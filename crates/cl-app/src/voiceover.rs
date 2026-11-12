@@ -1,0 +1,102 @@
+//! Einsprechen: kleines Fenster mit Aufnahmeknopf, Pegel, Live-Waveform, Mikrofonwahl.
+//! Während der Aufnahme wächst zusätzlich ein roter Clip mit Waveform in der Zeitleiste.
+
+use eframe::egui::{self, pos2, vec2, Rect, RichText, Stroke};
+
+use crate::app::App;
+use crate::preview::WAVE_PER_SEC;
+use crate::theme::{self, icon};
+use crate::widgets::{self, Slider};
+
+impl App {
+    pub fn voiceover_window(&mut self, ctx: &egui::Context) {
+        if !self.voiceover.open {
+            return;
+        }
+        if self.voiceover.devices.is_empty() {
+            self.voiceover.devices = crate::record::input_devices();
+        }
+        let mut open = true;
+        let recording = self.voiceover.recorder.is_some();
+        egui::Window::new(RichText::new(crate::tr(format!("{}  {}", icon::MICROPHONE, self.t("voiceover")))).strong())
+            .id(egui::Id::new("voiceover"))
+            .collapsible(false)
+            .resizable(false)
+            .default_pos(ctx.screen_rect().right_top() + vec2(-360.0, 70.0))
+            .fixed_size(vec2(300.0, 0.0))
+            .open(&mut open)
+            .frame(egui::Frame::window(&ctx.style()).inner_margin(16))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    let (rect, resp) = ui.allocate_exact_size(vec2(48.0, 48.0), egui::Sense::click());
+                    let hover = resp.hovered();
+                    ui.painter().circle_stroke(rect.center(), 22.0, Stroke::new(2.0_f32, if hover { theme::TEXT } else { theme::TEXT_DIM }));
+                    if recording {
+                        ui.painter().rect_filled(Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), 3.0, theme::DANGER);
+                    } else {
+                        ui.painter().circle_filled(rect.center(), 15.0, theme::DANGER);
+                    }
+                    if resp.on_hover_text(crate::tr(if recording { "Aufnahme beenden" } else { "Aufnahme starten" })).clicked() {
+                        if recording {
+                            self.stop_voiceover();
+                        } else if self.voiceover.countdown_until.is_none() {
+                            self.start_voiceover();
+                        }
+                    }
+                    ui.vertical(|ui| {
+                        let (time, state) = if let Some(r) = &self.voiceover.recorder {
+                            let s = r.elapsed().as_secs();
+                            (format!("{:02}:{:02}", s / 60, s % 60), "Aufnahme läuft".to_string())
+                        } else if let Some(u) = self.voiceover.countdown_until {
+                            let left = u.saturating_duration_since(std::time::Instant::now()).as_secs() + 1;
+                            (format!("{left}"), "Gleich geht's los …".to_string())
+                        } else {
+                            ("00:00".into(), "Bereit, startet am Playhead".into())
+                        };
+                        ui.label(RichText::new(crate::tr(time)).size(20.0).monospace());
+                        ui.label(RichText::new(crate::tr(state)).small().color(theme::TEXT_DIM));
+                    });
+                });
+                ui.add_space(6.0);
+                // Live-Waveform der letzten Sekunden
+                let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), egui::Sense::hover());
+                ui.painter().rect_filled(bar, 5.0, theme::BG_INPUT);
+                if let Some(r) = &self.voiceover.recorder {
+                    let peaks = r.peaks();
+                    let n = (bar.width() / 2.0) as usize;
+                    let start = peaks.len().saturating_sub(n);
+                    for (i, v) in peaks[start..].iter().enumerate() {
+                        let x = bar.left() + 2.0 + i as f32 * 2.0;
+                        let h = (v.sqrt() * (bar.height() - 6.0)).max(1.0);
+                        ui.painter().line_segment([pos2(x, bar.center().y - h / 2.0), pos2(x, bar.center().y + h / 2.0)], Stroke::new(1.4_f32, if *v > 0.9 || r.level() > 0.98 { theme::DANGER } else { theme::ACCENT }));
+                    }
+                    let _ = WAVE_PER_SEC;
+                } else {
+                    ui.painter().text(bar.center(), egui::Align2::CENTER_CENTER, crate::tr("Pegel und Waveform erscheinen bei der Aufnahme"), egui::FontId::proportional(10.0), theme::TEXT_FAINT);
+                }
+                ui.add_space(8.0);
+                ui.add_enabled_ui(!recording, |ui| {
+                    let devs = self.voiceover.devices.clone();
+                    egui::ComboBox::from_id_salt("vo-dev").selected_text(crate::tr(self.voiceover.device.clone().unwrap_or_else(|| "Standardmikrofon".into()))).width(268.0).show_ui(ui, |ui| {
+                        for d in devs {
+                            ui.selectable_value(&mut self.voiceover.device, Some(d.clone()), crate::tr(d));
+                        }
+                    });
+                    ui.add_space(4.0);
+                    theme::row(ui, "Eingang", |ui| Slider::new(&mut self.voiceover.gain_db, -12.0..=24.0).suffix(" dB").default(0.0).show(ui));
+                    widgets::toggle_row(ui, "Projekt stumm während der Aufnahme", &mut self.voiceover.mute_project);
+                    widgets::toggle_row(ui, "3-2-1-Countdown", &mut self.voiceover.countdown);
+                });
+            });
+        if self.voiceover.recorder.is_some() {
+            ctx.request_repaint();
+        }
+        if !open {
+            if self.voiceover.recorder.is_some() {
+                self.stop_voiceover();
+            }
+            self.voiceover.countdown_until = None;
+            self.voiceover.open = false;
+        }
+    }
+}

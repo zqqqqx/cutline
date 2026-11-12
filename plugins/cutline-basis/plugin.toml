@@ -1,0 +1,74 @@
+# Mitgeliefertes Basis-Paket: Referenz für das Asset-Paket-Format (docs/ARCHITECTURE.md).
+[plugin]
+id = "cutline.basis"
+version = "0.1.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Basis-Effekte", en = "Basic effects" }
+description = { de = "Grundausstattung an Übergängen, Effekten und Filtern", en = "Essential transitions, effects and filters" }
+authors = ["Cutline-Projekt"]
+license = "CC0-1.0"
+
+[[asset]]
+id = "crossfade"
+kind = "transition"
+name = { de = "Überblenden", en = "Crossfade" }
+category = ["Einfach"]
+shader = "shaders/crossfade.wgsl"
+
+[[asset]]
+id = "wipe"
+kind = "transition"
+name = { de = "Wischen", en = "Wipe" }
+category = ["Einfach", "Maske"]
+shader = "shaders/wipe.wgsl"
+params = [
+  { type = "choice", id = "direction", options = ["links", "rechts", "oben", "unten"], default = "links" },
+  { type = "float", id = "softness", min = 0.0, max = 0.5, default = 0.05 },
+]
+
+[[asset]]
+id = "rgb-split"
+kind = "video-effect"
+name = { de = "RGB-Versatz", en = "RGB split" }
+category = ["Störung", "Angesagt"]
+shader = "shaders/rgb_split.wgsl"
+params = [
+  { type = "float", id = "amount", min = 0.0, max = 1.0, default = 0.35, keyframable = true },
+  { type = "float", id = "speed", min = 0.0, max = 5.0, default = 1.0 },
+]
+
+[[asset]]
+id = "vignette"
+kind = "video-effect"
+name = { de = "Vignette", en = "Vignette" }
+category = ["Linse"]
+shader = "shaders/vignette.wgsl"
+params = [
+  { type = "float", id = "strength", min = 0.0, max = 1.0, default = 0.5, keyframable = true },
+  { type = "color", id = "color", default = "#000000" },
+]
+
+[[asset]]
+id = "warm"
+kind = "filter"
+name = { de = "Warm", en = "Warm" }
+category = ["Leben"]
+shader = "shaders/warm.wgsl"
+params = [{ type = "float", id = "intensity", min = 0.0, max = 1.0, default = 0.8, keyframable = true }]
+
+# FFmpeg-Assets laufen sofort in Vorschau und Export ({intensity} = Stärke 0…1)
+[[asset]]
+id = "soft-glow"
+kind = "video-effect"
+name = { de = "Sanftes Leuchten", en = "Soft glow" }
+category = ["Licht"]
+ffmpeg = "gblur=sigma={radius},eq=brightness=0.04*{intensity}:saturation=1.1"
+params = [{ type = "float", id = "radius", min = 0.5, max = 10.0, default = 2.5 }]
+
+[[asset]]
+id = "lomo"
+kind = "filter"
+name = { de = "Lomo", en = "Lomo" }
+category = ["Film"]
+ffmpeg = "curves=preset=increase_contrast,vignette=angle=0.7,eq=saturation=1.25"
