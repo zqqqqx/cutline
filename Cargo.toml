@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cl-core",
+    "crates/cl-media",
+    "crates/cl-fonts",
+    "crates/cl-i18n",
+    "crates/cl-plugin",
+    "crates/cl-mcp",
+    "crates/cl-export",
+    "crates/cl-fx",
+    "crates/cl-update",
+    "crates/cl-analyze",
+    "crates/cl-app",
+]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+license = "MPL-2.0"
+repository = "https://github.com/zqqqqx/cutline"
+
+[workspace.dependencies]
+cl-core = { path = "crates/cl-core" }
+cl-media = { path = "crates/cl-media" }
+cl-fonts = { path = "crates/cl-fonts" }
+cl-i18n = { path = "crates/cl-i18n" }
+cl-plugin = { path = "crates/cl-plugin" }
+cl-mcp = { path = "crates/cl-mcp" }
+cl-export = { path = "crates/cl-export" }
+cl-fx = { path = "crates/cl-fx" }
+cl-update = { path = "crates/cl-update" }
+cl-analyze = { path = "crates/cl-analyze" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+anyhow = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+tempfile = "3"
+
+[profile.dev.package."*"]
+opt-level = 2

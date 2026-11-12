@@ -1,0 +1,15 @@
+[package]
+name = "cl-media"
+description = "Cutline: Medien-Probe, Frame-Decode und Streaming (Phase 0: FFmpeg-Prozess, später libav-Bindings + HW-Decode)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cl-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

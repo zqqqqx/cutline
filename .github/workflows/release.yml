@@ -1,0 +1,137 @@
+# Release: Tag `vX.Y.Z` pushen → Pakete bauen → GitHub-Release mit
+#   cutline-<os>-<arch>.zip + .sha256
+# Die App (cl-update) findet das Paket über `releases/latest` und prüft die Prüfsumme.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: cutline-windows-x64.zip
+            exe: cutline.exe
+          - os: ubuntu-22.04
+            asset: cutline-linux-x64.zip
+            exe: cutline
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version aus Tag prüfen
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          if [ "$tag" != "$ver" ]; then echo "Tag $tag passt nicht zu Cargo.toml $ver"; exit 1; fi
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Cache nur lesen: das Hochladen hing beim Testlauf stundenlang
+          save-if: false
+
+      - name: Linux-Abhängigkeiten
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libgtk-3-dev libxkbcommon-dev libwayland-dev
+
+      - name: FFmpeg (aktuell, statisch)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ
+          echo "$PWD/$(ls -d ffmpeg-master-latest-linux64-gpl)/bin" >> $GITHUB_PATH
+
+      - name: FFmpeg für Tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
+          $bin = (Get-ChildItem ffmpeg-dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1).Directory.FullName
+          echo "FFBIN=$bin" >> $env:GITHUB_ENV
+          echo "$bin" >> $env:GITHUB_PATH
+
+      - name: Tests
+        run: cargo test --workspace --release
+
+      - name: Bauen
+        run: cargo build --release -p cl-app
+
+      - name: ONNX Runtime (für Untertitel und Freistellen)
+        shell: bash
+        run: |
+          mkdir -p pkg
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            curl -sL -o ort.zip https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-1.31.1.zip
+            7z x -y ort.zip > /dev/null
+            cp onnxruntime-win-x64-1.31.1/lib/onnxruntime.dll pkg/
+          else
+            curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-linux-x64-1.31.1.tgz | tar -xz
+            cp -L onnxruntime-linux-x64-1.31.1/lib/libonnxruntime.so pkg/libonnxruntime.so
+          fi
+
+      - name: Paket schnüren
+        shell: bash
+        run: |
+          mkdir -p pkg
+          cp "target/release/${{ matrix.exe }}" pkg/
+          cp -r plugins pkg/plugins
+          cp LICENSE README.md pkg/
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            mkdir -p pkg/ffmpeg
+            cp "$FFBIN/ffmpeg.exe" "$FFBIN/ffprobe.exe" pkg/ffmpeg/
+            (cd pkg && 7z a -tzip "../${{ matrix.asset }}" . > /dev/null)
+            sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          else
+            (cd pkg && zip -qr "../${{ matrix.asset }}" .)
+            sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          fi
+          cat "${{ matrix.asset }}.sha256"
+
+      - name: Windows-Installer (Inno Setup)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+          & $iscc /Qp "/DAppVersion=$ver" "/DSrcDir=..\pkg" installer\cutline.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $h = (Get-FileHash cutline-windows-x64-setup.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  cutline-windows-x64-setup.exe" | Out-File -Encoding ascii -NoNewline cutline-windows-x64-setup.exe.sha256
+          Get-Content cutline-windows-x64-setup.exe.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.sha256
+            cutline-windows-x64-setup.exe
+            cutline-windows-x64-setup.exe.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

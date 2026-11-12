@@ -1,0 +1,15 @@
+[package]
+name = "cl-fonts"
+description = "Cutline: echter Schriftarten-Import (TTF/OTF/TTC/WOFF), Bibliothek, Variable- und Farb-Fonts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+ttf-parser = "0.25"
+flate2 = "1"
+
+[dev-dependencies]
+tempfile.workspace = true

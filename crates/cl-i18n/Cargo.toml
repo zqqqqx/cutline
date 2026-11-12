@@ -1,0 +1,10 @@
+[package]
+name = "cl-i18n"
+description = "Cutline: Übersetzungen mit Project Fluent, Glossar-Prüfung und Pseudo-Lokalisierung"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fluent-bundle = "0.15"
+unic-langid = "0.9"

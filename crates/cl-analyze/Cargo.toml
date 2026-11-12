@@ -1,0 +1,16 @@
+[package]
+name = "cl-analyze"
+description = "Cutline: lokale Analysen (Spracherkennung Parakeet/Whisper, Freistellen, Szenen, Beats, Tracking, Auto-Reframe)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cl-core.workspace = true
+cl-media.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "ndarray", "api-24"] }
+
+[dev-dependencies]
+tempfile.workspace = true
