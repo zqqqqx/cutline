@@ -182,6 +182,28 @@ impl App {
             }
         });
         ui.add_space(6.0);
+        // Pexels (Plugin): Stock-Videos und -Fotos statt der Projektmedien
+        if self.stock_enabled(crate::stock::PEXELS) {
+            let mut sel = self
+                .asset_cat
+                .get("media-src")
+                .is_some_and(|s| s == "pexels") as usize;
+            if widgets::segmented(ui, &["Projekt", "Pexels"], &mut sel) {
+                self.asset_cat.insert(
+                    "media-src",
+                    if sel == 1 {
+                        "pexels".into()
+                    } else {
+                        String::new()
+                    },
+                );
+            }
+            ui.add_space(4.0);
+            if sel == 1 {
+                self.stock_panel(ui, crate::stock::PEXELS);
+                return;
+            }
+        }
         // Ordner und Favoriten gelten pro Projekt
         let area = crate::library_ui::intern(format!("media/{}", self.project.name));
         let (cat, q) = self.asset_bar(ui, area, &["Video", "Audio", "Bilder"]);
@@ -380,21 +402,14 @@ impl App {
             }
         });
         // Epidemic Sound erscheint nur, wenn das Plugin eingeschaltet ist
-        let es = self.epidemic_enabled();
-        let modes: &[(&str, &str)] = if es {
-            &[
-                ("sfx", "Soundeffekte"),
-                ("music", "Musik"),
-                ("es", "Epidemic Sound"),
-                ("rec", "Aufnahmen"),
-            ]
-        } else {
-            &[
-                ("sfx", "Soundeffekte"),
-                ("music", "Musik"),
-                ("rec", "Aufnahmen"),
-            ]
-        };
+        let mut modes: Vec<(&str, &str)> = vec![("sfx", "Soundeffekte"), ("music", "Musik")];
+        if self.epidemic_enabled() {
+            modes.push(("es", "Epidemic Sound"));
+        }
+        if self.stock_enabled(crate::stock::FREESOUND) {
+            modes.push(("fs", "Freesound"));
+        }
+        modes.push(("rec", "Aufnahmen"));
         let cur = self
             .asset_cat
             .get("audio-mode")
@@ -411,6 +426,10 @@ impl App {
             "music" => 1,
             "es" => {
                 self.epidemic_panel(ui);
+                return;
+            }
+            "fs" => {
+                self.stock_panel(ui, crate::stock::FREESOUND);
                 return;
             }
             _ => 2,

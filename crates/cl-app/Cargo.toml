@@ -16,6 +16,7 @@ cl-fonts.workspace = true
 cl-i18n.workspace = true
 cl-epidemic.workspace = true
 cl-import.workspace = true
+ureq = { version = "2", features = ["json"] }
 cl-plugin.workspace = true
 cl-mcp.workspace = true
 cl-export.workspace = true

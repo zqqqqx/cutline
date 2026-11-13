@@ -1,0 +1,13 @@
+# Eingebaute Integration, standardmäßig aus.
+[plugin]
+id = "cutline.freesound"
+version = "0.1.0"
+api = 1
+kind = "integration"
+entry = "builtin:freesound"
+default_enabled = false
+name = { de = "Freesound", en = "Freesound" }
+description = { de = "Soundeffekte (Creative Commons) suchen und einfügen. Benötigt einen kostenlosen API-Schlüssel.", en = "Search and add sound effects (Creative Commons). Requires a free API key." }
+authors = ["Cutline contributors"]
+license = "MPL-2.0"
+permissions = ["net:freesound.org", "project.write"]

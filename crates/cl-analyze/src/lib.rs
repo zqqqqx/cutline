@@ -11,6 +11,7 @@
 //! Modelle werden nicht mitgeliefert, sondern bei Bedarf geladen ([`CATALOG`]).
 
 pub mod asr;
+pub mod audio;
 pub mod beats;
 pub mod matte;
 pub mod reframe;

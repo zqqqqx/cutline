@@ -616,6 +616,8 @@ impl App {
     pub fn integrations_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         ui.label(RichText::new(crate::tr("Integrationen verbinden Cutline mit Diensten, für die du ein eigenes Konto brauchst. Sie sind ausgeschaltet, bis du sie unter Plugins aktivierst.")).small().color(theme::TEXT_DIM));
+        self.story_settings(ui);
+        self.stock_settings(ui);
         theme::section(ui, "Epidemic Sound");
         let enabled = self.epidemic_enabled();
         let mut on = enabled;

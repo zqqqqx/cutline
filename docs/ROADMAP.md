@@ -102,6 +102,8 @@ Legend: ⏳ planned · 🔨 in progress · ✅ done
 | **Cinematic tools**: letterbox ratios, camera shake presets, flashback and dream looks, day/night grades, slow push-ins | Story mood without plugins |
 | **Sound design helpers**: ambience beds that loop seamlessly, footstep and impact packs, room-tone fill for gaps | Fuller sound with little effort |
 
+**5.2 status (partly done):** sync a selection by audio (cross-correlation, works for several angles of one scene) · multicam editing (switch with 1–9 while playing, stop applies the cuts) · speaker recordings import (one file per person or a ZIP → one named track each) · recap from markers (new project, 3 s around every marker, crossfades). Characters, dialogue boxes and name tags are **not part of the core**: they ship as the built-in plugin **Story tools** (off by default, settings under Settings → Integrations). Moved to later: text-based editing, script import and coverage, speaker-aware captions, typewriter animation, tracking name tags, scene list, cinematic and sound design helpers.
+
 ### 5.3 Creator tools (moved from phase 4)
 
 | Feature | Why |
@@ -120,6 +122,8 @@ Legend: ⏳ planned · 🔨 in progress · ✅ done
 | **Auto ducking**: music gets quieter under speech | Clear voices, no manual keyframes |
 | **Creator overlays**: subscribe/follow animations, progress bar, countdown, webcam frames | Standard elements, own design |
 
+**5.3 status (mostly done):** everything sits in the new **Tools** menu of the timeline: jump cuts · filler words (local Parakeet transcript) · highlight finder (loud moments → markers) · YouTube chapters from markers · auto ducking (−12 dB keyframes under speech) · zoom punch-in · vertical 9:16 layout (facecam crop over gameplay) · thumbnail PNG from the current frame · export presets per platform with an aspect-ratio hint · "Creator" sticker category (subscribe button, bell, thumbs up, comment, share, live, webcam frame, progress bar). Moved to later: animated word captions, multi-export, shorts batch from an episode, auto zoom on beats, thumbnail text styles and cut-outs, countdown, OBS multi-track import.
+
 ### 5.4 Plugins (shipped, off by default, need your own account where noted)
 
 | Plugin | What it does |
@@ -133,6 +137,8 @@ Legend: ⏳ planned · 🔨 in progress · ✅ done
 | **Local text-to-speech** (Piper, open voices) | Scratch narration and placeholder lines while the real voice is not recorded yet |
 | **Character portraits** | Render portraits from images or supported game skin files for character cards |
 | **Asset pack registry** | Install community packs (sound effects, overlays, LUTs, dialogue box styles) |
+
+**5.4 status (partly done):** shipped and off by default: **Freesound** (search in the Audio tab, preview, download into the library with license and author), **Pexels** (videos and photos in the Media tab, saved next to the project), **Story tools** (characters, dialogue boxes, name tags). Keys are entered under Settings → Integrations and stay on your computer. Voice-call recordings became a core tool (see 5.2). Moved to later: Pixabay, Google Fonts, OBS, YouTube upload, local text-to-speech, character portraits, asset pack registry.
 
 ### 5.5 Where Cutline goes further than typical free editors
 

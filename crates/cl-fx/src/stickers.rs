@@ -11,7 +11,7 @@ pub struct Sticker {
     pub svg: &'static str,
 }
 
-pub const STICKER_CATEGORIES: [&str; 4] = ["Formen", "Pfeile", "Sprechblasen", "Deko"];
+pub const STICKER_CATEGORIES: [&str; 5] = ["Formen", "Pfeile", "Sprechblasen", "Deko", "Creator"];
 
 macro_rules! svg {
     ($body:expr) => {
@@ -224,6 +224,70 @@ pub static STICKERS: &[Sticker] = &[
         category: "Deko",
         svg: svg!(
             r##"<rect x="14" y="18" width="8" height="14" rx="2" fill="#FF3B5C" transform="rotate(-20 18 25)"/><rect x="70" y="12" width="8" height="14" rx="2" fill="#34C759" transform="rotate(25 74 19)"/><rect x="44" y="40" width="8" height="14" rx="2" fill="#FFD400" transform="rotate(10 48 47)"/><rect x="20" y="68" width="8" height="14" rx="2" fill="#5AC8FA" transform="rotate(35 24 75)"/><rect x="76" y="62" width="8" height="14" rx="2" fill="#AF52DE" transform="rotate(-30 80 69)"/><circle cx="58" cy="82" r="4" fill="#FF9500"/><circle cx="34" cy="44" r="3" fill="#FFFFFF"/><circle cx="86" cy="40" r="3" fill="#FFD400"/>"##
+        ),
+    },
+    Sticker {
+        id: "sub-button",
+        name: "Abo-Knopf",
+        category: "Creator",
+        svg: svg!(
+            r##"<rect x="4" y="30" width="92" height="40" rx="20" fill="#FF2D2D"/><path d="M40 40 L62 50 L40 60Z" fill="#FFFFFF"/>"##
+        ),
+    },
+    Sticker {
+        id: "bell",
+        name: "Glocke",
+        category: "Creator",
+        svg: svg!(
+            r##"<path d="M50 10 C30 10 24 28 24 44 V62 L14 74 H86 L76 62 V44 C76 28 70 10 50 10Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3" stroke-linejoin="round"/><circle cx="50" cy="84" r="8" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3"/><circle cx="74" cy="22" r="10" fill="#FF2D2D"/>"##
+        ),
+    },
+    Sticker {
+        id: "thumbs-up",
+        name: "Daumen hoch",
+        category: "Creator",
+        svg: svg!(
+            r##"<path d="M10 46 H26 V90 H10Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3"/><path d="M30 46 L48 12 C56 10 60 16 58 26 L54 40 H82 C90 40 94 48 90 56 L82 84 C80 88 76 90 72 90 H30Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3" stroke-linejoin="round"/>"##
+        ),
+    },
+    Sticker {
+        id: "comment",
+        name: "Kommentar",
+        category: "Creator",
+        svg: svg!(
+            r##"<path d="M12 14 H88 Q94 14 94 20 V64 Q94 70 88 70 H44 L24 88 V70 H12 Q6 70 6 64 V20 Q6 14 12 14Z" fill="#3A8DFF"/><circle cx="32" cy="42" r="5" fill="#FFFFFF"/><circle cx="50" cy="42" r="5" fill="#FFFFFF"/><circle cx="68" cy="42" r="5" fill="#FFFFFF"/>"##
+        ),
+    },
+    Sticker {
+        id: "share",
+        name: "Teilen",
+        category: "Creator",
+        svg: svg!(
+            r##"<path d="M58 14 L94 46 L58 78 V60 C34 60 18 68 6 88 C10 58 26 34 58 32Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3" stroke-linejoin="round"/>"##
+        ),
+    },
+    Sticker {
+        id: "live",
+        name: "Live",
+        category: "Creator",
+        svg: svg!(
+            r##"<rect x="6" y="30" width="88" height="40" rx="8" fill="#FF2D2D"/><circle cx="24" cy="50" r="7" fill="#FFFFFF"/><rect x="38" y="44" width="46" height="12" rx="6" fill="#FFFFFF"/>"##
+        ),
+    },
+    Sticker {
+        id: "webcam-frame",
+        name: "Webcam-Rahmen",
+        category: "Creator",
+        svg: svg!(
+            r##"<rect x="6" y="18" width="88" height="64" rx="10" fill="none" stroke="#FFFFFF" stroke-width="5"/><rect x="11" y="23" width="78" height="54" rx="6" fill="none" stroke="#7C5CFF" stroke-width="3"/>"##
+        ),
+    },
+    Sticker {
+        id: "progress",
+        name: "Fortschrittsbalken",
+        category: "Creator",
+        svg: svg!(
+            r##"<rect x="4" y="44" width="92" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.35"/><rect x="4" y="44" width="58" height="12" rx="6" fill="#FF2D2D"/><circle cx="62" cy="50" r="9" fill="#FF2D2D"/>"##
         ),
     },
 ];
