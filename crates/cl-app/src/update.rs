@@ -29,7 +29,10 @@ pub struct Updater {
 
 impl Default for Updater {
     fn default() -> Self {
-        Self { state: Arc::new(Mutex::new(UpdateState::Idle)), cancel: Arc::new(AtomicBool::new(false)) }
+        Self {
+            state: Arc::new(Mutex::new(UpdateState::Idle)),
+            cancel: Arc::new(AtomicBool::new(false)),
+        }
     }
 }
 
@@ -43,16 +46,25 @@ pub fn can_install() -> bool {
 }
 
 fn exe_dir() -> Option<std::path::PathBuf> {
-    std::env::current_exe().ok()?.parent().map(|p| p.to_path_buf())
+    std::env::current_exe()
+        .ok()?
+        .parent()
+        .map(|p| p.to_path_buf())
 }
 
 impl Updater {
     pub fn get(&self) -> UpdateState {
-        self.state.lock().map(|s| s.clone()).unwrap_or(UpdateState::Idle)
+        self.state
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or(UpdateState::Idle)
     }
 
     pub fn check(&self, ctx: &egui::Context) {
-        if matches!(self.get(), UpdateState::Checking | UpdateState::Downloading(_)) {
+        if matches!(
+            self.get(),
+            UpdateState::Checking | UpdateState::Downloading(_)
+        ) {
             return;
         }
         *self.state.lock().unwrap() = UpdateState::Checking;
@@ -125,19 +137,58 @@ impl App {
     /// Kleiner Hinweis in der Titelleiste (nur wenn es etwas zu tun gibt).
     pub fn update_badge(&mut self, ui: &mut egui::Ui) {
         match self.updater.get() {
-            UpdateState::Available(rel) if self.settings.skipped_version.as_deref() != Some(&rel.version.to_string()) => {
-                let b = egui::Button::new(RichText::new(crate::tr(format!("{}  Update {}", icon::ARROW_CIRCLE_UP, rel.version))).size(11.0).color(theme::ACCENT)).fill(theme::BG_RAISED).corner_radius(11).min_size(vec2(0.0, 22.0));
-                if ui.add(b).on_hover_text(crate::tr("Neue Version verfügbar")).clicked() {
+            UpdateState::Available(rel)
+                if self.settings.skipped_version.as_deref() != Some(&rel.version.to_string()) =>
+            {
+                let b = egui::Button::new(
+                    RichText::new(crate::tr(format!(
+                        "{}  Update {}",
+                        icon::ARROW_CIRCLE_UP,
+                        rel.version
+                    )))
+                    .size(11.0)
+                    .color(theme::ACCENT),
+                )
+                .fill(theme::BG_RAISED)
+                .corner_radius(11)
+                .min_size(vec2(0.0, 22.0));
+                if ui
+                    .add(b)
+                    .on_hover_text(crate::tr("Neue Version verfügbar"))
+                    .clicked()
+                {
                     self.settings_section = crate::settings::Section::Updates;
                     self.settings_open = true;
                 }
             }
             UpdateState::Downloading(p) => {
-                ui.label(RichText::new(crate::tr(format!("{}  Update {:.0} %", icon::DOWNLOAD_SIMPLE, p * 100.0))).size(11.0).color(theme::TEXT_DIM));
+                ui.label(
+                    RichText::new(crate::tr(format!(
+                        "{}  Update {:.0} %",
+                        icon::DOWNLOAD_SIMPLE,
+                        p * 100.0
+                    )))
+                    .size(11.0)
+                    .color(theme::TEXT_DIM),
+                );
             }
             UpdateState::Installed(v) => {
-                let b = egui::Button::new(RichText::new(crate::tr(format!("{}  Neu starten ({v})", icon::ARROWS_CLOCKWISE))).size(11.0).color(theme::ACCENT_INK)).fill(theme::ACCENT).corner_radius(11).min_size(vec2(0.0, 22.0));
-                if ui.add(b).on_hover_text(crate::tr("Update ist installiert. Cutline neu starten")).clicked() {
+                let b = egui::Button::new(
+                    RichText::new(crate::tr(format!(
+                        "{}  Neu starten ({v})",
+                        icon::ARROWS_CLOCKWISE
+                    )))
+                    .size(11.0)
+                    .color(theme::ACCENT_INK),
+                )
+                .fill(theme::ACCENT)
+                .corner_radius(11)
+                .min_size(vec2(0.0, 22.0));
+                if ui
+                    .add(b)
+                    .on_hover_text(crate::tr("Update ist installiert. Cutline neu starten"))
+                    .clicked()
+                {
                     self.restart_after_update(ui.ctx());
                 }
             }
@@ -152,9 +203,20 @@ impl App {
 
     /// Abschnitt „Updates“ im Einstellungsdialog.
     pub fn updates_settings(&mut self, ui: &mut egui::Ui) {
-        theme::row(ui, "Version", |ui| ui.label(RichText::new(crate::tr(current_version())).monospace()));
-        theme::row(ui, "Quelle", |ui| ui.label(RichText::new(crate::tr(format!("github.com/{}", cl_update::REPO))).color(theme::TEXT_DIM)));
-        if widgets::toggle_row(ui, "Beim Start automatisch nach Updates suchen", &mut self.settings.auto_update) {
+        theme::row(ui, "Version", |ui| {
+            ui.label(RichText::new(crate::tr(current_version())).monospace())
+        });
+        theme::row(ui, "Quelle", |ui| {
+            ui.label(
+                RichText::new(crate::tr(format!("github.com/{}", cl_update::REPO)))
+                    .color(theme::TEXT_DIM),
+            )
+        });
+        if widgets::toggle_row(
+            ui,
+            "Beim Start automatisch nach Updates suchen",
+            &mut self.settings.auto_update,
+        ) {
             self.settings.save();
         }
         ui.label(RichText::new(crate::tr("Dabei wird nur die Release-Liste auf GitHub abgefragt. Installiert wird erst nach deiner Bestätigung, jedes Paket wird per SHA-256 geprüft.")).small().color(theme::TEXT_DIM));
@@ -171,33 +233,76 @@ impl App {
                 });
             }
             UpdateState::UpToDate => {
-                ui.label(RichText::new(crate::tr(format!("{}  Cutline ist aktuell", icon::CHECK_CIRCLE))).color(theme::ACCENT));
+                ui.label(
+                    RichText::new(crate::tr(format!(
+                        "{}  Cutline ist aktuell",
+                        icon::CHECK_CIRCLE
+                    )))
+                    .color(theme::ACCENT),
+                );
             }
             UpdateState::Error(e) => {
-                ui.label(RichText::new(crate::tr(format!("{}  {e}", icon::WARNING_CIRCLE))).color(theme::TEXT_DIM));
+                ui.label(
+                    RichText::new(crate::tr(format!("{}  {e}", icon::WARNING_CIRCLE)))
+                        .color(theme::TEXT_DIM),
+                );
             }
             UpdateState::Available(rel) => {
-                ui.label(RichText::new(crate::tr(format!("{}  Version {} ist verfügbar", icon::ARROW_CIRCLE_UP, rel.version))).strong());
+                ui.label(
+                    RichText::new(crate::tr(format!(
+                        "{}  Version {} ist verfügbar",
+                        icon::ARROW_CIRCLE_UP,
+                        rel.version
+                    )))
+                    .strong(),
+                );
                 if rel.asset_size > 0 {
-                    ui.label(RichText::new(crate::tr(format!("{} · {:.1} MB", rel.name, rel.asset_size as f64 / 1_048_576.0))).small().color(theme::TEXT_DIM));
+                    ui.label(
+                        RichText::new(crate::tr(format!(
+                            "{} · {:.1} MB",
+                            rel.name,
+                            rel.asset_size as f64 / 1_048_576.0
+                        )))
+                        .small()
+                        .color(theme::TEXT_DIM),
+                    );
                 }
                 if !rel.notes.trim().is_empty() {
                     ui.add_space(4.0);
-                    egui::Frame::default().fill(theme::BG_INPUT).corner_radius(6).inner_margin(10).show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        egui::ScrollArea::vertical().id_salt("notes").max_height(140.0).show(ui, |ui| {
-                            ui.label(RichText::new(crate::tr(rel.notes.trim())).small());
+                    egui::Frame::default()
+                        .fill(theme::BG_INPUT)
+                        .corner_radius(6)
+                        .inner_margin(10)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            egui::ScrollArea::vertical()
+                                .id_salt("notes")
+                                .max_height(140.0)
+                                .show(ui, |ui| {
+                                    ui.label(RichText::new(crate::tr(rel.notes.trim())).small());
+                                });
                         });
-                    });
                 }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if can_install() {
-                        if ui.add(theme::primary(format!("{}  Herunterladen und installieren", icon::DOWNLOAD_SIMPLE))).clicked() {
+                        if ui
+                            .add(theme::primary(format!(
+                                "{}  Herunterladen und installieren",
+                                icon::DOWNLOAD_SIMPLE
+                            )))
+                            .clicked()
+                        {
                             self.updater.install((**rel).clone(), ui.ctx());
                         }
                     } else {
-                        ui.label(RichText::new(crate::tr("Entwicklungs-Build: bitte über Git aktualisieren")).small().color(theme::TEXT_DIM));
+                        ui.label(
+                            RichText::new(crate::tr(
+                                "Entwicklungs-Build: bitte über Git aktualisieren",
+                            ))
+                            .small()
+                            .color(theme::TEXT_DIM),
+                        );
                     }
                     if ui.add(theme::secondary("Auf GitHub ansehen")).clicked() {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(&rel.page));
@@ -209,21 +314,46 @@ impl App {
                 });
             }
             UpdateState::Downloading(p) => {
-                ui.add(egui::ProgressBar::new(*p).show_percentage().desired_height(6.0));
+                ui.add(
+                    egui::ProgressBar::new(*p)
+                        .show_percentage()
+                        .desired_height(6.0),
+                );
                 if ui.add(theme::secondary("Abbrechen")).clicked() {
                     self.updater.cancel();
                 }
             }
             UpdateState::Installed(v) => {
-                ui.label(RichText::new(crate::tr(format!("{}  Version {v} ist installiert", icon::CHECK_CIRCLE))).color(theme::ACCENT));
-                if ui.add(theme::primary(format!("{}  Jetzt neu starten", icon::ARROWS_CLOCKWISE))).clicked() {
+                ui.label(
+                    RichText::new(crate::tr(format!(
+                        "{}  Version {v} ist installiert",
+                        icon::CHECK_CIRCLE
+                    )))
+                    .color(theme::ACCENT),
+                );
+                if ui
+                    .add(theme::primary(format!(
+                        "{}  Jetzt neu starten",
+                        icon::ARROWS_CLOCKWISE
+                    )))
+                    .clicked()
+                {
                     self.restart_after_update(ui.ctx());
                 }
             }
         }
-        if !matches!(state, UpdateState::Checking | UpdateState::Downloading(_) | UpdateState::Installed(_)) {
+        if !matches!(
+            state,
+            UpdateState::Checking | UpdateState::Downloading(_) | UpdateState::Installed(_)
+        ) {
             ui.add_space(8.0);
-            if ui.add(theme::secondary(format!("{}  Jetzt nach Updates suchen", icon::ARROWS_CLOCKWISE))).clicked() {
+            if ui
+                .add(theme::secondary(format!(
+                    "{}  Jetzt nach Updates suchen",
+                    icon::ARROWS_CLOCKWISE
+                )))
+                .clicked()
+            {
                 self.settings.skipped_version = None;
                 self.updater.check(ui.ctx());
             }

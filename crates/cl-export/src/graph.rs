@@ -89,7 +89,13 @@ pub(crate) struct Sprite {
 }
 
 /// Deckkraft, Skalierung und Drehung (statisch oder animiert) anhängen.
-fn post_transform(ctx: &mut Ctx, input: &str, base_w: u32, base_h: u32, s: &[(f64, Evaluated)]) -> String {
+fn post_transform(
+    ctx: &mut Ctx,
+    input: &str,
+    base_w: u32,
+    base_h: u32,
+    s: &[(f64, Evaluated)],
+) -> String {
     let mut chain = vec!["format=rgba".to_string()];
     let op = value_expr(s, |e| e.opacity, "T");
     if is_const(&op) {
@@ -98,11 +104,17 @@ fn post_transform(ctx: &mut Ctx, input: &str, base_w: u32, base_h: u32, s: &[(f6
             chain.push(format!("colorchannelmixer=aa={v:.3}"));
         }
     } else {
-        chain.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*clip({op},0,1)'"));
+        chain.push(format!(
+            "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*clip({op},0,1)'"
+        ));
     }
     let sc = value_expr(s, |e| e.scale, "t");
     let rot = value_expr(s, |e| e.rotation_deg, "t");
-    let max_s = s.iter().map(|(_, e)| e.scale).fold(0.0f32, f32::max).max(0.01) as f64;
+    let max_s = s
+        .iter()
+        .map(|(_, e)| e.scale)
+        .fold(0.0f32, f32::max)
+        .max(0.01) as f64;
     // Feste Fläche für animierte Größe/Drehung: neuere FFmpeg-Versionen lehnen
     // wechselnde Bildgrößen in nachfolgenden Filtern (rotate, overlay) ab.
     let d = (((base_w as f64 * max_s).hypot(base_h as f64 * max_s)).ceil() as u32 + 2) & !1;
@@ -120,7 +132,9 @@ fn post_transform(ctx: &mut Ctx, input: &str, base_w: u32, base_h: u32, s: &[(f6
         }
     } else {
         chain.push(format!("scale=w='max(2,trunc({base_w}*({sc})/2)*2)':h='max(2,trunc({base_h}*({sc})/2)*2)':eval=frame:flags=bicubic"));
-        chain.push(format!("pad=w={d}:h={d}:x='(ow-iw)/2':y='(oh-ih)/2':color=black@0:eval=frame"));
+        chain.push(format!(
+            "pad=w={d}:h={d}:x='(ow-iw)/2':y='(oh-ih)/2':color=black@0:eval=frame"
+        ));
         if is_const(&rot) {
             let r: f32 = rot.parse().unwrap_or(0.0);
             if r.abs() > 0.01 {
@@ -132,7 +146,8 @@ fn post_transform(ctx: &mut Ctx, input: &str, base_w: u32, base_h: u32, s: &[(f6
     }
     chain.retain(|f| !f.is_empty());
     let out = ctx.label("sp");
-    ctx.graph.push(format!("[{input}]{}[{out}]", chain.join(",")));
+    ctx.graph
+        .push(format!("[{input}]{}[{out}]", chain.join(",")));
     out
 }
 
@@ -142,10 +157,24 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     let path = m.path.to_string_lossy().into_owned();
     let (_, seg_len) = source_segment(c);
     let i = if image {
-        ctx.input(vec!["-loop".into(), "1".into(), "-t".into(), f(dur + 0.1), "-i".into(), path])
+        ctx.input(vec![
+            "-loop".into(),
+            "1".into(),
+            "-t".into(),
+            f(dur + 0.1),
+            "-i".into(),
+            path,
+        ])
     } else {
         let (seg_in, _) = source_segment(c);
-        ctx.input(vec!["-ss".into(), f(seg_in.as_secs_f64()), "-t".into(), f(seg_len.as_secs_f64().max(0.04)), "-i".into(), path])
+        ctx.input(vec![
+            "-ss".into(),
+            f(seg_in.as_secs_f64()),
+            "-t".into(),
+            f(seg_len.as_secs_f64().max(0.04)),
+            "-i".into(),
+            path,
+        ])
     };
     // Grundgröße: eingepasst wie im Player (contain)
     let fit = (w as f64 / m.width.max(1) as f64).min(h as f64 / m.height.max(1) as f64);
@@ -158,13 +187,21 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
             pre.push("reverse".into());
             pre.push("setpts=PTS-STARTPTS".into());
         }
-        let sp = speed_setpts(c.speed, c.fx.speed_curve.as_deref(), seg_len.as_secs_f64(), dur);
+        let sp = speed_setpts(
+            c.speed,
+            c.fx.speed_curve.as_deref(),
+            seg_len.as_secs_f64(),
+            dur,
+        );
         if !sp.is_empty() {
             pre.push(sp);
         }
         // Flüssige Zeitlupe: Zwischenbilder per Bewegungsschätzung statt doppelter Bilder
         if c.fx.smooth_slowmo && (c.speed < 0.999 || c.fx.speed_curve.is_some()) {
-            pre.push(format!("minterpolate=fps={}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1", ctx.fps));
+            pre.push(format!(
+                "minterpolate=fps={}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1",
+                ctx.fps
+            ));
         }
         // Videos, die kürzer als der Clip sind (Rundung), halten das letzte Bild
         pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(0.5)));
@@ -185,10 +222,25 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     };
     // Hintergrund entfernen: Maskenvideo mit identischer Zeitachse als zweiter Eingang
     let mut matte = None;
-    if let Some(mp) = c.fx.cutout.as_ref().filter(|p| !image && Path::new(p).is_file()) {
+    if let Some(mp) =
+        c.fx.cutout
+            .as_ref()
+            .filter(|p| !image && Path::new(p).is_file())
+    {
         let (seg_in, _) = source_segment(c);
-        let mi = ctx.input(vec!["-ss".into(), f(seg_in.as_secs_f64()), "-t".into(), f(seg_len.as_secs_f64().max(0.04)), "-i".into(), mp.clone()]);
-        let mut mpre: Vec<String> = pre.iter().filter(|p| !p.starts_with("scale=")).cloned().collect();
+        let mi = ctx.input(vec![
+            "-ss".into(),
+            f(seg_in.as_secs_f64()),
+            "-t".into(),
+            f(seg_len.as_secs_f64().max(0.04)),
+            "-i".into(),
+            mp.clone(),
+        ]);
+        let mut mpre: Vec<String> = pre
+            .iter()
+            .filter(|p| !p.starts_with("scale="))
+            .cloned()
+            .collect();
         mpre.retain(|p| !p.starts_with("trim="));
         mpre.push(format!("scale={bw}:{bh}:flags=bilinear"));
         mpre.push(format!("trim=duration={}", f(dur)));
@@ -199,32 +251,73 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     }
     let fl = ctx.label("fx");
     let u = ctx.label("u");
-    let opts = ChainOpts { t_offset: 0.0, apply_reverse: false, lut, matte };
+    let opts = ChainOpts {
+        t_offset: 0.0,
+        apply_reverse: false,
+        lut,
+        matte,
+    };
     let mut fx = c.fx.clone();
     fx.reverse = false;
-    ctx.graph.extend(fx_graph(&fx, Src { w: bw, h: bh, has_alpha: image }, &opts, &pl, &fl, &u));
+    ctx.graph.extend(fx_graph(
+        &fx,
+        Src {
+            w: bw,
+            h: bh,
+            has_alpha: image,
+        },
+        &opts,
+        &pl,
+        &fl,
+        &u,
+    ));
     let s = samples(c, w as f32, h as f32);
     let label = post_transform(ctx, &fl, bw, bh, &s);
-    Ok(Sprite { label, x: value_expr(&s, |e| e.x, "TT"), y: value_expr(&s, |e| e.y, "TT") })
+    Ok(Sprite {
+        label,
+        x: value_expr(&s, |e| e.x, "TT"),
+        y: value_expr(&s, |e| e.y, "TT"),
+    })
 }
 
 fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>> {
-    let Some((font_path, idx)) = (ctx.fonts)(st.font_family.as_deref()).or_else(|| default_font().map(|p| (p, 0))) else {
+    let Some((font_path, idx)) =
+        (ctx.fonts)(st.font_family.as_deref()).or_else(|| default_font().map(|p| (p, 0)))
+    else {
         return Ok(None);
     };
     let n = ctx.label("t");
-    let font_file = format!("font_{n}.{}", font_path.extension().and_then(|e| e.to_str()).unwrap_or("ttf"));
+    let font_file = format!(
+        "font_{n}.{}",
+        font_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("ttf")
+    );
     std::fs::copy(&font_path, ctx.workdir.join(&font_file))?;
     let data = std::fs::read(&font_path).unwrap_or_default();
     let size = st.size;
-    let mut txt = if st.uppercase { st.text.to_uppercase() } else { st.text.clone() };
+    let mut txt = if st.uppercase {
+        st.text.to_uppercase()
+    } else {
+        st.text.clone()
+    };
     if st.auto_wrap {
-        txt = cl_fonts::wrap_text(&data, idx, size, &txt, ctx.w as f32 * 0.9 / c.transform.scale.max(0.05));
+        txt = cl_fonts::wrap_text(
+            &data,
+            idx,
+            size,
+            &txt,
+            ctx.w as f32 * 0.9 / c.transform.scale.max(0.05),
+        );
     }
     let lines: Vec<&str> = txt.split('\n').collect();
     let tw = lines
         .iter()
-        .map(|l| cl_fonts::text_width(&data, idx, size, l).unwrap_or(size * 0.6 * l.chars().count() as f32))
+        .map(|l| {
+            cl_fonts::text_width(&data, idx, size, l)
+                .unwrap_or(size * 0.6 * l.chars().count() as f32)
+        })
         .fold(0.0f32, f32::max);
     let ls = st.line_spacing.max(0.5);
     let th = size * 1.3 * ls * lines.len() as f32;
@@ -234,7 +327,15 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     let lh = ((th + pad * 2.0).ceil() as u32 + 1) & !1;
     let text_file = format!("text_{n}.txt");
     std::fs::write(ctx.workdir.join(&text_file), txt.as_bytes())?;
-    let rgba = |c: [u8; 4]| format!("0x{:02x}{:02x}{:02x}@{:.3}", c[0], c[1], c[2], c[3] as f32 / 255.0);
+    let rgba = |c: [u8; 4]| {
+        format!(
+            "0x{:02x}{:02x}{:02x}@{:.3}",
+            c[0],
+            c[1],
+            c[2],
+            c[3] as f32 / 255.0
+        )
+    };
     let align = match st.align {
         a if a < 0 => "L",
         a if a > 0 => "R",
@@ -249,23 +350,39 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         dt.push_str(&format!(":borderw={bw:.1}:bordercolor={}", rgba(col)));
     }
     if let Some(bg) = st.background {
-        dt.push_str(&format!(":box=1:boxcolor={}:boxborderw={:.0}", rgba(bg), (size * 0.25).max(4.0)));
+        dt.push_str(&format!(
+            ":box=1:boxcolor={}:boxborderw={:.0}",
+            rgba(bg),
+            (size * 0.25).max(4.0)
+        ));
     }
     if st.shadow {
         dt.push_str(":shadowx=3:shadowy=3:shadowcolor=black@0.6");
     }
     let dur = c.duration.as_secs_f64();
     let src = ctx.label("tx");
-    ctx.graph.push(format!("color=c=black@0.0:s={lw}x{lh}:r={}:d={},format=rgba,{dt}[{src}]", ctx.fps, f(dur)));
+    ctx.graph.push(format!(
+        "color=c=black@0.0:s={lw}x{lh}:r={}:d={},format=rgba,{dt}[{src}]",
+        ctx.fps,
+        f(dur)
+    ));
     let s = samples(c, ctx.w as f32, ctx.h as f32);
     let label = post_transform(ctx, &src, lw, lh, &s);
-    Ok(Some(Sprite { label, x: value_expr(&s, |e| e.x, "TT"), y: value_expr(&s, |e| e.y, "TT") }))
+    Ok(Some(Sprite {
+        label,
+        x: value_expr(&s, |e| e.x, "TT"),
+        y: value_expr(&s, |e| e.y, "TT"),
+    }))
 }
 
 /// Sprite zur Zeit `t0` (s, relativ zum Exportbeginn, auch negativ) auf `cur` legen.
 fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, t0: f64, len: f64) -> String {
     let shifted = ctx.label("pl");
-    let shift = if t0 >= 0.0 { format!("setpts=PTS-STARTPTS+{}/TB", f(t0)) } else { format!("trim=start={},setpts=PTS-STARTPTS", f(-t0)) };
+    let shift = if t0 >= 0.0 {
+        format!("setpts=PTS-STARTPTS+{}/TB", f(t0))
+    } else {
+        format!("trim=start={},setpts=PTS-STARTPTS", f(-t0))
+    };
     ctx.graph.push(format!("[{}]{shift}[{shifted}]", sp.label));
     let var = format!("(t-{})", f(t0));
     let x = sp.x.replace("TT", &var);
@@ -302,7 +419,10 @@ fn transition_groups(tr: &Track) -> Vec<Vec<&Clip>> {
 
 fn sprite_for(ctx: &mut Ctx, p: &Project, c: &Clip) -> Result<Option<Sprite>> {
     match &c.content {
-        ClipContent::Media { media, kind: kind @ (MediaKind::Video | MediaKind::Image) } => {
+        ClipContent::Media {
+            media,
+            kind: kind @ (MediaKind::Video | MediaKind::Image),
+        } => {
             let m = p.media(*media).expect("geprüft").clone();
             media_sprite(ctx, c, &m, *kind == MediaKind::Image).map(Some)
         }
@@ -316,13 +436,34 @@ fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Optio
     let (w, h) = (ctx.w, ctx.h);
     let mut acc: Option<(String, f64)> = None;
     for (k, c) in group.iter().enumerate() {
-        let Some(sp) = sprite_for(ctx, p, c)? else { continue };
+        let Some(sp) = sprite_for(ctx, p, c)? else {
+            continue;
+        };
         let len = c.duration.as_secs_f64();
-        let d_of = |cl: &Clip| cl.transition_out.as_ref().map(|t| t.duration.as_secs_f64()).unwrap_or(0.0);
-        let d_prev = if k > 0 { d_of(group[k - 1]).min(len).min(group[k - 1].duration.as_secs_f64()) } else { 0.0 };
-        let d_next = if k + 1 < group.len() { d_of(c).min(len).min(group[k + 1].duration.as_secs_f64()) } else { 0.0 };
+        let d_of = |cl: &Clip| {
+            cl.transition_out
+                .as_ref()
+                .map(|t| t.duration.as_secs_f64())
+                .unwrap_or(0.0)
+        };
+        let d_prev = if k > 0 {
+            d_of(group[k - 1])
+                .min(len)
+                .min(group[k - 1].duration.as_secs_f64())
+        } else {
+            0.0
+        };
+        let d_next = if k + 1 < group.len() {
+            d_of(c).min(len).min(group[k + 1].duration.as_secs_f64())
+        } else {
+            0.0
+        };
         let canvas = ctx.label("cv");
-        ctx.graph.push(format!("color=c=black@0.0:s={w}x{h}:r={}:d={},format=rgba[{canvas}]", ctx.fps, f(len)));
+        ctx.graph.push(format!(
+            "color=c=black@0.0:s={w}x{h}:r={}:d={},format=rgba[{canvas}]",
+            ctx.fps,
+            f(len)
+        ));
         let x = sp.x.replace("TT", "t");
         let y = sp.y.replace("TT", "t");
         let layer = ctx.label("ly");
@@ -341,7 +482,12 @@ fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Optio
                 let out = ctx.label("xf");
                 let d = d_prev.max(0.04);
                 let off = (a_len - d).max(0.0);
-                ctx.graph.push(format!("[{a}][{layer}]xfade=transition={}:duration={}:offset={}[{out}]", tr.id, f(d), f(off)));
+                ctx.graph.push(format!(
+                    "[{a}][{layer}]xfade=transition={}:duration={}:offset={}[{out}]",
+                    tr.id,
+                    f(d),
+                    f(off)
+                ));
                 (out, a_len + layer_len - d)
             }
         });
@@ -349,7 +495,11 @@ fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Optio
     Ok(acc.map(|(label, _)| {
         let out = format!("{label}r");
         ctx.graph.push(format!("[{label}]format=rgba[{out}]"));
-        Sprite { label: out, x: "0".into(), y: "0".into() }
+        Sprite {
+            label: out,
+            x: "0".into(),
+            y: "0".into(),
+        }
     }))
 }
 
@@ -384,8 +534,17 @@ fn scaled_project(p: &Project, w: u32) -> Project {
 /// Videoteil: alle sichtbaren Spuren von unten nach oben. Gibt das letzte Label zurück.
 pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Result<String> {
     let (w, h) = (ctx.w, ctx.h);
-    let base = if ctx.alpha { "color=c=black@0.0" } else { "color=c=black" };
-    ctx.graph.push(format!("{base}:s={w}x{h}:r={}:d={}{}[base0]", ctx.fps, f(dur.as_secs_f64()), if ctx.alpha { ",format=rgba" } else { "" }));
+    let base = if ctx.alpha {
+        "color=c=black@0.0"
+    } else {
+        "color=c=black"
+    };
+    ctx.graph.push(format!(
+        "{base}:s={w}x{h}:r={}:d={}{}[base0]",
+        ctx.fps,
+        f(dur.as_secs_f64()),
+        if ctx.alpha { ",format=rgba" } else { "" }
+    ));
     let mut cur = "base0".to_string();
     let proj = scaled_project(p, w);
     for tr in proj.timeline.tracks.iter().filter(|t| !t.hidden) {
@@ -395,7 +554,11 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
             if g_end <= ctx.start || g_start >= end {
                 continue;
             }
-            let sprite = if group.len() > 1 { transition_chain(ctx, &proj, &group)? } else { sprite_for(ctx, &proj, group[0])? };
+            let sprite = if group.len() > 1 {
+                transition_chain(ctx, &proj, &group)?
+            } else {
+                sprite_for(ctx, &proj, group[0])?
+            };
             let Some(sp) = sprite else { continue };
             let t0 = (g_start - ctx.start).as_secs_f64();
             cur = place(ctx, &cur, &sp, t0, (g_end - g_start).as_secs_f64());
@@ -406,14 +569,23 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
 
 /// Ton: alle hörbaren Clips (Geschwindigkeit, Rückwärts, Lautstärke-Keyframes,
 /// Ein-/Ausblenden, Verlängerung mit Stille) werden gemischt.
-pub(crate) fn audio_part(p: &Project, start: Time, end: Time, inputs: &mut Vec<String>, next_input: &mut usize, graph: &mut Vec<String>) -> String {
+pub(crate) fn audio_part(
+    p: &Project,
+    start: Time,
+    end: Time,
+    inputs: &mut Vec<String>,
+    next_input: &mut usize,
+    graph: &mut Vec<String>,
+) -> String {
     let mut labels = Vec::new();
     for tr in &p.timeline.tracks {
         if tr.muted || !matches!(tr.kind, TrackKind::Video | TrackKind::Audio) {
             continue;
         }
         for c in tr.clips.iter().filter(|c| !c.disabled) {
-            let ClipContent::Media { media, kind } = &c.content else { continue };
+            let ClipContent::Media { media, kind } = &c.content else {
+                continue;
+            };
             if *kind == MediaKind::Image || c.fx.speed_curve.is_some() {
                 continue;
             }
@@ -428,8 +600,19 @@ pub(crate) fn audio_part(p: &Project, start: Time, end: Time, inputs: &mut Vec<S
             let (seg_in, seg_len) = source_segment(c);
             let i = *next_input;
             *next_input += 1;
-            inputs.extend(["-ss".into(), f(seg_in.as_secs_f64()), "-t".into(), f(seg_len.as_secs_f64().max(0.02)), "-i".into(), m.path.to_string_lossy().into_owned()]);
-            let mut chain = vec!["aresample=48000".to_string(), "aformat=sample_fmts=fltp:channel_layouts=stereo".into(), "asetpts=PTS-STARTPTS".into()];
+            inputs.extend([
+                "-ss".into(),
+                f(seg_in.as_secs_f64()),
+                "-t".into(),
+                f(seg_len.as_secs_f64().max(0.02)),
+                "-i".into(),
+                m.path.to_string_lossy().into_owned(),
+            ]);
+            let mut chain = vec![
+                "aresample=48000".to_string(),
+                "aformat=sample_fmts=fltp:channel_layouts=stereo".into(),
+                "asetpts=PTS-STARTPTS".into(),
+            ];
             if c.fx.reverse {
                 chain.push("areverse".into());
             }
@@ -448,14 +631,24 @@ pub(crate) fn audio_part(p: &Project, start: Time, end: Time, inputs: &mut Vec<S
                     chain.push(format!("volume={:.2}dB", c.volume_db));
                 }
             } else {
-                let pts: Vec<(f64, f64)> = vol.iter().map(|k| (k.t.as_secs_f64(), k.v as f64)).collect();
-                chain.push(format!("volume='pow(10,({})/20)':eval=frame", piecewise_expr(&pts, "t")));
+                let pts: Vec<(f64, f64)> = vol
+                    .iter()
+                    .map(|k| (k.t.as_secs_f64(), k.v as f64))
+                    .collect();
+                chain.push(format!(
+                    "volume='pow(10,({})/20)':eval=frame",
+                    piecewise_expr(&pts, "t")
+                ));
             }
             if c.fade_in > Time::ZERO {
                 chain.push(format!("afade=t=in:d={}", f(c.fade_in.as_secs_f64())));
             }
             if c.fade_out > Time::ZERO {
-                chain.push(format!("afade=t=out:st={}:d={}", f(dur - c.fade_out.as_secs_f64()), f(c.fade_out.as_secs_f64())));
+                chain.push(format!(
+                    "afade=t=out:st={}:d={}",
+                    f(dur - c.fade_out.as_secs_f64()),
+                    f(c.fade_out.as_secs_f64())
+                ));
             }
             let t0 = (c.start - start).as_secs_f64();
             if t0 >= 0.0 {

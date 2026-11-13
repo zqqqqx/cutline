@@ -11,8 +11,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{sync_channel, Receiver, TryRecvError};
 use std::thread::JoinHandle;
 
-use serde::Deserialize;
 use cl_core::{MediaId, MediaKind, MediaRef, Rational, Time};
+use serde::Deserialize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
@@ -33,25 +33,35 @@ pub type Result<T> = std::result::Result<T, MediaError>;
 /// Dateiendungen für den Import-Dialog. Erkannt wird später aber per Inhalt (FFprobe),
 /// nicht per Endung. Falsch benannte Dateien funktionieren also auch.
 pub const VIDEO_EXTENSIONS: &[&str] = &[
-    "mp4", "m4v", "mov", "qt", "mkv", "webm", "avi", "mxf", "mts", "m2ts", "m2t", "ts", "mpg", "mpeg", "mpe",
-    "m2v", "vob", "flv", "f4v", "wmv", "asf", "3gp", "3g2", "ogv", "rm", "rmvb", "dv", "y4m", "nut", "ivf",
-    "mpeg4", "hevc", "h264", "264", "265", "av1", "obu", "braw", "r3d",
+    "mp4", "m4v", "mov", "qt", "mkv", "webm", "avi", "mxf", "mts", "m2ts", "m2t", "ts", "mpg",
+    "mpeg", "mpe", "m2v", "vob", "flv", "f4v", "wmv", "asf", "3gp", "3g2", "ogv", "rm", "rmvb",
+    "dv", "y4m", "nut", "ivf", "mpeg4", "hevc", "h264", "264", "265", "av1", "obu", "braw", "r3d",
 ];
 pub const AUDIO_EXTENSIONS: &[&str] = &[
-    "wav", "bwf", "aif", "aiff", "aifc", "mp3", "aac", "m4a", "m4b", "flac", "alac", "opus", "ogg", "oga", "spx",
-    "wma", "ac3", "eac3", "dts", "caf", "w64", "amr", "ape", "wv", "mka", "mp2",
+    "wav", "bwf", "aif", "aiff", "aifc", "mp3", "aac", "m4a", "m4b", "flac", "alac", "opus", "ogg",
+    "oga", "spx", "wma", "ac3", "eac3", "dts", "caf", "w64", "amr", "ape", "wv", "mka", "mp2",
 ];
 pub const IMAGE_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "jfif", "png", "apng", "webp", "avif", "heic", "heif", "jxl", "tif", "tiff", "bmp", "gif",
-    "tga", "psd", "exr", "hdr", "dpx", "svg", "ico", "qoi", "dng", "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2",
+    "jpg", "jpeg", "jfif", "png", "apng", "webp", "avif", "heic", "heif", "jxl", "tif", "tiff",
+    "bmp", "gif", "tga", "psd", "exr", "hdr", "dpx", "svg", "ico", "qoi", "dng", "cr2", "cr3",
+    "nef", "arw", "raf", "orf", "rw2",
 ];
 
 pub fn all_media_extensions() -> Vec<&'static str> {
-    VIDEO_EXTENSIONS.iter().chain(AUDIO_EXTENSIONS).chain(IMAGE_EXTENSIONS).copied().collect()
+    VIDEO_EXTENSIONS
+        .iter()
+        .chain(AUDIO_EXTENSIONS)
+        .chain(IMAGE_EXTENSIONS)
+        .copied()
+        .collect()
 }
 
 fn tool(name: &str) -> Result<PathBuf> {
-    let exe = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    let exe = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
     if let Some(dir) = std::env::var_os("CUTLINE_FFMPEG_DIR") {
         let p = PathBuf::from(dir).join(&exe);
         if p.is_file() {
@@ -59,7 +69,11 @@ fn tool(name: &str) -> Result<PathBuf> {
         }
     }
     // Mitgeliefertes FFmpeg im Release-Paket: <exe-Ordner>/ffmpeg/
-    if let Some(p) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("ffmpeg").join(&exe))).filter(|p| p.is_file()) {
+    if let Some(p) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join("ffmpeg").join(&exe)))
+        .filter(|p| p.is_file())
+    {
         return Ok(p);
     }
     let path = std::env::var_os("PATH").ok_or(MediaError::FfmpegMissing)?;
@@ -124,29 +138,47 @@ struct ProbeFormat {
     duration: Option<String>,
 }
 
-const IMAGE_CODECS: &[&str] =
-    &["png", "mjpeg", "jpegls", "webp", "bmp", "tiff", "gif", "targa", "psd", "exr", "dpx", "jpeg2000", "qoi", "hdr", "jpegxl", "svg"];
+const IMAGE_CODECS: &[&str] = &[
+    "png", "mjpeg", "jpegls", "webp", "bmp", "tiff", "gif", "targa", "psd", "exr", "dpx",
+    "jpeg2000", "qoi", "hdr", "jpegxl", "svg",
+];
 
 /// Liest Metadaten einer Mediendatei.
 pub fn probe(path: &Path) -> Result<MediaRef> {
     let out = command("ffprobe")?
-        .args(["-v", "error", "-print_format", "json", "-show_format", "-show_streams"])
+        .args([
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+        ])
         .arg(path)
         .stdin(Stdio::null())
         .output()?;
     if !out.status.success() {
-        return Err(MediaError::Unreadable(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+        return Err(MediaError::Unreadable(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ));
     }
     let p: ProbeOut = serde_json::from_slice(&out.stdout)?;
     let video = p
         .streams
         .iter()
         .find(|s| s.codec_type.as_deref() == Some("video") && s.disposition.attached_pic == 0);
-    let audio = p.streams.iter().find(|s| s.codec_type.as_deref() == Some("audio"));
+    let audio = p
+        .streams
+        .iter()
+        .find(|s| s.codec_type.as_deref() == Some("audio"));
     if video.is_none() && audio.is_none() {
         return Err(MediaError::NoStreams);
     }
-    let fmt_name = p.format.as_ref().and_then(|f| f.format_name.clone()).unwrap_or_default();
+    let fmt_name = p
+        .format
+        .as_ref()
+        .and_then(|f| f.format_name.clone())
+        .unwrap_or_default();
     let duration = p
         .format
         .as_ref()
@@ -158,9 +190,15 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
 
     let is_image = video.is_some_and(|v| {
         let codec = v.codec_name.as_deref().unwrap_or("");
-        let single = v.nb_frames.as_deref().map_or(true, |n| n == "1" || n == "0");
+        let single = v
+            .nb_frames
+            .as_deref()
+            .map_or(true, |n| n == "1" || n == "0");
         (fmt_name.contains("image2") || fmt_name.ends_with("_pipe") || fmt_name == "svg")
-            || (IMAGE_CODECS.contains(&codec) && single && duration <= Time::from_millis(100) && audio.is_none())
+            || (IMAGE_CODECS.contains(&codec)
+                && single
+                && duration <= Time::from_millis(100)
+                && audio.is_none())
     }) && !fmt_name.contains("gif");
 
     let kind = match (video, is_image) {
@@ -180,7 +218,11 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
         id: MediaId::new(),
         path: path.to_path_buf(),
         kind,
-        duration: if kind == MediaKind::Image { Time::ZERO } else { duration },
+        duration: if kind == MediaKind::Image {
+            Time::ZERO
+        } else {
+            duration
+        },
         width: video.and_then(|v| v.width).unwrap_or(0),
         height: video.and_then(|v| v.height).unwrap_or(0),
         fps: if kind == MediaKind::Video { fps } else { None },
@@ -221,21 +263,49 @@ pub fn decode_frame(path: &Path, at: Time, w: u32, h: u32) -> Result<RgbaFrame> 
 }
 
 /// Wie [`decode_frame`], optional mit Filtergraph (`[0:v]` → `[out]`, liefert `w`×`h` RGBA).
-pub fn decode_frame_fx(path: &Path, at: Time, w: u32, h: u32, graph: Option<&str>) -> Result<RgbaFrame> {
+pub fn decode_frame_fx(
+    path: &Path,
+    at: Time,
+    w: u32,
+    h: u32,
+    graph: Option<&str>,
+) -> Result<RgbaFrame> {
     let mut cmd = command("ffmpeg")?;
-    cmd.args(["-v", "error", "-nostdin"]).args(["-ss", &format!("{:.6}", at.as_secs_f64().max(0.0))]).arg("-i").arg(path);
+    cmd.args(["-v", "error", "-nostdin"])
+        .args(["-ss", &format!("{:.6}", at.as_secs_f64().max(0.0))])
+        .arg("-i")
+        .arg(path);
     match graph {
         Some(g) => cmd.args(["-filter_complex", g, "-map", "[out]"]),
         None => cmd.args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba")]),
     };
-    let out = cmd.args(["-frames:v", "1", "-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]).stdin(Stdio::null()).output()?;
+    let out = cmd
+        .args([
+            "-frames:v",
+            "1",
+            "-an",
+            "-sn",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-",
+        ])
+        .stdin(Stdio::null())
+        .output()?;
     let need = (w * h * 4) as usize;
     if out.stdout.len() < need {
-        return Err(MediaError::Unreadable(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+        return Err(MediaError::Unreadable(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ));
     }
     let mut data = out.stdout;
     data.truncate(need);
-    Ok(RgbaFrame { width: w, height: h, data })
+    Ok(RgbaFrame {
+        width: w,
+        height: h,
+        data,
+    })
 }
 
 /// Spitzenpegel (0..1) für die Waveform-Anzeige, `per_sec` Werte pro Sekunde.
@@ -244,11 +314,22 @@ pub fn waveform(path: &Path, per_sec: u32) -> Result<Vec<f32>> {
     let out = command("ffmpeg")?
         .args(["-v", "error", "-nostdin", "-i"])
         .arg(path)
-        .args(["-vn", "-ac", "1", "-ar", &RATE.to_string(), "-f", "s16le", "-"])
+        .args([
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            &RATE.to_string(),
+            "-f",
+            "s16le",
+            "-",
+        ])
         .stdin(Stdio::null())
         .output()?;
     if !out.status.success() {
-        return Err(MediaError::Unreadable(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+        return Err(MediaError::Unreadable(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ));
     }
     let bucket = (RATE / per_sec.max(1)).max(1) as usize;
     Ok(out
@@ -278,12 +359,29 @@ impl FrameStream {
     }
 
     /// Strom mit eigenem Filtergraph (`[0:v]` → `[out]`, muss `fps`, Größe und RGBA selbst setzen).
-    pub fn open_fx(path: &Path, start: Time, w: u32, h: u32, fps: Rational, graph: Option<&str>) -> Result<Self> {
+    pub fn open_fx(
+        path: &Path,
+        start: Time,
+        w: u32,
+        h: u32,
+        fps: Rational,
+        graph: Option<&str>,
+    ) -> Result<Self> {
         let mut cmd = command("ffmpeg")?;
-        cmd.args(["-v", "error", "-nostdin"]).args(["-ss", &format!("{:.6}", start.as_secs_f64().max(0.0))]).arg("-i").arg(path).args(["-an", "-sn"]);
+        cmd.args(["-v", "error", "-nostdin"])
+            .args(["-ss", &format!("{:.6}", start.as_secs_f64().max(0.0))])
+            .arg("-i")
+            .arg(path)
+            .args(["-an", "-sn"]);
         match graph {
             Some(g) => cmd.args(["-filter_complex", g, "-map", "[out]"]),
-            None => cmd.args(["-vf", &format!("fps={}/{},scale={w}:{h}:flags=bilinear,format=rgba", fps.num, fps.den)]),
+            None => cmd.args([
+                "-vf",
+                &format!(
+                    "fps={}/{},scale={w}:{h}:flags=bilinear,format=rgba",
+                    fps.num, fps.den
+                ),
+            ]),
         };
         let mut child = cmd
             .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
@@ -294,16 +392,33 @@ impl FrameStream {
         let mut stdout = child.stdout.take().expect("piped");
         let (tx, rx) = sync_channel::<RgbaFrame>(6);
         let frame_len = (w * h * 4) as usize;
-        let reader = std::thread::Builder::new().name("cl-frame-stream".into()).spawn(move || loop {
-            let mut buf = vec![0u8; frame_len];
-            if stdout.read_exact(&mut buf).is_err() {
-                break;
-            }
-            if tx.send(RgbaFrame { width: w, height: h, data: buf }).is_err() {
-                break;
-            }
-        })?;
-        Ok(Self { child, rx: Some(rx), reader: Some(reader), width: w, height: h, fps, start })
+        let reader = std::thread::Builder::new()
+            .name("cl-frame-stream".into())
+            .spawn(move || loop {
+                let mut buf = vec![0u8; frame_len];
+                if stdout.read_exact(&mut buf).is_err() {
+                    break;
+                }
+                if tx
+                    .send(RgbaFrame {
+                        width: w,
+                        height: h,
+                        data: buf,
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            })?;
+        Ok(Self {
+            child,
+            rx: Some(rx),
+            reader: Some(reader),
+            width: w,
+            height: h,
+            fps,
+            start,
+        })
     }
 
     /// Nächstes Bild, falls schon dekodiert. `Ok(None)` = noch nicht bereit, `Err` = Ende.
@@ -343,9 +458,25 @@ mod tests {
         let out = dir.join("t.mp4");
         let st = command("ffmpeg")
             .unwrap()
-            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=2"])
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=25:duration=2",
+            ])
             .args(["-f", "lavfi", "-i", "sine=frequency=440:duration=2"])
-            .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+            .args([
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ])
             .arg(&out)
             .status()
             .unwrap();
@@ -373,7 +504,8 @@ mod tests {
         let f = decode_frame(&clip, Time::from_secs_f64(1.0), w, h).unwrap();
         assert_eq!(f.data.len(), (160 * 90 * 4) as usize);
 
-        let s = FrameStream::open(&clip, Time::from_secs_f64(1.0), w, h, Rational::new(25, 1)).unwrap();
+        let s =
+            FrameStream::open(&clip, Time::from_secs_f64(1.0), w, h, Rational::new(25, 1)).unwrap();
         let mut n = 0;
         while s.next_blocking().is_some() {
             n += 1;
@@ -390,7 +522,10 @@ mod tests {
         let clip = make_clip(dir.path());
         let w = waveform(&clip, 50).unwrap();
         assert!((95..=105).contains(&w.len()), "{}", w.len());
-        assert!(w.iter().any(|v| *v > 0.1), "Sinus (Amplitude 1/8) sollte ausschlagen");
+        assert!(
+            w.iter().any(|v| *v > 0.1),
+            "Sinus (Amplitude 1/8) sollte ausschlagen"
+        );
     }
 
     #[test]
@@ -404,7 +539,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(500)); // Kanal läuft voll
         let t = std::time::Instant::now();
         drop(s);
-        assert!(t.elapsed() < std::time::Duration::from_secs(3), "Drop hat blockiert");
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(3),
+            "Drop hat blockiert"
+        );
     }
 
     #[test]
@@ -416,7 +554,17 @@ mod tests {
         let png = dir.path().join("bild.png");
         let st = command("ffmpeg")
             .unwrap()
-            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=64x32", "-frames:v", "1"])
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=red:size=64x32",
+                "-frames:v",
+                "1",
+            ])
             .arg(&png)
             .status()
             .unwrap();

@@ -16,8 +16,15 @@ pub struct WavSink {
 
 impl WavSink {
     pub fn create(path: &Path, rate: u32, channels: u16) -> Result<Self, String> {
-        let spec = hound::WavSpec { channels, sample_rate: rate, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
-        Ok(Self { writer: hound::WavWriter::create(path, spec).map_err(|e| e.to_string())? })
+        let spec = hound::WavSpec {
+            channels,
+            sample_rate: rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        Ok(Self {
+            writer: hound::WavWriter::create(path, spec).map_err(|e| e.to_string())?,
+        })
     }
     pub fn push(&mut self, samples: &[f32]) -> Result<(), String> {
         for s in samples {
@@ -38,7 +45,9 @@ pub fn input_devices() -> Vec<String> {
 }
 
 pub fn default_input() -> Option<String> {
-    cpal::default_host().default_input_device().and_then(|d| d.name().ok())
+    cpal::default_host()
+        .default_input_device()
+        .and_then(|d| d.name().ok())
 }
 
 pub struct Recorder {
@@ -55,10 +64,18 @@ pub struct Recorder {
 }
 
 impl Recorder {
-    pub fn start(device: Option<&str>, path: PathBuf, start_at: Time, gain: f32) -> Result<Self, String> {
+    pub fn start(
+        device: Option<&str>,
+        path: PathBuf,
+        start_at: Time,
+        gain: f32,
+    ) -> Result<Self, String> {
         let host = cpal::default_host();
         let dev = match device {
-            Some(n) => host.input_devices().map_err(|e| e.to_string())?.find(|d| d.name().ok().as_deref() == Some(n)),
+            Some(n) => host
+                .input_devices()
+                .map_err(|e| e.to_string())?
+                .find(|d| d.name().ok().as_deref() == Some(n)),
             None => host.default_input_device(),
         }
         .ok_or("Kein Mikrofon gefunden")?;
@@ -80,7 +97,8 @@ impl Recorder {
             .map_err(|e| e.to_string())?;
         let level = Arc::new(AtomicU32::new(0));
         let peaks = Arc::new(Mutex::new(Vec::<f32>::new()));
-        let bucket = ((rate as usize * channels as usize) / crate::preview::WAVE_PER_SEC as usize).max(1);
+        let bucket =
+            ((rate as usize * channels as usize) / crate::preview::WAVE_PER_SEC as usize).max(1);
         let cfg: cpal::StreamConfig = config.clone().into();
         let err = |e| eprintln!("Mikrofon: {e}");
         macro_rules! build {
@@ -90,7 +108,10 @@ impl Recorder {
                 dev.build_input_stream(
                     &cfg,
                     move |data: &[$t], _| {
-                        let buf: Vec<f32> = data.iter().map(|s| ($conv(*s) * gain).clamp(-1.0, 1.0)).collect();
+                        let buf: Vec<f32> = data
+                            .iter()
+                            .map(|s| ($conv(*s) * gain).clamp(-1.0, 1.0))
+                            .collect();
                         let peak = buf.iter().fold(0.0f32, |m, s| m.max(s.abs()));
                         level.store(peak.to_bits(), Ordering::Relaxed);
                         // Waveform-Werte im Raster der Zeitleiste sammeln
@@ -124,7 +145,16 @@ impl Recorder {
         }
         .map_err(|e| e.to_string())?;
         stream.play().map_err(|e| e.to_string())?;
-        Ok(Self { stream: Some(stream), tx: Some(tx), writer: Some(writer), level, peaks, path, start_at, started: std::time::Instant::now() })
+        Ok(Self {
+            stream: Some(stream),
+            tx: Some(tx),
+            writer: Some(writer),
+            level,
+            peaks,
+            path,
+            start_at,
+            started: std::time::Instant::now(),
+        })
     }
 
     /// Spitzenpegel der letzten Puffer (0..1).
@@ -146,7 +176,8 @@ impl Recorder {
         drop(self.stream.take()); // Callback endet, Sender im Callback wird verworfen
         drop(self.tx.take());
         if let Some(w) = self.writer.take() {
-            w.join().map_err(|_| "Schreib-Thread abgestürzt".to_string())??;
+            w.join()
+                .map_err(|_| "Schreib-Thread abgestürzt".to_string())??;
         }
         Ok(self.path.clone())
     }
@@ -161,7 +192,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("vo.wav");
         let mut s = WavSink::create(&p, 48000, 1).unwrap();
-        let tone: Vec<f32> = (0..48000).map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 0.5).collect();
+        let tone: Vec<f32> = (0..48000)
+            .map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 0.5)
+            .collect();
         s.push(&tone).unwrap();
         s.finish().unwrap();
         let r = hound::WavReader::open(&p).unwrap();

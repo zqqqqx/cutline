@@ -2,7 +2,7 @@
 //! Deckkraft, Ton-Bearbeitung, bei Text der Textstil ohne Inhalt) und mit einem Klick auf
 //! einen oder mehrere Clips anwenden. Ablage: `<Daten>/Library/presets.json`.
 
-use cl_core::{AudioFx, Animations, Clip, ClipContent, ClipFx, TextStyle};
+use cl_core::{Animations, AudioFx, Clip, ClipContent, ClipFx, TextStyle};
 use eframe::egui::{self, RichText};
 use serde::{Deserialize, Serialize};
 
@@ -38,15 +38,30 @@ impl Preset {
         fx.speed_curve = None;
         fx.reverse = false;
         let text = match &c.content {
-            ClipContent::Text(t) => Some(TextStyle { text: String::new(), ..t.clone() }),
+            ClipContent::Text(t) => Some(TextStyle {
+                text: String::new(),
+                ..t.clone()
+            }),
             _ => None,
         };
-        Self { name: name.trim().to_string(), fx, anim: c.anim.clone(), opacity: c.opacity, audio: c.audio.clone(), text }
+        Self {
+            name: name.trim().to_string(),
+            fx,
+            anim: c.anim.clone(),
+            opacity: c.opacity,
+            audio: c.audio.clone(),
+            text,
+        }
     }
 
     /// Auf einen Clip anwenden (Inhalt, Position, Zeit und Maske bleiben).
     pub fn apply(&self, c: &mut Clip) {
-        let keep = (c.fx.cutout.clone(), c.fx.person.clone(), c.fx.speed_curve.clone(), c.fx.reverse);
+        let keep = (
+            c.fx.cutout.clone(),
+            c.fx.person.clone(),
+            c.fx.speed_curve.clone(),
+            c.fx.reverse,
+        );
         c.fx = self.fx.clone();
         (c.fx.cutout, c.fx.person, c.fx.speed_curve, c.fx.reverse) = keep;
         c.anim = self.anim.clone();
@@ -64,11 +79,16 @@ impl Preset {
 }
 
 fn path() -> std::path::PathBuf {
-    crate::paths::data_dir().join("Library").join("presets.json")
+    crate::paths::data_dir()
+        .join("Library")
+        .join("presets.json")
 }
 
 pub fn load() -> Vec<Preset> {
-    std::fs::read_to_string(path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    std::fs::read_to_string(path())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
 }
 
 pub fn save(list: &[Preset]) {
@@ -90,16 +110,50 @@ impl App {
     pub fn preset_bar(&mut self, ui: &mut egui::Ui, c: &Clip) {
         let is_text = matches!(c.content, ClipContent::Text(_));
         ui.horizontal(|ui| {
-            ui.label(RichText::new(crate::tr("Preset")).small().color(theme::TEXT_DIM));
+            ui.label(
+                RichText::new(crate::tr("Preset"))
+                    .small()
+                    .color(theme::TEXT_DIM),
+            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if theme::icon_button(ui, icon::FLOPPY_DISK, "Look als Preset speichern", true, false).clicked() {
-                    self.preset_dialog = Some(PresetDialog::Save { name: String::new() });
+                if theme::icon_button(
+                    ui,
+                    icon::FLOPPY_DISK,
+                    "Look als Preset speichern",
+                    true,
+                    false,
+                )
+                .clicked()
+                {
+                    self.preset_dialog = Some(PresetDialog::Save {
+                        name: String::new(),
+                    });
                 }
-                let matching: Vec<(usize, String)> = self.presets.iter().enumerate().filter(|(_, p)| p.is_text() == is_text).map(|(i, p)| (i, p.name.clone())).collect();
-                let label = if matching.is_empty() { crate::tr("Keine Presets") } else { crate::tr(format!("{} anwenden …", matching.len())) };
+                let matching: Vec<(usize, String)> = self
+                    .presets
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| p.is_text() == is_text)
+                    .map(|(i, p)| (i, p.name.clone()))
+                    .collect();
+                let label = if matching.is_empty() {
+                    crate::tr("Keine Presets")
+                } else {
+                    crate::tr(format!("{} anwenden …", matching.len()))
+                };
                 // Aufklappbare Liste statt Popup (ein offenes Popup blieb beim Clipwechsel stehen)
-                let caret = if self.preset_list_open { icon::CARET_UP } else { icon::CARET_DOWN };
-                if ui.add_enabled(!matching.is_empty(), theme::ghost(format!("{}  {label} {caret}", icon::SWATCHES))).clicked() {
+                let caret = if self.preset_list_open {
+                    icon::CARET_UP
+                } else {
+                    icon::CARET_DOWN
+                };
+                if ui
+                    .add_enabled(
+                        !matching.is_empty(),
+                        theme::ghost(format!("{}  {label} {caret}", icon::SWATCHES)),
+                    )
+                    .clicked()
+                {
                     self.preset_list_open = !self.preset_list_open;
                 }
                 if matching.is_empty() {
@@ -111,25 +165,62 @@ impl App {
         let mut rename = None;
         let mut remove = None;
         if self.preset_list_open {
-            let matching: Vec<(usize, String)> = self.presets.iter().enumerate().filter(|(_, p)| p.is_text() == is_text).map(|(i, p)| (i, p.name.clone())).collect();
-            egui::Frame::default().fill(theme::BG_RAISED).corner_radius(6).inner_margin(6).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                for (i, n) in &matching {
-                    ui.horizontal(|ui| {
-                        if ui.add(egui::Button::new(n.as_str()).frame(false).min_size(egui::vec2(130.0, 22.0))).on_hover_text(crate::tr("Auf die Auswahl anwenden")).clicked() {
-                            apply = Some(*i);
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if theme::icon_button(ui, icon::TRASH, "Preset entfernen", true, false).clicked() {
-                                remove = Some(*i);
+            let matching: Vec<(usize, String)> = self
+                .presets
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.is_text() == is_text)
+                .map(|(i, p)| (i, p.name.clone()))
+                .collect();
+            egui::Frame::default()
+                .fill(theme::BG_RAISED)
+                .corner_radius(6)
+                .inner_margin(6)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    for (i, n) in &matching {
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(n.as_str())
+                                        .frame(false)
+                                        .min_size(egui::vec2(130.0, 22.0)),
+                                )
+                                .on_hover_text(crate::tr("Auf die Auswahl anwenden"))
+                                .clicked()
+                            {
+                                apply = Some(*i);
                             }
-                            if theme::icon_button(ui, icon::PENCIL_SIMPLE, "Umbenennen", true, false).clicked() {
-                                rename = Some(*i);
-                            }
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if theme::icon_button(
+                                        ui,
+                                        icon::TRASH,
+                                        "Preset entfernen",
+                                        true,
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
+                                        remove = Some(*i);
+                                    }
+                                    if theme::icon_button(
+                                        ui,
+                                        icon::PENCIL_SIMPLE,
+                                        "Umbenennen",
+                                        true,
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
+                                        rename = Some(*i);
+                                    }
+                                },
+                            );
                         });
-                    });
-                }
-            });
+                    }
+                });
         }
         {
             {
@@ -145,7 +236,10 @@ impl App {
                     self.preset_list_open = false;
                 }
                 if let Some(i) = rename {
-                    self.preset_dialog = Some(PresetDialog::Rename { index: i, name: self.presets[i].name.clone() });
+                    self.preset_dialog = Some(PresetDialog::Rename {
+                        index: i,
+                        name: self.presets[i].name.clone(),
+                    });
                 }
                 if let Some(i) = remove {
                     let p = self.presets.remove(i);
@@ -235,20 +329,42 @@ mod tests {
 
     #[test]
     fn preset_roundtrip_keeps_clip_specific_parts() {
-        let mut a = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(2.0));
-        a.fx.filter = Some(FxRef { id: "vivid".into(), intensity: 0.7, params: Default::default() });
+        let mut a = Clip::new(
+            ClipContent::Media {
+                media: MediaId::new(),
+                kind: MediaKind::Video,
+            },
+            Time::ZERO,
+            Time::from_secs_f64(2.0),
+        );
+        a.fx.filter = Some(FxRef {
+            id: "vivid".into(),
+            intensity: 0.7,
+            params: Default::default(),
+        });
         a.fx.adjust.brightness = 0.2;
         a.fx.cutout = Some("matte.mkv".into());
         a.opacity = 0.8;
         let p = Preset::from_clip("Look", &a);
         assert!(p.fx.cutout.is_none());
-        let mut b = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.0));
+        let mut b = Clip::new(
+            ClipContent::Media {
+                media: MediaId::new(),
+                kind: MediaKind::Video,
+            },
+            Time::ZERO,
+            Time::from_secs_f64(1.0),
+        );
         b.fx.cutout = Some("eigene.mkv".into());
         p.apply(&mut b);
         assert_eq!(b.fx.filter, a.fx.filter);
         assert_eq!(b.fx.adjust.brightness, 0.2);
         assert_eq!(b.opacity, 0.8);
-        assert_eq!(b.fx.cutout.as_deref(), Some("eigene.mkv"), "Maske des Ziel-Clips bleibt");
+        assert_eq!(
+            b.fx.cutout.as_deref(),
+            Some("eigene.mkv"),
+            "Maske des Ziel-Clips bleibt"
+        );
         let json = serde_json::to_string(&p).unwrap();
         assert_eq!(serde_json::from_str::<Preset>(&json).unwrap(), p);
     }

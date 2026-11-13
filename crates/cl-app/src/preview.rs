@@ -14,21 +14,61 @@ pub const WAVE_PER_SEC: u32 = 50;
 
 pub enum Job {
     /// Bild eines Clips (mit optionalem Filtergraphen `[0:v]` → `[out]`)
-    Frame { clip: ClipId, key: u64, path: PathBuf, at: Time, w: u32, h: u32, graph: Option<String> },
-    Thumb { media: MediaId, path: PathBuf, at: Time },
-    Wave { media: MediaId, path: PathBuf },
+    Frame {
+        clip: ClipId,
+        key: u64,
+        path: PathBuf,
+        at: Time,
+        w: u32,
+        h: u32,
+        graph: Option<String>,
+    },
+    Thumb {
+        media: MediaId,
+        path: PathBuf,
+        at: Time,
+    },
+    Wave {
+        media: MediaId,
+        path: PathBuf,
+    },
     /// Vorschaubild aus einem Graphen ohne Eingänge (Effekt-/Filter-/Übergangskacheln)
-    FxThumb { key: String, graph: String, w: u32, h: u32, cache: PathBuf },
+    FxThumb {
+        key: String,
+        graph: String,
+        w: u32,
+        h: u32,
+        cache: PathBuf,
+    },
     /// Titelbild eines Projekts für die Startseite
-    ProjectThumb { out: PathBuf, path: PathBuf, at: Time },
+    ProjectThumb {
+        out: PathBuf,
+        path: PathBuf,
+        at: Time,
+    },
 }
 
 pub enum Done {
-    Frame { clip: ClipId, key: u64, frame: RgbaFrame },
-    Thumb { media: MediaId, frame: RgbaFrame },
-    Wave { media: MediaId, peaks: Vec<f32> },
-    FxThumb { key: String, frame: RgbaFrame },
-    ProjectThumb { out: PathBuf },
+    Frame {
+        clip: ClipId,
+        key: u64,
+        frame: RgbaFrame,
+    },
+    Thumb {
+        media: MediaId,
+        frame: RgbaFrame,
+    },
+    Wave {
+        media: MediaId,
+        peaks: Vec<f32>,
+    },
+    FxThumb {
+        key: String,
+        frame: RgbaFrame,
+    },
+    ProjectThumb {
+        out: PathBuf,
+    },
     Error(String),
 }
 
@@ -43,7 +83,12 @@ struct FrameCache {
 
 impl FrameCache {
     fn new(budget: usize) -> Self {
-        Self { map: Default::default(), order: Default::default(), bytes: 0, budget }
+        Self {
+            map: Default::default(),
+            order: Default::default(),
+            bytes: 0,
+            budget,
+        }
     }
     fn get(&self, key: u64) -> Option<&RgbaFrame> {
         self.map.get(&key)
@@ -56,7 +101,9 @@ impl FrameCache {
         self.map.insert(key, f);
         self.order.push_back(key);
         while self.bytes > self.budget {
-            let Some(old) = self.order.pop_front() else { break };
+            let Some(old) = self.order.pop_front() else {
+                break;
+            };
             if let Some(o) = self.map.remove(&old) {
                 self.bytes -= o.data.len();
             }
@@ -74,23 +121,75 @@ pub struct Decoder {
 
 fn run(job: Job) -> Option<Done> {
     let res = match job {
-        Job::Frame { clip, key, path, at, w, h, graph } => cl_media::decode_frame_fx(&path, at, w, h, graph.as_deref()).map(|frame| Done::Frame { clip, key, frame }),
+        Job::Frame {
+            clip,
+            key,
+            path,
+            at,
+            w,
+            h,
+            graph,
+        } => cl_media::decode_frame_fx(&path, at, w, h, graph.as_deref())
+            .map(|frame| Done::Frame { clip, key, frame }),
         Job::Thumb { media, path, at } => {
-            let (w, h) = cl_media::probe(&path).map(|m| cl_media::fit_size(m.width, m.height, 192, 108)).unwrap_or((192, 108));
+            let (w, h) = cl_media::probe(&path)
+                .map(|m| cl_media::fit_size(m.width, m.height, 192, 108))
+                .unwrap_or((192, 108));
             cl_media::decode_frame(&path, at, w, h).map(|frame| Done::Thumb { media, frame })
         }
-        Job::Wave { media, path } => cl_media::waveform(&path, WAVE_PER_SEC).map(|peaks| Done::Wave { media, peaks }),
-        Job::FxThumb { key, graph, w, h, cache } => {
+        Job::Wave { media, path } => {
+            cl_media::waveform(&path, WAVE_PER_SEC).map(|peaks| Done::Wave { media, peaks })
+        }
+        Job::FxThumb {
+            key,
+            graph,
+            w,
+            h,
+            cache,
+        } => {
             // Zwischenspeicher: rohe RGBA-Bytes
             if let Ok(data) = std::fs::read(&cache) {
                 if data.len() == (w * h * 4) as usize {
-                    return Some(Done::FxThumb { key, frame: RgbaFrame { width: w, height: h, data } });
+                    return Some(Done::FxThumb {
+                        key,
+                        frame: RgbaFrame {
+                            width: w,
+                            height: h,
+                            data,
+                        },
+                    });
                 }
             }
-            let out = cl_media::ffmpeg_command().ok()?.args(["-v", "error", "-nostdin", "-filter_complex", &graph, "-map", "[out]", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]).stdin(Stdio::null()).output().ok()?;
+            let out = cl_media::ffmpeg_command()
+                .ok()?
+                .args([
+                    "-v",
+                    "error",
+                    "-nostdin",
+                    "-filter_complex",
+                    &graph,
+                    "-map",
+                    "[out]",
+                    "-frames:v",
+                    "1",
+                    "-f",
+                    "rawvideo",
+                    "-pix_fmt",
+                    "rgba",
+                    "-",
+                ])
+                .stdin(Stdio::null())
+                .output()
+                .ok()?;
             let need = (w * h * 4) as usize;
             if out.stdout.len() < need {
-                return Some(Done::Error(format!("{key}: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or(""))));
+                return Some(Done::Error(format!(
+                    "{key}: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                        .lines()
+                        .last()
+                        .unwrap_or("")
+                )));
             }
             let mut data = out.stdout;
             data.truncate(need);
@@ -98,7 +197,14 @@ fn run(job: Job) -> Option<Done> {
                 let _ = std::fs::create_dir_all(d);
             }
             let _ = std::fs::write(&cache, &data);
-            Ok(Done::FxThumb { key, frame: RgbaFrame { width: w, height: h, data } })
+            Ok(Done::FxThumb {
+                key,
+                frame: RgbaFrame {
+                    width: w,
+                    height: h,
+                    data,
+                },
+            })
         }
         Job::ProjectThumb { out, path, at } => {
             if let Some(d) = out.parent() {
@@ -143,7 +249,9 @@ impl Decoder {
                         let mut keep: Vec<Job> = Vec::new();
                         for j in pending.into_iter().rev() {
                             let dup = match &j {
-                                Job::Frame { clip, .. } => keep.iter().any(|k| matches!(k, Job::Frame { clip: c, .. } if c == clip)),
+                                Job::Frame { clip, .. } => keep
+                                    .iter()
+                                    .any(|k| matches!(k, Job::Frame { clip: c, .. } if c == clip)),
                                 _ => false,
                             };
                             if !dup {
@@ -165,7 +273,10 @@ impl Decoder {
                             }
                         }
                         let results: Vec<Option<Done>> = std::thread::scope(|sc| {
-                            let hs: Vec<_> = todo.into_iter().map(|job| sc.spawn(move || run(job))).collect();
+                            let hs: Vec<_> = todo
+                                .into_iter()
+                                .map(|job| sc.spawn(move || run(job)))
+                                .collect();
                             hs.into_iter().map(|h| h.join().ok().flatten()).collect()
                         });
                         for d in results.into_iter().flatten() {
@@ -218,8 +329,24 @@ pub struct Playback {
 
 impl Playback {
     #[allow(clippy::too_many_arguments)]
-    pub fn open(path: &std::path::Path, source_at: Time, t0: Time, w: u32, h: u32, fps: Rational, graph: Option<&str>, key: u64) -> Option<Self> {
-        FrameStream::open_fx(path, source_at, w, h, fps, graph).ok().map(|stream| Self { stream, t0, taken: 0, key })
+    pub fn open(
+        path: &std::path::Path,
+        source_at: Time,
+        t0: Time,
+        w: u32,
+        h: u32,
+        fps: Rational,
+        graph: Option<&str>,
+        key: u64,
+    ) -> Option<Self> {
+        FrameStream::open_fx(path, source_at, w, h, fps, graph)
+            .ok()
+            .map(|stream| Self {
+                stream,
+                t0,
+                taken: 0,
+                key,
+            })
     }
 
     /// Holt alle Frames bis zur aktuellen Position und gibt den neuesten zurück.
@@ -246,7 +373,11 @@ pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
 
 /// Beispielbild für Effekt-Kacheln (Farbverlauf mit „Sonne“ und Horizont).
 pub fn sample_source(w: u32, h: u32, warm: bool) -> String {
-    let (c0, c1) = if warm { ("0xFF9E5E", "0x3B3F9C") } else { ("0x52D1C6", "0x1E2A6B") };
+    let (c0, c1) = if warm {
+        ("0xFF9E5E", "0x3B3F9C")
+    } else {
+        ("0x52D1C6", "0x1E2A6B")
+    };
     format!(
         "gradients=s={w}x{h}:c0={c0}:c1={c1}:x0=0:y0=0:x1={w}:y1={h}:speed=0.0001:d=2,drawbox=x={}:y={}:w={}:h={}:color=0xFFF2C0@1:t=fill,drawbox=x=0:y={}:w={w}:h={}:color=0x101225@0.85:t=fill",
         w * 6 / 10,

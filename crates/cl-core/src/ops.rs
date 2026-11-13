@@ -16,51 +16,145 @@ pub enum Edge {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum EditOp {
-    ImportMedia { media: MediaRef },
-    AddTrack { kind: TrackKind },
-    SetTrackFlags { track: TrackId, locked: bool, hidden: bool, muted: bool },
+    ImportMedia {
+        media: MediaRef,
+    },
+    AddTrack {
+        kind: TrackKind,
+    },
+    SetTrackFlags {
+        track: TrackId,
+        locked: bool,
+        hidden: bool,
+        muted: bool,
+    },
     /// `track = None`: passende Spur automatisch wählen (Video → Hauptspur).
-    AddClip { track: Option<TrackId>, clip: Clip },
-    RemoveClip { clip: ClipId },
-    SplitClip { clip: ClipId, at: Time },
-    TrimClip { clip: ClipId, edge: Edge, to: Time },
-    MoveClip { clip: ClipId, track: Option<TrackId>, start: Time },
-    SetText { clip: ClipId, style: TextStyle },
-    SetTransform { clip: ClipId, transform: Transform },
-    SetOpacity { clip: ClipId, opacity: f32 },
-    SetVolume { clip: ClipId, volume_db: f32 },
-    SetSettings { settings: ProjectSettings },
-    AddProjectFont { path: PathBuf },
-    Rename { name: String },
+    AddClip {
+        track: Option<TrackId>,
+        clip: Clip,
+    },
+    RemoveClip {
+        clip: ClipId,
+    },
+    SplitClip {
+        clip: ClipId,
+        at: Time,
+    },
+    TrimClip {
+        clip: ClipId,
+        edge: Edge,
+        to: Time,
+    },
+    MoveClip {
+        clip: ClipId,
+        track: Option<TrackId>,
+        start: Time,
+    },
+    SetText {
+        clip: ClipId,
+        style: TextStyle,
+    },
+    SetTransform {
+        clip: ClipId,
+        transform: Transform,
+    },
+    SetOpacity {
+        clip: ClipId,
+        opacity: f32,
+    },
+    SetVolume {
+        clip: ClipId,
+        volume_db: f32,
+    },
+    SetSettings {
+        settings: ProjectSettings,
+    },
+    AddProjectFont {
+        path: PathBuf,
+    },
+    Rename {
+        name: String,
+    },
     /// Geschwindigkeit ändern; der genutzte Quellbereich bleibt, die Dauer passt sich an.
-    SetSpeed { clip: ClipId, speed: f32 },
-    SetFx { clip: ClipId, fx: ClipFx },
-    SetKeyframes { clip: ClipId, keyframes: Keyframes },
-    SetAnimations { clip: ClipId, anim: Animations },
-    SetTransition { clip: ClipId, transition: Option<TransitionRef> },
-    SetClipDisabled { clip: ClipId, disabled: bool },
-    SetFades { clip: ClipId, fade_in: Time, fade_out: Time },
+    SetSpeed {
+        clip: ClipId,
+        speed: f32,
+    },
+    SetFx {
+        clip: ClipId,
+        fx: ClipFx,
+    },
+    SetKeyframes {
+        clip: ClipId,
+        keyframes: Keyframes,
+    },
+    SetAnimations {
+        clip: ClipId,
+        anim: Animations,
+    },
+    SetTransition {
+        clip: ClipId,
+        transition: Option<TransitionRef>,
+    },
+    SetClipDisabled {
+        clip: ClipId,
+        disabled: bool,
+    },
+    SetFades {
+        clip: ClipId,
+        fade_in: Time,
+        fade_out: Time,
+    },
     /// Eigenschaften eines Clips ersetzen (Inhalt, Transform, Effekte, Keyframes …).
     /// Lage und Länge (Start, Dauer, Quellbeginn, Tempo) bleiben unverändert.
-    ReplaceClip { clip: Clip },
+    ReplaceClip {
+        clip: Clip,
+    },
     /// Neue leere Spur an Index (0 = unten) einfügen.
-    InsertTrack { index: usize, kind: TrackKind },
+    InsertTrack {
+        index: usize,
+        kind: TrackKind,
+    },
     /// Spur samt Clips entfernen (nicht die Hauptspur).
-    RemoveTrack { track: TrackId },
+    RemoveTrack {
+        track: TrackId,
+    },
     /// Clip auf eine neue Spur an `index` verschieben (Ziehen ins Leere).
-    MoveClipToNewTrack { clip: ClipId, index: usize, start: Time },
+    MoveClipToNewTrack {
+        clip: ClipId,
+        index: usize,
+        start: Time,
+    },
     /// Lücken schließen: eine Spur oder (None) alle Spuren.
-    CloseGaps { track: Option<TrackId> },
+    CloseGaps {
+        track: Option<TrackId>,
+    },
     /// Lage und Quellbereich direkt setzen (Rollen, Slippen, Zahleneingabe), ohne Ripple
-    SetClipTiming { clip: ClipId, start: Time, duration: Time, source_in: Time },
+    SetClipTiming {
+        clip: ClipId,
+        start: Time,
+        duration: Time,
+        source_in: Time,
+    },
     /// Datei eines Mediums austauschen (verschoben/umbenannt)
-    RelinkMedia { media: MediaId, path: PathBuf },
+    RelinkMedia {
+        media: MediaId,
+        path: PathBuf,
+    },
     /// Alle Marker ersetzen (setzen, verschieben, bearbeiten, löschen)
-    SetMarkers { markers: Vec<crate::Marker> },
+    SetMarkers {
+        markers: Vec<crate::Marker>,
+    },
     /// Spur umbenennen (`None` = Standardname)
-    RenameTrack { track: TrackId, name: Option<String> },
+    RenameTrack {
+        track: TrackId,
+        name: Option<String>,
+    },
     /// Mehrere Ops als ein Undo-Schritt (Mehrfachauswahl).
-    Batch { label: String, ops: Vec<EditOp> },
+    Batch {
+        label: String,
+        ops: Vec<EditOp>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -131,7 +225,12 @@ impl EditOp {
                 p.timeline.tracks.push(t);
                 Ok(OpOutput::Track(id))
             }
-            EditOp::SetTrackFlags { track, locked, hidden, muted } => {
+            EditOp::SetTrackFlags {
+                track,
+                locked,
+                hidden,
+                muted,
+            } => {
                 let t = track_mut(p, track)?;
                 t.locked = locked;
                 t.hidden = hidden;
@@ -139,7 +238,12 @@ impl EditOp {
                 Ok(OpOutput::None)
             }
             EditOp::AddClip { track, clip } => add_clip(p, track, clip),
-            EditOp::SetClipTiming { clip, start, duration, source_in } => {
+            EditOp::SetClipTiming {
+                clip,
+                start,
+                duration,
+                source_in,
+            } => {
                 if duration.0 <= 0 || start.0 < 0 || source_in.0 < 0 {
                     return Err(CoreError::InvalidDuration);
                 }
@@ -158,7 +262,11 @@ impl EditOp {
                 Ok(OpOutput::None)
             }
             EditOp::RelinkMedia { media, path } => {
-                let m = p.media.iter_mut().find(|m| m.id == media).ok_or(CoreError::MediaNotFound(media))?;
+                let m = p
+                    .media
+                    .iter_mut()
+                    .find(|m| m.id == media)
+                    .ok_or(CoreError::MediaNotFound(media))?;
                 m.path = path;
                 Ok(OpOutput::None)
             }
@@ -168,7 +276,8 @@ impl EditOp {
                 Ok(OpOutput::None)
             }
             EditOp::RenameTrack { track, name } => {
-                track_mut(p, track)?.name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+                track_mut(p, track)?.name =
+                    name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
                 Ok(OpOutput::None)
             }
             EditOp::RemoveClip { clip } => {
@@ -183,7 +292,11 @@ impl EditOp {
                 let ti = clip_track_index(p, clip)?;
                 let track = &mut p.timeline.tracks[ti];
                 ensure_unlocked(track)?;
-                let c = track.clips.iter_mut().find(|c| c.id == clip).expect("geprüft");
+                let c = track
+                    .clips
+                    .iter_mut()
+                    .find(|c| c.id == clip)
+                    .expect("geprüft");
                 if at <= c.start || at >= c.end() {
                     return Err(CoreError::InvalidSplit);
                 }
@@ -192,7 +305,8 @@ impl EditOp {
                 right.start = at;
                 right.duration = c.end() - at;
                 let rel = at - c.start;
-                right.source_in = c.source_in + Time((rel.0 as f64 * c.speed.max(0.01) as f64).round() as i64);
+                right.source_in =
+                    c.source_in + Time((rel.0 as f64 * c.speed.max(0.01) as f64).round() as i64);
                 right.keyframes.shift(rel);
                 // Ausblend-Animation und Übergang gehören zum rechten Teil, Einblenden zum linken
                 right.anim.intro = None;
@@ -207,12 +321,20 @@ impl EditOp {
             EditOp::TrimClip { clip, edge, to } => {
                 let ti = clip_track_index(p, clip)?;
                 let (src_len, is_audio) = {
-                    let c = p.timeline.tracks[ti].clips.iter().find(|c| c.id == clip).expect("geprüft");
+                    let c = p.timeline.tracks[ti]
+                        .clips
+                        .iter()
+                        .find(|c| c.id == clip)
+                        .expect("geprüft");
                     (source_length(p, c), c.kind() == TrackKind::Audio)
                 };
                 let track = &mut p.timeline.tracks[ti];
                 ensure_unlocked(track)?;
-                let c = track.clips.iter_mut().find(|c| c.id == clip).expect("geprüft");
+                let c = track
+                    .clips
+                    .iter_mut()
+                    .find(|c| c.id == clip)
+                    .expect("geprüft");
                 let speed = c.speed.max(0.01) as f64;
                 let to_src = |d: Time| Time((d.0 as f64 * speed).round() as i64);
                 let to_tl = |d: Time| Time((d.0 as f64 / speed).round() as i64);
@@ -261,7 +383,11 @@ impl EditOp {
                 let ti = clip_track_index(p, clip)?;
                 ensure_unlocked(&p.timeline.tracks[ti])?;
                 let src_track = p.timeline.tracks[ti].id;
-                let pos = p.timeline.tracks[ti].clips.iter().position(|c| c.id == clip).expect("geprüft");
+                let pos = p.timeline.tracks[ti]
+                    .clips
+                    .iter()
+                    .position(|c| c.id == clip)
+                    .expect("geprüft");
                 let mut c = p.timeline.tracks[ti].clips.remove(pos);
                 c.start = Time(start.0.max(0));
                 after_change(p, ti);
@@ -277,7 +403,11 @@ impl EditOp {
             EditOp::SetSpeed { clip, speed } => {
                 let ti = clip_track_index(p, clip)?;
                 ensure_unlocked(&p.timeline.tracks[ti])?;
-                let c = p.timeline.tracks[ti].clips.iter_mut().find(|c| c.id == clip).expect("geprüft");
+                let c = p.timeline.tracks[ti]
+                    .clips
+                    .iter_mut()
+                    .find(|c| c.id == clip)
+                    .expect("geprüft");
                 let speed = speed.clamp(0.1, 100.0);
                 let span = c.source_span();
                 let old = c.duration;
@@ -318,7 +448,11 @@ impl EditOp {
                 clip_mut(p, clip)?.disabled = disabled;
                 Ok(OpOutput::None)
             }
-            EditOp::SetFades { clip, fade_in, fade_out } => {
+            EditOp::SetFades {
+                clip,
+                fade_in,
+                fade_out,
+            } => {
                 let c = clip_mut(p, clip)?;
                 let half = Time(c.duration.0 / 2);
                 c.fade_in = Time(fade_in.0.clamp(0, half.0));
@@ -328,9 +462,13 @@ impl EditOp {
             EditOp::ReplaceClip { clip } => {
                 let c = clip_mut(p, clip.id)?;
                 if c.kind() != clip.kind() {
-                    return Err(CoreError::KindMismatch { clip: clip.kind(), track: c.kind() });
+                    return Err(CoreError::KindMismatch {
+                        clip: clip.kind(),
+                        track: c.kind(),
+                    });
                 }
-                let (start, duration, source_in, speed) = (c.start, c.duration, c.source_in, c.speed);
+                let (start, duration, source_in, speed) =
+                    (c.start, c.duration, c.source_in, c.speed);
                 *c = clip;
                 c.start = start;
                 c.duration = duration;
@@ -353,7 +491,12 @@ impl EditOp {
                 Ok(OpOutput::Track(id))
             }
             EditOp::RemoveTrack { track } => {
-                let ti = p.timeline.tracks.iter().position(|t| t.id == track).ok_or(CoreError::TrackNotFound(track))?;
+                let ti = p
+                    .timeline
+                    .tracks
+                    .iter()
+                    .position(|t| t.id == track)
+                    .ok_or(CoreError::TrackNotFound(track))?;
                 let t = &p.timeline.tracks[ti];
                 ensure_unlocked(t)?;
                 if t.main {
@@ -368,7 +511,11 @@ impl EditOp {
                 let ti = clip_track_index(p, clip)?;
                 ensure_unlocked(&p.timeline.tracks[ti])?;
                 let src_track = p.timeline.tracks[ti].id;
-                let pos = p.timeline.tracks[ti].clips.iter().position(|c| c.id == clip).expect("geprüft");
+                let pos = p.timeline.tracks[ti]
+                    .clips
+                    .iter()
+                    .position(|c| c.id == clip)
+                    .expect("geprüft");
                 let mut c = p.timeline.tracks[ti].clips.remove(pos);
                 c.start = Time(start.0.max(0));
                 after_change(p, ti);
@@ -414,7 +561,10 @@ impl EditOp {
                         *s = style;
                         Ok(OpOutput::None)
                     }
-                    _ => Err(CoreError::KindMismatch { clip: c.kind(), track: TrackKind::Text }),
+                    _ => Err(CoreError::KindMismatch {
+                        clip: c.kind(),
+                        track: TrackKind::Text,
+                    }),
                 }
             }
             EditOp::SetTransform { clip, transform } => {
@@ -456,9 +606,13 @@ impl EditOp {
 
 fn source_length(p: &Project, c: &Clip) -> Option<Time> {
     match &c.content {
-        ClipContent::Media { media, kind: MediaKind::Video | MediaKind::Audio } => {
-            p.media(*media).map(|m| m.duration).filter(|d| *d > Time::ZERO)
-        }
+        ClipContent::Media {
+            media,
+            kind: MediaKind::Video | MediaKind::Audio,
+        } => p
+            .media(*media)
+            .map(|m| m.duration)
+            .filter(|d| *d > Time::ZERO),
         _ => None,
     }
 }
@@ -472,7 +626,11 @@ fn ensure_unlocked(t: &Track) -> Result<()> {
 }
 
 fn track_mut(p: &mut Project, id: TrackId) -> Result<&mut Track> {
-    p.timeline.tracks.iter_mut().find(|t| t.id == id).ok_or(CoreError::TrackNotFound(id))
+    p.timeline
+        .tracks
+        .iter_mut()
+        .find(|t| t.id == id)
+        .ok_or(CoreError::TrackNotFound(id))
 }
 
 fn clip_track_index(p: &Project, id: ClipId) -> Result<usize> {
@@ -486,7 +644,11 @@ fn clip_track_index(p: &Project, id: ClipId) -> Result<usize> {
 fn clip_mut(p: &mut Project, id: ClipId) -> Result<&mut Clip> {
     let ti = clip_track_index(p, id)?;
     ensure_unlocked(&p.timeline.tracks[ti])?;
-    Ok(p.timeline.tracks[ti].clips.iter_mut().find(|c| c.id == id).expect("geprüft"))
+    Ok(p.timeline.tracks[ti]
+        .clips
+        .iter_mut()
+        .find(|c| c.id == id)
+        .expect("geprüft"))
 }
 
 /// Hauptspur lückenlos zusammenschieben (Ripple, Hauptspur-Magnet).
@@ -550,10 +712,18 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, clip: Clip) -> Result<OpOut
 
     let ti = match track {
         Some(tid) => {
-            let ti = p.timeline.tracks.iter().position(|t| t.id == tid).ok_or(CoreError::TrackNotFound(tid))?;
+            let ti = p
+                .timeline
+                .tracks
+                .iter()
+                .position(|t| t.id == tid)
+                .ok_or(CoreError::TrackNotFound(tid))?;
             let t = &p.timeline.tracks[ti];
             if t.kind != kind {
-                return Err(CoreError::KindMismatch { clip: kind, track: t.kind });
+                return Err(CoreError::KindMismatch {
+                    clip: kind,
+                    track: t.kind,
+                });
             }
             ensure_unlocked(t)?;
             let magnet_main = t.main && p.settings.main_track_magnet;
@@ -580,18 +750,17 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, clip: Clip) -> Result<OpOut
                 0
             }
         },
-        None => match p
-            .timeline
-            .tracks
-            .iter()
-            .position(|t| t.kind == kind && !t.locked && t.is_free(clip.start, clip.duration, None))
-        {
-            Some(ti) => ti,
-            None => {
-                p.timeline.tracks.push(Track::new(kind));
-                p.timeline.tracks.len() - 1
+        None => {
+            match p.timeline.tracks.iter().position(|t| {
+                t.kind == kind && !t.locked && t.is_free(clip.start, clip.duration, None)
+            }) {
+                Some(ti) => ti,
+                None => {
+                    p.timeline.tracks.push(Track::new(kind));
+                    p.timeline.tracks.len() - 1
+                }
             }
-        },
+        }
     };
 
     let magnet_main = p.timeline.tracks[ti].main && p.settings.main_track_magnet;
@@ -599,7 +768,11 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, clip: Clip) -> Result<OpOut
     if magnet_main {
         // Einfügen vor dem ersten Clip, dessen Mitte hinter der Ablageposition liegt
         let at = clip.start.0;
-        let idx = t.clips.iter().take_while(|c| (c.start.0 + c.end().0) / 2 < at).count();
+        let idx = t
+            .clips
+            .iter()
+            .take_while(|c| (c.start.0 + c.end().0) / 2 < at)
+            .count();
         t.clips.insert(idx, clip);
         compact(t);
     } else {

@@ -51,10 +51,34 @@ pub const EFFECT_CATEGORIES: [&str; 5] = ["Basis", "Retro", "Bewegung", "Licht",
 
 pub static EFFECTS: &[FxDef] = &[
     // Basis
-    FxDef { id: "blur", name: "Unschärfe", category: "Basis", native_intensity: true, build: |i, _| format!("gblur=sigma={:.2}", 1.0 + 14.0 * i) },
-    FxDef { id: "sharpen", name: "Schärfen", category: "Basis", native_intensity: true, build: |i, _| format!("unsharp=5:5:{:.2}", 0.4 + 2.0 * i) },
-    FxDef { id: "bw", name: "Schwarzweiß", category: "Basis", native_intensity: true, build: |i, _| format!("hue=s={:.3}", 1.0 - i) },
-    FxDef { id: "invert", name: "Negativ", category: "Basis", native_intensity: false, build: |_, _| "negate".into() },
+    FxDef {
+        id: "blur",
+        name: "Unschärfe",
+        category: "Basis",
+        native_intensity: true,
+        build: |i, _| format!("gblur=sigma={:.2}", 1.0 + 14.0 * i),
+    },
+    FxDef {
+        id: "sharpen",
+        name: "Schärfen",
+        category: "Basis",
+        native_intensity: true,
+        build: |i, _| format!("unsharp=5:5:{:.2}", 0.4 + 2.0 * i),
+    },
+    FxDef {
+        id: "bw",
+        name: "Schwarzweiß",
+        category: "Basis",
+        native_intensity: true,
+        build: |i, _| format!("hue=s={:.3}", 1.0 - i),
+    },
+    FxDef {
+        id: "invert",
+        name: "Negativ",
+        category: "Basis",
+        native_intensity: false,
+        build: |_, _| "negate".into(),
+    },
     FxDef {
         id: "pixelate",
         name: "Verpixeln",
@@ -62,12 +86,30 @@ pub static EFFECTS: &[FxDef] = &[
         native_intensity: true,
         build: |i, s| {
             let f = 4.0 + 36.0 * i;
-            let (w, h) = (((s.w as f32 / f).round() as u32).max(2), ((s.h as f32 / f).round() as u32).max(2));
-            format!("scale={w}:{h}:flags=area,scale={}:{}:flags=neighbor", s.w, s.h)
+            let (w, h) = (
+                ((s.w as f32 / f).round() as u32).max(2),
+                ((s.h as f32 / f).round() as u32).max(2),
+            );
+            format!(
+                "scale={w}:{h}:flags=area,scale={}:{}:flags=neighbor",
+                s.w, s.h
+            )
         },
     },
-    FxDef { id: "vignette", name: "Vignette", category: "Basis", native_intensity: true, build: |i, _| format!("vignette=angle={:.3}", 0.2 + 0.9 * i) },
-    FxDef { id: "grain", name: "Filmkorn", category: "Basis", native_intensity: true, build: |i, _| format!("noise=alls={:.0}:allf=t", 6.0 + 34.0 * i) },
+    FxDef {
+        id: "vignette",
+        name: "Vignette",
+        category: "Basis",
+        native_intensity: true,
+        build: |i, _| format!("vignette=angle={:.3}", 0.2 + 0.9 * i),
+    },
+    FxDef {
+        id: "grain",
+        name: "Filmkorn",
+        category: "Basis",
+        native_intensity: true,
+        build: |i, _| format!("noise=alls={:.0}:allf=t", 6.0 + 34.0 * i),
+    },
     FxDef {
         id: "edges",
         name: "Konturen",
@@ -81,14 +123,18 @@ pub static EFFECTS: &[FxDef] = &[
         name: "VHS",
         category: "Retro",
         native_intensity: false,
-        build: |_, _| "rgbashift=rh=-5:bh=5:gv=1,noise=alls=18:allf=t,eq=saturation=1.35:contrast=1.08,gblur=sigma=0.7,drawgrid=w=0:h=3:t=1:c=black@0.18".into(),
+        build: |_, _| {
+            "rgbashift=rh=-5:bh=5:gv=1,noise=alls=18:allf=t,eq=saturation=1.35:contrast=1.08,gblur=sigma=0.7,drawgrid=w=0:h=3:t=1:c=black@0.18".into()
+        },
     },
     FxDef {
         id: "old-film",
         name: "Alter Film",
         category: "Retro",
         native_intensity: false,
-        build: |_, _| "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131,noise=alls=24:allf=t,vignette=angle=0.9,eq=brightness='0.04*sin(t*37)':eval=frame".into(),
+        build: |_, _| {
+            "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131,noise=alls=24:allf=t,vignette=angle=0.9,eq=brightness='0.04*sin(t*37)':eval=frame".into()
+        },
     },
     FxDef {
         id: "sepia",
@@ -119,7 +165,9 @@ pub static EFFECTS: &[FxDef] = &[
         name: "Comic",
         category: "Retro",
         native_intensity: false,
-        build: |_, _| "lutrgb=r='trunc(val/64)*64':g='trunc(val/64)*64':b='trunc(val/64)*64',unsharp=7:7:2.5,eq=saturation=1.4".into(),
+        build: |_, _| {
+            "lutrgb=r='trunc(val/64)*64':g='trunc(val/64)*64':b='trunc(val/64)*64',unsharp=7:7:2.5,eq=saturation=1.4".into()
+        },
     },
     // Bewegung
     FxDef {
@@ -147,51 +195,89 @@ pub static EFFECTS: &[FxDef] = &[
             )
         },
     },
-    FxDef { id: "motion-blur", name: "Bewegungsunschärfe", category: "Bewegung", native_intensity: false, build: |_, _| "tmix=frames=4:weights='1 1 1 1'".into() },
-    FxDef { id: "echo", name: "Nachzieher", category: "Bewegung", native_intensity: false, build: |_, _| "tmix=frames=8:weights='1 1 1 2 2 3 4 8'".into() },
+    FxDef {
+        id: "motion-blur",
+        name: "Bewegungsunschärfe",
+        category: "Bewegung",
+        native_intensity: false,
+        build: |_, _| "tmix=frames=4:weights='1 1 1 1'".into(),
+    },
+    FxDef {
+        id: "echo",
+        name: "Nachzieher",
+        category: "Bewegung",
+        native_intensity: false,
+        build: |_, _| "tmix=frames=8:weights='1 1 1 2 2 3 4 8'".into(),
+    },
     FxDef {
         id: "glitch",
         name: "Glitch",
         category: "Bewegung",
         native_intensity: false,
-        build: |_, _| "rgbashift=rh=-8:bh=8:gv=3,hue=h='if(lt(mod(t,1.1),0.12),120,0)',noise=alls=20:allf=t+u".into(),
+        build: |_, _| {
+            "rgbashift=rh=-8:bh=8:gv=3,hue=h='if(lt(mod(t,1.1),0.12),120,0)',noise=alls=20:allf=t+u"
+                .into()
+        },
     },
-    FxDef { id: "rainbow", name: "Regenbogen", category: "Bewegung", native_intensity: true, build: |i, _| format!("hue=h='t*{:.0}'", 60.0 + 240.0 * i) },
+    FxDef {
+        id: "rainbow",
+        name: "Regenbogen",
+        category: "Bewegung",
+        native_intensity: true,
+        build: |i, _| format!("hue=h='t*{:.0}'", 60.0 + 240.0 * i),
+    },
     // Licht
     FxDef {
         id: "strobe",
         name: "Stroboskop",
         category: "Licht",
         native_intensity: true,
-        build: |i, _| format!("eq=brightness='{:.3}*gt(mod(t,0.25),0.125)':eval=frame", 0.15 + 0.45 * i),
+        build: |i, _| {
+            format!(
+                "eq=brightness='{:.3}*gt(mod(t,0.25),0.125)':eval=frame",
+                0.15 + 0.45 * i
+            )
+        },
     },
     FxDef {
         id: "flash",
         name: "Blitz",
         category: "Licht",
         native_intensity: true,
-        build: |i, _| format!("eq=brightness='max(0,{:.3}*(1-t*3))':eval=frame", 0.3 + 0.6 * i),
+        build: |i, _| {
+            format!(
+                "eq=brightness='max(0,{:.3}*(1-t*3))':eval=frame",
+                0.3 + 0.6 * i
+            )
+        },
     },
     FxDef {
         id: "dreamy",
         name: "Verträumt",
         category: "Licht",
         native_intensity: false,
-        build: |_, _| "gblur=sigma=3,eq=brightness=0.05:contrast=0.92:saturation=1.15,colortemperature=temperature=5600".into(),
+        build: |_, _| {
+            "gblur=sigma=3,eq=brightness=0.05:contrast=0.92:saturation=1.15,colortemperature=temperature=5600".into()
+        },
     },
     FxDef {
         id: "glow-edges",
         name: "Leuchtkanten",
         category: "Licht",
         native_intensity: false,
-        build: |_, _| "edgedetect=mode=colormix:high=0.15:low=0.04,eq=saturation=2.2:brightness=0.06,gblur=sigma=1.2".into(),
+        build: |_, _| {
+            "edgedetect=mode=colormix:high=0.15:low=0.04,eq=saturation=2.2:brightness=0.06,gblur=sigma=1.2".into()
+        },
     },
     FxDef {
         id: "warm-leak",
         name: "Lichteinfall",
         category: "Licht",
         native_intensity: false,
-        build: |_, _| "colorbalance=rh=0.25:gh=0.08:rm=0.12,eq=brightness='0.06+0.05*sin(t*1.7)':eval=frame".into(),
+        build: |_, _| {
+            "colorbalance=rh=0.25:gh=0.08:rm=0.12,eq=brightness='0.06+0.05*sin(t*1.7)':eval=frame"
+                .into()
+        },
     },
     FxDef {
         id: "chroma",
@@ -204,13 +290,21 @@ pub static EFFECTS: &[FxDef] = &[
         },
     },
     // Stil
-    FxDef { id: "heat", name: "Wärmebild", category: "Stil", native_intensity: false, build: |_, _| "format=gbrp,pseudocolor=preset=heat".into() },
+    FxDef {
+        id: "heat",
+        name: "Wärmebild",
+        category: "Stil",
+        native_intensity: false,
+        build: |_, _| "format=gbrp,pseudocolor=preset=heat".into(),
+    },
     FxDef {
         id: "night-vision",
         name: "Nachtsicht",
         category: "Stil",
         native_intensity: false,
-        build: |_, _| "hue=s=0,colorchannelmixer=0.2:0:0:0:0.3:1.2:0.2:0:0.1:0.2:0.1,noise=alls=22:allf=t,vignette=angle=0.8".into(),
+        build: |_, _| {
+            "hue=s=0,colorchannelmixer=0.2:0:0:0:0.3:1.2:0.2:0:0.1:0.2:0.1,noise=alls=22:allf=t,vignette=angle=0.8".into()
+        },
     },
     FxDef {
         id: "duotone",
@@ -224,9 +318,23 @@ pub static EFFECTS: &[FxDef] = &[
         name: "Relief",
         category: "Stil",
         native_intensity: false,
-        build: |_, _| "convolution='-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2'".into(),
+        build: |_, _| {
+            "convolution='-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2'".into()
+        },
     },
-    FxDef { id: "lens", name: "Linse", category: "Stil", native_intensity: true, build: |i, _| format!("lenscorrection=k1={:.3}:k2={:.3}", -0.15 - 0.35 * i, -0.05 - 0.1 * i) },
+    FxDef {
+        id: "lens",
+        name: "Linse",
+        category: "Stil",
+        native_intensity: true,
+        build: |i, _| {
+            format!(
+                "lenscorrection=k1={:.3}:k2={:.3}",
+                -0.15 - 0.35 * i,
+                -0.05 - 0.1 * i
+            )
+        },
+    },
     FxDef {
         id: "cinema-bars",
         name: "Kinobalken",
@@ -240,32 +348,148 @@ pub static EFFECTS: &[FxDef] = &[
 ];
 
 pub static FILTERS: &[FxDef] = &[
-    FxDef { id: "natural", name: "Natürlich", category: "Porträt", native_intensity: false, build: |_, _| "eq=saturation=1.1:contrast=1.05".into() },
-    FxDef { id: "vivid", name: "Lebendig", category: "Porträt", native_intensity: false, build: |_, _| "eq=saturation=1.45:contrast=1.1,vibrance=intensity=0.3".into() },
-    FxDef { id: "pastel", name: "Pastell", category: "Porträt", native_intensity: false, build: |_, _| "eq=saturation=0.7:brightness=0.05,curves=all='0/0.1 1/1'".into() },
-    FxDef { id: "bright", name: "Hell", category: "Porträt", native_intensity: false, build: |_, _| "curves=preset=lighter".into() },
-    FxDef { id: "warm", name: "Warm", category: "Landschaft", native_intensity: false, build: |_, _| "colortemperature=temperature=4600".into() },
-    FxDef { id: "cool", name: "Kühl", category: "Landschaft", native_intensity: false, build: |_, _| "colortemperature=temperature=9000".into() },
-    FxDef { id: "golden", name: "Goldene Stunde", category: "Landschaft", native_intensity: false, build: |_, _| "colortemperature=temperature=3800,eq=saturation=1.2".into() },
-    FxDef { id: "forest", name: "Wald", category: "Landschaft", native_intensity: false, build: |_, _| "colorbalance=gm=0.12:rs=-0.05:bs=0.03,eq=saturation=1.1".into() },
-    FxDef { id: "sunset", name: "Sonnenuntergang", category: "Landschaft", native_intensity: false, build: |_, _| "colorbalance=rm=0.18:gm=0.02:bm=-0.12:rh=0.1,eq=saturation=1.15".into() },
+    FxDef {
+        id: "natural",
+        name: "Natürlich",
+        category: "Porträt",
+        native_intensity: false,
+        build: |_, _| "eq=saturation=1.1:contrast=1.05".into(),
+    },
+    FxDef {
+        id: "vivid",
+        name: "Lebendig",
+        category: "Porträt",
+        native_intensity: false,
+        build: |_, _| "eq=saturation=1.45:contrast=1.1,vibrance=intensity=0.3".into(),
+    },
+    FxDef {
+        id: "pastel",
+        name: "Pastell",
+        category: "Porträt",
+        native_intensity: false,
+        build: |_, _| "eq=saturation=0.7:brightness=0.05,curves=all='0/0.1 1/1'".into(),
+    },
+    FxDef {
+        id: "bright",
+        name: "Hell",
+        category: "Porträt",
+        native_intensity: false,
+        build: |_, _| "curves=preset=lighter".into(),
+    },
+    FxDef {
+        id: "warm",
+        name: "Warm",
+        category: "Landschaft",
+        native_intensity: false,
+        build: |_, _| "colortemperature=temperature=4600".into(),
+    },
+    FxDef {
+        id: "cool",
+        name: "Kühl",
+        category: "Landschaft",
+        native_intensity: false,
+        build: |_, _| "colortemperature=temperature=9000".into(),
+    },
+    FxDef {
+        id: "golden",
+        name: "Goldene Stunde",
+        category: "Landschaft",
+        native_intensity: false,
+        build: |_, _| "colortemperature=temperature=3800,eq=saturation=1.2".into(),
+    },
+    FxDef {
+        id: "forest",
+        name: "Wald",
+        category: "Landschaft",
+        native_intensity: false,
+        build: |_, _| "colorbalance=gm=0.12:rs=-0.05:bs=0.03,eq=saturation=1.1".into(),
+    },
+    FxDef {
+        id: "sunset",
+        name: "Sonnenuntergang",
+        category: "Landschaft",
+        native_intensity: false,
+        build: |_, _| "colorbalance=rm=0.18:gm=0.02:bm=-0.12:rh=0.1,eq=saturation=1.15".into(),
+    },
     FxDef {
         id: "cinematic",
         name: "Kino",
         category: "Film",
         native_intensity: false,
-        build: |_, _| "colorbalance=rs=-0.12:bs=0.16:rh=0.14:bh=-0.12,curves=preset=medium_contrast,eq=saturation=0.9".into(),
+        build: |_, _| {
+            "colorbalance=rs=-0.12:bs=0.16:rh=0.14:bh=-0.12,curves=preset=medium_contrast,eq=saturation=0.9".into()
+        },
     },
-    FxDef { id: "teal-orange", name: "Teal & Orange", category: "Film", native_intensity: false, build: |_, _| "colorbalance=rs=-0.15:gs=0.02:bs=0.18:rh=0.15:gh=0.03:bh=-0.15".into() },
-    FxDef { id: "vintage", name: "Vintage", category: "Film", native_intensity: false, build: |_, _| "curves=preset=vintage".into() },
-    FxDef { id: "cross", name: "Crossentwicklung", category: "Film", native_intensity: false, build: |_, _| "curves=preset=cross_process".into() },
-    FxDef { id: "matte", name: "Matt", category: "Film", native_intensity: false, build: |_, _| "curves=all='0/0.12 1/0.92',eq=saturation=0.85".into() },
-    FxDef { id: "bleach", name: "Bleach Bypass", category: "Film", native_intensity: false, build: |_, _| "eq=saturation=0.45:contrast=1.3".into() },
-    FxDef { id: "polaroid", name: "Sofortbild", category: "Film", native_intensity: false, build: |_, _| "curves=preset=vintage,eq=saturation=0.9,vignette=angle=0.5".into() },
-    FxDef { id: "mono", name: "Mono", category: "Schwarzweiß", native_intensity: false, build: |_, _| "hue=s=0,eq=contrast=1.15".into() },
-    FxDef { id: "noir", name: "Noir", category: "Schwarzweiß", native_intensity: false, build: |_, _| "hue=s=0,curves=preset=strong_contrast".into() },
-    FxDef { id: "silver", name: "Silber", category: "Schwarzweiß", native_intensity: false, build: |_, _| "hue=s=0,curves=all='0/0.08 0.5/0.55 1/0.95'".into() },
-    FxDef { id: "moody", name: "Düster", category: "Stimmung", native_intensity: false, build: |_, _| "eq=brightness=-0.05:saturation=0.75,curves=preset=darker".into() },
+    FxDef {
+        id: "teal-orange",
+        name: "Teal & Orange",
+        category: "Film",
+        native_intensity: false,
+        build: |_, _| "colorbalance=rs=-0.15:gs=0.02:bs=0.18:rh=0.15:gh=0.03:bh=-0.15".into(),
+    },
+    FxDef {
+        id: "vintage",
+        name: "Vintage",
+        category: "Film",
+        native_intensity: false,
+        build: |_, _| "curves=preset=vintage".into(),
+    },
+    FxDef {
+        id: "cross",
+        name: "Crossentwicklung",
+        category: "Film",
+        native_intensity: false,
+        build: |_, _| "curves=preset=cross_process".into(),
+    },
+    FxDef {
+        id: "matte",
+        name: "Matt",
+        category: "Film",
+        native_intensity: false,
+        build: |_, _| "curves=all='0/0.12 1/0.92',eq=saturation=0.85".into(),
+    },
+    FxDef {
+        id: "bleach",
+        name: "Bleach Bypass",
+        category: "Film",
+        native_intensity: false,
+        build: |_, _| "eq=saturation=0.45:contrast=1.3".into(),
+    },
+    FxDef {
+        id: "polaroid",
+        name: "Sofortbild",
+        category: "Film",
+        native_intensity: false,
+        build: |_, _| "curves=preset=vintage,eq=saturation=0.9,vignette=angle=0.5".into(),
+    },
+    FxDef {
+        id: "mono",
+        name: "Mono",
+        category: "Schwarzweiß",
+        native_intensity: false,
+        build: |_, _| "hue=s=0,eq=contrast=1.15".into(),
+    },
+    FxDef {
+        id: "noir",
+        name: "Noir",
+        category: "Schwarzweiß",
+        native_intensity: false,
+        build: |_, _| "hue=s=0,curves=preset=strong_contrast".into(),
+    },
+    FxDef {
+        id: "silver",
+        name: "Silber",
+        category: "Schwarzweiß",
+        native_intensity: false,
+        build: |_, _| "hue=s=0,curves=all='0/0.08 0.5/0.55 1/0.95'".into(),
+    },
+    FxDef {
+        id: "moody",
+        name: "Düster",
+        category: "Stimmung",
+        native_intensity: false,
+        build: |_, _| "eq=brightness=-0.05:saturation=0.75,curves=preset=darker".into(),
+    },
     FxDef {
         id: "cyber",
         name: "Cyber",
@@ -273,10 +497,17 @@ pub static FILTERS: &[FxDef] = &[
         native_intensity: false,
         build: |_, _| "colorbalance=rs=0.1:bs=0.25:rh=0.2:bh=0.2:gm=-0.1,eq=saturation=1.3".into(),
     },
-    FxDef { id: "contrast", name: "Kontrast", category: "Stimmung", native_intensity: false, build: |_, _| "curves=preset=strong_contrast".into() },
+    FxDef {
+        id: "contrast",
+        name: "Kontrast",
+        category: "Stimmung",
+        native_intensity: false,
+        build: |_, _| "curves=preset=strong_contrast".into(),
+    },
 ];
 
-pub const FILTER_CATEGORIES: [&str; 5] = ["Porträt", "Landschaft", "Film", "Schwarzweiß", "Stimmung"];
+pub const FILTER_CATEGORIES: [&str; 5] =
+    ["Porträt", "Landschaft", "Film", "Schwarzweiß", "Stimmung"];
 
 /// Effekte/Filter aus Plugins (FFmpeg-Kette mit `{intensity}`), global für Vorschau und Export.
 static PLUGIN_CHAINS: std::sync::RwLock<Vec<PluginFx>> = std::sync::RwLock::new(Vec::new());
@@ -301,7 +532,9 @@ pub fn plugin_fx() -> Vec<PluginFx> {
 
 fn plugin_chain(id: &str, i: f32) -> Option<String> {
     let g = PLUGIN_CHAINS.read().ok()?;
-    g.iter().find(|p| p.id == id).map(|p| p.chain.replace("{intensity}", &format!("{i:.3}")))
+    g.iter()
+        .find(|p| p.id == id)
+        .map(|p| p.chain.replace("{intensity}", &format!("{i:.3}")))
 }
 
 /// Anzeigename eines Effekts/Filters (eingebaut oder Plugin).
@@ -309,7 +542,14 @@ pub fn fx_name(id: &str) -> String {
     effect(id)
         .or_else(|| filter(id))
         .map(|d| d.name.to_string())
-        .or_else(|| PLUGIN_CHAINS.read().ok()?.iter().find(|p| p.id == id).map(|p| p.name.clone()))
+        .or_else(|| {
+            PLUGIN_CHAINS
+                .read()
+                .ok()?
+                .iter()
+                .find(|p| p.id == id)
+                .map(|p| p.name.clone())
+        })
         .unwrap_or_else(|| id.to_string())
 }
 
@@ -376,12 +616,19 @@ pub static TRANSITIONS: &[(&str, &str, &str)] = &[
 pub const TRANSITION_CATEGORIES: [&str; 5] = ["Basis", "Wischen", "Bewegung", "Form", "Effekt"];
 
 pub fn transition_name(id: &str) -> &'static str {
-    TRANSITIONS.iter().find(|t| t.0 == id).map(|t| t.1).unwrap_or("Übergang")
+    TRANSITIONS
+        .iter()
+        .find(|t| t.0 == id)
+        .map(|t| t.1)
+        .unwrap_or("Übergang")
 }
 
 /// Pfad für FFmpeg-Filteroptionen escapen (`C:/x.cube` → `'C\:/x.cube'`).
 pub fn escape_path(p: &str) -> String {
-    format!("'{}'", p.replace('\\', "/").replace(':', "\\:").replace('\'', ""))
+    format!(
+        "'{}'",
+        p.replace('\\', "/").replace(':', "\\:").replace('\'', "")
+    )
 }
 
 /// Stückweise lineare Funktion als FFmpeg-Ausdruck (Variable `var`), Punkte (x, y) sortiert.
@@ -393,7 +640,11 @@ pub fn piecewise_expr(points: &[(f64, f64)], var: &str) -> String {
             let mut e = format!("{:.5}", points.last().expect("nicht leer").1);
             for w in points.windows(2).rev() {
                 let ((x0, y0), (x1, y1)) = (w[0], w[1]);
-                let k = if (x1 - x0).abs() < 1e-9 { 0.0 } else { (y1 - y0) / (x1 - x0) };
+                let k = if (x1 - x0).abs() < 1e-9 {
+                    0.0
+                } else {
+                    (y1 - y0) / (x1 - x0)
+                };
                 e = format!("if(lt({var},{x1:.5}),{y0:.5}+({var}-{x0:.5})*{k:.6},{e})");
             }
             format!("if(lt({var},{:.5}),{:.5},{e})", points[0].0, points[0].1)
@@ -412,7 +663,13 @@ pub struct GraphBuilder<'a> {
 
 impl<'a> GraphBuilder<'a> {
     pub fn new(input: &str, uniq: &'a str) -> Self {
-        Self { lines: Vec::new(), cur: input.to_string(), pending: Vec::new(), uniq, n: 0 }
+        Self {
+            lines: Vec::new(),
+            cur: input.to_string(),
+            pending: Vec::new(),
+            uniq,
+            n: 0,
+        }
     }
     fn label(&mut self, what: &str) -> String {
         self.n += 1;
@@ -427,7 +684,8 @@ impl<'a> GraphBuilder<'a> {
     pub fn flush(&mut self) -> String {
         if !self.pending.is_empty() {
             let l = self.label("c");
-            self.lines.push(format!("[{}]{}[{l}]", self.cur, self.pending.join(",")));
+            self.lines
+                .push(format!("[{}]{}[{l}]", self.cur, self.pending.join(",")));
             self.pending.clear();
             self.cur = l;
         }
@@ -444,10 +702,17 @@ impl<'a> GraphBuilder<'a> {
         }
         self.push("format=gbrap");
         let cur = self.flush();
-        let (a, b, f, o) = (self.label("a"), self.label("b"), self.label("f"), self.label("o"));
+        let (a, b, f, o) = (
+            self.label("a"),
+            self.label("b"),
+            self.label("f"),
+            self.label("o"),
+        );
         self.lines.push(format!("[{cur}]split[{a}][{b}]"));
         self.lines.push(format!("[{b}]{chain},format=gbrap[{f}]"));
-        self.lines.push(format!("[{f}][{a}]blend=all_mode=normal:all_opacity={i:.3}[{o}]"));
+        self.lines.push(format!(
+            "[{f}][{a}]blend=all_mode=normal:all_opacity={i:.3}[{o}]"
+        ));
         self.cur = o;
     }
     pub fn finish(mut self, output: &str) -> Vec<String> {
@@ -487,14 +752,27 @@ pub fn adjust_chain(a: &Adjust) -> Vec<String> {
     }
     let (b, c, s) = (a.brightness, a.contrast, a.saturation);
     if b != 0.0 || c != 0.0 || s != 0.0 {
-        v.push(format!("eq=brightness={:.3}:contrast={:.3}:saturation={:.3}", b * 0.3, 1.0 + c * 0.6, (1.0 + s).max(0.0)));
+        v.push(format!(
+            "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}",
+            b * 0.3,
+            1.0 + c * 0.6,
+            (1.0 + s).max(0.0)
+        ));
     }
     if a.temperature != 0.0 {
-        v.push(format!("colortemperature=temperature={:.0}", 6500.0 - a.temperature * 3500.0));
+        v.push(format!(
+            "colortemperature=temperature={:.0}",
+            6500.0 - a.temperature * 3500.0
+        ));
     }
     if a.tint != 0.0 {
         let t = a.tint;
-        v.push(format!("colorbalance=rm={:.3}:gm={:.3}:bm={:.3}", t * 0.1, -t * 0.15, t * 0.1));
+        v.push(format!(
+            "colorbalance=rm={:.3}:gm={:.3}:bm={:.3}",
+            t * 0.1,
+            -t * 0.15,
+            t * 0.1
+        ));
     }
     if a.hue != 0.0 {
         v.push(format!("hue=h={:.1}", a.hue));
@@ -502,7 +780,12 @@ pub fn adjust_chain(a: &Adjust) -> Vec<String> {
     for (k, (code, ..)) in HSL_COLORS.iter().enumerate() {
         let [h, s, l] = a.hsl[k];
         if h != 0.0 || s != 0.0 || l != 0.0 {
-            v.push(format!("huesaturation=hue={:.1}:saturation={:.3}:intensity={:.3}:colors={code}:strength=6", h * 60.0, s, l * 0.5));
+            v.push(format!(
+                "huesaturation=hue={:.1}:saturation={:.3}:intensity={:.3}:colors={code}:strength=6",
+                h * 60.0,
+                s,
+                l * 0.5
+            ));
         }
     }
     if a.highlights != 0.0 || a.shadows != 0.0 || a.fade != 0.0 {
@@ -510,7 +793,9 @@ pub fn adjust_chain(a: &Adjust) -> Vec<String> {
         let hi = (1.0 - 0.05 * a.fade.max(0.0)).clamp(0.6, 1.0);
         let sh = (0.25 + 0.12 * a.shadows).clamp(0.01, 0.49);
         let hl = (0.75 + 0.12 * a.highlights).clamp(0.51, 0.99);
-        v.push(format!("curves=all='0/{lo:.3} 0.25/{sh:.3} 0.75/{hl:.3} 1/{hi:.3}'"));
+        v.push(format!(
+            "curves=all='0/{lo:.3} 0.25/{sh:.3} 0.75/{hl:.3} 1/{hi:.3}'"
+        ));
     }
     if a.sharpen > 0.0 {
         v.push(format!("unsharp=5:5:{:.2}", a.sharpen * 2.0));
@@ -538,7 +823,10 @@ pub fn mask_expr(m: &Mask) -> String {
         MaskShape::Linear => format!("clip(0.5-{v}/({f:.4}*H+1),0,1)"),
         MaskShape::Mirror => format!("clip(({:.4}*H/2-abs({v}))/({f:.4}*H+1)+0.5,0,1)", m.h),
         MaskShape::Circle => {
-            format!("clip((1-hypot({u}/({:.4}*W/2+0.001),{v}/({:.4}*H/2+0.001)))/{f:.4}+0.5,0,1)", m.w, m.h)
+            format!(
+                "clip((1-hypot({u}/({:.4}*W/2+0.001),{v}/({:.4}*H/2+0.001)))/{f:.4}+0.5,0,1)",
+                m.w, m.h
+            )
         }
         MaskShape::Rect => {
             format!("clip((1-max(abs({u})/({:.4}*W/2+0.001),abs({v})/({:.4}*H/2+0.001)))/{f:.4}+0.5,0,1)", m.w, m.h)
@@ -552,7 +840,14 @@ pub fn mask_expr(m: &Mask) -> String {
 }
 
 /// Komplette Clip-Kette: Eingang `input` → Ausgang `output` (RGBA bei Maske, sonst offen).
-pub fn fx_graph(fx: &ClipFx, src: Src, o: &ChainOpts, input: &str, output: &str, uniq: &str) -> Vec<String> {
+pub fn fx_graph(
+    fx: &ClipFx,
+    src: Src,
+    o: &ChainOpts,
+    input: &str,
+    output: &str,
+    uniq: &str,
+) -> Vec<String> {
     let mut g = GraphBuilder::new(input, uniq);
     if o.apply_reverse && fx.reverse {
         g.push("reverse");
@@ -563,7 +858,13 @@ pub fn fx_graph(fx: &ClipFx, src: Src, o: &ChainOpts, input: &str, output: &str,
     }
     if fx.denoise > 0.0 {
         let k = fx.denoise.clamp(0.0, 1.0);
-        g.push(format!("hqdn3d=luma_spatial={:.2}:chroma_spatial={:.2}:luma_tmp={:.2}:chroma_tmp={:.2}", 1.0 + 7.0 * k, 1.0 + 5.0 * k, 2.0 + 10.0 * k, 2.0 + 8.0 * k));
+        g.push(format!(
+            "hqdn3d=luma_spatial={:.2}:chroma_spatial={:.2}:luma_tmp={:.2}:chroma_tmp={:.2}",
+            1.0 + 7.0 * k,
+            1.0 + 5.0 * k,
+            2.0 + 10.0 * k,
+            2.0 + 8.0 * k
+        ));
     }
     let mut person_done = false;
     if let (Some(m), Some(pf)) = (&o.matte, &fx.person) {
@@ -582,8 +883,14 @@ pub fn fx_graph(fx: &ClipFx, src: Src, o: &ChainOpts, input: &str, output: &str,
         let k = fx.stabilize.clamp(0.0, 1.0);
         let r = 16 * (1.0 + 3.0 * k).round() as u32;
         let z = 1.0 - 0.08 * k;
-        let (cw, ch) = (((src.w as f32 * z) as u32).max(2) & !1, ((src.h as f32 * z) as u32).max(2) & !1);
-        g.push(format!("deshake=rx={r}:ry={r}:edge=mirror,crop={cw}:{ch},scale={}:{}", src.w, src.h));
+        let (cw, ch) = (
+            ((src.w as f32 * z) as u32).max(2) & !1,
+            ((src.h as f32 * z) as u32).max(2) & !1,
+        );
+        g.push(format!(
+            "deshake=rx={r}:ry={r}:edge=mirror,crop={cw}:{ch},scale={}:{}",
+            src.w, src.h
+        ));
     }
     if fx.flip_h {
         g.push("hflip");
@@ -593,14 +900,27 @@ pub fn fx_graph(fx: &ClipFx, src: Src, o: &ChainOpts, input: &str, output: &str,
     }
     if let Some(k) = &fx.chroma {
         let [r, gg, b] = k.color;
-        g.push(format!("chromakey=color=0x{r:02x}{gg:02x}{b:02x}:similarity={:.3}:blend={:.3}", k.similarity.clamp(0.01, 1.0), k.blend.clamp(0.0, 1.0)));
+        g.push(format!(
+            "chromakey=color=0x{r:02x}{gg:02x}{b:02x}:similarity={:.3}:blend={:.3}",
+            k.similarity.clamp(0.01, 1.0),
+            k.blend.clamp(0.0, 1.0)
+        ));
         if k.spill > 0.0 {
             let ty = if b > gg { "blue" } else { "green" };
-            g.push(format!("format=rgba,despill=type={ty}:mix={:.2}:expand=0.1", k.spill.clamp(0.0, 1.0)));
+            g.push(format!(
+                "format=rgba,despill=type={ty}:mix={:.2}:expand=0.1",
+                k.spill.clamp(0.0, 1.0)
+            ));
         }
     }
-    let src = Src { has_alpha: src.has_alpha || (o.matte.is_some() && !person_done) || fx.chroma.is_some(), ..src };
-    let colour_work = !fx.adjust.is_identity() || fx.filter.is_some() || !fx.effects.is_empty() || o.lut.is_some();
+    let src = Src {
+        has_alpha: src.has_alpha || (o.matte.is_some() && !person_done) || fx.chroma.is_some(),
+        ..src
+    };
+    let colour_work = !fx.adjust.is_identity()
+        || fx.filter.is_some()
+        || !fx.effects.is_empty()
+        || o.lut.is_some();
     // Alpha (Sticker, Freistellen, Greenscreen) über die Farbfilter retten
     let mut alpha = None;
     if src.has_alpha && colour_work {
@@ -646,7 +966,10 @@ pub fn fx_graph(fx: &ClipFx, src: Src, o: &ChainOpts, input: &str, output: &str,
     }
     if let Some(m) = &fx.mask {
         g.push("format=rgba");
-        g.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{}'", mask_expr(m)));
+        g.push(format!(
+            "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*{}'",
+            mask_expr(m)
+        ));
     }
     g.finish(output)
 }
@@ -664,30 +987,57 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
     let out = g.next_label("po");
     match pf {
         PersonFx::BlurBackground { amount } => {
-            let sigma = 2.0 + 28.0 * amount.clamp(0.0, 1.0) * (src.w.max(src.h) as f32 / 1920.0).max(0.2);
+            let sigma =
+                2.0 + 28.0 * amount.clamp(0.0, 1.0) * (src.w.max(src.h) as f32 / 1920.0).max(0.2);
             g.lines.push(format!("[{cur}]split[{fg_src}][{bg_src}]"));
-            g.lines.push(format!("[{bg_src}]gblur=sigma={sigma:.2}[{bg}]"));
+            g.lines
+                .push(format!("[{bg_src}]gblur=sigma={sigma:.2}[{bg}]"));
             g.lines.push(format!("[{fg_src}][{m}]alphamerge[{fg}]"));
-            g.lines.push(format!("[{bg}][{fg}]overlay=format=auto,format=rgb24[{out}]"));
+            g.lines.push(format!(
+                "[{bg}][{fg}]overlay=format=auto,format=rgb24[{out}]"
+            ));
         }
         PersonFx::ColorBackground { color } => {
             g.lines.push(format!("[{cur}]split[{fg_src}][{bg_src}]"));
-            g.lines.push(format!("[{bg_src}]drawbox=x=0:y=0:w=iw:h=ih:color={}:t=fill[{bg}]", hex(*color)));
+            g.lines.push(format!(
+                "[{bg_src}]drawbox=x=0:y=0:w=iw:h=ih:color={}:t=fill[{bg}]",
+                hex(*color)
+            ));
             g.lines.push(format!("[{fg_src}][{m}]alphamerge[{fg}]"));
-            g.lines.push(format!("[{bg}][{fg}]overlay=format=auto,format=rgb24[{out}]"));
+            g.lines.push(format!(
+                "[{bg}][{fg}]overlay=format=auto,format=rgb24[{out}]"
+            ));
         }
         PersonFx::Outline { color, width } => {
             // Maske verbreitern und weich zeichnen → farbiger Saum hinter der Person
-            let px = (2.0 + 22.0 * width.clamp(0.0, 1.0)) * (src.w.max(src.h) as f32 / 1920.0).max(0.25);
-            let (m1, m2, ring, col, base, ringed) = (g.next_label("pm1"), g.next_label("pm2"), g.next_label("pr"), g.next_label("pc"), g.next_label("pbs"), g.next_label("prd"));
-            g.lines.push(format!("[{cur}]split=3[{fg_src}][{bg_src}][{base}]"));
+            let px =
+                (2.0 + 22.0 * width.clamp(0.0, 1.0)) * (src.w.max(src.h) as f32 / 1920.0).max(0.25);
+            let (m1, m2, ring, col, base, ringed) = (
+                g.next_label("pm1"),
+                g.next_label("pm2"),
+                g.next_label("pr"),
+                g.next_label("pc"),
+                g.next_label("pbs"),
+                g.next_label("prd"),
+            );
+            g.lines
+                .push(format!("[{cur}]split=3[{fg_src}][{bg_src}][{base}]"));
             g.lines.push(format!("[{m}]split[{m1}][{m2}]"));
-            g.lines.push(format!("[{m2}]format=gray,gblur=sigma={:.2},lut=y='min(255,val*4)'[{mm}]", px / 2.0));
-            g.lines.push(format!("[{bg_src}]drawbox=x=0:y=0:w=iw:h=ih:color={}:t=fill[{col}]", hex(*color)));
+            g.lines.push(format!(
+                "[{m2}]format=gray,gblur=sigma={:.2},lut=y='min(255,val*4)'[{mm}]",
+                px / 2.0
+            ));
+            g.lines.push(format!(
+                "[{bg_src}]drawbox=x=0:y=0:w=iw:h=ih:color={}:t=fill[{col}]",
+                hex(*color)
+            ));
             g.lines.push(format!("[{col}][{mm}]alphamerge[{ring}]"));
-            g.lines.push(format!("[{base}][{ring}]overlay=format=auto[{ringed}]"));
+            g.lines
+                .push(format!("[{base}][{ring}]overlay=format=auto[{ringed}]"));
             g.lines.push(format!("[{fg_src}][{m1}]alphamerge[{fg}]"));
-            g.lines.push(format!("[{ringed}][{fg}]overlay=format=auto,format=rgb24[{out}]"));
+            g.lines.push(format!(
+                "[{ringed}][{fg}]overlay=format=auto,format=rgb24[{out}]"
+            ));
         }
     }
     g.set_current(out);
@@ -696,11 +1046,33 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
 /// Filtergraph für die Vorschau (`[0:v]` → `[out]`, `w`×`h` RGBA) oder `None`, wenn der
 /// schnelle Weg ohne Effekte reicht. `t_offset` = Clipzeit des ersten Bildes,
 /// `stream` = Wiedergabe (Bildrate und Geschwindigkeit), sonst Einzelbild.
-pub fn preview_graph(c: &Clip, w: u32, h: u32, t_offset: f64, stream: Option<Rational>, lut: Option<String>) -> Option<String> {
+pub fn preview_graph(
+    c: &Clip,
+    w: u32,
+    h: u32,
+    t_offset: f64,
+    stream: Option<Rational>,
+    lut: Option<String>,
+) -> Option<String> {
     let speed = c.speed;
     let fx = &c.fx;
-    let cutout = fx.cutout.as_ref().filter(|p| std::path::Path::new(p).is_file());
-    let needs = !fx.is_empty() && (fx.flip_h || fx.flip_v || !fx.adjust.is_identity() || fx.filter.is_some() || !fx.effects.is_empty() || fx.mask.is_some() || lut.is_some() || fx.chroma.is_some() || fx.stabilize > 0.0 || cutout.is_some() || fx.denoise > 0.0 || fx.deflicker);
+    let cutout = fx
+        .cutout
+        .as_ref()
+        .filter(|p| std::path::Path::new(p).is_file());
+    let needs = !fx.is_empty()
+        && (fx.flip_h
+            || fx.flip_v
+            || !fx.adjust.is_identity()
+            || fx.filter.is_some()
+            || !fx.effects.is_empty()
+            || fx.mask.is_some()
+            || lut.is_some()
+            || fx.chroma.is_some()
+            || fx.stabilize > 0.0
+            || cutout.is_some()
+            || fx.denoise > 0.0
+            || fx.deflicker);
     let speed_stream = stream.is_some() && ((speed - 1.0).abs() > 1e-3 || fx.speed_curve.is_some());
     if !needs && !speed_stream {
         return None;
@@ -720,7 +1092,10 @@ pub fn preview_graph(c: &Clip, w: u32, h: u32, t_offset: f64, stream: Option<Rat
         }
         if fx.smooth_slowmo && speed < 0.999 {
             // Vorschau: günstiges Überblenden statt voller Bewegungsschätzung
-            pre.push(format!("minterpolate=fps={}/{}:mi_mode=blend", fps.num, fps.den));
+            pre.push(format!(
+                "minterpolate=fps={}/{}:mi_mode=blend",
+                fps.num, fps.den
+            ));
         }
         pre.push(format!("fps={}/{}", fps.num, fps.den));
     }
@@ -728,15 +1103,33 @@ pub fn preview_graph(c: &Clip, w: u32, h: u32, t_offset: f64, stream: Option<Rat
     let mut lines = vec![format!("[0:v]{}[pre]", pre.join(","))];
     let mut matte = None;
     if let Some(m) = cutout {
-        let src_t = c.source_time(c.start + Time::from_secs_f64(t_offset)).as_secs_f64();
-        lines.push(format!("movie=filename={}:seek_point={src_t:.4},{}[mt]", escape_path(m), matte_pre.join(",")));
+        let src_t = c
+            .source_time(c.start + Time::from_secs_f64(t_offset))
+            .as_secs_f64();
+        lines.push(format!(
+            "movie=filename={}:seek_point={src_t:.4},{}[mt]",
+            escape_path(m),
+            matte_pre.join(",")
+        ));
         matte = Some("mt".to_string());
     }
     let has_alpha = true;
     let mut fx2 = fx.clone();
     fx2.reverse = false;
-    let o = ChainOpts { t_offset, apply_reverse: false, lut, matte };
-    lines.extend(fx_graph(&fx2, Src { w, h, has_alpha }, &o, "pre", "fx", "p"));
+    let o = ChainOpts {
+        t_offset,
+        apply_reverse: false,
+        lut,
+        matte,
+    };
+    lines.extend(fx_graph(
+        &fx2,
+        Src { w, h, has_alpha },
+        &o,
+        "pre",
+        "fx",
+        "p",
+    ));
     lines.push("[fx]format=rgba[out]".into());
     Some(lines.join(";"))
 }
@@ -787,12 +1180,28 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("g.txt"), graph).unwrap();
         let mut cmd = cl_media::ffmpeg_command().unwrap();
-        cmd.args(["-v", "error", "-nostdin", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=15:d=0.6"]);
+        cmd.args([
+            "-v",
+            "error",
+            "-nostdin",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=160x90:r=15:d=0.6",
+        ]);
         for i in extra_inputs {
             cmd.args(["-f", "lavfi", "-i", i]);
         }
         let out = cmd
-            .args(["-/filter_complex", "g.txt", "-map", "[out]", "-f", "null", "-"])
+            .args([
+                "-/filter_complex",
+                "g.txt",
+                "-map",
+                "[out]",
+                "-f",
+                "null",
+                "-",
+            ])
             .current_dir(dir.path())
             .stdin(Stdio::null())
             .output()
@@ -804,21 +1213,38 @@ mod tests {
         }
     }
 
-    const SRC: Src = Src { w: 160, h: 90, has_alpha: false };
+    const SRC: Src = Src {
+        w: 160,
+        h: 90,
+        has_alpha: false,
+    };
 
     #[test]
     fn every_effect_and_filter_runs_in_ffmpeg() {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        let o = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: None };
+        let o = ChainOpts {
+            t_offset: 0.0,
+            apply_reverse: false,
+            lut: None,
+            matte: None,
+        };
         for def in EFFECTS.iter().chain(FILTERS.iter()) {
             for i in [0.4, 1.0] {
                 let mut fx = ClipFx::default();
                 if FILTERS.iter().any(|f| f.id == def.id) {
-                    fx.filter = Some(FxRef { id: def.id.into(), intensity: i, params: Default::default() });
+                    fx.filter = Some(FxRef {
+                        id: def.id.into(),
+                        intensity: i,
+                        params: Default::default(),
+                    });
                 } else {
-                    fx.effects.push(FxRef { id: def.id.into(), intensity: i, params: Default::default() });
+                    fx.effects.push(FxRef {
+                        id: def.id.into(),
+                        intensity: i,
+                        params: Default::default(),
+                    });
                 }
                 let g = fx_graph(&fx, SRC, &o, "0:v", "out", "x").join(";\n");
                 run_graph(&g, &[]).unwrap_or_else(|e| panic!("{} ({i}): {e}\n{g}", def.id));
@@ -839,24 +1265,61 @@ mod tests {
         for b in 0..2 {
             for g in 0..2 {
                 for r in 0..2 {
-                    cube.push_str(&format!("{} {} {}\n", r as f32 * 0.9, g as f32, b as f32 * 0.8));
+                    cube.push_str(&format!(
+                        "{} {} {}\n",
+                        r as f32 * 0.9,
+                        g as f32,
+                        b as f32 * 0.8
+                    ));
                 }
             }
         }
         std::fs::write(&lut, cube).unwrap();
         let mut fx = ClipFx::default();
-        fx.adjust = Adjust { brightness: 0.2, contrast: 0.3, saturation: -0.2, temperature: 0.5, tint: 0.2, highlights: -0.4, shadows: 0.3, sharpen: 0.5, vignette: 0.4, grain: 0.3, fade: 0.3, hue: 20.0, hsl: [[0.2, 0.3, -0.1]; 6] };
-        fx.filter = Some(FxRef { id: "cinematic".into(), intensity: 0.6, params: Default::default() });
+        fx.adjust = Adjust {
+            brightness: 0.2,
+            contrast: 0.3,
+            saturation: -0.2,
+            temperature: 0.5,
+            tint: 0.2,
+            highlights: -0.4,
+            shadows: 0.3,
+            sharpen: 0.5,
+            vignette: 0.4,
+            grain: 0.3,
+            fade: 0.3,
+            hue: 20.0,
+            hsl: [[0.2, 0.3, -0.1]; 6],
+        };
+        fx.filter = Some(FxRef {
+            id: "cinematic".into(),
+            intensity: 0.6,
+            params: Default::default(),
+        });
         fx.effects.push(FxRef::new("vhs"));
         fx.flip_h = true;
         fx.reverse = true;
-        for shape in [MaskShape::Linear, MaskShape::Mirror, MaskShape::Circle, MaskShape::Rect] {
+        for shape in [
+            MaskShape::Linear,
+            MaskShape::Mirror,
+            MaskShape::Circle,
+            MaskShape::Rect,
+        ] {
             let mut m = Mask::new(shape);
             m.rotation_deg = 30.0;
             m.invert = shape == MaskShape::Circle;
             fx.mask = Some(m);
-            let o = ChainOpts { t_offset: 1.5, apply_reverse: true, lut: Some(escape_path(&lut.to_string_lossy())), matte: None };
-            let src = Src { w: 160, h: 90, has_alpha: true };
+            let o = ChainOpts {
+                t_offset: 1.5,
+                apply_reverse: true,
+                lut: Some(escape_path(&lut.to_string_lossy())),
+                matte: None,
+            };
+            let src = Src {
+                w: 160,
+                h: 90,
+                has_alpha: true,
+            };
             let g = fx_graph(&fx, src, &o, "0:v", "out", "y").join(";\n");
             run_graph(&g, &[]).unwrap_or_else(|e| panic!("{shape:?}: {e}\n{g}"));
         }
@@ -869,9 +1332,31 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let v = dir.path().join("v.mp4");
-        let st = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=2", "-pix_fmt", "yuv420p"]).arg(&v).status().unwrap();
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=320x180:r=30:d=2",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&v)
+            .status()
+            .unwrap();
         assert!(st.success());
-        let mut c = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(2.0));
+        let mut c = Clip::new(
+            ClipContent::Media {
+                media: MediaId::new(),
+                kind: MediaKind::Video,
+            },
+            Time::ZERO,
+            Time::from_secs_f64(2.0),
+        );
         assert!(preview_graph(&c, 160, 90, 0.0, None, None).is_none());
         c.fx.effects.push(FxRef::new("vhs"));
         c.fx.mask = Some(Mask::new(MaskShape::Circle));
@@ -879,14 +1364,22 @@ mod tests {
         let g = preview_graph(&c, 160, 90, 0.5, None, None).unwrap();
         let f = cl_media::decode_frame_fx(&v, Time::from_secs_f64(0.5), 160, 90, Some(&g)).unwrap();
         assert_eq!(f.data.len(), 160 * 90 * 4);
-        assert_eq!(f.data[3], 0, "Ecke außerhalb der Kreismaske ist transparent");
+        assert_eq!(
+            f.data[3], 0,
+            "Ecke außerhalb der Kreismaske ist transparent"
+        );
         let g = preview_graph(&c, 160, 90, 0.0, Some(Rational::new(30, 1)), None).unwrap();
-        let s = cl_media::FrameStream::open_fx(&v, Time::ZERO, 160, 90, Rational::new(30, 1), Some(&g)).unwrap();
+        let s =
+            cl_media::FrameStream::open_fx(&v, Time::ZERO, 160, 90, Rational::new(30, 1), Some(&g))
+                .unwrap();
         let mut n = 0;
         while s.next_blocking().is_some() {
             n += 1;
         }
-        assert!((28..=32).contains(&n), "2 s bei Tempo 2 → ~30 Bilder, waren {n}");
+        assert!(
+            (28..=32).contains(&n),
+            "2 s bei Tempo 2 → ~30 Bilder, waren {n}"
+        );
     }
 
     #[test]
@@ -898,13 +1391,33 @@ mod tests {
         fx.chroma = Some(ChromaKey::default());
         fx.stabilize = 0.6;
         fx.adjust.brightness = 0.1;
-        let o = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: None };
+        let o = ChainOpts {
+            t_offset: 0.0,
+            apply_reverse: false,
+            lut: None,
+            matte: None,
+        };
         let g = fx_graph(&fx, SRC, &o, "0:v", "out", "c").join(";\n");
         run_graph(&g, &[]).unwrap_or_else(|e| panic!("{e}\n{g}"));
         // Maske als zweiter Eingang
         let mut lines = vec!["[1:v]format=gray[mt]".to_string()];
-        let o = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: Some("mt".into()) };
-        lines.extend(fx_graph(&ClipFx { flip_h: true, ..Default::default() }, SRC, &o, "0:v", "out", "m"));
+        let o = ChainOpts {
+            t_offset: 0.0,
+            apply_reverse: false,
+            lut: None,
+            matte: Some("mt".into()),
+        };
+        lines.extend(fx_graph(
+            &ClipFx {
+                flip_h: true,
+                ..Default::default()
+            },
+            SRC,
+            &o,
+            "0:v",
+            "out",
+            "m",
+        ));
         let g = lines.join(";\n");
         run_graph(&g, &["color=gray:s=160x90:r=15:d=0.6"]).unwrap_or_else(|e| panic!("{e}\n{g}"));
     }
@@ -914,12 +1427,28 @@ mod tests {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        register_plugin_fx(vec![PluginFx { id: "t.p/glow".into(), name: "Glow".into(), is_filter: false, chain: "gblur=sigma=2,eq=brightness=0.04*{intensity}".into() }]);
+        register_plugin_fx(vec![PluginFx {
+            id: "t.p/glow".into(),
+            name: "Glow".into(),
+            is_filter: false,
+            chain: "gblur=sigma=2,eq=brightness=0.04*{intensity}".into(),
+        }]);
         let mut fx = ClipFx::default();
-        fx.effects.push(FxRef { id: "t.p/glow".into(), intensity: 0.5, params: Default::default() });
-        let o = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: None };
-        let g = fx_graph(&fx, SRC, &o, "0:v", "out", "p").join(";
-");
+        fx.effects.push(FxRef {
+            id: "t.p/glow".into(),
+            intensity: 0.5,
+            params: Default::default(),
+        });
+        let o = ChainOpts {
+            t_offset: 0.0,
+            apply_reverse: false,
+            lut: None,
+            matte: None,
+        };
+        let g = fx_graph(&fx, SRC, &o, "0:v", "out", "p").join(
+            ";
+",
+        );
         assert!(g.contains("0.04*0.500"), "{g}");
         run_graph(&g, &[]).unwrap();
         assert_eq!(fx_name("t.p/glow"), "Glow");
@@ -932,7 +1461,8 @@ mod tests {
         }
         for (id, ..) in TRANSITIONS {
             let g = format!("[0:v]format=gbrap[a];[1:v]format=gbrap[b];[a][b]xfade=transition={id}:duration=0.3:offset=0.2[out]");
-            run_graph(&g, &["color=red:s=160x90:r=15:d=0.6"]).unwrap_or_else(|e| panic!("{id}: {e}"));
+            run_graph(&g, &["color=red:s=160x90:r=15:d=0.6"])
+                .unwrap_or_else(|e| panic!("{id}: {e}"));
         }
         assert!(TRANSITIONS.len() >= 40);
     }
@@ -949,7 +1479,18 @@ mod tests {
         }
         let sp = speed_setpts(1.0, Some("montage"), 0.6, 0.6);
         run_graph(&format!("[0:v]{sp}[out]"), &[]).unwrap();
-        run_graph(&format!("[0:v]{}[out]", speed_setpts(2.0, None, 0.6, 0.3)), &[]).unwrap();
-        run_graph(&format!("[0:v]setpts=PTS-STARTPTS,geq=lum='{}':cb=128:cr=128[out]", piecewise_expr(&[(0.0, 10.0), (0.3, 200.0)], "T")), &[]).unwrap();
+        run_graph(
+            &format!("[0:v]{}[out]", speed_setpts(2.0, None, 0.6, 0.3)),
+            &[],
+        )
+        .unwrap();
+        run_graph(
+            &format!(
+                "[0:v]setpts=PTS-STARTPTS,geq=lum='{}':cb=128:cr=128[out]",
+                piecewise_expr(&[(0.0, 10.0), (0.3, 200.0)], "T")
+            ),
+            &[],
+        )
+        .unwrap();
     }
 }

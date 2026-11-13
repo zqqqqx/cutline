@@ -22,14 +22,24 @@ pub fn list() -> Vec<(String, PathBuf)> {
         .flatten()
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|e| e == "cutline"))
-        .map(|p| (p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(), p))
+        .map(|p| {
+            (
+                p.file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                p,
+            )
+        })
         .collect();
     v.sort_by_key(|(n, _)| n.to_lowercase());
     v
 }
 
 fn safe(name: &str) -> String {
-    name.trim().chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect()
+    name.trim()
+        .chars()
+        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+        .collect()
 }
 
 pub enum TplDialog {
@@ -45,21 +55,34 @@ impl App {
             return;
         }
         ui.add_space(8.0);
-        ui.label(RichText::new(crate::tr("Aus Vorlage")).small().color(theme::TEXT_FAINT));
+        ui.label(
+            RichText::new(crate::tr("Aus Vorlage"))
+                .small()
+                .color(theme::TEXT_FAINT),
+        );
         let mut open: Option<PathBuf> = None;
         let mut rename: Option<(PathBuf, String)> = None;
         let mut remove: Option<PathBuf> = None;
         for (name, p) in list {
-            let r = ui.add_sized([ui.available_width(), 26.0], theme::ghost(format!("{}  {name}", icon::COPY_SIMPLE)));
+            let r = ui.add_sized(
+                [ui.available_width(), 26.0],
+                theme::ghost(format!("{}  {name}", icon::COPY_SIMPLE)),
+            );
             if r.clicked() {
                 open = Some(p.clone());
             }
             r.context_menu(|ui| {
-                if ui.button(crate::tr(format!("{}  Umbenennen", icon::PENCIL_SIMPLE))).clicked() {
+                if ui
+                    .button(crate::tr(format!("{}  Umbenennen", icon::PENCIL_SIMPLE)))
+                    .clicked()
+                {
                     rename = Some((p.clone(), name.clone()));
                     ui.close_menu();
                 }
-                if ui.button(crate::tr(format!("{}  Entfernen", icon::TRASH))).clicked() {
+                if ui
+                    .button(crate::tr(format!("{}  Entfernen", icon::TRASH)))
+                    .clicked()
+                {
                     remove = Some(p.clone());
                     ui.close_menu();
                 }
@@ -81,7 +104,10 @@ impl App {
     }
 
     pub fn new_from_template(&mut self, p: &std::path::Path) {
-        match std::fs::read_to_string(p).map_err(|e| e.to_string()).and_then(|s| Project::from_json(&s).map_err(|e| e.to_string())) {
+        match std::fs::read_to_string(p)
+            .map_err(|e| e.to_string())
+            .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
+        {
             Ok(mut proj) => {
                 self.new_project();
                 proj.name = crate::home::next_project_name();
@@ -97,7 +123,9 @@ impl App {
 
     /// Dialog „Als Vorlage speichern“ / „Vorlage umbenennen“.
     pub fn template_dialog(&mut self, ctx: &egui::Context) {
-        let Some(d) = &mut self.tpl_dialog else { return };
+        let Some(d) = &mut self.tpl_dialog else {
+            return;
+        };
         let (mut ok, mut close) = (false, false);
         let title = match d {
             TplDialog::Save { .. } => "Als Vorlage speichern",
@@ -133,7 +161,10 @@ impl App {
                     let _ = std::fs::create_dir_all(dir());
                     let mut p = self.project.clone();
                     p.name = name.trim().to_string();
-                    match std::fs::write(dir().join(format!("{}.cutline", safe(&name))), p.to_json()) {
+                    match std::fs::write(
+                        dir().join(format!("{}.cutline", safe(&name))),
+                        p.to_json(),
+                    ) {
                         Ok(_) => self.toast(format!("Vorlage „{}“ gespeichert", name.trim())),
                         Err(e) => self.toast_err(e.to_string()),
                     }

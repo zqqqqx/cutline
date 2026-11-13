@@ -51,13 +51,26 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { language: "auto".into(), max_chars: 42, max_dur: 5.0, force: None }
+        Self {
+            language: "auto".into(),
+            max_chars: 42,
+            max_dur: 5.0,
+            force: None,
+        }
     }
 }
 
 /// Ton einer Datei transkribieren (Bereich `start`..`start+dur` in Quellzeit).
 /// Zeiten im Ergebnis sind relativ zu `start`.
-pub fn transcribe(models: &Models, path: &Path, start: f64, dur: f64, opt: &Options, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Result<(Engine, Vec<Segment>), String> {
+pub fn transcribe(
+    models: &Models,
+    path: &Path,
+    start: f64,
+    dur: f64,
+    opt: &Options,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
+) -> Result<(Engine, Vec<Segment>), String> {
     let use_parakeet = match opt.force {
         Some(Engine::Whisper) => false,
         Some(Engine::Parakeet) => true,
@@ -65,12 +78,19 @@ pub fn transcribe(models: &Models, path: &Path, start: f64, dur: f64, opt: &Opti
     };
     if use_parakeet {
         match parakeet(models, path, start, dur, progress, cancel) {
-            Ok(words) => return Ok((Engine::Parakeet, group_words(&words, opt.max_chars, opt.max_dur))),
+            Ok(words) => {
+                return Ok((
+                    Engine::Parakeet,
+                    group_words(&words, opt.max_chars, opt.max_dur),
+                ))
+            }
             Err(e) if opt.force.is_some() || models.whisper().is_none() => return Err(e),
             Err(e) => eprintln!("Parakeet fehlgeschlagen, nehme Whisper: {e}"),
         }
     }
-    let model = models.whisper().ok_or("Kein Spracherkennungsmodell installiert (Einstellungen → Modelle)")?;
+    let model = models
+        .whisper()
+        .ok_or("Kein Spracherkennungsmodell installiert (Einstellungen → Modelle)")?;
     whisper(&model, path, start, dur, &opt.language, progress).map(|s| (Engine::Whisper, s))
 }
 
@@ -102,8 +122,17 @@ impl Parakeet {
             .collect();
         vocab.sort_by_key(|v| v.0);
         let vocab: Vec<String> = vocab.into_iter().map(|v| v.1).collect();
-        let blank = vocab.iter().position(|t| t == "<blk>").unwrap_or(vocab.len() - 1);
-        Ok(Self { pre: session(models, &d.join("nemo128.onnx"))?, enc: session(models, &d.join("encoder-model.int8.onnx"))?, dec: session(models, &d.join("decoder_joint-model.int8.onnx"))?, vocab, blank })
+        let blank = vocab
+            .iter()
+            .position(|t| t == "<blk>")
+            .unwrap_or(vocab.len() - 1);
+        Ok(Self {
+            pre: session(models, &d.join("nemo128.onnx"))?,
+            enc: session(models, &d.join("encoder-model.int8.onnx"))?,
+            dec: session(models, &d.join("decoder_joint-model.int8.onnx"))?,
+            vocab,
+            blank,
+        })
     }
 
     /// Encoder-Ausgabe als Zeilen je Zeitschritt (T × D).
@@ -111,20 +140,32 @@ impl Parakeet {
         let e = |e: ort::Error| e.to_string();
         let w = Tensor::from_array(([1usize, wave.len()], wave.to_vec())).map_err(e)?;
         let l = Tensor::from_array(([1usize], vec![wave.len() as i64])).map_err(e)?;
-        let out = self.pre.run(ort::inputs!["waveforms" => w, "waveforms_lens" => l]).map_err(e)?;
+        let out = self
+            .pre
+            .run(ort::inputs!["waveforms" => w, "waveforms_lens" => l])
+            .map_err(e)?;
         let (fs, feats) = out["features"].try_extract_tensor::<f32>().map_err(e)?;
-        let (_, flen) = out["features_lens"].try_extract_tensor::<i64>().map_err(e)?;
+        let (_, flen) = out["features_lens"]
+            .try_extract_tensor::<i64>()
+            .map_err(e)?;
         let shape: Vec<usize> = fs.iter().map(|d| *d as usize).collect();
         let feats = Tensor::from_array((shape, feats.to_vec())).map_err(e)?;
         let flen = Tensor::from_array(([1usize], vec![flen[0]])).map_err(e)?;
         drop(out);
-        let out = self.enc.run(ort::inputs!["audio_signal" => feats, "length" => flen]).map_err(e)?;
+        let out = self
+            .enc
+            .run(ort::inputs!["audio_signal" => feats, "length" => flen])
+            .map_err(e)?;
         let (s, data) = out["outputs"].try_extract_tensor::<f32>().map_err(e)?;
-        let (_, elen) = out["encoded_lengths"].try_extract_tensor::<i64>().map_err(e)?;
+        let (_, elen) = out["encoded_lengths"]
+            .try_extract_tensor::<i64>()
+            .map_err(e)?;
         let (dim, t) = (s[1] as usize, s[2] as usize);
         let n = (elen[0] as usize).min(t);
         // [1, D, T] → T Zeilen à D
-        let rows = (0..n).map(|ti| (0..dim).map(|di| data[di * t + ti]).collect()).collect();
+        let rows = (0..n)
+            .map(|ti| (0..dim).map(|di| data[di * t + ti]).collect())
+            .collect();
         Ok((rows, dim))
     }
 
@@ -145,12 +186,22 @@ impl Parakeet {
             let i2 = Tensor::from_array(([2usize, 1, 640], s2.clone())).map_err(e)?;
             let res = self.dec.run(ort::inputs!["encoder_outputs" => enc, "targets" => tg, "target_length" => tl, "input_states_1" => i1, "input_states_2" => i2]).map_err(e)?;
             let (_, logits) = res["outputs"].try_extract_tensor::<f32>().map_err(e)?;
-            let argmax = |s: &[f32]| s.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|x| x.0).unwrap_or(0);
+            let argmax = |s: &[f32]| {
+                s.iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.total_cmp(b.1))
+                    .map(|x| x.0)
+                    .unwrap_or(0)
+            };
             let tok = argmax(&logits[..vocab_n]);
             let step = argmax(&logits[vocab_n..]);
             if tok != self.blank {
-                let (_, n1) = res["output_states_1"].try_extract_tensor::<f32>().map_err(e)?;
-                let (_, n2) = res["output_states_2"].try_extract_tensor::<f32>().map_err(e)?;
+                let (_, n1) = res["output_states_1"]
+                    .try_extract_tensor::<f32>()
+                    .map_err(e)?;
+                let (_, n2) = res["output_states_2"]
+                    .try_extract_tensor::<f32>()
+                    .map_err(e)?;
                 s1 = n1.to_vec();
                 s2 = n2.to_vec();
                 last = tok as i32;
@@ -179,12 +230,19 @@ impl Parakeet {
             let new_word = piece.starts_with('\u{2581}') || words.is_empty();
             let clean = piece.replace('\u{2581}', "");
             // Satzzeichen hängen am vorigen Wort
-            let punct = !clean.is_empty() && clean.chars().all(|c| c.is_ascii_punctuation() || "„“«»…".contains(c));
+            let punct = !clean.is_empty()
+                && clean
+                    .chars()
+                    .all(|c| c.is_ascii_punctuation() || "„“«»…".contains(c));
             if new_word && !(punct && !words.is_empty()) {
                 if let Some(w) = words.last_mut() {
                     w.end = w.end.max(time);
                 }
-                words.push(Word { start: time, end: time + FRAME, text: clean });
+                words.push(Word {
+                    start: time,
+                    end: time + FRAME,
+                    text: clean,
+                });
             } else if let Some(w) = words.last_mut() {
                 w.text.push_str(&clean);
                 w.end = time + FRAME;
@@ -212,7 +270,12 @@ fn chunk_bounds(wave: &[f32]) -> Vec<(usize, usize)> {
         let cut = search
             .step_by(win)
             .min_by(|x, y| {
-                let e = |s: usize| wave[s..(s + win).min(total)].iter().map(|v| v * v).sum::<f32>();
+                let e = |s: usize| {
+                    wave[s..(s + win).min(total)]
+                        .iter()
+                        .map(|v| v * v)
+                        .sum::<f32>()
+                };
                 e(*x).total_cmp(&e(*y))
             })
             .unwrap_or(a + target);
@@ -222,7 +285,14 @@ fn chunk_bounds(wave: &[f32]) -> Vec<(usize, usize)> {
     out
 }
 
-pub fn parakeet(models: &Models, path: &Path, start: f64, dur: f64, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Result<Vec<Word>, String> {
+pub fn parakeet(
+    models: &Models,
+    path: &Path,
+    start: f64,
+    dur: f64,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
+) -> Result<Vec<Word>, String> {
     let wave = decode_audio(path, SR, start, Some(dur))?;
     if wave.is_empty() {
         return Ok(Vec::new());
@@ -253,7 +323,11 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
                 let len = c.text.chars().count() + 1 + w.text.chars().count();
                 // Ein Satzende darf die Zeile etwas überziehen, statt allein zu stehen
                 let ends = w.text.ends_with(['.', '!', '?']);
-                let too_long = if ends { len > max_chars + 14 } else { len > max_chars };
+                let too_long = if ends {
+                    len > max_chars + 14
+                } else {
+                    len > max_chars
+                };
                 gap || too_long || w.end - c.start > max_dur + if ends { 1.5 } else { 0.0 }
             }
             None => false,
@@ -267,7 +341,13 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
                 c.text.push_str(&w.text);
                 c.end = w.end;
             }
-            None => cur = Some(Segment { start: w.start, end: w.end, text: w.text.clone() }),
+            None => {
+                cur = Some(Segment {
+                    start: w.start,
+                    end: w.end,
+                    text: w.text.clone(),
+                })
+            }
         }
         // Satzende beendet die Zeile
         if w.text.ends_with(['.', '!', '?']) {
@@ -289,16 +369,36 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
 
 // ---------------------------------------------------------------- Whisper
 
-pub fn whisper(model: &Path, path: &Path, start: f64, dur: f64, language: &str, progress: &dyn Fn(f32)) -> Result<Vec<Segment>, String> {
+pub fn whisper(
+    model: &Path,
+    path: &Path,
+    start: f64,
+    dur: f64,
+    language: &str,
+    progress: &dyn Fn(f32),
+) -> Result<Vec<Segment>, String> {
     let dir = std::env::temp_dir().join(format!("cutline-whisper-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     let srt = dir.join("out.srt");
     let _ = std::fs::remove_file(&srt);
     progress(0.05);
-    let af = format!("aresample=16000,whisper=model={}:language={}:format=srt:destination={}:queue=10", esc(model), language, esc(&srt));
+    let af = format!(
+        "aresample=16000,whisper=model={}:language={}:format=srt:destination={}:queue=10",
+        esc(model),
+        language,
+        esc(&srt)
+    );
     let out = cl_media::ffmpeg_command()
         .map_err(|e| e.to_string())?
-        .args(["-v", "error", "-nostdin", "-ss", &format!("{start:.3}"), "-t", &format!("{dur:.3}")])
+        .args([
+            "-v",
+            "error",
+            "-nostdin",
+            "-ss",
+            &format!("{start:.3}"),
+            "-t",
+            &format!("{dur:.3}"),
+        ])
         .arg("-i")
         .arg(path)
         .args(["-vn", "-af", &af, "-f", "null", "-"])
@@ -306,7 +406,13 @@ pub fn whisper(model: &Path, path: &Path, start: f64, dur: f64, language: &str, 
         .output()
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
-        return Err(format!("Whisper: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("")));
+        return Err(format!(
+            "Whisper: {}",
+            String::from_utf8_lossy(&out.stderr)
+                .lines()
+                .last()
+                .unwrap_or("")
+        ));
     }
     progress(1.0);
     let text = std::fs::read_to_string(&srt).unwrap_or_default();
@@ -319,7 +425,11 @@ pub fn parse_srt(text: &str) -> Vec<Segment> {
     let ts = |s: &str| -> Option<f64> {
         let s = s.trim().replace(',', ".");
         let mut it = s.split(':');
-        Some(it.next()?.parse::<f64>().ok()? * 3600.0 + it.next()?.parse::<f64>().ok()? * 60.0 + it.next()?.parse::<f64>().ok()?)
+        Some(
+            it.next()?.parse::<f64>().ok()? * 3600.0
+                + it.next()?.parse::<f64>().ok()? * 60.0
+                + it.next()?.parse::<f64>().ok()?,
+        )
     };
     text.replace('\r', "")
         .split("\n\n")
@@ -328,8 +438,14 @@ pub fn parse_srt(text: &str) -> Vec<Segment> {
             let tl = lines.iter().position(|l| l.contains("-->"))?;
             let (a, b) = lines[tl].split_once("-->")?;
             let txt = lines[tl + 1..].join(" ").trim().to_string();
-            if txt.is_empty() { return None; }
-            Some(Segment { start: ts(a)?, end: ts(b)?, text: txt })
+            if txt.is_empty() {
+                return None;
+            }
+            Some(Segment {
+                start: ts(a)?,
+                end: ts(b)?,
+                text: txt,
+            })
         })
         .collect()
 }
@@ -344,8 +460,25 @@ mod tests {
 
     #[test]
     fn grouping_respects_limits_and_sentences() {
-        let w = |s: f64, t: &str| Word { start: s, end: s + 0.3, text: t.into() };
-        let words = vec![w(0.0, "Hallo"), w(0.4, "Welt."), w(1.0, "Das"), w(1.4, "ist"), w(1.8, "ein"), w(2.2, "ziemlich"), w(2.6, "langer"), w(3.0, "Satz"), w(3.4, "der"), w(3.8, "umbrechen"), w(4.2, "muss"), w(6.0, "Pause")];
+        let w = |s: f64, t: &str| Word {
+            start: s,
+            end: s + 0.3,
+            text: t.into(),
+        };
+        let words = vec![
+            w(0.0, "Hallo"),
+            w(0.4, "Welt."),
+            w(1.0, "Das"),
+            w(1.4, "ist"),
+            w(1.8, "ein"),
+            w(2.2, "ziemlich"),
+            w(2.6, "langer"),
+            w(3.0, "Satz"),
+            w(3.4, "der"),
+            w(3.8, "umbrechen"),
+            w(4.2, "muss"),
+            w(6.0, "Pause"),
+        ];
         let s = group_words(&words, 24, 5.0);
         assert_eq!(s[0].text, "Hallo Welt.");
         assert!(s.iter().all(|x| x.text.chars().count() <= 24 + 14), "{s:?}");
@@ -364,25 +497,57 @@ mod tests {
     /// Echter Durchlauf mit deutscher Sprachausgabe (nur wenn Modelle + Windows-Stimme da sind).
     #[test]
     fn transcribes_german_with_parakeet_and_whisper() {
-        let Some(models) = testutil::models() else { return };
+        let Some(models) = testutil::models() else {
+            return;
+        };
         let dir = tempfile::tempdir().unwrap();
-        let Some(wav) = testutil::speech(dir.path(), "Guten Morgen. Heute schneiden wir ein Video mit Cutline.") else { return };
+        let Some(wav) = testutil::speech(
+            dir.path(),
+            "Guten Morgen. Heute schneiden wir ein Video mit Cutline.",
+        ) else {
+            return;
+        };
         let dur = cl_media::probe(&wav).unwrap().duration.as_secs_f64();
         let cancel = AtomicBool::new(false);
         if models.parakeet().is_some() && models.ort_dll().is_some() {
             let t0 = std::time::Instant::now();
-            let (eng, segs) = transcribe(&models, &wav, 0.0, dur, &Options::default(), &|_| {}, &cancel).unwrap();
-            let all = segs.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
-            println!("{} ({:.1} s): {all:?} {segs:?}", eng.name(), t0.elapsed().as_secs_f64());
+            let (eng, segs) = transcribe(
+                &models,
+                &wav,
+                0.0,
+                dur,
+                &Options::default(),
+                &|_| {},
+                &cancel,
+            )
+            .unwrap();
+            let all = segs
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!(
+                "{} ({:.1} s): {all:?} {segs:?}",
+                eng.name(),
+                t0.elapsed().as_secs_f64()
+            );
             assert_eq!(eng, Engine::Parakeet);
             let low = all.to_lowercase();
             assert!(low.contains("morgen") && low.contains("video"), "{all}");
             assert!(segs.first().unwrap().start < 1.5 && segs.last().unwrap().end <= dur + 0.5);
         }
         if models.whisper().is_some() {
-            let o = Options { force: Some(Engine::Whisper), language: "de".into(), ..Default::default() };
+            let o = Options {
+                force: Some(Engine::Whisper),
+                language: "de".into(),
+                ..Default::default()
+            };
             let (_, segs) = transcribe(&models, &wav, 0.0, dur, &o, &|_| {}, &cancel).unwrap();
-            let all = segs.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
+            let all = segs
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
             println!("Whisper: {all:?}");
             assert!(all.to_lowercase().contains("video"), "{all}");
         }

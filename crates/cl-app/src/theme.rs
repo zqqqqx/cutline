@@ -68,7 +68,13 @@ pub fn apply(ctx: &egui::Context) {
     v.hyperlink_color = ACCENT;
     v.text_cursor.stroke = Stroke::new(1.5_f32, ACCENT);
     let r = CornerRadius::same(5);
-    for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+    for w in [
+        &mut v.widgets.noninteractive,
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
         w.corner_radius = r;
         w.expansion = 0.0;
     }
@@ -87,8 +93,18 @@ pub fn apply(ctx: &egui::Context) {
     v.widgets.active.bg_stroke = Stroke::NONE;
     v.widgets.active.fg_stroke = Stroke::new(1.0_f32, ACCENT);
     v.widgets.open.weak_bg_fill = BG_HOVER;
-    v.window_shadow = egui::epaint::Shadow { offset: [0, 10], blur: 28, spread: 0, color: Color32::from_black_alpha(150) };
-    v.popup_shadow = egui::epaint::Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha(130) };
+    v.window_shadow = egui::epaint::Shadow {
+        offset: [0, 10],
+        blur: 28,
+        spread: 0,
+        color: Color32::from_black_alpha(150),
+    };
+    v.popup_shadow = egui::epaint::Shadow {
+        offset: [0, 4],
+        blur: 14,
+        spread: 0,
+        color: Color32::from_black_alpha(130),
+    };
     ctx.set_visuals(v);
     ctx.style_mut(|s| {
         s.spacing.item_spacing = vec2(6.0, 4.0);
@@ -102,17 +118,26 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.menu_margin = egui::Margin::same(5);
         s.spacing.scroll = egui::style::ScrollStyle::thin();
         s.visuals.handle_shape = egui::style::HandleShape::Circle;
-        s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(12.0));
-        s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(12.0));
-        s.text_styles.insert(egui::TextStyle::Small, egui::FontId::proportional(10.5));
-        s.text_styles.insert(egui::TextStyle::Heading, egui::FontId::proportional(15.0));
-        s.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(11.0));
+        s.text_styles
+            .insert(egui::TextStyle::Body, egui::FontId::proportional(12.0));
+        s.text_styles
+            .insert(egui::TextStyle::Button, egui::FontId::proportional(12.0));
+        s.text_styles
+            .insert(egui::TextStyle::Small, egui::FontId::proportional(10.5));
+        s.text_styles
+            .insert(egui::TextStyle::Heading, egui::FontId::proportional(15.0));
+        s.text_styles
+            .insert(egui::TextStyle::Monospace, egui::FontId::monospace(11.0));
     });
 }
 
 /// Karte (abgerundet, schwebend). `margin` = Innenabstand.
 pub fn card(margin: i8) -> egui::Frame {
-    egui::Frame::default().fill(BG_CARD).corner_radius(RADIUS).inner_margin(margin).outer_margin(egui::Margin::same((GAP / 2.0) as i8))
+    egui::Frame::default()
+        .fill(BG_CARD)
+        .corner_radius(RADIUS)
+        .inner_margin(margin)
+        .outer_margin(egui::Margin::same((GAP / 2.0) as i8))
 }
 
 /// Kopfzeile einer Karte: Titel links, Aktionen rechts, dünne Linie darunter.
@@ -124,30 +149,62 @@ pub fn card_header(ui: &mut egui::Ui, title: &str, actions: impl FnOnce(&mut egu
     });
     let r = ui.max_rect();
     let y = ui.cursor().top();
-    ui.painter().line_segment([pos2(r.left() - 12.0, y), pos2(r.right() + 12.0, y)], Stroke::new(1.0_f32, BORDER));
+    ui.painter().line_segment(
+        [pos2(r.left() - 12.0, y), pos2(r.right() + 12.0, y)],
+        Stroke::new(1.0_f32, BORDER),
+    );
     ui.add_space(6.0);
 }
 
 /// Primärknopf (weiße Fläche, dunkle Schrift).
 pub fn primary(text: impl Into<String>) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(crate::tr(text.into())).size(11.5).color(ACCENT_INK).strong()).fill(ACCENT).corner_radius(5).min_size(vec2(0.0, 24.0))
+    egui::Button::new(
+        RichText::new(crate::tr(text.into()))
+            .size(11.5)
+            .color(ACCENT_INK)
+            .strong(),
+    )
+    .fill(ACCENT)
+    .corner_radius(5)
+    .min_size(vec2(0.0, 24.0))
 }
 
 /// Sekundärknopf (dezente Fläche).
 pub fn secondary(text: impl Into<String>) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(crate::tr(text.into())).size(11.5)).fill(BG_RAISED).corner_radius(5).min_size(vec2(0.0, 24.0))
+    egui::Button::new(RichText::new(crate::tr(text.into())).size(11.5))
+        .fill(BG_RAISED)
+        .corner_radius(5)
+        .min_size(vec2(0.0, 24.0))
 }
 
 /// Flacher Knopf ohne Fläche (wird beim Überfahren hell).
 pub fn ghost(text: impl Into<String>) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(crate::tr(text.into())).size(11.5)).frame(false).min_size(vec2(0.0, 22.0))
+    egui::Button::new(RichText::new(crate::tr(text.into())).size(11.5))
+        .frame(false)
+        .min_size(vec2(0.0, 22.0))
 }
 
 /// Icon-Knopf ohne Rahmen, mit Tooltip. `active` hebt ihn hervor.
-pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: impl Into<String>, enabled: bool, active: bool) -> egui::Response {
-    let color = if !enabled { TEXT_FAINT } else if active { ACCENT } else { TEXT_DIM };
+pub fn icon_button(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    tip: impl Into<String>,
+    enabled: bool,
+    active: bool,
+) -> egui::Response {
+    let color = if !enabled {
+        TEXT_FAINT
+    } else if active {
+        ACCENT
+    } else {
+        TEXT_DIM
+    };
     let btn = egui::Button::new(RichText::new(glyph).size(14.0).color(color))
-        .fill(if active { Color32::from_white_alpha(22) } else { Color32::TRANSPARENT })
+        .fill(if active {
+            Color32::from_white_alpha(22)
+        } else {
+            Color32::TRANSPARENT
+        })
         .corner_radius(5)
         .min_size(vec2(24.0, 22.0));
     let r = ui.add_enabled(enabled, btn);
@@ -161,20 +218,37 @@ pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: impl Into<String>, enabl
 
 /// Kleiner umrandeter Chip (Player-Leiste).
 pub fn chip(ui: &mut egui::Ui, text: &str) -> egui::Response {
-    ui.add(egui::Button::new(RichText::new(crate::tr(text)).size(10.5).color(TEXT_DIM)).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.0_f32, BORDER)).corner_radius(5))
+    ui.add(
+        egui::Button::new(RichText::new(crate::tr(text)).size(10.5).color(TEXT_DIM))
+            .fill(Color32::TRANSPARENT)
+            .stroke(Stroke::new(1.0_f32, BORDER))
+            .corner_radius(5),
+    )
 }
 
 /// Kategorie-Chip (aktiv = weiß gefüllt).
 pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
-    let (fg, bg) = if active { (ACCENT_INK, ACCENT) } else { (TEXT_DIM, BG_RAISED) };
-    ui.add(egui::Button::new(RichText::new(crate::tr(text)).size(10.5).color(fg)).fill(bg).corner_radius(10).min_size(vec2(0.0, 20.0)))
+    let (fg, bg) = if active {
+        (ACCENT_INK, ACCENT)
+    } else {
+        (TEXT_DIM, BG_RAISED)
+    };
+    ui.add(
+        egui::Button::new(RichText::new(crate::tr(text)).size(10.5).color(fg))
+            .fill(bg)
+            .corner_radius(10)
+            .min_size(vec2(0.0, 20.0)),
+    )
 }
 
 /// Zeile mit fester Label-Spalte (Inspektor).
 pub fn row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     ui.horizontal(|ui| {
         ui.set_min_height(24.0);
-        ui.add_sized([LABEL_W, 18.0], egui::Label::new(RichText::new(crate::tr(label)).size(11.5).color(TEXT_DIM)).truncate());
+        ui.add_sized(
+            [LABEL_W, 18.0],
+            egui::Label::new(RichText::new(crate::tr(label)).size(11.5).color(TEXT_DIM)).truncate(),
+        );
         add(ui)
     })
     .inner
@@ -184,9 +258,17 @@ pub fn row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) ->
 pub fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(6.0);
     let r = ui.available_rect_before_wrap();
-    ui.painter().line_segment([pos2(r.left(), r.top()), pos2(r.right(), r.top())], Stroke::new(1.0_f32, BORDER));
+    ui.painter().line_segment(
+        [pos2(r.left(), r.top()), pos2(r.right(), r.top())],
+        Stroke::new(1.0_f32, BORDER),
+    );
     ui.add_space(9.0);
-    ui.label(RichText::new(crate::tr(title)).size(11.0).color(TEXT).strong());
+    ui.label(
+        RichText::new(crate::tr(title))
+            .size(11.0)
+            .color(TEXT)
+            .strong(),
+    );
     ui.add_space(3.0);
 }
 
@@ -212,10 +294,19 @@ pub const LOGO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 pub fn logo(painter: &egui::Painter, rect: Rect) {
     let s = rect.width().min(rect.height()) / 64.0;
     let o = rect.center() - vec2(32.0 * s, 32.0 * s);
-    let r = |x: f32, y: f32, w: f32, h: f32| Rect::from_min_size(o + vec2(x * s, y * s), vec2(w * s, h * s));
+    let r = |x: f32, y: f32, w: f32, h: f32| {
+        Rect::from_min_size(o + vec2(x * s, y * s), vec2(w * s, h * s))
+    };
     painter.rect_filled(r(0.0, 0.0, 64.0, 64.0), 15.0 * s, ACCENT);
     let ink = ACCENT_INK;
-    for (x, y, w) in [(11.0, 16.0, 20.0), (11.0, 28.0, 13.0), (11.0, 40.0, 20.0), (37.0, 13.0, 16.0), (30.0, 25.0, 23.0), (37.0, 37.0, 12.0)] {
+    for (x, y, w) in [
+        (11.0, 16.0, 20.0),
+        (11.0, 28.0, 13.0),
+        (11.0, 40.0, 20.0),
+        (37.0, 13.0, 16.0),
+        (30.0, 25.0, 23.0),
+        (37.0, 37.0, 12.0),
+    ] {
         painter.rect_filled(r(x, y, w, 8.0), 4.0 * s, ink);
     }
     painter.rect_filled(r(32.5, 8.0, 2.0, 48.0), 1.0 * s, ink);
@@ -225,13 +316,27 @@ pub fn logo(painter: &egui::Painter, rect: Rect) {
 pub fn wordmark(ui: &mut egui::Ui, size: f32) {
     let (r, _) = ui.allocate_exact_size(vec2(size, size), egui::Sense::hover());
     logo(ui.painter(), r);
-    ui.label(RichText::new("Cutline").strong().size(size * 0.62).color(TEXT));
+    ui.label(
+        RichText::new("Cutline")
+            .strong()
+            .size(size * 0.62)
+            .color(TEXT),
+    );
 }
 
 /// Raute (Keyframe) zeichnen.
 pub fn diamond(painter: &egui::Painter, c: Pos2, r: f32, fill: Option<Color32>, stroke: Stroke) {
-    let pts = vec![pos2(c.x, c.y - r), pos2(c.x + r, c.y), pos2(c.x, c.y + r), pos2(c.x - r, c.y)];
-    painter.add(egui::Shape::convex_polygon(pts, fill.unwrap_or(Color32::TRANSPARENT), stroke));
+    let pts = vec![
+        pos2(c.x, c.y - r),
+        pos2(c.x + r, c.y),
+        pos2(c.x, c.y + r),
+        pos2(c.x - r, c.y),
+    ];
+    painter.add(egui::Shape::convex_polygon(
+        pts,
+        fill.unwrap_or(Color32::TRANSPARENT),
+        stroke,
+    ));
 }
 
 /// Fenster-Icon aus dem Logo.
@@ -247,5 +352,9 @@ pub fn window_icon() -> Option<egui::IconData> {
             }
         }
     }
-    Some(egui::IconData { rgba, width: size, height: size })
+    Some(egui::IconData {
+        rgba,
+        width: size,
+        height: size,
+    })
 }

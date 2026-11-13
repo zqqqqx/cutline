@@ -62,7 +62,11 @@ impl ExportDialog {
         if self.folder.as_os_str().is_empty() {
             self.folder = project_path
                 .and_then(|pp| pp.parent().map(Path::to_path_buf))
-                .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(|h| PathBuf::from(h).join("Videos")))
+                .or_else(|| {
+                    std::env::var_os("USERPROFILE")
+                        .or_else(|| std::env::var_os("HOME"))
+                        .map(|h| PathBuf::from(h).join("Videos"))
+                })
                 .unwrap_or_else(|| PathBuf::from("."));
         }
         let mut s = ExportSettings::from_project(p);
@@ -90,20 +94,41 @@ impl ExportDialog {
     }
 
     fn output_path(&self, f: Format) -> PathBuf {
-        let safe: String = self.name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
-        self.folder.join(format!("{}.{}", safe.trim(), f.extension()))
+        let safe: String = self
+            .name
+            .chars()
+            .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+            .collect();
+        self.folder
+            .join(format!("{}.{}", safe.trim(), f.extension()))
     }
 
     /// Zeigt den Dialog. Gibt eine Meldung für einen Toast zurück, wenn ein Export fertig ist.
-    pub fn show(&mut self, ctx: &egui::Context, p: &Project, fonts: &HashMap<String, (PathBuf, u32)>, cover: Option<(egui::TextureId, egui::Vec2)>) -> Option<String> {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        p: &Project,
+        fonts: &HashMap<String, (PathBuf, u32)>,
+        cover: Option<(egui::TextureId, egui::Vec2)>,
+    ) -> Option<String> {
         let mut toast = None;
         // Hintergrund-Export weiterverfolgen, auch wenn der Dialog geschlossen ist
-        let finished = self.running.as_ref().map(|r| (r.result.lock().unwrap().take(), r.started.elapsed().as_secs_f32()));
+        let finished = self.running.as_ref().map(|r| {
+            (
+                r.result.lock().unwrap().take(),
+                r.started.elapsed().as_secs_f32(),
+            )
+        });
         match finished {
             Some((Some(res), secs)) => {
                 self.running = None;
                 match res {
-                    Ok(()) => toast = Some(format!("{} Export fertig ({secs:.1} s)", icon::CHECK_CIRCLE)),
+                    Ok(()) => {
+                        toast = Some(format!(
+                            "{} Export fertig ({secs:.1} s)",
+                            icon::CHECK_CIRCLE
+                        ))
+                    }
                     Err(e) => self.error = Some(e),
                 }
             }
@@ -118,7 +143,9 @@ impl ExportDialog {
             self.open = false;
             return toast;
         }
-        let Some(mut s) = self.settings.clone() else { return toast };
+        let Some(mut s) = self.settings.clone() else {
+            return toast;
+        };
         let mut open = true;
         let mut start = false;
         egui::Window::new(RichText::new(crate::tr(format!("{}  Exportieren", icon::EXPORT))).strong())
@@ -314,7 +341,12 @@ impl ExportDialog {
                     let progress = Arc::new(Mutex::new(0.0));
                     let result = Arc::new(Mutex::new(None));
                     let cancel = Arc::new(AtomicBool::new(false));
-                    let (pr, rs, cc, c2) = (progress.clone(), result.clone(), cancel.clone(), ctx.clone());
+                    let (pr, rs, cc, c2) = (
+                        progress.clone(),
+                        result.clone(),
+                        cancel.clone(),
+                        ctx.clone(),
+                    );
                     std::thread::spawn(move || {
                         let r = cl_export::run(&job, cc, |x| {
                             *pr.lock().unwrap() = x;
@@ -323,7 +355,12 @@ impl ExportDialog {
                         *rs.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
                         c2.request_repaint();
                     });
-                    self.running = Some(Running { progress, result, cancel, started: Instant::now() });
+                    self.running = Some(Running {
+                        progress,
+                        result,
+                        cancel,
+                        started: Instant::now(),
+                    });
                     self.last_output = Some(out);
                 }
                 Err(e) => self.error = Some(e.to_string()),

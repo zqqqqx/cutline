@@ -10,15 +10,42 @@ use cl_core::{ClipId, Time};
 use eframe::egui;
 
 pub enum TaskDone {
-    Captions { segments: Vec<cl_analyze::asr::Segment>, offset: Time, engine: &'static str },
-    Matte { clip: ClipId, out: PathBuf },
-    Scenes { clip: ClipId, times: Vec<f64> },
-    Beats { clip: ClipId, times: Vec<f64>, bpm: f64 },
-    Track { clip: ClipId, target: ClipId, points: Vec<(f64, f32, f32)>, from: Time },
-    Reframe { clip: ClipId, points: Vec<(f64, f32, f32)> },
-    Model { id: &'static str },
+    Captions {
+        segments: Vec<cl_analyze::asr::Segment>,
+        offset: Time,
+        engine: &'static str,
+    },
+    Matte {
+        clip: ClipId,
+        out: PathBuf,
+    },
+    Scenes {
+        clip: ClipId,
+        times: Vec<f64>,
+    },
+    Beats {
+        clip: ClipId,
+        times: Vec<f64>,
+        bpm: f64,
+    },
+    Track {
+        clip: ClipId,
+        target: ClipId,
+        points: Vec<(f64, f32, f32)>,
+        from: Time,
+    },
+    Reframe {
+        clip: ClipId,
+        points: Vec<(f64, f32, f32)>,
+    },
+    Model {
+        id: &'static str,
+    },
     /// Proxy fertig (oder fehlgeschlagen)
-    Proxy { media: cl_core::MediaId, ok: bool },
+    Proxy {
+        media: cl_core::MediaId,
+        ok: bool,
+    },
     Failed(String),
 }
 
@@ -50,7 +77,12 @@ pub struct Tasks {
 impl Default for Tasks {
     fn default() -> Self {
         let (tx, rx) = channel();
-        Self { list: Vec::new(), next: 1, tx, rx }
+        Self {
+            list: Vec::new(),
+            next: 1,
+            tx,
+            rx,
+        }
     }
 }
 
@@ -60,7 +92,13 @@ impl Tasks {
     }
 
     /// Aufgabe starten; `f` bekommt eine Fortschrittsfunktion (0…1) und das Abbruch-Flag.
-    pub fn spawn(&mut self, ctx: &egui::Context, key: impl Into<String>, label: impl Into<String>, f: impl FnOnce(&dyn Fn(f32), &AtomicBool) -> TaskDone + Send + 'static) {
+    pub fn spawn(
+        &mut self,
+        ctx: &egui::Context,
+        key: impl Into<String>,
+        label: impl Into<String>,
+        f: impl FnOnce(&dyn Fn(f32), &AtomicBool) -> TaskDone + Send + 'static,
+    ) {
         let key = key.into();
         if self.running(&key).is_some() {
             return;
@@ -69,7 +107,13 @@ impl Tasks {
         self.next += 1;
         let progress = Arc::new(AtomicU32::new(0f32.to_bits()));
         let cancel = Arc::new(AtomicBool::new(false));
-        self.list.push(Task { id, label: label.into(), key, progress: progress.clone(), cancel: cancel.clone() });
+        self.list.push(Task {
+            id,
+            label: label.into(),
+            key,
+            progress: progress.clone(),
+            cancel: cancel.clone(),
+        });
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         std::thread::Builder::new()

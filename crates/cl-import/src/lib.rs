@@ -39,8 +39,16 @@ pub type Result<T> = std::result::Result<T, String>;
 
 /// Format anhand der Datei erkennen und importieren.
 pub fn import(path: &Path) -> Result<(Project, Report)> {
-    let name = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if path.is_dir() || path.file_name().is_some_and(|n| n == "draft_content.json" || n == "draft_info.json") {
+    let name = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if path.is_dir()
+        || path
+            .file_name()
+            .is_some_and(|n| n == "draft_content.json" || n == "draft_info.json")
+    {
         return capcut::import(path);
     }
     match name.as_str() {

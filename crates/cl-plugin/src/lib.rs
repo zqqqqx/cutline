@@ -24,8 +24,17 @@ pub const MANIFEST_FILE: &str = "plugin.toml";
 pub const API_VERSION: u32 = 1;
 
 /// Rechte, die ein Plugin anfordern kann. Unbekannte Rechte machen das Manifest ungültig.
-pub const KNOWN_PERMISSIONS: &[&str] =
-    &["project.read", "project.write", "media.read", "fs.read", "fs.write", "net", "ui.panel", "ui.command", "render"];
+pub const KNOWN_PERMISSIONS: &[&str] = &[
+    "project.read",
+    "project.write",
+    "media.read",
+    "fs.read",
+    "fs.write",
+    "net",
+    "ui.panel",
+    "ui.command",
+    "render",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -56,11 +65,33 @@ pub enum AssetKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ParamSpec {
-    Float { id: String, min: f32, max: f32, default: f32, #[serde(default)] keyframable: bool },
-    Int { id: String, min: i32, max: i32, default: i32 },
-    Bool { id: String, default: bool },
-    Color { id: String, default: String },
-    Choice { id: String, options: Vec<String>, default: String },
+    Float {
+        id: String,
+        min: f32,
+        max: f32,
+        default: f32,
+        #[serde(default)]
+        keyframable: bool,
+    },
+    Int {
+        id: String,
+        min: i32,
+        max: i32,
+        default: i32,
+    },
+    Bool {
+        id: String,
+        default: bool,
+    },
+    Color {
+        id: String,
+        default: String,
+    },
+    Choice {
+        id: String,
+        options: Vec<String>,
+        default: String,
+    },
 }
 
 impl ParamSpec {
@@ -79,7 +110,11 @@ impl ParamSpec {
 pub type LocalizedText = BTreeMap<String, String>;
 
 pub fn localized<'a>(t: &'a LocalizedText, lang: &str) -> &'a str {
-    t.get(lang).or_else(|| t.get("en")).or_else(|| t.values().next()).map(String::as_str).unwrap_or("?")
+    t.get(lang)
+        .or_else(|| t.get("en"))
+        .or_else(|| t.values().next())
+        .map(String::as_str)
+        .unwrap_or("?")
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -142,23 +177,40 @@ pub struct Manifest {
 
 impl Manifest {
     pub fn parse(src: &str, path: &Path) -> Result<Self, PluginError> {
-        toml::from_str(src).map_err(|e| PluginError::Parse { path: path.to_path_buf(), msg: e.to_string() })
+        toml::from_str(src).map_err(|e| PluginError::Parse {
+            path: path.to_path_buf(),
+            msg: e.to_string(),
+        })
     }
 
     /// Prüft das Manifest. `dir` = Plugin-Ordner (für Dateiprüfungen), `None` = nur Syntax.
     pub fn validate(&self, dir: Option<&Path>) -> Result<(), PluginError> {
         let p = &self.plugin;
-        let bad = |msg: String| Err(PluginError::Invalid { id: p.id.clone(), msg });
+        let bad = |msg: String| {
+            Err(PluginError::Invalid {
+                id: p.id.clone(),
+                msg,
+            })
+        };
         let id_ok = p.id.split('.').count() >= 2
-            && p.id.split('.').all(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+            && p.id.split('.').all(|s| {
+                !s.is_empty()
+                    && s.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            });
         if !id_ok {
             return bad("ID muss im Format 'anbieter.name' sein (klein, a-z0-9-)".into());
         }
-        if p.version.split('.').count() != 3 || p.version.split('.').any(|n| n.parse::<u32>().is_err()) {
+        if p.version.split('.').count() != 3
+            || p.version.split('.').any(|n| n.parse::<u32>().is_err())
+        {
             return bad(format!("Version '{}' ist kein SemVer (x.y.z)", p.version));
         }
         if p.api != API_VERSION {
-            return bad(format!("API-Version {} nicht unterstützt (erwartet {API_VERSION})", p.api));
+            return bad(format!(
+                "API-Version {} nicht unterstützt (erwartet {API_VERSION})",
+                p.api
+            ));
         }
         if p.name.is_empty() {
             return bad("Name fehlt".into());
@@ -172,14 +224,21 @@ impl Manifest {
         match p.kind {
             PluginKind::AssetPack => {
                 if !p.permissions.is_empty() {
-                    return bad("Asset-Pakete führen keinen Code aus und dürfen keine Rechte anfordern".into());
+                    return bad(
+                        "Asset-Pakete führen keinen Code aus und dürfen keine Rechte anfordern"
+                            .into(),
+                    );
                 }
                 if self.assets.is_empty() {
                     return bad("Asset-Paket ohne Assets".into());
                 }
             }
             PluginKind::Integration => {
-                if !p.entry.as_deref().is_some_and(|e| e.starts_with("builtin:")) {
+                if !p
+                    .entry
+                    .as_deref()
+                    .is_some_and(|e| e.starts_with("builtin:"))
+                {
                     return bad("Integrationen brauchen 'entry = \"builtin:<name>\"'".into());
                 }
                 if !p.permissions.iter().any(|x| x.starts_with("net")) {
@@ -197,17 +256,38 @@ impl Manifest {
             if !seen.insert(&a.id) {
                 return bad(format!("Asset-ID '{}' doppelt", a.id));
             }
-            let needs_shader = matches!(a.kind, AssetKind::VideoEffect | AssetKind::BodyEffect | AssetKind::Transition);
+            let needs_shader = matches!(
+                a.kind,
+                AssetKind::VideoEffect | AssetKind::BodyEffect | AssetKind::Transition
+            );
             if needs_shader && a.shader.is_none() && a.ffmpeg.is_none() {
-                return bad(format!("Asset '{}' braucht einen Shader oder eine FFmpeg-Kette", a.id));
+                return bad(format!(
+                    "Asset '{}' braucht einen Shader oder eine FFmpeg-Kette",
+                    a.id
+                ));
             }
-            if a.kind == AssetKind::Filter && a.shader.is_none() && a.lut.is_none() && a.ffmpeg.is_none() {
-                return bad(format!("Filter '{}' braucht Shader, LUT oder FFmpeg-Kette", a.id));
+            if a.kind == AssetKind::Filter
+                && a.shader.is_none()
+                && a.lut.is_none()
+                && a.ffmpeg.is_none()
+            {
+                return bad(format!(
+                    "Filter '{}' braucht Shader, LUT oder FFmpeg-Kette",
+                    a.id
+                ));
             }
             if let Some(f) = &a.ffmpeg {
                 // Kette darf keine eigenen Ein-/Ausgänge, Dateien oder Graph-Trenner enthalten
-                if f.contains(';') || f.contains('[') || f.contains("movie=") || f.contains("amovie=") || f.contains("file=") {
-                    return bad(format!("FFmpeg-Kette von '{}' enthält nicht erlaubte Elemente", a.id));
+                if f.contains(';')
+                    || f.contains('[')
+                    || f.contains("movie=")
+                    || f.contains("amovie=")
+                    || f.contains("file=")
+                {
+                    return bad(format!(
+                        "FFmpeg-Kette von '{}' enthält nicht erlaubte Elemente",
+                        a.id
+                    ));
                 }
             }
             let mut pids = std::collections::HashSet::new();
@@ -216,20 +296,35 @@ impl Manifest {
                     return bad(format!("Parameter '{}' doppelt in '{}'", prm.id(), a.id));
                 }
                 match prm {
-                    ParamSpec::Float { min, max, default, .. } if !(min <= default && default <= max) => {
-                        return bad(format!("Standardwert von '{}' außerhalb [{min}, {max}]", prm.id()))
+                    ParamSpec::Float {
+                        min, max, default, ..
+                    } if !(min <= default && default <= max) => {
+                        return bad(format!(
+                            "Standardwert von '{}' außerhalb [{min}, {max}]",
+                            prm.id()
+                        ))
                     }
-                    ParamSpec::Int { min, max, default, .. } if !(min <= default && default <= max) => {
-                        return bad(format!("Standardwert von '{}' außerhalb [{min}, {max}]", prm.id()))
+                    ParamSpec::Int {
+                        min, max, default, ..
+                    } if !(min <= default && default <= max) => {
+                        return bad(format!(
+                            "Standardwert von '{}' außerhalb [{min}, {max}]",
+                            prm.id()
+                        ))
                     }
-                    ParamSpec::Choice { options, default, .. } if !options.contains(default) => {
+                    ParamSpec::Choice {
+                        options, default, ..
+                    } if !options.contains(default) => {
                         return bad(format!("Standardwert von '{}' ist keine Option", prm.id()))
                     }
                     _ => {}
                 }
             }
             if let Some(dir) = dir {
-                for f in [&a.shader, &a.lut, &a.file, &a.preview].into_iter().flatten() {
+                for f in [&a.shader, &a.lut, &a.file, &a.preview]
+                    .into_iter()
+                    .flatten()
+                {
                     if f.contains("..") || Path::new(f).is_absolute() {
                         return bad(format!("Pfad '{f}' muss innerhalb des Plugins liegen"));
                     }
@@ -239,7 +334,9 @@ impl Manifest {
                 }
             }
         }
-        if let (Some(dir), Some(entry)) = (dir, p.entry.as_ref().filter(|e| !e.starts_with("builtin:"))) {
+        if let (Some(dir), Some(entry)) =
+            (dir, p.entry.as_ref().filter(|e| !e.starts_with("builtin:")))
+        {
             if entry.contains("..") || !dir.join(entry).exists() {
                 return bad(format!("Einstiegsdatei '{entry}' fehlt"));
             }
@@ -264,7 +361,11 @@ pub struct Registry {
 impl Registry {
     /// Ist die eingebaute Integration `builtin` (z. B. "epidemic-sound") geladen und aktiv?
     pub fn integration_enabled(&self, builtin: &str) -> bool {
-        self.plugins.iter().any(|p| p.enabled && p.manifest.plugin.kind == PluginKind::Integration && p.manifest.plugin.entry.as_deref() == Some(&format!("builtin:{builtin}")))
+        self.plugins.iter().any(|p| {
+            p.enabled
+                && p.manifest.plugin.kind == PluginKind::Integration
+                && p.manifest.plugin.entry.as_deref() == Some(&format!("builtin:{builtin}"))
+        })
     }
 
     /// Gespeicherte Ein/Aus-Zustände anwenden (Plugin-ID → aktiv).
@@ -280,8 +381,14 @@ impl Registry {
     pub fn scan<'a>(roots: impl IntoIterator<Item = &'a Path>) -> Self {
         let mut reg = Registry::default();
         for root in roots {
-            let Ok(rd) = std::fs::read_dir(root) else { continue };
-            let mut dirs: Vec<_> = rd.flatten().map(|e| e.path()).filter(|p| p.join(MANIFEST_FILE).is_file()).collect();
+            let Ok(rd) = std::fs::read_dir(root) else {
+                continue;
+            };
+            let mut dirs: Vec<_> = rd
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.join(MANIFEST_FILE).is_file())
+                .collect();
             dirs.sort();
             for dir in dirs {
                 match reg.load_dir(&dir) {
@@ -297,11 +404,22 @@ impl Registry {
         let path = dir.join(MANIFEST_FILE);
         let m = Manifest::parse(&std::fs::read_to_string(&path)?, &path)?;
         m.validate(Some(dir))?;
-        if self.plugins.iter().any(|p| p.manifest.plugin.id == m.plugin.id) {
-            return Err(PluginError::Invalid { id: m.plugin.id.clone(), msg: "bereits geladen".into() });
+        if self
+            .plugins
+            .iter()
+            .any(|p| p.manifest.plugin.id == m.plugin.id)
+        {
+            return Err(PluginError::Invalid {
+                id: m.plugin.id.clone(),
+                msg: "bereits geladen".into(),
+            });
         }
         let enabled = m.plugin.default_enabled;
-        self.plugins.push(LoadedPlugin { dir: dir.to_path_buf(), manifest: m, enabled });
+        self.plugins.push(LoadedPlugin {
+            dir: dir.to_path_buf(),
+            manifest: m,
+            enabled,
+        });
         Ok(())
     }
 
@@ -309,7 +427,13 @@ impl Registry {
         self.plugins
             .iter()
             .filter(|p| p.enabled)
-            .flat_map(move |p| p.manifest.assets.iter().filter(move |a| a.kind == kind).map(move |a| (p, a)))
+            .flat_map(move |p| {
+                p.manifest
+                    .assets
+                    .iter()
+                    .filter(move |a| a.kind == kind)
+                    .map(move |a| (p, a))
+            })
     }
 
     /// Alle sofort lauffähigen FFmpeg-Assets: (volle ID `plugin/asset`, Art, Name, Kette).
@@ -327,18 +451,28 @@ impl Registry {
                             ParamSpec::Float { default, .. } => default.to_string(),
                             ParamSpec::Int { default, .. } => default.to_string(),
                             ParamSpec::Bool { default, .. } => (*default as u8).to_string(),
-                            ParamSpec::Color { default, .. } | ParamSpec::Choice { default, .. } => default.clone(),
+                            ParamSpec::Color { default, .. }
+                            | ParamSpec::Choice { default, .. } => default.clone(),
                         };
                         c = c.replace(&format!("{{{}}}", prm.id()), &v);
                     }
-                    Some((format!("{}/{}", p.manifest.plugin.id, a.id), a.kind, localized(&a.name, lang).to_string(), c))
+                    Some((
+                        format!("{}/{}", p.manifest.plugin.id, a.id),
+                        a.kind,
+                        localized(&a.name, lang).to_string(),
+                        c,
+                    ))
                 })
             })
             .collect()
     }
 
     pub fn asset_count(&self) -> usize {
-        self.plugins.iter().filter(|p| p.enabled).map(|p| p.manifest.assets.len()).sum()
+        self.plugins
+            .iter()
+            .filter(|p| p.enabled)
+            .map(|p| p.manifest.assets.len())
+            .sum()
     }
 }
 
@@ -359,7 +493,11 @@ mod tests {
         assert!(reg.assets(AssetKind::VideoEffect).count() >= 1);
         assert!(reg.assets(AssetKind::Filter).count() >= 1);
         let ff = reg.ffmpeg_assets("de");
-        assert!(ff.iter().any(|a| a.1 == AssetKind::VideoEffect && a.3.contains("{intensity}")), "{ff:?}");
+        assert!(
+            ff.iter()
+                .any(|a| a.1 == AssetKind::VideoEffect && a.3.contains("{intensity}")),
+            "{ff:?}"
+        );
     }
 
     #[test]
@@ -380,24 +518,37 @@ mod tests {
         let m = format!(
             "{base}\n[[asset]]\nid='a'\nkind='video-effect'\nname={{de='A'}}\nshader='a.wgsl'\nparams=[{{type='float',id='x',min=0.0,max=1.0,default=2.0}}]"
         );
-        let err = Manifest::parse(&m, p).unwrap().validate(None).unwrap_err().to_string();
+        let err = Manifest::parse(&m, p)
+            .unwrap()
+            .validate(None)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("außerhalb"), "{err}");
         // Asset-Pakete dürfen keine Rechte fordern
-        let m = base.replace("license = \"MIT\"", "license = \"MIT\"\npermissions = [\"net\"]")
-            + "\n[[asset]]\nid='f'\nkind='filter'\nname={de='F'}\nlut='f.cube'";
+        let m = base.replace(
+            "license = \"MIT\"",
+            "license = \"MIT\"\npermissions = [\"net\"]",
+        ) + "\n[[asset]]\nid='f'\nkind='filter'\nname={de='F'}\nlut='f.cube'";
         assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
         // Unbekannte Felder werden abgelehnt (Tippfehler fallen auf)
         assert!(Manifest::parse(&format!("{base}\nfoo = 1"), p).is_err());
         // WASM ohne entry
         let m = base.replace("asset-pack", "wasm");
-        assert!(Manifest::parse(&m, p).unwrap().validate(None).unwrap_err().to_string().contains("entry"));
+        assert!(Manifest::parse(&m, p)
+            .unwrap()
+            .validate(None)
+            .unwrap_err()
+            .to_string()
+            .contains("entry"));
         // FFmpeg-Ketten dürfen keine Dateien lesen
-        let m = format!("{base}
+        let m = format!(
+            "{base}
 [[asset]]
 id='e'
 kind='video-effect'
 name={{de='E'}}
-ffmpeg='movie=x.mp4'");
+ffmpeg='movie=x.mp4'"
+        );
         assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
     }
 
@@ -406,11 +557,19 @@ ffmpeg='movie=x.mp4'");
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
         let reg = Registry::scan([root.as_path()]);
         assert!(reg.errors.is_empty(), "{:?}", reg.errors);
-        let es = reg.plugins.iter().find(|p| p.manifest.plugin.id == "cutline.epidemic-sound").expect("Epidemic-Plugin");
+        let es = reg
+            .plugins
+            .iter()
+            .find(|p| p.manifest.plugin.id == "cutline.epidemic-sound")
+            .expect("Epidemic-Plugin");
         assert!(!es.enabled);
         assert!(!reg.integration_enabled("epidemic-sound"));
         let mut reg = reg;
-        reg.apply_states(&[("cutline.epidemic-sound".to_string(), true)].into_iter().collect());
+        reg.apply_states(
+            &[("cutline.epidemic-sound".to_string(), true)]
+                .into_iter()
+                .collect(),
+        );
         assert!(reg.integration_enabled("epidemic-sound"));
     }
 }
