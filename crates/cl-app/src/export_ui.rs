@@ -193,6 +193,12 @@ impl ExportDialog {
                                             }
                                         });
                                     });
+                                    if s.alpha_possible() {
+                                        theme::row(ui, "Hintergrund", |ui| {
+                                            ui.checkbox(&mut s.transparent, crate::tr(if s.codec == Codec::ProRes { "Transparent (ProRes 4444)" } else { "Transparent (VP9 mit Alpha)" }))
+                                                .on_hover_text(crate::tr("Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen"));
+                                        });
+                                    }
                                     theme::row(ui, "Qualität", |ui| {
                                         let label = match s.quality {
                                             Quality::Lower => "Kleinere Datei".to_string(),

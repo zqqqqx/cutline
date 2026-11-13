@@ -109,4 +109,4 @@ switches at runtime; the pseudo language makes every string ~40 % longer to catc
 | 1 Editing | Multi-track timeline, magnet, snapping, split/trim, transform, audio, text, voiceover, export with HW encoding | done |
 | 2 Creative library | Effects, filters, transitions, LUTs, adjustments, masks, animations, keyframes, speed curves, stickers, sound effects, text templates | done |
 | 3 Local pro tools | Auto captions, background removal, chroma key, stabilization, tracking, auto reframe, scenes, audio tools, voice changer, beats | done |
-| 4 Polish | Retouch, body effects, optical flow, motion blur, HDR, alpha export, compound clips, multicam, templates, community registry | planned |
+| 4 Polish | Person effects (background blur/color, outline), smooth slow motion, video denoise/deflicker, transparent export · next: retouch, HDR, compound clips, multicam, templates, community registry | in progress |

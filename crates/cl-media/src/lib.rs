@@ -74,6 +74,11 @@ pub fn ffmpeg_command() -> Result<Command> {
     command("ffmpeg")
 }
 
+/// FFprobe-Befehl (ohne Konsolenfenster).
+pub fn ffprobe_command() -> Result<Command> {
+    command("ffprobe")
+}
+
 pub fn ffmpeg_available() -> bool {
     tool("ffmpeg").is_ok() && tool("ffprobe").is_ok()
 }

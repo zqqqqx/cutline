@@ -361,6 +361,46 @@ impl App {
                     }
                 }
                 task_bar(ui, self, &format!("matte:{}", c.id));
+                if c.fx.cutout.is_some() {
+                    // Personen-Effekte: was mit dem Hintergrund passiert
+                    let mut sel = c.fx.person.as_ref().map(|p| p.index() + 1).unwrap_or(0);
+                    let items = ["Transparent", PersonFx::KINDS[0], PersonFx::KINDS[1], PersonFx::KINDS[2]];
+                    theme::row(ui, "Hintergrund", |ui| {
+                        egui::ComboBox::from_id_salt(("person", c.id)).selected_text(crate::tr(items[sel])).width((ui.available_width() - 12.0).max(60.0)).show_ui(ui, |ui| {
+                            for (i, it) in items.iter().enumerate() {
+                                if ui.selectable_value(&mut sel, i, crate::tr(*it)).changed() {
+                                    c.fx.person = (i > 0).then(|| PersonFx::from_index(i - 1));
+                                    e.commit = true;
+                                }
+                            }
+                        });
+                    });
+                    match &mut c.fx.person {
+                        Some(PersonFx::BlurBackground { amount }) => {
+                            *e |= theme::row(ui, "Unschärfe", |ui| Slider::new(amount, 0.0..=1.0).percent().default(0.6).show(ui));
+                        }
+                        Some(PersonFx::ColorBackground { color }) => {
+                            theme::row(ui, "Farbe", |ui| {
+                                let mut rgba = [color[0], color[1], color[2], 255];
+                                if widgets::color_button(ui, &mut rgba) {
+                                    *color = [rgba[0], rgba[1], rgba[2]];
+                                    e.commit = true;
+                                }
+                            });
+                        }
+                        Some(PersonFx::Outline { color, width }) => {
+                            theme::row(ui, "Farbe", |ui| {
+                                let mut rgba = [color[0], color[1], color[2], 255];
+                                if widgets::color_button(ui, &mut rgba) {
+                                    *color = [rgba[0], rgba[1], rgba[2]];
+                                    e.commit = true;
+                                }
+                            });
+                            *e |= theme::row(ui, "Breite", |ui| Slider::new(width, 0.0..=1.0).percent().default(0.4).show(ui));
+                        }
+                        None => {}
+                    }
+                }
             }
             let mut ck = c.fx.chroma.is_some();
             if widgets::toggle_row(ui, "Chroma-Key (Greenscreen)", &mut ck) {
@@ -385,6 +425,11 @@ impl App {
             }
         }
         if is_video {
+            theme::section(ui, "Bildqualität");
+            *e |= theme::row(ui, "Rauschen entfernen", |ui| Slider::new(&mut c.fx.denoise, 0.0..=1.0).percent().default(0.0).show(ui));
+            if widgets::toggle_row(ui, "Flackern ausgleichen", &mut c.fx.deflicker) {
+                e.commit = true;
+            }
             theme::section(ui, "Bewegung");
             *e |= theme::row(ui, "Stabilisieren", |ui| Slider::new(&mut c.fx.stabilize, 0.0..=1.0).percent().default(0.0).show(ui));
             if c.fx.stabilize > 0.0 && c.fx.cutout.is_some() {

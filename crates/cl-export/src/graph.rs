@@ -22,6 +22,8 @@ pub(crate) struct Ctx<'a> {
     pub n_input: usize,
     pub graph: Vec<String>,
     pub uniq: usize,
+    /// Transparenter Hintergrund statt Schwarz
+    pub alpha: bool,
 }
 
 impl Ctx<'_> {
@@ -160,6 +162,10 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
         if !sp.is_empty() {
             pre.push(sp);
         }
+        // Flüssige Zeitlupe: Zwischenbilder per Bewegungsschätzung statt doppelter Bilder
+        if c.fx.smooth_slowmo && (c.speed < 0.999 || c.fx.speed_curve.is_some()) {
+            pre.push(format!("minterpolate=fps={}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1", ctx.fps));
+        }
         // Videos, die kürzer als der Clip sind (Rundung), halten das letzte Bild
         pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(0.5)));
     }
@@ -267,7 +273,8 @@ fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, t0: f64, len: f64) -> String {
     let out = ctx.label("base");
     let (a, b) = (t0.max(0.0), t0 + len);
     ctx.graph.push(format!(
-        "[{cur}][{shifted}]overlay=x='(W-w)/2+{x}':y='(H-h)/2+{y}':eval=frame:eof_action=pass:enable='between(t,{},{})'[{out}]",
+        "[{cur}][{shifted}]overlay=x='(W-w)/2+{x}':y='(H-h)/2+{y}':eval=frame:eof_action=pass{}:enable='between(t,{},{})'[{out}]",
+        if ctx.alpha { ":format=auto" } else { "" },
         f(a),
         f(b)
     ));
@@ -377,7 +384,8 @@ fn scaled_project(p: &Project, w: u32) -> Project {
 /// Videoteil: alle sichtbaren Spuren von unten nach oben. Gibt das letzte Label zurück.
 pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Result<String> {
     let (w, h) = (ctx.w, ctx.h);
-    ctx.graph.push(format!("color=c=black:s={w}x{h}:r={}:d={}[base0]", ctx.fps, f(dur.as_secs_f64())));
+    let base = if ctx.alpha { "color=c=black@0.0" } else { "color=c=black" };
+    ctx.graph.push(format!("{base}:s={w}x{h}:r={}:d={}{}[base0]", ctx.fps, f(dur.as_secs_f64()), if ctx.alpha { ",format=rgba" } else { "" }));
     let mut cur = "base0".to_string();
     let proj = scaled_project(p, w);
     for tr in proj.timeline.tracks.iter().filter(|t| !t.hidden) {

@@ -787,3 +787,18 @@ Zoom-Puls	Zoom pulse
 Seitenverhältnis: {}	Aspect ratio: {}
 installiert	installed
 Personen freistellen ohne Greenscreen (GPL-3.0)	Cut out people without a green screen (GPL-3.0)
+# Phase 4
+Transparent	Transparent
+Hintergrund weich	Blur background
+Hintergrundfarbe	Background color
+Umriss	Outline
+Bildqualität	Image quality
+Rauschen entfernen	Reduce noise
+Flackern ausgleichen	Remove flicker
+Zeitlupe	Slow motion
+Flüssige Zeitlupe	Smooth slow motion
+Berechnet Zwischenbilder aus der Bewegung. Die Vorschau blendet nur über, der Export rechnet genau (dauert länger).	Generates in-between frames from motion. The preview only blends; the export computes them precisely (takes longer).
+Transparent (ProRes 4444)	Transparent (ProRes 4444)
+Transparent (VP9 mit Alpha)	Transparent (VP9 with alpha)
+Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen	Empty areas and cut-out people stay transparent, e.g. for overlays in other apps
+nur Ton	audio only

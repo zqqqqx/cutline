@@ -558,7 +558,20 @@ pub fn fx_graph(fx: &ClipFx, src: Src, o: &ChainOpts, input: &str, output: &str,
         g.push("reverse");
     }
     g.push(format!("setpts=PTS-STARTPTS+{:.6}/TB", o.t_offset));
-    if let Some(m) = &o.matte {
+    if fx.deflicker {
+        g.push("deflicker=size=7:mode=pm");
+    }
+    if fx.denoise > 0.0 {
+        let k = fx.denoise.clamp(0.0, 1.0);
+        g.push(format!("hqdn3d=luma_spatial={:.2}:chroma_spatial={:.2}:luma_tmp={:.2}:chroma_tmp={:.2}", 1.0 + 7.0 * k, 1.0 + 5.0 * k, 2.0 + 10.0 * k, 2.0 + 8.0 * k));
+    }
+    let mut person_done = false;
+    if let (Some(m), Some(pf)) = (&o.matte, &fx.person) {
+        person_graph(&mut g, m, pf, src);
+        person_done = true;
+    }
+    if person_done {
+    } else if let Some(m) = &o.matte {
         // Hintergrund entfernen: Maske als Alphakanal
         g.push("format=rgb24");
         let cur = g.current();
@@ -586,7 +599,7 @@ pub fn fx_graph(fx: &ClipFx, src: Src, o: &ChainOpts, input: &str, output: &str,
             g.push(format!("format=rgba,despill=type={ty}:mix={:.2}:expand=0.1", k.spill.clamp(0.0, 1.0)));
         }
     }
-    let src = Src { has_alpha: src.has_alpha || o.matte.is_some() || fx.chroma.is_some(), ..src };
+    let src = Src { has_alpha: src.has_alpha || (o.matte.is_some() && !person_done) || fx.chroma.is_some(), ..src };
     let colour_work = !fx.adjust.is_identity() || fx.filter.is_some() || !fx.effects.is_empty() || o.lut.is_some();
     // Alpha (Sticker, Freistellen, Greenscreen) über die Farbfilter retten
     let mut alpha = None;
@@ -638,6 +651,48 @@ pub fn fx_graph(fx: &ClipFx, src: Src, o: &ChainOpts, input: &str, output: &str,
     g.finish(output)
 }
 
+/// Personen-Effekte: Person (Maske `m`) bleibt scharf, der Hintergrund wird verändert.
+/// Das Ergebnis ist deckend.
+fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src) {
+    use cl_core::PersonFx;
+    let hex = |c: [u8; 3]| format!("0x{:02x}{:02x}{:02x}", c[0], c[1], c[2]);
+    g.push("format=rgb24");
+    let cur = g.current();
+    let (fg_src, bg_src, mm) = (g.next_label("pf"), g.next_label("pb"), g.next_label("pm"));
+    let fg = g.next_label("pfg");
+    let bg = g.next_label("pbg");
+    let out = g.next_label("po");
+    match pf {
+        PersonFx::BlurBackground { amount } => {
+            let sigma = 2.0 + 28.0 * amount.clamp(0.0, 1.0) * (src.w.max(src.h) as f32 / 1920.0).max(0.2);
+            g.lines.push(format!("[{cur}]split[{fg_src}][{bg_src}]"));
+            g.lines.push(format!("[{bg_src}]gblur=sigma={sigma:.2}[{bg}]"));
+            g.lines.push(format!("[{fg_src}][{m}]alphamerge[{fg}]"));
+            g.lines.push(format!("[{bg}][{fg}]overlay=format=auto,format=rgb24[{out}]"));
+        }
+        PersonFx::ColorBackground { color } => {
+            g.lines.push(format!("[{cur}]split[{fg_src}][{bg_src}]"));
+            g.lines.push(format!("[{bg_src}]drawbox=x=0:y=0:w=iw:h=ih:color={}:t=fill[{bg}]", hex(*color)));
+            g.lines.push(format!("[{fg_src}][{m}]alphamerge[{fg}]"));
+            g.lines.push(format!("[{bg}][{fg}]overlay=format=auto,format=rgb24[{out}]"));
+        }
+        PersonFx::Outline { color, width } => {
+            // Maske verbreitern und weich zeichnen → farbiger Saum hinter der Person
+            let px = (2.0 + 22.0 * width.clamp(0.0, 1.0)) * (src.w.max(src.h) as f32 / 1920.0).max(0.25);
+            let (m1, m2, ring, col, base, ringed) = (g.next_label("pm1"), g.next_label("pm2"), g.next_label("pr"), g.next_label("pc"), g.next_label("pbs"), g.next_label("prd"));
+            g.lines.push(format!("[{cur}]split=3[{fg_src}][{bg_src}][{base}]"));
+            g.lines.push(format!("[{m}]split[{m1}][{m2}]"));
+            g.lines.push(format!("[{m2}]format=gray,gblur=sigma={:.2},lut=y='min(255,val*4)'[{mm}]", px / 2.0));
+            g.lines.push(format!("[{bg_src}]drawbox=x=0:y=0:w=iw:h=ih:color={}:t=fill[{col}]", hex(*color)));
+            g.lines.push(format!("[{col}][{mm}]alphamerge[{ring}]"));
+            g.lines.push(format!("[{base}][{ring}]overlay=format=auto[{ringed}]"));
+            g.lines.push(format!("[{fg_src}][{m1}]alphamerge[{fg}]"));
+            g.lines.push(format!("[{ringed}][{fg}]overlay=format=auto,format=rgb24[{out}]"));
+        }
+    }
+    g.set_current(out);
+}
+
 /// Filtergraph für die Vorschau (`[0:v]` → `[out]`, `w`×`h` RGBA) oder `None`, wenn der
 /// schnelle Weg ohne Effekte reicht. `t_offset` = Clipzeit des ersten Bildes,
 /// `stream` = Wiedergabe (Bildrate und Geschwindigkeit), sonst Einzelbild.
@@ -645,7 +700,7 @@ pub fn preview_graph(c: &Clip, w: u32, h: u32, t_offset: f64, stream: Option<Rat
     let speed = c.speed;
     let fx = &c.fx;
     let cutout = fx.cutout.as_ref().filter(|p| std::path::Path::new(p).is_file());
-    let needs = !fx.is_empty() && (fx.flip_h || fx.flip_v || !fx.adjust.is_identity() || fx.filter.is_some() || !fx.effects.is_empty() || fx.mask.is_some() || lut.is_some() || fx.chroma.is_some() || fx.stabilize > 0.0 || cutout.is_some());
+    let needs = !fx.is_empty() && (fx.flip_h || fx.flip_v || !fx.adjust.is_identity() || fx.filter.is_some() || !fx.effects.is_empty() || fx.mask.is_some() || lut.is_some() || fx.chroma.is_some() || fx.stabilize > 0.0 || cutout.is_some() || fx.denoise > 0.0 || fx.deflicker);
     let speed_stream = stream.is_some() && ((speed - 1.0).abs() > 1e-3 || fx.speed_curve.is_some());
     if !needs && !speed_stream {
         return None;
@@ -662,6 +717,10 @@ pub fn preview_graph(c: &Clip, w: u32, h: u32, t_offset: f64, stream: Option<Rat
     if let Some(fps) = stream {
         if fx.speed_curve.is_none() && (speed - 1.0).abs() > 1e-3 {
             pre.push(format!("setpts=(PTS-STARTPTS)/{speed:.5}"));
+        }
+        if fx.smooth_slowmo && speed < 0.999 {
+            // Vorschau: günstiges Überblenden statt voller Bewegungsschätzung
+            pre.push(format!("minterpolate=fps={}/{}:mi_mode=blend", fps.num, fps.den));
         }
         pre.push(format!("fps={}/{}", fps.num, fps.den));
     }
