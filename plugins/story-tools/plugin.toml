@@ -1,0 +1,14 @@
+# Eingebautes Plugin: Figuren, Dialogboxen und Namensschilder für Story-Videos.
+# Standardmäßig aus. Einschalten unter Plugins oder Einstellungen → Integrationen.
+[plugin]
+id = "cutline.story-tools"
+version = "0.1.0"
+api = 1
+kind = "integration"
+entry = "builtin:story"
+default_enabled = false
+name = { de = "Story-Werkzeuge", en = "Story tools" }
+description = { de = "Figuren mit Name, Farbe und Porträt; Dialogboxen und Namensschilder mit einem Klick.", en = "Characters with name, color and portrait; dialogue boxes and name tags in one click." }
+authors = ["Cutline contributors"]
+license = "MPL-2.0"
+permissions = ["net:none", "project.write"]

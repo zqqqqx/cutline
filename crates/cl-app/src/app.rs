@@ -142,6 +142,12 @@ pub struct App {
     pub proxy_failed: HashSet<MediaId>,
     /// Vorschau in eigenem Fenster
     pub ext_preview: bool,
+    /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
+    pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
+    /// Figuren (Plugin „Story-Werkzeuge“)
+    pub characters: Vec<crate::story::Character>,
+    /// Plugins Freesound und Pexels
+    pub stock: crate::stock::StockState,
     /// Letzte automatische Sicherung
     pub last_backup: Option<Instant>,
     pub backup_revision: u64,
@@ -295,6 +301,9 @@ impl App {
             tpl_dialog: None,
             proxy_failed: HashSet::new(),
             ext_preview: false,
+            multicam: None,
+            characters: crate::story::load(),
+            stock: Default::default(),
             last_backup: None,
             backup_revision: 0,
             backups_open: false,
@@ -1779,6 +1788,10 @@ impl App {
     }
 
     pub fn stop_playback(&mut self) {
+        if self.playing && self.multicam.as_ref().is_some_and(|m| !m.1.is_empty()) {
+            self.playing = false;
+            self.multicam_finish();
+        }
         self.playing = false;
         self.play_rate = 1.0;
         self.audio = None;
@@ -1947,10 +1960,29 @@ impl App {
         let frame = Time::from_secs_f64(1.0 / fps.as_f64());
         let mut actions: Vec<&str> = Vec::new();
         let binds = crate::keymap::bindings(&self.settings.shortcuts);
+        let multicam_on = self.multicam.is_some();
         ctx.input_mut(|i| {
             for (c, a) in &binds {
                 if i.consume_key(c.mods, c.key) {
                     actions.push(a);
+                }
+            }
+            if multicam_on {
+                const NUMS: [(Key, &str); 9] = [
+                    (Key::Num1, "cam1"),
+                    (Key::Num2, "cam2"),
+                    (Key::Num3, "cam3"),
+                    (Key::Num4, "cam4"),
+                    (Key::Num5, "cam5"),
+                    (Key::Num6, "cam6"),
+                    (Key::Num7, "cam7"),
+                    (Key::Num8, "cam8"),
+                    (Key::Num9, "cam9"),
+                ];
+                for (k, a) in NUMS {
+                    if i.consume_key(Modifiers::NONE, k) {
+                        actions.push(a);
+                    }
                 }
             }
         });
@@ -2051,6 +2083,10 @@ impl App {
                 "marker_next" => self.jump_marker(true),
                 "marker_prev" => self.jump_marker(false),
                 "ripple_delete" => self.ripple_delete(),
+                a if a.starts_with("cam") => {
+                    let n = a[3..].parse::<usize>().unwrap_or(1);
+                    self.multicam_switch(n - 1);
+                }
                 "nudge_left" => self.nudge(-1),
                 "nudge_right" => self.nudge(1),
                 "nudge_left10" => self.nudge(-10),
@@ -2190,6 +2226,7 @@ impl eframe::App for App {
         self.receive_decoded(ctx);
         self.poll_tasks();
         self.poll_epidemic(ctx);
+        self.poll_stock();
         if self.screen == Screen::Editor {
             self.ensure_proxies(ctx);
         }

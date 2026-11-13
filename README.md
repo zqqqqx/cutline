@@ -33,15 +33,17 @@
 
 | | |
 |---|---|
-| **Timeline** | Multiple video, text and audio tracks · main-track magnet (ripple) · snapping to clips, playhead and beats · marquee and multi-selection · copy/paste · freeze frame · reverse · speed 0.1–10× and speed curves · smooth slow motion with interpolated frames |
-| **Player** | All layers live, picture-in-picture · drag, scale and rotate with snapping · zoom 50–400 % · large player mode |
+| **Timeline** | Multiple video, text and audio tracks · track names, solo and clip color labels · markers with notes (copy as YouTube chapters) · In/Out range with loop · J/K/L shuttle · roll, slip, nudge and numeric timing · clip groups · paste attributes · main-track magnet (ripple) · snapping to clips, playhead and beats · marquee and multi-selection · copy/paste · freeze frame · reverse · speed 0.1–10× and speed curves · smooth slow motion with interpolated frames |
+| **Player** | All layers live, picture-in-picture · drag, scale and rotate with snapping · zoom 50–400 % · large player mode · preview in its own window for a second screen · audio meters · proxy media for smooth playback of large recordings |
+| **Creator tools** | Remove pauses (jump cuts) · remove filler words · auto ducking · highlights as markers · sync recordings by audio · multicam editing (1–9 while playing) · speaker recordings import · zoom punch-in · vertical 9:16 layout with facecam · thumbnail PNG · recap from markers · export presets for YouTube, Shorts/TikTok/Reels, Instagram and Twitch |
+| **Library** | One asset system for stickers, sound effects, music, effects, filters, transitions, text templates, fonts and media: search, favorites, own folders, and every category can be moved, renamed or hidden · own stickers, sounds and presets |
 | **Look** | Adjustments (light, color, HSL per range, sharpness, vignette, grain) · filters · LUT (.cube) · masks (linear, mirror, circle, rectangle) · blend and opacity · video noise reduction · deflicker |
 | **Motion** | Keyframes for position, scale, rotation, opacity and volume · in/out/combo animations · transitions between clips |
 | **Text** | Templates and text effects · outline, box and shadow · auto wrap · imported fonts · SRT import/export |
 | **Audio** | Waveforms · volume keyframes and fades · voiceover recording with countdown · noise reduction · voice enhancement · loudness to −14 LUFS · bass/treble · 13 voice changers · music folder and sound effects |
 | **Local AI** | Auto captions with NVIDIA Parakeet TDT 0.6B v3 (25 European languages, word timing), with Whisper as the fallback · background removal without a green screen (RobustVideoMatting), with blurred or colored background and person outline · chroma key with eyedropper · stabilization · object tracking · auto reframe for 9:16 · scene detection · beat detection |
 | **Export** | MP4, MOV, MKV, WebM, GIF · audio-only WAV, MP3, M4A, FLAC · H.264, HEVC, AV1, VP9, ProRes · NVENC, Quick Sync and AMF hardware encoding · up to 4K · transparent video (ProRes 4444, VP9 with alpha) · SRT side file |
-| **App** | Project overview with search, duplicate and trash · autosave · English and German interface · adjustable UI scale · built-in updater |
+| **App** | Project overview with search, duplicate and trash · project templates · autosave and automatic backups with restore · relink missing media · archive a project with its files · customizable shortcuts (Cutline, Premiere-like, Resolve-like) · optional plugins, off by default: Freesound, Pexels, Story tools · English and German interface · adjustable UI scale · built-in updater |
 
 ## Install
 
@@ -87,6 +89,9 @@ For local captions and background removal, place an ONNX Runtime 1.31 library (`
 | P / N | Magnet / snapping | V | Disable clip |
 | R | Voiceover | F | Large player |
 | Ctrl+I / S / O / E | Import / save / open / export | Ctrl+wheel | Zoom timeline |
+| J / K / L | Shuttle back / pause / forward | I / O | In / Out point |
+| M | Marker | Shift+Del | Ripple delete |
+| Ctrl+G / Ctrl+Shift+G | Group / ungroup | Ctrl+Alt+V | Paste attributes |
 
 ## Control Cutline over MCP
 

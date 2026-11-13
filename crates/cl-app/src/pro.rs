@@ -104,6 +104,7 @@ impl App {
         for (_, done) in self.tasks.poll() {
             match done {
                 TaskDone::Failed(e) => self.toast_err(e),
+                TaskDone::Run(f) => f(self),
                 TaskDone::Proxy { media, ok } => {
                     if ok {
                         self.invalidate_preview();

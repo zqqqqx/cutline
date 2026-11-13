@@ -12,6 +12,67 @@ use eframe::egui::{self, vec2, Color32, RichText};
 
 use crate::theme::{self, icon};
 
+/// Plattform-Vorlagen: (Name, kürzere Kante, Bildrate, Codec, Qualität, Seitenverhältnis B/H)
+type PlatformPreset = (&'static str, u32, Option<u32>, Codec, Quality, f32);
+const PLATFORM_PRESETS: &[PlatformPreset] = &[
+    (
+        "YouTube 1080p",
+        1080,
+        None,
+        Codec::H264,
+        Quality::Higher,
+        16.0 / 9.0,
+    ),
+    (
+        "YouTube 1440p",
+        1440,
+        None,
+        Codec::H264,
+        Quality::Higher,
+        16.0 / 9.0,
+    ),
+    (
+        "YouTube 4K",
+        2160,
+        None,
+        Codec::Hevc,
+        Quality::Higher,
+        16.0 / 9.0,
+    ),
+    (
+        "Shorts / TikTok / Reels (1080×1920)",
+        1080,
+        Some(30),
+        Codec::H264,
+        Quality::Higher,
+        9.0 / 16.0,
+    ),
+    (
+        "Instagram-Beitrag (1080×1350)",
+        1080,
+        Some(30),
+        Codec::H264,
+        Quality::Higher,
+        4.0 / 5.0,
+    ),
+    (
+        "Twitch-Clip (1080p60)",
+        1080,
+        Some(60),
+        Codec::H264,
+        Quality::Recommended,
+        16.0 / 9.0,
+    ),
+    (
+        "Kleine Datei zum Teilen (720p)",
+        720,
+        Some(30),
+        Codec::H264,
+        Quality::Lower,
+        16.0 / 9.0,
+    ),
+];
+
 struct Running {
     progress: Arc<Mutex<f32>>,
     result: Arc<Mutex<Option<Result<(), String>>>>,
@@ -30,6 +91,7 @@ pub struct ExportDialog {
     custom_kbps: u32,
     /// In/Out-Bereich der Zeitleiste, falls gesetzt
     range_avail: Option<(Time, Time)>,
+    preset_hint: Option<String>,
     also_srt: bool,
     encoders: Arc<Mutex<Option<Vec<Encoder>>>>,
     running: Option<Running>,
@@ -198,6 +260,27 @@ impl ExportDialog {
                             });
                             if !s.format.audio_only() {
                                 theme::section(ui, "Video");
+                                // Plattform-Vorlagen: setzen Format, Codec, Größe, Bildrate und Qualität
+                                theme::row(ui, "Vorlage", |ui| {
+                                    egui::ComboBox::from_id_salt("exp-preset").selected_text(crate::tr("Plattform wählen …")).width(200.0).show_ui(ui, |ui| {
+                                        for (name, edge, fps, codec, q, ratio) in PLATFORM_PRESETS {
+                                            if ui.selectable_label(false, crate::tr(*name)).clicked() {
+                                                s.format = Format::Mp4;
+                                                s.codec = *codec;
+                                                s.quality = *q;
+                                                self.short_edge = *edge;
+                                                if let Some(f) = fps {
+                                                    s.fps = cl_core::Rational::new(*f, 1);
+                                                }
+                                                let (pw, ph) = (p.settings.width.max(2) as f32, p.settings.height.max(2) as f32);
+                                                self.preset_hint = (((pw / ph) - ratio).abs() > 0.02).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – für Hochkant: Werkzeuge → Hochkant-Layout"));
+                                            }
+                                        }
+                                    });
+                                });
+                                if let Some(h) = &self.preset_hint {
+                                    ui.label(egui::RichText::new(h).small().color(egui::Color32::from_rgb(0xE0, 0xA0, 0x40)));
+                                }
                                 theme::row(ui, "Auflösung", |ui| {
                                     let label = |e: u32| match e {
                                         0 => format!("Projekt ({}×{})", p.settings.width, p.settings.height),

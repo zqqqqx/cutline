@@ -41,6 +41,8 @@ pub enum TaskDone {
     Model {
         id: &'static str,
     },
+    /// Ergebnis direkt auf dem Haupt-Thread anwenden
+    Run(Box<dyn FnOnce(&mut crate::app::App) + Send>),
     /// Proxy fertig (oder fehlgeschlagen)
     Proxy {
         media: cl_core::MediaId,

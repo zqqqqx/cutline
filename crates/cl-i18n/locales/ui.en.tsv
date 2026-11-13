@@ -1040,3 +1040,100 @@ Proxys löschen	Delete proxies
 Proxy wird erstellt: {}	Creating proxy: {}
 Vorschau in eigenem Fenster (zweiter Bildschirm, Doppelklick oder F11 = Vollbild)	Preview in its own window (second screen, double-click or F11 = fullscreen)
 Rückgängig: {}	Undo: {}
+Werkzeuge	Tools
+Story	Story
+Story-Werkzeuge	Story tools
+Dialogbox: {}	Dialogue box: {}
+Namensschild: {}	Name tag: {}
+Figur	Character
+Figuren anlegen …	Create characters …
+Dialogbox für {} eingefügt – Text im Inspektor eingeben	Dialogue box for {} inserted – enter the text in the inspector
+Namensschild für {} eingefügt	Name tag for {} inserted
+Figuren mit Name, Farbe und Porträt; Dialogboxen und Namensschilder mit einem Klick (Menü „Werkzeuge“).	Characters with name, color and portrait; dialogue boxes and name tags in one click (“Tools” menu).
+Porträt …	Portrait …
+Figur entfernen	Remove character
+Figur hinzufügen	Add character
+Ton und Sprache	Sound and speech
+Pausen entfernen (Jump Cuts)	Remove pauses (jump cuts)
+Schneidet stille Stellen aus dem ausgewählten Clip	Cuts silent parts out of the selected clip
+Füllwörter entfernen (äh, ähm, uh, um)	Remove filler words (uh, um)
+Erkennt Füllwörter lokal (Parakeet) und schneidet sie heraus	Detects filler words locally (Parakeet) and cuts them out
+Musik unter Sprache absenken (Auto-Ducking)	Lower music under speech (auto-ducking)
+Ausgewählter Musik-Clip wird leiser, wo auf anderen Spuren gesprochen wird	The selected music clip gets quieter wherever someone speaks on other tracks
+Highlights finden (laute Momente → Marker)	Find highlights (loud moments → markers)
+Setzt Marker an Schreien, Explosionen, Jubel im ausgewählten Clip	Adds markers at screams, explosions and cheers in the selected clip
+Auswahl per Ton synchronisieren	Sync selection by audio
+Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)	Aligns all selected clips to the audio of the first one selected (e.g. several angles of the same scene)
+Multicam-Schnitt starten	Start multicam edit
+Synchronisierte Clips auf eigenen Spuren: während der Wiedergabe mit 1–9 den Blickwinkel wählen	Synced clips on their own tracks: pick the angle with 1–9 during playback
+Sprecher-Aufnahmen importieren …	Import speaker recordings …
+Eine Datei pro Person (z. B. aus einer Call-Aufnahme, auch als ZIP): je eine benannte Tonspur am Playhead	One file per person (e.g. from a call recording, ZIP works too): one named audio track each at the playhead
+Bild und Format	Picture and format
+Zoom-Punch-in	Zoom punch-in
+Kurzer Zoom auf 125 % mit Keyframes (danach anpassbar)	Short zoom to 125 % with keyframes (adjustable afterwards)
+Hochkant-Layout (9:16, Facecam oben)	Vertical layout (9:16, facecam on top)
+Stellt auf 1080×1920 um: Gameplay unten, Kopie des Clips oben als Facecam-Ausschnitt	Switches to 1080×1920: gameplay at the bottom, a copy of the clip on top as facecam crop
+Thumbnail exportieren (aktuelles Bild)	Export thumbnail (current frame)
+Speichert das Bild am Playhead als PNG (1280×720 bei 16:9)	Saves the frame at the playhead as PNG (1280×720 for 16:9)
+Rückblick aus Markern erstellen	Create recap from markers
+Neues Projekt mit je 3 s um jeden Marker, mit Überblendungen („Was bisher geschah“)	New project with 3 s around each marker, with crossfades (“previously on”)
+Pausen werden gesucht …	Looking for pauses …
+Keine längeren Pausen gefunden	No longer pauses found
+Pausen entfernen	Remove pauses
+{} Pausen entfernt ({} s)	{} pauses removed ({} s)
+Benötigt: Parakeet TDT 0.6B v3 (Einstellungen → Modelle)	Requires: Parakeet TDT 0.6B v3 (Settings → Models)
+Füllwörter werden gesucht …	Looking for filler words …
+Keine Füllwörter gefunden	No filler words found
+Füllwörter entfernen	Remove filler words
+{} Füllwörter entfernt	{} filler words removed
+Keine anderen Tonspuren unter dem Musik-Clip	No other audio tracks under the music clip
+Sprache wird erkannt …	Detecting speech …
+Keine Sprache unter der Musik gefunden	No speech found under the music
+Musik an {} Stellen abgesenkt (−12 dB)	Music lowered in {} places (−12 dB)
+Highlights werden gesucht …	Looking for highlights …
+Keine auffällig lauten Momente gefunden	No notably loud moments found
+{} Highlights als Marker gesetzt	{} highlights added as markers
+Der zuerst gewählte Clip braucht Ton	The first selected clip needs audio
+Aufnahmen werden synchronisiert …	Syncing recordings …
+Kein gemeinsamer Ton gefunden	No shared audio found
+{} Aufnahmen synchronisiert	{} recordings synced
+Multicam: Wiedergabe starten und mit 1–9 den Blickwinkel wählen, Stopp übernimmt den Schnitt	Multicam: start playback and pick the angle with 1–9, stopping applies the edit
+Multicam-Schnitt mit {} Wechseln übernommen	Multicam edit applied with {} switches
+Audio oder ZIP	Audio or ZIP
+{} Sprecherspuren angelegt	{} speaker tracks created
+Zoom-Punch-in gesetzt (Keyframes im Basis-Reiter anpassbar)	Zoom punch-in added (keyframes adjustable in the Basic tab)
+Hochkant-Layout: Facecam oben mit Position X/Y auf dein Gesicht ausrichten	Vertical layout: align the facecam on top to your face with position X/Y
+Thumbnail wird erstellt …	Creating thumbnail …
+Thumbnail konnte nicht gespeichert werden	Thumbnail could not be saved
+Thumbnail gespeichert: {}	Thumbnail saved: {}
+Rückblick aus {} Markern erstellt	Recap created from {} markers
+Schlüssel ungültig oder ohne Zugriff	Key invalid or without access
+Dienst antwortet mit {}	Service responded with {}
+Keine Verbindung ({})	No connection ({})
+API-Schlüssel fehlt	API key missing
+Unter Einstellungen → Integrationen eintragen	Enter it under Settings → Integrations
+Einrichten …	Set up …
+Suchbegriff eingeben und Enter drücken	Type a search term and press Enter
+Laden und am Playhead einfügen	Download and insert at the playhead
+Hunderttausende Soundeffekte unter Creative-Commons-Lizenzen. Lizenz und Urheber stehen bei jedem Treffer.	Hundreds of thousands of sound effects under Creative Commons licenses. License and author are shown with every result.
+Kostenlose Stock-Videos und -Fotos (Pexels-Lizenz, Nennung freiwillig).	Free stock videos and photos (Pexels license, attribution optional).
+Schlüssel beantragen	Request a key
+Shorts / TikTok / Reels (1080×1920)	Shorts / TikTok / Reels (1080×1920)
+Instagram-Beitrag (1080×1350)	Instagram post (1080×1350)
+Twitch-Clip (1080p60)	Twitch clip (1080p60)
+Kleine Datei zum Teilen (720p)	Small file for sharing (720p)
+Plattform wählen …	Choose platform …
+Das Projekt hat ein anderes Seitenverhältnis – für Hochkant: Werkzeuge → Hochkant-Layout	The project has a different aspect ratio – for vertical: Tools → Vertical layout
+Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Synchronisieren, Multicam, Hochkant, Thumbnail …	Remove pauses, filler words, auto-ducking, highlights, sync, multicam, vertical, thumbnail …
+Integration · {}	Integration · {}
+Daumen hoch	Thumbs up
+Abo-Knopf	Subscribe button
+Glocke	Bell
+Live	Live
+Webcam-Rahmen	Webcam frame
+Fortschrittsbalken	Progress bar
+Creator	Creator
+Freesound	Freesound
+Pexels	Pexels
+Mehrere Aufnahmen	Several recordings
+Zoom-Punch-in am Playhead	Zoom punch-in at the playhead

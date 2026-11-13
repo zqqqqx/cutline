@@ -149,119 +149,46 @@ impl App {
                 let d = self.doc.lock().unwrap();
                 (d.can_undo(), d.can_redo())
             };
-            if theme::icon_button(
-                ui,
-                icon::ARROW_COUNTER_CLOCKWISE,
-                format!("{}  (Strg+Z)", self.t("undo")),
-                cu,
-                false,
-            )
-            .clicked()
-            {
+            if theme::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, format!("{}  (Strg+Z)", self.t("undo")), cu, false).clicked() {
                 self.undo();
             }
-            if theme::icon_button(
-                ui,
-                icon::ARROW_CLOCKWISE,
-                format!("{}  (Strg+Umschalt+Z)", self.t("redo")),
-                cr,
-                false,
-            )
-            .clicked()
-            {
+            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, format!("{}  (Strg+Umschalt+Z)", self.t("redo")), cr, false).clicked() {
                 self.redo();
             }
             ui.add(egui::Separator::default().vertical().spacing(10.0));
+            ui.menu_button(egui::RichText::new(crate::tr(format!("{}  Werkzeuge", icon::MAGIC_WAND))).size(12.0), |ui| self.tools_menu(ui)).response.on_hover_text(crate::tr("Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Synchronisieren, Multicam, Hochkant, Thumbnail …"));
+            ui.add(egui::Separator::default().vertical().spacing(10.0));
             let has = !self.project.timeline.tracks.is_empty();
-            let sel = self.selected.is_some()
-                || !self.sel_extra.is_empty()
-                || self.selected_transition.is_some();
+            let sel = self.selected.is_some() || !self.sel_extra.is_empty() || self.selected_transition.is_some();
             if theme::icon_button(ui, icon::SCISSORS, "Teilen  (Strg+B)", has, false).clicked() {
                 self.split_at_playhead();
             }
-            if theme::icon_button(
-                ui,
-                icon::ARROW_LINE_LEFT,
-                "Links vom Playhead löschen  (Q)",
-                has,
-                false,
-            )
-            .clicked()
-            {
+            if theme::icon_button(ui, icon::ARROW_LINE_LEFT, "Links vom Playhead löschen  (Q)", has, false).clicked() {
                 self.delete_side(true);
             }
-            if theme::icon_button(
-                ui,
-                icon::ARROW_LINE_RIGHT,
-                "Rechts vom Playhead löschen  (W)",
-                has,
-                false,
-            )
-            .clicked()
-            {
+            if theme::icon_button(ui, icon::ARROW_LINE_RIGHT, "Rechts vom Playhead löschen  (W)", has, false).clicked() {
                 self.delete_side(false);
             }
             if theme::icon_button(ui, icon::TRASH, "Löschen  (Entf)", sel, false).clicked() {
                 self.delete_selected();
             }
             ui.add(egui::Separator::default().vertical().spacing(10.0));
-            let video_sel = self
-                .selected
-                .and_then(|s| self.project.find_clip(s))
-                .is_some_and(|(_, c)| {
-                    matches!(
-                        c.content,
-                        ClipContent::Media {
-                            kind: MediaKind::Video,
-                            ..
-                        }
-                    )
-                });
-            let visual_sel = self
-                .selected
-                .and_then(|s| self.project.find_clip(s))
-                .is_some_and(|(_, c)| c.kind() == TrackKind::Video);
-            if theme::icon_button(
-                ui,
-                icon::SNOWFLAKE,
-                "Standbild (3 s am Playhead)",
-                has,
-                false,
-            )
-            .clicked()
-            {
+            let video_sel = self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| matches!(c.content, ClipContent::Media { kind: MediaKind::Video, .. }));
+            let visual_sel = self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| c.kind() == TrackKind::Video);
+            if theme::icon_button(ui, icon::SNOWFLAKE, "Standbild (3 s am Playhead)", has, false).clicked() {
                 self.freeze_frame();
             }
-            let rev = self
-                .selected
-                .and_then(|s| self.project.find_clip(s))
-                .is_some_and(|(_, c)| c.fx.reverse);
-            if theme::icon_button(
-                ui,
-                icon::ARROWS_LEFT_RIGHT,
-                "Rückwärts abspielen",
-                video_sel,
-                rev,
-            )
-            .clicked()
-            {
+            let rev = self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| c.fx.reverse);
+            if theme::icon_button(ui, icon::ARROWS_LEFT_RIGHT, "Rückwärts abspielen", video_sel, rev).clicked() {
                 self.modify_selection(|c| c.fx.reverse = !c.fx.reverse);
             }
-            if theme::icon_button(ui, icon::FLIP_HORIZONTAL, "Spiegeln", visual_sel, false)
-                .clicked()
-            {
+            if theme::icon_button(ui, icon::FLIP_HORIZONTAL, "Spiegeln", visual_sel, false).clicked() {
                 self.modify_selection(|c| c.fx.flip_h = !c.fx.flip_h);
             }
-            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, "90° drehen", visual_sel, false)
-                .clicked()
-            {
-                self.modify_selection(|c| {
-                    c.transform.rotation_deg =
-                        ((c.transform.rotation_deg + 90.0 + 180.0).rem_euclid(360.0)) - 180.0
-                });
+            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, "90° drehen", visual_sel, false).clicked() {
+                self.modify_selection(|c| c.transform.rotation_deg = ((c.transform.rotation_deg + 90.0 + 180.0).rem_euclid(360.0)) - 180.0);
             }
-            if theme::icon_button(ui, icon::WAVEFORM, "Ton extrahieren", video_sel, false).clicked()
-            {
+            if theme::icon_button(ui, icon::WAVEFORM, "Ton extrahieren", video_sel, false).clicked() {
                 if let Some(s) = self.selected {
                     self.extract_audio(s);
                 }
@@ -270,31 +197,20 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 1.0;
                 ui.add_space(4.0);
-                if theme::icon_button(
-                    ui,
-                    icon::ARROWS_OUT_LINE_HORIZONTAL,
-                    "Zeitleiste einpassen",
-                    true,
-                    false,
-                )
-                .clicked()
-                {
+                if theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Zeitleiste einpassen", true, false).clicked() {
                     let w = ui.ctx().screen_rect().width() * 0.6;
                     let d = self.project.duration().as_secs_f64().max(1.0);
                     self.timeline.pps = (w / d as f32).clamp(2.0, 400.0);
                     self.timeline.scroll = 0.0;
                 }
-                if theme::icon_button(ui, icon::PLUS, "Vergrößern (Strg+Mausrad)", true, false)
-                    .clicked()
-                {
+                if theme::icon_button(ui, icon::PLUS, "Vergrößern (Strg+Mausrad)", true, false).clicked() {
                     self.timeline.pps = (self.timeline.pps * 1.25).min(400.0);
                 }
                 ui.allocate_ui(vec2(90.0, 20.0), |ui| {
                     let mut z = self.timeline.pps;
                     ui.spacing_mut().item_spacing.x = 0.0;
                     let r = ui.allocate_ui(vec2(90.0, 18.0), |ui| {
-                        let (rect, resp) =
-                            ui.allocate_exact_size(vec2(90.0, 18.0), Sense::click_and_drag());
+                        let (rect, resp) = ui.allocate_exact_size(vec2(90.0, 18.0), Sense::click_and_drag());
                         let track = Rect::from_center_size(rect.center(), vec2(80.0, 2.0));
                         let n = ((z.ln() - 2f32.ln()) / (400f32.ln() - 2f32.ln())).clamp(0.0, 1.0);
                         if let Some(p) = resp.interact_pointer_pos() {
@@ -302,19 +218,8 @@ impl App {
                             z = (2f32.ln() + nn * (400f32.ln() - 2f32.ln())).exp();
                         }
                         ui.painter().rect_filled(track, 1.0, theme::BG_HOVER);
-                        ui.painter().rect_filled(
-                            Rect::from_min_max(
-                                track.min,
-                                pos2(track.left() + n * track.width(), track.max.y),
-                            ),
-                            1.0,
-                            theme::TEXT_DIM,
-                        );
-                        ui.painter().circle_filled(
-                            pos2(track.left() + n * track.width(), track.center().y),
-                            if resp.hovered() { 5.5 } else { 4.5 },
-                            theme::ACCENT,
-                        );
+                        ui.painter().rect_filled(Rect::from_min_max(track.min, pos2(track.left() + n * track.width(), track.max.y)), 1.0, theme::TEXT_DIM);
+                        ui.painter().circle_filled(pos2(track.left() + n * track.width(), track.center().y), if resp.hovered() { 5.5 } else { 4.5 }, theme::ACCENT);
                     });
                     let _ = r;
                     self.timeline.pps = z;
@@ -324,28 +229,12 @@ impl App {
                 }
                 ui.add(egui::Separator::default().vertical().spacing(10.0));
                 let s = self.project.settings.clone();
-                if theme::icon_button(
-                    ui,
-                    icon::ARROWS_IN_LINE_HORIZONTAL,
-                    format!("{}  (N)", self.t("snapping")),
-                    true,
-                    s.snapping,
-                )
-                .clicked()
-                {
+                if theme::icon_button(ui, icon::ARROWS_IN_LINE_HORIZONTAL, format!("{}  (N)", self.t("snapping")), true, s.snapping).clicked() {
                     let mut n = s.clone();
                     n.snapping = !n.snapping;
                     self.apply(EditOp::SetSettings { settings: n });
                 }
-                if theme::icon_button(
-                    ui,
-                    icon::MAGNET,
-                    format!("{}  (P)", self.t("magnet")),
-                    true,
-                    s.main_track_magnet,
-                )
-                .clicked()
-                {
+                if theme::icon_button(ui, icon::MAGNET, format!("{}  (P)", self.t("magnet")), true, s.main_track_magnet).clicked() {
                     let mut n = s.clone();
                     n.main_track_magnet = !n.main_track_magnet;
                     self.apply(EditOp::SetSettings { settings: n });
@@ -353,25 +242,12 @@ impl App {
                 ui.add(egui::Separator::default().vertical().spacing(10.0));
                 let rec = self.voiceover.recorder.is_some();
                 let mic = ui.add(
-                    egui::Button::new(RichText::new(icon::MICROPHONE).size(14.0).color(if rec {
-                        theme::DANGER
-                    } else if self.voiceover.open {
-                        theme::ACCENT
-                    } else {
-                        theme::TEXT_DIM
-                    }))
-                    .fill(if self.voiceover.open || rec {
-                        Color32::from_white_alpha(22)
-                    } else {
-                        Color32::TRANSPARENT
-                    })
-                    .corner_radius(5)
-                    .min_size(vec2(24.0, 22.0)),
+                    egui::Button::new(RichText::new(icon::MICROPHONE).size(14.0).color(if rec { theme::DANGER } else if self.voiceover.open { theme::ACCENT } else { theme::TEXT_DIM }))
+                        .fill(if self.voiceover.open || rec { Color32::from_white_alpha(22) } else { Color32::TRANSPARENT })
+                        .corner_radius(5)
+                        .min_size(vec2(24.0, 22.0)),
                 );
-                if mic
-                    .on_hover_text(crate::tr(format!("{}  (R)", self.t("voiceover"))))
-                    .clicked()
-                {
+                if mic.on_hover_text(crate::tr(format!("{}  (R)", self.t("voiceover")))).clicked() {
                     self.voiceover.open = !self.voiceover.open;
                 }
             });

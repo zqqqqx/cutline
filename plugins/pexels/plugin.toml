@@ -1,0 +1,13 @@
+# Eingebaute Integration, standardmäßig aus.
+[plugin]
+id = "cutline.pexels"
+version = "0.1.0"
+api = 1
+kind = "integration"
+entry = "builtin:pexels"
+default_enabled = false
+name = { de = "Pexels", en = "Pexels" }
+description = { de = "Stock-Videos und -Fotos suchen und einfügen. Benötigt einen kostenlosen API-Schlüssel.", en = "Search and add stock videos and photos. Requires a free API key." }
+authors = ["Cutline contributors"]
+license = "MPL-2.0"
+permissions = ["net:api.pexels.com", "project.write"]
