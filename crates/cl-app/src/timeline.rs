@@ -17,7 +17,7 @@ use crate::preview::WAVE_PER_SEC;
 use crate::theme::{self, icon};
 use crate::widgets::Slider;
 
-const HEADER_W: f32 = 92.0;
+const HEADER_W: f32 = 172.0;
 const RULER_H: f32 = 22.0;
 const ROW_H: f32 = 34.0;
 const MAIN_ROW_H: f32 = 58.0;
@@ -359,9 +359,27 @@ impl App {
         // ---------- Klicks ----------
         let mods = ui.input(|i| i.modifiers);
         let multi = mods.command || mods.shift;
+        // Marker im Lineal: Klick springt hin, Doppelklick öffnet den Editor
+        let markers = self.project.timeline.markers.clone();
+        let marker_at = |p: Pos2| -> Option<(u64, Time)> {
+            if p.y >= ruler.bottom() || p.x < x0 {
+                return None;
+            }
+            markers.iter().filter(|m| (tx(m.at.as_secs_f64()) - p.x).abs() <= 7.0).min_by_key(|m| ((tx(m.at.as_secs_f64()) - p.x).abs() * 100.0) as i64).map(|m| (m.id, m.at))
+        };
+        if resp.double_clicked() {
+            if let Some((id, at)) = resp.interact_pointer_pos().and_then(marker_at) {
+                self.stop_playback();
+                self.playhead = at;
+                self.marker_edit = Some(id);
+            }
+        }
         if resp.clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
-                if p.y < ruler.bottom() && p.x >= x0 {
+                if let Some((_, at)) = marker_at(p) {
+                    self.stop_playback();
+                    self.playhead = at;
+                } else if p.y < ruler.bottom() && p.x >= x0 {
                     self.set_playhead_ui(Time::from_secs_f64(xt(p.x)), false);
                 } else if let Some(b) = hit_block(p) {
                     self.select_only(None);
@@ -651,6 +669,52 @@ impl App {
             t += minor;
         }
         painter.line_segment([pos2(rect.left(), ruler.bottom()), pos2(rect.right(), ruler.bottom())], Stroke::new(1.0_f32, theme::BORDER));
+        // In/Out-Bereich
+        if self.range_in.is_some() || self.range_out.is_some() {
+            let a = self.range_in.map(|t| tx(t.as_secs_f64())).unwrap_or(x0);
+            let b = self.range_out.map(|t| tx(t.as_secs_f64())).unwrap_or(rect.right());
+            let r = Rect::from_min_max(pos2(a.max(x0), ruler.top()), pos2(b.min(rect.right()), ruler.bottom()));
+            if r.width() > 0.0 {
+                // dezentes Band unten im Lineal (Schleife: blau)
+                let band = Rect::from_min_max(pos2(r.left(), ruler.bottom() - 5.0), r.max);
+                rp.rect_filled(band, 0.0, if self.loop_range { Color32::from_rgb(0x4A, 0x78, 0xC8) } else { Color32::from_rgb(0x5A, 0x5A, 0x64) });
+                let lp = painter.with_clip_rect(lanes);
+                for x in [r.left(), r.right()] {
+                    if x > x0 && x < rect.right() - 1.0 {
+                        lp.line_segment([pos2(x, ruler.bottom()), pos2(x, rect.bottom())], Stroke::new(1.0_f32, Color32::from_rgb(0x4A, 0x4A, 0x55)));
+                    }
+                }
+            }
+            for (t, glyph) in [(self.range_in, "["), (self.range_out, "]")] {
+                if let Some(t) = t {
+                    let x = tx(t.as_secs_f64());
+                    if x >= x0 {
+                        rp.line_segment([pos2(x, ruler.top()), pos2(x, ruler.bottom())], Stroke::new(1.5_f32, theme::ACCENT));
+                        rp.text(pos2(x, ruler.bottom() - 2.0), egui::Align2::CENTER_BOTTOM, glyph, egui::FontId::monospace(11.0), theme::ACCENT);
+                    }
+                }
+            }
+        }
+        // Marker
+        for m in self.project.timeline.markers.clone() {
+            let x = tx(m.at.as_secs_f64());
+            if x < x0 - 6.0 || x > rect.right() + 6.0 {
+                continue;
+            }
+            let col = crate::navigate::marker_color(m.color);
+            if m.duration > Time::ZERO {
+                let x2 = tx((m.at + m.duration).as_secs_f64());
+                rp.rect_filled(Rect::from_min_max(pos2(x.max(x0), ruler.bottom() - 4.0), pos2(x2.min(rect.right()), ruler.bottom())), 0.0, col.gamma_multiply(0.6));
+            }
+            let top = ruler.top() + 2.0;
+            let pts = vec![pos2(x - 5.0, top), pos2(x + 5.0, top), pos2(x + 5.0, top + 7.0), pos2(x, top + 12.0), pos2(x - 5.0, top + 7.0)];
+            rp.add(egui::Shape::convex_polygon(pts, col, Stroke::NONE));
+            let hit = Rect::from_center_size(pos2(x, top + 6.0), vec2(12.0, 14.0));
+            let r = ui.interact(hit, ui.id().with(("marker", m.id)), Sense::hover());
+            let tip = if m.name.is_empty() { crate::navigate::chapter_time(m.at) } else { format!("{}  {}", crate::navigate::chapter_time(m.at), m.name) };
+            let r = if m.note.is_empty() { r.on_hover_text(tip) } else { r.on_hover_text(format!("{tip}\n{}", m.note)) };
+            let _ = r;
+        }
 
         if tracks.is_empty() && recording.is_none() {
             let r = Rect::from_center_size(pos2((x0 + rect.right()) / 2.0, lanes.center().y), vec2((rect.right() - x0 - 40.0).max(200.0), 58.0));
@@ -791,6 +855,23 @@ impl App {
             }
             if matches!(tr.kind, TrackKind::Video | TrackKind::Audio) {
                 toggles.push((2, if tr.muted { icon::SPEAKER_SLASH } else { icon::SPEAKER_HIGH }, tr.muted, "Stumm"));
+                toggles.push((3, icon::HEADPHONES, self.solo.contains(&tr.id), "Solo (nur diese Spur hören)"));
+            }
+            // Spurname (eigener Name oder Art + Nummer)
+            let name = tr.name.clone().unwrap_or_else(|| {
+                let n = tracks.iter().filter(|t| t.kind == tr.kind).position(|t| t.id == tr.id).unwrap_or(0) + 1;
+                let k = match tr.kind {
+                    TrackKind::Audio => "Audio",
+                    TrackKind::Text => "Text",
+                    _ => "Video",
+                };
+                format!("{} {n}", crate::tr(k))
+            });
+            let name_x = head.left() + 32.0 + toggles.len() as f32 * 19.0 + 4.0;
+            if name_x < head.right() - 16.0 {
+                let g = hp.layout_no_wrap(name, egui::FontId::proportional(10.5), if tr.name.is_some() { theme::TEXT_DIM } else { theme::TEXT_FAINT });
+                let clip = Rect::from_min_max(pos2(name_x, head.top()), pos2(head.right() - 6.0, head.bottom()));
+                hp.with_clip_rect(clip.intersect(head_bg)).galley(pos2(name_x, head.center().y - g.size().y / 2.0), g, theme::TEXT_DIM);
             }
             for (n, (k, glyph, on, tip)) in toggles.iter().enumerate() {
                 let c = pos2(head.left() + 32.0 + n as f32 * 19.0, head.center().y);
@@ -803,7 +884,14 @@ impl App {
                     hp.rect_filled(r, 4.0, theme::BG_RAISED);
                 }
                 hp.text(c, egui::Align2::CENTER_CENTER, crate::tr(*glyph), egui::FontId::proportional(12.0), if *on { theme::ACCENT } else { theme::TEXT_FAINT });
-                if br.clicked() {
+                if br.clicked() && *k == 3 {
+                    if !self.solo.remove(&tr.id) {
+                        self.solo.insert(tr.id);
+                    }
+                    if self.playing {
+                        self.restart_audio();
+                    }
+                } else if br.clicked() {
                     let (mut l, mut h, mut m) = (tr.locked, tr.hidden, tr.muted);
                     match k {
                         0 => l = !l,
@@ -909,6 +997,10 @@ impl App {
         }
         p.rect_filled(cr, 5.0, col);
         let band = Rect::from_min_max(cr.min, pos2(cr.right(), (cr.top() + BAND_H).min(cr.bottom())));
+        if let Some(l) = c.label {
+            // Farbmarkierung als Kopfband
+            p.rect_filled(band, egui::CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 }, crate::navigate::marker_color(l).gamma_multiply(0.85));
+        }
         let body = Rect::from_min_max(pos2(cr.left(), band.bottom()), cr.max);
         let inner = p.with_clip_rect(body.intersect(lanes_clip));
         if let ClipContent::Media { media, kind: mk } = &c.content {
@@ -1112,6 +1204,20 @@ impl App {
                 if menu_item(ui, if c.disabled { icon::EYE } else { icon::EYE_SLASH }, if c.disabled { "Clip aktivieren" } else { "Clip deaktivieren" }, "V") {
                     self.toggle_disabled();
                 }
+                ui.menu_button(crate::tr(format!("{}   Farbe", icon::PALETTE)), |ui| {
+                    ui.set_min_width(150.0);
+                    if ui.button(crate::tr("Keine")).clicked() {
+                        self.modify_selection(|x| x.label = None);
+                        ui.close_menu();
+                    }
+                    for (i, (n, _)) in cl_core::MARKER_COLORS.iter().enumerate() {
+                        let col = crate::navigate::marker_color(i as u8);
+                        if ui.button(RichText::new(crate::tr(format!("●  {n}"))).color(col)).clicked() {
+                            self.modify_selection(|x| x.label = Some(i as u8));
+                            ui.close_menu();
+                        }
+                    }
+                });
                 let _ = tr;
             }
             CtxTarget::Transition(id) => {
@@ -1126,6 +1232,9 @@ impl App {
                 };
                 let audio = tr.kind == TrackKind::Audio;
                 let (above, below) = if audio { (idx, idx + 1) } else { (idx + 1, idx) };
+                if menu_item(ui, icon::PENCIL_SIMPLE, "Spur umbenennen …", "") {
+                    self.track_rename = Some((tr.id, tr.name.clone().unwrap_or_default()));
+                }
                 if menu_item(ui, icon::ARROW_LINE_UP, "Spur darüber einfügen", "") {
                     self.apply(EditOp::InsertTrack { index: above, kind: tr.kind });
                 }

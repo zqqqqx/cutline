@@ -687,7 +687,8 @@ Krone	Crown
 Musiknote	Music note
 Lächeln	Smile
 Unterstrich	Underline
-Marker	Highlighter
+Textmarker	Highlighter
+Marker	Markers
 Konfetti	Confetti
 # Textvorlagen
 Titel	Title
@@ -909,3 +910,75 @@ Sonstiges	Other
 Der Entwurf ist verschlüsselt oder beschädigt und kann nicht gelesen werden	The draft is encrypted or damaged and can't be read
 Im Entwurf wurden keine übertragbaren Clips gefunden	No transferable clips found in the draft
 Unbekanntes Projektformat	Unknown project format
+# Phase 5.1
+Rückwärts abspielen (mehrfach: schneller)	Play backward (press again: faster)
+Vorwärts abspielen (mehrfach: schneller)	Play forward (press again: faster)
+Anhalten	Stop
+In-Punkt setzen	Set In point
+Out-Punkt setzen	Set Out point
+In/Out löschen	Clear In/Out
+Bereich in Schleife abspielen	Loop the range
+Marker setzen	Add marker
+Nächster Marker	Next marker
+Vorheriger Marker	Previous marker
+Löschen und Lücke schließen	Ripple delete
+Zum vorherigen Schnitt	Previous edit
+Zum nächsten Schnitt	Next edit
+Zum Anfang	Go to start
+Zum Ende	Go to end
+Hauptspur-Magnet	Main track magnet
+Einrasten	Snapping
+Speichern unter	Save as
+Oberfläche größer	Larger interface
+Oberfläche kleiner	Smaller interface
+Oberfläche 100 %	Interface 100 %
+Auswahl aufheben	Clear selection
+Vorlage	Preset
+Premiere-ähnlich	Premiere-like
+Resolve-ähnlich	Resolve-like
+Klicke auf eine Belegung und drücke die neue Taste. Entf entfernt die Belegung, Esc bricht ab.	Click a binding and press the new key. Delete removes the binding, Esc cancels.
+Taste drücken …	Press a key …
+Standard wiederherstellen	Restore default
+Außerdem: Strg+C / X / V kopieren, ausschneiden, einfügen · Strg+Mausrad zoomt die Zeitleiste · Umschalt+Mausrad scrollt waagerecht · Alt+Umschalt+Z passt den Player ein	Also: Ctrl+C / X / V copy, cut, paste · Ctrl+wheel zooms the timeline · Shift+wheel scrolls horizontally · Alt+Shift+Z fits the player
+Schleife an	Loop on
+Schleife aus	Loop off
+Nur In/Out-Bereich ({} – {})	In/Out range only ({} – {})
+z. B. Intro, Szene 2	e.g. Intro, Scene 2
+Notiz	Note
+Fertig	Done
+Setze Marker mit M (am Playhead)	Add markers with M (at the playhead)
+Ohne Namen	Untitled
+YouTube-Kapitel kopieren	Copy YouTube chapters
+Kapitelliste aus den Markern für die Videobeschreibung	Chapter list from the markers for the video description
+Kapitel in die Zwischenablage kopiert	Chapters copied to the clipboard
+Solo (nur diese Spur hören)	Solo (hear only this track)
+Spur umbenennen	Rename track
+Spur umbenennen …	Rename track …
+z. B. Sprecher 1, Musik, Kamera B	e.g. Speaker 1, Music, Camera B
+Orange	Orange
+Pink	Pink
+Lila	Purple
+Grau	Gray
+Projekt archivieren …	Archive project …
+Projekt mit allen Medien und Schriften in einen Ordner kopieren	Copy the project with all media and fonts into one folder
+Medien neu verknüpfen …	Relink media …
+Medien neu verknüpfen	Relink media
+Sicherungen …	Backups …
+Sicherungen	Backups
+Zielordner für das Archiv	Destination folder for the archive
+Projekt wird archiviert …	Archiving project …
+Archiv erstellt: {}	Archive created: {}
+Archivieren fehlgeschlagen: {}	Archiving failed: {}
+Cutline sichert geöffnete Projekte alle 5 Minuten, wenn sich etwas geändert hat. Die letzten 30 Stände bleiben erhalten.	Cutline backs up open projects every 5 minutes when something changed. The last 30 versions are kept.
+Das Projekt ist noch nicht gespeichert.	The project hasn't been saved yet.
+Jetzt sichern	Back up now
+Noch keine Sicherungen	No backups yet
+Wiederherstellen	Restore
+Sicherung wiederhergestellt	Backup restored
+Alle Medien sind vorhanden	All media are available
+{} Mediendateien wurden nicht gefunden (verschoben oder umbenannt).	{} media files were not found (moved or renamed).
+Ordner durchsuchen …	Search folder …
+Sucht alle fehlenden Dateien nach Namen in einem Ordner und seinen Unterordnern	Looks for all missing files by name in a folder and its subfolders
+{} von {} Dateien gefunden	Found {} of {} files
+Pegel L {} dB · R {} dB	Level L {} dB · R {} dB
+Medium neu verknüpfen	Relink media

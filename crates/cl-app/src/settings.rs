@@ -41,6 +41,8 @@ pub struct AppSettings {
     /// Import aus anderen Schnittprogrammen
     pub import_capcut: bool,
     pub import_fcpxml: bool,
+    /// Eigene Tastenkürzel: Aktion → Kombination (leer = keine)
+    pub shortcuts: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for AppSettings {
@@ -64,6 +66,7 @@ impl Default for AppSettings {
             plugin_states: Default::default(),
             import_capcut: true,
             import_fcpxml: true,
+            shortcuts: Default::default(),
         }
     }
 }
@@ -140,27 +143,6 @@ const SECTIONS: [(Section, &str, &str); 10] = [
     (Section::About, icon::INFO, "Über Cutline"),
 ];
 
-const SHORTCUTS: &[(&str, &str)] = &[
-    ("Leertaste", "Abspielen / Pause"),
-    ("Strg+B", "Am Playhead teilen"),
-    ("Q / W", "Links / rechts vom Playhead löschen"),
-    ("Entf", "Auswahl löschen"),
-    ("Strg+C / X / V", "Kopieren / Ausschneiden / Einfügen"),
-    ("Strg+D", "Duplizieren"),
-    ("Strg+A", "Alle Clips auswählen"),
-    ("V", "Clip deaktivieren"),
-    ("Strg+Z / Strg+Umschalt+Z", "Rückgängig / Wiederholen"),
-    ("← / →", "Ein Bild zurück / vor"),
-    ("Pos1 / Ende", "Anfang / Ende"),
-    ("P / N", "Magnet / Einrasten"),
-    ("R", "Einsprechen"),
-    ("F", "Großer Player"),
-    ("Strg+Mausrad", "Zeitleiste zoomen"),
-    ("Umschalt+Mausrad", "Zeitleiste waagerecht"),
-    ("Alt+Umschalt+Z", "Player einpassen"),
-    ("Strg+I / S / O / E", "Importieren / Speichern / Öffnen / Exportieren"),
-    ("Strg + / − / 0", "Oberflächengröße"),
-];
 
 impl App {
     pub fn start_mcp(&mut self) {
@@ -365,15 +347,7 @@ impl App {
                 ui.label(RichText::new(crate::tr("cutline --mcp projekt.cutline")).monospace().color(theme::TEXT_DIM));
                 ui.label(RichText::new(crate::tr("Werkzeuge: Projekt lesen, Medien importieren, Clips einfügen, teilen, trimmen, löschen, Format setzen, beliebige EditOps, Rückgängig/Wiederholen.")).small().color(theme::TEXT_DIM));
             }
-            Section::Shortcuts => {
-                egui::Grid::new("keys").num_columns(2).spacing(vec2(24.0, 8.0)).show(ui, |ui| {
-                    for (k, what) in SHORTCUTS {
-                        ui.label(RichText::new(crate::tr(*k)).monospace().color(theme::ACCENT));
-                        ui.label(RichText::new(crate::tr(*what)).color(theme::TEXT_DIM));
-                        ui.end_row();
-                    }
-                });
-            }
+            Section::Shortcuts => self.shortcuts_settings(ui),
             Section::Updates => self.updates_settings(ui),
             Section::Integrations => self.integrations_settings(ui),
             Section::Import => self.import_settings(ui),

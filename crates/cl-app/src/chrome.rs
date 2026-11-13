@@ -197,6 +197,19 @@ impl App {
                 self.export.open_for(&self.project, self.project_path.as_deref());
             }
             ui.separator();
+            if item(ui, icon::ARCHIVE, "Projekt archivieren …", "").on_hover_text(crate::tr("Projekt mit allen Medien und Schriften in einen Ordner kopieren")).clicked() {
+                ui.close_menu();
+                self.start_archive(ui.ctx());
+            }
+            if item(ui, icon::LINK, "Medien neu verknüpfen …", "").clicked() {
+                ui.close_menu();
+                self.missing_open = true;
+            }
+            if item(ui, icon::CLOCK_COUNTER_CLOCKWISE, "Sicherungen …", "").clicked() {
+                ui.close_menu();
+                self.backups_open = true;
+            }
+            ui.separator();
             ui.menu_button(crate::tr(format!("{}  Oberflächengröße  ({:.0} %)", icon::MAGNIFYING_GLASS, self.ui_scale * 100.0)), |ui| {
                 for v in [0.8, 0.9, 1.0, 1.1, 1.25, 1.5] {
                     if ui.selectable_label((self.ui_scale - v).abs() < 0.01, crate::tr(format!("{:.0} %", v * 100.0))).clicked() {

@@ -791,6 +791,7 @@ impl App {
             ui.label(RichText::new(crate::tr(format!("{} Spuren · {clips} Clips · {} Medien", self.project.timeline.tracks.len(), self.project.media.len()))).color(theme::TEXT_DIM))
         });
         theme::row(ui, "Länge", |ui| ui.label(RichText::new(crate::tr(self.project.duration().timecode(self.project.settings.fps))).monospace().color(theme::TEXT_DIM)));
+        self.marker_list(ui);
     }
 
     fn history_inspector(&mut self, ui: &mut egui::Ui) {

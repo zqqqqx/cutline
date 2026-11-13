@@ -135,7 +135,7 @@ impl App {
             let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_fx::escape_path);
             let is_video = *kind == MediaKind::Video;
             let streamable = is_video && !c.fx.reverse && c.fx.speed_curve.is_none() && l.alpha >= 1.0;
-            if self.playing && streamable {
+            if self.playing && streamable && (self.play_rate - 1.0).abs() < 1e-6 {
                 let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), Some(fps), lut.clone());
                 let key = Self::frame_key(c, Time::ZERO, w, h, Time::ZERO, false);
                 let reopen = self.playbacks.get(&c.id).is_none_or(|p| p.key != key);
@@ -308,6 +308,45 @@ impl App {
     }
 
     /// Steuerleiste: Zeit links, Play mittig, Chips rechts.
+    /// Pegelanzeige (Spitze mit Abfall und Haltelinie), rot ab −1 dBFS
+    fn level_meter(&mut self, ui: &mut egui::Ui) {
+        let (l, r) = self.audio.as_ref().map(|a| a.take_peaks()).unwrap_or((0.0, 0.0));
+        let dt = ui.input(|i| i.stable_dt).min(0.1);
+        for (i, v) in [l, r].into_iter().enumerate() {
+            let cur = &mut self.meter[i];
+            cur.0 = v.max(cur.0 - dt * 1.2);
+            if v >= cur.1 {
+                cur.1 = v;
+                cur.2 = 1.0;
+            } else {
+                cur.2 -= dt;
+                if cur.2 <= 0.0 {
+                    cur.1 = (cur.1 - dt * 0.6).max(cur.0);
+                }
+            }
+        }
+        let (rect, resp) = ui.allocate_exact_size(vec2(14.0, 22.0), egui::Sense::hover());
+        let db = |v: f32| if v <= 1e-5 { -60.0 } else { 20.0 * v.log10() };
+        let y_of = |v: f32| rect.bottom() - rect.height() * ((db(v) + 60.0) / 60.0).clamp(0.0, 1.0);
+        let p = ui.painter();
+        for i in 0..2 {
+            let x0 = rect.left() + i as f32 * 7.0;
+            let bar = Rect::from_min_max(pos2(x0, rect.top()), pos2(x0 + 5.0, rect.bottom()));
+            p.rect_filled(bar, 1.0, Color32::from_rgb(0x26, 0x26, 0x2B));
+            let (v, hold, _) = self.meter[i];
+            let col = if db(v) > -1.0 { theme::DANGER } else if db(v) > -9.0 { Color32::from_rgb(0xE8, 0xC0, 0x50) } else { Color32::from_rgb(0x5C, 0xC8, 0x7A) };
+            p.rect_filled(Rect::from_min_max(pos2(bar.left(), y_of(v)), bar.max), 1.0, col);
+            if hold > 1e-4 {
+                let y = y_of(hold);
+                p.line_segment([pos2(bar.left(), y), pos2(bar.right(), y)], egui::Stroke::new(1.0_f32, if db(hold) > -1.0 { theme::DANGER } else { theme::TEXT_DIM }));
+            }
+        }
+        resp.on_hover_text(crate::tr(format!("Pegel L {:.0} dB · R {:.0} dB", db(self.meter[0].1), db(self.meter[1].1))));
+        if self.playing {
+            ui.ctx().request_repaint();
+        }
+    }
+
     fn player_controls(&mut self, ui: &mut egui::Ui, h: f32) {
         let fps = self.project.settings.fps;
         let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), egui::Sense::hover());
@@ -315,6 +354,7 @@ impl App {
         let right = Rect::from_min_max(pos2(bar.center().x + 24.0, bar.min.y), bar.max);
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(left).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             ui.add_space(4.0);
+            self.level_meter(ui);
             ui.label(RichText::new(crate::tr(self.playhead.timecode(fps))).color(theme::ACCENT).monospace());
             let total = format!("/ {}", self.project.duration().timecode(fps));
             let need = ui.painter().layout_no_wrap(total.clone(), egui::TextStyle::Monospace.resolve(ui.style()), theme::TEXT_DIM).size().x + 8.0;
