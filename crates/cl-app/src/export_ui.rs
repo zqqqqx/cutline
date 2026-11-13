@@ -12,66 +12,116 @@ use eframe::egui::{self, vec2, Color32, RichText};
 
 use crate::theme::{self, icon};
 
-/// Plattform-Vorlagen: (Name, kürzere Kante, Bildrate, Codec, Qualität, Seitenverhältnis B/H)
-type PlatformPreset = (&'static str, u32, Option<u32>, Codec, Quality, f32);
-const PLATFORM_PRESETS: &[PlatformPreset] = &[
-    (
-        "YouTube 1080p",
-        1080,
-        None,
-        Codec::H264,
-        Quality::Higher,
-        16.0 / 9.0,
-    ),
-    (
-        "YouTube 1440p",
-        1440,
-        None,
-        Codec::H264,
-        Quality::Higher,
-        16.0 / 9.0,
-    ),
-    (
-        "YouTube 4K",
-        2160,
-        None,
-        Codec::Hevc,
-        Quality::Higher,
-        16.0 / 9.0,
-    ),
-    (
-        "Shorts / TikTok / Reels (1080×1920)",
-        1080,
-        Some(30),
-        Codec::H264,
-        Quality::Higher,
-        9.0 / 16.0,
-    ),
-    (
-        "Instagram-Beitrag (1080×1350)",
-        1080,
-        Some(30),
-        Codec::H264,
-        Quality::Higher,
-        4.0 / 5.0,
-    ),
-    (
-        "Twitch-Clip (1080p60)",
-        1080,
-        Some(60),
-        Codec::H264,
-        Quality::Recommended,
-        16.0 / 9.0,
-    ),
-    (
-        "Kleine Datei zum Teilen (720p)",
-        720,
-        Some(30),
-        Codec::H264,
-        Quality::Lower,
-        16.0 / 9.0,
-    ),
+/// Zielplattform: setzt Projektformat (Größe, Bildrate) und Export (Codec, Qualität).
+pub struct Platform {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub w: u32,
+    pub h: u32,
+    pub fps: Option<u32>,
+    pub codec: Codec,
+    pub quality: Quality,
+}
+
+pub const PLATFORMS: &[Platform] = &[
+    Platform {
+        id: "youtube-1080",
+        name: "YouTube 1080p",
+        w: 1920,
+        h: 1080,
+        fps: None,
+        codec: Codec::H264,
+        quality: Quality::Higher,
+    },
+    Platform {
+        id: "youtube-1440",
+        name: "YouTube 1440p",
+        w: 2560,
+        h: 1440,
+        fps: None,
+        codec: Codec::H264,
+        quality: Quality::Higher,
+    },
+    Platform {
+        id: "youtube-4k",
+        name: "YouTube 4K",
+        w: 3840,
+        h: 2160,
+        fps: None,
+        codec: Codec::Hevc,
+        quality: Quality::Higher,
+    },
+    Platform {
+        id: "shorts",
+        name: "Shorts / TikTok / Reels (1080×1920)",
+        w: 1080,
+        h: 1920,
+        fps: Some(30),
+        codec: Codec::H264,
+        quality: Quality::Higher,
+    },
+    Platform {
+        id: "instagram",
+        name: "Instagram-Beitrag (1080×1350)",
+        w: 1080,
+        h: 1350,
+        fps: Some(30),
+        codec: Codec::H264,
+        quality: Quality::Higher,
+    },
+    Platform {
+        id: "twitch",
+        name: "Twitch-Clip (1080p60)",
+        w: 1920,
+        h: 1080,
+        fps: Some(60),
+        codec: Codec::H264,
+        quality: Quality::Recommended,
+    },
+    Platform {
+        id: "small",
+        name: "Kleine Datei zum Teilen (720p)",
+        w: 1280,
+        h: 720,
+        fps: Some(30),
+        codec: Codec::H264,
+        quality: Quality::Lower,
+    },
 ];
+
+pub fn platform(id: &str) -> Option<&'static Platform> {
+    PLATFORMS.iter().find(|p| p.id == id)
+}
+
+impl Platform {
+    /// Projektformat für diese Plattform (Größe, Seitenverhältnis, ggf. Bildrate).
+    pub fn apply_to(&self, s: &mut cl_core::ProjectSettings) {
+        s.width = self.w;
+        s.height = self.h;
+        let g = gcd(self.w, self.h);
+        s.aspect = cl_core::AspectPreset::Ratio(self.w / g, self.h / g);
+        if let Some(f) = self.fps {
+            s.fps = cl_core::Rational::new(f, 1);
+        }
+        s.platform = Some(self.id.to_string());
+    }
+    /// Passt das Seitenverhältnis des Projekts zu dieser Plattform?
+    pub fn fits(&self, s: &cl_core::ProjectSettings) -> bool {
+        let (a, b) = (
+            s.width.max(1) as f32 / s.height.max(1) as f32,
+            self.w as f32 / self.h as f32,
+        );
+        (a - b).abs() < 0.02
+    }
+}
+
+fn gcd(a: u32, b: u32) -> u32 {
+    if b == 0 {
+        a.max(1)
+    } else {
+        gcd(b, a % b)
+    }
+}
 
 struct Running {
     progress: Arc<Mutex<f32>>,
@@ -92,6 +142,9 @@ pub struct ExportDialog {
     /// In/Out-Bereich der Zeitleiste, falls gesetzt
     range_avail: Option<(Time, Time)>,
     preset_hint: Option<String>,
+    /// Gewählte Plattform (wird im Projekt gemerkt, wenn das Format passt)
+    platform: Option<&'static str>,
+    picked_platform: Option<&'static str>,
     also_srt: bool,
     encoders: Arc<Mutex<Option<Vec<Encoder>>>>,
     running: Option<Running>,
@@ -139,8 +192,14 @@ impl ExportDialog {
             s.encoder = old.encoder;
             s.include_audio = old.include_audio;
         }
-        self.settings = Some(s);
         self.short_edge = 0;
+        self.preset_hint = None;
+        self.platform = None;
+        if let Some(pl) = p.settings.platform.as_deref().and_then(platform) {
+            Self::apply_platform(&mut s, &mut self.short_edge, pl);
+            self.platform = Some(pl.id);
+        }
+        self.settings = Some(s);
         if self.custom_kbps == 0 {
             self.custom_kbps = 12000;
         }
@@ -153,6 +212,21 @@ impl ExportDialog {
                 *slot.lock().unwrap() = Some(found);
             });
         }
+    }
+
+    fn apply_platform(s: &mut ExportSettings, short_edge: &mut u32, pl: &Platform) {
+        s.format = Format::Mp4;
+        s.codec = pl.codec;
+        s.quality = pl.quality;
+        *short_edge = pl.w.min(pl.h);
+        if let Some(f) = pl.fps {
+            s.fps = cl_core::Rational::new(f, 1);
+        }
+    }
+
+    /// Im Export gewählte Plattform (einmalig abholen), damit das Projekt sie sich merkt.
+    pub fn take_picked_platform(&mut self) -> Option<&'static str> {
+        self.picked_platform.take()
     }
 
     fn output_path(&self, f: Format) -> PathBuf {
@@ -262,18 +336,16 @@ impl ExportDialog {
                                 theme::section(ui, "Video");
                                 // Plattform-Vorlagen: setzen Format, Codec, Größe, Bildrate und Qualität
                                 theme::row(ui, "Vorlage", |ui| {
-                                    egui::ComboBox::from_id_salt("exp-preset").selected_text(crate::tr("Plattform wählen …")).width(200.0).show_ui(ui, |ui| {
-                                        for (name, edge, fps, codec, q, ratio) in PLATFORM_PRESETS {
-                                            if ui.selectable_label(false, crate::tr(*name)).clicked() {
-                                                s.format = Format::Mp4;
-                                                s.codec = *codec;
-                                                s.quality = *q;
-                                                self.short_edge = *edge;
-                                                if let Some(f) = fps {
-                                                    s.fps = cl_core::Rational::new(*f, 1);
+                                    let sel = self.platform.and_then(platform).map(|pl| crate::tr(pl.name)).unwrap_or_else(|| crate::tr("Plattform wählen …"));
+                                    egui::ComboBox::from_id_salt("exp-preset").selected_text(sel).width(200.0).show_ui(ui, |ui| {
+                                        for pl in PLATFORMS {
+                                            if ui.selectable_label(self.platform == Some(pl.id), crate::tr(pl.name)).clicked() {
+                                                Self::apply_platform(&mut s, &mut self.short_edge, pl);
+                                                self.platform = Some(pl.id);
+                                                self.preset_hint = (!pl.fits(&p.settings)).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Werkzeuge → Hochkant-Layout"));
+                                                if pl.fits(&p.settings) {
+                                                    self.picked_platform = Some(pl.id);
                                                 }
-                                                let (pw, ph) = (p.settings.width.max(2) as f32, p.settings.height.max(2) as f32);
-                                                self.preset_hint = (((pw / ph) - ratio).abs() > 0.02).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – für Hochkant: Werkzeuge → Hochkant-Layout"));
                                             }
                                         }
                                     });
@@ -390,7 +462,7 @@ impl ExportDialog {
                     if let Some(out) = &self.last_output {
                         if self.running.is_none() && out.exists() {
                             if ui.add(theme::secondary(format!("{}  Im Ordner zeigen", icon::FOLDER_OPEN))).clicked() {
-                                let _ = std::process::Command::new("explorer").arg(format!("/select,{}", out.display())).spawn();
+                                crate::home::reveal(out);
                             }
                         }
                     }

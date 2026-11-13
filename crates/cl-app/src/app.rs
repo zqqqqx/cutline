@@ -147,6 +147,15 @@ pub struct App {
     pub tour: Option<usize>,
     /// Lage der Bereiche für den Rundgang
     pub tour_rects: HashMap<&'static str, egui::Rect>,
+    /// Vorschau: maskierte Effekt-Elemente (Clip, zweite Fassung, Maske)
+    pub fx_overlays: Vec<(ClipId, ClipId, Option<Mask>, f32)>,
+    /// Messung (CUTLINE_PERF): geöffnete Ströme, gezeigte Strom-Bilder, UI-Bilder
+    pub perf_opens: u32,
+    pub perf_frames: u32,
+    pub perf_ui: u32,
+    pub perf_since: Instant,
+    pub perf_last_frame: Option<Instant>,
+    pub perf_max_gap: f64,
     /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
     /// Figuren (Plugin „Story-Werkzeuge“)
@@ -203,8 +212,14 @@ pub struct App {
     pub frames: HashMap<ClipId, (u64, egui::TextureHandle)>,
     pub requested: HashMap<ClipId, u64>,
     pub playbacks: HashMap<ClipId, Playback>,
+    /// Neu geöffnete Ströme, die den laufenden ersetzen, sobald sie ein Bild haben
+    pub playbacks_next: HashMap<ClipId, Playback>,
+    /// Fingerabdruck alles Hörbaren (Ton nur bei Änderungen neu starten)
+    pub audio_sig: u64,
     pub audio: Option<AudioPlayer>,
     pub play_clock: Option<(Instant, Time)>,
+    /// Abspielen gedrückt, Bild und Ton starten, sobald die Ströme das erste Bild haben
+    pub play_warmup: Option<Instant>,
     pub sfx_preview: Option<(String, AudioPlayer)>,
     pub thumbs: HashMap<MediaId, egui::TextureHandle>,
     pub waves: HashMap<MediaId, Vec<f32>>,
@@ -312,6 +327,13 @@ impl App {
             onboard,
             tour: None,
             tour_rects: HashMap::new(),
+            fx_overlays: Vec::new(),
+            perf_opens: 0,
+            perf_frames: 0,
+            perf_ui: 0,
+            perf_since: Instant::now(),
+            perf_last_frame: None,
+            perf_max_gap: 0.0,
             multicam: None,
             characters: crate::story::load(),
             stock: Default::default(),
@@ -363,8 +385,11 @@ impl App {
             frames: HashMap::new(),
             requested: HashMap::new(),
             playbacks: HashMap::new(),
+            playbacks_next: HashMap::new(),
+            audio_sig: 0,
             audio: None,
             play_clock: None,
+            play_warmup: None,
             sfx_preview: None,
             thumbs: HashMap::new(),
             waves: HashMap::new(),
@@ -480,9 +505,15 @@ impl App {
                     self.live = None;
                 }
             }
-            self.invalidate_preview();
-            if self.playing && self.voiceover.recorder.is_none() {
-                self.restart_audio(); // Änderungen sofort hörbar
+            // Einzelbilder neu anfordern; laufende Ströme bleiben – ihr Schlüssel enthält Effekte
+            // und Timing, geänderte Clips wechseln ohne Stocken auf einen neuen Strom.
+            self.requested.clear();
+            let sig = audio_signature(&self.project);
+            if sig != self.audio_sig {
+                self.audio_sig = sig;
+                if self.playing && self.voiceover.recorder.is_none() && self.play_warmup.is_none() {
+                    self.restart_audio(); // hörbare Änderungen sofort hörbar
+                }
             }
             for m in &self.project.media {
                 if m.has_audio && !self.waves.contains_key(&m.id) {
@@ -512,6 +543,7 @@ impl App {
     pub fn invalidate_preview(&mut self) {
         self.requested.clear();
         self.playbacks.clear();
+        self.playbacks_next.clear();
     }
 
     // ---------- Auswahl ----------
@@ -575,10 +607,22 @@ impl App {
 
     /// Laufende Inspektor-Bearbeitung in den Verlauf schreiben.
     pub fn commit_live(&mut self) {
-        if let Some(c) = self.live.take() {
-            if self.project.find_clip(c.id).is_some_and(|(_, o)| *o != c) {
-                self.apply(EditOp::ReplaceClip { clip: c });
-            }
+        let Some(c) = self.live.take() else {
+            return;
+        };
+        let Some(orig) = self.project.find_clip(c.id).map(|(_, o)| o.clone()) else {
+            return;
+        };
+        if orig == c {
+            return;
+        }
+        // Mehrfachauswahl: dieselben Änderungen auf alle anderen ausgewählten Clips übertragen
+        let mut ops = crate::multi_edit::propagate(&self.project, &orig, &c, &self.selection());
+        if ops.is_empty() {
+            self.apply(EditOp::ReplaceClip { clip: c });
+        } else {
+            ops.insert(0, EditOp::ReplaceClip { clip: c });
+            self.apply_batch(ops);
         }
     }
 
@@ -601,6 +645,11 @@ impl App {
             Prop::Rotation => c.transform.rotation_deg = v,
             Prop::Opacity => c.opacity = v,
             Prop::Volume => c.volume_db = v,
+            Prop::Strength => {
+                if let ClipContent::Effect(r) | ClipContent::Filter(r) = &mut c.content {
+                    r.intensity = v.clamp(0.0, 1.0);
+                }
+            }
         }
     }
 
@@ -627,6 +676,7 @@ impl App {
                     Prop::Rotation => ev.rotation_deg,
                     Prop::Opacity => ev.opacity,
                     Prop::Volume => ev.volume_db,
+                    Prop::Strength => c.strength_at(t),
                 };
                 // Erster Keyframe: Grundwert übernehmen, damit nichts springt
                 c.keyframes.set(*p, t, v);
@@ -1047,19 +1097,90 @@ impl App {
             DragAsset::File(p) => {
                 self.add_file_at(p.clone(), at, track);
             }
-            DragAsset::Effect(id) => match on_clip.or(self.selected) {
+            // Auf einen Clip gezogen: wirkt auf diesen Clip. Ins Freie: eigenes Element auf einer
+            // Effekt-/Filterspur, das auf alles darunter wirkt.
+            DragAsset::Effect(id) => match self.visual_target(on_clip) {
                 Some(c) => self.add_effect(c, id),
-                None => self.toast_err("Ziehe den Effekt auf einen Clip"),
+                None => {
+                    self.add_fx_clip(id, false, at, track);
+                }
             },
-            DragAsset::Filter(id) => match on_clip.or(self.selected) {
+            DragAsset::Filter(id) => match self.visual_target(on_clip) {
                 Some(c) => self.set_filter(c, Some(id.clone())),
-                None => self.toast_err("Ziehe den Filter auf einen Clip"),
+                None => {
+                    self.add_fx_clip(id, true, at, track);
+                }
             },
             DragAsset::Transition(id) => match on_clip {
                 Some(c) => self.set_transition(c, Some(id)),
                 None => self.apply_transition_near_playhead(id),
             },
         }
+    }
+
+    /// Clip unter dem Mauszeiger, falls er ein Bild hat (Video, Bild, Sticker).
+    fn visual_target(&self, on_clip: Option<ClipId>) -> Option<ClipId> {
+        on_clip.filter(|c| {
+            self.project.find_clip(*c).is_some_and(|(_, c)| {
+                matches!(
+                    c.content,
+                    ClipContent::Media {
+                        kind: MediaKind::Video | MediaKind::Image,
+                        ..
+                    }
+                )
+            })
+        })
+    }
+
+    /// Effekt oder Filter als eigenes Element (3 s) bei `at` einfügen.
+    pub fn add_fx_clip(
+        &mut self,
+        id: &str,
+        filter: bool,
+        at: Time,
+        track: Option<TrackId>,
+    ) -> Option<ClipId> {
+        let r = FxRef::new(id);
+        let content = if filter {
+            ClipContent::Filter(r)
+        } else {
+            ClipContent::Effect(r)
+        };
+        let clip = Clip::new(content, at.max(Time::ZERO), Time::from_secs_f64(3.0));
+        let kind = clip.kind();
+        let free =
+            |t: &Track| t.kind == kind && !t.locked && t.is_free(clip.start, clip.duration, None);
+        let track = track
+            .filter(|t| {
+                self.project
+                    .timeline
+                    .tracks
+                    .iter()
+                    .any(|x| x.id == *t && free(x))
+            })
+            .or_else(|| {
+                self.project
+                    .timeline
+                    .tracks
+                    .iter()
+                    .rev()
+                    .find(|t| free(t))
+                    .map(|t| t.id)
+            });
+        let track = match track {
+            Some(t) => Some(t),
+            None => match self.apply(EditOp::InsertTrack {
+                index: self.project.timeline.tracks.len(),
+                kind,
+            }) {
+                Some(OpOutput::Track(t)) => Some(t),
+                _ => None,
+            },
+        };
+        let id = self.insert_clip(clip, track)?;
+        self.select_only(Some(id));
+        Some(id)
     }
 
     pub fn add_effect(&mut self, clip: ClipId, id: &str) {
@@ -1178,6 +1299,10 @@ impl App {
 
     pub fn split_at_playhead(&mut self) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
+        // Keine Splitter kürzer als ein halbes Bild (entstehen sonst an Clipgrenzen
+        // mit krummer Bildrate und stören den Export)
+        let half = Time::from_secs_f64(0.5 / self.project.settings.fps.as_f64());
+        let splittable = |c: &Clip| c.contains(at) && at - c.start >= half && c.end() - at >= half;
         let sel = self.selection();
         let mut targets: Vec<ClipId> = sel
             .iter()
@@ -1185,7 +1310,7 @@ impl App {
             .filter(|s| {
                 self.project
                     .find_clip(*s)
-                    .is_some_and(|(_, c)| c.contains(at) && c.start != at)
+                    .is_some_and(|(_, c)| splittable(c))
             })
             .collect();
         if targets.is_empty() {
@@ -1195,7 +1320,7 @@ impl App {
                 .tracks
                 .iter()
                 .find(|t| t.main)
-                .and_then(|t| t.clips.iter().find(|c| c.contains(at) && c.start != at))
+                .and_then(|t| t.clips.iter().find(|c| splittable(c)))
                 .map(|c| vec![c.id])
                 .unwrap_or_default();
         }
@@ -1794,7 +1919,11 @@ impl App {
             }
             self.playing = true;
             self.playbacks.clear();
-            self.restart_audio();
+            self.playbacks_next.clear();
+            // Erst puffern: Playhead und Ton laufen los, wenn die Bildströme bereit sind
+            self.audio = None;
+            self.play_clock = None;
+            self.play_warmup = Some(Instant::now());
         }
     }
 
@@ -1807,7 +1936,9 @@ impl App {
         self.play_rate = 1.0;
         self.audio = None;
         self.playbacks.clear();
+        self.playbacks_next.clear();
         self.play_clock = None;
+        self.play_warmup = None;
     }
 
     pub fn restart_audio(&mut self) {
@@ -1840,6 +1971,27 @@ impl App {
         if !self.playing {
             return;
         }
+        if let Some(w) = self.play_warmup {
+            let now = self.playhead;
+            let active = self.playbacks.values().filter(|p| p.t0 <= now);
+            let mut any = false;
+            let mut ready = true;
+            for p in active {
+                any = true;
+                ready &= p.taken > 0;
+            }
+            let waited = w.elapsed().as_secs_f64();
+            if (ready && (any || waited > 0.05)) || waited > 1.0 {
+                self.play_warmup = None;
+                self.playbacks.values_mut().for_each(|p| {
+                    if p.t0 <= now {
+                        p.t0 = now;
+                    }
+                });
+                self.restart_audio();
+            }
+            return;
+        }
         match &self.audio {
             Some(a) if a.started() => self.playhead = a.position(),
             Some(_) => {} // Ton startet gleich, Bild wartet
@@ -1861,6 +2013,7 @@ impl App {
                 if self.playhead >= b {
                     self.playhead = a;
                     self.playbacks.clear();
+                    self.playbacks_next.clear();
                     self.restart_audio();
                     return;
                 }
@@ -2226,6 +2379,29 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
+        if std::env::var_os("CUTLINE_PERF").is_some() {
+            self.perf_ui += 1;
+            let el = self.perf_since.elapsed().as_secs_f64();
+            if el >= 1.0 {
+                eprintln!(
+                    "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}",
+                    self.perf_ui as f64 / el,
+                    self.perf_frames as f64 / el,
+                    self.perf_opens,
+                    self.perf_max_gap * 1000.0,
+                    self.playing
+                );
+                self.perf_max_gap = 0.0;
+                self.perf_ui = 0;
+                self.perf_frames = 0;
+                self.perf_opens = 0;
+                self.perf_since = Instant::now();
+            }
+        }
+        #[cfg(debug_assertions)]
+        if std::env::var_os("CUTLINE_DEBUG_HITS").is_some() {
+            ctx.style_mut(|s| s.debug.show_widget_hits = true);
+        }
         if let Some(f) = self.pending_fonts.take() {
             let known = ctx.fonts(|fo| fo.families());
             self.registered_fonts = f
@@ -2345,6 +2521,13 @@ impl eframe::App for App {
             }
             self.toast(msg);
         }
+        if let Some(id) = self.export.take_picked_platform() {
+            if self.project.settings.platform.as_deref() != Some(id) {
+                let mut s = self.project.settings.clone();
+                s.platform = Some(id.to_string());
+                self.apply(EditOp::SetSettings { settings: s });
+            }
+        }
         self.lib_dialogs(ctx);
         self.preset_dialogs(ctx);
         self.import_dialogs(ctx);
@@ -2356,6 +2539,7 @@ impl eframe::App for App {
         self.external_preview(ctx);
         self.onboarding(ctx);
         self.tour_overlay(ctx);
+        self.drag_ghost(ctx);
         self.draw_toasts(ctx);
         self.sync_project();
         self.autosave();
@@ -2363,6 +2547,130 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         self.flush_before_leaving();
+    }
+}
+
+/// Fingerabdruck aller hörbaren Eigenschaften (Spuren, Tonclips, Lautstärke, Tempo, Ton-Effekte).
+fn audio_signature(p: &Project) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for t in &p.timeline.tracks {
+        if !matches!(t.kind, TrackKind::Video | TrackKind::Audio) {
+            continue;
+        }
+        (t.id, t.muted, t.hidden).hash(&mut h);
+        for c in &t.clips {
+            let ClipContent::Media { media, .. } = &c.content else {
+                continue;
+            };
+            (
+                c.id,
+                media,
+                c.start,
+                c.duration,
+                c.source_in,
+                c.disabled,
+                c.fade_in,
+                c.fade_out,
+                c.fx.reverse,
+            )
+                .hash(&mut h);
+            (c.speed.to_bits(), c.volume_db.to_bits()).hash(&mut h);
+            serde_json::to_string(&c.audio)
+                .unwrap_or_default()
+                .hash(&mut h);
+            serde_json::to_string(&c.fx.speed_curve)
+                .unwrap_or_default()
+                .hash(&mut h);
+            serde_json::to_string(c.keyframes.get(Prop::Volume))
+                .unwrap_or_default()
+                .hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
+impl App {
+    /// Beim Ziehen aus der Bibliothek: Symbol und Name am Mauszeiger, damit klar ist, was bewegt wird.
+    fn drag_ghost(&self, ctx: &egui::Context) {
+        let Some(a) = egui::DragAndDrop::payload::<DragAsset>(ctx) else {
+            return;
+        };
+        let Some(pos) = ctx.pointer_latest_pos() else {
+            return;
+        };
+        if !ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        let name = |p: &std::path::Path| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
+        let (glyph, label) = match &*a {
+            DragAsset::Media(id) => match self.project.media(*id) {
+                Some(m) => (
+                    match m.kind {
+                        MediaKind::Video => icon::FILM_STRIP,
+                        MediaKind::Image => icon::IMAGE,
+                        MediaKind::Audio => icon::MUSIC_NOTE,
+                    },
+                    name(&m.path),
+                ),
+                None => (icon::FILE, String::new()),
+            },
+            DragAsset::Text(_) => (icon::TEXT_T, crate::tr("Text")),
+            DragAsset::Sticker(id) => (
+                icon::STICKER,
+                cl_fx::stickers::sticker(id)
+                    .map(|s| crate::tr(s.name))
+                    .unwrap_or_default(),
+            ),
+            DragAsset::OwnSticker(p) => (icon::STICKER, name(p)),
+            DragAsset::Effect(id) => (icon::SPARKLE, crate::tr(cl_fx::fx_name(id))),
+            DragAsset::Filter(id) => (icon::CIRCLE_HALF, crate::tr(cl_fx::fx_name(id))),
+            DragAsset::Transition(id) => (
+                icon::ARROWS_LEFT_RIGHT,
+                crate::tr(cl_fx::transition_name(id)),
+            ),
+            DragAsset::Sfx(id) => (
+                icon::WAVEFORM,
+                cl_fx::sfx::sfx(id)
+                    .map(|s| crate::tr(s.name))
+                    .unwrap_or_default(),
+            ),
+            DragAsset::File(p) => (icon::FILE, name(p)),
+        };
+        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        egui::Area::new(egui::Id::new("drag-ghost"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(pos + egui::vec2(14.0, 12.0))
+            .interactable(false)
+            .show(ctx, |ui| {
+                egui::Frame::default()
+                    .fill(theme::BG_RAISED)
+                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
+                    .corner_radius(8)
+                    .inner_margin(egui::Margin::symmetric(8, 5))
+                    .shadow(egui::Shadow {
+                        offset: [0, 4],
+                        blur: 12,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(120),
+                    })
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(glyph).size(16.0).color(theme::ACCENT));
+                            let mut l = label;
+                            if l.chars().count() > 28 {
+                                l = format!("{}…", l.chars().take(27).collect::<String>());
+                            }
+                            if !l.is_empty() {
+                                ui.label(egui::RichText::new(l).size(11.5).color(theme::TEXT));
+                            }
+                        });
+                    });
+            });
     }
 }
 

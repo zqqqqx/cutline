@@ -35,6 +35,13 @@ macro_rules! id_type {
     };
 }
 id_type!(ClipId);
+
+impl ClipId {
+    /// Abgeleitete, stabile ID (z. B. für eine zweite Vorschau-Fassung desselben Clips).
+    pub fn derived(&self, salt: u128) -> Self {
+        Self(uuid::Uuid::from_u128(self.0.as_u128() ^ salt))
+    }
+}
 id_type!(TrackId);
 id_type!(MediaId);
 
@@ -150,6 +157,9 @@ pub struct ProjectSettings {
     /// Hauptspur-Magnet: Clips der Hauptspur schließen lückenlos an.
     pub main_track_magnet: bool,
     pub snapping: bool,
+    /// Gewählte Zielplattform (Format und Export-Vorlage), z. B. "shorts"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
 }
 
 impl Default for ProjectSettings {
@@ -163,6 +173,7 @@ impl Default for ProjectSettings {
             float_pipeline: false,
             main_track_magnet: true,
             snapping: true,
+            platform: None,
         }
     }
 }
@@ -463,6 +474,17 @@ impl Clip {
         e.opacity = e.opacity.clamp(0.0, 1.0);
         e
     }
+    /// Stärke eines Effekt-/Filter-Elements zum Zeitpunkt `t_rel` (Keyframes oder fester Wert).
+    pub fn strength_at(&self, t_rel: Time) -> f32 {
+        let base = match &self.content {
+            ClipContent::Effect(r) | ClipContent::Filter(r) => r.intensity,
+            _ => 1.0,
+        };
+        self.keyframes
+            .eval(Prop::Strength, t_rel)
+            .unwrap_or(base)
+            .clamp(0.0, 1.0)
+    }
     pub fn kind(&self) -> TrackKind {
         match &self.content {
             ClipContent::Media {
@@ -471,6 +493,8 @@ impl Clip {
             } => TrackKind::Audio,
             ClipContent::Media { .. } => TrackKind::Video,
             ClipContent::Text(_) => TrackKind::Text,
+            ClipContent::Effect(_) => TrackKind::Effect,
+            ClipContent::Filter(_) => TrackKind::Filter,
         }
     }
     pub fn label(&self, project: &Project) -> String {
@@ -481,14 +505,22 @@ impl Clip {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Medium fehlt".into()),
             ClipContent::Text(t) => t.text.clone(),
+            ClipContent::Effect(f) | ClipContent::Filter(f) => f.id.clone(),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ClipContent {
-    Media { media: MediaId, kind: MediaKind },
+    Media {
+        media: MediaId,
+        kind: MediaKind,
+    },
     Text(TextStyle),
+    /// Effekt als eigenes Element auf einer Effektspur: wirkt auf alles darunter
+    Effect(FxRef),
+    /// Filter als eigenes Element auf einer Filterspur: wirkt auf alles darunter
+    Filter(FxRef),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

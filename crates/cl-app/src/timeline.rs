@@ -1442,6 +1442,8 @@ impl App {
                 let k = match tr.kind {
                     TrackKind::Audio => "Audio",
                     TrackKind::Text => "Text",
+                    TrackKind::Effect => "Effekte",
+                    TrackKind::Filter => "Filter",
                     _ => "Video",
                 };
                 format!("{} {n}", crate::tr(k))
@@ -1547,6 +1549,8 @@ impl App {
                 DragAsset::Text(_) => Some(TrackKind::Text),
                 DragAsset::Sticker(_) | DragAsset::OwnSticker(_) => Some(TrackKind::Video),
                 DragAsset::Sfx(_) | DragAsset::File(_) => Some(TrackKind::Audio),
+                DragAsset::Effect(_) => Some(TrackKind::Effect),
+                DragAsset::Filter(_) => Some(TrackKind::Filter),
                 _ => None,
             };
             let mut track = pointer
@@ -1854,6 +1858,16 @@ impl App {
         }
         let label = match &c.content {
             ClipContent::Text(_) => format!("{}{tags}", icon::TEXT_T),
+            ClipContent::Effect(r) => format!(
+                "{}  {}{tags}",
+                icon::SPARKLE,
+                crate::tr(cl_fx::fx_name(&r.id))
+            ),
+            ClipContent::Filter(r) => format!(
+                "{}  {}{tags}",
+                icon::CIRCLE_HALF,
+                crate::tr(cl_fx::fx_name(&r.id))
+            ),
             _ => format!(
                 "{}{tags}  {:.1}s",
                 c.label(&self.project),

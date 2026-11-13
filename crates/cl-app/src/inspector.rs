@@ -11,6 +11,9 @@ use crate::widgets::{self, Edit, Kf, Slider};
 
 fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
     match &c.content {
+        ClipContent::Effect(_) | ClipContent::Filter(_) => {
+            vec![(ClipTab::Effects, "Einfach"), (ClipTab::Basic, "Maske")]
+        }
         ClipContent::Text(_) => vec![
             (ClipTab::Text, "Text"),
             (ClipTab::Basic, "Basis"),
@@ -38,6 +41,83 @@ fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
             (ClipTab::Audio, "Audio"),
         ],
     }
+}
+
+/// Masken-Auswahl und -Regler (Clip oder Effekt-Element).
+fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
+    let mut e = Edit::default();
+    let shapes = [
+        None,
+        Some(MaskShape::Linear),
+        Some(MaskShape::Mirror),
+        Some(MaskShape::Circle),
+        Some(MaskShape::Rect),
+    ];
+    let mut i = shapes
+        .iter()
+        .position(|s| *s == mask.map(|m| m.shape))
+        .unwrap_or(0);
+    if widgets::segmented(
+        ui,
+        &["Keine", "Linear", "Spiegel", "Kreis", "Rechteck"],
+        &mut i,
+    ) {
+        *mask = shapes[i].map(|s| {
+            let mut m = mask.unwrap_or(Mask::new(s));
+            m.shape = s;
+            m
+        });
+        e.commit = true;
+    }
+    if let Some(m) = mask.as_mut() {
+        ui.add_space(4.0);
+        let mut r = Edit::default();
+        if matches!(m.shape, MaskShape::Circle | MaskShape::Rect) {
+            r |= theme::row(ui, "Breite", |ui| {
+                Slider::new(&mut m.w, 0.02..=2.0)
+                    .percent()
+                    .default(0.6)
+                    .show(ui)
+            });
+        }
+        if m.shape != MaskShape::Linear {
+            r |= theme::row(ui, "Höhe", |ui| {
+                Slider::new(&mut m.h, 0.02..=2.0)
+                    .percent()
+                    .default(0.6)
+                    .show(ui)
+            });
+        }
+        r |= theme::row(ui, "Mitte X", |ui| {
+            Slider::new(&mut m.cx, 0.0..=1.0)
+                .percent()
+                .default(0.5)
+                .show(ui)
+        });
+        r |= theme::row(ui, "Mitte Y", |ui| {
+            Slider::new(&mut m.cy, 0.0..=1.0)
+                .percent()
+                .default(0.5)
+                .show(ui)
+        });
+        r |= theme::row(ui, "Drehen", |ui| {
+            Slider::new(&mut m.rotation_deg, -180.0..=180.0)
+                .suffix("°")
+                .default(0.0)
+                .show(ui)
+        });
+        r |= theme::row(ui, "Weiche Kante", |ui| {
+            Slider::new(&mut m.feather, 0.0..=0.5)
+                .percent()
+                .default(0.05)
+                .show(ui)
+        });
+        if widgets::toggle_row(ui, "Umkehren", &mut m.invert) {
+            r.commit = true;
+        }
+        e |= r;
+    }
+    e
 }
 
 /// Reiterleiste mit Unterstrich.
@@ -118,7 +198,9 @@ impl App {
         let sel = self.selection();
         if sel.len() > 1 {
             self.multi_inspector(ui, sel.len());
-            return;
+            if self.selected.is_none() {
+                self.selected = sel.last().copied();
+            }
         }
         match self.selected.and_then(|s| self.clip_view(s)) {
             Some(clip) => self.clip_inspector(ui, clip),
@@ -150,27 +232,30 @@ impl App {
                 self.select_only(None);
             }
         });
-        ui.label(RichText::new(crate::tr("Ziehen verschiebt alle gemeinsam. Strg+Klick ergänzt oder entfernt einzelne Clips.")).small().color(theme::TEXT_DIM));
-        ui.add_space(10.0);
-        let b = |ui: &mut egui::Ui, g: &str, t: &str| {
-            ui.add_sized(
-                [ui.available_width(), 26.0],
-                theme::secondary(format!("{g}  {t}")),
+        ui.horizontal(|ui| {
+            if theme::icon_button(ui, icon::COPY, "Kopieren", true, false).clicked() {
+                self.copy_selection();
+            }
+            if theme::icon_button(ui, icon::COPY_SIMPLE, "Duplizieren", true, false).clicked() {
+                self.duplicate_selection();
+            }
+            if theme::icon_button(
+                ui,
+                icon::EYE_SLASH,
+                "Deaktivieren / Aktivieren",
+                true,
+                false,
             )
             .clicked()
-        };
-        if b(ui, icon::COPY, "Kopieren") {
-            self.copy_selection();
-        }
-        if b(ui, icon::COPY_SIMPLE, "Duplizieren") {
-            self.duplicate_selection();
-        }
-        if b(ui, icon::EYE_SLASH, "Deaktivieren / Aktivieren") {
-            self.toggle_disabled();
-        }
-        if b(ui, icon::TRASH, "Löschen") {
-            self.delete_selected();
-        }
+            {
+                self.toggle_disabled();
+            }
+            if theme::icon_button(ui, icon::TRASH, "Löschen", true, false).clicked() {
+                self.delete_selected();
+            }
+        });
+        ui.label(RichText::new(crate::tr("Änderungen unten gelten für alle ausgewählten Clips (Skalierung, Position, Effekte, Filter, Anpassen, Ton …). Lage und Länge bleiben je Clip.")).small().color(theme::TEXT_DIM));
+        ui.add_space(6.0);
     }
 
     fn transition_inspector(&mut self, ui: &mut egui::Ui, c: &Clip, tr: &TransitionRef) {
@@ -266,6 +351,7 @@ impl App {
                 Prop::Rotation => c.transform.rotation_deg,
                 Prop::Opacity => c.opacity,
                 Prop::Volume => c.volume_db,
+                Prop::Strength => c.strength_at(Time::ZERO),
             }
         } else {
             match p {
@@ -322,6 +408,18 @@ impl App {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 match self.clip_tab {
+                    ClipTab::Basic
+                        if matches!(c.content, ClipContent::Effect(_) | ClipContent::Filter(_)) =>
+                    {
+                        theme::section(ui, "Maske");
+                        ui.label(
+                            RichText::new(crate::tr("Begrenzt das Element auf einen Bildbereich. Der Umriss erscheint in der Vorschau, solange das Element ausgewählt ist."))
+                                .small()
+                                .color(theme::TEXT_DIM),
+                        );
+                        ui.add_space(4.0);
+                        e |= mask_ui(ui, &mut c.fx.mask);
+                    }
                     ClipTab::Basic => {
                         self.basic_tab(ui, &mut c, &mut e, &mut kf);
                         // Bilder und Texte haben keinen Tempo-Reiter: Zeit hier
@@ -337,6 +435,13 @@ impl App {
                         }
                     }
                     ClipTab::Text => self.text_props(ui, &mut c, &mut e),
+                    ClipTab::Effects
+                        if matches!(c.content, ClipContent::Effect(_) | ClipContent::Filter(_)) =>
+                    {
+                        self.fx_clip_props(ui, &mut c, &mut e, &mut kf);
+                        let now = c.clone();
+                        self.timing_section(ui, &now);
+                    }
                     ClipTab::Effects => self.effects_props(ui, &mut c, &mut e),
                     ClipTab::Adjust => self.adjust_props(ui, &mut c, &mut e),
                     ClipTab::Animation => self.anim_props(ui, &mut c, &mut e),
@@ -373,6 +478,45 @@ impl App {
         if e.commit {
             self.commit_live();
         }
+    }
+
+    /// Effekt- oder Filter-Element auf einer eigenen Spur: Art und Stärke.
+    fn fx_clip_props(
+        &mut self,
+        ui: &mut egui::Ui,
+        c: &mut Clip,
+        e: &mut Edit,
+        kf: &mut Option<Vec<Prop>>,
+    ) {
+        let (filter, id) = match &c.content {
+            ClipContent::Effect(r) => (false, r.id.clone()),
+            ClipContent::Filter(r) => (true, r.id.clone()),
+            _ => return,
+        };
+        theme::section(ui, "Einzelheiten");
+        theme::row(ui, "Name", |ui| {
+            ui.label(RichText::new(crate::tr(cl_fx::fx_name(&id))).strong())
+        });
+        *e |= self.prop_slider(
+            ui,
+            c,
+            "Stärke",
+            Prop::Strength,
+            0.0..=1.0,
+            1.0,
+            ("", 0, 100.0),
+            kf,
+        );
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new(crate::tr(if filter {
+                "Der Filter wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste."
+            } else {
+                "Der Effekt wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste."
+            }))
+            .small()
+            .color(theme::TEXT_DIM),
+        );
     }
 
     fn basic_tab(
@@ -481,77 +625,7 @@ impl App {
                 }
             });
             theme::section(ui, "Maske");
-            let shapes = [
-                None,
-                Some(MaskShape::Linear),
-                Some(MaskShape::Mirror),
-                Some(MaskShape::Circle),
-                Some(MaskShape::Rect),
-            ];
-            let mut i = shapes
-                .iter()
-                .position(|s| *s == c.fx.mask.map(|m| m.shape))
-                .unwrap_or(0);
-            if widgets::segmented(
-                ui,
-                &["Keine", "Linear", "Spiegel", "Kreis", "Rechteck"],
-                &mut i,
-            ) {
-                c.fx.mask = shapes[i].map(|s| {
-                    let mut m = c.fx.mask.unwrap_or(Mask::new(s));
-                    m.shape = s;
-                    m
-                });
-                e.commit = true;
-            }
-            if let Some(m) = &mut c.fx.mask {
-                ui.add_space(4.0);
-                let mut r = Edit::default();
-                if matches!(m.shape, MaskShape::Circle | MaskShape::Rect) {
-                    r |= theme::row(ui, "Breite", |ui| {
-                        Slider::new(&mut m.w, 0.02..=2.0)
-                            .percent()
-                            .default(0.6)
-                            .show(ui)
-                    });
-                }
-                if m.shape != MaskShape::Linear {
-                    r |= theme::row(ui, "Höhe", |ui| {
-                        Slider::new(&mut m.h, 0.02..=2.0)
-                            .percent()
-                            .default(0.6)
-                            .show(ui)
-                    });
-                }
-                r |= theme::row(ui, "Mitte X", |ui| {
-                    Slider::new(&mut m.cx, 0.0..=1.0)
-                        .percent()
-                        .default(0.5)
-                        .show(ui)
-                });
-                r |= theme::row(ui, "Mitte Y", |ui| {
-                    Slider::new(&mut m.cy, 0.0..=1.0)
-                        .percent()
-                        .default(0.5)
-                        .show(ui)
-                });
-                r |= theme::row(ui, "Drehen", |ui| {
-                    Slider::new(&mut m.rotation_deg, -180.0..=180.0)
-                        .suffix("°")
-                        .default(0.0)
-                        .show(ui)
-                });
-                r |= theme::row(ui, "Weiche Kante", |ui| {
-                    Slider::new(&mut m.feather, 0.0..=0.5)
-                        .percent()
-                        .default(0.05)
-                        .show(ui)
-                });
-                if widgets::toggle_row(ui, "Umkehren", &mut m.invert) {
-                    r.commit = true;
-                }
-                *e |= r;
-            }
+            *e |= mask_ui(ui, &mut c.fx.mask);
         }
         self.pro_visual(ui, c, e);
         theme::section(ui, "Clip");
@@ -1341,6 +1415,49 @@ impl App {
             });
         }
         theme::section(ui, "Format");
+        let mut picked: Option<Option<&'static crate::export_ui::Platform>> = None;
+        theme::row(ui, "Plattform", |ui| {
+            let cur = settings
+                .platform
+                .as_deref()
+                .and_then(crate::export_ui::platform);
+            egui::ComboBox::from_id_salt("proj-platform")
+                .selected_text(crate::tr(cur.map(|p| p.name).unwrap_or("Keine")))
+                .width((ui.available_width() - 12.0).max(60.0))
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(cur.is_none(), crate::tr("Keine"))
+                        .clicked()
+                    {
+                        picked = Some(None);
+                    }
+                    for pl in crate::export_ui::PLATFORMS {
+                        if ui
+                            .selectable_label(
+                                cur.is_some_and(|c| c.id == pl.id),
+                                crate::tr(pl.name),
+                            )
+                            .clicked()
+                        {
+                            picked = Some(Some(pl));
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(crate::tr(
+                    "Setzt Größe und Bildrate; der Export übernimmt die passende Vorlage",
+                ));
+        });
+        if let Some(pl) = picked {
+            match pl {
+                Some(pl) => pl.apply_to(&mut settings),
+                None => settings.platform = None,
+            }
+            if settings != self.project.settings {
+                self.apply(EditOp::SetSettings { settings });
+            }
+            return;
+        }
         let aspect_name = AspectPreset::PRESETS
             .iter()
             .find(|(_, p)| *p == settings.aspect)
@@ -1377,6 +1494,7 @@ impl App {
                 settings.width = w & !1;
                 settings.height = h & !1;
                 settings.aspect = AspectPreset::Custom;
+                settings.platform = None;
                 changed = true;
             }
         });

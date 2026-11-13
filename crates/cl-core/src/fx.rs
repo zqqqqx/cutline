@@ -227,6 +227,8 @@ pub enum Prop {
     Rotation,
     Opacity,
     Volume,
+    /// Stärke eines Effekt-/Filter-Elements (0…1)
+    Strength,
 }
 
 impl Prop {
