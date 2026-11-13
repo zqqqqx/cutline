@@ -61,6 +61,33 @@ impl Item {
 struct Stored {
     favorites: BTreeSet<String>,
     hidden: BTreeSet<String>,
+    areas: std::collections::BTreeMap<String, AreaLayout>,
+}
+
+/// Anordnung eines Asset-Bereichs (Sticker, Soundeffekte, Effekte, …).
+///
+/// Kategorie-Schlüssel: `b:<Name>` eingebaute Kategorie, `p:<Ordner>` eigener Dateiordner,
+/// `v:<Name>` eigener Sammelordner (enthält Verweise auf beliebige Einträge).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AreaLayout {
+    /// Reihenfolge der Kategorien
+    pub order: Vec<String>,
+    /// Eigene Anzeigenamen für eingebaute Kategorien
+    pub names: std::collections::BTreeMap<String, String>,
+    /// Verborgene Kategorien
+    pub hidden: BTreeSet<String>,
+    /// Sammelordner → Eintragsschlüssel
+    pub virt: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+/// Eine Kategorie zur Anzeige
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cat {
+    pub key: String,
+    pub label: String,
+    /// Eingebaut (nur umbenennbar als Anzeigename, nicht löschbar)
+    pub builtin: bool,
 }
 
 /// Zustand der Bibliothek (wird bei jeder Änderung gespeichert).
@@ -68,6 +95,7 @@ struct Stored {
 pub struct Library {
     favorites: BTreeSet<String>,
     hidden: BTreeSet<String>,
+    areas: std::collections::BTreeMap<String, AreaLayout>,
     /// Zwischenspeicher der Dateilisten (nach Änderungen neu einlesen)
     cache: std::collections::HashMap<&'static str, (Vec<String>, Vec<Item>)>,
 }
@@ -86,7 +114,7 @@ fn kind_key(k: Kind) -> &'static str {
 impl Library {
     pub fn load() -> Self {
         let s: Stored = std::fs::read_to_string(store()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Self { favorites: s.favorites, hidden: s.hidden, cache: Default::default() }
+        Self { favorites: s.favorites, hidden: s.hidden, areas: s.areas, cache: Default::default() }
     }
 
     fn save(&self) {
@@ -94,7 +122,7 @@ impl Library {
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        let s = Stored { favorites: self.favorites.clone(), hidden: self.hidden.clone() };
+        let s = Stored { favorites: self.favorites.clone(), hidden: self.hidden.clone(), areas: self.areas.clone() };
         let _ = std::fs::write(p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
 
@@ -122,6 +150,177 @@ impl Library {
     pub fn unhide_all(&mut self, prefix: &str) {
         self.hidden.retain(|k| !k.starts_with(prefix));
         self.save();
+    }
+
+    // ---------------------------------------------------------- Kategorien je Bereich
+
+    /// Sichtbare Kategorien in gespeicherter Reihenfolge (neue hinten angehängt).
+    pub fn cats(&mut self, area: &str, builtin: &[&str], phys: Option<Kind>) -> Vec<Cat> {
+        let all = self.all_cats(area, builtin, phys);
+        let l = self.areas.get(area).cloned().unwrap_or_default();
+        all.into_iter().filter(|c| !l.hidden.contains(&c.key)).collect()
+    }
+
+    fn all_cats(&mut self, area: &str, builtin: &[&str], phys: Option<Kind>) -> Vec<Cat> {
+        let l = self.areas.get(area).cloned().unwrap_or_default();
+        let mut found: Vec<Cat> = builtin
+            .iter()
+            .map(|b| {
+                let key = format!("b:{b}");
+                Cat { label: l.names.get(&key).cloned().unwrap_or_else(|| crate::tr(*b)), key, builtin: true }
+            })
+            .collect();
+        if let Some(k) = phys {
+            found.extend(self.folders(k).into_iter().map(|f| Cat { key: format!("p:{f}"), label: f, builtin: false }));
+        }
+        found.extend(l.virt.keys().map(|v| Cat { key: format!("v:{v}"), label: v.clone(), builtin: false }));
+        let mut out: Vec<Cat> = l.order.iter().filter_map(|k| found.iter().find(|c| &c.key == k).cloned()).collect();
+        out.extend(found.into_iter().filter(|c| !l.order.contains(&c.key)));
+        out
+    }
+
+    pub fn hidden_cats(&self, area: &str) -> usize {
+        self.areas.get(area).map(|l| l.hidden.len()).unwrap_or(0)
+    }
+
+    pub fn unhide_cats(&mut self, area: &str) {
+        if let Some(l) = self.areas.get_mut(area) {
+            l.hidden.clear();
+        }
+        self.save();
+    }
+
+    pub fn hide_cat(&mut self, area: &str, key: &str) {
+        self.areas.entry(area.to_string()).or_default().hidden.insert(key.to_string());
+        self.save();
+    }
+
+    /// Kategorie um `delta` Plätze verschieben.
+    pub fn move_cat(&mut self, area: &str, key: &str, delta: i32, builtin: &[&str], phys: Option<Kind>) {
+        let mut order: Vec<String> = self.all_cats(area, builtin, phys).into_iter().map(|c| c.key).collect();
+        let Some(i) = order.iter().position(|k| k == key) else { return };
+        let j = (i as i32 + delta).clamp(0, order.len() as i32 - 1) as usize;
+        let k = order.remove(i);
+        order.insert(j, k);
+        self.areas.entry(area.to_string()).or_default().order = order;
+        self.save();
+    }
+
+    /// Umbenennen: eingebaut = Anzeigename, Dateiordner = auf der Platte, Sammelordner = Name.
+    pub fn rename_cat(&mut self, area: &str, key: &str, new: &str, phys: Option<Kind>) -> Result<(), String> {
+        let new = sanitize(new);
+        if new.is_empty() {
+            return Err("Ungültiger Name".into());
+        }
+        let l = self.areas.entry(area.to_string()).or_default();
+        let new_key = match key.split_once(':') {
+            Some(("b", _)) => {
+                l.names.insert(key.to_string(), new.clone());
+                key.to_string()
+            }
+            Some(("v", old)) => {
+                if l.virt.contains_key(&new) {
+                    return Err("Ordner gibt es schon".into());
+                }
+                let items = l.virt.remove(old).unwrap_or_default();
+                l.virt.insert(new.clone(), items);
+                format!("v:{new}")
+            }
+            Some(("p", old)) => {
+                let k = phys.ok_or("Kein Dateiordner")?;
+                let (a, b) = (k.dir().join(old), k.dir().join(&new));
+                if b.exists() {
+                    return Err("Ordner gibt es schon".into());
+                }
+                std::fs::rename(&a, &b).map_err(|e| e.to_string())?;
+                // Favoriten der Dateien mitnehmen
+                let (ap, bp) = (format!("file:{}", a.display()), format!("file:{}", b.display()));
+                let moved: Vec<String> = self.favorites.iter().filter(|f| f.starts_with(&ap)).cloned().collect();
+                for f in moved {
+                    self.favorites.remove(&f);
+                    self.favorites.insert(f.replacen(&ap, &bp, 1));
+                }
+                self.invalidate();
+                format!("p:{new}")
+            }
+            _ => return Err("Unbekannte Kategorie".into()),
+        };
+        let l = self.areas.entry(area.to_string()).or_default();
+        for k in &mut l.order {
+            if k == key {
+                *k = new_key.clone();
+            }
+        }
+        self.save();
+        Ok(())
+    }
+
+    /// Eigenen Ordner entfernen (Dateiordner wandert in den Papierkorb).
+    pub fn delete_cat(&mut self, area: &str, key: &str, phys: Option<Kind>) -> Result<(), String> {
+        match key.split_once(':') {
+            Some(("v", name)) => {
+                self.areas.entry(area.to_string()).or_default().virt.remove(name);
+            }
+            Some(("p", name)) => self.delete_folder(phys.ok_or("Kein Dateiordner")?, name)?,
+            _ => return Err("Eingebaute Kategorien lassen sich nur verbergen".into()),
+        }
+        self.areas.entry(area.to_string()).or_default().order.retain(|k| k != key);
+        self.save();
+        Ok(())
+    }
+
+    pub fn create_virtual(&mut self, area: &str, name: &str) -> Result<String, String> {
+        let name = sanitize(name);
+        if name.is_empty() {
+            return Err("Ungültiger Ordnername".into());
+        }
+        self.areas.entry(area.to_string()).or_default().virt.entry(name.clone()).or_default();
+        self.save();
+        Ok(format!("v:{name}"))
+    }
+
+    pub fn virtual_folders(&self, area: &str) -> Vec<String> {
+        self.areas.get(area).map(|l| l.virt.keys().cloned().collect()).unwrap_or_default()
+    }
+
+    pub fn add_to_virtual(&mut self, area: &str, folder: &str, item: &str) {
+        let v = self.areas.entry(area.to_string()).or_default().virt.entry(folder.to_string()).or_default();
+        if !v.iter().any(|x| x == item) {
+            v.push(item.to_string());
+        }
+        self.save();
+    }
+
+    pub fn remove_from_virtual(&mut self, area: &str, folder: &str, item: &str) {
+        if let Some(v) = self.areas.entry(area.to_string()).or_default().virt.get_mut(folder) {
+            v.retain(|x| x != item);
+        }
+        self.save();
+    }
+
+    /// Gehört ein Eintrag (`key`, eingebaute Kategorie bzw. Dateiordner `folder`) zur Kategorie?
+    pub fn in_cat(&self, area: &str, cat: &str, key: &str, folder: &str) -> bool {
+        match cat {
+            "Alle" => {
+                // Einträge aus verborgenen Kategorien erscheinen auch unter „Alle“ nicht
+                let l = self.areas.get(area);
+                !l.is_some_and(|l| l.hidden.contains(&format!("b:{folder}")) || l.hidden.contains(&format!("p:{folder}")))
+            }
+            "Favoriten" => self.is_favorite(key),
+            c => match c.split_once(':') {
+                Some(("b", n)) | Some(("p", n)) => n == folder,
+                Some(("v", n)) => self.areas.get(area).and_then(|l| l.virt.get(n)).is_some_and(|v| v.iter().any(|x| x == key)),
+                _ => false,
+            },
+        }
+    }
+
+    /// Sichtbar unter Kategorie und Suche?
+    pub fn visible(&self, area: &str, cat: &str, q: &str, key: &str, name: &str, folder: &str) -> bool {
+        let q = q.trim().to_lowercase();
+        !self.is_hidden(key)
+            && self.in_cat(area, cat, key, folder)
+            && (q.is_empty() || name.to_lowercase().contains(&q) || crate::tr(name).to_lowercase().contains(&q) || crate::tr(folder).to_lowercase().contains(&q))
     }
 
     pub fn invalidate(&mut self) {
@@ -251,21 +450,6 @@ impl Library {
     }
 }
 
-/// Filtert Einträge nach Ordner/Kategorie („Alle“, „Favoriten“ oder Name) und Suchtext.
-pub fn filter(lib: &Library, items: Vec<Item>, cat: &str, search: &str) -> Vec<Item> {
-    let q = search.trim().to_lowercase();
-    items
-        .into_iter()
-        .filter(|i| !lib.is_hidden(&i.key))
-        .filter(|i| match cat {
-            "Alle" => true,
-            "Favoriten" => lib.is_favorite(&i.key),
-            c => i.folder == c,
-        })
-        .filter(|i| q.is_empty() || i.name.to_lowercase().contains(&q) || crate::tr(&i.name).to_lowercase().contains(&q) || i.folder.to_lowercase().contains(&q))
-        .collect()
-}
-
 fn sanitize(s: &str) -> String {
     s.trim().chars().map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect::<String>().trim_matches('.').to_string()
 }
@@ -309,8 +493,7 @@ mod tests {
         assert_eq!(lib.folders(Kind::Sound), vec!["Gaming".to_string(), "Memes".to_string()]);
         let it = lib.own_items(Kind::Sound).remove(0);
         lib.toggle_favorite(&it.key);
-        let all = lib.clone_items(Kind::Sound);
-        assert_eq!(filter(&lib, all, "Favoriten", "").len(), 1);
+        assert!(lib.visible("sfx", "Favoriten", "", &it.key, &it.name, &it.folder));
         lib.move_to(&it, Kind::Sound, "Memes").unwrap();
         let moved = lib.own_items(Kind::Sound).remove(0);
         assert_eq!(moved.folder, "Memes");
@@ -318,22 +501,33 @@ mod tests {
         lib.rename(&moved, "Explosion").unwrap();
         let renamed = lib.own_items(Kind::Sound).remove(0);
         assert_eq!(renamed.name, "Explosion");
-        let all = lib.clone_items(Kind::Sound);
-        assert_eq!(filter(&lib, all, "Alle", "explo").len(), 1);
+        assert!(lib.visible("sfx", "Alle", "explo", &renamed.key, &renamed.name, &renamed.folder));
         lib.remove(&renamed).unwrap();
         assert!(lib.own_items(Kind::Sound).is_empty());
         assert!(home.path().join("Papierkorb/Library/Explosion.wav").is_file());
         // eingebaute Einträge werden nur ausgeblendet
         let b = Item { key: "builtin:sfx:pop".into(), name: "Pop".into(), folder: "Oberfläche".into(), builtin: Some("pop"), path: None };
         lib.remove(&b).unwrap();
-        assert!(filter(&lib, vec![b.clone()], "Alle", "").is_empty());
+        assert!(!lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
         lib.unhide_all("builtin:sfx:");
-        assert_eq!(filter(&lib, vec![b], "Alle", "").len(), 1);
-    }
-
-    impl Library {
-        fn clone_items(&mut self, k: Kind) -> Vec<Item> {
-            self.own_items(k)
-        }
+        assert!(lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
+        // Kategorien: umbenennen (Anzeigename), verschieben, verbergen, Sammelordner
+        let cats = lib.cats("sfx", &["Natur", "Oberfläche"], Some(Kind::Sound));
+        assert_eq!(cats.iter().map(|c| c.key.as_str()).collect::<Vec<_>>(), ["b:Natur", "b:Oberfläche", "p:Gaming", "p:Memes"]);
+        lib.rename_cat("sfx", "b:Natur", "Draußen", Some(Kind::Sound)).unwrap();
+        lib.move_cat("sfx", "p:Memes", -3, &["Natur", "Oberfläche"], Some(Kind::Sound));
+        lib.hide_cat("sfx", "b:Oberfläche");
+        let cats = lib.cats("sfx", &["Natur", "Oberfläche"], Some(Kind::Sound));
+        assert_eq!(cats[0].key, "p:Memes");
+        assert!(cats.iter().any(|c| c.label == "Draußen"));
+        assert!(!cats.iter().any(|c| c.key == "b:Oberfläche"));
+        assert!(!lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder), "Eintrag aus verborgener Kategorie");
+        let v = lib.create_virtual("sfx", "Intro").unwrap();
+        lib.add_to_virtual("sfx", "Intro", "builtin:sfx:pop");
+        assert!(lib.in_cat("sfx", &v, "builtin:sfx:pop", "Oberfläche"));
+        lib.rename_cat("sfx", &v, "Intros", None).unwrap();
+        assert!(lib.in_cat("sfx", "v:Intros", "builtin:sfx:pop", ""));
+        lib.rename_cat("sfx", "p:Gaming", "Games", Some(Kind::Sound)).unwrap();
+        assert!(Kind::Sound.dir().join("Games").is_dir());
     }
 }

@@ -321,8 +321,12 @@ impl App {
                     st.font_family = None;
                     e.commit = true;
                 }
+                // Favoriten zuerst (mit Stern)
+                let mut fonts = fonts.clone();
+                fonts.sort_by_key(|f| !self.library.is_favorite(&format!("font:{f}")));
                 for f in &fonts {
-                    let txt = RichText::new(f).font(egui::FontId::new(15.0, self.font_family(Some(f))));
+                    let fav = self.library.is_favorite(&format!("font:{f}"));
+                    let txt = RichText::new(if fav { format!("★ {f}") } else { f.clone() }).font(egui::FontId::new(15.0, self.font_family(Some(f))));
                     if ui.selectable_label(st.font_family.as_deref() == Some(f), txt).clicked() {
                         st.font_family = Some(f.clone());
                         e.commit = true;
