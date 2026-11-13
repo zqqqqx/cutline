@@ -1,0 +1,15 @@
+# Eingebaute Integration: Musik von Epidemic Sound direkt im Audio-Tab.
+# Standardmäßig aus. Zum Nutzen in Plugins einschalten und unter
+# Einstellungen → Integrationen mit dem eigenen Epidemic-Konto verbinden.
+[plugin]
+id = "cutline.epidemic-sound"
+version = "0.1.0"
+api = 1
+kind = "integration"
+entry = "builtin:epidemic-sound"
+default_enabled = false
+name = { de = "Epidemic Sound", en = "Epidemic Sound" }
+description = { de = "Musik suchen, vorhören und einfügen, mit Favoriten. Benötigt ein Epidemic-Sound-Konto.", en = "Search, preview and add music, with favorites. Requires an Epidemic Sound account." }
+authors = ["Cutline contributors"]
+license = "MPL-2.0"
+permissions = ["net:api.epidemicsound.com", "net:login.epidemicsound.com", "project.write"]

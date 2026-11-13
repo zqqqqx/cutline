@@ -802,3 +802,70 @@ Transparent (ProRes 4444)	Transparent (ProRes 4444)
 Transparent (VP9 mit Alpha)	Transparent (VP9 with alpha)
 Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen	Empty areas and cut-out people stay transparent, e.g. for overlays in other apps
 nur Ton	audio only
+# Integrationen und Bibliothek
+Integrationen	Integrations
+Integration	Integration
+Einrichten	Set up
+Plugin aktiv	Plugin enabled
+Anmeldung	Sign-in
+Epidemic-Konto	Epidemic account
+API-Schlüssel	API key
+Abmelden	Sign out
+Verbunden	Connected
+Verbunden als {}	Connected as {}
+Verbinden …	Connect …
+Mit Epidemic Sound verbinden	Connect to Epidemic Sound
+Mit Epidemic Sound verbunden	Connected to Epidemic Sound
+Anmeldung im Browser abschließen …	Finish signing in in your browser …
+Integrationen verbinden Cutline mit Diensten, für die du ein eigenes Konto brauchst. Sie sind ausgeschaltet, bis du sie unter Plugins aktivierst.	Integrations connect Cutline to services that need your own account. They stay off until you turn them on under Plugins.
+Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechner.	For partners and your own developer apps. The key stays on this computer.
+Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.	Exports with Epidemic music are reported to Epidemic Sound (track IDs only), as their terms require.
+Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.	Client ID of your app in the Epidemic Developer Portal; register {} there as the redirect URI.
+Epidemic Sound ist noch nicht verbunden	Epidemic Sound isn't connected yet
+Melde dich unter Einstellungen → Integrationen an	Sign in under Settings → Integrations
+Entdecken	Discover
+Favoriten	Favorites
+Gefällt mir	Liked
+Instrumental	Instrumental
+Titel, Stimmung, Genre …	Title, mood, genre …
+Keine Titel gefunden	No tracks found
+Andere Suche oder weniger Filter probieren	Try another search or fewer filters
+Noch keine Favoriten	No favorites yet
+Markiere Titel mit dem Stern	Mark tracks with the star
+Mehr laden	Load more
+Vorhören	Preview
+Stopp	Stop
+Zu Favoriten	Add to favorites
+Aus Favoriten entfernen	Remove from favorites
+Dieser Titel ist nur zum Vorhören freigegeben	This track is preview-only
+„{}“ eingefügt	“{}” added
+Kein API-Schlüssel eingetragen	No API key entered
+Nicht mit Epidemic Sound verbunden	Not connected to Epidemic Sound
+Anmeldung abgelaufen oder ungültig	Sign-in expired or invalid
+Kein Zugriff (Abo oder Partnervertrag prüfen)	No access (check your subscription or partner agreement)
+Zu viele Anfragen, bitte kurz warten	Too many requests, please wait a moment
+Keine Verbindung zu Epidemic Sound ({})	Can't reach Epidemic Sound ({})
+Anmeldung abgebrochen (Zeit abgelaufen)	Sign-in cancelled (timed out)
+Client-ID fehlt	Client ID missing
+Eigene	Mine
+Bilder	Images
+Neuer Ordner	New folder
+Neuer Ordner …	New folder …
+Ordner entfernen	Remove folder
+Ordner entfernen?	Remove folder?
+„{}“ und sein Inhalt werden in den Cutline-Papierkorb verschoben.	“{}” and its contents will be moved to the Cutline trash.
+Verschieben nach	Move to
+Verbergen	Hide
+{} verborgen · wieder anzeigen	{} hidden · show again
+Eigene Sticker oder Bilder hinzufügen (auch per Ablegen)	Add your own stickers or images (or drop them here)
+Eigene Sounds hinzufügen (auch per Ablegen)	Add your own sounds (or drop them here)
+Keine Sticker gefunden	No stickers found
+Eigene Bilder per Knopf oder Ablegen hinzufügen	Add your own images with the button or by dropping them
+Keine Sounds gefunden	No sounds found
+Eigene Sounds per Knopf oder Ablegen hinzufügen	Add your own sounds with the button or by dropping them
+Keine passenden Dateien	No matching files
+{} in „{}“ hinzugefügt	{} added to “{}”
+„{}“ in den Papierkorb verschoben	“{}” moved to trash
+„{}“ wird im offenen Projekt verwendet und bleibt deshalb erhalten	“{}” is used in the open project and is kept
+Ungültiger Ordnername	Invalid folder name
+Ungültiger Name	Invalid name
