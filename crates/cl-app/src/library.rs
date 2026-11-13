@@ -296,6 +296,7 @@ mod tests {
 
     #[test]
     fn import_folders_favorites_move_remove() {
+        let _g = crate::paths::TEST_HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         std::env::set_var("CUTLINE_HOME", home.path());
         let src = home.path().join("in");

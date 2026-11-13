@@ -40,3 +40,7 @@ pub fn models_dir() -> PathBuf {
     }
     data_dir().join("Models")
 }
+
+/// Tests, die `CUTLINE_HOME` setzen, laufen nacheinander.
+#[cfg(test)]
+pub static TEST_HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

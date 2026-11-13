@@ -202,7 +202,38 @@ pub enum MediaKind {
 pub struct Timeline {
     /// Index 0 ist die unterste Spur. Die erste Video-Spur mit `main = true` ist die Hauptspur.
     pub tracks: Vec<Track>,
+    /// Marker (Notizen, Kapitel), nach Zeit sortiert
+    #[serde(default)]
+    pub markers: Vec<Marker>,
 }
+
+/// Marker auf der Zeitleiste: Zeitpunkt (optional mit Dauer), Farbe und Notiz.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Marker {
+    pub id: u64,
+    pub at: Time,
+    #[serde(default)]
+    pub duration: Time,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub note: String,
+    /// Index in `MARKER_COLORS`
+    #[serde(default)]
+    pub color: u8,
+}
+
+/// Farbpalette für Marker und Clip-Labels (Name, RGB)
+pub const MARKER_COLORS: [(&str, [u8; 3]); 8] = [
+    ("Blau", [70, 140, 255]),
+    ("Grün", [70, 200, 120]),
+    ("Gelb", [240, 200, 60]),
+    ("Orange", [250, 140, 60]),
+    ("Rot", [235, 80, 80]),
+    ("Pink", [240, 110, 190]),
+    ("Lila", [160, 110, 240]),
+    ("Grau", [150, 150, 160]),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -223,11 +254,14 @@ pub struct Track {
     pub hidden: bool,
     pub muted: bool,
     pub clips: Vec<Clip>,
+    /// Eigener Spurname (sonst Art + Nummer)
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 impl Track {
     pub fn new(kind: TrackKind) -> Self {
-        Self { id: TrackId::new(), kind, main: false, locked: false, hidden: false, muted: false, clips: Vec::new() }
+        Self { id: TrackId::new(), kind, main: false, locked: false, hidden: false, muted: false, clips: Vec::new(), name: None }
     }
     pub fn end(&self) -> Time {
         self.clips.iter().map(|c| c.end()).max().unwrap_or(Time::ZERO)
@@ -282,6 +316,9 @@ pub struct Clip {
     /// Erkannte Beats (Quellzeit), für Markierungen und Einrasten
     #[serde(default)]
     pub beats: Vec<Time>,
+    /// Farbmarkierung (Index in `MARKER_COLORS`)
+    #[serde(default)]
+    pub label: Option<u8>,
 }
 
 fn one() -> f32 {
@@ -312,6 +349,7 @@ impl Clip {
             fade_out: Time::ZERO,
             audio: AudioFx::default(),
             beats: Vec::new(),
+            label: None,
         }
     }
 

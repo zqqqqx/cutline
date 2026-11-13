@@ -51,6 +51,12 @@ pub enum EditOp {
     MoveClipToNewTrack { clip: ClipId, index: usize, start: Time },
     /// Lücken schließen: eine Spur oder (None) alle Spuren.
     CloseGaps { track: Option<TrackId> },
+    /// Datei eines Mediums austauschen (verschoben/umbenannt)
+    RelinkMedia { media: MediaId, path: PathBuf },
+    /// Alle Marker ersetzen (setzen, verschieben, bearbeiten, löschen)
+    SetMarkers { markers: Vec<crate::Marker> },
+    /// Spur umbenennen (`None` = Standardname)
+    RenameTrack { track: TrackId, name: Option<String> },
     /// Mehrere Ops als ein Undo-Schritt (Mehrfachauswahl).
     Batch { label: String, ops: Vec<EditOp> },
 }
@@ -95,6 +101,9 @@ impl EditOp {
             EditOp::RemoveTrack { .. } => "Spur löschen",
             EditOp::MoveClipToNewTrack { .. } => "Auf neue Spur verschieben",
             EditOp::CloseGaps { .. } => "Lücken schließen",
+            EditOp::SetMarkers { .. } => "Marker",
+            EditOp::RelinkMedia { .. } => "Medium neu verknüpfen",
+            EditOp::RenameTrack { .. } => "Spur umbenennen",
             EditOp::Batch { ops, .. } => match ops.first() {
                 Some(EditOp::RemoveClip { .. }) => "Clips löschen",
                 Some(EditOp::MoveClip { .. }) => "Clips verschieben",
@@ -127,6 +136,20 @@ impl EditOp {
                 Ok(OpOutput::None)
             }
             EditOp::AddClip { track, clip } => add_clip(p, track, clip),
+            EditOp::RelinkMedia { media, path } => {
+                let m = p.media.iter_mut().find(|m| m.id == media).ok_or(CoreError::MediaNotFound(media))?;
+                m.path = path;
+                Ok(OpOutput::None)
+            }
+            EditOp::SetMarkers { mut markers } => {
+                markers.sort_by_key(|m| m.at);
+                p.timeline.markers = markers;
+                Ok(OpOutput::None)
+            }
+            EditOp::RenameTrack { track, name } => {
+                track_mut(p, track)?.name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+                Ok(OpOutput::None)
+            }
             EditOp::RemoveClip { clip } => {
                 let ti = clip_track_index(p, clip)?;
                 ensure_unlocked(&p.timeline.tracks[ti])?;

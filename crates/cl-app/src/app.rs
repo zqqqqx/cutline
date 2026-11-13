@@ -117,6 +117,31 @@ pub struct App {
     pub preset_dialog_since: u64,
     /// Projekt-Import aus anderen Programmen
     pub import: crate::import_ui::ImportState,
+    /// Wiedergabegeschwindigkeit (J/K/L): 1 = normal, negativ = rückwärts
+    pub play_rate: f64,
+    /// In/Out-Bereich und Schleife
+    pub range_in: Option<Time>,
+    pub range_out: Option<Time>,
+    pub loop_range: bool,
+    /// Spuren, die solo gehört werden (nur Vorschau, nicht im Export)
+    pub solo: HashSet<TrackId>,
+    /// Einstellungsseite: Aktion, deren Taste gerade aufgenommen wird
+    pub capture_key: Option<&'static str>,
+    /// Geöffneter Marker-Editor
+    pub marker_edit: Option<u64>,
+    pub marker_draft: Option<cl_core::Marker>,
+    /// Spur umbenennen: (Spur, Eingabe)
+    pub track_rename: Option<(TrackId, String)>,
+    /// Pegelanzeige: (Wert, Halten, Haltezeit) links/rechts
+    pub meter: [(f32, f32, f32); 2],
+    /// Letzte automatische Sicherung
+    pub last_backup: Option<Instant>,
+    pub backup_revision: u64,
+    pub backups_open: bool,
+    /// Fehlende Medien nach dem Öffnen
+    pub missing_open: bool,
+    /// Laufendes Archivieren: Fortschritt/Ergebnis
+    pub archive: Option<std::sync::mpsc::Receiver<Result<PathBuf, String>>>,
     pub lib_thumbs: crate::library_ui::Thumbs,
     /// Ablagefläche der Bibliotheksliste im letzten Frame (Dateien dort landen in der Bibliothek)
     pub lib_drop: Option<(crate::library::Kind, egui::Rect)>,
@@ -233,6 +258,21 @@ impl App {
             preset_dialog: None,
             preset_dialog_since: 0,
             import: Default::default(),
+            play_rate: 1.0,
+            range_in: None,
+            range_out: None,
+            loop_range: false,
+            solo: HashSet::new(),
+            capture_key: None,
+            marker_edit: None,
+            marker_draft: None,
+            track_rename: None,
+            meter: [(0.0, 0.0, 0.0); 2],
+            last_backup: None,
+            backup_revision: 0,
+            backups_open: false,
+            missing_open: false,
+            archive: None,
             lib_thumbs: Default::default(),
             lib_drop: None,
             i18n: I18n::new(lang),
@@ -1217,6 +1257,8 @@ impl App {
                 self.settings.add_recent(p);
                 self.settings.save();
                 self.screen = Screen::Editor;
+                self.last_backup = Some(Instant::now());
+                self.missing_open = self.project.media.iter().any(|m| !m.path.is_file() && !m.path.to_string_lossy().contains("://"));
                 let known = self.font_files();
                 let missing: Vec<String> = needed.into_iter().filter(|f| !known.contains_key(f)).collect();
                 if !missing.is_empty() {
@@ -1259,7 +1301,14 @@ impl App {
         if self.playing {
             self.stop_playback();
         } else {
+            self.play_rate = 1.0;
             self.commit_live();
+            // Mit In/Out-Bereich: im Bereich starten
+            if let (Some(a), Some(b)) = (self.range_in, self.range_out) {
+                if self.loop_range && (self.playhead < a || self.playhead >= b) {
+                    self.playhead = a;
+                }
+            }
             if self.playhead >= self.last_frame() {
                 self.playhead = Time::ZERO;
             }
@@ -1271,6 +1320,7 @@ impl App {
 
     pub fn stop_playback(&mut self) {
         self.playing = false;
+        self.play_rate = 1.0;
         self.audio = None;
         self.playbacks.clear();
         self.play_clock = None;
@@ -1279,9 +1329,21 @@ impl App {
     pub fn restart_audio(&mut self) {
         self.audio = None;
         self.play_clock = Some((Instant::now(), self.playhead));
-        let mute = self.voiceover.recorder.is_some() && self.voiceover.mute_project;
+        let mute = (self.voiceover.recorder.is_some() && self.voiceover.mute_project) || (self.play_rate - 1.0).abs() > 1e-6;
         if !mute {
-            match AudioPlayer::start(&self.project, self.playhead) {
+            // Solo: alle anderen Tonspuren stumm (nur in der Vorschau)
+            let proj = if self.solo.is_empty() {
+                std::borrow::Cow::Borrowed(&self.project)
+            } else {
+                let mut p = self.project.clone();
+                for t in &mut p.timeline.tracks {
+                    if !self.solo.contains(&t.id) {
+                        t.muted = true;
+                    }
+                }
+                std::borrow::Cow::Owned(p)
+            };
+            match AudioPlayer::start(&proj, self.playhead) {
                 Ok(a) => self.audio = Some(a),
                 Err(e) => eprintln!("Ton: {e}"),
             }
@@ -1298,7 +1360,24 @@ impl App {
             Some(_) => {} // Ton startet gleich, Bild wartet
             None => {
                 if let Some((t0, p0)) = self.play_clock {
-                    self.playhead = p0 + Time::from_secs_f64(t0.elapsed().as_secs_f64());
+                    let t = p0.as_secs_f64() + t0.elapsed().as_secs_f64() * self.play_rate;
+                    self.playhead = Time::from_secs_f64(t.max(0.0));
+                    if t <= 0.0 && self.play_rate < 0.0 {
+                        self.stop_playback();
+                        self.playhead = Time::ZERO;
+                        return;
+                    }
+                }
+            }
+        }
+        // Schleife über In/Out
+        if self.loop_range && self.play_rate > 0.0 {
+            if let (Some(a), Some(b)) = (self.range_in, self.range_out) {
+                if self.playhead >= b {
+                    self.playhead = a;
+                    self.playbacks.clear();
+                    self.restart_audio();
+                    return;
                 }
             }
         }
@@ -1391,43 +1470,15 @@ impl App {
         let fps = self.project.settings.fps;
         let frame = Time::from_secs_f64(1.0 / fps.as_f64());
         let mut actions: Vec<&str> = Vec::new();
+        let binds = crate::keymap::bindings(&self.settings.shortcuts);
         ctx.input_mut(|i| {
-            let mut k = |m: Modifiers, key: Key, a: &'static str| {
-                if i.consume_key(m, key) {
+            for (c, a) in &binds {
+                if i.consume_key(c.mods, c.key) {
                     actions.push(a);
                 }
-            };
-            k(Modifiers::NONE, Key::Space, "play");
-            k(Modifiers::COMMAND, Key::B, "split");
-            k(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z, "redo");
-            k(Modifiers::COMMAND, Key::Y, "redo");
-            k(Modifiers::COMMAND, Key::Z, "undo");
-            k(Modifiers::NONE, Key::Delete, "delete");
-            k(Modifiers::NONE, Key::Backspace, "delete");
-            k(Modifiers::COMMAND, Key::I, "import");
-            k(Modifiers::COMMAND | Modifiers::SHIFT, Key::S, "save_as");
-            k(Modifiers::COMMAND, Key::S, "save");
-            k(Modifiers::COMMAND, Key::O, "open");
-            k(Modifiers::COMMAND, Key::E, "export");
-            k(Modifiers::COMMAND, Key::A, "select_all");
-            k(Modifiers::COMMAND, Key::D, "duplicate");
-            k(Modifiers::COMMAND, Key::Comma, "settings");
-            k(Modifiers::NONE, Key::ArrowLeft, "prev");
-            k(Modifiers::NONE, Key::ArrowRight, "next");
-            k(Modifiers::NONE, Key::Home, "home");
-            k(Modifiers::NONE, Key::End, "end");
-            k(Modifiers::NONE, Key::P, "magnet");
-            k(Modifiers::NONE, Key::N, "snap");
-            k(Modifiers::NONE, Key::F, "max");
-            k(Modifiers::NONE, Key::R, "voiceover");
-            k(Modifiers::NONE, Key::Q, "del_left");
-            k(Modifiers::NONE, Key::W, "del_right");
-            k(Modifiers::NONE, Key::V, "disable");
-            k(Modifiers::NONE, Key::Escape, "escape");
-            k(Modifiers::COMMAND, Key::Plus, "zoom_in");
-            k(Modifiers::COMMAND, Key::Equals, "zoom_in");
-            k(Modifiers::COMMAND, Key::Minus, "zoom_out");
-            k(Modifiers::COMMAND, Key::Num0, "zoom_reset");
+            }
+
+
         });
         // Kopieren/Ausschneiden/Einfügen kommen als Ereignisse
         let (copy, cut, paste) = ctx.input_mut(|i| {
@@ -1474,6 +1525,7 @@ impl App {
                 "export" => {
                     self.commit_live();
                     self.export.open_for(&self.project, self.project_path.as_deref());
+                    self.export.set_range(self.range_in.zip(self.range_out));
                 }
                 "select_all" => self.select_all(),
                 "duplicate" => self.duplicate_selection(),
@@ -1496,6 +1548,25 @@ impl App {
                         self.select_only(None)
                     }
                 }
+                "shuttle_fwd" => self.shuttle(1.0),
+                "shuttle_back" => self.shuttle(-1.0),
+                "shuttle_stop" => self.stop_playback(),
+                "mark_in" => self.set_range_point(true),
+                "mark_out" => self.set_range_point(false),
+                "clear_range" => {
+                    self.range_in = None;
+                    self.range_out = None;
+                }
+                "loop" => {
+                    self.loop_range = !self.loop_range;
+                    self.toast(if self.loop_range { "Schleife an" } else { "Schleife aus" });
+                }
+                "marker" => self.add_marker(),
+                "marker_next" => self.jump_marker(true),
+                "marker_prev" => self.jump_marker(false),
+                "ripple_delete" => self.ripple_delete(),
+                "prev_edit" => self.jump_edit(false),
+                "next_edit" => self.jump_edit(true),
                 "zoom_in" => self.set_ui_scale(ctx, self.ui_scale + 0.1),
                 "zoom_out" => self.set_ui_scale(ctx, self.ui_scale - 0.1),
                 "zoom_reset" => self.set_ui_scale(ctx, 1.0),
@@ -1654,6 +1725,9 @@ impl eframe::App for App {
         self.lib_dialogs(ctx);
         self.preset_dialogs(ctx);
         self.import_dialogs(ctx);
+        self.marker_dialog(ctx);
+        self.track_rename_dialog(ctx);
+        self.project_tools(ctx);
         self.draw_toasts(ctx);
         self.sync_project();
         self.autosave();

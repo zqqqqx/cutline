@@ -28,6 +28,8 @@ pub struct ExportDialog {
     /// Kürzere Bildkante (720/1080/1440/2160) oder 0 = Projekt
     short_edge: u32,
     custom_kbps: u32,
+    /// In/Out-Bereich der Zeitleiste, falls gesetzt
+    range_avail: Option<(Time, Time)>,
     also_srt: bool,
     encoders: Arc<Mutex<Option<Vec<Encoder>>>>,
     running: Option<Running>,
@@ -38,6 +40,14 @@ pub struct ExportDialog {
 impl ExportDialog {
     pub fn is_open(&self) -> bool {
         self.open
+    }
+
+    /// In/Out-Bereich aus der Zeitleiste anbieten (vorausgewählt).
+    pub fn set_range(&mut self, r: Option<(Time, Time)>) {
+        self.range_avail = r.filter(|(a, b)| b > a);
+        if let Some(s) = &mut self.settings {
+            s.range = self.range_avail;
+        }
     }
 
     pub fn open_for(&mut self, p: &Project, project_path: Option<&Path>) {
@@ -243,6 +253,13 @@ impl ExportDialog {
                                     });
                                     theme::section(ui, "Ton");
                                     ui.checkbox(&mut s.include_audio, crate::tr("Ton exportieren (AAC 256 kbit/s, bei WebM Opus)"));
+                                    if let Some((a, b)) = self.range_avail {
+                                        let mut only = s.range.is_some();
+                                        let fmt = |t: Time| format!("{:02}:{:02}.{:02}", (t.as_secs_f64() / 60.0) as u32, t.as_secs_f64() as u32 % 60, ((t.as_secs_f64().fract()) * 100.0) as u32);
+                                        if ui.checkbox(&mut only, crate::tr(format!("Nur In/Out-Bereich ({} – {})", fmt(a), fmt(b)))).changed() {
+                                            s.range = only.then_some((a, b));
+                                        }
+                                    }
                                 }
                                 ui.checkbox(&mut self.also_srt, crate::tr("Texte zusätzlich als Untertiteldatei (SRT) speichern"));
                             }
