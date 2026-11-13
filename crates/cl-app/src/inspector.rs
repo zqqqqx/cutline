@@ -191,12 +191,23 @@ impl App {
         let mut kf: Option<Vec<Prop>> = None;
         egui::ScrollArea::vertical().id_salt(("insp", c.id)).auto_shrink([false, false]).show(ui, |ui| {
             match self.clip_tab {
-                ClipTab::Basic => self.basic_tab(ui, &mut c, &mut e, &mut kf),
+                ClipTab::Basic => {
+                    self.basic_tab(ui, &mut c, &mut e, &mut kf);
+                    // Bilder und Texte haben keinen Tempo-Reiter: Zeit hier
+                    if !matches!(c.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Audio, .. }) {
+                        let now = c.clone();
+                        self.timing_section(ui, &now);
+                    }
+                }
                 ClipTab::Text => self.text_props(ui, &mut c, &mut e),
                 ClipTab::Effects => self.effects_props(ui, &mut c, &mut e),
                 ClipTab::Adjust => self.adjust_props(ui, &mut c, &mut e),
                 ClipTab::Animation => self.anim_props(ui, &mut c, &mut e),
-                ClipTab::Speed => self.speed_props(ui, &mut c, &mut e),
+                ClipTab::Speed => {
+                    self.speed_props(ui, &mut c, &mut e);
+                    let now = c.clone();
+                    self.timing_section(ui, &now);
+                }
                 ClipTab::Audio => self.audio_props(ui, &mut c, &mut e, &mut kf),
             }
             ui.add_space(10.0);

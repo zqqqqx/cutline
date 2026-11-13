@@ -154,6 +154,7 @@ impl App {
             if ui.add_sized([ui.available_width(), 30.0], theme::secondary(format!("{}  Projekt öffnen …", icon::FOLDER_OPEN))).clicked() {
                 self.open_dialog();
             }
+            self.home_templates(ui);
             if self.import_enabled() {
                 ui.add_space(6.0);
                 if ui.add_sized([ui.available_width(), 30.0], theme::ghost(format!("{}  Projekt importieren …", icon::DOWNLOAD_SIMPLE))).on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve")).clicked() {

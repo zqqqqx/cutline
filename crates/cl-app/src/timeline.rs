@@ -35,6 +35,10 @@ enum Drag {
     /// `ids`: alle bewegten Clips mit Startzeit; `grab` = Abstand Zeiger ↔ Clipanfang
     Move { clip: ClipId, grab: f64, ids: Vec<(ClipId, f64)> },
     Trim { clip: ClipId, edge: Edge },
+    /// Alt+Kante zwischen zwei Clips: Schnitt verschieben
+    Roll { left: ClipId, right: ClipId },
+    /// Alt+Clip: Quellausschnitt verschieben (`src` = Quellbeginn beim Start, `x` = Startposition)
+    Slip { clip: ClipId, src: f64, x: f32 },
     Marquee { origin: Pos2, additive: bool },
 }
 
@@ -390,6 +394,7 @@ impl App {
                     } else {
                         self.select_only(Some(c));
                     }
+                    self.expand_groups();
                 } else if p.x >= x0 {
                     // Kurzer Klick ins Leere: Playhead dorthin (höchstens Projektende)
                     if !multi {
@@ -440,10 +445,29 @@ impl App {
                 self.timeline.drag = if (p.y < ruler.bottom() && p.x >= x0) || head_rect.contains(p) || ((p.x - tx(ph)).abs() < 4.0 && p.x >= x0 && hit(p).is_none()) {
                     Drag::Scrub
                 } else {
+                    let alt = ui.input(|i| i.modifiers.alt);
+                    // Nachbar, der an dieser Kante direkt anschließt
+                    let neighbor = |c: ClipId, edge: Edge| -> Option<(ClipId, ClipId)> {
+                        let (t, x) = self.project.find_clip(c)?;
+                        match edge {
+                            Edge::End => t.clips.iter().find(|o| o.id != c && (o.start.0 - x.end().0).abs() < 2000).map(|o| (c, o.id)),
+                            Edge::Start => t.clips.iter().find(|o| o.id != c && (o.end().0 - x.start.0).abs() < 2000).map(|o| (o.id, c)),
+                        }
+                    };
                     match hit(p) {
+                        Some((c, Some(edge), _)) if alt && neighbor(c, edge).is_some() => {
+                            let (left, right) = neighbor(c, edge).unwrap();
+                            self.select_only(Some(c));
+                            Drag::Roll { left, right }
+                        }
                         Some((c, Some(edge), _)) => {
                             self.select_only(Some(c));
                             Drag::Trim { clip: c, edge }
+                        }
+                        Some((c, None, _)) if alt && self.project.find_clip(c).is_some_and(|(_, x)| crate::edit_tools::source_limit(self, x).is_some()) => {
+                            self.select_only(Some(c));
+                            let src = self.project.find_clip(c).map(|(_, x)| x.source_in.as_secs_f64()).unwrap_or(0.0);
+                            Drag::Slip { clip: c, src, x: p.x }
                         }
                         Some((c, None, _)) => {
                             if !self.is_selected(c) {
@@ -455,6 +479,7 @@ impl App {
                             } else {
                                 self.selected = Some(c);
                             }
+                            self.expand_groups();
                             let start = self.project.find_clip(c).map(|(_, c)| c.start.as_secs_f64()).unwrap_or(0.0);
                             let ids = self.selection().into_iter().filter_map(|id| self.project.find_clip(id).map(|(_, x)| (id, x.start.as_secs_f64()))).collect();
                             Drag::Move { clip: c, grab: xt(p.x) - start, ids }
@@ -586,6 +611,33 @@ impl App {
                             self.apply(EditOp::TrimClip { clip, edge, to: Time::from_secs_f64(to).snap_to_frame(fps) });
                         }
                         ghost.clear();
+                    }
+                }
+                Drag::Roll { left, right } => {
+                    let raw = xt(p.x);
+                    let t = snap_to(raw, &snap_cands(&[left, right])).inspect(|s| snap_line = Some(*s)).unwrap_or(raw);
+                    if let (Some((_, l)), Some((_, r))) = (self.project.find_clip(left), self.project.find_clip(right)) {
+                        let t = t.clamp(l.start.as_secs_f64() + 0.04, r.end().as_secs_f64() - 0.04);
+                        ghost.push((left, l.start.as_secs_f64(), t, None));
+                        ghost.push((right, t, r.end().as_secs_f64(), None));
+                        painter.text(pos2(tx(t), ruler.bottom() + 2.0), egui::Align2::CENTER_TOP, crate::tr("Rollen"), egui::FontId::proportional(10.0), theme::ACCENT);
+                    }
+                    if resp.drag_stopped() {
+                        self.timeline.drag = Drag::None;
+                        self.roll_edit(left, right, t);
+                        ghost.clear();
+                    }
+                }
+                Drag::Slip { clip, src, x } => {
+                    let Some((_, c)) = self.project.find_clip(clip) else { return };
+                    // nach rechts ziehen = früherer Ausschnitt (wie in anderen Schnittprogrammen)
+                    let lim = crate::edit_tools::source_limit(self, c).unwrap_or(0.0);
+                    let v = (src - ((p.x - x) / pps) as f64 * c.speed as f64).clamp(0.0, lim);
+                    let cx = tx(c.start.as_secs_f64());
+                    painter.text(pos2(cx + 4.0, ruler.bottom() + 2.0), egui::Align2::LEFT_TOP, crate::tr(format!("Slippen: Quelle ab {v:.2} s")), egui::FontId::proportional(10.0), theme::ACCENT);
+                    if resp.drag_stopped() {
+                        self.timeline.drag = Drag::None;
+                        self.slip_edit(clip, v);
                     }
                 }
                 Drag::Marquee { origin, additive } => {
@@ -997,6 +1049,9 @@ impl App {
         }
         p.rect_filled(cr, 5.0, col);
         let band = Rect::from_min_max(cr.min, pos2(cr.right(), (cr.top() + BAND_H).min(cr.bottom())));
+        if c.group.is_some() {
+            p.rect_stroke(cr.shrink(0.5), 5.0, Stroke::new(1.0_f32, Color32::from_white_alpha(140)), egui::StrokeKind::Inside);
+        }
         if let Some(l) = c.label {
             // Farbmarkierung als Kopfband
             p.rect_filled(band, egui::CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 }, crate::navigate::marker_color(l).gamma_multiply(0.85));

@@ -43,6 +43,8 @@ pub struct AppSettings {
     pub import_fcpxml: bool,
     /// Eigene Tastenkürzel: Aktion → Kombination (leer = keine)
     pub shortcuts: std::collections::BTreeMap<String, String>,
+    /// Proxys für große Videos in der Vorschau
+    pub use_proxies: bool,
 }
 
 impl Default for AppSettings {
@@ -67,6 +69,7 @@ impl Default for AppSettings {
             import_capcut: true,
             import_fcpxml: true,
             shortcuts: Default::default(),
+            use_proxies: true,
         }
     }
 }
@@ -295,6 +298,7 @@ impl App {
                     }
                 });
                 ui.label(RichText::new(crate::tr("Geringere Vorschauauflösung macht die Wiedergabe mit Effekten flüssiger. Der Export nutzt immer die volle Auflösung.")).small().color(theme::TEXT_DIM));
+                self.proxy_settings(ui);
                 ui.add_space(8.0);
                 theme::row(ui, "Effekt-Cache", |ui| {
                     if ui.add(theme::secondary(format!("{}  Vorschaubilder neu erzeugen", icon::ARROWS_CLOCKWISE))).clicked() {

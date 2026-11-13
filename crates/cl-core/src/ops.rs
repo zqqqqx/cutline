@@ -51,6 +51,8 @@ pub enum EditOp {
     MoveClipToNewTrack { clip: ClipId, index: usize, start: Time },
     /// Lücken schließen: eine Spur oder (None) alle Spuren.
     CloseGaps { track: Option<TrackId> },
+    /// Lage und Quellbereich direkt setzen (Rollen, Slippen, Zahleneingabe), ohne Ripple
+    SetClipTiming { clip: ClipId, start: Time, duration: Time, source_in: Time },
     /// Datei eines Mediums austauschen (verschoben/umbenannt)
     RelinkMedia { media: MediaId, path: PathBuf },
     /// Alle Marker ersetzen (setzen, verschieben, bearbeiten, löschen)
@@ -103,6 +105,7 @@ impl EditOp {
             EditOp::CloseGaps { .. } => "Lücken schließen",
             EditOp::SetMarkers { .. } => "Marker",
             EditOp::RelinkMedia { .. } => "Medium neu verknüpfen",
+            EditOp::SetClipTiming { .. } => "Clip-Zeit",
             EditOp::RenameTrack { .. } => "Spur umbenennen",
             EditOp::Batch { ops, .. } => match ops.first() {
                 Some(EditOp::RemoveClip { .. }) => "Clips löschen",
@@ -136,6 +139,24 @@ impl EditOp {
                 Ok(OpOutput::None)
             }
             EditOp::AddClip { track, clip } => add_clip(p, track, clip),
+            EditOp::SetClipTiming { clip, start, duration, source_in } => {
+                if duration.0 <= 0 || start.0 < 0 || source_in.0 < 0 {
+                    return Err(CoreError::InvalidDuration);
+                }
+                let c = clip_mut(p, clip)?;
+                c.start = start;
+                c.duration = duration;
+                c.source_in = source_in;
+                let magnet = p.settings.main_track_magnet;
+                for t in &mut p.timeline.tracks {
+                    t.sort();
+                    // Hauptspur-Magnet: Lücken sofort schließen
+                    if magnet && t.main && t.clips.iter().any(|c| c.id == clip) {
+                        compact(t);
+                    }
+                }
+                Ok(OpOutput::None)
+            }
             EditOp::RelinkMedia { media, path } => {
                 let m = p.media.iter_mut().find(|m| m.id == media).ok_or(CoreError::MediaNotFound(media))?;
                 m.path = path;

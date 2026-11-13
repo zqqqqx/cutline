@@ -82,7 +82,7 @@ Legend: ⏳ planned · 🔨 in progress · ✅ done
 | **Project templates**: intro, outro, lower thirds, end screen ready to fill | Same structure every week |
 | **Bin organization**: folders, tags, star ratings, notes and search for media | Find the right take among hundreds |
 
-**Done in 5.1 so far:** custom shortcuts with presets · J/K/L shuttle · In/Out with loop and range export · markers with notes and YouTube chapters · ripple delete, jump to edits · track names, solo, clip color labels · automatic backups with restore · relink missing media · archive project · audio meters · **one asset system everywhere** (stickers, sound effects, music, effects, filters, transitions, text templates, text effects, fonts): search, favorites, own folders, and every category or folder can be moved, renamed or hidden.
+**5.1 is done:** custom shortcuts with presets · J/K/L shuttle · In/Out with loop and range export · markers with notes and YouTube chapters · ripple delete, jump to edits · track names, solo, clip color labels · automatic backups with restore · relink missing media · archive project · audio meters · **one asset system everywhere** (stickers, sound effects, music, effects, filters, transitions, text templates, text effects, fonts): search, favorites, own folders, and every category or folder can be moved, renamed or hidden · numeric timing (start, duration, source), nudge by frames, roll and slip edits (Alt+drag) · paste attributes · clip groups · media bin with folders and favorites · project templates · proxy media in the background · preview in its own window for a second screen. Moved to later: true nested compound clips (groups cover moving and selecting together for now).
 
 ### 5.2 Story and multi-speaker production
 

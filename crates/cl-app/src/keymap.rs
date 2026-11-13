@@ -21,9 +21,9 @@ impl Chord {
         let mut key = None;
         for part in s.split('+').map(str::trim).filter(|p| !p.is_empty()) {
             match part.to_ascii_lowercase().as_str() {
-                "ctrl" | "strg" | "cmd" => mods = mods | Modifiers::COMMAND,
-                "shift" | "umschalt" => mods = mods | Modifiers::SHIFT,
-                "alt" => mods = mods | Modifiers::ALT,
+                "ctrl" | "strg" | "cmd" => mods |= Modifiers::COMMAND,
+                "shift" | "umschalt" => mods |= Modifiers::SHIFT,
+                "alt" => mods |= Modifiers::ALT,
                 _ => key = Key::from_name(part),
             }
         }
@@ -98,6 +98,13 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("del_right", "Rechts vom Playhead löschen", &["W"]),
     ("ripple_delete", "Löschen und Lücke schließen", &["Shift+Delete", "Shift+Backspace"]),
     ("delete", "Auswahl löschen", &["Delete", "Backspace"]),
+    ("nudge_left", "Clip 1 Bild nach links", &["Alt+ArrowLeft"]),
+    ("nudge_right", "Clip 1 Bild nach rechts", &["Alt+ArrowRight"]),
+    ("nudge_left10", "Clip 10 Bilder nach links", &["Alt+Shift+ArrowLeft"]),
+    ("nudge_right10", "Clip 10 Bilder nach rechts", &["Alt+Shift+ArrowRight"]),
+    ("paste_attrs", "Attribute einfügen", &["Ctrl+Alt+V"]),
+    ("group", "Gruppieren", &["Ctrl+G"]),
+    ("ungroup", "Gruppe auflösen", &["Ctrl+Shift+G"]),
     ("duplicate", "Duplizieren", &["Ctrl+D"]),
     ("select_all", "Alle Clips auswählen", &["Ctrl+A"]),
     ("disable", "Clip deaktivieren", &["V"]),

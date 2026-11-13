@@ -994,3 +994,49 @@ Der Ordner „{}“ wird entfernt. Die Einträge darin bleiben erhalten.	The fol
 Eingebaute Kategorien lassen sich nur verbergen	Built-in categories can only be hidden
 Unbekannte Kategorie	Unknown category
 Kein Dateiordner	Not a file folder
+# 5.1 Rest
+Zeit	Timing
+Start	Start
+Quelle ab	Source from
+Ziehen oder tippen; Bilder als m:ss.ff	Drag or type; frames as m:ss.ff
+Slippen: anderer Ausschnitt der Quelle, Lage und Länge bleiben (Alt+Ziehen im Clip)	Slip: different part of the source, position and length stay (Alt+drag on the clip)
+Rollen	Roll
+Slippen: Quelle ab {} s	Slip: source from {} s
+Am Anfang des rechten Clips ist kein weiteres Material	No more material at the start of the right clip
+Am Ende des linken Clips ist kein weiteres Material	No more material at the end of the left clip
+Attribute einfügen	Paste attributes
+Erst einen Clip kopieren (Strg+C)	Copy a clip first (Ctrl+C)
+Von „{}“ auf die Auswahl übertragen:	Transfer from “{}” to the selection:
+Look (Anpassen, Filter, Effekte, LUT, Maske, Freistellen-Farbe)	Look (adjustments, filter, effects, LUT, mask, key color)
+Position, Größe, Drehung und Keyframes	Position, scale, rotation and keyframes
+Ton (Lautstärke, Bearbeitung, Ein-/Ausblenden)	Audio (volume, processing, fades)
+Tempokurve und Richtung	Speed curve and direction
+Textstil (bei Texten)	Text style (for texts)
+Attribute eingefügt	Attributes pasted
+Für eine Gruppe mindestens zwei Clips auswählen	Select at least two clips to group
+{} Clips gruppiert	{} clips grouped
+Gruppe aufgelöst	Group removed
+Clip 1 Bild nach links	Nudge clip 1 frame left
+Clip 1 Bild nach rechts	Nudge clip 1 frame right
+Clip 10 Bilder nach links	Nudge clip 10 frames left
+Clip 10 Bilder nach rechts	Nudge clip 10 frames right
+Gruppieren	Group
+Gruppe auflösen	Ungroup
+Clip-Zeit	Clip timing
+Aus Vorlage	From template
+Als Vorlage speichern …	Save as template …
+Als Vorlage speichern	Save as template
+Vorlage umbenennen	Rename template
+z. B. Folge mit Intro und Endcard	e.g. Episode with intro and end card
+Gespeichert werden Format, Spuren, Clips, Texte, Effekte und Marker. Neue Projekte aus der Vorlage starten mit diesem Stand.	Saves format, tracks, clips, texts, effects and markers. New projects from the template start from this state.
+Vorlage „{}“ gespeichert	Template “{}” saved
+Neues Projekt aus Vorlage	New project from template
+Vorlage in den Papierkorb verschoben	Template moved to trash
+Proxys	Proxies
+Proxys für große Videos verwenden	Use proxies for large videos
+Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes erstellt Cutline im Hintergrund kleine Kopien (540p). Die Vorschau wird flüssiger, der Export nutzt immer die Originale.	For videos above 1080p, above 30 fps or in HEVC/AV1/ProRes, Cutline creates small copies (540p) in the background. Preview gets smoother; export always uses the originals.
+{} Proxys · {} MB	{} proxies · {} MB
+Proxys löschen	Delete proxies
+Proxy wird erstellt: {}	Creating proxy: {}
+Vorschau in eigenem Fenster (zweiter Bildschirm, Doppelklick oder F11 = Vollbild)	Preview in its own window (second screen, double-click or F11 = fullscreen)
+Rückgängig: {}	Undo: {}

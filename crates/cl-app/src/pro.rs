@@ -73,6 +73,13 @@ impl App {
         for (_, done) in self.tasks.poll() {
             match done {
                 TaskDone::Failed(e) => self.toast_err(e),
+                TaskDone::Proxy { media, ok } => {
+                    if ok {
+                        self.invalidate_preview();
+                    } else {
+                        self.proxy_failed.insert(media);
+                    }
+                }
                 TaskDone::Model { id } => {
                     let n = cl_analyze::CATALOG.iter().find(|c| c.id == id).map(|c| c.name).unwrap_or(id);
                     self.toast(format!("{n} installiert"));
