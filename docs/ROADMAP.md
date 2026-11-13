@@ -1,10 +1,10 @@
 # Roadmap
 
-Phases 0–3 are released (v0.3.0). Phase 4 turns Cutline into a tool for creators: YouTubers,
+Phases 0–3 are released (v0.3.0); phase 4 is done. Phase 4 turns Cutline into a tool for creators: YouTubers,
 TikTokers and streamers in gaming and lifestyle, who publish often, in several formats, and need
 to get from a raw recording to a finished clip fast.
 
-## Phase 4 – Creator edition
+## Phase 4 – Creator edition (done)
 
 Legend: ✅ done · 🔨 in progress · ⏳ planned
 
@@ -53,41 +53,97 @@ Settings → **Import** turns importers on or off; projects open from the home s
 Proprietary effects, stickers and templates of other editors can't be carried over; the importer
 reports what it skipped.
 
-### 4.4 Faster editing for talking heads and gameplay
+## Phase 5 – Series edition
 
-| Feature | Why it matters | Status |
-|---|---|---|
-| **Jump cuts**: remove silences automatically (threshold, min. pause, padding) | Talking-head videos lose 20–40 % of dead air in one click | ⏳ |
-| **Filler words**: find and cut "äh/ähm/uh/um/like" from the transcript | Cleaner speech without manual scrubbing | ⏳ |
-| **Highlight finder** for gameplay: loud moments (shouts, kills, crowd) become markers or clips | Turns a 2-hour stream into a shortlist | ⏳ |
-| **Markers and chapters**: add markers, export YouTube chapters (`00:00 Intro`) | Copy-paste into the video description | ⏳ |
-| **Multi-track audio** from OBS recordings: each audio stream as its own track (game, mic, Discord) | Mix game and voice separately | ⏳ |
+Phase 5 is for people who publish **episodes**: story-driven series, scripted shows, long
+let's-plays and podcasts with several speakers, cut down into shorts afterwards. That means
+hours of footage per episode, several recordings of the same scene, a script, many voices –
+and a weekly deadline. Every item below is local, free and works offline.
 
-### 4.5 Short-form and social
+Legend: ⏳ planned · 🔨 in progress · ✅ done
 
-| Feature | Status |
+### 5.1 Everyday comfort (QoL)
+
+| Feature | Why |
 |---|---|
-| **Animated word captions** (TikTok style): word-by-word highlight, pop, bounce, emoji-free styles, from Parakeet word timing | ⏳ |
-| **Gaming layouts** for 9:16: facecam on top, gameplay below; split, picture-in-picture, blurred-fill | ⏳ |
-| **Auto reframe** for gameplay (already in 3) plus "keep facecam" region | ⏳ |
-| **Export presets**: TikTok, YouTube Shorts, Instagram Reels, YouTube 1080p/4K, Twitch clip; one click sets size, frame rate and bitrate | ⏳ |
-| **Multi-export**: render 16:9 and 9:16 in one go | ⏳ |
-| **Zoom punch-ins**: quick zoom on a moment (keyframes in one click), auto zoom on beats | ⏳ |
-| **Thumbnail maker**: current frame + text template → PNG at 1280×720 | ⏳ |
-| **Auto ducking**: music gets quieter under speech | ⏳ |
-| Creator stickers and overlays: subscribe/like/follow animations, progress bar, countdown, webcam frames | ⏳ |
+| **J / K / L** shuttle (play back, pause, play forward, tap again for 2×/4×), **audio scrubbing** | The fastest way to find a moment |
+| **In/Out points** (I / O), loop playback of the range, export or render just the range | Review a scene over and over |
+| **Markers** (M) with color, note and duration; marker list; jump between markers | Notes for retakes, chapters, sound cues |
+| **Roll, slip and slide** edits, ripple delete (Shift+Del), numeric trim (type `+12f`, `-0.5s`) | Frame-precise editing without zooming |
+| **Clip color labels** and **track names**, solo (S) per track, track height presets | Order in timelines with 20+ tracks |
+| **Compound clips / scenes**: group clips into one, open and edit inside, reuse | Keep long episodes manageable |
+| **Paste attributes** (choose which: look, audio, transform, speed) | Faster than presets for one-offs |
+| **Relink missing media** and **collect & archive** (project + used files + fonts in one folder) | Move projects between PCs or editors |
+| **Auto backups** every N minutes with version list and one-click restore; crash recovery | Never lose an episode |
+| **Proxy media** for 1440p/4K/high-frame-rate recordings, created in the background | Smooth editing of long recordings |
+| **Customizable shortcuts** with presets (Cutline, Premiere-like, Resolve-like) | Muscle memory from other editors |
+| **Second-monitor preview** (fullscreen player on another screen) | Watch while editing |
+| **Audio meters** in the player and per track, loudness readout (LUFS) | Consistent levels across episodes |
+| **Project templates**: intro, outro, lower thirds, end screen ready to fill | Same structure every week |
+| **Bin organization**: folders, tags, star ratings, notes and search for media | Find the right take among hundreds |
 
-### 4.6 Your own library and presets
+### 5.2 Story and multi-speaker production
 
-| Feature | Status |
+| Feature | Why |
 |---|---|
-| **Own stickers and images**: add PNG/SVG/GIF/WebP files (dialog or drag & drop), organized in your own folders | ⏳ |
-| **Own sound effects**: add audio files, organize in folders, rename | ⏳ |
-| **Favorites** (star) and **search** across built-in and own stickers and sound effects | ⏳ |
-| **Remove**: delete own items, hide built-in ones you never use (restorable) | ⏳ |
-| **Presets**: save a clip's look (filter, adjustments, effects, LUT, animation) or a text style as a named preset, apply with one click, rename and delete; import/export as a file to share | ⏳ |
+| **Multi-POV sync**: drop several recordings of the same scene, Cutline aligns them by audio | Every player or camera recorded the scene – no manual syncing |
+| **Multicam editing**: switch angles live while playing (1–9), then fine-tune the cuts | Cut dialogue scenes between viewpoints in real time |
+| **Speaker tracks**: import per-speaker recordings from voice calls (one file per person), name and color each speaker, align to the scene | Clean voices, separate volume per person |
+| **Text-based editing**: edit the video by editing its transcript – delete words, reorder sentences | Cut dialogue like a document |
+| **Script import** (plain text, Fountain): match lines to the recordings, show which lines are covered, jump to the best take | Scripted episodes come together from the script |
+| **Speaker-aware captions**: captions colored and labeled per speaker, automatic speaker detection | Readable dialogue captions |
+| **Dialogue boxes**: text box with portrait, name and typewriter animation, driven by captions or script lines | Classic story-game look in one click |
+| **Character cards**: name, color, portrait per character; reused by name tags, dialogue boxes and captions | One place to define the cast |
+| **Name tags / lower thirds** that follow a character (uses motion tracking) | Introduce characters without manual keyframes |
+| **Scene list**: episode outline from markers or scenes, drag to reorder whole scenes | Restructure an episode quickly |
+| **"Previously on" builder**: pick marked moments from earlier episodes, auto-cut a recap with music | Recaps in minutes |
+| **Cinematic tools**: letterbox ratios, camera shake presets, flashback and dream looks, day/night grades, slow push-ins | Story mood without plugins |
+| **Sound design helpers**: ambience beds that loop seamlessly, footstep and impact packs, room-tone fill for gaps | Fuller sound with little effort |
 
-### 4.7 Later in phase 4
+### 5.3 Creator tools (moved from phase 4)
 
-Retouch (skin smoothing), HDR export, compound clips, multicam, templates with placeholders,
-community registry for plugins and asset packs.
+| Feature | Why |
+|---|---|
+| **Jump cuts**: remove silences (threshold, min. pause, padding) | Cuts 20–40 % dead air from talking parts |
+| **Filler words**: find and cut "äh/ähm/uh/um" from the transcript | Cleaner speech |
+| **Highlight finder**: loud or busy moments become markers or clips | Turns hours of footage into a shortlist |
+| **YouTube chapters** from markers (`00:00 Intro`), copy to clipboard | Ready for the description |
+| **Multi-track audio** from OBS recordings: each stream on its own track | Mix game, mic and call separately |
+| **Animated word captions**: word-by-word highlight, pop and bounce styles | Short-form standard |
+| **Vertical layouts** for 9:16: facecam over gameplay, split, blurred fill | Shorts from widescreen recordings |
+| **Export presets** (Shorts, TikTok, Reels, YouTube 1080p/1440p/4K) and **multi-export** (16:9 and 9:16 in one go) | One click per platform |
+| **Shorts from an episode**: pick highlights, auto reframe to 9:16, add captions, export as a batch | Promotion clips for every episode |
+| **Zoom punch-ins** in one click, auto zoom on beats | Energy in talking parts |
+| **Thumbnail maker**: frame or cut-out person + text styles + outline/glow → 1280×720 PNG, A/B variants | Thumbnails without another app |
+| **Auto ducking**: music gets quieter under speech | Clear voices, no manual keyframes |
+| **Creator overlays**: subscribe/follow animations, progress bar, countdown, webcam frames | Standard elements, own design |
+
+### 5.4 Plugins (shipped, off by default, need your own account where noted)
+
+| Plugin | What it does |
+|---|---|
+| **Freesound** (account) | Search and add CC sound effects inside the Audio tab, with license info |
+| **Pixabay / Pexels** (API key) | Stock video, images and music inside the Media tab |
+| **Google Fonts** | Browse and install open fonts for one project or all |
+| **Voice-call recordings** | Import a per-speaker recording archive (one track per person) and create speaker tracks |
+| **OBS** (local websocket) | Set markers while recording, import recordings with their markers and audio streams |
+| **YouTube upload** (account) | Upload with title, description, chapters, tags, thumbnail and schedule |
+| **Local text-to-speech** (Piper, open voices) | Scratch narration and placeholder lines while the real voice is not recorded yet |
+| **Character portraits** | Render portraits from images or supported game skin files for character cards |
+| **Asset pack registry** | Install community packs (sound effects, overlays, LUTs, dialogue box styles) |
+
+### 5.5 Where Cutline goes further than typical free editors
+
+- **No account, no paywall, no watermark, no upload.** Every feature, including captions and
+  background removal, runs on your computer.
+- **Open project format** (JSON) plus FCPXML import; projects stay yours.
+- **Real font import** and a library you control (own stickers, sounds, presets).
+- **Scriptable**: MCP for assistants and scripts, plugins for services.
+- **Pro features without the pro price**: proxies, multicam, text-based editing, transparent
+  export, color spaces, loudness targets.
+- **Honest UI**: no upsell, shortcuts in every tooltip, translations checked by humans.
+
+### 5.6 Later
+
+Retouch (skin smoothing), HDR export, body effects, optical-flow retiming per clip, collaboration
+(shared project packages with comments), Linux/macOS installers.
