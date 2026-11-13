@@ -142,6 +142,11 @@ pub struct App {
     pub proxy_failed: HashSet<MediaId>,
     /// Vorschau in eigenem Fenster
     pub ext_preview: bool,
+    /// Einführung (erster Start) und Rundgang
+    pub onboard: Option<crate::onboarding::Onboard>,
+    pub tour: Option<usize>,
+    /// Lage der Bereiche für den Rundgang
+    pub tour_rects: HashMap<&'static str, egui::Rect>,
     /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
     /// Figuren (Plugin „Story-Werkzeuge“)
@@ -223,6 +228,9 @@ impl App {
         theme::apply(&cc.egui_ctx);
         crate::set_dialog_parent(cc);
         let settings = AppSettings::load();
+        let onboard = (!settings.onboarding_done
+            && std::env::var_os("CUTLINE_NO_ONBOARDING").is_none())
+        .then(|| crate::onboarding::Onboard::new(&settings.use_cases));
         let fonts = cl_fonts::FontLibrary::open(paths::font_dir()).unwrap_or_default();
         let plugin_dirs = paths::plugin_dirs();
         let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
@@ -301,6 +309,9 @@ impl App {
             tpl_dialog: None,
             proxy_failed: HashSet::new(),
             ext_preview: false,
+            onboard,
+            tour: None,
+            tour_rects: HashMap::new(),
             multicam: None,
             characters: crate::story::load(),
             stock: Default::default(),
@@ -2214,6 +2225,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        dev_screenshot(ctx);
         if let Some(f) = self.pending_fonts.take() {
             let known = ctx.fonts(|fo| fo.families());
             self.registered_fonts = f
@@ -2254,11 +2266,12 @@ impl eframe::App for App {
             self.import_dialogs(ctx);
             self.template_dialog(ctx);
             self.external_preview(ctx);
+            self.onboarding(ctx);
             self.draw_toasts(ctx);
             return;
         }
 
-        if !self.export.is_open() {
+        if !self.export.is_open() && self.onboard.is_none() && self.tour.is_none() {
             self.shortcuts(ctx);
         }
         // Countdown vor der Voiceover-Aufnahme
@@ -2276,34 +2289,46 @@ impl eframe::App for App {
         if !self.player_max {
             // Aufteilung relativ zur Fenstergröße: der Player behält immer genug Platz
             let sr = ctx.screen_rect();
-            egui::TopBottomPanel::bottom("timeline")
+            let r = egui::TopBottomPanel::bottom("timeline")
                 .resizable(true)
                 .default_height((sr.height() * 0.38).clamp(170.0, 420.0))
                 .min_height(130.0)
                 .max_height((sr.height() * 0.55).max(140.0))
                 .frame(theme::card(6))
-                .show(ctx, |ui| self.timeline_panel(ui));
+                .show(ctx, |ui| self.timeline_panel(ui))
+                .response
+                .rect;
+            self.tour_rects.insert("timeline", r);
 
-            egui::SidePanel::left("assets")
+            let r = egui::SidePanel::left("assets")
                 .resizable(true)
                 .default_width((sr.width() * 0.27).clamp(280.0, 520.0))
                 .min_width(250.0)
                 .max_width((sr.width() * 0.34).max(260.0))
                 .frame(theme::card(0))
-                .show(ctx, |ui| fixed_width(ui, |ui| self.assets_panel(ui)));
+                .show(ctx, |ui| fixed_width(ui, |ui| self.assets_panel(ui)))
+                .response
+                .rect;
+            self.tour_rects.insert("assets", r);
 
-            egui::SidePanel::right("inspector")
+            let r = egui::SidePanel::right("inspector")
                 .resizable(true)
                 .default_width((sr.width() * 0.22).clamp(250.0, 380.0))
                 .min_width(230.0)
                 .max_width((sr.width() * 0.3).max(240.0))
                 .frame(theme::card(10))
-                .show(ctx, |ui| fixed_width(ui, |ui| self.inspector_panel(ui)));
+                .show(ctx, |ui| fixed_width(ui, |ui| self.inspector_panel(ui)))
+                .response
+                .rect;
+            self.tour_rects.insert("inspector", r);
         }
 
-        egui::CentralPanel::default()
+        let r = egui::CentralPanel::default()
             .frame(theme::card(8))
-            .show(ctx, |ui| self.player(ui));
+            .show(ctx, |ui| self.player(ui))
+            .response
+            .rect;
+        self.tour_rects.insert("player", r);
 
         self.voiceover_window(ctx);
         self.settings_window(ctx);
@@ -2329,6 +2354,8 @@ impl eframe::App for App {
         self.paste_attrs_dialog(ctx);
         self.template_dialog(ctx);
         self.external_preview(ctx);
+        self.onboarding(ctx);
+        self.tour_overlay(ctx);
         self.draw_toasts(ctx);
         self.sync_project();
         self.autosave();
@@ -2336,6 +2363,39 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         self.flush_before_leaving();
+    }
+}
+
+/// Für Dokumentation: Mit `CUTLINE_SHOTS=<Ordner>` speichert Cutline das Fensterbild als PNG,
+/// sobald dort eine Datei `take` liegt (direkt aus der App, ohne überlagernde Fenster).
+fn dev_screenshot(ctx: &egui::Context) {
+    let Some(dir) = std::env::var_os("CUTLINE_SHOTS").filter(|d| !d.is_empty()) else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let trigger = dir.join("take");
+    if trigger.is_file() {
+        let _ = std::fs::remove_file(&trigger);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
+    }
+    ctx.request_repaint_after(std::time::Duration::from_millis(300));
+    let shots: Vec<std::sync::Arc<egui::ColorImage>> = ctx.input(|i| {
+        i.raw
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+            .collect()
+    });
+    for img in shots {
+        let [w, h] = img.size;
+        let buf: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
+        let n = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0);
+        if let Some(im) = image::RgbaImage::from_raw(w as u32, h as u32, buf) {
+            let _ = im.save(dir.join(format!("shot-{n:02}.png")));
+        }
     }
 }
 

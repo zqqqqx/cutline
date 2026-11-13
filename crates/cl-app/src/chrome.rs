@@ -233,15 +233,13 @@ impl App {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    if ui
-                        .add(theme::primary(format!(
-                            "{}  {}",
-                            icon::EXPORT,
-                            self.t("export")
-                        )))
-                        .on_hover_text(crate::tr("Strg+E"))
-                        .clicked()
-                    {
+                    let ex = ui.add(theme::primary(format!(
+                        "{}  {}",
+                        icon::EXPORT,
+                        self.t("export")
+                    )));
+                    self.tour_rects.insert("export", ex.rect);
+                    if ex.on_hover_text(crate::tr("Strg+E")).clicked() {
                         self.commit_live();
                         self.export
                             .open_for(&self.project, self.project_path.as_deref());
@@ -280,7 +278,7 @@ impl App {
     }
 
     fn main_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button(
+        let menu = ui.menu_button(
             RichText::new(crate::tr(format!(
                 "{} {}",
                 self.t("menu"),
@@ -396,7 +394,17 @@ impl App {
                     ui.close_menu();
                     self.go_home();
                 }
+                ui.separator();
+                if item(ui, icon::COMPASS, "Rundgang", "").clicked() {
+                    ui.close_menu();
+                    self.start_tour();
+                }
+                if item(ui, icon::HAND_WAVING, "Einführung wiederholen", "").clicked() {
+                    ui.close_menu();
+                    self.start_onboarding();
+                }
             },
         );
+        self.tour_rects.insert("menu", menu.response.rect);
     }
 }
