@@ -110,6 +110,44 @@ pub struct ClipFx {
     pub stabilize: f32,
     /// Hintergrund entfernen: Pfad des Maskenvideos (Graustufen, gleiche Zeitbasis wie die Quelle)
     pub cutout: Option<String>,
+    /// Was mit dem Hintergrund passiert, wenn eine Personen-Maske vorhanden ist
+    pub person: Option<PersonFx>,
+    /// Bildrauschen entfernen 0…1
+    pub denoise: f32,
+    /// Helligkeitsflackern ausgleichen (Kunstlicht, Zeitraffer)
+    pub deflicker: bool,
+    /// Zeitlupe mit berechneten Zwischenbildern (optischer Fluss) statt doppelter Bilder
+    pub smooth_slowmo: bool,
+}
+
+/// Personen-Effekte auf Basis der Maske aus „Hintergrund entfernen“.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PersonFx {
+    /// Hintergrund unscharf (Porträt-Look), Stärke 0…1
+    BlurBackground { amount: f32 },
+    /// Hintergrund durch eine Farbe ersetzen
+    ColorBackground { color: [u8; 3] },
+    /// Leuchtender Umriss um die Person, Hintergrund bleibt
+    Outline { color: [u8; 3], width: f32 },
+}
+
+impl PersonFx {
+    pub const KINDS: [&'static str; 3] = ["Hintergrund weich", "Hintergrundfarbe", "Umriss"];
+    pub fn index(&self) -> usize {
+        match self {
+            PersonFx::BlurBackground { .. } => 0,
+            PersonFx::ColorBackground { .. } => 1,
+            PersonFx::Outline { .. } => 2,
+        }
+    }
+    pub fn from_index(i: usize) -> Self {
+        match i {
+            1 => PersonFx::ColorBackground { color: [24, 120, 255] },
+            2 => PersonFx::Outline { color: [255, 255, 255], width: 0.4 },
+            _ => PersonFx::BlurBackground { amount: 0.6 },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

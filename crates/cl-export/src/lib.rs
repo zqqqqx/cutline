@@ -149,6 +149,9 @@ pub struct ExportSettings {
     pub include_audio: bool,
     /// Nur einen Bereich exportieren
     pub range: Option<(Time, Time)>,
+    /// Transparenter Hintergrund (nur ProRes 4444 in MOV und VP9 in WebM)
+    #[serde(default)]
+    pub transparent: bool,
 }
 
 impl ExportSettings {
@@ -163,7 +166,18 @@ impl ExportSettings {
             encoder: Encoder::Software,
             include_audio: true,
             range: None,
+            transparent: false,
         }
+    }
+
+    /// Unterstützen Container und Codec einen Alphakanal?
+    pub fn alpha_possible(&self) -> bool {
+        matches!((self.format, self.codec), (Format::Mov, Codec::ProRes) | (Format::WebM, Codec::Vp9))
+    }
+
+    /// Wird tatsächlich mit Alphakanal exportiert?
+    pub fn alpha(&self) -> bool {
+        self.transparent && self.alpha_possible()
     }
 }
 
@@ -218,6 +232,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         fonts,
         inputs: Vec::new(),
         n_input: 0,
+        alpha: s.alpha(),
         graph: Vec::new(),
         uniq: 0,
     };
@@ -229,7 +244,12 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
             ctx.graph.push("[g0]palettegen=stats_mode=diff[pal]".into());
             ctx.graph.push("[g1][pal]paletteuse=dither=sierra2_4a[vout]".into());
         } else {
-            ctx.graph.push(format!("[{cur}]format=yuv420p[vout]"));
+            let pf = match (s.alpha(), s.codec) {
+                (true, Codec::ProRes) => "yuva444p10le",
+                (true, _) => "yuva420p",
+                _ => "yuv420p",
+            };
+            ctx.graph.push(format!("[{cur}]format={pf}[vout]"));
         }
         vlabel = Some("vout");
     }
@@ -281,7 +301,13 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
         (Codec::H264, _) => a.extend(v(&["-c:v", "libx264", "-preset", "medium", "-crf"]).into_iter().chain([crf(26, 20, 16).to_string()])),
         (Codec::Hevc, _) => a.extend(v(&["-c:v", "libx265", "-preset", "medium", "-tag:v", "hvc1", "-crf"]).into_iter().chain([crf(30, 24, 19).to_string()])),
         (Codec::Av1, _) => a.extend(v(&["-c:v", "libsvtav1", "-preset", "8", "-crf"]).into_iter().chain([crf(38, 32, 26).to_string()])),
-        (Codec::Vp9, _) => a.extend(v(&["-c:v", "libvpx-vp9", "-b:v", "0", "-row-mt", "1", "-crf"]).into_iter().chain([crf(38, 32, 26).to_string()])),
+        (Codec::Vp9, _) => {
+            a.extend(v(&["-c:v", "libvpx-vp9", "-b:v", "0", "-row-mt", "1", "-crf"]).into_iter().chain([crf(38, 32, 26).to_string()]));
+            if s.alpha() {
+                a.extend(v(&["-pix_fmt", "yuva420p", "-auto-alt-ref", "0"]));
+            }
+        }
+        (Codec::ProRes, _) if s.alpha() => a.extend(v(&["-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le", "-alpha_bits", "16", "-vendor", "apl0"])),
         (Codec::ProRes, _) => a.extend(v(&["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le"])),
     }
     if let Quality::Bitrate(k) = s.quality {
@@ -633,6 +659,71 @@ mod tests {
         let l = px(20, 160);
         assert!(!(l[1] > 150 && l[0] < 60 && l[2] < 100), "links unten kein Greenscreen-Grün: {l:?}");
         let _ = oid;
+    }
+
+    #[test]
+    fn exports_phase4_features() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let (v, _) = make_media(dir.path());
+        let matte = dir.path().join("matte.mkv");
+        assert!(cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=320x180:r=30:d=3", "-vf", "drawbox=x=0:y=0:w=160:h=180:color=white:t=fill,format=gray", "-c:v", "ffv1"]).arg(&matte).status().unwrap().success());
+        let mk = |person: Option<PersonFx>, speed: f64| {
+            let mut d = Document::new(Project::new("Phase4"));
+            let mut s = d.project().settings.clone();
+            s.width = 320;
+            s.height = 180;
+            d.apply(EditOp::SetSettings { settings: s }, OpSource::Ui).unwrap();
+            d.apply(EditOp::ImportMedia { media: v.clone() }, OpSource::Ui).unwrap();
+            let mut c = Clip::new(ClipContent::Media { media: v.id, kind: MediaKind::Video }, Time::ZERO, v.duration);
+            c.fx.cutout = Some(matte.to_string_lossy().into_owned());
+            c.fx.person = person;
+            c.fx.denoise = 0.5;
+            c.fx.deflicker = true;
+            c.fx.smooth_slowmo = true;
+            c.speed = speed as _;
+            d.apply(EditOp::AddClip { track: None, clip: c }, OpSource::Ui).unwrap();
+            d.project().clone()
+        };
+        let render = |p: &Project, s: &ExportSettings, name: &str| {
+            let out = dir.path().join(name);
+            let job = build(p, s, &no_fonts, &out).unwrap();
+            run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap_or_else(|e| panic!("{e}
+{}", std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap()));
+            out
+        };
+        // Hintergrundfarbe: rechte Hälfte (Maske schwarz) wird blau, links bleibt das Bild
+        let p = mk(Some(PersonFx::ColorBackground { color: [0, 0, 255] }), 0.5);
+        let out = render(&p, &ExportSettings::from_project(&p), "color.mp4");
+        let f = cl_media::decode_frame(&out, Time::from_secs_f64(0.5), 320, 180).unwrap();
+        let px = |x: usize, y: usize| f.data[(y * 320 + x) * 4..(y * 320 + x) * 4 + 3].to_vec();
+        let r = px(300, 90);
+        assert!(r[2] > 180 && r[0] < 60, "rechts sollte blau sein: {r:?}");
+        // Weichzeichnen und Umriss laufen ohne Fehler durch
+        for pf in [PersonFx::BlurBackground { amount: 0.7 }, PersonFx::Outline { color: [255, 0, 0], width: 0.5 }] {
+            let p = mk(Some(pf), 1.0);
+            render(&p, &ExportSettings::from_project(&p), "pf.mp4");
+        }
+        // Transparenter Export: freigestellt ohne Personen-Effekt → Alpha in MOV und WebM
+        let p = mk(None, 1.0);
+        for (fmt, codec, name) in [(Format::Mov, Codec::ProRes, "a.mov"), (Format::WebM, Codec::Vp9, "a.webm")] {
+            let mut s = ExportSettings::from_project(&p);
+            s.format = fmt;
+            s.codec = codec;
+            s.transparent = true;
+            s.include_audio = false;
+            let out = render(&p, &s, name);
+            let pf = cl_media::ffprobe_command()
+                .unwrap()
+                .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt:stream_tags=alpha_mode", "-of", "default=nw=1"])
+                .arg(&out)
+                .output()
+                .unwrap();
+            let txt = String::from_utf8_lossy(&pf.stdout).to_string();
+            assert!(txt.contains("yuva") || txt.contains("alpha_mode=1"), "{name}: kein Alphakanal: {txt}");
+        }
     }
 
     #[test]

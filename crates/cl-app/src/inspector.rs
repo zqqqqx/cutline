@@ -664,6 +664,13 @@ impl App {
             }
         }
         if matches!(c.content, ClipContent::Media { kind: MediaKind::Video, .. }) {
+            if c.speed < 0.999 || c.fx.speed_curve.is_some() {
+                theme::section(ui, "Zeitlupe");
+                if widgets::toggle_row(ui, "Flüssige Zeitlupe", &mut c.fx.smooth_slowmo) {
+                    e.commit = true;
+                }
+                ui.label(RichText::new(crate::tr("Berechnet Zwischenbilder aus der Bewegung. Die Vorschau blendet nur über, der Export rechnet genau (dauert länger).")).small().color(theme::TEXT_DIM));
+            }
             theme::section(ui, "Richtung");
             if widgets::toggle_row(ui, "Rückwärts abspielen", &mut c.fx.reverse) {
                 e.commit = true;
