@@ -130,19 +130,28 @@ impl App {
             if ui.add(theme::secondary(icon::MICROPHONE)).on_hover_text(crate::tr(format!("{} (R)", self.t("voiceover")))).clicked() {
                 self.voiceover.open = true;
             }
-            ui.add(egui::TextEdit::singleline(&mut self.media_filter).hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS))).desired_width(f32::INFINITY));
         });
-        ui.add_space(8.0);
+        ui.add_space(6.0);
+        // Ordner und Favoriten gelten pro Projekt
+        let area = crate::library_ui::intern(format!("media/{}", self.project.name));
+        let (cat, q) = self.asset_bar(ui, area, &["Video", "Audio", "Bilder"]);
         if self.project.media.is_empty() {
             theme::empty_state(ui, icon::FILE_ARROW_DOWN, &self.t("media-empty"), &self.t("drop-hint"));
             return;
         }
-        let filter = self.media_filter.to_lowercase();
+        let kind_cat = |k: MediaKind| match k {
+            MediaKind::Video => "Video",
+            MediaKind::Audio => "Audio",
+            MediaKind::Image => "Bilder",
+        };
         let media: Vec<MediaRef> = self
             .project
             .media
             .iter()
-            .filter(|m| filter.is_empty() || m.path.to_string_lossy().to_lowercase().contains(&filter))
+            .filter(|m| {
+                let name = m.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                self.library.visible(area, &cat, &q, &format!("media:{}", m.id), &name, kind_cat(m.kind))
+            })
             .filter(|m| !m.path.starts_with(crate::paths::data_dir().join("Stickers")) && !m.path.starts_with(crate::paths::data_dir().join("Sfx")))
             .cloned()
             .collect();
@@ -158,6 +167,7 @@ impl App {
             })
             .collect();
         let mut add: Option<MediaId> = None;
+        let mut menus: Vec<(egui::Response, MediaRef)> = Vec::new();
         egui::ScrollArea::vertical().id_salt("media").auto_shrink([false, false]).show(ui, |ui| {
             widgets::grid(ui, &media, 104.0, 16.0 / 9.0, 16.0, |ui, r, m| {
                 let name = m.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
@@ -185,24 +195,36 @@ impl App {
                     if used.contains(&m.id) {
                         p.text(a.left_top() + vec2(6.0, 5.0), egui::Align2::LEFT_TOP, icon::CHECK_CIRCLE, egui::FontId::proportional(12.0), theme::ACCENT);
                     }
+                    if self.library.is_favorite(&format!("media:{}", m.id)) {
+                        p.text(a.right_top() + vec2(-6.0, 5.0), egui::Align2::RIGHT_TOP, icon::STAR, egui::FontId::proportional(11.0), theme::ACCENT);
+                    }
                 });
                 resp.dnd_set_drag_payload(DragAsset::Media(m.id));
                 let resp = resp.on_hover_text(crate::tr(format!("{}\n{}×{} · {}\nKlick auf + oder Doppelklick fügt am Playhead ein", m.path.display(), m.width, m.height, m.video_codec.clone().or(m.audio_codec.clone()).unwrap_or_default())));
                 if resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0)) {
                     add = Some(m.id);
                 }
-                resp.context_menu(|ui| {
-                    if ui.button(crate::tr(format!("{}  Am Playhead einfügen", icon::PLUS))).clicked() {
-                        add = Some(m.id);
-                        ui.close_menu();
-                    }
-                    if ui.button(crate::tr(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
-                        crate::home::reveal(&m.path);
-                        ui.close_menu();
-                    }
-                });
+                menus.push((resp, m.clone()));
             });
         });
+        for (resp, m) in menus {
+            let key = format!("media:{}", m.id);
+            let mut ins = false;
+            self.asset_menu_with(&resp, area, &key, None, &cat, &mut |ui| {
+                if ui.button(crate::tr(format!("{}  Am Playhead einfügen", icon::PLUS))).clicked() {
+                    ins = true;
+                    ui.close_menu();
+                }
+                if ui.button(crate::tr(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
+                    crate::home::reveal(&m.path);
+                    ui.close_menu();
+                }
+                ui.separator();
+            });
+            if ins {
+                add = Some(m.id);
+            }
+        }
         if let Some(m) = add {
             self.add_media_at(m, self.playhead, None);
         }

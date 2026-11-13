@@ -141,7 +141,7 @@ impl App {
                 let reopen = self.playbacks.get(&c.id).is_none_or(|p| p.key != key);
                 if reopen {
                     let at = c.source_time(c.start + l.t_rel);
-                    if let Some(pb) = Playback::open(&m.path, at, self.playhead, w, h, fps, graph.as_deref(), key) {
+                    if let Some(pb) = Playback::open(&self.preview_path(&m), at, self.playhead, w, h, fps, graph.as_deref(), key) {
                         self.playbacks.insert(c.id, pb);
                     }
                 }
@@ -161,7 +161,7 @@ impl App {
             if self.requested.get(&c.id) != Some(&key) {
                 self.requested.insert(c.id, key);
                 let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
-                self.decoder.send(Job::Frame { clip: c.id, key, path: m.path.clone(), at: src, w, h, graph });
+                self.decoder.send(Job::Frame { clip: c.id, key, path: self.preview_path(&m), at: src, w, h, graph });
             }
         }
         self.playbacks.retain(|id, _| visible.contains(id));
@@ -185,8 +185,37 @@ impl App {
         let painter = ui.painter_at(area);
         painter.rect_filled(canvas, 0.0, Color32::BLACK);
         let content = painter.with_clip_rect(canvas.intersect(area));
+        let regions = self.draw_layers(&content, canvas, scale, &layers);
+        // Ablegen aus dem Asset-Bereich direkt im Player
+        if let Some(payload) = area_resp.dnd_release_payload::<DragAsset>() {
+            let on = area_resp.hover_pos().and_then(|p| regions.iter().rev().find(|r| r.contains(p)).map(|r| r.clip));
+            self.drop_asset(&payload, self.playhead, None, on);
+        } else if area_resp.dnd_hover_payload::<DragAsset>().is_some() {
+            painter.rect_stroke(canvas, 0.0, egui::Stroke::new(2.0_f32, theme::ACCENT), egui::StrokeKind::Inside);
+        }
+        if area_resp.clicked() || area_resp.drag_started() {
+            crate::app::release_text_focus(ui.ctx());
+        }
+        if !self.player_pick(ui, &area_resp, &regions) {
+            self.player_interact(ui, &area_resp, canvas, scale, &regions);
+        }
+        if self.voiceover.recorder.is_some() {
+            painter.circle_filled(canvas.left_top() + vec2(14.0, 14.0), 5.0, theme::DANGER);
+            painter.text(canvas.left_top() + vec2(24.0, 14.0), egui::Align2::LEFT_CENTER, crate::tr("REC"), egui::FontId::proportional(11.0), Color32::WHITE);
+        }
+        if self.project.duration() == Time::ZERO {
+            painter.text(canvas.center() - vec2(0.0, 10.0), egui::Align2::CENTER_CENTER, icon::FILM_SLATE, egui::FontId::proportional(28.0), theme::TEXT_FAINT);
+            painter.text(canvas.center() + vec2(0.0, 18.0), egui::Align2::CENTER_CENTER, crate::tr(self.t("drop-hint")), egui::FontId::proportional(12.0), theme::TEXT_DIM);
+        }
+        self.player_controls(ui, controls_h);
+    }
+
+    /// Alle Ebenen in `canvas` zeichnen (Player und externes Vorschaufenster).
+    fn draw_layers(&self, content: &egui::Painter, canvas: Rect, scale: f32, layers: &[Layer]) -> Vec<Region> {
+        let s = &self.project.settings;
+        let (pw, ph) = (s.width.max(2) as f32, s.height.max(2) as f32);
         let mut regions: Vec<Region> = Vec::new();
-        for l in &layers {
+        for l in layers {
             let c = &l.clip;
             let mut ev = c.eval_at(l.t_rel, pw, ph);
             if let Some((id, lt)) = self.gizmo.live {
@@ -217,33 +246,57 @@ impl App {
                     regions.push(region);
                 }
                 ClipContent::Text(st) => {
-                    let size = self.draw_text(&content, st, center, ev.scale * scale, angle, alpha, canvas.width());
+                    let size = self.draw_text(content, st, center, ev.scale * scale, angle, alpha, canvas.width());
                     regions.push(Region { clip: c.id, center, size, angle, tr });
                 }
             }
         }
-        // Ablegen aus dem Asset-Bereich direkt im Player
-        if let Some(payload) = area_resp.dnd_release_payload::<DragAsset>() {
-            let on = area_resp.hover_pos().and_then(|p| regions.iter().rev().find(|r| r.contains(p)).map(|r| r.clip));
-            self.drop_asset(&payload, self.playhead, None, on);
-        } else if area_resp.dnd_hover_payload::<DragAsset>().is_some() {
-            painter.rect_stroke(canvas, 0.0, egui::Stroke::new(2.0_f32, theme::ACCENT), egui::StrokeKind::Inside);
+        regions
+    }
+
+    /// Vorschau in eigenem Fenster (z. B. auf dem zweiten Bildschirm, F11 = Vollbild).
+    pub fn external_preview(&mut self, ctx: &egui::Context) {
+        if !self.ext_preview {
+            return;
         }
-        if area_resp.clicked() || area_resp.drag_started() {
-            crate::app::release_text_focus(ui.ctx());
+        let vid = egui::ViewportId::from_hash_of("cutline-preview");
+        let mut builder = egui::ViewportBuilder::default().with_title("Cutline – Vorschau").with_inner_size([960.0, 540.0]).with_min_inner_size([320.0, 180.0]);
+        // Erst auf dem Bildschirm des Hauptfensters öffnen; von dort auf den zweiten ziehen
+        if let Some(r) = ctx.input(|i| i.viewport().outer_rect) {
+            builder = builder.with_position(r.min + vec2(80.0, 80.0));
         }
-        if !self.player_pick(ui, &area_resp, &regions) {
-            self.player_interact(ui, &area_resp, canvas, scale, &regions);
+        ctx.show_viewport_immediate(vid, builder, |ctx, _| {
+            egui::CentralPanel::default().frame(egui::Frame::default().fill(Color32::BLACK)).show(ctx, |ui| {
+                let s = self.project.settings.clone();
+                let (pw, ph) = (s.width.max(2) as f32, s.height.max(2) as f32);
+                let area = ui.max_rect();
+                let scale = (area.width() / pw).min(area.height() / ph);
+                let canvas = Rect::from_center_size(area.center(), vec2(pw * scale, ph * scale));
+                let layers = self.layers_at(self.playhead);
+                let painter = ui.painter_at(area);
+                self.draw_layers(&painter.with_clip_rect(canvas), canvas, scale, &layers);
+                let r = ui.interact(area, ui.id().with("ext"), egui::Sense::click());
+                if r.double_clicked() {
+                    let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+                }
+            });
+            ctx.input(|i| {
+                if i.key_pressed(egui::Key::F11) {
+                    let full = i.viewport().fullscreen.unwrap_or(false);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+                }
+            });
+            if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+                self.toggle_play();
+            }
+            if ctx.input(|i| i.viewport().close_requested()) {
+                self.ext_preview = false;
+            }
+        });
+        if self.playing {
+            ctx.request_repaint_of(vid);
         }
-        if self.voiceover.recorder.is_some() {
-            painter.circle_filled(canvas.left_top() + vec2(14.0, 14.0), 5.0, theme::DANGER);
-            painter.text(canvas.left_top() + vec2(24.0, 14.0), egui::Align2::LEFT_CENTER, crate::tr("REC"), egui::FontId::proportional(11.0), Color32::WHITE);
-        }
-        if self.project.duration() == Time::ZERO {
-            painter.text(canvas.center() - vec2(0.0, 10.0), egui::Align2::CENTER_CENTER, icon::FILM_SLATE, egui::FontId::proportional(28.0), theme::TEXT_FAINT);
-            painter.text(canvas.center() + vec2(0.0, 18.0), egui::Align2::CENTER_CENTER, crate::tr(self.t("drop-hint")), egui::FontId::proportional(12.0), theme::TEXT_DIM);
-        }
-        self.player_controls(ui, controls_h);
     }
 
     /// Text wie im Export: Fläche, Kontur, Schatten, Ausrichtung, Zeilenabstand.
@@ -372,6 +425,9 @@ impl App {
             let (g, tip) = if self.player_max { (icon::CORNERS_IN, "Normale Ansicht (F)") } else { (icon::CORNERS_OUT, "Großer Player (F)") };
             if theme::icon_button(ui, g, tip, true, self.player_max).clicked() {
                 self.player_max = !self.player_max;
+            }
+            if theme::icon_button(ui, icon::MONITOR_PLAY, "Vorschau in eigenem Fenster (zweiter Bildschirm, Doppelklick oder F11 = Vollbild)", true, self.ext_preview).clicked() {
+                self.ext_preview = !self.ext_preview;
             }
             self.player_zoom_chip(ui, compact);
             let q = match self.settings.preview_div {

@@ -197,6 +197,10 @@ impl App {
                 self.export.open_for(&self.project, self.project_path.as_deref());
             }
             ui.separator();
+            if item(ui, icon::COPY_SIMPLE, "Als Vorlage speichern …", "").clicked() {
+                ui.close_menu();
+                self.tpl_dialog = Some(crate::templates::TplDialog::Save { name: self.project.name.clone() });
+            }
             if item(ui, icon::ARCHIVE, "Projekt archivieren …", "").on_hover_text(crate::tr("Projekt mit allen Medien und Schriften in einen Ordner kopieren")).clicked() {
                 ui.close_menu();
                 self.start_archive(ui.ctx());

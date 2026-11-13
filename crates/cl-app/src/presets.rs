@@ -97,32 +97,42 @@ impl App {
                 }
                 let matching: Vec<(usize, String)> = self.presets.iter().enumerate().filter(|(_, p)| p.is_text() == is_text).map(|(i, p)| (i, p.name.clone())).collect();
                 let label = if matching.is_empty() { crate::tr("Keine Presets") } else { crate::tr(format!("{} anwenden …", matching.len())) };
-                let mut apply = None;
-                let mut rename = None;
-                let mut remove = None;
-                ui.add_enabled_ui(!matching.is_empty(), |ui| {
-                    ui.menu_button(format!("{}  {label}", icon::SWATCHES), |ui| {
-                        ui.set_min_width(200.0);
-                        for (i, n) in &matching {
-                            ui.horizontal(|ui| {
-                                if ui.add(egui::Button::new(n.as_str()).frame(false).min_size(egui::vec2(130.0, 22.0))).on_hover_text(crate::tr("Auf die Auswahl anwenden")).clicked() {
-                                    apply = Some(*i);
-                                    ui.close_menu();
-                                }
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if theme::icon_button(ui, icon::TRASH, "Preset entfernen", true, false).clicked() {
-                                        remove = Some(*i);
-                                        ui.close_menu();
-                                    }
-                                    if theme::icon_button(ui, icon::PENCIL_SIMPLE, "Umbenennen", true, false).clicked() {
-                                        rename = Some(*i);
-                                        ui.close_menu();
-                                    }
-                                });
-                            });
+                // Aufklappbare Liste statt Popup (ein offenes Popup blieb beim Clipwechsel stehen)
+                let caret = if self.preset_list_open { icon::CARET_UP } else { icon::CARET_DOWN };
+                if ui.add_enabled(!matching.is_empty(), theme::ghost(format!("{}  {label} {caret}", icon::SWATCHES))).clicked() {
+                    self.preset_list_open = !self.preset_list_open;
+                }
+                if matching.is_empty() {
+                    self.preset_list_open = false;
+                }
+            });
+        });
+        let mut apply = None;
+        let mut rename = None;
+        let mut remove = None;
+        if self.preset_list_open {
+            let matching: Vec<(usize, String)> = self.presets.iter().enumerate().filter(|(_, p)| p.is_text() == is_text).map(|(i, p)| (i, p.name.clone())).collect();
+            egui::Frame::default().fill(theme::BG_RAISED).corner_radius(6).inner_margin(6).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for (i, n) in &matching {
+                    ui.horizontal(|ui| {
+                        if ui.add(egui::Button::new(n.as_str()).frame(false).min_size(egui::vec2(130.0, 22.0))).on_hover_text(crate::tr("Auf die Auswahl anwenden")).clicked() {
+                            apply = Some(*i);
                         }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if theme::icon_button(ui, icon::TRASH, "Preset entfernen", true, false).clicked() {
+                                remove = Some(*i);
+                            }
+                            if theme::icon_button(ui, icon::PENCIL_SIMPLE, "Umbenennen", true, false).clicked() {
+                                rename = Some(*i);
+                            }
+                        });
                     });
-                });
+                }
+            });
+        }
+        {
+            {
                 if let Some(i) = apply {
                     let p = self.presets[i].clone();
                     self.modify_selection(|x| {
@@ -132,6 +142,7 @@ impl App {
                         }
                     });
                     self.toast(format!("Preset „{}“ angewendet", p.name));
+                    self.preset_list_open = false;
                 }
                 if let Some(i) = rename {
                     self.preset_dialog = Some(PresetDialog::Rename { index: i, name: self.presets[i].name.clone() });
@@ -141,8 +152,8 @@ impl App {
                     save(&self.presets);
                     self.toast(format!("Preset „{}“ entfernt", p.name));
                 }
-            });
-        });
+            }
+        }
     }
 
     /// Dialog „Preset speichern/umbenennen“ (jeden Frame aufrufen).

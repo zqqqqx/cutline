@@ -85,6 +85,18 @@ impl Thumbs {
     }
 }
 
+/// Dauerhafte `&'static str` für Schlüssel, die zur Laufzeit gebildet werden (einmal je Text).
+pub fn intern(s: String) -> &'static str {
+    static MAP: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, &'static str>>> = std::sync::OnceLock::new();
+    let mut m = MAP.get_or_init(Default::default).lock().unwrap();
+    if let Some(v) = m.get(&s) {
+        return v;
+    }
+    let v: &'static str = Box::leak(s.clone().into_boxed_str());
+    m.insert(s, v);
+    v
+}
+
 /// Stern oben links auf einer Kachel
 pub fn fav_badge(p: &egui::Painter, a: egui::Rect) {
     p.text(a.left_top() + egui::vec2(5.0, 4.0), egui::Align2::LEFT_TOP, icon::STAR, egui::FontId::proportional(11.0), theme::ACCENT);
@@ -95,8 +107,8 @@ impl App {
     /// Gibt (Kategorie-Schlüssel, Suchtext) zurück; Kategorie ist „Alle“, „Favoriten“ oder `b:/p:/v:…`.
     pub fn asset_bar(&mut self, ui: &mut egui::Ui, area: &'static str, builtin: &[&str]) -> (String, String) {
         let phys = area_kind(area);
-        let qkey: &'static str = Box::leak(format!("{area}-q").into_boxed_str());
-        let ckey: &'static str = Box::leak(format!("{area}-cat").into_boxed_str());
+        let qkey: &'static str = intern(format!("{area}-q"));
+        let ckey: &'static str = intern(format!("{area}-cat"));
         let mut q = self.asset_cat.get(qkey).cloned().unwrap_or_default();
         ui.horizontal(|ui| {
             let buttons = if phys.is_some() { 2.0 } else { 1.0 };
@@ -199,6 +211,11 @@ impl App {
     /// Kontextmenü eines Eintrags (eingebaut oder eigene Datei).
     /// `key` = eindeutiger Schlüssel des Eintrags, `cat` = aktuell gewählte Kategorie.
     pub fn asset_menu(&mut self, resp: &egui::Response, area: &'static str, key: &str, own: Option<&Item>, cat: &str) {
+        self.asset_menu_with(resp, area, key, own, cat, &mut |_| {});
+    }
+
+    /// Wie `asset_menu`, mit eigenen Einträgen oben im Menü.
+    pub fn asset_menu_with(&mut self, resp: &egui::Response, area: &'static str, key: &str, own: Option<&Item>, cat: &str, extra: &mut dyn FnMut(&mut egui::Ui)) {
         let fav = self.library.is_favorite(key);
         let virt = self.library.virtual_folders(area);
         let phys_folders = area_kind(area).map(|k| self.library.folders(k)).unwrap_or_default();
@@ -207,6 +224,7 @@ impl App {
         let mut move_to: Option<String> = None;
         resp.context_menu(|ui| {
             ui.set_min_width(200.0);
+            extra(ui);
             if ui.button(crate::tr(format!("{}  {}", icon::STAR, if fav { "Aus Favoriten entfernen" } else { "Zu Favoriten" }))).clicked() {
                 act = Some(0);
                 ui.close_menu();
@@ -389,7 +407,7 @@ impl App {
         if ok {
             let res = match self.lib_dialog.take() {
                 Some(LibDialog::NewFolder { area, name, add }) => {
-                    let ckey: &'static str = Box::leak(format!("{area}-cat").into_boxed_str());
+                    let ckey: &'static str = intern(format!("{area}-cat"));
                     // Sticker/Sounds ohne Eintrag: echter Dateiordner, sonst Sammelordner
                     match (area_kind(area), &add) {
                         (Some(k), None) => self.library.create_folder(k, &name).map(|_| {
@@ -406,7 +424,7 @@ impl App {
                 }
                 Some(LibDialog::Rename { item, name }) => self.library.rename(&item, &name),
                 Some(LibDialog::RenameCat { area, key, name }) => {
-                    let ckey: &'static str = Box::leak(format!("{area}-cat").into_boxed_str());
+                    let ckey: &'static str = intern(format!("{area}-cat"));
                     let was = self.asset_cat.get(ckey).cloned();
                     self.library.rename_cat(area, &key, &name, area_kind(area)).map(|_| {
                         // gewählte Kategorie folgt dem neuen Namen

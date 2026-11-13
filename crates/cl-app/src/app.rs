@@ -115,6 +115,7 @@ pub struct App {
     pub presets: Vec<crate::presets::Preset>,
     pub preset_dialog: Option<crate::presets::PresetDialog>,
     pub preset_dialog_since: u64,
+    pub preset_list_open: bool,
     /// Projekt-Import aus anderen Programmen
     pub import: crate::import_ui::ImportState,
     /// Wiedergabegeschwindigkeit (J/K/L): 1 = normal, negativ = rückwärts
@@ -134,6 +135,13 @@ pub struct App {
     pub track_rename: Option<(TrackId, String)>,
     /// Pegelanzeige: (Wert, Halten, Haltezeit) links/rechts
     pub meter: [(f32, f32, f32); 2],
+    pub paste_attrs: crate::edit_tools::PasteAttrs,
+    pub paste_attrs_open: bool,
+    pub tpl_dialog: Option<crate::templates::TplDialog>,
+    /// Medien, deren Proxy nicht erstellt werden konnte (nicht erneut versuchen)
+    pub proxy_failed: HashSet<MediaId>,
+    /// Vorschau in eigenem Fenster
+    pub ext_preview: bool,
     /// Letzte automatische Sicherung
     pub last_backup: Option<Instant>,
     pub backup_revision: u64,
@@ -149,7 +157,6 @@ pub struct App {
     pub tab: LeftTab,
     pub inspector_tab: InspectorTab,
     pub clip_tab: ClipTab,
-    pub media_filter: String,
     pub asset_cat: HashMap<&'static str, String>,
     /// Zuletzt angeklickter Clip (Inspektor, Player-Rahmen)
     pub selected: Option<ClipId>,
@@ -257,6 +264,7 @@ impl App {
             presets: crate::presets::load(),
             preset_dialog: None,
             preset_dialog_since: 0,
+            preset_list_open: false,
             import: Default::default(),
             play_rate: 1.0,
             range_in: None,
@@ -268,6 +276,11 @@ impl App {
             marker_draft: None,
             track_rename: None,
             meter: [(0.0, 0.0, 0.0); 2],
+            paste_attrs: Default::default(),
+            paste_attrs_open: false,
+            tpl_dialog: None,
+            proxy_failed: HashSet::new(),
+            ext_preview: false,
             last_backup: None,
             backup_revision: 0,
             backups_open: false,
@@ -279,7 +292,6 @@ impl App {
             tab: LeftTab::Media,
             inspector_tab: InspectorTab::Project,
             clip_tab: ClipTab::Basic,
-            media_filter: String::new(),
             asset_cat: HashMap::new(),
             selected: None,
             sel_extra: HashSet::new(),
@@ -389,7 +401,7 @@ impl App {
         self.live = None;
         let r = self.doc.lock().unwrap().undo();
         match r {
-            Ok(l) => self.toast(format!("{}: {l}", self.t("undo"))),
+            Ok(l) => self.toast(format!("{}: {}", self.t("undo"), crate::tr(l))),
             Err(e) => self.toast_err(e.to_string()),
         }
     }
@@ -397,7 +409,7 @@ impl App {
         self.live = None;
         let r = self.doc.lock().unwrap().redo();
         match r {
-            Ok(l) => self.toast(format!("{}: {l}", self.t("redo"))),
+            Ok(l) => self.toast(format!("{}: {}", self.t("redo"), crate::tr(l))),
             Err(e) => self.toast_err(e.to_string()),
         }
     }
@@ -1496,6 +1508,13 @@ impl App {
             r.0 |= i.consume_key(Modifiers::COMMAND, Key::C);
             r.1 |= i.consume_key(Modifiers::COMMAND, Key::X);
             r.2 |= i.consume_key(Modifiers::COMMAND, Key::V);
+            // Strg+Alt+V (Windows: AltGr) ist „Attribute einfügen“, kein normales Einfügen
+            if r.2 && (i.modifiers.alt || actions.contains(&"paste_attrs")) {
+                r.2 = false;
+                if !actions.contains(&"paste_attrs") {
+                    actions.push("paste_attrs");
+                }
+            }
             r
         });
         if copy {
@@ -1565,6 +1584,13 @@ impl App {
                 "marker_next" => self.jump_marker(true),
                 "marker_prev" => self.jump_marker(false),
                 "ripple_delete" => self.ripple_delete(),
+                "nudge_left" => self.nudge(-1),
+                "nudge_right" => self.nudge(1),
+                "nudge_left10" => self.nudge(-10),
+                "nudge_right10" => self.nudge(10),
+                "paste_attrs" => self.paste_attrs_open = true,
+                "group" => self.group_selection(true),
+                "ungroup" => self.group_selection(false),
                 "prev_edit" => self.jump_edit(false),
                 "next_edit" => self.jump_edit(true),
                 "zoom_in" => self.set_ui_scale(ctx, self.ui_scale + 0.1),
@@ -1590,6 +1616,8 @@ impl App {
             return;
         }
         egui::Area::new(egui::Id::new("toasts")).anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -24.0)).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
+            // Meldungen nicht Wort für Wort umbrechen (die Fläche hat keine feste Breite)
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             for (msg, _, err) in self.toasts.iter().rev().take(3) {
                 egui::Frame::default()
                     .fill(if *err { Color32::from_rgb(0x3A, 0x1A, 0x1C) } else { theme::BG_RAISED })
@@ -1651,6 +1679,9 @@ impl eframe::App for App {
         self.receive_decoded(ctx);
         self.poll_tasks();
         self.poll_epidemic(ctx);
+        if self.screen == Screen::Editor {
+            self.ensure_proxies(ctx);
+        }
 
         self.window_frame(ctx);
         egui::TopBottomPanel::top("top")
@@ -1662,6 +1693,8 @@ impl eframe::App for App {
             egui::CentralPanel::default().frame(egui::Frame::default().fill(theme::BG_APP)).show(ctx, |ui| self.home_page(ui));
             self.settings_window(ctx);
             self.import_dialogs(ctx);
+            self.template_dialog(ctx);
+        self.external_preview(ctx);
         self.draw_toasts(ctx);
             return;
         }
@@ -1728,6 +1761,9 @@ impl eframe::App for App {
         self.marker_dialog(ctx);
         self.track_rename_dialog(ctx);
         self.project_tools(ctx);
+        self.paste_attrs_dialog(ctx);
+        self.template_dialog(ctx);
+        self.external_preview(ctx);
         self.draw_toasts(ctx);
         self.sync_project();
         self.autosave();

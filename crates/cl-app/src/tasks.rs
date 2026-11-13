@@ -17,6 +17,8 @@ pub enum TaskDone {
     Track { clip: ClipId, target: ClipId, points: Vec<(f64, f32, f32)>, from: Time },
     Reframe { clip: ClipId, points: Vec<(f64, f32, f32)> },
     Model { id: &'static str },
+    /// Proxy fertig (oder fehlgeschlagen)
+    Proxy { media: cl_core::MediaId, ok: bool },
     Failed(String),
 }
 

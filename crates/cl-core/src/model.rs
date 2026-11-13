@@ -319,6 +319,9 @@ pub struct Clip {
     /// Farbmarkierung (Index in `MARKER_COLORS`)
     #[serde(default)]
     pub label: Option<u8>,
+    /// Gruppe: Clips mit gleicher Kennung werden gemeinsam ausgewählt und bewegt
+    #[serde(default)]
+    pub group: Option<u64>,
 }
 
 fn one() -> f32 {
@@ -350,6 +353,7 @@ impl Clip {
             audio: AudioFx::default(),
             beats: Vec::new(),
             label: None,
+            group: None,
         }
     }
 
