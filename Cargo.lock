@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "cl-analyze"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "cl-core",
  "cl-media",
@@ -744,7 +744,7 @@ dependencies = [
 
 [[package]]
 name = "cl-app"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "cl-analyze",
@@ -775,7 +775,7 @@ dependencies = [
 
 [[package]]
 name = "cl-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -785,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "cl-epidemic"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64",
  "getrandom 0.2.17",
@@ -797,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "cl-export"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "cl-core",
  "cl-fonts",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "cl-fonts"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "flate2",
  "serde",
@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "cl-fx"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "cl-core",
  "cl-media",
@@ -831,7 +831,7 @@ dependencies = [
 
 [[package]]
 name = "cl-i18n"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "fluent-bundle",
  "unic-langid",
@@ -839,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "cl-import"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "cl-core",
  "cl-media",
@@ -850,7 +850,7 @@ dependencies = [
 
 [[package]]
 name = "cl-mcp"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "cl-core",
  "cl-fonts",
@@ -862,7 +862,7 @@ dependencies = [
 
 [[package]]
 name = "cl-media"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "cl-core",
  "serde",
@@ -873,7 +873,7 @@ dependencies = [
 
 [[package]]
 name = "cl-plugin"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -882,7 +882,7 @@ dependencies = [
 
 [[package]]
 name = "cl-update"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
