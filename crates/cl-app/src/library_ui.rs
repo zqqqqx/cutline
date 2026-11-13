@@ -1,6 +1,10 @@
-//! Oberfläche der eigenen Bibliothek (Sticker-Tab und Soundeffekte im Audio-Tab):
-//! Suche, Kategorie-/Ordner-Chips mit Favoriten, Import per Knopf oder Ablegen,
-//! Kontextmenü (Favorit, verschieben, umbenennen, entfernen) und kleine Dialoge.
+//! Einheitliche Verwaltung aller Asset-Bereiche (Sticker, Soundeffekte, Musik, Effekte, Filter,
+//! Übergänge, Textvorlagen, Texteffekte, Schriften):
+//! - Suche, „Alle“, „Favoriten“ und Kategorien bzw. Ordner als Chips
+//! - Kategorien/Ordner: verschieben, umbenennen, verbergen, eigene entfernen
+//! - eigene Sammelordner in jedem Bereich, Einträge hinzufügen/entfernen
+//! - Einträge: Favorit, in Ordner legen, verbergen (eingebaut) bzw. entfernen (eigene Datei)
+//! - Sticker und Sounds zusätzlich mit eigenen Dateien (Import per Knopf oder Ablegen)
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,14 +13,28 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use eframe::egui::{self, Color32, RichText};
 
 use crate::app::App;
-use crate::library::{self, Item, Kind};
+use crate::library::{Item, Kind};
 use crate::theme::{self, icon};
+
+/// Bereich mit eigenen Dateien?
+pub fn area_kind(area: &str) -> Option<Kind> {
+    match area {
+        "sticker" => Some(Kind::Sticker),
+        "sfx" => Some(Kind::Sound),
+        _ => None,
+    }
+}
 
 /// Offener Dialog der Bibliothek.
 pub enum LibDialog {
-    NewFolder { kind: Kind, name: String },
+    /// Neuer Ordner (Dateiordner bei Sticker/Sounds, sonst Sammelordner); optional gleich mit Eintrag
+    NewFolder { area: &'static str, name: String, add: Option<String> },
+    /// Eigene Datei umbenennen
     Rename { item: Item, name: String },
-    DeleteFolder { kind: Kind, name: String },
+    /// Kategorie/Ordner umbenennen
+    RenameCat { area: &'static str, key: String, name: String },
+    /// Eigenen Ordner entfernen
+    DeleteCat { area: &'static str, key: String, label: String },
 }
 
 /// Lädt Vorschaubilder eigener Sticker im Hintergrund.
@@ -37,7 +55,6 @@ impl Default for Thumbs {
 fn load_rgba(p: &std::path::Path, size: u32) -> Option<(u32, u32, Vec<u8>)> {
     if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
         let svg = std::fs::read_to_string(p).ok()?;
-        // render_svg liefert vormultipliziertes RGBA
         let px = cl_fx::stickers::render_svg(&svg, size)?;
         return Some((size, size, px));
     }
@@ -68,125 +85,159 @@ impl Thumbs {
     }
 }
 
+/// Stern oben links auf einer Kachel
+pub fn fav_badge(p: &egui::Painter, a: egui::Rect) {
+    p.text(a.left_top() + egui::vec2(5.0, 4.0), egui::Align2::LEFT_TOP, icon::STAR, egui::FontId::proportional(11.0), theme::ACCENT);
+}
+
 impl App {
-    /// Kopfbereich: Suche, Import, neuer Ordner, Chips. Gibt (Kategorie, Suchtext) zurück.
-    pub fn lib_header(&mut self, ui: &mut egui::Ui, kind: Kind, key: &'static str, builtin_cats: &[&str]) -> (String, String) {
-        let qkey: &'static str = match kind {
-            Kind::Sticker => "st-q",
-            Kind::Sound => "snd-q",
-        };
+    /// Kopfbereich eines Asset-Bereichs: Suche, (Import), neuer Ordner, Chips mit Menüs.
+    /// Gibt (Kategorie-Schlüssel, Suchtext) zurück; Kategorie ist „Alle“, „Favoriten“ oder `b:/p:/v:…`.
+    pub fn asset_bar(&mut self, ui: &mut egui::Ui, area: &'static str, builtin: &[&str]) -> (String, String) {
+        let phys = area_kind(area);
+        let qkey: &'static str = Box::leak(format!("{area}-q").into_boxed_str());
+        let ckey: &'static str = Box::leak(format!("{area}-cat").into_boxed_str());
         let mut q = self.asset_cat.get(qkey).cloned().unwrap_or_default();
         ui.horizontal(|ui| {
-            let w = (ui.available_width() - 2.0 * 30.0 - 2.0 * ui.spacing().item_spacing.x).max(60.0);
+            let buttons = if phys.is_some() { 2.0 } else { 1.0 };
+            let w = (ui.available_width() - buttons * 30.0 - buttons * ui.spacing().item_spacing.x).max(60.0);
             ui.add(egui::TextEdit::singleline(&mut q).hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS))).desired_width(w));
-            if theme::icon_button(ui, icon::UPLOAD_SIMPLE, match kind {
-                Kind::Sticker => "Eigene Sticker oder Bilder hinzufügen (auch per Ablegen)",
-                Kind::Sound => "Eigene Sounds hinzufügen (auch per Ablegen)",
-            }, true, false)
-            .clicked()
-            {
-                self.lib_pick(kind);
+            if let Some(k) = phys {
+                let tip = match k {
+                    Kind::Sticker => "Eigene Sticker oder Bilder hinzufügen (auch per Ablegen)",
+                    Kind::Sound => "Eigene Sounds hinzufügen (auch per Ablegen)",
+                };
+                if theme::icon_button(ui, icon::UPLOAD_SIMPLE, tip, true, false).clicked() {
+                    self.lib_pick(k);
+                }
             }
             if theme::icon_button(ui, icon::FOLDER_PLUS, "Neuer Ordner", true, false).clicked() {
-                self.lib_dialog = Some(LibDialog::NewFolder { kind, name: String::new() });
+                self.lib_dialog = Some(LibDialog::NewFolder { area, name: String::new(), add: None });
             }
         });
         self.asset_cat.insert(qkey, q.clone());
         ui.add_space(4.0);
-        let folders = self.library.folders(kind);
-        let cur = self.asset_cat.get(key).cloned().unwrap_or_else(|| "Alle".into());
-        let mut del = None;
+        let cats = self.library.cats(area, builtin, phys);
+        let mut cur = self.asset_cat.get(ckey).cloned().unwrap_or_else(|| "Alle".into());
+        // Kategorie verschwunden (verborgen/gelöscht/umbenannt)? Zurück auf „Alle“
+        if cur != "Alle" && cur != "Favoriten" && !cats.iter().any(|c| c.key == cur) {
+            cur = "Alle".into();
+            self.asset_cat.insert(ckey, cur.clone());
+        }
+        let mut act: Option<(u8, String)> = None;
+        let n = cats.len();
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
-            let fav_label = format!("{} Favoriten", icon::STAR);
-            for (c, label) in [("Alle".to_string(), "Alle".to_string()), ("Favoriten".to_string(), fav_label)].into_iter().chain(builtin_cats.iter().map(|c| (c.to_string(), c.to_string()))) {
-                if theme::cat_chip(ui, &label, cur == c).clicked() {
-                    self.asset_cat.insert(key, c);
-                }
+            if theme::cat_chip(ui, "Alle", cur == "Alle").clicked() {
+                self.asset_cat.insert(ckey, "Alle".into());
             }
-            for f in &folders {
-                let r = theme::cat_chip(ui, &format!("{}  {f}", icon::FOLDER_SIMPLE), cur == *f);
+            if theme::cat_chip(ui, &format!("{} {}", icon::STAR, crate::tr("Favoriten")), cur == "Favoriten").clicked() {
+                self.asset_cat.insert(ckey, "Favoriten".into());
+            }
+            for (i, c) in cats.iter().enumerate() {
+                let label = if c.builtin { c.label.clone() } else { format!("{}  {}", icon::FOLDER_SIMPLE, c.label) };
+                let r = theme::cat_chip(ui, &label, cur == c.key);
                 if r.clicked() {
-                    self.asset_cat.insert(key, f.clone());
+                    self.asset_cat.insert(ckey, c.key.clone());
                 }
                 r.context_menu(|ui| {
-                    if ui.button(crate::tr(format!("{}  Ordner entfernen", icon::TRASH))).clicked() {
-                        del = Some(f.clone());
+                    ui.set_min_width(170.0);
+                    if ui.button(crate::tr(format!("{}  Umbenennen", icon::PENCIL_SIMPLE))).clicked() {
+                        act = Some((0, c.key.clone()));
                         ui.close_menu();
+                    }
+                    if i > 0 && ui.button(crate::tr(format!("{}  Nach vorne", icon::ARROW_LEFT))).clicked() {
+                        act = Some((1, c.key.clone()));
+                        ui.close_menu();
+                    }
+                    if i + 1 < n && ui.button(crate::tr(format!("{}  Nach hinten", icon::ARROW_RIGHT))).clicked() {
+                        act = Some((2, c.key.clone()));
+                        ui.close_menu();
+                    }
+                    if ui.button(crate::tr(format!("{}  Verbergen", icon::EYE_SLASH))).clicked() {
+                        act = Some((3, c.key.clone()));
+                        ui.close_menu();
+                    }
+                    if !c.builtin {
+                        ui.separator();
+                        if ui.button(RichText::new(crate::tr(format!("{}  Ordner entfernen", icon::TRASH))).color(Color32::from_rgb(0xE0, 0x80, 0x60))).clicked() {
+                            act = Some((4, c.key.clone()));
+                            ui.close_menu();
+                        }
                     }
                 });
             }
         });
-        if let Some(name) = del {
-            self.lib_dialog = Some(LibDialog::DeleteFolder { kind, name });
+        if let Some((a, key)) = act {
+            let label = cats.iter().find(|c| c.key == key).map(|c| c.label.clone()).unwrap_or_default();
+            match a {
+                0 => self.lib_dialog = Some(LibDialog::RenameCat { area, key, name: label }),
+                1 => self.library.move_cat(area, &key, -1, builtin, phys),
+                2 => self.library.move_cat(area, &key, 1, builtin, phys),
+                3 => self.library.hide_cat(area, &key),
+                _ => self.lib_dialog = Some(LibDialog::DeleteCat { area, key, label }),
+            }
         }
-        let prefix = match kind {
-            Kind::Sticker => "builtin:st:",
-            Kind::Sound => "builtin:sfx:",
-        };
-        let hidden = self.library.hidden_count(prefix);
-        if hidden > 0 && ui.add(theme::ghost(format!("{}  {hidden} verborgen · wieder anzeigen", icon::EYE))).clicked() {
-            self.library.unhide_all(prefix);
+        // Verborgenes wieder anzeigen
+        let hidden_cats = self.library.hidden_cats(area);
+        let prefix = format!("{area}:");
+        let hidden_items = self.library.hidden_count(&prefix) + if area == "sticker" { self.library.hidden_count("builtin:st:") } else if area == "sfx" { self.library.hidden_count("builtin:sfx:") } else { 0 };
+        if hidden_cats + hidden_items > 0 && ui.add(theme::ghost(format!("{}  {} verborgen · wieder anzeigen", icon::EYE, hidden_cats + hidden_items))).clicked() {
+            self.library.unhide_cats(area);
+            self.library.unhide_all(&prefix);
+            if area == "sticker" {
+                self.library.unhide_all("builtin:st:");
+            } else if area == "sfx" {
+                self.library.unhide_all("builtin:sfx:");
+            }
         }
         ui.add_space(4.0);
-        let cat = self.asset_cat.get(key).cloned().unwrap_or_else(|| "Alle".into());
-        // Ordner gelöscht? Zurück auf „Alle“
-        let cat = if cat != "Alle" && cat != "Favoriten" && !builtin_cats.contains(&cat.as_str()) && !folders.contains(&cat) { "Alle".to_string() } else { cat };
+        let cat = self.asset_cat.get(ckey).cloned().unwrap_or_else(|| "Alle".into());
         (cat, q)
     }
 
-    /// Dateiauswahl für eigene Sticker/Sounds; Ziel ist der gewählte Ordner (sonst „Eigene“).
-    pub fn lib_pick(&mut self, kind: Kind) {
-        let label = match kind {
-            Kind::Sticker => "Bilder",
-            Kind::Sound => "Audio",
-        };
-        if let Some(files) = crate::dialog().add_filter(crate::tr(label), kind.exts()).pick_files() {
-            self.lib_import(kind, files);
-        }
-    }
-
-    pub fn lib_import(&mut self, kind: Kind, files: Vec<PathBuf>) {
-        let key = match kind {
-            Kind::Sticker => "sticker",
-            Kind::Sound => "sfx",
-        };
-        let cur = self.asset_cat.get(key).cloned().unwrap_or_default();
-        let folders = self.library.folders(kind);
-        let folder = if folders.contains(&cur) { cur } else { Kind::DEFAULT_FOLDER.to_string() };
-        let n = self.library.import(kind, &folder, &files);
-        if n == 0 {
-            self.toast_err("Keine passenden Dateien");
-        } else {
-            self.asset_cat.insert(key, folder.clone());
-            self.toast(format!("{n} in „{folder}“ hinzugefügt"));
-        }
-    }
-
-    /// Kontextmenü eines Eintrags.
-    pub fn lib_item_menu(&mut self, resp: &egui::Response, kind: Kind, item: &Item) {
-        let fav = self.library.is_favorite(&item.key);
-        let folders = self.library.folders(kind);
+    /// Kontextmenü eines Eintrags (eingebaut oder eigene Datei).
+    /// `key` = eindeutiger Schlüssel des Eintrags, `cat` = aktuell gewählte Kategorie.
+    pub fn asset_menu(&mut self, resp: &egui::Response, area: &'static str, key: &str, own: Option<&Item>, cat: &str) {
+        let fav = self.library.is_favorite(key);
+        let virt = self.library.virtual_folders(area);
+        let phys_folders = area_kind(area).map(|k| self.library.folders(k)).unwrap_or_default();
         let mut act: Option<u8> = None;
+        let mut add_to: Option<String> = None;
         let mut move_to: Option<String> = None;
         resp.context_menu(|ui| {
-            ui.set_min_width(190.0);
+            ui.set_min_width(200.0);
             if ui.button(crate::tr(format!("{}  {}", icon::STAR, if fav { "Aus Favoriten entfernen" } else { "Zu Favoriten" }))).clicked() {
                 act = Some(0);
                 ui.close_menu();
             }
-            if item.is_own() {
+            ui.menu_button(crate::tr(format!("{}  Zu Ordner hinzufügen", icon::FOLDER_SIMPLE_PLUS)), |ui| {
+                ui.set_min_width(160.0);
+                for f in &virt {
+                    if ui.button(f).clicked() {
+                        add_to = Some(f.clone());
+                        ui.close_menu();
+                    }
+                }
+                if ui.button(crate::tr(format!("{}  Neuer Ordner …", icon::FOLDER_PLUS))).clicked() {
+                    act = Some(3);
+                    ui.close_menu();
+                }
+            });
+            if let Some(name) = cat.strip_prefix("v:") {
+                if ui.button(crate::tr(format!("{}  Aus „{name}“ entfernen", icon::FOLDER_MINUS))).clicked() {
+                    act = Some(4);
+                    ui.close_menu();
+                }
+            }
+            if let Some(item) = own {
                 ui.menu_button(crate::tr(format!("{}  Verschieben nach", icon::FOLDER_SIMPLE)), |ui| {
                     ui.set_min_width(150.0);
-                    for f in folders.iter().filter(|f| **f != item.folder) {
+                    for f in phys_folders.iter().filter(|f| **f != item.folder) {
                         if ui.button(f).clicked() {
                             move_to = Some(f.clone());
                             ui.close_menu();
                         }
-                    }
-                    if ui.button(crate::tr(format!("{}  Neuer Ordner …", icon::FOLDER_PLUS))).clicked() {
-                        act = Some(3);
-                        ui.close_menu();
                     }
                 });
                 if ui.button(crate::tr(format!("{}  Umbenennen", icon::PENCIL_SIMPLE))).clicked() {
@@ -201,32 +252,74 @@ impl App {
                 }
             }
             ui.separator();
-            let label = if item.is_own() { "Entfernen" } else { "Verbergen" };
+            let label = if own.is_some() { "Entfernen" } else { "Verbergen" };
             if ui.button(RichText::new(crate::tr(format!("{}  {label}", icon::TRASH))).color(Color32::from_rgb(0xE0, 0x80, 0x60))).clicked() {
                 act = Some(2);
                 ui.close_menu();
             }
         });
         match act {
-            Some(0) => self.library.toggle_favorite(&item.key),
-            Some(1) => self.lib_dialog = Some(LibDialog::Rename { item: item.clone(), name: item.name.clone() }),
-            Some(2) if item.path.as_ref().is_some_and(|p| self.project.media.iter().any(|m| &m.path == p)) => {
-                self.toast_err(format!("„{}“ wird im offenen Projekt verwendet und bleibt deshalb erhalten", item.name));
-            }
-            Some(2) => {
-                if let Err(e) = self.library.remove(item) {
-                    self.toast_err(e);
-                } else if item.is_own() {
-                    self.toast(format!("„{}“ in den Papierkorb verschoben", item.name));
+            Some(0) => self.library.toggle_favorite(key),
+            Some(1) => {
+                if let Some(item) = own {
+                    self.lib_dialog = Some(LibDialog::Rename { item: item.clone(), name: item.name.clone() });
                 }
             }
-            Some(3) => self.lib_dialog = Some(LibDialog::NewFolder { kind, name: String::new() }),
+            Some(2) => match own {
+                Some(item) if item.path.as_ref().is_some_and(|p| self.project.media.iter().any(|m| &m.path == p)) => {
+                    self.toast_err(format!("„{}“ wird im offenen Projekt verwendet und bleibt deshalb erhalten", item.name));
+                }
+                Some(item) => match self.library.remove(item) {
+                    Ok(()) => self.toast(format!("„{}“ in den Papierkorb verschoben", item.name)),
+                    Err(e) => self.toast_err(e),
+                },
+                None => self.library.hide(key),
+            },
+            Some(3) => self.lib_dialog = Some(LibDialog::NewFolder { area, name: String::new(), add: Some(key.to_string()) }),
+            Some(4) => {
+                if let Some(name) = cat.strip_prefix("v:") {
+                    self.library.remove_from_virtual(area, name, key);
+                }
+            }
             _ => {}
         }
-        if let Some(f) = move_to {
-            if let Err(e) = self.library.move_to(item, kind, &f) {
-                self.toast_err(e);
+        if let Some(f) = add_to {
+            self.library.add_to_virtual(area, &f, key);
+            self.toast(format!("Zu „{f}“ hinzugefügt"));
+        }
+        if let (Some(f), Some(item)) = (move_to, own) {
+            if let Some(k) = area_kind(area) {
+                if let Err(e) = self.library.move_to(item, k, &f) {
+                    self.toast_err(e);
+                }
             }
+        }
+    }
+
+    /// Dateiauswahl für eigene Sticker/Sounds; Ziel ist der gewählte Ordner (sonst „Eigene“).
+    pub fn lib_pick(&mut self, kind: Kind) {
+        let label = match kind {
+            Kind::Sticker => "Bilder",
+            Kind::Sound => "Audio",
+        };
+        if let Some(files) = crate::dialog().add_filter(crate::tr(label), kind.exts()).pick_files() {
+            self.lib_import(kind, files);
+        }
+    }
+
+    pub fn lib_import(&mut self, kind: Kind, files: Vec<PathBuf>) {
+        let ckey = match kind {
+            Kind::Sticker => "sticker-cat",
+            Kind::Sound => "sfx-cat",
+        };
+        let cur = self.asset_cat.get(ckey).cloned().unwrap_or_default();
+        let folder = cur.strip_prefix("p:").map(String::from).unwrap_or_else(|| Kind::DEFAULT_FOLDER.to_string());
+        let n = self.library.import(kind, &folder, &files);
+        if n == 0 {
+            self.toast_err("Keine passenden Dateien");
+        } else {
+            self.asset_cat.insert(ckey, format!("p:{folder}"));
+            self.toast(format!("{n} in „{folder}“ hinzugefügt"));
         }
     }
 
@@ -246,15 +339,15 @@ impl App {
         let mut ok = false;
         let title = match d {
             LibDialog::NewFolder { .. } => "Neuer Ordner",
-            LibDialog::Rename { .. } => "Umbenennen",
-            LibDialog::DeleteFolder { .. } => "Ordner entfernen?",
+            LibDialog::Rename { .. } | LibDialog::RenameCat { .. } => "Umbenennen",
+            LibDialog::DeleteCat { .. } => "Ordner entfernen?",
         };
         let modal = egui::Modal::new(egui::Id::new("lib-dialog")).show(ctx, |ui| {
             ui.set_width(320.0);
             ui.label(RichText::new(crate::tr(title)).strong().size(14.0));
             ui.add_space(8.0);
             match d {
-                LibDialog::NewFolder { name, .. } | LibDialog::Rename { name, .. } => {
+                LibDialog::NewFolder { name, .. } | LibDialog::Rename { name, .. } | LibDialog::RenameCat { name, .. } => {
                     let r = ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY));
                     if fresh {
                         r.request_focus();
@@ -262,15 +355,25 @@ impl App {
                     if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         ok = true;
                     }
+                    if let LibDialog::RenameCat { key, .. } = d {
+                        if key.starts_with("b:") {
+                            ui.label(RichText::new(crate::tr("Eingebaute Kategorien bekommen nur einen eigenen Anzeigenamen.")).small().color(theme::TEXT_FAINT));
+                        }
+                    }
                 }
-                LibDialog::DeleteFolder { name, .. } => {
-                    ui.label(crate::tr(format!("„{name}“ und sein Inhalt werden in den Cutline-Papierkorb verschoben.")));
+                LibDialog::DeleteCat { area, key, label } => {
+                    let text = if key.starts_with("p:") && area_kind(area).is_some() {
+                        format!("„{label}“ und sein Inhalt werden in den Cutline-Papierkorb verschoben.")
+                    } else {
+                        format!("Der Ordner „{label}“ wird entfernt. Die Einträge darin bleiben erhalten.")
+                    };
+                    ui.label(crate::tr(text));
                 }
             }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let label = if matches!(d, LibDialog::DeleteFolder { .. }) { "Entfernen" } else { "OK" };
+                    let label = if matches!(d, LibDialog::DeleteCat { .. }) { "Entfernen" } else { "OK" };
                     if ui.add(theme::primary(label)).clicked() {
                         ok = true;
                     }
@@ -285,16 +388,35 @@ impl App {
         }
         if ok {
             let res = match self.lib_dialog.take() {
-                Some(LibDialog::NewFolder { kind, name }) => {
-                    let r = self.library.create_folder(kind, &name);
-                    if r.is_ok() {
-                        let key = if kind == Kind::Sticker { "sticker" } else { "sfx" };
-                        self.asset_cat.insert(key, name.trim().to_string());
+                Some(LibDialog::NewFolder { area, name, add }) => {
+                    let ckey: &'static str = Box::leak(format!("{area}-cat").into_boxed_str());
+                    // Sticker/Sounds ohne Eintrag: echter Dateiordner, sonst Sammelordner
+                    match (area_kind(area), &add) {
+                        (Some(k), None) => self.library.create_folder(k, &name).map(|_| {
+                            self.asset_cat.insert(ckey, format!("p:{}", name.trim()));
+                        }),
+                        _ => self.library.create_virtual(area, &name).map(|key| {
+                            if let Some(item) = &add {
+                                self.library.add_to_virtual(area, name.trim(), item);
+                            } else {
+                                self.asset_cat.insert(ckey, key);
+                            }
+                        }),
                     }
-                    r
                 }
                 Some(LibDialog::Rename { item, name }) => self.library.rename(&item, &name),
-                Some(LibDialog::DeleteFolder { kind, name }) => self.library.delete_folder(kind, &name),
+                Some(LibDialog::RenameCat { area, key, name }) => {
+                    let ckey: &'static str = Box::leak(format!("{area}-cat").into_boxed_str());
+                    let was = self.asset_cat.get(ckey).cloned();
+                    self.library.rename_cat(area, &key, &name, area_kind(area)).map(|_| {
+                        // gewählte Kategorie folgt dem neuen Namen
+                        if was.as_deref() == Some(key.as_str()) && !key.starts_with("b:") {
+                            let pre = &key[..2];
+                            self.asset_cat.insert(ckey, format!("{pre}{}", name.trim()));
+                        }
+                    })
+                }
+                Some(LibDialog::DeleteCat { area, key, .. }) => self.library.delete_cat(area, &key, area_kind(area)),
                 None => Ok(()),
             };
             if let Err(e) = res {
@@ -333,10 +455,11 @@ impl App {
         self.add_image_overlay_at(file, at, track)
     }
 
-    /// Eigene Sticker/Sounds in der Liste nach Ordner/Suche filtern (eingebaute davor).
-    pub fn lib_items(&mut self, kind: Kind, builtin: Vec<Item>, cat: &str, q: &str) -> Vec<Item> {
+
+    /// Eingebaute und eigene Einträge eines Bereichs nach Kategorie und Suche gefiltert.
+    pub fn lib_items(&mut self, area: &'static str, kind: Kind, builtin: Vec<Item>, cat: &str, q: &str) -> Vec<Item> {
         let mut all = builtin;
         all.extend(self.library.own_items(kind));
-        library::filter(&self.library, all, cat, q)
+        all.into_iter().filter(|i| self.library.visible(area, cat, q, &i.key, &i.name, &i.folder)).collect()
     }
 }

@@ -982,3 +982,15 @@ Sucht alle fehlenden Dateien nach Namen in einem Ordner und seinen Unterordnern	
 {} von {} Dateien gefunden	Found {} of {} files
 Pegel L {} dB · R {} dB	Level L {} dB · R {} dB
 Medium neu verknüpfen	Relink media
+# Asset-Verwaltung
+Nach vorne	Move forward
+Nach hinten	Move back
+Zu Ordner hinzufügen	Add to folder
+Aus „{}“ entfernen	Remove from “{}”
+Zu „{}“ hinzugefügt	Added to “{}”
+Ordner gibt es schon	Folder already exists
+Eingebaute Kategorien bekommen nur einen eigenen Anzeigenamen.	Built-in categories only get a custom display name.
+Der Ordner „{}“ wird entfernt. Die Einträge darin bleiben erhalten.	The folder “{}” will be removed. The items in it are kept.
+Eingebaute Kategorien lassen sich nur verbergen	Built-in categories can only be hidden
+Unbekannte Kategorie	Unknown category
+Kein Dateiordner	Not a file folder

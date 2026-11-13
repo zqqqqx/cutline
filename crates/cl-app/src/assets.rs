@@ -119,20 +119,6 @@ impl App {
         ui.add_space(4.0);
     }
 
-    fn categories(&mut self, ui: &mut egui::Ui, key: &'static str, cats: &[&str]) -> String {
-        let cur = self.asset_cat.get(key).cloned().unwrap_or_else(|| "Alle".into());
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-            for c in std::iter::once("Alle").chain(cats.iter().copied()) {
-                if theme::cat_chip(ui, c, cur == c).clicked() {
-                    self.asset_cat.insert(key, c.to_string());
-                }
-            }
-        });
-        ui.add_space(6.0);
-        self.asset_cat.get(key).cloned().unwrap_or_else(|| "Alle".into())
-    }
-
     // ------------------------------------------------------------------ Medien
 
     fn media_tab(&mut self, ui: &mut egui::Ui) {
@@ -256,12 +242,12 @@ impl App {
         match sel {
             0 => {
                 use crate::library::{Item, Kind};
-                let (cat, q) = self.lib_header(ui, Kind::Sound, "sfx", &cl_fx::sfx::SFX_CATEGORIES);
+                let (cat, q) = self.asset_bar(ui, "sfx", &cl_fx::sfx::SFX_CATEGORIES);
                 let builtin: Vec<Item> = cl_fx::sfx::SFX
                     .iter()
                     .map(|s| Item { key: format!("builtin:sfx:{}", s.id), name: s.name.to_string(), folder: s.category.to_string(), builtin: Some(s.id), path: None })
                     .collect();
-                let items = self.lib_items(Kind::Sound, builtin, &cat, &q);
+                let items = self.lib_items("sfx", Kind::Sound, builtin, &cat, &q);
                 let mut menu: Vec<(egui::Response, Item)> = Vec::new();
                 let area = egui::ScrollArea::vertical().id_salt("sfx").auto_shrink([false, false]).show(ui, |ui| {
                     if items.is_empty() {
@@ -305,7 +291,7 @@ impl App {
                 });
                 self.lib_drop = Some((Kind::Sound, area.inner_rect));
                 for (r, it) in menu {
-                    self.lib_item_menu(&r, Kind::Sound, &it);
+                    self.asset_menu(&r, "sfx", &it.key, it.is_own().then_some(&it), &cat);
                 }
             }
             1 => {
@@ -318,15 +304,30 @@ impl App {
                     Some(l) => {
                         ui.label(RichText::new(crate::tr(format!("{} Titel aus deinem Musik-Ordner", l.len()))).small().color(theme::TEXT_DIM));
                         ui.add_space(4.0);
+                        // Unterordner des Musik-Ordners als Kategorien (nur Anzeige: umbenennen,
+                        // sortieren, verbergen ändern nichts an deinen Dateien)
+                        let dir_of = |p: &PathBuf| p.parent().and_then(|d| d.file_name()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                        let mut dirs: Vec<String> = l.iter().map(dir_of).collect();
+                        dirs.sort();
+                        dirs.dedup();
+                        let dir_refs: Vec<&str> = dirs.iter().map(|s| s.as_str()).collect();
+                        let (cat, q) = self.asset_bar(ui, "music", &dir_refs);
+                        let l: Vec<PathBuf> = l.into_iter().filter(|p| {
+                            let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                            self.library.visible("music", &cat, &q, &format!("music:{}", p.display()), &name, &dir_of(p))
+                        }).collect();
+                        let mut menus: Vec<(egui::Response, String)> = Vec::new();
                         egui::ScrollArea::vertical().id_salt("music").auto_shrink([false, false]).show(ui, |ui| {
                             for p in l {
                                 let key = format!("music:{}", p.display());
                                 let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                                let dir = p.parent().and_then(|d| d.file_name()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                                let dir = dir_of(&p);
+                                let info = if self.library.is_favorite(&key) { format!("{}  {dir}", icon::STAR) } else { dir };
                                 let playing = self.sfx_preview.as_ref().is_some_and(|(k, _)| *k == key);
-                                let (play, add, drag) = self.sound_row(ui, &key, &name, &dir, playing);
+                                let (play, add, drag) = self.sound_row(ui, &key, &name, &info, playing);
                                 if let Some(r) = drag {
                                     r.dnd_set_drag_payload(DragAsset::File(p.clone()));
+                                    menus.push((r, key.clone()));
                                 }
                                 if play {
                                     self.preview_sound(key.clone(), &p);
@@ -336,6 +337,9 @@ impl App {
                                 }
                             }
                         });
+                        for (r, k) in menus {
+                            self.asset_menu(&r, "music", &k, None, &cat);
+                        }
                     }
                 }
             }
@@ -422,11 +426,15 @@ impl App {
         ui.add_space(8.0);
         match mode {
             0 => {
-                let cat = self.categories(ui, "text", &cl_fx::text::TEMPLATE_CATEGORIES);
+                let (cat, q) = self.asset_bar(ui, "text", &cl_fx::text::TEMPLATE_CATEGORIES);
+                let mut menus: Vec<(egui::Response, String)> = Vec::new();
                 egui::ScrollArea::vertical().id_salt("tpl").auto_shrink([false, false]).show(ui, |ui| {
                     // Standardtext zuerst
-                    let mut items: Vec<Option<&'static cl_fx::text::TextTemplate>> = vec![None];
-                    items.extend(cl_fx::text::TEMPLATES.iter().filter(|t| cat == "Alle" || t.category == cat).map(Some));
+                    let mut items: Vec<Option<&'static cl_fx::text::TextTemplate>> = Vec::new();
+                    if self.library.visible("text", &cat, &q, "tt:default", "Standardtext", "") {
+                        items.push(None);
+                    }
+                    items.extend(cl_fx::text::TEMPLATES.iter().filter(|t| self.library.visible("text", &cat, &q, &format!("tt:{}", t.id), t.name, t.category)).map(Some));
                     let mut add: Option<Option<&'static str>> = None;
                     widgets::grid(ui, &items, 120.0, 16.0 / 10.0, 16.0, |ui, r, t| {
                         let (id, name) = match t {
@@ -434,10 +442,16 @@ impl App {
                             None => ("default", "Standardtext"),
                         };
                         let style = t.map(|t| t.make()).unwrap_or_else(|| TextStyle { text: "Text".into(), ..Default::default() });
+                        let akey = format!("tt:{id}");
+                        let fav = self.library.is_favorite(&akey);
                         let resp = widgets::tile(ui, egui::Id::new(("tpl", id)), r, name, false, |p, a| {
                             p.rect_filled(a, 6.0, Color32::from_rgb(0x2A, 0x2D, 0x36));
                             self.text_preview(p, &style, a);
+                            if fav {
+                                crate::library_ui::fav_badge(p, a);
+                            }
                         });
+                        menus.push((resp.clone(), akey));
                         resp.dnd_set_drag_payload(DragAsset::Text(t.map(|t| t.id)));
                         if resp.clicked() || resp.double_clicked() {
                             add = Some(t.map(|t| t.id));
@@ -447,26 +461,40 @@ impl App {
                         self.add_text_at(self.playhead, t, None);
                     }
                 });
+                for (r, k) in menus {
+                    self.asset_menu(&r, "text", &k, None, &cat);
+                }
             }
             1 => {
                 let sel_text = self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| matches!(c.content, ClipContent::Text(_)));
                 ui.label(RichText::new(crate::tr(if sel_text { "Klick wendet den Effekt auf den ausgewählten Text an" } else { "Klick fügt einen neuen Text mit diesem Effekt ein" })).small().color(theme::TEXT_DIM));
                 ui.add_space(6.0);
-                let items: Vec<&'static cl_fx::text::TextEffect> = cl_fx::text::TEXT_EFFECTS.iter().collect();
+                let (cat, q) = self.asset_bar(ui, "texteffect", &[]);
+                let items: Vec<&'static cl_fx::text::TextEffect> = cl_fx::text::TEXT_EFFECTS.iter().filter(|e| self.library.visible("texteffect", &cat, &q, &format!("te:{}", e.id), e.name, "")).collect();
+                let mut menus: Vec<(egui::Response, String)> = Vec::new();
                 let mut chosen = None;
                 egui::ScrollArea::vertical().id_salt("teff").auto_shrink([false, false]).show(ui, |ui| {
                     widgets::grid(ui, &items, 76.0, 1.0, 16.0, |ui, r, e| {
                         let mut st = TextStyle { text: "Aa".into(), size: 64.0, bold: true, ..Default::default() };
                         (e.apply)(&mut st);
+                        let akey = format!("te:{}", e.id);
+                        let fav = self.library.is_favorite(&akey);
                         let resp = widgets::tile(ui, egui::Id::new(("teff", e.id)), r, e.name, false, |p, a| {
                             p.rect_filled(a, 6.0, Color32::from_rgb(0x2A, 0x2D, 0x36));
                             self.text_preview(p, &st, a);
+                            if fav {
+                                crate::library_ui::fav_badge(p, a);
+                            }
                         });
+                        menus.push((resp.clone(), akey));
                         if resp.clicked() {
                             chosen = Some(e.apply);
                         }
                     });
                 });
+                for (r, k) in menus {
+                    self.asset_menu(&r, "texteffect", &k, None, &cat);
+                }
                 if let Some(apply) = chosen {
                     if sel_text {
                         self.modify_selection(|c| {
@@ -508,15 +536,21 @@ impl App {
         let sys = (*self.system_font_count.lock().unwrap()).map(|n| format!(" · {n} Systemschriften")).unwrap_or_default();
         ui.label(RichText::new(crate::tr(format!("{}{sys} · TTF, OTF, TTC, WOFF hierher ziehen", self.i18n.t_num("fonts-count", "count", fam_count)))).small().color(theme::TEXT_DIM));
         ui.add_space(6.0);
-        let families: Vec<(String, Vec<cl_fonts::FaceInfo>)> = self.fonts.lock().unwrap().families().into_iter().map(|(k, v)| (k, v.into_iter().map(|f| f.info.clone()).collect())).collect();
-        if families.is_empty() {
+        let (cat, q) = self.asset_bar(ui, "font", &[]);
+        let all_fams: Vec<(String, Vec<cl_fonts::FaceInfo>)> = self.fonts.lock().unwrap().families().into_iter().map(|(k, v)| (k, v.into_iter().map(|f| f.info.clone()).collect())).collect();
+        let none_imported = all_fams.is_empty();
+        let families: Vec<(String, Vec<cl_fonts::FaceInfo>)> = all_fams.into_iter().filter(|(f, _)| self.library.visible("font", &cat, &q, &format!("font:{f}"), f, "")).collect();
+        let mut menus: Vec<(egui::Response, String)> = Vec::new();
+        if none_imported {
             theme::empty_state(ui, icon::TEXT_AA, "Noch keine eigenen Schriften", "Importiere Schriftdateien oder ziehe sie hierher");
         }
         let mut remove = None;
         let mut use_font = None;
         egui::ScrollArea::vertical().id_salt("fonts").auto_shrink([false, false]).show(ui, |ui| {
             for (fam, faces) in families {
-                egui::Frame::default().fill(theme::BG_RAISED).corner_radius(8).inner_margin(10).show(ui, |ui| {
+                let akey = format!("font:{fam}");
+                let fav = self.library.is_favorite(&akey);
+                let fr = egui::Frame::default().fill(theme::BG_RAISED).corner_radius(8).inner_margin(10).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(crate::tr(&fam)).strong());
@@ -532,6 +566,9 @@ impl App {
                             if theme::icon_button(ui, icon::TEXT_T, "Für ausgewählten Text verwenden", true, false).clicked() {
                                 use_font = Some(fam.clone());
                             }
+                            if theme::icon_button(ui, icon::STAR, if fav { "Aus Favoriten entfernen" } else { "Zu Favoriten" }, true, fav).clicked() {
+                                self.library.toggle_favorite(&akey);
+                            }
                         });
                     });
                     ui.label(RichText::new(crate::tr("Cutline 0123 ÄÖÜ äöü ß")).font(egui::FontId::new(20.0, self.font_family(Some(&fam)))));
@@ -539,9 +576,13 @@ impl App {
                         ui.label(RichText::new(crate::tr(format!("{} {}", icon::WARNING, self.t("font-restricted")))).small().color(Color32::from_rgb(0xE0, 0xA0, 0x40)));
                     }
                 });
+                menus.push((fr.response.interact(Sense::click()), akey));
                 ui.add_space(6.0);
             }
         });
+        for (r, k) in menus {
+            self.asset_menu(&r, "font", &k, None, &cat);
+        }
         if let Some(f) = use_font {
             self.modify_selection(|c| {
                 if let ClipContent::Text(s) = &mut c.content {
@@ -564,12 +605,12 @@ impl App {
     fn sticker_tab(&mut self, ui: &mut egui::Ui) {
         use crate::library::{Item, Kind};
         Self::tab_title(ui, "Sticker", |_| {});
-        let (cat, q) = self.lib_header(ui, Kind::Sticker, "sticker", &cl_fx::stickers::STICKER_CATEGORIES);
+        let (cat, q) = self.asset_bar(ui, "sticker", &cl_fx::stickers::STICKER_CATEGORIES);
         let builtin: Vec<Item> = cl_fx::stickers::STICKERS
             .iter()
             .map(|s| Item { key: format!("builtin:st:{}", s.id), name: s.name.to_string(), folder: s.category.to_string(), builtin: Some(s.id), path: None })
             .collect();
-        let items = self.lib_items(Kind::Sticker, builtin, &cat, &q);
+        let items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
         for it in &items {
             if let Some(id) = it.builtin {
                 if !self.sticker_tex.contains_key(id) {
@@ -622,7 +663,7 @@ impl App {
         });
         self.lib_drop = Some((Kind::Sticker, area.inner_rect));
         for (r, it) in menu {
-            self.lib_item_menu(&r, Kind::Sticker, &it);
+            self.asset_menu(&r, "sticker", &it.key, it.is_own().then_some(&it), &cat);
         }
         if let Some(it) = add {
             match (it.builtin.and_then(cl_fx::stickers::sticker), it.path) {
@@ -673,18 +714,20 @@ impl App {
         if !plugin.is_empty() {
             cats.push("Plugins");
         }
-        let cat = self.categories(ui, if filters { "filter" } else { "effect" }, &cats);
-        let mut items: Vec<(String, String)> = if filters { cl_fx::FILTERS.iter() } else { cl_fx::EFFECTS.iter() }.filter(|d| cat == "Alle" || d.category == cat).map(|d| (d.id.to_string(), d.name.to_string())).collect();
-        if cat == "Alle" || cat == "Plugins" {
-            items.extend(plugin.iter().map(|p| (p.id.clone(), p.name.clone())));
-        }
+        let area: &'static str = if filters { "filter" } else { "effect" };
+        let pre = if filters { "flt" } else { "fx" };
+        let (cat, q) = self.asset_bar(ui, area, &cats);
+        let mut all: Vec<(String, String, String)> = if filters { cl_fx::FILTERS.iter() } else { cl_fx::EFFECTS.iter() }.map(|d| (d.id.to_string(), d.name.to_string(), d.category.to_string())).collect();
+        all.extend(plugin.iter().map(|p| (p.id.clone(), p.name.clone(), "Plugins".to_string())));
+        let mut items: Vec<(String, String)> = all.into_iter().filter(|(id, name, c)| self.library.visible(area, &cat, &q, &format!("{pre}:{id}"), name, c)).map(|(id, name, _)| (id, name)).collect();
+        let mut menus: Vec<(egui::Response, String)> = Vec::new();
         let current: Vec<String> = target
             .and_then(|t| self.project.find_clip(t))
             .map(|(_, c)| if filters { c.fx.filter.iter().map(|f| f.id.clone()).collect() } else { c.fx.effects.iter().map(|e| e.id.clone()).collect() })
             .unwrap_or_default();
         let mut chosen = None;
         egui::ScrollArea::vertical().id_salt(if filters { "flt" } else { "eff" }).auto_shrink([false, false]).show(ui, |ui| {
-            if filters {
+            if filters && cat == "Alle" && q.is_empty() {
                 // „Kein Filter“
                 let none_sel = target.is_some() && current.is_empty();
                 let mut list = vec![("".to_string(), "Ohne".to_string())];
@@ -712,14 +755,24 @@ impl App {
                     })
                 };
                 let selected = if id.is_empty() { target.is_some() && current.is_empty() } else { current.contains(id) };
-                let resp = widgets::tile(ui, egui::Id::new(("fx", key.as_str())), r, name, selected, |p, a| match tex {
-                    Some(t) => {
-                        p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))));
+                let akey = format!("{pre}:{id}");
+                let fav = self.library.is_favorite(&akey);
+                let resp = widgets::tile(ui, egui::Id::new(("fx", key.as_str())), r, name, selected, |p, a| {
+                    match tex {
+                        Some(t) => {
+                            p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))));
+                        }
+                        None => {
+                            p.text(a.center(), egui::Align2::CENTER_CENTER, crate::tr(if filters { icon::CIRCLE_HALF } else { icon::SPARKLE }), egui::FontId::proportional(18.0), theme::TEXT_FAINT);
+                        }
                     }
-                    None => {
-                        p.text(a.center(), egui::Align2::CENTER_CENTER, crate::tr(if filters { icon::CIRCLE_HALF } else { icon::SPARKLE }), egui::FontId::proportional(18.0), theme::TEXT_FAINT);
+                    if fav {
+                        crate::library_ui::fav_badge(p, a);
                     }
                 });
+                if !id.is_empty() {
+                    menus.push((resp.clone(), akey));
+                }
                 if !id.is_empty() {
                     resp.dnd_set_drag_payload(if filters { DragAsset::Filter(id.clone()) } else { DragAsset::Effect(id.clone()) });
                 }
@@ -728,6 +781,9 @@ impl App {
                 }
             });
         });
+        for (r, k) in menus {
+            self.asset_menu(&r, area, &k, None, &cat);
+        }
         if let Some(id) = chosen {
             match target {
                 Some(c) if filters => self.set_filter(c, if id.is_empty() { None } else { Some(id) }),
@@ -748,8 +804,9 @@ impl App {
         Self::tab_title(ui, "Übergänge", |_| {});
         ui.label(RichText::new(crate::tr("Auf einen Schnitt ziehen oder anklicken (nächster Schnitt am Playhead bzw. nach dem ausgewählten Clip)")).small().color(theme::TEXT_DIM));
         ui.add_space(6.0);
-        let cat = self.categories(ui, "trans", &cl_fx::TRANSITION_CATEGORIES);
-        let items: Vec<(&'static str, &'static str)> = cl_fx::TRANSITIONS.iter().filter(|t| cat == "Alle" || t.2 == cat).map(|t| (t.0, t.1)).collect();
+        let (cat, q) = self.asset_bar(ui, "transition", &cl_fx::TRANSITION_CATEGORIES);
+        let items: Vec<(&'static str, &'static str)> = cl_fx::TRANSITIONS.iter().filter(|t| self.library.visible("transition", &cat, &q, &format!("tr:{}", t.0), t.1, t.2)).map(|t| (t.0, t.1)).collect();
+        let mut menus: Vec<(egui::Response, String)> = Vec::new();
         let current = self.selected_transition.and_then(|c| self.project.find_clip(c)).and_then(|(_, c)| c.transition_out.as_ref().map(|t| t.id.clone()));
         let mut chosen = None;
         egui::ScrollArea::vertical().id_salt("trans").auto_shrink([false, false]).show(ui, |ui| {
@@ -762,20 +819,31 @@ impl App {
                         sample_source(THUMB.0, THUMB.1, false)
                     )
                 });
-                let resp = widgets::tile(ui, egui::Id::new(("tr", *id)), r, name, current.as_deref() == Some(*id), |p, a| match tex {
-                    Some(t) => {
-                        p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))));
+                let akey = format!("tr:{id}");
+                let fav = self.library.is_favorite(&akey);
+                let resp = widgets::tile(ui, egui::Id::new(("tr", *id)), r, name, current.as_deref() == Some(*id), |p, a| {
+                    match tex {
+                        Some(t) => {
+                            p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))));
+                        }
+                        None => {
+                            p.text(a.center(), egui::Align2::CENTER_CENTER, icon::INTERSECT, egui::FontId::proportional(18.0), theme::TEXT_FAINT);
+                        }
                     }
-                    None => {
-                        p.text(a.center(), egui::Align2::CENTER_CENTER, icon::INTERSECT, egui::FontId::proportional(18.0), theme::TEXT_FAINT);
+                    if fav {
+                        crate::library_ui::fav_badge(p, a);
                     }
                 });
+                menus.push((resp.clone(), akey));
                 resp.dnd_set_drag_payload(DragAsset::Transition(id));
                 if resp.clicked() {
                     chosen = Some(*id);
                 }
             });
         });
+        for (r, k) in menus {
+            self.asset_menu(&r, "transition", &k, None, &cat);
+        }
         if let Some(id) = chosen {
             match self.selected_transition {
                 Some(c) => self.set_transition(c, Some(id)),
