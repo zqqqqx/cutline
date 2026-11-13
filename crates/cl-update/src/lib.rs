@@ -243,7 +243,7 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
         let Some(rel) = entry.enclosed_name() else {
-            return Err(format!("Unsicherer Pfad im Paket: {}", entry.name()));
+            return Err(format!("Unsicherer Pfad im Paket: {}", entry.name().unwrap_or_default()));
         };
         let dst = staging.join(&rel);
         if entry.is_dir() {
@@ -343,7 +343,7 @@ pub fn extract_zip(zip_path: &Path, dir: &Path) -> Result<usize, String> {
     for i in 0..zip.len() {
         let mut e = zip.by_index(i).map_err(|e| e.to_string())?;
         let Some(rel) = e.enclosed_name() else {
-            return Err(format!("Unsicherer Pfad: {}", e.name()));
+            return Err(format!("Unsicherer Pfad: {}", e.name().unwrap_or_default()));
         };
         let dst = dir.join(rel);
         if e.is_dir() {
