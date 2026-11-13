@@ -111,6 +111,12 @@ pub struct App {
     pub library: crate::library::Library,
     pub lib_dialog: Option<crate::library_ui::LibDialog>,
     pub lib_dialog_since: u64,
+    /// Gespeicherte Look-Presets
+    pub presets: Vec<crate::presets::Preset>,
+    pub preset_dialog: Option<crate::presets::PresetDialog>,
+    pub preset_dialog_since: u64,
+    /// Projekt-Import aus anderen Programmen
+    pub import: crate::import_ui::ImportState,
     pub lib_thumbs: crate::library_ui::Thumbs,
     /// Ablagefläche der Bibliotheksliste im letzten Frame (Dateien dort landen in der Bibliothek)
     pub lib_drop: Option<(crate::library::Kind, egui::Rect)>,
@@ -223,6 +229,10 @@ impl App {
             library: crate::library::Library::load(),
             lib_dialog: None,
             lib_dialog_since: 0,
+            presets: crate::presets::load(),
+            preset_dialog: None,
+            preset_dialog_since: 0,
+            import: Default::default(),
             lib_thumbs: Default::default(),
             lib_drop: None,
             i18n: I18n::new(lang),
@@ -1077,7 +1087,7 @@ impl App {
 
     // ---------- Projekte ----------
 
-    fn default_project_path(&self) -> PathBuf {
+    pub fn default_project_path(&self) -> PathBuf {
         let name: String = self.project.name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
         let dir = paths::data_dir().join("Projects");
         let mut p = dir.join(format!("{}.cutline", name.trim()));
@@ -1089,7 +1099,7 @@ impl App {
         p
     }
 
-    fn write_project(&mut self, p: &Path) -> Result<(), String> {
+    pub fn write_project(&mut self, p: &Path) -> Result<(), String> {
         if let Some(d) = p.parent() {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
@@ -1580,6 +1590,7 @@ impl eframe::App for App {
         if self.screen == Screen::Home {
             egui::CentralPanel::default().frame(egui::Frame::default().fill(theme::BG_APP)).show(ctx, |ui| self.home_page(ui));
             self.settings_window(ctx);
+            self.import_dialogs(ctx);
         self.draw_toasts(ctx);
             return;
         }
@@ -1641,6 +1652,8 @@ impl eframe::App for App {
             self.toast(msg);
         }
         self.lib_dialogs(ctx);
+        self.preset_dialogs(ctx);
+        self.import_dialogs(ctx);
         self.draw_toasts(ctx);
         self.sync_project();
         self.autosave();

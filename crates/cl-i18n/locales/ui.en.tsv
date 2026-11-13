@@ -869,3 +869,43 @@ Keine passenden Dateien	No matching files
 „{}“ wird im offenen Projekt verwendet und bleibt deshalb erhalten	“{}” is used in the open project and is kept
 Ungültiger Ordnername	Invalid folder name
 Ungültiger Name	Invalid name
+# Presets
+Preset	Preset
+Keine Presets	No presets
+{} anwenden …	Apply ({}) …
+Look als Preset speichern	Save look as preset
+Auf die Auswahl anwenden	Apply to selection
+Preset entfernen	Remove preset
+Preset umbenennen	Rename preset
+Name, z. B. Gaming-Look	Name, e.g. Gaming look
+Gespeichert werden Anpassen, Filter, Effekte, LUT, Animationen, Deckkraft und Ton – bei Text auch der Textstil.	Saves adjustments, filter, effects, LUT, animations, opacity and audio – for text also the text style.
+Preset „{}“ gespeichert	Preset “{}” saved
+Preset „{}“ angewendet	Preset “{}” applied
+Preset „{}“ entfernt	Preset “{}” removed
+Bitte einen Namen eingeben	Please enter a name
+# Import
+Import	Import
+Projekt importieren	Import project
+Projekt importieren …	Import project …
+Aus CapCut, Final Cut Pro oder DaVinci Resolve	From CapCut, Final Cut Pro or DaVinci Resolve
+Übernimmt Clips, Zeiten, Position, Größe, Tempo, Lautstärke und Texte. Programmeigene Effekte und Vorlagen bleiben außen vor.	Brings over clips, timing, position, size, speed, volume and texts. Effects and templates specific to the other app are left out.
+CapCut-Entwürfe auf diesem Rechner	CapCut drafts on this computer
+Keine Entwürfe gefunden	No drafts found
+Datei wählen …	Choose file …
+draft_content.json (CapCut) oder FCPXML (Final Cut Pro, DaVinci Resolve)	draft_content.json (CapCut) or FCPXML (Final Cut Pro, DaVinci Resolve)
+„{}“ wird importiert …	Importing “{}” …
+„{}“ importiert: {} Clips, {} Texte	“{}” imported: {} clips, {} texts
+„{}“ importiert	“{}” imported
+Nicht übertragen (gibt es nur im Ursprungsprogramm):	Not transferred (only available in the original app):
+{} Mediendateien wurden nicht gefunden:	{} media files were not found:
+Projekte aus anderen Schnittprogrammen übernehmen. Eingeschaltete Formate erscheinen auf der Startseite unter „Projekt importieren …“.	Bring over projects from other editors. Enabled formats appear on the home screen under “Import project …”.
+CapCut-Entwürfe	CapCut drafts
+FCPXML (Final Cut Pro, DaVinci Resolve)	FCPXML (Final Cut Pro, DaVinci Resolve)
+Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen.	No CapCut draft folder found; you can still pick a draft as a file.
+Entwurfsordner gefunden	Draft folder found
+Online-Material	Online media
+Online-Musik / Sprachausgabe	Online music / text-to-speech
+Sonstiges	Other
+Der Entwurf ist verschlüsselt oder beschädigt und kann nicht gelesen werden	The draft is encrypted or damaged and can't be read
+Im Entwurf wurden keine übertragbaren Clips gefunden	No transferable clips found in the draft
+Unbekanntes Projektformat	Unknown project format

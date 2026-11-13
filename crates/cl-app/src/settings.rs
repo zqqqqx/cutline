@@ -38,6 +38,9 @@ pub struct AppSettings {
     pub skipped_version: Option<String>,
     /// Plugin-ID → aktiv (überschreibt `default_enabled` des Manifests)
     pub plugin_states: std::collections::BTreeMap<String, bool>,
+    /// Import aus anderen Schnittprogrammen
+    pub import_capcut: bool,
+    pub import_fcpxml: bool,
 }
 
 impl Default for AppSettings {
@@ -59,6 +62,8 @@ impl Default for AppSettings {
             auto_update: true,
             skipped_version: None,
             plugin_states: Default::default(),
+            import_capcut: true,
+            import_fcpxml: true,
         }
     }
 }
@@ -118,10 +123,11 @@ pub enum Section {
     Models,
     Updates,
     Integrations,
+    Import,
     About,
 }
 
-const SECTIONS: [(Section, &str, &str); 9] = [
+const SECTIONS: [(Section, &str, &str); 10] = [
     (Section::General, icon::GEAR_SIX, "Allgemein"),
     (Section::Editing, icon::SCISSORS, "Bearbeiten"),
     (Section::Performance, icon::GAUGE, "Leistung"),
@@ -130,6 +136,7 @@ const SECTIONS: [(Section, &str, &str); 9] = [
     (Section::Models, icon::CPU, "Modelle (lokale KI)"),
     (Section::Updates, icon::ARROW_CIRCLE_UP, "Updates"),
     (Section::Integrations, icon::PUZZLE_PIECE, "Integrationen"),
+    (Section::Import, icon::DOWNLOAD_SIMPLE, "Import"),
     (Section::About, icon::INFO, "Über Cutline"),
 ];
 
@@ -369,6 +376,7 @@ impl App {
             }
             Section::Updates => self.updates_settings(ui),
             Section::Integrations => self.integrations_settings(ui),
+            Section::Import => self.import_settings(ui),
             Section::Models => self.models_settings(ui),
             Section::About => {
                 ui.horizontal(|ui| theme::wordmark(ui, 34.0));

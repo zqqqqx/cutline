@@ -15,6 +15,7 @@ cl-media.workspace = true
 cl-fonts.workspace = true
 cl-i18n.workspace = true
 cl-epidemic.workspace = true
+cl-import.workspace = true
 cl-plugin.workspace = true
 cl-mcp.workspace = true
 cl-export.workspace = true
