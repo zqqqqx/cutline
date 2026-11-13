@@ -36,6 +36,8 @@ pub struct AppSettings {
     pub auto_update: bool,
     /// Vom Benutzer übersprungene Version
     pub skipped_version: Option<String>,
+    /// Plugin-ID → aktiv (überschreibt `default_enabled` des Manifests)
+    pub plugin_states: std::collections::BTreeMap<String, bool>,
 }
 
 impl Default for AppSettings {
@@ -56,6 +58,7 @@ impl Default for AppSettings {
             recent: Vec::new(),
             auto_update: true,
             skipped_version: None,
+            plugin_states: Default::default(),
         }
     }
 }
@@ -114,10 +117,11 @@ pub enum Section {
     Shortcuts,
     Models,
     Updates,
+    Integrations,
     About,
 }
 
-const SECTIONS: [(Section, &str, &str); 8] = [
+const SECTIONS: [(Section, &str, &str); 9] = [
     (Section::General, icon::GEAR_SIX, "Allgemein"),
     (Section::Editing, icon::SCISSORS, "Bearbeiten"),
     (Section::Performance, icon::GAUGE, "Leistung"),
@@ -125,6 +129,7 @@ const SECTIONS: [(Section, &str, &str); 8] = [
     (Section::Shortcuts, icon::KEYBOARD, "Tastenkürzel"),
     (Section::Models, icon::CPU, "Modelle (lokale KI)"),
     (Section::Updates, icon::ARROW_CIRCLE_UP, "Updates"),
+    (Section::Integrations, icon::PUZZLE_PIECE, "Integrationen"),
     (Section::About, icon::INFO, "Über Cutline"),
 ];
 
@@ -363,6 +368,7 @@ impl App {
                 });
             }
             Section::Updates => self.updates_settings(ui),
+            Section::Integrations => self.integrations_settings(ui),
             Section::Models => self.models_settings(ui),
             Section::About => {
                 ui.horizontal(|ui| theme::wordmark(ui, 34.0));

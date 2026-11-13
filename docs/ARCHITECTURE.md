@@ -103,10 +103,4 @@ switches at runtime; the pseudo language makes every string ~40 % longer to catc
 
 ## Roadmap
 
-| Phase | Scope | Status |
-|---|---|---|
-| 0 Foundation | Workspace, data model, undo, FFmpeg probe/decode, UI skeleton, i18n, font import, MCP, plugin format | done |
-| 1 Editing | Multi-track timeline, magnet, snapping, split/trim, transform, audio, text, voiceover, export with HW encoding | done |
-| 2 Creative library | Effects, filters, transitions, LUTs, adjustments, masks, animations, keyframes, speed curves, stickers, sound effects, text templates | done |
-| 3 Local pro tools | Auto captions, background removal, chroma key, stabilization, tracking, auto reframe, scenes, audio tools, voice changer, beats | done |
-| 4 Polish | Person effects (background blur/color, outline), smooth slow motion, video denoise/deflicker, transparent export · next: retouch, HDR, compound clips, multicam, templates, community registry | in progress |
+See [`ROADMAP.md`](ROADMAP.md).

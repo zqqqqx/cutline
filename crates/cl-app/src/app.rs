@@ -71,6 +71,8 @@ pub enum DragAsset {
     /// Text, optional mit Vorlage
     Text(Option<&'static str>),
     Sticker(&'static str),
+    /// Eigener Sticker / eigenes Bild aus der Bibliothek
+    OwnSticker(PathBuf),
     Effect(String),
     Filter(String),
     Transition(&'static str),
@@ -103,6 +105,15 @@ pub struct App {
     pub fonts: Arc<Mutex<cl_fonts::FontLibrary>>,
     pub system_font_count: Arc<Mutex<Option<usize>>>,
     pub plugins: cl_plugin::Registry,
+    /// Epidemic-Sound-Integration (nur aktiv, wenn das Plugin eingeschaltet ist)
+    pub es: crate::epidemic::EsState,
+    /// Eigene Sticker und Sounds
+    pub library: crate::library::Library,
+    pub lib_dialog: Option<crate::library_ui::LibDialog>,
+    pub lib_dialog_since: u64,
+    pub lib_thumbs: crate::library_ui::Thumbs,
+    /// Ablagefläche der Bibliotheksliste im letzten Frame (Dateien dort landen in der Bibliothek)
+    pub lib_drop: Option<(crate::library::Kind, egui::Rect)>,
     pub i18n: I18n,
     pub tab: LeftTab,
     pub inspector_tab: InspectorTab,
@@ -170,7 +181,8 @@ impl App {
         let settings = AppSettings::load();
         let fonts = cl_fonts::FontLibrary::open(paths::font_dir()).unwrap_or_default();
         let plugin_dirs = paths::plugin_dirs();
-        let plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
+        let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
+        plugins.apply_states(&settings.plugin_states);
         let lang = settings.lang();
         cl_fx::register_plugin_fx(
             plugins
@@ -207,6 +219,12 @@ impl App {
             fonts: Arc::new(Mutex::new(fonts)),
             system_font_count,
             plugins,
+            es: Default::default(),
+            library: crate::library::Library::load(),
+            lib_dialog: None,
+            lib_dialog_since: 0,
+            lib_thumbs: Default::default(),
+            lib_drop: None,
             i18n: I18n::new(lang),
             tab: LeftTab::Media,
             inspector_tab: InspectorTab::Project,
@@ -691,6 +709,11 @@ impl App {
                 return None;
             }
         }
+        self.add_image_overlay_at(path, at, track)
+    }
+
+    /// Bild als Sticker-Clip (verkleinert) auf eine freie Overlay-Spur legen.
+    pub fn add_image_overlay_at(&mut self, path: PathBuf, at: Time, track: Option<TrackId>) -> Option<ClipId> {
         let media = *self.import_media(vec![path]).first()?;
         let clip = Clip::new(ClipContent::Media { media, kind: MediaKind::Image }, at, Time::from_secs_f64(self.settings.text_duration as f64));
         let mut clip = clip;
@@ -743,6 +766,9 @@ impl App {
             }
             DragAsset::Sfx(s) => {
                 self.add_sfx_at(s, at, track);
+            }
+            DragAsset::OwnSticker(p) => {
+                self.add_own_sticker_at(p, at, track);
             }
             DragAsset::File(p) => {
                 self.add_file_at(p.clone(), at, track);
@@ -1280,6 +1306,11 @@ impl App {
             return;
         }
         let Ok(m) = cl_media::probe(path) else { return };
+        self.preview_media(key, m);
+    }
+
+    /// Vorhören eines bereits geprüften Mediums (auch Netz-Adressen, z. B. HLS).
+    pub fn preview_media(&mut self, key: String, m: MediaRef) {
         let mut p = Project::new("vorhören");
         let id = m.id;
         let dur = m.duration;
@@ -1500,6 +1531,13 @@ impl App {
         if dropped.is_empty() {
             return;
         }
+        // Über der Sticker- bzw. Soundliste abgelegt: in die eigene Bibliothek
+        if let (Some((kind, rect)), Some(pos)) = (self.lib_drop, ctx.input(|i| i.pointer.hover_pos())) {
+            if rect.contains(pos) {
+                self.lib_import(kind, dropped);
+                return;
+            }
+        }
         let (projects, rest): (Vec<_>, Vec<_>) = dropped.into_iter().partition(|p| p.extension().is_some_and(|e| e == "cutline"));
         if let Some(p) = projects.first() {
             self.open_project(p);
@@ -1531,6 +1569,7 @@ impl eframe::App for App {
         self.handle_dropped_files(ctx);
         self.receive_decoded(ctx);
         self.poll_tasks();
+        self.poll_epidemic(ctx);
 
         self.window_frame(ctx);
         egui::TopBottomPanel::top("top")
@@ -1541,7 +1580,7 @@ impl eframe::App for App {
         if self.screen == Screen::Home {
             egui::CentralPanel::default().frame(egui::Frame::default().fill(theme::BG_APP)).show(ctx, |ui| self.home_page(ui));
             self.settings_window(ctx);
-            self.draw_toasts(ctx);
+        self.draw_toasts(ctx);
             return;
         }
 
@@ -1577,7 +1616,7 @@ impl eframe::App for App {
                 .min_width(250.0)
                 .max_width((sr.width() * 0.34).max(260.0))
                 .frame(theme::card(0))
-                .show(ctx, |ui| self.assets_panel(ui));
+                .show(ctx, |ui| fixed_width(ui, |ui| self.assets_panel(ui)));
 
             egui::SidePanel::right("inspector")
                 .resizable(true)
@@ -1585,7 +1624,7 @@ impl eframe::App for App {
                 .min_width(230.0)
                 .max_width((sr.width() * 0.3).max(240.0))
                 .frame(theme::card(10))
-                .show(ctx, |ui| self.inspector_panel(ui));
+                .show(ctx, |ui| fixed_width(ui, |ui| self.inspector_panel(ui)));
         }
 
         egui::CentralPanel::default().frame(theme::card(8)).show(ctx, |ui| self.player(ui));
@@ -1595,8 +1634,13 @@ impl eframe::App for App {
         let fonts_owned = self.font_files();
         let tex = self.frames.values().next().map(|(_, t)| (t.id(), t.size_vec2()));
         if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex) {
+            // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen)
+            if msg.contains("Export fertig") {
+                self.report_epidemic_export(ctx);
+            }
             self.toast(msg);
         }
+        self.lib_dialogs(ctx);
         self.draw_toasts(ctx);
         self.sync_project();
         self.autosave();
@@ -1605,4 +1649,15 @@ impl eframe::App for App {
     fn on_exit(&mut self) {
         self.flush_before_leaving();
     }
+}
+
+/// Inhalt in genau der verfügbaren Fläche zeichnen. Seitenleisten von egui wachsen sonst mit
+/// ihrem breitesten Inhalt mit, und beim Tab-Wechsel springt die ganze Oberfläche.
+/// So bestimmt nur der Nutzer (Ziehen am Rand) die Breite.
+pub fn fixed_width(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    let rect = ui.available_rect_before_wrap();
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
+    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    add(&mut child);
+    ui.allocate_rect(rect, egui::Sense::hover());
 }

@@ -33,6 +33,9 @@ pub enum PluginKind {
     AssetPack,
     Wasm,
     Clap,
+    /// In Cutline eingebaute Anbindung an einen Dienst (`entry = "builtin:<name>"`),
+    /// standardmäßig aus und nur mit Zugangsdaten des Nutzers nutzbar.
+    Integration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -118,8 +121,15 @@ pub struct PluginMeta {
     pub license: String,
     #[serde(default)]
     pub permissions: Vec<String>,
-    /// WASM-Komponente bzw. CLAP-Bundle relativ zum Plugin-Ordner.
+    /// WASM-Komponente bzw. CLAP-Bundle relativ zum Plugin-Ordner, bei Integrationen `builtin:<name>`.
     pub entry: Option<String>,
+    /// Nach der Installation aktiv? (Integrationen: nein)
+    #[serde(default = "yes")]
+    pub default_enabled: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -166,6 +176,14 @@ impl Manifest {
                 }
                 if self.assets.is_empty() {
                     return bad("Asset-Paket ohne Assets".into());
+                }
+            }
+            PluginKind::Integration => {
+                if !p.entry.as_deref().is_some_and(|e| e.starts_with("builtin:")) {
+                    return bad("Integrationen brauchen 'entry = \"builtin:<name>\"'".into());
+                }
+                if !p.permissions.iter().any(|x| x.starts_with("net")) {
+                    return bad("Integrationen müssen das Recht 'net' deklarieren".into());
                 }
             }
             PluginKind::Wasm | PluginKind::Clap => {
@@ -221,7 +239,7 @@ impl Manifest {
                 }
             }
         }
-        if let (Some(dir), Some(entry)) = (dir, &p.entry) {
+        if let (Some(dir), Some(entry)) = (dir, p.entry.as_ref().filter(|e| !e.starts_with("builtin:"))) {
             if entry.contains("..") || !dir.join(entry).exists() {
                 return bad(format!("Einstiegsdatei '{entry}' fehlt"));
             }
@@ -244,6 +262,20 @@ pub struct Registry {
 }
 
 impl Registry {
+    /// Ist die eingebaute Integration `builtin` (z. B. "epidemic-sound") geladen und aktiv?
+    pub fn integration_enabled(&self, builtin: &str) -> bool {
+        self.plugins.iter().any(|p| p.enabled && p.manifest.plugin.kind == PluginKind::Integration && p.manifest.plugin.entry.as_deref() == Some(&format!("builtin:{builtin}")))
+    }
+
+    /// Gespeicherte Ein/Aus-Zustände anwenden (Plugin-ID → aktiv).
+    pub fn apply_states(&mut self, states: &std::collections::BTreeMap<String, bool>) {
+        for p in &mut self.plugins {
+            if let Some(on) = states.get(&p.manifest.plugin.id) {
+                p.enabled = *on;
+            }
+        }
+    }
+
     /// Lädt alle Unterordner mit `plugin.toml` aus den angegebenen Wurzeln.
     pub fn scan<'a>(roots: impl IntoIterator<Item = &'a Path>) -> Self {
         let mut reg = Registry::default();
@@ -268,7 +300,8 @@ impl Registry {
         if self.plugins.iter().any(|p| p.manifest.plugin.id == m.plugin.id) {
             return Err(PluginError::Invalid { id: m.plugin.id.clone(), msg: "bereits geladen".into() });
         }
-        self.plugins.push(LoadedPlugin { dir: dir.to_path_buf(), manifest: m, enabled: true });
+        let enabled = m.plugin.default_enabled;
+        self.plugins.push(LoadedPlugin { dir: dir.to_path_buf(), manifest: m, enabled });
         Ok(())
     }
 
@@ -366,5 +399,18 @@ kind='video-effect'
 name={{de='E'}}
 ffmpeg='movie=x.mp4'");
         assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
+    }
+
+    #[test]
+    fn shipped_plugins_load_and_integrations_start_disabled() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+        let reg = Registry::scan([root.as_path()]);
+        assert!(reg.errors.is_empty(), "{:?}", reg.errors);
+        let es = reg.plugins.iter().find(|p| p.manifest.plugin.id == "cutline.epidemic-sound").expect("Epidemic-Plugin");
+        assert!(!es.enabled);
+        assert!(!reg.integration_enabled("epidemic-sound"));
+        let mut reg = reg;
+        reg.apply_states(&[("cutline.epidemic-sound".to_string(), true)].into_iter().collect());
+        assert!(reg.integration_enabled("epidemic-sound"));
     }
 }

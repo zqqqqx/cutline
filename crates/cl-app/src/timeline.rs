@@ -833,7 +833,7 @@ impl App {
             let kind = match &*payload {
                 DragAsset::Media(m) => self.project.media(*m).map(|m| if m.kind == MediaKind::Audio { TrackKind::Audio } else { TrackKind::Video }),
                 DragAsset::Text(_) => Some(TrackKind::Text),
-                DragAsset::Sticker(_) => Some(TrackKind::Video),
+                DragAsset::Sticker(_) | DragAsset::OwnSticker(_) => Some(TrackKind::Video),
                 DragAsset::Sfx(_) | DragAsset::File(_) => Some(TrackKind::Audio),
                 _ => None,
             };

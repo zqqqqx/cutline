@@ -230,38 +230,83 @@ impl App {
                 self.pick_media();
             }
         });
-        let mut sel = match self.asset_cat.get("audio-mode").map(|s| s.as_str()) {
-            Some("music") => 1,
-            Some("rec") => 2,
-            _ => 0,
+        // Epidemic Sound erscheint nur, wenn das Plugin eingeschaltet ist
+        let es = self.epidemic_enabled();
+        let modes: &[(&str, &str)] = if es {
+            &[("sfx", "Soundeffekte"), ("music", "Musik"), ("es", "Epidemic Sound"), ("rec", "Aufnahmen")]
+        } else {
+            &[("sfx", "Soundeffekte"), ("music", "Musik"), ("rec", "Aufnahmen")]
         };
-        if widgets::segmented(ui, &["Soundeffekte", "Musik", "Aufnahmen"], &mut sel) {
-            self.asset_cat.insert("audio-mode", ["sfx", "music", "rec"][sel].into());
+        let cur = self.asset_cat.get("audio-mode").cloned().unwrap_or_default();
+        let mut sel = modes.iter().position(|(k, _)| *k == cur).unwrap_or(0);
+        let labels: Vec<&str> = modes.iter().map(|m| m.1).collect();
+        if widgets::segmented(ui, &labels, &mut sel) {
+            self.asset_cat.insert("audio-mode", modes[sel].0.into());
         }
         ui.add_space(8.0);
+        let sel = match modes[sel].0 {
+            "sfx" => 0,
+            "music" => 1,
+            "es" => {
+                self.epidemic_panel(ui);
+                return;
+            }
+            _ => 2,
+        };
         match sel {
             0 => {
-                let cat = self.categories(ui, "sfx", &cl_fx::sfx::SFX_CATEGORIES);
-                let items: Vec<&'static cl_fx::sfx::Sfx> = cl_fx::sfx::SFX.iter().filter(|s| cat == "Alle" || s.category == cat).collect();
-                egui::ScrollArea::vertical().id_salt("sfx").auto_shrink([false, false]).show(ui, |ui| {
-                    for s in items {
-                        let path = App::sfx_path(s.id);
-                        let key = format!("sfx:{}", s.id);
+                use crate::library::{Item, Kind};
+                let (cat, q) = self.lib_header(ui, Kind::Sound, "sfx", &cl_fx::sfx::SFX_CATEGORIES);
+                let builtin: Vec<Item> = cl_fx::sfx::SFX
+                    .iter()
+                    .map(|s| Item { key: format!("builtin:sfx:{}", s.id), name: s.name.to_string(), folder: s.category.to_string(), builtin: Some(s.id), path: None })
+                    .collect();
+                let items = self.lib_items(Kind::Sound, builtin, &cat, &q);
+                let mut menu: Vec<(egui::Response, Item)> = Vec::new();
+                let area = egui::ScrollArea::vertical().id_salt("sfx").auto_shrink([false, false]).show(ui, |ui| {
+                    if items.is_empty() {
+                        theme::empty_state(ui, icon::SPEAKER_HIGH, "Keine Sounds gefunden", "Eigene Sounds per Knopf oder Ablegen hinzufügen");
+                    }
+                    for it in &items {
+                        let key = format!("sfx:{}", it.key);
                         let playing = self.sfx_preview.as_ref().is_some_and(|(k, _)| *k == key);
-                        let (play, add, drag) = self.sound_row(ui, &key, s.name, s.category, playing);
-                        if let Some(r) = drag {
-                            r.dnd_set_drag_payload(DragAsset::Sfx(s.id));
-                        }
-                        if play {
-                            if cl_fx::sfx::render(s, &path).is_ok() {
-                                self.preview_sound(key.clone(), &path);
+                        let fav = self.library.is_favorite(&it.key);
+                        let info = if fav { format!("{}  {}", icon::STAR, it.folder) } else { it.folder.clone() };
+                        let (play, add, drag) = self.sound_row(ui, &key, &it.name, &info, playing);
+                        let path = match (it.builtin.and_then(cl_fx::sfx::sfx), &it.path) {
+                            (Some(s), _) => {
+                                let p = App::sfx_path(s.id);
+                                if (play || add) && cl_fx::sfx::render(s, &p).is_err() {
+                                    continue;
+                                }
+                                if let Some(r) = &drag {
+                                    r.dnd_set_drag_payload(DragAsset::Sfx(s.id));
+                                }
+                                p
                             }
+                            (None, Some(p)) => {
+                                if let Some(r) = &drag {
+                                    r.dnd_set_drag_payload(DragAsset::File(p.clone()));
+                                }
+                                p.clone()
+                            }
+                            _ => continue,
+                        };
+                        if play {
+                            self.preview_sound(key.clone(), &path);
                         }
                         if add {
-                            self.add_sfx_at(s.id, self.playhead, None);
+                            self.add_file_at(path, self.playhead, None);
+                        }
+                        if let Some(r) = drag {
+                            menu.push((r, it.clone()));
                         }
                     }
                 });
+                self.lib_drop = Some((Kind::Sound, area.inner_rect));
+                for (r, it) in menu {
+                    self.lib_item_menu(&r, Kind::Sound, &it);
+                }
             }
             1 => {
                 let list = music_files();
@@ -517,36 +562,78 @@ impl App {
     // ------------------------------------------------------------------ Sticker
 
     fn sticker_tab(&mut self, ui: &mut egui::Ui) {
+        use crate::library::{Item, Kind};
         Self::tab_title(ui, "Sticker", |_| {});
-        let cat = self.categories(ui, "sticker", &cl_fx::stickers::STICKER_CATEGORIES);
-        let items: Vec<&'static cl_fx::stickers::Sticker> = cl_fx::stickers::STICKERS.iter().filter(|s| cat == "Alle" || s.category == cat).collect();
-        for s in &items {
-            if !self.sticker_tex.contains_key(s.id) {
-                if let Some(px) = cl_fx::stickers::render_rgba(s, 128) {
-                    let img = egui::ColorImage::from_rgba_premultiplied([128, 128], &px);
-                    let t = ui.ctx().load_texture(format!("st-{}", s.id), img, egui::TextureOptions::LINEAR);
-                    self.sticker_tex.insert(s.id, t);
+        let (cat, q) = self.lib_header(ui, Kind::Sticker, "sticker", &cl_fx::stickers::STICKER_CATEGORIES);
+        let builtin: Vec<Item> = cl_fx::stickers::STICKERS
+            .iter()
+            .map(|s| Item { key: format!("builtin:st:{}", s.id), name: s.name.to_string(), folder: s.category.to_string(), builtin: Some(s.id), path: None })
+            .collect();
+        let items = self.lib_items(Kind::Sticker, builtin, &cat, &q);
+        for it in &items {
+            if let Some(id) = it.builtin {
+                if !self.sticker_tex.contains_key(id) {
+                    if let Some(st) = cl_fx::stickers::sticker(id) {
+                        if let Some(px) = cl_fx::stickers::render_rgba(st, 128) {
+                            let img = egui::ColorImage::from_rgba_premultiplied([128, 128], &px);
+                            let t = ui.ctx().load_texture(format!("st-{id}"), img, egui::TextureOptions::LINEAR);
+                            self.sticker_tex.insert(st.id, t);
+                        }
+                    }
                 }
             }
         }
-        let mut add = None;
-        egui::ScrollArea::vertical().id_salt("stickers").auto_shrink([false, false]).show(ui, |ui| {
-            widgets::grid(ui, &items, 70.0, 1.0, 16.0, |ui, r, s| {
-                let tex = self.sticker_tex.get(s.id).map(|t| t.id());
-                let resp = widgets::tile(ui, egui::Id::new(("st", s.id)), r, s.name, false, |p, a| {
+        let ctx = ui.ctx().clone();
+        let mut add: Option<Item> = None;
+        let mut menu: Vec<(egui::Response, Item)> = Vec::new();
+        let area = egui::ScrollArea::vertical().id_salt("stickers").auto_shrink([false, false]).show(ui, |ui| {
+            if items.is_empty() {
+                theme::empty_state(ui, icon::STICKER, "Keine Sticker gefunden", "Eigene Bilder per Knopf oder Ablegen hinzufügen");
+            }
+            widgets::grid(ui, &items, 70.0, 1.0, 16.0, |ui, r, it| {
+                let tex = match (it.builtin, &it.path) {
+                    (Some(id), _) => self.sticker_tex.get(id).map(|t| t.id()),
+                    (None, Some(p)) => self.lib_thumbs.get(&ctx, &it.key, p),
+                    _ => None,
+                };
+                let size = self.lib_thumbs.tex.get(&it.key).map(|t| t.size_vec2()).unwrap_or(vec2(1.0, 1.0));
+                let fav = self.library.is_favorite(&it.key);
+                let resp = widgets::tile(ui, egui::Id::new(("st", &it.key)), r, &it.name, false, |p, a| {
                     if let Some(t) = tex {
-                        let inner = Rect::from_center_size(a.center(), vec2(a.height() * 0.72, a.height() * 0.72));
+                        let side = a.height() * 0.72;
+                        let k = side / size.x.max(size.y).max(1.0);
+                        let inner = Rect::from_center_size(a.center(), if it.builtin.is_some() { vec2(side, side) } else { size * k });
                         p.image(t, inner, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                     }
+                    if fav {
+                        p.text(a.left_top() + vec2(5.0, 4.0), egui::Align2::LEFT_TOP, icon::STAR, egui::FontId::proportional(11.0), theme::ACCENT);
+                    }
                 });
-                resp.dnd_set_drag_payload(DragAsset::Sticker(s.id));
-                if resp.clicked() {
-                    add = Some(s.id);
+                match (it.builtin.and_then(cl_fx::stickers::sticker), &it.path) {
+                    (Some(st), _) => resp.dnd_set_drag_payload(DragAsset::Sticker(st.id)),
+                    (None, Some(p)) => resp.dnd_set_drag_payload(DragAsset::OwnSticker(p.clone())),
+                    _ => {}
                 }
+                if resp.clicked() {
+                    add = Some(it.clone());
+                }
+                menu.push((resp, it.clone()));
             });
         });
-        if let Some(id) = add {
-            self.add_sticker_at(id, self.playhead, None);
+        self.lib_drop = Some((Kind::Sticker, area.inner_rect));
+        for (r, it) in menu {
+            self.lib_item_menu(&r, Kind::Sticker, &it);
+        }
+        if let Some(it) = add {
+            match (it.builtin.and_then(cl_fx::stickers::sticker), it.path) {
+                (Some(st), _) => {
+                    self.add_sticker_at(st.id, self.playhead, None);
+                }
+                (None, Some(p)) => {
+                    self.add_own_sticker_at(&p, self.playhead, None);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -759,7 +846,11 @@ impl App {
         ui.add_space(6.0);
         let lang = self.i18n.lang().code().to_string();
         let mut changed = false;
+        let mut toggled: Vec<(String, bool)> = Vec::new();
+        let mut setup = false;
         for p in &mut self.plugins.plugins {
+            let integration = p.manifest.plugin.kind == cl_plugin::PluginKind::Integration;
+            let before = p.enabled;
             egui::Frame::default().fill(theme::BG_RAISED).corner_radius(8).inner_margin(10).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
@@ -770,9 +861,28 @@ impl App {
                     });
                 });
                 ui.label(RichText::new(crate::tr(cl_plugin::localized(&p.manifest.plugin.description, &lang))).small().color(theme::TEXT_DIM));
-                ui.label(RichText::new(crate::tr(format!("{} Assets · {}", p.manifest.assets.len(), p.manifest.plugin.license))).small().color(theme::TEXT_FAINT));
+                if integration {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(crate::tr(format!("Integration · {}", p.manifest.plugin.license))).small().color(theme::TEXT_FAINT));
+                        if p.enabled && ui.add(theme::ghost(format!("{}  Einrichten", icon::GEAR_SIX))).clicked() {
+                            setup = true;
+                        }
+                    });
+                } else {
+                    ui.label(RichText::new(crate::tr(format!("{} Assets · {}", p.manifest.assets.len(), p.manifest.plugin.license))).small().color(theme::TEXT_FAINT));
+                }
             });
+            if p.enabled != before {
+                toggled.push((p.manifest.plugin.id.clone(), p.enabled));
+            }
             ui.add_space(6.0);
+        }
+        for (id, on) in toggled {
+            self.set_plugin_enabled(&id, on);
+        }
+        if setup {
+            self.settings_section = crate::settings::Section::Integrations;
+            self.settings_open = true;
         }
         for e in &self.plugins.errors {
             ui.label(RichText::new(crate::tr(format!("{} {e}", icon::WARNING))).small().color(Color32::from_rgb(0xE0, 0x80, 0x60)));
