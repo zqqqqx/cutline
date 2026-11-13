@@ -20,6 +20,24 @@ pub static VOICES: &[(&str, &str, &str)] = &[
     ("underwater", "Unter Wasser", "lowpass=f=700,aecho=0.7:0.6:30:0.5,vibrato=f=1.5:d=0.3"),
 ];
 
+/// Audiofilter: (id, Name, FFmpeg-Kette).
+pub static FILTERS: &[(&str, &str, &str)] = &[
+    ("podcast", "Podcast", "highpass=f=80,acompressor=threshold=0.1:ratio=3:attack=10:release=150:makeup=2,equalizer=f=3000:t=q:w=1.4:g=3"),
+    ("warm", "Wärmer", "bass=g=4:f=150,treble=g=-3:f=6000"),
+    ("clear", "Klarer", "highpass=f=100,equalizer=f=3500:t=q:w=1.2:g=4,treble=g=2:f=8000"),
+    ("bassboost", "Bass-Boost", "bass=g=8:f=90"),
+    ("lofi", "Lo-Fi", "lowpass=f=3500,acrusher=bits=8:mix=0.3"),
+    ("laptop", "Laptop", "highpass=f=400,lowpass=f=6000"),
+    ("stadium", "Stadion", "aecho=0.8:0.8:120|240:0.3|0.2"),
+    ("nextroom", "Nebenraum", "lowpass=f=500,volume=1.4"),
+    ("vintage", "Vintage", "highpass=f=200,lowpass=f=5000,acrusher=bits=12:mix=0.15"),
+    ("wide", "Breiter", "extrastereo=m=2"),
+];
+
+pub fn filter_name(id: &str) -> &'static str {
+    FILTERS.iter().find(|v| v.0 == id).map(|v| v.1).unwrap_or("Audiofilter")
+}
+
 pub fn voice_name(id: &str) -> &'static str {
     VOICES
         .iter()
@@ -31,6 +49,17 @@ pub fn voice_name(id: &str) -> &'static str {
 /// Kette für die Ton-Bearbeitung (leer, wenn nichts eingestellt ist).
 pub fn audio_chain(a: &AudioFx) -> Vec<String> {
     let mut v = Vec::new();
+    if a.rumble {
+        v.push("highpass=f=90:poles=2".into());
+    }
+    if a.hum {
+        for f in [50, 60, 100, 120, 150, 180] {
+            v.push(format!("bandreject=f={f}:width_type=q:w=25"));
+        }
+    }
+    if a.declick {
+        v.push("adeclick".into());
+    }
     if a.voice_isolate {
         // Sprachband, Rauschen und Hintergrund absenken, Sprache anheben
         v.push("highpass=f=90".into());
@@ -53,6 +82,18 @@ pub fn audio_chain(a: &AudioFx) -> Vec<String> {
             "treble=g={:.1}:f=4000",
             a.treble.clamp(-12.0, 12.0)
         ));
+    }
+    if a.compress > 0.0 {
+        let k = a.compress.clamp(0.0, 1.0);
+        v.push(format!(
+            "acompressor=threshold={:.3}:ratio={:.1}:attack=8:release=160:makeup={:.2}",
+            0.25 - 0.2 * k,
+            2.0 + 6.0 * k,
+            1.0 + 2.0 * k
+        ));
+    }
+    if let Some(ch) = a.filter.as_deref().and_then(|id| FILTERS.iter().find(|x| x.0 == id)).map(|x| x.2) {
+        v.push(ch.to_string());
     }
     if let Some(id) = &a.voice {
         if let Some(ch) = VOICES.iter().find(|x| x.0 == id).map(|x| x.2) {
@@ -117,6 +158,15 @@ mod tests {
             let peak = run(&ch).unwrap_or_else(|e| panic!("{id}: {e}"));
             assert!(peak > 0.02, "{id} ist stumm ({peak})");
         }
+        for (id, ..) in FILTERS {
+            let a = AudioFx {
+                filter: Some(id.to_string()),
+                ..Default::default()
+            };
+            let ch = audio_chain(&a).join(",");
+            let peak = run(&ch).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert!(peak > 0.02, "{id} ist stumm ({peak})");
+        }
         let all = AudioFx {
             denoise: 0.7,
             voice_isolate: true,
@@ -124,6 +174,11 @@ mod tests {
             voice: None,
             bass: 4.0,
             treble: -3.0,
+            hum: true,
+            rumble: true,
+            declick: true,
+            compress: 0.6,
+            filter: Some("podcast".into()),
         };
         let peak = run(&audio_chain(&all).join(",")).unwrap();
         assert!(peak > 0.05, "{peak}");

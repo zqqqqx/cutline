@@ -140,9 +140,6 @@ impl App {
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
-            if matches!(d, TplDialog::Save { .. }) {
-                ui.label(RichText::new(crate::tr("Gespeichert werden Format, Spuren, Clips, Texte, Effekte und Marker. Neue Projekte aus der Vorlage starten mit diesem Stand.")).small().color(theme::TEXT_DIM));
-            }
             ui.horizontal(|ui| {
                 if ui.add(theme::primary("OK")).clicked() {
                     ok = true;

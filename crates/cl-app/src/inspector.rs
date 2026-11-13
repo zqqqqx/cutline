@@ -254,7 +254,7 @@ impl App {
                 self.delete_selected();
             }
         });
-        ui.label(RichText::new(crate::tr("Änderungen unten gelten für alle ausgewählten Clips (Skalierung, Position, Effekte, Filter, Anpassen, Ton …). Lage und Länge bleiben je Clip.")).small().color(theme::TEXT_DIM));
+        ui.label(RichText::new(crate::tr("Gilt für alle ausgewählten Clips")).small().color(theme::TEXT_DIM));
         ui.add_space(6.0);
     }
 
@@ -290,14 +290,6 @@ impl App {
                 }),
             });
         }
-        ui.add_space(8.0);
-        ui.label(
-            RichText::new(crate::tr(
-                "Andere Art: im Bereich „Übergänge“ links anklicken",
-            ))
-            .small()
-            .color(theme::TEXT_DIM),
-        );
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui
@@ -412,12 +404,6 @@ impl App {
                         if matches!(c.content, ClipContent::Effect(_) | ClipContent::Filter(_)) =>
                     {
                         theme::section(ui, "Maske");
-                        ui.label(
-                            RichText::new(crate::tr("Begrenzt das Element auf einen Bildbereich. Der Umriss erscheint in der Vorschau, solange das Element ausgewählt ist."))
-                                .small()
-                                .color(theme::TEXT_DIM),
-                        );
-                        ui.add_space(4.0);
                         e |= mask_ui(ui, &mut c.fx.mask);
                     }
                     ClipTab::Basic => {
@@ -455,12 +441,15 @@ impl App {
                 ui.add_space(10.0);
                 let fps = self.project.settings.fps;
                 ui.label(
-                    RichText::new(crate::tr(format!(
-                        "{} · {:.2} s · ab {}",
-                        c.label(&self.project),
+                    RichText::new(format!(
+                        "{} · {:.2} s · {}",
+                        crate::tr(match &c.content {
+                            ClipContent::Effect(r) | ClipContent::Filter(r) => cl_fx::fx_name(&r.id),
+                            _ => c.label(&self.project),
+                        }),
                         c.duration.as_secs_f64(),
-                        c.start.timecode(fps)
-                    )))
+                        crate::tr(format!("ab {}", c.start.timecode(fps)))
+                    ))
                     .small()
                     .color(theme::TEXT_FAINT),
                 );
@@ -488,9 +477,8 @@ impl App {
         e: &mut Edit,
         kf: &mut Option<Vec<Prop>>,
     ) {
-        let (filter, id) = match &c.content {
-            ClipContent::Effect(r) => (false, r.id.clone()),
-            ClipContent::Filter(r) => (true, r.id.clone()),
+        let id = match &c.content {
+            ClipContent::Effect(r) | ClipContent::Filter(r) => r.id.clone(),
             _ => return,
         };
         theme::section(ui, "Einzelheiten");
@@ -506,16 +494,6 @@ impl App {
             1.0,
             ("", 0, 100.0),
             kf,
-        );
-        ui.add_space(4.0);
-        ui.label(
-            RichText::new(crate::tr(if filter {
-                "Der Filter wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste."
-            } else {
-                "Der Effekt wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste."
-            }))
-            .small()
-            .color(theme::TEXT_DIM),
         );
     }
 
@@ -1236,7 +1214,7 @@ impl App {
                 return;
             }
         } else {
-            ui.label(RichText::new(crate::tr("Kurven verteilen die Zeit im Clip um, die Länge bleibt gleich. Ton wird bei Kurven stummgeschaltet.")).small().color(theme::TEXT_DIM));
+            ui.label(RichText::new(crate::tr("Ton ist bei Kurven stumm")).small().color(theme::TEXT_DIM));
             ui.add_space(6.0);
             let mut items: Vec<(&str, &str)> = vec![("", "Keine")];
             items.extend(cl_core::SPEED_CURVES.iter().map(|c| (c.0, c.1)));
@@ -1300,7 +1278,7 @@ impl App {
                 if widgets::toggle_row(ui, "Flüssige Zeitlupe", &mut c.fx.smooth_slowmo) {
                     e.commit = true;
                 }
-                ui.label(RichText::new(crate::tr("Berechnet Zwischenbilder aus der Bewegung. Die Vorschau blendet nur über, der Export rechnet genau (dauert länger).")).small().color(theme::TEXT_DIM));
+                ui.label(RichText::new(crate::tr("Vorschau angenähert, Export exakt")).small().color(theme::TEXT_DIM));
             }
             theme::section(ui, "Richtung");
             if widgets::toggle_row(ui, "Rückwärts abspielen", &mut c.fx.reverse) {

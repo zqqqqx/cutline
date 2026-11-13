@@ -305,8 +305,14 @@ impl EditOp {
                 right.start = at;
                 right.duration = c.end() - at;
                 let rel = at - c.start;
-                right.source_in =
-                    c.source_in + Time((rel.0 as f64 * c.speed.max(0.01) as f64).round() as i64);
+                let rel_src = Time((rel.0 as f64 * c.speed.max(0.01) as f64).round() as i64);
+                if c.fx.reverse {
+                    // Rückwärts: der linke Teil zeigt das Ende des Quellbereichs
+                    right.source_in = c.source_in;
+                    c.source_in = c.source_in + c.source_span() - rel_src;
+                } else {
+                    right.source_in = c.source_in + rel_src;
+                }
                 right.keyframes.shift(rel);
                 // Ausblend-Animation und Übergang gehören zum rechten Teil, Einblenden zum linken
                 right.anim.intro = None;
@@ -338,12 +344,20 @@ impl EditOp {
                 let speed = c.speed.max(0.01) as f64;
                 let to_src = |d: Time| Time((d.0 as f64 * speed).round() as i64);
                 let to_tl = |d: Time| Time((d.0 as f64 / speed).round() as i64);
+                // Rückwärts läuft die Quelle vom Ende des Bereichs zu `source_in`:
+                // der Clipanfang hängt dann am Bereichsende, das Clipende an `source_in`.
+                let rev = c.fx.reverse;
                 match edge {
                     Edge::Start => {
                         let mut to = Time(to.0.max(0));
-                        if src_len.is_some() {
-                            // Nicht vor den Quellanfang: still begrenzen
-                            let earliest = c.start - to_tl(c.source_in);
+                        if let Some(len) = src_len {
+                            // Nicht über die Quelle hinaus: still begrenzen
+                            let room = if rev {
+                                Time((len - c.source_in - c.source_span()).0.max(0))
+                            } else {
+                                c.source_in
+                            };
+                            let earliest = c.start - to_tl(room);
                             if to < earliest {
                                 to = earliest;
                             }
@@ -353,7 +367,7 @@ impl EditOp {
                         if new_dur <= Time::ZERO {
                             return Err(CoreError::InvalidDuration);
                         }
-                        if src_len.is_some() {
+                        if src_len.is_some() && !rev {
                             c.source_in = Time((c.source_in + to_src(delta)).0.max(0));
                         }
                         c.keyframes.shift(delta);
@@ -364,7 +378,12 @@ impl EditOp {
                         let mut new_dur = to - c.start;
                         // Video: still auf das Quellende begrenzen. Audio darf länger
                         // werden; der Rest wird mit Stille aufgefüllt.
-                        if let (Some(len), false) = (src_len, is_audio) {
+                        if rev && src_len.is_some() {
+                            let max = c.duration + to_tl(c.source_in);
+                            if new_dur > max {
+                                new_dur = max;
+                            }
+                        } else if let (Some(len), false) = (src_len, is_audio) {
                             let max = to_tl(len - c.source_in);
                             if new_dur > max {
                                 new_dur = max;
@@ -373,7 +392,11 @@ impl EditOp {
                         if new_dur <= Time::ZERO {
                             return Err(CoreError::InvalidDuration);
                         }
+                        let old_span = c.source_span();
                         c.duration = new_dur;
+                        if rev && src_len.is_some() {
+                            c.source_in = Time((c.source_in + old_span - c.source_span()).0.max(0));
+                        }
                     }
                 }
                 after_change(p, ti);

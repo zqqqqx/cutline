@@ -60,6 +60,8 @@ impl Item {
 #[serde(default)]
 struct Stored {
     favorites: BTreeSet<String>,
+    /// Zuletzt verwendet (neueste zuerst)
+    recent: Vec<String>,
     hidden: BTreeSet<String>,
     areas: std::collections::BTreeMap<String, AreaLayout>,
 }
@@ -94,6 +96,7 @@ pub struct Cat {
 #[derive(Debug, Default)]
 pub struct Library {
     favorites: BTreeSet<String>,
+    recent: Vec<String>,
     hidden: BTreeSet<String>,
     areas: std::collections::BTreeMap<String, AreaLayout>,
     /// Zwischenspeicher der Dateilisten (nach Änderungen neu einlesen)
@@ -119,6 +122,7 @@ impl Library {
             .unwrap_or_default();
         Self {
             favorites: s.favorites,
+            recent: s.recent,
             hidden: s.hidden,
             areas: s.areas,
             cache: Default::default(),
@@ -132,12 +136,24 @@ impl Library {
         }
         let s = Stored {
             favorites: self.favorites.clone(),
+            recent: self.recent.clone(),
             hidden: self.hidden.clone(),
             areas: self.areas.clone(),
         };
-        let _ = std::fs::write(p, serde_json::to_string_pretty(&s).unwrap_or_default());
+        let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
 
+    /// Eintrag als „zuletzt verwendet“ merken (höchstens 40, neueste zuerst).
+    pub fn mark_used(&mut self, key: &str) {
+        self.recent.retain(|k| k != key);
+        self.recent.insert(0, key.to_string());
+        self.recent.truncate(40);
+        self.save();
+    }
+    /// Rang in „Zuletzt verwendet“ (0 = zuletzt), falls vorhanden.
+    pub fn recent_rank(&self, key: &str) -> Option<usize> {
+        self.recent.iter().position(|k| k == key)
+    }
     pub fn is_favorite(&self, key: &str) -> bool {
         self.favorites.contains(key)
     }
@@ -399,6 +415,7 @@ impl Library {
                 })
             }
             "Favoriten" => self.is_favorite(key),
+            "Zuletzt" => self.recent_rank(key).is_some(),
             c => match c.split_once(':') {
                 Some(("b", n)) | Some(("p", n)) => n == folder,
                 Some(("v", n)) => self

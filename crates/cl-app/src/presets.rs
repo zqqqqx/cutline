@@ -280,9 +280,6 @@ impl App {
             if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
-            if matches!(d, PresetDialog::Save { .. }) {
-                ui.label(RichText::new(crate::tr("Gespeichert werden Anpassen, Filter, Effekte, LUT, Animationen, Deckkraft und Ton – bei Text auch der Textstil.")).small().color(theme::TEXT_DIM));
-            }
             ui.add_space(10.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.add(theme::primary("OK")).clicked() {

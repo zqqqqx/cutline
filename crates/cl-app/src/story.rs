@@ -238,7 +238,6 @@ impl App {
             }
         }
         if !on {
-            ui.label(RichText::new(crate::tr("Figuren mit Name, Farbe und Porträt; Dialogboxen und Namensschilder mit einem Klick (Menü „Werkzeuge“).")).small().color(theme::TEXT_DIM));
             return;
         }
         let mut changed = false;

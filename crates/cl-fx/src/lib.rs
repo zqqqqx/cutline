@@ -1249,6 +1249,55 @@ mod tests {
     use super::*;
     use std::process::Stdio;
 
+    /// Jeder Effekt und Filter muss auch als Abspiel-Strom laufen (sonst bleibt beim
+    /// Abspielen ein Standbild stehen).
+    #[test]
+    fn every_effect_and_filter_streams_for_playback() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.mp4");
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=3", "-pix_fmt", "yuv420p"])
+            .arg(&src)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let fps = Rational::new(30, 1);
+        let mut failed = Vec::new();
+        let ids: Vec<(String, bool)> = EFFECTS
+            .iter()
+            .map(|e| (e.id.to_string(), false))
+            .chain(FILTERS.iter().map(|f| (f.id.to_string(), true)))
+            .collect();
+        for (id, filter) in ids {
+            let mut c = Clip::new(
+                ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video },
+                Time::ZERO,
+                Time::from_secs_f64(3.0),
+            );
+            if filter {
+                c.fx.filter = Some(FxRef::new(&id));
+            } else {
+                c.fx.effects.push(FxRef::new(&id));
+            }
+            let Some(g) = preview_graph(&c, 320, 180, 0.5, Some(fps), None) else {
+                continue;
+            };
+            let s = cl_media::FrameStream::open_fx(&src, Time::from_secs_f64(0.5), 320, 180, fps, Some(&g));
+            let n = match s {
+                Ok(s) => (0..10).take_while(|_| s.next_blocking().is_some()).count(),
+                Err(_) => 0,
+            };
+            if n < 10 {
+                failed.push(format!("{id} ({n} Bilder)"));
+            }
+        }
+        assert!(failed.is_empty(), "laufen nicht als Strom: {failed:?}");
+    }
+
     fn run_graph(graph: &str, extra_inputs: &[&str]) -> std::result::Result<(), String> {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("g.txt"), graph).unwrap();

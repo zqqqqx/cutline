@@ -402,9 +402,9 @@ impl App {
             }
         });
         // Epidemic Sound erscheint nur, wenn das Plugin eingeschaltet ist
-        let mut modes: Vec<(&str, &str)> = vec![("sfx", "Soundeffekte"), ("music", "Musik")];
+        let mut modes: Vec<(&str, &str)> = vec![("sfx", "Sounds"), ("music", "Musik")];
         if self.epidemic_enabled() {
-            modes.push(("es", "Epidemic Sound"));
+            modes.push(("es", "Epidemic"));
         }
         if self.stock_enabled(crate::stock::FREESOUND) {
             modes.push(("fs", "Freesound"));
@@ -857,15 +857,6 @@ impl App {
                     .selected
                     .and_then(|s| self.project.find_clip(s))
                     .is_some_and(|(_, c)| matches!(c.content, ClipContent::Text(_)));
-                ui.label(
-                    RichText::new(crate::tr(if sel_text {
-                        "Klick wendet den Effekt auf den ausgewählten Text an"
-                    } else {
-                        "Klick fügt einen neuen Text mit diesem Effekt ein"
-                    }))
-                    .small()
-                    .color(theme::TEXT_DIM),
-                );
                 ui.add_space(6.0);
                 let (cat, q) = self.asset_bar(ui, "texteffect", &[]);
                 let items: Vec<&'static cl_fx::text::TextEffect> = cl_fx::text::TEXT_EFFECTS
@@ -1265,7 +1256,7 @@ impl App {
             let cache = crate::paths::data_dir()
                 .join("cache")
                 .join("fx")
-                .join(format!("{}.rgba", key.replace([':', '/', '\\'], "_")));
+                .join(format!("v2_{}.rgba", key.replace([':', '/', '\\'], "_")));
             self.decoder.send(Job::FxThumb {
                 key: key.to_string(),
                 graph: graph(),
@@ -1308,15 +1299,6 @@ impl App {
                 }
             }
         });
-        ui.label(
-            RichText::new(crate::tr(if target.is_some() {
-                "Klick wendet auf den ausgewählten Clip an. Ziehen auf einen Clip: nur dieser Clip; ins Freie der Zeitleiste: eigenes Element für alles darunter"
-            } else {
-                "Klick legt ein Element am Playhead an, das auf alle Spuren darunter wirkt. Auf einen Clip ziehen: nur dieser Clip"
-            }))
-            .small()
-            .color(theme::TEXT_DIM),
-        );
         ui.add_space(6.0);
         let plugin: Vec<cl_fx::PluginFx> = cl_fx::plugin_fx()
             .into_iter()
@@ -1365,6 +1347,12 @@ impl App {
             })
             .unwrap_or_default();
         let mut chosen = None;
+        let orig = self.fx_thumb("orig", || {
+            format!(
+                "{},trim=start=0.5,setpts=PTS-STARTPTS,format=rgba[out]",
+                sample_source(THUMB.0, THUMB.1, true)
+            )
+        });
         egui::ScrollArea::vertical()
             .id_salt(if filters { "flt" } else { "eff" })
             .auto_shrink([false, false])
@@ -1380,12 +1368,7 @@ impl App {
                 widgets::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, (id, name)| {
                     let key = format!("{}:{id}", if filters { "flt" } else { "fx" });
                     let tex = if id.is_empty() {
-                        self.fx_thumb("orig", || {
-                            format!(
-                                "{},trim=start=0.5,setpts=PTS-STARTPTS,format=rgba[out]",
-                                sample_source(THUMB.0, THUMB.1, true)
-                            )
-                        })
+                        orig
                     } else {
                         let id2 = id.clone();
                         self.fx_thumb(&key, || {
@@ -1431,6 +1414,11 @@ impl App {
                     };
                     let akey = format!("{pre}:{id}");
                     let fav = self.library.is_favorite(&akey);
+                    // Hover: Vorher/Nachher-Wischblende über dem Beispielbild
+                    let wipe = (!id.is_empty() && ui.rect_contains_pointer(r)).then(|| {
+                        ui.ctx().request_repaint();
+                        0.5 + 0.45 * (ui.input(|i| i.time) as f32 * 2.4).sin()
+                    });
                     let resp = widgets::tile(
                         ui,
                         egui::Id::new(("fx", key.as_str())),
@@ -1440,13 +1428,16 @@ impl App {
                         |p, a| {
                             match tex {
                                 Some(t) => {
-                                    p.add(
-                                        egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE)
-                                            .with_texture(
-                                                t,
-                                                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                                            ),
-                                    );
+                                    let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                                    p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, uv));
+                                    if let (Some(w), Some(o)) = (wipe, orig) {
+                                        let x = a.left() + a.width() * w;
+                                        let left = Rect::from_min_max(a.min, pos2(x, a.bottom()));
+                                        p.with_clip_rect(left).add(
+                                            egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(o, uv),
+                                        );
+                                        p.line_segment([pos2(x, a.top()), pos2(x, a.bottom())], egui::Stroke::new(1.5_f32, Color32::WHITE));
+                                    }
                                 }
                                 None => {
                                     p.text(
@@ -1515,7 +1506,6 @@ impl App {
 
     fn transitions_tab(&mut self, ui: &mut egui::Ui) {
         Self::tab_title(ui, "Übergänge", |_| {});
-        ui.label(RichText::new(crate::tr("Auf einen Schnitt ziehen oder anklicken (nächster Schnitt am Playhead bzw. nach dem ausgewählten Clip)")).small().color(theme::TEXT_DIM));
         ui.add_space(6.0);
         let (cat, q) = self.asset_bar(ui, "transition", &cl_fx::TRANSITION_CATEGORIES);
         let items: Vec<(&'static str, &'static str)> = cl_fx::TRANSITIONS
@@ -1535,13 +1525,20 @@ impl App {
         egui::ScrollArea::vertical().id_salt("trans").auto_shrink([false, false]).show(ui, |ui| {
             widgets::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, (id, name)| {
                 let key = format!("tr:{id}");
-                let tex = self.fx_thumb(&key, || {
+                let graph = |start: f32| {
                     format!(
-                        "{}[a];{}[b];[a]format=gbrap[a1];[b]format=gbrap[b1];[a1][b1]xfade=transition={id}:duration=1:offset=0.2,trim=start=0.72,setpts=PTS-STARTPTS,format=rgba[out]",
+                        "{}[a];{}[b];[a]format=gbrap[a1];[b]format=gbrap[b1];[a1][b1]xfade=transition={id}:duration=1:offset=0.2,trim=start={start:.3},setpts=PTS-STARTPTS,format=rgba[out]",
                         sample_source(THUMB.0, THUMB.1, true),
                         sample_source(THUMB.0, THUMB.1, false)
                     )
-                });
+                };
+                let mut tex = self.fx_thumb(&key, || graph(0.72));
+                if ui.rect_contains_pointer(r) {
+                    // Fortschritt 0…1, am Ende kurz halten
+                    let k = (((ui.input(|i| i.time) * 0.9) % 1.3).min(1.0) * 8.0).round() as u32;
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(40));
+                    tex = self.fx_thumb(&format!("{key}@{k}"), || graph(0.2 + k as f32 / 8.0 * 0.98)).or(tex);
+                }
                 let akey = format!("tr:{id}");
                 let fav = self.library.is_favorite(&akey);
                 let resp = widgets::tile(ui, egui::Id::new(("tr", *id)), r, name, current.as_deref() == Some(*id), |p, a| {

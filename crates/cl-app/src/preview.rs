@@ -160,8 +160,16 @@ fn run(job: Job) -> Option<Done> {
                     });
                 }
             }
+            let dir = cache.parent()?.to_path_buf();
+            let _ = std::fs::create_dir_all(&dir);
+            for (n, b) in SAMPLES {
+                if !dir.join(n).exists() {
+                    let _ = std::fs::write(dir.join(n), b);
+                }
+            }
             let out = cl_media::ffmpeg_command()
                 .ok()?
+                .current_dir(&dir)
                 .args([
                     "-v",
                     "error",
@@ -325,6 +333,10 @@ pub struct Playback {
     pub t0: Time,
     pub taken: u64,
     pub key: u64,
+    /// Seit wann wird abgefragt, ohne dass ein fälliges Bild kommt
+    pub waiting_since: Option<std::time::Instant>,
+    /// FFmpeg hat den Strom beendet (Ende der Quelle oder Fehler)
+    pub ended: bool,
 }
 
 impl Playback {
@@ -346,6 +358,8 @@ impl Playback {
                 t0,
                 taken: 0,
                 key,
+                waiting_since: None,
+                ended: false,
             })
     }
 
@@ -360,10 +374,26 @@ impl Playback {
                     latest = Some(f);
                     self.taken += 1;
                 }
-                _ => break,
+                Ok(None) => break,
+                Err(()) => {
+                    self.ended = true;
+                    break;
+                }
             }
         }
+        // Nur zählen, solange wirklich abgefragt wird: ein vorab geöffneter, noch nicht
+        // gebrauchter Strom (z. B. während eines Übergangs) hängt nicht.
+        if latest.is_some() || self.taken > target {
+            self.waiting_since = None;
+        } else {
+            self.waiting_since.get_or_insert_with(std::time::Instant::now);
+        }
         latest
+    }
+
+    /// Hängt der Strom (beendet oder seit über einer Sekunde abgefragt, ohne fälliges Bild)?
+    pub fn stalled(&self) -> bool {
+        self.ended || self.waiting_since.is_some_and(|w| w.elapsed().as_secs_f64() > 1.0)
     }
 }
 
@@ -371,20 +401,15 @@ pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
     egui::ColorImage::from_rgba_unmultiplied([f.width as usize, f.height as usize], &f.data)
 }
 
-/// Beispielbild für Effekt-Kacheln (Farbverlauf mit „Sonne“ und Horizont).
+/// Beispielbild für Effekt-/Übergangskacheln (CC0-Standbilder von Wikimedia Commons:
+/// „Sunset timelapse on the beach in Libreville, Gabon“ und „Ocean surface waves 06“).
+/// Läuft im Ordner der Kachel-Zwischenspeicher, siehe `Job::FxThumb`.
 pub fn sample_source(w: u32, h: u32, warm: bool) -> String {
-    let (c0, c1) = if warm {
-        ("0xFF9E5E", "0x3B3F9C")
-    } else {
-        ("0x52D1C6", "0x1E2A6B")
-    };
-    format!(
-        "gradients=s={w}x{h}:c0={c0}:c1={c1}:x0=0:y0=0:x1={w}:y1={h}:speed=0.0001:d=2,drawbox=x={}:y={}:w={}:h={}:color=0xFFF2C0@1:t=fill,drawbox=x=0:y={}:w={w}:h={}:color=0x101225@0.85:t=fill",
-        w * 6 / 10,
-        h / 5,
-        w / 6,
-        w / 6,
-        h * 7 / 10,
-        h - h * 7 / 10
-    )
+    let f = if warm { "fx-sample-a.jpg" } else { "fx-sample-b.jpg" };
+    format!("movie={f},loop=loop=-1:size=1:start=0,setpts=N/25/TB,scale={w}:{h},setsar=1")
 }
+
+const SAMPLES: [(&str, &[u8]); 2] = [
+    ("fx-sample-a.jpg", include_bytes!("../assets/fx-sample-a.jpg")),
+    ("fx-sample-b.jpg", include_bytes!("../assets/fx-sample-b.jpg")),
+];

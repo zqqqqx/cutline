@@ -190,7 +190,7 @@ impl App {
         let mut open = true;
         let mut restore: Option<PathBuf> = None;
         egui::Window::new(crate::tr("Sicherungen")).id(egui::Id::new("backups")).open(&mut open).collapsible(false).default_width(380.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
-            ui.label(RichText::new(crate::tr("Cutline sichert geöffnete Projekte alle 5 Minuten, wenn sich etwas geändert hat. Die letzten 30 Stände bleiben erhalten.")).small().color(theme::TEXT_DIM));
+            ui.label(RichText::new(crate::tr("Alle 5 Minuten bei Änderungen, die letzten 30 Stände")).small().color(theme::TEXT_DIM));
             ui.add_space(6.0);
             let Some(path) = self.project_path.clone() else {
                 ui.label(crate::tr("Das Projekt ist noch nicht gespeichert."));

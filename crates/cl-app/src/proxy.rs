@@ -186,7 +186,7 @@ impl App {
             self.settings.save();
             self.invalidate_preview();
         }
-        ui.label(RichText::new(crate::tr("Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes erstellt Cutline im Hintergrund kleine Kopien (540p). Die Vorschau wird flüssiger, der Export nutzt immer die Originale.")).small().color(theme::TEXT_DIM));
+        ui.label(RichText::new(crate::tr("Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes. Der Export nutzt immer die Originale.")).small().color(theme::TEXT_DIM));
         let (n, bytes) = std::fs::read_dir(dir())
             .into_iter()
             .flatten()

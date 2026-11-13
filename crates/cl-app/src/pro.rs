@@ -769,69 +769,10 @@ impl App {
         }
     }
 
-    /// Zusätze im Reiter „Audio“.
+    /// Zusätze im Reiter „Audio“ (Störgeräusche, Klang, Audiofilter, Stimmfilter, Beats).
     pub fn pro_audio(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let ctx = ui.ctx().clone();
-        theme::section(ui, "Ton verbessern");
-        let a = &mut c.audio;
-        *e |= theme::row(ui, "Entrauschen", |ui| {
-            Slider::new(&mut a.denoise, 0.0..=1.0)
-                .percent()
-                .default(0.0)
-                .show(ui)
-        });
-        if widgets::toggle_row(ui, "Stimme hervorheben", &mut a.voice_isolate) {
-            e.commit = true;
-        }
-        if widgets::toggle_row(ui, "Lautheit angleichen (−14 LUFS)", &mut a.normalize) {
-            e.commit = true;
-        }
-        *e |= theme::row(ui, "Bass", |ui| {
-            Slider::new(&mut a.bass, -12.0..=12.0)
-                .suffix(" dB")
-                .default(0.0)
-                .show(ui)
-        });
-        *e |= theme::row(ui, "Höhen", |ui| {
-            Slider::new(&mut a.treble, -12.0..=12.0)
-                .suffix(" dB")
-                .default(0.0)
-                .show(ui)
-        });
-        theme::section(ui, "Stimmfilter");
-        let mut items: Vec<(&str, &str)> = vec![("", "Kein")];
-        items.extend(cl_fx::audio::VOICES.iter().map(|v| (v.0, v.1)));
-        let cur = a.voice.clone().unwrap_or_default();
-        let mut chosen = None;
-        widgets::grid(ui, &items, 70.0, 2.4, 0.0, |ui, r, (id, name)| {
-            let resp = widgets::tile(
-                ui,
-                egui::Id::new(("voice", *id)),
-                r,
-                "",
-                cur == *id,
-                |p, area| {
-                    p.text(
-                        area.center(),
-                        egui::Align2::CENTER_CENTER,
-                        crate::tr(*name),
-                        egui::FontId::proportional(11.0),
-                        if cur == *id {
-                            theme::ACCENT
-                        } else {
-                            theme::TEXT
-                        },
-                    );
-                },
-            );
-            if resp.clicked() {
-                chosen = Some(id.to_string());
-            }
-        });
-        if let Some(v) = chosen {
-            c.audio.voice = (!v.is_empty()).then_some(v);
-            e.commit = true;
-        }
+        *e |= audio_fx_ui(ui, &mut c.audio);
         theme::section(ui, "Beats");
         if !task_bar(ui, self, &format!("beats:{}", c.id)) {
             ui.horizontal(|ui| {
@@ -1344,9 +1285,8 @@ impl App {
     pub fn models_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let m = self.models();
-        ui.label(RichText::new(crate::tr("Untertitel und Freistellen laufen mit KI-Modellen direkt auf deinem Rechner. Sie werden einmal geladen und liegen dann lokal; es werden keine Daten hochgeladen.")).small().color(theme::TEXT_DIM));
+        ui.label(RichText::new(crate::tr("Läuft lokal auf deinem Rechner, es werden keine Daten hochgeladen.")).small().color(theme::TEXT_DIM));
         ui.add_space(6.0);
-        ui.label(RichText::new(crate::tr("Spracherkennung: Parakeet TDT 0.6B v3 wird bevorzugt (beste Genauigkeit für Deutsch, Wort-genaue Zeiten), Whisper ist der Rückfall für weitere Sprachen.")).small().color(theme::TEXT_DIM));
         ui.add_space(8.0);
         for info in cl_analyze::CATALOG {
             let installed = m.installed(info.id);
@@ -1459,4 +1399,68 @@ impl App {
 #[allow(dead_code)]
 fn _unused(_: egui::Pos2) -> egui::Pos2 {
     pos2(0.0, 0.0)
+}
+
+/// Ton-Werkzeuge für Clips und Einsprechen: Störgeräusche, Klang, Audiofilter, Stimmfilter.
+pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
+    let mut e = Edit::default();
+    theme::section(ui, "Störgeräusche");
+    e |= theme::row(ui, "Entrauschen", |ui| {
+        Slider::new(&mut a.denoise, 0.0..=1.0).percent().default(0.0).show(ui)
+    });
+    let toggles: [(&str, &str, &mut bool); 4] = [
+        ("Brummen", "Netzbrummen (50/60 Hz) entfernen", &mut a.hum),
+        ("Rumpeln & Wind", "Tiefe Störgeräusche unter 90 Hz entfernen", &mut a.rumble),
+        ("Klicks", "Klicks und Knackser entfernen", &mut a.declick),
+        ("Stimme hervorheben", "Sprache betonen, Hintergrund absenken", &mut a.voice_isolate),
+    ];
+    for (label, tip, v) in toggles {
+        let r = ui.scope(|ui| widgets::toggle_row(ui, label, v));
+        if r.inner {
+            e.commit = true;
+        }
+        r.response.on_hover_text(crate::tr(tip));
+    }
+    theme::section(ui, "Klang");
+    e |= theme::row(ui, "Kompressor", |ui| {
+        Slider::new(&mut a.compress, 0.0..=1.0).percent().default(0.0).show(ui)
+    });
+    e |= theme::row(ui, "Bass", |ui| {
+        Slider::new(&mut a.bass, -12.0..=12.0).suffix(" dB").default(0.0).show(ui)
+    });
+    e |= theme::row(ui, "Höhen", |ui| {
+        Slider::new(&mut a.treble, -12.0..=12.0).suffix(" dB").default(0.0).show(ui)
+    });
+    if widgets::toggle_row(ui, "Lautheit angleichen (−14 LUFS)", &mut a.normalize) {
+        e.commit = true;
+    }
+    for (title, list, slot, salt) in [
+        ("Audiofilter", cl_fx::audio::FILTERS, &mut a.filter, "afilter"),
+        ("Stimmfilter", cl_fx::audio::VOICES, &mut a.voice, "voice"),
+    ] {
+        theme::section(ui, title);
+        let mut items: Vec<(&str, &str)> = vec![("", "Kein")];
+        items.extend(list.iter().map(|v| (v.0, v.1)));
+        let cur = slot.clone().unwrap_or_default();
+        let mut chosen = None;
+        widgets::grid(ui, &items, 70.0, 2.4, 0.0, |ui, r, (id, name)| {
+            let resp = widgets::tile(ui, egui::Id::new((salt, *id)), r, "", cur == *id, |p, area| {
+                p.text(
+                    area.center(),
+                    egui::Align2::CENTER_CENTER,
+                    crate::tr(*name),
+                    egui::FontId::proportional(11.0),
+                    if cur == *id { theme::ACCENT } else { theme::TEXT },
+                );
+            });
+            if resp.clicked() {
+                chosen = Some(id.to_string());
+            }
+        });
+        if let Some(v) = chosen {
+            *slot = (!v.is_empty()).then_some(v);
+            e.commit = true;
+        }
+    }
+    e
 }

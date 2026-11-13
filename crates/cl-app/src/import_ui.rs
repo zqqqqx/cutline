@@ -154,7 +154,7 @@ impl App {
                     }
                 });
             });
-            ui.label(RichText::new(crate::tr("Übernimmt Clips, Zeiten, Position, Größe, Tempo, Lautstärke und Texte. Programmeigene Effekte und Vorlagen bleiben außen vor.")).small().color(theme::TEXT_DIM));
+            ui.label(RichText::new(crate::tr("Programmeigene Effekte und Vorlagen werden nicht übernommen.")).small().color(theme::TEXT_DIM));
             ui.add_space(8.0);
             if let Some((label, _)) = &self.import.running {
                 ui.horizontal(|ui| {
@@ -216,7 +216,6 @@ impl App {
 
     /// Einstellungsseite „Import“.
     pub fn import_settings(&mut self, ui: &mut egui::Ui) {
-        ui.label(RichText::new(crate::tr("Projekte aus anderen Schnittprogrammen übernehmen. Eingeschaltete Formate erscheinen auf der Startseite unter „Projekt importieren …“.")).small().color(theme::TEXT_DIM));
         ui.add_space(6.0);
         let mut changed =
             widgets::toggle_row(ui, "CapCut-Entwürfe", &mut self.settings.import_capcut);

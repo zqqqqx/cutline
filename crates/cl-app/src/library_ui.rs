@@ -185,14 +185,24 @@ impl App {
             .cloned()
             .unwrap_or_else(|| "Alle".into());
         // Kategorie verschwunden (verborgen/gelöscht/umbenannt)? Zurück auf „Alle“
-        if cur != "Alle" && cur != "Favoriten" && !cats.iter().any(|c| c.key == cur) {
+        if cur != "Alle" && cur != "Favoriten" && cur != "Zuletzt" && !cats.iter().any(|c| c.key == cur) {
             cur = "Alle".into();
             self.asset_cat.insert(ckey, cur.clone());
         }
         let mut act: Option<(u8, String)> = None;
         let n = cats.len();
-        ui.horizontal_wrapped(|ui| {
+        // Eine Zeile, waagrecht scrollbar (Mausrad oder Ziehen) statt mehrzeiligem Umbruch
+        egui::ScrollArea::horizontal()
+            .id_salt(ckey)
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .show(ui, |ui| ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            if ui.rect_contains_pointer(ui.clip_rect()) {
+                let d = ui.input(|i| i.smooth_scroll_delta);
+                if d.x == 0.0 && d.y != 0.0 {
+                    ui.scroll_with_delta(egui::vec2(d.y, 0.0));
+                }
+            }
             if theme::cat_chip(ui, "Alle", cur == "Alle").clicked() {
                 self.asset_cat.insert(ckey, "Alle".into());
             }
@@ -204,6 +214,16 @@ impl App {
             .clicked()
             {
                 self.asset_cat.insert(ckey, "Favoriten".into());
+            }
+            if theme::cat_chip(
+                ui,
+                &format!("{} {}", icon::CLOCK_COUNTER_CLOCKWISE, crate::tr("Zuletzt")),
+                cur == "Zuletzt",
+            )
+            .on_hover_text(crate::tr("Zuletzt verwendet"))
+            .clicked()
+            {
+                self.asset_cat.insert(ckey, "Zuletzt".into());
             }
             for (i, c) in cats.iter().enumerate() {
                 let label = if c.builtin {
@@ -265,7 +285,7 @@ impl App {
                     }
                 });
             }
-        });
+        }));
         if let Some((a, key)) = act {
             let label = cats
                 .iter()
@@ -659,6 +679,7 @@ impl App {
         at: cl_core::Time,
         track: Option<cl_core::TrackId>,
     ) -> Option<cl_core::ClipId> {
+        self.library.mark_used(&format!("file:{}", path.display()));
         // SVG wird für den Clip einmal als PNG gerendert
         let file = if path
             .extension()

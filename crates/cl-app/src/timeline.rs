@@ -84,6 +84,8 @@ pub struct TimelineState {
     /// Höhenfaktor je Spur (Rechtsklick → Spurhöhe)
     pub heights: HashMap<TrackId, f32>,
     last_click: Option<Pos2>,
+    /// Playhead im letzten Bild (Sprünge per Taste → Ansicht folgt)
+    last_playhead: Option<Time>,
 }
 
 impl Default for TimelineState {
@@ -96,6 +98,7 @@ impl Default for TimelineState {
             ctx: None,
             heights: HashMap::new(),
             last_click: None,
+            last_playhead: None,
         }
     }
 }
@@ -331,6 +334,38 @@ impl App {
                 }
             }
         }
+        // Beim Ziehen (Playhead, Clips, Kanten) an den Rand: Zeitleiste rollt in diese Richtung,
+        // je näher am Rand, desto schneller – auch wenn die Maus dort stillsteht.
+        if resp.dragged() && !matches!(self.timeline.drag, Drag::None | Drag::Slip { .. }) {
+            if let Some(p) = ui.input(|i| i.pointer.interact_pos()) {
+                let edge = 48.0;
+                let (l, r) = (x0, lanes.right());
+                let v = if p.x < l + edge {
+                    -((l + edge - p.x) / edge).min(3.0)
+                } else if p.x > r - edge {
+                    ((p.x - (r - edge)) / edge).min(3.0)
+                } else {
+                    0.0
+                };
+                if v != 0.0 {
+                    let dt = ui.input(|i| i.stable_dt).clamp(0.001, 0.05) as f64;
+                    let visible = ((r - x0) / pps) as f64;
+                    self.timeline.scroll =
+                        (self.timeline.scroll + v as f64 * visible * 0.8 * dt).max(0.0);
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
+        // Springt der Playhead (Pos1/Ende, Marker, Schnitte …) aus dem sichtbaren Bereich,
+        // rollt die Ansicht hinterher.
+        if !resp.dragged() && !self.playing && self.timeline.last_playhead != Some(self.playhead) {
+            let t = self.playhead.as_secs_f64();
+            let visible = ((lanes.right() - x0) / pps) as f64;
+            if t < self.timeline.scroll || t > self.timeline.scroll + visible {
+                self.timeline.scroll = (t - visible * 0.3).max(0.0);
+            }
+        }
+        self.timeline.last_playhead = Some(self.playhead);
         self.timeline.vscroll = self.timeline.vscroll.clamp(0.0, overflow);
         let pps = self.timeline.pps;
         let scroll = self.timeline.scroll;

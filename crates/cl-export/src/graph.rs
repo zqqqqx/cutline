@@ -401,7 +401,7 @@ fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, t0: f64, len: f64) -> String {
 /// Effekt-/Filter-Element: Gesamtbild bis hierher kopieren, Effekt anwenden (optional nur
 /// innerhalb der Maske) und für die Dauer des Elements darüberlegen. Mit Stärke-Keyframes wird
 /// das Ergebnis zeitabhängig mit dem Original gemischt.
-fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0: f64) -> String {
+fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0: f64) -> Result<String> {
     let len = c.duration.as_secs_f64();
     let kfs = c.keyframes.get(Prop::Strength);
     let mut r = r.clone();
@@ -414,8 +414,13 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
         mask: c.fx.mask,
         ..Default::default()
     };
-    let (a, b, fo) = (ctx.label("ea"), ctx.label("eb"), ctx.label("ef"));
-    ctx.graph.push(format!("[{cur}]split=3[{a}][{b}][{a}x]"));
+    // Nur das aktive Zeitfenster wird bearbeitet (nicht das ganze Video)
+    let (s0, s1) = (t0.max(0.0), t0 + len);
+    let window = format!("trim=start={}:end={},setpts=PTS-STARTPTS", f(s0), f(s1));
+    let (a, b, bw, fo) = (ctx.label("ea"), ctx.label("eb"), ctx.label("ew"), ctx.label("ef"));
+    let o = ctx.label("eo");
+    ctx.graph.push(format!("[{cur}]split=3[{a}][{b}][{o}]"));
+    ctx.graph.push(format!("[{b}]{window}[{bw}]"));
     let uniq = ctx.label("e");
     let opts = ChainOpts {
         t_offset: 0.0,
@@ -428,44 +433,48 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
         h: ctx.h,
         has_alpha: ctx.alpha,
     };
-    ctx.graph.extend(fx_graph(&fx, src, &opts, &b, &fo, &uniq));
+    ctx.graph.extend(fx_graph(&fx, src, &opts, &bw, &fo, &uniq));
     let fmt = if ctx.alpha { ":format=auto" } else { "" };
-    let (s0, s1) = (t0.max(0.0), t0 + len);
+    let shift = format!("setpts=PTS+{}/TB", f(s0));
+    let (top, out) = (ctx.label("et"), ctx.label("base"));
     if kfs.is_empty() {
-        let out = ctx.label("base");
-        ctx.graph.push(format!("[{a}x]nullsink"));
+        ctx.graph.push(format!("[{o}]nullsink"));
+        ctx.graph.push(format!("[{fo}]{shift}[{top}]"));
+    } else {
+        // Maske einbacken (Effekt über Original), dann die Deckkraft je Bild per sendcmd
+        // setzen (schnell, statt einer Formel je Pixel)
+        let (ow, fm) = (ctx.label("eow"), ctx.label("em"));
+        ctx.graph.push(format!("[{o}]{window}[{ow}]"));
+        ctx.graph.push(format!("[{ow}][{fo}]overlay=eof_action=pass{fmt}[{fm}]"));
+        let mix = ctx.label("mix");
+        let lo = s0 - t0; // Versatz, falls der Export mitten im Element beginnt
+        let k = |tau: f64| {
+            c.keyframes
+                .eval(Prop::Strength, Time::from_secs_f64(lo + tau))
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0)
+        };
+        let step = 1.0 / 60.0;
+        let n = ((s1 - s0) / step).ceil() as usize;
+        let cmds: String = (0..=n)
+            .map(|i| {
+                let tau = i as f64 * step;
+                format!("{} colorchannelmixer@{mix} aa {:.4};\n", f(tau), k(tau))
+            })
+            .collect();
+        let file = format!("{mix}.cmd");
+        std::fs::write(ctx.workdir.join(&file), cmds)?;
         ctx.graph.push(format!(
-            "[{a}][{fo}]overlay=eof_action=pass{fmt}:enable='between(t,{},{})'[{out}]",
-            f(s0),
-            f(s1)
+            "[{fm}]format=rgba,sendcmd=f={file},colorchannelmixer@{mix}=aa={:.4},{shift}[{top}]",
+            k(0.0)
         ));
-        return out;
     }
-    // Maske einbacken (Effekt über Original), dann zeitabhängig mit dem Original mischen
-    let (fm, fg, og, out) = (
-        ctx.label("em"),
-        ctx.label("eg"),
-        ctx.label("eo"),
-        ctx.label("base"),
-    );
-    ctx.graph
-        .push(format!("[{a}][{fo}]overlay=eof_action=pass{fmt}[{fm}]"));
-    ctx.graph.push(format!("[{fm}]format=gbrap[{fg}]"));
-    ctx.graph.push(format!("[{a}x]format=gbrap[{og}]"));
-    let pts: Vec<(f64, f64)> = kfs
-        .iter()
-        .map(|k| (t0 + k.t.as_secs_f64(), k.v.clamp(0.0, 1.0) as f64))
-        .collect();
-    let k = format!(
-        "(between(T,{},{})*clip({},0,1))",
-        f(s0),
-        f(s1),
-        piecewise_expr(&pts, "T")
-    );
     ctx.graph.push(format!(
-        "[{fg}][{og}]blend=all_expr='A*{k}+B*(1-{k})'[{out}]"
+        "[{a}][{top}]overlay=eof_action=pass{fmt}:enable='between(t,{},{})'[{out}]",
+        f(s0),
+        f(s1)
     ));
-    out
+    Ok(out)
 }
 
 /// Clips einer Spur in Gruppen, die über Übergänge verbunden sind.
@@ -629,7 +638,7 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
                     _ => continue,
                 };
                 let t0 = (c.start - ctx.start).as_secs_f64();
-                cur = effect_layer(ctx, &cur, c, r, filter, t0);
+                cur = effect_layer(ctx, &cur, c, r, filter, t0)?;
             }
             continue;
         }

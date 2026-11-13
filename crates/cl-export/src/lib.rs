@@ -295,12 +295,23 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         "-nostats".into(),
     ];
     args.extend(std::mem::take(&mut ctx.inputs));
+    // Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel)
+    let chapters = matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a)
+        .then(|| ffmetadata(&p.timeline.markers, start, end))
+        .flatten();
+    if let Some(meta) = chapters {
+        std::fs::write(workdir.path().join("chapters.txt"), meta)?;
+        args.extend(["-f".into(), "ffmetadata".into(), "-i".into(), "chapters.txt".into()]);
+    }
     args.extend(["-/filter_complex".into(), "graph.txt".into()]);
     if let Some(v) = vlabel {
         args.extend(["-map".into(), format!("[{v}]")]);
     }
     if let Some(a) = &alabel {
         args.extend(["-map".into(), format!("[{a}]")]);
+    }
+    if args.iter().any(|a| a == "chapters.txt") {
+        args.extend(["-map_chapters".into(), ctx.n_input.to_string()]);
     }
     args.extend(codec_args(s));
     args.extend(["-t".into(), f(dur.as_secs_f64())]);
@@ -310,6 +321,53 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         workdir,
         duration: dur,
     })
+}
+
+/// Kapitel (Start relativ zu `start`, Titel) aus den Markern im Bereich `start..end`.
+/// YouTube verlangt ein Kapitel bei 0:00: Ein Marker in der ersten Sekunde wird dorthin
+/// gezogen, sonst kommt „Intro“ davor.
+pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time) -> Vec<(Time, String)> {
+    let mut v: Vec<(Time, String)> = markers
+        .iter()
+        .filter(|m| m.at >= start && m.at < end)
+        .map(|m| (m.at - start, if m.name.is_empty() { "Kapitel".into() } else { m.name.clone() }))
+        .collect();
+    v.sort_by_key(|m| m.0);
+    match v.first_mut() {
+        Some(f) if f.0 < Time::from_secs_f64(1.0) => f.0 = Time::ZERO,
+        _ => v.insert(0, (Time::ZERO, "Intro".into())),
+    }
+    v
+}
+
+/// Kapitel im FFmetadata-Format (siehe [`chapter_list`]); `None` ohne Marker.
+fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time) -> Option<String> {
+    let esc = |t: &str| {
+        t.chars()
+            .flat_map(|c| match c {
+                '=' | ';' | '#' | '\\' => vec!['\\', c],
+                '\n' => vec!['\\', '\n'],
+                c => vec![c],
+            })
+            .collect::<String>()
+    };
+    if !markers.iter().any(|m| m.at >= start && m.at < end) {
+        return None;
+    }
+    let v = chapter_list(markers, start, end);
+    let ms = |t: Time| (t.as_secs_f64() * 1000.0).round() as i64;
+    let len = end - start;
+    let mut out = String::from(";FFMETADATA1\n");
+    for (i, (t, name)) in v.iter().enumerate() {
+        let e = v.get(i + 1).map(|n| n.0).unwrap_or(len);
+        out += &format!(
+            "[CHAPTER]\nTIMEBASE=1/1000\nSTART={}\nEND={}\ntitle={}\n",
+            ms(*t),
+            ms(e),
+            esc(name)
+        );
+    }
+    Some(out)
 }
 
 fn codec_args(s: &ExportSettings) -> Vec<String> {
@@ -898,8 +956,17 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let p = project(dir.path());
+        let mut p = project(dir.path());
         assert_eq!(p.duration(), Time::from_secs_f64(4.0)); // 3 s Video + 1 s Bild (Magnet)
+        let mk = |id, at: f64, name: &str| cl_core::Marker {
+            id,
+            at: Time::from_secs_f64(at),
+            duration: Time::ZERO,
+            name: name.into(),
+            note: String::new(),
+            color: 0,
+        };
+        p.timeline.markers = vec![mk(1, 1.0, "Teil = 1"), mk(2, 2.5, "Ende")];
 
         let mut s = ExportSettings::from_project(&p);
         let out = dir.path().join("out.mp4");
@@ -915,6 +982,16 @@ mod tests {
             m.duration
         );
         assert!(m.has_audio);
+        // Marker landen als Kapitel in der Datei (mit „Intro“ ab 0:00)
+        let ch = cl_media::ffprobe_command()
+            .unwrap()
+            .args(["-v", "error", "-show_chapters", "-of", "csv=p=0"])
+            .arg(&out)
+            .output()
+            .unwrap();
+        let ch = String::from_utf8_lossy(&ch.stdout);
+        let titles: Vec<&str> = ch.lines().filter_map(|l| l.rsplit(',').next()).collect();
+        assert_eq!(titles, ["Intro", "Teil = 1", "Ende"], "{ch}");
 
         s.format = Format::Gif;
         let gif = dir.path().join("out.gif");
@@ -1338,6 +1415,10 @@ mod tests {
             voice: Some("robot".into()),
             bass: 3.0,
             treble: 2.0,
+            hum: true,
+            compress: 0.4,
+            filter: Some("warm".into()),
+            ..Default::default()
         };
         d.apply(EditOp::ReplaceClip { clip: c }, OpSource::Ui)
             .unwrap();

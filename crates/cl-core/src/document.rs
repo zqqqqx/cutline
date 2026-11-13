@@ -275,6 +275,51 @@ mod tests {
     }
 
     #[test]
+    fn reversed_clip_keeps_frames_on_split_and_trim() {
+        let (mut d, id) = doc_with_clip(); // 0–10 s, Quelle 10 s
+        let before = |t: f64| Time::from_secs_f64(9.0 - t); // Quellzeit an Zeitleistenposition t
+        let src = |d: &Document, t: f64| {
+            let p = d.project();
+            let at = Time::from_secs_f64(t);
+            let c = p.timeline.tracks[0].clips.iter().find(|c| c.contains(at)).unwrap();
+            c.source_time(at)
+        };
+        let timing = EditOp::SetClipTiming {
+            clip: id,
+            start: Time::ZERO,
+            duration: Time::from_secs_f64(8.0),
+            source_in: Time::from_secs_f64(1.0), // Quelle 1–9 s, rückwärts
+        };
+        d.apply(timing, OpSource::Ui).unwrap();
+        let mut c = d.project().find_clip(id).unwrap().1.clone();
+        c.fx.reverse = true;
+        d.apply(EditOp::ReplaceClip { clip: c }, OpSource::Ui).unwrap();
+        assert_eq!(src(&d, 0.0), before(0.0));
+        let OpOutput::Clip(right) = d
+            .apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(3.0) }, OpSource::Ui)
+            .unwrap()
+        else {
+            panic!()
+        };
+        for t in [0.0, 2.0, 3.0, 5.0, 7.5] {
+            assert_eq!(src(&d, t), before(t), "nach Teilen bei {t} s");
+        }
+        // Ende des rechten Teils um 1 s kürzen, Anfang des linken um 1 s kürzen
+        d.apply(EditOp::TrimClip { clip: right, edge: Edge::End, to: Time::from_secs_f64(7.0) }, OpSource::Ui).unwrap();
+        let (_, r) = d.project().find_clip(right).unwrap();
+        assert_eq!(r.source_time(Time::from_secs_f64(3.0)), before(3.0));
+        assert_eq!(r.source_in, Time::from_secs_f64(2.0));
+        d.apply(EditOp::TrimClip { clip: id, edge: Edge::Start, to: Time::from_secs_f64(1.0) }, OpSource::Ui).unwrap();
+        let (_, l) = d.project().find_clip(id).unwrap();
+        assert_eq!(l.source_time(l.start), before(1.0));
+        // Ende verlängern: höchstens bis Quellzeit 0, der Anfang bleibt gleich
+        d.apply(EditOp::TrimClip { clip: right, edge: Edge::End, to: Time::from_secs_f64(30.0) }, OpSource::Ui).unwrap();
+        let (_, r) = d.project().find_clip(right).unwrap();
+        assert_eq!(r.source_in, Time::ZERO);
+        assert_eq!(r.source_time(r.start), before(3.0));
+    }
+
+    #[test]
     fn trim_start_ripples_main_track() {
         let (mut d, id) = doc_with_clip();
         let OpOutput::Clip(right) = d

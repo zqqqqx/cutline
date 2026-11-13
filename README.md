@@ -126,6 +126,12 @@ cargo test --workspace
 cargo run -p cl-app --release
 ```
 
+The export test renders every project in `crates/cl-export/tests/projects` with generated stand-in media. To add a case, save a project there. To run it before every commit:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 For local captions and background removal, place an ONNX Runtime 1.31 library (`onnxruntime.dll` / `libonnxruntime.so`) next to the binary or in the models folder.
 
 <details>

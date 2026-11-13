@@ -444,6 +444,20 @@ impl ExportDialog {
                                     }
                                 }
                                 ui.checkbox(&mut self.also_srt, crate::tr("Texte zusätzlich als Untertiteldatei (SRT) speichern"));
+                                let ms = &p.timeline.markers;
+                                if !ms.is_empty() {
+                                    theme::section(ui, "Kapitel");
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new(format!("{} {}", ms.len(), crate::tr("aus Markern, werden eingebettet"))).small().color(theme::TEXT_DIM));
+                                        if ui.add(theme::secondary(format!("{}  YouTube-Kapitel kopieren", icon::COPY))).clicked() {
+                                            ui.ctx().copy_text(crate::navigate::chapters(ms));
+                                            toast = Some(crate::tr("Kapitel in die Zwischenablage kopiert"));
+                                        }
+                                    });
+                                    if let Some(w) = crate::navigate::chapter_issue(ms, p.duration()) {
+                                        ui.label(RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w))).small().color(theme::SNAP));
+                                    }
+                                }
                             }
                         });
                     });
