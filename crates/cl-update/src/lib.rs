@@ -30,7 +30,11 @@ impl Version {
         let s = s.trim().trim_start_matches(['v', 'V']);
         let core = s.split(['-', '+']).next()?;
         let mut it = core.split('.').map(|p| p.parse::<u64>());
-        let v = Version(it.next()?.ok()?, it.next().unwrap_or(Ok(0)).ok()?, it.next().unwrap_or(Ok(0)).ok()?);
+        let v = Version(
+            it.next()?.ok()?,
+            it.next().unwrap_or(Ok(0)).ok()?,
+            it.next().unwrap_or(Ok(0)).ok()?,
+        );
         Some(v)
     }
 }
@@ -92,27 +96,42 @@ pub fn asset_name() -> String {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().timeout_connect(std::time::Duration::from_secs(8)).timeout_read(std::time::Duration::from_secs(30)).build()
+    ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(8))
+        .timeout_read(std::time::Duration::from_secs(30))
+        .build()
 }
 
 /// Release-JSON auswerten (eigene Funktion, damit sie ohne Netz testbar ist).
 pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, String> {
-    let r: GhRelease = serde_json::from_str(json).map_err(|e| format!("Antwort nicht lesbar: {e}"))?;
+    let r: GhRelease =
+        serde_json::from_str(json).map_err(|e| format!("Antwort nicht lesbar: {e}"))?;
     if r.draft || r.prerelease {
         return Ok(None);
     }
-    let Some(version) = Version::parse(&r.tag_name) else { return Err(format!("Unbekanntes Versionsformat: {}", r.tag_name)) };
+    let Some(version) = Version::parse(&r.tag_name) else {
+        return Err(format!("Unbekanntes Versionsformat: {}", r.tag_name));
+    };
     if version <= current {
         return Ok(None);
     }
     let want = asset_name();
     let Some(asset) = r.assets.iter().find(|a| a.name == want) else {
-        return Err(format!("Version {version} hat kein Paket für dieses System ({want})"));
+        return Err(format!(
+            "Version {version} hat kein Paket für dieses System ({want})"
+        ));
     };
-    let sha = r.assets.iter().find(|a| a.name == format!("{want}.sha256")).map(|a| a.browser_download_url.clone());
+    let sha = r
+        .assets
+        .iter()
+        .find(|a| a.name == format!("{want}.sha256"))
+        .map(|a| a.browser_download_url.clone());
     Ok(Some(Release {
         version,
-        name: r.name.filter(|n| !n.is_empty()).unwrap_or_else(|| r.tag_name.clone()),
+        name: r
+            .name
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| r.tag_name.clone()),
         tag: r.tag_name,
         notes: r.body.unwrap_or_default(),
         page: r.html_url,
@@ -126,7 +145,12 @@ pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, St
 pub fn check(current: &str) -> Result<Option<Release>, String> {
     let cur = Version::parse(current).ok_or("Eigene Version unlesbar")?;
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    match agent().get(&url).set("Accept", "application/vnd.github+json").set("User-Agent", "cutline-updater").call() {
+    match agent()
+        .get(&url)
+        .set("Accept", "application/vnd.github+json")
+        .set("User-Agent", "cutline-updater")
+        .call()
+    {
         Ok(resp) => {
             let body = resp.into_string().map_err(|e| e.to_string())?;
             parse_release(&body, cur)
@@ -150,12 +174,34 @@ pub fn parse_sha_file(s: &str) -> Option<String> {
 }
 
 /// Paket laden und prüfen. Gibt den Pfad der geprüften ZIP-Datei zurück.
-pub fn download(rel: &Release, dir: &Path, mut progress: impl FnMut(f32), cancel: &AtomicBool) -> Result<PathBuf, String> {
-    let sha_url = rel.sha_url.as_ref().ok_or("Release ohne Prüfsumme – Installation aus Sicherheitsgründen abgebrochen")?;
-    let expected = agent().get(sha_url).set("User-Agent", "cutline-updater").call().map_err(|e| e.to_string())?.into_string().map_err(|e| e.to_string())?;
+pub fn download(
+    rel: &Release,
+    dir: &Path,
+    mut progress: impl FnMut(f32),
+    cancel: &AtomicBool,
+) -> Result<PathBuf, String> {
+    let sha_url = rel
+        .sha_url
+        .as_ref()
+        .ok_or("Release ohne Prüfsumme – Installation aus Sicherheitsgründen abgebrochen")?;
+    let expected = agent()
+        .get(sha_url)
+        .set("User-Agent", "cutline-updater")
+        .call()
+        .map_err(|e| e.to_string())?
+        .into_string()
+        .map_err(|e| e.to_string())?;
     let expected = parse_sha_file(&expected).ok_or("Prüfsummendatei unlesbar")?;
-    let resp = agent().get(&rel.asset_url).set("User-Agent", "cutline-updater").call().map_err(|e| e.to_string())?;
-    let total = resp.header("Content-Length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(rel.asset_size).max(1);
+    let resp = agent()
+        .get(&rel.asset_url)
+        .set("User-Agent", "cutline-updater")
+        .call()
+        .map_err(|e| e.to_string())?;
+    let total = resp
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(rel.asset_size)
+        .max(1);
     let mut reader = resp.into_reader();
     let mut data = Vec::with_capacity(total as usize);
     let mut buf = [0u8; 64 * 1024];
@@ -172,7 +218,11 @@ pub fn download(rel: &Release, dir: &Path, mut progress: impl FnMut(f32), cancel
     }
     let got = sha256_hex(&data);
     if got != expected {
-        return Err(format!("Prüfsumme stimmt nicht (erwartet {}…, erhalten {}…)", &expected[..12], &got[..12]));
+        return Err(format!(
+            "Prüfsumme stimmt nicht (erwartet {}…, erhalten {}…)",
+            &expected[..12],
+            &got[..12]
+        ));
     }
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let out = dir.join(asset_name());
@@ -192,7 +242,9 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
     let mut files = Vec::new();
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-        let Some(rel) = entry.enclosed_name() else { return Err(format!("Unsicherer Pfad im Paket: {}", entry.name())) };
+        let Some(rel) = entry.enclosed_name() else {
+            return Err(format!("Unsicherer Pfad im Paket: {}", entry.name()));
+        };
         let dst = staging.join(&rel);
         if entry.is_dir() {
             std::fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
@@ -237,9 +289,21 @@ fn old_name(p: &Path) -> PathBuf {
 }
 
 /// Datei laden (für Modelle). Schreibt erst `*.part` und benennt am Ende um.
-pub fn download_to(url: &str, dest: &Path, mut progress: impl FnMut(u64, u64), cancel: &AtomicBool) -> Result<(), String> {
-    let resp = agent().get(url).set("User-Agent", "cutline").call().map_err(|e| format!("{url}: {e}"))?;
-    let total = resp.header("Content-Length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+pub fn download_to(
+    url: &str,
+    dest: &Path,
+    mut progress: impl FnMut(u64, u64),
+    cancel: &AtomicBool,
+) -> Result<(), String> {
+    let resp = agent()
+        .get(url)
+        .set("User-Agent", "cutline")
+        .call()
+        .map_err(|e| format!("{url}: {e}"))?;
+    let total = resp
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
     if let Some(d) = dest.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
@@ -278,7 +342,9 @@ pub fn extract_zip(zip_path: &Path, dir: &Path) -> Result<usize, String> {
     let mut n = 0;
     for i in 0..zip.len() {
         let mut e = zip.by_index(i).map_err(|e| e.to_string())?;
-        let Some(rel) = e.enclosed_name() else { return Err(format!("Unsicherer Pfad: {}", e.name())) };
+        let Some(rel) = e.enclosed_name() else {
+            return Err(format!("Unsicherer Pfad: {}", e.name()));
+        };
         let dst = dir.join(rel);
         if e.is_dir() {
             std::fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
@@ -326,7 +392,9 @@ mod tests {
 
     fn release_json(tag: &str, with_sha: bool) -> String {
         let a = asset_name();
-        let mut assets = vec![serde_json::json!({ "name": a, "browser_download_url": "https://x/pkg.zip", "size": 10 })];
+        let mut assets = vec![
+            serde_json::json!({ "name": a, "browser_download_url": "https://x/pkg.zip", "size": 10 }),
+        ];
         if with_sha {
             assets.push(serde_json::json!({ "name": format!("{a}.sha256"), "browser_download_url": "https://x/pkg.sha256", "size": 1 }));
         }
@@ -336,24 +404,40 @@ mod tests {
     #[test]
     fn release_selection() {
         let cur = Version(0, 2, 0);
-        assert!(parse_release(&release_json("v0.2.0", true), cur).unwrap().is_none(), "gleiche Version");
-        let r = parse_release(&release_json("v0.3.0", true), cur).unwrap().unwrap();
+        assert!(
+            parse_release(&release_json("v0.2.0", true), cur)
+                .unwrap()
+                .is_none(),
+            "gleiche Version"
+        );
+        let r = parse_release(&release_json("v0.3.0", true), cur)
+            .unwrap()
+            .unwrap();
         assert_eq!(r.version, Version(0, 3, 0));
         assert!(r.sha_url.is_some());
         assert_eq!(r.notes, "Neu: alles");
         let mut j: serde_json::Value = serde_json::from_str(&release_json("v0.3.0", true)).unwrap();
         j["prerelease"] = true.into();
-        assert!(parse_release(&j.to_string(), cur).unwrap().is_none(), "Vorabversionen werden ignoriert");
+        assert!(
+            parse_release(&j.to_string(), cur).unwrap().is_none(),
+            "Vorabversionen werden ignoriert"
+        );
         j["prerelease"] = false.into();
         j["assets"] = serde_json::json!([]);
-        assert!(parse_release(&j.to_string(), cur).is_err(), "kein Paket für dieses System");
+        assert!(
+            parse_release(&j.to_string(), cur).is_err(),
+            "kein Paket für dieses System"
+        );
     }
 
     #[test]
     fn sha_files() {
         let h = sha256_hex(b"cutline");
         assert_eq!(h.len(), 64);
-        assert_eq!(parse_sha_file(&format!("{h}  cutline-windows-x64.zip\n")), Some(h.clone()));
+        assert_eq!(
+            parse_sha_file(&format!("{h}  cutline-windows-x64.zip\n")),
+            Some(h.clone())
+        );
         assert_eq!(parse_sha_file(&h.to_uppercase()), Some(h));
         assert_eq!(parse_sha_file("kaputt"), None);
     }
@@ -395,7 +479,8 @@ mod tests {
         let zp = dir.path().join("evil.zip");
         {
             let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
-            w.start_file("../boese.exe", zip::write::SimpleFileOptions::default()).unwrap();
+            w.start_file("../boese.exe", zip::write::SimpleFileOptions::default())
+                .unwrap();
             w.write_all(b"x").unwrap();
             w.finish().unwrap();
         }

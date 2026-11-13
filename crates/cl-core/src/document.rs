@@ -34,7 +34,13 @@ pub struct Document {
 
 impl Document {
     pub fn new(project: Project) -> Self {
-        Self { project, undo: Vec::new(), redo: Vec::new(), revision: 0, max_history: 500 }
+        Self {
+            project,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            revision: 0,
+            max_history: 500,
+        }
     }
 
     pub fn project(&self) -> &Project {
@@ -51,7 +57,11 @@ impl Document {
         let before = self.project.clone();
         match op.apply(&mut self.project) {
             Ok(out) => {
-                self.undo.push(HistoryEntry { label, source, snapshot: before });
+                self.undo.push(HistoryEntry {
+                    label,
+                    source,
+                    snapshot: before,
+                });
                 if self.undo.len() > self.max_history {
                     self.undo.remove(0);
                 }
@@ -70,7 +80,11 @@ impl Document {
         let entry = self.undo.pop().ok_or(CoreError::NothingToUndo)?;
         let label = entry.label;
         let current = std::mem::replace(&mut self.project, entry.snapshot);
-        self.redo.push(HistoryEntry { label, source: entry.source, snapshot: current });
+        self.redo.push(HistoryEntry {
+            label,
+            source: entry.source,
+            snapshot: current,
+        });
         self.revision += 1;
         Ok(label)
     }
@@ -79,7 +93,11 @@ impl Document {
         let entry = self.redo.pop().ok_or(CoreError::NothingToRedo)?;
         let label = entry.label;
         let current = std::mem::replace(&mut self.project, entry.snapshot);
-        self.undo.push(HistoryEntry { label, source: entry.source, snapshot: current });
+        self.undo.push(HistoryEntry {
+            label,
+            source: entry.source,
+            snapshot: current,
+        });
         self.revision += 1;
         Ok(label)
     }
@@ -119,7 +137,10 @@ mod tests {
 
     fn video_clip(m: &MediaRef, start: f64, dur: f64) -> Clip {
         Clip::new(
-            ClipContent::Media { media: m.id, kind: MediaKind::Video },
+            ClipContent::Media {
+                media: m.id,
+                kind: MediaKind::Video,
+            },
             Time::from_secs_f64(start),
             Time::from_secs_f64(dur),
         )
@@ -128,8 +149,17 @@ mod tests {
     fn doc_with_clip() -> (Document, ClipId) {
         let mut d = Document::new(Project::new("Test"));
         let m = media(10.0);
-        d.apply(EditOp::ImportMedia { media: m.clone() }, OpSource::Ui).unwrap();
-        let out = d.apply(EditOp::AddClip { track: None, clip: video_clip(&m, 0.0, 10.0) }, OpSource::Ui).unwrap();
+        d.apply(EditOp::ImportMedia { media: m.clone() }, OpSource::Ui)
+            .unwrap();
+        let out = d
+            .apply(
+                EditOp::AddClip {
+                    track: None,
+                    clip: video_clip(&m, 0.0, 10.0),
+                },
+                OpSource::Ui,
+            )
+            .unwrap();
         let OpOutput::Clip(id) = out else { panic!() };
         (d, id)
     }
@@ -139,7 +169,14 @@ mod tests {
         let (mut d, _) = doc_with_clip();
         let m = d.project().media[0].clone();
         // Startzeit 99 s wird vom Magnet auf 10 s gezogen.
-        d.apply(EditOp::AddClip { track: None, clip: video_clip(&m, 99.0, 5.0) }, OpSource::Ui).unwrap();
+        d.apply(
+            EditOp::AddClip {
+                track: None,
+                clip: video_clip(&m, 99.0, 5.0),
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
         let main = &d.project().timeline.tracks[0];
         assert!(main.main);
         assert_eq!(main.clips.len(), 2);
@@ -152,23 +189,71 @@ mod tests {
         let (mut d, first) = doc_with_clip(); // 0–10 s
         let m = d.project().media[0].clone();
         // Ablage bei 0 s → vor den bestehenden Clip
-        let OpOutput::Clip(a) = d.apply(EditOp::AddClip { track: None, clip: video_clip(&m, 0.0, 2.0) }, OpSource::Ui).unwrap() else { panic!() };
+        let OpOutput::Clip(a) = d
+            .apply(
+                EditOp::AddClip {
+                    track: None,
+                    clip: video_clip(&m, 0.0, 2.0),
+                },
+                OpSource::Ui,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
         // Ablage bei 9 s (hinter der Mitte des 10-s-Clips, der jetzt bei 2–12 liegt) → davor, denn Mitte = 7 < 9 → dahinter
-        let OpOutput::Clip(b) = d.apply(EditOp::AddClip { track: None, clip: video_clip(&m, 9.0, 1.0) }, OpSource::Ui).unwrap() else { panic!() };
-        let order: Vec<ClipId> = d.project().timeline.tracks[0].clips.iter().map(|c| c.id).collect();
+        let OpOutput::Clip(b) = d
+            .apply(
+                EditOp::AddClip {
+                    track: None,
+                    clip: video_clip(&m, 9.0, 1.0),
+                },
+                OpSource::Ui,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        let order: Vec<ClipId> = d.project().timeline.tracks[0]
+            .clips
+            .iter()
+            .map(|c| c.id)
+            .collect();
         assert_eq!(order, vec![a, first, b]);
-        assert_eq!(d.project().timeline.tracks[0].clips[2].start, Time::from_secs_f64(12.0));
+        assert_eq!(
+            d.project().timeline.tracks[0].clips[2].start,
+            Time::from_secs_f64(12.0)
+        );
         // Verschieben an den Anfang
-        d.apply(EditOp::MoveClip { clip: b, track: None, start: Time::ZERO }, OpSource::Ui).unwrap();
-        let order: Vec<ClipId> = d.project().timeline.tracks[0].clips.iter().map(|c| c.id).collect();
+        d.apply(
+            EditOp::MoveClip {
+                clip: b,
+                track: None,
+                start: Time::ZERO,
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
+        let order: Vec<ClipId> = d.project().timeline.tracks[0]
+            .clips
+            .iter()
+            .map(|c| c.id)
+            .collect();
         assert_eq!(order, vec![b, a, first]);
     }
 
     #[test]
     fn split_and_source_offsets() {
         let (mut d, id) = doc_with_clip();
-        let OpOutput::Clip(right) =
-            d.apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(4.0) }, OpSource::Ui).unwrap()
+        let OpOutput::Clip(right) = d
+            .apply(
+                EditOp::SplitClip {
+                    clip: id,
+                    at: Time::from_secs_f64(4.0),
+                },
+                OpSource::Ui,
+            )
+            .unwrap()
         else {
             panic!()
         };
@@ -178,7 +263,13 @@ mod tests {
         assert_eq!(r.start, Time::from_secs_f64(4.0));
         assert_eq!(r.source_in, Time::from_secs_f64(4.0));
         assert_eq!(
-            d.apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(9.0) }, OpSource::Ui),
+            d.apply(
+                EditOp::SplitClip {
+                    clip: id,
+                    at: Time::from_secs_f64(9.0)
+                },
+                OpSource::Ui
+            ),
             Err(CoreError::InvalidSplit)
         );
     }
@@ -186,21 +277,43 @@ mod tests {
     #[test]
     fn trim_start_ripples_main_track() {
         let (mut d, id) = doc_with_clip();
-        let OpOutput::Clip(right) =
-            d.apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(4.0) }, OpSource::Ui).unwrap()
+        let OpOutput::Clip(right) = d
+            .apply(
+                EditOp::SplitClip {
+                    clip: id,
+                    at: Time::from_secs_f64(4.0),
+                },
+                OpSource::Ui,
+            )
+            .unwrap()
         else {
             panic!()
         };
         // Anfang des ersten Clips um 1 s kürzen → alles rückt nach links.
-        d.apply(EditOp::TrimClip { clip: id, edge: Edge::Start, to: Time::from_secs_f64(1.0) }, OpSource::Ui)
-            .unwrap();
+        d.apply(
+            EditOp::TrimClip {
+                clip: id,
+                edge: Edge::Start,
+                to: Time::from_secs_f64(1.0),
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
         let (_, l) = d.project().find_clip(id).unwrap();
         let (_, r) = d.project().find_clip(right).unwrap();
         assert_eq!(l.start, Time::ZERO);
         assert_eq!(l.source_in, Time::from_secs_f64(1.0));
         assert_eq!(r.start, Time::from_secs_f64(3.0));
         // Video über das Quellende hinaus: still auf das Ende begrenzt (kein Fehler).
-        d.apply(EditOp::TrimClip { clip: right, edge: Edge::End, to: Time::from_secs_f64(30.0) }, OpSource::Ui).unwrap();
+        d.apply(
+            EditOp::TrimClip {
+                clip: right,
+                edge: Edge::End,
+                to: Time::from_secs_f64(30.0),
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
         let (_, r) = d.project().find_clip(right).unwrap();
         assert_eq!(r.source_in + r.duration, Time::from_secs_f64(10.0));
     }
@@ -210,60 +323,186 @@ mod tests {
         let mut d = Document::new(Project::new("T"));
         let mut m = media(2.0);
         m.kind = MediaKind::Audio;
-        d.apply(EditOp::ImportMedia { media: m.clone() }, OpSource::Ui).unwrap();
-        let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::ZERO, Time::from_secs_f64(2.0));
-        let OpOutput::Clip(id) = d.apply(EditOp::AddClip { track: None, clip: c }, OpSource::Ui).unwrap() else { panic!() };
-        d.apply(EditOp::TrimClip { clip: id, edge: Edge::End, to: Time::from_secs_f64(5.0) }, OpSource::Ui).unwrap();
-        assert_eq!(d.project().find_clip(id).unwrap().1.duration, Time::from_secs_f64(5.0));
+        d.apply(EditOp::ImportMedia { media: m.clone() }, OpSource::Ui)
+            .unwrap();
+        let c = Clip::new(
+            ClipContent::Media {
+                media: m.id,
+                kind: MediaKind::Audio,
+            },
+            Time::ZERO,
+            Time::from_secs_f64(2.0),
+        );
+        let OpOutput::Clip(id) = d
+            .apply(
+                EditOp::AddClip {
+                    track: None,
+                    clip: c,
+                },
+                OpSource::Ui,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        d.apply(
+            EditOp::TrimClip {
+                clip: id,
+                edge: Edge::End,
+                to: Time::from_secs_f64(5.0),
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
+        assert_eq!(
+            d.project().find_clip(id).unwrap().1.duration,
+            Time::from_secs_f64(5.0)
+        );
     }
 
     #[test]
     fn speed_changes_duration_and_source_mapping() {
         let (mut d, id) = doc_with_clip(); // 10 s
-        d.apply(EditOp::SetSpeed { clip: id, speed: 2.0 }, OpSource::Ui).unwrap();
+        d.apply(
+            EditOp::SetSpeed {
+                clip: id,
+                speed: 2.0,
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
         let (_, c) = d.project().find_clip(id).unwrap();
         assert_eq!(c.duration, Time::from_secs_f64(5.0));
-        assert_eq!(c.source_time(Time::from_secs_f64(1.0)), Time::from_secs_f64(2.0));
+        assert_eq!(
+            c.source_time(Time::from_secs_f64(1.0)),
+            Time::from_secs_f64(2.0)
+        );
         // Teilen bei 2 s → rechter Teil beginnt in der Quelle bei 4 s
-        let OpOutput::Clip(r) = d.apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(2.0) }, OpSource::Ui).unwrap() else { panic!() };
-        assert_eq!(d.project().find_clip(r).unwrap().1.source_in, Time::from_secs_f64(4.0));
+        let OpOutput::Clip(r) = d
+            .apply(
+                EditOp::SplitClip {
+                    clip: id,
+                    at: Time::from_secs_f64(2.0),
+                },
+                OpSource::Ui,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            d.project().find_clip(r).unwrap().1.source_in,
+            Time::from_secs_f64(4.0)
+        );
     }
 
     #[test]
     fn tracks_insert_remove_and_prune() {
         let (mut d, _) = doc_with_clip();
-        let t = Clip::new(ClipContent::Text(TextStyle::default()), Time::ZERO, Time::from_secs_f64(2.0));
-        let OpOutput::Clip(tc) = d.apply(EditOp::AddClip { track: None, clip: t }, OpSource::Ui).unwrap() else { panic!() };
+        let t = Clip::new(
+            ClipContent::Text(TextStyle::default()),
+            Time::ZERO,
+            Time::from_secs_f64(2.0),
+        );
+        let OpOutput::Clip(tc) = d
+            .apply(
+                EditOp::AddClip {
+                    track: None,
+                    clip: t,
+                },
+                OpSource::Ui,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
         assert_eq!(d.project().timeline.tracks.len(), 2);
         // Ins Leere ziehen → neue Spur
-        d.apply(EditOp::MoveClipToNewTrack { clip: tc, index: 2, start: Time::from_secs_f64(1.0) }, OpSource::Ui).unwrap();
+        d.apply(
+            EditOp::MoveClipToNewTrack {
+                clip: tc,
+                index: 2,
+                start: Time::from_secs_f64(1.0),
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
         // alte, jetzt leere Textspur wurde entfernt
         assert_eq!(d.project().timeline.tracks.len(), 2);
-        assert_eq!(d.project().find_clip(tc).unwrap().1.start, Time::from_secs_f64(1.0));
+        assert_eq!(
+            d.project().find_clip(tc).unwrap().1.start,
+            Time::from_secs_f64(1.0)
+        );
         // Spur einfügen und wieder löschen
-        let OpOutput::Track(nt) = d.apply(EditOp::InsertTrack { index: 0, kind: TrackKind::Text }, OpSource::Ui).unwrap() else { panic!() };
-        assert!(d.project().timeline.tracks[0].main, "nichts unter die Hauptspur");
-        d.apply(EditOp::RemoveTrack { track: nt }, OpSource::Ui).unwrap();
+        let OpOutput::Track(nt) = d
+            .apply(
+                EditOp::InsertTrack {
+                    index: 0,
+                    kind: TrackKind::Text,
+                },
+                OpSource::Ui,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(
+            d.project().timeline.tracks[0].main,
+            "nichts unter die Hauptspur"
+        );
+        d.apply(EditOp::RemoveTrack { track: nt }, OpSource::Ui)
+            .unwrap();
         assert_eq!(d.project().timeline.tracks.len(), 2);
         // Clip löschen entfernt seine leere Spur
-        d.apply(EditOp::RemoveClip { clip: tc }, OpSource::Ui).unwrap();
+        d.apply(EditOp::RemoveClip { clip: tc }, OpSource::Ui)
+            .unwrap();
         assert_eq!(d.project().timeline.tracks.len(), 1);
     }
 
     #[test]
     fn batch_is_one_undo_step_and_gaps_close() {
         let mut d = Document::new(Project::new("T"));
-        let t = |s| Clip::new(ClipContent::Text(TextStyle::default()), Time::from_secs_f64(s), Time::from_secs_f64(1.0));
+        let t = |s| {
+            Clip::new(
+                ClipContent::Text(TextStyle::default()),
+                Time::from_secs_f64(s),
+                Time::from_secs_f64(1.0),
+            )
+        };
         let (a, b) = (t(2.0), t(5.0));
         let (ia, ib) = (a.id, b.id);
-        d.apply(EditOp::AddClip { track: None, clip: a }, OpSource::Ui).unwrap();
+        d.apply(
+            EditOp::AddClip {
+                track: None,
+                clip: a,
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
         let tr = d.project().timeline.tracks[0].id;
-        d.apply(EditOp::AddClip { track: Some(tr), clip: b }, OpSource::Ui).unwrap();
-        d.apply(EditOp::CloseGaps { track: Some(tr) }, OpSource::Ui).unwrap();
-        assert_eq!(d.project().find_clip(ib).unwrap().1.start, Time::from_secs_f64(1.0));
+        d.apply(
+            EditOp::AddClip {
+                track: Some(tr),
+                clip: b,
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
+        d.apply(EditOp::CloseGaps { track: Some(tr) }, OpSource::Ui)
+            .unwrap();
+        assert_eq!(
+            d.project().find_clip(ib).unwrap().1.start,
+            Time::from_secs_f64(1.0)
+        );
         let n = d.history().count();
         d.apply(
-            EditOp::Batch { label: String::new(), ops: vec![EditOp::RemoveClip { clip: ia }, EditOp::RemoveClip { clip: ib }] },
+            EditOp::Batch {
+                label: String::new(),
+                ops: vec![
+                    EditOp::RemoveClip { clip: ia },
+                    EditOp::RemoveClip { clip: ib },
+                ],
+            },
             OpSource::Ui,
         )
         .unwrap();
@@ -278,16 +517,31 @@ mod tests {
         let m = media(10.0);
         let mut c = video_clip(&m, 0.0, 4.0);
         c.keyframes.set(Prop::Opacity, Time::ZERO, 0.0);
-        c.keyframes.set(Prop::Opacity, Time::from_secs_f64(2.0), 1.0);
+        c.keyframes
+            .set(Prop::Opacity, Time::from_secs_f64(2.0), 1.0);
         assert!((c.eval_at(Time::from_secs_f64(1.0), 1920.0, 1080.0).opacity - 0.5).abs() < 1e-3);
         c.keyframes = Keyframes::default();
-        c.anim.intro = Some(AnimRef { id: "slide-left".into(), duration: Time::from_secs_f64(1.0) });
+        c.anim.intro = Some(AnimRef {
+            id: "slide-left".into(),
+            duration: Time::from_secs_f64(1.0),
+        });
         let e0 = c.eval_at(Time::ZERO, 1920.0, 1080.0);
         assert!((e0.x + 1920.0).abs() < 1.0);
         assert_eq!(c.eval_at(Time::from_secs_f64(2.0), 1920.0, 1080.0).x, 0.0);
         // alte Projekte ohne neue Felder laden weiter
         let mut v: serde_json::Value = serde_json::to_value(&c).unwrap();
-        for k in ["speed", "disabled", "fx", "keyframes", "anim", "transition_out", "fade_in", "fade_out", "audio", "beats"] {
+        for k in [
+            "speed",
+            "disabled",
+            "fx",
+            "keyframes",
+            "anim",
+            "transition_out",
+            "fade_in",
+            "fade_out",
+            "audio",
+            "beats",
+        ] {
             v.as_object_mut().unwrap().remove(k);
         }
         let back: Clip = serde_json::from_value(v).unwrap();
@@ -298,9 +552,16 @@ mod tests {
     fn undo_redo_roundtrip_and_sources() {
         let (mut d, id) = doc_with_clip();
         let before = d.project().clone();
-        d.apply(EditOp::RemoveClip { clip: id }, OpSource::Mcp("claude".into())).unwrap();
+        d.apply(
+            EditOp::RemoveClip { clip: id },
+            OpSource::Mcp("claude".into()),
+        )
+        .unwrap();
         assert!(d.project().find_clip(id).is_none());
-        assert_eq!(d.history().last().unwrap().1, &OpSource::Mcp("claude".into()));
+        assert_eq!(
+            d.history().last().unwrap().1,
+            &OpSource::Mcp("claude".into())
+        );
         assert_eq!(d.undo().unwrap(), "Clip löschen");
         assert_eq!(d.project(), &before);
         d.redo().unwrap();
@@ -310,10 +571,36 @@ mod tests {
     #[test]
     fn text_goes_to_own_track_and_overlap_creates_new_track() {
         let (mut d, _) = doc_with_clip();
-        let t = |s| Clip::new(ClipContent::Text(TextStyle::default()), Time::from_secs_f64(s), Time::from_secs_f64(3.0));
-        d.apply(EditOp::AddClip { track: None, clip: t(1.0) }, OpSource::Ui).unwrap();
-        d.apply(EditOp::AddClip { track: None, clip: t(2.0) }, OpSource::Ui).unwrap();
-        let text_tracks = d.project().timeline.tracks.iter().filter(|t| t.kind == TrackKind::Text).count();
+        let t = |s| {
+            Clip::new(
+                ClipContent::Text(TextStyle::default()),
+                Time::from_secs_f64(s),
+                Time::from_secs_f64(3.0),
+            )
+        };
+        d.apply(
+            EditOp::AddClip {
+                track: None,
+                clip: t(1.0),
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
+        d.apply(
+            EditOp::AddClip {
+                track: None,
+                clip: t(2.0),
+            },
+            OpSource::Ui,
+        )
+        .unwrap();
+        let text_tracks = d
+            .project()
+            .timeline
+            .tracks
+            .iter()
+            .filter(|t| t.kind == TrackKind::Text)
+            .count();
         assert_eq!(text_tracks, 2);
     }
 
@@ -321,7 +608,14 @@ mod tests {
     fn failed_op_leaves_project_untouched_and_json_roundtrip() {
         let (mut d, _) = doc_with_clip();
         let snap = d.project().clone();
-        assert!(d.apply(EditOp::RemoveClip { clip: ClipId::new() }, OpSource::Ui).is_err());
+        assert!(d
+            .apply(
+                EditOp::RemoveClip {
+                    clip: ClipId::new()
+                },
+                OpSource::Ui
+            )
+            .is_err());
         assert_eq!(d.project(), &snap);
         let json = d.project().to_json();
         assert_eq!(Project::from_json(&json).unwrap(), snap);

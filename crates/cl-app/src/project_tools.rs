@@ -17,7 +17,10 @@ const BACKUP_EVERY: Duration = Duration::from_secs(5 * 60);
 const BACKUP_KEEP: usize = 30;
 
 fn backup_dir(project: &Path) -> PathBuf {
-    let stem = project.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Projekt".into());
+    let stem = project
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Projekt".into());
     paths::data_dir().join("Backups").join(stem)
 }
 
@@ -39,7 +42,10 @@ pub fn list_backups(project: &Path) -> Vec<(PathBuf, SystemTime)> {
 pub fn write_backup(project: &Path, json: &str) -> std::io::Result<PathBuf> {
     let dir = backup_dir(project);
     std::fs::create_dir_all(&dir)?;
-    let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let stamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let p = dir.join(format!("{stamp}.cutline"));
     std::fs::write(&p, json)?;
     for (old, _) in list_backups(project).into_iter().skip(BACKUP_KEEP) {
@@ -51,7 +57,9 @@ pub fn write_backup(project: &Path, json: &str) -> std::io::Result<PathBuf> {
 /// Dateien rekursiv nach Namen suchen (für fehlende Medien).
 pub fn find_by_name(root: &Path, names: &[String], depth: usize) -> Vec<(String, PathBuf)> {
     let mut found = Vec::new();
-    let Ok(rd) = std::fs::read_dir(root) else { return found };
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return found;
+    };
     for e in rd.flatten() {
         let p = e.path();
         if p.is_dir() {
@@ -69,8 +77,21 @@ pub fn find_by_name(root: &Path, names: &[String], depth: usize) -> Vec<(String,
 
 /// Projekt archivieren: `<ziel>/<Name>/` mit `Medien/`, `Schriften/` und angepasstem Projekt.
 pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathBuf, String> {
-    let safe: String = p.name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
-    let dir = (1..).map(|i| if i == 1 { dest_root.join(&safe) } else { dest_root.join(format!("{safe} ({i})")) }).find(|d| !d.exists()).unwrap();
+    let safe: String = p
+        .name
+        .chars()
+        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+    let dir = (1..)
+        .map(|i| {
+            if i == 1 {
+                dest_root.join(&safe)
+            } else {
+                dest_root.join(format!("{safe} ({i})"))
+            }
+        })
+        .find(|d| !d.exists())
+        .unwrap();
     let media_dir = dir.join("Medien");
     std::fs::create_dir_all(&media_dir).map_err(|e| e.to_string())?;
     let mut out = p.clone();
@@ -79,7 +100,11 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
         if !m.path.is_file() {
             continue;
         }
-        let name = m.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = m
+            .path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         // gleiche Dateinamen aus verschiedenen Ordnern nicht überschreiben
         let mut target = media_dir.join(&name);
         let mut i = 2;
@@ -101,7 +126,8 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
             out.project_fonts.push(t);
         }
     }
-    std::fs::write(dir.join(format!("{safe}.cutline")), out.to_json()).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(format!("{safe}.cutline")), out.to_json())
+        .map_err(|e| e.to_string())?;
     Ok(dir)
 }
 
@@ -138,7 +164,12 @@ impl App {
     }
 
     pub fn start_archive(&mut self, ctx: &egui::Context) {
-        let Some(dest) = crate::dialog().set_title(crate::tr("Zielordner für das Archiv")).pick_folder() else { return };
+        let Some(dest) = crate::dialog()
+            .set_title(crate::tr("Zielordner für das Archiv"))
+            .pick_folder()
+        else {
+            return;
+        };
         self.commit_live();
         let p = self.project.clone();
         let fonts: Vec<PathBuf> = p.project_fonts.clone();
@@ -198,7 +229,10 @@ impl App {
             self.backups_open = false;
         }
         if let Some(p) = restore {
-            match std::fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|s| Project::from_json(&s).map_err(|e| e.to_string())) {
+            match std::fs::read_to_string(&p)
+                .map_err(|e| e.to_string())
+                .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
+            {
                 Ok(proj) => {
                     // aktuellen Stand vorher sichern, dann ersetzen (Pfad bleibt)
                     if let Some(path) = &self.project_path {
@@ -219,7 +253,13 @@ impl App {
         if !self.missing_open {
             return;
         }
-        let missing: Vec<(cl_core::MediaId, PathBuf)> = self.project.media.iter().filter(|m| !m.path.is_file() && !m.path.to_string_lossy().contains("://")).map(|m| (m.id, m.path.clone())).collect();
+        let missing: Vec<(cl_core::MediaId, PathBuf)> = self
+            .project
+            .media
+            .iter()
+            .filter(|m| !m.path.is_file() && !m.path.to_string_lossy().contains("://"))
+            .map(|m| (m.id, m.path.clone()))
+            .collect();
         let mut open = true;
         let mut search = false;
         let mut pick: Option<cl_core::MediaId> = None;
@@ -260,13 +300,22 @@ impl App {
         }
         if search {
             if let Some(dir) = crate::dialog().pick_folder() {
-                let names: Vec<String> = missing.iter().filter_map(|(_, p)| p.file_name().map(|s| s.to_string_lossy().into_owned())).collect();
+                let names: Vec<String> = missing
+                    .iter()
+                    .filter_map(|(_, p)| p.file_name().map(|s| s.to_string_lossy().into_owned()))
+                    .collect();
                 let found = find_by_name(&dir, &names, 6);
                 let ops: Vec<EditOp> = missing
                     .iter()
                     .filter_map(|(id, p)| {
                         let n = p.file_name()?.to_string_lossy().into_owned();
-                        found.iter().find(|(w, _)| *w == n).map(|(_, f)| EditOp::RelinkMedia { media: *id, path: f.clone() })
+                        found
+                            .iter()
+                            .find(|(w, _)| *w == n)
+                            .map(|(_, f)| EditOp::RelinkMedia {
+                                media: *id,
+                                path: f.clone(),
+                            })
                     })
                     .collect();
                 let n = ops.len();
@@ -283,7 +332,10 @@ impl App {
 /// Datum/Uhrzeit in Ortszeit ohne zusätzliche Abhängigkeit (Windows: über die Zeitzone des Systems
 /// nicht exakt; wir zeigen UTC-Offset-frei die Systemzeit über `ago` daneben).
 fn chrono_like(t: SystemTime) -> String {
-    let secs = t.duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let secs = t
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
     let off = local_offset_secs();
     let s = secs + off;
     let days = s.div_euclid(86400);
@@ -340,7 +392,12 @@ fn local_offset_windows() -> i64 {
     let mut tz: TzInfo = unsafe { std::mem::zeroed() };
     let r = unsafe { GetTimeZoneInformation(&mut tz) };
     // 2 = Sommerzeit aktiv
-    let bias = tz.bias + if r == 2 { tz.daylight_bias } else { tz.standard_bias };
+    let bias = tz.bias
+        + if r == 2 {
+            tz.daylight_bias
+        } else {
+            tz.standard_bias
+        };
     -(bias as i64) * 60
 }
 
@@ -355,7 +412,9 @@ mod tests {
 
     #[test]
     fn backups_rotate_and_archive_copies() {
-        let _g = crate::paths::TEST_HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::paths::TEST_HOME_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         std::env::set_var("CUTLINE_HOME", home.path());
         let proj = home.path().join("Film.cutline");
@@ -382,9 +441,16 @@ mod tests {
             p.media.push(m);
         }
         let out = archive(&p, &[], &home.path().join("out")).unwrap();
-        let back = Project::from_json(&std::fs::read_to_string(out.join("Film.cutline")).unwrap()).unwrap();
-        assert!(back.media.iter().all(|m| m.path.starts_with(out.join("Medien")) && m.path.is_file()));
-        assert_ne!(back.media[0].path, back.media[1].path, "gleiche Namen bleiben getrennt");
+        let back = Project::from_json(&std::fs::read_to_string(out.join("Film.cutline")).unwrap())
+            .unwrap();
+        assert!(back
+            .media
+            .iter()
+            .all(|m| m.path.starts_with(out.join("Medien")) && m.path.is_file()));
+        assert_ne!(
+            back.media[0].path, back.media[1].path,
+            "gleiche Namen bleiben getrennt"
+        );
         // Suche nach Namen
         let f = find_by_name(&media, &["CLIP.mp4".into()], 3);
         assert_eq!(f.len(), 2);

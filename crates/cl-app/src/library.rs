@@ -113,8 +113,16 @@ fn kind_key(k: Kind) -> &'static str {
 
 impl Library {
     pub fn load() -> Self {
-        let s: Stored = std::fs::read_to_string(store()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Self { favorites: s.favorites, hidden: s.hidden, areas: s.areas, cache: Default::default() }
+        let s: Stored = std::fs::read_to_string(store())
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        Self {
+            favorites: s.favorites,
+            hidden: s.hidden,
+            areas: s.areas,
+            cache: Default::default(),
+        }
     }
 
     fn save(&self) {
@@ -122,7 +130,11 @@ impl Library {
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        let s = Stored { favorites: self.favorites.clone(), hidden: self.hidden.clone(), areas: self.areas.clone() };
+        let s = Stored {
+            favorites: self.favorites.clone(),
+            hidden: self.hidden.clone(),
+            areas: self.areas.clone(),
+        };
         let _ = std::fs::write(p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
 
@@ -158,7 +170,9 @@ impl Library {
     pub fn cats(&mut self, area: &str, builtin: &[&str], phys: Option<Kind>) -> Vec<Cat> {
         let all = self.all_cats(area, builtin, phys);
         let l = self.areas.get(area).cloned().unwrap_or_default();
-        all.into_iter().filter(|c| !l.hidden.contains(&c.key)).collect()
+        all.into_iter()
+            .filter(|c| !l.hidden.contains(&c.key))
+            .collect()
     }
 
     fn all_cats(&mut self, area: &str, builtin: &[&str], phys: Option<Kind>) -> Vec<Cat> {
@@ -167,14 +181,30 @@ impl Library {
             .iter()
             .map(|b| {
                 let key = format!("b:{b}");
-                Cat { label: l.names.get(&key).cloned().unwrap_or_else(|| crate::tr(*b)), key, builtin: true }
+                Cat {
+                    label: l.names.get(&key).cloned().unwrap_or_else(|| crate::tr(*b)),
+                    key,
+                    builtin: true,
+                }
             })
             .collect();
         if let Some(k) = phys {
-            found.extend(self.folders(k).into_iter().map(|f| Cat { key: format!("p:{f}"), label: f, builtin: false }));
+            found.extend(self.folders(k).into_iter().map(|f| Cat {
+                key: format!("p:{f}"),
+                label: f,
+                builtin: false,
+            }));
         }
-        found.extend(l.virt.keys().map(|v| Cat { key: format!("v:{v}"), label: v.clone(), builtin: false }));
-        let mut out: Vec<Cat> = l.order.iter().filter_map(|k| found.iter().find(|c| &c.key == k).cloned()).collect();
+        found.extend(l.virt.keys().map(|v| Cat {
+            key: format!("v:{v}"),
+            label: v.clone(),
+            builtin: false,
+        }));
+        let mut out: Vec<Cat> = l
+            .order
+            .iter()
+            .filter_map(|k| found.iter().find(|c| &c.key == k).cloned())
+            .collect();
         out.extend(found.into_iter().filter(|c| !l.order.contains(&c.key)));
         out
     }
@@ -191,14 +221,31 @@ impl Library {
     }
 
     pub fn hide_cat(&mut self, area: &str, key: &str) {
-        self.areas.entry(area.to_string()).or_default().hidden.insert(key.to_string());
+        self.areas
+            .entry(area.to_string())
+            .or_default()
+            .hidden
+            .insert(key.to_string());
         self.save();
     }
 
     /// Kategorie um `delta` Plätze verschieben.
-    pub fn move_cat(&mut self, area: &str, key: &str, delta: i32, builtin: &[&str], phys: Option<Kind>) {
-        let mut order: Vec<String> = self.all_cats(area, builtin, phys).into_iter().map(|c| c.key).collect();
-        let Some(i) = order.iter().position(|k| k == key) else { return };
+    pub fn move_cat(
+        &mut self,
+        area: &str,
+        key: &str,
+        delta: i32,
+        builtin: &[&str],
+        phys: Option<Kind>,
+    ) {
+        let mut order: Vec<String> = self
+            .all_cats(area, builtin, phys)
+            .into_iter()
+            .map(|c| c.key)
+            .collect();
+        let Some(i) = order.iter().position(|k| k == key) else {
+            return;
+        };
         let j = (i as i32 + delta).clamp(0, order.len() as i32 - 1) as usize;
         let k = order.remove(i);
         order.insert(j, k);
@@ -207,7 +254,13 @@ impl Library {
     }
 
     /// Umbenennen: eingebaut = Anzeigename, Dateiordner = auf der Platte, Sammelordner = Name.
-    pub fn rename_cat(&mut self, area: &str, key: &str, new: &str, phys: Option<Kind>) -> Result<(), String> {
+    pub fn rename_cat(
+        &mut self,
+        area: &str,
+        key: &str,
+        new: &str,
+        phys: Option<Kind>,
+    ) -> Result<(), String> {
         let new = sanitize(new);
         if new.is_empty() {
             return Err("Ungültiger Name".into());
@@ -234,8 +287,16 @@ impl Library {
                 }
                 std::fs::rename(&a, &b).map_err(|e| e.to_string())?;
                 // Favoriten der Dateien mitnehmen
-                let (ap, bp) = (format!("file:{}", a.display()), format!("file:{}", b.display()));
-                let moved: Vec<String> = self.favorites.iter().filter(|f| f.starts_with(&ap)).cloned().collect();
+                let (ap, bp) = (
+                    format!("file:{}", a.display()),
+                    format!("file:{}", b.display()),
+                );
+                let moved: Vec<String> = self
+                    .favorites
+                    .iter()
+                    .filter(|f| f.starts_with(&ap))
+                    .cloned()
+                    .collect();
                 for f in moved {
                     self.favorites.remove(&f);
                     self.favorites.insert(f.replacen(&ap, &bp, 1));
@@ -259,12 +320,20 @@ impl Library {
     pub fn delete_cat(&mut self, area: &str, key: &str, phys: Option<Kind>) -> Result<(), String> {
         match key.split_once(':') {
             Some(("v", name)) => {
-                self.areas.entry(area.to_string()).or_default().virt.remove(name);
+                self.areas
+                    .entry(area.to_string())
+                    .or_default()
+                    .virt
+                    .remove(name);
             }
             Some(("p", name)) => self.delete_folder(phys.ok_or("Kein Dateiordner")?, name)?,
             _ => return Err("Eingebaute Kategorien lassen sich nur verbergen".into()),
         }
-        self.areas.entry(area.to_string()).or_default().order.retain(|k| k != key);
+        self.areas
+            .entry(area.to_string())
+            .or_default()
+            .order
+            .retain(|k| k != key);
         self.save();
         Ok(())
     }
@@ -274,17 +343,31 @@ impl Library {
         if name.is_empty() {
             return Err("Ungültiger Ordnername".into());
         }
-        self.areas.entry(area.to_string()).or_default().virt.entry(name.clone()).or_default();
+        self.areas
+            .entry(area.to_string())
+            .or_default()
+            .virt
+            .entry(name.clone())
+            .or_default();
         self.save();
         Ok(format!("v:{name}"))
     }
 
     pub fn virtual_folders(&self, area: &str) -> Vec<String> {
-        self.areas.get(area).map(|l| l.virt.keys().cloned().collect()).unwrap_or_default()
+        self.areas
+            .get(area)
+            .map(|l| l.virt.keys().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub fn add_to_virtual(&mut self, area: &str, folder: &str, item: &str) {
-        let v = self.areas.entry(area.to_string()).or_default().virt.entry(folder.to_string()).or_default();
+        let v = self
+            .areas
+            .entry(area.to_string())
+            .or_default()
+            .virt
+            .entry(folder.to_string())
+            .or_default();
         if !v.iter().any(|x| x == item) {
             v.push(item.to_string());
         }
@@ -292,7 +375,13 @@ impl Library {
     }
 
     pub fn remove_from_virtual(&mut self, area: &str, folder: &str, item: &str) {
-        if let Some(v) = self.areas.entry(area.to_string()).or_default().virt.get_mut(folder) {
+        if let Some(v) = self
+            .areas
+            .entry(area.to_string())
+            .or_default()
+            .virt
+            .get_mut(folder)
+        {
             v.retain(|x| x != item);
         }
         self.save();
@@ -304,23 +393,41 @@ impl Library {
             "Alle" => {
                 // Einträge aus verborgenen Kategorien erscheinen auch unter „Alle“ nicht
                 let l = self.areas.get(area);
-                !l.is_some_and(|l| l.hidden.contains(&format!("b:{folder}")) || l.hidden.contains(&format!("p:{folder}")))
+                !l.is_some_and(|l| {
+                    l.hidden.contains(&format!("b:{folder}"))
+                        || l.hidden.contains(&format!("p:{folder}"))
+                })
             }
             "Favoriten" => self.is_favorite(key),
             c => match c.split_once(':') {
                 Some(("b", n)) | Some(("p", n)) => n == folder,
-                Some(("v", n)) => self.areas.get(area).and_then(|l| l.virt.get(n)).is_some_and(|v| v.iter().any(|x| x == key)),
+                Some(("v", n)) => self
+                    .areas
+                    .get(area)
+                    .and_then(|l| l.virt.get(n))
+                    .is_some_and(|v| v.iter().any(|x| x == key)),
                 _ => false,
             },
         }
     }
 
     /// Sichtbar unter Kategorie und Suche?
-    pub fn visible(&self, area: &str, cat: &str, q: &str, key: &str, name: &str, folder: &str) -> bool {
+    pub fn visible(
+        &self,
+        area: &str,
+        cat: &str,
+        q: &str,
+        key: &str,
+        name: &str,
+        folder: &str,
+    ) -> bool {
         let q = q.trim().to_lowercase();
         !self.is_hidden(key)
             && self.in_cat(area, cat, key, folder)
-            && (q.is_empty() || name.to_lowercase().contains(&q) || crate::tr(name).to_lowercase().contains(&q) || crate::tr(folder).to_lowercase().contains(&q))
+            && (q.is_empty()
+                || name.to_lowercase().contains(&q)
+                || crate::tr(name).to_lowercase().contains(&q)
+                || crate::tr(folder).to_lowercase().contains(&q))
     }
 
     pub fn invalidate(&mut self) {
@@ -343,17 +450,43 @@ impl Library {
             let mut folders = Vec::new();
             let mut items = Vec::new();
             if let Ok(rd) = std::fs::read_dir(&root) {
-                let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+                let mut dirs: Vec<PathBuf> = rd
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.is_dir())
+                    .collect();
                 dirs.sort();
                 for d in dirs {
-                    let folder = d.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                    let folder = d
+                        .file_name()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_default();
                     folders.push(folder.clone());
-                    let Ok(files) = std::fs::read_dir(&d) else { continue };
-                    let mut files: Vec<PathBuf> = files.flatten().map(|e| e.path()).filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| k.exts().contains(&e.to_ascii_lowercase().as_str()))).collect();
+                    let Ok(files) = std::fs::read_dir(&d) else {
+                        continue;
+                    };
+                    let mut files: Vec<PathBuf> = files
+                        .flatten()
+                        .map(|e| e.path())
+                        .filter(|p| {
+                            p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                                k.exts().contains(&e.to_ascii_lowercase().as_str())
+                            })
+                        })
+                        .collect();
                     files.sort();
                     for f in files {
-                        let name = f.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                        items.push(Item { key: format!("file:{}", f.display()), name, folder: folder.clone(), builtin: None, path: Some(f) });
+                        let name = f
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        items.push(Item {
+                            key: format!("file:{}", f.display()),
+                            name,
+                            folder: folder.clone(),
+                            builtin: None,
+                            path: Some(f),
+                        });
                     }
                 }
             }
@@ -385,11 +518,19 @@ impl Library {
         let _ = std::fs::create_dir_all(&dir);
         let mut n = 0;
         for f in files {
-            let ok_ext = f.extension().and_then(|e| e.to_str()).is_some_and(|e| k.exts().contains(&e.to_ascii_lowercase().as_str()));
+            let ok_ext = f
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| k.exts().contains(&e.to_ascii_lowercase().as_str()));
             if !ok_ext || !f.is_file() {
                 continue;
             }
-            let dest = unique(&dir, f.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+            let dest = unique(
+                &dir,
+                f.file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            );
             if std::fs::copy(f, &dest).is_ok() {
                 n += 1;
             }
@@ -400,10 +541,17 @@ impl Library {
 
     /// Eigenen Eintrag in einen anderen Ordner verschieben.
     pub fn move_to(&mut self, item: &Item, k: Kind, folder: &str) -> Result<(), String> {
-        let Some(p) = &item.path else { return Err("Eingebaute Einträge lassen sich nicht verschieben".into()) };
+        let Some(p) = &item.path else {
+            return Err("Eingebaute Einträge lassen sich nicht verschieben".into());
+        };
         let dir = k.dir().join(sanitize(folder));
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let dest = unique(&dir, p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+        let dest = unique(
+            &dir,
+            p.file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        );
         std::fs::rename(p, &dest).map_err(|e| e.to_string())?;
         self.rekey(&item.key, &format!("file:{}", dest.display()));
         self.invalidate();
@@ -412,12 +560,17 @@ impl Library {
 
     /// Eigenen Eintrag umbenennen (Dateiname, Endung bleibt).
     pub fn rename(&mut self, item: &Item, new_name: &str) -> Result<(), String> {
-        let Some(p) = &item.path else { return Err("Eingebaute Einträge lassen sich nicht umbenennen".into()) };
+        let Some(p) = &item.path else {
+            return Err("Eingebaute Einträge lassen sich nicht umbenennen".into());
+        };
         let name = sanitize(new_name);
         if name.is_empty() {
             return Err("Ungültiger Name".into());
         }
-        let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+        let ext = p
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_default();
         let dest = unique(p.parent().unwrap_or(Path::new(".")), format!("{name}{ext}"));
         std::fs::rename(p, &dest).map_err(|e| e.to_string())?;
         self.rekey(&item.key, &format!("file:{}", dest.display()));
@@ -451,7 +604,18 @@ impl Library {
 }
 
 fn sanitize(s: &str) -> String {
-    s.trim().chars().map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect::<String>().trim_matches('.').to_string()
+    s.trim()
+        .chars()
+        .map(|c| {
+            if "\\/:*?\"<>|".contains(c) || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .trim_matches('.')
+        .to_string()
 }
 
 fn unique(dir: &Path, file: String) -> PathBuf {
@@ -463,14 +627,22 @@ fn unique(dir: &Path, file: String) -> PathBuf {
         Some((s, e)) => (s.to_string(), format!(".{e}")),
         None => (file.clone(), String::new()),
     };
-    (2..).map(|i| dir.join(format!("{stem} ({i}){ext}"))).find(|p| !p.exists()).unwrap()
+    (2..)
+        .map(|i| dir.join(format!("{stem} ({i}){ext}")))
+        .find(|p| !p.exists())
+        .unwrap()
 }
 
 /// In den Cutline-Papierkorb verschieben (nichts wird endgültig gelöscht).
 fn to_trash(p: &Path) -> Result<(), String> {
     let trash = paths::data_dir().join("Papierkorb").join("Library");
     std::fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
-    let dest = unique(&trash, p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+    let dest = unique(
+        &trash,
+        p.file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
     std::fs::rename(p, dest).map_err(|e| e.to_string())
 }
 
@@ -480,7 +652,9 @@ mod tests {
 
     #[test]
     fn import_folders_favorites_move_remove() {
-        let _g = crate::paths::TEST_HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::paths::TEST_HOME_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         std::env::set_var("CUTLINE_HOME", home.path());
         let src = home.path().join("in");
@@ -488,46 +662,89 @@ mod tests {
         std::fs::write(src.join("boom.wav"), b"x").unwrap();
         std::fs::write(src.join("note.txt"), b"x").unwrap();
         let mut lib = Library::load();
-        assert_eq!(lib.import(Kind::Sound, "Gaming", &[src.join("boom.wav"), src.join("note.txt")]), 1);
+        assert_eq!(
+            lib.import(
+                Kind::Sound,
+                "Gaming",
+                &[src.join("boom.wav"), src.join("note.txt")]
+            ),
+            1
+        );
         lib.create_folder(Kind::Sound, "Memes").unwrap();
-        assert_eq!(lib.folders(Kind::Sound), vec!["Gaming".to_string(), "Memes".to_string()]);
+        assert_eq!(
+            lib.folders(Kind::Sound),
+            vec!["Gaming".to_string(), "Memes".to_string()]
+        );
         let it = lib.own_items(Kind::Sound).remove(0);
         lib.toggle_favorite(&it.key);
         assert!(lib.visible("sfx", "Favoriten", "", &it.key, &it.name, &it.folder));
         lib.move_to(&it, Kind::Sound, "Memes").unwrap();
         let moved = lib.own_items(Kind::Sound).remove(0);
         assert_eq!(moved.folder, "Memes");
-        assert!(lib.is_favorite(&moved.key), "Favorit bleibt beim Verschieben");
+        assert!(
+            lib.is_favorite(&moved.key),
+            "Favorit bleibt beim Verschieben"
+        );
         lib.rename(&moved, "Explosion").unwrap();
         let renamed = lib.own_items(Kind::Sound).remove(0);
         assert_eq!(renamed.name, "Explosion");
-        assert!(lib.visible("sfx", "Alle", "explo", &renamed.key, &renamed.name, &renamed.folder));
+        assert!(lib.visible(
+            "sfx",
+            "Alle",
+            "explo",
+            &renamed.key,
+            &renamed.name,
+            &renamed.folder
+        ));
         lib.remove(&renamed).unwrap();
         assert!(lib.own_items(Kind::Sound).is_empty());
-        assert!(home.path().join("Papierkorb/Library/Explosion.wav").is_file());
+        assert!(home
+            .path()
+            .join("Papierkorb/Library/Explosion.wav")
+            .is_file());
         // eingebaute Einträge werden nur ausgeblendet
-        let b = Item { key: "builtin:sfx:pop".into(), name: "Pop".into(), folder: "Oberfläche".into(), builtin: Some("pop"), path: None };
+        let b = Item {
+            key: "builtin:sfx:pop".into(),
+            name: "Pop".into(),
+            folder: "Oberfläche".into(),
+            builtin: Some("pop"),
+            path: None,
+        };
         lib.remove(&b).unwrap();
         assert!(!lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
         lib.unhide_all("builtin:sfx:");
         assert!(lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
         // Kategorien: umbenennen (Anzeigename), verschieben, verbergen, Sammelordner
         let cats = lib.cats("sfx", &["Natur", "Oberfläche"], Some(Kind::Sound));
-        assert_eq!(cats.iter().map(|c| c.key.as_str()).collect::<Vec<_>>(), ["b:Natur", "b:Oberfläche", "p:Gaming", "p:Memes"]);
-        lib.rename_cat("sfx", "b:Natur", "Draußen", Some(Kind::Sound)).unwrap();
-        lib.move_cat("sfx", "p:Memes", -3, &["Natur", "Oberfläche"], Some(Kind::Sound));
+        assert_eq!(
+            cats.iter().map(|c| c.key.as_str()).collect::<Vec<_>>(),
+            ["b:Natur", "b:Oberfläche", "p:Gaming", "p:Memes"]
+        );
+        lib.rename_cat("sfx", "b:Natur", "Draußen", Some(Kind::Sound))
+            .unwrap();
+        lib.move_cat(
+            "sfx",
+            "p:Memes",
+            -3,
+            &["Natur", "Oberfläche"],
+            Some(Kind::Sound),
+        );
         lib.hide_cat("sfx", "b:Oberfläche");
         let cats = lib.cats("sfx", &["Natur", "Oberfläche"], Some(Kind::Sound));
         assert_eq!(cats[0].key, "p:Memes");
         assert!(cats.iter().any(|c| c.label == "Draußen"));
         assert!(!cats.iter().any(|c| c.key == "b:Oberfläche"));
-        assert!(!lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder), "Eintrag aus verborgener Kategorie");
+        assert!(
+            !lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder),
+            "Eintrag aus verborgener Kategorie"
+        );
         let v = lib.create_virtual("sfx", "Intro").unwrap();
         lib.add_to_virtual("sfx", "Intro", "builtin:sfx:pop");
         assert!(lib.in_cat("sfx", &v, "builtin:sfx:pop", "Oberfläche"));
         lib.rename_cat("sfx", &v, "Intros", None).unwrap();
         assert!(lib.in_cat("sfx", "v:Intros", "builtin:sfx:pop", ""));
-        lib.rename_cat("sfx", "p:Gaming", "Games", Some(Kind::Sound)).unwrap();
+        lib.rename_cat("sfx", "p:Gaming", "Games", Some(Kind::Sound))
+            .unwrap();
         assert!(Kind::Sound.dir().join("Games").is_dir());
     }
 }

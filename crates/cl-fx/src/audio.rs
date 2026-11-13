@@ -21,7 +21,11 @@ pub static VOICES: &[(&str, &str, &str)] = &[
 ];
 
 pub fn voice_name(id: &str) -> &'static str {
-    VOICES.iter().find(|v| v.0 == id).map(|v| v.1).unwrap_or("Stimmfilter")
+    VOICES
+        .iter()
+        .find(|v| v.0 == id)
+        .map(|v| v.1)
+        .unwrap_or("Stimmfilter")
 }
 
 /// Kette für die Ton-Bearbeitung (leer, wenn nichts eingestellt ist).
@@ -36,13 +40,19 @@ pub fn audio_chain(a: &AudioFx) -> Vec<String> {
         v.push("equalizer=f=2800:t=q:w=1.2:g=3".into());
     }
     if a.denoise > 0.0 {
-        v.push(format!("afftdn=nr={:.1}:nf=-40:tn=1", 6.0 + 30.0 * a.denoise.clamp(0.0, 1.0)));
+        v.push(format!(
+            "afftdn=nr={:.1}:nf=-40:tn=1",
+            6.0 + 30.0 * a.denoise.clamp(0.0, 1.0)
+        ));
     }
     if a.bass.abs() > 0.05 {
         v.push(format!("bass=g={:.1}:f=110", a.bass.clamp(-12.0, 12.0)));
     }
     if a.treble.abs() > 0.05 {
-        v.push(format!("treble=g={:.1}:f=4000", a.treble.clamp(-12.0, 12.0)));
+        v.push(format!(
+            "treble=g={:.1}:f=4000",
+            a.treble.clamp(-12.0, 12.0)
+        ));
     }
     if let Some(id) = &a.voice {
         if let Some(ch) = VOICES.iter().find(|x| x.0 == id).map(|x| x.2) {
@@ -69,7 +79,16 @@ mod tests {
         let out = dir.path().join("o.wav");
         let o = cl_media::ffmpeg_command()
             .unwrap()
-            .args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "aevalsrc='0.3*sin(2*PI*220*t)+0.05*random(0)':d=2:s=48000:c=stereo"])
+            .args([
+                "-v",
+                "error",
+                "-nostdin",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "aevalsrc='0.3*sin(2*PI*220*t)+0.05*random(0)':d=2:s=48000:c=stereo",
+            ])
             .args(["-af", chain])
             .arg(&out)
             .stdin(Stdio::null())
@@ -78,7 +97,10 @@ mod tests {
         if !o.status.success() {
             return Err(String::from_utf8_lossy(&o.stderr).into_owned());
         }
-        Ok(cl_media::waveform(&out, 50).unwrap().into_iter().fold(0.0, f32::max))
+        Ok(cl_media::waveform(&out, 50)
+            .unwrap()
+            .into_iter()
+            .fold(0.0, f32::max))
     }
 
     #[test]
@@ -87,12 +109,22 @@ mod tests {
             return;
         }
         for (id, ..) in VOICES {
-            let a = AudioFx { voice: Some(id.to_string()), ..Default::default() };
+            let a = AudioFx {
+                voice: Some(id.to_string()),
+                ..Default::default()
+            };
             let ch = audio_chain(&a).join(",");
             let peak = run(&ch).unwrap_or_else(|e| panic!("{id}: {e}"));
             assert!(peak > 0.02, "{id} ist stumm ({peak})");
         }
-        let all = AudioFx { denoise: 0.7, voice_isolate: true, normalize: true, voice: None, bass: 4.0, treble: -3.0 };
+        let all = AudioFx {
+            denoise: 0.7,
+            voice_isolate: true,
+            normalize: true,
+            voice: None,
+            bass: 4.0,
+            treble: -3.0,
+        };
         let peak = run(&audio_chain(&all).join(",")).unwrap();
         assert!(peak > 0.05, "{peak}");
         assert!(audio_chain(&AudioFx::default()).is_empty());

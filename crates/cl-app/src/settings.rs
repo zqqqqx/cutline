@@ -50,7 +50,11 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            lang: cl_i18n::Lang::from_locale(&std::env::var("LANG").unwrap_or_else(|_| "de".into())).code().into(),
+            lang: cl_i18n::Lang::from_locale(
+                &std::env::var("LANG").unwrap_or_else(|_| "de".into()),
+            )
+            .code()
+            .into(),
             ui_scale: 1.0,
             start_on_home: true,
             image_duration: 5.0,
@@ -79,12 +83,18 @@ impl AppSettings {
         paths::data_dir().join("settings.json")
     }
     pub fn load() -> Self {
-        let mut s: AppSettings = std::fs::read_to_string(Self::path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        let mut s: AppSettings = std::fs::read_to_string(Self::path())
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
         // Übernahme aus Phase 1 (eigene Datei für die Oberflächengröße)
         if !Self::path().is_file() {
             s.ui_scale = crate::chrome::load_ui_scale();
         }
-        if let Some(v) = std::env::var("CUTLINE_UI_SCALE").ok().and_then(|v| v.parse::<f32>().ok()) {
+        if let Some(v) = std::env::var("CUTLINE_UI_SCALE")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+        {
             s.ui_scale = v;
         }
         s.ui_scale = s.ui_scale.clamp(0.6, 2.0);
@@ -92,10 +102,16 @@ impl AppSettings {
     }
     pub fn save(&self) {
         let _ = std::fs::create_dir_all(paths::data_dir());
-        let _ = std::fs::write(Self::path(), serde_json::to_string_pretty(self).unwrap_or_default());
+        let _ = std::fs::write(
+            Self::path(),
+            serde_json::to_string_pretty(self).unwrap_or_default(),
+        );
     }
     pub fn lang(&self) -> cl_i18n::Lang {
-        cl_i18n::Lang::ALL.into_iter().find(|l| l.code() == self.lang).unwrap_or(cl_i18n::Lang::De)
+        cl_i18n::Lang::ALL
+            .into_iter()
+            .find(|l| l.code() == self.lang)
+            .unwrap_or(cl_i18n::Lang::De)
     }
     pub fn add_recent(&mut self, p: &std::path::Path) {
         self.recent.retain(|r| r != p);
@@ -146,7 +162,6 @@ const SECTIONS: [(Section, &str, &str); 10] = [
     (Section::About, icon::INFO, "Über Cutline"),
 ];
 
-
 impl App {
     pub fn start_mcp(&mut self) {
         self.mcp = None;
@@ -158,8 +173,16 @@ impl App {
             Ok((addr, _)) => {
                 let info = serde_json::json!({ "url": format!("http://127.0.0.1:{}/mcp", addr.port()), "token": token, "read_only": self.settings.mcp_read_only });
                 let _ = std::fs::create_dir_all(paths::data_dir());
-                let _ = std::fs::write(paths::data_dir().join("mcp.json"), serde_json::to_string_pretty(&info).unwrap_or_default());
-                self.mcp = Some(McpRunning { port: addr.port(), token, read_only: self.settings.mcp_read_only, stop });
+                let _ = std::fs::write(
+                    paths::data_dir().join("mcp.json"),
+                    serde_json::to_string_pretty(&info).unwrap_or_default(),
+                );
+                self.mcp = Some(McpRunning {
+                    port: addr.port(),
+                    token,
+                    read_only: self.settings.mcp_read_only,
+                    stop,
+                });
             }
             Err(e) => {
                 self.settings.mcp_enabled = false;
@@ -177,58 +200,120 @@ impl App {
         if !self.settings_open {
             return;
         }
-        let modal = egui::Modal::new(egui::Id::new("settings")).frame(egui::Frame::window(&ctx.style()).inner_margin(0)).show(ctx, |ui| {
-            ui.set_width(700.0);
-            ui.set_height(470.0);
-            ui.horizontal_top(|ui| {
-                // Navigation
-                egui::Frame::default().fill(theme::BG_APP).corner_radius(egui::CornerRadius { nw: 10, sw: 10, ne: 0, se: 0 }).inner_margin(12).show(ui, |ui| ui.vertical(|ui| {
-                    ui.set_width(170.0);
-                    ui.set_height(446.0);
-                    ui.label(RichText::new(crate::tr("Einstellungen")).strong().size(14.0));
-                    ui.add_space(12.0);
-                    for (s, g, label) in SECTIONS {
-                        let active = self.settings_section == s;
-                        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), egui::Sense::click());
-                        if active {
-                            ui.painter().rect_filled(r, 6.0, theme::BG_RAISED);
-                        } else if resp.hovered() {
-                            ui.painter().rect_filled(r, 6.0, theme::BG_CARD);
-                        }
-                        let col = if active { theme::ACCENT } else { theme::TEXT_DIM };
-                        ui.painter().text(r.left_center() + vec2(10.0, 0.0), egui::Align2::LEFT_CENTER, crate::tr(g), egui::FontId::proportional(14.0), col);
-                        ui.painter().text(r.left_center() + vec2(32.0, 0.0), egui::Align2::LEFT_CENTER, crate::tr(label), egui::FontId::proportional(12.0), col);
-                        if resp.clicked() {
-                            self.settings_section = s;
-                        }
-                    }
-                }));
-                // Inhalt
-                ui.vertical(|ui| {
-                    // feste Breite, sonst springt das Fenster beim Bereichswechsel
-                    ui.set_width(514.0);
-                    ui.add_space(14.0);
-                    ui.horizontal(|ui| {
+        let modal = egui::Modal::new(egui::Id::new("settings"))
+            .frame(egui::Frame::window(&ctx.style()).inner_margin(0))
+            .show(ctx, |ui| {
+                ui.set_width(700.0);
+                ui.set_height(470.0);
+                ui.horizontal_top(|ui| {
+                    // Navigation
+                    egui::Frame::default()
+                        .fill(theme::BG_APP)
+                        .corner_radius(egui::CornerRadius {
+                            nw: 10,
+                            sw: 10,
+                            ne: 0,
+                            se: 0,
+                        })
+                        .inner_margin(12)
+                        .show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                ui.set_width(170.0);
+                                ui.set_height(446.0);
+                                ui.label(
+                                    RichText::new(crate::tr("Einstellungen"))
+                                        .strong()
+                                        .size(14.0),
+                                );
+                                ui.add_space(12.0);
+                                for (s, g, label) in SECTIONS {
+                                    let active = self.settings_section == s;
+                                    let (r, resp) = ui.allocate_exact_size(
+                                        vec2(ui.available_width(), 28.0),
+                                        egui::Sense::click(),
+                                    );
+                                    if active {
+                                        ui.painter().rect_filled(r, 6.0, theme::BG_RAISED);
+                                    } else if resp.hovered() {
+                                        ui.painter().rect_filled(r, 6.0, theme::BG_CARD);
+                                    }
+                                    let col = if active {
+                                        theme::ACCENT
+                                    } else {
+                                        theme::TEXT_DIM
+                                    };
+                                    ui.painter().text(
+                                        r.left_center() + vec2(10.0, 0.0),
+                                        egui::Align2::LEFT_CENTER,
+                                        crate::tr(g),
+                                        egui::FontId::proportional(14.0),
+                                        col,
+                                    );
+                                    ui.painter().text(
+                                        r.left_center() + vec2(32.0, 0.0),
+                                        egui::Align2::LEFT_CENTER,
+                                        crate::tr(label),
+                                        egui::FontId::proportional(12.0),
+                                        col,
+                                    );
+                                    if resp.clicked() {
+                                        self.settings_section = s;
+                                    }
+                                }
+                            })
+                        });
+                    // Inhalt
+                    ui.vertical(|ui| {
+                        // feste Breite, sonst springt das Fenster beim Bereichswechsel
+                        ui.set_width(514.0);
+                        ui.add_space(14.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space(8.0);
+                            let title = SECTIONS
+                                .iter()
+                                .find(|s| s.0 == self.settings_section)
+                                .map(|s| s.2)
+                                .unwrap_or("");
+                            ui.label(RichText::new(crate::tr(title)).strong().size(14.0));
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.add_space(10.0);
+                                    if theme::icon_button(
+                                        ui,
+                                        icon::X,
+                                        "Schließen (Esc)",
+                                        true,
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
+                                        self.settings_open = false;
+                                    }
+                                },
+                            );
+                        });
                         ui.add_space(8.0);
-                        let title = SECTIONS.iter().find(|s| s.0 == self.settings_section).map(|s| s.2).unwrap_or("");
-                        ui.label(RichText::new(crate::tr(title)).strong().size(14.0));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.add_space(10.0);
-                            if theme::icon_button(ui, icon::X, "Schließen (Esc)", true, false).clicked() {
-                                self.settings_open = false;
-                            }
-                        });
-                    });
-                    ui.add_space(8.0);
-                    egui::ScrollArea::vertical().id_salt("settings-body").auto_shrink([false, true]).max_height(410.0).show(ui, |ui| {
-                        egui::Frame::default().inner_margin(egui::Margin { left: 8, right: 16, top: 0, bottom: 8 }).show(ui, |ui| {
-                            ui.set_width(490.0);
-                            self.settings_body(ui);
-                        });
+                        egui::ScrollArea::vertical()
+                            .id_salt("settings-body")
+                            .auto_shrink([false, true])
+                            .max_height(410.0)
+                            .show(ui, |ui| {
+                                egui::Frame::default()
+                                    .inner_margin(egui::Margin {
+                                        left: 8,
+                                        right: 16,
+                                        top: 0,
+                                        bottom: 8,
+                                    })
+                                    .show(ui, |ui| {
+                                        ui.set_width(490.0);
+                                        self.settings_body(ui);
+                                    });
+                            });
                     });
                 });
             });
-        });
         if modal.should_close() {
             self.settings_open = false;
         }
@@ -241,42 +326,92 @@ impl App {
         match self.settings_section {
             Section::General => {
                 theme::row(ui, "Sprache", |ui| {
-                    egui::ComboBox::from_id_salt("set-lang").selected_text(crate::tr(self.i18n.lang().native_name())).show_ui(ui, |ui| {
-                        for l in cl_i18n::Lang::ALL {
-                            if ui.selectable_label(self.i18n.lang() == l, crate::tr(l.native_name())).clicked() {
-                                self.i18n.set_lang(l);
-                                self.settings.lang = l.code().into();
+                    egui::ComboBox::from_id_salt("set-lang")
+                        .selected_text(crate::tr(self.i18n.lang().native_name()))
+                        .show_ui(ui, |ui| {
+                            for l in cl_i18n::Lang::ALL {
+                                if ui
+                                    .selectable_label(
+                                        self.i18n.lang() == l,
+                                        crate::tr(l.native_name()),
+                                    )
+                                    .clicked()
+                                {
+                                    self.i18n.set_lang(l);
+                                    self.settings.lang = l.code().into();
+                                }
                             }
-                        }
-                    });
+                        });
                 });
                 theme::row(ui, "Oberfläche", |ui| {
                     let mut v = self.settings.ui_scale;
-                    let e = Slider::new(&mut v, 0.6..=2.0).percent().default(1.0).show(ui);
+                    let e = Slider::new(&mut v, 0.6..=2.0)
+                        .percent()
+                        .default(1.0)
+                        .show(ui);
                     if e.commit {
                         let ctx = ui.ctx().clone();
                         self.set_ui_scale(&ctx, v);
                     }
                 });
-                widgets::toggle_row(ui, "Beim Start die Projektübersicht zeigen", &mut self.settings.start_on_home);
+                widgets::toggle_row(
+                    ui,
+                    "Beim Start die Projektübersicht zeigen",
+                    &mut self.settings.start_on_home,
+                );
                 widgets::toggle_row(ui, "Automatisch speichern", &mut self.settings.autosave);
                 theme::row(ui, "Projektordner", |ui| {
                     let d = paths::data_dir().join("Projects");
                     let full = d.display().to_string();
                     let n = full.chars().count();
-                    let short = if n > 52 { format!("…{}", full.chars().skip(n - 50).collect::<String>()) } else { full.clone() };
-                    if ui.add(theme::ghost(format!("{}  {short}", icon::FOLDER_OPEN))).on_hover_text(format!("{}
-{full}", crate::tr("Im Explorer öffnen"))).clicked() {
+                    let short = if n > 52 {
+                        format!("…{}", full.chars().skip(n - 50).collect::<String>())
+                    } else {
+                        full.clone()
+                    };
+                    if ui
+                        .add(theme::ghost(format!("{}  {short}", icon::FOLDER_OPEN)))
+                        .on_hover_text(format!(
+                            "{}
+{full}",
+                            crate::tr("Im Explorer öffnen")
+                        ))
+                        .clicked()
+                    {
                         let _ = std::fs::create_dir_all(&d);
                         crate::home::reveal(&d);
                     }
                 });
             }
             Section::Editing => {
-                theme::row(ui, "Bilddauer", |ui| Slider::new(&mut self.settings.image_duration, 0.5..=30.0).suffix(" s").decimals(1).default(5.0).show(ui));
-                theme::row(ui, "Textdauer", |ui| Slider::new(&mut self.settings.text_duration, 0.5..=30.0).suffix(" s").decimals(1).default(3.0).show(ui));
-                theme::row(ui, "Übergang", |ui| Slider::new(&mut self.settings.transition_duration, 0.1..=3.0).suffix(" s").decimals(1).default(0.5).show(ui));
-                theme::row(ui, "Animation", |ui| Slider::new(&mut self.settings.anim_duration, 0.1..=3.0).suffix(" s").decimals(1).default(0.5).show(ui));
+                theme::row(ui, "Bilddauer", |ui| {
+                    Slider::new(&mut self.settings.image_duration, 0.5..=30.0)
+                        .suffix(" s")
+                        .decimals(1)
+                        .default(5.0)
+                        .show(ui)
+                });
+                theme::row(ui, "Textdauer", |ui| {
+                    Slider::new(&mut self.settings.text_duration, 0.5..=30.0)
+                        .suffix(" s")
+                        .decimals(1)
+                        .default(3.0)
+                        .show(ui)
+                });
+                theme::row(ui, "Übergang", |ui| {
+                    Slider::new(&mut self.settings.transition_duration, 0.1..=3.0)
+                        .suffix(" s")
+                        .decimals(1)
+                        .default(0.5)
+                        .show(ui)
+                });
+                theme::row(ui, "Animation", |ui| {
+                    Slider::new(&mut self.settings.anim_duration, 0.1..=3.0)
+                        .suffix(" s")
+                        .decimals(1)
+                        .default(0.5)
+                        .show(ui)
+                });
                 ui.add_space(6.0);
                 let mut s = self.project.settings.clone();
                 let a = widgets::toggle_row(ui, "Hauptspur-Magnet (P)", &mut s.main_track_magnet);
@@ -301,7 +436,13 @@ impl App {
                 self.proxy_settings(ui);
                 ui.add_space(8.0);
                 theme::row(ui, "Effekt-Cache", |ui| {
-                    if ui.add(theme::secondary(format!("{}  Vorschaubilder neu erzeugen", icon::ARROWS_CLOCKWISE))).clicked() {
+                    if ui
+                        .add(theme::secondary(format!(
+                            "{}  Vorschaubilder neu erzeugen",
+                            icon::ARROWS_CLOCKWISE
+                        )))
+                        .clicked()
+                    {
                         let _ = std::fs::remove_dir_all(paths::data_dir().join("cache"));
                         self.fx_thumbs.clear();
                         self.fx_thumbs_requested.clear();
@@ -320,35 +461,87 @@ impl App {
                         self.stop_mcp();
                     }
                 }
-                let running = self.mcp.as_ref().map(|m| (m.port, m.token.clone(), m.read_only));
+                let running = self
+                    .mcp
+                    .as_ref()
+                    .map(|m| (m.port, m.token.clone(), m.read_only));
                 ui.add_enabled_ui(running.is_none(), |ui| {
-                    theme::row(ui, "Port", |ui| ui.add(egui::DragValue::new(&mut self.settings.mcp_port).range(1024..=65535)));
-                    widgets::toggle_row(ui, "Nur lesen (keine Änderungen erlauben)", &mut self.settings.mcp_read_only);
+                    theme::row(ui, "Port", |ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut self.settings.mcp_port).range(1024..=65535),
+                        )
+                    });
+                    widgets::toggle_row(
+                        ui,
+                        "Nur lesen (keine Änderungen erlauben)",
+                        &mut self.settings.mcp_read_only,
+                    );
                 });
                 if let Some((port, token, ro)) = running {
                     theme::section(ui, "Verbindung");
-                    theme::row(ui, "Status", |ui| ui.label(RichText::new(crate::tr(format!("{}  aktiv auf Port {port}{}", icon::CIRCLE, if ro { " · nur lesen" } else { "" }))).color(theme::ACCENT)));
-                    theme::row(ui, "Adresse", |ui| ui.monospace(format!("http://127.0.0.1:{port}/mcp")));
+                    theme::row(ui, "Status", |ui| {
+                        ui.label(
+                            RichText::new(crate::tr(format!(
+                                "{}  aktiv auf Port {port}{}",
+                                icon::CIRCLE,
+                                if ro { " · nur lesen" } else { "" }
+                            )))
+                            .color(theme::ACCENT),
+                        )
+                    });
+                    theme::row(ui, "Adresse", |ui| {
+                        ui.monospace(format!("http://127.0.0.1:{port}/mcp"))
+                    });
                     theme::row(ui, "Token", |ui| {
                         ui.monospace(format!("{}…", &token[..10.min(token.len())]));
-                        if theme::icon_button(ui, icon::ARROWS_CLOCKWISE, "Neues Token erzeugen (alte Clients verlieren den Zugriff)", true, false).clicked() {
+                        if theme::icon_button(
+                            ui,
+                            icon::ARROWS_CLOCKWISE,
+                            "Neues Token erzeugen (alte Clients verlieren den Zugriff)",
+                            true,
+                            false,
+                        )
+                        .clicked()
+                        {
                             self.start_mcp();
                         }
                     });
                     ui.add_space(6.0);
-                    if ui.add(theme::primary(format!("{}  Client-Konfiguration kopieren", icon::COPY))).clicked() {
+                    if ui
+                        .add(theme::primary(format!(
+                            "{}  Client-Konfiguration kopieren",
+                            icon::COPY
+                        )))
+                        .clicked()
+                    {
                         let cfg = serde_json::json!({ "mcpServers": { "cutline": {
                             "type": "http", "url": format!("http://127.0.0.1:{port}/mcp"),
                             "headers": { "Authorization": format!("Bearer {token}") } } } });
-                        ui.ctx().copy_text(serde_json::to_string_pretty(&cfg).unwrap_or_default());
+                        ui.ctx()
+                            .copy_text(serde_json::to_string_pretty(&cfg).unwrap_or_default());
                         self.toast("MCP-Konfiguration kopiert");
                     }
-                    ui.label(RichText::new(crate::tr(format!("Auch gespeichert in {}", paths::data_dir().join("mcp.json").display()))).small().color(theme::TEXT_FAINT));
+                    ui.label(
+                        RichText::new(crate::tr(format!(
+                            "Auch gespeichert in {}",
+                            paths::data_dir().join("mcp.json").display()
+                        )))
+                        .small()
+                        .color(theme::TEXT_FAINT),
+                    );
                 } else if self.settings.mcp_enabled {
-                    ui.label(RichText::new(crate::tr("Server startet …")).small().color(theme::TEXT_DIM));
+                    ui.label(
+                        RichText::new(crate::tr("Server startet …"))
+                            .small()
+                            .color(theme::TEXT_DIM),
+                    );
                 }
                 theme::section(ui, "Ohne laufende App (stdio)");
-                ui.label(RichText::new(crate::tr("cutline --mcp projekt.cutline")).monospace().color(theme::TEXT_DIM));
+                ui.label(
+                    RichText::new(crate::tr("cutline --mcp projekt.cutline"))
+                        .monospace()
+                        .color(theme::TEXT_DIM),
+                );
                 ui.label(RichText::new(crate::tr("Werkzeuge: Projekt lesen, Medien importieren, Clips einfügen, teilen, trimmen, löschen, Format setzen, beliebige EditOps, Rückgängig/Wiederholen.")).small().color(theme::TEXT_DIM));
             }
             Section::Shortcuts => self.shortcuts_settings(ui),
@@ -359,10 +552,17 @@ impl App {
             Section::About => {
                 ui.horizontal(|ui| theme::wordmark(ui, 34.0));
                 ui.add_space(8.0);
-                ui.label(crate::tr(format!("Version {} · MPL-2.0", env!("CARGO_PKG_VERSION"))));
+                ui.label(crate::tr(format!(
+                    "Version {} · MPL-2.0",
+                    env!("CARGO_PKG_VERSION")
+                )));
                 ui.label(RichText::new(crate::tr("Open-Source-Videoeditor in Rust. Lokal, ohne Konto, ohne Abo, ohne Werbung, ohne generative KI.")).color(theme::TEXT_DIM));
                 ui.add_space(8.0);
-                let (e, f, t) = (cl_fx::EFFECTS.len(), cl_fx::FILTERS.len(), cl_fx::TRANSITIONS.len());
+                let (e, f, t) = (
+                    cl_fx::EFFECTS.len(),
+                    cl_fx::FILTERS.len(),
+                    cl_fx::TRANSITIONS.len(),
+                );
                 ui.label(RichText::new(crate::tr(format!(
                     "{e} Effekte · {f} Filter · {t} Übergänge · {} Sticker · {} Soundeffekte · {} Textvorlagen",
                     cl_fx::stickers::STICKERS.len(),
@@ -371,7 +571,14 @@ impl App {
                 )))
                 .small()
                 .color(theme::TEXT_DIM));
-                ui.label(RichText::new(crate::tr(format!("{} Plugins geladen", self.plugins.plugins.len()))).small().color(theme::TEXT_DIM));
+                ui.label(
+                    RichText::new(crate::tr(format!(
+                        "{} Plugins geladen",
+                        self.plugins.plugins.len()
+                    )))
+                    .small()
+                    .color(theme::TEXT_DIM),
+                );
             }
         }
     }

@@ -18,7 +18,10 @@ pub fn parse_time(s: &str) -> f64 {
 }
 
 fn url_to_path(src: &str) -> PathBuf {
-    let s = src.strip_prefix("file://localhost").or_else(|| src.strip_prefix("file://")).unwrap_or(src);
+    let s = src
+        .strip_prefix("file://localhost")
+        .or_else(|| src.strip_prefix("file://"))
+        .unwrap_or(src);
     // %20 usw. dekodieren
     let mut out = Vec::new();
     let b = s.as_bytes();
@@ -36,13 +39,20 @@ fn url_to_path(src: &str) -> PathBuf {
     }
     let p = String::from_utf8_lossy(&out).into_owned();
     // Windows: /C:/… → C:/…
-    let p = if p.len() > 3 && p.as_bytes()[0] == b'/' && p.as_bytes()[2] == b':' { p[1..].to_string() } else { p };
+    let p = if p.len() > 3 && p.as_bytes()[0] == b'/' && p.as_bytes()[2] == b':' {
+        p[1..].to_string()
+    } else {
+        p
+    };
     PathBuf::from(p)
 }
 
 pub fn import(path: &Path) -> Result<(Project, Report)> {
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "FCPXML".into());
+    let name = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "FCPXML".into());
     convert(&text, &name)
 }
 
@@ -58,16 +68,30 @@ pub fn convert(text: &str, name: &str) -> Result<(Project, Report)> {
     let mut formats: HashMap<String, (u32, u32, f64)> = HashMap::new();
     for f in root.descendants().filter(|n| n.has_tag_name("format")) {
         let id = f.attribute("id").unwrap_or("").to_string();
-        let w = f.attribute("width").and_then(|v| v.parse().ok()).unwrap_or(1920);
-        let h = f.attribute("height").and_then(|v| v.parse().ok()).unwrap_or(1080);
-        let fd = f.attribute("frameDuration").map(parse_time).unwrap_or(1.0 / 30.0);
+        let w = f
+            .attribute("width")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1920);
+        let h = f
+            .attribute("height")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1080);
+        let fd = f
+            .attribute("frameDuration")
+            .map(parse_time)
+            .unwrap_or(1.0 / 30.0);
         formats.insert(id, (w, h, fd));
     }
     // Assets
     let mut assets: HashMap<String, Option<MediaRef>> = HashMap::new();
     for a in root.descendants().filter(|n| n.has_tag_name("asset")) {
         let id = a.attribute("id").unwrap_or("").to_string();
-        let src = a.attribute("src").map(String::from).or_else(|| a.children().find(|c| c.has_tag_name("media-rep")).and_then(|m| m.attribute("src")).map(String::from));
+        let src = a.attribute("src").map(String::from).or_else(|| {
+            a.children()
+                .find(|c| c.has_tag_name("media-rep"))
+                .and_then(|m| m.attribute("src"))
+                .map(String::from)
+        });
         let m = src.map(|s| url_to_path(&s)).and_then(|path| {
             if !path.is_file() {
                 rep.missing.push(path);
@@ -79,15 +103,25 @@ pub fn convert(text: &str, name: &str) -> Result<(Project, Report)> {
         });
         assets.insert(id, m);
     }
-    let seq = root.descendants().find(|n| n.has_tag_name("sequence")).ok_or("Keine Sequenz gefunden")?;
+    let seq = root
+        .descendants()
+        .find(|n| n.has_tag_name("sequence"))
+        .ok_or("Keine Sequenz gefunden")?;
     if let Some((w, h, fd)) = seq.attribute("format").and_then(|f| formats.get(f)) {
         p.settings.width = *w & !1;
         p.settings.height = *h & !1;
         let fps = 1.0 / fd;
-        p.settings.fps = if (fps - 29.97).abs() < 0.01 { Rational::new(30000, 1001) } else { Rational::new(fps.round().max(1.0) as u32, 1) };
+        p.settings.fps = if (fps - 29.97).abs() < 0.01 {
+            Rational::new(30000, 1001)
+        } else {
+            Rational::new(fps.round().max(1.0) as u32, 1)
+        };
         p.settings.aspect = cl_core::AspectPreset::Custom;
     }
-    let spine = seq.descendants().find(|n| n.has_tag_name("spine")).ok_or("Keine Hauptspur (spine) gefunden")?;
+    let spine = seq
+        .descendants()
+        .find(|n| n.has_tag_name("spine"))
+        .ok_or("Keine Hauptspur (spine) gefunden")?;
     // lane → Spur
     let mut lanes: std::collections::BTreeMap<i32, Track> = Default::default();
     let mut main = Track::new(TrackKind::Video);
@@ -104,13 +138,33 @@ pub fn convert(text: &str, name: &str) -> Result<(Project, Report)> {
                 }
             }
             // verbundene Clips: Zeit relativ zum Elternclip
-            for child in item.children().filter(|n| n.is_element() && clip_tags.contains(&n.tag_name().name())) {
-                let lane: i32 = child.attribute("lane").and_then(|v| v.parse().ok()).unwrap_or(1);
+            for child in item
+                .children()
+                .filter(|n| n.is_element() && clip_tags.contains(&n.tag_name().name()))
+            {
+                let lane: i32 = child
+                    .attribute("lane")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1);
                 let off = child.attribute("offset").map(parse_time).unwrap_or(0.0);
                 let abs = offset + (off - start_in);
                 if let Some(c) = make_clip(child, abs, &assets, &mut rep) {
-                    let kind = if matches!(c.content, ClipContent::Media { kind: MediaKind::Audio, .. }) { TrackKind::Audio } else { TrackKind::Video };
-                    lanes.entry(lane).or_insert_with(|| Track::new(kind)).clips.push(c);
+                    let kind = if matches!(
+                        c.content,
+                        ClipContent::Media {
+                            kind: MediaKind::Audio,
+                            ..
+                        }
+                    ) {
+                        TrackKind::Audio
+                    } else {
+                        TrackKind::Video
+                    };
+                    lanes
+                        .entry(lane)
+                        .or_insert_with(|| Track::new(kind))
+                        .clips
+                        .push(c);
                 }
             }
         } else if tag == "title" {
@@ -134,12 +188,29 @@ pub fn convert(text: &str, name: &str) -> Result<(Project, Report)> {
     Ok((p, rep))
 }
 
-fn make_clip(n: roxmltree::Node, at: f64, assets: &HashMap<String, Option<MediaRef>>, rep: &mut Report) -> Option<Clip> {
-    let r = n.attribute("ref").or_else(|| n.descendants().find_map(|d| d.attribute("ref")))?;
+fn make_clip(
+    n: roxmltree::Node,
+    at: f64,
+    assets: &HashMap<String, Option<MediaRef>>,
+    rep: &mut Report,
+) -> Option<Clip> {
+    let r = n
+        .attribute("ref")
+        .or_else(|| n.descendants().find_map(|d| d.attribute("ref")))?;
     let m = assets.get(r)?.as_ref()?;
-    let dur = n.attribute("duration").map(parse_time).unwrap_or(m.duration.as_secs_f64());
+    let dur = n
+        .attribute("duration")
+        .map(parse_time)
+        .unwrap_or(m.duration.as_secs_f64());
     let start = n.attribute("start").map(parse_time).unwrap_or(0.0);
-    let mut c = Clip::new(ClipContent::Media { media: m.id, kind: m.kind }, Time::from_secs_f64(at.max(0.0)), Time::from_secs_f64(dur.max(0.04)));
+    let mut c = Clip::new(
+        ClipContent::Media {
+            media: m.id,
+            kind: m.kind,
+        },
+        Time::from_secs_f64(at.max(0.0)),
+        Time::from_secs_f64(dur.max(0.04)),
+    );
     c.source_in = Time::from_secs_f64(start);
     rep.clips += 1;
     Some(c)
@@ -158,8 +229,27 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let v = dir.path().join("a b.mp4");
-        assert!(cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=6", "-pix_fmt", "yuv420p"]).arg(&v).status().unwrap().success());
-        let url = format!("file:///{}", v.to_string_lossy().replace('\\', "/").replace(' ', "%20"));
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=320x180:r=25:d=6",
+                "-pix_fmt",
+                "yuv420p"
+            ])
+            .arg(&v)
+            .status()
+            .unwrap()
+            .success());
+        let url = format!(
+            "file:///{}",
+            v.to_string_lossy().replace('\\', "/").replace(' ', "%20")
+        );
         let xml = format!(
             r#"<?xml version="1.0"?><fcpxml version="1.9"><resources><format id="r1" frameDuration="1/25s" width="1280" height="720"/><asset id="r2" src="{url}" duration="6s"/></resources>
             <library><event><project name="P"><sequence format="r1"><spine>
@@ -173,9 +263,15 @@ mod tests {
         assert_eq!((p.settings.width, p.settings.height), (1280, 720));
         assert_eq!(rep.clips, 3);
         assert_eq!(p.timeline.tracks[0].clips.len(), 2);
-        assert_eq!(p.timeline.tracks[0].clips[1].start, Time::from_secs_f64(3.0));
+        assert_eq!(
+            p.timeline.tracks[0].clips[1].start,
+            Time::from_secs_f64(3.0)
+        );
         // verbundener Clip: 0 + (1.5 - 1) = 0.5 s
-        assert_eq!(p.timeline.tracks[1].clips[0].start, Time::from_secs_f64(0.5));
+        assert_eq!(
+            p.timeline.tracks[1].clips[0].start,
+            Time::from_secs_f64(0.5)
+        );
         assert!(rep.skipped.iter().any(|(w, _)| w == "Übergänge"));
     }
 }

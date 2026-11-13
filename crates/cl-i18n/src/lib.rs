@@ -61,7 +61,8 @@ fn bundle_for(lang: Lang) -> FluentBundle<FluentResource> {
         Lang::De => (DE, "de".parse().unwrap()),
         Lang::En | Lang::Pseudo => (EN, "en".parse().unwrap()),
     };
-    let res = FluentResource::try_new(src.to_string()).expect("FTL-Datei ist gültig (per Test geprüft)");
+    let res =
+        FluentResource::try_new(src.to_string()).expect("FTL-Datei ist gültig (per Test geprüft)");
     let mut b = FluentBundle::new_concurrent(vec![id]);
     b.set_use_isolating(false);
     b.add_resource(res).expect("keine doppelten Schlüssel");
@@ -91,7 +92,10 @@ fn pseudo(s: &str) -> String {
 impl I18n {
     pub fn new(lang: Lang) -> Self {
         set_ui_lang(lang);
-        Self { lang, bundle: bundle_for(lang) }
+        Self {
+            lang,
+            bundle: bundle_for(lang),
+        }
     }
 
     pub fn lang(&self) -> Lang {
@@ -130,7 +134,10 @@ impl I18n {
             return format!("⟦{key}⟧");
         };
         let mut errs = Vec::new();
-        let s = self.bundle.format_pattern(pattern, args, &mut errs).into_owned();
+        let s = self
+            .bundle
+            .format_pattern(pattern, args, &mut errs)
+            .into_owned();
         if self.lang == Lang::Pseudo {
             pseudo(&s)
         } else {
@@ -167,16 +174,33 @@ mod tests {
         }
         let de: BTreeSet<_> = keys(DE).into_iter().collect();
         let en: BTreeSet<_> = keys(EN).into_iter().collect();
-        assert_eq!(de.difference(&en).collect::<Vec<_>>(), Vec::<&String>::new(), "fehlt in en");
-        assert_eq!(en.difference(&de).collect::<Vec<_>>(), Vec::<&String>::new(), "fehlt in de");
+        assert_eq!(
+            de.difference(&en).collect::<Vec<_>>(),
+            Vec::<&String>::new(),
+            "fehlt in en"
+        );
+        assert_eq!(
+            en.difference(&de).collect::<Vec<_>>(),
+            Vec::<&String>::new(),
+            "fehlt in de"
+        );
     }
 
     #[test]
     fn plurals_and_args() {
         let de = I18n::new(Lang::De);
-        assert_eq!(de.t_num("fonts-count", "count", 1), "Eine importierte Schrift");
-        assert_eq!(de.t_num("fonts-count", "count", 3), "3 importierte Schriften");
-        assert_eq!(de.t_str("font-imported", "family", "Impact"), "Schrift „Impact“ importiert");
+        assert_eq!(
+            de.t_num("fonts-count", "count", 1),
+            "Eine importierte Schrift"
+        );
+        assert_eq!(
+            de.t_num("fonts-count", "count", 3),
+            "3 importierte Schriften"
+        );
+        assert_eq!(
+            de.t_str("font-imported", "family", "Impact"),
+            "Schrift „Impact“ importiert"
+        );
         let en = I18n::new(Lang::En);
         assert_eq!(en.t_num("media-imported", "count", 2), "Imported 2 items");
         assert_eq!(en.t("does-not-exist"), "⟦does-not-exist⟧");
@@ -185,7 +209,14 @@ mod tests {
     /// Bekannte Fehlübersetzungen dürfen bei uns nie auftauchen.
     #[test]
     fn german_glossary() {
-        let forbidden = ["Rahmen", "Kostenlos", "Mittelgrau", "Abkürzung", "Personen suchen", "Geschw."];
+        let forbidden = [
+            "Rahmen",
+            "Kostenlos",
+            "Mittelgrau",
+            "Abkürzung",
+            "Personen suchen",
+            "Geschw.",
+        ];
         for line in DE.lines().filter(|l| !l.starts_with('#')) {
             for f in forbidden {
                 assert!(!line.contains(f), "Glossar-Verstoß „{f}“ in: {line}");
@@ -197,6 +228,9 @@ mod tests {
     fn pseudo_is_longer() {
         let p = I18n::new(Lang::Pseudo);
         let s = p.t("import-media");
-        assert!(s.starts_with('[') && s.chars().count() as f32 >= "Import media …".chars().count() as f32 * 1.4);
+        assert!(
+            s.starts_with('[')
+                && s.chars().count() as f32 >= "Import media …".chars().count() as f32 * 1.4
+        );
     }
 }

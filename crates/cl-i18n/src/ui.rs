@@ -56,7 +56,9 @@ fn parse(src: &'static str) -> Dict {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some((de, en)) = line.split_once('\t') else { continue };
+        let Some((de, en)) = line.split_once('\t') else {
+            continue;
+        };
         if de.contains("{}") {
             templates.push((de.split("{}").collect(), en));
         } else {
@@ -64,14 +66,18 @@ fn parse(src: &'static str) -> Dict {
         }
     }
     // Längere (spezifischere) Vorlagen zuerst
-    templates.sort_by_key(|(parts, _): &(Vec<&str>, &str)| std::cmp::Reverse(parts.iter().map(|p| p.len()).sum::<usize>()));
+    templates.sort_by_key(|(parts, _): &(Vec<&str>, &str)| {
+        std::cmp::Reverse(parts.iter().map(|p| p.len()).sum::<usize>())
+    });
     Dict { exact, templates }
 }
 
 static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 fn is_icon(c: char) -> bool {
-    matches!(c, '◇' | '◆' | '●' | '○' | '•' | '✓') || ('\u{E000}'..='\u{F8FF}').contains(&c) ||('\u{F0000}'..='\u{FFFFD}').contains(&c)
+    matches!(c, '◇' | '◆' | '●' | '○' | '•' | '✓')
+        || ('\u{E000}'..='\u{F8FF}').contains(&c)
+        || ('\u{F0000}'..='\u{FFFFD}').contains(&c)
 }
 
 /// Übersetzt einen sichtbaren Oberflächentext in die eingestellte Sprache.
@@ -103,8 +109,17 @@ fn translate(s: &str) -> String {
 
 fn lookup(s: &str) -> String {
     // Icons und Leerraum am Rand abtrennen
-    let start = s.char_indices().find(|(_, c)| !is_icon(*c) && !c.is_whitespace()).map(|(i, _)| i).unwrap_or(s.len());
-    let end = s.char_indices().rev().find(|(_, c)| !is_icon(*c) && !c.is_whitespace()).map(|(i, c)| i + c.len_utf8()).unwrap_or(start);
+    let start = s
+        .char_indices()
+        .find(|(_, c)| !is_icon(*c) && !c.is_whitespace())
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    let end = s
+        .char_indices()
+        .rev()
+        .find(|(_, c)| !is_icon(*c) && !c.is_whitespace())
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(start);
     if start >= end {
         return s.to_string();
     }
@@ -224,11 +239,17 @@ fn fill(en: &str, vals: &[&str]) -> String {
 
 fn report_missing(s: &str) {
     static SEEN: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
-    let Ok(path) = std::env::var("CUTLINE_MISSING_TR") else { return };
+    let Ok(path) = std::env::var("CUTLINE_MISSING_TR") else {
+        return;
+    };
     let seen = SEEN.get_or_init(Default::default);
     if seen.lock().unwrap().insert(s.to_string()) {
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             let _ = writeln!(f, "{}", s.replace('\n', "\\n"));
         }
     }
@@ -236,7 +257,11 @@ fn report_missing(s: &str) {
 
 /// Alle deutschen Schlüssel (für Tests).
 pub fn entries() -> Vec<(&'static str, &'static str)> {
-    EN_TSV.lines().filter(|l| !l.is_empty() && !l.starts_with('#')).filter_map(|l| l.split_once('\t')).collect()
+    EN_TSV
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| l.split_once('\t'))
+        .collect()
 }
 
 #[cfg(test)]
@@ -248,7 +273,10 @@ mod tests {
         assert_eq!(translate("Abbrechen"), "Cancel");
         assert_eq!(translate("\u{e0f0}  Abbrechen"), "\u{e0f0}  Cancel");
         assert_eq!(fill("{2} of {1}", &["a", "b"]), "b of a");
-        assert_eq!(match_template("3 Clips gelöscht", &["", " Clips gelöscht"]), Some(vec!["3"]));
+        assert_eq!(
+            match_template("3 Clips gelöscht", &["", " Clips gelöscht"]),
+            Some(vec!["3"])
+        );
         assert_eq!(translate("unbekannter Text"), "unbekannter Text");
     }
 
@@ -258,7 +286,11 @@ mod tests {
         for (de, en) in entries() {
             assert!(seen.insert(de), "doppelt: {de}");
             assert!(!en.trim().is_empty(), "leer: {de}");
-            assert_eq!(de.matches("{}").count(), en.matches('{').count(), "Platzhalter: {de}");
+            assert_eq!(
+                de.matches("{}").count(),
+                en.matches('{').count(),
+                "Platzhalter: {de}"
+            );
         }
     }
 }

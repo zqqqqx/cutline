@@ -18,7 +18,16 @@ const WORK_W: u32 = 320;
 pub const FPS: f64 = 15.0;
 
 /// Ergebnis: (Zeit relativ zu `start`, Mitte x, Mitte y) normiert.
-pub fn track(path: &Path, src_w: u32, src_h: u32, start: f64, dur: f64, init: BoxN, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Result<Vec<(f64, f32, f32)>, String> {
+pub fn track(
+    path: &Path,
+    src_w: u32,
+    src_h: u32,
+    start: f64,
+    dur: f64,
+    init: BoxN,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
+) -> Result<Vec<(f64, f32, f32)>, String> {
     let ww = WORK_W.min(src_w.max(2)) & !1;
     let wh = (((ww as f64 * src_h as f64 / src_w.max(1) as f64).round() as u32).max(2)) & !1;
     let (w, h) = (ww as i32, wh as i32);
@@ -35,7 +44,12 @@ pub fn track(path: &Path, src_w: u32, src_h: u32, start: f64, dur: f64, init: Bo
             return false;
         }
         let px = |x: i32, y: i32| f[(y.clamp(0, h - 1) * w + x.clamp(0, w - 1)) as usize] as f32;
-        let patch = |x0: i32, y0: i32| -> Vec<f32> { (0..th).flat_map(|y| (0..tw).map(move |x| (x, y))).map(|(x, y)| px(x0 + x, y0 + y)).collect() };
+        let patch = |x0: i32, y0: i32| -> Vec<f32> {
+            (0..th)
+                .flat_map(|y| (0..tw).map(move |x| (x, y)))
+                .map(|(x, y)| px(x0 + x, y0 + y))
+                .collect()
+        };
         if i == 0 {
             tpl = patch(cx as i32 - tw / 2, cy as i32 - th / 2);
         } else {
@@ -105,14 +119,46 @@ mod tests {
         // gemustertes Kästchen wandert von x=40 nach x=240 (2 s), y fest
         let st = cl_media::ffmpeg_command()
             .unwrap()
-            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "color=0x203040:s=320x180:r=25:d=2", "-f", "lavfi", "-i", "testsrc2=s=40x40:r=25:d=2"])
-            .args(["-filter_complex", "[0][1]overlay=x='40+100*t':y=70", "-pix_fmt", "yuv420p"])
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=0x203040:s=320x180:r=25:d=2",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=40x40:r=25:d=2",
+            ])
+            .args([
+                "-filter_complex",
+                "[0][1]overlay=x='40+100*t':y=70",
+                "-pix_fmt",
+                "yuv420p",
+            ])
             .arg(&v)
             .status()
             .unwrap();
         assert!(st.success());
-        let init = BoxN { cx: 60.0 / 320.0, cy: 90.0 / 180.0, w: 40.0 / 320.0, h: 40.0 / 180.0 };
-        let path = track(&v, 320, 180, 0.0, 2.0, init, &|_| {}, &AtomicBool::new(false)).unwrap();
+        let init = BoxN {
+            cx: 60.0 / 320.0,
+            cy: 90.0 / 180.0,
+            w: 40.0 / 320.0,
+            h: 40.0 / 180.0,
+        };
+        let path = track(
+            &v,
+            320,
+            180,
+            0.0,
+            2.0,
+            init,
+            &|_| {},
+            &AtomicBool::new(false),
+        )
+        .unwrap();
         assert!(path.len() >= 28);
         for (t, x, y) in &path {
             let ex = (60.0 + 100.0 * t) / 320.0;

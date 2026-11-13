@@ -115,7 +115,8 @@ pub fn inspect(data: &[u8]) -> Result<Vec<FaceInfo>> {
     let count = ttf_parser::fonts_in_collection(sfnt).unwrap_or(1);
     let mut faces = Vec::new();
     for index in 0..count {
-        let face = ttf_parser::Face::parse(sfnt, index).map_err(|e| FontError::Corrupt(e.to_string()))?;
+        let face =
+            ttf_parser::Face::parse(sfnt, index).map_err(|e| FontError::Corrupt(e.to_string()))?;
         faces.push(face_info(&face, index));
     }
     if faces.is_empty() {
@@ -144,9 +145,12 @@ fn best_name(face: &ttf_parser::Face, ids: &[u16]) -> Option<String> {
 
 fn face_info(face: &ttf_parser::Face, index: u32) -> FaceInfo {
     use ttf_parser::name_id;
-    let family = best_name(face, &[name_id::TYPOGRAPHIC_FAMILY, name_id::FAMILY]).unwrap_or_else(|| "Unbenannt".into());
-    let style = best_name(face, &[name_id::TYPOGRAPHIC_SUBFAMILY, name_id::SUBFAMILY]).unwrap_or_else(|| "Regular".into());
-    let full_name = best_name(face, &[name_id::FULL_NAME]).unwrap_or_else(|| format!("{family} {style}"));
+    let family = best_name(face, &[name_id::TYPOGRAPHIC_FAMILY, name_id::FAMILY])
+        .unwrap_or_else(|| "Unbenannt".into());
+    let style = best_name(face, &[name_id::TYPOGRAPHIC_SUBFAMILY, name_id::SUBFAMILY])
+        .unwrap_or_else(|| "Regular".into());
+    let full_name =
+        best_name(face, &[name_id::FULL_NAME]).unwrap_or_else(|| format!("{family} {style}"));
     let t = face.tables();
     let axes = face
         .variation_axes()
@@ -180,7 +184,9 @@ fn face_info(face: &ttf_parser::Face, index: u32) -> FaceInfo {
 }
 
 fn be_u16(d: &[u8], o: usize) -> Result<u16> {
-    d.get(o..o + 2).map(|b| u16::from_be_bytes([b[0], b[1]])).ok_or_else(|| FontError::Corrupt("WOFF zu kurz".into()))
+    d.get(o..o + 2)
+        .map(|b| u16::from_be_bytes([b[0], b[1]]))
+        .ok_or_else(|| FontError::Corrupt("WOFF zu kurz".into()))
 }
 fn be_u32(d: &[u8], o: usize) -> Result<u32> {
     d.get(o..o + 4)
@@ -203,7 +209,9 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
         let comp = be_u32(d, e + 8)? as usize;
         let orig = be_u32(d, e + 12)? as usize;
         let csum = be_u32(d, e + 16)?;
-        let src = d.get(off..off + comp).ok_or_else(|| FontError::Corrupt("WOFF-Tabelle außerhalb".into()))?;
+        let src = d
+            .get(off..off + comp)
+            .ok_or_else(|| FontError::Corrupt("WOFF-Tabelle außerhalb".into()))?;
         let data = if comp < orig {
             let mut out = Vec::with_capacity(orig);
             flate2::read::ZlibDecoder::new(src)
@@ -275,15 +283,36 @@ pub struct FontLibrary {
 fn identity(infos: &[FaceInfo]) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for i in infos {
-        (&i.full_name, &i.family, &i.style, i.weight, i.italic, i.glyph_count).hash(&mut h);
+        (
+            &i.full_name,
+            &i.family,
+            &i.style,
+            i.weight,
+            i.italic,
+            i.glyph_count,
+        )
+            .hash(&mut h);
     }
     h.finish()
 }
 
 fn sanitize(s: &str) -> String {
-    let s: String = s.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' }).collect();
+    let s: String = s
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     let s = s.trim_matches('_').to_string();
-    if s.is_empty() { "font".into() } else { s }
+    if s.is_empty() {
+        "font".into()
+    } else {
+        s
+    }
 }
 
 impl FontLibrary {
@@ -291,7 +320,10 @@ impl FontLibrary {
     pub fn open(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
         std::fs::create_dir_all(&root)?;
-        let mut lib = Self { root, ..Default::default() };
+        let mut lib = Self {
+            root,
+            ..Default::default()
+        };
         lib.rescan()?;
         Ok(lib)
     }
@@ -305,7 +337,10 @@ impl FontLibrary {
         self.faces.clear();
         self.hashes.clear();
         self.errors.clear();
-        let mut entries: Vec<_> = std::fs::read_dir(&self.root)?.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        let mut entries: Vec<_> = std::fs::read_dir(&self.root)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .collect();
         entries.sort();
         for path in entries.into_iter().filter(|p| p.is_file()) {
             let data = match std::fs::read(&path) {
@@ -318,7 +353,10 @@ impl FontLibrary {
             match inspect(&data) {
                 Ok(infos) => {
                     self.hashes.insert(identity(&infos));
-                    self.faces.extend(infos.into_iter().map(|info| LibraryFace { path: path.clone(), info }));
+                    self.faces.extend(infos.into_iter().map(|info| LibraryFace {
+                        path: path.clone(),
+                        info,
+                    }));
                 }
                 Err(FontError::UnknownFormat) => {} // fremde Dateien ignorieren
                 Err(e) => self.errors.push((path, e.to_string())),
@@ -330,7 +368,10 @@ impl FontLibrary {
     /// Importiert eine Schriftdatei: prüfen, WOFF entpacken, Duplikate erkennen, ablegen.
     pub fn import_file(&mut self, src: &Path) -> Result<ImportReport> {
         let data = std::fs::read(src)?;
-        let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let stem = src
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         self.import_bytes(&data, &stem)
     }
 
@@ -348,12 +389,23 @@ impl FontLibrary {
         let infos = inspect(&bytes)?;
         let hash = identity(&infos);
         if self.hashes.contains(&hash) {
-            return Ok(ImportReport { stored_as: None, added: Vec::new(), duplicate: true });
+            return Ok(ImportReport {
+                stored_as: None,
+                added: Vec::new(),
+                duplicate: true,
+            });
         }
         let base = if infos.len() == 1 {
             sanitize(&format!("{}-{}", infos[0].family, infos[0].style))
         } else {
-            sanitize(&format!("{}-collection", if name_hint.is_empty() { &infos[0].family } else { name_hint }))
+            sanitize(&format!(
+                "{}-collection",
+                if name_hint.is_empty() {
+                    &infos[0].family
+                } else {
+                    name_hint
+                }
+            ))
         };
         let mut target = self.root.join(format!("{base}.{}", format.extension()));
         let mut n = 2;
@@ -363,8 +415,16 @@ impl FontLibrary {
         }
         std::fs::write(&target, &bytes)?;
         self.hashes.insert(hash);
-        self.faces.extend(infos.iter().cloned().map(|info| LibraryFace { path: target.clone(), info }));
-        Ok(ImportReport { stored_as: Some(target), added: infos, duplicate: false })
+        self.faces
+            .extend(infos.iter().cloned().map(|info| LibraryFace {
+                path: target.clone(),
+                info,
+            }));
+        Ok(ImportReport {
+            stored_as: Some(target),
+            added: infos,
+            duplicate: false,
+        })
     }
 
     pub fn faces(&self) -> &[LibraryFace] {
@@ -393,8 +453,12 @@ impl FontLibrary {
 
     /// Entfernt alle Dateien einer Familie aus der Bibliothek.
     pub fn remove_family(&mut self, family: &str) -> Result<usize> {
-        let paths: HashSet<PathBuf> =
-            self.faces.iter().filter(|f| f.info.family == family).map(|f| f.path.clone()).collect();
+        let paths: HashSet<PathBuf> = self
+            .faces
+            .iter()
+            .filter(|f| f.info.family == family)
+            .map(|f| f.path.clone())
+            .collect();
         for p in &paths {
             std::fs::remove_file(p)?;
         }
@@ -403,7 +467,11 @@ impl FontLibrary {
     }
 
     /// Welche der benötigten Familien fehlen (für den Dialog „Fehlende Schriften“)?
-    pub fn missing<'a>(&self, needed: impl IntoIterator<Item = &'a str>, system: &HashSet<String>) -> Vec<String> {
+    pub fn missing<'a>(
+        &self,
+        needed: impl IntoIterator<Item = &'a str>,
+        system: &HashSet<String>,
+    ) -> Vec<String> {
         let have: HashSet<&str> = self.faces.iter().map(|f| f.info.family.as_str()).collect();
         let mut v: Vec<String> = needed
             .into_iter()
@@ -420,10 +488,17 @@ impl FontLibrary {
 pub fn text_width(data: &[u8], index: u32, size: f32, text: &str) -> Option<f32> {
     let face = ttf_parser::Face::parse(data, index).ok()?;
     let upem = face.units_per_em() as f32;
-    let fallback = face.glyph_hor_advance(face.glyph_index(' ').unwrap_or_default()).unwrap_or(0) as f32;
+    let fallback = face
+        .glyph_hor_advance(face.glyph_index(' ').unwrap_or_default())
+        .unwrap_or(0) as f32;
     Some(
         text.chars()
-            .map(|c| face.glyph_index(c).and_then(|g| face.glyph_hor_advance(g)).map(|a| a as f32).unwrap_or(fallback))
+            .map(|c| {
+                face.glyph_index(c)
+                    .and_then(|g| face.glyph_hor_advance(g))
+                    .map(|a| a as f32)
+                    .unwrap_or(fallback)
+            })
             .sum::<f32>()
             * size
             / upem,
@@ -436,8 +511,14 @@ pub fn wrap_text(data: &[u8], index: u32, size: f32, text: &str, max_width: f32)
     for para in text.split('\n') {
         let mut line = String::new();
         for word in para.split_whitespace() {
-            let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
-            if !line.is_empty() && text_width(data, index, size, &candidate).unwrap_or(0.0) > max_width {
+            let candidate = if line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{line} {word}")
+            };
+            if !line.is_empty()
+                && text_width(data, index, size, &candidate).unwrap_or(0.0) > max_width
+            {
                 lines.push(std::mem::take(&mut line));
                 line = word.to_string();
             } else {
@@ -457,7 +538,12 @@ pub fn system_font_dirs() -> Vec<PathBuf> {
             v.push(PathBuf::from(w).join("Fonts"));
         }
         if let Some(l) = std::env::var_os("LOCALAPPDATA") {
-            v.push(PathBuf::from(l).join("Microsoft").join("Windows").join("Fonts"));
+            v.push(
+                PathBuf::from(l)
+                    .join("Microsoft")
+                    .join("Windows")
+                    .join("Fonts"),
+            );
         }
     } else if cfg!(target_os = "macos") {
         v.extend(["/System/Library/Fonts", "/Library/Fonts"].map(PathBuf::from));
@@ -476,7 +562,9 @@ pub fn system_font_dirs() -> Vec<PathBuf> {
 /// Familiennamen aller Systemschriften (rekursiv, Fehler werden übersprungen).
 pub fn system_families() -> HashSet<String> {
     fn walk(dir: &Path, out: &mut HashSet<String>, depth: u8) {
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in rd.flatten() {
             let p = e.path();
             if p.is_dir() && depth < 4 {
@@ -528,10 +616,15 @@ mod tests {
             let off = u32::from_be_bytes(s[r + 8..r + 12].try_into().unwrap()) as usize;
             let len = u32::from_be_bytes(s[r + 12..r + 16].try_into().unwrap()) as usize;
             let raw = &s[off..off + len];
-            let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+            let mut enc =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
             enc.write_all(raw).unwrap();
             let comp = enc.finish().unwrap();
-            let data = if comp.len() < raw.len() { comp } else { raw.to_vec() };
+            let data = if comp.len() < raw.len() {
+                comp
+            } else {
+                raw.to_vec()
+            };
             entries.push((tag.to_vec(), csum.to_vec(), len, data));
         }
         let mut out = vec![0u8; 44 + num * 20];
@@ -584,7 +677,10 @@ mod tests {
         assert!(lib2.regular_face(&family).is_some());
 
         let empty = HashSet::new();
-        assert_eq!(lib.missing([family.as_str(), "Gibt Es Nicht"], &empty), vec!["Gibt Es Nicht".to_string()]);
+        assert_eq!(
+            lib.missing([family.as_str(), "Gibt Es Nicht"], &empty),
+            vec!["Gibt Es Nicht".to_string()]
+        );
 
         assert_eq!(lib.remove_family(&family).unwrap(), 1);
         assert!(lib.faces().is_empty());
@@ -604,8 +700,14 @@ mod tests {
 
     #[test]
     fn rejects_garbage_and_woff2() {
-        assert!(matches!(inspect(b"hallo welt"), Err(FontError::UnknownFormat)));
-        assert!(matches!(inspect(b"wOF2\0\0\0\0"), Err(FontError::Woff2Unsupported)));
+        assert!(matches!(
+            inspect(b"hallo welt"),
+            Err(FontError::UnknownFormat)
+        ));
+        assert!(matches!(
+            inspect(b"wOF2\0\0\0\0"),
+            Err(FontError::Woff2Unsupported)
+        ));
         assert!(matches!(inspect(b"OTTO\0\0"), Err(FontError::Corrupt(_))));
     }
 }

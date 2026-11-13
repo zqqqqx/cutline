@@ -3,7 +3,9 @@ use std::fmt;
 use std::ops::{Add, Sub};
 
 /// Zeitpunkt bzw. Dauer in Mikrosekunden.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 #[serde(transparent)]
 pub struct Time(pub i64);
 
@@ -33,7 +35,13 @@ impl Time {
         let fps_f = fps.as_f64();
         let secs = total.floor() as i64;
         let frames = ((total - secs as f64) * fps_f).floor() as i64;
-        format!("{:02}:{:02}:{:02}:{:02}", secs / 3600, (secs / 60) % 60, secs % 60, frames)
+        format!(
+            "{:02}:{:02}:{:02}:{:02}",
+            secs / 3600,
+            (secs / 60) % 60,
+            secs % 60,
+            frames
+        )
     }
 }
 
@@ -98,7 +106,13 @@ mod tests {
     fn timecode_and_parse() {
         let fps = Rational::parse("30000/1001").unwrap();
         assert!((fps.as_f64() - 29.97).abs() < 0.01);
-        assert_eq!(Rational::parse("29.97").unwrap(), Rational::new(30000, 1001));
-        assert_eq!(Time::from_secs_f64(3661.5).timecode(Rational::new(30, 1)), "01:01:01:15");
+        assert_eq!(
+            Rational::parse("29.97").unwrap(),
+            Rational::new(30000, 1001)
+        );
+        assert_eq!(
+            Time::from_secs_f64(3661.5).timecode(Rational::new(30, 1)),
+            "01:01:01:15"
+        );
     }
 }

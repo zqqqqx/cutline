@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 macro_rules! id_type {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+        #[derive(
+            Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+        )]
         #[serde(transparent)]
         pub struct $name(pub uuid::Uuid);
         impl $name {
@@ -88,7 +90,12 @@ impl Project {
             .tracks
             .iter()
             .filter(|tr| !tr.hidden)
-            .flat_map(|tr| tr.clips.iter().filter(move |c| c.contains(t)).map(move |c| (tr, c)))
+            .flat_map(|tr| {
+                tr.clips
+                    .iter()
+                    .filter(move |c| c.contains(t))
+                    .map(move |c| (tr, c))
+            })
             .collect()
     }
 
@@ -261,10 +268,23 @@ pub struct Track {
 
 impl Track {
     pub fn new(kind: TrackKind) -> Self {
-        Self { id: TrackId::new(), kind, main: false, locked: false, hidden: false, muted: false, clips: Vec::new(), name: None }
+        Self {
+            id: TrackId::new(),
+            kind,
+            main: false,
+            locked: false,
+            hidden: false,
+            muted: false,
+            clips: Vec::new(),
+            name: None,
+        }
     }
     pub fn end(&self) -> Time {
-        self.clips.iter().map(|c| c.end()).max().unwrap_or(Time::ZERO)
+        self.clips
+            .iter()
+            .map(|c| c.end())
+            .max()
+            .unwrap_or(Time::ZERO)
     }
     pub(crate) fn sort(&mut self) {
         self.clips.sort_by_key(|c| c.start);
@@ -363,7 +383,13 @@ impl Clip {
         self.beats
             .iter()
             .filter(|b| **b >= self.source_in && **b <= self.source_in + span)
-            .map(|b| self.start + Time(((b.0 - self.source_in.0) as f64 / self.speed.max(0.01) as f64).round() as i64))
+            .map(|b| {
+                self.start
+                    + Time(
+                        ((b.0 - self.source_in.0) as f64 / self.speed.max(0.01) as f64).round()
+                            as i64,
+                    )
+            })
             .collect()
     }
     pub fn end(&self) -> Time {
@@ -400,7 +426,9 @@ impl Clip {
             x: k.eval(Prop::X, t_rel).unwrap_or(self.transform.x),
             y: k.eval(Prop::Y, t_rel).unwrap_or(self.transform.y),
             scale: k.eval(Prop::Scale, t_rel).unwrap_or(self.transform.scale),
-            rotation_deg: k.eval(Prop::Rotation, t_rel).unwrap_or(self.transform.rotation_deg),
+            rotation_deg: k
+                .eval(Prop::Rotation, t_rel)
+                .unwrap_or(self.transform.rotation_deg),
             opacity: k.eval(Prop::Opacity, t_rel).unwrap_or(self.opacity),
             volume_db: k.eval(Prop::Volume, t_rel).unwrap_or(self.volume_db),
         };
@@ -419,18 +447,28 @@ impl Clip {
         if let Some(a) = &self.anim.outro {
             let left = self.duration - t_rel;
             if left < a.duration && a.duration.0 > 0 {
-                apply(anim_delta(&a.id, left.0.max(0) as f32 / a.duration.0 as f32));
+                apply(anim_delta(
+                    &a.id,
+                    left.0.max(0) as f32 / a.duration.0 as f32,
+                ));
             }
         }
         if let Some(a) = &self.anim.combo {
-            apply(combo_delta(&a.id, t_rel.as_secs_f64() as f32, a.duration.as_secs_f64() as f32));
+            apply(combo_delta(
+                &a.id,
+                t_rel.as_secs_f64() as f32,
+                a.duration.as_secs_f64() as f32,
+            ));
         }
         e.opacity = e.opacity.clamp(0.0, 1.0);
         e
     }
     pub fn kind(&self) -> TrackKind {
         match &self.content {
-            ClipContent::Media { kind: MediaKind::Audio, .. } => TrackKind::Audio,
+            ClipContent::Media {
+                kind: MediaKind::Audio,
+                ..
+            } => TrackKind::Audio,
             ClipContent::Media { .. } => TrackKind::Video,
             ClipContent::Text(_) => TrackKind::Text,
         }
@@ -511,6 +549,11 @@ pub struct Transform {
 
 impl Default for Transform {
     fn default() -> Self {
-        Self { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0 }
+        Self {
+            x: 0.0,
+            y: 0.0,
+            scale: 1.0,
+            rotation_deg: 0.0,
+        }
     }
 }

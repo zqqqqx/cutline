@@ -52,7 +52,22 @@ pub fn render(s: &Sfx, out: &Path) -> Result<(), String> {
     }
     let o = cl_media::ffmpeg_command()
         .map_err(|e| e.to_string())?
-        .args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", s.source, "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le"])
+        .args([
+            "-v",
+            "error",
+            "-nostdin",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            s.source,
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-c:a",
+            "pcm_s16le",
+        ])
         .arg(out)
         .stdin(Stdio::null())
         .output()
@@ -80,7 +95,10 @@ mod tests {
             render(s, &p).unwrap_or_else(|e| panic!("{}: {e}", s.id));
             let m = cl_media::probe(&p).unwrap();
             assert!(m.duration.as_secs_f64() > 0.03, "{}", s.id);
-            let peak = cl_media::waveform(&p, 50).unwrap().into_iter().fold(0.0, f32::max);
+            let peak = cl_media::waveform(&p, 50)
+                .unwrap()
+                .into_iter()
+                .fold(0.0, f32::max);
             assert!(peak > 0.05, "{} ist stumm ({peak})", s.id);
         }
         assert!(SFX.len() >= 20);

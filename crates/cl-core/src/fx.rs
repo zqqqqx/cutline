@@ -22,7 +22,11 @@ pub struct FxRef {
 
 impl FxRef {
     pub fn new(id: impl Into<String>) -> Self {
-        Self { id: id.into(), intensity: 1.0, params: BTreeMap::new() }
+        Self {
+            id: id.into(),
+            intensity: 1.0,
+            params: BTreeMap::new(),
+        }
     }
 }
 
@@ -86,7 +90,16 @@ pub struct Mask {
 
 impl Mask {
     pub fn new(shape: MaskShape) -> Self {
-        Self { shape, cx: 0.5, cy: 0.5, w: 0.6, h: 0.6, rotation_deg: 0.0, feather: 0.05, invert: false }
+        Self {
+            shape,
+            cx: 0.5,
+            cy: 0.5,
+            w: 0.6,
+            h: 0.6,
+            rotation_deg: 0.0,
+            feather: 0.05,
+            invert: false,
+        }
     }
 }
 
@@ -143,8 +156,13 @@ impl PersonFx {
     }
     pub fn from_index(i: usize) -> Self {
         match i {
-            1 => PersonFx::ColorBackground { color: [24, 120, 255] },
-            2 => PersonFx::Outline { color: [255, 255, 255], width: 0.4 },
+            1 => PersonFx::ColorBackground {
+                color: [24, 120, 255],
+            },
+            2 => PersonFx::Outline {
+                color: [255, 255, 255],
+                width: 0.4,
+            },
             _ => PersonFx::BlurBackground { amount: 0.6 },
         }
     }
@@ -163,7 +181,12 @@ pub struct ChromaKey {
 
 impl Default for ChromaKey {
     fn default() -> Self {
-        Self { color: [0, 177, 64], similarity: 0.18, blend: 0.08, spill: 0.5 }
+        Self {
+            color: [0, 177, 64],
+            similarity: 0.18,
+            blend: 0.08,
+            spill: 0.5,
+        }
     }
 }
 
@@ -207,7 +230,14 @@ pub enum Prop {
 }
 
 impl Prop {
-    pub const ALL: [Prop; 6] = [Prop::X, Prop::Y, Prop::Scale, Prop::Rotation, Prop::Opacity, Prop::Volume];
+    pub const ALL: [Prop; 6] = [
+        Prop::X,
+        Prop::Y,
+        Prop::Scale,
+        Prop::Rotation,
+        Prop::Opacity,
+        Prop::Volume,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -260,12 +290,18 @@ impl Keyframes {
         if let Some(k) = list.iter_mut().find(|k| (k.t.0 - t.0).abs() < 1000) {
             k.v = v;
         } else {
-            list.push(Keyframe { t, v, ease: Ease::EaseInOut });
+            list.push(Keyframe {
+                t,
+                v,
+                ease: Ease::EaseInOut,
+            });
             list.sort_by_key(|k| k.t);
         }
     }
     pub fn remove(&mut self, p: Prop, t: Time) -> bool {
-        let Some(list) = self.0.get_mut(&p) else { return false };
+        let Some(list) = self.0.get_mut(&p) else {
+            return false;
+        };
         let before = list.len();
         list.retain(|k| (k.t.0 - t.0).abs() >= 1000);
         let removed = list.len() != before;
@@ -304,7 +340,11 @@ impl Keyframes {
     }
     /// Alle Keyframe-Zeiten (für die Anzeige in der Zeitleiste).
     pub fn times(&self) -> Vec<Time> {
-        let mut v: Vec<Time> = self.0.values().flat_map(|l| l.iter().map(|k| k.t)).collect();
+        let mut v: Vec<Time> = self
+            .0
+            .values()
+            .flat_map(|l| l.iter().map(|k| k.t))
+            .collect();
         v.sort();
         v.dedup_by(|a, b| (a.0 - b.0).abs() < 1000);
         v
@@ -361,7 +401,13 @@ pub struct AnimDelta {
 }
 
 impl AnimDelta {
-    pub const NONE: AnimDelta = AnimDelta { dx: 0.0, dy: 0.0, scale_mul: 1.0, rot_add: 0.0, opacity_mul: 1.0 };
+    pub const NONE: AnimDelta = AnimDelta {
+        dx: 0.0,
+        dy: 0.0,
+        scale_mul: 1.0,
+        rot_add: 0.0,
+        opacity_mul: 1.0,
+    };
 }
 
 /// Eingebaute Ein-/Ausblend-Animationen (id, Name).
@@ -381,7 +427,12 @@ pub const ANIMATIONS: &[(&str, &str)] = &[
 ];
 
 /// Kombi-Animationen über die ganze Dauer (id, Name).
-pub const COMBO_ANIMATIONS: &[(&str, &str)] = &[("pulse", "Pulsieren"), ("wobble", "Wackeln"), ("float", "Schweben"), ("spin-loop", "Rotieren")];
+pub const COMBO_ANIMATIONS: &[(&str, &str)] = &[
+    ("pulse", "Pulsieren"),
+    ("wobble", "Wackeln"),
+    ("float", "Schweben"),
+    ("spin-loop", "Rotieren"),
+];
 
 pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
     let p = p.clamp(0.0, 1.0);
@@ -403,7 +454,11 @@ pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
             d.opacity_mul = p;
         }
         "pop" => {
-            let s = if p < 0.7 { p / 0.7 * 1.15 } else { 1.15 - (p - 0.7) / 0.3 * 0.15 };
+            let s = if p < 0.7 {
+                p / 0.7 * 1.15
+            } else {
+                1.15 - (p - 0.7) / 0.3 * 0.15
+            };
             d.scale_mul = s.max(0.01);
         }
         "spin" => {
@@ -444,12 +499,42 @@ pub fn combo_delta(id: &str, t: f32, period: f32) -> AnimDelta {
 
 /// Geschwindigkeitskurven: Stützpunkte (Position 0…1 in der Clipzeit, relative Geschwindigkeit).
 pub const SPEED_CURVES: &[(&str, &str, &[(f32, f32)])] = &[
-    ("montage", "Montage", &[(0.0, 1.0), (0.3, 4.0), (0.5, 0.4), (0.7, 4.0), (1.0, 1.0)]),
-    ("hero", "Held", &[(0.0, 2.5), (0.35, 2.5), (0.5, 0.25), (0.65, 2.5), (1.0, 2.5)]),
-    ("bullet", "Kugel", &[(0.0, 3.0), (0.4, 0.2), (0.6, 0.2), (1.0, 3.0)]),
-    ("jump-cut", "Sprung", &[(0.0, 1.0), (0.45, 1.0), (0.5, 6.0), (0.55, 1.0), (1.0, 1.0)]),
-    ("flash-in", "Blitz rein", &[(0.0, 5.0), (0.4, 1.0), (1.0, 1.0)]),
-    ("flash-out", "Blitz raus", &[(0.0, 1.0), (0.6, 1.0), (1.0, 5.0)]),
+    (
+        "montage",
+        "Montage",
+        &[(0.0, 1.0), (0.3, 4.0), (0.5, 0.4), (0.7, 4.0), (1.0, 1.0)],
+    ),
+    (
+        "hero",
+        "Held",
+        &[
+            (0.0, 2.5),
+            (0.35, 2.5),
+            (0.5, 0.25),
+            (0.65, 2.5),
+            (1.0, 2.5),
+        ],
+    ),
+    (
+        "bullet",
+        "Kugel",
+        &[(0.0, 3.0), (0.4, 0.2), (0.6, 0.2), (1.0, 3.0)],
+    ),
+    (
+        "jump-cut",
+        "Sprung",
+        &[(0.0, 1.0), (0.45, 1.0), (0.5, 6.0), (0.55, 1.0), (1.0, 1.0)],
+    ),
+    (
+        "flash-in",
+        "Blitz rein",
+        &[(0.0, 5.0), (0.4, 1.0), (1.0, 1.0)],
+    ),
+    (
+        "flash-out",
+        "Blitz raus",
+        &[(0.0, 1.0), (0.6, 1.0), (1.0, 5.0)],
+    ),
     ("ease-in", "Langsam rein", &[(0.0, 0.3), (1.0, 2.0)]),
     ("ease-out", "Langsam raus", &[(0.0, 2.0), (1.0, 0.3)]),
 ];
@@ -471,7 +556,9 @@ fn curve_speed(pts: &[(f32, f32)], u: f32) -> f32 {
 
 /// Anteil des Quellbereichs, der bei Clip-Fortschritt `u` (0…1) erreicht ist.
 pub fn curve_progress(id: &str, u: f32) -> f32 {
-    let Some(pts) = curve_points(id) else { return u.clamp(0.0, 1.0) };
+    let Some(pts) = curve_points(id) else {
+        return u.clamp(0.0, 1.0);
+    };
     const N: usize = 64;
     let u = u.clamp(0.0, 1.0);
     let mut total = 0.0;

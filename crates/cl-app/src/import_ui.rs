@@ -33,7 +33,10 @@ impl App {
     pub fn start_import(&mut self, path: PathBuf, ctx: &egui::Context) {
         let (tx, rx) = channel();
         let c = ctx.clone();
-        let label = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let label = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         std::thread::spawn(move || {
             let _ = tx.send(cl_import::import(&path));
             c.request_repaint();
@@ -43,7 +46,9 @@ impl App {
 
     /// Fertigen Import übernehmen (jeden Frame).
     pub fn poll_import(&mut self) {
-        let Some((_, rx)) = &self.import.running else { return };
+        let Some((_, rx)) = &self.import.running else {
+            return;
+        };
         let Ok(res) = rx.try_recv() else { return };
         self.import.running = None;
         match res {
@@ -66,7 +71,10 @@ impl App {
             self.project_path = Some(p);
         }
         self.screen = Screen::Editor;
-        self.toast(format!("„{name}“ importiert: {} Clips, {} Texte", rep.clips, rep.texts));
+        self.toast(format!(
+            "„{name}“ importiert: {} Clips, {} Texte",
+            rep.clips, rep.texts
+        ));
         if !rep.skipped.is_empty() || !rep.missing.is_empty() {
             self.import.report = Some((name, rep));
         }
@@ -79,19 +87,35 @@ impl App {
             let mut close = false;
             let m = egui::Modal::new(egui::Id::new("import-report")).show(ctx, |ui| {
                 ui.set_width(420.0);
-                ui.label(RichText::new(crate::tr(format!("„{name}“ importiert"))).strong().size(14.0));
+                ui.label(
+                    RichText::new(crate::tr(format!("„{name}“ importiert")))
+                        .strong()
+                        .size(14.0),
+                );
                 ui.add_space(6.0);
                 if !rep.skipped.is_empty() {
-                    ui.label(crate::tr("Nicht übertragen (gibt es nur im Ursprungsprogramm):"));
+                    ui.label(crate::tr(
+                        "Nicht übertragen (gibt es nur im Ursprungsprogramm):",
+                    ));
                     for (w, n) in &rep.skipped {
-                        ui.label(RichText::new(format!("·  {}  ×{n}", crate::tr(w))).color(theme::TEXT_DIM));
+                        ui.label(
+                            RichText::new(format!("·  {}  ×{n}", crate::tr(w)))
+                                .color(theme::TEXT_DIM),
+                        );
                     }
                 }
                 if !rep.missing.is_empty() {
                     ui.add_space(6.0);
-                    ui.label(crate::tr(format!("{} Mediendateien wurden nicht gefunden:", rep.missing.len())));
+                    ui.label(crate::tr(format!(
+                        "{} Mediendateien wurden nicht gefunden:",
+                        rep.missing.len()
+                    )));
                     for p in rep.missing.iter().take(6) {
-                        ui.label(RichText::new(p.display().to_string()).small().color(theme::TEXT_FAINT));
+                        ui.label(
+                            RichText::new(p.display().to_string())
+                                .small()
+                                .color(theme::TEXT_FAINT),
+                        );
                     }
                 }
                 ui.add_space(10.0);
@@ -194,8 +218,13 @@ impl App {
     pub fn import_settings(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new(crate::tr("Projekte aus anderen Schnittprogrammen übernehmen. Eingeschaltete Formate erscheinen auf der Startseite unter „Projekt importieren …“.")).small().color(theme::TEXT_DIM));
         ui.add_space(6.0);
-        let mut changed = widgets::toggle_row(ui, "CapCut-Entwürfe", &mut self.settings.import_capcut);
-        changed |= widgets::toggle_row(ui, "FCPXML (Final Cut Pro, DaVinci Resolve)", &mut self.settings.import_fcpxml);
+        let mut changed =
+            widgets::toggle_row(ui, "CapCut-Entwürfe", &mut self.settings.import_capcut);
+        changed |= widgets::toggle_row(
+            ui,
+            "FCPXML (Final Cut Pro, DaVinci Resolve)",
+            &mut self.settings.import_fcpxml,
+        );
         if changed {
             self.settings.save();
             self.import.drafts = None;
@@ -207,7 +236,13 @@ impl App {
         }
         ui.add_space(8.0);
         ui.add_enabled_ui(self.import_enabled(), |ui| {
-            if ui.add(theme::secondary(format!("{}  Projekt importieren …", icon::DOWNLOAD_SIMPLE))).clicked() {
+            if ui
+                .add(theme::secondary(format!(
+                    "{}  Projekt importieren …",
+                    icon::DOWNLOAD_SIMPLE
+                )))
+                .clicked()
+            {
                 self.settings_open = false;
                 self.import.open = true;
             }

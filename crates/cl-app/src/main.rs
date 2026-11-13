@@ -9,18 +9,18 @@ mod epidemic;
 mod export_ui;
 mod home;
 mod import_ui;
-mod library;
-mod library_ui;
 mod inspector;
 mod keymap;
+mod library;
+mod library_ui;
 mod navigate;
 mod paths;
 mod player;
 mod player_edit;
-mod pro;
 mod presets;
-mod project_tools;
 mod preview;
+mod pro;
+mod project_tools;
 mod proxy;
 mod record;
 mod settings;
@@ -36,7 +36,10 @@ pub use cl_i18n::tr;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use raw_window_handle::{DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle, WindowHandle};
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
+    RawWindowHandle, WindowHandle,
+};
 
 /// Hauptfenster als Elternfenster für Dateidialoge (sonst öffnen sie auf einem anderen Monitor).
 struct Parent {
@@ -60,7 +63,10 @@ static PARENT: OnceLock<Parent> = OnceLock::new();
 
 pub fn set_dialog_parent(cc: &eframe::CreationContext<'_>) {
     if let (Ok(w), Ok(d)) = (cc.window_handle(), cc.display_handle()) {
-        let _ = PARENT.set(Parent { w: w.as_raw(), d: d.as_raw() });
+        let _ = PARENT.set(Parent {
+            w: w.as_raw(),
+            d: d.as_raw(),
+        });
     }
 }
 
@@ -81,7 +87,11 @@ fn main() -> anyhow::Result<()> {
         return run_mcp_stdio(args.get(i + 1).map(std::path::PathBuf::from));
     }
 
-    let open = args.iter().skip(1).find(|a| !a.starts_with("--")).map(std::path::PathBuf::from);
+    let open = args
+        .iter()
+        .skip(1)
+        .find(|a| !a.starts_with("--"))
+        .map(std::path::PathBuf::from);
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Cutline")
         .with_inner_size([1440.0, 900.0])
@@ -113,19 +123,29 @@ fn main() -> anyhow::Result<()> {
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
-    eframe::run_native("Cutline", options, Box::new(move |cc| Ok(Box::new(app::App::new(cc, open)))))
-        .map_err(|e| anyhow::anyhow!("{e}"))
+    eframe::run_native(
+        "Cutline",
+        options,
+        Box::new(move |cc| Ok(Box::new(app::App::new(cc, open)))),
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> anyhow::Result<()> {
     use cl_core::{Document, Project};
     let proj = match &project {
         Some(p) if p.is_file() => Project::from_json(&std::fs::read_to_string(p)?)?,
-        Some(p) => Project::new(p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Projekt".into())),
+        Some(p) => Project::new(
+            p.file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Projekt".into()),
+        ),
         None => Project::new("MCP-Projekt"),
     };
     let doc = Arc::new(Mutex::new(Document::new(proj)));
-    let fonts = cl_fonts::FontLibrary::open(paths::font_dir()).ok().map(|f| Arc::new(Mutex::new(f)));
+    let fonts = cl_fonts::FontLibrary::open(paths::font_dir())
+        .ok()
+        .map(|f| Arc::new(Mutex::new(f)));
     let server = cl_mcp::McpServer::new(doc.clone(), fonts);
     server.serve_stdio()?;
     if let Some(p) = project {

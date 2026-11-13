@@ -37,18 +37,54 @@ pub fn wants_proxy(m: &MediaRef) -> bool {
     }
     let fps = m.fps.map(|f| f.as_f64()).unwrap_or(30.0);
     let codec = m.video_codec.as_deref().unwrap_or("").to_ascii_lowercase();
-    m.height > 1080 || m.width > 1920 || fps > 31.0 || ["hevc", "av1", "prores", "vp9"].iter().any(|c| codec.contains(c))
+    m.height > 1080
+        || m.width > 1920
+        || fps > 31.0
+        || ["hevc", "av1", "prores", "vp9"]
+            .iter()
+            .any(|c| codec.contains(c))
 }
 
 /// Proxy erzeugen: 540p, H.264 sehr schnell, Schlüsselbild alle 10 Bilder (schnelles Springen).
-pub fn build(src: &Path, out: &Path, dur: f64, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Result<(), String> {
+pub fn build(
+    src: &Path,
+    out: &Path,
+    dur: f64,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
+) -> Result<(), String> {
     std::fs::create_dir_all(out.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
     let tmp = out.with_extension("part.mp4");
     let mut child = cl_media::ffmpeg_command()
         .map_err(|e| e.to_string())?
-        .args(["-v", "error", "-y", "-nostdin", "-progress", "pipe:1", "-nostats", "-i"])
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-nostdin",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "-i",
+        ])
         .arg(src)
-        .args(["-map", "0:v:0", "-an", "-vf", "scale=-2:540:flags=bilinear,fps=30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-g", "10", "-pix_fmt", "yuv420p"])
+        .args([
+            "-map",
+            "0:v:0",
+            "-an",
+            "-vf",
+            "scale=-2:540:flags=bilinear,fps=30",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "26",
+            "-g",
+            "10",
+            "-pix_fmt",
+            "yuv420p",
+        ])
         .arg(&tmp)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -94,31 +130,76 @@ impl App {
         if !self.settings.use_proxies || self.tasks.running("proxy").is_some() {
             return;
         }
-        let next = self.project.media.iter().find(|m| wants_proxy(m) && m.path.is_file() && !proxy_path(m).is_file() && !self.proxy_failed.contains(&m.id)).cloned();
+        let next = self
+            .project
+            .media
+            .iter()
+            .find(|m| {
+                wants_proxy(m)
+                    && m.path.is_file()
+                    && !proxy_path(m).is_file()
+                    && !self.proxy_failed.contains(&m.id)
+            })
+            .cloned();
         if let Some(m) = next {
             let out = proxy_path(&m);
             let dur = m.duration.as_secs_f64();
-            let name = m.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let name = m
+                .path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
             let id = m.id;
-            self.tasks.spawn(ctx, "proxy", format!("Proxy wird erstellt: {name}"), move |p, cancel| match build(&m.path, &out, dur, p, cancel) {
-                Ok(()) => TaskDone::Proxy { media: id, ok: true },
-                Err(_) => TaskDone::Proxy { media: id, ok: false },
-            });
+            self.tasks.spawn(
+                ctx,
+                "proxy",
+                format!("Proxy wird erstellt: {name}"),
+                move |p, cancel| match build(&m.path, &out, dur, p, cancel) {
+                    Ok(()) => TaskDone::Proxy {
+                        media: id,
+                        ok: true,
+                    },
+                    Err(_) => TaskDone::Proxy {
+                        media: id,
+                        ok: false,
+                    },
+                },
+            );
         }
     }
 
     /// Einstellungen → Leistung: Proxys
     pub fn proxy_settings(&mut self, ui: &mut egui::Ui) {
         theme::section(ui, "Proxys");
-        if widgets::toggle_row(ui, "Proxys für große Videos verwenden", &mut self.settings.use_proxies) {
+        if widgets::toggle_row(
+            ui,
+            "Proxys für große Videos verwenden",
+            &mut self.settings.use_proxies,
+        ) {
             self.settings.save();
             self.invalidate_preview();
         }
         ui.label(RichText::new(crate::tr("Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes erstellt Cutline im Hintergrund kleine Kopien (540p). Die Vorschau wird flüssiger, der Export nutzt immer die Originale.")).small().color(theme::TEXT_DIM));
-        let (n, bytes) = std::fs::read_dir(dir()).into_iter().flatten().flatten().filter_map(|e| e.metadata().ok()).fold((0u64, 0u64), |(n, b), m| (n + 1, b + m.len()));
+        let (n, bytes) = std::fs::read_dir(dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.metadata().ok())
+            .fold((0u64, 0u64), |(n, b), m| (n + 1, b + m.len()));
         ui.horizontal(|ui| {
-            ui.label(RichText::new(crate::tr(format!("{n} Proxys · {:.0} MB", bytes as f64 / 1e6))).small().color(theme::TEXT_FAINT));
-            if n > 0 && ui.add(theme::ghost(format!("{}  Proxys löschen", icon::TRASH))).clicked() {
+            ui.label(
+                RichText::new(crate::tr(format!(
+                    "{n} Proxys · {:.0} MB",
+                    bytes as f64 / 1e6
+                )))
+                .small()
+                .color(theme::TEXT_FAINT),
+            );
+            if n > 0
+                && ui
+                    .add(theme::ghost(format!("{}  Proxys löschen", icon::TRASH)))
+                    .clicked()
+            {
                 let _ = std::fs::remove_dir_all(dir());
                 self.invalidate_preview();
             }
@@ -137,7 +218,23 @@ mod tests {
         }
         let d = tempfile::tempdir().unwrap();
         let src = d.path().join("big.mp4");
-        assert!(cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=2560x1440:r=60:d=1", "-pix_fmt", "yuv420p"]).arg(&src).status().unwrap().success());
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=2560x1440:r=60:d=1",
+                "-pix_fmt",
+                "yuv420p"
+            ])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
         let m = cl_media::probe(&src).unwrap();
         assert!(wants_proxy(&m));
         let out = d.path().join("p.mp4");

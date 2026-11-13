@@ -226,8 +226,18 @@ impl App {
             plugins
                 .ffmpeg_assets(lang.code())
                 .into_iter()
-                .filter(|a| matches!(a.1, cl_plugin::AssetKind::VideoEffect | cl_plugin::AssetKind::Filter))
-                .map(|(id, kind, name, chain)| cl_fx::PluginFx { id, name, is_filter: kind == cl_plugin::AssetKind::Filter, chain })
+                .filter(|a| {
+                    matches!(
+                        a.1,
+                        cl_plugin::AssetKind::VideoEffect | cl_plugin::AssetKind::Filter
+                    )
+                })
+                .map(|(id, kind, name, chain)| cl_fx::PluginFx {
+                    id,
+                    name,
+                    is_filter: kind == cl_plugin::AssetKind::Filter,
+                    chain,
+                })
                 .collect(),
         );
 
@@ -243,7 +253,11 @@ impl App {
         }
 
         let project = Project::new("Neues Projekt");
-        let screen = if open.is_some() || !settings.start_on_home { Screen::Editor } else { Screen::Home };
+        let screen = if open.is_some() || !settings.start_on_home {
+            Screen::Editor
+        } else {
+            Screen::Home
+        };
         let mut app = Self {
             doc: Arc::new(Mutex::new(Document::new(project.clone()))),
             project,
@@ -367,10 +381,12 @@ impl App {
     }
 
     pub fn toast(&mut self, msg: impl Into<String>) {
-        self.toasts.push((crate::tr(msg.into()), Instant::now(), false));
+        self.toasts
+            .push((crate::tr(msg.into()), Instant::now(), false));
     }
     pub fn toast_err(&mut self, msg: impl Into<String>) {
-        self.toasts.push((crate::tr(msg.into()), Instant::now(), true));
+        self.toasts
+            .push((crate::tr(msg.into()), Instant::now(), true));
     }
 
     /// Einziger Weg für Änderungen aus der Oberfläche.
@@ -393,7 +409,10 @@ impl App {
         match ops.len() {
             0 => None,
             1 => self.apply(ops.into_iter().next().expect("eins")),
-            _ => self.apply(EditOp::Batch { label: String::new(), ops }),
+            _ => self.apply(EditOp::Batch {
+                label: String::new(),
+                ops,
+            }),
         }
     }
 
@@ -425,9 +444,14 @@ impl App {
                     self.selected = None;
                 }
             }
-            self.sel_extra.retain(|c| self.project.find_clip(*c).is_some());
+            self.sel_extra
+                .retain(|c| self.project.find_clip(*c).is_some());
             if let Some(t) = self.selected_transition {
-                if self.project.find_clip(t).is_none_or(|(_, c)| c.transition_out.is_none()) {
+                if self
+                    .project
+                    .find_clip(t)
+                    .is_none_or(|(_, c)| c.transition_out.is_none())
+                {
                     self.selected_transition = None;
                 }
             }
@@ -443,11 +467,22 @@ impl App {
             for m in &self.project.media {
                 if m.has_audio && !self.waves.contains_key(&m.id) {
                     self.waves.insert(m.id, Vec::new()); // Platzhalter: Auftrag nur einmal senden
-                    self.decoder.send(Job::Wave { media: m.id, path: m.path.clone() });
+                    self.decoder.send(Job::Wave {
+                        media: m.id,
+                        path: m.path.clone(),
+                    });
                 }
                 if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) {
-                    let at = if m.kind == MediaKind::Video { Time::from_secs_f64((m.duration.as_secs_f64() * 0.1).min(1.0)) } else { Time::ZERO };
-                    self.decoder.send(Job::Thumb { media: m.id, path: m.path.clone(), at });
+                    let at = if m.kind == MediaKind::Video {
+                        Time::from_secs_f64((m.duration.as_secs_f64() * 0.1).min(1.0))
+                    } else {
+                        Time::ZERO
+                    };
+                    self.decoder.send(Job::Thumb {
+                        media: m.id,
+                        path: m.path.clone(),
+                        at,
+                    });
                 }
             }
         }
@@ -499,7 +534,13 @@ impl App {
         self.selected_transition = None;
     }
     pub fn select_all(&mut self) {
-        let all: Vec<ClipId> = self.project.timeline.tracks.iter().flat_map(|t| t.clips.iter().map(|c| c.id)).collect();
+        let all: Vec<ClipId> = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .flat_map(|t| t.clips.iter().map(|c| c.id))
+            .collect();
         self.selected = all.last().copied();
         self.sel_extra = all.into_iter().collect();
     }
@@ -545,9 +586,14 @@ impl App {
 
     /// Keyframe am Playhead setzen/entfernen.
     pub fn toggle_keyframe(&mut self, id: ClipId, props: &[Prop]) {
-        let Some(mut c) = self.clip_view(id) else { return };
+        let Some(mut c) = self.clip_view(id) else {
+            return;
+        };
         let t = self.rel_time(&c);
-        let (w, h) = (self.project.settings.width as f32, self.project.settings.height as f32);
+        let (w, h) = (
+            self.project.settings.width as f32,
+            self.project.settings.height as f32,
+        );
         let ev = c.eval_at(t, w, h);
         let here = props.iter().any(|p| c.keyframes.has_at(*p, t));
         for p in props {
@@ -567,12 +613,17 @@ impl App {
             }
         }
         self.live = None;
-        self.apply(EditOp::SetKeyframes { clip: id, keyframes: c.keyframes });
+        self.apply(EditOp::SetKeyframes {
+            clip: id,
+            keyframes: c.keyframes,
+        });
     }
 
     /// Transformation aus dem Player übernehmen (Keyframes werden respektiert).
     pub fn commit_transform(&mut self, id: ClipId, tr: Transform) {
-        let Some(mut c) = self.clip_view(id) else { return };
+        let Some(mut c) = self.clip_view(id) else {
+            return;
+        };
         let before = c.clone();
         self.set_prop(&mut c, Prop::X, tr.x);
         self.set_prop(&mut c, Prop::Y, tr.y);
@@ -592,12 +643,26 @@ impl App {
         let mut defs = egui::FontDefinitions::default();
         egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
         let system_ui: [(&str, &[&str]); 2] = [
-            ("ui-main", &["C:/Windows/Fonts/segoeui.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/System/Library/Fonts/SFNS.ttf"]),
-            ("ui-symbols", &["C:/Windows/Fonts/seguisym.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]),
+            (
+                "ui-main",
+                &[
+                    "C:/Windows/Fonts/segoeui.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/System/Library/Fonts/SFNS.ttf",
+                ],
+            ),
+            (
+                "ui-symbols",
+                &[
+                    "C:/Windows/Fonts/seguisym.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                ],
+            ),
         ];
         for (i, (key, candidates)) in system_ui.iter().enumerate() {
             if let Some(bytes) = candidates.iter().find_map(|p| std::fs::read(p).ok()) {
-                defs.font_data.insert(key.to_string(), egui::FontData::from_owned(bytes).into());
+                defs.font_data
+                    .insert(key.to_string(), egui::FontData::from_owned(bytes).into());
                 for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
                     let list = defs.families.entry(fam.clone()).or_default();
                     if i == 0 && fam == egui::FontFamily::Proportional {
@@ -608,30 +673,48 @@ impl App {
                 }
             }
         }
-        let fallback = defs.families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
+        let fallback = defs
+            .families
+            .get(&egui::FontFamily::Proportional)
+            .cloned()
+            .unwrap_or_default();
         let mut names = HashSet::new();
         // Bibliothek + häufige Systemschriften für Textvorlagen
         let mut sources: Vec<(String, PathBuf, u32)> = Vec::new();
         for (family, faces) in lib.families() {
-            if let Some(face) = faces.iter().min_by_key(|f| (f.info.italic, (f.info.weight as i32 - 400).abs())) {
+            if let Some(face) = faces
+                .iter()
+                .min_by_key(|f| (f.info.italic, (f.info.weight as i32 - 400).abs()))
+            {
                 sources.push((family.clone(), face.path.clone(), face.info.index));
             }
         }
-        for (fam, file) in [("Georgia", "georgia.ttf"), ("Impact", "impact.ttf"), ("Arial", "arial.ttf"), ("Segoe UI", "segoeui.ttf"), ("Consolas", "consola.ttf"), ("Comic Sans MS", "comic.ttf"), ("Times New Roman", "times.ttf")] {
+        for (fam, file) in [
+            ("Georgia", "georgia.ttf"),
+            ("Impact", "impact.ttf"),
+            ("Arial", "arial.ttf"),
+            ("Segoe UI", "segoeui.ttf"),
+            ("Consolas", "consola.ttf"),
+            ("Comic Sans MS", "comic.ttf"),
+            ("Times New Roman", "times.ttf"),
+        ] {
             let p = PathBuf::from("C:/Windows/Fonts").join(file);
             if p.is_file() && !sources.iter().any(|s| s.0 == fam) {
                 sources.push((fam.to_string(), p, 0));
             }
         }
         for (family, path, index) in sources {
-            let Ok(bytes) = std::fs::read(&path) else { continue };
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
             let key = format!("user:{family}");
             let mut data = egui::FontData::from_owned(bytes);
             data.index = index;
             defs.font_data.insert(key.clone(), data.into());
             let mut chain = vec![key];
             chain.extend(fallback.iter().cloned());
-            defs.families.insert(egui::FontFamily::Name(family.clone().into()), chain);
+            defs.families
+                .insert(egui::FontFamily::Name(family.clone().into()), chain);
             names.insert(family);
         }
         drop(lib);
@@ -649,8 +732,23 @@ impl App {
     /// Schriftdatei für den Export: Bibliothek, dann Systemschriften.
     pub fn font_files(&self) -> HashMap<String, (PathBuf, u32)> {
         let lib = self.fonts.lock().unwrap();
-        let mut m: HashMap<String, (PathBuf, u32)> = lib.families().keys().filter_map(|k| lib.regular_face(k).map(|f| (k.clone(), (f.path.clone(), f.info.index)))).collect();
-        for (fam, file) in [("Georgia", "georgia.ttf"), ("Impact", "impact.ttf"), ("Arial", "arial.ttf"), ("Segoe UI", "segoeui.ttf"), ("Consolas", "consola.ttf"), ("Comic Sans MS", "comic.ttf"), ("Times New Roman", "times.ttf")] {
+        let mut m: HashMap<String, (PathBuf, u32)> = lib
+            .families()
+            .keys()
+            .filter_map(|k| {
+                lib.regular_face(k)
+                    .map(|f| (k.clone(), (f.path.clone(), f.info.index)))
+            })
+            .collect();
+        for (fam, file) in [
+            ("Georgia", "georgia.ttf"),
+            ("Impact", "impact.ttf"),
+            ("Arial", "arial.ttf"),
+            ("Segoe UI", "segoeui.ttf"),
+            ("Consolas", "consola.ttf"),
+            ("Comic Sans MS", "comic.ttf"),
+            ("Times New Roman", "times.ttf"),
+        ] {
             let p = PathBuf::from("C:/Windows/Fonts").join(file);
             if p.is_file() {
                 m.entry(fam.to_string()).or_insert((p, 0));
@@ -666,7 +764,11 @@ impl App {
             match res {
                 Ok(r) if r.duplicate => self.toast(self.t("font-duplicate")),
                 Ok(r) => {
-                    let fam = r.added.first().map(|i| i.family.clone()).unwrap_or_default();
+                    let fam = r
+                        .added
+                        .first()
+                        .map(|i| i.family.clone())
+                        .unwrap_or_default();
                     if self.font_scope_project {
                         if let Some(p) = r.stored_as.clone() {
                             self.apply(EditOp::AddProjectFont { path: p });
@@ -684,7 +786,10 @@ impl App {
     }
 
     pub fn pick_fonts(&mut self, ctx: &egui::Context) {
-        if let Some(files) = crate::dialog().add_filter("Fonts", cl_fonts::FONT_EXTENSIONS).pick_files() {
+        if let Some(files) = crate::dialog()
+            .add_filter("Fonts", cl_fonts::FONT_EXTENSIONS)
+            .pick_files()
+        {
             self.import_fonts(ctx, files);
         }
     }
@@ -694,7 +799,11 @@ impl App {
     pub fn import_media(&mut self, files: Vec<PathBuf>) -> Vec<MediaId> {
         let mut ids = Vec::new();
         for f in files {
-            let ext = f.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+            let ext = f
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
             if cl_fonts::FONT_EXTENSIONS.contains(&ext.as_str()) {
                 continue;
             }
@@ -711,8 +820,17 @@ impl App {
                     }
                 }
                 Err(e) => {
-                    let name = f.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                    self.toast_err(self.i18n.t_args("media-probe-error", &[("file", name.as_str().into()), ("error", e.to_string().into())]));
+                    let name = f
+                        .file_name()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    self.toast_err(self.i18n.t_args(
+                        "media-probe-error",
+                        &[
+                            ("file", name.as_str().into()),
+                            ("error", e.to_string().into()),
+                        ],
+                    ));
                 }
             }
         }
@@ -721,7 +839,10 @@ impl App {
 
     pub fn pick_media(&mut self) {
         let exts = cl_media::all_media_extensions();
-        if let Some(files) = crate::dialog().add_filter(self.t("tab-media"), &exts).pick_files() {
+        if let Some(files) = crate::dialog()
+            .add_filter(self.t("tab-media"), &exts)
+            .pick_files()
+        {
             let n = self.import_media(files).len();
             if n > 0 {
                 self.toast(self.i18n.t_num("media-imported", "count", n as i64));
@@ -738,22 +859,57 @@ impl App {
     }
 
     /// Medium an Position `at` einfügen (Video → Hauptspur, Audio → Audiospur).
-    pub fn add_media_at(&mut self, media: MediaId, at: Time, track: Option<TrackId>) -> Option<ClipId> {
-        let m = self.project.media(media).cloned().or_else(|| self.doc.lock().unwrap().project().media(media).cloned())?;
-        let dur = if m.kind == MediaKind::Image || m.duration <= Time::ZERO { Time::from_secs_f64(self.settings.image_duration as f64) } else { m.duration };
-        let clip = Clip::new(ClipContent::Media { media, kind: m.kind }, at, dur);
+    pub fn add_media_at(
+        &mut self,
+        media: MediaId,
+        at: Time,
+        track: Option<TrackId>,
+    ) -> Option<ClipId> {
+        let m = self
+            .project
+            .media(media)
+            .cloned()
+            .or_else(|| self.doc.lock().unwrap().project().media(media).cloned())?;
+        let dur = if m.kind == MediaKind::Image || m.duration <= Time::ZERO {
+            Time::from_secs_f64(self.settings.image_duration as f64)
+        } else {
+            m.duration
+        };
+        let clip = Clip::new(
+            ClipContent::Media {
+                media,
+                kind: m.kind,
+            },
+            at,
+            dur,
+        );
         self.insert_clip(clip, track)
     }
 
-    pub fn add_text_at(&mut self, at: Time, template: Option<&str>, track: Option<TrackId>) -> Option<ClipId> {
+    pub fn add_text_at(
+        &mut self,
+        at: Time,
+        template: Option<&str>,
+        track: Option<TrackId>,
+    ) -> Option<ClipId> {
         let tpl = template.and_then(|id| cl_fx::text::TEMPLATES.iter().find(|t| t.id == id));
         let style = match tpl {
             Some(t) => t.make(),
-            None => TextStyle { text: self.t("text-default"), ..Default::default() },
+            None => TextStyle {
+                text: self.t("text-default"),
+                ..Default::default()
+            },
         };
-        let mut clip = Clip::new(ClipContent::Text(style), at, Time::from_secs_f64(self.settings.text_duration as f64));
+        let mut clip = Clip::new(
+            ClipContent::Text(style),
+            at,
+            Time::from_secs_f64(self.settings.text_duration as f64),
+        );
         if let Some(a) = tpl.and_then(|t| t.intro) {
-            clip.anim.intro = Some(AnimRef { id: a.into(), duration: Time::from_secs_f64(self.settings.anim_duration as f64) });
+            clip.anim.intro = Some(AnimRef {
+                id: a.into(),
+                duration: Time::from_secs_f64(self.settings.anim_duration as f64),
+            });
         }
         let id = self.insert_clip(clip, track);
         if id.is_some() {
@@ -775,18 +931,43 @@ impl App {
     }
 
     /// Bild als Sticker-Clip (verkleinert) auf eine freie Overlay-Spur legen.
-    pub fn add_image_overlay_at(&mut self, path: PathBuf, at: Time, track: Option<TrackId>) -> Option<ClipId> {
+    pub fn add_image_overlay_at(
+        &mut self,
+        path: PathBuf,
+        at: Time,
+        track: Option<TrackId>,
+    ) -> Option<ClipId> {
         let media = *self.import_media(vec![path]).first()?;
-        let clip = Clip::new(ClipContent::Media { media, kind: MediaKind::Image }, at, Time::from_secs_f64(self.settings.text_duration as f64));
+        let clip = Clip::new(
+            ClipContent::Media {
+                media,
+                kind: MediaKind::Image,
+            },
+            at,
+            Time::from_secs_f64(self.settings.text_duration as f64),
+        );
         let mut clip = clip;
         clip.transform.scale = 0.35;
         // Sticker liegen immer über dem Video: freie Overlay-Spur suchen oder anlegen
         let track = track.or_else(|| {
-            self.project.timeline.tracks.iter().find(|t| t.kind == TrackKind::Video && !t.main && !t.locked && t.is_free(clip.start, clip.duration, None)).map(|t| t.id)
+            self.project
+                .timeline
+                .tracks
+                .iter()
+                .find(|t| {
+                    t.kind == TrackKind::Video
+                        && !t.main
+                        && !t.locked
+                        && t.is_free(clip.start, clip.duration, None)
+                })
+                .map(|t| t.id)
         });
         let track = match track {
             Some(t) => Some(t),
-            None => match self.apply(EditOp::InsertTrack { index: self.project.timeline.tracks.len(), kind: TrackKind::Video }) {
+            None => match self.apply(EditOp::InsertTrack {
+                index: self.project.timeline.tracks.len(),
+                kind: TrackKind::Video,
+            }) {
                 Some(OpOutput::Track(t)) => Some(t),
                 _ => None,
             },
@@ -809,13 +990,24 @@ impl App {
         self.add_media_at(media, at, track)
     }
 
-    pub fn add_file_at(&mut self, path: PathBuf, at: Time, track: Option<TrackId>) -> Option<ClipId> {
+    pub fn add_file_at(
+        &mut self,
+        path: PathBuf,
+        at: Time,
+        track: Option<TrackId>,
+    ) -> Option<ClipId> {
         let media = *self.import_media(vec![path]).first()?;
         self.add_media_at(media, at, track)
     }
 
     /// Asset ablegen (aus Liste, Zeitleiste oder Player).
-    pub fn drop_asset(&mut self, a: &DragAsset, at: Time, track: Option<TrackId>, on_clip: Option<ClipId>) {
+    pub fn drop_asset(
+        &mut self,
+        a: &DragAsset,
+        at: Time,
+        track: Option<TrackId>,
+        on_clip: Option<ClipId>,
+    ) {
         match a {
             DragAsset::Media(m) => {
                 self.add_media_at(*m, at, track);
@@ -851,8 +1043,16 @@ impl App {
     }
 
     pub fn add_effect(&mut self, clip: ClipId, id: &str) {
-        let Some(mut c) = self.clip_view(clip) else { return };
-        if !matches!(c.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Image, .. }) {
+        let Some(mut c) = self.clip_view(clip) else {
+            return;
+        };
+        if !matches!(
+            c.content,
+            ClipContent::Media {
+                kind: MediaKind::Video | MediaKind::Image,
+                ..
+            }
+        ) {
             self.toast_err("Effekte wirken auf Video-, Bild- und Sticker-Clips");
             return;
         }
@@ -867,12 +1067,24 @@ impl App {
     }
 
     pub fn set_filter(&mut self, clip: ClipId, id: Option<String>) {
-        let Some(mut c) = self.clip_view(clip) else { return };
-        if !matches!(c.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Image, .. }) {
+        let Some(mut c) = self.clip_view(clip) else {
+            return;
+        };
+        if !matches!(
+            c.content,
+            ClipContent::Media {
+                kind: MediaKind::Video | MediaKind::Image,
+                ..
+            }
+        ) {
             self.toast_err("Filter wirken auf Video- und Bild-Clips");
             return;
         }
-        c.fx.filter = id.map(|i| FxRef { id: i, intensity: c.fx.filter.as_ref().map(|f| f.intensity).unwrap_or(1.0), params: Default::default() });
+        c.fx.filter = id.map(|i| FxRef {
+            id: i,
+            intensity: c.fx.filter.as_ref().map(|f| f.intensity).unwrap_or(1.0),
+            params: Default::default(),
+        });
         self.live = None;
         self.apply(EditOp::ReplaceClip { clip: c });
         self.select_only(Some(clip));
@@ -887,9 +1099,21 @@ impl App {
             self.toast_err("Übergänge liegen zwischen zwei direkt aufeinanderfolgenden Clips");
             return;
         }
-        let keep = self.project.find_clip(clip).and_then(|(_, c)| c.transition_out.as_ref().map(|t| t.duration));
-        let t = id.map(|i| TransitionRef { id: i.to_string(), duration: keep.unwrap_or(dur) });
-        if self.apply(EditOp::SetTransition { clip, transition: t }).is_some() {
+        let keep = self
+            .project
+            .find_clip(clip)
+            .and_then(|(_, c)| c.transition_out.as_ref().map(|t| t.duration));
+        let t = id.map(|i| TransitionRef {
+            id: i.to_string(),
+            duration: keep.unwrap_or(dur),
+        });
+        if self
+            .apply(EditOp::SetTransition {
+                clip,
+                transition: t,
+            })
+            .is_some()
+        {
             self.selected_transition = id.map(|_| clip);
             if id.is_some() {
                 self.selected = None;
@@ -901,7 +1125,10 @@ impl App {
     /// Direkter Nachfolger auf derselben Spur (für Übergänge).
     pub fn next_adjacent(&self, clip: ClipId) -> Option<ClipId> {
         let (tr, c) = self.project.find_clip(clip)?;
-        tr.clips.iter().find(|n| n.id != clip && (n.start.0 - c.end().0).abs() < 2000).map(|n| n.id)
+        tr.clips
+            .iter()
+            .find(|n| n.id != clip && (n.start.0 - c.end().0).abs() < 2000)
+            .map(|n| n.id)
     }
 
     /// Übergang am nächstgelegenen Schnitt der Hauptspur (oder am ausgewählten Clip).
@@ -932,7 +1159,15 @@ impl App {
     pub fn split_at_playhead(&mut self) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
         let sel = self.selection();
-        let mut targets: Vec<ClipId> = sel.iter().copied().filter(|s| self.project.find_clip(*s).is_some_and(|(_, c)| c.contains(at) && c.start != at)).collect();
+        let mut targets: Vec<ClipId> = sel
+            .iter()
+            .copied()
+            .filter(|s| {
+                self.project
+                    .find_clip(*s)
+                    .is_some_and(|(_, c)| c.contains(at) && c.start != at)
+            })
+            .collect();
         if targets.is_empty() {
             targets = self
                 .project
@@ -947,7 +1182,10 @@ impl App {
         if targets.is_empty() {
             return;
         }
-        let ops: Vec<EditOp> = targets.iter().map(|c| EditOp::SplitClip { clip: *c, at }).collect();
+        let ops: Vec<EditOp> = targets
+            .iter()
+            .map(|c| EditOp::SplitClip { clip: *c, at })
+            .collect();
         if let Some(OpOutput::Clip(r)) = self.apply_batch(ops) {
             self.select_only(Some(r));
         }
@@ -957,15 +1195,24 @@ impl App {
     pub fn delete_selected(&mut self) {
         self.live = None;
         if let Some(t) = self.selected_transition.take() {
-            self.apply(EditOp::SetTransition { clip: t, transition: None });
+            self.apply(EditOp::SetTransition {
+                clip: t,
+                transition: None,
+            });
             return;
         }
         let sel = self.selection();
         if sel.is_empty() {
             return;
         }
-        let first = sel.iter().filter_map(|c| self.project.find_clip(*c).map(|(_, c)| c.start)).min();
-        let ops = sel.iter().map(|c| EditOp::RemoveClip { clip: *c }).collect();
+        let first = sel
+            .iter()
+            .filter_map(|c| self.project.find_clip(*c).map(|(_, c)| c.start))
+            .min();
+        let ops = sel
+            .iter()
+            .map(|c| EditOp::RemoveClip { clip: *c })
+            .collect();
         self.select_only(None);
         if self.apply_batch(ops).is_some() {
             if let Some(t) = first {
@@ -978,25 +1225,68 @@ impl App {
     /// Q / W: links bzw. rechts vom Playhead wegschneiden (ausgewählter Clip oder Hauptspur).
     pub fn delete_side(&mut self, left: bool) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
-        let target = self.selected.filter(|s| self.project.find_clip(*s).is_some_and(|(_, c)| c.contains(at))).or_else(|| {
-            self.project.timeline.tracks.iter().find(|t| t.main).and_then(|t| t.clips.iter().find(|c| c.contains(at))).map(|c| c.id)
-        });
+        let target = self
+            .selected
+            .filter(|s| {
+                self.project
+                    .find_clip(*s)
+                    .is_some_and(|(_, c)| c.contains(at))
+            })
+            .or_else(|| {
+                self.project
+                    .timeline
+                    .tracks
+                    .iter()
+                    .find(|t| t.main)
+                    .and_then(|t| t.clips.iter().find(|c| c.contains(at)))
+                    .map(|c| c.id)
+            });
         let Some(id) = target else { return };
-        let Some((tr, c)) = self.project.find_clip(id).map(|(t, c)| (t.clone(), c.clone())) else { return };
+        let Some((tr, c)) = self
+            .project
+            .find_clip(id)
+            .map(|(t, c)| (t.clone(), c.clone()))
+        else {
+            return;
+        };
         if at <= c.start || at >= c.end() {
             return;
         }
-        let op = if left { EditOp::TrimClip { clip: id, edge: Edge::Start, to: at } } else { EditOp::TrimClip { clip: id, edge: Edge::End, to: at } };
+        let op = if left {
+            EditOp::TrimClip {
+                clip: id,
+                edge: Edge::Start,
+                to: at,
+            }
+        } else {
+            EditOp::TrimClip {
+                clip: id,
+                edge: Edge::End,
+                to: at,
+            }
+        };
         if self.apply(op).is_some() && left && tr.main && self.project.settings.main_track_magnet {
-            self.playhead = self.project.find_clip(id).map(|(_, c)| c.start).unwrap_or(self.playhead);
+            self.playhead = self
+                .project
+                .find_clip(id)
+                .map(|(_, c)| c.start)
+                .unwrap_or(self.playhead);
         }
     }
 
     pub fn copy_selection(&mut self) {
-        let mut clips: Vec<Clip> = self.selection().iter().filter_map(|c| self.project.find_clip(*c).map(|(_, c)| c.clone())).collect();
+        let mut clips: Vec<Clip> = self
+            .selection()
+            .iter()
+            .filter_map(|c| self.project.find_clip(*c).map(|(_, c)| c.clone()))
+            .collect();
         clips.sort_by_key(|c| c.start);
         if !clips.is_empty() {
-            self.toast(format!("{} {} kopiert", clips.len(), if clips.len() == 1 { "Clip" } else { "Clips" }));
+            self.toast(format!(
+                "{} {} kopiert",
+                clips.len(),
+                if clips.len() == 1 { "Clip" } else { "Clips" }
+            ));
             self.clipboard = clips;
             self.copy_marker = true;
         }
@@ -1011,7 +1301,12 @@ impl App {
         if self.clipboard.is_empty() {
             return;
         }
-        let first = self.clipboard.iter().map(|c| c.start).min().unwrap_or(Time::ZERO);
+        let first = self
+            .clipboard
+            .iter()
+            .map(|c| c.start)
+            .min()
+            .unwrap_or(Time::ZERO);
         let ops: Vec<EditOp> = self
             .clipboard
             .iter()
@@ -1019,7 +1314,10 @@ impl App {
                 let mut n = c.clone();
                 n.id = ClipId::new();
                 n.start = self.playhead + (c.start - first);
-                EditOp::AddClip { track: None, clip: n }
+                EditOp::AddClip {
+                    track: None,
+                    clip: n,
+                }
             })
             .collect();
         if let Some(OpOutput::Clip(c)) = self.apply_batch(ops) {
@@ -1028,14 +1326,21 @@ impl App {
     }
 
     pub fn duplicate_selection(&mut self) {
-        let clips: Vec<(TrackId, Clip)> = self.selection().iter().filter_map(|c| self.project.find_clip(*c).map(|(t, c)| (t.id, c.clone()))).collect();
+        let clips: Vec<(TrackId, Clip)> = self
+            .selection()
+            .iter()
+            .filter_map(|c| self.project.find_clip(*c).map(|(t, c)| (t.id, c.clone())))
+            .collect();
         let ops: Vec<EditOp> = clips
             .iter()
             .map(|(t, c)| {
                 let mut n = c.clone();
                 n.id = ClipId::new();
                 n.start = c.end();
-                EditOp::AddClip { track: Some(*t), clip: n }
+                EditOp::AddClip {
+                    track: Some(*t),
+                    clip: n,
+                }
             })
             .collect();
         if let Some(OpOutput::Clip(c)) = self.apply_batch(ops) {
@@ -1045,73 +1350,154 @@ impl App {
 
     pub fn toggle_disabled(&mut self) {
         let sel = self.selection();
-        let any_enabled = sel.iter().any(|c| self.project.find_clip(*c).is_some_and(|(_, c)| !c.disabled));
-        let ops = sel.iter().map(|c| EditOp::SetClipDisabled { clip: *c, disabled: any_enabled }).collect();
+        let any_enabled = sel
+            .iter()
+            .any(|c| self.project.find_clip(*c).is_some_and(|(_, c)| !c.disabled));
+        let ops = sel
+            .iter()
+            .map(|c| EditOp::SetClipDisabled {
+                clip: *c,
+                disabled: any_enabled,
+            })
+            .collect();
         self.apply_batch(ops);
     }
 
     /// Ton eines Videoclips als eigenen Audioclip anlegen und im Video stummschalten.
     pub fn extract_audio(&mut self, id: ClipId) {
         let Some(c) = self.clip_view(id) else { return };
-        let ClipContent::Media { media, kind: MediaKind::Video } = c.content else { return };
+        let ClipContent::Media {
+            media,
+            kind: MediaKind::Video,
+        } = c.content
+        else {
+            return;
+        };
         if !self.project.media(media).is_some_and(|m| m.has_audio) {
             self.toast_err("Dieser Clip hat keinen Ton");
             return;
         }
         let mut a = c.clone();
         a.id = ClipId::new();
-        a.content = ClipContent::Media { media, kind: MediaKind::Audio };
-        a.fx = ClipFx { reverse: c.fx.reverse, speed_curve: c.fx.speed_curve.clone(), ..Default::default() };
+        a.content = ClipContent::Media {
+            media,
+            kind: MediaKind::Audio,
+        };
+        a.fx = ClipFx {
+            reverse: c.fx.reverse,
+            speed_curve: c.fx.speed_curve.clone(),
+            ..Default::default()
+        };
         a.keyframes = Keyframes::default();
         a.anim = Animations::default();
         a.transition_out = None;
         let mut v = c.clone();
         v.volume_db = -60.0;
-        self.apply_batch(vec![EditOp::ReplaceClip { clip: v }, EditOp::AddClip { track: None, clip: a }]);
+        self.apply_batch(vec![
+            EditOp::ReplaceClip { clip: v },
+            EditOp::AddClip {
+                track: None,
+                clip: a,
+            },
+        ]);
         self.toast(format!("{} Ton extrahiert", icon::WAVEFORM));
     }
 
     /// Standbild: aktuelles Bild als 3-s-Bild am Playhead einfügen.
     pub fn freeze_frame(&mut self) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
-        let target = self.selected.and_then(|s| self.project.find_clip(s).map(|(t, c)| (t.clone(), c.clone()))).filter(|(_, c)| c.contains(at)).or_else(|| {
-            self.project.timeline.tracks.iter().find(|t| t.main).and_then(|t| t.clips.iter().find(|c| c.contains(at)).map(|c| (t.clone(), c.clone())))
-        });
+        let target = self
+            .selected
+            .and_then(|s| {
+                self.project
+                    .find_clip(s)
+                    .map(|(t, c)| (t.clone(), c.clone()))
+            })
+            .filter(|(_, c)| c.contains(at))
+            .or_else(|| {
+                self.project
+                    .timeline
+                    .tracks
+                    .iter()
+                    .find(|t| t.main)
+                    .and_then(|t| {
+                        t.clips
+                            .iter()
+                            .find(|c| c.contains(at))
+                            .map(|c| (t.clone(), c.clone()))
+                    })
+            });
         let Some((tr, c)) = target else { return };
-        let ClipContent::Media { media, kind: MediaKind::Video } = c.content else {
+        let ClipContent::Media {
+            media,
+            kind: MediaKind::Video,
+        } = c.content
+        else {
             self.toast_err("Standbilder gibt es nur von Videoclips");
             return;
         };
-        let Some(m) = self.project.media(media).cloned() else { return };
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-        let out = paths::data_dir().join("Freeze").join(format!("freeze-{stamp}.png"));
+        let Some(m) = self.project.media(media).cloned() else {
+            return;
+        };
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let out = paths::data_dir()
+            .join("Freeze")
+            .join(format!("freeze-{stamp}.png"));
         let _ = std::fs::create_dir_all(out.parent().expect("Ordner"));
         let ok = cl_media::ffmpeg_command()
             .ok()
             .and_then(|mut cmd| {
-                cmd.args(["-v", "error", "-nostdin", "-y", "-ss", &format!("{:.4}", c.source_time(at).as_secs_f64())])
-                    .arg("-i")
-                    .arg(&m.path)
-                    .args(["-frames:v", "1"])
-                    .arg(&out)
-                    .stdin(std::process::Stdio::null())
-                    .status()
-                    .ok()
+                cmd.args([
+                    "-v",
+                    "error",
+                    "-nostdin",
+                    "-y",
+                    "-ss",
+                    &format!("{:.4}", c.source_time(at).as_secs_f64()),
+                ])
+                .arg("-i")
+                .arg(&m.path)
+                .args(["-frames:v", "1"])
+                .arg(&out)
+                .stdin(std::process::Stdio::null())
+                .status()
+                .ok()
             })
             .is_some_and(|s| s.success());
         if !ok {
             self.toast_err("Standbild konnte nicht erzeugt werden");
             return;
         }
-        let Some(img) = self.import_media(vec![out]).first().copied() else { return };
-        let mut f = Clip::new(ClipContent::Media { media: img, kind: MediaKind::Image }, at, Time::from_secs_f64(3.0));
+        let Some(img) = self.import_media(vec![out]).first().copied() else {
+            return;
+        };
+        let mut f = Clip::new(
+            ClipContent::Media {
+                media: img,
+                kind: MediaKind::Image,
+            },
+            at,
+            Time::from_secs_f64(3.0),
+        );
         f.transform = c.transform;
-        f.fx = ClipFx { flip_h: c.fx.flip_h, flip_v: c.fx.flip_v, filter: c.fx.filter.clone(), adjust: c.fx.adjust, ..Default::default() };
+        f.fx = ClipFx {
+            flip_h: c.fx.flip_h,
+            flip_v: c.fx.flip_v,
+            filter: c.fx.filter.clone(),
+            adjust: c.fx.adjust,
+            ..Default::default()
+        };
         let mut ops = Vec::new();
         if at > c.start && at < c.end() {
             ops.push(EditOp::SplitClip { clip: c.id, at });
         }
-        ops.push(EditOp::AddClip { track: Some(tr.id), clip: f });
+        ops.push(EditOp::AddClip {
+            track: Some(tr.id),
+            clip: f,
+        });
         if let Some(OpOutput::Clip(id)) = self.apply_batch(ops) {
             self.select_only(Some(id));
         }
@@ -1133,14 +1519,29 @@ impl App {
     }
 
     pub fn set_speed_selection(&mut self, speed: f32) {
-        let ops = self.selection().iter().map(|c| EditOp::SetSpeed { clip: *c, speed }).collect();
+        let ops = self
+            .selection()
+            .iter()
+            .map(|c| EditOp::SetSpeed { clip: *c, speed })
+            .collect();
         self.apply_batch(ops);
     }
 
     // ---------- Projekte ----------
 
     pub fn default_project_path(&self) -> PathBuf {
-        let name: String = self.project.name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
+        let name: String = self
+            .project
+            .name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == ' ' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
         let dir = paths::data_dir().join("Projects");
         let mut p = dir.join(format!("{}.cutline", name.trim()));
         let mut n = 2;
@@ -1160,11 +1561,27 @@ impl App {
         self.last_saved = Some(Instant::now());
         self.settings.add_recent(p);
         // Titelbild für die Startseite
-        if let Some((path, at)) = self.project.timeline.tracks.iter().filter(|t| t.kind == TrackKind::Video).flat_map(|t| t.clips.iter()).min_by_key(|c| c.start).and_then(|c| match &c.content {
-            ClipContent::Media { media, .. } => self.project.media(*media).map(|m| (m.path.clone(), c.source_time(c.start))),
-            _ => None,
-        }) {
-            self.decoder.send(Job::ProjectThumb { out: crate::home::thumb_path(p), path, at });
+        if let Some((path, at)) = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .filter(|t| t.kind == TrackKind::Video)
+            .flat_map(|t| t.clips.iter())
+            .min_by_key(|c| c.start)
+            .and_then(|c| match &c.content {
+                ClipContent::Media { media, .. } => self
+                    .project
+                    .media(*media)
+                    .map(|m| (m.path.clone(), c.source_time(c.start))),
+                _ => None,
+            })
+        {
+            self.decoder.send(Job::ProjectThumb {
+                out: crate::home::thumb_path(p),
+                path,
+                at,
+            });
         }
         Ok(())
     }
@@ -1174,7 +1591,10 @@ impl App {
         let path = match (&self.project_path, save_as) {
             (Some(p), false) => Some(p.clone()),
             (None, false) => Some(self.default_project_path()),
-            _ => crate::dialog().add_filter("Cutline-Projekt", &["cutline"]).set_file_name(format!("{}.cutline", self.project.name)).save_file(),
+            _ => crate::dialog()
+                .add_filter("Cutline-Projekt", &["cutline"])
+                .set_file_name(format!("{}.cutline", self.project.name))
+                .save_file(),
         };
         if let Some(p) = path {
             match self.write_project(&p) {
@@ -1193,7 +1613,9 @@ impl App {
         if !self.settings.autosave || self.screen != Screen::Editor {
             return;
         }
-        if self.revision == self.saved_revision || self.project.duration() == Time::ZERO && self.project.media.is_empty() {
+        if self.revision == self.saved_revision
+            || self.project.duration() == Time::ZERO && self.project.media.is_empty()
+        {
             return;
         }
         if self.doc.lock().unwrap().revision() != self.revision {
@@ -1205,7 +1627,10 @@ impl App {
             Some((rev, t)) if rev == self.revision => {
                 if t.elapsed() > Duration::from_millis(1500) {
                     drop(lc);
-                    let p = self.project_path.clone().unwrap_or_else(|| self.default_project_path());
+                    let p = self
+                        .project_path
+                        .clone()
+                        .unwrap_or_else(|| self.default_project_path());
                     if self.write_project(&p).is_ok() {
                         self.project_path = Some(p);
                         self.settings.save();
@@ -1217,7 +1642,10 @@ impl App {
     }
 
     pub fn open_dialog(&mut self) {
-        if let Some(p) = crate::dialog().add_filter("Cutline-Projekt", &["cutline", "json"]).pick_file() {
+        if let Some(p) = crate::dialog()
+            .add_filter("Cutline-Projekt", &["cutline", "json"])
+            .pick_file()
+        {
             self.open_project(&p);
         }
     }
@@ -1248,7 +1676,10 @@ impl App {
 
     pub fn open_project(&mut self, p: &Path) {
         self.flush_before_leaving();
-        match std::fs::read_to_string(p).map_err(|e| e.to_string()).and_then(|s| Project::from_json(&s).map_err(|e| e.to_string())) {
+        match std::fs::read_to_string(p)
+            .map_err(|e| e.to_string())
+            .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
+        {
             Ok(proj) => {
                 self.reset_editor();
                 let needed: HashSet<String> = proj
@@ -1270,9 +1701,16 @@ impl App {
                 self.settings.save();
                 self.screen = Screen::Editor;
                 self.last_backup = Some(Instant::now());
-                self.missing_open = self.project.media.iter().any(|m| !m.path.is_file() && !m.path.to_string_lossy().contains("://"));
+                self.missing_open = self
+                    .project
+                    .media
+                    .iter()
+                    .any(|m| !m.path.is_file() && !m.path.to_string_lossy().contains("://"));
                 let known = self.font_files();
-                let missing: Vec<String> = needed.into_iter().filter(|f| !known.contains_key(f)).collect();
+                let missing: Vec<String> = needed
+                    .into_iter()
+                    .filter(|f| !known.contains_key(f))
+                    .collect();
                 if !missing.is_empty() {
                     self.toast_err(format!("Fehlende Schriften: {}", missing.join(", ")));
                 }
@@ -1287,8 +1725,13 @@ impl App {
         if self.voiceover.recorder.is_some() {
             self.stop_voiceover();
         }
-        if self.revision != self.saved_revision && !(self.project.media.is_empty() && self.project.duration() == Time::ZERO) {
-            let p = self.project_path.clone().unwrap_or_else(|| self.default_project_path());
+        if self.revision != self.saved_revision
+            && !(self.project.media.is_empty() && self.project.duration() == Time::ZERO)
+        {
+            let p = self
+                .project_path
+                .clone()
+                .unwrap_or_else(|| self.default_project_path());
             if self.write_project(&p).is_ok() {
                 self.project_path = Some(p);
             }
@@ -1306,7 +1749,12 @@ impl App {
     // ---------- Wiedergabe ----------
 
     pub fn last_frame(&self) -> Time {
-        Time((self.project.duration() - Time::from_secs_f64(1.0 / self.project.settings.fps.as_f64())).0.max(0))
+        Time(
+            (self.project.duration()
+                - Time::from_secs_f64(1.0 / self.project.settings.fps.as_f64()))
+            .0
+            .max(0),
+        )
     }
 
     pub fn toggle_play(&mut self) {
@@ -1341,7 +1789,8 @@ impl App {
     pub fn restart_audio(&mut self) {
         self.audio = None;
         self.play_clock = Some((Instant::now(), self.playhead));
-        let mute = (self.voiceover.recorder.is_some() && self.voiceover.mute_project) || (self.play_rate - 1.0).abs() > 1e-6;
+        let mute = (self.voiceover.recorder.is_some() && self.voiceover.mute_project)
+            || (self.play_rate - 1.0).abs() > 1e-6;
         if !mute {
             // Solo: alle anderen Tonspuren stumm (nur in der Vorschau)
             let proj = if self.solo.is_empty() {
@@ -1417,7 +1866,14 @@ impl App {
         let dur = m.duration;
         p.media.push(m);
         let mut t = Track::new(TrackKind::Audio);
-        t.clips.push(Clip::new(ClipContent::Media { media: id, kind: MediaKind::Audio }, Time::ZERO, dur));
+        t.clips.push(Clip::new(
+            ClipContent::Media {
+                media: id,
+                kind: MediaKind::Audio,
+            },
+            Time::ZERO,
+            dur,
+        ));
         p.timeline.tracks.push(t);
         match AudioPlayer::start(&p, Time::ZERO) {
             Ok(a) => self.sfx_preview = Some((key, a)),
@@ -1436,9 +1892,15 @@ impl App {
         let dir = self
             .project_path
             .as_ref()
-            .and_then(|p| p.parent().map(|d| d.join(format!("{}-media", self.project.name))))
+            .and_then(|p| {
+                p.parent()
+                    .map(|d| d.join(format!("{}-media", self.project.name)))
+            })
             .unwrap_or_else(|| paths::data_dir().join("Recordings"));
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let path = dir.join(format!("Voiceover-{stamp}.wav"));
         let gain = 10f32.powf(self.voiceover.gain_db / 20.0);
         match Recorder::start(self.voiceover.device.as_deref(), path, self.playhead, gain) {
@@ -1453,7 +1915,9 @@ impl App {
     }
 
     pub fn stop_voiceover(&mut self) {
-        let Some(rec) = self.voiceover.recorder.take() else { return };
+        let Some(rec) = self.voiceover.recorder.take() else {
+            return;
+        };
         let start = rec.start_at;
         let peaks = rec.peaks();
         self.stop_playback();
@@ -1489,8 +1953,6 @@ impl App {
                     actions.push(a);
                 }
             }
-
-
         });
         // Kopieren/Ausschneiden/Einfügen kommen als Ereignisse
         let (copy, cut, paste) = ctx.input_mut(|i| {
@@ -1543,7 +2005,8 @@ impl App {
                 "open" => self.open_dialog(),
                 "export" => {
                     self.commit_live();
-                    self.export.open_for(&self.project, self.project_path.as_deref());
+                    self.export
+                        .open_for(&self.project, self.project_path.as_deref());
                     self.export.set_range(self.range_in.zip(self.range_out));
                 }
                 "select_all" => self.select_all(),
@@ -1578,7 +2041,11 @@ impl App {
                 }
                 "loop" => {
                     self.loop_range = !self.loop_range;
-                    self.toast(if self.loop_range { "Schleife an" } else { "Schleife aus" });
+                    self.toast(if self.loop_range {
+                        "Schleife an"
+                    } else {
+                        "Schleife aus"
+                    });
                 }
                 "marker" => self.add_marker(),
                 "marker_next" => self.jump_marker(true),
@@ -1611,43 +2078,80 @@ impl App {
     }
 
     fn draw_toasts(&mut self, ctx: &egui::Context) {
-        self.toasts.retain(|(_, t, _)| t.elapsed() < Duration::from_secs(4));
+        self.toasts
+            .retain(|(_, t, _)| t.elapsed() < Duration::from_secs(4));
         if self.toasts.is_empty() {
             return;
         }
-        egui::Area::new(egui::Id::new("toasts")).anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -24.0)).order(egui::Order::Foreground).interactable(false).show(ctx, |ui| {
-            // Meldungen nicht Wort für Wort umbrechen (die Fläche hat keine feste Breite)
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            for (msg, _, err) in self.toasts.iter().rev().take(3) {
-                egui::Frame::default()
-                    .fill(if *err { Color32::from_rgb(0x3A, 0x1A, 0x1C) } else { theme::BG_RAISED })
-                    .stroke(egui::Stroke::new(1.0_f32, if *err { theme::DANGER } else { theme::BORDER }))
-                    .corner_radius(8)
-                    .inner_margin(egui::Margin::symmetric(14, 8))
-                    .shadow(egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(120) })
-                    .show(ui, |ui| {
-                        let g = if *err { icon::WARNING_CIRCLE } else { icon::CHECK_CIRCLE };
-                        ui.label(RichText::new(crate::tr(format!("{g}  {msg}"))).color(if *err { Color32::from_rgb(0xFF, 0xB4, 0xB4) } else { theme::TEXT }));
-                    });
-                ui.add_space(4.0);
-            }
-        });
+        egui::Area::new(egui::Id::new("toasts"))
+            .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -24.0))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .show(ctx, |ui| {
+                // Meldungen nicht Wort für Wort umbrechen (die Fläche hat keine feste Breite)
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                for (msg, _, err) in self.toasts.iter().rev().take(3) {
+                    egui::Frame::default()
+                        .fill(if *err {
+                            Color32::from_rgb(0x3A, 0x1A, 0x1C)
+                        } else {
+                            theme::BG_RAISED
+                        })
+                        .stroke(egui::Stroke::new(
+                            1.0_f32,
+                            if *err { theme::DANGER } else { theme::BORDER },
+                        ))
+                        .corner_radius(8)
+                        .inner_margin(egui::Margin::symmetric(14, 8))
+                        .shadow(egui::epaint::Shadow {
+                            offset: [0, 4],
+                            blur: 16,
+                            spread: 0,
+                            color: Color32::from_black_alpha(120),
+                        })
+                        .show(ui, |ui| {
+                            let g = if *err {
+                                icon::WARNING_CIRCLE
+                            } else {
+                                icon::CHECK_CIRCLE
+                            };
+                            ui.label(RichText::new(crate::tr(format!("{g}  {msg}"))).color(
+                                if *err {
+                                    Color32::from_rgb(0xFF, 0xB4, 0xB4)
+                                } else {
+                                    theme::TEXT
+                                },
+                            ));
+                        });
+                    ui.add_space(4.0);
+                }
+            });
         ctx.request_repaint_after(Duration::from_millis(250));
     }
 
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
-        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .collect()
+        });
         if dropped.is_empty() {
             return;
         }
         // Über der Sticker- bzw. Soundliste abgelegt: in die eigene Bibliothek
-        if let (Some((kind, rect)), Some(pos)) = (self.lib_drop, ctx.input(|i| i.pointer.hover_pos())) {
+        if let (Some((kind, rect)), Some(pos)) =
+            (self.lib_drop, ctx.input(|i| i.pointer.hover_pos()))
+        {
             if rect.contains(pos) {
                 self.lib_import(kind, dropped);
                 return;
             }
         }
-        let (projects, rest): (Vec<_>, Vec<_>) = dropped.into_iter().partition(|p| p.extension().is_some_and(|e| e == "cutline"));
+        let (projects, rest): (Vec<_>, Vec<_>) = dropped
+            .into_iter()
+            .partition(|p| p.extension().is_some_and(|e| e == "cutline"));
         if let Some(p) = projects.first() {
             self.open_project(p);
             return;
@@ -1655,7 +2159,11 @@ impl App {
         if self.screen == Screen::Home {
             self.new_project();
         }
-        let (fonts, media): (Vec<_>, Vec<_>) = rest.into_iter().partition(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| cl_fonts::FONT_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())));
+        let (fonts, media): (Vec<_>, Vec<_>) = rest.into_iter().partition(|p| {
+            p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                cl_fonts::FONT_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())
+            })
+        });
         if !fonts.is_empty() {
             self.import_fonts(ctx, fonts);
         }
@@ -1672,7 +2180,10 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if let Some(f) = self.pending_fonts.take() {
             let known = ctx.fonts(|fo| fo.families());
-            self.registered_fonts = f.into_iter().filter(|n| known.contains(&egui::FontFamily::Name(n.clone().into()))).collect();
+            self.registered_fonts = f
+                .into_iter()
+                .filter(|n| known.contains(&egui::FontFamily::Name(n.clone().into())))
+                .collect();
         }
         self.sync_project();
         self.handle_dropped_files(ctx);
@@ -1686,16 +2197,27 @@ impl eframe::App for App {
         self.window_frame(ctx);
         egui::TopBottomPanel::top("top")
             .exact_height(theme::TITLE_H)
-            .frame(egui::Frame::default().fill(theme::BG_APP).inner_margin(egui::Margin { left: 10, right: 0, top: 0, bottom: 0 }))
+            .frame(
+                egui::Frame::default()
+                    .fill(theme::BG_APP)
+                    .inner_margin(egui::Margin {
+                        left: 10,
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                    }),
+            )
             .show(ctx, |ui| self.title_bar(ui));
 
         if self.screen == Screen::Home {
-            egui::CentralPanel::default().frame(egui::Frame::default().fill(theme::BG_APP)).show(ctx, |ui| self.home_page(ui));
+            egui::CentralPanel::default()
+                .frame(egui::Frame::default().fill(theme::BG_APP))
+                .show(ctx, |ui| self.home_page(ui));
             self.settings_window(ctx);
             self.import_dialogs(ctx);
             self.template_dialog(ctx);
-        self.external_preview(ctx);
-        self.draw_toasts(ctx);
+            self.external_preview(ctx);
+            self.draw_toasts(ctx);
             return;
         }
 
@@ -1742,12 +2264,18 @@ impl eframe::App for App {
                 .show(ctx, |ui| fixed_width(ui, |ui| self.inspector_panel(ui)));
         }
 
-        egui::CentralPanel::default().frame(theme::card(8)).show(ctx, |ui| self.player(ui));
+        egui::CentralPanel::default()
+            .frame(theme::card(8))
+            .show(ctx, |ui| self.player(ui));
 
         self.voiceover_window(ctx);
         self.settings_window(ctx);
         let fonts_owned = self.font_files();
-        let tex = self.frames.values().next().map(|(_, t)| (t.id(), t.size_vec2()));
+        let tex = self
+            .frames
+            .values()
+            .next()
+            .map(|(_, t)| (t.id(), t.size_vec2()));
         if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex) {
             // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen)
             if msg.contains("Export fertig") {

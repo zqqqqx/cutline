@@ -85,9 +85,18 @@ impl Models {
 
     /// `onnxruntime.dll` neben der EXE, im Modellordner oder im entpackten Release-Ordner.
     pub fn ort_dll(&self) -> Option<PathBuf> {
-        let name = if cfg!(windows) { "onnxruntime.dll" } else if cfg!(target_os = "macos") { "libonnxruntime.dylib" } else { "libonnxruntime.so" };
+        let name = if cfg!(windows) {
+            "onnxruntime.dll"
+        } else if cfg!(target_os = "macos") {
+            "libonnxruntime.dylib"
+        } else {
+            "libonnxruntime.so"
+        };
         let mut cands = vec![];
-        if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+        if let Some(d) = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+        {
             cands.push(d.join(name));
         }
         cands.push(self.dir.join(name));
@@ -100,10 +109,26 @@ impl Models {
     }
     pub fn parakeet(&self) -> Option<PathBuf> {
         let d = self.dir.join("parakeet-tdt-0.6b-v3");
-        ["nemo128.onnx", "encoder-model.int8.onnx", "decoder_joint-model.int8.onnx", "vocab.txt"].iter().all(|f| d.join(f).is_file()).then_some(d)
+        [
+            "nemo128.onnx",
+            "encoder-model.int8.onnx",
+            "decoder_joint-model.int8.onnx",
+            "vocab.txt",
+        ]
+        .iter()
+        .all(|f| d.join(f).is_file())
+        .then_some(d)
     }
     pub fn whisper(&self) -> Option<PathBuf> {
-        ["ggml-large-v3-turbo.bin", "ggml-small.bin", "ggml-base.bin", "ggml-tiny.bin"].iter().map(|f| self.dir.join(f)).find(|p| p.is_file())
+        [
+            "ggml-large-v3-turbo.bin",
+            "ggml-small.bin",
+            "ggml-base.bin",
+            "ggml-tiny.bin",
+        ]
+        .iter()
+        .map(|f| self.dir.join(f))
+        .find(|p| p.is_file())
     }
     pub fn rvm(&self) -> Option<PathBuf> {
         Some(self.dir.join("rvm_mobilenetv3_fp32.onnx")).filter(|p| p.is_file())
@@ -125,8 +150,14 @@ static ENV: OnceLock<Result<ort::environment::Environment, String>> = OnceLock::
 /// ONNX-Runtime einmalig laden.
 pub fn ort_env(models: &Models) -> Result<&'static ort::environment::Environment, String> {
     ENV.get_or_init(|| {
-        let dll = models.ort_dll().ok_or("ONNX Runtime fehlt (Einstellungen → Modelle)")?;
-        ort::init_from(&dll).map_err(|e| e.to_string())?.with_name("cutline").build().map_err(|e| e.to_string())
+        let dll = models
+            .ort_dll()
+            .ok_or("ONNX Runtime fehlt (Einstellungen → Modelle)")?;
+        ort::init_from(&dll)
+            .map_err(|e| e.to_string())?
+            .with_name("cutline")
+            .build()
+            .map_err(|e| e.to_string())
     })
     .as_ref()
     .map_err(|e| e.clone())
@@ -136,34 +167,90 @@ pub(crate) fn session(models: &Models, path: &Path) -> Result<ort::session::Sess
     let env = ort_env(models)?;
     ort::session::Session::builder(env)
         .map_err(|e| e.to_string())?
-        .with_intra_threads(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(8))
+        .with_intra_threads(
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+                .min(8),
+        )
         .map_err(|e| e.to_string())?
         .commit_from_file(path)
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Ton als 16-kHz-Mono-f32 (für Spracherkennung und Beats).
-pub fn decode_audio(path: &Path, rate: u32, start: f64, dur: Option<f64>) -> Result<Vec<f32>, String> {
+pub fn decode_audio(
+    path: &Path,
+    rate: u32,
+    start: f64,
+    dur: Option<f64>,
+) -> Result<Vec<f32>, String> {
     let mut cmd = cl_media::ffmpeg_command().map_err(|e| e.to_string())?;
     cmd.args(["-v", "error", "-nostdin", "-ss", &format!("{start:.3}")]);
     if let Some(d) = dur {
         cmd.args(["-t", &format!("{d:.3}")]);
     }
-    let out = cmd.arg("-i").arg(path).args(["-vn", "-ac", "1", "-ar", &rate.to_string(), "-f", "f32le", "-"]).stdin(Stdio::null()).output().map_err(|e| e.to_string())?;
+    let out = cmd
+        .arg("-i")
+        .arg(path)
+        .args([
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            &rate.to_string(),
+            "-f",
+            "f32le",
+            "-",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| e.to_string())?;
     if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("Ton nicht lesbar").to_string());
+        return Err(String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .last()
+            .unwrap_or("Ton nicht lesbar")
+            .to_string());
     }
-    Ok(out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect())
+    Ok(out
+        .stdout
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect())
 }
 
 /// Videobilder als Graustufen (w×h) mit `fps` Bildern pro Sekunde, ab `start` für `dur` Sekunden.
-pub fn gray_frames(path: &Path, w: u32, h: u32, fps: f64, start: f64, dur: f64, mut each: impl FnMut(usize, &[u8]) -> bool) -> Result<usize, String> {
+pub fn gray_frames(
+    path: &Path,
+    w: u32,
+    h: u32,
+    fps: f64,
+    start: f64,
+    dur: f64,
+    mut each: impl FnMut(usize, &[u8]) -> bool,
+) -> Result<usize, String> {
     let mut child = cl_media::ffmpeg_command()
         .map_err(|e| e.to_string())?
-        .args(["-v", "error", "-nostdin", "-ss", &format!("{start:.3}"), "-t", &format!("{dur:.3}")])
+        .args([
+            "-v",
+            "error",
+            "-nostdin",
+            "-ss",
+            &format!("{start:.3}"),
+            "-t",
+            &format!("{dur:.3}"),
+        ])
         .arg("-i")
         .arg(path)
-        .args(["-an", "-vf", &format!("fps={fps},scale={w}:{h}:flags=area,format=gray"), "-f", "rawvideo", "-"])
+        .args([
+            "-an",
+            "-vf",
+            &format!("fps={fps},scale={w}:{h}:flags=area,format=gray"),
+            "-f",
+            "rawvideo",
+            "-",
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -185,7 +272,13 @@ pub fn gray_frames(path: &Path, w: u32, h: u32, fps: f64, start: f64, dur: f64, 
 
 /// Pfad für FFmpeg-Filteroptionen escapen.
 pub(crate) fn esc(p: &Path) -> String {
-    format!("'{}'", p.to_string_lossy().replace('\\', "/").replace(':', "\\:").replace('\'', ""))
+    format!(
+        "'{}'",
+        p.to_string_lossy()
+            .replace('\\', "/")
+            .replace(':', "\\:")
+            .replace('\'', "")
+    )
 }
 
 #[cfg(test)]
@@ -194,7 +287,11 @@ pub(crate) mod testutil {
 
     /// Modellordner der Entwicklungsumgebung (CUTLINE_MODELS oder %LOCALAPPDATA%/cutline-models).
     pub fn models() -> Option<Models> {
-        let d = std::env::var_os("CUTLINE_MODELS").map(PathBuf::from).or_else(|| std::env::var_os("LOCALAPPDATA").map(|l| PathBuf::from(l).join("cutline-models")))?;
+        let d = std::env::var_os("CUTLINE_MODELS")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("LOCALAPPDATA").map(|l| PathBuf::from(l).join("cutline-models"))
+            })?;
         d.is_dir().then(|| Models::new(d))
     }
 
@@ -209,7 +306,11 @@ pub(crate) mod testutil {
             wav.display(),
             text
         );
-        let ok = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &ps]).status().ok()?.success();
+        let ok = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &ps])
+            .status()
+            .ok()?
+            .success();
         (ok && wav.is_file()).then_some(wav)
     }
 }
