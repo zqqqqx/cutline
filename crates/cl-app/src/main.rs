@@ -127,12 +127,14 @@ fn main() -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport,
         renderer: eframe::Renderer::Wgpu,
-        // An die Bildwiederholrate gebunden: gleichmäßige Bilder, keine unnötige Last
+        // Nicht blockierend präsentieren: Mit festem VSync hängt Windows das Zeichnen auf, sobald
+        // das Hauptfenster verdeckt ist (z. B. vom Vollbild-Vorschaufenster). Die Bildrate
+        // begrenzt die App beim Abspielen selbst (~120/s).
         wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
-            present_mode: eframe::wgpu::PresentMode::Fifo,
+            present_mode: eframe::wgpu::PresentMode::AutoNoVsync,
             ..Default::default()
         },
-        vsync: true,
+        vsync: false,
         ..Default::default()
     };
     eframe::run_native(

@@ -90,6 +90,11 @@ pub struct Voiceover {
     pub gain_db: f32,
     pub countdown_until: Option<Instant>,
     pub recorder: Option<Recorder>,
+    /// 0 = Aufnahme, 1 = Einstellungen
+    pub tab: usize,
+    /// Lautstärke und Ton-Werkzeuge für die neue Aufnahme
+    pub volume_db: f32,
+    pub audio: AudioFx,
 }
 
 pub struct App {
@@ -142,6 +147,13 @@ pub struct App {
     pub proxy_failed: HashSet<MediaId>,
     /// Vorschau in eigenem Fenster
     pub ext_preview: bool,
+    /// Vorschaufenster im Vollbild (randlos maximiert)
+    pub ext_full: bool,
+    /// Vorschaugröße beim Start der Wiedergabe (bleibt bis zum Anhalten)
+    pub play_canvas_px: Option<egui::Vec2>,
+    /// Aufteilung (Medien-, Inspektor-Breite, Zeitleisten-Höhe) als Anteil des Fensters
+    pub layout_frac: (f32, f32, f32),
+    pub layout_screen: Option<egui::Rect>,
     /// Einführung (erster Start) und Rundgang
     pub onboard: Option<crate::onboarding::Onboard>,
     pub tour: Option<usize>,
@@ -324,6 +336,10 @@ impl App {
             tpl_dialog: None,
             proxy_failed: HashSet::new(),
             ext_preview: false,
+            ext_full: false,
+            play_canvas_px: None,
+            layout_frac: (0.27, 0.22, 0.38),
+            layout_screen: None,
             onboard,
             tour: None,
             tour_rects: HashMap::new(),
@@ -377,6 +393,9 @@ impl App {
                 gain_db: 0.0,
                 countdown_until: None,
                 recorder: None,
+                tab: 0,
+                volume_db: 0.0,
+                audio: AudioFx::default(),
             },
             anim_slot: 0,
             focus_text: false,
@@ -962,6 +981,9 @@ impl App {
         template: Option<&str>,
         track: Option<TrackId>,
     ) -> Option<ClipId> {
+        if let Some(id) = template {
+            self.library.mark_used(&format!("tt:{id}"));
+        }
         let tpl = template.and_then(|id| cl_fx::text::TEMPLATES.iter().find(|t| t.id == id));
         let style = match tpl {
             Some(t) => t.make(),
@@ -990,6 +1012,7 @@ impl App {
 
     pub fn add_sticker_at(&mut self, id: &str, at: Time, track: Option<TrackId>) -> Option<ClipId> {
         let st = cl_fx::stickers::sticker(id)?;
+        self.library.mark_used(&format!("builtin:st:{id}"));
         let path = paths::data_dir().join("Stickers").join(format!("{id}.png"));
         if !path.is_file() {
             if let Err(e) = cl_fx::stickers::render_png(st, 512, &path) {
@@ -1051,6 +1074,7 @@ impl App {
 
     pub fn add_sfx_at(&mut self, id: &str, at: Time, track: Option<TrackId>) -> Option<ClipId> {
         let s = cl_fx::sfx::sfx(id)?;
+        self.library.mark_used(&format!("builtin:sfx:{id}"));
         let path = Self::sfx_path(id);
         if let Err(e) = cl_fx::sfx::render(s, &path) {
             self.toast_err(e);
@@ -1184,6 +1208,7 @@ impl App {
     }
 
     pub fn add_effect(&mut self, clip: ClipId, id: &str) {
+        self.library.mark_used(&format!("fx:{id}"));
         let Some(mut c) = self.clip_view(clip) else {
             return;
         };
@@ -1208,6 +1233,9 @@ impl App {
     }
 
     pub fn set_filter(&mut self, clip: ClipId, id: Option<String>) {
+        if let Some(i) = &id {
+            self.library.mark_used(&format!("flt:{i}"));
+        }
         let Some(mut c) = self.clip_view(clip) else {
             return;
         };
@@ -1234,6 +1262,9 @@ impl App {
 
     /// Übergang zwischen `clip` und seinem direkten Nachfolger setzen.
     pub fn set_transition(&mut self, clip: ClipId, id: Option<&str>) {
+        if let Some(i) = id {
+            self.library.mark_used(&format!("tr:{i}"));
+        }
         let dur = Time::from_secs_f64(self.settings.transition_duration as f64);
         let has_next = self.next_adjacent(clip).is_some();
         if id.is_some() && !has_next {
@@ -1701,7 +1732,7 @@ impl App {
         if let Some(d) = p.parent() {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
-        std::fs::write(p, self.project.to_json()).map_err(|e| e.to_string())?;
+        paths::write_atomic(p, self.project.to_json()).map_err(|e| e.to_string())?;
         self.saved_revision = self.revision;
         self.last_saved = Some(Instant::now());
         self.settings.add_recent(p);
@@ -2105,6 +2136,13 @@ impl App {
                     // Live-Waveform übernehmen, bis die genaue berechnet ist
                     self.waves.entry(*id).or_insert(peaks);
                     if let Some(c) = self.add_media_at(*id, start, None) {
+                        // Einstellungen aus dem Einsprech-Fenster übernehmen
+                        let tuned = self.voiceover.volume_db.abs() > 0.01 || !self.voiceover.audio.is_empty();
+                        if let Some(mut clip) = self.project.find_clip(c).map(|(_, x)| x.clone()).filter(|_| tuned) {
+                            clip.volume_db = self.voiceover.volume_db;
+                            clip.audio = self.voiceover.audio.clone();
+                            self.apply(EditOp::ReplaceClip { clip });
+                        }
                         self.select_only(Some(c));
                         self.toast(format!("{} {}", icon::MICROPHONE, self.t("voiceover")));
                     }
@@ -2376,6 +2414,17 @@ impl App {
     }
 }
 
+impl App {
+    /// Bildtakt der Oberfläche beim Abspielen: etwa zwei UI-Bilder pro Videobild.
+    /// egui zieht von der Wartezeit 1/60 s ab, deshalb wird sie hier aufgeschlagen
+    /// (sonst zeichnet die Oberfläche ungebremst mehrere hundert Mal pro Sekunde).
+    /// Genau auf das nächste Videobild zu zielen verliert Bilder (Windows-Timer ~15 ms).
+    pub fn play_repaint_delay(&self) -> Duration {
+        let fps = self.project.settings.fps.as_f64().max(1.0);
+        Duration::from_secs_f64(1.0 / 60.0 + 0.5 / fps)
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
@@ -2459,44 +2508,71 @@ impl eframe::App for App {
         }
         self.advance_playhead();
         if self.playing {
-            ctx.request_repaint();
+            ctx.request_repaint_after(self.play_repaint_delay());
         }
 
         if !self.player_max {
             // Aufteilung relativ zur Fenstergröße: der Player behält immer genug Platz
             let sr = ctx.screen_rect();
+            // Bereiche als Anteil der Fenstergröße: Wird das Fenster kleiner und wieder größer,
+            // wachsen Medien, Inspektor und Zeitleiste wieder mit (statt gestaucht zu bleiben).
+            let resized = self
+                .layout_screen
+                .is_some_and(|s| (s.width() - sr.width()).abs() > 1.0 || (s.height() - sr.height()).abs() > 1.0);
+            let (fa, fi, ft) = self.layout_frac;
+            if resized {
+                let set = |id: &str, w: Option<f32>, h: Option<f32>| {
+                    let id = egui::Id::new(id);
+                    if let Some(mut st) = egui::containers::panel::PanelState::load(ctx, id) {
+                        let size = vec2(w.unwrap_or(st.rect.width()), h.unwrap_or(st.rect.height()));
+                        st.rect = egui::Rect::from_min_size(st.rect.min, size);
+                        ctx.data_mut(|d| d.insert_persisted(id, st));
+                    }
+                };
+                set("assets", Some(sr.width() * fa), None);
+                set("inspector", Some(sr.width() * fi), None);
+                set("timeline", None, Some(sr.height() * ft));
+            }
+            let small = sr.width() < 1200.0;
             let r = egui::TopBottomPanel::bottom("timeline")
                 .resizable(true)
-                .default_height((sr.height() * 0.38).clamp(170.0, 420.0))
-                .min_height(130.0)
-                .max_height((sr.height() * 0.55).max(140.0))
+                .default_height((sr.height() * ft).clamp(150.0, 520.0))
+                .min_height(120.0)
+                .max_height((sr.height() * 0.6).max(140.0))
                 .frame(theme::card(6))
                 .show(ctx, |ui| self.timeline_panel(ui))
                 .response
                 .rect;
             self.tour_rects.insert("timeline", r);
+            let th = r.height();
 
             let r = egui::SidePanel::left("assets")
                 .resizable(true)
-                .default_width((sr.width() * 0.27).clamp(280.0, 520.0))
-                .min_width(250.0)
-                .max_width((sr.width() * 0.34).max(260.0))
+                .default_width((sr.width() * fa).clamp(200.0, 560.0))
+                .min_width(if small { 180.0 } else { 240.0 })
+                .max_width((sr.width() * 0.38).max(200.0))
                 .frame(theme::card(0))
                 .show(ctx, |ui| fixed_width(ui, |ui| self.assets_panel(ui)))
                 .response
                 .rect;
             self.tour_rects.insert("assets", r);
+            let aw = r.width();
 
             let r = egui::SidePanel::right("inspector")
                 .resizable(true)
-                .default_width((sr.width() * 0.22).clamp(250.0, 380.0))
-                .min_width(230.0)
-                .max_width((sr.width() * 0.3).max(240.0))
+                .default_width((sr.width() * fi).clamp(200.0, 420.0))
+                .min_width(if small { 180.0 } else { 220.0 })
+                .max_width((sr.width() * 0.32).max(200.0))
                 .frame(theme::card(10))
                 .show(ctx, |ui| fixed_width(ui, |ui| self.inspector_panel(ui)))
                 .response
                 .rect;
             self.tour_rects.insert("inspector", r);
+            // Vom Nutzer gezogene Breiten als Anteil merken (nur wenn das Fenster gleich blieb)
+            if !resized && sr.width() > 0.0 && sr.height() > 0.0 {
+                self.layout_frac = (aw / sr.width(), r.width() / sr.width(), th / sr.height());
+            }
+            self.layout_screen = Some(sr);
         }
 
         let r = egui::CentralPanel::default()
@@ -2509,10 +2585,17 @@ impl eframe::App for App {
         self.voiceover_window(ctx);
         self.settings_window(ctx);
         let fonts_owned = self.font_files();
-        let tex = self
-            .frames
-            .values()
-            .next()
+        // Titelbild: der Clip der Hauptspur am Playhead (sonst irgendein sichtbares Bild)
+        let main = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.main)
+            .and_then(|t| t.clips.iter().find(|c| c.contains(self.playhead)))
+            .and_then(|c| self.frames.get(&c.id));
+        let tex = main
+            .or_else(|| self.frames.values().next())
             .map(|(_, t)| (t.id(), t.size_vec2()));
         if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex) {
             // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen)

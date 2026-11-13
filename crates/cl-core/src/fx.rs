@@ -205,6 +205,16 @@ pub struct AudioFx {
     /// Bass / Höhen in dB (−12…12)
     pub bass: f32,
     pub treble: f32,
+    /// Netzbrummen entfernen (50/60 Hz und Obertöne)
+    pub hum: bool,
+    /// Rumpeln und Wind entfernen (Tiefen unter ~90 Hz)
+    pub rumble: bool,
+    /// Klicks und Knackser entfernen
+    pub declick: bool,
+    /// Kompressor 0…1 (gleichmäßigere Lautstärke)
+    pub compress: f32,
+    /// Audiofilter (id aus `cl_fx::audio::FILTERS`)
+    pub filter: Option<String>,
 }
 
 impl AudioFx {

@@ -1,4 +1,27 @@
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+/// Datei ersetzen ohne Zwischenzustand: erst `*.tmp` schreiben und auf die Platte bringen,
+/// dann umbenennen. Ein Absturz mitten im Schreiben lässt so die alte Datei stehen.
+pub fn write_atomic(p: &Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let mut tmp = p.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let mut f = std::fs::File::create(&tmp)?;
+    f.write_all(data.as_ref())?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, p)
+}
+
+#[test]
+fn write_atomic_replaces_and_leaves_no_tmp() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("a.cutline");
+    std::fs::write(&p, "alt").unwrap();
+    write_atomic(&p, "neu").unwrap();
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "neu");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
 
 /// Benutzerdaten-Ordner: %APPDATA%\Cutline bzw. ~/.local/share/cutline
 pub fn data_dir() -> PathBuf {

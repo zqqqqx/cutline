@@ -55,8 +55,35 @@ pub struct Gizmo {
     drag: Option<(ClipId, Mode)>,
     /// Laufende Änderung (nur Vorschau, noch nicht im Verlauf)
     pub live: Option<(ClipId, Transform)>,
-    snapped_x: bool,
-    snapped_y: bool,
+    /// Aktive Hilfslinien (Projektpixel relativ zur Bildmitte): senkrecht bei x, waagrecht bei y
+    guides_x: Vec<f32>,
+    guides_y: Vec<f32>,
+}
+
+/// Halbe Breite/Höhe der achsparallelen Hülle eines (gedrehten) Elements in Bildschirmpixeln.
+fn half_extent(r: &Region) -> Vec2 {
+    let pts = [r.corner(-1.0, -1.0), r.corner(1.0, -1.0), r.corner(1.0, 1.0), r.corner(-1.0, 1.0)];
+    let (mut w, mut h) = (0.0f32, 0.0f32);
+    for p in pts {
+        w = w.max((p.x - r.center.x).abs());
+        h = h.max((p.y - r.center.y).abs());
+    }
+    vec2(w, h)
+}
+
+/// Bester Versatz, der eines der Merkmale `feats` an einen Kandidaten `cands` bringt
+/// (innerhalb `tol`). Gibt (Versatz, Linie) zurück.
+fn best_snap(feats: &[f32], cands: &[f32], tol: f32) -> Option<(f32, f32)> {
+    let mut best: Option<(f32, f32)> = None;
+    for f in feats {
+        for c in cands {
+            let d = c - f;
+            if d.abs() <= tol && best.is_none_or(|(b, _)| d.abs() < b.abs()) {
+                best = Some((d, *c));
+            }
+        }
+    }
+    best
 }
 
 const HANDLE: f32 = 9.0;
@@ -175,27 +202,71 @@ impl App {
                 | Mode::Scale { start, .. }
                 | Mode::Rotate { start, .. } => start,
             };
-            self.gizmo.snapped_x = false;
-            self.gizmo.snapped_y = false;
+            self.gizmo.guides_x.clear();
+            self.gizmo.guides_y.clear();
+            let (pw, ph) = (canvas.width() / px_per_unit, canvas.height() / px_per_unit);
+            let free = ui.input(|i| i.modifiers.alt); // Alt = ohne Einrasten
+            let tol = SNAP_PX / px_per_unit;
             match mode {
                 Mode::Move { press, start } => {
                     let d = (p - press) / px_per_unit;
                     t.x = start.x + d.x;
                     t.y = start.y + d.y;
-                    // An der Bildmitte einrasten
-                    if (t.x * px_per_unit).abs() < SNAP_PX {
-                        t.x = 0.0;
-                        self.gizmo.snapped_x = true;
-                    }
-                    if (t.y * px_per_unit).abs() < SNAP_PX {
-                        t.y = 0.0;
-                        self.gizmo.snapped_y = true;
+                    if let (Some(r), false) = (reg, free) {
+                        // Kanten und Mitte an Bildrand, Mitte, Dritteln und anderen Elementen
+                        let he = half_extent(&r) / px_per_unit;
+                        let mut cx = vec![-pw / 2.0, -pw / 6.0, 0.0, pw / 6.0, pw / 2.0];
+                        let mut cy = vec![-ph / 2.0, -ph / 6.0, 0.0, ph / 6.0, ph / 2.0];
+                        for o in regions.iter().filter(|o| o.clip != clip) {
+                            let oc = (o.center - canvas.center()) / px_per_unit;
+                            let oe = half_extent(o) / px_per_unit;
+                            cx.extend([oc.x - oe.x, oc.x, oc.x + oe.x]);
+                            cy.extend([oc.y - oe.y, oc.y, oc.y + oe.y]);
+                        }
+                        if let Some((dx, line)) = best_snap(&[t.x - he.x, t.x, t.x + he.x], &cx, tol) {
+                            t.x += dx;
+                            self.gizmo.guides_x.push(line);
+                        }
+                        if let Some((dy, line)) = best_snap(&[t.y - he.y, t.y, t.y + he.y], &cy, tol) {
+                            t.y += dy;
+                            self.gizmo.guides_y.push(line);
+                        }
                     }
                 }
                 Mode::Scale { start, press_dist } => {
                     if let Some(r) = reg {
                         t.scale =
                             (start.scale * p.distance(r.center) / press_dist).clamp(0.02, 20.0);
+                        if !free {
+                            // Kanten am Bildrand einrasten, außerdem bei 100 %
+                            let cur = self.gizmo.live.map(|l| l.1.scale).unwrap_or(start.scale).max(0.001);
+                            let base = half_extent(&r) / px_per_unit / cur;
+                            let raw = t.scale;
+                            let mut best: Option<(f32, Option<(bool, f32)>)> = None;
+                            let mut consider = |sc: f32, line: Option<(bool, f32)>| {
+                                let near = ((sc - raw) * base.x.max(base.y) * px_per_unit).abs() <= SNAP_PX;
+                                if sc > 0.02 && near && best.is_none_or(|(b, _)| (sc - raw).abs() < (b - raw).abs()) {
+                                    best = Some((sc, line));
+                                }
+                            };
+                            if base.x > 0.0 {
+                                consider((pw / 2.0 - t.x) / base.x, Some((true, pw / 2.0)));
+                                consider((pw / 2.0 + t.x) / base.x, Some((true, -pw / 2.0)));
+                            }
+                            if base.y > 0.0 {
+                                consider((ph / 2.0 - t.y) / base.y, Some((false, ph / 2.0)));
+                                consider((ph / 2.0 + t.y) / base.y, Some((false, -ph / 2.0)));
+                            }
+                            consider(1.0, None);
+                            if let Some((sc, line)) = best {
+                                t.scale = sc;
+                                match line {
+                                    Some((true, x)) => self.gizmo.guides_x.push(x),
+                                    Some((false, y)) => self.gizmo.guides_y.push(y),
+                                    None => {}
+                                }
+                            }
+                        }
                         badge = Some(format!("{:.0} %", t.scale * 100.0));
                     }
                 }
@@ -223,29 +294,28 @@ impl App {
             {
                 self.commit_transform(clip, t);
             }
-            self.gizmo.snapped_x = false;
-            self.gizmo.snapped_y = false;
+            self.gizmo.guides_x.clear();
+            self.gizmo.guides_y.clear();
         }
 
-        // Hilfslinien beim Einrasten
-        let guide = Stroke::new(1.0_f32, theme::SNAP);
-        if self.gizmo.snapped_x {
-            painter.line_segment(
-                [
-                    pos2(canvas.center().x, canvas.top()),
-                    pos2(canvas.center().x, canvas.bottom()),
-                ],
-                guide,
-            );
+        // Beim Verschieben/Skalieren: dezentes Raster (Drittel, Mitte) und aktive Hilfslinien
+        if self.gizmo.drag.is_some_and(|(_, m)| !matches!(m, Mode::Rotate { .. })) {
+            let grid = Stroke::new(1.0_f32, Color32::from_white_alpha(28));
+            for k in [1.0 / 3.0, 0.5, 2.0 / 3.0] {
+                let x = canvas.left() + canvas.width() * k;
+                let y = canvas.top() + canvas.height() * k;
+                painter.line_segment([pos2(x, canvas.top()), pos2(x, canvas.bottom())], grid);
+                painter.line_segment([pos2(canvas.left(), y), pos2(canvas.right(), y)], grid);
+            }
         }
-        if self.gizmo.snapped_y {
-            painter.line_segment(
-                [
-                    pos2(canvas.left(), canvas.center().y),
-                    pos2(canvas.right(), canvas.center().y),
-                ],
-                guide,
-            );
+        let guide = Stroke::new(1.0_f32, theme::SNAP);
+        for x in &self.gizmo.guides_x {
+            let sx = canvas.center().x + x * px_per_unit;
+            painter.line_segment([pos2(sx, canvas.top() - 6.0), pos2(sx, canvas.bottom() + 6.0)], guide);
+        }
+        for y in &self.gizmo.guides_y {
+            let sy = canvas.center().y + y * px_per_unit;
+            painter.line_segment([pos2(canvas.left() - 6.0, sy), pos2(canvas.right() + 6.0, sy)], guide);
         }
 
         // Rahmen + Griffe des ausgewählten Elements

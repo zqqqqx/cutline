@@ -48,6 +48,8 @@ fn save_keys(k: &Keys) {
 #[derive(Debug, Clone)]
 pub struct Hit {
     pub title: String,
+    /// ID beim Dienst: macht den Dateinamen eindeutig (Titel wiederholen sich oft)
+    pub id: String,
     pub info: String,
     /// Datei zum Laden (MP3-Vorschau bzw. Video/Foto)
     pub url: String,
@@ -129,6 +131,7 @@ pub fn freesound_search(key: &str, q: &str) -> Result<Vec<Hit>, String> {
                 .to_uppercase();
             Some(Hit {
                 title: r["name"].as_str().unwrap_or("?").to_string(),
+                id: r["id"].to_string(),
                 info: format!(
                     "{:.1} s · {}",
                     r["duration"].as_f64().unwrap_or(0.0),
@@ -170,6 +173,7 @@ pub fn pexels_search(key: &str, q: &str, photos: bool) -> Result<Vec<Hit>, Strin
                         .filter(|s| !s.is_empty())
                         .unwrap_or("Foto")
                         .to_string(),
+                    id: p["id"].to_string(),
                     info: format!(
                         "{}×{} · {}",
                         p["width"],
@@ -204,6 +208,7 @@ pub fn pexels_search(key: &str, q: &str, photos: bool) -> Result<Vec<Hit>, Strin
                             .unwrap_or_else(|| s.to_string())
                     })
                     .unwrap_or_else(|| "Video".into()),
+                id: vd["id"].to_string(),
                 info: format!(
                     "{} s · {}×{} · {}",
                     vd["duration"],
@@ -217,16 +222,6 @@ pub fn pexels_search(key: &str, q: &str, photos: bool) -> Result<Vec<Hit>, Strin
             })
         })
         .collect())
-}
-
-fn download(url: &str, dest: &std::path::Path) -> Result<(), String> {
-    let resp = agent().get(url).call().map_err(http_err)?;
-    if let Some(d) = dest.parent() {
-        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
-    }
-    let mut f = std::fs::File::create(dest).map_err(|e| e.to_string())?;
-    std::io::copy(&mut resp.into_reader(), &mut f).map_err(|e| e.to_string())?;
-    Ok(())
 }
 
 fn safe(s: &str) -> String {
@@ -379,7 +374,7 @@ impl App {
                 crate::library::Kind::Sound
                     .dir()
                     .join("Freesound")
-                    .join(format!("{}.{}", safe(&h.title), h.ext))
+                    .join(format!("{} {}.{}", safe(&h.title), h.id, h.ext))
             } else {
                 let base = self
                     .project_path
@@ -390,14 +385,15 @@ impl App {
                     })
                     .unwrap_or_else(|| crate::paths::data_dir().join("Stock"));
                 base.join("Pexels")
-                    .join(format!("{}.{}", safe(&h.title), h.ext))
+                    .join(format!("{} {}.{}", safe(&h.title), h.id, h.ext))
             };
             let (tx, c) = (self.stock.tx.clone(), ctx.clone());
             std::thread::spawn(move || {
                 let r = if dest.is_file() {
                     Ok(())
                 } else {
-                    download(&h.url, &dest)
+                    // schreibt erst *.part: ein abgebrochener Download wird nie wiederverwendet
+                    cl_update::download_to(&h.url, &dest, |_, _| {}, &Default::default())
                 };
                 let _ = tx.send(Msg::Downloaded(which, r.map(|_| (dest, h.title.clone()))));
                 c.request_repaint();

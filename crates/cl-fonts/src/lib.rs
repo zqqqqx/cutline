@@ -510,7 +510,8 @@ pub fn wrap_text(data: &[u8], index: u32, size: f32, text: &str, max_width: f32)
     let mut lines = Vec::new();
     for para in text.split('\n') {
         let mut line = String::new();
-        for word in para.split_whitespace() {
+        // An einzelnen Leerzeichen trennen: Mehrfach-Leerzeichen (z. B. „D E R  F I L M“) bleiben
+        for word in para.split(' ') {
             let candidate = if line.is_empty() {
                 word.to_string()
             } else {
@@ -696,6 +697,7 @@ mod tests {
         let wrapped = wrap_text(&d, 0, 100.0, "eins zwei drei vier fünf sechs", w1 * 1.5);
         assert!(wrapped.lines().count() >= 3, "{wrapped}");
         assert_eq!(wrapped.replace('\n', " "), "eins zwei drei vier fünf sechs");
+        assert_eq!(wrap_text(&d, 0, 100.0, "D E R  F I L M", 1e6), "D E R  F I L M");
     }
 
     #[test]

@@ -108,8 +108,8 @@ impl AppSettings {
     }
     pub fn save(&self) {
         let _ = std::fs::create_dir_all(paths::data_dir());
-        let _ = std::fs::write(
-            Self::path(),
+        let _ = paths::write_atomic(
+            &Self::path(),
             serde_json::to_string_pretty(self).unwrap_or_default(),
         );
     }
@@ -457,7 +457,7 @@ impl App {
                         self.invalidate_preview();
                     }
                 });
-                ui.label(RichText::new(crate::tr("Geringere Vorschauauflösung macht die Wiedergabe mit Effekten flüssiger. Der Export nutzt immer die volle Auflösung.")).small().color(theme::TEXT_DIM));
+                ui.label(RichText::new(crate::tr("Export immer in voller Auflösung")).small().color(theme::TEXT_DIM));
                 self.proxy_settings(ui);
                 ui.add_space(8.0);
                 theme::row(ui, "Effekt-Cache", |ui| {
@@ -475,7 +475,7 @@ impl App {
                 });
             }
             Section::Mcp => {
-                ui.label(RichText::new(crate::tr("Über das Model Context Protocol können lokale KI-Assistenten und Skripte das offene Projekt lesen und bearbeiten. Jede Änderung landet im Verlauf und lässt sich rückgängig machen. Der Server ist nur auf diesem Rechner erreichbar (127.0.0.1) und verlangt ein Token.")).small().color(theme::TEXT_DIM));
+                ui.label(RichText::new(crate::tr("Nur auf diesem Rechner erreichbar (127.0.0.1), mit Token. Jede Änderung lässt sich rückgängig machen.")).small().color(theme::TEXT_DIM));
                 ui.add_space(10.0);
                 let mut on = self.settings.mcp_enabled;
                 if widgets::toggle_row(ui, "MCP-Server aktivieren", &mut on) {
@@ -567,7 +567,6 @@ impl App {
                         .monospace()
                         .color(theme::TEXT_DIM),
                 );
-                ui.label(RichText::new(crate::tr("Werkzeuge: Projekt lesen, Medien importieren, Clips einfügen, teilen, trimmen, löschen, Format setzen, beliebige EditOps, Rückgängig/Wiederholen.")).small().color(theme::TEXT_DIM));
             }
             Section::Shortcuts => self.shortcuts_settings(ui),
             Section::Updates => self.updates_settings(ui),

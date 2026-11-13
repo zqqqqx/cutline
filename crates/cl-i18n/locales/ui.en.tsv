@@ -1235,3 +1235,47 @@ Einzelheiten	Details
 Begrenzt das Element auf einen Bildbereich. Der Umriss erscheint in der Vorschau, solange das Element ausgewählt ist.	Limits the element to an area of the picture. The outline shows in the preview while the element is selected.
 Der Filter wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.	The filter affects all tracks below while the element runs. Change its position and length in the timeline.
 Der Effekt wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.	The effect affects all tracks below while the element runs. Change its position and length in the timeline.
+Zuletzt	Recent
+Zuletzt verwendet	Recently used
+Sounds	Sounds
+Epidemic	Epidemic
+aus Markern, werden eingebettet	from markers, embedded in the file
+YouTube braucht mindestens 3 Kapitel	YouTube needs at least 3 chapters
+YouTube: jedes Kapitel muss mindestens 10 s lang sein	YouTube: every chapter must be at least 10 s long
+Für die Videobeschreibung	For the video description
+Störgeräusche	Noise
+Rumpeln & Wind	Rumble & wind
+Klicks	Clicks
+Klang	Sound
+Kompressor	Compressor
+Lautheit angleichen	Normalize loudness
+Audiofilter	Audio filters
+Aufnahme	Recording
+Startet am Playhead	Starts at the playhead
+Gleich geht's los	Get ready
+Countdown abbrechen (Esc)	Cancel countdown (Esc)
+Projekt stumm	Mute project
+Podcast	Podcast
+Bass-Boost	Bass boost
+Lo-Fi	Lo-fi
+Laptop	Laptop
+Stadion	Stadium
+Nebenraum	Next room
+Wärmer	Warmer
+Klarer	Clearer
+Breiter	Wider
+Klicks und Knackser entfernen	Remove clicks and crackle
+Netzbrummen (50/60 Hz) entfernen	Remove mains hum (50/60 Hz)
+Sprache betonen, Hintergrund absenken	Bring out speech, lower the background
+Tiefe Störgeräusche unter 90 Hz entfernen	Remove low noise below 90 Hz
+Gilt für alle ausgewählten Clips	Applies to all selected clips
+Ton ist bei Kurven stumm	Audio is muted with curves
+Vorschau angenähert, Export exakt	Preview approximated, export exact
+Brauchen ein eigenes Konto. Aus, bis du sie unter Plugins einschaltest.	Need their own account. Off until you turn them on under Plugins.
+Export immer in voller Auflösung	Export always uses full resolution
+Nur auf diesem Rechner erreichbar (127.0.0.1), mit Token. Jede Änderung lässt sich rückgängig machen.	Only reachable on this computer (127.0.0.1), with a token. Every change can be undone.
+Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes. Der Export nutzt immer die Originale.	For videos above 1080p, above 30 fps or in HEVC/AV1/ProRes. Export always uses the originals.
+Alle 5 Minuten bei Änderungen, die letzten 30 Stände	Every 5 minutes when changed, the last 30 versions
+Läuft lokal auf deinem Rechner, es werden keine Daten hochgeladen.	Runs locally on your computer, no data is uploaded.
+Programmeigene Effekte und Vorlagen werden nicht übernommen.	The other program's own effects and templates are not imported.
+ab {}	from {}

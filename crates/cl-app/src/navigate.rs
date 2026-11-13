@@ -22,29 +22,31 @@ pub fn chapter_time(t: Time) -> String {
     }
 }
 
-/// Kapitelliste für die Videobeschreibung. YouTube verlangt ein Kapitel bei 0:00.
+/// Kapitel (Start, Titel) wie im Export eingebettet.
+fn chapter_list(markers: &[Marker]) -> Vec<(Time, String)> {
+    cl_export::chapter_list(markers, Time::ZERO, Time(i64::MAX))
+}
+
+/// Kapitelliste für die Videobeschreibung.
 pub fn chapters(markers: &[Marker]) -> String {
-    let mut v: Vec<(Time, String)> = markers
+    chapter_list(markers)
         .iter()
-        .map(|m| {
-            (
-                m.at,
-                if m.name.is_empty() {
-                    "Kapitel".to_string()
-                } else {
-                    m.name.clone()
-                },
-            )
-        })
-        .collect();
-    v.sort_by_key(|m| m.0);
-    if v.first().is_none_or(|m| m.0 > Time::ZERO) {
-        v.insert(0, (Time::ZERO, "Intro".into()));
-    }
-    v.iter()
         .map(|(t, n)| format!("{} {n}", chapter_time(*t)))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Verstößt die Liste gegen YouTubes Regeln (mind. 3 Kapitel, je mind. 10 s)?
+pub fn chapter_issue(markers: &[Marker], total: Time) -> Option<&'static str> {
+    let v = chapter_list(markers);
+    if v.len() < 3 {
+        return Some("YouTube braucht mindestens 3 Kapitel");
+    }
+    let short = v.iter().enumerate().any(|(i, (t, _))| {
+        let end = v.get(i + 1).map(|n| n.0).unwrap_or(total);
+        (end - *t).as_secs_f64() < 10.0
+    });
+    short.then_some("YouTube: jedes Kapitel muss mindestens 10 s lang sein")
 }
 
 impl App {
@@ -433,14 +435,19 @@ impl App {
             });
         }
         ui.add_space(4.0);
+        if let Some(w) = chapter_issue(&ms, self.project.duration()) {
+            ui.label(
+                RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w)))
+                    .small()
+                    .color(theme::SNAP),
+            );
+        }
         if ui
             .add(theme::secondary(format!(
                 "{}  YouTube-Kapitel kopieren",
                 icon::COPY
             )))
-            .on_hover_text(crate::tr(
-                "Kapitelliste aus den Markern für die Videobeschreibung",
-            ))
+            .on_hover_text(crate::tr("Für die Videobeschreibung"))
             .clicked()
         {
             ui.ctx().copy_text(chapters(&ms));
@@ -468,5 +475,24 @@ mod tests {
             "0:00 Intro\n1:15 Boss\n1:02:05 Ende"
         );
         assert_eq!(chapters(&[m(0.0, "Start")]), "0:00 Start");
+        // Marker knapp nach 0:00 (ein Bild) wird das erste Kapitel, kein extra „Intro“
+        assert_eq!(chapters(&[m(0.033, "Start"), m(20.0, "B")]), "0:00 Start\n0:20 B");
+    }
+
+    #[test]
+    fn youtube_chapter_rules() {
+        let m = |s: f64| Marker {
+            id: 0,
+            at: Time::from_secs_f64(s),
+            duration: Time::ZERO,
+            name: String::new(),
+            note: String::new(),
+            color: 0,
+        };
+        let total = Time::from_secs_f64(60.0);
+        assert!(chapter_issue(&[m(20.0)], total).is_some()); // nur 2 Kapitel
+        assert!(chapter_issue(&[m(20.0), m(25.0)], total).is_some()); // 5 s zu kurz
+        assert!(chapter_issue(&[m(20.0), m(55.0)], total).is_some()); // letztes 5 s
+        assert_eq!(chapter_issue(&[m(20.0), m(40.0)], total), None);
     }
 }

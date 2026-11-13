@@ -253,32 +253,39 @@ pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 24.0), Sense::hover());
     ui.painter().rect_filled(rect, 6.0, theme::BG_INPUT);
-    let cw = rect.width() / items.len().max(1) as f32;
+    let font = egui::FontId::proportional(11.0);
+    let texts: Vec<String> = items.iter().map(|it| crate::tr(*it)).collect();
+    // Breite je Segment nach Textlänge; Restplatz gleichmäßig verteilt
+    let need: Vec<f32> = texts
+        .iter()
+        .map(|t| ui.fonts(|f| f.layout_no_wrap(t.clone(), font.clone(), Color32::WHITE).size().x) + 14.0)
+        .collect();
+    let total: f32 = need.iter().sum();
+    let extra = (rect.width() - total) / items.len().max(1) as f32;
+    let scale = (rect.width() / total).min(1.0);
+    let mut x = rect.left();
     let mut changed = false;
-    for (i, it) in items.iter().enumerate() {
-        let r = Rect::from_min_size(
-            pos2(rect.left() + i as f32 * cw, rect.top()),
-            vec2(cw, rect.height()),
-        )
-        .shrink(2.0);
-        let resp = ui.interact(r, ui.id().with(("seg", i, *it)), Sense::click());
+    for (i, t) in texts.iter().enumerate() {
+        let cw = if extra >= 0.0 { need[i] + extra } else { need[i] * scale };
+        let r = Rect::from_min_size(pos2(x, rect.top()), vec2(cw, rect.height())).shrink(2.0);
+        x += cw;
+        let resp = ui.interact(r, ui.id().with(("seg", i, items[i])), Sense::click());
         let active = *sel == i;
         if active {
             ui.painter().rect_filled(r, 5.0, theme::BG_HOVER);
         } else if resp.hovered() {
             ui.painter().rect_filled(r, 5.0, theme::BG_RAISED);
         }
-        ui.painter().text(
+        ui.painter_at(r).text(
             r.center(),
             egui::Align2::CENTER_CENTER,
-            crate::tr(*it),
-            egui::FontId::proportional(11.0),
-            if active {
-                theme::ACCENT
-            } else {
-                theme::TEXT_DIM
-            },
+            t,
+            font.clone(),
+            if active { theme::ACCENT } else { theme::TEXT_DIM },
         );
+        if extra < 0.0 {
+            resp.clone().on_hover_text(t);
+        }
         if resp.clicked() && !active {
             *sel = i;
             changed = true;

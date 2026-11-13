@@ -177,6 +177,14 @@ impl App {
     /// Elemente, die gleich beginnen, werden vorab geöffnet, damit an Schnitten nichts hakt.
     fn update_layers(&mut self, ctx: &egui::Context, layers: &[Layer], canvas_px: egui::Vec2) {
         const AHEAD: f64 = 1.5;
+        // Beim Abspielen bleibt die Dekodiergröße fest (Umschalten auf den großen Player oder
+        // Fenstergröße ändern startet die Ströme nicht neu); im Stand folgt sie der Ansicht.
+        let canvas_px = if self.playing {
+            *self.play_canvas_px.get_or_insert(canvas_px)
+        } else {
+            self.play_canvas_px = None;
+            canvas_px
+        };
         let mut visible = Vec::new();
         let mut overlays = Vec::new();
         let now = self.playhead;
@@ -307,11 +315,27 @@ impl App {
                 .filter(|p| std::path::Path::new(p).is_file())
                 .map(cl_fx::escape_path);
         let is_video = *kind == MediaKind::Video;
-        let streamable = is_video && !c.fx.reverse && c.fx.speed_curve.is_none() && l.alpha >= 1.0;
+        // Auch während Übergängen: der vorab geöffnete Strom beginnt genau am Clipanfang
+        let streamable = is_video && !c.fx.reverse && c.fx.speed_curve.is_none();
         if self.playing && streamable && (self.play_rate - 1.0).abs() < 1e-6 {
             let graph =
                 cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), Some(fps), lut.clone());
             let key = Self::frame_key(id, c, Time::ZERO, w, h, Time::ZERO, false);
+            // Hängender oder vorzeitig beendeter Strom: an der aktuellen Stelle neu öffnen
+            // (das letzte Bild bleibt stehen, bis der neue Strom liefert).
+            if prefetch_at.is_none()
+                && self.play_warmup.is_none()
+                && (c.end() - self.playhead).as_secs_f64() > 0.25
+                && self
+                    .playbacks
+                    .get(&id)
+                    .is_some_and(|p| p.key == key && p.t0 <= self.playhead && p.stalled())
+            {
+                if std::env::var_os("CUTLINE_PERF").is_some() {
+                    eprintln!("perf: Strom hing bei {:.2} s, neu geöffnet", self.playhead.as_secs_f64());
+                }
+                self.playbacks.remove(&id);
+            }
             let current = self.playbacks.get(&id).is_some_and(|p| p.key == key);
             let pending = self.playbacks_next.get(&id).is_some_and(|p| p.key == key);
             if !current && !pending {
@@ -655,6 +679,8 @@ impl App {
         if let Some(r) = ctx.input(|i| i.viewport().outer_rect) {
             builder = builder.with_position(r.min + vec2(80.0, 80.0));
         }
+        let mut ext_full = self.ext_full;
+        let mut toggle_full = false;
         ctx.show_viewport_immediate(vid, builder, |ctx, _| {
             egui::CentralPanel::default()
                 .frame(egui::Frame::default().fill(Color32::BLACK))
@@ -670,23 +696,29 @@ impl App {
                     self.draw_layers(&painter.with_clip_rect(canvas), canvas, scale, &layers);
                     let r = ui.interact(area, ui.id().with("ext"), egui::Sense::click());
                     if r.double_clicked() {
-                        let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+                        toggle_full = true;
                     }
                 });
-            ctx.input(|i| {
-                if i.key_pressed(egui::Key::F11) {
-                    let full = i.viewport().fullscreen.unwrap_or(false);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
-                }
-            });
+            if ctx.input(|i| i.key_pressed(egui::Key::F11) || (ext_full && i.key_pressed(egui::Key::Escape))) {
+                toggle_full = true;
+            }
+            // Vollbild als randloses, maximiertes Fenster: echtes Vollbild einer zweiten
+            // Ansicht lässt egui/winit unter Windows hängen.
+            if toggle_full {
+                let full = !ext_full;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(!full));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(full));
+                ext_full = full;
+            }
             if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
                 self.toggle_play();
             }
             if ctx.input(|i| i.viewport().close_requested()) {
                 self.ext_preview = false;
+                ext_full = false;
             }
         });
+        self.ext_full = ext_full;
         if self.playing {
             ctx.request_repaint_of(vid);
         }
@@ -865,7 +897,7 @@ impl App {
             db(self.meter[1].1)
         )));
         if self.playing {
-            ui.ctx().request_repaint();
+            ui.ctx().request_repaint_after(self.play_repaint_delay());
         }
     }
 
