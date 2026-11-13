@@ -754,6 +754,7 @@ dependencies = [
  "cl-fonts",
  "cl-fx",
  "cl-i18n",
+ "cl-import",
  "cl-mcp",
  "cl-media",
  "cl-plugin",
@@ -833,6 +834,17 @@ version = "0.3.0"
 dependencies = [
  "fluent-bundle",
  "unic-langid",
+]
+
+[[package]]
+name = "cl-import"
+version = "0.3.0"
+dependencies = [
+ "cl-core",
+ "cl-media",
+ "roxmltree",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

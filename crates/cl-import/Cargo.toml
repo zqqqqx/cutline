@@ -1,0 +1,15 @@
+[package]
+name = "cl-import"
+description = "Cutline: Projekte anderer Schnittprogramme importieren (CapCut-Entwürfe, FCPXML)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cl-core.workspace = true
+cl-media.workspace = true
+serde_json.workspace = true
+roxmltree = "0.20"
+
+[dev-dependencies]
+tempfile.workspace = true

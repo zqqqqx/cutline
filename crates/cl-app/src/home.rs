@@ -67,7 +67,7 @@ pub fn next_project_name() -> String {
     (1..).map(|n| format!("Projekt {n}")).find(|n| !dir.join(format!("{n}.cutline")).exists()).unwrap_or_else(|| "Projekt".into())
 }
 
-fn ago(t: SystemTime) -> String {
+pub fn ago(t: SystemTime) -> String {
     let s = SystemTime::now().duration_since(t).map(|d| d.as_secs()).unwrap_or(0);
     match s {
         0..=59 => "gerade eben".into(),
@@ -153,6 +153,12 @@ impl App {
             ui.add_space(6.0);
             if ui.add_sized([ui.available_width(), 30.0], theme::secondary(format!("{}  Projekt öffnen …", icon::FOLDER_OPEN))).clicked() {
                 self.open_dialog();
+            }
+            if self.import_enabled() {
+                ui.add_space(6.0);
+                if ui.add_sized([ui.available_width(), 30.0], theme::ghost(format!("{}  Projekt importieren …", icon::DOWNLOAD_SIMPLE))).on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve")).clicked() {
+                    self.import.open = true;
+                }
             }
             ui.add_space(18.0);
             let nav = |ui: &mut egui::Ui, g: &str, t: &str, active: bool| {

@@ -179,6 +179,7 @@ impl App {
         if !tabs.iter().any(|t| t.0 == self.clip_tab) {
             self.clip_tab = tabs[0].0;
         }
+        self.preset_bar(ui, &c);
         let mut tab = self.clip_tab;
         tab_bar(ui, &tabs, &mut tab);
         if tab != self.clip_tab {

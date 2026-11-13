@@ -389,7 +389,7 @@ impl App {
             for t in &list {
                 self.es_row(ui, &ctx, t);
             }
-            if self.es.view == View::Discover && list.len() >= 40 && list.len() % 40 == 0 {
+            if self.es.view == View::Discover && list.len() >= 40 && list.len().is_multiple_of(40) {
                 ui.vertical_centered(|ui| {
                     if ui.add_enabled(!self.es.busy, theme::ghost("Mehr laden")).clicked() {
                         load_more = true;

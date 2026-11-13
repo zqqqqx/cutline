@@ -33,10 +33,10 @@ turns them on and enters their own credentials. Nothing talks to a third-party s
 
 | Feature | Status |
 |---|---|
-| Add your own stickers and images (PNG, WebP, GIF, SVG) and sound effects (WAV, MP3, OGG, FLAC) by button or drag & drop | ⏳ |
-| Own folders for stickers and sounds, rename, move, remove; built-in items can be hidden | ⏳ |
-| Favorites and search for stickers and sounds (built-in and own) | ⏳ |
-| Presets: save the look of a clip (adjustments, filter, effects, animation, text style) and apply it in one click; manage presets | ⏳ |
+| Add your own stickers and images (PNG, WebP, GIF, SVG) and sound effects (WAV, MP3, OGG, FLAC) by button or drag & drop | ✅ |
+| Own folders for stickers and sounds, rename, move, remove; built-in items can be hidden | ✅ |
+| Favorites and search for stickers and sounds (built-in and own) | ✅ |
+| Presets: save the look of a clip (adjustments, filter, effects, animation, text style) and apply it in one click; manage presets | ✅ |
 
 ### 4.3 Bring your projects (import)
 
@@ -45,8 +45,8 @@ Settings → **Import** turns importers on or off; projects open from the home s
 
 | Source | What comes over | Status |
 |---|---|---|
-| CapCut desktop drafts (`draft_content.json`), with a list of local drafts | Video, image, audio and text clips with timing, speed, volume, position, scale, rotation, opacity, flip; text content, color and size | 🔨 |
-| Final Cut Pro / DaVinci Resolve (FCPXML) | Clips, timing, tracks | 🔨 |
+| CapCut desktop drafts (`draft_content.json`), with a list of local drafts | Video, image, audio and text clips with timing, speed, volume, position, scale, rotation, opacity, flip; text content, color and size | ✅ |
+| Final Cut Pro / DaVinci Resolve (FCPXML) | Clips, timing, tracks | ✅ |
 | OpenTimelineIO (`.otio`) | Clips, timing, tracks | ⏳ |
 | Premiere Pro (XML, xmeml) | Clips, timing, tracks | ⏳ |
 
