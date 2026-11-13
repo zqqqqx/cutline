@@ -1221,3 +1221,17 @@ Mehrfachauswahl. Danach schlagen wir passende Werkzeuge und Plugins vor.	Pick as
 Tastenkürzel wie in	Shortcuts like in
 Rundgang	Tour
 Einführung wiederholen	Repeat introduction
+Änderungen unten gelten für alle ausgewählten Clips (Skalierung, Position, Effekte, Filter, Anpassen, Ton …). Lage und Länge bleiben je Clip.	Changes below apply to all selected clips (scale, position, effects, filters, adjust, audio …). Position in time and length stay per clip.
+Wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.	Affects all tracks below while the element runs. Change its position and length in the timeline.
+Setzt Größe und Bildrate; der Export übernimmt die passende Vorlage	Sets size and frame rate; export uses the matching preset
+Klick wendet auf den ausgewählten Clip an. Ziehen auf einen Clip: nur dieser Clip; ins Freie der Zeitleiste: eigenes Element für alles darunter	Click applies to the selected clip. Drag onto a clip: only that clip; into an empty spot of the timeline: its own element for everything below
+Klick legt ein Element am Playhead an, das auf alle Spuren darunter wirkt. Auf einen Clip ziehen: nur dieser Clip	Click adds an element at the playhead that affects all tracks below. Drag onto a clip: only that clip
+Filter als Element eingefügt – wirkt auf alle Spuren darunter	Filter added as an element – affects all tracks below
+Effekt als Element eingefügt – wirkt auf alle Spuren darunter	Effect added as an element – affects all tracks below
+Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Werkzeuge → Hochkant-Layout	The project has a different aspect ratio – change the format in the Project tab or use Tools → Vertical layout
+Plattform	Platform
+Einfach	Basic
+Einzelheiten	Details
+Begrenzt das Element auf einen Bildbereich. Der Umriss erscheint in der Vorschau, solange das Element ausgewählt ist.	Limits the element to an area of the picture. The outline shows in the preview while the element is selected.
+Der Filter wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.	The filter affects all tracks below while the element runs. Change its position and length in the timeline.
+Der Effekt wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.	The effect affects all tracks below while the element runs. Change its position and length in the timeline.

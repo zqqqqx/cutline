@@ -139,6 +139,10 @@ For local captions and background removal, place an ONNX Runtime 1.31 library (`
 | `CUTLINE_NO_UPDATE=1` | Don't check for updates on startup |
 | `CUTLINE_UI_SCALE`, `CUTLINE_WINDOW_SIZE`, `CUTLINE_WINDOW_POS`, `CUTLINE_MAXIMIZED=1` | Window and scale for testing |
 | `CUTLINE_MISSING_TR=file` | Debug builds: log UI strings that have no translation yet |
+| `CUTLINE_SHOTS=folder` | Save the window as PNG whenever a file named `take` appears in that folder (for docs) |
+| `CUTLINE_DEBUG_HITS=1` | Debug builds: highlight the widget under the pointer |
+| `CUTLINE_PERF=1` | Log preview frame rate, stream starts and the largest gap between frames once per second |
+| `CUTLINE_NO_ONBOARDING=1` | Skip the first-start introduction |
 
 </details>
 

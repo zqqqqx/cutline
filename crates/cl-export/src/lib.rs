@@ -769,6 +769,130 @@ mod tests {
     }
 
     #[test]
+    fn effect_and_filter_elements_apply_to_layers_below() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = project(dir.path());
+        let mut fx = Track::new(TrackKind::Effect);
+        fx.clips.push(Clip::new(
+            ClipContent::Effect(FxRef::new("shake")),
+            Time::from_secs_f64(0.5),
+            Time::from_secs_f64(1.0),
+        ));
+        p.timeline.tracks.push(fx);
+        let mut fl = Track::new(TrackKind::Filter);
+        fl.clips.push(Clip::new(
+            ClipContent::Filter(FxRef::new("noir")),
+            Time::from_secs_f64(1.0),
+            Time::from_secs_f64(2.0),
+        ));
+        p.timeline.tracks.push(fl);
+        let s = ExportSettings::from_project(&p);
+        let out = dir.path().join("fx.mp4");
+        let job = build(&p, &s, &no_fonts, &out).unwrap();
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let m = cl_media::probe(&out).unwrap();
+        assert!((m.duration.as_secs_f64() - 4.0).abs() < 0.15);
+        // Filter-Element (Schwarzweiß) wirkt nur in seinem Zeitraum
+        let gray = cl_media::decode_frame(&out, Time::from_secs_f64(2.0), 32, 18).unwrap();
+        let color = cl_media::decode_frame(&out, Time::from_secs_f64(0.2), 32, 18).unwrap();
+        let sat = |f: &cl_media::RgbaFrame| {
+            f.data
+                .chunks(4)
+                .map(|px| (px[0] as i32 - px[1] as i32).abs() + (px[1] as i32 - px[2] as i32).abs())
+                .sum::<i32>()
+        };
+        assert!(sat(&gray) < sat(&color), "Filter wirkt ab 1 s");
+    }
+
+    #[test]
+    fn effect_element_mask_and_strength_keyframes() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = project(dir.path());
+        // Schwarzweiß nur in der linken Bildhälfte
+        let mut fl = Track::new(TrackKind::Filter);
+        let mut c = Clip::new(
+            ClipContent::Filter(FxRef::new("noir")),
+            Time::ZERO,
+            Time::from_secs_f64(2.0),
+        );
+        c.fx.mask = Some(Mask {
+            cx: 0.25,
+            cy: 0.5,
+            w: 0.5,
+            h: 1.2,
+            feather: 0.0,
+            ..Mask::new(MaskShape::Rect)
+        });
+        fl.clips.push(c);
+        p.timeline.tracks.push(fl);
+        // Zweites Element ab 2 s: Stärke 0 → 1 über eine Sekunde
+        let mut fl2 = Track::new(TrackKind::Filter);
+        let mut c2 = Clip::new(
+            ClipContent::Filter(FxRef::new("noir")),
+            Time::from_secs_f64(2.0),
+            Time::from_secs_f64(2.0),
+        );
+        c2.keyframes.set(Prop::Strength, Time::ZERO, 0.0);
+        c2.keyframes
+            .set(Prop::Strength, Time::from_secs_f64(1.0), 1.0);
+        fl2.clips.push(c2);
+        p.timeline.tracks.push(fl2);
+        let s = ExportSettings::from_project(&p);
+        let out = dir.path().join("mask.mp4");
+        run(
+            &build(&p, &s, &no_fonts, &out).unwrap(),
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .unwrap();
+        let sat = |f: &cl_media::RgbaFrame, x0: u32, x1: u32| {
+            let mut sum = 0i64;
+            for y in 0..f.height {
+                for x in x0..x1 {
+                    let i = ((y * f.width + x) * 4) as usize;
+                    let px = &f.data[i..i + 4];
+                    sum += ((px[0] as i32 - px[1] as i32).abs()
+                        + (px[1] as i32 - px[2] as i32).abs()) as i64;
+                }
+            }
+            sum
+        };
+        let f = cl_media::decode_frame(&out, Time::from_secs_f64(1.0), 32, 56).unwrap();
+        assert!(
+            sat(&f, 0, 12) * 3 < sat(&f, 20, 32),
+            "links grau, rechts farbig"
+        );
+        let early = cl_media::decode_frame(&out, Time::from_secs_f64(2.05), 32, 56).unwrap();
+        let late = cl_media::decode_frame(&out, Time::from_secs_f64(3.5), 32, 56).unwrap();
+        assert!(
+            sat(&late, 0, 32) * 3 < sat(&early, 0, 32),
+            "Stärke steigt an"
+        );
+    }
+
+    /// Export einer echten Projektdatei: `CUTLINE_EXPORT_PROJECT=<pfad> cargo test -p cl-export export_project_file -- --ignored`
+    #[test]
+    #[ignore]
+    fn export_project_file() {
+        let Some(path) = std::env::var_os("CUTLINE_EXPORT_PROJECT") else {
+            return;
+        };
+        let p = Project::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let s = ExportSettings::from_project(&p);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.mp4");
+        let job = build(&p, &s, &no_fonts, &out).unwrap();
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        assert!(cl_media::probe(&out).is_ok());
+    }
+
+    #[test]
     fn exports_mp4_gif_and_audio() {
         if !cl_media::ffmpeg_available() {
             return;

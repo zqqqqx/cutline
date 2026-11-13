@@ -631,25 +631,98 @@ pub fn escape_path(p: &str) -> String {
     )
 }
 
+/// Strecke von (x, y) nach (x, y)
+type Seg = ((f64, f64), (f64, f64));
+
 /// Stückweise lineare Funktion als FFmpeg-Ausdruck (Variable `var`), Punkte (x, y) sortiert.
+///
+/// Punkte auf einer Geraden werden zusammengefasst (lange konstante Abschnitte kosten nichts),
+/// und die Fallunterscheidung ist ein ausgeglichener Baum statt einer Kette: FFmpeg bricht bei
+/// zu tief verschachtelten Ausdrücken ab („Missing ')' or too many args“).
 pub fn piecewise_expr(points: &[(f64, f64)], var: &str) -> String {
-    match points {
+    let slope = |a: (f64, f64), b: (f64, f64)| {
+        if (b.0 - a.0).abs() < 1e-9 {
+            0.0
+        } else {
+            (b.1 - a.1) / (b.0 - a.0)
+        }
+    };
+    // doppelte x-Werte entfernen, Punkte auf einer Geraden zusammenfassen
+    let mut pts: Vec<(f64, f64)> = Vec::with_capacity(points.len());
+    for &p in points {
+        if pts
+            .last()
+            .is_some_and(|l: &(f64, f64)| (p.0 - l.0).abs() < 1e-9)
+        {
+            *pts.last_mut().expect("nicht leer") = p;
+            continue;
+        }
+        while pts.len() >= 2 {
+            let (a, b) = (pts[pts.len() - 2], pts[pts.len() - 1]);
+            let (k1, k2) = (slope(a, b), slope(b, p));
+            if (k1 - k2).abs() <= 1e-6 * k1.abs().max(k2.abs()).max(1.0) {
+                pts.pop();
+            } else {
+                break;
+            }
+        }
+        pts.push(p);
+    }
+    match pts.as_slice() {
         [] => "0".into(),
         [p] => format!("{:.5}", p.1),
         _ => {
-            let mut e = format!("{:.5}", points.last().expect("nicht leer").1);
-            for w in points.windows(2).rev() {
-                let ((x0, y0), (x1, y1)) = (w[0], w[1]);
-                let k = if (x1 - x0).abs() < 1e-9 {
-                    0.0
-                } else {
-                    (y1 - y0) / (x1 - x0)
-                };
-                e = format!("if(lt({var},{x1:.5}),{y0:.5}+({var}-{x0:.5})*{k:.6},{e})");
+            let segs: Vec<Seg> = pts.windows(2).map(|w| (w[0], w[1])).collect();
+            fn tree(
+                segs: &[Seg],
+                var: &str,
+                slope: &dyn Fn((f64, f64), (f64, f64)) -> f64,
+            ) -> String {
+                if let [(a, b)] = segs {
+                    let k = slope(*a, *b);
+                    if k == 0.0 {
+                        return format!("{:.5}", a.1);
+                    }
+                    return format!("{:.5}+({var}-{:.5})*{k:.6}", a.1, a.0);
+                }
+                let mid = segs.len() / 2;
+                format!(
+                    "if(lt({var},{:.5}),{},{})",
+                    segs[mid].0 .0,
+                    tree(&segs[..mid], var, slope),
+                    tree(&segs[mid..], var, slope)
+                )
             }
-            format!("if(lt({var},{:.5}),{:.5},{e})", points[0].0, points[0].1)
+            let (first, last) = (pts[0], pts[pts.len() - 1]);
+            format!(
+                "if(lt({var},{:.5}),{:.5},if(lt({var},{:.5}),{},{:.5}))",
+                first.0,
+                first.1,
+                last.0,
+                tree(&segs, var, &slope),
+                last.1
+            )
         }
     }
+}
+
+/// Wertet einen von [`piecewise_expr`] erzeugten Verlauf direkt aus (für Tests und Vorschau).
+#[cfg(test)]
+fn piecewise_eval(points: &[(f64, f64)], x: f64) -> f64 {
+    if x < points[0].0 {
+        return points[0].1;
+    }
+    for w in points.windows(2) {
+        if x < w[1].0 {
+            let k = if (w[1].0 - w[0].0).abs() < 1e-9 {
+                0.0
+            } else {
+                (w[1].1 - w[0].1) / (w[1].0 - w[0].0)
+            };
+            return w[0].1 + (x - w[0].0) * k;
+        }
+    }
+    points[points.len() - 1].1
 }
 
 /// Hilfsbau für Filtergraphen mit eindeutigen Labels.
@@ -1465,6 +1538,40 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{id}: {e}"));
         }
         assert!(TRANSITIONS.len() >= 40);
+    }
+
+    #[test]
+    fn long_piecewise_stays_shallow_and_runs_in_ffmpeg() {
+        // 240 Stützpunkte: Animation am Anfang, danach konstant (wie ein langer Textclip)
+        let mut pts: Vec<(f64, f64)> = (0..240)
+            .map(|i| (i as f64 * 0.141, if i < 4 { i as f64 * 0.1 } else { 0.4 }))
+            .collect();
+        // dazu eine echte Kurve mit vielen Knicken
+        pts.extend((240..400).map(|i| (i as f64 * 0.141, ((i as f64) * 0.3).sin())));
+        let e = piecewise_expr(&pts, "t");
+        let mut depth = 0i32;
+        let mut max = 0;
+        for c in e.chars() {
+            match c {
+                '(' => {
+                    depth += 1;
+                    max = max.max(depth);
+                }
+                ')' => depth -= 1,
+                _ => {}
+            }
+        }
+        assert!(max < 40, "zu tief verschachtelt: {max}");
+        assert!(e.matches("if(").count() < pts.len());
+        let _ = piecewise_eval(&pts, 1.0);
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let g = format!(
+            "[0:v]scale=w='max(2,trunc(320*(0.5+{})/2)*2)':h=180:eval=frame[out]",
+            e
+        );
+        run_graph(&g, &["color=red:s=320x180:r=10:d=1"]).unwrap();
     }
 
     #[test]

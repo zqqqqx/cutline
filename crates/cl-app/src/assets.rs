@@ -1310,9 +1310,9 @@ impl App {
         });
         ui.label(
             RichText::new(crate::tr(if target.is_some() {
-                "Klick wendet auf den ausgewählten Clip an, Ziehen auf einen Clip in der Zeitleiste"
+                "Klick wendet auf den ausgewählten Clip an. Ziehen auf einen Clip: nur dieser Clip; ins Freie der Zeitleiste: eigenes Element für alles darunter"
             } else {
-                "Clip auswählen oder Effekt auf einen Clip ziehen"
+                "Klick legt ein Element am Playhead an, das auf alle Spuren darunter wirkt. Auf einen Clip ziehen: nur dieser Clip"
             }))
             .small()
             .color(theme::TEXT_DIM),
@@ -1497,7 +1497,17 @@ impl App {
                         self.add_effect(c, &id);
                     }
                 }
-                None => self.toast_err("Wähle zuerst einen Video- oder Bildclip in der Zeitleiste"),
+                None if id.is_empty() => {}
+                None => {
+                    let at = self.playhead;
+                    if self.add_fx_clip(&id, filters, at, None).is_some() {
+                        self.toast(if filters {
+                            "Filter als Element eingefügt – wirkt auf alle Spuren darunter"
+                        } else {
+                            "Effekt als Element eingefügt – wirkt auf alle Spuren darunter"
+                        });
+                    }
+                }
             }
             self.clip_tab = ClipTab::Effects;
         }

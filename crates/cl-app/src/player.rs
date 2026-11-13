@@ -129,9 +129,19 @@ impl App {
         out
     }
 
-    fn frame_key(c: &Clip, src: Time, w: u32, h: u32, t_rel: Time, animated_fx: bool) -> u64 {
+    fn frame_key(
+        id: ClipId,
+        c: &Clip,
+        src: Time,
+        w: u32,
+        h: u32,
+        t_rel: Time,
+        animated_fx: bool,
+    ) -> u64 {
         let mut hs = std::collections::hash_map::DefaultHasher::new();
-        (c.id, src, w, h).hash(&mut hs);
+        (id, src, w, h).hash(&mut hs);
+        // Timing gehört zum Schlüssel: verschobene/getrimmte Clips brauchen einen neuen Strom
+        (c.start, c.duration, c.source_in, c.speed.to_bits()).hash(&mut hs);
         serde_json::to_string(&c.fx)
             .unwrap_or_default()
             .hash(&mut hs);
@@ -141,109 +151,270 @@ impl App {
         hs.finish() | 1
     }
 
+    /// Effekt-/Filter-Elemente auf Spuren über dem Clip `clip` (eingeschaltet, sichtbar).
+    fn fx_elements_over(&self, clip: ClipId) -> Vec<Clip> {
+        let tracks = &self.project.timeline.tracks;
+        let Some(idx) = tracks
+            .iter()
+            .position(|tr| tr.clips.iter().any(|c| c.id == clip))
+        else {
+            return Vec::new();
+        };
+        tracks[idx + 1..]
+            .iter()
+            .filter(|tr| !tr.hidden && matches!(tr.kind, TrackKind::Effect | TrackKind::Filter))
+            .flat_map(|tr| tr.clips.iter())
+            .filter(|c| !c.disabled)
+            .cloned()
+            .collect()
+    }
+
     /// Bilder für alle sichtbaren Medien-Ebenen anfordern bzw. aus Strömen holen.
+    ///
+    /// Flüssiges Abspielen: Der Strom eines Clips läuft ununterbrochen. Effekt-/Filter-Elemente
+    /// darüber laufen als eigene Fassung des Clips (eigener Strom), die beim Zeichnen mit ihrer
+    /// Stärke und ggf. nur innerhalb der Maske darübergelegt wird. Ströme für Clips und
+    /// Elemente, die gleich beginnen, werden vorab geöffnet, damit an Schnitten nichts hakt.
     fn update_layers(&mut self, ctx: &egui::Context, layers: &[Layer], canvas_px: egui::Vec2) {
-        let div = self.settings.preview_div.max(1) as f32;
-        let fps = self.project.settings.fps;
+        const AHEAD: f64 = 1.5;
         let mut visible = Vec::new();
+        let mut overlays = Vec::new();
+        let now = self.playhead;
         for l in layers {
             // Pipette: Bild ohne Chroma-Key zeigen, damit die Farbe sichtbar bleibt
-            let unkeyed;
-            let c = if matches!(self.pick, Some(crate::pro::Pick::Chroma(id)) if id == l.clip.id) {
-                let mut x = l.clip.clone();
-                x.fx.chroma = None;
-                unkeyed = x;
-                &unkeyed
-            } else {
-                &l.clip
-            };
-            let ClipContent::Media { media, kind } = &c.content else {
+            let mut c = l.clip.clone();
+            if matches!(self.pick, Some(crate::pro::Pick::Chroma(id)) if id == c.id) {
+                c.fx.chroma = None;
+            }
+            let ClipContent::Media { media, .. } = &c.content else {
                 continue;
             };
             let Some(m) = self.project.media(*media).cloned() else {
                 continue;
             };
             visible.push(c.id);
-            let max_w = ((canvas_px.x / div) as u32).clamp(64, 1920);
-            let max_h = ((canvas_px.y / div) as u32).clamp(64, 1920);
-            let (w, h) = cl_media::fit_size(m.width, m.height, max_w, max_h);
-            let lut =
-                c.fx.lut
-                    .as_deref()
-                    .filter(|p| std::path::Path::new(p).is_file())
-                    .map(cl_fx::escape_path);
-            let is_video = *kind == MediaKind::Video;
-            let streamable =
-                is_video && !c.fx.reverse && c.fx.speed_curve.is_none() && l.alpha >= 1.0;
-            if self.playing && streamable && (self.play_rate - 1.0).abs() < 1e-6 {
-                let graph =
-                    cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), Some(fps), lut.clone());
-                let key = Self::frame_key(c, Time::ZERO, w, h, Time::ZERO, false);
-                let reopen = self.playbacks.get(&c.id).is_none_or(|p| p.key != key);
-                if reopen {
-                    let at = c.source_time(c.start + l.t_rel);
-                    if let Some(pb) = Playback::open(
-                        &self.preview_path(&m),
-                        at,
-                        self.playhead,
-                        w,
-                        h,
-                        fps,
-                        graph.as_deref(),
-                        key,
-                    ) {
-                        self.playbacks.insert(c.id, pb);
-                    }
+            self.request_frame(ctx, c.id, &c, &m, l, canvas_px, None);
+            for e in self.fx_elements_over(c.id) {
+                let active = e.contains(now);
+                let soon = self.playing
+                    && e.start > now
+                    && (e.start - now).as_secs_f64() <= AHEAD
+                    && e.start < c.end();
+                if !active && !soon {
+                    continue;
                 }
-                if let Some(f) = self
-                    .playbacks
-                    .get_mut(&c.id)
-                    .and_then(|p| p.catch_up(self.playhead))
-                {
-                    self.set_frame(ctx, c.id, key, &f);
+                let (mut r, filter) = match &e.content {
+                    ClipContent::Effect(r) => (r.clone(), false),
+                    ClipContent::Filter(r) => (r.clone(), true),
+                    _ => continue,
+                };
+                let animated = !e.keyframes.get(Prop::Strength).is_empty();
+                if animated {
+                    r.intensity = 1.0;
                 }
-                continue;
-            }
-            let src = if is_video {
-                let span_end = c.source_in + c.source_span() - Time::from_millis(20);
-                Time(
-                    c.source_time(c.start + l.t_rel)
-                        .0
-                        .clamp(c.source_in.0, span_end.0.max(c.source_in.0)),
-                )
-                .snap_to_frame(m.fps.unwrap_or(fps))
-            } else {
-                Time::ZERO
-            };
-            let animated_fx = c.fx.effects.iter().any(|e| {
-                matches!(
-                    e.id.as_str(),
-                    "shake"
-                        | "zoom-pulse"
-                        | "glitch"
-                        | "rainbow"
-                        | "strobe"
-                        | "flash"
-                        | "old-film"
-                        | "warm-leak"
-                )
-            });
-            let key = Self::frame_key(c, src, w, h, l.t_rel, animated_fx);
-            if self.requested.get(&c.id) != Some(&key) {
-                self.requested.insert(c.id, key);
-                let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
-                self.decoder.send(Job::Frame {
-                    clip: c.id,
-                    key,
-                    path: self.preview_path(&m),
-                    at: src,
-                    w,
-                    h,
-                    graph,
-                });
+                let mut x = c.clone();
+                if filter {
+                    x.fx.filter = Some(r);
+                } else if !x.fx.effects.iter().any(|f| f.id == r.id) {
+                    x.fx.effects.push(r);
+                }
+                let did = c.id.derived(e.id.0.as_u128());
+                visible.push(did);
+                if active {
+                    self.request_frame(ctx, did, &x, &m, l, canvas_px, None);
+                    let k = if animated {
+                        e.strength_at(now - e.start)
+                    } else {
+                        1.0
+                    };
+                    overlays.push((c.id, did, e.fx.mask, k));
+                } else {
+                    let at = Layer {
+                        clip: x.clone(),
+                        t_rel: e.start - c.start,
+                        alpha: l.alpha,
+                    };
+                    self.request_frame(ctx, did, &x, &m, &at, canvas_px, Some(e.start));
+                }
             }
         }
+        // Gleich beginnende Clips vorladen
+        if self.playing {
+            let upcoming: Vec<Clip> = self
+                .project
+                .timeline
+                .tracks
+                .iter()
+                .filter(|tr| !tr.hidden && matches!(tr.kind, TrackKind::Video | TrackKind::Sticker))
+                .flat_map(|tr| tr.clips.iter())
+                .filter(|c| !c.disabled && c.start > now && (c.start - now).as_secs_f64() <= AHEAD)
+                .cloned()
+                .collect();
+            for c in upcoming {
+                let ClipContent::Media { media, .. } = &c.content else {
+                    continue;
+                };
+                let Some(m) = self.project.media(*media).cloned() else {
+                    continue;
+                };
+                visible.push(c.id);
+                let at = Layer {
+                    clip: c.clone(),
+                    t_rel: Time::ZERO,
+                    alpha: 1.0,
+                };
+                self.request_frame(ctx, c.id, &c, &m, &at, canvas_px, Some(c.start));
+            }
+        }
+        self.fx_overlays = overlays;
         self.playbacks.retain(|id, _| visible.contains(id));
+        self.playbacks_next.retain(|id, _| visible.contains(id));
+    }
+
+    /// Ein Bild für die Ebene anfordern (Strom beim Abspielen, sonst Einzelbild).
+    #[allow(clippy::too_many_arguments)]
+    fn request_frame(
+        &mut self,
+        ctx: &egui::Context,
+        id: ClipId,
+        c: &Clip,
+        m: &MediaRef,
+        l: &Layer,
+        canvas_px: egui::Vec2,
+        prefetch_at: Option<Time>,
+    ) {
+        let div = self.settings.preview_div.max(1) as f32;
+        let fps = self.project.settings.fps;
+        let ClipContent::Media { kind, .. } = &c.content else {
+            return;
+        };
+        // Vergrößerte Clips (z. B. Querformat-Gameplay im Hochformat auf 200 %) brauchen
+        // entsprechend mehr Pixel, sonst wird ein kleines Bild hochgezogen und unscharf.
+        let zoom = c
+            .keyframes
+            .get(Prop::Scale)
+            .iter()
+            .map(|k| k.v)
+            .fold(c.transform.scale, f32::max)
+            .clamp(0.25, 6.0);
+        let cap = |v: f32, src: u32| (v as u32).clamp(64, 3840).min(src.max(64));
+        let max_w = cap(canvas_px.x / div * zoom, m.width);
+        let max_h = cap(canvas_px.y / div * zoom, m.height);
+        let (w, h) = cl_media::fit_size(m.width, m.height, max_w, max_h);
+        let lut =
+            c.fx.lut
+                .as_deref()
+                .filter(|p| std::path::Path::new(p).is_file())
+                .map(cl_fx::escape_path);
+        let is_video = *kind == MediaKind::Video;
+        let streamable = is_video && !c.fx.reverse && c.fx.speed_curve.is_none() && l.alpha >= 1.0;
+        if self.playing && streamable && (self.play_rate - 1.0).abs() < 1e-6 {
+            let graph =
+                cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), Some(fps), lut.clone());
+            let key = Self::frame_key(id, c, Time::ZERO, w, h, Time::ZERO, false);
+            let current = self.playbacks.get(&id).is_some_and(|p| p.key == key);
+            let pending = self.playbacks_next.get(&id).is_some_and(|p| p.key == key);
+            if !current && !pending {
+                // Vorab: ab dem Startpunkt des Clips/Elements; sonst ab dem Playhead
+                let t0 = prefetch_at.unwrap_or(self.playhead);
+                let at = c.source_time(c.start + l.t_rel);
+                if let Some(pb) = Playback::open(
+                    &self.preview_path(m, h),
+                    at,
+                    t0,
+                    w,
+                    h,
+                    fps,
+                    graph.as_deref(),
+                    key,
+                ) {
+                    self.perf_opens += 1;
+                    // Läuft schon ein Strom (z. B. Effekt während der Wiedergabe geändert),
+                    // zeigt er weiter Bilder, bis der neue bereit ist – kein Stocken.
+                    if self.playbacks.contains_key(&id) && prefetch_at.is_none() {
+                        self.playbacks_next.insert(id, pb);
+                    } else {
+                        self.playbacks.insert(id, pb);
+                    }
+                }
+            }
+            if prefetch_at.is_some() {
+                return;
+            }
+            // Neuer Strom bereit? Dann umschalten.
+            if let Some(f) = self
+                .playbacks_next
+                .get_mut(&id)
+                .filter(|p| p.key == key)
+                .and_then(|p| p.catch_up(self.playhead))
+            {
+                if let Some(pb) = self.playbacks_next.remove(&id) {
+                    self.playbacks.insert(id, pb);
+                }
+                self.perf_frames += 1;
+                self.set_frame(ctx, id, key, &f);
+                return;
+            }
+            if let Some(f) = self
+                .playbacks
+                .get_mut(&id)
+                .and_then(|p| p.catch_up(self.playhead))
+            {
+                self.perf_frames += 1;
+                if id == l.clip.id && !self.play_warmup.is_some() {
+                    let now = std::time::Instant::now();
+                    if let Some(last) = self.perf_last_frame {
+                        self.perf_max_gap = self
+                            .perf_max_gap
+                            .max(now.duration_since(last).as_secs_f64());
+                    }
+                    self.perf_last_frame = Some(now);
+                }
+                self.set_frame(ctx, id, key, &f);
+            }
+            return;
+        }
+        if prefetch_at.is_some() {
+            return;
+        }
+        let src = if is_video {
+            let span_end = c.source_in + c.source_span() - Time::from_millis(20);
+            Time(
+                c.source_time(c.start + l.t_rel)
+                    .0
+                    .clamp(c.source_in.0, span_end.0.max(c.source_in.0)),
+            )
+            .snap_to_frame(m.fps.unwrap_or(fps))
+        } else {
+            Time::ZERO
+        };
+        let animated_fx = c.fx.effects.iter().any(|e| {
+            matches!(
+                e.id.as_str(),
+                "shake"
+                    | "zoom-pulse"
+                    | "glitch"
+                    | "rainbow"
+                    | "strobe"
+                    | "flash"
+                    | "old-film"
+                    | "warm-leak"
+            )
+        });
+        let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx);
+        if self.requested.get(&id) != Some(&key) {
+            self.requested.insert(id, key);
+            let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
+            self.decoder.send(Job::Frame {
+                clip: id,
+                key,
+                path: self.preview_path(m, h),
+                at: src,
+                w,
+                h,
+                graph,
+            });
+        }
     }
 
     pub fn player(&mut self, ui: &mut egui::Ui) {
@@ -375,7 +546,77 @@ impl App {
                     }
                     mesh.indices.extend([0, 1, 2, 0, 2, 3]);
                     content.add(egui::Shape::mesh(mesh));
+                    // Maskierte Effekt-/Filter-Elemente darüber: zweite Fassung nur in der Maske
+                    let corners = [
+                        region.corner(-1.0, -1.0),
+                        region.corner(1.0, -1.0),
+                        region.corner(1.0, 1.0),
+                        region.corner(-1.0, 1.0),
+                    ];
+                    for (base, did, mk, k) in &self.fx_overlays {
+                        if *base != c.id || *k <= 0.001 {
+                            continue;
+                        }
+                        let Some((_, fx_tex)) = self.frames.get(did) else {
+                            continue;
+                        };
+                        let alpha = alpha * k;
+                        let Some(mk) = mk else {
+                            crate::fx_mask::draw_textured(
+                                content,
+                                fx_tex.id(),
+                                corners,
+                                &corners,
+                                alpha,
+                            );
+                            continue;
+                        };
+                        let (polys, inverted) = crate::fx_mask::polygons(mk, canvas);
+                        if inverted {
+                            // alles außer der Form: Effekt ganz, Original in der Form darüber
+                            crate::fx_mask::draw_textured(
+                                content,
+                                fx_tex.id(),
+                                corners,
+                                &corners,
+                                alpha,
+                            );
+                            for poly in &polys {
+                                crate::fx_mask::draw_textured(
+                                    content,
+                                    tex.id(),
+                                    corners,
+                                    poly,
+                                    alpha,
+                                );
+                            }
+                        } else {
+                            for poly in &polys {
+                                crate::fx_mask::draw_textured(
+                                    content,
+                                    fx_tex.id(),
+                                    corners,
+                                    poly,
+                                    alpha,
+                                );
+                            }
+                        }
+                    }
                     regions.push(region);
+                }
+                ClipContent::Effect(_) | ClipContent::Filter(_) => {
+                    // Maske des ausgewählten Elements als Umriss zeigen
+                    if self.selected == Some(c.id) {
+                        if let Some(mk) = &c.fx.mask {
+                            let (polys, _) = crate::fx_mask::polygons(mk, canvas);
+                            for poly in polys {
+                                content.add(egui::Shape::closed_line(
+                                    poly,
+                                    egui::Stroke::new(1.5_f32, theme::ACCENT),
+                                ));
+                            }
+                        }
+                    }
                 }
                 ClipContent::Text(st) => {
                     let size = self.draw_text(
@@ -739,6 +980,13 @@ impl App {
             s.aspect = p;
         } else {
             s.apply_aspect(p);
+        }
+        if s.platform
+            .as_deref()
+            .and_then(crate::export_ui::platform)
+            .is_some_and(|pl| !pl.fits(&s))
+        {
+            s.platform = None;
         }
         if s != self.project.settings {
             self.apply(EditOp::SetSettings { settings: s });

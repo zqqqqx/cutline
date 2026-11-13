@@ -46,24 +46,39 @@ pub fn thumb_path(project: &Path) -> PathBuf {
         .join(format!("{:016x}.rgba", h.finish()))
 }
 
-/// Datei/Ordner im Explorer zeigen.
+/// Datei/Ordner im Explorer zeigen (Datei wird markiert).
+///
+/// Der Explorer versteht `/select,"C:\pfad mit leerzeichen\datei"` nur in genau dieser Form:
+/// mit Backslashes und Anführungszeichen nur um den Pfad. Die übliche Argument-Quotierung
+/// (`"/select,C:\…"`) führt dazu, dass er stattdessen „Dokumente“ öffnet.
 pub fn reveal(p: &Path) {
+    let p = std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
+    // fehlende Datei: nächsten vorhandenen Ordner zeigen
+    let target = if p.exists() {
+        p.clone()
+    } else {
+        p.ancestors()
+            .find(|a| a.is_dir())
+            .map(Path::to_path_buf)
+            .unwrap_or(p.clone())
+    };
     #[cfg(windows)]
     {
-        let _ = if p.is_file() {
-            std::process::Command::new("explorer")
-                .arg(format!("/select,{}", p.display()))
-                .spawn()
+        use std::os::windows::process::CommandExt;
+        let win = target.display().to_string().replace('/', "\\");
+        let arg = if target.is_file() {
+            format!("/select,\"{win}\"")
         } else {
-            std::process::Command::new("explorer").arg(p).spawn()
+            format!("\"{win}\"")
         };
+        let _ = std::process::Command::new("explorer").raw_arg(arg).spawn();
     }
     #[cfg(not(windows))]
     {
-        let dir = if p.is_file() {
-            p.parent().unwrap_or(p)
+        let dir = if target.is_file() {
+            target.parent().unwrap_or(&target).to_path_buf()
         } else {
-            p
+            target
         };
         let _ = std::process::Command::new(if cfg!(target_os = "macos") {
             "open"

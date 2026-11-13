@@ -8,12 +8,14 @@ mod creator;
 mod edit_tools;
 mod epidemic;
 mod export_ui;
+mod fx_mask;
 mod home;
 mod import_ui;
 mod inspector;
 mod keymap;
 mod library;
 mod library_ui;
+mod multi_edit;
 mod navigate;
 mod onboarding;
 mod paths;
@@ -125,6 +127,12 @@ fn main() -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport,
         renderer: eframe::Renderer::Wgpu,
+        // An die Bildwiederholrate gebunden: gleichmäßige Bilder, keine unnötige Last
+        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+            present_mode: eframe::wgpu::PresentMode::Fifo,
+            ..Default::default()
+        },
+        vsync: true,
         ..Default::default()
     };
     eframe::run_native(

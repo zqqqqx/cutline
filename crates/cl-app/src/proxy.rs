@@ -45,6 +45,9 @@ pub fn wants_proxy(m: &MediaRef) -> bool {
             .any(|c| codec.contains(c))
 }
 
+/// Höhe der Proxys in Zeilen
+pub const PROXY_H: u32 = 540;
+
 /// Proxy erzeugen: 540p, H.264 sehr schnell, Schlüsselbild alle 10 Bilder (schnelles Springen).
 pub fn build(
     src: &Path,
@@ -114,9 +117,13 @@ pub fn build(
 }
 
 impl App {
-    /// Pfad für die Vorschau: Proxy, falls eingeschaltet und vorhanden.
-    pub fn preview_path(&self, m: &MediaRef) -> PathBuf {
-        if self.settings.use_proxies && m.kind == MediaKind::Video {
+    /// Datei für die Vorschau: beim Abspielen der Proxy (flüssig), im Stand das Original, wenn
+    /// die 540 Zeilen des Proxys für die benötigte Höhe `need_h` nicht reichen (scharf).
+    pub fn preview_path(&self, m: &MediaRef, need_h: u32) -> PathBuf {
+        if self.settings.use_proxies
+            && m.kind == MediaKind::Video
+            && (self.playing || need_h <= PROXY_H * 6 / 5)
+        {
             let p = proxy_path(m);
             if p.is_file() {
                 return p;

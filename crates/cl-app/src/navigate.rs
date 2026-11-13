@@ -66,6 +66,7 @@ impl App {
         self.play_rate = rate;
         self.playing = true;
         self.playbacks.clear();
+        self.playbacks_next.clear();
         self.restart_audio();
     }
 
