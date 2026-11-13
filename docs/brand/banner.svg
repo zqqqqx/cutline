@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17171A"/>
+      <stop offset="1" stop-color="#0C0C0E"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="360" rx="24" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="1279" height="359" rx="24" fill="none" stroke="#29292E"/>
+  <g transform="translate(96 108) scale(2.25)"><rect width="64" height="64" rx="15" fill="#F4F4F6"/><g fill="#111113"><rect x="11" y="16" width="20" height="8" rx="4"/><rect x="11" y="28" width="13" height="8" rx="4"/><rect x="11" y="40" width="20" height="8" rx="4"/><rect x="37" y="13" width="16" height="8" rx="4"/><rect x="30" y="25" width="23" height="8" rx="4"/><rect x="37" y="37" width="12" height="8" rx="4"/></g><rect x="32.5" y="8" width="2" height="48" rx="1" fill="#111113"/></g>
+  <text x="264" y="178" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="76" font-weight="700" fill="#ECECEE" letter-spacing="-1.5">Cutline</text>
+  <text x="266" y="226" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="26" fill="#8C8C93">The open video editor that runs on your machine.</text>
+  <g opacity="0.9" transform="translate(916 112) scale(0.78) translate(-840 -80)">
+    <rect x="840" y="96" width="140" height="22" rx="11" fill="#2B2B30"/>
+    <rect x="990" y="96" width="190" height="22" rx="11" fill="#F4F4F6"/>
+    <rect x="840" y="132" width="210" height="22" rx="11" fill="#F4F4F6"/>
+    <rect x="1060" y="132" width="120" height="22" rx="11" fill="#2B2B30"/>
+    <rect x="840" y="168" width="90" height="22" rx="11" fill="#2B2B30"/>
+    <rect x="940" y="168" width="240" height="22" rx="11" fill="#22222699"/>
+    <rect x="840" y="204" width="340" height="14" rx="7" fill="#22222A"/>
+    <rect x="1021" y="80" width="3" height="152" rx="1.5" fill="#F4F4F6"/>
+  </g>
+  <text x="266" y="286" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" fill="#58585F" letter-spacing="2">LOCAL  ·  NO ACCOUNT  ·  NO WATERMARK  ·  OPEN SOURCE</text>
+</svg>

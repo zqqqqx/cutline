@@ -1137,3 +1137,87 @@ Freesound	Freesound
 Pexels	Pexels
 Mehrere Aufnahmen	Several recordings
 Zoom-Punch-in am Playhead	Zoom punch-in at the playhead
+Gaming & Let's Plays	Gaming & let's plays
+Lange Aufnahmen, Highlights, Facecam	Long recordings, highlights, facecam
+Shorts, TikTok & Reels	Shorts, TikTok & Reels
+Hochformat, Untertitel, schnelle Schnitte	Vertical, captions, fast cuts
+Podcasts & Interviews	Podcasts & interviews
+Mehrere Sprecher, Pausen und Füllwörter	Several speakers, pauses and filler words
+Vlogs & Lifestyle	Vlogs & lifestyle
+Looks, Musik, Stock-Material	Looks, music, stock footage
+Story-Serien & Hörspiele	Story series & audio dramas
+Figuren, Dialoge, mehrere Blickwinkel	Characters, dialogue, several angles
+Musikvideos & Edits	Music videos & edits
+Beats, Übergänge, Effekte	Beats, transitions, effects
+Schule, Arbeit & Tutorials	School, work & tutorials
+Untertitel, Sprachaufnahme, Kapitel	Captions, voiceover, chapters
+Spracherkennung laden	Download speech recognition
+Automatische Untertitel und Füllwörter entfernen. Läuft lokal.	Automatic captions and filler word removal. Runs locally.
+ca. 690 MB	approx. 690 MB
+ca. 32 MB	approx. 32 MB
+Freistellen ohne Greenscreen	Background removal without a green screen
+Person vom Hintergrund trennen, z. B. Facecam über Gameplay.	Separate a person from the background, e.g. facecam over gameplay.
+Epidemic Sound	Epidemic Sound
+eigenes Konto	own account
+Musik und Soundeffekte direkt im Audio-Reiter.	Music and sound effects right in the Audio tab.
+kostenloser Schlüssel	free key
+Hunderttausende freie Soundeffekte im Audio-Reiter.	Hundreds of thousands of free sound effects in the Audio tab.
+Kostenlose Stock-Videos und Fotos im Medien-Reiter.	Free stock videos and photos in the Media tab.
+Figuren, Dialogboxen und Namensschilder mit einem Klick.	Characters, dialogue boxes and name tags in one click.
+Werkzeuge → Pausen entfernen schneidet Stille aus Sprechpassagen.	Tools → Remove pauses cuts silence out of spoken parts.
+Highlights finden	Find highlights
+Werkzeuge → Highlights setzt Marker an lauten Momenten langer Aufnahmen.	Tools → Highlights adds markers at loud moments of long recordings.
+Hochkant-Layout	Vertical layout
+Werkzeuge → Hochkant-Layout macht aus 16:9 ein 9:16-Video mit Facecam oben.	Tools → Vertical layout turns 16:9 into a 9:16 video with the facecam on top.
+Multicam	Multicam
+Mehrere Aufnahmen per Ton synchronisieren und mit 1–9 live zwischen ihnen schneiden.	Sync several recordings by audio and cut between them live with 1–9.
+Auto-Ducking	Auto ducking
+Werkzeuge → Musik unter Sprache absenken, ohne Keyframes von Hand.	Tools → Lower music under speech, no manual keyframes.
+Beat-Erkennung	Beat detection
+Beats eines Songs erkennen lassen, Clips rasten darauf ein.	Detect the beats of a song, clips snap to them.
+Kapitel aus Markern	Chapters from markers
+M setzt Marker, im Projekt-Reiter werden daraus YouTube-Kapitel.	M adds markers, the Project tab turns them into YouTube chapters.
+Rückblick aus Markern	Recap from markers
+Werkzeuge → Rückblick schneidet markierte Momente zu einem „Was bisher geschah“.	Tools → Recap cuts marked moments into a “previously on”.
+Bibliothek	Library
+Medien importieren oder einfach hierher ziehen. Oben findest du Audio, Text, Sticker, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an.	Import media or simply drag it here. At the top you find audio, text, stickers, effects, transitions, filters and captions. Star items as favorites and create your own folders.
+Zeigt das Bild am Playhead. Clips verschiebst, skalierst und drehst du direkt hier. Leertaste spielt ab, J/K/L spult.	Shows the frame at the playhead. Move, scale and rotate clips right here. Space plays, J/K/L shuttles.
+Inspektor	Inspector
+Alles zum ausgewählten Clip: Bild, Ton, Geschwindigkeit, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker.	Everything about the selected clip: picture, audio, speed, animations and keyframes. Without a selection you see the project and its markers here.
+Zeitleiste	Timeline
+Hier entsteht dein Video. Strg+B teilt, Q/W löscht links/rechts vom Playhead, M setzt einen Marker. Der Magnet hält die Hauptspur lückenlos.	This is where your video comes together. Ctrl+B splits, Q/W deletes left/right of the playhead, M adds a marker. The magnet keeps the main track gap-free.
+Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Layout und Thumbnail mit einem Klick.	Remove pauses, filler words, auto ducking, highlights, multicam, vertical layout and thumbnail in one click.
+Vorlagen für YouTube, Shorts, TikTok, Instagram und Twitch. Ohne Wasserzeichen, bis 4K.	Presets for YouTube, Shorts, TikTok, Instagram and Twitch. No watermark, up to 4K.
+Menü	Menu
+Projekte, Vorlagen, Sicherungen, Einstellungen und Tastenkürzel. Den Rundgang findest du hier jederzeit wieder.	Projects, templates, backups, settings and shortcuts. You can restart the tour here at any time.
+Schlüssel bzw. Anmeldung unter Einstellungen → Integrationen eintragen	Enter keys or sign in under Settings → Integrations
+Zurück	Back
+Überspringen	Skip
+Die Einführung findest du später unter Menü → Einführung wiederholen	You can find the introduction later under Menu → Repeat introduction
+Los geht's	Let's go
+Weiter	Next
+Rundgang starten	Start tour
+Übernimmt die Auswahl und zeigt dir die Bereiche des Editors	Applies your choices and shows you around the editor
+Ohne Rundgang fertig	Finish without tour
+Passend für dich	Picked for you
+Alles ist optional und jederzeit unter Einstellungen und Plugins änderbar. Plugins sind ohne dein Okay immer aus.	Everything is optional and can be changed any time under Settings and Plugins. Plugins stay off without your okay.
+Einschalten und laden	Turn on and download
+bereits aktiv	already active
+Schon eingebaut	Already built in
+Rundgang · {} von {}	Tour · {} of {}
+Beenden	End
+Rundgang und Einführung findest du jederzeit im Menü	You can find the tour and introduction in the menu at any time
+Willkommen bei Cutline	Welcome to Cutline
+Schneiden ohne Konto, ohne Abo und ohne Cloud. Alles läuft auf deinem Rechner.	Edit without an account, subscription or cloud. Everything runs on your computer.
+Alles lokal	Fully local
+Untertitel, Freistellen und Analysen laufen mit offenen Modellen auf deinem Rechner.	Captions, background removal and analysis run with open models on your computer.
+Ehrlich	Honest
+Kein Wasserzeichen, keine Werbung, kein Upload. Projekte sind offenes JSON.	No watermark, no ads, no upload. Projects are open JSON.
+Erweiterbar	Extensible
+Plugins für Musik und Stock-Material, eigene Bibliothek, MCP-Schnittstelle.	Plugins for music and stock footage, your own library, MCP interface.
+In drei kurzen Schritten richtest du Cutline für deine Videos ein.	Set up Cutline for your videos in three short steps.
+Wofür nutzt du Cutline?	What do you use Cutline for?
+Mehrfachauswahl. Danach schlagen wir passende Werkzeuge und Plugins vor.	Pick as many as you like. We'll suggest matching tools and plugins next.
+Tastenkürzel wie in	Shortcuts like in
+Rundgang	Tour
+Einführung wiederholen	Repeat introduction

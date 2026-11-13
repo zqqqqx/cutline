@@ -1,35 +1,97 @@
 <p align="center">
-  <img src="assets/logo.png" width="96" alt="Cutline logo">
+  <img src="docs/brand/banner.svg" alt="Cutline – the open video editor that runs on your machine" width="100%">
 </p>
 
-<h1 align="center">Cutline</h1>
+<p align="center">
+  <a href="https://github.com/zqqqqx/cutline/releases/latest"><img src="https://img.shields.io/github/v/release/zqqqqx/cutline?label=download&color=F4F4F6&labelColor=17171A" alt="Latest release"></a>
+  <a href="https://github.com/zqqqqx/cutline/actions/workflows/ci.yml"><img src="https://github.com/zqqqqx/cutline/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/license-MPL--2.0-F4F4F6?labelColor=17171A" alt="MPL-2.0">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-F4F4F6?labelColor=17171A" alt="Windows and Linux">
+</p>
 
 <p align="center">
   <b>A fast, local, open-source video editor written in Rust.</b><br>
-  No account. No subscription. No ads. No cloud. Your footage stays on your machine.
+  No account, no subscription, no watermark, no cloud. Your footage stays on your machine.
 </p>
 
 <p align="center">
-  <a href="https://github.com/zqqqqx/cutline/releases/latest"><img src="https://img.shields.io/github/v/release/zqqqqx/cutline?label=download" alt="Latest release"></a>
-  <a href="https://github.com/zqqqqx/cutline/actions/workflows/ci.yml"><img src="https://github.com/zqqqqx/cutline/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/license-MPL--2.0-blue" alt="MPL-2.0">
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" alt="Platforms">
+  <a href="https://github.com/zqqqqx/cutline/releases/latest"><b>Download for Windows</b></a> ·
+  <a href="https://github.com/zqqqqx/cutline/releases/latest"><b>Linux</b></a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="docs/ROADMAP.md">Roadmap</a>
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.jpg" alt="Cutline editor" width="100%">
+  <img src="docs/images/editor.jpg" alt="The Cutline editor with a beach video, title text, music and voiceover" width="100%">
 </p>
 
 ## Why Cutline
 
-- **Everything runs locally.** Auto captions, background removal, tracking and beat detection run on your own computer with open models. Nothing is uploaded.
-- **Edit fast.** A multi-track timeline with a main-track magnet, snapping, and split/trim shortcuts on single keys. You can also edit right in the player: drag, scale and rotate with guides.
-- **Built-in creative library.** 34 effects, 22 filters, 49 transitions, keyframes, animations, masks, LUTs, stickers, sound effects and text templates. All of it is in the export too, exactly as previewed.
-- **Bring your own fonts.** Import TTF, OTF, TTC and WOFF files directly, for one project or for all of them. Variable and color fonts are supported.
-- **Scriptable.** A built-in [MCP](https://modelcontextprotocol.io) server lets assistants and scripts edit the open project. Every change lands in the undo history.
-- **Honest software.** MPL-2.0, project files are plain JSON, and updates are verified with SHA-256 and installed only when you confirm.
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>Fully local</h3>
+      Captions, background removal, tracking and beat detection run with open models on your computer. Nothing is uploaded.
+    </td>
+    <td width="33%" valign="top">
+      <h3>Honest</h3>
+      Every feature is free. No watermark, no ads, no upsell. Projects are plain JSON, the code is MPL-2.0.
+    </td>
+    <td width="33%" valign="top">
+      <h3>Built for creators</h3>
+      Jump cuts, filler words, auto ducking, highlights, multicam, vertical layouts and export presets for every platform.
+    </td>
+  </tr>
+</table>
+
+## One click for the tedious parts
+
+<img src="docs/images/tools.jpg" alt="The Tools menu with jump cuts, filler words, auto ducking, highlights, sync, multicam, punch-in, vertical layout, thumbnail and recap" width="100%">
+
+The **Tools** menu in the timeline does the work that usually eats an evening: remove pauses from talking
+parts, cut filler words found by the local speech model, lower music under speech, turn loud moments of a
+long recording into markers, sync several recordings by their audio and cut between them live, switch to a
+9:16 layout with the facecam on top, or save the current frame as a thumbnail.
+
+## Set up in a minute
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/welcome.jpg" alt="Welcome screen"></td>
+    <td width="50%"><img src="docs/images/uses.jpg" alt="Choosing what you use Cutline for"></td>
+  </tr>
+  <tr>
+    <td>A short, skippable introduction on first start.</td>
+    <td>Tell Cutline what you make. It suggests matching tools, models and plugins, and nothing is turned on without your okay.</td>
+  </tr>
+</table>
+
+<img src="docs/images/tour.jpg" alt="Guided tour highlighting the timeline" width="100%">
+
+A guided tour points out each part of the editor. You can restart it any time from **Menu → Tour**.
+
+## Export for every platform
+
+<img src="docs/images/export.jpg" alt="Export presets for YouTube, Shorts, TikTok, Reels, Instagram and Twitch" width="70%">
+
+Presets for YouTube (1080p, 1440p, 4K), Shorts/TikTok/Reels, Instagram and Twitch, with hardware encoding,
+transparent video and audio-only export. Cutline warns you when the project's aspect ratio does not match.
+
+## Plugins
+
+Integrations ship with Cutline but stay **off** until you turn them on. Keys and sign-ins stay on your computer.
+
+| Plugin | What it adds |
+|---|---|
+| Epidemic Sound | Music and sound effects in the Audio tab (your own account) |
+| Freesound | Hundreds of thousands of Creative Commons sound effects with license info (free key) |
+| Pexels | Free stock videos and photos in the Media tab (free key) |
+| Story tools | Characters with name, color and portrait; dialogue boxes and name tags in one click |
 
 ## Features
+
+<details>
+<summary><b>Full feature list</b></summary>
 
 | | |
 |---|---|
@@ -43,7 +105,9 @@
 | **Audio** | Waveforms · volume keyframes and fades · voiceover recording with countdown · noise reduction · voice enhancement · loudness to −14 LUFS · bass/treble · 13 voice changers · music folder and sound effects |
 | **Local AI** | Auto captions with NVIDIA Parakeet TDT 0.6B v3 (25 European languages, word timing), with Whisper as the fallback · background removal without a green screen (RobustVideoMatting), with blurred or colored background and person outline · chroma key with eyedropper · stabilization · object tracking · auto reframe for 9:16 · scene detection · beat detection |
 | **Export** | MP4, MOV, MKV, WebM, GIF · audio-only WAV, MP3, M4A, FLAC · H.264, HEVC, AV1, VP9, ProRes · NVENC, Quick Sync and AMF hardware encoding · up to 4K · transparent video (ProRes 4444, VP9 with alpha) · SRT side file |
-| **App** | Project overview with search, duplicate and trash · project templates · autosave and automatic backups with restore · relink missing media · archive a project with its files · customizable shortcuts (Cutline, Premiere-like, Resolve-like) · optional plugins, off by default: Freesound, Pexels, Story tools · English and German interface · adjustable UI scale · built-in updater |
+| **App** | Skippable introduction with plugin suggestions and a guided tour · project overview with search, duplicate and trash · project templates · autosave and automatic backups with restore · relink missing media · archive a project with its files · customizable shortcuts (Cutline, Premiere-like, Resolve-like) · optional plugins, off by default: Epidemic Sound, Freesound, Pexels, Story tools · English and German interface · adjustable UI scale · built-in updater |
+
+</details>
 
 ## Install
 
@@ -114,3 +178,7 @@ Issues and pull requests are welcome. Run `cargo test --workspace` and `cargo cl
 ## License
 
 Cutline is licensed under the [Mozilla Public License 2.0](LICENSE). FFmpeg, ONNX Runtime and the AI models are separate programs and files under their own licenses.
+
+---
+
+<sub>Footage in the screenshots: "Sunset timelapse on the beach in Libreville, Gabon" and "Ocean surface waves 06" from Wikimedia Commons, both CC0. Brand assets and guidelines: [`docs/BRAND.md`](docs/BRAND.md).</sub>

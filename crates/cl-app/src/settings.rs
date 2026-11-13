@@ -45,6 +45,10 @@ pub struct AppSettings {
     pub shortcuts: std::collections::BTreeMap<String, String>,
     /// Proxys für große Videos in der Vorschau
     pub use_proxies: bool,
+    /// Einführung abgeschlossen oder übersprungen
+    pub onboarding_done: bool,
+    /// Antworten auf „Wofür nutzt du Cutline?“
+    pub use_cases: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -74,6 +78,8 @@ impl Default for AppSettings {
             import_fcpxml: true,
             shortcuts: Default::default(),
             use_proxies: true,
+            onboarding_done: false,
+            use_cases: Vec::new(),
         }
     }
 }
@@ -360,6 +366,25 @@ impl App {
                     &mut self.settings.start_on_home,
                 );
                 widgets::toggle_row(ui, "Automatisch speichern", &mut self.settings.autosave);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(theme::secondary(format!(
+                            "{}  Einführung wiederholen",
+                            icon::HAND_WAVING
+                        )))
+                        .clicked()
+                    {
+                        self.settings_open = false;
+                        self.start_onboarding();
+                    }
+                    if ui
+                        .add(theme::secondary(format!("{}  Rundgang", icon::COMPASS)))
+                        .clicked()
+                    {
+                        self.settings_open = false;
+                        self.start_tour();
+                    }
+                });
                 theme::row(ui, "Projektordner", |ui| {
                     let d = paths::data_dir().join("Projects");
                     let full = d.display().to_string();

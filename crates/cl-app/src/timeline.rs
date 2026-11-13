@@ -156,7 +156,9 @@ impl App {
                 self.redo();
             }
             ui.add(egui::Separator::default().vertical().spacing(10.0));
-            ui.menu_button(egui::RichText::new(crate::tr(format!("{}  Werkzeuge", icon::MAGIC_WAND))).size(12.0), |ui| self.tools_menu(ui)).response.on_hover_text(crate::tr("Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Synchronisieren, Multicam, Hochkant, Thumbnail …"));
+            let tools = ui.menu_button(egui::RichText::new(crate::tr(format!("{}  Werkzeuge", icon::MAGIC_WAND))).size(12.0), |ui| self.tools_menu(ui)).response;
+            self.tour_rects.insert("tools", tools.rect);
+            tools.on_hover_text(crate::tr("Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Synchronisieren, Multicam, Hochkant, Thumbnail …"));
             ui.add(egui::Separator::default().vertical().spacing(10.0));
             let has = !self.project.timeline.tracks.is_empty();
             let sel = self.selected.is_some() || !self.sel_extra.is_empty() || self.selected_transition.is_some();

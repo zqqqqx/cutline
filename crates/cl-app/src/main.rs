@@ -15,6 +15,7 @@ mod keymap;
 mod library;
 mod library_ui;
 mod navigate;
+mod onboarding;
 mod paths;
 mod player;
 mod player_edit;
