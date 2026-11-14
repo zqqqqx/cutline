@@ -2,7 +2,7 @@
 ; Installiert pro Benutzer ohne Administratorrechte, damit der eingebaute Updater
 ; die Programmdateien ersetzen kann.
 ;
-; Bauen:  iscc /DAppVersion=0.7.0 /DSrcDir=..\pkg installer\cutline.iss
+; Bauen:  iscc /DAppVersion=0.7.1 /DSrcDir=..\pkg installer\cutline.iss
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
