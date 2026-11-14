@@ -112,7 +112,7 @@ impl App {
                 ui.label(
                     RichText::new(crate::tr(format!("„{name}“ importiert")))
                         .strong()
-                        .size(14.0),
+                        .size(theme::FS_TITLE),
                 );
                 ui.add_space(6.0);
                 if !rep.skipped.is_empty() {
@@ -169,7 +169,7 @@ impl App {
         let m = egui::Modal::new(egui::Id::new("import")).show(ctx, |ui| {
             ui.set_width(520.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(crate::tr("Projekt importieren")).strong().size(14.0));
+                ui.label(RichText::new(crate::tr("Projekt importieren")).strong().size(theme::FS_TITLE));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if theme::icon_button(ui, icon::X, "Schließen (Esc)", true, false).clicked() {
                         close = true;
@@ -189,7 +189,7 @@ impl App {
                 theme::section(ui, "CapCut-Entwürfe auf diesem Rechner");
                 let drafts = self.import.drafts.clone().unwrap_or_default();
                 if drafts.is_empty() {
-                    ui.label(RichText::new(crate::tr("Keine Entwürfe gefunden")).color(theme::TEXT_DIM()));
+                    theme::empty_state(ui, icon::FOLDER_OPEN, "Keine Entwürfe gefunden", "");
                 } else {
                     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                         for d in &drafts {

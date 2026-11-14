@@ -126,7 +126,7 @@ fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
 fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut T) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 28.0), Sense::hover());
-    let font = egui::FontId::proportional(11.5);
+    let font = egui::FontId::proportional(theme::FS_UI);
     let widths: Vec<f32> = tabs
         .iter()
         .map(|(_, l)| {
@@ -587,25 +587,11 @@ impl App {
         );
         if matches!(c.content, ClipContent::Media { .. }) {
             theme::row(ui, "Spiegeln", |ui| {
-                if ui
-                    .add(
-                        egui::Button::new(RichText::new(icon::FLIP_HORIZONTAL).size(14.0))
-                            .selected(c.fx.flip_h),
-                    )
-                    .on_hover_text(crate::tr("Horizontal"))
-                    .clicked()
-                {
+                if theme::icon_button(ui, icon::FLIP_HORIZONTAL, "Horizontal", true, c.fx.flip_h).clicked() {
                     c.fx.flip_h = !c.fx.flip_h;
                     e.commit = true;
                 }
-                if ui
-                    .add(
-                        egui::Button::new(RichText::new(icon::FLIP_VERTICAL).size(14.0))
-                            .selected(c.fx.flip_v),
-                    )
-                    .on_hover_text(crate::tr("Vertikal"))
-                    .clicked()
-                {
+                if theme::icon_button(ui, icon::FLIP_VERTICAL, "Vertikal", true, c.fx.flip_v).clicked() {
                     c.fx.flip_v = !c.fx.flip_v;
                     e.commit = true;
                 }
@@ -712,15 +698,7 @@ impl App {
                     "Automatischer Umbruch",
                 ),
             ] {
-                if ui
-                    .add(
-                        egui::Button::new(RichText::new(crate::tr(g)).size(14.0))
-                            .selected(*on)
-                            .min_size(vec2(26.0, 22.0)),
-                    )
-                    .on_hover_text(crate::tr(tip))
-                    .clicked()
-                {
+                if theme::icon_button(ui, g, tip, true, *on).clicked() {
                     *on = !*on;
                     e.commit = true;
                 }
@@ -732,14 +710,7 @@ impl App {
                 (0, icon::TEXT_ALIGN_CENTER),
                 (1, icon::TEXT_ALIGN_RIGHT),
             ] {
-                if ui
-                    .add(
-                        egui::Button::new(RichText::new(crate::tr(g)).size(14.0))
-                            .selected(st.align == v)
-                            .min_size(vec2(26.0, 22.0)),
-                    )
-                    .clicked()
-                {
+                if theme::icon_button(ui, g, "", true, st.align == v).clicked() {
                     st.align = v;
                     e.commit = true;
                 }
@@ -816,7 +787,7 @@ impl App {
                     "",
                     false,
                     |p, a| {
-                        p.rect_filled(a, 6.0, theme::BG_RAISED());
+                        p.rect_filled(a, theme::R_CARD, theme::BG_RAISED());
                         let k = (a.height() * 0.5) / 64.0;
                         self.draw_text(p, &s2, a.center(), k, 0.0, 1.0, a.width());
                     },
@@ -1081,6 +1052,7 @@ impl App {
                             a.center(),
                             egui::Align2::CENTER_CENTER,
                             icon::PROHIBIT,
+                            // Icon-Glyphe in der Kachel
                             egui::FontId::proportional(18.0),
                             theme::TEXT_FAINT(),
                         );
@@ -1729,7 +1701,7 @@ fn history_row(
     let r = ui.add(theme::menu_row(text).hint(&when).min_width(ui.available_width()));
     if !done {
         // rückgängig gemachte Schritte blass überdecken
-        ui.painter().rect_filled(r.rect, 5.0, theme::BG_CARD().linear_multiply(0.55));
+        ui.painter().rect_filled(r.rect, theme::R_CTRL, theme::BG_CARD().linear_multiply(0.55));
     }
     r
 }

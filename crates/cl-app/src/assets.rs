@@ -152,10 +152,10 @@ impl App {
             let resp = ui.interact(r, ui.id().with(("rail", label)), Sense::click());
             let active = self.tab == tab;
             if active {
-                ui.painter().rect_filled(r, 7.0, theme::BG_RAISED());
+                ui.painter().rect_filled(r, theme::R_CARD, theme::BG_RAISED());
             } else if resp.hovered() {
                 ui.painter()
-                    .rect_filled(r, 7.0, theme::overlay(10));
+                    .rect_filled(r, theme::R_CARD, theme::overlay(10));
             }
             let col = if active {
                 theme::ACCENT()
@@ -168,6 +168,7 @@ impl App {
                 r.center() - vec2(0.0, 7.0),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(glyph),
+                // Icon-Glyphe der Leiste
                 egui::FontId::proportional(17.0),
                 col,
             );
@@ -175,7 +176,7 @@ impl App {
                 r.center() + vec2(0.0, 12.0),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(label),
-                egui::FontId::proportional(9.5),
+                egui::FontId::proportional(theme::FS_HINT),
                 col,
             );
             if resp.clicked() {
@@ -214,7 +215,7 @@ impl App {
     fn tab_title(ui: &mut egui::Ui, title: &str, actions: impl FnOnce(&mut egui::Ui)) {
         ui.horizontal(|ui| {
             ui.set_min_height(24.0);
-            ui.label(RichText::new(crate::tr(title)).strong().size(13.0));
+            ui.label(RichText::new(crate::tr(title)).strong().size(theme::FS_TEXT));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), actions);
         });
         ui.add_space(4.0);
@@ -394,7 +395,7 @@ impl App {
                                     (v0 + uv.top() * (v1 - v0))..=(v0 + uv.bottom() * (v1 - v0)),
                                 );
                                 p.add(
-                                    egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE)
+                                    egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE)
                                         .with_texture(tid, uv),
                                 );
                             } else {
@@ -407,6 +408,7 @@ impl App {
                                     a.center(),
                                     egui::Align2::CENTER_CENTER,
                                     crate::tr(g),
+                                    // Icon-Glyphe als Platzhalter
                                     egui::FontId::proportional(22.0),
                                     theme::TEXT_DIM(),
                                 );
@@ -419,14 +421,14 @@ impl App {
                                 let s = m.duration.as_secs_f64();
                                 let g = p.layout_no_wrap(
                                     format!("{}:{:02}", (s / 60.0).floor(), s.floor() as i64 % 60),
-                                    egui::FontId::proportional(9.5),
+                                    egui::FontId::proportional(theme::FS_HINT),
                                     Color32::WHITE,
                                 );
                                 let br = Rect::from_min_size(
                                     a.left_bottom() + vec2(5.0, -g.size().y - 7.0),
                                     g.size() + vec2(6.0, 2.0),
                                 );
-                                p.rect_filled(br, 3.0, Color32::from_black_alpha(170));
+                                p.rect_filled(br, theme::R_CTRL, Color32::from_black_alpha(170));
                                 p.galley(br.min + vec2(3.0, 1.0), g, Color32::WHITE);
                             }
                             if used.contains(&m.id) {
@@ -434,6 +436,7 @@ impl App {
                                     a.left_top() + vec2(6.0, 5.0),
                                     egui::Align2::LEFT_TOP,
                                     icon::CHECK_CIRCLE,
+                                    // Icon-Glyphe
                                     egui::FontId::proportional(12.0),
                                     theme::ACCENT(),
                                 );
@@ -443,6 +446,7 @@ impl App {
                                     a.right_top() + vec2(-6.0, 5.0),
                                     egui::Align2::RIGHT_TOP,
                                     icon::STAR,
+                                    // Icon-Glyphe
                                     egui::FontId::proportional(11.0),
                                     theme::ACCENT(),
                                 );
@@ -550,13 +554,14 @@ impl App {
                                     pos2(0.5, 0.5),
                                     vec2((a.width() / (ts.x * s)).min(1.0), (a.height() / (ts.y * s)).min(1.0)),
                                 );
-                                p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(tid, uv));
+                                p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(tid, uv));
                             }
                             None => {
                                 p.text(
                                     a.center(),
                                     egui::Align2::CENTER_CENTER,
                                     if audio { icon::WAVEFORM } else { icon::IMAGE },
+                                    // Icon-Glyphe als Platzhalter
                                     egui::FontId::proportional(22.0),
                                     theme::TEXT_DIM(),
                                 );
@@ -796,12 +801,13 @@ impl App {
             _ => {
                 let r = egui::Frame::default()
                     .fill(theme::BG_RAISED())
-                    .corner_radius(8)
-                    .inner_margin(12)
+                    .corner_radius(theme::R_CARD)
+                    .inner_margin(theme::PAD_CARD_L)
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
                             ui.label(
+                                // Icon-Glyphe
                                 RichText::new(icon::MICROPHONE)
                                     .size(22.0)
                                     .color(theme::ACCENT()),
@@ -838,10 +844,11 @@ impl App {
                     .cloned()
                     .collect();
                 if recs.is_empty() {
-                    ui.label(
-                        RichText::new(crate::tr("Noch keine Aufnahmen in diesem Projekt"))
-                            .small()
-                            .color(theme::TEXT_DIM()),
+                    theme::empty_state(
+                        ui,
+                        icon::MICROPHONE,
+                        "Noch keine Aufnahmen in diesem Projekt",
+                        "Am Playhead einsprechen, die Waveform wächst live mit (R)",
                     );
                 }
                 for m in recs {
@@ -892,12 +899,12 @@ impl App {
         let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), theme::anim(0.12));
         let p = ui.painter();
         if hover > 0.0 || playing.is_some() {
-            p.rect_filled(r, 8.0, theme::BG_RAISED().linear_multiply(if playing.is_some() { 1.0 } else { hover }));
+            p.rect_filled(r, theme::R_CARD, theme::BG_RAISED().linear_multiply(if playing.is_some() { 1.0 } else { hover }));
         }
         // Abspielknopf
         let play_r = Rect::from_center_size(r.left_center() + vec2(22.0, 0.0), vec2(30.0, 30.0));
         let on = playing.is_some() || loading;
-        p.rect_filled(play_r, 8.0, if on { theme::ACCENT() } else { theme::BG_HOVER() });
+        p.rect_filled(play_r, theme::R_CARD, if on { theme::ACCENT() } else { theme::BG_HOVER() });
         if loading {
             let t = ui.input(|i| i.time) as f32;
             let c = play_r.center();
@@ -911,6 +918,7 @@ impl App {
                 play_r.center(),
                 egui::Align2::CENTER_CENTER,
                 if playing.is_some() { icon::PAUSE } else { icon::PLAY },
+                // Icon-Glyphe
                 egui::FontId::proportional(12.0),
                 if on { theme::ACCENT_INK() } else { theme::TEXT() },
             );
@@ -928,7 +936,7 @@ impl App {
             r.left_center() + vec2(46.0, -8.0),
             egui::Align2::LEFT_CENTER,
             crate::tr(name),
-            egui::FontId::proportional(12.0),
+            egui::FontId::proportional(theme::FS_TEXT),
             theme::TEXT(),
         );
         let len = meta.map(|(m, _)| {
@@ -948,7 +956,7 @@ impl App {
             r.left_center() + vec2(46.0, 8.0),
             egui::Align2::LEFT_CENTER,
             sub,
-            egui::FontId::proportional(10.0),
+            egui::FontId::proportional(theme::FS_HINT),
             theme::TEXT_FAINT(),
         );
         if wave_w > 30.0 {
@@ -979,6 +987,7 @@ impl App {
                 plus_r.center(),
                 egui::Align2::CENTER_CENTER,
                 icon::PLUS,
+                // Icon-Glyphe
                 egui::FontId::proportional(12.0),
                 theme::ACCENT_INK().linear_multiply(hover),
             );
@@ -1070,7 +1079,7 @@ impl App {
                                 name,
                                 false,
                                 |p, a| {
-                                    p.rect_filled(a, 6.0, theme::BG_RAISED());
+                                    p.rect_filled(a, theme::R_CARD, theme::BG_RAISED());
                                     self.text_preview(p, &style, a);
                                     if fav {
                                         crate::library_ui::fav_badge(p, a);
@@ -1134,7 +1143,7 @@ impl App {
                                 e.name,
                                 false,
                                 |p, a| {
-                                    p.rect_filled(a, 6.0, theme::BG_RAISED());
+                                    p.rect_filled(a, theme::R_CARD, theme::BG_RAISED());
                                     self.text_preview(p, &st, a);
                                     if fav {
                                         crate::library_ui::fav_badge(p, a);
@@ -1251,8 +1260,8 @@ impl App {
                     let fav = self.library.is_favorite(&akey);
                     let fr = egui::Frame::default()
                         .fill(theme::BG_RAISED())
-                        .corner_radius(8)
-                        .inner_margin(10)
+                        .corner_radius(theme::R_CARD)
+                        .inner_margin(theme::PAD_CARD_L)
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             ui.horizontal(|ui| {
@@ -1450,6 +1459,7 @@ impl App {
                                     a.left_top() + vec2(5.0, 4.0),
                                     egui::Align2::LEFT_TOP,
                                     icon::STAR,
+                                    // Icon-Glyphe
                                     egui::FontId::proportional(11.0),
                                     theme::ACCENT(),
                                 );
@@ -1651,12 +1661,12 @@ impl App {
                             match tex {
                                 Some(t) => {
                                     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-                                    p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, uv));
+                                    p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(t, uv));
                                     if let (Some(w), Some(o)) = (wipe, orig) {
                                         let x = a.left() + a.width() * w;
                                         let left = Rect::from_min_max(a.min, pos2(x, a.bottom()));
                                         p.with_clip_rect(left).add(
-                                            egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(o, uv),
+                                            egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(o, uv),
                                         );
                                         p.line_segment([pos2(x, a.top()), pos2(x, a.bottom())], egui::Stroke::new(1.5_f32, Color32::WHITE));
                                     }
@@ -1670,6 +1680,7 @@ impl App {
                                         } else {
                                             icon::SPARKLE
                                         }),
+                                        // Icon-Glyphe
                                         egui::FontId::proportional(18.0),
                                         theme::TEXT_FAINT(),
                                     );
@@ -1765,9 +1776,10 @@ impl App {
                 let resp = widgets::tile(ui, egui::Id::new(("tr", *id)), r, name, current.as_deref() == Some(*id), |p, a| {
                     match tex {
                         Some(t) => {
-                            p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, uv));
+                            p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(t, uv));
                         }
                         None => {
+                            // Icon-Glyphe
                             p.text(a.center(), egui::Align2::CENTER_CENTER, icon::INTERSECT, egui::FontId::proportional(18.0), theme::TEXT_FAINT());
                         }
                     }
@@ -1909,8 +1921,8 @@ impl App {
             let before = p.enabled;
             egui::Frame::default()
                 .fill(theme::BG_RAISED())
-                .corner_radius(8)
-                .inner_margin(10)
+                .corner_radius(theme::R_CARD)
+                .inner_margin(theme::PAD_CARD_L)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {

@@ -313,7 +313,7 @@ impl ExportDialog {
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .fixed_size(vec2(720.0, 0.0))
             .open(&mut open)
-            .frame(egui::Frame::window(&ctx.style()).inner_margin(18))
+            .frame(egui::Frame::window(&ctx.style()).inner_margin(theme::PAD_DIALOG))
             .show(ctx, |ui| {
                 let busy = self.running.is_some();
                 ui.horizontal_top(|ui| {
@@ -322,7 +322,7 @@ impl ExportDialog {
                         ui.set_width(250.0);
                         let size = vec2(250.0, 250.0 * s.height as f32 / s.width.max(1) as f32).min(vec2(250.0, 300.0));
                         let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 6.0, Color32::BLACK);
+                        ui.painter().rect_filled(rect, theme::R_CARD, Color32::BLACK);
                         if let Some((id, ts)) = cover {
                             let fit = (rect.width() / ts.x).min(rect.height() / ts.y);
                             ui.painter().image(id, egui::Rect::from_center_size(rect.center(), ts * fit), egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
@@ -583,6 +583,7 @@ fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32) {
     let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, 0.35);
     let t = ui.input(|i| i.time) as f32;
     ui.horizontal(|ui| {
+        // 14 px wie ein Icon in der Zeile (Standard wäre Zeilenhöhe)
         ui.add(egui::Spinner::new().size(14.0).color(theme::ACCENT()));
         ui.label(RichText::new(crate::tr("Exportiere …")).color(theme::TEXT()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -598,6 +599,7 @@ fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32) {
     });
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 8.0), egui::Sense::hover());
     let p = ui.painter();
+    // Pille: Radius = halbe Balkenhöhe (8 px), bewusst ganz rund
     p.rect_filled(rect, 4.0, theme::BG_HOVER());
     let fill = Rect::from_min_size(rect.min, vec2(rect.width() * shown.clamp(0.0, 1.0), rect.height()));
     p.rect_filled(fill, 4.0, theme::ACCENT());

@@ -208,6 +208,7 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> bool {
     let t = ui.ctx().animate_bool(resp.id, *on);
     let p = ui.painter();
     let bg = if *on { theme::ACCENT() } else { theme::BG_HOVER() };
+    // Pille: Radius = halbe Höhe (16 px), bewusst ganz rund
     p.rect_filled(rect, 8.0, bg);
     let x = egui::lerp(rect.left() + 8.0..=rect.right() - 8.0, t);
     p.circle_filled(
@@ -229,7 +230,7 @@ pub fn toggle_row(ui: &mut egui::Ui, label: &str, on: &mut bool) -> bool {
         ui.set_min_height(24.0);
         ui.label(
             RichText::new(crate::tr(label))
-                .size(11.5)
+                .size(theme::FS_UI)
                 .color(theme::TEXT_DIM()),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -285,8 +286,8 @@ pub fn kf_button(ui: &mut egui::Ui, state: Kf) -> egui::Response {
 pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 24.0), Sense::hover());
-    ui.painter().rect_filled(rect, 6.0, theme::BG_INPUT());
-    let font = egui::FontId::proportional(11.0);
+    ui.painter().rect_filled(rect, theme::R_CARD, theme::BG_INPUT());
+    let font = egui::FontId::proportional(theme::FS_UI);
     let texts: Vec<String> = items.iter().map(|it| crate::tr(*it)).collect();
     // Breite je Segment nach Textlänge; Restplatz gleichmäßig verteilt
     let need: Vec<f32> = texts
@@ -305,9 +306,9 @@ pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
         let resp = ui.interact(r, ui.id().with(("seg", i, items[i])), Sense::click());
         let active = *sel == i;
         if active {
-            ui.painter().rect_filled(r, 5.0, theme::BG_HOVER());
+            ui.painter().rect_filled(r, theme::R_CTRL, theme::BG_HOVER());
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, 5.0, theme::BG_RAISED());
+            ui.painter().rect_filled(r, theme::R_CTRL, theme::BG_RAISED());
         }
         ui.painter_at(r).text(
             r.center(),
@@ -367,19 +368,19 @@ pub fn tile(
     let area = Rect::from_min_max(r.min, pos2(r.right(), r.bottom() - label_h));
     let resp = ui.interact(r, id, Sense::click_and_drag());
     let p = ui.painter_at(r.expand(2.0));
-    p.rect_filled(area, 6.0, theme::BG_RAISED());
+    p.rect_filled(area, theme::R_CARD, theme::BG_RAISED());
     draw(&p.with_clip_rect(area), area);
     if selected {
         p.rect_stroke(
             area,
-            6.0,
+            theme::R_CARD,
             Stroke::new(1.5_f32, theme::ACCENT()),
             egui::StrokeKind::Inside,
         );
     } else if resp.hovered() {
         p.rect_stroke(
             area,
-            6.0,
+            theme::R_CARD,
             Stroke::new(1.0_f32, theme::overlay(110)),
             egui::StrokeKind::Inside,
         );
@@ -392,6 +393,7 @@ pub fn tile(
             plus.center(),
             egui::Align2::CENTER_CENTER,
             icon::PLUS,
+            // Icon-Glyphe im 18-px-Kreis
             egui::FontId::proportional(11.0),
             theme::ACCENT_INK(),
         );
@@ -399,7 +401,7 @@ pub fn tile(
     if !label.is_empty() {
         let g = p.layout(
             crate::tr(label),
-            egui::FontId::proportional(10.5),
+            egui::FontId::proportional(theme::FS_HINT),
             if selected {
                 theme::ACCENT()
             } else {
