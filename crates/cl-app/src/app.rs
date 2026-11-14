@@ -2524,6 +2524,31 @@ impl App {
 
     // ---------- Tastatur ----------
 
+    /// Esc schließt das oberste offene Fenster (Eigenschaften, Exporte, Sicherungen, Neu verknüpfen).
+    /// Läuft vor den Kürzeln, sonst verbraucht dort „escape“ die Taste und hebt nur die Auswahl auf.
+    fn esc_closes(&mut self, ctx: &egui::Context) -> bool {
+        let open = [
+            ("props", self.props.is_some()),
+            ("exports", self.exports_for.is_some()),
+            ("backups", self.backups_open),
+            ("relink", self.missing_open),
+        ];
+        if !open.iter().any(|o| o.1) || ctx.wants_keyboard_input() || !ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            return false;
+        }
+        let top = ctx.memory(|m| m.areas().top_layer_id(egui::Order::Middle));
+        let mut ids = open.iter().filter(|o| o.1).map(|o| o.0);
+        let first = ids.clone().next();
+        let pick = ids.find(|id| top.is_some_and(|l| l.id == egui::Id::new(*id))).or(first);
+        match pick {
+            Some("props") => self.props = None,
+            Some("exports") => self.exports_for = None,
+            Some("backups") => self.backups_open = false,
+            _ => self.missing_open = false,
+        }
+        true
+    }
+
     fn shortcuts(&mut self, ctx: &egui::Context) {
         if ctx.wants_keyboard_input() || self.settings_open {
             return;
@@ -2904,6 +2929,9 @@ impl eframe::App for App {
                 .frame(egui::Frame::default().fill(theme::BG_APP()))
                 .show(ctx, |ui| self.home_page(ui));
             self.settings_window(ctx);
+            if !self.settings_open {
+                self.esc_closes(ctx);
+            }
             self.import_dialogs(ctx);
             self.template_dialog(ctx);
             self.external_preview(ctx);
@@ -2914,7 +2942,7 @@ impl eframe::App for App {
             return;
         }
 
-        if !self.export.is_open() && self.onboard.is_none() && self.tour.is_none() {
+        if !self.export.is_open() && self.onboard.is_none() && self.tour.is_none() && !self.esc_closes(ctx) {
             self.shortcuts(ctx);
         }
         // Countdown vor der Voiceover-Aufnahme
@@ -3200,7 +3228,7 @@ impl App {
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             // Icon-Glyphe
-                            ui.label(egui::RichText::new(glyph).size(16.0).color(theme::ACCENT()));
+                            ui.label(egui::RichText::new(glyph).size(16.0).color(theme::TEXT()));
                             let mut l = label;
                             if l.chars().count() > 28 {
                                 l = format!("{}…", l.chars().take(27).collect::<String>());

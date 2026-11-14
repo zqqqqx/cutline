@@ -259,7 +259,7 @@ impl App {
                     let pt = ui.painter();
                     pt.rect_filled(r, theme::R_CARD, Color32::from_rgb(0x1E, 0x24, 0x2C));
                     let s = (p.style)();
-                    let sample = if p.id == "word" { "Wort".to_string() } else if s.uppercase { "SO SIEHT ES AUS".into() } else { crate::tr("So sieht es aus") };
+                    let sample = if p.id == "word" { crate::tr("Wort") } else if s.uppercase { crate::tr("So sieht es aus").to_uppercase() } else { crate::tr("So sieht es aus") };
                     let fam = self.font_family(s.font_family.as_deref());
                     let size = (s.size * 0.24).clamp(11.0, 22.0);
                     let col = Color32::from_rgba_unmultiplied(s.color[0], s.color[1], s.color[2], s.color[3]);

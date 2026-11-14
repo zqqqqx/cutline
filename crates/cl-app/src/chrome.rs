@@ -156,8 +156,8 @@ impl App {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 let (lr, lresp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
                 theme::logo(ui.painter(), lr);
+                // Startseite: Name steht schon als Wortmarke links, hier nur das Logo
                 if home {
-                    ui.label(RichText::new(crate::tr("Cutline")).strong().size(theme::FS_TEXT));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if theme::icon_button(
                             ui,
@@ -290,7 +290,7 @@ impl App {
             |ui| {
                 ui.set_min_width(230.0);
                 let item = |ui: &mut egui::Ui, g: &str, t: &str, k: &str| {
-                    ui.add(theme::menu_row(crate::tr(format!("{g}  {t}"))).keys(k))
+                    ui.add(theme::menu_row(crate::tr(format!("{g}   {t}"))).keys(k))
                 };
                 if item(ui, icon::FILE_PLUS, "Neues Projekt", "").clicked() {
                     ui.close_menu();
@@ -382,12 +382,10 @@ impl App {
                     self.backups_open = true;
                 }
                 ui.separator();
-                ui.menu_button(
-                    crate::tr(format!(
-                        "{}  Oberflächengröße  ({:.0} %)",
-                        icon::MAGNIFYING_GLASS,
-                        self.ui_scale * 100.0
-                    )),
+                theme::submenu(
+                    ui,
+                    icon::MAGNIFYING_GLASS,
+                    &format!("Oberflächengröße  ({:.0} %)", self.ui_scale * 100.0),
                     |ui| {
                         for v in [0.8, 0.9, 1.0, 1.1, 1.25, 1.5] {
                             if ui

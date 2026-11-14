@@ -161,7 +161,7 @@ impl crate::app::App {
                 egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                     for (e, size) in list {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(icon::FILE_VIDEO).color(theme::ACCENT()));
+                            ui.label(RichText::new(icon::FILE_VIDEO).color(theme::TEXT_DIM()));
                             ui.vertical(|ui| {
                                 ui.label(e.path.file_name().unwrap_or_default().to_string_lossy());
                                 let when = std::time::UNIX_EPOCH + std::time::Duration::from_secs(e.at);
@@ -182,7 +182,7 @@ impl crate::app::App {
                     }
                 });
             });
-        if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if !open {
             self.exports_for = None;
         }
     }

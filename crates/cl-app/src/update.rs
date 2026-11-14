@@ -219,7 +219,7 @@ impl App {
                         "{}  Cutline ist aktuell",
                         icon::CHECK_CIRCLE
                     )))
-                    .color(theme::ACCENT()),
+                    .color(theme::TEXT()),
                 );
             }
             UpdateState::Error(e) => {
@@ -310,7 +310,7 @@ impl App {
                         "{}  Version {v} ist installiert",
                         icon::CHECK_CIRCLE
                     )))
-                    .color(theme::ACCENT()),
+                    .color(theme::TEXT()),
                 );
                 if ui
                     .add(theme::primary(format!(

@@ -87,7 +87,14 @@ impl<'a> Slider<'a> {
 
     pub fn show(self, ui: &mut egui::Ui) -> Edit {
         let mut out = Edit::default();
-        let value_w = 46.0;
+        // Wertfeld so breit wie der längste Wert („-60.0 dB“); sonst wächst es und schiebt die
+        // Keyframe-Raute rechts aus dem Inspektor (sah aus wie ein „<“)
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        let text_w = |v: f32| {
+            let t = format!("{:.*}{}", self.decimals, v * self.display, self.suffix);
+            ui.fonts(|f| f.layout_no_wrap(t, font.clone(), Color32::WHITE).size().x)
+        };
+        let value_w = (text_w(*self.range.start()).max(text_w(*self.range.end())) + 2.0 * ui.spacing().button_padding.x + 2.0).max(46.0);
         let w = (ui.available_width() - value_w - ui.spacing().item_spacing.x - 1.0).max(30.0);
         let (rect, resp) = ui.allocate_exact_size(vec2(w, 18.0), Sense::click_and_drag());
         let track = Rect::from_center_size(rect.center(), vec2(rect.width() - 10.0, 2.0));
@@ -223,6 +230,23 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> bool {
     resp.clicked()
 }
 
+/// Schalter mit Text rechts daneben, statt Checkbox (deren leeres Kästchen ist auf den
+/// Karten kaum zu sehen). Der Text schaltet mit; `changed()` wie bei `ui.checkbox`.
+pub fn check(ui: &mut egui::Ui, on: &mut bool, text: impl Into<egui::WidgetText>) -> egui::Response {
+    ui.horizontal(|ui| {
+        let flipped = toggle(ui, on);
+        let mut r = ui.add(egui::Label::new(text).sense(Sense::click()));
+        if r.clicked() {
+            *on = !*on;
+        }
+        if flipped || r.clicked() {
+            r.mark_changed();
+        }
+        r
+    })
+    .inner
+}
+
 /// Zeile: Label links, Schalter rechts.
 pub fn toggle_row(ui: &mut egui::Ui, label: &str, on: &mut bool) -> bool {
     let mut changed = false;
@@ -315,7 +339,8 @@ pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
             egui::Align2::CENTER_CENTER,
             t,
             font.clone(),
-            if active { theme::ACCENT() } else { theme::TEXT_DIM() },
+            // aktiv: neutrale Fläche + heller Text (kein Akzent-Text)
+            if active { theme::TEXT() } else { theme::TEXT_DIM() },
         );
         if extra < 0.0 {
             resp.clone().on_hover_text(t);
@@ -403,7 +428,7 @@ pub fn tile(
             crate::tr(label),
             egui::FontId::proportional(theme::FS_HINT),
             if selected {
-                theme::ACCENT()
+                theme::TEXT()
             } else {
                 theme::TEXT_DIM()
             },

@@ -722,7 +722,7 @@ impl App {
             let picking = matches!(self.pick, Some(Pick::Track { clip, .. }) if clip == c.id);
             if task_bar(ui, self, &format!("track:{}", c.id)) {
             } else if picking {
-                ui.label(RichText::new(crate::tr("Ziehe im Player einen Rahmen um das Objekt, dem dieser Clip folgen soll (Esc bricht ab)")).small().color(theme::ACCENT()));
+                ui.label(RichText::new(crate::tr("Ziehe im Player einen Rahmen um das Objekt, dem dieser Clip folgen soll (Esc bricht ab)")).small().color(theme::TEXT()));
             } else if ui
                 .add(theme::secondary(format!(
                     "{}  Objekt verfolgen",
@@ -1153,7 +1153,7 @@ impl App {
                                         icon::CHECK_CIRCLE
                                     )))
                                     .small()
-                                    .color(theme::ACCENT()),
+                                    .color(theme::TEXT_DIM()),
                                 );
                             } else if info.id == "onnxruntime" && !cfg!(windows) {
                                 ui.label(
@@ -1300,7 +1300,7 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
                     egui::Align2::CENTER_CENTER,
                     crate::tr(*name),
                     egui::FontId::proportional(theme::FS_UI),
-                    if cur == *id { theme::ACCENT() } else { theme::TEXT() },
+                    theme::TEXT(),
                 );
             });
             if resp.clicked() {

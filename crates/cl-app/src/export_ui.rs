@@ -409,7 +409,7 @@ impl ExportDialog {
                                     });
                                     if s.alpha_possible() {
                                         theme::row(ui, "Hintergrund", |ui| {
-                                            ui.checkbox(&mut s.transparent, crate::tr(if s.codec == Codec::ProRes { "Transparent (ProRes 4444)" } else { "Transparent (VP9 mit Alpha)" }))
+                                            crate::widgets::check(ui, &mut s.transparent, crate::tr(if s.codec == Codec::ProRes { "Transparent (ProRes 4444)" } else { "Transparent (VP9 mit Alpha)" }))
                                                 .on_hover_text(crate::tr("Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen"));
                                         });
                                     }
@@ -456,16 +456,16 @@ impl ExportDialog {
                                         });
                                     });
                                     theme::section(ui, "Ton");
-                                    ui.checkbox(&mut s.include_audio, crate::tr("Ton exportieren (AAC 256 kbit/s, bei WebM Opus)"));
+                                    crate::widgets::check(ui, &mut s.include_audio, crate::tr("Ton exportieren (AAC 256 kbit/s, bei WebM Opus)"));
                                     if let Some((a, b)) = self.range_avail {
                                         let mut only = s.range.is_some();
                                         let fmt = |t: Time| format!("{:02}:{:02}.{:02}", (t.as_secs_f64() / 60.0) as u32, t.as_secs_f64() as u32 % 60, ((t.as_secs_f64().fract()) * 100.0) as u32);
-                                        if ui.checkbox(&mut only, crate::tr(format!("Nur In/Out-Bereich ({} – {})", fmt(a), fmt(b)))).changed() {
+                                        if crate::widgets::check(ui, &mut only, crate::tr(format!("Nur In/Out-Bereich ({} – {})", fmt(a), fmt(b)))).changed() {
                                             s.range = only.then_some((a, b));
                                         }
                                     }
                                 }
-                                ui.checkbox(&mut self.also_srt, crate::tr("Texte zusätzlich als Untertiteldatei (SRT) speichern"));
+                                crate::widgets::check(ui, &mut self.also_srt, crate::tr("Texte zusätzlich als Untertiteldatei (SRT) speichern"));
                                 let ms = &p.timeline.markers;
                                 if !ms.is_empty() {
                                     theme::section(ui, "Kapitel");
@@ -643,19 +643,32 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
     true
 }
 
+/// Dateigröße grob schätzen. Bei konstanter Qualität (CRF) aus Pixel × Bildrate, geeicht auf
+/// 1080p30 „Empfohlen“ ≈ 23 Mbit/s (was libx264 mit CRF 20 tatsächlich liefert);
+/// je +6 CRF etwa halbe Größe (Kleiner = CRF 26, Höher = CRF 16).
 fn estimate_mb(s: &ExportSettings, d: Time) -> f64 {
     let px = (s.width * s.height) as f64;
     let kbps = match s.quality {
         Quality::Bitrate(k) => k as f64,
         q => {
-            let base = px / (1920.0 * 1080.0) * 9000.0 * s.fps.as_f64() / 30.0;
+            let base = px / (1920.0 * 1080.0) * 23_000.0 * s.fps.as_f64() / 30.0;
             base * match q {
                 Quality::Lower => 0.5,
-                Quality::Higher => 1.8,
+                Quality::Higher => 2f64.powf(4.0 / 6.0),
                 _ => 1.0,
             }
         }
     };
     let audio = if s.include_audio { 256.0 } else { 0.0 };
-    (kbps + audio) * d.as_secs_f64() / 8.0 / 1000.0
+    let secs = s.range.map_or(d.as_secs_f64(), |(a, b)| (b.as_secs_f64() - a.as_secs_f64()).max(0.0));
+    (kbps + audio) * secs / 8.0 / 1000.0
+}
+
+#[test]
+fn estimate_matches_a_real_1080p30_export() {
+    let mut s = ExportSettings::from_project(&Project::new("t"));
+    (s.width, s.height, s.fps) = (1920, 1080, cl_core::Rational::parse("30").unwrap());
+    let mb = estimate_mb(&s, Time::from_secs_f64(40.0));
+    // echte Datei: 117,6 MB
+    assert!((80.0..=160.0).contains(&mb), "{mb}");
 }

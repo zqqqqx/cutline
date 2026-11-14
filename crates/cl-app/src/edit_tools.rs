@@ -262,22 +262,22 @@ impl App {
                     .color(theme::TEXT_DIM()),
                 );
                 ui.add_space(4.0);
-                ui.checkbox(
+                crate::widgets::check(ui, 
                     &mut a.look,
                     crate::tr("Look (Anpassen, Filter, Effekte, LUT, Maske, Freistellen-Farbe)"),
                 );
-                ui.checkbox(
+                crate::widgets::check(ui, 
                     &mut a.transform,
                     crate::tr("Position, Größe, Drehung und Keyframes"),
                 );
-                ui.checkbox(&mut a.opacity, crate::tr("Deckkraft"));
-                ui.checkbox(&mut a.anim, crate::tr("Animationen"));
-                ui.checkbox(
+                crate::widgets::check(ui, &mut a.opacity, crate::tr("Deckkraft"));
+                crate::widgets::check(ui, &mut a.anim, crate::tr("Animationen"));
+                crate::widgets::check(ui, 
                     &mut a.audio,
                     crate::tr("Ton (Lautstärke, Bearbeitung, Ein-/Ausblenden)"),
                 );
-                ui.checkbox(&mut a.speed, crate::tr("Tempokurve und Richtung"));
-                ui.checkbox(&mut a.text, crate::tr("Textstil (bei Texten)"));
+                crate::widgets::check(ui, &mut a.speed, crate::tr("Tempokurve und Richtung"));
+                crate::widgets::check(ui, &mut a.text, crate::tr("Textstil (bei Texten)"));
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.add(theme::primary("Einfügen")).clicked() {

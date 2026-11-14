@@ -277,7 +277,7 @@ impl App {
                 ui,
                 icon::KEY,
                 "API-Schlüssel fehlt",
-                "Unter Einstellungen → Integrationen und Plugins eintragen",
+                "Unter Einstellungen → Plugins und Konten eintragen",
             );
             ui.vertical_centered(|ui| {
                 if ui.add(theme::primary("Einrichten …")).clicked() {
@@ -404,7 +404,7 @@ impl App {
         }
     }
 
-    /// Abschnitte in Einstellungen → Integrationen
+    /// Abschnitte in Einstellungen → Plugins und Konten
     pub fn stock_settings(&mut self, ui: &mut egui::Ui) {
         for (which, title, about, url) in [
             (FREESOUND, "Freesound", "Hunderttausende Soundeffekte unter Creative-Commons-Lizenzen. Lizenz und Urheber stehen bei jedem Treffer.", "https://freesound.org/apiv2/apply/"),

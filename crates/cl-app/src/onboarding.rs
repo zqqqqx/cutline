@@ -386,7 +386,7 @@ impl App {
             }
         }
         if need_key {
-            self.toast("Schlüssel bzw. Anmeldung unter Einstellungen → Integrationen eintragen");
+            self.toast("Schlüssel bzw. Anmeldung unter Einstellungen → Plugins und Konten eintragen");
         }
     }
 
@@ -866,7 +866,7 @@ fn welcome(ui: &mut egui::Ui) {
                 ui.set_width(cw - 2.0 * theme::PAD_CARD_L as f32);
                 ui.set_min_height(104.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(g).size(22.0) /* Icon-Glyphe der Kachel */.color(theme::ACCENT()));
+                    ui.label(RichText::new(g).size(22.0) /* Icon-Glyphe der Kachel */.color(theme::TEXT()));
                     ui.add_space(4.0);
                     ui.label(RichText::new(crate::tr(t)).strong());
                     ui.label(RichText::new(crate::tr(d)).small().color(theme::TEXT_DIM()));

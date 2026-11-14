@@ -234,7 +234,7 @@ impl App {
         let mut act: Option<(u8, String)> = None;
         let n = cats.len();
         // Eine Zeile, waagrecht scrollbar (Mausrad oder Ziehen) statt mehrzeiligem Umbruch
-        egui::ScrollArea::horizontal()
+        let row = egui::ScrollArea::horizontal()
             .id_salt(ckey)
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
             .show(ui, |ui| ui.horizontal(|ui| {
@@ -313,6 +313,7 @@ impl App {
                 });
             }
         }));
+        theme::edge_fade(ui, &row);
         if let Some((a, key)) = act {
             let label = cats
                 .iter()
@@ -416,11 +417,10 @@ impl App {
             ) {
                 act = Some(0);
             }
-            ui.menu_button(
-                crate::tr(format!(
-                    "{}  Zu Ordner hinzufügen",
-                    icon::FOLDER_SIMPLE_PLUS
-                )),
+            theme::submenu(
+                ui,
+                icon::FOLDER_SIMPLE_PLUS,
+                "Zu Ordner hinzufügen",
                 |ui| {
                     ui.set_min_width(160.0);
                     for f in &virt {
@@ -441,8 +441,10 @@ impl App {
                 }
             }
             if let Some(item) = own {
-                ui.menu_button(
-                    crate::tr(format!("{}  Verschieben nach", icon::FOLDER_SIMPLE)),
+                theme::submenu(
+                    ui,
+                    icon::FOLDER_SIMPLE,
+                    "Verschieben nach",
                     |ui| {
                         ui.set_min_width(150.0);
                         for f in phys_folders.iter().filter(|f| **f != item.folder) {

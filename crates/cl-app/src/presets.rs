@@ -137,7 +137,7 @@ impl App {
                 let label = if matching.is_empty() {
                     crate::tr("Keine Presets")
                 } else {
-                    crate::tr(format!("{} anwenden …", matching.len()))
+                    crate::tr(format!("Looks ({})", matching.len()))
                 };
                 // Aufklappbare Liste statt Popup (ein offenes Popup blieb beim Clipwechsel stehen)
                 let caret = if self.preset_list_open {

@@ -231,11 +231,10 @@ impl App {
             self.home_templates(ui);
             if self.import_enabled() {
                 ui.add_space(6.0);
-                if ui
-                    .add_sized(
-                        [ui.available_width(), 30.0],
-                        theme::ghost(format!("{}  Projekt importieren …", icon::DOWNLOAD_SIMPLE)),
-                    )
+                let r = ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
+                    ui.add(theme::ghost(format!("{}  Projekt importieren …", icon::DOWNLOAD_SIMPLE)).min_size(vec2(0.0, 30.0)))
+                });
+                if r.inner
                     .on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve"))
                     .clicked()
                 {
@@ -265,12 +264,13 @@ impl App {
                     egui::FontId::proportional(14.0),
                     col,
                 );
+                // Akzent nur am Icon, der Text bleibt neutral
                 ui.painter().text(
                     r.left_center() + vec2(34.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     crate::tr(t),
                     egui::FontId::proportional(theme::FS_TEXT),
-                    col,
+                    if active { theme::TEXT() } else { col },
                 );
                 resp.clicked()
             };
@@ -329,6 +329,8 @@ impl App {
                                     "{}  Projekte suchen",
                                     icon::MAGNIFYING_GLASS
                                 )))
+                                // Text und Platzhalter gleich groß
+                                .font(egui::FontId::proportional(theme::FS_TEXT))
                                 .desired_width(220.0),
                         );
                     });

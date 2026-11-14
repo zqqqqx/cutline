@@ -1,6 +1,6 @@
 //! Plugin „Story-Werkzeuge“ (eingebaut, standardmäßig aus): Figuren mit Name, Farbe und
 //! Porträt; Dialogbox und Namensschild für eine Figur am Playhead einfügen.
-//! Einstellungen unter Einstellungen → Integrationen und Plugins, Werkzeuge im Menü „Quick Actions“.
+//! Einstellungen unter Einstellungen → Plugins und Konten, Werkzeuge im Menü „Quick Actions“.
 
 use std::path::PathBuf;
 
@@ -217,7 +217,7 @@ impl App {
         self.toast(format!("Namensschild für {} eingefügt", ch.name));
     }
 
-    /// Abschnitt in Einstellungen → Integrationen und Plugins
+    /// Abschnitt in Einstellungen → Plugins und Konten
     pub fn story_settings(&mut self, ui: &mut egui::Ui) {
         theme::section(ui, "Story-Werkzeuge");
         let mut on = enabled(self);

@@ -944,7 +944,7 @@ impl App {
                 self.level_meter(ui);
                 ui.label(
                     RichText::new(crate::tr(self.playhead.timecode(fps)))
-                        .color(theme::ACCENT())
+                        .color(theme::TEXT())
                         .monospace(),
                 );
                 let total = format!("/ {}", self.project.duration().timecode(fps));
