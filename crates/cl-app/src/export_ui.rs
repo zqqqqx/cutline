@@ -756,7 +756,7 @@ fn loudness_row(ui: &mut egui::Ui, l: &mut Option<f32>) {
         Some(_) => "Sprache (−16 LUFS)",
         None => "Aus",
     };
-    theme::row(ui, "Lautheit angleichen", |ui| {
+    theme::row(ui, "Lautheit", |ui| {
         egui::ComboBox::from_id_salt("exp-loud").selected_text(crate::tr(name(*l))).width(200.0).show_ui(ui, |ui| {
             for v in [Some(-14.0), Some(-16.0), None] {
                 ui.selectable_value(l, v, crate::tr(name(v)));

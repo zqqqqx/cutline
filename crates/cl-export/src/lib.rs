@@ -436,6 +436,8 @@ pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time) -> Vec<
         Some(f) if f.0 < Time::from_secs_f64(1.0) => f.0 = Time::ZERO,
         _ => v.insert(0, (Time::ZERO, "Intro".into())),
     }
+    // zwei Marker in derselben Sekunde ergäben zweimal dieselbe Zeit: der erste gewinnt
+    v.dedup_by(|b, a| (b.0 - a.0) < Time::from_secs_f64(1.0));
     v
 }
 
@@ -573,6 +575,8 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
             a.drain(i..i + 2);
         }
         a.extend(["-b:v".into(), format!("{k}k")]);
+        // Deckel knapp über dem Ziel, sonst überziehen vor allem Hardware-Encoder deutlich
+        a.extend(["-maxrate".into(), format!("{}k", k + k / 10), "-bufsize".into(), format!("{}k", k * 2)]);
     }
     a.extend(["-r".into(), format!("{}/{}", s.fps.num, s.fps.den)]);
     if s.include_audio {
