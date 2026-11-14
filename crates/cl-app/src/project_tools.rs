@@ -160,6 +160,8 @@ impl App {
         self.missing_window(ctx);
         self.props_window(ctx);
         self.exports_window(ctx);
+        self.shorts_window(ctx);
+        self.aspect_fit_dialog(ctx);
     }
 
     pub fn start_archive(&mut self, ctx: &egui::Context) {

@@ -496,6 +496,27 @@ impl App {
         if !self.player_pick(ui, &area_resp, &regions) {
             self.player_interact(ui, &area_resp, canvas, scale, &regions);
         }
+        // Plattform-Bedienelemente (oben ~10 %, unten ~20 %, rechts ~12 %): nur Vorschau
+        if self.safe_area && ph > pw {
+            let (w, h) = (canvas.width(), canvas.height());
+            let zones = [
+                Rect::from_min_size(canvas.min, vec2(w, h * 0.10)),
+                Rect::from_min_max(canvas.min + vec2(0.0, h * 0.80), canvas.max),
+                Rect::from_min_max(canvas.min + vec2(w * 0.88, h * 0.10), canvas.max - vec2(0.0, h * 0.20)),
+            ];
+            let line = egui::Stroke::new(1.0_f32, Color32::from_white_alpha(70));
+            for z in zones {
+                content.rect_filled(z, 0.0, Color32::from_black_alpha(70));
+                // Schraffur
+                let hatch = content.with_clip_rect(z.intersect(canvas.intersect(area)));
+                let mut x = z.left() - z.height();
+                while x < z.right() {
+                    hatch.line_segment([pos2(x, z.bottom()), pos2(x + z.height(), z.top())], egui::Stroke::new(1.0_f32, Color32::from_white_alpha(18)));
+                    x += 12.0;
+                }
+                content.rect_stroke(z, 0.0, line, egui::StrokeKind::Inside);
+            }
+        }
         area_resp.context_menu(|ui| self.player_menu(ui));
         if self.voiceover.recorder.is_some() {
             painter.circle_filled(canvas.left_top() + vec2(14.0, 14.0), 5.0, theme::DANGER);
@@ -1053,6 +1074,10 @@ impl App {
         if menu_item(ui, max, "Großer Player", &self.key_of("max")) {
             self.player_max = !self.player_max;
         }
+        let sa = if self.safe_area { icon::CHECK } else { icon::DEVICE_MOBILE };
+        if menu_item(ui, sa, "Safe-Area", "") {
+            self.safe_area = !self.safe_area;
+        }
     }
 
     pub fn set_aspect(&mut self, p: AspectPreset) {
@@ -1074,7 +1099,12 @@ impl App {
             s.platform = None;
         }
         if s != self.project.settings {
-            self.apply(EditOp::SetSettings { settings: s });
+            // Format ändert sich und es gibt Bilder: erst fragen, wie sie neu ins Bild sollen
+            if (s.width, s.height) != (self.project.settings.width, self.project.settings.height) && self.has_visual_clips() {
+                self.aspect_fit = Some(s);
+            } else {
+                self.apply(EditOp::SetSettings { settings: s });
+            }
         }
     }
 }

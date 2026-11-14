@@ -173,6 +173,12 @@ pub struct App {
     pub perf_max_gap: f64,
     /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
+    /// Trefferliste von „Highlights finden“ (Fenster offen)
+    pub shorts: Option<crate::shorts::ShortsState>,
+    /// Neues Seitenverhältnis, das auf die Wahl „Clips neu einpassen?“ wartet
+    pub aspect_fit: Option<cl_core::ProjectSettings>,
+    /// Hilfslinien für Plattform-Bedienelemente im Player
+    pub safe_area: bool,
     /// Figuren (Plugin „Story-Werkzeuge“)
     pub characters: Vec<crate::story::Character>,
     /// Plugins Freesound und Pexels
@@ -395,6 +401,9 @@ impl App {
             perf_last_frame: None,
             perf_max_gap: 0.0,
             multicam: None,
+            shorts: None,
+            aspect_fit: None,
+            safe_area: false,
             characters: crate::story::load(),
             stock: Default::default(),
             last_backup: None,
