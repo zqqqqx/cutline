@@ -848,7 +848,7 @@ fn welcome(ui: &mut egui::Ui) {
         ui.add_space(4.0);
         ui.label(
             RichText::new(crate::tr(
-                "Schneiden ohne Konto, ohne Abo und ohne Cloud. Alles läuft auf deinem Rechner.",
+                "Einfach zu bedienen, schnell, komplett auf deinem Rechner.",
             ))
             .size(13.0)
             .color(theme::TEXT_DIM()),
@@ -860,9 +860,9 @@ fn welcome(ui: &mut egui::Ui) {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 12.0;
         for (g, t, d) in [
-            (icon::CPU, "Alles lokal", "Untertitel, Freistellen und Analysen laufen mit offenen Modellen auf deinem Rechner."),
-            (icon::SHIELD_CHECK, "Ehrlich", "Kein Wasserzeichen, keine Werbung, kein Upload. Projekte sind offenes JSON."),
-            (icon::PUZZLE_PIECE, "Erweiterbar", "Plugins für Musik und Stock-Material, eigene Bibliothek, MCP-Schnittstelle."),
+            (icon::CPU, "Einfach schneiden", "Vertraute Bedienung: reinziehen, schneiden, exportieren. Jede Funktion ist ab dem ersten Start freigeschaltet."),
+            (icon::SHIELD_CHECK, "Schnell arbeiten", "In Rust geschrieben. Flüssige Vorschau mit Proxys, schnelle Exporte mit Hardware-Encodern."),
+            (icon::PUZZLE_PIECE, "Offen", "Open Source, läuft lokal, ohne Konto, ohne Abo, ohne Wasserzeichen. Projekte sind offenes JSON."),
         ] {
             egui::Frame::default().fill(theme::BG_INPUT()).corner_radius(12).inner_margin(14).show(ui, |ui| {
                 ui.set_width(cw - 28.0);

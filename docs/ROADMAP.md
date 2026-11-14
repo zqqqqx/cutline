@@ -1,8 +1,8 @@
 # Roadmap
 
-Phases 0–3 are released (v0.3.0); phase 4 is done. Phase 4 turns Cutline into a tool for creators: YouTubers,
-TikTokers and streamers in gaming and lifestyle, who publish often, in several formats, and need
-to get from a raw recording to a finished clip fast.
+Cutline is the open video editor for creators: easy to use, fast, and entirely on your machine. It is made for
+content creators (YouTube, Shorts/TikTok/Reels, streaming, podcasts) who publish often, in several formats, and need
+to get from a raw recording to a finished clip fast. The current release is v0.7.1; phases 0–4 are done.
 
 ## Phase 4 – Creator edition (done)
 
@@ -122,7 +122,7 @@ Legend: ⏳ planned · 🔨 in progress · ✅ done
 | **Auto ducking**: music gets quieter under speech | Clear voices, no manual keyframes |
 | **Creator overlays**: subscribe/follow animations, progress bar, countdown, webcam frames | Standard elements, own design |
 
-**5.3 status (mostly done):** everything sits in the new **Tools** menu of the timeline: jump cuts · filler words (local Parakeet transcript) · highlight finder (loud moments → markers) · YouTube chapters from markers · auto ducking (−12 dB keyframes under speech) · zoom punch-in · vertical 9:16 layout (facecam crop over gameplay) · thumbnail PNG from the current frame · export presets per platform with an aspect-ratio hint · "Creator" sticker category (subscribe button, bell, thumbs up, comment, share, live, webcam frame, progress bar). Moved to later: animated word captions, multi-export, shorts batch from an episode, auto zoom on beats, thumbnail text styles and cut-outs, countdown, OBS multi-track import.
+**5.3 status (mostly done):** everything sits in the new **Quick Actions** menu of the timeline: jump cuts · filler words (local Parakeet transcript) · highlight finder (loud moments → markers) · YouTube chapters from markers · auto ducking (−12 dB keyframes under speech) · zoom punch-in · vertical 9:16 layout (facecam crop over gameplay) · thumbnail PNG from the current frame · export presets per platform with an aspect-ratio hint · "Creator" sticker category (subscribe button, bell, thumbs up, comment, share, live, webcam frame, progress bar). Moved to later: animated word captions, multi-export, shorts batch from an episode, auto zoom on beats, thumbnail text styles and cut-outs, countdown, OBS multi-track import.
 
 ### 5.4 Plugins (shipped, off by default, need your own account where noted)
 
