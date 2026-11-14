@@ -853,7 +853,7 @@ impl App {
                     "Version {} · MPL-2.0",
                     env!("CARGO_PKG_VERSION")
                 )));
-                ui.label(RichText::new(crate::tr("Open-Source-Videoeditor in Rust. Lokal, ohne Konto, ohne Abo, ohne Werbung, ohne generative KI.")).color(theme::TEXT_DIM()));
+                ui.label(RichText::new(crate::tr("Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner. Lokale KI für Untertitel, Freistellen und Entrauschen – nichts wird hochgeladen; keine erzeugende KI.")).color(theme::TEXT_DIM()));
                 ui.add_space(8.0);
                 let (e, f, t) = (
                     cl_fx::EFFECTS.len(),

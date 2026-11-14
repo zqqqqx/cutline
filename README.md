@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/brand/banner.svg" alt="Cutline – the open video editor that runs on your machine" width="100%">
+  <img src="docs/brand/banner.svg" alt="Cutline – the open video editor for creators" width="100%">
 </p>
 
 <p align="center">
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <b>A fast, local, open-source video editor written in Rust.</b><br>
-  No account, no subscription, no watermark, no cloud. Your footage stays on your machine.
+  <b>The open video editor for creators.</b><br>
+  Easy to use, fast, and entirely on your machine.
 </p>
 
 <p align="center">
@@ -30,25 +30,25 @@
 <table>
   <tr>
     <td width="33%" valign="top">
-      <h3>Fully local</h3>
-      Captions, background removal, tracking and beat detection run with open models on your computer. Nothing is uploaded.
+      <h3>Simple</h3>
+      A familiar layout: drag your footage in, cut, export. Every function is unlocked from the first start. Presets for YouTube, Shorts, TikTok, Reels and Twitch.
     </td>
     <td width="33%" valign="top">
-      <h3>Honest</h3>
-      Every feature is free. No watermark, no ads, no upsell. Projects are plain JSON, the code is MPL-2.0.
+      <h3>Fast</h3>
+      Written in Rust. Proxy media keeps the preview smooth on large recordings, hardware encoders (NVENC, Quick Sync, AMF) make exports quick.
     </td>
     <td width="33%" valign="top">
-      <h3>Built for creators</h3>
-      Jump cuts, filler words, auto ducking, highlights, multicam, vertical layouts and export presets for every platform.
+      <h3>Open</h3>
+      Open source (MPL-2.0), runs locally, no account, no subscription, no watermark. Local AI for captions, cut-outs and noise removal – nothing is uploaded; no generative AI. Projects are plain JSON.
     </td>
   </tr>
 </table>
 
 ## One click for the tedious parts
 
-<img src="docs/images/tools.jpg" alt="The Tools menu with jump cuts, filler words, auto ducking, highlights, sync, multicam, punch-in, vertical layout, thumbnail and recap" width="100%">
+<img src="docs/images/tools.jpg" alt="The Quick Actions menu with jump cuts, filler words, auto ducking, highlights, sync, multicam, punch-in, vertical layout, thumbnail and recap" width="100%">
 
-The **Tools** menu in the timeline does the work that usually eats an evening: remove pauses from talking
+The **Quick Actions** menu in the timeline does the work that usually eats an evening: remove pauses from talking
 parts, cut filler words found by the local speech model, lower music under speech, turn loud moments of a
 long recording into markers, sync several recordings by their audio and cut between them live, switch to a
 9:16 layout with the facecam on top, or save the current frame as a thumbnail.
@@ -97,7 +97,7 @@ Integrations ship with Cutline but stay **off** until you turn them on. Keys and
 |---|---|
 | **Timeline** | Multiple video, text and audio tracks · track names, solo and clip color labels · markers with notes (copy as YouTube chapters) · In/Out range with loop · J/K/L shuttle · roll, slip, nudge and numeric timing · clip groups · paste attributes · main-track magnet (ripple) · snapping to clips, playhead and beats · marquee and multi-selection · copy/paste · freeze frame · reverse · speed 0.1–10× and speed curves · smooth slow motion with interpolated frames |
 | **Player** | All layers live, picture-in-picture · drag, scale and rotate with snapping · zoom 50–400 % · large player mode · preview in its own window for a second screen · audio meters · proxy media for smooth playback of large recordings |
-| **Creator tools** | Remove pauses (jump cuts) · remove filler words · auto ducking · highlights as markers · sync recordings by audio · multicam editing (1–9 while playing) · speaker recordings import · zoom punch-in · vertical 9:16 layout with facecam · thumbnail PNG · recap from markers · export presets for YouTube, Shorts/TikTok/Reels, Instagram and Twitch |
+| **Quick Actions** | Remove pauses (jump cuts) · remove filler words · auto ducking · highlights as markers · sync recordings by audio · multicam editing (1–9 while playing) · speaker recordings import · zoom punch-in · vertical 9:16 layout with facecam · thumbnail PNG · recap from markers · export presets for YouTube, Shorts/TikTok/Reels, Instagram and Twitch |
 | **Library** | One asset system for stickers, sound effects, music, effects, filters, transitions, text templates, fonts and media: search, favorites, own folders, and every category can be moved, renamed or hidden · own stickers, sounds and presets |
 | **Look** | Adjustments (light, color, HSL per range, sharpness, vignette, grain) · filters · LUT (.cube) · masks (linear, mirror, circle, rectangle) · blend and opacity · video noise reduction · deflicker |
 | **Motion** | Keyframes for position, scale, rotation, opacity and volume · in/out/combo animations · transitions between clips |
