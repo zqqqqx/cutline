@@ -1,8 +1,9 @@
-//! Creator-Werkzeuge (Menü „Werkzeuge“ in der Zeitleiste):
+//! Quick Actions (Menü in der Zeitleiste):
 //! Pausen entfernen (Jump Cuts), Füllwörter entfernen, Highlights als Marker, Auto-Ducking,
 //! Zoom-Punch-in, Aufnahmen per Ton synchronisieren, Multicam-Schnitt, Rückblick erstellen,
 //! Hochkant-Layout, Thumbnail exportieren, Sprecher-Aufnahmen importieren.
 //! Analysen laufen im Hintergrund; das Ergebnis wird als ein Undo-Schritt angewendet.
+//! Pausen, Füllwörter, Ducking und Punch-in öffnen erst das Einstellungsfenster (`quick.rs`).
 
 use std::path::PathBuf;
 
@@ -14,7 +15,7 @@ use crate::tasks::TaskDone;
 use crate::theme::icon;
 
 /// Ton eines Clips: (Datei, Quellbeginn, Quelllänge, Tempo)
-fn clip_audio(app: &App, c: &Clip) -> Option<(PathBuf, f64, f64, f64)> {
+pub fn clip_audio(app: &App, c: &Clip) -> Option<(PathBuf, f64, f64, f64)> {
     let ClipContent::Media { media, kind } = &c.content else {
         return None;
     };
@@ -31,72 +32,13 @@ fn clip_audio(app: &App, c: &Clip) -> Option<(PathBuf, f64, f64, f64)> {
     ))
 }
 
-/// Teile eines Clips entfernen (`cut` = Bereiche in Clipzeit, Sekunden) und den Rest
-/// lückenlos zusammenschieben; folgende Clips derselben Spur rücken nach.
-fn cut_ranges_ops(p: &Project, clip: ClipId, cut: &[(f64, f64)]) -> Vec<EditOp> {
-    let Some((t, c)) = p.find_clip(clip) else {
-        return vec![];
-    };
-    let dur = c.duration.as_secs_f64();
-    let sp = c.speed.max(0.01) as f64;
-    let mut cut: Vec<(f64, f64)> = cut
-        .iter()
-        .map(|(a, b)| (a.max(0.0), b.min(dur)))
-        .filter(|(a, b)| b - a > 0.02)
-        .collect();
-    cut.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    // Behalten = Lücken zwischen den Schnitten
-    let mut keep = Vec::new();
-    let mut pos = 0.0;
-    for (a, b) in &cut {
-        if *a > pos + 0.04 {
-            keep.push((pos, *a));
-        }
-        pos = pos.max(*b);
-    }
-    if dur > pos + 0.04 {
-        keep.push((pos, dur));
-    }
-    if keep.is_empty() || cut.is_empty() {
-        return vec![];
-    }
-    let removed: f64 = dur - keep.iter().map(|(a, b)| b - a).sum::<f64>();
-    let mut ops = vec![EditOp::RemoveClip { clip }];
-    let mut at = c.start.as_secs_f64();
-    for (a, b) in keep {
-        let mut n = c.clone();
-        n.id = ClipId::new();
-        n.start = Time::from_secs_f64(at);
-        n.duration = Time::from_secs_f64(b - a);
-        n.source_in = Time::from_secs_f64(c.source_in.as_secs_f64() + a * sp);
-        n.keyframes = Keyframes::default();
-        n.transition_out = None;
-        at += b - a;
-        ops.push(EditOp::AddClip {
-            track: Some(t.id),
-            clip: n,
-        });
-    }
-    // Hauptspur mit Magnet schließt selbst; sonst folgende Clips nachziehen
-    if !(t.main && p.settings.main_track_magnet) {
-        for o in t.clips.iter().filter(|o| o.start > c.start && o.id != clip) {
-            ops.push(EditOp::MoveClip {
-                clip: o.id,
-                track: Some(t.id),
-                start: Time::from_secs_f64((o.start.as_secs_f64() - removed).max(0.0)),
-            });
-        }
-    }
-    ops
-}
-
 impl App {
     fn selected_clip(&self) -> Option<Clip> {
         self.selected
             .and_then(|s| self.project.find_clip(s).map(|(_, c)| c.clone()))
     }
 
-    /// Menü „Werkzeuge“ (in der Werkzeugleiste der Zeitleiste)
+    /// Menü „Quick Actions“ (in der Werkzeugleiste der Zeitleiste)
     pub fn tools_menu(&mut self, ui: &mut egui::Ui) {
         let sel = self.selected_clip();
         let has_audio = sel.as_ref().is_some_and(|c| clip_audio(self, c).is_some());
@@ -218,14 +160,14 @@ impl App {
         if let Some(a) = act {
             ui.close_menu();
             match a {
-                "jump" => self.tool_jump_cuts(&ctx),
-                "filler" => self.tool_fillers(&ctx),
-                "duck" => self.tool_ducking(&ctx),
+                "jump" => self.quick_open(crate::quick::QuickKind::Pauses),
+                "filler" => self.quick_open(crate::quick::QuickKind::Fillers),
+                "duck" => self.quick_open(crate::quick::QuickKind::Ducking),
                 "highlights" => self.tool_highlights(&ctx),
                 "sync" => self.tool_sync(&ctx),
                 "multicam" => self.tool_multicam_start(),
                 "speakers" => self.tool_speakers(&ctx),
-                "punch" => self.tool_punch_in(),
+                "punch" => self.quick_open(crate::quick::QuickKind::Punch),
                 "vertical" => self.tool_vertical(),
                 "thumb" => self.tool_thumbnail(&ctx),
                 _ => self.tool_recap(),
@@ -233,87 +175,8 @@ impl App {
         }
     }
 
-    pub fn tool_jump_cuts(&mut self, ctx: &egui::Context) {
-        let Some(c) = self.selected_clip() else {
-            return;
-        };
-        let Some((path, src, span, sp)) = clip_audio(self, &c) else {
-            return;
-        };
-        let id = c.id;
-        self.tasks
-            .spawn(ctx, "tool", "Pausen werden gesucht …", move |p, _| {
-                p(0.3);
-                match cl_analyze::audio::envelope(&path, src, Some(span)) {
-                    Ok(env) => {
-                        let pad = 0.12;
-                        let cuts: Vec<(f64, f64)> = cl_analyze::audio::silences(&env, -32.0, 0.55)
-                            .into_iter()
-                            .map(|(a, b)| ((a + pad) / sp, (b - pad) / sp))
-                            .filter(|(a, b)| b > a)
-                            .collect();
-                        TaskDone::Run(Box::new(move |app: &mut App| {
-                            let ops = cut_ranges_ops(&app.project, id, &cuts);
-                            if ops.is_empty() {
-                                app.toast("Keine längeren Pausen gefunden");
-                            } else {
-                                let total: f64 = cuts.iter().map(|(a, b)| b - a).sum();
-                                app.apply(EditOp::Batch {
-                                    label: "Pausen entfernen".into(),
-                                    ops,
-                                });
-                                app.toast(format!("{} Pausen entfernt ({total:.1} s)", cuts.len()));
-                            }
-                        }))
-                    }
-                    Err(e) => TaskDone::Failed(e),
-                }
-            });
-    }
-
-    pub fn tool_fillers(&mut self, ctx: &egui::Context) {
-        let Some(c) = self.selected_clip() else {
-            return;
-        };
-        let Some((path, src, span, sp)) = clip_audio(self, &c) else {
-            return;
-        };
-        let models = self.models();
-        if models.parakeet().is_none() {
-            self.toast_err("Benötigt: Parakeet TDT 0.6B v3 (Einstellungen → Modelle)");
-            return;
-        }
-        let id = c.id;
-        self.tasks.spawn(
-            ctx,
-            "tool",
-            "Füllwörter werden gesucht …",
-            move |p, cancel| match cl_analyze::asr::parakeet(&models, &path, src, span, p, cancel) {
-                Ok(words) => {
-                    let cuts: Vec<(f64, f64)> = words
-                        .iter()
-                        .filter(|w| cl_analyze::audio::is_filler(&w.text))
-                        .map(|w| ((w.start - 0.03).max(0.0) / sp, (w.end + 0.03) / sp))
-                        .collect();
-                    TaskDone::Run(Box::new(move |app: &mut App| {
-                        let ops = cut_ranges_ops(&app.project, id, &cuts);
-                        if ops.is_empty() {
-                            app.toast("Keine Füllwörter gefunden");
-                        } else {
-                            app.apply(EditOp::Batch {
-                                label: "Füllwörter entfernen".into(),
-                                ops,
-                            });
-                            app.toast(format!("{} Füllwörter entfernt", cuts.len()));
-                        }
-                    }))
-                }
-                Err(e) => TaskDone::Failed(e),
-            },
-        );
-    }
-
-    pub fn tool_ducking(&mut self, ctx: &egui::Context) {
+    /// Musik absenken: `drop_db` unter dem Grundpegel, `ramp` Sekunden Übergang
+    pub fn tool_ducking(&mut self, ctx: &egui::Context, drop_db: f32, ramp: f32) {
         let Some(music) = self.selected_clip() else {
             return;
         };
@@ -376,8 +239,8 @@ impl App {
                     let Some(mut c) = app.project.find_clip(id).map(|(_, c)| c.clone()) else {
                         return;
                     };
-                    let low = base - 12.0;
-                    let ramp = 0.3;
+                    let low = base - drop_db;
+                    let ramp = ramp as f64;
                     let rel = |t: f64| Time::from_secs_f64((t - m0).clamp(0.0, m1 - m0));
                     let mut n = 0;
                     c.keyframes.0.remove(&Prop::Volume);
@@ -396,7 +259,7 @@ impl App {
                         clip: id,
                         keyframes: c.keyframes,
                     });
-                    app.toast(format!("Musik an {n} Stellen abgesenkt (−12 dB)"));
+                    app.toast(format!("Musik an {n} Stellen abgesenkt (−{drop_db:.0} dB)"));
                 }))
             });
     }
@@ -666,7 +529,8 @@ impl App {
         }
     }
 
-    pub fn tool_punch_in(&mut self) {
+    /// Zoom auf `zoom` (1.25 = 125 %) für `dur` Sekunden ab dem Playhead
+    pub fn tool_punch_in(&mut self, zoom: f32, dur: f32) {
         let Some(mut c) = self.selected_clip() else {
             return;
         };
@@ -679,9 +543,10 @@ impl App {
         let end = c.duration.as_secs_f64();
         let k = |t: f64| Time::from_secs_f64(t.clamp(0.0, end));
         c.keyframes.set(Prop::Scale, k(rel), base);
-        c.keyframes.set(Prop::Scale, k(rel + 0.2), base * 1.25);
-        c.keyframes.set(Prop::Scale, k(rel + 1.4), base * 1.25);
-        c.keyframes.set(Prop::Scale, k(rel + 1.7), base);
+        let dur = (dur as f64).max(0.6);
+        c.keyframes.set(Prop::Scale, k(rel + 0.2), base * zoom);
+        c.keyframes.set(Prop::Scale, k(rel + dur - 0.3), base * zoom);
+        c.keyframes.set(Prop::Scale, k(rel + dur), base);
         self.apply(EditOp::SetKeyframes {
             clip: c.id,
             keyframes: c.keyframes,
@@ -889,51 +754,4 @@ fn walk_audio(dir: &std::path::Path) -> Vec<PathBuf> {
         }
     }
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cut_ranges_keeps_rest_contiguous() {
-        let mut p = Project::new("t");
-        let mut tr = Track::new(TrackKind::Audio);
-        let mut c = Clip::new(
-            ClipContent::Media {
-                media: MediaId::new(),
-                kind: MediaKind::Audio,
-            },
-            Time::from_secs_f64(1.0),
-            Time::from_secs_f64(10.0),
-        );
-        c.source_in = Time::from_secs_f64(2.0);
-        let after = Clip::new(
-            ClipContent::Media {
-                media: MediaId::new(),
-                kind: MediaKind::Audio,
-            },
-            Time::from_secs_f64(12.0),
-            Time::from_secs_f64(1.0),
-        );
-        let (cid, aid) = (c.id, after.id);
-        tr.clips = vec![c, after];
-        p.timeline.tracks.push(tr);
-        let ops = cut_ranges_ops(&p, cid, &[(2.0, 3.0), (5.0, 7.0)]);
-        let adds: Vec<&Clip> = ops
-            .iter()
-            .filter_map(|o| {
-                if let EditOp::AddClip { clip, .. } = o {
-                    Some(clip)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        assert_eq!(adds.len(), 3);
-        assert_eq!(adds[1].start, Time::from_secs_f64(3.0));
-        assert_eq!(adds[1].source_in, Time::from_secs_f64(5.0));
-        assert_eq!(adds[2].start, Time::from_secs_f64(5.0));
-        assert!(ops.iter().any(|o| matches!(o, EditOp::MoveClip { clip, start, .. } if *clip == aid && *start == Time::from_secs_f64(9.0))));
-    }
 }

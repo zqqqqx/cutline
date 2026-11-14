@@ -142,6 +142,9 @@ pub struct ProjectSettings {
     /// Hauptspur-Magnet: Clips der Hauptspur schließen lückenlos an.
     pub main_track_magnet: bool,
     pub snapping: bool,
+    /// „Alles mitziehen“: Ripple-Schnitte wirken auf alle nicht gesperrten Spuren.
+    #[serde(default = "yes")]
+    pub ripple_all_tracks: bool,
     /// Gewählte Zielplattform (Format und Export-Vorlage), z. B. "shorts"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
@@ -161,6 +164,7 @@ impl Default for ProjectSettings {
             float_pipeline: false,
             main_track_magnet: true,
             snapping: true,
+            ripple_all_tracks: true,
             platform: None,
             channels: Default::default(),
         }

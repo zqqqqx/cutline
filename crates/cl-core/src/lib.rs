@@ -13,7 +13,7 @@ mod time;
 pub use document::{Document, HistoryEntry, OpSource};
 pub use fx::*;
 pub use model::*;
-pub use ops::{Edge, EditOp, OpOutput};
+pub use ops::{gaps, ripple_ops, Edge, EditOp, OpOutput};
 pub use time::{Rational, Time};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

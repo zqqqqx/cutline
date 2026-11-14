@@ -400,6 +400,11 @@ impl App {
                     n.main_track_magnet = !n.main_track_magnet;
                     self.apply(EditOp::SetSettings { settings: n });
                 }
+                if theme::icon_button(ui, icon::STACK, "Alles mitziehen: Ripple-Schnitte verschieben alle Spuren und Marker", true, s.ripple_all_tracks).clicked() {
+                    let mut n = s.clone();
+                    n.ripple_all_tracks = !n.ripple_all_tracks;
+                    self.apply(EditOp::SetSettings { settings: n });
+                }
                 ui.add(egui::Separator::default().vertical().spacing(10.0));
                 let rec = self.voiceover.recorder.is_some();
                 // Eigener Knopf statt icon_button: bei laufender Aufnahme rot (icon_button kennt nur aktiv = Akzent)
@@ -2693,7 +2698,7 @@ impl App {
                     self.selected = tr.clips.last().map(|c| c.id);
                 }
                 if menu_item(ui, icon::ARROWS_MERGE, "Lücken schließen", "") {
-                    self.apply(EditOp::CloseGaps { track: Some(tid) });
+                    self.close_gaps(Some(tid));
                 }
                 let folded = self.timeline.collapsed.contains(&tid);
                 let (g, label) = if folded {
@@ -2748,11 +2753,11 @@ impl App {
                 }
                 if let Some(t) = track {
                     if menu_item(ui, icon::ARROWS_MERGE, "Lücken schließen", "") {
-                        self.apply(EditOp::CloseGaps { track: Some(t) });
+                        self.close_gaps(Some(t));
                     }
                 }
                 if menu_item(ui, icon::ARROWS_MERGE, "Alle Lücken schließen", "") {
-                    self.apply(EditOp::CloseGaps { track: None });
+                    self.close_gaps(None);
                 }
                 ui.separator();
                 let n = self.project.timeline.tracks.len();

@@ -28,6 +28,7 @@ mod player_edit;
 mod presets;
 mod preview;
 mod pro;
+mod quick;
 mod project_tools;
 mod props;
 mod proxy;
