@@ -1,9 +1,12 @@
 //! Vorschau: Hintergrund-Decoder (Einzelbilder je Clip mit Effektkette, Thumbnails,
 //! Waveforms, Effekt-Vorschaubilder, Projekt-Titelbilder) und Wiedergabe-Ströme.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 
 use cl_core::{ClipId, MediaId, Rational, Time};
 use cl_media::{FrameStream, RgbaFrame};
@@ -95,6 +98,8 @@ pub enum Done {
     ProjectThumb {
         out: PathBuf,
     },
+    /// Streifen-Auftrag übersprungen (Kachel nicht mehr sichtbar) → wieder anforderbar
+    Skipped(String),
     Error(String),
 }
 
@@ -141,11 +146,29 @@ impl FrameCache {
 /// einer für alles im Hintergrund (Thumbnails, Waveforms, Kacheln).
 pub struct Decoder {
     tx: Sender<Job>,
-    tx_bg: Sender<Job>,
+    tx_bg: Sender<(u64, Job)>,
     /// Kacheln (Effekte, Filter, Übergänge): eigener Thread, bis zu vier FFmpeg parallel,
     /// damit das Vorladen Thumbnails und Waveforms der Medien nicht aufhält
-    tx_fx: Sender<Job>,
+    tx_fx: Sender<(u64, Job)>,
     pub rx: Receiver<Done>,
+    /// Streifen-Schlüssel, die gerade sichtbar/gehovert sind (Medien-Tab setzt sie je Frame)
+    pub strips_wanted: Arc<Mutex<HashSet<String>>>,
+    /// Projektgeneration: Aufträge eines verlassenen Projekts verwirft der Worker
+    pub generation: Arc<AtomicU64>,
+}
+
+/// Auftrag noch nötig? `None` = verwerfen, `Some(Some(d))` = statt Ausführung melden.
+fn check(job: &Job, g: u64, gen: &AtomicU64, wanted: &Mutex<HashSet<String>>) -> Option<Option<Done>> {
+    let project = matches!(job, Job::Thumb { .. } | Job::Wave { .. } | Job::MediaStrip { .. } | Job::FileThumb { .. });
+    if project && g != gen.load(Ordering::Relaxed) {
+        return None;
+    }
+    if let Job::MediaStrip { key, .. } = job {
+        if !wanted.lock().unwrap_or_else(|e| e.into_inner()).contains(key) {
+            return Some(Some(Done::Skipped(key.clone())));
+        }
+    }
+    Some(None)
 }
 
 fn run(job: Job) -> Option<Done> {
@@ -385,20 +408,36 @@ impl Decoder {
                 })
                 .expect("Decoder-Thread");
         }
-        let (tx_fx, jobs_fx) = channel::<Job>();
+        let strips_wanted: Arc<Mutex<HashSet<String>>> = Default::default();
+        let generation = Arc::new(AtomicU64::new(0));
+        let (tx_fx, jobs_fx) = channel::<(u64, Job)>();
         {
             let (done_tx, ctx) = (done_tx.clone(), ctx.clone());
+            let (gen, wanted) = (generation.clone(), strips_wanted.clone());
             std::thread::Builder::new()
                 .name("cl-decoder-fx".into())
                 .spawn(move || {
                     while let Ok(first) = jobs_fx.recv() {
                         let mut batch = vec![first];
                         batch.extend(jobs_fx.try_iter().take(3));
+                        let mut skipped = Vec::new();
+                        let batch: Vec<Job> = batch
+                            .into_iter()
+                            .filter(|(g, j)| match check(j, *g, &gen, &wanted) {
+                                None => false,
+                                Some(Some(d)) => {
+                                    skipped.push(d);
+                                    false
+                                }
+                                Some(None) => true,
+                            })
+                            .map(|(_, j)| j)
+                            .collect();
                         let results: Vec<Option<Done>> = std::thread::scope(|sc| {
                             let hs: Vec<_> = batch.into_iter().map(|j| sc.spawn(move || run(j))).collect();
                             hs.into_iter().map(|h| h.join().ok().flatten()).collect()
                         });
-                        for d in results.into_iter().flatten() {
+                        for d in skipped.into_iter().chain(results.into_iter().flatten()) {
                             if done_tx.send(d).is_err() {
                                 return;
                             }
@@ -409,12 +448,18 @@ impl Decoder {
                 .expect("Decoder-Thread");
         }
         // Hintergrund
-        let (tx_bg, jobs_bg) = channel::<Job>();
+        let (tx_bg, jobs_bg) = channel::<(u64, Job)>();
+        let (gen, wanted) = (generation.clone(), strips_wanted.clone());
         std::thread::Builder::new()
             .name("cl-decoder-bg".into())
             .spawn(move || {
-                while let Ok(job) = jobs_bg.recv() {
-                    if let Some(d) = run(job) {
+                while let Ok((g, job)) = jobs_bg.recv() {
+                    let d = match check(&job, g, &gen, &wanted) {
+                        None => continue,
+                        Some(Some(d)) => Some(d),
+                        Some(None) => run(job),
+                    };
+                    if let Some(d) = d {
                         if done_tx.send(d).is_err() {
                             return;
                         }
@@ -423,15 +468,34 @@ impl Decoder {
                 }
             })
             .expect("Decoder-Thread");
-        Self { tx, tx_bg, tx_fx, rx }
+        Self {
+            tx,
+            tx_bg,
+            tx_fx,
+            rx,
+            strips_wanted,
+            generation,
+        }
     }
 
     pub fn send(&self, job: Job) {
-        let _ = match job {
-            Job::Frame { .. } => self.tx.send(job),
-            Job::FxThumb { .. } | Job::MediaStrip { .. } | Job::FileThumb { .. } => self.tx_fx.send(job),
-            _ => self.tx_bg.send(job),
-        };
+        let g = self.generation.load(Ordering::Relaxed);
+        match job {
+            Job::Frame { .. } => {
+                let _ = self.tx.send(job);
+            }
+            Job::FxThumb { .. } | Job::MediaStrip { .. } | Job::FileThumb { .. } => {
+                let _ = self.tx_fx.send((g, job));
+            }
+            _ => {
+                let _ = self.tx_bg.send((g, job));
+            }
+        }
+    }
+
+    /// Projektwechsel: noch wartende Aufträge des alten Projekts verfallen
+    pub fn next_generation(&self) {
+        self.generation.fetch_add(1, Ordering::Relaxed);
     }
 }
 
