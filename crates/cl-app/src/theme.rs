@@ -509,7 +509,7 @@ pub fn icon_button(
     // Icon-Glyphe: 14 px in Bedienelementen
     let btn = egui::Button::new(RichText::new(glyph).size(14.0).color(color))
         .fill(if active {
-            overlay(22)
+            ACCENT().gamma_multiply(0.18)
         } else {
             Color32::TRANSPARENT
         })
