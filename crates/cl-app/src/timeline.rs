@@ -2114,7 +2114,7 @@ impl App {
                             .map(|s| s.iter().copied().fold(0.0f32, f32::max))
                             .unwrap_or(0.0);
                         let h = (v.sqrt() * wave_h * 10f32.powf(c.volume_db.min(6.0) / 40.0))
-                            .clamp(1.0, wave_h);
+                            .clamp(1.0, wave_h.max(1.0));
                         inner.line_segment(
                             [pos2(x, base), pos2(x, base - h)],
                             Stroke::new(1.5_f32, wcol),
