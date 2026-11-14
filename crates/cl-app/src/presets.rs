@@ -85,10 +85,7 @@ fn path() -> std::path::PathBuf {
 }
 
 pub fn load() -> Vec<Preset> {
-    std::fs::read_to_string(path())
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
+    crate::paths::read_json_or_quarantine(&path())
 }
 
 pub fn save(list: &[Preset]) {
@@ -96,7 +93,7 @@ pub fn save(list: &[Preset]) {
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let _ = std::fs::write(p, serde_json::to_string_pretty(list).unwrap_or_default());
+    let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(list).unwrap_or_default());
 }
 
 /// Offener Preset-Dialog

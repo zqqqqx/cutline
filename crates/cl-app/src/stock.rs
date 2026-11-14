@@ -41,7 +41,7 @@ fn save_keys(k: &Keys) {
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let _ = std::fs::write(p, serde_json::to_string_pretty(k).unwrap_or_default());
+    let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(k).unwrap_or_default());
 }
 
 /// Ein Suchtreffer (Freesound oder Pexels)
@@ -384,7 +384,7 @@ impl App {
                     .as_ref()
                     .and_then(|p| {
                         p.parent()
-                            .map(|d| d.join(format!("{}-media", self.project.name)))
+                            .map(|d| d.join(format!("{}-media", crate::paths::safe_name(&self.project.name))))
                     })
                     .unwrap_or_else(|| crate::paths::data_dir().join("Stock"));
                 base.join("Pexels")
