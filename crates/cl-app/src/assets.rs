@@ -16,6 +16,9 @@ use crate::timeline::menu_item;
 use crate::widgets;
 
 const RAIL_W: f32 = 58.0;
+/// Höhe der Symbolleiste, wenn sie oben liegt; Breite je Eintrag (wie seitlich: 48 + Abstand)
+const RAIL_TOP_H: f32 = 56.0;
+const RAIL_ITEM_W: f32 = 52.0;
 
 const TABS: [(LeftTab, &str, &str); 9] = [
     (LeftTab::Media, icon::FILM_STRIP, "Medien"),
@@ -134,28 +137,49 @@ impl App {
         let full = ui.max_rect();
         // Breite gehört dem Panel (sonst schrumpft es auf den Inhalt)
         ui.expand_to_include_rect(full);
-        let rail = Rect::from_min_max(full.min, pos2(full.left() + RAIL_W, full.bottom()));
-        ui.painter().rect_filled(
-            rail,
-            egui::CornerRadius {
-                nw: theme::RADIUS,
-                sw: theme::RADIUS,
-                ne: 0,
-                se: 0,
-            },
-            theme::BG_INPUT(),
-        );
-        // Icon-Leiste
+        let (right, top) = (self.settings.layout.assets_right, self.settings.layout.rail_top);
+        // Symbolleiste: oben über die ganze Breite oder seitlich an der äußeren Kante
+        // (Medien rechts: gespiegelt am rechten Fensterrand)
+        let rail = if top {
+            Rect::from_min_max(full.min, pos2(full.right(), full.top() + RAIL_TOP_H))
+        } else if right {
+            Rect::from_min_max(pos2(full.right() - RAIL_W, full.top()), full.max)
+        } else {
+            Rect::from_min_max(full.min, pos2(full.left() + RAIL_W, full.bottom()))
+        };
+        let (rr, no) = (theme::RADIUS, 0);
+        let corners = match (top, right) {
+            (true, _) => egui::CornerRadius { nw: rr, ne: rr, sw: no, se: no },
+            (false, true) => egui::CornerRadius { nw: no, sw: no, ne: rr, se: rr },
+            (false, false) => egui::CornerRadius { nw: rr, sw: rr, ne: no, se: no },
+        };
+        ui.painter().rect_filled(rail, corners, theme::BG_INPUT());
+        // Einträge: senkrecht untereinander bzw. oben waagrecht (scrollt, wenn die Breite nicht reicht)
+        let strip = rail.shrink2(vec2(4.0, 0.0));
+        let widths = [RAIL_ITEM_W; TABS.len()];
+        let off = if top {
+            crate::inspector::strip_begin(ui, strip, "rail", &widths, TABS.iter().position(|t| t.0 == self.tab))
+        } else {
+            0.0
+        };
+        let painter = ui.painter_at(if top { strip } else { rail });
         let mut y = rail.top() + 8.0;
-        for (tab, glyph, label) in TABS {
-            let r = Rect::from_min_size(pos2(rail.left() + 5.0, y), vec2(RAIL_W - 10.0, 46.0));
-            let resp = ui.interact(r, ui.id().with(("rail", label)), Sense::click());
+        for (i, (tab, glyph, label)) in TABS.into_iter().enumerate() {
+            let r = if top {
+                Rect::from_min_size(pos2(strip.left() - off + i as f32 * RAIL_ITEM_W + 2.0, rail.top() + 5.0), vec2(RAIL_W - 10.0, 46.0))
+            } else {
+                Rect::from_min_size(pos2(rail.left() + 5.0, y), vec2(RAIL_W - 10.0, 46.0))
+            };
+            let hit = r.intersect(strip);
+            if top && hit.width() <= 0.0 {
+                continue;
+            }
+            let resp = ui.interact(if top { hit } else { r }, ui.id().with(("rail", label)), Sense::click());
             let active = self.tab == tab;
             if active {
-                ui.painter().rect_filled(r, theme::R_CARD, theme::BG_RAISED());
+                painter.rect_filled(r, theme::R_CARD, theme::BG_RAISED());
             } else if resp.hovered() {
-                ui.painter()
-                    .rect_filled(r, theme::R_CARD, theme::overlay(10));
+                painter.rect_filled(r, theme::R_CARD, theme::overlay(10));
             }
             let col = if active {
                 theme::ACCENT()
@@ -164,7 +188,7 @@ impl App {
             } else {
                 theme::TEXT_DIM()
             };
-            ui.painter().text(
+            painter.text(
                 r.center() - vec2(0.0, 7.0),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(glyph),
@@ -173,7 +197,7 @@ impl App {
                 col,
             );
             // Akzent nur am Icon (Zustand), der Text bleibt neutral
-            ui.painter().text(
+            painter.text(
                 r.center() + vec2(0.0, 12.0),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(label),
@@ -184,14 +208,20 @@ impl App {
                 self.tab = tab;
             }
             y += 50.0;
-            if y > rail.bottom() - 46.0 {
+            if !top && y > rail.bottom() - 46.0 {
                 break;
             }
         }
-        let content = Rect::from_min_max(
-            pos2(rail.right() + 10.0, full.top() + 8.0),
-            pos2(full.right() - 8.0, full.bottom() - 6.0),
-        );
+        if top {
+            crate::inspector::strip_end(ui, strip, "rail", &widths, off, theme::BG_INPUT());
+        }
+        let content = if top {
+            Rect::from_min_max(pos2(full.left() + 8.0, rail.bottom() + 8.0), pos2(full.right() - 8.0, full.bottom() - 6.0))
+        } else if right {
+            Rect::from_min_max(pos2(full.left() + 8.0, full.top() + 8.0), pos2(rail.left() - 10.0, full.bottom() - 6.0))
+        } else {
+            Rect::from_min_max(pos2(rail.right() + 10.0, full.top() + 8.0), pos2(full.right() - 8.0, full.bottom() - 6.0))
+        };
         ui.allocate_new_ui(
             egui::UiBuilder::new()
                 .max_rect(content)

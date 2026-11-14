@@ -13,6 +13,8 @@ use cl_core::*;
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, RichText, Sense, Stroke};
 
 use crate::app::{App, DragAsset};
+use crate::keymap::with_key;
+
 use crate::preview::WAVE_PER_SEC;
 use crate::theme::{self, icon};
 use crate::widgets::Slider;
@@ -273,10 +275,10 @@ impl App {
                 let d = self.doc.lock().unwrap_or_else(|e| e.into_inner());
                 (d.can_undo(), d.can_redo())
             };
-            if theme::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, format!("{}  (Strg+Z)", self.t("undo")), cu, false).clicked() {
+            if theme::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, with_key(&self.t("undo"), &self.key_of("undo")), cu, false).clicked() {
                 self.undo();
             }
-            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, format!("{}  (Strg+Umschalt+Z)", self.t("redo")), cr, false).clicked() {
+            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, with_key(&self.t("redo"), &self.key_of("redo")), cr, false).clicked() {
                 self.redo();
             }
             ui.add(egui::Separator::default().vertical().spacing(10.0));
@@ -321,16 +323,16 @@ impl App {
             ui.add(egui::Separator::default().vertical().spacing(10.0));
             let has = !self.project.timeline.tracks.is_empty();
             let sel = self.selected.is_some() || !self.sel_extra.is_empty() || self.selected_transition.is_some();
-            if theme::icon_button(ui, icon::SCISSORS, "Teilen  (Strg+B)", has, false).clicked() {
+            if theme::icon_button(ui, icon::SCISSORS, with_key("Teilen", &self.key_of("split")), has, false).clicked() {
                 self.split_at_playhead();
             }
-            if theme::icon_button(ui, icon::ARROW_LINE_LEFT, "Links vom Playhead löschen  (Q)", has, false).clicked() {
+            if theme::icon_button(ui, icon::ARROW_LINE_LEFT, with_key("Links vom Playhead löschen", &self.key_of("del_left")), has, false).clicked() {
                 self.delete_side(true);
             }
-            if theme::icon_button(ui, icon::ARROW_LINE_RIGHT, "Rechts vom Playhead löschen  (W)", has, false).clicked() {
+            if theme::icon_button(ui, icon::ARROW_LINE_RIGHT, with_key("Rechts vom Playhead löschen", &self.key_of("del_right")), has, false).clicked() {
                 self.delete_side(false);
             }
-            if theme::icon_button(ui, icon::TRASH, "Löschen  (Entf)", sel, false).clicked() {
+            if theme::icon_button(ui, icon::TRASH, with_key("Löschen", &self.key_of("delete")), sel, false).clicked() {
                 self.delete_selected();
             }
             ui.add(egui::Separator::default().vertical().spacing(10.0));
@@ -390,12 +392,12 @@ impl App {
                 }
                 ui.add(egui::Separator::default().vertical().spacing(10.0));
                 let s = self.project.settings.clone();
-                if theme::icon_button(ui, icon::ARROWS_IN_LINE_HORIZONTAL, format!("{}  (N)", self.t("snapping")), true, s.snapping).clicked() {
+                if theme::icon_button(ui, icon::ARROWS_IN_LINE_HORIZONTAL, with_key(&self.t("snapping"), &self.key_of("snap")), true, s.snapping).clicked() {
                     let mut n = s.clone();
                     n.snapping = !n.snapping;
                     self.apply(EditOp::SetSettings { settings: n });
                 }
-                if theme::icon_button(ui, icon::MAGNET, format!("{}  (P)", self.t("magnet")), true, s.main_track_magnet).clicked() {
+                if theme::icon_button(ui, icon::MAGNET, with_key(&self.t("magnet"), &self.key_of("magnet")), true, s.main_track_magnet).clicked() {
                     let mut n = s.clone();
                     n.main_track_magnet = !n.main_track_magnet;
                     self.apply(EditOp::SetSettings { settings: n });
@@ -414,7 +416,7 @@ impl App {
                         .corner_radius(theme::R_CTRL)
                         .min_size(vec2(24.0, 22.0)),
                 );
-                if mic.on_hover_text(crate::tr(format!("{}  (R)", self.t("voiceover")))).clicked() {
+                if mic.on_hover_text(crate::tr(with_key(&self.t("voiceover"), &self.key_of("voiceover")))).clicked() {
                     self.voiceover.open = !self.voiceover.open;
                 }
             });
@@ -1787,7 +1789,8 @@ impl App {
                         icon::EYE
                     },
                     tr.hidden,
-                    if tr.hidden { "Spur einblenden" } else { "Spur ausblenden" },
+                    if tr.hidden { "Spur einblenden" } else { "Spur verbergen" },
+
                 ));
             }
             if matches!(tr.kind, TrackKind::Video | TrackKind::Audio) {
@@ -2648,7 +2651,7 @@ impl App {
                         if tr.hidden {
                             "Spur einblenden"
                         } else {
-                            "Spur ausblenden"
+                            "Spur verbergen"
                         },
                         "",
                     )

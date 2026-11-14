@@ -203,7 +203,7 @@ impl App {
         }
         let first = ranges.iter().map(|r| r.1).min();
         self.select_only(None);
-        if self.ripple_ranges(ranges) {
+        if self.ripple_ranges(ranges, "") {
             if let Some(t) = first {
                 self.stop_playback();
                 self.playhead = t;
@@ -213,7 +213,8 @@ impl App {
 
     /// Bereiche (Spur, von, bis) als ein Undo-Schritt entfernen und alles dahinter nachziehen.
     /// Gemeinsamer Weg für Ripple-Löschen, Lücken schließen, Pausen und Füllwörter.
-    pub fn ripple_ranges(&mut self, ranges: Vec<(TrackId, Time, Time)>) -> bool {
+    /// `label`: Name im Verlauf (leer = aus den Schritten geraten).
+    pub fn ripple_ranges(&mut self, ranges: Vec<(TrackId, Time, Time)>, label: &str) -> bool {
         let all = self.project.settings.ripple_all_tracks;
         // „Alles mitziehen“ nimmt Clips anderer Spuren mit, die ganz im Bereich liegen: das sagen wir
         let inside = |tid: TrackId, c: &cl_core::Clip, own: bool| {
@@ -228,7 +229,13 @@ impl App {
             .flat_map(|t| t.clips.iter().map(move |c| (t.id, c)))
             .filter(|(tid, c)| inside(*tid, c, false) && !inside(*tid, c, true))
             .count();
-        let ok = self.apply_batch(cl_core::ripple_ops(ranges, all)).is_some();
+        let ops = cl_core::ripple_ops(ranges, all);
+        let ok = if label.is_empty() || ops.is_empty() {
+            self.apply_batch(ops)
+        } else {
+            self.apply(EditOp::Batch { label: label.into(), ops })
+        }
+        .is_some();
         if ok && extra > 0 {
             self.toast(format!("{extra} Clips auf anderen Spuren mit entfernt (Alles mitziehen)"));
         }

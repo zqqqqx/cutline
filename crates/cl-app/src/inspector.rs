@@ -33,14 +33,15 @@ fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
             (ClipTab::Smart, "Smart"),
             (ClipTab::Animation, "Animation"),
         ],
+        // Lautstärke gehört zu den häufigsten Einstellungen: „Audio“ gleich nach „Basis“
         ClipContent::Media { .. } => vec![
             (ClipTab::Basic, "Basis"),
+            (ClipTab::Audio, "Audio"),
             (ClipTab::Effects, "Effekte"),
             (ClipTab::Adjust, "Anpassen"),
             (ClipTab::Smart, "Smart"),
             (ClipTab::Animation, "Animation"),
             (ClipTab::Speed, "Tempo"),
-            (ClipTab::Audio, "Audio"),
         ],
     }
 }
@@ -122,8 +123,113 @@ fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
     e
 }
 
+/// Breite der Pfeil-Knöpfe an einer überlaufenden Leiste
+const STRIP_ARROW: f32 = 24.0;
+
+/// Anfang jedes Eintrags einer Leiste (Summe der Breiten davor)
+fn strip_starts(widths: &[f32]) -> Vec<f32> {
+    widths
+        .iter()
+        .scan(0.0, |x, w| {
+            let s = *x;
+            *x += w;
+            Some(s)
+        })
+        .collect()
+}
+
+/// Versatz, bei dem Eintrag `i` ganz sichtbar ist (neben den Pfeil-Knöpfen), auf den
+/// gültigen Bereich begrenzt.
+fn strip_into_view(widths: &[f32], i: usize, off: f32, view: f32) -> f32 {
+    let total: f32 = widths.iter().sum();
+    let a = strip_starts(widths)[i];
+    let b = a + widths[i];
+    let off = if a - STRIP_ARROW < off {
+        a - STRIP_ARROW
+    } else if b + STRIP_ARROW > off + view {
+        b + STRIP_ARROW - view
+    } else {
+        off
+    };
+    off.clamp(0.0, (total - view).max(0.0))
+}
+
+/// Um einen Eintrag nach links (`dir` < 0) bzw. rechts weiterschieben
+fn strip_step(widths: &[f32], off: f32, view: f32, dir: f32) -> f32 {
+    let starts = strip_starts(widths);
+    let i = if dir < 0.0 {
+        // letzter Eintrag, der links (teilweise) verdeckt ist
+        starts.iter().rposition(|s| *s < off + STRIP_ARROW - 0.5)
+    } else {
+        (0..widths.len()).find(|&i| starts[i] + widths[i] > off + view - STRIP_ARROW + 0.5)
+    };
+    i.map_or(off, |i| strip_into_view(widths, i, off, view))
+}
+
+/// Waagrechte Leiste in `rect` mit Einträgen der Breiten `widths`. Passt nicht alles hinein,
+/// scrollt sie per Mausrad; Eintrag `keep` wird beim Wechsel (oder anderer Breite) ganz in
+/// die Sicht geholt. Gibt den Versatz zurück; der Aufrufer zeichnet die Einträge (beschnitten
+/// auf `rect`) und ruft danach `strip_end` für die Pfeil-Knöpfe auf.
+pub fn strip_begin(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], keep: Option<usize>) -> f32 {
+    let id = ui.id().with(("strip", salt));
+    let total: f32 = widths.iter().sum();
+    let view = rect.width();
+    let (mut off, last): (f32, (Option<usize>, f32)) = ui.data(|d| d.get_temp(id)).unwrap_or((0.0, (None, 0.0)));
+    if total <= view + 0.5 {
+        return 0.0;
+    }
+    if ui.rect_contains_pointer(rect) {
+        let d = ui.input(|i| i.smooth_scroll_delta);
+        if d != egui::Vec2::ZERO {
+            off -= d.x + d.y;
+            // das Rad gehört der Leiste, nicht der Seite dahinter
+            ui.input_mut(|i| i.smooth_scroll_delta = egui::Vec2::ZERO);
+        }
+    }
+    if let Some(i) = keep.filter(|_| last != (keep, view)) {
+        off = strip_into_view(widths, i, off, view);
+    }
+    off = off.clamp(0.0, total - view);
+    ui.data_mut(|d| d.insert_temp(id, (off, (keep, view))));
+    off
+}
+
+/// Pfeil-Knöpfe an den Enden, wenn dort noch Einträge liegen (Klick: einen Eintrag weiter).
+/// `bg` = Grund der Leiste, damit der Knopf nicht über einem halben Eintrag schwebt.
+pub fn strip_end(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], off: f32, bg: Color32) {
+    let id = ui.id().with(("strip", salt));
+    let total: f32 = widths.iter().sum();
+    let view = rect.width();
+    if total <= view + 0.5 {
+        return;
+    }
+    for (show, dir, glyph, x) in [
+        (off > 0.5, -1.0, icon::CARET_LEFT, rect.left()),
+        (off < total - view - 0.5, 1.0, icon::CARET_RIGHT, rect.right() - STRIP_ARROW),
+    ] {
+        if !show {
+            continue;
+        }
+        let r = Rect::from_min_size(pos2(x, rect.top()), vec2(STRIP_ARROW, rect.height()));
+        ui.painter().rect_filled(r, 0.0, bg);
+        let layout = egui::Layout::centered_and_justified(egui::Direction::TopDown);
+        let clicked = ui
+            .allocate_new_ui(egui::UiBuilder::new().max_rect(r).layout(layout), |ui| {
+                theme::icon_button(ui, glyph, "", true, false).clicked()
+            })
+            .inner;
+        if clicked {
+            let n = strip_step(widths, off, view, dir);
+            let last: (f32, (Option<usize>, f32)) = ui.data(|d| d.get_temp(id)).unwrap_or((off, (None, view)));
+            ui.data_mut(|d| d.insert_temp(id, (n, last.1)));
+            ui.ctx().request_repaint();
+        }
+    }
+}
+
 /// Reiterleiste mit Unterstrich. Freier Platz wird gleichmäßig verteilt; reicht die Breite
-/// nicht (7 Reiter auf Englisch), scrollt die Leiste waagrecht statt sich zu überlappen.
+/// nicht (7 Reiter auf Englisch), scrollt die Leiste waagrecht (Mausrad, Pfeil-Knöpfe), und
+/// der aktive Reiter bleibt ganz sichtbar.
 fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut T) {
     let w = ui.available_width();
     let font = egui::FontId::proportional(theme::FS_UI);
@@ -135,20 +241,28 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
         .collect();
     let sum: f32 = text.iter().sum();
     let pad = ((w - sum) / tabs.len() as f32).clamp(6.0, 28.0);
-    let total = sum + pad * tabs.len() as f32;
     let line_y = ui.cursor().top() + 28.0;
-    let mut draw = |ui: &mut egui::Ui| {
-        let (rect, _) = ui.allocate_exact_size(vec2(total, 28.0), Sense::hover());
-        let mut x = rect.left();
+    let widths: Vec<f32> = text.iter().map(|t| t + pad).collect();
+    let (bar, _) = ui.allocate_exact_size(vec2(w, 28.0), Sense::hover());
+    let keep = tabs.iter().position(|(t, _)| *t == *cur);
+    let off = strip_begin(ui, bar, "itab", &widths, keep);
+    {
+        let painter = ui.painter_at(bar);
+        let mut x = bar.left() - off;
         for (i, (t, l)) in tabs.iter().enumerate() {
-            let r = Rect::from_min_size(pos2(x, rect.top()), vec2(text[i] + pad, rect.height()));
-            let resp = ui.interact(r, ui.id().with(("itab", *l)), Sense::click());
+            let r = Rect::from_min_size(pos2(x, bar.top()), vec2(widths[i], bar.height()));
+            x += r.width();
+            let hit = r.intersect(bar);
+            if hit.width() <= 0.0 {
+                continue;
+            }
+            let resp = ui.interact(hit, ui.id().with(("itab", *l)), Sense::click());
             let active = *cur == *t;
             // aktiver Reiter: Text neutral, nur der Unterstrich im Akzent
             let col = if active || resp.hovered() { theme::TEXT() } else { theme::TEXT_DIM() };
-            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, &labels[i], font.clone(), col);
+            painter.text(r.center(), egui::Align2::CENTER_CENTER, &labels[i], font.clone(), col);
             if active {
-                ui.painter().line_segment(
+                painter.line_segment(
                     [pos2(r.left() + pad.min(12.0) / 2.0, r.bottom() - 1.0), pos2(r.right() - pad.min(12.0) / 2.0, r.bottom() - 1.0)],
                     Stroke::new(2.0_f32, theme::ACCENT()),
                 );
@@ -156,18 +270,10 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
             if resp.clicked() {
                 *cur = *t;
             }
-            x += r.width();
         }
-    };
-    if total > w + 0.5 {
-        let row = egui::ScrollArea::horizontal()
-            .id_salt("itab-scroll")
-            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-            .show(ui, |ui| draw(ui));
-        theme::edge_fade(ui, &row);
-    } else {
-        draw(ui);
     }
+    strip_end(ui, bar, "itab", &widths, off, theme::BG_CARD());
+
     let r = ui.max_rect();
     ui.painter().line_segment(
         [pos2(r.left() - 10.0, line_y), pos2(r.right() + 10.0, line_y)],
@@ -590,7 +696,7 @@ impl App {
                 }
             });
         }
-        disabled_toggle(ui, c, e);
+        disabled_toggle(ui, c, e, &self.key_of("disable"));
         if matches!(c.content, ClipContent::Media { .. }) {
             theme::section(ui, "Maske");
             *e |= mask_ui(ui, &mut c.fx.mask);
@@ -1306,7 +1412,7 @@ impl App {
         *e |= r1;
         *e |= r2;
         if matches!(c.content, ClipContent::Media { kind: MediaKind::Audio, .. }) {
-            disabled_toggle(ui, c, e);
+            disabled_toggle(ui, c, e, &self.key_of("disable"));
         }
         if let ClipContent::Media {
             kind: MediaKind::Video,
@@ -1551,10 +1657,11 @@ impl App {
     /// Verlauf: oben die rückgängig gemachten Schritte (blass), dann „Jetzt“, darunter die
     /// bisherigen Änderungen. Klick auf einen Eintrag springt zu dem Stand nach diesem Schritt.
     fn history_inspector(&mut self, ui: &mut egui::Ui) {
-        type Row = (&'static str, OpSource, std::time::SystemTime);
+        type Row = (String, OpSource, std::time::SystemTime);
         let (done, undone): (Vec<Row>, Vec<Row>) = {
             let d = self.doc.lock().unwrap_or_else(|e| e.into_inner());
-            let map = |e: &cl_core::HistoryEntry| (e.label, e.source.clone(), e.at);
+            let map = |e: &cl_core::HistoryEntry| (e.label.clone(), e.source.clone(), e.at);
+
             (d.undo_entries().iter().map(map).collect(), d.redo_entries().iter().map(map).collect())
         };
         // Kopf: Rückgängig/Wiederholen und Anzahl
@@ -1697,11 +1804,44 @@ fn history_row(
     r
 }
 
-/// „Deaktiviert (V)“ – im Abschnitt „Mischen“ (Bild) bzw. „Lautstärke“ (Audio).
-fn disabled_toggle(ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
+/// „Deaktiviert  (Taste)“ – im Abschnitt „Mischen“ (Bild) bzw. „Lautstärke“ (Audio).
+fn disabled_toggle(ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit, key: &str) {
     let mut dis = c.disabled;
-    if widgets::toggle_row(ui, "Deaktiviert (V)", &mut dis) {
+    if widgets::toggle_row(ui, &crate::keymap::with_key("Deaktiviert", key), &mut dis) {
+
         c.disabled = dis;
         e.commit = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_keeps_entry_visible_and_steps() {
+        let w = [60.0, 60.0, 60.0, 60.0, 60.0];
+        let view = 150.0;
+        // Eintrag 3 (180..240) rechts außerhalb: ganz sichtbar, links vom Pfeil-Knopf
+        let off = strip_into_view(&w, 3, 0.0, view);
+        assert!(180.0 - STRIP_ARROW >= off && 240.0 + STRIP_ARROW <= off + view + 0.01, "{off}");
+        // schon sichtbar: bleibt
+        assert_eq!(strip_into_view(&w, 1, 30.0, view), 30.0);
+        // Rand: nie über die Enden hinaus
+        assert_eq!(strip_into_view(&w, 0, 100.0, view), 0.0);
+        assert_eq!(strip_into_view(&w, 4, 0.0, view), 300.0 - view);
+        // Pfeile: einen Eintrag weiter, am Ende nichts mehr
+        let r = strip_step(&w, 0.0, view, 1.0);
+        assert!(r > 0.0);
+        assert!(strip_step(&w, r, view, -1.0) < r);
+        assert_eq!(strip_step(&w, 300.0 - view, view, 1.0), 300.0 - view);
+        assert_eq!(strip_step(&w, 0.0, view, -1.0), 0.0);
+    }
+
+    #[test]
+    fn audio_tab_follows_basic_for_video() {
+        let c = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.0));
+        let t = tabs_for(&c);
+        assert!(t[0].0 == ClipTab::Basic && t[1].0 == ClipTab::Audio);
     }
 }

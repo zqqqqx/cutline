@@ -182,9 +182,9 @@ pub enum OpOutput {
 }
 
 impl EditOp {
-    /// Bezeichnung für den Undo-Verlauf.
-    pub fn label(&self) -> &'static str {
-        match self {
+    /// Bezeichnung für den Undo-Verlauf (ein mitgegebener Batch-Name hat Vorrang).
+    pub fn label(&self) -> String {
+        let l: &str = match self {
             EditOp::ImportMedia { .. } => "Medium importieren",
             EditOp::AddTrack { .. } => "Spur hinzufügen",
             EditOp::SetTrackFlags { .. } => "Spur-Eigenschaften",
@@ -218,6 +218,7 @@ impl EditOp {
             EditOp::SetClipTiming { .. } => "Clip-Zeit",
             EditOp::RenameTrack { .. } => "Spur umbenennen",
             EditOp::RippleRange { .. } => "Bereich entfernen",
+            EditOp::Batch { label, .. } if !label.is_empty() => label,
             EditOp::Batch { ops, .. } => match ops.first() {
                 Some(EditOp::RemoveClip { .. }) => "Clips löschen",
                 Some(EditOp::MoveClip { .. }) => "Clips verschieben",
@@ -225,8 +226,10 @@ impl EditOp {
                 Some(EditOp::RippleRange { .. }) => "Bereich entfernen",
                 _ => "Mehrere Änderungen",
             },
-        }
+        };
+        l.to_string()
     }
+
 
     pub(crate) fn apply(self, p: &mut Project) -> Result<OpOutput> {
         match self {

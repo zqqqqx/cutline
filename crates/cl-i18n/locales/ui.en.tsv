@@ -213,7 +213,7 @@ Mitte X	Center X
 Mitte Y	Center Y
 Weiche Kante	Feather
 Umkehren	Invert
-Deaktiviert (V)	Disabled (V)
+Deaktiviert	Disabled
 Text eingeben	Enter text
 Schrift	Font
 Schriftart	Typeface
@@ -448,10 +448,6 @@ Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett 
 {} Plugins geladen	{} plugins loaded
 Sprache der Oberfläche	Interface language
 # Zeitleiste
-Teilen  (Strg+B)	Split  (Ctrl+B)
-Links vom Playhead löschen  (Q)	Delete left of playhead  (Q)
-Rechts vom Playhead löschen  (W)	Delete right of playhead  (W)
-Löschen  (Entf)	Delete  (Del)
 Standbild (3 s am Playhead)	Freeze frame (3 s at playhead)
 90° drehen	Rotate 90°
 Ganze Zeitleiste zeigen	Fit timeline
@@ -494,7 +490,7 @@ Textspur hinzufügen	Add text track
 Audiospur hinzufügen	Add audio track
 Text am Playhead	Text at playhead
 Spur einblenden	Show track
-Spur ausblenden	Hide track
+Spur verbergen	Hide track
 Rückgängig	Undo
 Wiederholen	Redo
 # Updates
@@ -1173,12 +1169,12 @@ M setzt Marker, im Projekt-Reiter werden daraus YouTube-Kapitel.	M adds markers,
 Rückblick aus Markern	Recap from markers
 Quick Actions → Rückblick schneidet markierte Momente zu einem „Was bisher geschah“.	Quick Actions → Recap cuts marked moments into a “previously on”.
 Bibliothek	Library
-Medien importieren oder einfach hierher ziehen. Oben findest du Audio, Text, Sticker, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an.	Import media or simply drag it here. At the top you find audio, text, stickers, effects, transitions, filters and captions. Star items as favorites and create your own folders.
+Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Sticker, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an.	Import media or simply drag it here. The toolbar of the media panel holds audio, text, stickers, effects, transitions, filters and captions. Star items as favorites and create your own folders.
 Zeigt das Bild am Playhead. Clips verschiebst, skalierst und drehst du direkt hier. Leertaste spielt ab, J/K/L spult.	Shows the frame at the playhead. Move, scale and rotate clips right here. Space plays, J/K/L shuttles.
 Inspektor	Inspector
-Alles zum ausgewählten Clip: Bild, Ton, Geschwindigkeit, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker.	Everything about the selected clip: picture, audio, speed, animations and keyframes. Without a selection you see the project and its markers here.
+Alles zum ausgewählten Clip: Bild, Ton, Tempo, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker.	Everything about the selected clip: picture, audio, speed, animations and keyframes. Without a selection you see the project and its markers here.
 Zeitleiste	Timeline
-Hier entsteht dein Video. Strg+B teilt, Q/W löscht links/rechts vom Playhead, M setzt einen Marker. Der Magnet hält die Hauptspur lückenlos.	This is where your video comes together. Ctrl+B splits, Q/W deletes left/right of the playhead, M adds a marker. The magnet keeps the main track gap-free.
+Hier entsteht dein Video. Der Magnet hält die Hauptspur lückenlos.	This is where your video comes together. The magnet keeps the main track gap-free.
 Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Layout und Thumbnail mit einem Klick.	Remove pauses, filler words, auto ducking, highlights, multicam, vertical layout and thumbnail in one click.
 Vorlagen für YouTube, Shorts, TikTok, Instagram und Twitch. Ohne Wasserzeichen, bis 4K.	Presets for YouTube, Shorts, TikTok, Instagram and Twitch. No watermark, up to 4K.
 Menü	Menu
@@ -1583,3 +1579,18 @@ Projekt hat sich geändert – bitte erneut ausführen	The project has changed �
 Bei mehreren Spuren wird nur geschnitten, wo alle still sind	With several tracks, cuts are made only where all are silent
 Begleitdatei nicht gespeichert	Could not save companion file
 Lautheit konnte nicht gemessen werden	Could not measure loudness
+{} teilt	{} splits
+{} löscht links vom Playhead	{} deletes left of the playhead
+{} löscht rechts vom Playhead	{} deletes right of the playhead
+{} setzt einen Marker	{} adds a marker
+Anordnung	Arrangement
+Getauscht	Swapped
+Oben	Top
+Beides	Both
+Medien links, Inspektor rechts, Zeitleiste unten	Media left, inspector right, timeline at the bottom
+Medien rechts, Inspektor links, Zeitleiste unten	Media right, inspector left, timeline at the bottom
+Medien links, Inspektor rechts, Zeitleiste oben	Media left, inspector right, timeline at the top
+Medien rechts, Inspektor links, Zeitleiste oben	Media right, inspector left, timeline at the top
+Zeitleiste über die ganze Breite	Timeline across the full width
+Symbolleiste	Toolbar
+Seitlich	Side

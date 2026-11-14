@@ -14,7 +14,7 @@ pub enum OpSource {
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
-    pub label: &'static str,
+    pub label: String,
     pub source: OpSource,
     /// Zeitpunkt der Änderung
     pub at: std::time::SystemTime,
@@ -79,12 +79,12 @@ impl Document {
         }
     }
 
-    pub fn undo(&mut self) -> Result<&'static str> {
+    pub fn undo(&mut self) -> Result<String> {
         let entry = self.undo.pop().ok_or(CoreError::NothingToUndo)?;
         let label = entry.label;
         let current = std::mem::replace(&mut self.project, entry.snapshot);
         self.redo.push(HistoryEntry {
-            label,
+            label: label.clone(),
             source: entry.source,
             at: entry.at,
             snapshot: current,
@@ -93,12 +93,12 @@ impl Document {
         Ok(label)
     }
 
-    pub fn redo(&mut self) -> Result<&'static str> {
+    pub fn redo(&mut self) -> Result<String> {
         let entry = self.redo.pop().ok_or(CoreError::NothingToRedo)?;
         let label = entry.label;
         let current = std::mem::replace(&mut self.project, entry.snapshot);
         self.undo.push(HistoryEntry {
-            label,
+            label: label.clone(),
             source: entry.source,
             at: entry.at,
             snapshot: current,
@@ -139,8 +139,8 @@ impl Document {
     }
 
     /// Verlauf (älteste zuerst) als (Bezeichnung, Quelle).
-    pub fn history(&self) -> impl Iterator<Item = (&'static str, &OpSource)> {
-        self.undo.iter().map(|e| (e.label, &e.source))
+    pub fn history(&self) -> impl Iterator<Item = (&str, &OpSource)> {
+        self.undo.iter().map(|e| (e.label.as_str(), &e.source))
     }
 }
 
@@ -675,6 +675,18 @@ mod tests {
         d.undo().unwrap();
         assert_eq!(d.project().timeline.tracks[0].clips.len(), 2);
     }
+
+    #[test]
+    fn batch_label_uses_given_name() {
+        let ops = || vec![EditOp::RemoveClip { clip: ClipId::new() }];
+        let named = EditOp::Batch { label: "Pausen entfernen".into(), ops: ops() };
+        assert_eq!(named.label(), "Pausen entfernen");
+        // ohne Namen: wie bisher aus dem ersten Schritt geraten
+        let plain = EditOp::Batch { label: String::new(), ops: ops() };
+        assert_eq!(plain.label(), "Clips löschen");
+        assert_eq!(EditOp::Batch { label: String::new(), ops: vec![] }.label(), "Mehrere Änderungen");
+    }
+
 
     #[test]
     fn eval_combines_keyframes_and_animation() {

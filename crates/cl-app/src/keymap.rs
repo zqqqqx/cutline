@@ -208,7 +208,18 @@ pub fn bindings(custom: &BTreeMap<String, String>) -> Vec<(Chord, &'static str)>
     v
 }
 
+/// Tooltip „Text  (Kürzel)“; ohne belegte Taste nur der Text. Das Wörterbuch übersetzt beide
+/// Teile einzeln, `theme::tip_with_keys` zeigt das Kürzel als Tastenkappe.
+pub fn with_key(text: &str, key: &str) -> String {
+    if key.is_empty() {
+        text.to_string()
+    } else {
+        format!("{text}  ({key})")
+    }
+}
+
 impl App {
+
     /// Einstellungsseite „Tastenkürzel“: Belegung ändern (Klick, dann Tasten drücken).
     pub fn shortcuts_settings(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -349,6 +360,15 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tooltip_with_and_without_key() {
+        assert_eq!(with_key("Teilen", "Strg+K"), "Teilen  (Strg+K)");
+        assert_eq!(with_key("Teilen", ""), "Teilen");
+        // so zerlegt es die Tooltip-Anzeige wieder in Text und Tastenkappe
+        assert_eq!(with_key("Teilen", "Q").rsplit_once("  ("), Some(("Teilen", "Q)")));
+    }
+
 
     #[test]
     fn parse_store_and_override() {
