@@ -921,6 +921,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, clip: Clip) -> Result<OpOut
         }
         None if kind == TrackKind::Video => match p.timeline.tracks.iter().position(|t| t.main) {
             Some(ti) => {
+                ensure_unlocked(&p.timeline.tracks[ti])?;
                 let magnet = p.settings.main_track_magnet;
                 if magnet || p.timeline.tracks[ti].is_free(clip.start, clip.duration, None) {
                     ti

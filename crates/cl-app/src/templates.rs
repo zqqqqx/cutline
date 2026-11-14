@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use cl_core::{AnimRef, Clip, ClipContent, ClipId, Document, EditOp, OpSource, Project, TextStyle, Time};
+use cl_core::{AnimRef, Clip, ClipContent, ClipId, Document, EditOp, OpSource, Project, TextStyle, Time, TrackId, TrackKind};
 use eframe::egui::{self, RichText};
 
 use crate::app::{App, Screen};
@@ -46,8 +46,8 @@ fn safe(name: &str) -> String {
 pub enum TplDialog {
     Save { name: String },
     Rename { path: PathBuf, name: String },
-    /// „Aus Vorlage einfügen“: Liste aller Vorlagen mit Einfügeposition
-    Insert,
+    /// „Aus Vorlage einfügen“: Liste aller Vorlagen (beim Öffnen geladen) mit Einfügeposition
+    Insert(Vec<(String, Project)>),
 }
 
 /// Mitgelieferte Vorlagen (nicht löschbar), im Code erzeugt.
@@ -78,13 +78,27 @@ fn builtin(i: usize) -> Project {
     d.project().clone()
 }
 
-/// Alle Vorlagen für den Einfügen-Dialog: erst mitgelieferte, dann eigene.
-fn load_all() -> Vec<(String, Result<Project, String>)> {
-    let own = list().into_iter().map(|(n, p)| {
-        let r = std::fs::read_to_string(p).map_err(|e| e.to_string()).and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()));
-        (n, r)
+/// Alle lesbaren Vorlagen für den Einfügen-Dialog: erst mitgelieferte, dann eigene.
+pub fn load_all() -> Vec<(String, Project)> {
+    let own = list().into_iter().filter_map(|(n, p)| {
+        let s = std::fs::read_to_string(p).ok()?;
+        Some((n, Project::from_json(&s).ok()?))
     });
-    (0..BUILTIN.len()).map(|i| (BUILTIN[i].to_string(), Ok(builtin(i)))).chain(own).collect()
+    (0..BUILTIN.len()).map(|i| (BUILTIN[i].to_string(), builtin(i))).chain(own).collect()
+}
+
+/// Nebenspur für Bild-Overlays der Vorlage: freie, sonst irgendeine nicht gesperrte Bildspur
+/// außer der Hauptspur (`AddClip` legt bei Belegung selbst eine Spur darüber an).
+fn overlay_track(target: &Project, start: Time, dur: Time) -> Option<TrackId> {
+    let mut cands = target.timeline.tracks.iter().filter(|t| t.kind == TrackKind::Video && !t.main && !t.locked);
+    let first = cands.clone().next().map(|t| t.id);
+    cands.find(|t| t.is_free(start, dur, None)).map(|t| t.id).or(first)
+}
+
+/// Braucht das Einfügen erst eine neue Overlay-Spur (Vorlage hat Bild-Overlays, Ziel keine Nebenspur)?
+pub fn needs_overlay_track(tpl: &Project, target: &Project) -> bool {
+    let overlays = tpl.timeline.tracks.iter().filter(|t| !t.main).flat_map(|t| &t.clips).any(|c| c.kind() == TrackKind::Video);
+    overlays && overlay_track(target, Time::ZERO, Time::ZERO).is_none()
 }
 
 /// Umrechnung Vorlage + Zielprojekt + Zeit -> Ops (für einen Batch): Medien aufnehmen,
@@ -102,11 +116,25 @@ pub fn insert_ops(tpl: &Project, target: &Project, at: Time) -> Vec<EditOp> {
         v.sort_by_key(|c| std::cmp::Reverse(c.start)); // hinterste zuerst, damit nichts kollidiert
         ops.extend(v.into_iter().map(|c| EditOp::MoveClip { clip: c.id, track: Some(t.id), start: c.start + len }));
     }
-    for c in tpl.timeline.tracks.iter().flat_map(|t| &t.clips) {
-        let mut n = c.clone();
-        n.id = ClipId::new();
-        n.start = c.start + at;
-        ops.push(EditOp::AddClip { track: None, clip: n });
+    // Gruppen je Einfügung neu: zweimal dieselbe Vorlage ergibt zwei Gruppen
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(1);
+    let mut next = target.timeline.tracks.iter().flat_map(|t| &t.clips).filter_map(|c| c.group).max().unwrap_or(0).max(now);
+    let mut groups = std::collections::HashMap::new();
+    for t in &tpl.timeline.tracks {
+        for c in &t.clips {
+            let mut n = c.clone();
+            n.id = ClipId::new();
+            n.start = c.start + at;
+            n.group = c.group.map(|g| {
+                *groups.entry(g).or_insert_with(|| {
+                    next += 1;
+                    next
+                })
+            });
+            // nur Hauptspur-Clips der Vorlage in die Hauptspur, Bild-Overlays auf eine Nebenspur
+            let track = if !t.main && n.kind() == TrackKind::Video { overlay_track(target, n.start, n.duration) } else { None };
+            ops.push(EditOp::AddClip { track, clip: n });
+        }
     }
     ops
 }
@@ -206,19 +234,28 @@ impl App {
             1 => self.playhead,
             _ => self.project.duration(),
         };
+        // shortcut: fehlt eine Overlay-Spur, ist ihr Anlegen ein eigener Undo-Schritt (Spur-IDs
+        // entstehen erst beim Anwenden); ausbauen, wenn ein Batch neue Spuren benennen kann
+        let added = needs_overlay_track(tpl, &self.project)
+            && self.apply(EditOp::InsertTrack { index: self.project.timeline.tracks.len(), kind: TrackKind::Video }).is_some();
         let ops = insert_ops(tpl, &self.project, at);
-        if !ops.is_empty() {
-            self.apply(EditOp::Batch { label: "Vorlage einfügen".into(), ops });
+        if !ops.is_empty() && self.apply(EditOp::Batch { label: "Vorlage einfügen".into(), ops }).is_some() {
             self.toast("Vorlage eingefügt");
+        } else if added {
+            // Einfügen fehlgeschlagen: die leere Spur wieder weg
+            let _ = self.doc.lock().unwrap_or_else(|e| e.into_inner()).undo();
+            self.sync_project();
         }
     }
 
     fn tpl_insert_dialog(&mut self, ctx: &egui::Context) {
+        let Some(TplDialog::Insert(list)) = &self.tpl_dialog else {
+            return;
+        };
         let mut pick: Option<(Project, u8)> = None;
         let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         egui::Window::new(crate::tr("Aus Vorlage einfügen")).id(egui::Id::new("tpl-insert")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0)).show(ctx, |ui| {
-            for (name, proj) in load_all() {
-                let Ok(proj) = proj else { continue };
+            for (name, proj) in list {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(crate::tr(name.as_str())).size(theme::FS_UI));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -270,7 +307,7 @@ impl App {
     /// Dialog „Als Vorlage speichern“ / „Vorlage umbenennen“.
     pub fn template_dialog(&mut self, ctx: &egui::Context) {
         self.multicam_hint(ctx);
-        if matches!(self.tpl_dialog, Some(TplDialog::Insert)) {
+        if matches!(self.tpl_dialog, Some(TplDialog::Insert(_))) {
             self.tpl_insert_dialog(ctx);
             return;
         }
@@ -283,12 +320,12 @@ impl App {
         let title = match d {
             TplDialog::Save { .. } => "Als Vorlage speichern",
             TplDialog::Rename { .. } => "Vorlage umbenennen",
-            TplDialog::Insert => return,
+            TplDialog::Insert(_) => return,
         };
         egui::Window::new(crate::tr(title)).id(egui::Id::new("tpl-dialog")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0)).show(ctx, |ui| {
             let name = match d {
                 TplDialog::Save { name } | TplDialog::Rename { name, .. } => name,
-                TplDialog::Insert => return,
+                TplDialog::Insert(_) => return,
             };
             let r = ui.add(egui::TextEdit::singleline(name).hint_text(crate::tr("z. B. Folge mit Intro und Endcard")).desired_width(280.0));
             r.request_focus();
@@ -362,7 +399,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cl_core::{Track, TrackKind};
+    use cl_core::{MediaId, MediaKind, MediaRef, Track};
 
     fn text_track(starts: &[f64]) -> Track {
         let mut t = Track::new(TrackKind::Text);
@@ -388,6 +425,103 @@ mod tests {
         let mut starts: Vec<f64> = d.project().timeline.tracks.iter().flat_map(|t| &t.clips).map(|c| c.start.as_secs_f64()).collect();
         starts.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert_eq!(starts, vec![0.0, 3.0, 5.0]);
+    }
+
+    fn media(kind: MediaKind) -> MediaRef {
+        MediaRef {
+            id: MediaId::new(),
+            path: "m".into(),
+            kind,
+            duration: Time::from_secs_f64(60.0),
+            width: 1920,
+            height: 1080,
+            fps: None,
+            has_audio: false,
+            video_codec: None,
+            audio_codec: None,
+        }
+    }
+
+    fn clip(m: &MediaRef, start: f64, dur: f64) -> Clip {
+        Clip::new(ClipContent::Media { media: m.id, kind: m.kind }, Time::from_secs_f64(start), Time::from_secs_f64(dur))
+    }
+
+    /// wie `insert_template`: bei Bedarf erst die Overlay-Spur, dann der Batch
+    fn insert(d: &mut Document, tpl: &Project, at: f64) -> cl_core::Result<()> {
+        if needs_overlay_track(tpl, d.project()) {
+            let n = d.project().timeline.tracks.len();
+            d.apply(EditOp::InsertTrack { index: n, kind: TrackKind::Video }, OpSource::Ui)?;
+        }
+        let ops = insert_ops(tpl, d.project(), Time::from_secs_f64(at));
+        d.apply(EditOp::Batch { label: String::new(), ops }, OpSource::Ui).map(|_| ())
+    }
+
+    /// Ziel mit Magnet-Hauptspur (0–5, 5–10) und Vorlage mit Intro-Video (Hauptspur) + PNG (Spur 2)
+    fn main_and_overlay() -> (Project, Project, MediaId) {
+        let (v, png) = (media(MediaKind::Video), media(MediaKind::Image));
+        let mut target = Project::new("p");
+        target.settings.main_track_magnet = true;
+        target.media.push(v.clone());
+        let mut main = Track::new(TrackKind::Video);
+        main.main = true;
+        main.clips = vec![clip(&v, 0.0, 5.0), clip(&v, 5.0, 5.0)];
+        target.timeline.tracks.push(main);
+        let mut tpl = Project::new("t");
+        tpl.media = vec![v.clone(), png.clone()];
+        let mut tmain = Track::new(TrackKind::Video);
+        tmain.main = true;
+        tmain.clips.push(clip(&v, 0.0, 2.0));
+        let mut over = Track::new(TrackKind::Video);
+        over.clips.push(clip(&png, 0.0, 2.0));
+        tpl.timeline.tracks = vec![tmain, over];
+        (target, tpl, png.id)
+    }
+
+    #[test]
+    fn template_overlay_image_stays_off_the_main_track() {
+        let (target, tpl, png) = main_and_overlay();
+        let mut d = Document::new(target);
+        insert(&mut d, &tpl, 5.0).unwrap();
+        let p = d.project();
+        let main = p.timeline.tracks.iter().find(|t| t.main).unwrap();
+        assert_eq!(main.clips.len(), 3);
+        assert_eq!(main.end(), Time::from_secs_f64(12.0));
+        let is_png = |c: &Clip| matches!(c.content, ClipContent::Media { media, .. } if media == png);
+        assert!(!main.clips.iter().any(is_png));
+        let (t, c) = p.timeline.tracks.iter().flat_map(|t| t.clips.iter().map(move |c| (t, c))).find(|(_, c)| is_png(c)).unwrap();
+        assert!(!t.main && t.kind == TrackKind::Video);
+        assert_eq!(c.start, Time::from_secs_f64(5.0));
+        // zweites Einfügen nutzt die vorhandene Nebenspur
+        let n = d.project().timeline.tracks.len();
+        insert(&mut d, &tpl, 0.0).unwrap();
+        assert!(d.project().timeline.tracks.len() <= n + 1);
+    }
+
+    #[test]
+    fn template_into_locked_main_track_fails() {
+        let (mut target, tpl, _) = main_and_overlay();
+        target.timeline.tracks[0].locked = true;
+        let mut d = Document::new(target.clone());
+        assert!(insert(&mut d, &tpl, 5.0).is_err());
+        assert_eq!(d.project().timeline.tracks[0].clips, target.timeline.tracks[0].clips);
+    }
+
+    #[test]
+    fn each_template_insert_gets_its_own_group() {
+        let mut tpl = Project::new("t");
+        let mut tt = text_track(&[0.0, 1.0]);
+        for c in &mut tt.clips {
+            c.group = Some(7);
+        }
+        tpl.timeline.tracks.push(tt);
+        let mut d = Document::new(Project::new("p"));
+        insert(&mut d, &tpl, 0.0).unwrap();
+        insert(&mut d, &tpl, 10.0).unwrap();
+        let mut g: Vec<(f64, u64)> = d.project().timeline.tracks.iter().flat_map(|t| &t.clips).map(|c| (c.start.as_secs_f64(), c.group.unwrap())).collect();
+        g.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(g[0].1, g[1].1);
+        assert_eq!(g[2].1, g[3].1);
+        assert_ne!(g[0].1, g[2].1);
     }
 
     #[test]

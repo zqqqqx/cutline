@@ -40,10 +40,15 @@ pub fn short_range(at: f64, len: f64, total: f64) -> (f64, f64) {
     (a, (a + len).min(total))
 }
 
+/// Verkleinertes Overlay (Bild im Bild, Facecam): Skalierung oder ein Skalierungs-Keyframe unter 0,95.
+pub fn is_shrunk_overlay(c: &Clip) -> bool {
+    c.transform.scale < 0.95 || c.keyframes.0.get(&Prop::Scale).is_some_and(|l| l.iter().any(|k| k.v < 0.95))
+}
+
 /// Medien-Clip neu ins Bild `w`×`h` setzen: füllen (beschneiden) oder ganz einpassen.
 pub fn fit_clip(c: &mut Clip, m: &MediaRef, w: f32, h: f32, fill: bool) {
-    // verkleinerte Overlays (Bild im Bild, Facecam) behalten Lage und Größe
-    if c.transform.scale < 0.95 {
+    // verkleinerte Overlays behalten Lage und Größe
+    if is_shrunk_overlay(c) {
         return;
     }
     let (sx, sy) = (w / m.width.max(1) as f32, h / m.height.max(1) as f32);
@@ -72,7 +77,7 @@ fn visual<'a>(p: &'a Project, c: &Clip) -> Option<&'a MediaRef> {
 pub fn make_short(p: &Project, a: Time, b: Time, name: &str, captions: Option<(&[TrackId], &CapPreset)>) -> Project {
     let mut out = p.clone();
     out.name = name.to_string();
-    let old_h = p.settings.height.max(2) as f32;
+    let (old_w, old_h) = (p.settings.width.max(2) as f32, p.settings.height.max(2) as f32);
     out.settings.width = 1080;
     out.settings.height = 1920;
     out.settings.aspect = AspectPreset::Ratio(9, 16);
@@ -88,8 +93,16 @@ pub fn make_short(p: &Project, a: Time, b: Time, name: &str, captions: Option<(&
             let head = if c.start < a { a - c.start } else { Time::ZERO };
             let tail = if c.end() > b { c.end() - b } else { Time::ZERO };
             let src = |d: Time| Time((d.0 as f64 * c.speed.max(0.01) as f64).round() as i64);
-            // wie beim Teilen: rückwärts zeigt der Anfang das Ende der Quelle
-            if c.fx.reverse {
+            if c.fx.speed_curve.is_some() && (head > Time::ZERO || tail > Time::ZERO) {
+                // shortcut: der Zuschnitt läuft mit konstantem Tempo über denselben Quellbereich statt
+                // mit dem passenden Kurvenstück; ausbauen, wenn Kurven sich zerschneiden lassen
+                let (s1, s2) = (c.source_time(c.start + head), c.source_time(c.end() - tail));
+                let d = c.duration - head - tail;
+                c.source_in = s1.min(s2);
+                c.speed = ((s2.0 - s1.0).abs() as f64 / d.0.max(1) as f64) as f32;
+                c.fx.speed_curve = None;
+            } else if c.fx.reverse {
+                // wie beim Teilen: rückwärts zeigt der Anfang das Ende der Quelle
                 c.source_in = c.source_in + src(tail);
             } else {
                 c.source_in = c.source_in + src(head);
@@ -109,8 +122,23 @@ pub fn make_short(p: &Project, a: Time, b: Time, name: &str, captions: Option<(&
             if let Some(m) = visual(p, &c) {
                 fit_clip(&mut c, m, w, h, true);
             } else if let ClipContent::Text(s) = &mut c.content {
-                // gleiche Höhe im Bild wie vorher
-                c.transform.y *= h / old_h;
+                // gleiche Höhe im Bild wie vorher; Breite, Schrift und x nach der neuen Bildbreite,
+                // x bleibt im sichtbaren Bereich
+                let (kx, ky) = (w / old_w, h / old_h);
+                c.transform.x = (c.transform.x * kx).clamp(-w / 2.0, w / 2.0);
+                c.transform.y *= ky;
+                s.size *= kx;
+                if let Some(o) = &mut s.outline {
+                    o.0 *= kx;
+                }
+                for (prop, k) in [(Prop::X, kx), (Prop::Y, ky)] {
+                    for kf in c.keyframes.0.get_mut(&prop).into_iter().flatten() {
+                        kf.v *= k;
+                        if prop == Prop::X {
+                            kf.v = kf.v.clamp(-w / 2.0, w / 2.0);
+                        }
+                    }
+                }
                 if let Some(pre) = style {
                     *s = TextStyle { text: std::mem::take(&mut s.text), ..(pre.style)() };
                     c.transform.y = h * pre.y;
@@ -140,6 +168,8 @@ impl App {
         let has_caps = !self.caption_clips().is_empty();
         let max = st.hits.iter().map(|h| h.strength).fold(0.0f32, f32::max).max(1e-6);
         let (mut open, mut make, mut markers) = (true, false, false);
+        // vor dem Zeichnen: ein Wertfeld gibt den Fokus schon beim Enter ab
+        let typing = ctx.wants_keyboard_input();
         egui::Window::new(crate::tr("Highlights"))
             .id(egui::Id::new("shorts"))
             .open(&mut open)
@@ -198,7 +228,7 @@ impl App {
                         }
                     });
                 });
-                if n > 0 && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if n > 0 && !typing && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     make = true;
                 }
             });
@@ -272,6 +302,7 @@ impl App {
             return;
         };
         let mut pick: Option<u8> = None;
+        let typing = ctx.wants_keyboard_input();
         egui::Modal::new(egui::Id::new("aspect-fit")).show(ctx, |ui| {
             ui.set_width(360.0);
             ui.label(RichText::new(crate::tr("Clips neu einpassen?")).strong().size(theme::FS_TITLE));
@@ -294,7 +325,7 @@ impl App {
                     }
                 });
             });
-            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            if !typing && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 pick = Some(1);
             }
         });
@@ -324,15 +355,39 @@ impl App {
         }
         self.apply(EditOp::Batch { label: "Seitenverhältnis".into(), ops });
         if mode == 3 {
-            for (c, m) in clips.into_iter().filter(|(_, m)| m.kind == MediaKind::Video) {
-                let (start, span, id) = (c.source_time(c.start).as_secs_f64(), c.source_span().as_secs_f64(), c.id);
-                self.tasks.spawn(ctx, format!("reframe:{id}"), "Auto-Reframe analysiert …", move |p, cancel| {
-                    match cl_analyze::reframe::focus_path(&m.path, m.width, m.height, start, span, p, cancel) {
-                        Ok(points) => TaskDone::Reframe { clip: id, points },
-                        Err(e) => TaskDone::Failed(e),
-                    }
-                });
+            // ein Auftrag für alle Clips, nacheinander; Ergebnis als ein Undo-Schritt
+            let jobs: Vec<(ClipId, MediaRef, f64, f64)> = clips
+                .into_iter()
+                .filter(|(c, m)| m.kind == MediaKind::Video && !is_shrunk_overlay(c))
+                .map(|(c, m)| (c.id, m, c.source_time(c.start).as_secs_f64(), c.source_span().as_secs_f64()))
+                .collect();
+            if jobs.is_empty() {
+                return;
             }
+            self.tasks.spawn(ctx, "reframe:fit", "Auto-Reframe analysiert …", move |p, cancel| {
+                let n = jobs.len() as f32;
+                let (mut done, mut err) = (Vec::new(), None);
+                for (i, (id, m, start, span)) in jobs.into_iter().enumerate() {
+                    let sub = |v: f32| p((i as f32 + v) / n);
+                    let r = cl_analyze::reframe::focus_path(&m.path, m.width, m.height, start, span, &sub, cancel);
+                    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        return TaskDone::Failed("Abgebrochen".into());
+                    }
+                    match r {
+                        Ok(points) => done.push((id, points)),
+                        Err(e) => err = Some(e),
+                    }
+                }
+                match err {
+                    Some(e) if done.is_empty() => TaskDone::Failed(e),
+                    _ => TaskDone::Run(Box::new(move |app: &mut App| {
+                        app.apply_reframes(&done);
+                        if let Some(e) = err {
+                            app.toast_err(e);
+                        }
+                    })),
+                }
+            });
         }
     }
 
@@ -391,5 +446,71 @@ mod tests {
         assert_eq!(short_range(95.0, 30.0, 100.0), (70.0, 100.0));
         let env: Vec<f32> = (0..1000).map(|i| if (495..505).contains(&i) { 1.0 } else { 0.1 }).collect();
         assert!(strength(&env, 5.0) > strength(&env, 2.0));
+    }
+
+    fn long_project() -> (Project, MediaId) {
+        let mut p = Project::new("Lang");
+        p.settings.width = 1920;
+        p.settings.height = 1080;
+        let m = MediaRef {
+            id: MediaId::new(),
+            path: "a.mp4".into(),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(60.0),
+            width: 1920,
+            height: 1080,
+            fps: None,
+            has_audio: true,
+            video_codec: None,
+            audio_codec: None,
+        };
+        let id = m.id;
+        p.media.push(m);
+        (p, id)
+    }
+
+    #[test]
+    fn animated_pip_keeps_its_keyframes() {
+        let (p, mid) = long_project();
+        let mut c = Clip::new(ClipContent::Media { media: mid, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0));
+        c.keyframes.set(Prop::Scale, Time::ZERO, 0.4);
+        c.keyframes.set(Prop::Scale, Time::from_secs_f64(2.0), 0.6);
+        assert!(is_shrunk_overlay(&c));
+        let before = c.clone();
+        fit_clip(&mut c, &p.media[0], 1080.0, 1920.0, true);
+        assert_eq!(c, before);
+    }
+
+    #[test]
+    fn trimmed_speed_curve_keeps_the_same_source_frames() {
+        let (mut p, mid) = long_project();
+        let mut t = Track::new(TrackKind::Video);
+        let mut c = Clip::new(ClipContent::Media { media: mid, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(20.0));
+        c.fx.speed_curve = Some("montage".into());
+        let (s1, s2) = (c.source_time(Time::from_secs_f64(5.0)), c.source_time(Time::from_secs_f64(15.0)));
+        t.clips.push(c);
+        p.timeline.tracks.push(t);
+        let s = make_short(&p, Time::from_secs_f64(5.0), Time::from_secs_f64(15.0), "S", None);
+        let c = &s.timeline.tracks[0].clips[0];
+        assert!(c.fx.speed_curve.is_none());
+        assert_eq!(c.source_in, s1);
+        assert!((c.source_time(c.end()).as_secs_f64() - s2.as_secs_f64()).abs() < 1e-3);
+    }
+
+    #[test]
+    fn short_text_stays_inside_the_narrow_frame() {
+        let (mut p, _) = long_project();
+        let mut t = Track::new(TrackKind::Text);
+        let mut c = Clip::new(ClipContent::Text(TextStyle { size: 96.0, ..TextStyle::default() }), Time::ZERO, Time::from_secs_f64(5.0));
+        c.transform.x = 700.0;
+        c.keyframes.set(Prop::X, Time::ZERO, -900.0);
+        t.clips.push(c);
+        p.timeline.tracks.push(t);
+        let s = make_short(&p, Time::ZERO, Time::from_secs_f64(5.0), "S", None);
+        let c = &s.timeline.tracks[0].clips[0];
+        assert!(c.transform.x.abs() <= 540.0, "{}", c.transform.x);
+        assert!(c.keyframes.0[&Prop::X].iter().all(|k| k.v.abs() <= 540.0));
+        let ClipContent::Text(st) = &c.content else { panic!() };
+        assert!((st.size - 54.0).abs() < 0.01, "{}", st.size);
     }
 }
