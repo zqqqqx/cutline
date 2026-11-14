@@ -156,6 +156,15 @@ pub enum EditOp {
         track: TrackId,
         name: Option<String>,
     },
+    /// Zeitbereich entfernen und alles dahinter nach links ziehen (Ripple). Mit
+    /// `all_tracks` auf allen nicht gesperrten Spuren (Clips am Rand werden geteilt), sonst
+    /// nur auf `track`. Marker dahinter wandern mit, Marker im Bereich fallen auf `from`.
+    RippleRange {
+        track: TrackId,
+        from: Time,
+        to: Time,
+        all_tracks: bool,
+    },
     /// Mehrere Ops als ein Undo-Schritt (Mehrfachauswahl).
     Batch {
         label: String,
@@ -208,10 +217,12 @@ impl EditOp {
             EditOp::RelinkMedia { .. } => "Medium neu verknüpfen",
             EditOp::SetClipTiming { .. } => "Clip-Zeit",
             EditOp::RenameTrack { .. } => "Spur umbenennen",
+            EditOp::RippleRange { .. } => "Bereich entfernen",
             EditOp::Batch { ops, .. } => match ops.first() {
                 Some(EditOp::RemoveClip { .. }) => "Clips löschen",
                 Some(EditOp::MoveClip { .. }) => "Clips verschieben",
                 Some(EditOp::AddClip { .. }) => "Clips einfügen",
+                Some(EditOp::RippleRange { .. }) => "Bereich entfernen",
                 _ => "Mehrere Änderungen",
             },
         }
@@ -608,6 +619,55 @@ impl EditOp {
                 }
                 Ok(OpOutput::None)
             }
+            EditOp::RippleRange {
+                track,
+                from,
+                to,
+                all_tracks,
+            } => {
+                if to <= from || from.0 < 0 {
+                    return Err(CoreError::InvalidDuration);
+                }
+                ensure_unlocked(track_mut(p, track)?)?;
+                let ids: Vec<TrackId> = if all_tracks {
+                    p.timeline.tracks.iter().filter(|t| !t.locked).map(|t| t.id).collect()
+                } else {
+                    vec![track]
+                };
+                let d = to - from;
+                for id in ids {
+                    // Clips an den Bereichsgrenzen teilen, dann liegt alles ganz innen oder außen
+                    for at in [from, to] {
+                        let hit = track_mut(p, id)?
+                            .clips
+                            .iter()
+                            .find(|c| c.start < at && at < c.end())
+                            .map(|c| c.id);
+                        if let Some(clip) = hit {
+                            EditOp::SplitClip { clip, at }.apply(p)?;
+                        }
+                    }
+                    let ti = p.timeline.tracks.iter().position(|t| t.id == id).expect("geprüft");
+                    let t = &mut p.timeline.tracks[ti];
+                    let had = !t.clips.is_empty();
+                    t.clips.retain(|c| c.start < from || c.start >= to);
+                    for c in t.clips.iter_mut().filter(|c| c.start >= to) {
+                        c.start = c.start - d;
+                    }
+                    after_change(p, ti);
+                    if had {
+                        prune_if_empty(p, ti);
+                    }
+                }
+                for m in &mut p.timeline.markers {
+                    if m.at >= to {
+                        m.at = m.at - d;
+                    } else if m.at > from {
+                        m.at = from;
+                    }
+                }
+                Ok(OpOutput::None)
+            }
             EditOp::Batch { ops, .. } => {
                 let mut last = OpOutput::None;
                 for op in ops {
@@ -666,6 +726,51 @@ impl EditOp {
             }
         }
     }
+}
+
+/// Lücken zwischen Clips (ab 0) als (von, bis), Clips in beliebiger Reihenfolge.
+pub fn gaps<'a>(clips: impl IntoIterator<Item = &'a Clip>) -> Vec<(Time, Time)> {
+    let mut iv: Vec<(Time, Time)> = clips.into_iter().map(|c| (c.start, c.end())).collect();
+    iv.sort();
+    let mut out = Vec::new();
+    let mut cursor = Time::ZERO;
+    for (a, b) in iv {
+        if a > cursor {
+            out.push((cursor, a));
+        }
+        cursor = cursor.max(b);
+    }
+    out
+}
+
+/// Ripple-Ops für mehrere Bereiche (Spur, von, bis): überlappende werden zusammengefasst
+/// (bei `all_tracks` spurübergreifend) und von hinten nach vorn entfernt, damit frühere
+/// Bereiche ihre Lage behalten.
+pub fn ripple_ops(ranges: Vec<(TrackId, Time, Time)>, all_tracks: bool) -> Vec<EditOp> {
+    let mut r: Vec<(TrackId, Time, Time)> = ranges.into_iter().filter(|r| r.2 > r.1).collect();
+    r.sort_by_key(|r| r.1);
+    let mut merged: Vec<(TrackId, Time, Time)> = Vec::new();
+    for (t, a, b) in r {
+        match merged
+            .iter_mut()
+            .rev()
+            .find(|m| all_tracks || m.0 == t)
+            .filter(|m| a <= m.2)
+        {
+            Some(m) => m.2 = m.2.max(b),
+            None => merged.push((t, a, b)),
+        }
+    }
+    merged
+        .into_iter()
+        .rev()
+        .map(|(track, from, to)| EditOp::RippleRange {
+            track,
+            from,
+            to,
+            all_tracks,
+        })
+        .collect()
 }
 
 fn source_length(p: &Project, c: &Clip) -> Option<Time> {

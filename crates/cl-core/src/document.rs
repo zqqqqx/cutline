@@ -796,4 +796,88 @@ mod tests {
         let (_, c) = d.project().find_clip(id).unwrap();
         assert_eq!(c.source_time(c.start), Time::from_secs_f64(2.0));
     }
+
+    #[test]
+    fn ripple_range_all_tracks_markers_lock_and_undo() {
+        let s = Time::from_secs_f64;
+        let (mut d, vid) = doc_with_clip(); // Hauptspur 0–10 s
+        let text = |a: f64, b: f64| {
+            Clip::new(ClipContent::Text(TextStyle::default()), s(a), s(b - a))
+        };
+        let (a, b) = (text(3.0, 6.0), text(7.0, 9.0));
+        let (ia, ib) = (a.id, b.id);
+        for c in [a, b] {
+            d.apply(EditOp::AddClip { track: None, clip: c }, OpSource::Ui).unwrap();
+        }
+        let Some(OpOutput::Track(lt)) = d
+            .apply(EditOp::InsertTrack { index: 9, kind: TrackKind::Text }, OpSource::Ui)
+            .ok()
+        else {
+            panic!()
+        };
+        let l = text(4.0, 12.0);
+        let il = l.id;
+        d.apply(EditOp::AddClip { track: Some(lt), clip: l }, OpSource::Ui).unwrap();
+        d.apply(EditOp::SetTrackFlags { track: lt, locked: true, hidden: false, muted: false }, OpSource::Ui)
+            .unwrap();
+        let markers = [1.0, 5.0, 9.0]
+            .iter()
+            .enumerate()
+            .map(|(i, t)| Marker {
+                id: i as u64,
+                at: s(*t),
+                duration: Time::ZERO,
+                name: String::new(),
+                note: String::new(),
+                color: 0,
+            })
+            .collect();
+        d.apply(EditOp::SetMarkers { markers }, OpSource::Ui).unwrap();
+        let main = d.project().find_clip(vid).unwrap().0.id;
+        let before = d.project().clone();
+
+        // nur die eigene Spur: Text bleibt, Marker wandern trotzdem
+        d.apply(EditOp::RippleRange { track: main, from: s(4.0), to: s(6.0), all_tracks: false }, OpSource::Ui)
+            .unwrap();
+        assert_eq!(d.project().find_clip(ib).unwrap().1.start, s(7.0));
+        let at: Vec<Time> = d.project().timeline.markers.iter().map(|m| m.at).collect();
+        assert_eq!(at, vec![s(1.0), s(4.0), s(7.0)]);
+        d.undo().unwrap();
+        assert_eq!(*d.project(), before);
+
+        d.apply(EditOp::RippleRange { track: main, from: s(4.0), to: s(6.0), all_tracks: true }, OpSource::Ui)
+            .unwrap();
+        let p = d.project();
+        let mt = p.timeline.tracks.iter().find(|t| t.main).unwrap();
+        let spans: Vec<(Time, Time, Time)> =
+            mt.clips.iter().map(|c| (c.start, c.duration, c.source_in)).collect();
+        assert_eq!(spans, vec![(s(0.0), s(4.0), s(0.0)), (s(4.0), s(4.0), s(6.0))]);
+        let ca = p.find_clip(ia).unwrap().1;
+        assert_eq!((ca.start, ca.end()), (s(3.0), s(4.0)));
+        assert_eq!(p.find_clip(ib).unwrap().1.start, s(5.0));
+        let cl = p.find_clip(il).unwrap().1;
+        assert_eq!((cl.start, cl.end()), (s(4.0), s(12.0)), "gesperrte Spur bleibt");
+        let at: Vec<Time> = p.timeline.markers.iter().map(|m| m.at).collect();
+        assert_eq!(at, vec![s(1.0), s(4.0), s(7.0)]);
+        d.undo().unwrap();
+        assert_eq!(*d.project(), before);
+    }
+
+    #[test]
+    fn ripple_ops_merge_and_run_back_to_front() {
+        let s = Time::from_secs_f64;
+        let (a, b) = (TrackId::new(), TrackId::new());
+        let ops = ripple_ops(vec![(a, s(1.0), s(3.0)), (b, s(2.0), s(4.0)), (a, s(6.0), s(7.0))], true);
+        let r: Vec<(Time, Time)> = ops
+            .iter()
+            .map(|o| match o {
+                EditOp::RippleRange { from, to, .. } => (*from, *to),
+                _ => panic!(),
+            })
+            .collect();
+        assert_eq!(r, vec![(s(6.0), s(7.0)), (s(1.0), s(4.0))]);
+        assert_eq!(ripple_ops(vec![(a, s(1.0), s(3.0)), (b, s(2.0), s(4.0))], false).len(), 2);
+        let c = |x: f64, y: f64| Clip::new(ClipContent::Text(TextStyle::default()), s(x), s(y - x));
+        assert_eq!(gaps(&[c(1.0, 2.0), c(4.0, 5.0), c(1.5, 3.0)]), vec![(s(0.0), s(1.0)), (s(3.0), s(4.0))]);
+    }
 }
