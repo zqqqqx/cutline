@@ -91,21 +91,6 @@ impl Project {
             .unwrap_or(Time::ZERO)
     }
 
-    /// Alle Clips, die zum Zeitpunkt `t` sichtbar sind, von unten nach oben.
-    pub fn clips_at(&self, t: Time) -> Vec<(&Track, &Clip)> {
-        self.timeline
-            .tracks
-            .iter()
-            .filter(|tr| !tr.hidden)
-            .flat_map(|tr| {
-                tr.clips
-                    .iter()
-                    .filter(move |c| c.contains(t))
-                    .map(move |c| (tr, c))
-            })
-            .collect()
-    }
-
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).expect("Projekt ist immer serialisierbar")
     }
@@ -429,9 +414,6 @@ impl Clip {
     /// Länge des genutzten Quellbereichs.
     pub fn source_span(&self) -> Time {
         Time((self.duration.0 as f64 * self.speed.max(0.01) as f64).round() as i64)
-    }
-    pub fn is_animated(&self) -> bool {
-        !self.keyframes.is_empty() || !self.anim.is_empty()
     }
     /// Darstellung zum Zeitpunkt `t_rel` (relativ zum Clipanfang): Keyframes,
     /// dann Ein-/Aus-/Kombi-Animation.

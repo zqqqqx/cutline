@@ -214,6 +214,18 @@ pub struct Job {
     pub args: Vec<String>,
     pub workdir: tempfile::TempDir,
     pub duration: Time,
+    /// Ziel; FFmpeg schreibt nach `part`, erst bei Erfolg wird umbenannt
+    pub out: PathBuf,
+    pub part: PathBuf,
+}
+
+/// `<stem>.part.<ext>` neben dem Ziel (Endung bleibt, FFmpeg wählt danach den Muxer).
+fn part_path(out: &Path) -> PathBuf {
+    let stem = out.file_stem().unwrap_or_default().to_string_lossy();
+    match out.extension() {
+        Some(e) => out.with_file_name(format!("{stem}.part.{}", e.to_string_lossy())),
+        None => out.with_file_name(format!("{stem}.part")),
+    }
 }
 
 pub(crate) fn f(x: f64) -> String {
@@ -226,9 +238,14 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     if total <= Time::ZERO {
         return Err(ExportError::Empty);
     }
-    for m in &p.media {
-        if !m.path.is_file() {
-            return Err(ExportError::MissingMedia(m.path.display().to_string()));
+    // Nur Medien prüfen, die ein aktiver Clip nutzt (ungenutzte dürfen fehlen)
+    for c in p.timeline.tracks.iter().flat_map(|t| &t.clips).filter(|c| !c.disabled) {
+        if let ClipContent::Media { media, .. } = &c.content {
+            match p.media(*media) {
+                Some(m) if m.path.is_file() => {}
+                Some(m) => return Err(ExportError::MissingMedia(m.path.display().to_string())),
+                None => return Err(ExportError::MissingMedia(media.to_string())),
+            }
         }
     }
     let (start, end) = s.range.unwrap_or((Time::ZERO, total));
@@ -316,11 +333,14 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     }
     args.extend(codec_args(s));
     args.extend(["-t".into(), f(dur.as_secs_f64())]);
-    args.push(out.to_string_lossy().into_owned());
+    let part = part_path(out);
+    args.push(part.to_string_lossy().into_owned());
     Ok(Job {
         args,
         workdir,
         duration: dur,
+        out: out.to_path_buf(),
+        part,
     })
 }
 
@@ -470,6 +490,10 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
         ])),
     }
     if let Quality::Bitrate(k) = s.quality {
+        // Konstante Qualität (-crf/-cq/-global_quality) würde die Bitrate übersteuern
+        if let Some(i) = a.iter().position(|x| matches!(x.as_str(), "-crf" | "-cq" | "-global_quality")) {
+            a.drain(i..i + 2);
+        }
         a.extend(["-b:v".into(), format!("{k}k")]);
     }
     a.extend(["-r".into(), format!("{}/{}", s.fps.num, s.fps.den)]);
@@ -487,7 +511,17 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
 }
 
 /// Läuft einen Job und meldet den Fortschritt (0..1). `cancel` bricht ab.
-pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
+/// Eine vorhandene Zieldatei bleibt bei Abbruch oder Fehler unverändert.
+pub fn run(job: &Job, cancel: Arc<AtomicBool>, progress: impl FnMut(f32)) -> Result<()> {
+    let r = run_ffmpeg(job, cancel, progress)
+        .and_then(|()| std::fs::rename(&job.part, &job.out).map_err(Into::into));
+    if r.is_err() {
+        let _ = std::fs::remove_file(&job.part);
+    }
+    r
+}
+
+fn run_ffmpeg(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
     let mut child: Child = cl_media::ffmpeg_command()?
         .args(&job.args)
         .current_dir(job.workdir.path())
@@ -1646,6 +1680,184 @@ mod tests {
         child.wait().unwrap();
         let secs = buf.len() as f64 / (48000.0 * 2.0 * 4.0);
         assert!((secs - 3.0).abs() < 0.1, "{secs}");
+    }
+
+    /// Peak-Pegel je Kanal (dB) einer Tondatei, nur der Abschnitt `ss`..`ss + t`.
+    fn peaks_db(path: &Path, ss: f64, t: f64) -> Vec<f64> {
+        let o = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "info", "-nostdin", "-ss", &f(ss), "-t", &f(t), "-i"])
+            .arg(path)
+            .args(["-af", "astats=measure_overall=none:measure_perchannel=Peak_level", "-f", "null", "-"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&o.stderr)
+            .lines()
+            .filter_map(|l| l.split("Peak level dB:").nth(1))
+            .map(|v| v.trim().parse::<f64>().unwrap_or(f64::NEG_INFINITY))
+            .collect()
+    }
+
+    /// Projekt mit einer Tonspur: Sinus (2 s) ab `start`.
+    fn sine_project(dir: &Path, start: f64) -> Project {
+        let src = dir.join("sine.wav");
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=2", "-ac", "2"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        let m = cl_media::probe(&src).unwrap();
+        let mut p = Project::new("Ton");
+        p.media.push(m.clone());
+        let mut t = Track::new(TrackKind::Audio);
+        t.clips.push(Clip::new(
+            ClipContent::Media { media: m.id, kind: MediaKind::Audio },
+            Time::from_secs_f64(start),
+            Time::from_secs_f64(2.0),
+        ));
+        p.timeline.tracks.push(t);
+        p
+    }
+
+    fn wav_settings(p: &Project) -> ExportSettings {
+        let mut s = ExportSettings::from_project(p);
+        s.format = Format::Wav;
+        s
+    }
+
+    #[test]
+    fn audio_clip_offset_leaves_leading_silence() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = sine_project(dir.path(), 1.0);
+        let out = dir.path().join("off.wav");
+        run(&build(&p, &wav_settings(&p), &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let gap = peaks_db(&out, 0.0, 0.9);
+        let tone = peaks_db(&out, 1.2, 1.5);
+        assert!(!gap.is_empty() && gap.iter().all(|v| *v < -60.0), "Lücke still: {gap:?}");
+        assert!(!tone.is_empty() && tone.iter().all(|v| *v > -30.0), "Ton ab 1 s: {tone:?}");
+    }
+
+    #[test]
+    fn fade_longer_than_clip_still_exports() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = sine_project(dir.path(), 0.0);
+        // z. B. nach Tempo-Änderung: Blenden länger als der Clip
+        let c = &mut p.timeline.tracks[0].clips[0];
+        c.fade_in = Time::from_secs_f64(5.0);
+        c.fade_out = Time::from_secs_f64(5.0);
+        let out = dir.path().join("fade.wav");
+        run(&build(&p, &wav_settings(&p), &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        assert!(out.is_file());
+    }
+
+    #[test]
+    fn cancelled_export_keeps_existing_file() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = sine_project(dir.path(), 0.0);
+        let out = dir.path().join("ziel.wav");
+        std::fs::write(&out, b"alte Datei").unwrap();
+        let job = build(&p, &wav_settings(&p), &no_fonts, &out).unwrap();
+        assert!(matches!(run(&job, Arc::new(AtomicBool::new(true)), |_| {}), Err(ExportError::Cancelled)));
+        assert_eq!(std::fs::read(&out).unwrap(), b"alte Datei");
+        assert!(!dir.path().join("ziel.part.wav").exists());
+        // Erfolg: Ziel ersetzt, keine Teildatei übrig
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        assert!(cl_media::probe(&out).is_ok());
+        assert!(!job.part.exists());
+    }
+
+    #[test]
+    fn unused_or_remote_media_is_ignored() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = sine_project(dir.path(), 0.0);
+        // Ungenutztes fehlendes Medium blockiert den Export nicht
+        let mut gone = p.media[0].clone();
+        gone.id = MediaId::new();
+        gone.path = dir.path().join("weg.wav");
+        p.media.push(gone);
+        assert!(build(&p, &wav_settings(&p), &no_fonts, &dir.path().join("o.wav")).is_ok());
+        // Vorschau lädt keine URL aus der Projektdatei
+        p.media[0].path = PathBuf::from("http://127.0.0.1:9/x.wav");
+        let (mut child, wd) = spawn_audio_preview(&p, Time::ZERO, 48000).unwrap();
+        let _ = child.kill();
+        let _ = child.wait();
+        let g = std::fs::read_to_string(wd.path().join("graph.txt")).unwrap();
+        assert!(!g.contains(":a]"), "{g}");
+    }
+
+    #[test]
+    fn transition_id_cannot_inject_filters() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = project(dir.path());
+        let main = p.timeline.tracks.iter_mut().find(|t| t.main).unwrap();
+        main.clips[0].transition_out = Some(TransitionRef {
+            id: "fade[x];movie=geheim.mp4[y];[y]nullsink".into(),
+            duration: Time::from_secs_f64(0.5),
+        });
+        let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("x.mp4")).unwrap();
+        let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+        assert!(!g.contains("movie="), "{g}");
+        assert!(g.contains("xfade=transition=fade:"), "{g}");
+    }
+
+    #[test]
+    fn text_with_percent_and_backslash_is_literal() {
+        if !cl_media::ffmpeg_available() || default_font().is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = Project::new("Text");
+        let mut t = Track::new(TrackKind::Text);
+        t.clips.push(Clip::new(
+            ClipContent::Text(TextStyle { text: "50% Rabatt \\o/".into(), ..Default::default() }),
+            Time::ZERO,
+            Time::from_secs_f64(0.5),
+        ));
+        p.timeline.tracks.push(t);
+        let out = dir.path().join("t.mp4");
+        let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &out).unwrap();
+        let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+        assert!(g.contains("expansion=none"), "{g}");
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        assert!(cl_media::probe(&out).is_ok());
+    }
+
+    #[test]
+    fn bitrate_quality_drops_constant_quality_args() {
+        let mut s = ExportSettings::from_project(&Project::new("q"));
+        s.quality = Quality::Bitrate(5000);
+        for (codec, enc) in [
+            (Codec::H264, Encoder::Software),
+            (Codec::Hevc, Encoder::Software),
+            (Codec::H264, Encoder::Nvenc),
+            (Codec::H264, Encoder::Qsv),
+        ] {
+            s.codec = codec;
+            s.encoder = enc;
+            let a = codec_args(&s);
+            assert!(!a.iter().any(|x| matches!(x.as_str(), "-crf" | "-cq" | "-global_quality")), "{a:?}");
+            assert_eq!(a.iter().filter(|x| *x == "-b:v").count(), 1, "{a:?}");
+            assert!(a.contains(&"5000k".to_string()), "{a:?}");
+        }
+        s.quality = Quality::Recommended;
+        assert!(codec_args(&s).contains(&"-global_quality".to_string()));
     }
 
     #[test]
