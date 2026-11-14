@@ -18,22 +18,14 @@ impl App {
         }
         let mut open = true;
         let recording = self.voiceover.recorder.is_some();
-        egui::Window::new(
-            RichText::new(crate::tr(format!(
-                "{}  {}",
-                icon::MICROPHONE,
-                self.t("voiceover")
-            )))
-            .strong(),
-        )
-        .id(egui::Id::new("voiceover"))
-        .collapsible(false)
-        .resizable(false)
+        let title = format!("{}  {}", icon::MICROPHONE, self.t("voiceover"));
+        crate::dialog::window(ctx, crate::tr(title.as_str()), "voiceover")
         .default_pos(ctx.screen_rect().right_top() + vec2(-360.0, 70.0))
         .fixed_size(vec2(300.0, 0.0))
-        .open(&mut open)
-        .frame(egui::Frame::window(&ctx.style()).inner_margin(theme::PAD_DIALOG))
         .show(ctx, |ui| {
+            if crate::dialog::title(ui, &title) {
+                open = false;
+            }
             ui.horizontal(|ui| {
                 let (rect, resp) = ui.allocate_exact_size(vec2(48.0, 48.0), egui::Sense::click());
                 let hover = resp.hovered();

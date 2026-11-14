@@ -335,6 +335,8 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.icon_width = 12.0;
         s.spacing.icon_width_inner = 6.0;
         s.spacing.menu_margin = egui::Margin::same(5);
+        // Dialogrand (auch für Fenster, die nicht über `dialog::frame` laufen)
+        s.spacing.window_margin = egui::Margin::same(PAD_DIALOG);
         s.spacing.scroll = egui::style::ScrollStyle::thin();
         s.visuals.handle_shape = egui::style::HandleShape::Circle;
         s.text_styles

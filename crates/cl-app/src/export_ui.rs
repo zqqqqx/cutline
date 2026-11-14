@@ -145,6 +145,8 @@ struct Running {
     rev: u64,
     /// Begleitdateien (Untertitel, Kapitel) mit Text vom Start; erst nach Erfolg geschrieben
     sidecars: Vec<(PathBuf, String)>,
+    /// Einstellungen beim Start (Fingerabdruck für „Erneut exportieren“)
+    settings: ExportSettings,
 }
 
 #[derive(Default)]
@@ -173,8 +175,8 @@ pub struct ExportDialog {
     done: Option<(Instant, f32)>,
     /// Projektstand beim Öffnen des Dialogs
     rev: u64,
-    /// Projektstand und Datei des letzten fertigen Exports („Zur Datei“ statt „Exportieren“)
-    exported: Option<(u64, PathBuf)>,
+    /// Projektstand, Datei und Einstellungen des letzten fertigen Exports („Zur Datei“ statt „Exportieren“)
+    exported: Option<(u64, PathBuf, ExportSettings)>,
     /// Zieldatei existiert: Nachfrage vor dem Start
     confirm_overwrite: bool,
     /// Nachfrage erst in diesem Bild geöffnet: Enter/Esc noch nicht auswerten
@@ -276,6 +278,14 @@ impl ExportDialog {
         self.picked_platform.take()
     }
 
+    /// Projekt, Zieldatei und Export-Einstellungen wie beim letzten fertigen Export: „Zur Datei“ und
+    /// „Erneut exportieren“ (überschreibt ohne Nachfrage) statt „Exportieren“
+    fn unchanged_since_export(&self, s: &ExportSettings) -> bool {
+        self.exported
+            .as_ref()
+            .is_some_and(|(r, f, used)| *r == self.rev && f.is_file() && *f == self.output_path(s.format) && used == s)
+    }
+
     fn output_path(&self, f: Format) -> PathBuf {
         let safe: String = self
             .name
@@ -308,7 +318,7 @@ impl ExportDialog {
         });
         match finished {
             Some((Some(res), secs)) => {
-                let sidecars = self.running.take().map(|r| r.sidecars).unwrap_or_default();
+                let (sidecars, used) = self.running.take().map(|r| (r.sidecars, Some(r.settings))).unwrap_or_default();
                 match res {
                     Ok(()) => {
                         self.done = Some((Instant::now(), secs));
@@ -319,7 +329,9 @@ impl ExportDialog {
                         if let Some(out) = &self.last_output {
                             // unter dem Projektnamen, nicht dem (änderbaren) Dateinamen
                             crate::exports::record(&p.name, self.project_path.as_deref(), out);
-                            self.exported = Some((started_rev, out.clone()));
+                            if let Some(used) = used {
+                                self.exported = Some((started_rev, out.clone(), used));
+                            }
                         }
                         toast = Some(format!(
                             "{} Export fertig ({secs:.1} s)",
@@ -340,11 +352,15 @@ impl ExportDialog {
         if !self.open {
             return toast;
         }
-        // Esc schließt den Dialog (nicht während eines laufenden Exports)
-        if self.running.is_none() && !self.confirm_overwrite && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        // Esc schließt den Dialog, Enter löst die Hauptaktion aus (nicht während eines laufenden
+        // Exports oder der Überschreiben-Nachfrage)
+        let (esc, enter) = crate::dialog::keys(ctx);
+        let idle = self.running.is_none() && !self.confirm_overwrite;
+        if idle && esc {
             self.open = false;
             return toast;
         }
+        let mut main = idle && enter;
         let Some(mut s) = self.settings.clone() else {
             return toast;
         };
@@ -352,15 +368,14 @@ impl ExportDialog {
         let mut start = false;
         // ohne Nachfrage überschreiben (bestätigt oder „Erneut exportieren“)
         let mut overwrite = false;
-        egui::Window::new(RichText::new(crate::tr(format!("{}  Exportieren", icon::EXPORT))).strong())
-            .id(egui::Id::new("export-dialog"))
-            .collapsible(false)
-            .resizable(false)
+        let title = format!("{}  Exportieren", icon::EXPORT);
+        crate::dialog::window(ctx, crate::tr(title.as_str()), "export-dialog")
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .fixed_size(vec2(720.0, 0.0))
-            .open(&mut open)
-            .frame(egui::Frame::window(&ctx.style()).inner_margin(theme::PAD_DIALOG))
             .show(ctx, |ui| {
+                if crate::dialog::title(ui, &title) {
+                    open = false;
+                }
                 let busy = self.running.is_some();
                 ui.horizontal_top(|ui| {
                     // Links: Cover/Vorschau
@@ -561,7 +576,7 @@ impl ExportDialog {
                 ui.separator();
                 ui.horizontal(|ui| {
                     if let Some(out) = &self.last_output {
-                        if self.running.is_none() && out.exists() && self.exported.as_ref().is_none_or(|(r, f)| *r != self.rev || f != out) {
+                        if self.running.is_none() && out.exists() && self.exported.as_ref().is_none_or(|(r, f, used)| *r != self.rev || f != out || *used != s) {
                             if ui.add(theme::secondary(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
                                 crate::home::reveal(out);
                             }
@@ -574,10 +589,10 @@ impl ExportDialog {
                                     r.cancel.store(true, Ordering::Relaxed);
                                 }
                             }
-                        } else if self.exported.as_ref().is_some_and(|(r, f)| *r == self.rev && f.is_file() && *f == self.output_path(s.format)) {
+                        } else if self.unchanged_since_export(&s) {
                             // unverändert seit dem letzten Export: direkt zur fertigen Datei
-                            if ui.add(theme::primary(format!("{}  Zur Datei", icon::FOLDER_OPEN))).clicked() {
-                                if let Some((_, f)) = &self.exported {
+                            if ui.add(theme::primary(format!("{}  Zur Datei", icon::FOLDER_OPEN))).clicked() || std::mem::take(&mut main) {
+                                if let Some((_, f, _)) = &self.exported {
                                     crate::home::reveal(f);
                                 }
                             }
@@ -585,8 +600,11 @@ impl ExportDialog {
                                 start = true;
                                 overwrite = true;
                             }
-                        } else if ui.add(theme::primary(format!("{}  Exportieren", icon::EXPORT))).clicked() {
+                        } else if ui.add(theme::primary(format!("{}  Exportieren", icon::EXPORT))).clicked() || std::mem::take(&mut main) {
                             start = true;
+                        }
+                        if self.running.is_none() && ui.add(theme::secondary("Abbrechen")).clicked() {
+                            open = false;
                         }
                     });
                 });
@@ -604,31 +622,30 @@ impl ExportDialog {
             // 0 = überschreiben, 1 = anderer Name, 2 = abbrechen
             let mut choice = None;
             let file = self.output_path(s.format);
-            let m = egui::Modal::new(egui::Id::new("export-overwrite")).show(ctx, |ui| {
+            let m = crate::dialog::modal(ctx, "export-overwrite").show(ctx, |ui| {
                 ui.set_width(380.0);
-                ui.label(RichText::new(crate::tr("Datei existiert bereits")).strong().size(theme::FS_TITLE));
-                ui.add_space(8.0);
+                if crate::dialog::title(ui, "Datei existiert bereits") {
+                    choice = Some(2);
+                }
                 ui.label(RichText::new(crate::tr(file.display().to_string())).small().color(theme::TEXT_DIM()));
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(theme::primary("Überschreiben")).clicked() {
-                            choice = Some(0);
-                        }
-                        if ui.add(theme::secondary("Anderen Namen")).clicked() {
-                            choice = Some(1);
-                        }
-                        if ui.add(theme::secondary("Abbrechen")).clicked() {
-                            choice = Some(2);
-                        }
-                    });
+                crate::dialog::footer(ui, |ui| {
+                    if ui.add(theme::primary("Anderen Namen")).clicked() {
+                        choice = Some(1);
+                    }
+                    if ui.add(theme::danger("Überschreiben")).clicked() {
+                        choice = Some(0);
+                    }
+                    if ui.add(theme::secondary("Abbrechen")).clicked() {
+                        choice = Some(2);
+                    }
                 });
             });
             let fresh = std::mem::take(&mut self.confirm_fresh);
             if fresh {
                 ctx.request_repaint();
             } else if choice.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                choice = Some(0);
+                // Enter nie zum Überschreiben: ungefährliche Hauptaktion
+                choice = Some(1);
             } else if choice.is_none() && m.should_close() {
                 choice = Some(2);
             }
@@ -685,6 +702,7 @@ impl ExportDialog {
                         started: Instant::now(),
                         rev: self.rev,
                         sidecars,
+                        settings: s.clone(),
                     });
                     self.last_output = Some(out);
                 }
@@ -883,9 +901,28 @@ fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
     (d.confirm_overwrite, d.confirm_fresh) = (true, true);
     frame(&mut d, &ctx, &p, true);
     assert!(d.confirm_overwrite && d.error.is_none());
-    // erst ein neues Enter bestätigt (leeres Projekt: Start scheitert mit Fehler)
+    // erst ein neues Enter bestätigt – mit „Anderen Namen“, nie Überschreiben
+    // (leeres Projekt: Start scheitert mit Fehler)
     frame(&mut d, &ctx, &p, true);
     assert!(!d.confirm_overwrite && d.error.is_some());
+    assert!(d.name.starts_with("t ("), "{}", d.name);
+}
+
+#[test]
+fn reexport_only_with_unchanged_settings() {
+    let (dir, p) = (tempfile::tempdir().unwrap(), Project::new("t"));
+    let mut d = ExportDialog { folder: dir.path().to_path_buf(), name: "t".into(), ..Default::default() };
+    let s = ExportSettings::from_project(&p);
+    let out = d.output_path(s.format);
+    std::fs::write(&out, b"x").unwrap();
+    d.exported = Some((0, out, s.clone()));
+    assert!(d.unchanged_since_export(&s));
+    // andere Qualität: wieder „Exportieren“ (fragt bei vorhandener Datei nach)
+    let mut q = s.clone();
+    q.quality = Quality::Bitrate(1234);
+    assert!(!d.unchanged_since_export(&q));
+    d.rev = 1;
+    assert!(!d.unchanged_since_export(&s));
 }
 
 #[test]
@@ -917,6 +954,7 @@ fn sidecars_follow_range_and_wait_for_success() {
             started: Instant::now(),
             rev: 0,
             sidecars: v.clone(),
+            settings: s.clone(),
         });
         frame(&mut d, &ctx, &p, false);
         assert_eq!(v.iter().all(|(f, _)| f.is_file()), ok);

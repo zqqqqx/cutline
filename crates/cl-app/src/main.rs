@@ -6,6 +6,7 @@ mod captions;
 mod audio;
 mod chrome;
 mod curves;
+mod dialog;
 mod exports;
 mod creator;
 mod edit_tools;

@@ -592,10 +592,9 @@ impl App {
             LibDialog::Rename { .. } | LibDialog::RenameCat { .. } => "Umbenennen",
             LibDialog::DeleteCat { .. } => "Ordner entfernen?",
         };
-        let modal = egui::Modal::new(egui::Id::new("lib-dialog")).show(ctx, |ui| {
+        let modal = crate::dialog::modal(ctx, "lib-dialog").show(ctx, |ui| {
             ui.set_width(320.0);
-            ui.label(RichText::new(crate::tr(title)).strong().size(theme::FS_TITLE));
-            ui.add_space(8.0);
+            close |= crate::dialog::title(ui, title);
             match d {
                 LibDialog::NewFolder { name, .. } | LibDialog::Rename { name, .. } | LibDialog::RenameCat { name, .. } => {
                     let r = ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY));
@@ -623,18 +622,10 @@ impl App {
                     theme::field_error(ui, err.as_deref());
                 }
             }
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let label = if matches!(d, LibDialog::DeleteCat { .. }) { "Entfernen" } else { "OK" };
-                    if ui.add(theme::primary(label)).clicked() {
-                        ok = true;
-                    }
-                    if ui.add(theme::secondary("Abbrechen")).clicked() {
-                        close = true;
-                    }
-                });
-            });
+            let main = if matches!(d, LibDialog::DeleteCat { .. }) { theme::danger("Entfernen") } else { theme::primary("OK") };
+            let (m, c) = crate::dialog::buttons(ui, main, true);
+            ok |= m;
+            close |= c;
         });
         if modal.should_close() && !fresh {
             close = true;

@@ -295,25 +295,25 @@ impl App {
         }
         let analyzes = matches!(kind, QuickKind::Pauses | QuickKind::Fillers);
         let busy = self.tasks.running("tool").is_some();
-        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         // Enter im Textfeld (Wortliste, Zahlenfeld) ist Eingabe, keine Hauptaktion
-        let mut main = ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !ctx.wants_keyboard_input();
+        let (mut close, mut main) = crate::dialog::keys(ctx);
+        // Füllwörter ohne Spracherkennungsmodell: statt „Analysieren“ zum Modell-Download
+        let no_model = kind == QuickKind::Fillers && self.models().parakeet().is_none();
         let multi = self.project.settings.ripple_all_tracks
             && self.quick.cover.iter().any(|c| self.quick.cover.first().is_some_and(|f| f.0 != c.0));
         let mut jump: Option<Time> = None;
+        let mut x = false;
         let title = match kind {
             QuickKind::Pauses => "Pausen entfernen",
             QuickKind::Fillers => "Füllwörter entfernen",
             QuickKind::Ducking => "Musik unter Sprache absenken",
             QuickKind::Punch => "Zoom-Punch-in",
         };
-        egui::Window::new(crate::tr(title))
-            .id(egui::Id::new("quick-action"))
-            .collapsible(false)
-            .resizable(false)
+        crate::dialog::window(ctx, crate::tr(title), "quick-action")
             .default_width(340.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0))
             .show(ctx, |ui| {
+                x = crate::dialog::title(ui, title);
                 let q = &mut self.quick;
                 let mut changed = false;
                 match kind {
@@ -334,6 +334,9 @@ impl App {
                     QuickKind::Fillers => {
                         ui.label(RichText::new(crate::tr("Wörter (durch Komma getrennt)")).size(theme::FS_UI).color(theme::TEXT_DIM()));
                         changed |= ui.add(egui::TextEdit::multiline(&mut q.words).desired_rows(2).desired_width(f32::INFINITY)).changed();
+                        if no_model {
+                            ui.label(RichText::new(crate::tr("Noch kein Spracherkennungsmodell installiert")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
+                        }
                     }
                     QuickKind::Ducking => {
                         ui.label(RichText::new(crate::tr("Musik-Clip auswählen. Abgesenkt wird, wo auf anderen Tonspuren gesprochen wird.")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
@@ -393,30 +396,32 @@ impl App {
                     ui.add_space(6.0);
                     ui.label(RichText::new(crate::tr("Der Clip hat schon Lautstärke-Keyframes. Ersetzen?")).size(theme::FS_UI).color(theme::TEXT_DIM()));
                 }
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let label = if analyzes && q.hits.is_none() {
-                            "Analysieren"
-                        } else if q.confirm_replace {
-                            "Ersetzen"
-                        } else {
-                            "Anwenden"
-                        };
-                        if ui.add_enabled(!busy, theme::primary(label)).clicked() {
-                            main = true;
-                        }
-                        if ui.add(theme::secondary("Abbrechen")).clicked() {
-                            close = true;
-                        }
-                    });
-                });
+                let label = if no_model {
+                    "Modell laden …"
+                } else if analyzes && q.hits.is_none() {
+                    "Analysieren"
+                } else if q.confirm_replace {
+                    "Ersetzen"
+                } else {
+                    "Anwenden"
+                };
+                let (m, c) = crate::dialog::buttons(ui, theme::primary(label), !busy);
+                main |= m;
+                close |= c;
             });
         if let Some(t) = jump {
             self.stop_playback();
             self.playhead = t;
         }
-        if close {
+        if x {
+            self.quick.confirm_replace = false;
+            self.quick.open = None;
+        } else if main && no_model {
+            // wie bei den Untertiteln: Einstellungen → Modelle
+            self.quick.open = None;
+            self.settings_section = crate::settings::Section::Models;
+            self.settings_open = true;
+        } else if close {
             if self.quick.confirm_replace {
                 self.quick.confirm_replace = false;
             } else {

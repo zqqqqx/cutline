@@ -671,14 +671,11 @@ impl App {
         if let Some((path, mut name)) = self.home.rename.take() {
             let mut keep = true;
             let mut save = false;
-            let m = egui::Modal::new(egui::Id::new("rename")).show(ctx, |ui| {
+            let m = crate::dialog::modal(ctx, "rename").show(ctx, |ui| {
                 ui.set_width(340.0);
-                ui.label(
-                    RichText::new(crate::tr("Projekt umbenennen"))
-                        .strong()
-                        .size(theme::FS_TITLE),
-                );
-                ui.add_space(10.0);
+                if crate::dialog::title(ui, "Projekt umbenennen") {
+                    keep = false;
+                }
                 let r = ui.add(
                     egui::TextEdit::singleline(&mut name)
                         .id_salt("rename-field")
@@ -690,17 +687,9 @@ impl App {
                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     save = true;
                 }
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(theme::primary("Umbenennen")).clicked() {
-                            save = true;
-                        }
-                        if ui.add(theme::secondary("Abbrechen")).clicked() {
-                            keep = false;
-                        }
-                    });
-                });
+                let (m, c) = crate::dialog::buttons(ui, theme::primary("Umbenennen"), true);
+                save |= m;
+                keep &= !c;
             });
             if m.should_close() {
                 keep = false;
@@ -735,34 +724,30 @@ impl App {
         }
         if let Some(path) = self.home.confirm_delete.clone() {
             let mut close = false;
-            let m = egui::Modal::new(egui::Id::new("delete")).show(ctx, |ui| {
+            let m = crate::dialog::modal(ctx, "delete").show(ctx, |ui| {
                 ui.set_width(380.0);
-                ui.label(RichText::new(crate::tr("Projekt löschen?")).strong().size(theme::FS_TITLE));
-                ui.add_space(8.0);
+                close |= crate::dialog::title(ui, "Projekt löschen?");
                 let name = self.home.entries.iter().find(|e| e.path == path).map(|e| e.name.clone()).unwrap_or_default();
                 ui.label(crate::tr(format!("„{name}“ wird in den Cutline-Papierkorb verschoben. Deine Medien-Dateien bleiben unverändert.")));
                 ui.label(RichText::new(crate::tr(paths::data_dir().join("Papierkorb").display().to_string())).small().color(theme::TEXT_DIM()));
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(theme::danger("Löschen")).clicked() {
-                            let trash = paths::data_dir().join("Papierkorb");
-                            let _ = std::fs::create_dir_all(&trash);
-                            let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-                            let fname = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
-                            let target = trash.join(format!("{stamp}-{fname}"));
-                            if std::fs::rename(&path, &target).or_else(|_| std::fs::copy(&path, &target).and_then(|_| std::fs::remove_file(&path))).is_ok() {
-                                let _ = std::fs::remove_file(thumb_path(&path));
-                                self.settings.recent.retain(|r| r != &path);
-                                self.settings.save();
-                                self.toast("Projekt in den Papierkorb verschoben");
-                            }
-                            close = true;
+                crate::dialog::footer(ui, |ui| {
+                    if ui.add(theme::danger("Löschen")).clicked() {
+                        let trash = paths::data_dir().join("Papierkorb");
+                        let _ = std::fs::create_dir_all(&trash);
+                        let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                        let fname = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+                        let target = trash.join(format!("{stamp}-{fname}"));
+                        if std::fs::rename(&path, &target).or_else(|_| std::fs::copy(&path, &target).and_then(|_| std::fs::remove_file(&path))).is_ok() {
+                            let _ = std::fs::remove_file(thumb_path(&path));
+                            self.settings.recent.retain(|r| r != &path);
+                            self.settings.save();
+                            self.toast("Projekt in den Papierkorb verschoben");
                         }
-                        if ui.add(theme::secondary("Abbrechen")).clicked() {
-                            close = true;
-                        }
-                    });
+                        close = true;
+                    }
+                    if ui.add(theme::secondary("Abbrechen")).clicked() {
+                        close = true;
+                    }
                 });
             });
             if close || m.should_close() {
