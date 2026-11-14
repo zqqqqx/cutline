@@ -3067,6 +3067,10 @@ impl eframe::App for App {
             }
             self.toast(msg);
         }
+        // „Projekt auf 9:16 umstellen“ im Export-Dialog (die Vorgabe merkt sich der Block darunter)
+        if self.export.take_switch_aspect() {
+            self.set_aspect(cl_core::AspectPreset::Ratio(9, 16));
+        }
         if let Some(id) = self.export.take_picked_platform() {
             if self.project.settings.platform.as_deref() != Some(id) {
                 let mut s = self.project.settings.clone();

@@ -120,10 +120,12 @@ pub fn move_dir(old: &Path, new: &Path) -> usize {
     for e in v.iter_mut().filter(|e| e.path.parent() == Some(old) && e.path.is_file()) {
         let to = new.join(e.path.file_name().unwrap_or_default());
         if !to.exists() && paths::move_path(&e.path, &to).is_ok() {
-            // Untertiteldatei daneben mitnehmen
-            let srt = e.path.with_extension("srt");
-            if srt.is_file() {
-                let _ = paths::move_path(&srt, &to.with_extension("srt"));
+            // Untertitel- und Kapiteldateien daneben mitnehmen
+            for ext in ["srt", "vtt", "chapters.txt"] {
+                let side = e.path.with_extension(ext);
+                if side.is_file() {
+                    let _ = paths::move_path(&side, &to.with_extension(ext));
+                }
             }
             e.path = to;
             n += 1;
