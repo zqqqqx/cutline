@@ -134,7 +134,7 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
         .map(|l| ui.painter().layout_no_wrap(l.clone(), font.clone(), theme::TEXT()).size().x)
         .collect();
     let sum: f32 = text.iter().sum();
-    let pad = ((w - sum) / tabs.len() as f32).clamp(12.0, 28.0);
+    let pad = ((w - sum) / tabs.len() as f32).clamp(6.0, 28.0);
     let total = sum + pad * tabs.len() as f32;
     let line_y = ui.cursor().top() + 28.0;
     let mut draw = |ui: &mut egui::Ui| {
@@ -149,7 +149,7 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
             ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, &labels[i], font.clone(), col);
             if active {
                 ui.painter().line_segment(
-                    [pos2(r.left() + 6.0, r.bottom() - 1.0), pos2(r.right() - 6.0, r.bottom() - 1.0)],
+                    [pos2(r.left() + pad.min(12.0) / 2.0, r.bottom() - 1.0), pos2(r.right() - pad.min(12.0) / 2.0, r.bottom() - 1.0)],
                     Stroke::new(2.0_f32, theme::ACCENT()),
                 );
             }

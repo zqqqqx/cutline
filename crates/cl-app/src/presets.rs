@@ -109,7 +109,7 @@ impl App {
         let is_text = matches!(c.content, ClipContent::Text(_));
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(crate::tr("Preset"))
+                RichText::new(crate::tr("Look"))
                     .small()
                     .color(theme::TEXT_DIM()),
             );

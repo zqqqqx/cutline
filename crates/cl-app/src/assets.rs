@@ -228,7 +228,7 @@ impl App {
         Self::tab_title(ui, "Medien", |_| {});
         ui.horizontal(|ui| {
             if ui
-                .add(theme::primary(format!("{}  Importieren", icon::PLUS)))
+                .add(theme::secondary(format!("{}  Importieren", icon::PLUS)))
                 .on_hover_text(crate::tr("Strg+I"))
                 .clicked()
             {

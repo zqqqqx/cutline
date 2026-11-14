@@ -609,7 +609,7 @@ impl App {
                         self.settings.backup_minutes = v.round() as u32;
                     }
                 });
-                theme::row(ui, "Sicherungen behalten", |ui| {
+                theme::row(ui, "Aufbewahren", |ui| {
                     let mut v = self.settings.backup_keep as f32;
                     if Slider::new(&mut v, 3.0..=100.0).decimals(0).default(30.0).show(ui).changed {
                         self.settings.backup_keep = v.round() as usize;

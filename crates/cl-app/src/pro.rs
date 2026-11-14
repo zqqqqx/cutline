@@ -670,7 +670,7 @@ impl App {
         }
         if is_video {
             theme::section(ui, "Bildqualität");
-            *e |= theme::row(ui, "Rauschen entfernen", |ui| {
+            *e |= theme::row(ui, "Entrauschen", |ui| {
                 Slider::new(&mut c.fx.denoise, 0.0..=1.0)
                     .percent()
                     .default(0.0)
