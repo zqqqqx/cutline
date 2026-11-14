@@ -191,7 +191,7 @@ impl EditOp {
             EditOp::SetSettings { .. } => "Projekteinstellungen",
             EditOp::AddProjectFont { .. } => "Projektschrift hinzufügen",
             EditOp::Rename { .. } => "Projekt umbenennen",
-            EditOp::SetSpeed { .. } => "Geschwindigkeit",
+            EditOp::SetSpeed { .. } => "Tempo",
             EditOp::SetFx { .. } => "Effekte/Anpassen",
             EditOp::SetKeyframes { .. } => "Keyframe",
             EditOp::SetAnimations { .. } => "Animation",

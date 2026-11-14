@@ -775,7 +775,7 @@ fn project_menu(ui: &mut egui::Ui, path: &Path, action: &mut Option<(&'static st
     for (a, g, t) in [
         ("open", icon::FOLDER_OPEN, "Öffnen"),
         ("rename", icon::PENCIL_SIMPLE, "Umbenennen"),
-        ("duplicate", icon::COPY, "Duplizieren"),
+        ("duplicate", icon::COPY_SIMPLE, "Duplizieren"),
         ("reveal", icon::FOLDER_SIMPLE, "Im Explorer zeigen"),
         ("exports", icon::EXPORT, "Exporte"),
         ("props", icon::INFO, "Eigenschaften"),

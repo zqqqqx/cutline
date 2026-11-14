@@ -496,6 +496,7 @@ impl App {
         if !self.player_pick(ui, &area_resp, &regions) {
             self.player_interact(ui, &area_resp, canvas, scale, &regions);
         }
+        area_resp.context_menu(|ui| self.player_menu(ui));
         if self.voiceover.recorder.is_some() {
             painter.circle_filled(canvas.left_top() + vec2(14.0, 14.0), 5.0, theme::DANGER);
             painter.text(
@@ -998,13 +999,14 @@ impl App {
                 self.ext_preview = !self.ext_preview;
             }
             self.player_zoom_chip(ui, compact);
-            let q = match self.settings.preview_div {
-                1 => "Voll",
-                2 => "½",
-                _ => "¼",
+            // Chip kurz (½, ¼), Tooltip mit denselben Wörtern wie überall: Voll, Halb, Viertel
+            let (q, word) = match self.settings.preview_div {
+                1 => ("Voll", "Voll"),
+                2 => ("½", "Halb"),
+                _ => ("¼", "Viertel"),
             };
-            let qlabel = if compact { icon::MONITOR.to_string() } else { format!("{} {q}", icon::MONITOR) };
-            if theme::chip(ui, &qlabel).on_hover_text(crate::tr(format!("Vorschauqualität: {q}"))).clicked() {
+            let qlabel = if compact { icon::MONITOR.to_string() } else { format!("{} {}", icon::MONITOR, crate::tr(q)) };
+            if theme::chip(ui, &qlabel).on_hover_text(crate::tr(format!("Vorschauqualität: {}", crate::tr(word)))).clicked() {
                 self.settings.preview_div = match self.settings.preview_div {
                     1 => 2,
                     2 => 4,
@@ -1028,6 +1030,28 @@ impl App {
                 }
             });
         });
+    }
+
+    /// Rechtsklick in den Player: dieselben Befehle wie in der Player-Leiste und den Quick Actions.
+    fn player_menu(&mut self, ui: &mut egui::Ui) {
+        use crate::timeline::menu_item;
+        if menu_item(ui, icon::IMAGE, "Standbild speichern …", "") {
+            let ctx = ui.ctx().clone();
+            self.tool_thumbnail(&ctx);
+        }
+        ui.separator();
+        if menu_item(ui, icon::MAGNIFYING_GLASS, "Ganzes Bild", "Alt+Umschalt+Z") {
+            self.player_zoom = 1.0;
+            self.player_pan = egui::Vec2::ZERO;
+        }
+        let ext = if self.ext_preview { icon::CHECK } else { icon::MONITOR_PLAY };
+        if menu_item(ui, ext, "Vorschau in eigenem Fenster", "") {
+            self.ext_preview = !self.ext_preview;
+        }
+        let max = if self.player_max { icon::CHECK } else { icon::CORNERS_OUT };
+        if menu_item(ui, max, "Großer Player", &self.key_of("max")) {
+            self.player_max = !self.player_max;
+        }
     }
 
     pub fn set_aspect(&mut self, p: AspectPreset) {

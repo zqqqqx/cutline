@@ -15,6 +15,7 @@ use eframe::egui::{self, Color32, RichText};
 use crate::app::App;
 use crate::library::{Item, Kind};
 use crate::theme::{self, icon};
+use crate::timeline::menu_item;
 
 /// Bereich mit eigenen Dateien?
 pub fn area_kind(area: &str) -> Option<Kind> {
@@ -281,35 +282,17 @@ impl App {
                 }
                 r.context_menu(|ui| {
                     ui.set_min_width(170.0);
-                    if ui
-                        .button(crate::tr(format!("{}  Umbenennen", icon::PENCIL_SIMPLE)))
-                        .clicked()
-                    {
+                    if menu_item(ui, icon::PENCIL_SIMPLE, "Umbenennen", "") {
                         act = Some((0, c.key.clone()));
-                        ui.close_menu();
                     }
-                    if i > 0
-                        && ui
-                            .button(crate::tr(format!("{}  Nach vorne", icon::ARROW_LEFT)))
-                            .clicked()
-                    {
+                    if i > 0 && menu_item(ui, icon::ARROW_LEFT, "Nach vorne", "") {
                         act = Some((1, c.key.clone()));
-                        ui.close_menu();
                     }
-                    if i + 1 < n
-                        && ui
-                            .button(crate::tr(format!("{}  Nach hinten", icon::ARROW_RIGHT)))
-                            .clicked()
-                    {
+                    if i + 1 < n && menu_item(ui, icon::ARROW_RIGHT, "Nach hinten", "") {
                         act = Some((2, c.key.clone()));
-                        ui.close_menu();
                     }
-                    if ui
-                        .button(crate::tr(format!("{}  Verbergen", icon::EYE_SLASH)))
-                        .clicked()
-                    {
+                    if menu_item(ui, icon::EYE_SLASH, "Verbergen", "") {
                         act = Some((3, c.key.clone()));
-                        ui.close_menu();
                     }
                     if !c.builtin {
                         ui.separator();
@@ -421,20 +404,17 @@ impl App {
         resp.context_menu(|ui| {
             ui.set_min_width(200.0);
             extra(ui);
-            if ui
-                .button(crate::tr(format!(
-                    "{}  {}",
-                    icon::STAR,
-                    if fav {
-                        "Aus Favoriten entfernen"
-                    } else {
-                        "Zu Favoriten"
-                    }
-                )))
-                .clicked()
-            {
+            if menu_item(
+                ui,
+                icon::STAR,
+                if fav {
+                    "Aus Favoriten entfernen"
+                } else {
+                    "Zu Favoriten"
+                },
+                "",
+            ) {
                 act = Some(0);
-                ui.close_menu();
             }
             ui.menu_button(
                 crate::tr(format!(
@@ -444,30 +424,20 @@ impl App {
                 |ui| {
                     ui.set_min_width(160.0);
                     for f in &virt {
-                        if ui.button(f).clicked() {
+                        // Ordnernamen sind Nutzertext: nicht übersetzen
+                        if ui.add(theme::menu_row(format!("{}   {f}", icon::FOLDER_SIMPLE)).min_width(160.0)).clicked() {
                             add_to = Some(f.clone());
                             ui.close_menu();
                         }
                     }
-                    if ui
-                        .button(crate::tr(format!("{}  Neuer Ordner …", icon::FOLDER_PLUS)))
-                        .clicked()
-                    {
+                    if menu_item(ui, icon::FOLDER_PLUS, "Neuer Ordner …", "") {
                         act = Some(3);
-                        ui.close_menu();
                     }
                 },
             );
             if let Some(name) = cat.strip_prefix("v:") {
-                if ui
-                    .button(crate::tr(format!(
-                        "{}  Aus „{name}“ entfernen",
-                        icon::FOLDER_MINUS
-                    )))
-                    .clicked()
-                {
+                if menu_item(ui, icon::FOLDER_MINUS, &format!("Aus „{name}“ entfernen"), "") {
                     act = Some(4);
-                    ui.close_menu();
                 }
             }
             if let Some(item) = own {
@@ -476,31 +446,20 @@ impl App {
                     |ui| {
                         ui.set_min_width(150.0);
                         for f in phys_folders.iter().filter(|f| **f != item.folder) {
-                            if ui.button(f).clicked() {
+                            if ui.add(theme::menu_row(format!("{}   {f}", icon::FOLDER_SIMPLE)).min_width(150.0)).clicked() {
                                 move_to = Some(f.clone());
                                 ui.close_menu();
                             }
                         }
                     },
                 );
-                if ui
-                    .button(crate::tr(format!("{}  Umbenennen", icon::PENCIL_SIMPLE)))
-                    .clicked()
-                {
+                if menu_item(ui, icon::PENCIL_SIMPLE, "Umbenennen", "") {
                     act = Some(1);
-                    ui.close_menu();
                 }
-                if ui
-                    .button(crate::tr(format!(
-                        "{}  Im Explorer zeigen",
-                        icon::FOLDER_OPEN
-                    )))
-                    .clicked()
-                {
+                if menu_item(ui, icon::FOLDER_OPEN, "Im Explorer zeigen", "") {
                     if let Some(p) = &item.path {
                         crate::home::reveal(p);
                     }
-                    ui.close_menu();
                 }
             }
             ui.separator();

@@ -133,7 +133,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("select_all", "Alle Clips auswählen", &["Ctrl+A"]),
     ("disable", "Clip deaktivieren", &["V"]),
     ("tool_select", "Werkzeug: Auswählen", &["A"]),
-    ("tool_blade", "Werkzeug: Teilen", &["B"]),
+    ("tool_blade", "Werkzeug: Klinge", &["B"]),
     ("undo", "Rückgängig", &["Ctrl+Z"]),
     ("redo", "Wiederholen", &["Ctrl+Shift+Z", "Ctrl+Y"]),
     ("prev", "Ein Bild zurück", &["ArrowLeft"]),

@@ -375,7 +375,7 @@ impl App {
             painter.text(
                 rh,
                 egui::Align2::CENTER_CENTER,
-                icon::ARROW_CLOCKWISE,
+                icon::ARROWS_CLOCKWISE,
                 egui::FontId::proportional(10.0),
                 Color32::WHITE,
             );

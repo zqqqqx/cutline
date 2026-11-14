@@ -357,14 +357,14 @@ impl ExportDialog {
                             if !s.format.audio_only() {
                                 theme::section(ui, "Video");
                                 // Plattform-Vorlagen: setzen Format, Codec, Größe, Bildrate und Qualität
-                                theme::row(ui, "Vorlage", |ui| {
+                                theme::row(ui, "Plattform", |ui| {
                                     let sel = self.platform.and_then(platform).map(|pl| crate::tr(pl.name)).unwrap_or_else(|| crate::tr("Plattform wählen …"));
                                     egui::ComboBox::from_id_salt("exp-preset").selected_text(sel).width(200.0).show_ui(ui, |ui| {
                                         for pl in PLATFORMS {
                                             if ui.selectable_label(self.platform == Some(pl.id), crate::tr(pl.name)).clicked() {
                                                 Self::apply_platform(&mut s, &mut self.short_edge, pl);
                                                 self.platform = Some(pl.id);
-                                                self.preset_hint = (!pl.fits(&p.settings)).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Werkzeuge → Hochkant-Layout"));
+                                                self.preset_hint = (!pl.fits(&p.settings)).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Quick Actions → Hochkant-Layout"));
                                                 if pl.fits(&p.settings) {
                                                     self.picked_platform = Some(pl.id);
                                                 }
@@ -501,7 +501,7 @@ impl ExportDialog {
                 ui.horizontal(|ui| {
                     if let Some(out) = &self.last_output {
                         if self.running.is_none() && out.exists() && self.exported.as_ref().is_none_or(|(r, f)| *r != self.rev || f != out) {
-                            if ui.add(theme::secondary(format!("{}  Im Ordner zeigen", icon::FOLDER_OPEN))).clicked() {
+                            if ui.add(theme::secondary(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
                                 crate::home::reveal(out);
                             }
                         }

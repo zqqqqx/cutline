@@ -73,19 +73,11 @@ impl App {
                 open = Some(p.clone());
             }
             r.context_menu(|ui| {
-                if ui
-                    .button(crate::tr(format!("{}  Umbenennen", icon::PENCIL_SIMPLE)))
-                    .clicked()
-                {
+                if crate::timeline::menu_item(ui, icon::PENCIL_SIMPLE, "Umbenennen", "") {
                     rename = Some((p.clone(), name.clone()));
-                    ui.close_menu();
                 }
-                if ui
-                    .button(crate::tr(format!("{}  Entfernen", icon::TRASH)))
-                    .clicked()
-                {
+                if crate::timeline::menu_item(ui, icon::TRASH, "Entfernen", "") {
                     remove = Some(p.clone());
-                    ui.close_menu();
                 }
             });
         }

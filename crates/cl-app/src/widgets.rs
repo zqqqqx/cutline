@@ -151,7 +151,8 @@ impl<'a> Slider<'a> {
         } else {
             0.0
         };
-        let n = self.to_norm(*self.value);
+        // Werte außerhalb des Bereichs (z. B. alte +20 dB) bleiben stehen, bis man sie ändert
+        let n = self.to_norm(*self.value).clamp(0.0, 1.0);
         let (fa, fb) = (zero_n.min(n), zero_n.max(n));
         let fill = Rect::from_min_max(
             pos2(track.left() + fa * track.width(), track.top()),
@@ -182,6 +183,7 @@ impl<'a> Slider<'a> {
             [value_w, 18.0],
             egui::DragValue::new(&mut shown)
                 .range((a * self.display)..=(b * self.display))
+                .clamp_existing_to_range(false)
                 .fixed_decimals(self.decimals)
                 .suffix(self.suffix)
                 .speed(((b - a) * self.display / 300.0).max(0.01)),

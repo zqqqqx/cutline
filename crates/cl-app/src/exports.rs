@@ -173,7 +173,7 @@ impl crate::app::App {
                                 .on_hover_text(e.path.display().to_string());
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.add(theme::secondary(format!("{}  Zur Datei", icon::FOLDER_OPEN))).clicked() {
+                                if ui.add(theme::secondary(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
                                     crate::home::reveal(&e.path);
                                 }
                             });
@@ -182,7 +182,7 @@ impl crate::app::App {
                     }
                 });
             });
-        if !open {
+        if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.exports_for = None;
         }
     }

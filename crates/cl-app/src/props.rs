@@ -216,7 +216,7 @@ impl App {
                     });
                 }
             });
-        if !open {
+        if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.props = None;
         }
     }

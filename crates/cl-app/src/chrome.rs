@@ -318,6 +318,19 @@ impl App {
                     ui.close_menu();
                     self.pick_media();
                 }
+                // gleicher Dialog wie auf der Startseite; aus, wenn alle Formate abgeschaltet sind
+                let can_import = self.import_enabled();
+                if ui
+                    .add_enabled_ui(can_import, |ui| {
+                        item(ui, icon::DOWNLOAD_SIMPLE, "Projekt aus anderem Programm importieren …", "")
+                    })
+                    .inner
+                    .on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve"))
+                    .clicked()
+                {
+                    ui.close_menu();
+                    self.import.open = true;
+                }
                 if item(ui, icon::TEXT_AA, &self.t("import-fonts"), "").clicked() {
                     ui.close_menu();
                     let ctx = ui.ctx().clone();

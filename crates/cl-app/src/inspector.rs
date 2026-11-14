@@ -12,7 +12,7 @@ use crate::widgets::{self, Edit, Kf, Slider};
 fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
     match &c.content {
         ClipContent::Effect(_) | ClipContent::Filter(_) => {
-            vec![(ClipTab::Effects, "Einfach"), (ClipTab::Basic, "Maske")]
+            vec![(ClipTab::Effects, "Effekt"), (ClipTab::Basic, "Maske")]
         }
         ClipContent::Text(_) => vec![
             (ClipTab::Text, "Text"),
@@ -30,12 +30,14 @@ fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
             (ClipTab::Basic, "Basis"),
             (ClipTab::Effects, "Effekte"),
             (ClipTab::Adjust, "Anpassen"),
+            (ClipTab::Smart, "Smart"),
             (ClipTab::Animation, "Animation"),
         ],
         ClipContent::Media { .. } => vec![
             (ClipTab::Basic, "Basis"),
             (ClipTab::Effects, "Effekte"),
             (ClipTab::Adjust, "Anpassen"),
+            (ClipTab::Smart, "Smart"),
             (ClipTab::Animation, "Animation"),
             (ClipTab::Speed, "Tempo"),
             (ClipTab::Audio, "Audio"),
@@ -100,7 +102,7 @@ fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
                 .default(0.5)
                 .show(ui)
         });
-        r |= theme::row(ui, "Drehen", |ui| {
+        r |= theme::row(ui, "Drehung", |ui| {
             Slider::new(&mut m.rotation_deg, -180.0..=180.0)
                 .suffix("°")
                 .default(0.0)
@@ -211,6 +213,7 @@ impl App {
                     &[
                         (InspectorTab::Project, "Projekt"),
                         (InspectorTab::History, "Verlauf"),
+                        (InspectorTab::Markers, "Marker"),
                     ],
                     &mut t,
                 );
@@ -221,6 +224,7 @@ impl App {
                     .show(ui, |ui| match self.inspector_tab {
                         InspectorTab::Project => self.project_inspector(ui),
                         InspectorTab::History => self.history_inspector(ui),
+                        InspectorTab::Markers => self.marker_list(ui),
                     });
             }
         }
@@ -430,6 +434,7 @@ impl App {
                     }
                     ClipTab::Effects => self.effects_props(ui, &mut c, &mut e),
                     ClipTab::Adjust => self.adjust_props(ui, &mut c, &mut e),
+                    ClipTab::Smart => self.pro_visual(ui, &mut c, &mut e),
                     ClipTab::Animation => self.anim_props(ui, &mut c, &mut e),
                     ClipTab::Speed => {
                         self.speed_props(ui, &mut c, &mut e);
@@ -515,7 +520,7 @@ impl App {
         *e |= self.prop_slider(
             ui,
             c,
-            "Skalierung",
+            "Größe",
             Prop::Scale,
             0.05..=5.0,
             1.0,
@@ -531,7 +536,7 @@ impl App {
         *e |= self.prop_slider(
             ui,
             c,
-            "Drehen",
+            "Drehung",
             Prop::Rotation,
             -180.0..=180.0,
             0.0,
@@ -605,15 +610,14 @@ impl App {
                     e.commit = true;
                 }
             });
+        }
+        disabled_toggle(ui, c, e);
+        if matches!(c.content, ClipContent::Media { .. }) {
             theme::section(ui, "Maske");
             *e |= mask_ui(ui, &mut c.fx.mask);
-        }
-        self.pro_visual(ui, c, e);
-        theme::section(ui, "Clip");
-        let mut dis = c.disabled;
-        if widgets::toggle_row(ui, "Deaktiviert (V)", &mut dis) {
-            c.disabled = dis;
-            e.commit = true;
+        } else {
+            // Text: nur „Bewegung verfolgen“; Video/Bild haben dafür den Reiter „Smart“
+            self.pro_visual(ui, c, e);
         }
     }
 
@@ -1282,15 +1286,15 @@ impl App {
                 ..
             }
         ) {
+            // Zeitlupe und Richtung gehören zum Tempo – kein eigener Abschnitt für je einen Schalter
+            ui.add_space(8.0);
             if c.speed < 0.999 || c.fx.speed_curve.is_some() {
-                theme::section(ui, "Zeitlupe");
                 if widgets::toggle_row(ui, "Flüssige Zeitlupe", &mut c.fx.smooth_slowmo) {
                     e.commit = true;
                 }
                 ui.label(RichText::new(crate::tr("Vorschau angenähert, Export exakt")).small().color(theme::TEXT_DIM()));
             }
-            theme::section(ui, "Richtung");
-            if widgets::toggle_row(ui, "Rückwärts abspielen", &mut c.fx.reverse) {
+            if widgets::toggle_row(ui, "Rückwärts", &mut c.fx.reverse) {
                 e.commit = true;
             }
         }
@@ -1309,23 +1313,26 @@ impl App {
             c,
             "Lautstärke",
             Prop::Volume,
-            -60.0..=20.0,
+            -60.0..=crate::timeline::VOL_MAX,
             0.0,
             (" dB", 1, 1.0),
             kf,
         );
-        let half = (c.duration.as_secs_f64() / 2.0) as f32;
+        // gleiche Grenze wie die Griffe in der Zeitleiste: Cliplänge minus die andere Blende
+        let dur = c.duration.as_secs_f64();
         let mut fi = c.fade_in.as_secs_f64() as f32;
         let mut fo = c.fade_out.as_secs_f64() as f32;
+        let max_in = crate::timeline::fade_max(dur, fo as f64) as f32;
+        let max_out = crate::timeline::fade_max(dur, fi as f64) as f32;
         let r1 = theme::row(ui, "Einblenden", |ui| {
-            Slider::new(&mut fi, 0.0..=half.max(0.01))
+            Slider::new(&mut fi, 0.0..=max_in.max(0.01))
                 .suffix(" s")
                 .decimals(1)
                 .default(0.0)
                 .show(ui)
         });
         let r2 = theme::row(ui, "Ausblenden", |ui| {
-            Slider::new(&mut fo, 0.0..=half.max(0.01))
+            Slider::new(&mut fo, 0.0..=max_out.max(0.01))
                 .suffix(" s")
                 .decimals(1)
                 .default(0.0)
@@ -1335,6 +1342,9 @@ impl App {
         c.fade_out = Time::from_secs_f64(fo as f64);
         *e |= r1;
         *e |= r2;
+        if matches!(c.content, ClipContent::Media { kind: MediaKind::Audio, .. }) {
+            disabled_toggle(ui, c, e);
+        }
         if let ClipContent::Media {
             kind: MediaKind::Video,
             ..
@@ -1451,7 +1461,7 @@ impl App {
             .iter()
             .find(|(_, p)| *p == settings.aspect)
             .map(|(n, _)| n.to_string())
-            .unwrap_or_else(|| "Benutzerdefiniert".into());
+            .unwrap_or_else(|| "Eigenes".into());
         let mut new_aspect = None;
         theme::row(ui, &self.t("aspect"), |ui| {
             egui::ComboBox::from_id_salt("aspect")
@@ -1492,9 +1502,7 @@ impl App {
                 .selected_text(crate::tr(format!("{:.3} fps", settings.fps.as_f64())))
                 .width((ui.available_width() - 12.0).max(60.0))
                 .show_ui(ui, |ui| {
-                    for f in [
-                        "23.976", "24", "25", "29.97", "30", "50", "59.94", "60", "120",
-                    ] {
+                    for f in crate::settings::FPS_CHOICES {
                         let r = Rational::parse(f).unwrap();
                         if ui
                             .selectable_label(settings.fps == r, crate::tr(format!("{f} fps")))
@@ -1533,17 +1541,18 @@ impl App {
                     }
                 });
         });
-        theme::section(ui, "Bearbeiten");
-        changed |= widgets::toggle_row(
-            ui,
-            &format!("{}  (P)", self.t("magnet")),
-            &mut settings.main_track_magnet,
-        );
-        changed |= widgets::toggle_row(
-            ui,
-            &format!("{}  (N)", self.t("snapping")),
-            &mut settings.snapping,
-        );
+        // Kanäle des Projekts (der Standard für neue Projekte steht in Einstellungen → Audio)
+        theme::row(ui, "Kanäle", |ui| {
+            egui::ComboBox::from_id_salt("proj-channels")
+                .selected_text(crate::tr(settings.channels.name()))
+                .width((ui.available_width() - 12.0).max(60.0))
+                .show_ui(ui, |ui| {
+                    for (c, n) in cl_core::Channels::ALL {
+                        changed |= ui.selectable_value(&mut settings.channels, c, crate::tr(n)).changed();
+                    }
+                });
+        });
+        // Magnet und Einrasten: nur Zeitleisten-Leiste und Tasten (P / N)
         if changed && settings != self.project.settings {
             self.apply(EditOp::SetSettings { settings });
         }
@@ -1574,7 +1583,6 @@ impl App {
                 .color(theme::TEXT_DIM()),
             )
         });
-        self.marker_list(ui);
     }
 
     /// Verlauf: oben die rückgängig gemachten Schritte (blass), dann „Jetzt“, darunter die
@@ -1724,4 +1732,13 @@ fn history_row(
         ui.painter().rect_filled(r.rect, 5.0, theme::BG_CARD().linear_multiply(0.55));
     }
     r
+}
+
+/// „Deaktiviert (V)“ – im Abschnitt „Mischen“ (Bild) bzw. „Lautstärke“ (Audio).
+fn disabled_toggle(ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
+    let mut dis = c.disabled;
+    if widgets::toggle_row(ui, "Deaktiviert (V)", &mut dis) {
+        c.disabled = dis;
+        e.commit = true;
+    }
 }

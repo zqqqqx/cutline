@@ -255,19 +255,7 @@ impl App {
             ui.add_space(4.0);
             ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_FAINT()));
         }
-        ui.add_space(8.0);
-        ui.add_enabled_ui(self.import_enabled(), |ui| {
-            if ui
-                .add(theme::secondary(format!(
-                    "{}  Projekt importieren …",
-                    icon::DOWNLOAD_SIMPLE
-                )))
-                .clicked()
-            {
-                self.settings_open = false;
-                self.import.open = true;
-            }
-        });
+        // Importieren selbst: Hauptmenü → „Projekt aus anderem Programm importieren …“
         let _ = vec2(0.0, 0.0);
     }
 }

@@ -219,14 +219,7 @@ impl App {
         {
             {
                 if let Some(i) = apply {
-                    let p = self.presets[i].clone();
-                    self.modify_selection(|x| {
-                        // Text-Presets nur auf Text, Look-Presets nur auf Medien
-                        if matches!(x.content, ClipContent::Text(_)) == p.is_text() {
-                            p.apply(x);
-                        }
-                    });
-                    self.toast(format!("Preset „{}“ angewendet", p.name));
+                    self.apply_preset(i);
                     self.preset_list_open = false;
                 }
                 if let Some(i) = rename {
@@ -242,6 +235,20 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Preset `i` auf die Auswahl anwenden (Inspektor-Leiste und Clip-Menü „Look anwenden“).
+    pub fn apply_preset(&mut self, i: usize) {
+        let Some(p) = self.presets.get(i).cloned() else {
+            return;
+        };
+        self.modify_selection(|x| {
+            // Text-Presets nur auf Text, Look-Presets nur auf Medien
+            if matches!(x.content, ClipContent::Text(_)) == p.is_text() {
+                p.apply(x);
+            }
+        });
+        self.toast(format!("Preset „{}“ angewendet", p.name));
     }
 
     /// Dialog „Preset speichern/umbenennen“ (jeden Frame aufrufen).
