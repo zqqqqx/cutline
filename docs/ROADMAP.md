@@ -2,12 +2,12 @@
 
 Cutline is the open video editor for creators: easy to use, fast, and entirely on your machine. It is made for
 content creators (YouTube, Shorts/TikTok/Reels, streaming, podcasts) who publish often, in several formats, and need
-to get from a raw recording to a finished clip fast. The current release is v0.8.0; phases 0–4 are done.
+to get from a raw recording to a finished clip fast. The current release is v0.9.0; phases 0–4 are done.
 
 ## Next releases
 
 - **0.8.0 (released)** Tidy-up: accent colour you can choose (white by default, presets or your own), one design system (six type sizes, three corner radii), duplicate options merged, one vocabulary, context menus for ruler and player, inspector tabs "Smart" and "Markers".
-- **0.9.0** Workflows that connect: "move everything" on ripple edits (all tracks and markers), Quick Actions with settings and a result list, highlights to Shorts, loudness on export (−14 LUFS), YouTube bitrates, insert templates into an open project, multicam audio.
+- **0.9.0 (released)** Workflows that connect: "move everything" on ripple edits (all tracks and markers), Quick Actions with settings and a result list, highlights to Shorts, loudness on export (−14 LUFS), YouTube bitrates, insert templates into an open project, multicam audio.
 - **0.10.0** New tools: command search (Ctrl+K), brand kit, export queue, karaoke captions, thumbnail tool, picture-in-picture and split-screen layouts, tracked censor mask.
 
 ## Phase 4 – Creator edition (done)
