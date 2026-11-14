@@ -209,12 +209,18 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
         let comp = be_u32(d, e + 8)? as usize;
         let orig = be_u32(d, e + 12)? as usize;
         let csum = be_u32(d, e + 16)?;
+        // Längen stammen aus der Datei: ohne Grenze reicht ein Header für 4 GiB Speicher
+        if orig > 64 << 20 {
+            return Err(FontError::Corrupt("WOFF-Tabelle zu groß".into()));
+        }
         let src = d
             .get(off..off + comp)
             .ok_or_else(|| FontError::Corrupt("WOFF-Tabelle außerhalb".into()))?;
         let data = if comp < orig {
             let mut out = Vec::with_capacity(orig);
+            // höchstens orig + 1 Bytes entpacken (Zip-Bombe); zu lang fällt unten auf
             flate2::read::ZlibDecoder::new(src)
+                .take(orig as u64 + 1)
                 .read_to_end(&mut out)
                 .map_err(|e| FontError::Corrupt(format!("zlib: {e}")))?;
             if out.len() != orig {
@@ -593,6 +599,18 @@ pub fn system_families() -> HashSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn woff_rejects_huge_table() {
+        // ein Tabelleneintrag mit Originallänge 4 GiB
+        let mut d = vec![0u8; 64];
+        d[0..4].copy_from_slice(b"wOFF");
+        d[12..14].copy_from_slice(&1u16.to_be_bytes());
+        d[44 + 4..44 + 8].copy_from_slice(&64u32.to_be_bytes());
+        d[44 + 12..44 + 16].copy_from_slice(&u32::MAX.to_be_bytes());
+        let e = woff_to_sfnt(&d).unwrap_err();
+        assert!(e.to_string().contains("zu groß"), "{e}");
+    }
 
     /// Eine echte Systemschrift für Tests (Windows: Arial/Impact, Linux: DejaVu).
     fn sample_font() -> Option<PathBuf> {

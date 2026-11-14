@@ -6,10 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-cl-core.workspace = true
 cl-media.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "ndarray", "api-24"] }
 
 [dev-dependencies]
