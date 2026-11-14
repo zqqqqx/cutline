@@ -38,7 +38,7 @@ fn task_bar(ui: &mut egui::Ui, app: &App, key: &str) -> bool {
     if let Some(t) = app.tasks.running(key) {
         ui.horizontal(|ui| {
             ui.add(
-                egui::ProgressBar::new(t.progress())
+                egui::ProgressBar::new(t.progress()).fill(theme::ACCENT())
                     .desired_width((ui.available_width() - 36.0).max(20.0))
                     .desired_height(6.0),
             );

@@ -51,6 +51,8 @@ pub struct AppSettings {
     pub use_cases: Vec<String>,
     /// Design: „system“, „dark“, „darkgray“, „gray“, „light“
     pub theme: String,
+    /// Akzentfarbe: „auto“ (neutral), Vorgabe-id aus `theme::ACCENTS` oder „#RRGGBB“
+    pub accent: String,
     /// Kleine Animationen (Hover, Einblenden, Export)
     pub animations: bool,
     /// Eigener Projektordner (`None` = im Datenordner)
@@ -110,6 +112,7 @@ impl Default for AppSettings {
             onboarding_done: false,
             use_cases: Vec::new(),
             theme: "dark".into(),
+            accent: "auto".into(),
             animations: true,
             projects_dir: None,
             backup_minutes: 5,
@@ -150,6 +153,7 @@ impl AppSettings {
         s.backup_keep = s.backup_keep.clamp(1, 500);
         paths::set_projects_dir(s.projects_dir.clone());
         crate::theme::set_animations(s.animations);
+        crate::theme::set_accent(&s.accent);
         crate::audio::set_output_device(s.audio_device.clone());
         if s.cache_days > 0 {
             let days = s.cache_days;
@@ -446,7 +450,7 @@ impl App {
                                 Some(p) => {
                                     pnt.rect_filled(sw, 6.0, p.bg_app);
                                     pnt.rect_filled(sw.shrink2(egui::vec2(8.0, 7.0)), 3.0, p.bg_card);
-                                    pnt.rect_filled(egui::Rect::from_min_size(sw.min + egui::vec2(14.0, 12.0), egui::vec2(26.0, 4.0)), 2.0, p.text);
+                                    pnt.rect_filled(egui::Rect::from_min_size(sw.min + egui::vec2(14.0, 12.0), egui::vec2(26.0, 4.0)), 2.0, theme::accent_for(p));
                                     pnt.rect_filled(egui::Rect::from_min_size(sw.min + egui::vec2(14.0, 19.0), egui::vec2(18.0, 3.0)), 1.5, p.text_dim);
                                 }
                                 None => {
@@ -477,6 +481,46 @@ impl App {
                                 theme::select(ui.ctx(), id);
                                 self.settings.save();
                             }
+                        }
+                    });
+                });
+                theme::row(ui, "Akzentfarbe", |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        let mut pick = None;
+                        for (id, name, dark, light) in theme::ACCENTS {
+                            let (r, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+                            let c = match (id, theme::pal().dark) {
+                                ("auto", _) => theme::pal().accent,
+                                (_, true) => dark,
+                                _ => light,
+                            };
+                            let on = self.settings.accent == id;
+                            ui.painter().circle_filled(r.center(), 9.0, c);
+                            if on || resp.hovered() {
+                                let s = if on { egui::Stroke::new(2.0_f32, theme::TEXT()) } else { egui::Stroke::new(1.0_f32, theme::TEXT_DIM()) };
+                                ui.painter().circle_stroke(r.center(), 11.5, s);
+                            }
+                            if resp.on_hover_text(crate::tr(name)).clicked() {
+                                pick = Some(id.to_string());
+                            }
+                        }
+                        // Eigene Farbe: Farbwähler, gespeichert als „#RRGGBB“
+                        let custom = self.settings.accent.starts_with('#');
+                        let [r, g, b, _] = theme::ACCENT().to_array();
+                        let mut rgb = egui::Color32::from_hex(&self.settings.accent).map_or([r, g, b], |c| [c.r(), c.g(), c.b()]);
+                        ui.add_space(4.0);
+                        if ui.color_edit_button_srgb(&mut rgb).on_hover_text(crate::tr("Eigene Farbe")).changed() {
+                            pick = Some(format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]));
+                        }
+                        if custom {
+                            ui.label(RichText::new(crate::tr("Eigene Farbe")).small().color(theme::TEXT_DIM()));
+                        }
+                        if let Some(spec) = pick {
+                            theme::set_accent(&spec);
+                            self.settings.accent = spec;
+                            // shortcut: speichert beim Ziehen im Farbwähler jedes Frame, ggf. erst beim Schließen speichern
+                            self.settings.save();
+                            theme::apply(ui.ctx());
                         }
                     });
                 });
