@@ -32,6 +32,58 @@ pub fn clip_audio(app: &App, c: &Clip) -> Option<(PathBuf, f64, f64, f64)> {
     ))
 }
 
+/// Zeit im Quellbereich (ab Quellbeginn, s) → Clipzeit; rückwärts liegt der Quellanfang am Clipende
+pub fn src_to_clip(t: f64, span: f64, sp: f64, reverse: bool) -> f64 {
+    if reverse { (span - t) / sp } else { t / sp }
+}
+
+/// Quellbereich (a, b) → Clipbereich (von, bis); rückwärts tauschen Anfang und Ende
+pub fn src_range_to_clip(a: f64, b: f64, span: f64, sp: f64, reverse: bool) -> (f64, f64) {
+    let (x, y) = (src_to_clip(a, span, sp, reverse), src_to_clip(b, span, sp, reverse));
+    (x.min(y), x.max(y))
+}
+
+/// Sprechbereiche sortieren und zusammenfassen, wenn die Lücke kürzer ist als zwei Rampen
+/// (sonst würde die Musik mitten in der Sprache wieder laut)
+pub fn merge_speech(mut speech: Vec<(f64, f64)>, ramp: f64) -> Vec<(f64, f64)> {
+    let gap = 0.5f64.max(2.0 * ramp);
+    speech.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut merged: Vec<(f64, f64)> = Vec::new();
+    for s in speech {
+        match merged.last_mut() {
+            Some(l) if s.0 <= l.1 + gap => l.1 = l.1.max(s.1),
+            _ => merged.push(s),
+        }
+    }
+    merged
+}
+
+/// Multicam-Stück [a, b) eines Clips: Einblenden/Intro nur am ersten, Ausblenden/Outro/Übergang
+/// nur am letzten Stück, damit der durchlaufende Ton an den Wechseln nicht aus- und einblendet.
+pub fn multicam_piece(c: &Clip, a: Time, b: Time) -> Clip {
+    let mut n = c.clone();
+    n.id = ClipId::new();
+    n.start = a;
+    n.duration = Time(b.0 - a.0);
+    let off = |t: Time| ((t.0 - c.start.0) as f64 * c.speed as f64) as i64;
+    n.source_in = if c.fx.reverse {
+        // rückwärts: das Stück endet (in der Quelle) dort, wo es auf der Zeitleiste beginnt
+        Time(c.source_in.0 + c.source_span().0 - off(b))
+    } else {
+        Time(c.source_in.0 + off(a))
+    };
+    if a > c.start {
+        n.fade_in = Time::ZERO;
+        n.anim.intro = None;
+    }
+    if b < c.end() {
+        n.fade_out = Time::ZERO;
+        n.anim.outro = None;
+        n.transition_out = None;
+    }
+    n
+}
+
 impl App {
     fn selected_clip(&self) -> Option<Clip> {
         self.selected
@@ -205,6 +257,7 @@ impl App {
             music.id,
         );
         let base = music.volume_db;
+        let rev = self.revision;
         self.tasks
             .spawn(ctx, "tool", "Sprache wird erkannt …", move |p, _| {
                 // Sprechbereiche in Projektzeit sammeln
@@ -226,16 +279,13 @@ impl App {
                         pos = b;
                     }
                 }
-                speech.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-                // überlappende zusammenfassen
-                let mut merged: Vec<(f64, f64)> = Vec::new();
-                for s in speech {
-                    match merged.last_mut() {
-                        Some(l) if s.0 <= l.1 + 0.5 => l.1 = l.1.max(s.1),
-                        _ => merged.push(s),
-                    }
-                }
+                let merged = merge_speech(speech, ramp as f64);
                 TaskDone::Run(Box::new(move |app: &mut App| {
+                    // Clip-Lagen stammen vom Analysestart
+                    if app.revision != rev {
+                        app.toast_err("Projekt hat sich geändert – bitte erneut ausführen");
+                        return;
+                    }
                     let Some(mut c) = app.project.find_clip(id).map(|(_, c)| c.clone()) else {
                         return;
                     };
@@ -271,7 +321,7 @@ impl App {
         let Some((path, src, span, sp)) = clip_audio(self, &c) else {
             return;
         };
-        let start = c.start.as_secs_f64();
+        let (start, rev, id) = (c.start.as_secs_f64(), c.fx.reverse, c.id);
         self.tasks
             .spawn(ctx, "tool", "Highlights werden gesucht …", move |p, _| {
                 p(0.3);
@@ -282,12 +332,15 @@ impl App {
                         let hits: Vec<crate::shorts::Hit> = cl_analyze::audio::loud_moments(&env, n, 8.0)
                             .into_iter()
                             .map(|t| crate::shorts::Hit {
-                                at: start + t / sp,
+                                at: start + src_to_clip(t, span, sp, rev),
                                 strength: crate::shorts::strength(&env, t),
                                 on: true,
                             })
                             .collect();
                         TaskDone::Run(Box::new(move |app: &mut App| {
+                            if app.project.find_clip(id).is_none() {
+                                return;
+                            }
                             if hits.is_empty() {
                                 app.toast("Keine auffällig lauten Momente gefunden");
                                 return;
@@ -435,12 +488,7 @@ impl App {
                     .find(|x| x.0 <= a)
                     .map(|x| x.1)
                     .unwrap_or(0);
-                let mut n = c.clone();
-                n.id = ClipId::new();
-                n.start = a;
-                n.duration = Time(b.0 - a.0);
-                n.source_in =
-                    Time(c.source_in.0 + ((a.0 - c.start.0) as f64 * c.speed as f64) as i64);
+                let mut n = multicam_piece(&c, a, b);
                 // Ton nur von der Hauptquelle, das Bild wechselt
                 let (off, op, mute) = crate::templates::cam_piece(ai, self.multicam_audio, active == ai);
                 n.disabled = off;
@@ -753,4 +801,42 @@ fn walk_audio(dir: &std::path::Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_times_map_into_reversed_clips() {
+        // 10 s rückwärts, Pause bei Quelle 1–2 s liegt im Clip bei 8–9 s
+        assert_eq!(src_range_to_clip(1.0, 2.0, 10.0, 1.0, true), (8.0, 9.0));
+        assert_eq!(src_range_to_clip(1.0, 2.0, 10.0, 2.0, false), (0.5, 1.0));
+        assert_eq!(src_to_clip(3.0, 10.0, 2.0, true), 3.5);
+    }
+
+    #[test]
+    fn speech_merges_across_gaps_shorter_than_two_ramps() {
+        let sp = vec![(4.8, 6.0), (2.0, 4.0)];
+        assert_eq!(merge_speech(sp.clone(), 1.0), vec![(2.0, 6.0)]);
+        assert_eq!(merge_speech(sp, 0.2), vec![(2.0, 4.0), (4.8, 6.0)]);
+    }
+
+    #[test]
+    fn multicam_pieces_keep_fades_at_outer_edges_and_reverse_source() {
+        let s = Time::from_secs_f64;
+        let mut c = Clip::new(ClipContent::Text(TextStyle::default()), s(0.0), s(10.0));
+        c.fade_in = s(0.5);
+        c.fade_out = s(0.5);
+        c.transition_out = Some(TransitionRef { id: "fade".into(), duration: s(0.4) });
+        let (p1, p2, p3) = (multicam_piece(&c, s(0.0), s(3.0)), multicam_piece(&c, s(3.0), s(6.0)), multicam_piece(&c, s(6.0), s(10.0)));
+        assert_eq!((p1.fade_in, p1.fade_out, p1.transition_out.is_some()), (s(0.5), Time::ZERO, false));
+        assert_eq!((p2.fade_in, p2.fade_out, p2.transition_out.is_some()), (Time::ZERO, Time::ZERO, false));
+        assert_eq!((p3.fade_in, p3.fade_out, p3.transition_out.is_some()), (Time::ZERO, s(0.5), true));
+        assert_eq!(p2.source_in, s(3.0));
+        c.fx.reverse = true;
+        let p = multicam_piece(&c, s(3.0), s(6.0));
+        assert_eq!(p.source_time(p.start), c.source_time(s(3.0)));
+        assert_eq!(p.source_in, s(4.0));
+    }
 }
