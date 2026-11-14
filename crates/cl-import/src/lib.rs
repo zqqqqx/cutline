@@ -24,6 +24,8 @@ pub struct Report {
     pub skipped: Vec<(String, usize)>,
     /// Fehlende Mediendateien
     pub missing: Vec<PathBuf>,
+    /// Schriftdateien der Texte (werden in Cutline übernommen, damit die Texte gleich aussehen)
+    pub fonts: Vec<PathBuf>,
 }
 
 impl Report {

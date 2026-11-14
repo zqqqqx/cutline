@@ -16,6 +16,8 @@ pub enum OpSource {
 pub struct HistoryEntry {
     pub label: &'static str,
     pub source: OpSource,
+    /// Zeitpunkt der Änderung
+    pub at: std::time::SystemTime,
     snapshot: Project,
 }
 
@@ -60,6 +62,7 @@ impl Document {
                 self.undo.push(HistoryEntry {
                     label,
                     source,
+                    at: std::time::SystemTime::now(),
                     snapshot: before,
                 });
                 if self.undo.len() > self.max_history {
@@ -83,6 +86,7 @@ impl Document {
         self.redo.push(HistoryEntry {
             label,
             source: entry.source,
+            at: entry.at,
             snapshot: current,
         });
         self.revision += 1;
@@ -96,10 +100,35 @@ impl Document {
         self.undo.push(HistoryEntry {
             label,
             source: entry.source,
+            at: entry.at,
             snapshot: current,
         });
         self.revision += 1;
         Ok(label)
+    }
+
+    /// Mehrere Schritte auf einmal: `steps` < 0 rückgängig, > 0 wiederholen. Gibt die Anzahl
+    /// der tatsächlich ausgeführten Schritte zurück.
+    pub fn step(&mut self, steps: isize) -> usize {
+        let mut n = 0;
+        for _ in 0..steps.unsigned_abs() {
+            let ok = if steps < 0 { self.undo().is_ok() } else { self.redo().is_ok() };
+            if !ok {
+                break;
+            }
+            n += 1;
+        }
+        n
+    }
+
+    /// Rückgängig machbare Schritte (älteste zuerst)
+    pub fn undo_entries(&self) -> &[HistoryEntry] {
+        &self.undo
+    }
+
+    /// Wiederholbare Schritte (der nächste zuletzt)
+    pub fn redo_entries(&self) -> &[HistoryEntry] {
+        &self.redo
     }
 
     pub fn can_undo(&self) -> bool {
@@ -317,6 +346,51 @@ mod tests {
         let (_, r) = d.project().find_clip(right).unwrap();
         assert_eq!(r.source_in, Time::ZERO);
         assert_eq!(r.source_time(r.start), before(3.0));
+    }
+
+    #[test]
+    fn move_track_stays_in_its_group() {
+        let mut d = Document::new(Project::new("T"));
+        let ins = |d: &mut Document, kind| {
+            let n = d.project().timeline.tracks.len();
+            match d.apply(EditOp::InsertTrack { index: n, kind }, OpSource::Ui).unwrap() {
+                OpOutput::Track(t) => t,
+                _ => panic!(),
+            }
+        };
+        let v1 = ins(&mut d, TrackKind::Video);
+        let t1 = ins(&mut d, TrackKind::Text);
+        let a1 = ins(&mut d, TrackKind::Audio);
+        let a2 = ins(&mut d, TrackKind::Audio);
+        let ids = |d: &Document| d.project().timeline.tracks.iter().map(|t| t.id).collect::<Vec<_>>();
+        // Text liegt oben; nach unten → unter die Videospur
+        d.apply(EditOp::MoveTrack { track: t1, up: false }, OpSource::Ui).unwrap();
+        assert_eq!(ids(&d)[..2], [t1, v1]);
+        // ganz unten: bleibt
+        d.apply(EditOp::MoveTrack { track: t1, up: false }, OpSource::Ui).unwrap();
+        assert_eq!(ids(&d)[..2], [t1, v1]);
+        // Tonspur a2 (unten) nach oben → vor a1, aber nicht zwischen die Bildspuren
+        d.apply(EditOp::MoveTrack { track: a2, up: true }, OpSource::Ui).unwrap();
+        assert_eq!(ids(&d)[2..], [a2, a1]);
+        d.apply(EditOp::MoveTrack { track: a2, up: true }, OpSource::Ui).unwrap();
+        assert_eq!(ids(&d)[2..], [a2, a1]);
+    }
+
+    #[test]
+    fn step_moves_through_history_both_ways() {
+        let (mut d, id) = doc_with_clip();
+        for at in [2.0, 4.0, 6.0] {
+            d.apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(at) }, OpSource::Ui).ok();
+        }
+        let clips = |d: &Document| d.project().timeline.tracks[0].clips.len();
+        assert_eq!(clips(&d), 2); // nur der erste Schnitt trifft den (immer kürzeren) linken Teil
+        let total = d.undo_entries().len();
+        assert_eq!(d.step(-(total as isize)), total);
+        assert_eq!(d.undo_entries().len(), 0);
+        assert_eq!(d.redo_entries().len(), total);
+        assert_eq!(d.step(-1), 0);
+        assert_eq!(d.step(2), 2.min(total));
+        assert!(d.undo_entries().iter().all(|e| e.at <= std::time::SystemTime::now()));
     }
 
     #[test]

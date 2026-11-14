@@ -20,9 +20,184 @@ fn base(text: &str) -> TextStyle {
     }
 }
 
-pub const TEMPLATE_CATEGORIES: [&str; 4] = ["Titel", "Untertitel", "Social", "Hinweis"];
+pub const TEMPLATE_CATEGORIES: [&str; 5] = ["Gaming", "Titel", "Untertitel", "Social", "Hinweis"];
 
 pub static TEMPLATES: &[TextTemplate] = &[
+    TextTemplate {
+        id: "victory",
+        name: "Sieg",
+        category: "Gaming",
+        text: "VICTORY!",
+        intro: Some("pop"),
+        style: || TextStyle {
+            size: 1e+02,
+            font_family: Some("Lilita One".into()),
+            color: [255, 214, 0, 255],
+            outline: Some((9e+00, [25, 10, 0, 255])),
+            shadow: true,
+            uppercase: false,
+            ..base("VICTORY!")
+        },
+    },
+    TextTemplate {
+        id: "headshot",
+        name: "Headshot",
+        category: "Gaming",
+        text: "HEADSHOT",
+        intro: Some("zoom-in"),
+        style: || TextStyle {
+            size: 1e+02,
+            font_family: Some("Black Ops One".into()),
+            color: [255, 64, 64, 255],
+            outline: Some((6e+00, [20, 0, 0, 255])),
+            shadow: true,
+            uppercase: false,
+            ..base("HEADSHOT")
+        },
+    },
+    TextTemplate {
+        id: "arcade",
+        name: "Arcade",
+        category: "Gaming",
+        text: "GAME OVER",
+        intro: Some("fade"),
+        style: || TextStyle {
+            size: 6e+01,
+            font_family: Some("Press Start 2P".into()),
+            color: [255, 255, 255, 255],
+            outline: Some((5e+00, [230, 0, 120, 255])),
+            shadow: true,
+            uppercase: false,
+            ..base("GAME OVER")
+        },
+    },
+    TextTemplate {
+        id: "lets-play",
+        name: "Let's Play",
+        category: "Gaming",
+        text: "LET'S PLAY",
+        intro: Some("pop"),
+        style: || TextStyle {
+            size: 1e+02,
+            font_family: Some("Bungee".into()),
+            color: [0, 235, 255, 255],
+            outline: Some((5e+00, [0, 30, 70, 255])),
+            shadow: true,
+            uppercase: false,
+            ..base("LET'S PLAY")
+        },
+    },
+    TextTemplate {
+        id: "thumbnail",
+        name: "Thumbnail",
+        category: "Gaming",
+        text: "KRASS?!",
+        intro: Some("zoom-in"),
+        style: || TextStyle {
+            size: 1e+02,
+            font_family: Some("Anton".into()),
+            color: [255, 255, 255, 255],
+            outline: Some((1e+01, [0, 0, 0, 255])),
+            shadow: true,
+            uppercase: true,
+            ..base("KRASS?!")
+        },
+    },
+    TextTemplate {
+        id: "comic",
+        name: "Comic",
+        category: "Gaming",
+        text: "BOOM!",
+        intro: Some("pop"),
+        style: || TextStyle {
+            size: 1e+02,
+            font_family: Some("Bangers".into()),
+            color: [255, 220, 40, 255],
+            outline: Some((8e+00, [0, 0, 0, 255])),
+            shadow: true,
+            uppercase: false,
+            ..base("BOOM!")
+        },
+    },
+    TextTemplate {
+        id: "episode",
+        name: "Episode",
+        category: "Gaming",
+        text: "EPISODE 1",
+        intro: Some("rise"),
+        style: || TextStyle {
+            size: 1e+02,
+            font_family: Some("Bebas Neue".into()),
+            color: [255, 255, 255, 255],
+            shadow: true,
+            uppercase: false,
+            ..base("EPISODE 1")
+        },
+    },
+    TextTemplate {
+        id: "esports",
+        name: "E-Sport",
+        category: "Gaming",
+        text: "TEAM CUTLINE",
+        intro: Some("slide-left"),
+        style: || TextStyle {
+            size: 7e+01,
+            font_family: Some("Russo One".into()),
+            color: [255, 255, 255, 255],
+            background: Some([0, 150, 255, 235]),
+            shadow: false,
+            uppercase: false,
+            ..base("TEAM CUTLINE")
+        },
+    },
+    TextTemplate {
+        id: "nice",
+        name: "Nice",
+        category: "Gaming",
+        text: "NICE!",
+        intro: Some("pop"),
+        style: || TextStyle {
+            size: 1e+02,
+            font_family: Some("Luckiest Guy".into()),
+            color: [255, 140, 0, 255],
+            outline: Some((7e+00, [255, 255, 255, 255])),
+            shadow: true,
+            uppercase: false,
+            ..base("NICE!")
+        },
+    },
+    TextTemplate {
+        id: "level-up",
+        name: "Level Up",
+        category: "Gaming",
+        text: "LEVEL UP",
+        intro: Some("rise"),
+        style: || TextStyle {
+            size: 1e+02,
+            font_family: Some("Titan One".into()),
+            color: [90, 255, 130, 255],
+            outline: Some((7e+00, [0, 40, 10, 255])),
+            shadow: true,
+            uppercase: false,
+            ..base("LEVEL UP")
+        },
+    },
+    TextTemplate {
+        id: "subscribe-box",
+        name: "Abo-Hinweis",
+        category: "Gaming",
+        text: "ABONNIEREN",
+        intro: Some("pop"),
+        style: || TextStyle {
+            size: 6e+01,
+            font_family: Some("Poppins".into()),
+            color: [255, 255, 255, 255],
+            background: Some([230, 30, 40, 255]),
+            shadow: false,
+            uppercase: false,
+            ..base("ABONNIEREN")
+        },
+    },
     TextTemplate {
         id: "headline",
         name: "Schlagzeile",

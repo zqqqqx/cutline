@@ -20,14 +20,19 @@ pub fn dir() -> PathBuf {
     paths::data_dir().join("cache").join("proxies")
 }
 
-/// Proxy-Pfad eines Mediums (ändert sich, wenn die Datei sich ändert).
-pub fn proxy_path(m: &MediaRef) -> PathBuf {
+/// Proxy-Pfad eines Mediums in der Höhe `height` (ändert sich, wenn die Datei sich ändert).
+pub fn proxy_path(m: &MediaRef, height: u32) -> PathBuf {
     let meta = std::fs::metadata(&m.path).ok();
     let mut h = std::collections::hash_map::DefaultHasher::new();
     m.path.hash(&mut h);
     meta.as_ref().map(|m| m.len()).hash(&mut h);
     meta.and_then(|m| m.modified().ok()).hash(&mut h);
-    dir().join(format!("{:016x}.mp4", h.finish()))
+    dir().join(format!("{:016x}-{}.mp4", h.finish(), proxy_height(m, height)))
+}
+
+/// Proxy nie größer als das Original
+fn proxy_height(m: &MediaRef, height: u32) -> u32 {
+    height.min(m.height.max(2)) & !1
 }
 
 /// Lohnt sich ein Proxy?
@@ -45,48 +50,63 @@ pub fn wants_proxy(m: &MediaRef) -> bool {
             .any(|c| codec.contains(c))
 }
 
-/// Höhe der Proxys in Zeilen
-pub const PROXY_H: u32 = 540;
+/// Wählbare Proxy-Höhen (Einstellungen → Leistung)
+pub const PROXY_HEIGHTS: [(u32, &str); 3] = [(540, "Schnell · 540p"), (720, "Ausgewogen · 720p"), (1080, "Hoch · 1080p")];
 
-/// Proxy erzeugen: 540p, H.264 sehr schnell, Schlüsselbild alle 10 Bilder (schnelles Springen).
+/// Proxy erzeugen: H.264 mit „fastdecode“ (leicht zu decodieren), Schlüsselbild alle 10 Bilder
+/// (schnelles Springen), Bildrate des Originals bis 60 fps. Erst mit Hardware-Decodierung
+/// des Originals, bei einem Fehler ohne.
 pub fn build(
     src: &Path,
     out: &Path,
+    height: u32,
     dur: f64,
     progress: &dyn Fn(f32),
     cancel: &AtomicBool,
 ) -> Result<(), String> {
+    match build_with(src, out, height, dur, progress, cancel, true) {
+        Err(e) if e != "Abgebrochen" => build_with(src, out, height, dur, progress, cancel, false),
+        r => r,
+    }
+}
+
+fn build_with(
+    src: &Path,
+    out: &Path,
+    height: u32,
+    dur: f64,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
+    hw: bool,
+) -> Result<(), String> {
     std::fs::create_dir_all(out.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
     let tmp = out.with_extension("part.mp4");
-    let mut child = cl_media::ffmpeg_command()
-        .map_err(|e| e.to_string())?
-        .args([
-            "-v",
-            "error",
-            "-y",
-            "-nostdin",
-            "-progress",
-            "pipe:1",
-            "-nostats",
-            "-i",
-        ])
+    let mut cmd = cl_media::ffmpeg_command().map_err(|e| e.to_string())?;
+    cmd.args(["-v", "error", "-y", "-nostdin", "-progress", "pipe:1", "-nostats"]);
+    if hw {
+        cmd.args(["-hwaccel", "auto"]);
+    }
+    let mut child = cmd
+        .arg("-i")
         .arg(src)
         .args([
             "-map",
             "0:v:0",
             "-an",
             "-vf",
-            "scale=-2:540:flags=bilinear,fps=30",
+            &format!("scale=-2:{height}:flags=bicubic,format=yuv420p"),
+            "-fpsmax",
+            "60",
             "-c:v",
             "libx264",
             "-preset",
             "veryfast",
+            "-tune",
+            "fastdecode",
             "-crf",
-            "26",
+            "20",
             "-g",
             "10",
-            "-pix_fmt",
-            "yuv420p",
         ])
         .arg(&tmp)
         .stdout(Stdio::piped())
@@ -118,13 +138,14 @@ pub fn build(
 
 impl App {
     /// Datei für die Vorschau: beim Abspielen der Proxy (flüssig), im Stand das Original, wenn
-    /// die 540 Zeilen des Proxys für die benötigte Höhe `need_h` nicht reichen (scharf).
+    /// die Zeilen des Proxys für die benötigte Höhe `need_h` nicht reichen (scharf).
     pub fn preview_path(&self, m: &MediaRef, need_h: u32) -> PathBuf {
+        let ph = self.settings.proxy_h;
         if self.settings.use_proxies
             && m.kind == MediaKind::Video
-            && (self.playing || need_h <= PROXY_H * 6 / 5)
+            && (self.playing || need_h <= ph * 6 / 5)
         {
-            let p = proxy_path(m);
+            let p = proxy_path(m, ph);
             if p.is_file() {
                 return p;
             }
@@ -144,12 +165,13 @@ impl App {
             .find(|m| {
                 wants_proxy(m)
                     && m.path.is_file()
-                    && !proxy_path(m).is_file()
+                    && !proxy_path(m, self.settings.proxy_h).is_file()
                     && !self.proxy_failed.contains(&m.id)
             })
             .cloned();
         if let Some(m) = next {
-            let out = proxy_path(&m);
+            let height = proxy_height(&m, self.settings.proxy_h);
+            let out = proxy_path(&m, self.settings.proxy_h);
             let dur = m.duration.as_secs_f64();
             let name = m
                 .path
@@ -161,7 +183,7 @@ impl App {
                 ctx,
                 "proxy",
                 format!("Proxy wird erstellt: {name}"),
-                move |p, cancel| match build(&m.path, &out, dur, p, cancel) {
+                move |p, cancel| match build(&m.path, &out, height, dur, p, cancel) {
                     Ok(()) => TaskDone::Proxy {
                         media: id,
                         ok: true,
@@ -186,7 +208,17 @@ impl App {
             self.settings.save();
             self.invalidate_preview();
         }
-        ui.label(RichText::new(crate::tr("Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes. Der Export nutzt immer die Originale.")).small().color(theme::TEXT_DIM));
+        theme::row(ui, "Qualität", |ui| {
+            let names: Vec<&str> = PROXY_HEIGHTS.iter().map(|p| p.1).collect();
+            let mut i = PROXY_HEIGHTS.iter().position(|p| p.0 == self.settings.proxy_h).unwrap_or(1);
+            if widgets::segmented(ui, &names, &mut i) {
+                self.settings.proxy_h = PROXY_HEIGHTS[i].0;
+                self.settings.save();
+                self.proxy_failed.clear();
+                self.invalidate_preview();
+            }
+        });
+        ui.label(RichText::new(crate::tr("Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes. Der Export nutzt immer die Originale.")).small().color(theme::TEXT_DIM()));
         let (n, bytes) = std::fs::read_dir(dir())
             .into_iter()
             .flatten()
@@ -200,7 +232,7 @@ impl App {
                     bytes as f64 / 1e6
                 )))
                 .small()
-                .color(theme::TEXT_FAINT),
+                .color(theme::TEXT_FAINT()),
             );
             if n > 0
                 && ui
@@ -245,9 +277,11 @@ mod tests {
         let m = cl_media::probe(&src).unwrap();
         assert!(wants_proxy(&m));
         let out = d.path().join("p.mp4");
-        build(&src, &out, 1.0, &|_| {}, &AtomicBool::new(false)).unwrap();
+        build(&src, &out, 720, 1.0, &|_| {}, &AtomicBool::new(false)).unwrap();
         let p = cl_media::probe(&out).unwrap();
-        assert_eq!(p.height, 540);
+        assert_eq!(p.height, 720);
+        // 60 fps bleiben erhalten (flüssiges Abspielen von 60-fps-Material)
+        assert!((p.fps.unwrap().as_f64() - 60.0).abs() < 0.5);
         assert!((p.duration.as_secs_f64() - 1.0).abs() < 0.2);
     }
 }

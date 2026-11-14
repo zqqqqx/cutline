@@ -215,6 +215,54 @@ pub struct AudioFx {
     pub compress: f32,
     /// Audiofilter (id aus `cl_fx::audio::FILTERS`)
     pub filter: Option<String>,
+    /// Kanäle; `None` = Standard des Projekts
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channels: Option<Channels>,
+}
+
+/// Umgang mit den Tonkanälen eines Clips.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Channels {
+    /// Ist nur ein Kanal belegt (z. B. Mikrofon nur links), auf beide verteilen
+    #[default]
+    Auto,
+    /// Unverändert
+    Stereo,
+    /// Beide Kanäle mischen, auf beiden gleich
+    Mono,
+    /// Nur den linken Kanal verwenden (auf beiden)
+    Left,
+    /// Nur den rechten Kanal verwenden (auf beiden)
+    Right,
+}
+
+impl Channels {
+    pub const ALL: [(Channels, &'static str); 5] = [
+        (Channels::Auto, "Automatisch"),
+        (Channels::Stereo, "Stereo"),
+        (Channels::Mono, "Mono"),
+        (Channels::Left, "Nur links"),
+        (Channels::Right, "Nur rechts"),
+    ];
+    pub fn name(self) -> &'static str {
+        Self::ALL.iter().find(|c| c.0 == self).map(|c| c.1).unwrap_or("")
+    }
+    /// FFmpeg-Filter (nach `aformat=…stereo`). `silent`: Index des stummen Kanals (nur für Auto).
+    pub fn filter(self, silent: Option<u8>) -> Option<&'static str> {
+        let left = "pan=stereo|c0=c0|c1=c0";
+        let right = "pan=stereo|c0=c1|c1=c1";
+        match self {
+            Channels::Stereo => None,
+            Channels::Mono => Some("pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1"),
+            Channels::Left => Some(left),
+            Channels::Right => Some(right),
+            Channels::Auto => match silent {
+                Some(1) => Some(left),
+                Some(0) => Some(right),
+                _ => None,
+            },
+        }
+    }
 }
 
 impl AudioFx {
@@ -252,7 +300,7 @@ impl Prop {
     ];
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum Ease {
     #[default]
     Linear,
@@ -260,6 +308,9 @@ pub enum Ease {
     EaseOut,
     EaseInOut,
     Hold,
+    /// Eigene Kurve wie CSS `cubic-bezier(x1, y1, x2, y2)`; y darf über 0…1 hinausgehen
+    /// (Ausholen, Überschwingen)
+    Bezier(f32, f32, f32, f32),
 }
 
 impl Ease {
@@ -271,8 +322,52 @@ impl Ease {
             Ease::EaseOut => 1.0 - (1.0 - p) * (1.0 - p),
             Ease::EaseInOut => p * p * (3.0 - 2.0 * p),
             Ease::Hold => 0.0,
+            Ease::Bezier(x1, y1, x2, y2) => {
+                let (x1, x2) = (x1.clamp(0.0, 1.0), x2.clamp(0.0, 1.0));
+                let bez = |s: f32, a: f32, b: f32| {
+                    let u = 1.0 - s;
+                    3.0 * u * u * s * a + 3.0 * u * s * s * b + s * s * s
+                };
+                // x(s) wächst monoton: Parameter zu p per Halbierung suchen
+                let (mut lo, mut hi) = (0.0f32, 1.0f32);
+                for _ in 0..24 {
+                    let mid = (lo + hi) / 2.0;
+                    if bez(mid, x1, x2) < p {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                bez((lo + hi) / 2.0, y1, y2)
+            }
         }
     }
+    /// Steuerpunkte der Kurve (für den Kurven-Editor); `None` bei „Halten“
+    pub fn bezier(self) -> Option<(f32, f32, f32, f32)> {
+        match self {
+            Ease::Linear => Some((0.0, 0.0, 1.0, 1.0)),
+            Ease::EaseIn => Some((0.42, 0.0, 1.0, 1.0)),
+            Ease::EaseOut => Some((0.0, 0.0, 0.58, 1.0)),
+            Ease::EaseInOut => Some((0.42, 0.0, 0.58, 1.0)),
+            Ease::Hold => None,
+            Ease::Bezier(a, b, c, d) => Some((a, b, c, d)),
+        }
+    }
+}
+
+#[test]
+fn bezier_ease_hits_ends_and_can_overshoot() {
+    let lin = Ease::Bezier(0.0, 0.0, 1.0, 1.0);
+    for p in [0.0, 0.25, 0.5, 1.0] {
+        assert!((lin.apply(p) - p).abs() < 1e-3);
+    }
+    let back = Ease::Bezier(0.34, 1.56, 0.64, 1.0);
+    assert!(back.apply(0.0).abs() < 1e-3 && (back.apply(1.0) - 1.0).abs() < 1e-3);
+    assert!((0..=20).any(|i| back.apply(i as f32 / 20.0) > 1.02), "schwingt über");
+    // alte Projekte ohne Kurve und neue mit Kurve lesen
+    assert_eq!(serde_json::from_str::<Ease>("\"EaseIn\"").unwrap(), Ease::EaseIn);
+    let s = serde_json::to_string(&back).unwrap();
+    assert_eq!(serde_json::from_str::<Ease>(&s).unwrap(), back);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

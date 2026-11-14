@@ -281,6 +281,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
             &mut ctx.inputs,
             &mut ctx.n_input,
             &mut ctx.graph,
+            true,
         )
     });
 
@@ -582,7 +583,7 @@ pub fn spawn_audio_preview(
     let mut inputs = Vec::new();
     let mut graph = Vec::new();
     let mut n = 0;
-    let label = graph::audio_part(p, from, end, &mut inputs, &mut n, &mut graph);
+    let label = graph::audio_part(p, from, end, &mut inputs, &mut n, &mut graph, false);
     std::fs::write(workdir.path().join("graph.txt"), graph.join(";\n"))?;
     let child = cl_media::ffmpeg_command()?
         .args(["-v", "error", "-nostdin"])
@@ -946,8 +947,62 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("out.mp4");
         let job = build(&p, &s, &no_fonts, &out).unwrap();
-        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        
+        let t = std::time::Instant::now();
+        run(&job, Arc::new(AtomicBool::new(false)), |x| eprintln!("{:.1}s {x:.3}", t.elapsed().as_secs_f32())).unwrap();
         assert!(cl_media::probe(&out).is_ok());
+    }
+
+    /// Mikrofon nur links aufgenommen: im Export auf beiden Kanälen (Standard „Automatisch“),
+    /// mit „Stereo“ bleibt der rechte Kanal still.
+    #[test]
+    fn one_sided_audio_is_spread_to_both_channels() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("links.wav");
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=2", "-af", "pan=stereo|c0=c0|c1=0*c0"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        let m = cl_media::probe(&src).unwrap();
+        let peaks = |p: &Project| -> Vec<f64> {
+            let out = dir.path().join("out.wav");
+            let mut s = ExportSettings::from_project(p);
+            s.format = Format::Wav;
+            run(&build(p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+            let o = cl_media::ffmpeg_command()
+                .unwrap()
+                .args(["-v", "info", "-nostdin", "-i"])
+                .arg(&out)
+                .args(["-af", "astats=measure_overall=none:measure_perchannel=Peak_level", "-f", "null", "-"])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&o.stderr)
+                .lines()
+                .filter_map(|l| l.split("Peak level dB:").nth(1))
+                .map(|v| v.trim().parse::<f64>().unwrap_or(f64::NEG_INFINITY))
+                .collect()
+        };
+        let mut p = Project::new("Kanäle");
+        p.media.push(m.clone());
+        let mut t = Track::new(TrackKind::Audio);
+        t.clips.push(Clip::new(
+            ClipContent::Media { media: m.id, kind: MediaKind::Audio },
+            Time::ZERO,
+            Time::from_secs_f64(2.0),
+        ));
+        p.timeline.tracks.push(t);
+        let auto = peaks(&p);
+        assert_eq!(auto.len(), 2, "{auto:?}");
+        assert!(auto[0] > -20.0 && auto[1] > -20.0, "beide Kanäle hörbar: {auto:?}");
+        p.settings.channels = Channels::Stereo;
+        let stereo = peaks(&p);
+        assert!(stereo[1] < -60.0, "rechts still bei Stereo: {stereo:?}");
     }
 
     #[test]

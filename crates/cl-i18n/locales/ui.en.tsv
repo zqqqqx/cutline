@@ -415,7 +415,7 @@ Magnet / Einrasten	Magnet / snapping
 Großer Player	Large player
 Zeitleiste zoomen	Zoom timeline
 Zeitleiste waagerecht	Scroll timeline horizontally
-Player einpassen	Fit player
+Player: ganzes Bild	Fit player
 Importieren / Speichern / Öffnen / Exportieren	Import / save / open / export
 Oberfläche	Interface
 Beim Start die Projektübersicht zeigen	Show projects on startup
@@ -458,7 +458,7 @@ Rechts vom Playhead löschen  (W)	Delete right of playhead  (W)
 Löschen  (Entf)	Delete  (Del)
 Standbild (3 s am Playhead)	Freeze frame (3 s at playhead)
 90° drehen	Rotate 90°
-Zeitleiste einpassen	Fit timeline
+Ganze Zeitleiste zeigen	Fit timeline
 Vergrößern (Strg+Mausrad)	Zoom in (Ctrl+wheel)
 Verkleinern	Zoom out
 Neue Spur	New track
@@ -777,7 +777,7 @@ Mehrere Änderungen	Multiple changes
 Clip ersetzen	Replace clip
 Ein- und Ausblenden	Fades
 # Nachträge
-Einpassen	Fit
+Ganzes Bild	Fit
 LUT laden	Load LUT
 Wischen ↖	Wipe ↖
 Wischen ↗	Wipe ↗
@@ -1279,3 +1279,219 @@ Alle 5 Minuten bei Änderungen, die letzten 30 Stände	Every 5 minutes when chan
 Läuft lokal auf deinem Rechner, es werden keine Daten hochgeladen.	Runs locally on your computer, no data is uploaded.
 Programmeigene Effekte und Vorlagen werden nicht übernommen.	The other program's own effects and templates are not imported.
 ab {}	from {}
+Auswählen	Select
+Alle Clips links auswählen	Select all clips to the left
+Alle Clips rechts auswählen	Select all clips to the right
+Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …	Remove pauses, filler words, ducking, multicam, vertical …
+Neue Spur hinzufügen	Add a new track
+Spur nach oben	Move track up
+Spur nach unten	Move track down
+Spur verschieben	Move track
+Spur	Track
+Videospur	Video track
+Textspur	Text track
+Effektspur	Effect track
+Filterspur	Filter track
+Audiospur	Audio track
+Werkzeug	Tool
+Werkzeug: Auswählen	Tool: select
+Werkzeug: Teilen	Tool: split
+Eigenschaften	Properties
+Dateigröße	File size
+Video-Codec	Video codec
+Audio-Codec	Audio codec
+Verwendet	Used
+Ende	End
+Quellbeginn	Source in
+Ja	Yes
+Ein-/Ausblenden	Fade in/out
+Hauptspur	main track
+gesperrt	locked
+ausgeblendet	hidden
+stumm	muted
+Geändert	Modified
+Fehlende Dateien	Missing files
+Datei fehlt	File missing
+Pfad kopieren	Copy path
+Kopiert	Copied
+Bild	Image
+Design	Theme
+Animationen	Animations
+Dunkel	Dark
+Dunkelgrau	Dark gray
+Ändern …	Change …
+Standard	Default
+Zurück in den Datenordner	Back to the data folder
+Neuer Projektordner	New projects folder
+Vorhandene Projekte werden mit verschoben.	Existing projects are moved along.
+Sicherung alle	Backup every
+Sicherungen behalten	Keep backups
+Neue Projekte	New projects
+Kanäle	Channels
+Dieses Projekt	This project
+Projekt-Standard	Project default
+Stereo	Stereo
+Nur links	Left only
+Nur rechts	Right only
+Standard für neue Projekte. „Automatisch“ legt Ton, der nur auf einer Seite aufgenommen wurde, auf beide Ohren. Pro Clip änderbar.	Default for new projects. “Automatic” puts sound that was recorded on one side only on both ears. Can be changed per clip.
+„Automatisch“ legt Ton, der nur links oder rechts aufgenommen wurde, auf beide Ohren	“Automatic” puts sound recorded only on the left or right on both ears
+Cache	Cache
+Belegt	Used
+Cache leeren	Clear cache
+Proxys, Vorschaubilder und Projektbilder. Werden bei Bedarf neu erzeugt.	Proxies, previews and project images. Created again when needed.
+Cache geleert	Cache cleared
+Schnell · 540p	Fast · 540p
+Ausgewogen · 720p	Balanced · 720p
+Hoch · 1080p	High · 1080p
+Proxy konnte nicht erstellt werden	Proxy could not be created
+Verknüpfte Ordner erscheinen in allen Projekten (Medien → Bibliothek, Sticker, Audio → Sounds). Die Dateien bleiben, wo sie sind.	Linked folders appear in every project (Media → Library, Stickers, Audio → Sounds). The files stay where they are.
+Verknüpfung lösen	Unlink
+Ordner verknüpfen …	Link folder …
+Downloads in die Bibliothek übernehmen	Add downloads to the library
+Musik von Epidemic Sound und Videos von Pexels stehen dann auch in anderen Projekten bereit. Freesound-Sounds landen immer in der Bibliothek.	Music from Epidemic Sound and videos from Pexels are then available in other projects too. Freesound sounds always go to the library.
+Dateien zur Bibliothek hinzufügen (auch per Ablegen)	Add files to the library (or drop them here)
+Zur Bibliothek hinzufügen	Add to library
+In allen Projekten unter Medien → Bibliothek	In every project under Media → Library
+Zur Bibliothek hinzugefügt	Added to library
+Datei nicht gefunden	File not found
+Bibliothek ist leer	Library is empty
+Dateien hier ablegen, Rechtsklick auf ein Medium → Zur Bibliothek, oder in den Einstellungen einen Ordner verknüpfen	Drop files here, right-click a media item → Add to library, or link a folder in the settings
+Medien rechts	Media on the right
+Lange Zeitleiste	Long timeline
+Klick spielt ab · Doppelklick, + oder Ziehen fügt ein	Click to play · double-click, + or drag to add
+Exportiere …	Exporting …
+noch ca. {}:{}	about {}:{} left
+Fertig in {} s	Done in {} s
+Untertitel ({})	Captions ({})
+Hinzufügen	Add
+Neuer Untertitel am Playhead	New caption at the playhead
+Noch keine Untertitel	No captions yet
+Erzeugen, SRT importieren oder von Hand hinzufügen	Generate, import an SRT or add by hand
+Ersetzen durch	Replace with
+Alle ersetzen	Replace all
+ersetzt	replaced
+Stil „{}“ auf alle	Style “{}” for all
+Neu aufteilen	Split again
+Zeilen so lang wie in der gewählten Vorlage	Lines as long as in the selected style
+Hinspringen	Jump there
+Mit dem nächsten zusammenführen	Merge with the next one
+Hier liegt schon ein Untertitel	There is already a caption here
+Zu wenig Platz bis zum nächsten Untertitel	Not enough room before the next caption
+Neuer Untertitel	New caption
+Zeilen	lines
+So sieht es aus	This is how it looks
+Klassisch	Classic
+Box	Box
+Kurz & fett	Short & bold
+Wort für Wort	Word by word
+Weich	Soft
+Ganze Sätze, ruhig unten im Bild	Full sentences, calm at the bottom
+Gut lesbar auf hellen Bildern	Easy to read on bright images
+Wenige Wörter, groß in der Mitte – passt ins Hochformat	A few words, big in the middle – fits vertical video
+Jedes Wort einzeln, schnell und auffällig	Every word on its own, fast and eye-catching
+Kurze Zeilen, sanft eingeblendet	Short lines, gently faded in
+Schmale Serifenschrift, elegant	Slim serif font, elegant
+Layout	Layout
+Name des Profils	Profile name
+Dieser Name gehört zu einem mitgelieferten Profil	This name belongs to a built-in profile
+Layout gespeichert	Layout saved
+Profil löschen	Delete profile
+Auf die andere Seite	To the other side
+Nach unten	Down
+Nach oben	Up
+Volle Breite	Full width
+Ränder ziehen zum Ändern der Größe	Drag the edges to resize
+Layout bearbeiten …	Edit layout …
+Bearbeitungsverlauf	Edit history
+Jetzt	Now
+Projektbeginn	Project start
+1 Schritt	1 step
+{} Schritte	{} steps
+Schritt	step
+Schritte	steps
+Bis hier wiederholen	Redo up to here
+Zu diesem Stand zurück	Go back to this state
+Alle Schritte rückgängig	Undo all steps
+Jede Änderung erscheint hier und lässt sich mit einem Klick zurückholen	Every change shows up here and can be brought back with one click
+{} {} Projekte verschoben	{} {} projects moved
+Der neue Ordner darf nicht im alten liegen (oder umgekehrt)	The new folder must not be inside the old one (or the other way round)
+Gaming	Gaming
+Comedy	Comedy
+Reaktionen	Reactions
+Bass-Drop	Bass drop
+Kino-Braam	Cinematic braam
+Rückwärts-Becken	Reverse cymbal
+Bandstopp	Tape stop
+Level Up	Level up
+Sieg-Fanfare	Victory fanfare
+Power-down	Power down
+Treffer	Hit marker
+Countdown	Countdown
+Airhorn	Airhorn
+Ba-dum-tss	Ba-dum-tss
+Boing	Boing
+Plattenkratzer	Record scratch
+Kasse	Cash register
+Kamera	Camera shutter
+Play-Knopf	Play button
+Neu	New
+Einkreisen	Circle it
+Fadenkreuz	Crosshair
+Lebensleiste	Health bar
+Pokal	Trophy
+Controller	Controller
+Flamme	Flame
+Totenkopf	Skull
+Lachen	Laughing
+Schock	Shocked
+Fragezeichen	Question mark
+Ausrufezeichen	Exclamation mark
+Sieg	Victory
+Headshot	Headshot
+Arcade	Arcade
+Thumbnail	Thumbnail
+Episode	Episode
+E-Sport	Esports
+Nice	Nice
+Abo-Hinweis	Subscribe callout
+Quick Actions	Quick Actions
+Player-Zoom {} (Strg+Mausrad, Alt+Umschalt+Z: ganzes Bild)	Player zoom {} (Ctrl+wheel, Alt+Shift+Z: fit)
+Klick spielt ab	Click to play
+Animationen ausschalten	Turn off animations
+Zur Datei	Go to file
+Erneut exportieren	Export again
+Exporte	Exports
+Noch nichts exportiert	Nothing exported yet
+Spur einklappen	Collapse track
+Spur ausklappen	Expand track
+Bewegung zwischen Keyframes	Motion between keyframes
+Abschnitt	Section
+Setze einen zweiten Keyframe an einer anderen Stelle – dann kannst du hier wählen, wie die Bewegung dazwischen abläuft.	Set a second keyframe somewhere else – then you can choose here how the motion in between plays out.
+Sanft	Smooth
+Anfahren	Ease in
+Abbremsen	Ease out
+Schnell	Snappy
+Schwung	Overshoot
+Ausholen	Anticipate
+Halten	Hold
+Gleiches Tempo von Anfang bis Ende	Same speed from start to end
+Langsam anfahren und abbremsen	Start slowly and slow down at the end
+Startet langsam, wird schneller	Starts slowly, gets faster
+Startet schnell, kommt sanft an	Starts fast, arrives gently
+Kurzer, kräftiger Ruck in der Mitte	Short, strong push in the middle
+Schießt etwas übers Ziel und federt zurück	Shoots a little past the target and springs back
+Holt kurz in die Gegenrichtung aus	Briefly swings in the opposite direction first
+Bleibt stehen und springt am nächsten Keyframe	Stays put and jumps at the next keyframe
+Eigene Kurve	Custom curve
+„Halten“ hat keine Kurve. Wähle oben eine andere Form.	“Hold” has no curve. Pick another shape above.
+Griffe ziehen: links der Start, rechts die Ankunft. Über die Linien hinaus = Ausholen bzw. Überschwingen.	Drag the handles: left is the start, right the arrival. Beyond the lines = anticipation or overshoot.
+Systemstandard	System default
+Ausgabegerät	Output device
+Ton beim Ziehen des Playheads	Sound while dragging the playhead
+Hinweiston, wenn ein Export fertig ist	Play a sound when an export is finished
+Automatisch leeren	Clear automatically
+Nie	Never
+Älter als {} Tage	Older than {} days
+Wird beim Programmstart geprüft.	Checked when the app starts.
+Animation (als Blende übernommen)	Animation (imported as a fade)
+Aufräumen	Clean up

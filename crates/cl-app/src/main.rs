@@ -2,8 +2,11 @@
 
 mod app;
 mod assets;
+mod captions;
 mod audio;
 mod chrome;
+mod curves;
+mod exports;
 mod creator;
 mod edit_tools;
 mod epidemic;
@@ -13,6 +16,7 @@ mod home;
 mod import_ui;
 mod inspector;
 mod keymap;
+mod layout;
 mod library;
 mod library_ui;
 mod multi_edit;
@@ -25,6 +29,7 @@ mod presets;
 mod preview;
 mod pro;
 mod project_tools;
+mod props;
 mod proxy;
 mod record;
 mod settings;

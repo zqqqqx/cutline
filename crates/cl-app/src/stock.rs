@@ -250,7 +250,10 @@ impl App {
                     if w == FREESOUND {
                         self.library.invalidate();
                         self.add_file_at(p, self.playhead, None);
-                    } else if let Some(m) = self.import_media(vec![p]).first().copied() {
+                    } else if let Some(m) = self.import_media(vec![p.clone()]).first().copied() {
+                        if self.settings.lib_downloads {
+                            self.library.import(crate::library::Kind::Media, "Pexels", &[p]);
+                        }
                         self.add_media_at(m, self.playhead, None);
                     }
                     self.toast(format!("„{title}“ eingefügt"));
@@ -328,7 +331,7 @@ impl App {
             ui.label(
                 RichText::new(crate::tr("Suchbegriff eingeben und Enter drücken"))
                     .small()
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
             );
         }
         let mut get: Option<Hit> = None;
@@ -359,7 +362,7 @@ impl App {
                                     egui::Label::new(
                                         RichText::new(format!("{} · {}", h.info, h.license))
                                             .size(10.5)
-                                            .color(theme::TEXT_DIM),
+                                            .color(theme::TEXT_DIM()),
                                     )
                                     .truncate(),
                                 );
@@ -415,7 +418,7 @@ impl App {
                     self.set_plugin_enabled(&id, on);
                 }
             }
-            ui.label(RichText::new(crate::tr(about)).small().color(theme::TEXT_DIM));
+            ui.label(RichText::new(crate::tr(about)).small().color(theme::TEXT_DIM()));
             if on {
                 let k = if which == FREESOUND { &mut self.stock.keys.freesound } else { &mut self.stock.keys.pexels };
                 let mut changed = false;

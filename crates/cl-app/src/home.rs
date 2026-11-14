@@ -92,7 +92,7 @@ pub fn reveal(p: &Path) {
 
 /// Freier Name „Projekt N“.
 pub fn next_project_name() -> String {
-    let dir = paths::data_dir().join("Projects");
+    let dir = paths::projects_dir();
     (1..)
         .map(|n| format!("Projekt {n}"))
         .find(|n| !dir.join(format!("{n}.cutline")).exists())
@@ -126,7 +126,7 @@ impl HomeState {
     }
 
     fn scan(&mut self, recent: &[PathBuf]) {
-        let mut paths_: Vec<PathBuf> = std::fs::read_dir(paths::data_dir().join("Projects"))
+        let mut paths_: Vec<PathBuf> = std::fs::read_dir(paths::projects_dir())
             .map(|rd| {
                 rd.flatten()
                     .map(|e| e.path())
@@ -201,9 +201,9 @@ impl App {
             full.max - vec2(4.0, 4.0),
         );
         ui.painter()
-            .rect_filled(side, theme::RADIUS, theme::BG_CARD);
+            .rect_filled(side, theme::RADIUS, theme::BG_CARD());
         ui.painter()
-            .rect_filled(main, theme::RADIUS, theme::BG_CARD);
+            .rect_filled(main, theme::RADIUS, theme::BG_CARD());
 
         // Seitenleiste
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(side.shrink(16.0)), |ui| {
@@ -247,15 +247,15 @@ impl App {
                 let (r, resp) =
                     ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
                 if active {
-                    ui.painter().rect_filled(r, 6.0, theme::BG_RAISED);
+                    ui.painter().rect_filled(r, 6.0, theme::BG_RAISED());
                 } else if resp.hovered() {
                     ui.painter()
-                        .rect_filled(r, 6.0, Color32::from_rgb(0x1E, 0x1E, 0x22));
+                        .rect_filled(r, 6.0, theme::overlay(10));
                 }
                 let col = if active {
-                    theme::ACCENT
+                    theme::ACCENT()
                 } else {
-                    theme::TEXT_DIM
+                    theme::TEXT_DIM()
                 };
                 ui.painter().text(
                     r.left_center() + vec2(10.0, 0.0),
@@ -275,7 +275,7 @@ impl App {
             };
             nav(ui, icon::SQUARES_FOUR, "Projekte", true);
             if nav(ui, icon::FOLDER_SIMPLE, "Projektordner", false) {
-                let d = paths::data_dir().join("Projects");
+                let d = paths::projects_dir();
                 let _ = std::fs::create_dir_all(&d);
                 reveal(&d);
             }
@@ -289,12 +289,7 @@ impl App {
                         env!("CARGO_PKG_VERSION")
                     )))
                     .small()
-                    .color(theme::TEXT_FAINT),
-                );
-                ui.label(
-                    RichText::new(crate::tr("Lokal · ohne Konto · ohne Werbung"))
-                        .small()
-                        .color(theme::TEXT_FAINT),
+                    .color(theme::TEXT_FAINT()),
                 );
             });
         });
@@ -307,7 +302,7 @@ impl App {
                     ui.label(RichText::new(crate::tr("Projekte")).size(18.0).strong());
                     ui.label(
                         RichText::new(crate::tr(format!("{}", self.home.entries.len())))
-                            .color(theme::TEXT_FAINT),
+                            .color(theme::TEXT_FAINT()),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if theme::icon_button(ui, icon::LIST, "Liste", true, self.home.list_view)
@@ -368,7 +363,7 @@ impl App {
                                     Sense::click(),
                                 );
                                 if resp.hovered() {
-                                    ui.painter().rect_filled(r, 6.0, theme::BG_RAISED);
+                                    ui.painter().rect_filled(r, 6.0, theme::BG_RAISED());
                                 }
                                 let tr =
                                     Rect::from_min_size(r.min + vec2(6.0, 6.0), vec2(71.0, 40.0));
@@ -379,7 +374,7 @@ impl App {
                                     egui::Align2::LEFT_CENTER,
                                     crate::tr(&name),
                                     egui::FontId::proportional(12.5),
-                                    theme::TEXT,
+                                    theme::TEXT(),
                                 );
                                 ui.painter().text(
                                     pos2(tr.right() + 12.0, r.center().y + 9.0),
@@ -391,14 +386,14 @@ impl App {
                                         size.1
                                     )),
                                     egui::FontId::proportional(10.5),
-                                    theme::TEXT_FAINT,
+                                    theme::TEXT_FAINT(),
                                 );
                                 ui.painter().text(
                                     r.right_center() - vec2(14.0, 0.0),
                                     egui::Align2::RIGHT_CENTER,
                                     crate::tr(ago(modified)),
                                     egui::FontId::proportional(10.5),
-                                    theme::TEXT_DIM,
+                                    theme::TEXT_DIM(),
                                 );
                                 if resp.clicked() {
                                     open = Some(path.clone());
@@ -438,9 +433,9 @@ impl App {
                                             thumb_r,
                                             8.0,
                                             if hov {
-                                                theme::BG_HOVER
+                                                theme::BG_HOVER()
                                             } else {
-                                                theme::BG_RAISED
+                                                theme::BG_RAISED()
                                             },
                                         );
                                         ui.painter().rect_stroke(
@@ -451,7 +446,7 @@ impl App {
                                                 if hov {
                                                     Color32::from_white_alpha(120)
                                                 } else {
-                                                    theme::BORDER
+                                                    theme::BORDER()
                                                 },
                                             ),
                                             egui::StrokeKind::Inside,
@@ -459,28 +454,28 @@ impl App {
                                         ui.painter().circle_filled(
                                             thumb_r.center() - vec2(0.0, 10.0),
                                             18.0,
-                                            theme::ACCENT,
+                                            theme::ACCENT(),
                                         );
                                         ui.painter().text(
                                             thumb_r.center() - vec2(0.0, 10.0),
                                             egui::Align2::CENTER_CENTER,
                                             icon::PLUS,
                                             egui::FontId::proportional(18.0),
-                                            theme::ACCENT_INK,
+                                            theme::ACCENT_INK(),
                                         );
                                         ui.painter().text(
                                             thumb_r.center() + vec2(0.0, 24.0),
                                             egui::Align2::CENTER_CENTER,
                                             crate::tr("Neues Projekt"),
                                             egui::FontId::proportional(12.0),
-                                            theme::TEXT,
+                                            theme::TEXT(),
                                         );
                                         ui.painter().text(
                                             pos2(r.left() + 2.0, thumb_r.bottom() + 14.0),
                                             egui::Align2::LEFT_CENTER,
                                             crate::tr("Oder Dateien hierher ziehen"),
                                             egui::FontId::proportional(10.5),
-                                            theme::TEXT_FAINT,
+                                            theme::TEXT_FAINT(),
                                         );
                                         if resp.clicked() {
                                             self.new_project();
@@ -503,7 +498,7 @@ impl App {
                                         ui.painter().rect_stroke(
                                             thumb_r,
                                             8.0,
-                                            Stroke::new(1.5_f32, theme::ACCENT),
+                                            Stroke::new(1.5_f32, theme::ACCENT()),
                                             egui::StrokeKind::Inside,
                                         );
                                     }
@@ -535,14 +530,14 @@ impl App {
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(&name),
                                         egui::FontId::proportional(12.5),
-                                        theme::TEXT,
+                                        theme::TEXT(),
                                     );
                                     np.text(
                                         pos2(r.left() + 2.0, thumb_r.bottom() + 31.0),
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(ago(modified)),
                                         egui::FontId::proportional(10.5),
-                                        theme::TEXT_FAINT,
+                                        theme::TEXT_FAINT(),
                                     );
                                     // ⋯-Menü
                                     let mr = Rect::from_center_size(
@@ -560,7 +555,7 @@ impl App {
                                             egui::Align2::CENTER_CENTER,
                                             icon::DOTS_THREE,
                                             egui::FontId::proportional(16.0),
-                                            theme::TEXT,
+                                            theme::TEXT(),
                                         );
                                     }
                                     let pid = ui.make_persistent_id(("pmenu-pop", &path));
@@ -586,7 +581,7 @@ impl App {
                             if idx.is_empty() && !q.is_empty() {
                                 ui.label(
                                     RichText::new(crate::tr("Keine Projekte gefunden"))
-                                        .color(theme::TEXT_DIM),
+                                        .color(theme::TEXT_DIM()),
                                 );
                             }
                         }
@@ -609,6 +604,10 @@ impl App {
                         }
                         "duplicate" => self.duplicate_project(&p),
                         "reveal" => reveal(&p),
+                        "props" => self.props = Some(crate::props::Props::Project(p)),
+                        "exports" => {
+                            self.exports_for = self.home.entries.iter().find(|e| e.path == p).map(|e| e.name.clone());
+                        }
                         "delete" => self.home.confirm_delete = Some(p),
                         _ => {}
                     }
@@ -619,7 +618,7 @@ impl App {
     }
 
     fn paint_thumb(&self, p: &egui::Painter, r: Rect, tex: Option<egui::TextureId>) {
-        p.rect_filled(r, 8.0, Color32::from_rgb(0x1F, 0x1F, 0x24));
+        p.rect_filled(r, 8.0, theme::BG_RAISED());
         match tex {
             Some(t) => {
                 p.add(
@@ -633,7 +632,7 @@ impl App {
                     egui::Align2::CENTER_CENTER,
                     icon::FILM_SLATE,
                     egui::FontId::proportional(r.height() * 0.22),
-                    theme::TEXT_FAINT,
+                    theme::TEXT_FAINT(),
                 );
             }
         }
@@ -647,7 +646,7 @@ impl App {
             return;
         };
         proj.name = format!("{} (Kopie)", proj.name);
-        let dir = paths::data_dir().join("Projects");
+        let dir = paths::projects_dir();
         let mut out = dir.join(format!("{}.cutline", proj.name));
         let mut n = 2;
         while out.exists() {
@@ -709,10 +708,11 @@ impl App {
                     .and_then(|s| Project::from_json(&s).ok())
                 {
                     let mut proj = proj;
+                    crate::exports::rename_project(&proj.name, name.trim());
                     proj.name = name.trim().to_string();
                     let _ = std::fs::write(&path, proj.to_json());
                     // Datei im Projektordner mit umbenennen
-                    if path.starts_with(paths::data_dir().join("Projects")) {
+                    if path.starts_with(paths::projects_dir()) {
                         let clean: String = proj
                             .name
                             .chars()
@@ -744,7 +744,7 @@ impl App {
                 ui.add_space(8.0);
                 let name = self.home.entries.iter().find(|e| e.path == path).map(|e| e.name.clone()).unwrap_or_default();
                 ui.label(crate::tr(format!("„{name}“ wird in den Cutline-Papierkorb verschoben. Deine Medien-Dateien bleiben unverändert.")));
-                ui.label(RichText::new(crate::tr(paths::data_dir().join("Papierkorb").display().to_string())).small().color(theme::TEXT_FAINT));
+                ui.label(RichText::new(crate::tr(paths::data_dir().join("Papierkorb").display().to_string())).small().color(theme::TEXT_FAINT()));
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -783,14 +783,12 @@ fn project_menu(ui: &mut egui::Ui, path: &Path, action: &mut Option<(&'static st
         ("rename", icon::PENCIL_SIMPLE, "Umbenennen"),
         ("duplicate", icon::COPY, "Duplizieren"),
         ("reveal", icon::FOLDER_SIMPLE, "Im Explorer zeigen"),
+        ("exports", icon::EXPORT, "Exporte"),
+        ("props", icon::INFO, "Eigenschaften"),
         ("delete", icon::TRASH, "Löschen"),
     ] {
         if ui
-            .add(
-                egui::Button::new(crate::tr(format!("{g}   {t}")))
-                    .frame(false)
-                    .min_size(vec2(170.0, 22.0)),
-            )
+            .add(theme::menu_row(crate::tr(format!("{g}   {t}"))).min_width(170.0))
             .clicked()
         {
             *action = Some((a, path.to_path_buf()));

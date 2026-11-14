@@ -318,8 +318,16 @@ impl App {
             painter.line_segment([pos2(canvas.left() - 6.0, sy), pos2(canvas.right() + 6.0, sy)], guide);
         }
 
-        // Rahmen + Griffe des ausgewählten Elements
-        if let Some(r) = sel {
+        // Rahmen + Griffe des ausgewählten Elements: nur solange der Zeiger im Player ist
+        // (oder gezogen wird), sonst weich ausblenden – die Auswahl selbst bleibt bestehen
+        let show = ui.ctx().animate_bool_with_time(
+            egui::Id::new("gizmo-visible"),
+            resp.contains_pointer() || self.gizmo.drag.is_some(),
+            theme::anim(0.18),
+        );
+        let mut painter = painter;
+        painter.multiply_opacity(show);
+        if let Some(r) = sel.filter(|_| show > 0.01) {
             let pts = [
                 r.corner(-1.0, -1.0),
                 r.corner(1.0, -1.0),
@@ -412,7 +420,7 @@ mod tests {
 
 // ---------------------------------------------------------------- Player-Zoom
 
-/// Zoomstufen relativ zu „Einpassen“
+/// Zoomstufen relativ zu „Ganzes Bild“
 const ZOOM_MIN: f32 = 0.1;
 const ZOOM_MAX: f32 = 16.0;
 
@@ -487,18 +495,18 @@ impl App {
         self.player_zoom = new;
     }
 
-    /// Chip in der Player-Leiste mit Popover (−, Regler, +, Einpassen, 1:1).
+    /// Chip in der Player-Leiste mit Popover (−, Regler, +, Ganzes Bild, 1:1).
     pub fn player_zoom_chip(&mut self, ui: &mut egui::Ui, compact: bool) {
         let pct = format!("{:.0} %", self.player_zoom * 100.0);
         let label = if compact {
             icon::MAGNIFYING_GLASS.to_string()
         } else if (self.player_zoom - 1.0).abs() < 1e-3 {
-            format!("{} Einpassen", icon::MAGNIFYING_GLASS)
+            format!("{} Ganzes Bild", icon::MAGNIFYING_GLASS)
         } else {
             format!("{} {pct}", icon::MAGNIFYING_GLASS)
         };
         let resp = theme::chip(ui, &label).on_hover_text(format!(
-            "Player-Zoom {pct} (Strg+Mausrad, Alt+Umschalt+Z einpassen)"
+            "Player-Zoom {pct} (Strg+Mausrad, Alt+Umschalt+Z: ganzes Bild)"
         ));
         let id = ui.make_persistent_id("player-zoom");
         if resp.clicked() {
@@ -549,7 +557,7 @@ impl App {
                     }
                 });
                 ui.horizontal(|ui| {
-                    if ui.add(theme::secondary("Einpassen")).clicked() {
+                    if ui.add(theme::secondary("Ganzes Bild")).clicked() {
                         self.player_zoom = 1.0;
                         self.player_pan = egui::Vec2::ZERO;
                     }

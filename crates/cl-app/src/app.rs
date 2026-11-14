@@ -233,10 +233,36 @@ pub struct App {
     /// Abspielen gedrückt, Bild und Ton starten, sobald die Ströme das erste Bild haben
     pub play_warmup: Option<Instant>,
     pub sfx_preview: Option<(String, AudioPlayer)>,
+    /// Länge des gerade vorgehörten Sounds (Ende erkennen, Fortschritt zeigen)
+    pub sfx_preview_len: Time,
+    /// Bibliotheks-Sounds: geprüftes Medium und Wellenform (40 Balken), im Hintergrund geladen
+    pub sound_meta: HashMap<String, (MediaRef, Vec<f32>)>,
+    pub sound_meta_req: HashSet<String>,
+    /// Abspielen, sobald die Daten dieses Sounds da sind
+    pub sound_pending: Option<String>,
     pub thumbs: HashMap<MediaId, egui::TextureHandle>,
     pub waves: HashMap<MediaId, Vec<f32>>,
     pub fx_thumbs: HashMap<String, egui::TextureHandle>,
     pub fx_thumbs_requested: HashSet<String>,
+    /// Rechtsklick → Eigenschaften
+    pub props: Option<crate::props::Props>,
+    /// Fenster „Exporte“ für dieses Projekt (Name)
+    pub exports_for: Option<String>,
+    /// Ton beim Ziehen: (letzte Stelle, Zeitpunkt, laufendes Stück)
+    pub scrub: Option<(Time, Instant, Option<AudioPlayer>)>,
+    /// Pause mit offenen Strömen: (Playhead, Revision) beim Anhalten
+    pub paused: Option<(Time, u64)>,
+    /// Untertitel, dessen Textfeld im nächsten Bild den Fokus bekommt
+    pub caption_focus: Option<ClipId>,
+    /// Eingabefehler im gerade offenen Dialog (wird dort angezeigt, der Dialog bleibt offen)
+    pub dialog_error: Option<String>,
+    /// „Layout bearbeiten“ aktiv; Name für ein neues Profil
+    pub layout_edit: bool,
+    pub layout_name: String,
+    /// Fehlermeldung im Einstellungsfenster (bleibt offen, statt nur eine Meldung unten)
+    pub settings_error: Option<String>,
+    /// Belegter Cache (zuletzt gezählt, Bytes)
+    pub cache_size: Option<(Instant, u64)>,
     pub sticker_tex: HashMap<&'static str, egui::TextureHandle>,
     pub updater: crate::update::Updater,
     pub tasks: crate::tasks::Tasks,
@@ -252,12 +278,15 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, open: Option<PathBuf>) -> Self {
-        theme::apply(&cc.egui_ctx);
         crate::set_dialog_parent(cc);
         let settings = AppSettings::load();
+        let layout_frac = settings.layout.frac;
+        theme::select(&cc.egui_ctx, &settings.theme);
+        theme::apply(&cc.egui_ctx);
         let onboard = (!settings.onboarding_done
             && std::env::var_os("CUTLINE_NO_ONBOARDING").is_none())
         .then(|| crate::onboarding::Onboard::new(&settings.use_cases));
+        paths::install_bundled_fonts();
         let fonts = cl_fonts::FontLibrary::open(paths::font_dir()).unwrap_or_default();
         let plugin_dirs = paths::plugin_dirs();
         let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
@@ -338,7 +367,7 @@ impl App {
             ext_preview: false,
             ext_full: false,
             play_canvas_px: None,
-            layout_frac: (0.27, 0.22, 0.38),
+            layout_frac,
             layout_screen: None,
             onboard,
             tour: None,
@@ -410,10 +439,24 @@ impl App {
             play_clock: None,
             play_warmup: None,
             sfx_preview: None,
+            sfx_preview_len: Time::ZERO,
+            sound_meta: HashMap::new(),
+            sound_meta_req: HashSet::new(),
+            sound_pending: None,
             thumbs: HashMap::new(),
             waves: HashMap::new(),
             fx_thumbs: HashMap::new(),
             fx_thumbs_requested: HashSet::new(),
+            props: None,
+            exports_for: None,
+            scrub: None,
+            paused: None,
+            caption_focus: None,
+            dialog_error: None,
+            layout_edit: false,
+            layout_name: String::new(),
+            settings_error: None,
+            cache_size: None,
             sticker_tex: HashMap::new(),
             updater: Default::default(),
             tasks: Default::default(),
@@ -488,6 +531,40 @@ impl App {
             Err(e) => self.toast_err(e.to_string()),
         }
     }
+    /// Zeitleiste als Bereich oben oder unten; gibt die Höhe zurück
+    fn timeline_area(&mut self, ctx: &egui::Context, id: &'static str, top: bool, sr: egui::Rect, ft: f32) -> f32 {
+        let p = if top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
+        let r = p
+            .resizable(true)
+            .default_height((sr.height() * ft).clamp(150.0, 520.0))
+            .min_height(120.0)
+            .max_height((sr.height() * 0.6).max(140.0))
+            .frame(theme::card(6))
+            .show(ctx, |ui| self.timeline_panel(ui))
+            .response
+            .rect;
+        self.tour_rects.insert("timeline", r);
+        r.height()
+    }
+
+    /// Mehrere Schritte auf einmal (negativ = rückgängig)
+    pub fn history_step(&mut self, steps: isize) {
+        self.commit_live();
+        self.live = None;
+        let n = self.doc.lock().unwrap().step(steps);
+        if n > 0 {
+            let what = if steps < 0 { self.t("undo") } else { self.t("redo") };
+            self.toast(format!("{what}: {n} {}", crate::tr(if n == 1 { "Schritt" } else { "Schritte" })));
+        }
+    }
+
+    /// Verlauf rechts im Inspektor zeigen
+    pub fn show_history(&mut self) {
+        self.select_only(None);
+        self.selected_transition = None;
+        self.inspector_tab = InspectorTab::History;
+    }
+
     pub fn redo(&mut self) {
         self.live = None;
         let r = self.doc.lock().unwrap().redo();
@@ -1068,8 +1145,13 @@ impl App {
         self.insert_clip(clip, track)
     }
 
+    /// Datei eines eingebauten Sounds; der Name enthält einen Fingerabdruck der Quelle, damit
+    /// verbesserte Sounds neu erzeugt werden
     pub fn sfx_path(id: &str) -> PathBuf {
-        paths::data_dir().join("Sfx").join(format!("{id}.wav"))
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        cl_fx::sfx::sfx(id).map(|s| s.source).hash(&mut h);
+        paths::data_dir().join("Sfx").join(format!("{id}-{:08x}.wav", h.finish() as u32))
     }
 
     pub fn add_sfx_at(&mut self, id: &str, at: Time, track: Option<TrackId>) -> Option<ClipId> {
@@ -1718,7 +1800,7 @@ impl App {
                 }
             })
             .collect();
-        let dir = paths::data_dir().join("Projects");
+        let dir = paths::projects_dir();
         let mut p = dir.join(format!("{}.cutline", name.trim()));
         let mut n = 2;
         while p.exists() && Some(&p) != self.project_path.as_ref() {
@@ -1842,12 +1924,57 @@ impl App {
         self.flush_before_leaving();
         self.reset_editor();
         let n = crate::home::next_project_name();
-        *self.doc.lock().unwrap() = Document::new(Project::new(n));
+        let mut p = Project::new(n);
+        p.settings.fps = Rational::new(self.settings.new_fps.clamp(1, 240), 1);
+        p.settings.channels = self.settings.new_channels;
+        *self.doc.lock().unwrap() = Document::new(p);
         self.revision = u64::MAX;
         self.sync_project();
         self.saved_revision = self.revision;
         self.project_path = None;
         self.screen = Screen::Editor;
+    }
+
+    /// Projektordner ändern und vorhandene Projekte mitnehmen. Fehler bleiben im
+    /// Einstellungsfenster stehen.
+    pub fn change_projects_dir(&mut self, new: PathBuf) {
+        let old = paths::projects_dir();
+        if new == old {
+            return;
+        }
+        // offenes Projekt erst sichern und Dateien freigeben (laufende Wiedergabe hält sie offen)
+        self.stop_playback();
+        self.flush_before_leaving();
+        let mut reopen = None;
+        let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
+        match paths::move_projects(&old, &new, |a, b| moved.push((a.to_path_buf(), b.to_path_buf()))) {
+            Ok(n) => {
+                crate::exports::move_dir(&old, &new);
+                for (a, b) in &moved {
+                    let _ = std::fs::rename(crate::home::thumb_path(a), crate::home::thumb_path(b));
+                    for r in &mut self.settings.recent {
+                        if r == a {
+                            *r = b.clone();
+                        }
+                    }
+                    if self.project_path.as_ref() == Some(a) {
+                        reopen = Some(b.clone());
+                    }
+                }
+                let default = paths::data_dir().join("Projects");
+                self.settings.projects_dir = (new != default).then_some(new.clone());
+                paths::set_projects_dir(self.settings.projects_dir.clone());
+                self.settings.save();
+                self.settings_error = None;
+                self.home.refresh();
+                // das offene Projekt vom neuen Ort laden (seine Medienpfade wurden umgeschrieben)
+                if let Some(p) = reopen {
+                    self.open_project(&p);
+                }
+                self.toast(crate::tr(format!("{} {n} Projekte verschoben", icon::CHECK)));
+            }
+            Err(e) => self.settings_error = Some(e),
+        }
     }
 
     pub fn open_project(&mut self, p: &Path) {
@@ -1935,7 +2062,8 @@ impl App {
 
     pub fn toggle_play(&mut self) {
         if self.playing {
-            self.stop_playback();
+            self.pause_playback();
+        } else if self.try_resume() {
         } else {
             self.play_rate = 1.0;
             self.commit_live();
@@ -1958,7 +2086,47 @@ impl App {
         }
     }
 
+    /// Pause: Bild- und Tonströme bleiben offen, damit es an derselben Stelle ohne neues
+    /// Puffern weitergeht (sonst hängt das Bild beim Fortsetzen bis zu einer Sekunde).
+    fn pause_playback(&mut self) {
+        let simple = (self.play_rate - 1.0).abs() < 1e-6
+            && self.play_warmup.is_none()
+            && !self.multicam.as_ref().is_some_and(|m| !m.1.is_empty())
+            && self.audio.as_ref().is_some_and(|a| a.started() && a.pause());
+        if !simple {
+            self.stop_playback();
+            return;
+        }
+        self.playing = false;
+        self.playbacks_next.clear();
+        self.play_clock = None;
+        self.paused = Some((self.playhead, self.revision));
+        self.perf_last_frame = None;
+    }
+
+    /// Nach einer Pause an derselben Stelle und ohne Änderung direkt weiterlaufen.
+    fn try_resume(&mut self) -> bool {
+        let Some((at, rev)) = self.paused.take() else { return false };
+        if at != self.playhead || rev != self.revision || self.audio.is_none() {
+            self.stop_playback();
+            return false;
+        }
+        for pb in self.playbacks.values_mut() {
+            // nächstes Bild des Stroms = jetzige Position
+            let fps = pb.stream.fps.as_f64().max(1.0);
+            pb.t0 = self.playhead - Time::from_secs_f64(pb.taken as f64 / fps);
+            pb.waiting_since = None;
+        }
+        if !self.audio.as_ref().is_some_and(|a| a.resume()) {
+            self.stop_playback();
+            return false;
+        }
+        self.playing = true;
+        true
+    }
+
     pub fn stop_playback(&mut self) {
+        self.paused = None;
         if self.playing && self.multicam.as_ref().is_some_and(|m| !m.1.is_empty()) {
             self.playing = false;
             self.multicam_finish();
@@ -1993,6 +2161,35 @@ impl App {
             match AudioPlayer::start(&proj, self.playhead) {
                 Ok(a) => self.audio = Some(a),
                 Err(e) => eprintln!("Ton: {e}"),
+            }
+        }
+    }
+
+    /// Ton beim Ziehen des Playheads: alle 250 ms ein kurzes Stück ab der aktuellen Stelle.
+    fn scrub_audio(&mut self, ctx: &egui::Context) {
+        let moved = self.scrub.as_ref().is_none_or(|(t, _, _)| *t != self.playhead);
+        let dragging = ctx.input(|i| i.pointer.primary_down());
+        if self.settings.scrub_audio && !self.playing && dragging && moved {
+            let due = self.scrub.as_ref().is_none_or(|(_, at, _)| at.elapsed() > Duration::from_millis(250));
+            // erster Aufruf nach dem Start merkt sich nur die Stelle
+            if due && self.scrub.is_some() {
+                let a = AudioPlayer::start(&self.project, self.playhead).ok();
+                if std::env::var_os("CUTLINE_PERF").is_some() {
+                    eprintln!("scrub: Ton ab {:.2} s, ok={}", self.playhead.as_secs_f64(), a.is_some());
+                }
+                self.scrub = Some((self.playhead, Instant::now(), a));
+            } else if self.scrub.is_none() {
+                self.scrub = Some((self.playhead, Instant::now(), None));
+            }
+        }
+        // Stück nach 350 ms beenden
+        if let Some((_, at, a)) = &mut self.scrub {
+            if a.is_some() {
+                if at.elapsed() > Duration::from_millis(350) {
+                    *a = None;
+                } else {
+                    ctx.request_repaint_after(Duration::from_millis(60));
+                }
             }
         }
     }
@@ -2057,14 +2254,38 @@ impl App {
         }
     }
 
-    /// Vorhören eines Soundeffekts bzw. einer Audiodatei in der Liste.
-    pub fn preview_sound(&mut self, key: String, path: &Path) {
-        if self.sfx_preview.as_ref().is_some_and(|(k, _)| *k == key) {
+    /// Daten eines Bibliotheks-Sounds anfordern (einmal je Schlüssel, im Hintergrund).
+    pub fn request_sound_meta(&mut self, key: &str, path: &Path, sfx: Option<&'static str>) {
+        if self.sound_meta_req.insert(key.to_string()) {
+            self.decoder.send(crate::preview::Job::SoundMeta {
+                key: key.to_string(),
+                path: path.to_path_buf(),
+                sfx,
+            });
+        }
+    }
+
+    /// Vorhören umschalten. Ohne fertige Daten wird angefordert und danach gestartet –
+    /// die Oberfläche wartet nicht auf FFmpeg.
+    pub fn preview_sound(&mut self, key: String, path: &Path, sfx: Option<&'static str>) {
+        if self.sfx_preview.as_ref().is_some_and(|(k, _)| *k == key)
+            || self.sound_pending.as_deref() == Some(key.as_str())
+        {
             self.sfx_preview = None;
+            self.sound_pending = None;
             return;
         }
-        let Ok(m) = cl_media::probe(path) else { return };
-        self.preview_media(key, m);
+        self.sfx_preview = None;
+        match self.sound_meta.get(&key) {
+            Some((m, _)) => {
+                let m = m.clone();
+                self.preview_media(key, m);
+            }
+            None => {
+                self.request_sound_meta(&key, path, sfx);
+                self.sound_pending = Some(key);
+            }
+        }
     }
 
     /// Vorhören eines bereits geprüften Mediums (auch Netz-Adressen, z. B. HLS).
@@ -2084,7 +2305,10 @@ impl App {
         ));
         p.timeline.tracks.push(t);
         match AudioPlayer::start(&p, Time::ZERO) {
-            Ok(a) => self.sfx_preview = Some((key, a)),
+            Ok(a) => {
+                self.sfx_preview = Some((key, a));
+                self.sfx_preview_len = dur;
+            }
             Err(e) => self.toast_err(e),
         }
     }
@@ -2240,7 +2464,7 @@ impl App {
                 "export" => {
                     self.commit_live();
                     self.export
-                        .open_for(&self.project, self.project_path.as_deref());
+                        .open_for(&self.project, self.project_path.as_deref(), self.revision);
                     self.export.set_range(self.range_in.zip(self.range_out));
                 }
                 "select_all" => self.select_all(),
@@ -2255,8 +2479,12 @@ impl App {
                 "del_left" => self.delete_side(true),
                 "del_right" => self.delete_side(false),
                 "disable" => self.toggle_disabled(),
+                "tool_select" => self.timeline.tool = crate::timeline::Tool::Select,
+                "tool_blade" => self.timeline.tool = crate::timeline::Tool::Blade,
                 "escape" => {
-                    if self.pick.is_some() {
+                    if self.timeline.tool != crate::timeline::Tool::Select {
+                        self.timeline.tool = crate::timeline::Tool::Select
+                    } else if self.pick.is_some() {
                         self.pick = None
                     } else if self.player_max {
                         self.player_max = false
@@ -2328,16 +2556,20 @@ impl App {
             .show(ctx, |ui| {
                 // Meldungen nicht Wort für Wort umbrechen (die Fläche hat keine feste Breite)
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                for (msg, _, err) in self.toasts.iter().rev().take(3) {
+                for (msg, at, err) in self.toasts.iter().rev().take(3) {
+                    // weich ein- (0,15 s) und ausblenden (letzte 0,4 s)
+                    let age = at.elapsed().as_secs_f32();
+                    let a = (age / 0.15).min(1.0).min((4.0 - age) / 0.4).clamp(0.0, 1.0);
+                    ui.set_opacity(a);
                     egui::Frame::default()
                         .fill(if *err {
                             Color32::from_rgb(0x3A, 0x1A, 0x1C)
                         } else {
-                            theme::BG_RAISED
+                            theme::BG_RAISED()
                         })
                         .stroke(egui::Stroke::new(
                             1.0_f32,
-                            if *err { theme::DANGER } else { theme::BORDER },
+                            if *err { theme::DANGER } else { theme::BORDER() },
                         ))
                         .corner_radius(8)
                         .inner_margin(egui::Margin::symmetric(14, 8))
@@ -2357,14 +2589,18 @@ impl App {
                                 if *err {
                                     Color32::from_rgb(0xFF, 0xB4, 0xB4)
                                 } else {
-                                    theme::TEXT
+                                    theme::TEXT()
                                 },
                             ));
                         });
                     ui.add_space(4.0);
                 }
             });
-        ctx.request_repaint_after(Duration::from_millis(250));
+        let fading = self.toasts.iter().any(|(_, t, _)| {
+            let a = t.elapsed().as_secs_f32();
+            !(0.15..=3.6).contains(&a)
+        });
+        ctx.request_repaint_after(Duration::from_millis(if fading { 16 } else { 250 }));
     }
 
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
@@ -2426,6 +2662,11 @@ impl App {
 }
 
 impl eframe::App for App {
+    /// Fenstergrund in der Farbe des Themes (sichtbar in den Lücken zwischen den Karten)
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.panel_fill.to_normalized_gamma_f32()
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
         if std::env::var_os("CUTLINE_PERF").is_some() {
@@ -2458,6 +2699,19 @@ impl eframe::App for App {
                 .filter(|n| known.contains(&egui::FontFamily::Name(n.clone().into())))
                 .collect();
         }
+        // „System“ folgt einem Wechsel des Betriebssystems sofort
+        theme::select(ctx, &self.settings.theme);
+        // Vorhören zu Ende → Knopf zurück auf „Abspielen“
+        if let Some((_, a)) = &self.sfx_preview {
+            if a.started() && a.position() + Time::from_millis(40) >= self.sfx_preview_len {
+                self.sfx_preview = None;
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(33));
+            }
+        }
+        if self.fx_thumbs_requested.is_empty() {
+            self.preload_fx_thumbs();
+        }
         self.sync_project();
         self.handle_dropped_files(ctx);
         self.receive_decoded(ctx);
@@ -2473,7 +2727,7 @@ impl eframe::App for App {
             .exact_height(theme::TITLE_H)
             .frame(
                 egui::Frame::default()
-                    .fill(theme::BG_APP)
+                    .fill(theme::BG_APP())
                     .inner_margin(egui::Margin {
                         left: 10,
                         right: 0,
@@ -2485,12 +2739,14 @@ impl eframe::App for App {
 
         if self.screen == Screen::Home {
             egui::CentralPanel::default()
-                .frame(egui::Frame::default().fill(theme::BG_APP))
+                .frame(egui::Frame::default().fill(theme::BG_APP()))
                 .show(ctx, |ui| self.home_page(ui));
             self.settings_window(ctx);
             self.import_dialogs(ctx);
             self.template_dialog(ctx);
             self.external_preview(ctx);
+            self.props_window(ctx);
+            self.exports_window(ctx);
             self.onboarding(ctx);
             self.draw_toasts(ctx);
             return;
@@ -2510,6 +2766,7 @@ impl eframe::App for App {
         if self.playing {
             ctx.request_repaint_after(self.play_repaint_delay());
         }
+        self.scrub_audio(ctx);
 
         if !self.player_max {
             // Aufteilung relativ zur Fenstergröße: der Player behält immer genug Platz
@@ -2520,6 +2777,13 @@ impl eframe::App for App {
                 .layout_screen
                 .is_some_and(|s| (s.width() - sr.width()).abs() > 1.0 || (s.height() - sr.height()).abs() > 1.0);
             let (fa, fi, ft) = self.layout_frac;
+            let lay = self.settings.layout.clone();
+            // eigene Kennungen je Seite, damit gemerkte Größen nicht zwischen den Seiten springen
+            let (id_a, id_i, id_t) = (
+                if lay.assets_right { "assets-r" } else { "assets" },
+                if lay.assets_right { "inspector-l" } else { "inspector" },
+                if lay.timeline_top { "timeline-top" } else { "timeline" },
+            );
             if resized {
                 let set = |id: &str, w: Option<f32>, h: Option<f32>| {
                     let id = egui::Id::new(id);
@@ -2529,24 +2793,18 @@ impl eframe::App for App {
                         ctx.data_mut(|d| d.insert_persisted(id, st));
                     }
                 };
-                set("assets", Some(sr.width() * fa), None);
-                set("inspector", Some(sr.width() * fi), None);
-                set("timeline", None, Some(sr.height() * ft));
+                set(id_a, Some(sr.width() * fa), None);
+                set(id_i, Some(sr.width() * fi), None);
+                set(id_t, None, Some(sr.height() * ft));
             }
             let small = sr.width() < 1200.0;
-            let r = egui::TopBottomPanel::bottom("timeline")
-                .resizable(true)
-                .default_height((sr.height() * ft).clamp(150.0, 520.0))
-                .min_height(120.0)
-                .max_height((sr.height() * 0.6).max(140.0))
-                .frame(theme::card(6))
-                .show(ctx, |ui| self.timeline_panel(ui))
-                .response
-                .rect;
-            self.tour_rects.insert("timeline", r);
-            let th = r.height();
-
-            let r = egui::SidePanel::left("assets")
+            let mut th = 0.0;
+            // Zeitleiste über die volle Breite: vor den Seitenbereichen anlegen
+            if lay.timeline_full {
+                th = self.timeline_area(ctx, id_t, lay.timeline_top, sr, ft);
+            }
+            let assets = if lay.assets_right { egui::SidePanel::right(id_a) } else { egui::SidePanel::left(id_a) };
+            let r = assets
                 .resizable(true)
                 .default_width((sr.width() * fa).clamp(200.0, 560.0))
                 .min_width(if small { 180.0 } else { 240.0 })
@@ -2558,7 +2816,8 @@ impl eframe::App for App {
             self.tour_rects.insert("assets", r);
             let aw = r.width();
 
-            let r = egui::SidePanel::right("inspector")
+            let insp = if lay.assets_right { egui::SidePanel::left(id_i) } else { egui::SidePanel::right(id_i) };
+            let r = insp
                 .resizable(true)
                 .default_width((sr.width() * fi).clamp(200.0, 420.0))
                 .min_width(if small { 180.0 } else { 220.0 })
@@ -2568,6 +2827,9 @@ impl eframe::App for App {
                 .response
                 .rect;
             self.tour_rects.insert("inspector", r);
+            if !lay.timeline_full {
+                th = self.timeline_area(ctx, id_t, lay.timeline_top, sr, ft);
+            }
             // Vom Nutzer gezogene Breiten als Anteil merken (nur wenn das Fenster gleich blieb)
             if !resized && sr.width() > 0.0 && sr.height() > 0.0 {
                 self.layout_frac = (aw / sr.width(), r.width() / sr.width(), th / sr.height());
@@ -2582,6 +2844,7 @@ impl eframe::App for App {
             .rect;
         self.tour_rects.insert("player", r);
 
+        self.layout_editor(ctx);
         self.voiceover_window(ctx);
         self.settings_window(ctx);
         let fonts_owned = self.font_files();
@@ -2597,10 +2860,13 @@ impl eframe::App for App {
         let tex = main
             .or_else(|| self.frames.values().next())
             .map(|(_, t)| (t.id(), t.size_vec2()));
-        if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex) {
+        if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex, self.revision) {
             // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen)
             if msg.contains("Export fertig") {
                 self.report_epidemic_export(ctx);
+                if self.settings.export_sound && !self.playing {
+                    self.preview_sound("builtin:sfx:notify".into(), &Self::sfx_path("notify"), Some("notify"));
+                }
             }
             self.toast(msg);
         }
@@ -2731,8 +2997,8 @@ impl App {
             .interactable(false)
             .show(ctx, |ui| {
                 egui::Frame::default()
-                    .fill(theme::BG_RAISED)
-                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
+                    .fill(theme::BG_RAISED())
+                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER()))
                     .corner_radius(8)
                     .inner_margin(egui::Margin::symmetric(8, 5))
                     .shadow(egui::Shadow {
@@ -2743,13 +3009,13 @@ impl App {
                     })
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(glyph).size(16.0).color(theme::ACCENT));
+                            ui.label(egui::RichText::new(glyph).size(16.0).color(theme::ACCENT()));
                             let mut l = label;
                             if l.chars().count() > 28 {
                                 l = format!("{}…", l.chars().take(27).collect::<String>());
                             }
                             if !l.is_empty() {
-                                ui.label(egui::RichText::new(l).size(11.5).color(theme::TEXT));
+                                ui.label(egui::RichText::new(l).size(11.5).color(theme::TEXT()));
                             }
                         });
                     });

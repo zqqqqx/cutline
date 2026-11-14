@@ -419,7 +419,13 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
     let window = format!("trim=start={}:end={},setpts=PTS-STARTPTS", f(s0), f(s1));
     let (a, b, bw, fo) = (ctx.label("ea"), ctx.label("eb"), ctx.label("ew"), ctx.label("ef"));
     let o = ctx.label("eo");
-    ctx.graph.push(format!("[{cur}]split=3[{a}][{b}][{o}]"));
+    // Ohne Stärke-Keyframes nur zwei Abzweige: ein dritter mit nullsink lässt ffmpeg das
+    // ganze Video vorab durchrechnen (lange Startpause ohne Fortschritt)
+    if kfs.is_empty() {
+        ctx.graph.push(format!("[{cur}]split=2[{a}][{b}]"));
+    } else {
+        ctx.graph.push(format!("[{cur}]split=3[{a}][{b}][{o}]"));
+    }
     ctx.graph.push(format!("[{b}]{window}[{bw}]"));
     let uniq = ctx.label("e");
     let opts = ChainOpts {
@@ -435,11 +441,9 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
     };
     ctx.graph.extend(fx_graph(&fx, src, &opts, &bw, &fo, &uniq));
     let fmt = if ctx.alpha { ":format=auto" } else { "" };
-    let shift = format!("setpts=PTS+{}/TB", f(s0));
-    let (top, out) = (ctx.label("et"), ctx.label("base"));
+    let (pre, top, out) = (ctx.label("ep"), ctx.label("et"), ctx.label("base"));
     if kfs.is_empty() {
-        ctx.graph.push(format!("[{o}]nullsink"));
-        ctx.graph.push(format!("[{fo}]{shift}[{top}]"));
+        ctx.graph.push(format!("[{fo}]format=rgba,setsar=1[{pre}]"));
     } else {
         // Maske einbacken (Effekt über Original), dann die Deckkraft je Bild per sendcmd
         // setzen (schnell, statt einer Formel je Pixel)
@@ -465,9 +469,24 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
         let file = format!("{mix}.cmd");
         std::fs::write(ctx.workdir.join(&file), cmds)?;
         ctx.graph.push(format!(
-            "[{fm}]format=rgba,sendcmd=f={file},colorchannelmixer@{mix}=aa={:.4},{shift}[{top}]",
+            "[{fm}]format=rgba,sendcmd=f={file},colorchannelmixer@{mix}=aa={:.4},setsar=1[{pre}]",
             k(0.0)
         ));
+    }
+    // Leerbilder aus eigener Quelle davor (statt PTS-Versatz): sonst wartet overlay auf das
+    // erste Effektbild und puffert das ganze Video bis s0 (lange Startpause, viel RAM)
+    if s0 > 0.0 {
+        let pad = ctx.label("epad");
+        ctx.graph.push(format!(
+            "color=c=black@0.0:s={}x{}:r={}:d={},format=rgba,setsar=1[{pad}]",
+            ctx.w,
+            ctx.h,
+            ctx.fps,
+            f(s0)
+        ));
+        ctx.graph.push(format!("[{pad}][{pre}]concat=n=2:v=1:a=0[{top}]"));
+    } else {
+        ctx.graph.push(format!("[{pre}]null[{top}]"));
     }
     ctx.graph.push(format!(
         "[{a}][{top}]overlay=eof_action=pass{fmt}:enable='between(t,{},{})'[{out}]",
@@ -670,6 +689,8 @@ pub(crate) fn audio_part(
     inputs: &mut Vec<String>,
     next_input: &mut usize,
     graph: &mut Vec<String>,
+    // Export wartet auf die Kanalprüfung, die Wiedergabe nicht (sonst friert die Oberfläche ein)
+    wait_probe: bool,
 ) -> String {
     let mut labels = Vec::new();
     for tr in &p.timeline.tracks {
@@ -707,6 +728,14 @@ pub(crate) fn audio_part(
                 "aformat=sample_fmts=fltp:channel_layouts=stereo".into(),
                 "asetpts=PTS-STARTPTS".into(),
             ];
+            // Kanäle: z. B. Mikrofon nur links → auf beide Ohren
+            let mode = c.audio.channels.unwrap_or(p.settings.channels);
+            let silent = (mode == Channels::Auto)
+                .then(|| cl_media::silent_channel_opt(&m.path, wait_probe))
+                .flatten();
+            if let Some(pan) = mode.filter(silent) {
+                chain.push(pan.into());
+            }
             if c.fx.reverse {
                 chain.push("areverse".into());
             }
@@ -745,15 +774,21 @@ pub(crate) fn audio_part(
                 ));
             }
             let t0 = (c.start - start).as_secs_f64();
-            if t0 >= 0.0 {
-                let ms = (t0 * 1000.0).round() as i64;
-                chain.push(format!("adelay={ms}|{ms}"));
-            } else {
+            if t0 < 0.0 {
                 chain.push(format!("atrim=start={}", f(-t0)));
                 chain.push("asetpts=PTS-STARTPTS".into());
             }
             let label = format!("a{i}");
-            graph.push(format!("[{i}:a]{}[{label}]", chain.join(",")));
+            if t0 > 0.0 {
+                // Stille aus eigener Quelle davor statt adelay: bei langem Versatz liefert
+                // adelay lange nichts, der Muxer hält dann das Video zurück (kein Fortschritt)
+                let fmt = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
+                graph.push(format!("[{i}:a]{},{fmt}[{label}x]", chain.join(",")));
+                graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{},{fmt}[{label}s]", f(t0)));
+                graph.push(format!("[{label}s][{label}x]concat=n=2:v=0:a=1[{label}]"));
+            } else {
+                graph.push(format!("[{i}:a]{}[{label}]", chain.join(",")));
+            }
             labels.push(label);
         }
     }

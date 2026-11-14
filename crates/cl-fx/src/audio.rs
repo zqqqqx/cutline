@@ -179,6 +179,7 @@ mod tests {
             declick: true,
             compress: 0.6,
             filter: Some("podcast".into()),
+            channels: None,
         };
         let peak = run(&audio_chain(&all).join(",")).unwrap();
         assert!(peak > 0.05, "{peak}");

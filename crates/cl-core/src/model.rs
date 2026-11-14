@@ -160,6 +160,9 @@ pub struct ProjectSettings {
     /// Gewählte Zielplattform (Format und Export-Vorlage), z. B. "shorts"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
+    /// Standard für die Tonkanäle aller Clips (einzeln überschreibbar)
+    #[serde(default)]
+    pub channels: crate::fx::Channels,
 }
 
 impl Default for ProjectSettings {
@@ -174,6 +177,7 @@ impl Default for ProjectSettings {
             main_track_magnet: true,
             snapping: true,
             platform: None,
+            channels: Default::default(),
         }
     }
 }

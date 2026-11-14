@@ -43,6 +43,13 @@ impl App {
                 Done::Wave { media, peaks } => {
                     self.waves.insert(media, peaks);
                 }
+                Done::SoundMeta { key, media, bars } => {
+                    if self.sound_pending.as_deref() == Some(key.as_str()) {
+                        self.sound_pending = None;
+                        self.preview_media(key.clone(), media.clone());
+                    }
+                    self.sound_meta.insert(key, (media, bars));
+                }
                 Done::FxThumb { key, frame } => {
                     let tex = ctx.load_texture(
                         format!("fx-{key}"),
@@ -470,7 +477,7 @@ impl App {
             painter.rect_stroke(
                 canvas,
                 0.0,
-                egui::Stroke::new(2.0_f32, theme::ACCENT),
+                egui::Stroke::new(2.0_f32, theme::ACCENT()),
                 egui::StrokeKind::Inside,
             );
         }
@@ -496,14 +503,14 @@ impl App {
                 egui::Align2::CENTER_CENTER,
                 icon::FILM_SLATE,
                 egui::FontId::proportional(28.0),
-                theme::TEXT_FAINT,
+                theme::TEXT_FAINT(),
             );
             painter.text(
                 canvas.center() + vec2(0.0, 18.0),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(self.t("drop-hint")),
                 egui::FontId::proportional(12.0),
-                theme::TEXT_DIM,
+                theme::TEXT_DIM(),
             );
         }
         self.player_controls(ui, controls_h);
@@ -636,7 +643,7 @@ impl App {
                             for poly in polys {
                                 content.add(egui::Shape::closed_line(
                                     poly,
-                                    egui::Stroke::new(1.5_f32, theme::ACCENT),
+                                    egui::Stroke::new(1.5_f32, theme::ACCENT()),
                                 ));
                             }
                         }
@@ -667,16 +674,31 @@ impl App {
 
     /// Vorschau in eigenem Fenster (z. B. auf dem zweiten Bildschirm, F11 = Vollbild).
     pub fn external_preview(&mut self, ctx: &egui::Context) {
+        let init = egui::Id::new("ext-preview-init");
         if !self.ext_preview {
+            ctx.data_mut(|d| d.remove::<u8>(init));
             return;
         }
         let vid = egui::ViewportId::from_hash_of("cutline-preview");
+        // In den ersten Bildern nach dem Öffnen ausdrücklich nach vorn holen: die Angabe im
+        // Builder allein wirkt unter Windows nicht, das Fenster läge hinter dem Hauptfenster
+        let n = ctx.data(|d| d.get_temp::<u8>(init)).unwrap_or(0);
+        if n < 4 {
+            ctx.data_mut(|d| d.insert_temp(init, n + 1));
+            ctx.send_viewport_cmd_to(vid, egui::ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
+            ctx.send_viewport_cmd_to(vid, egui::ViewportCommand::Focus);
+            ctx.request_repaint();
+        }
         let mut builder = egui::ViewportBuilder::default()
             .with_title("Cutline – Vorschau")
             .with_inner_size([960.0, 540.0])
-            .with_min_inner_size([320.0, 180.0]);
+            .with_min_inner_size([320.0, 180.0])
+            // immer vor dem Hauptfenster: sonst rutscht die Vorschau beim Öffnen dahinter
+            // und lässt sich nicht mehr greifen
+            .with_always_on_top();
         // Erst auf dem Bildschirm des Hauptfensters öffnen; von dort auf den zweiten ziehen
-        if let Some(r) = ctx.input(|i| i.viewport().outer_rect) {
+        // nur beim Öffnen: eine dauerhaft gesetzte Position hält das Fenster fest
+        if let Some(r) = ctx.input(|i| i.viewport().outer_rect).filter(|_| n < 4) {
             builder = builder.with_position(r.min + vec2(80.0, 80.0));
         }
         let mut ext_full = self.ext_full;
@@ -862,7 +884,7 @@ impl App {
         for i in 0..2 {
             let x0 = rect.left() + i as f32 * 7.0;
             let bar = Rect::from_min_max(pos2(x0, rect.top()), pos2(x0 + 5.0, rect.bottom()));
-            p.rect_filled(bar, 1.0, Color32::from_rgb(0x26, 0x26, 0x2B));
+            p.rect_filled(bar, 1.0, theme::BG_HOVER());
             let (v, hold, _) = self.meter[i];
             let col = if db(v) > -1.0 {
                 theme::DANGER
@@ -885,7 +907,7 @@ impl App {
                         if db(hold) > -1.0 {
                             theme::DANGER
                         } else {
-                            theme::TEXT_DIM
+                            theme::TEXT_DIM()
                         },
                     ),
                 );
@@ -915,7 +937,7 @@ impl App {
                 self.level_meter(ui);
                 ui.label(
                     RichText::new(crate::tr(self.playhead.timecode(fps)))
-                        .color(theme::ACCENT)
+                        .color(theme::ACCENT())
                         .monospace(),
                 );
                 let total = format!("/ {}", self.project.duration().timecode(fps));
@@ -924,7 +946,7 @@ impl App {
                     .layout_no_wrap(
                         total.clone(),
                         egui::TextStyle::Monospace.resolve(ui.style()),
-                        theme::TEXT_DIM,
+                        theme::TEXT_DIM(),
                     )
                     .size()
                     .x
@@ -932,7 +954,7 @@ impl App {
                 if ui.available_width() > need {
                     ui.label(
                         RichText::new(crate::tr(total))
-                            .color(theme::TEXT_DIM)
+                            .color(theme::TEXT_DIM())
                             .monospace(),
                     );
                 }

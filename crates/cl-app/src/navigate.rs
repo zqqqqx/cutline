@@ -124,6 +124,9 @@ impl App {
             color: 0,
         });
         self.apply(EditOp::SetMarkers { markers: ms });
+        // gleich benennen; bleibt der Name leer, steht „Unbenannt“ in der Liste
+        self.marker_draft = None;
+        self.marker_edit = Some(id);
     }
 
     pub fn jump_marker(&mut self, forward: bool) {
@@ -250,6 +253,7 @@ impl App {
             .unwrap_or_else(|| orig.clone());
         let mut close = false;
         let mut delete = false;
+        let first = self.marker_draft.as_ref().is_none_or(|d| d.id != id);
         egui::Window::new(crate::tr("Marker"))
             .id(egui::Id::new("marker-edit"))
             .collapsible(false)
@@ -258,11 +262,18 @@ impl App {
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -80.0))
             .show(ctx, |ui| {
                 theme::row(ui, "Name", |ui| {
-                    ui.add(
+                    let r = ui.add(
                         egui::TextEdit::singleline(&mut m.name)
                             .hint_text(crate::tr("z. B. Intro, Szene 2"))
                             .desired_width(ui.available_width() - 12.0),
-                    )
+                    );
+                    if first {
+                        r.request_focus();
+                    }
+                    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        close = true;
+                    }
+                    r
                 });
                 theme::row(ui, "Farbe", |ui| {
                     for (i, _) in MARKER_COLORS.iter().enumerate() {
@@ -274,7 +285,7 @@ impl App {
                             ui.painter().circle_stroke(
                                 r.center(),
                                 8.5,
-                                egui::Stroke::new(1.5_f32, theme::ACCENT),
+                                egui::Stroke::new(1.5_f32, theme::ACCENT()),
                             );
                         }
                         if resp.on_hover_text(crate::tr(MARKER_COLORS[i].0)).clicked() {
@@ -295,7 +306,7 @@ impl App {
                 ui.label(
                     RichText::new(crate::tr("Notiz"))
                         .small()
-                        .color(theme::TEXT_DIM),
+                        .color(theme::TEXT_DIM()),
                 );
                 ui.add(
                     egui::TextEdit::multiline(&mut m.note)
@@ -395,7 +406,7 @@ impl App {
             ui.label(
                 RichText::new(crate::tr("Setze Marker mit M (am Playhead)"))
                     .small()
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
             );
             return;
         }

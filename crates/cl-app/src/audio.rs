@@ -12,7 +12,7 @@ use cl_core::{Project, Time};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 pub struct AudioPlayer {
-    _stream: cpal::Stream,
+    stream: cpal::Stream,
     child: Child,
     _workdir: tempfile::TempDir,
     reader: Option<JoinHandle<()>>,
@@ -24,11 +24,29 @@ pub struct AudioPlayer {
     pub start: Time,
 }
 
+/// Gewähltes Ausgabegerät (Name); `None` = Systemstandard
+static DEVICE: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn set_output_device(name: Option<String>) {
+    *DEVICE.lock().unwrap() = name;
+}
+
+/// Namen aller Ausgabegeräte (für die Einstellungen)
+pub fn output_devices() -> Vec<String> {
+    cpal::default_host()
+        .output_devices()
+        .map(|d| d.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default()
+}
+
 impl AudioPlayer {
     pub fn start(project: &Project, from: Time) -> Result<Self, String> {
         let host = cpal::default_host();
-        let device = host
-            .default_output_device()
+        // gewähltes Gerät; ist es nicht (mehr) da, der Systemstandard
+        let wanted = DEVICE.lock().unwrap().clone();
+        let device = wanted
+            .and_then(|w| host.output_devices().ok()?.find(|d| d.name().ok().as_deref() == Some(w.as_str())))
+            .or_else(|| host.default_output_device())
             .ok_or("Kein Audio-Ausgabegerät")?;
         let config = device.default_output_config().map_err(|e| e.to_string())?;
         let rate = config.sample_rate().0;
@@ -134,7 +152,7 @@ impl AudioPlayer {
         };
         stream.play().map_err(|e| e.to_string())?;
         Ok(Self {
-            _stream: stream,
+            stream,
             child,
             _workdir: workdir,
             reader: Some(reader),
@@ -144,6 +162,14 @@ impl AudioPlayer {
             rate,
             start: from,
         })
+    }
+
+    /// Ausgabe anhalten bzw. fortsetzen (Puffer und Uhr bleiben erhalten → sofort weiter)
+    pub fn pause(&self) -> bool {
+        self.stream.pause().is_ok()
+    }
+    pub fn resume(&self) -> bool {
+        self.stream.play().is_ok()
     }
 
     /// Aktuelle Wiedergabeposition nach Audio-Clock.

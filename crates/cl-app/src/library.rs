@@ -19,19 +19,35 @@ pub const SOUND_EXT: &[&str] = &["wav", "mp3", "ogg", "flac", "m4a", "aac", "opu
 pub enum Kind {
     Sticker,
     Sound,
+    /// Videos, Bilder und Ton, die man in vielen Projekten braucht
+    Media,
+}
+
+pub const MEDIA_EXT: &[&str] = &[
+    "mp4", "mov", "mkv", "webm", "m4v", "avi", "png", "jpg", "jpeg", "webp", "gif", "wav", "mp3", "ogg",
+    "flac", "m4a", "aac", "opus",
+];
+
+/// Vorsatz für verknüpfte Ordner (eigene Ordner auf der Platte, werden nicht kopiert)
+pub fn link_label(name: &str) -> String {
+    format!("{} {name}", crate::theme::icon::LINK_SIMPLE)
 }
 
 impl Kind {
+    pub const ALL: [(Kind, &'static str); 3] =
+        [(Kind::Media, "Medien"), (Kind::Sticker, "Sticker"), (Kind::Sound, "Sounds")];
     pub fn dir(self) -> PathBuf {
         paths::data_dir().join("Library").join(match self {
             Kind::Sticker => "Stickers",
             Kind::Sound => "Sounds",
+            Kind::Media => "Media",
         })
     }
     pub fn exts(self) -> &'static [&'static str] {
         match self {
             Kind::Sticker => STICKER_EXT,
             Kind::Sound => SOUND_EXT,
+            Kind::Media => MEDIA_EXT,
         }
     }
     /// Standardordner für Importe ohne Ordnerwahl
@@ -48,11 +64,13 @@ pub struct Item {
     pub folder: String,
     pub builtin: Option<&'static str>,
     pub path: Option<PathBuf>,
+    /// Liegt in einem verknüpften Ordner: nicht umbenennen, verschieben oder löschen
+    pub linked: bool,
 }
 
 impl Item {
     pub fn is_own(&self) -> bool {
-        self.path.is_some()
+        self.path.is_some() && !self.linked
     }
 }
 
@@ -64,6 +82,8 @@ struct Stored {
     recent: Vec<String>,
     hidden: BTreeSet<String>,
     areas: std::collections::BTreeMap<String, AreaLayout>,
+    /// Verknüpfte Ordner: (Art, Pfad)
+    linked: Vec<(String, PathBuf)>,
 }
 
 /// Anordnung eines Asset-Bereichs (Sticker, Soundeffekte, Effekte, …).
@@ -99,6 +119,7 @@ pub struct Library {
     recent: Vec<String>,
     hidden: BTreeSet<String>,
     areas: std::collections::BTreeMap<String, AreaLayout>,
+    linked: Vec<(String, PathBuf)>,
     /// Zwischenspeicher der Dateilisten (nach Änderungen neu einlesen)
     cache: std::collections::HashMap<&'static str, (Vec<String>, Vec<Item>)>,
 }
@@ -111,6 +132,30 @@ fn kind_key(k: Kind) -> &'static str {
     match k {
         Kind::Sticker => "st",
         Kind::Sound => "snd",
+        Kind::Media => "med",
+    }
+}
+
+/// Dateien eines verknüpften Ordners (bis drei Ebenen tief, höchstens 3000)
+fn walk(dir: &Path, exts: &[&str], depth: u8, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let mut entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    entries.sort();
+    for p in entries {
+        if out.len() >= 3000 {
+            return;
+        }
+        if p.is_dir() {
+            if depth > 0 {
+                walk(&p, exts, depth - 1, out);
+            }
+        } else if p
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| exts.contains(&e.to_ascii_lowercase().as_str()))
+        {
+            out.push(p);
+        }
     }
 }
 
@@ -125,6 +170,7 @@ impl Library {
             recent: s.recent,
             hidden: s.hidden,
             areas: s.areas,
+            linked: s.linked,
             cache: Default::default(),
         }
     }
@@ -139,6 +185,7 @@ impl Library {
             recent: self.recent.clone(),
             hidden: self.hidden.clone(),
             areas: self.areas.clone(),
+            linked: self.linked.clone(),
         };
         let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
@@ -342,6 +389,15 @@ impl Library {
                     .virt
                     .remove(name);
             }
+            // verknüpfter Ordner: nur die Verknüpfung lösen, Dateien bleiben
+            Some(("p", name)) if name.starts_with(crate::theme::icon::LINK_SIMPLE) => {
+                let k = phys.ok_or("Kein Dateiordner")?;
+                if let Some(d) = self.linked(k).into_iter().find(|d| {
+                    link_label(&d.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()) == name
+                }) {
+                    self.unlink_folder(k, &d);
+                }
+            }
             Some(("p", name)) => self.delete_folder(phys.ok_or("Kein Dateiordner")?, name)?,
             _ => return Err("Eingebaute Kategorien lassen sich nur verbergen".into()),
         }
@@ -503,12 +559,47 @@ impl Library {
                             folder: folder.clone(),
                             builtin: None,
                             path: Some(f),
+                            linked: false,
                         });
                     }
                 }
             }
+            // Verknüpfte Ordner: Dateien bleiben, wo sie sind
+            for (kk, dir) in self.linked.iter().filter(|(kk, _)| kk == kind_key(k)) {
+                let _ = kk;
+                let folder = link_label(&dir.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+                folders.push(folder.clone());
+                let mut files = Vec::new();
+                walk(dir, k.exts(), 3, &mut files);
+                items.extend(files.into_iter().map(|f| Item {
+                    key: format!("file:{}", f.display()),
+                    name: f.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+                    folder: folder.clone(),
+                    builtin: None,
+                    path: Some(f),
+                    linked: true,
+                }));
+            }
             (folders, items)
         })
+    }
+
+    pub fn linked(&self, k: Kind) -> Vec<PathBuf> {
+        self.linked.iter().filter(|(kk, _)| kk == kind_key(k)).map(|(_, p)| p.clone()).collect()
+    }
+
+    pub fn link_folder(&mut self, k: Kind, dir: PathBuf) {
+        if !self.linked.iter().any(|(kk, p)| kk == kind_key(k) && *p == dir) {
+            self.linked.push((kind_key(k).to_string(), dir));
+            self.save();
+        }
+        self.invalidate();
+    }
+
+    pub fn unlink_folder(&mut self, k: Kind, dir: &Path) {
+        self.linked.retain(|(kk, p)| !(kk == kind_key(k) && p == dir));
+        self.save();
+        self.invalidate();
     }
 
     pub fn create_folder(&mut self, k: Kind, name: &str) -> Result<(), String> {
@@ -667,11 +758,32 @@ fn to_trash(p: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
 
+
+    #[test]
+    fn linked_folders_are_listed_but_not_owned() {
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        let ext = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(ext.path().join("Clips/sub")).unwrap();
+        std::fs::write(ext.path().join("Clips/a.mp4"), b"x").unwrap();
+        std::fs::write(ext.path().join("Clips/sub/b.png"), b"x").unwrap();
+        std::fs::write(ext.path().join("Clips/notes.txt"), b"x").unwrap();
+        let mut lib = Library::default();
+        lib.link_folder(Kind::Media, ext.path().join("Clips"));
+        let items = lib.own_items(Kind::Media);
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|i| i.linked && !i.is_own()));
+        assert!(lib.folders(Kind::Media).contains(&link_label("Clips")));
+        // Kategorie löschen löst nur die Verknüpfung
+        lib.delete_cat("libmedia", &format!("p:{}", link_label("Clips")), Some(Kind::Media)).unwrap();
+        assert!(lib.own_items(Kind::Media).is_empty());
+        assert!(ext.path().join("Clips/a.mp4").is_file());
+    }
+
     #[test]
     fn import_folders_favorites_move_remove() {
-        let _g = crate::paths::TEST_HOME_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         std::env::set_var("CUTLINE_HOME", home.path());
         let src = home.path().join("in");
@@ -726,6 +838,7 @@ mod tests {
             folder: "Oberfläche".into(),
             builtin: Some("pop"),
             path: None,
+            linked: false,
         };
         lib.remove(&b).unwrap();
         assert!(!lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));

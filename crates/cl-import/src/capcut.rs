@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use cl_core::{
     AspectPreset, Clip, ClipContent, MediaKind, MediaRef, Project, Rational, TextStyle, Time,
-    Track, TrackKind,
+    Track, TrackId, TrackKind,
 };
 use serde_json::Value;
 
@@ -168,7 +168,15 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
         & !1;
     p.settings.width = w;
     p.settings.height = h;
-    p.settings.aspect = AspectPreset::Custom;
+    // gekürztes Seitenverhältnis (1920×1080 → 16:9) statt „Eigenes“
+    let g = {
+        let (mut a, mut b) = (w.max(1), h.max(1));
+        while b != 0 {
+            (a, b) = (b, a % b);
+        }
+        a
+    };
+    p.settings.aspect = AspectPreset::Ratio(w / g, h / g);
     let fps = f(d, &["fps"]).unwrap_or(30.0);
     p.settings.fps = if (fps - 29.97).abs() < 0.01 {
         Rational::new(30000, 1001)
@@ -212,6 +220,11 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
         .and_then(|t| t.as_array())
         .cloned()
         .unwrap_or_default();
+    // Schriftdatei → Familienname (nur einmal lesen)
+    let mut font_family: HashMap<PathBuf, Option<String>> = HashMap::new();
+    // CapCut stapelt nach `render_index` (Text ab 14000, Overlays 1, 2, …), nicht nach der
+    // Reihenfolge der Spuren in der Datei
+    let mut layer: HashMap<TrackId, i64> = HashMap::new();
     let mut first_video = true;
     for t in &tracks {
         let ty = t.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -343,7 +356,8 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
                         255,
                     ];
                     // CapCut-Größe 15 entspricht etwa 72 px bei 1080p
-                    st.size = (size as f32 * 4.8 * h.min(w) as f32 / 1080.0).clamp(8.0, 600.0);
+                    // 11,5: an CapCut 9.2 nachgemessen (Projekt mit Größe 15 und 8,1 bei 1080p)
+                    st.size = (size as f32 * 11.5 * h.min(w) as f32 / 1080.0).clamp(8.0, 600.0);
                     st.bold = style0
                         .get("bold")
                         .and_then(|v| v.as_bool())
@@ -357,6 +371,33 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
                         Some(2) => 1,
                         _ => 0,
                     };
+                    // Schrift: eigene Schrift des Textes, sonst die des Stils (CapCut-Standard)
+                    let style_font = style0.pointer("/font/path").and_then(|v| v.as_str());
+                    let mat_font = m.get("font_path").and_then(|v| v.as_str());
+                    let is_default = |p: &str| p.contains("SystemFont");
+                    let font = match (mat_font, style_font) {
+                        (Some(a), _) if !a.is_empty() && !is_default(a) => Some(a),
+                        (_, Some(b)) if !b.is_empty() => Some(b),
+                        (Some(a), _) if !a.is_empty() => Some(a),
+                        _ => None,
+                    };
+                    if let Some(fp) = font.map(|f| resolve(f, dir)).filter(|p| p.is_file()) {
+                        let fam = font_family
+                            .entry(fp.clone())
+                            .or_insert_with(|| {
+                                std::fs::read(&fp)
+                                    .ok()
+                                    .and_then(|data| cl_fonts::inspect(&data).ok())
+                                    .and_then(|faces| faces.first().map(|f| f.family.clone()))
+                            })
+                            .clone();
+                        if let Some(fam) = fam {
+                            st.font_family = Some(fam);
+                            if !rep.fonts.contains(&fp) {
+                                rep.fonts.push(fp);
+                            }
+                        }
+                    }
                     if let Some(sw) = style0.pointer("/strokes/0/width").and_then(|v| v.as_f64()) {
                         let c = style0
                             .pointer("/strokes/0/content/solid/color")
@@ -377,6 +418,8 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
                             ],
                         ));
                     }
+                    // Schatten nur, wenn er in CapCut an ist (Cutline-Standard wäre „an“)
+                    st.shadow = m.get("has_shadow").and_then(|v| v.as_bool()).unwrap_or(false);
                     rep.texts += 1;
                     Clip::new(ClipContent::Text(st), start, duration)
                 }
@@ -421,6 +464,26 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
             }
+            // Ein-/Ausblend-Animationen: CapCuts eigene Animationen gibt es hier nicht, deshalb
+            // wird jede als weiche Blende mit gleicher Dauer übernommen
+            for r in s.get("extra_material_refs").and_then(|v| v.as_array()).into_iter().flatten() {
+                let Some((k, am)) = r.as_str().and_then(|id| by_id.get(id)) else { continue };
+                if k != "material_animations" {
+                    continue;
+                }
+                for a in am.get("animations").and_then(|v| v.as_array()).into_iter().flatten() {
+                    let anim = cl_core::AnimRef {
+                        id: "fade".into(),
+                        duration: Time(a.get("duration").and_then(|v| v.as_i64()).unwrap_or(500_000).clamp(100_000, duration.0.max(100_000))),
+                    };
+                    match a.get("type").and_then(|v| v.as_str()) {
+                        Some("in") => clip.anim.intro = Some(anim),
+                        Some("out") => clip.anim.outro = Some(anim),
+                        _ => continue,
+                    }
+                    rep.skip("Animation (als Blende übernommen)");
+                }
+            }
             // Bei Text ist die Größe schon in der Schrift enthalten
             if matches!(clip.content, ClipContent::Text(_)) {
                 if let ClipContent::Text(st) = &mut clip.content {
@@ -431,6 +494,15 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
             track.clips.push(clip);
         }
         track.clips.sort_by_key(|c| c.start);
+        let ri = t
+            .get("segments")
+            .and_then(|s| s.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|s| s.get("render_index").and_then(|v| v.as_i64()))
+            .max()
+            .unwrap_or(if kind == TrackKind::Text { 14000 } else { 0 });
+        layer.insert(track.id, ri);
         if !track.clips.is_empty() {
             p.timeline.tracks.push(track);
         }
@@ -454,6 +526,9 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
         };
         match merged.iter_mut().find(|m| fits(m, &t)) {
             Some(m) => {
+                let ri = layer.get(&t.id).copied().unwrap_or(0);
+                let e = layer.entry(m.id).or_insert(0);
+                *e = (*e).max(ri);
                 m.clips.extend(t.clips);
                 m.clips.sort_by_key(|c| c.start);
             }
@@ -471,11 +546,12 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
             t.main = true;
         }
     }
-    // Hauptspur nach unten, Audio ans Ende (Cutline zeichnet von unten nach oben)
+    // Hauptspur nach unten, darüber nach CapCut-Ebene, Audio ans Ende
+    // (Cutline zeichnet Bildspuren von unten nach oben)
     p.timeline.tracks.sort_by_key(|t| match (t.main, t.kind) {
-        (true, _) => 0,
-        (_, TrackKind::Audio) => 2,
-        _ => 1,
+        (true, _) => (0, 0),
+        (_, TrackKind::Audio) => (2, 0),
+        _ => (1, layer.get(&t.id).copied().unwrap_or(0)),
     });
     if rep.clips + rep.texts == 0 {
         return Err("Im Entwurf wurden keine übertragbaren Clips gefunden".into());
@@ -486,6 +562,68 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layers_follow_render_index_and_fonts_are_taken_over() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let v = dir.path().join("clip.mp4");
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=2", "-pix_fmt", "yuv420p"])
+            .arg(&v)
+            .status()
+            .unwrap()
+            .success());
+        // Schriftdatei aus den mitgelieferten Cutline-Schriften
+        let font = dir.path().join("Poppins-ExtraBold.ttf");
+        std::fs::write(&font, include_bytes!("../../cl-app/assets/fonts/Poppins-ExtraBold.ttf")).unwrap();
+        let content = serde_json::json!({"text": "Oben", "styles": [{"size": 15.0, "font": {"path": "C:/x/SystemFont/en.ttf"}}]}).to_string();
+        let seg = |mid: &str, ri: i64| serde_json::json!({"material_id": mid, "render_index": ri, "target_timerange": {"start": 0, "duration": 1000000}, "source_timerange": {"start": 0, "duration": 1000000}});
+        let draft = serde_json::json!({
+            "canvas_config": {"width": 1920, "height": 1080},
+            "fps": 30.0,
+            "materials": {
+                "videos": [{"id": "V1", "type": "video", "path": v.to_string_lossy()}, {"id": "V2", "type": "video", "path": v.to_string_lossy()}],
+                "texts": [{"id": "T1", "content": content, "font_path": font.to_string_lossy()}]
+            },
+            "tracks": [
+                {"type": "video", "segments": [seg("V1", 0)]},
+                {"type": "text", "segments": [seg("T1", 14000)]},
+                {"type": "video", "segments": [seg("V2", 1)]}
+            ]
+        });
+        let (p, rep) = convert(&draft, dir.path(), "Ebenen").unwrap();
+        let kinds: Vec<TrackKind> = p.timeline.tracks.iter().map(|t| t.kind).collect();
+        // Hauptspur, darüber das Overlay-Video, ganz oben der Text
+        assert_eq!(kinds, [TrackKind::Video, TrackKind::Video, TrackKind::Text]);
+        assert!(p.timeline.tracks[0].main);
+        let ClipContent::Text(st) = &p.timeline.tracks[2].clips[0].content else { panic!() };
+        assert_eq!(st.font_family.as_deref(), Some("Poppins"));
+        assert_eq!(rep.fonts, vec![font]);
+    }
+
+    /// Echten Entwurf ansehen: CAPCUT_DRAFT=<Ordner> cargo test -- --ignored real_draft --nocapture
+    #[test]
+    #[ignore]
+    fn real_draft() {
+        let Some(d) = std::env::var_os("CAPCUT_DRAFT") else { return };
+        let (p, rep) = import(std::path::Path::new(&d)).unwrap();
+        for t in &p.timeline.tracks {
+            let fonts: Vec<String> = t.clips.iter().filter_map(|c| match &c.content {
+                ClipContent::Text(s) => s.font_family.clone(),
+                _ => None,
+            }).collect();
+            println!("{:?} main={} clips={} fonts={fonts:?}", t.kind, t.main, t.clips.len());
+        }
+        println!("fonts: {:?}", rep.fonts);
+        println!("clips={} texts={} skipped={:?} missing={:?}", rep.clips, rep.texts, rep.skipped, rep.missing);
+        if let Some(out) = std::env::var_os("CAPCUT_OUT") {
+            std::fs::write(out, p.to_json()).unwrap();
+        }
+    }
 
     #[test]
     fn converts_draft() {

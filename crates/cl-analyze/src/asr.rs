@@ -367,6 +367,27 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
     out
 }
 
+/// Vorhandene Zeilen neu aufteilen (z. B. kürzer oder Wort für Wort). Die Zeit eines Wortes
+/// wird nach seiner Zeichenzahl innerhalb der Zeile geschätzt.
+pub fn resegment(segs: &[Segment], max_chars: usize, max_dur: f64) -> Vec<Segment> {
+    let mut words = Vec::new();
+    for s in segs {
+        let ws: Vec<&str> = s.text.split_whitespace().collect();
+        let total = ws.iter().map(|w| w.chars().count() + 1).sum::<usize>().max(1) as f64;
+        let mut t = s.start;
+        for w in ws {
+            let d = (s.end - s.start) * (w.chars().count() + 1) as f64 / total;
+            words.push(Word {
+                start: t,
+                end: t + d,
+                text: w.to_string(),
+            });
+            t += d;
+        }
+    }
+    group_words(&words, max_chars, max_dur)
+}
+
 // ---------------------------------------------------------------- Whisper
 
 pub fn whisper(
@@ -484,6 +505,21 @@ mod tests {
         assert!(s.iter().all(|x| x.text.chars().count() <= 24 + 14), "{s:?}");
         assert_eq!(s.last().unwrap().text, "Pause");
         assert!(s.windows(2).all(|p| p[0].end <= p[1].start));
+    }
+
+    #[test]
+    fn resegment_splits_word_by_word_and_keeps_order() {
+        let segs = vec![
+            Segment { start: 0.0, end: 3.0, text: "Das ist ein Test".into() },
+            Segment { start: 3.0, end: 4.0, text: "Ende".into() },
+        ];
+        let w = resegment(&segs, 1, 1.0);
+        assert_eq!(w.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["Das", "ist", "ein", "Test", "Ende"]);
+        assert!(w.windows(2).all(|p| p[0].end <= p[1].start + 1e-9 && p[0].start < p[1].start));
+        assert!((w[0].start - 0.0).abs() < 1e-9 && w.last().unwrap().end >= 3.9);
+        // lange Zeilen bleiben zusammen, wenn sie passen
+        let l = resegment(&segs, 42, 5.0);
+        assert_eq!(l[0].text, "Das ist ein Test Ende");
     }
 
     #[test]

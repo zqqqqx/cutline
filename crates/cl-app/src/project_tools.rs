@@ -12,8 +12,8 @@ use crate::paths;
 use crate::theme::{self, icon};
 
 /// Abstand der automatischen Sicherungen
-const BACKUP_EVERY: Duration = Duration::from_secs(5 * 60);
 /// So viele Sicherungen je Projekt bleiben erhalten
+#[cfg(test)]
 const BACKUP_KEEP: usize = 30;
 
 fn backup_dir(project: &Path) -> PathBuf {
@@ -39,7 +39,7 @@ pub fn list_backups(project: &Path) -> Vec<(PathBuf, SystemTime)> {
 }
 
 /// Sicherung schreiben und alte entfernen.
-pub fn write_backup(project: &Path, json: &str) -> std::io::Result<PathBuf> {
+pub fn write_backup(project: &Path, json: &str, keep: usize) -> std::io::Result<PathBuf> {
     let dir = backup_dir(project);
     std::fs::create_dir_all(&dir)?;
     let stamp = SystemTime::now()
@@ -48,7 +48,7 @@ pub fn write_backup(project: &Path, json: &str) -> std::io::Result<PathBuf> {
         .unwrap_or(0);
     let p = dir.join(format!("{stamp}.cutline"));
     std::fs::write(&p, json)?;
-    for (old, _) in list_backups(project).into_iter().skip(BACKUP_KEEP) {
+    for (old, _) in list_backups(project).into_iter().skip(keep.max(1)) {
         let _ = std::fs::remove_file(old);
     }
     Ok(p)
@@ -140,9 +140,10 @@ impl App {
     pub fn project_tools(&mut self, ctx: &egui::Context) {
         // Automatische Sicherung (nur bei gespeicherten Projekten mit Änderungen seit der letzten)
         if let Some(path) = self.project_path.clone() {
-            let due = self.last_backup.is_none_or(|t| t.elapsed() >= BACKUP_EVERY);
+            let every = Duration::from_secs(self.settings.backup_minutes.max(1) as u64 * 60);
+            let due = self.last_backup.is_none_or(|t| t.elapsed() >= every);
             if due && self.revision != self.backup_revision {
-                let _ = write_backup(&path, &self.project.to_json());
+                let _ = write_backup(&path, &self.project.to_json(), self.settings.backup_keep);
                 self.backup_revision = self.revision;
                 self.last_backup = Some(Instant::now());
             }
@@ -161,6 +162,8 @@ impl App {
         }
         self.backups_window(ctx);
         self.missing_window(ctx);
+        self.props_window(ctx);
+        self.exports_window(ctx);
     }
 
     pub fn start_archive(&mut self, ctx: &egui::Context) {
@@ -190,14 +193,14 @@ impl App {
         let mut open = true;
         let mut restore: Option<PathBuf> = None;
         egui::Window::new(crate::tr("Sicherungen")).id(egui::Id::new("backups")).open(&mut open).collapsible(false).default_width(380.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
-            ui.label(RichText::new(crate::tr("Alle 5 Minuten bei Änderungen, die letzten 30 Stände")).small().color(theme::TEXT_DIM));
+            ui.label(RichText::new(crate::tr("Alle 5 Minuten bei Änderungen, die letzten 30 Stände")).small().color(theme::TEXT_DIM()));
             ui.add_space(6.0);
             let Some(path) = self.project_path.clone() else {
                 ui.label(crate::tr("Das Projekt ist noch nicht gespeichert."));
                 return;
             };
             if ui.add(theme::secondary(format!("{}  Jetzt sichern", icon::FLOPPY_DISK))).clicked() {
-                match write_backup(&path, &self.project.to_json()) {
+                match write_backup(&path, &self.project.to_json(), self.settings.backup_keep) {
                     Ok(_) => {
                         self.backup_revision = self.revision;
                         self.last_backup = Some(Instant::now());
@@ -208,14 +211,14 @@ impl App {
             ui.add_space(4.0);
             let list = list_backups(&path);
             if list.is_empty() {
-                ui.label(RichText::new(crate::tr("Noch keine Sicherungen")).color(theme::TEXT_DIM));
+                ui.label(RichText::new(crate::tr("Noch keine Sicherungen")).color(theme::TEXT_DIM()));
             }
             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                 for (p, t) in list {
                     ui.horizontal(|ui| {
                         let local = chrono_like(t);
                         ui.label(RichText::new(local).monospace());
-                        ui.label(RichText::new(crate::tr(ago(t))).small().color(theme::TEXT_FAINT));
+                        ui.label(RichText::new(crate::tr(ago(t))).small().color(theme::TEXT_FAINT()));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.add(theme::ghost("Wiederherstellen")).clicked() {
                                 restore = Some(p.clone());
@@ -236,7 +239,7 @@ impl App {
                 Ok(proj) => {
                     // aktuellen Stand vorher sichern, dann ersetzen (Pfad bleibt)
                     if let Some(path) = &self.project_path {
-                        let _ = write_backup(path, &self.project.to_json());
+                        let _ = write_backup(path, &self.project.to_json(), self.settings.backup_keep);
                     }
                     *self.doc.lock().unwrap() = Document::new(proj);
                     self.revision = u64::MAX;
@@ -265,7 +268,7 @@ impl App {
         let mut pick: Option<cl_core::MediaId> = None;
         egui::Window::new(crate::tr("Medien neu verknüpfen")).id(egui::Id::new("relink")).open(&mut open).collapsible(false).default_width(460.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
             if missing.is_empty() {
-                ui.label(RichText::new(crate::tr(format!("{}  Alle Medien sind vorhanden", icon::CHECK_CIRCLE))).color(theme::TEXT_DIM));
+                ui.label(RichText::new(crate::tr(format!("{}  Alle Medien sind vorhanden", icon::CHECK_CIRCLE))).color(theme::TEXT_DIM()));
                 return;
             }
             ui.label(crate::tr(format!("{} Mediendateien wurden nicht gefunden (verschoben oder umbenannt).", missing.len())));
@@ -412,18 +415,16 @@ mod tests {
 
     #[test]
     fn backups_rotate_and_archive_copies() {
-        let _g = crate::paths::TEST_HOME_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("CUTLINE_HOME", home.path());
         let proj = home.path().join("Film.cutline");
         for i in 0..(BACKUP_KEEP + 3) {
-            let p = write_backup(&proj, &format!("{{\"n\":{i}}}")).unwrap();
+            let p = write_backup(&proj, &format!("{{\"n\":{i}}}"), BACKUP_KEEP).unwrap();
             // eindeutige Zeitstempel erzwingen
             let _ = std::fs::rename(&p, p.with_file_name(format!("{}.cutline", 1000 + i)));
         }
-        let _ = write_backup(&proj, "{}");
+        let _ = write_backup(&proj, "{}", BACKUP_KEEP);
         assert!(list_backups(&proj).len() <= BACKUP_KEEP + 1);
         // Archiv
         let media = home.path().join("src");

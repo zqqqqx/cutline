@@ -40,7 +40,7 @@ impl App {
                 ui.painter().circle_stroke(
                     rect.center(),
                     22.0,
-                    Stroke::new(2.0_f32, if hover { theme::TEXT } else { theme::TEXT_DIM }),
+                    Stroke::new(2.0_f32, if hover { theme::TEXT() } else { theme::TEXT_DIM() }),
                 );
                 let counting = self.voiceover.countdown_until.is_some();
                 if recording {
@@ -55,7 +55,7 @@ impl App {
                         egui::Align2::CENTER_CENTER,
                         icon::X,
                         egui::FontId::proportional(20.0),
-                        theme::TEXT,
+                        theme::TEXT(),
                     );
                 } else {
                     ui.painter()
@@ -99,7 +99,7 @@ impl App {
                     ui.label(
                         RichText::new(crate::tr(state))
                             .small()
-                            .color(theme::TEXT_DIM),
+                            .color(theme::TEXT_DIM()),
                     );
                 });
             });
@@ -107,7 +107,7 @@ impl App {
             // Live-Waveform der letzten Sekunden
             let (bar, _) =
                 ui.allocate_exact_size(vec2(ui.available_width(), 34.0), egui::Sense::hover());
-            ui.painter().rect_filled(bar, 5.0, theme::BG_INPUT);
+            ui.painter().rect_filled(bar, 5.0, theme::BG_INPUT());
             if let Some(r) = &self.voiceover.recorder {
                 let peaks = r.peaks();
                 let n = (bar.width() / 2.0) as usize;
@@ -125,7 +125,7 @@ impl App {
                             if *v > 0.9 || r.level() > 0.98 {
                                 theme::DANGER
                             } else {
-                                theme::ACCENT
+                                theme::ACCENT()
                             },
                         ),
                     );

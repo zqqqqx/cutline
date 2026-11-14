@@ -53,18 +53,15 @@ impl App {
         ui.label(
             RichText::new(crate::tr("Story"))
                 .small()
-                .color(theme::TEXT_FAINT),
+                .color(theme::TEXT_FAINT()),
         );
         let chars = self.characters.clone();
         if chars.is_empty() {
             if ui
-                .add(
-                    egui::Button::new(crate::tr(format!(
-                        "{}   Figuren anlegen …",
-                        icon::USER_PLUS
-                    )))
-                    .frame(false),
-                )
+                .add(crate::theme::menu_row(crate::tr(format!(
+                    "{}   Figuren anlegen …",
+                    icon::USER_PLUS
+                ))))
                 .clicked()
             {
                 ui.close_menu();
@@ -78,13 +75,12 @@ impl App {
         for (i, c) in chars.iter().enumerate() {
             if ui
                 .add(
-                    egui::Button::new(crate::tr(format!(
+                    crate::theme::menu_row(crate::tr(format!(
                         "{}   Dialogbox: {}",
                         icon::CHAT_TEXT,
                         c.name
                     )))
-                    .frame(false)
-                    .min_size(egui::vec2(250.0, 22.0)),
+                    .min_width(250.0),
                 )
                 .clicked()
             {
@@ -95,13 +91,12 @@ impl App {
         for (i, c) in chars.iter().enumerate() {
             if ui
                 .add(
-                    egui::Button::new(crate::tr(format!(
+                    crate::theme::menu_row(crate::tr(format!(
                         "{}   Namensschild: {}",
                         icon::IDENTIFICATION_BADGE,
                         c.name
                     )))
-                    .frame(false)
-                    .min_size(egui::vec2(250.0, 22.0)),
+                    .min_width(250.0),
                 )
                 .clicked()
             {
