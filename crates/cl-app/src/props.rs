@@ -193,7 +193,7 @@ impl App {
             .resizable(false)
             .default_width(340.0)
             .show(ctx, |ui| {
-                ui.label(RichText::new(&title).strong().size(13.0));
+                ui.label(RichText::new(&title).strong().size(theme::FS_TEXT));
                 ui.add_space(6.0);
                 egui::Grid::new("props-grid").num_columns(2).spacing([14.0, 5.0]).show(ui, |ui| {
                     for (k, v) in &rows {

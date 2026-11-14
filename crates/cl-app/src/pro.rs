@@ -798,8 +798,8 @@ impl App {
         };
         egui::Frame::default()
             .fill(theme::BG_RAISED())
-            .corner_radius(8)
-            .inner_margin(12)
+            .corner_radius(theme::R_CARD)
+            .inner_margin(theme::PAD_CARD_L)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(
@@ -953,14 +953,14 @@ impl App {
                     Pick::Track { .. } => icon::CROSSHAIR,
                 }
             ),
-            egui::FontId::proportional(12.0),
+            egui::FontId::proportional(theme::FS_TEXT),
             theme::ACCENT_INK(),
         );
         let br = Rect::from_center_size(
             resp.rect.center_top() + vec2(0.0, 22.0),
             g.size() + vec2(20.0, 10.0),
         );
-        painter.rect_filled(br, 12.0, theme::ACCENT());
+        painter.rect_filled(br, 12.0, theme::ACCENT()); // Pille: Radius = halbe Höhe
         painter.galley(br.min + vec2(10.0, 5.0), g, theme::ACCENT_INK());
         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         let local = |r: &Region, p: egui::Pos2| -> (f32, f32) {
@@ -1102,7 +1102,7 @@ impl App {
                     String::new()
                 }
             );
-            let r = ui.label(RichText::new(txt).size(11.0).color(theme::TEXT_DIM()));
+            let r = ui.label(RichText::new(txt).size(theme::FS_UI).color(theme::TEXT_DIM()));
             if r.on_hover_text(crate::tr("Klicken bricht ab"))
                 .interact(egui::Sense::click())
                 .clicked()
@@ -1126,8 +1126,8 @@ impl App {
             let installed = m.installed(info.id);
             egui::Frame::default()
                 .fill(theme::BG_RAISED())
-                .corner_radius(8)
-                .inner_margin(10)
+                .corner_radius(theme::R_CARD)
+                .inner_margin(theme::PAD_CARD_L)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
@@ -1299,7 +1299,7 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
                     area.center(),
                     egui::Align2::CENTER_CENTER,
                     crate::tr(*name),
-                    egui::FontId::proportional(11.0),
+                    egui::FontId::proportional(theme::FS_UI),
                     if cur == *id { theme::ACCENT() } else { theme::TEXT() },
                 );
             });

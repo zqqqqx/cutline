@@ -207,7 +207,7 @@ impl App {
             ui.add_space(4.0);
             let list = list_backups(&path);
             if list.is_empty() {
-                ui.label(RichText::new(crate::tr("Noch keine Sicherungen")).color(theme::TEXT_DIM()));
+                theme::empty_state(ui, icon::CLOCK_COUNTER_CLOCKWISE, "Noch keine Sicherungen", "");
             }
             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                 for (p, t) in list {

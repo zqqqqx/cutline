@@ -172,8 +172,8 @@ impl App {
                 .collect();
             egui::Frame::default()
                 .fill(theme::BG_RAISED())
-                .corner_radius(6)
-                .inner_margin(6)
+                .corner_radius(theme::R_CARD)
+                .inner_margin(theme::PAD_CARD)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     for (i, n) in &matching {
@@ -271,7 +271,7 @@ impl App {
         };
         let modal = egui::Modal::new(egui::Id::new("preset-dialog")).show(ctx, |ui| {
             ui.set_width(320.0);
-            ui.label(RichText::new(crate::tr(title)).strong().size(14.0));
+            ui.label(RichText::new(crate::tr(title)).strong().size(theme::FS_TITLE));
             ui.add_space(8.0);
             let name = match d {
                 PresetDialog::Save { name } | PresetDialog::Rename { name, .. } => name,
