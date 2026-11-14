@@ -140,18 +140,8 @@ impl App {
             UpdateState::Available(rel)
                 if self.settings.skipped_version.as_deref() != Some(&rel.version.to_string()) =>
             {
-                let b = egui::Button::new(
-                    RichText::new(crate::tr(format!(
-                        "{}  Update {}",
-                        icon::ARROW_CIRCLE_UP,
-                        rel.version
-                    )))
-                    .size(11.0)
-                    .color(theme::ACCENT()),
-                )
-                .fill(theme::BG_RAISED())
-                .corner_radius(11)
-                .min_size(vec2(0.0, 22.0));
+                let b = theme::secondary(format!("{}  Update {}", icon::ARROW_CIRCLE_UP, rel.version))
+                    .min_size(vec2(0.0, 22.0));
                 if ui
                     .add(b)
                     .on_hover_text(crate::tr("Neue Version verfügbar"))
@@ -168,22 +158,13 @@ impl App {
                         icon::DOWNLOAD_SIMPLE,
                         p * 100.0
                     )))
-                    .size(11.0)
+                    .size(theme::FS_UI)
                     .color(theme::TEXT_DIM()),
                 );
             }
             UpdateState::Installed(v) => {
-                let b = egui::Button::new(
-                    RichText::new(crate::tr(format!(
-                        "{}  Neu starten ({v})",
-                        icon::ARROWS_CLOCKWISE
-                    )))
-                    .size(11.0)
-                    .color(theme::ACCENT_INK()),
-                )
-                .fill(theme::ACCENT())
-                .corner_radius(11)
-                .min_size(vec2(0.0, 22.0));
+                let b = theme::primary(format!("{}  Neu starten ({v})", icon::ARROWS_CLOCKWISE))
+                    .min_size(vec2(0.0, 22.0));
                 if ui
                     .add(b)
                     .on_hover_text(crate::tr("Update ist installiert. Cutline neu starten"))
@@ -271,8 +252,8 @@ impl App {
                     ui.add_space(4.0);
                     egui::Frame::default()
                         .fill(theme::BG_INPUT())
-                        .corner_radius(6)
-                        .inner_margin(10)
+                        .corner_radius(theme::R_CARD)
+                        .inner_margin(theme::PAD_CARD_L)
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             egui::ScrollArea::vertical()

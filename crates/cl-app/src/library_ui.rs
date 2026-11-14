@@ -173,7 +173,7 @@ pub fn fav_badge(p: &egui::Painter, a: egui::Rect) {
         a.left_top() + egui::vec2(5.0, 4.0),
         egui::Align2::LEFT_TOP,
         icon::STAR,
-        egui::FontId::proportional(11.0),
+        egui::FontId::proportional(11.0), // Icon-Glyphe (Stern) auf der Kachel
         theme::ACCENT(),
     );
 }
@@ -592,7 +592,7 @@ impl App {
         };
         let modal = egui::Modal::new(egui::Id::new("lib-dialog")).show(ctx, |ui| {
             ui.set_width(320.0);
-            ui.label(RichText::new(crate::tr(title)).strong().size(14.0));
+            ui.label(RichText::new(crate::tr(title)).strong().size(theme::FS_TITLE));
             ui.add_space(8.0);
             match d {
                 LibDialog::NewFolder { name, .. } | LibDialog::Rename { name, .. } | LibDialog::RenameCat { name, .. } => {

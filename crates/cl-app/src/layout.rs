@@ -86,13 +86,13 @@ impl App {
                 _ => "Player",
             };
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new(("lay-dim", k))));
-            painter.rect_filled(r.shrink(3.0), 8.0, Color32::from_black_alpha(120));
-            painter.rect_stroke(r.shrink(3.0), 8.0, egui::Stroke::new(1.5_f32, theme::ACCENT()), egui::StrokeKind::Inside);
+            painter.rect_filled(r.shrink(3.0), theme::R_CARD, Color32::from_black_alpha(120));
+            painter.rect_stroke(r.shrink(3.0), theme::R_CARD, egui::Stroke::new(1.5_f32, theme::ACCENT()), egui::StrokeKind::Inside);
             egui::Area::new(egui::Id::new(("lay-card", k)))
                 .order(egui::Order::Foreground)
                 .fixed_pos(r.center() - vec2(90.0, 30.0))
                 .show(ctx, |ui| {
-                    theme::card(10).show(ui, |ui| {
+                    theme::card(theme::PAD_CARD_L).show(ui, |ui| {
                         ui.set_width(160.0);
                         ui.vertical_centered(|ui| {
                             ui.label(RichText::new(crate::tr(title)).strong());
@@ -135,7 +135,7 @@ impl App {
             .order(egui::Order::Tooltip)
             .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -16.0))
             .show(ctx, |ui| {
-                theme::card(8).show(ui, |ui| {
+                theme::card(theme::PAD_CARD).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{}  {}", icon::LAYOUT, crate::tr("Layout"))).strong());
                         let mut all = builtin();

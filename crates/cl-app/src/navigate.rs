@@ -421,10 +421,7 @@ impl App {
                 ui.painter()
                     .circle_filled(r.center(), 4.5, marker_color(m.color));
                 if ui
-                    .add(
-                        egui::Button::new(RichText::new(chapter_time(m.at)).monospace().size(11.0))
-                            .frame(false),
-                    )
+                    .add(theme::ghost(chapter_time(m.at)))
                     .clicked()
                 {
                     self.stop_playback();
@@ -436,7 +433,7 @@ impl App {
                     m.name.clone()
                 };
                 let r = ui.add(
-                    egui::Label::new(RichText::new(name).size(11.5))
+                    egui::Label::new(RichText::new(name).size(theme::FS_UI))
                         .truncate()
                         .sense(egui::Sense::click()),
                 );

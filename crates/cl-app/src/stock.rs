@@ -356,12 +356,12 @@ impl App {
                             }
                             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                                 ui.add(
-                                    egui::Label::new(RichText::new(&h.title).size(12.0)).truncate(),
+                                    egui::Label::new(RichText::new(&h.title).size(theme::FS_TEXT)).truncate(),
                                 );
                                 ui.add(
                                     egui::Label::new(
                                         RichText::new(format!("{} · {}", h.info, h.license))
-                                            .size(10.5)
+                                            .size(theme::FS_HINT)
                                             .color(theme::TEXT_DIM()),
                                     )
                                     .truncate(),
