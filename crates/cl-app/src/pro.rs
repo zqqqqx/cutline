@@ -63,8 +63,8 @@ fn matte_cache(path: &std::path::Path) -> PathBuf {
         m.len().hash(&mut h);
         m.modified().ok().hash(&mut h);
     }
-    crate::paths::data_dir()
-        .join("cache")
+    // nicht im Cache: das Projekt zeigt dauerhaft auf die Maske
+    crate::paths::generated_dir()
         .join("matte")
         .join(format!("{:016x}.mkv", h.finish()))
 }

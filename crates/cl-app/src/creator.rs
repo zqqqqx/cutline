@@ -865,7 +865,9 @@ impl App {
             }
             at += b - a;
         }
-        self.new_project();
+        if !self.new_project() {
+            return;
+        }
         *self.doc.lock().unwrap() = Document::new(p);
         self.revision = u64::MAX;
         self.sync_project();

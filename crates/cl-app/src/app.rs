@@ -247,7 +247,9 @@ pub struct App {
     /// Rechtsklick → Eigenschaften
     pub props: Option<crate::props::Props>,
     /// Fenster „Exporte“ für dieses Projekt (Name)
-    pub exports_for: Option<String>,
+    pub exports_for: Option<crate::exports::ExportsList>,
+    /// Sperrdatei des offenen Projekts (siehe `take_lock`)
+    lock_file: Option<PathBuf>,
     /// Ton beim Ziehen: (letzte Stelle, Zeitpunkt, laufendes Stück)
     pub scrub: Option<(Time, Instant, Option<AudioPlayer>)>,
     /// Pause mit offenen Strömen: (Playhead, Revision) beim Anhalten
@@ -449,6 +451,7 @@ impl App {
             fx_thumbs_requested: HashSet::new(),
             props: None,
             exports_for: None,
+            lock_file: None,
             scrub: None,
             paused: None,
             caption_focus: None,
@@ -1788,18 +1791,7 @@ impl App {
     // ---------- Projekte ----------
 
     pub fn default_project_path(&self) -> PathBuf {
-        let name: String = self
-            .project
-            .name
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == ' ' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
+        let name: String = paths::safe_name(&self.project.name);
         let dir = paths::projects_dir();
         let mut p = dir.join(format!("{}.cutline", name.trim()));
         let mut n = 2;
@@ -1889,9 +1881,21 @@ impl App {
                         .project_path
                         .clone()
                         .unwrap_or_else(|| self.default_project_path());
-                    if self.write_project(&p).is_ok() {
-                        self.project_path = Some(p);
-                        self.settings.save();
+                    match self.write_project(&p) {
+                        Ok(()) => {
+                            self.project_path = Some(p);
+                            self.settings.save();
+                        }
+                        // höchstens einmal pro Minute melden, sonst jeder Frame
+                        Err(e) => {
+                            static LAST_ERR: Mutex<Option<Instant>> = Mutex::new(None);
+                            let mut le = LAST_ERR.lock().unwrap();
+                            if le.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
+                                *le = Some(Instant::now());
+                                drop(le);
+                                self.toast_err(format!("Automatisch speichern fehlgeschlagen: {e}"));
+                            }
+                        }
                     }
                 }
             }
@@ -1920,8 +1924,11 @@ impl App {
         self.player_pan = egui::Vec2::ZERO;
     }
 
-    pub fn new_project(&mut self) {
-        self.flush_before_leaving();
+    /// `false`: altes Projekt ließ sich nicht speichern, es bleibt offen.
+    pub fn new_project(&mut self) -> bool {
+        if !self.flush_before_leaving() {
+            return false;
+        }
         self.reset_editor();
         let n = crate::home::next_project_name();
         let mut p = Project::new(n);
@@ -1933,6 +1940,7 @@ impl App {
         self.saved_revision = self.revision;
         self.project_path = None;
         self.screen = Screen::Editor;
+        true
     }
 
     /// Projektordner ändern und vorhandene Projekte mitnehmen. Fehler bleiben im
@@ -1944,41 +1952,49 @@ impl App {
         }
         // offenes Projekt erst sichern und Dateien freigeben (laufende Wiedergabe hält sie offen)
         self.stop_playback();
-        self.flush_before_leaving();
+        if !self.flush_before_leaving() {
+            return;
+        }
         let mut reopen = None;
-        let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
-        match paths::move_projects(&old, &new, |a, b| moved.push((a.to_path_buf(), b.to_path_buf()))) {
-            Ok(n) => {
-                crate::exports::move_dir(&old, &new);
-                for (a, b) in &moved {
-                    let _ = std::fs::rename(crate::home::thumb_path(a), crate::home::thumb_path(b));
-                    for r in &mut self.settings.recent {
-                        if r == a {
-                            *r = b.clone();
-                        }
-                    }
-                    if self.project_path.as_ref() == Some(a) {
-                        reopen = Some(b.clone());
-                    }
+        let (moved, errs) = paths::move_projects(&old, &new);
+        // was umgezogen ist, wird nachgetragen – auch wenn anderes fehlschlug
+        if !moved.is_empty() {
+            crate::exports::move_dir(&old, &new);
+            crate::exports::move_projects(&moved);
+        }
+        for (a, b) in &moved {
+            let _ = std::fs::rename(crate::home::thumb_path(a), crate::home::thumb_path(b));
+            for r in &mut self.settings.recent {
+                if r == a {
+                    *r = b.clone();
                 }
-                let default = paths::data_dir().join("Projects");
-                self.settings.projects_dir = (new != default).then_some(new.clone());
-                paths::set_projects_dir(self.settings.projects_dir.clone());
-                self.settings.save();
-                self.settings_error = None;
-                self.home.refresh();
-                // das offene Projekt vom neuen Ort laden (seine Medienpfade wurden umgeschrieben)
-                if let Some(p) = reopen {
-                    self.open_project(&p);
-                }
-                self.toast(crate::tr(format!("{} {n} Projekte verschoben", icon::CHECK)));
             }
-            Err(e) => self.settings_error = Some(e),
+            if self.project_path.as_ref() == Some(a) {
+                reopen = Some(b.clone());
+            }
+        }
+        // Ordner nur wechseln, wenn nichts zurückgeblieben ist
+        if errs.is_empty() {
+            let default = paths::data_dir().join("Projects");
+            self.settings.projects_dir = (new != default).then_some(new.clone());
+            paths::set_projects_dir(self.settings.projects_dir.clone());
+            self.settings_error = None;
+            self.toast(crate::tr(format!("{} {} Projekte verschoben", icon::CHECK, moved.len())));
+        } else {
+            self.settings_error = Some(errs.join("\n"));
+        }
+        self.settings.save();
+        self.home.refresh();
+        // das offene Projekt vom neuen Ort laden (seine Medienpfade wurden umgeschrieben)
+        if let Some(p) = reopen {
+            self.open_project(&p);
         }
     }
 
     pub fn open_project(&mut self, p: &Path) {
-        self.flush_before_leaving();
+        if !self.flush_before_leaving() {
+            return;
+        }
         match std::fs::read_to_string(p)
             .map_err(|e| e.to_string())
             .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
@@ -2000,6 +2016,7 @@ impl App {
                 self.sync_project();
                 self.saved_revision = self.revision;
                 self.project_path = Some(p.to_path_buf());
+                self.take_lock(p);
                 self.settings.add_recent(p);
                 self.settings.save();
                 self.screen = Screen::Editor;
@@ -2022,8 +2039,9 @@ impl App {
         }
     }
 
-    /// Vor dem Verlassen eines Projekts: offene Änderungen speichern.
-    fn flush_before_leaving(&mut self) {
+    /// Vor dem Verlassen eines Projekts: offene Änderungen speichern. `false`, wenn das nicht
+    /// ging – dann bleibt das Projekt offen, sonst wären die Änderungen weg.
+    fn flush_before_leaving(&mut self) -> bool {
         self.commit_live();
         if self.voiceover.recorder.is_some() {
             self.stop_voiceover();
@@ -2035,15 +2053,47 @@ impl App {
                 .project_path
                 .clone()
                 .unwrap_or_else(|| self.default_project_path());
-            if self.write_project(&p).is_ok() {
-                self.project_path = Some(p);
+            if let Err(e) = self.write_project(&p) {
+                self.toast_err(format!("Projekt konnte nicht gespeichert werden: {e}"));
+                return false;
             }
+            self.project_path = Some(p);
         }
         self.settings.save();
+        self.release_lock();
+        true
+    }
+
+    /// Sperrdatei `<Projekt>.lock` (Inhalt: PID): warnt, wenn ein zweites Fenster dasselbe
+    /// Projekt öffnet – beide würden sich sonst still gegenseitig überschreiben.
+    fn take_lock(&mut self, p: &Path) {
+        let lock = lock_path(p);
+        let me = std::process::id().to_string();
+        let fresh = std::fs::metadata(&lock)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|d| d < Duration::from_secs(12 * 3600));
+        if fresh && std::fs::read_to_string(&lock).is_ok_and(|s| s.trim() != me) {
+            self.toast_err("Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet");
+        }
+        let _ = std::fs::write(&lock, me);
+        self.lock_file = Some(lock);
+    }
+
+    fn release_lock(&mut self) {
+        if let Some(l) = self.lock_file.take() {
+            // nur die eigene Sperre entfernen
+            if std::fs::read_to_string(&l).is_ok_and(|s| s.trim() == std::process::id().to_string()) {
+                let _ = std::fs::remove_file(l);
+            }
+        }
     }
 
     pub fn go_home(&mut self) {
-        self.flush_before_leaving();
+        if !self.flush_before_leaving() {
+            return;
+        }
         self.stop_playback();
         self.home.refresh();
         self.screen = Screen::Home;
@@ -2630,8 +2680,8 @@ impl App {
             self.open_project(p);
             return;
         }
-        if self.screen == Screen::Home {
-            self.new_project();
+        if self.screen == Screen::Home && !self.new_project() {
+            return;
         }
         let (fonts, media): (Vec<_>, Vec<_>) = rest.into_iter().partition(|p| {
             p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
@@ -2895,8 +2945,29 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
-        self.flush_before_leaving();
+        if !self.flush_before_leaving() {
+            // letzter Ausweg: Stand in die Sicherungen schreiben
+            let stem = self
+                .project_path
+                .as_ref()
+                .and_then(|p| p.file_stem())
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| paths::safe_name(&self.project.name));
+            let dir = paths::data_dir().join("Backups").join(stem);
+            let _ = std::fs::create_dir_all(&dir);
+            let p = dir.join(format!("exit-{}.cutline", paths::unix_secs()));
+            if let Err(e) = paths::write_atomic(&p, self.project.to_json()) {
+                eprintln!("{}: {e}", p.display());
+            }
+            self.release_lock();
+        }
     }
+}
+
+fn lock_path(p: &Path) -> PathBuf {
+    let mut l = p.as_os_str().to_owned();
+    l.push(".lock");
+    PathBuf::from(l)
 }
 
 /// Fingerabdruck aller hörbaren Eigenschaften (Spuren, Tonclips, Lautstärke, Tempo, Ton-Effekte).

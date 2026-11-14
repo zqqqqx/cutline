@@ -132,7 +132,7 @@ impl EsState {
             },
             downloads: self.downloads.clone(),
         };
-        let _ = std::fs::write(p, serde_json::to_string_pretty(&s).unwrap_or_default());
+        let _ = paths::write_atomic(&p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
 
     /// Hintergrund-Aufgabe mit eigenem Client (Token-Refresh wird zurückgemeldet).
@@ -223,11 +223,6 @@ pub fn open_url(url: &str) {
     })
     .arg(url)
     .spawn();
-}
-
-fn fmt_len(s: f64) -> String {
-    let s = s.round() as u64;
-    format!("{}:{:02}", s / 60, s % 60)
 }
 
 impl App {
@@ -343,7 +338,7 @@ impl App {
             .as_ref()
             .and_then(|p| {
                 p.parent()
-                    .map(|d| d.join(format!("{}-media", self.project.name)))
+                    .map(|d| d.join(format!("{}-media", paths::safe_name(&self.project.name))))
             })
             .unwrap_or_else(|| paths::data_dir().join("Epidemic Sound"))
             .join("Epidemic Sound")
@@ -513,7 +508,7 @@ impl App {
             info.push_str(&format!(" · {b:.0} BPM"));
         }
         if let Some(s) = t.seconds() {
-            info.push_str(&format!(" · {}", fmt_len(s)));
+            info.push_str(&format!(" · {}", crate::home::fmt_dur(cl_core::Time::from_secs_f64(s))));
         }
         if let Some(m) = t.moods.first() {
             info.push_str(&format!(" · {}", m.name));

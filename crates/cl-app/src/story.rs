@@ -40,7 +40,7 @@ pub fn save(list: &[Character]) {
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let _ = std::fs::write(p, serde_json::to_string_pretty(list).unwrap_or_default());
+    let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(list).unwrap_or_default());
 }
 
 pub fn enabled(app: &App) -> bool {

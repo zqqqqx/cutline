@@ -161,10 +161,7 @@ fn walk(dir: &Path, exts: &[&str], depth: u8, out: &mut Vec<PathBuf>) {
 
 impl Library {
     pub fn load() -> Self {
-        let s: Stored = std::fs::read_to_string(store())
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
+        let s: Stored = paths::read_json_or_quarantine(&store());
         Self {
             favorites: s.favorites,
             recent: s.recent,
@@ -379,8 +376,8 @@ impl Library {
         Ok(())
     }
 
-    /// Eigenen Ordner entfernen (Dateiordner wandert in den Papierkorb).
-    pub fn delete_cat(&mut self, area: &str, key: &str, phys: Option<Kind>) -> Result<(), String> {
+    /// Eigenen Ordner entfernen (Dateiordner wandert in den Papierkorb). `used`: Dateien des offenen Projekts.
+    pub fn delete_cat(&mut self, area: &str, key: &str, phys: Option<Kind>, used: &[PathBuf]) -> Result<(), String> {
         match key.split_once(':') {
             Some(("v", name)) => {
                 self.areas
@@ -398,7 +395,7 @@ impl Library {
                     self.unlink_folder(k, &d);
                 }
             }
-            Some(("p", name)) => self.delete_folder(phys.ok_or("Kein Dateiordner")?, name)?,
+            Some(("p", name)) => self.delete_folder(phys.ok_or("Kein Dateiordner")?, name, used)?,
             _ => return Err("Eingebaute Kategorien lassen sich nur verbergen".into()),
         }
         self.areas
@@ -613,8 +610,12 @@ impl Library {
     }
 
     /// Leeren Ordner löschen; Ordner mit Inhalt wandern in den Papierkorb.
-    pub fn delete_folder(&mut self, k: Kind, name: &str) -> Result<(), String> {
+    pub fn delete_folder(&mut self, k: Kind, name: &str, used: &[PathBuf]) -> Result<(), String> {
         let d = k.dir().join(sanitize(name));
+        // wie bei einzelnen Einträgen: was das offene Projekt nutzt, bleibt
+        if used.iter().any(|u| u.starts_with(&d)) {
+            return Err(format!("„{}“ enthält Dateien, die im offenen Projekt verwendet werden, und bleibt deshalb erhalten", name.trim()));
+        }
         to_trash(&d)?;
         self.invalidate();
         Ok(())
@@ -726,7 +727,7 @@ fn sanitize(s: &str) -> String {
         .to_string()
 }
 
-fn unique(dir: &Path, file: String) -> PathBuf {
+pub fn unique(dir: &Path, file: String) -> PathBuf {
     let p = dir.join(&file);
     if !p.exists() {
         return p;
@@ -776,7 +777,7 @@ mod tests {
         assert!(items.iter().all(|i| i.linked && !i.is_own()));
         assert!(lib.folders(Kind::Media).contains(&link_label("Clips")));
         // Kategorie löschen löst nur die Verknüpfung
-        lib.delete_cat("libmedia", &format!("p:{}", link_label("Clips")), Some(Kind::Media)).unwrap();
+        lib.delete_cat("libmedia", &format!("p:{}", link_label("Clips")), Some(Kind::Media), &[]).unwrap();
         assert!(lib.own_items(Kind::Media).is_empty());
         assert!(ext.path().join("Clips/a.mp4").is_file());
     }
@@ -876,5 +877,12 @@ mod tests {
         lib.rename_cat("sfx", "p:Gaming", "Games", Some(Kind::Sound))
             .unwrap();
         assert!(Kind::Sound.dir().join("Games").is_dir());
+        // Ordner mit Dateien des offenen Projekts bleibt
+        let used = Kind::Sound.dir().join("Games/x.wav");
+        std::fs::write(&used, b"x").unwrap();
+        assert!(lib.delete_cat("sfx", "p:Games", Some(Kind::Sound), std::slice::from_ref(&used)).is_err());
+        assert!(used.is_file());
+        lib.delete_cat("sfx", "p:Games", Some(Kind::Sound), &[]).unwrap();
+        assert!(!used.exists());
     }
 }
