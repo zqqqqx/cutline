@@ -41,7 +41,7 @@ impl Document {
             undo: Vec::new(),
             redo: Vec::new(),
             revision: 0,
-            max_history: 500,
+            max_history: 100,
         }
     }
 

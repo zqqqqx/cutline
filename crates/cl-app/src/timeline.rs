@@ -245,7 +245,7 @@ impl App {
             ui.set_min_height(26.0);
             ui.spacing_mut().item_spacing.x = 1.0;
             let (cu, cr) = {
-                let d = self.doc.lock().unwrap();
+                let d = self.doc.lock().unwrap_or_else(|e| e.into_inner());
                 (d.can_undo(), d.can_redo())
             };
             if theme::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, format!("{}  (Strg+Z)", self.t("undo")), cu, false).clicked() {
@@ -1469,7 +1469,7 @@ impl App {
         for row in rows.iter().filter(|r| r.track != REC_ROW) {
             let tr = &tracks[row.track];
             for c0 in &tr.clips {
-                let mut c = self.clip_view(c0.id).unwrap_or_else(|| c0.clone());
+                let mut c = self.clip_ref(c0).clone();
                 let audio_drag = match &self.timeline.drag {
                     Drag::Audio { clip, handle, value }
                         if has_audio(&c)
