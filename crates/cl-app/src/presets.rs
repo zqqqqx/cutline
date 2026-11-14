@@ -117,7 +117,7 @@ impl App {
                 if theme::icon_button(
                     ui,
                     icon::FLOPPY_DISK,
-                    "Look als Preset speichern",
+                    "Als Look speichern",
                     true,
                     false,
                 )
@@ -135,7 +135,7 @@ impl App {
                     .map(|(i, p)| (i, p.name.clone()))
                     .collect();
                 let label = if matching.is_empty() {
-                    crate::tr("Keine Presets")
+                    crate::tr("Keine Looks")
                 } else {
                     crate::tr(format!("Looks ({})", matching.len()))
                 };
@@ -191,7 +191,7 @@ impl App {
                                     if theme::icon_button(
                                         ui,
                                         icon::TRASH,
-                                        "Preset entfernen",
+                                        "Look löschen",
                                         true,
                                         false,
                                     )
@@ -231,7 +231,7 @@ impl App {
                 if let Some(i) = remove {
                     let p = self.presets.remove(i);
                     save(&self.presets);
-                    self.toast(format!("Preset „{}“ entfernt", p.name));
+                    self.toast(format!("Look „{}“ gelöscht", p.name));
                 }
             }
         }
@@ -248,7 +248,7 @@ impl App {
                 p.apply(x);
             }
         });
-        self.toast(format!("Preset „{}“ angewendet", p.name));
+        self.toast(format!("Look „{}“ angewendet", p.name));
     }
 
     /// Dialog „Preset speichern/umbenennen“ (jeden Frame aufrufen).
@@ -266,13 +266,12 @@ impl App {
         let err = self.dialog_error.clone();
         let mut edited = false;
         let title = match d {
-            PresetDialog::Save { .. } => "Look als Preset speichern",
-            PresetDialog::Rename { .. } => "Preset umbenennen",
+            PresetDialog::Save { .. } => "Als Look speichern",
+            PresetDialog::Rename { .. } => "Look umbenennen",
         };
-        let modal = egui::Modal::new(egui::Id::new("preset-dialog")).show(ctx, |ui| {
+        let modal = crate::dialog::modal(ctx, "preset-dialog").show(ctx, |ui| {
             ui.set_width(320.0);
-            ui.label(RichText::new(crate::tr(title)).strong().size(theme::FS_TITLE));
-            ui.add_space(8.0);
+            close |= crate::dialog::title(ui, title);
             let name = match d {
                 PresetDialog::Save { name } | PresetDialog::Rename { name, .. } => name,
             };
@@ -285,15 +284,9 @@ impl App {
             if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
-            ui.add_space(10.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(theme::primary("OK")).clicked() {
-                    ok = true;
-                }
-                if ui.add(theme::secondary("Abbrechen")).clicked() {
-                    close = true;
-                }
-            });
+            let (m, c) = crate::dialog::buttons(ui, theme::primary("OK"), true);
+            ok |= m;
+            close |= c;
         });
         if modal.should_close() && !fresh {
             close = true;
@@ -314,7 +307,7 @@ impl App {
                         self.presets.retain(|x| x.name != p.name);
                         self.presets.push(p);
                         save(&self.presets);
-                        self.toast(format!("Preset „{}“ gespeichert", name.trim()));
+                        self.toast(format!("Look „{}“ gespeichert", name.trim()));
                     }
                 }
                 Some(PresetDialog::Rename { index, name }) if !name.trim().is_empty() => {

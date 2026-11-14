@@ -96,25 +96,33 @@ impl App {
         let has_audio = sel.as_ref().is_some_and(|c| clip_audio(self, c).is_some());
         let visual = sel.as_ref().is_some_and(|c| c.kind() == TrackKind::Video);
         let n_sel = self.selection().len();
-        let item = |ui: &mut egui::Ui, enabled: bool, g: &str, t: &str, tip: &str| -> bool {
+        // `why`: Grund im Tooltip, solange der Eintrag ausgegraut ist
+        let item = |ui: &mut egui::Ui, (enabled, why): (bool, &str), g: &str, t: &str, tip: &str| -> bool {
             ui.add_enabled(
                 enabled,
                 crate::theme::menu_row(crate::tr(format!("{g}   {t}"))).min_width(250.0),
             )
             .on_hover_text(crate::tr(tip))
-            .on_disabled_hover_text(crate::tr(tip))
+            .on_disabled_hover_text(crate::tr(why))
             .clicked()
         };
+        // Abschnittstitel auf der Symbolkante (Einzug wie `theme::menu_row`)
+        let title = |ui: &mut egui::Ui, t: &str| {
+            ui.horizontal(|ui| {
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new(crate::tr(t)).small().color(crate::theme::TEXT_FAINT()));
+            });
+        };
+        let audio = (has_audio, "Wähle zuerst einen Clip mit Ton");
+        let two = (n_sel >= 2, "Wähle zwei oder mehr Clips");
+        let video = (visual, "Wähle einen Videoclip");
+        let always = (true, "");
         let ctx = ui.ctx().clone();
         let mut act: Option<&str> = None;
-        ui.label(
-            egui::RichText::new(crate::tr("Ton und Sprache"))
-                .small()
-                .color(crate::theme::TEXT_FAINT()),
-        );
+        title(ui, "Ton und Sprache");
         if item(
             ui,
-            has_audio,
+            audio,
             icon::SCISSORS,
             "Pausen entfernen (Jump Cuts)",
             "Schneidet stille Stellen aus dem ausgewählten Clip",
@@ -123,7 +131,7 @@ impl App {
         }
         if item(
             ui,
-            has_audio,
+            audio,
             icon::CHAT_CIRCLE_DOTS,
             "Füllwörter entfernen (äh, ähm, uh, um)",
             "Erkennt Füllwörter lokal (Parakeet) und schneidet sie heraus",
@@ -132,7 +140,7 @@ impl App {
         }
         if item(
             ui,
-            has_audio,
+            audio,
             icon::SPEAKER_SIMPLE_LOW,
             "Musik unter Sprache absenken (Auto-Ducking)",
             "Ausgewählter Musik-Clip wird leiser, wo auf anderen Spuren gesprochen wird",
@@ -141,7 +149,7 @@ impl App {
         }
         if item(
             ui,
-            has_audio,
+            audio,
             icon::LIGHTNING,
             "Highlights finden (laute Momente → Marker)",
             "Setzt Marker an Schreien, Explosionen, Jubel im ausgewählten Clip",
@@ -149,29 +157,21 @@ impl App {
             act = Some("highlights");
         }
         ui.separator();
-        ui.label(
-            egui::RichText::new(crate::tr("Mehrere Aufnahmen"))
-                .small()
-                .color(crate::theme::TEXT_FAINT()),
-        );
-        if item(ui, n_sel >= 2, icon::WAVEFORM, "Auswahl per Ton synchronisieren", "Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)") {
+        title(ui, "Mehrere Aufnahmen");
+        if item(ui, two, icon::WAVEFORM, "Auswahl per Ton synchronisieren", "Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)") {
             act = Some("sync");
         }
-        if item(ui, n_sel >= 2, icon::VIDEO_CAMERA, "Multicam-Schnitt starten", "Synchronisierte Clips auf eigenen Spuren: während der Wiedergabe mit 1–9 den Blickwinkel wählen") {
+        if item(ui, two, icon::VIDEO_CAMERA, "Multicam-Schnitt starten", "Synchronisierte Clips auf eigenen Spuren: während der Wiedergabe mit 1–9 den Blickwinkel wählen") {
             act = Some("multicam");
         }
-        if item(ui, true, icon::USERS, "Sprecher-Aufnahmen importieren …", "Eine Datei pro Person (z. B. aus einer Call-Aufnahme, auch als ZIP): je eine benannte Tonspur am Playhead") {
+        if item(ui, always, icon::USERS, "Sprecher-Aufnahmen importieren …", "Eine Datei pro Person (z. B. aus einer Call-Aufnahme, auch als ZIP): je eine benannte Tonspur am Playhead") {
             act = Some("speakers");
         }
         ui.separator();
-        ui.label(
-            egui::RichText::new(crate::tr("Bild und Format"))
-                .small()
-                .color(crate::theme::TEXT_FAINT()),
-        );
+        title(ui, "Bild und Format");
         if item(
             ui,
-            visual,
+            video,
             icon::MAGNIFYING_GLASS_PLUS,
             "Zoom-Punch-in am Playhead",
             "Kurzer Zoom auf 125 % mit Keyframes (danach anpassbar)",
@@ -180,7 +180,7 @@ impl App {
         }
         if item(
             ui,
-            visual,
+            video,
             icon::DEVICE_MOBILE,
             "Hochkant-Layout (9:16, Facecam oben)",
             "Stellt auf 1080×1920 um: Gameplay unten, Kopie des Clips oben als Facecam-Ausschnitt",
@@ -189,7 +189,7 @@ impl App {
         }
         if item(
             ui,
-            true,
+            always,
             icon::IMAGE,
             "Thumbnail exportieren (aktuelles Bild)",
             "Speichert das Bild am Playhead als PNG (1280×720 bei 16:9)",
@@ -198,7 +198,7 @@ impl App {
         }
         if item(
             ui,
-            !self.project.timeline.markers.is_empty(),
+            (!self.project.timeline.markers.is_empty(), "Setze zuerst Marker"),
             icon::CLOCK_COUNTER_CLOCKWISE,
             "Rückblick aus Markern erstellen",
             "Neues Projekt mit je 3 s um jeden Marker, mit Überblendungen („Was bisher geschah“)",

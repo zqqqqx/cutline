@@ -167,16 +167,17 @@ impl App {
         let total = self.project.duration().as_secs_f64();
         let has_caps = !self.caption_clips().is_empty();
         let max = st.hits.iter().map(|h| h.strength).fold(0.0f32, f32::max).max(1e-6);
-        let (mut open, mut make, mut markers) = (true, false, false);
+        let (mut make, mut markers) = (false, false);
         // vor dem Zeichnen: ein Wertfeld gibt den Fokus schon beim Enter ab
-        let typing = ctx.wants_keyboard_input();
-        egui::Window::new(crate::tr("Highlights"))
-            .id(egui::Id::new("shorts"))
-            .open(&mut open)
-            .collapsible(false)
+        let (esc, enter) = crate::dialog::keys(ctx);
+        let mut open = !esc;
+        crate::dialog::window(ctx, crate::tr("Highlights"), "shorts")
             .default_width(400.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
+                if crate::dialog::title(ui, "Highlights") {
+                    open = false;
+                }
                 egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                     for h in &mut st.hits {
                         let (a, b) = short_range(h.at, st.len as f64, total);
@@ -216,25 +217,22 @@ impl App {
                             .color(theme::TEXT_FAINT()),
                     );
                 }
-                ui.add_space(8.0);
                 let n = st.hits.iter().filter(|h| h.on).count();
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add_enabled(n > 0, theme::primary(format!("{}  Als Shorts anlegen", icon::DEVICE_MOBILE))).clicked() {
-                            make = true;
-                        }
-                        if ui.add_enabled(n > 0, theme::secondary(format!("{}  Als Marker setzen", icon::FLAG))).clicked() {
-                            markers = true;
-                        }
-                    });
+                crate::dialog::footer(ui, |ui| {
+                    if ui.add_enabled(n > 0, theme::primary(format!("{}  Als Shorts anlegen", icon::DEVICE_MOBILE))).clicked() {
+                        make = true;
+                    }
+                    if ui.add_enabled(n > 0, theme::secondary(format!("{}  Als Marker setzen", icon::FLAG))).clicked() {
+                        markers = true;
+                    }
+                    if ui.add(theme::secondary("Abbrechen")).clicked() {
+                        open = false;
+                    }
                 });
-                if n > 0 && !typing && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if n > 0 && enter {
                     make = true;
                 }
             });
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            open = false;
-        }
         let chosen: Vec<f64> = st.hits.iter().filter(|h| h.on).map(|h| h.at).collect();
         if markers {
             let mut ms = self.project.timeline.markers.clone();
@@ -302,34 +300,30 @@ impl App {
             return;
         };
         let mut pick: Option<u8> = None;
-        let typing = ctx.wants_keyboard_input();
-        egui::Modal::new(egui::Id::new("aspect-fit")).show(ctx, |ui| {
+        let (mut esc, enter) = crate::dialog::keys(ctx);
+        crate::dialog::modal(ctx, "aspect-fit").show(ctx, |ui| {
             ui.set_width(360.0);
-            ui.label(RichText::new(crate::tr("Clips neu einpassen?")).strong().size(theme::FS_TITLE));
-            ui.add_space(6.0);
+            esc |= crate::dialog::title(ui, "Clips neu einpassen?");
             ui.label(RichText::new(crate::tr("Das Seitenverhältnis ändert sich. Wie sollen vorhandene Bilder ins neue Format?")).color(theme::TEXT_DIM()));
-            ui.add_space(12.0);
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(theme::primary("Füllen")).on_hover_text(crate::tr("Bild füllt das Format, Ränder werden beschnitten")).clicked() {
-                        pick = Some(1);
-                    }
-                    if ui.add(theme::secondary("Einpassen")).on_hover_text(crate::tr("Ganzes Bild sichtbar, mit Balken")).clicked() {
-                        pick = Some(2);
-                    }
-                    if ui.add(theme::secondary("Auto-Reframe")).on_hover_text(crate::tr("Füllen und dem Wichtigen im Bild folgen (Analyse im Hintergrund)")).clicked() {
-                        pick = Some(3);
-                    }
-                    if ui.add(theme::ghost("So lassen")).clicked() {
-                        pick = Some(0);
-                    }
-                });
+            crate::dialog::footer(ui, |ui| {
+                if ui.add(theme::primary("Füllen")).on_hover_text(crate::tr("Bild füllt das Format, Ränder werden beschnitten")).clicked() {
+                    pick = Some(1);
+                }
+                if ui.add(theme::secondary("Einpassen")).on_hover_text(crate::tr("Ganzes Bild sichtbar, mit Balken")).clicked() {
+                    pick = Some(2);
+                }
+                if ui.add(theme::secondary("Auto-Reframe")).on_hover_text(crate::tr("Füllen und dem Wichtigen im Bild folgen (Analyse im Hintergrund)")).clicked() {
+                    pick = Some(3);
+                }
+                if ui.add(theme::secondary("So lassen")).clicked() {
+                    pick = Some(0);
+                }
             });
-            if !typing && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            if enter {
                 pick = Some(1);
             }
         });
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if esc {
             self.aspect_fit = None;
             return;
         }

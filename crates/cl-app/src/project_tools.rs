@@ -190,7 +190,10 @@ impl App {
         }
         let mut open = true;
         let mut restore: Option<PathBuf> = None;
-        egui::Window::new(crate::tr("Sicherungen")).id(egui::Id::new("backups")).open(&mut open).collapsible(false).default_width(380.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
+        crate::dialog::window(ctx, crate::tr("Sicherungen"), "backups").default_width(380.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
+            if crate::dialog::title(ui, "Sicherungen") {
+                open = false;
+            }
             ui.label(RichText::new(crate::tr("Alle 5 Minuten bei Änderungen, die letzten 30 Stände")).small().color(theme::TEXT_DIM()));
             ui.add_space(6.0);
             let Some(path) = self.project_path.clone() else {
@@ -264,7 +267,10 @@ impl App {
         let mut open = true;
         let mut search = false;
         let mut pick: Option<cl_core::MediaId> = None;
-        egui::Window::new(crate::tr("Medien neu verknüpfen")).id(egui::Id::new("relink")).open(&mut open).collapsible(false).default_width(460.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
+        crate::dialog::window(ctx, crate::tr("Medien neu verknüpfen"), "relink").default_width(460.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
+            if crate::dialog::title(ui, "Medien neu verknüpfen") {
+                open = false;
+            }
             if missing.is_empty() {
                 ui.label(RichText::new(crate::tr(format!("{}  Alle Medien sind vorhanden", icon::CHECK_CIRCLE))).color(theme::TEXT_DIM()));
                 return;
@@ -285,10 +291,14 @@ impl App {
                     });
                 }
             });
-            ui.add_space(6.0);
-            if ui.add(theme::primary(format!("{}  Ordner durchsuchen …", icon::MAGNIFYING_GLASS))).on_hover_text(crate::tr("Sucht alle fehlenden Dateien nach Namen in einem Ordner und seinen Unterordnern")).clicked() {
-                search = true;
-            }
+            crate::dialog::footer(ui, |ui| {
+                if ui.add(theme::primary(format!("{}  Ordner durchsuchen …", icon::MAGNIFYING_GLASS))).on_hover_text(crate::tr("Sucht alle fehlenden Dateien nach Namen in einem Ordner und seinen Unterordnern")).clicked() {
+                    search = true;
+                }
+                if ui.add(theme::secondary("Abbrechen")).clicked() {
+                    open = false;
+                }
+            });
         });
         if !open {
             self.missing_open = false;

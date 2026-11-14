@@ -292,8 +292,9 @@ impl App {
         if !self.settings_open {
             return;
         }
-        let modal = egui::Modal::new(egui::Id::new("settings"))
-            .frame(egui::Frame::window(&ctx.style()).inner_margin(0))
+        // Seitenleiste reicht bis an den Rand: gemeinsamer Rahmen ohne Innenabstand
+        let modal = crate::dialog::modal(ctx, "settings")
+            .frame(crate::dialog::frame(ctx).inner_margin(0))
             .show(ctx, |ui| {
                 ui.set_width(700.0);
                 ui.set_height(470.0);

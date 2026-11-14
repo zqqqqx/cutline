@@ -186,13 +186,13 @@ impl App {
             return;
         }
         let mut open = true;
-        egui::Window::new(crate::tr(format!("{}  Eigenschaften", icon::INFO)))
-            .id(egui::Id::new("props"))
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
+        let head = format!("{}  Eigenschaften", icon::INFO);
+        crate::dialog::window(ctx, crate::tr(head.as_str()), "props")
             .default_width(340.0)
             .show(ctx, |ui| {
+                if crate::dialog::title(ui, &head) {
+                    open = false;
+                }
                 ui.label(RichText::new(&title).strong().size(theme::FS_TEXT));
                 ui.add_space(6.0);
                 egui::Grid::new("props-grid").num_columns(2).spacing([14.0, 5.0]).show(ui, |ui| {

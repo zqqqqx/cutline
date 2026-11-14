@@ -148,13 +148,13 @@ impl crate::app::App {
         }
         let (name, list) = (&l.name, &l.items);
         let mut open = true;
-        egui::Window::new(crate::tr(format!("{}  Exporte", icon::EXPORT)))
-            .id(egui::Id::new("exports"))
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
+        let title = format!("{}  Exporte", icon::EXPORT);
+        crate::dialog::window(ctx, crate::tr(title.as_str()), "exports")
             .default_width(420.0)
             .show(ctx, |ui| {
+                if crate::dialog::title(ui, &title) {
+                    open = false;
+                }
                 ui.label(RichText::new(name).strong().size(theme::FS_TEXT));
                 ui.add_space(6.0);
                 if list.is_empty() {

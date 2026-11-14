@@ -289,13 +289,11 @@ impl App {
         let mut close = false;
         let mut delete = false;
         let first = self.marker_draft.as_ref().is_none_or(|d| d.id != id);
-        egui::Window::new(crate::tr("Marker"))
-            .id(egui::Id::new("marker-edit"))
-            .collapsible(false)
-            .resizable(false)
-            .default_width(300.0)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -80.0))
+        let modal = crate::dialog::modal(ctx, "marker-edit")
             .show(ctx, |ui| {
+                ui.set_width(300.0);
+                // Kreuz wie Esc: übernimmt den Entwurf
+                close |= crate::dialog::title(ui, "Marker");
                 theme::row(ui, "Name", |ui| {
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut m.name)
@@ -348,7 +346,7 @@ impl App {
                         .desired_rows(3)
                         .desired_width(f32::INFINITY),
                 );
-                ui.add_space(6.0);
+                ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     if ui
                         .add(theme::ghost(format!("{}  Löschen", icon::TRASH)))
@@ -363,7 +361,7 @@ impl App {
                     });
                 });
             });
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if modal.should_close() {
             close = true;
         }
         let mut ms = self.project.timeline.markers.clone();
@@ -395,31 +393,28 @@ impl App {
         };
         let id = *id;
         let mut done = None;
-        egui::Window::new(crate::tr("Spur umbenennen"))
-            .id(egui::Id::new("track-rename"))
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -80.0))
+        let modal = crate::dialog::modal(ctx, "track-rename")
             .show(ctx, |ui| {
+                if crate::dialog::title(ui, "Spur umbenennen") {
+                    done = Some(false);
+                }
                 let r = ui.add(
                     egui::TextEdit::singleline(name)
                         .hint_text(crate::tr("z. B. Sprecher 1, Musik, Kamera B"))
                         .desired_width(260.0),
                 );
                 r.request_focus();
+                // Namensfeld hat immer den Fokus: Enter bestätigt die Eingabe
                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     done = Some(true);
                 }
-                ui.horizontal(|ui| {
-                    if ui.add(theme::primary("OK")).clicked() {
-                        done = Some(true);
-                    }
-                    if ui.add(theme::secondary("Abbrechen")).clicked() {
-                        done = Some(false);
-                    }
-                });
+                match crate::dialog::buttons(ui, theme::primary("OK"), true) {
+                    (true, _) => done = Some(true),
+                    (_, true) => done = Some(false),
+                    _ => {}
+                }
             });
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if modal.should_close() {
             done = Some(false);
         }
         if let Some(ok) = done {

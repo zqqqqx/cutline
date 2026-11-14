@@ -866,17 +866,10 @@ Keine passenden Dateien	No matching files
 Ungültiger Ordnername	Invalid folder name
 Ungültiger Name	Invalid name
 # Presets
-Keine Presets	No presets
 Looks ({})	Looks ({})
-Look als Preset speichern	Save look as preset
 Auf die Auswahl anwenden	Apply to selection
-Preset entfernen	Remove preset
-Preset umbenennen	Rename preset
 Name, z. B. Gaming-Look	Name, e.g. Gaming look
 Gespeichert werden Anpassen, Filter, Effekte, LUT, Animationen, Deckkraft und Ton – bei Text auch der Textstil.	Saves adjustments, filter, effects, LUT, animations, opacity and audio – for text also the text style.
-Preset „{}“ gespeichert	Preset “{}” saved
-Preset „{}“ angewendet	Preset “{}” applied
-Preset „{}“ entfernt	Preset “{}” removed
 Bitte einen Namen eingeben	Please enter a name
 # Import
 Import	Import
@@ -1583,3 +1576,14 @@ Projekt hat sich geändert – bitte erneut ausführen	The project has changed �
 Bei mehreren Spuren wird nur geschnitten, wo alle still sind	With several tracks, cuts are made only where all are silent
 Begleitdatei nicht gespeichert	Could not save companion file
 Lautheit konnte nicht gemessen werden	Could not measure loudness
+Keine Looks	No looks
+Als Look speichern	Save as look
+Look löschen	Delete look
+Look umbenennen	Rename look
+Look „{}“ gespeichert	Look “{}” saved
+Look „{}“ angewendet	Look “{}” applied
+Look „{}“ gelöscht	Look “{}” deleted
+Wähle zuerst einen Clip mit Ton	Select a clip with audio first
+Wähle zwei oder mehr Clips	Select two or more clips
+Wähle einen Videoclip	Select a video clip
+Setze zuerst Marker	Add markers first

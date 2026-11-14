@@ -254,7 +254,8 @@ impl App {
         };
         let mut pick: Option<(Project, u8)> = None;
         let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-        egui::Window::new(crate::tr("Aus Vorlage einfügen")).id(egui::Id::new("tpl-insert")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0)).show(ctx, |ui| {
+        crate::dialog::window(ctx, crate::tr("Aus Vorlage einfügen"), "tpl-insert").anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0)).show(ctx, |ui| {
+            close |= crate::dialog::title(ui, "Aus Vorlage einfügen");
             for (name, proj) in list {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(crate::tr(name.as_str())).size(theme::FS_UI));
@@ -266,9 +267,6 @@ impl App {
                         }
                     });
                 });
-            }
-            if ui.add(theme::secondary("Abbrechen")).clicked() {
-                close = true;
             }
         });
         if let Some((proj, mode)) = pick {
@@ -287,16 +285,16 @@ impl App {
         };
         let mut sel = self.multicam_audio.min(n - 1);
         let mut cancel = false;
-        egui::Window::new(crate::tr("Multicam")).id(egui::Id::new("multicam-hint")).collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 60.0)).show(ctx, |ui| {
+        crate::dialog::window(ctx, crate::tr("Multicam"), "multicam-hint").anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 60.0)).show(ctx, |ui| {
             ui.set_max_width(300.0);
+            cancel |= crate::dialog::title(ui, "Multicam");
             ui.label(RichText::new(crate::tr("Multicam: Wiedergabe starten und mit 1–9 den Blickwinkel wählen, Stopp übernimmt den Schnitt")).size(theme::FS_UI));
             ui.add_space(6.0);
             ui.label(RichText::new(crate::tr("Ton von (läuft durchgehend)")).small().color(theme::TEXT_FAINT()));
             let names: Vec<String> = (1..=n).map(|i| format!("{} {i}", crate::tr("Kamera"))).collect();
             let items: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
             crate::widgets::segmented(ui, &items, &mut sel);
-            ui.add_space(6.0);
-            cancel = ui.add(theme::secondary("Abbrechen")).clicked();
+            cancel |= crate::dialog::footer(ui, |ui| ui.add(theme::secondary("Abbrechen")).clicked());
         });
         self.multicam_audio = sel;
         if cancel {
@@ -322,7 +320,8 @@ impl App {
             TplDialog::Rename { .. } => "Vorlage umbenennen",
             TplDialog::Insert(_) => return,
         };
-        egui::Window::new(crate::tr(title)).id(egui::Id::new("tpl-dialog")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0)).show(ctx, |ui| {
+        let modal = crate::dialog::modal(ctx, "tpl-dialog").show(ctx, |ui| {
+            close |= crate::dialog::title(ui, title);
             let name = match d {
                 TplDialog::Save { name } | TplDialog::Rename { name, .. } => name,
                 TplDialog::Insert(_) => return,
@@ -331,19 +330,15 @@ impl App {
             r.request_focus();
             edited |= r.changed();
             theme::field_error(ui, err.as_deref());
+            // Namensfeld hat immer den Fokus: Enter bestätigt die Eingabe
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
-            ui.horizontal(|ui| {
-                if ui.add(theme::primary("OK")).clicked() {
-                    ok = true;
-                }
-                if ui.add(theme::secondary("Abbrechen")).clicked() {
-                    close = true;
-                }
-            });
+            let (m, c) = crate::dialog::buttons(ui, theme::primary("OK"), true);
+            ok |= m;
+            close |= c;
         });
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if modal.should_close() {
             close = true;
         }
         if edited {

@@ -107,14 +107,9 @@ impl App {
         }
         if let Some((name, rep)) = &self.import.report {
             let mut close = false;
-            let m = egui::Modal::new(egui::Id::new("import-report")).show(ctx, |ui| {
+            let m = crate::dialog::modal(ctx, "import-report").show(ctx, |ui| {
                 ui.set_width(420.0);
-                ui.label(
-                    RichText::new(crate::tr(format!("„{name}“ importiert")))
-                        .strong()
-                        .size(theme::FS_TITLE),
-                );
-                ui.add_space(6.0);
+                close |= crate::dialog::title(ui, &format!("„{name}“ importiert"));
                 if !rep.skipped.is_empty() {
                     ui.label(crate::tr(
                         "Nicht übertragen (gibt es nur im Ursprungsprogramm):",
@@ -140,12 +135,7 @@ impl App {
                         );
                     }
                 }
-                ui.add_space(10.0);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(theme::primary("OK")).clicked() {
-                        close = true;
-                    }
-                });
+                close |= crate::dialog::footer(ui, |ui| ui.add(theme::primary("OK")).clicked());
             });
             if close || m.should_close() {
                 self.import.report = None;
@@ -166,16 +156,9 @@ impl App {
         let mut close = false;
         let mut pick: Option<PathBuf> = None;
         let busy = self.import.running.is_some();
-        let m = egui::Modal::new(egui::Id::new("import")).show(ctx, |ui| {
+        let m = crate::dialog::modal(ctx, "import").show(ctx, |ui| {
             ui.set_width(520.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(crate::tr("Projekt importieren")).strong().size(theme::FS_TITLE));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if theme::icon_button(ui, icon::X, "Schließen (Esc)", true, false).clicked() {
-                        close = true;
-                    }
-                });
-            });
+            close |= crate::dialog::title(ui, "Projekt importieren");
             ui.label(RichText::new(crate::tr("Programmeigene Effekte und Vorlagen werden nicht übernommen.")).small().color(theme::TEXT_DIM()));
             ui.add_space(8.0);
             if let Some((label, _)) = &self.import.running {
@@ -210,9 +193,8 @@ impl App {
                         }
                     });
                 }
-                ui.add_space(4.0);
             }
-            ui.horizontal(|ui| {
+            crate::dialog::footer(ui, |ui| {
                 let mut exts: Vec<&str> = Vec::new();
                 if self.settings.import_capcut {
                     exts.push("json");
