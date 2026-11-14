@@ -173,6 +173,8 @@ pub struct App {
     pub perf_max_gap: f64,
     /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
+    /// Quick-Action-Fenster (Pausen, Füllwörter, Ducking, Punch-in)
+    pub quick: crate::quick::Quick,
     /// Figuren (Plugin „Story-Werkzeuge“)
     pub characters: Vec<crate::story::Character>,
     /// Plugins Freesound und Pexels
@@ -395,6 +397,7 @@ impl App {
             perf_last_frame: None,
             perf_max_gap: 0.0,
             multicam: None,
+            quick: Default::default(),
             characters: crate::story::load(),
             stock: Default::default(),
             last_backup: None,
@@ -3078,6 +3081,7 @@ impl eframe::App for App {
         self.preset_dialogs(ctx);
         self.import_dialogs(ctx);
         self.marker_dialog(ctx);
+        self.quick_dialog(ctx);
         self.track_rename_dialog(ctx);
         self.project_tools(ctx);
         self.paste_attrs_dialog(ctx);

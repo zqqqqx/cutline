@@ -1,7 +1,7 @@
 //! Navigation und Bereich: J/K/L-Shuttle, In/Out-Punkte, Marker (setzen, springen,
 //! bearbeiten, Liste, YouTube-Kapitel), Ripple-Löschen und Sprung zum nächsten Schnitt.
 
-use cl_core::{EditOp, Marker, Time, MARKER_COLORS};
+use cl_core::{EditOp, Marker, Time, Track, TrackId, MARKER_COLORS};
 use eframe::egui::{self, Color32, RichText};
 
 use crate::app::App;
@@ -177,57 +177,69 @@ impl App {
         }
     }
 
-    /// Umschalt+Entf: Auswahl löschen und die Lücke auf derselben Spur schließen.
+    /// Umschalt+Entf: Auswahl löschen und die Lücke schließen (je nach „Alles mitziehen“
+    /// nur auf derselben Spur oder auf allen Spuren).
     pub fn ripple_delete(&mut self) {
         self.live = None;
         let sel = self.selection();
         if sel.is_empty() {
             return;
         }
-        let mut ops = Vec::new();
-        for t in &self.project.timeline.tracks {
-            let mut gone: Vec<(Time, Time)> = t
-                .clips
-                .iter()
-                .filter(|c| sel.contains(&c.id))
-                .map(|c| (c.start, c.duration))
-                .collect();
-            if gone.is_empty() {
-                continue;
-            }
-            gone.sort_by_key(|g| g.0);
-            for c in t.clips.iter().filter(|c| sel.contains(&c.id)) {
-                ops.push(EditOp::RemoveClip { clip: c.id });
-            }
-            // Hauptspur mit Magnet schließt die Lücke selbst
-            if t.main && self.project.settings.main_track_magnet {
-                continue;
-            }
-            for c in t.clips.iter().filter(|c| !sel.contains(&c.id)) {
-                let shift: i64 = gone
-                    .iter()
-                    .filter(|(s, _)| s.0 < c.start.0)
-                    .map(|(_, d)| d.0)
-                    .sum();
-                if shift > 0 {
-                    ops.push(EditOp::MoveClip {
-                        clip: c.id,
-                        track: Some(t.id),
-                        start: Time(c.start.0 - shift),
-                    });
-                }
-            }
-        }
-        let first = sel
+        let ranges: Vec<(TrackId, Time, Time)> = self
+            .project
+            .timeline
+            .tracks
             .iter()
-            .filter_map(|c| self.project.find_clip(*c).map(|(_, c)| c.start))
-            .min();
+            .flat_map(|t| {
+                t.clips
+                    .iter()
+                    .filter(|c| sel.contains(&c.id))
+                    .map(move |c| (t.id, c.start, c.end()))
+            })
+            .collect();
+        let first = ranges.iter().map(|r| r.1).min();
         self.select_only(None);
-        if self.apply_batch(ops).is_some() {
+        if self.ripple_ranges(ranges) {
             if let Some(t) = first {
                 self.stop_playback();
                 self.playhead = t;
             }
+        }
+    }
+
+    /// Bereiche (Spur, von, bis) als ein Undo-Schritt entfernen und alles dahinter nachziehen.
+    /// Gemeinsamer Weg für Ripple-Löschen, Lücken schließen, Pausen und Füllwörter.
+    pub fn ripple_ranges(&mut self, ranges: Vec<(TrackId, Time, Time)>) -> bool {
+        let ops = cl_core::ripple_ops(ranges, self.project.settings.ripple_all_tracks);
+        self.apply_batch(ops).is_some()
+    }
+
+    /// Lücken einer Spur oder (None) aller Spuren schließen. Mit „Alles mitziehen“ und
+    /// allen Spuren nur Stellen, an denen keine Spur etwas zeigt.
+    pub fn close_gaps(&mut self, track: Option<TrackId>) {
+        let tracks: Vec<&Track> = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .filter(|t| !t.locked && track.is_none_or(|id| t.id == id))
+            .collect();
+        let ranges: Vec<(TrackId, Time, Time)> = match tracks.first() {
+            Some(t0) if track.is_none() && self.project.settings.ripple_all_tracks => {
+                cl_core::gaps(tracks.iter().flat_map(|t| t.clips.iter()))
+                    .into_iter()
+                    .map(|(a, b)| (t0.id, a, b))
+                    .collect()
+            }
+            _ => tracks
+                .iter()
+                .flat_map(|t| cl_core::gaps(&t.clips).into_iter().map(move |(a, b)| (t.id, a, b)))
+                .collect(),
+        };
+        if ranges.is_empty() {
+            self.toast("Keine Lücken");
+        } else {
+            self.ripple_ranges(ranges);
         }
     }
 
