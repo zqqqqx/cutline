@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use cl_core::*;
-use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText, Stroke};
+use eframe::egui::{self, vec2, Color32, Rect, RichText, Stroke};
 
 use crate::app::App;
 use crate::player_edit::Region;
@@ -1229,11 +1229,6 @@ impl App {
             },
         );
     }
-}
-
-#[allow(dead_code)]
-fn _unused(_: egui::Pos2) -> egui::Pos2 {
-    pos2(0.0, 0.0)
 }
 
 /// Ton-Werkzeuge für Clips und Einsprechen: Störgeräusche, Klang, Audiofilter, Stimmfilter.

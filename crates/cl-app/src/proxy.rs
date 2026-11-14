@@ -118,6 +118,8 @@ fn build_with(
         for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
             if cancel.load(Ordering::Relaxed) {
                 let _ = child.kill();
+                // warten, bis FFmpeg die Datei losgelassen hat (Windows), sonst bleibt `.part.mp4`
+                let _ = child.wait();
                 let _ = std::fs::remove_file(&tmp);
                 return Err("Abgebrochen".into());
             }
@@ -156,17 +158,28 @@ impl App {
     /// Fehlende Proxys im Hintergrund erzeugen (nacheinander, je Medium eine Aufgabe).
     pub fn ensure_proxies(&mut self, ctx: &egui::Context) {
         if !self.settings.use_proxies || self.tasks.running("proxy").is_some() {
+            // nach Ende einer Aufgabe sofort weitersuchen
+            self.proxy_scan = None;
             return;
         }
+        // Dateisystem höchstens alle 2 s prüfen (oder wenn sich die Medienliste ändert)
+        let n = self.project.media.len();
+        if self
+            .proxy_scan
+            .is_some_and(|(t, len)| len == n && t.elapsed() < std::time::Duration::from_secs(2))
+        {
+            return;
+        }
+        self.proxy_scan = Some((std::time::Instant::now(), n));
         let next = self
             .project
             .media
             .iter()
             .find(|m| {
                 wants_proxy(m)
+                    && !self.proxy_failed.contains(&m.id)
                     && m.path.is_file()
                     && !proxy_path(m, self.settings.proxy_h).is_file()
-                    && !self.proxy_failed.contains(&m.id)
             })
             .cloned();
         if let Some(m) = next {
@@ -219,12 +232,20 @@ impl App {
             }
         });
         ui.label(RichText::new(crate::tr("Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes. Der Export nutzt immer die Originale.")).small().color(theme::TEXT_DIM()));
-        let (n, bytes) = std::fs::read_dir(dir())
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter_map(|e| e.metadata().ok())
-            .fold((0u64, 0u64), |(n, b), m| (n + 1, b + m.len()));
+        // Ordner höchstens alle 2 s zählen
+        let (n, bytes) = match self.proxy_stats {
+            Some((t, n, b)) if t.elapsed() < std::time::Duration::from_secs(2) => (n, b),
+            _ => {
+                let (n, b) = std::fs::read_dir(dir())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .filter_map(|e| e.metadata().ok())
+                    .fold((0u64, 0u64), |(n, b), m| (n + 1, b + m.len()));
+                self.proxy_stats = Some((std::time::Instant::now(), n, b));
+                (n, b)
+            }
+        };
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(crate::tr(format!(
@@ -240,6 +261,7 @@ impl App {
                     .clicked()
             {
                 let _ = std::fs::remove_dir_all(dir());
+                self.proxy_stats = None;
                 self.invalidate_preview();
             }
         });

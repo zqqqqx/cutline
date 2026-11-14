@@ -618,10 +618,16 @@ impl App {
     }
 
     fn text_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
-        let fonts: Vec<String> = {
-            let mut v: Vec<String> = self.font_files().into_keys().collect();
-            v.sort();
-            v
+        // Schriftliste nicht in jedem Bild neu aufbauen: höchstens alle 2 s
+        let fonts = match &self.font_names {
+            Some((t, v)) if t.elapsed() < std::time::Duration::from_secs(2) => v.clone(),
+            _ => {
+                let mut v: Vec<String> = self.font_files().into_keys().collect();
+                v.sort();
+                let v = std::sync::Arc::new(v);
+                self.font_names = Some((std::time::Instant::now(), v.clone()));
+                v
+            }
         };
         let ClipContent::Text(st) = &mut c.content else {
             return;
@@ -659,7 +665,7 @@ impl App {
                         e.commit = true;
                     }
                     // Favoriten zuerst (mit Stern)
-                    let mut fonts = fonts.clone();
+                    let mut fonts: Vec<String> = fonts.to_vec();
                     fonts.sort_by_key(|f| !self.library.is_favorite(&format!("font:{f}")));
                     for f in &fonts {
                         let fav = self.library.is_favorite(&format!("font:{f}"));
@@ -1574,7 +1580,7 @@ impl App {
     fn history_inspector(&mut self, ui: &mut egui::Ui) {
         type Row = (&'static str, OpSource, std::time::SystemTime);
         let (done, undone): (Vec<Row>, Vec<Row>) = {
-            let d = self.doc.lock().unwrap();
+            let d = self.doc.lock().unwrap_or_else(|e| e.into_inner());
             let map = |e: &cl_core::HistoryEntry| (e.label, e.source.clone(), e.at);
             (d.undo_entries().iter().map(map).collect(), d.redo_entries().iter().map(map).collect())
         };
