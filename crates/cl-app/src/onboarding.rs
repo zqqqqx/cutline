@@ -258,14 +258,32 @@ fn suggestions(uses: &BTreeSet<&'static str>) -> Vec<&'static Sug> {
 
 /// Rundgang: (Bereich, Titel, Text)
 pub const TOUR: &[(&str, &str, &str)] = &[
-    ("assets", "Bibliothek", "Medien importieren oder einfach hierher ziehen. Oben findest du Audio, Text, Sticker, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an."),
+    ("assets", "Medien", "Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Sticker, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an."),
     ("player", "Vorschau", "Zeigt das Bild am Playhead. Clips verschiebst, skalierst und drehst du direkt hier. Leertaste spielt ab, J/K/L spult."),
-    ("inspector", "Inspektor", "Alles zum ausgewählten Clip: Bild, Ton, Geschwindigkeit, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker."),
-    ("timeline", "Zeitleiste", "Hier entsteht dein Video. Strg+B teilt, Q/W löscht links/rechts vom Playhead, M setzt einen Marker. Der Magnet hält die Hauptspur lückenlos."),
+    ("inspector", "Inspektor", "Alles zum ausgewählten Clip: Bild, Ton, Tempo, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker."),
+    // die Tastenkürzel hängt `tour_overlay` mit der wirklichen Belegung an
+    ("timeline", "Zeitleiste", "Hier entsteht dein Video. Der Magnet hält die Hauptspur lückenlos."),
     ("tools", "Quick Actions", "Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Layout und Thumbnail mit einem Klick."),
     ("export", "Exportieren", "Vorlagen für YouTube, Shorts, TikTok, Instagram und Twitch. Ohne Wasserzeichen, bis 4K."),
     ("menu", "Menü", "Projekte, Vorlagen, Sicherungen, Einstellungen und Tastenkürzel. Den Rundgang findest du hier jederzeit wieder."),
 ];
+
+/// Tastenkürzel im Rundgang-Text zur Zeitleiste: (Aktion, Satzteil)
+const TOUR_KEYS: &[(&str, &str)] = &[
+    ("split", "{} teilt"),
+    ("del_left", "{} löscht links vom Playhead"),
+    ("del_right", "{} löscht rechts vom Playhead"),
+    ("marker", "{} setzt einen Marker"),
+];
+
+/// Breite des Rahmens um den gezeigten Bereich im Rundgang
+const TOUR_STROKE: f32 = 2.0;
+
+/// Ausschnitt des Rundgangs: etwas Luft um den Bereich, aber nur so weit, dass der Rahmen
+/// (außen herum gezeichnet) ganz in der Fensterfläche bleibt – auch an den Fensterkanten.
+fn tour_hole(r: Rect, screen: Rect) -> Rect {
+    r.expand(4.0).intersect(screen.shrink(TOUR_STROKE))
+}
 
 /// Kachel zum Auswählen (Icon, Titel, kleine Zeile); `on` = ausgewählt.
 fn choice_tile(
@@ -677,11 +695,22 @@ impl App {
             return;
         }
         let (key, title, text) = TOUR[i];
+        let mut body = crate::tr(text);
+        if key == "timeline" {
+            // wirkliche Belegung; nicht belegte Aktionen fallen weg
+            let keys: Vec<String> = TOUR_KEYS
+                .iter()
+                .map(|(a, s)| (self.key_of(a), s))
+                .filter(|(k, _)| !k.is_empty())
+                .map(|(k, s)| crate::tr(s.replace("{}", &crate::tr(&k))))
+                .collect();
+            if !keys.is_empty() {
+                body = format!("{body} {}.", keys.join(", "));
+            }
+        }
+
         let screen = ctx.screen_rect();
-        let hole = self
-            .tour_rects
-            .get(key)
-            .map(|r| r.expand(4.0).intersect(screen));
+        let hole = self.tour_rects.get(key).map(|r| tour_hole(*r, screen));
         // Titelleiste frei lassen: Fenster verschieben, minimieren, maximieren und schließen
         // bleiben während der Einführung möglich
         let below_title = Rect::from_min_max(screen.min + vec2(0.0, theme::TITLE_H), screen.max);
@@ -720,7 +749,7 @@ impl App {
                         p.rect_stroke(
                             h,
                             theme::R_CARD,
-                            Stroke::new(2.0_f32, theme::ACCENT()),
+                            Stroke::new(TOUR_STROKE, theme::ACCENT()),
                             egui::StrokeKind::Outside,
                         );
                     }
@@ -783,7 +812,7 @@ impl App {
                         ui.add_space(2.0);
                         ui.label(RichText::new(crate::tr(title)).size(theme::FS_PAGE).strong());
                         ui.add_space(4.0);
-                        ui.label(RichText::new(crate::tr(text)).color(theme::TEXT_DIM()));
+                        ui.label(RichText::new(body).color(theme::TEXT_DIM()));
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
                             if ui.add(theme::ghost("Beenden")).clicked() {
@@ -939,4 +968,26 @@ fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tour_frame_stays_inside_the_window() {
+        let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(1600.0, 900.0));
+        // Medien-Menü an der linken/oberen/unteren Kante, Inspektor an der rechten
+        for r in [
+            Rect::from_min_max(pos2(0.0, 40.0), pos2(400.0, 900.0)),
+            Rect::from_min_max(pos2(1300.0, 0.0), pos2(1600.0, 600.0)),
+        ] {
+            let h = tour_hole(r, screen);
+            // der ganze Rahmen (außen, TOUR_STROKE breit) liegt im Fenster
+            assert!(screen.contains_rect(h.expand(TOUR_STROKE)), "{h:?}");
+        }
+        // Bereich in der Mitte: wie bisher 4 px Luft
+        let mid = Rect::from_min_max(pos2(400.0, 100.0), pos2(1200.0, 600.0));
+        assert_eq!(tour_hole(mid, screen), mid.expand(4.0));
+    }
 }

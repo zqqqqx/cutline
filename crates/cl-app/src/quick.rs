@@ -259,7 +259,9 @@ impl App {
                 }
                 let total: f64 = ranges.iter().map(|r| (r.2 - r.1).as_secs_f64()).sum();
                 let n = ranges.len();
-                if self.ripple_ranges(ranges) {
+                let label = if kind == QuickKind::Pauses { "Pausen entfernen" } else { "Füllwörter entfernen" };
+                if self.ripple_ranges(ranges, label) {
+
                     self.toast(if kind == QuickKind::Pauses {
                         format!("{n} Pausen entfernt ({total:.1} s)")
                     } else {

@@ -547,7 +547,10 @@ impl App {
                         }
                     });
                 });
+                // Anordnung der großen Bereiche (Kacheln mit Mini-Skizze), siehe layout.rs
+                self.arrangement_settings(ui);
                 if widgets::toggle_row(ui, "Animationen", &mut self.settings.animations) {
+
                     theme::set_animations(self.settings.animations);
                     let ctx = ui.ctx().clone();
                     theme::apply(&ctx);
