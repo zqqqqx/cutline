@@ -80,7 +80,8 @@ pub struct AppSettings {
     pub backup_minutes: u32,
     pub backup_keep: usize,
     /// Neue Projekte: Bildrate und Umgang mit Tonkanälen
-    #[serde(deserialize_with = "fps_compat")]
+    /// Gespeichert als `new_rate`: 0.7 erwartet `new_fps` als Zahl und legte sonst die ganze Datei beiseite
+    #[serde(rename = "new_rate", alias = "new_fps", deserialize_with = "fps_compat")]
     pub new_fps: cl_core::Rational,
     pub new_channels: cl_core::Channels,
     /// Höhe der Proxys (540, 720, 1080)
@@ -913,6 +914,11 @@ mod tests {
         s.new_fps = cl_core::Rational::parse("29.97").unwrap();
         let back: AppSettings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back.new_fps, s.new_fps);
+        // 0.8/0.9 schrieben den Bruch unter dem alten Namen; geschrieben wird nur noch `new_rate`
+        let v089: AppSettings = serde_json::from_str(r#"{"new_fps":{"num":25,"den":1}}"#).unwrap();
+        assert_eq!(v089.new_fps, cl_core::Rational::new(25, 1));
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"new_rate\"") && !json.contains("\"new_fps\""));
         assert!(FPS_CHOICES.iter().all(|f| cl_core::Rational::parse(f).is_some()));
     }
 }

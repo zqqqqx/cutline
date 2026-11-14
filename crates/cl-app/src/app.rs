@@ -1996,6 +1996,11 @@ impl App {
         self.invalidate_preview();
         self.player_zoom = 1.0;
         self.player_pan = egui::Vec2::ZERO;
+        // Fenster mit Zeiten und Treffern des alten Projekts schließen
+        self.shorts = None;
+        self.aspect_fit = None;
+        self.quick.open = None;
+        self.quick.hits = None;
     }
 
     /// Beim Beenden: laufende Hintergrundaufgaben abbrechen, damit ihre FFmpeg-Prozesse enden
@@ -2541,7 +2546,16 @@ impl App {
 
     /// Esc schließt das oberste offene Fenster (Eigenschaften, Exporte, Sicherungen, Neu verknüpfen).
     /// Läuft vor den Kürzeln, sonst verbraucht dort „escape“ die Taste und hebt nur die Auswahl auf.
+    /// Ein Dialog, der Esc/Enter selbst auswertet, ist offen
+    fn dialog_open(&self) -> bool {
+        self.quick.open.is_some() || self.shorts.is_some() || self.aspect_fit.is_some() || self.tpl_dialog.is_some()
+    }
+
     fn esc_closes(&mut self, ctx: &egui::Context) -> bool {
+        // darüber liegende Fenster zuerst: sonst schlösse Esc ein verdecktes Fenster dahinter
+        if self.settings_open || self.dialog_open() {
+            return false;
+        }
         let open = [
             ("props", self.props.is_some()),
             ("exports", self.exports_for.is_some()),
@@ -2566,8 +2580,7 @@ impl App {
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
         // offenes Kontextmenü: Esc gehört dem Menü (sonst verbraucht das Kürzel die Taste)
-        let dialog = self.quick.open.is_some() || self.shorts.is_some() || self.aspect_fit.is_some() || self.tpl_dialog.is_some();
-        if ctx.wants_keyboard_input() || self.settings_open || dialog || ctx.is_context_menu_open() {
+        if ctx.wants_keyboard_input() || self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
             return;
         }
         let mut actions: Vec<&str> = Vec::new();

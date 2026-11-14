@@ -255,7 +255,6 @@ Kombi	Combo
 Neue Dauer	New duration
 Kurven verteilen die Zeit im Clip um, die Länge bleibt gleich. Ton wird bei Kurven stummgeschaltet.	Curves redistribute time within the clip; the length stays the same. Audio is muted with curves.
 Richtung	Direction
-Rückwärts abspielen	Play in reverse
 Lautstärke	Volume
 Einblenden	Fade in
 Ausblenden	Fade out
@@ -421,8 +420,6 @@ Beim Start die Projektübersicht zeigen	Show projects on startup
 Automatisch speichern	Auto save
 Bilddauer	Image duration
 Textdauer	Text duration
-Hauptspur-Magnet (P)	Main track magnet (P)
-Einrasten (N)	Snapping (N)
 Geringere Vorschauauflösung macht die Wiedergabe mit Effekten flüssiger. Der Export nutzt immer die volle Auflösung.	A lower preview resolution makes playback with effects smoother. Export always uses full resolution.
 Effekt-Cache	Effect cache
 Vorschaubilder neu erzeugen	Rebuild thumbnails
@@ -793,7 +790,6 @@ Hintergrund weich	Blur background
 Hintergrundfarbe	Background color
 Umriss	Outline
 Bildqualität	Image quality
-Rauschen entfernen	Reduce noise
 Flackern ausgleichen	Remove flicker
 Zeitlupe	Slow motion
 Flüssige Zeitlupe	Smooth slow motion
@@ -870,7 +866,6 @@ Keine passenden Dateien	No matching files
 Ungültiger Ordnername	Invalid folder name
 Ungültiger Name	Invalid name
 # Presets
-Preset	Preset
 Keine Presets	No presets
 Looks ({})	Looks ({})
 Look als Preset speichern	Save look as preset
@@ -1039,7 +1034,6 @@ Proxys löschen	Delete proxies
 Proxy wird erstellt: {}	Creating proxy: {}
 Vorschau in eigenem Fenster (zweiter Bildschirm, Doppelklick oder F11 = Vollbild)	Preview in its own window (second screen, double-click or F11 = fullscreen)
 Rückgängig: {}	Undo: {}
-Werkzeuge	Tools
 Story	Story
 Story-Werkzeuge	Story tools
 Dialogbox: {}	Dialogue box: {}
@@ -1229,7 +1223,6 @@ Filter als Clip eingefügt – wirkt auf alle Spuren darunter	Filter added as a 
 Effekt als Clip eingefügt – wirkt auf alle Spuren darunter	Effect added as a clip – affects all tracks below
 Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Quick Actions → Hochkant-Layout	The project has a different aspect ratio – change the format in the Project tab or use Quick Actions → Vertical layout
 Plattform	Platform
-Einfach	Basic
 Einzelheiten	Details
 Begrenzt das Element auf einen Bildbereich. Der Umriss erscheint in der Vorschau, solange das Element ausgewählt ist.	Limits the element to an area of the picture. The outline shows in the preview while the element is selected.
 Der Filter wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.	The filter affects all tracks below while the element runs. Change its position and length in the timeline.
@@ -1247,7 +1240,6 @@ Rumpeln & Wind	Rumble & wind
 Klicks	Clicks
 Klang	Sound
 Kompressor	Compressor
-Lautheit angleichen	Normalize loudness
 Audiofilter	Audio filters
 Aufnahme	Recording
 Startet am Playhead	Starts at the playhead
@@ -1268,7 +1260,6 @@ Netzbrummen (50/60 Hz) entfernen	Remove mains hum (50/60 Hz)
 Sprache betonen, Hintergrund absenken	Bring out speech, lower the background
 Tiefe Störgeräusche unter 90 Hz entfernen	Remove low noise below 90 Hz
 Gilt für alle ausgewählten Clips	Applies to all selected clips
-Ton ist bei Kurven stumm	Audio is muted with curves
 Vorschau angenähert, Export exakt	Preview approximated, export exact
 Story-Werkzeuge, Pexels und Epidemic Sound sind Plugins: hier oder im Reiter Plugins einschalten. Pexels und Epidemic Sound brauchen ein eigenes Konto.	Story tools, Pexels and Epidemic Sound are plugins: turn them on here or in the Plugins tab. Pexels and Epidemic Sound need their own account.
 Export immer in voller Auflösung	Export always uses full resolution
@@ -1324,7 +1315,6 @@ Zurück in den Datenordner	Back to the data folder
 Neuer Projektordner	New projects folder
 Vorhandene Projekte werden mit verschoben.	Existing projects are moved along.
 Sicherung alle	Backup every
-Sicherungen behalten	Keep backups
 Neue Projekte	New projects
 Kanäle	Channels
 Kanäle (neue Projekte)	Channels (new projects)
