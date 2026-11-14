@@ -550,9 +550,9 @@ impl App {
                 // Platz für Stern und Plus rechts lassen, sonst wächst die Leiste jeden Frame
                 let sp = ui.spacing().item_spacing.x;
                 ui.set_width((ui.available_width() - 2.0 * 24.0 - 3.0 * sp - 6.0).max(60.0));
-                ui.add(egui::Label::new(RichText::new(&t.title).size(12.0)).truncate());
+                ui.add(egui::Label::new(RichText::new(&t.title).size(theme::FS_TEXT)).truncate());
                 ui.add(
-                    egui::Label::new(RichText::new(info).size(10.5).color(theme::TEXT_DIM()))
+                    egui::Label::new(RichText::new(info).size(theme::FS_HINT).color(theme::TEXT_DIM()))
                         .truncate(),
                 );
             });

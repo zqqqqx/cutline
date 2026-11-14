@@ -247,10 +247,10 @@ impl App {
                 let (r, resp) =
                     ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
                 if active {
-                    ui.painter().rect_filled(r, 6.0, theme::BG_RAISED());
+                    ui.painter().rect_filled(r, theme::R_CARD, theme::BG_RAISED());
                 } else if resp.hovered() {
                     ui.painter()
-                        .rect_filled(r, 6.0, theme::overlay(10));
+                        .rect_filled(r, theme::R_CARD, theme::overlay(10));
                 }
                 let col = if active {
                     theme::ACCENT()
@@ -261,6 +261,7 @@ impl App {
                     r.left_center() + vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     crate::tr(g),
+                    // Icon-Glyphe
                     egui::FontId::proportional(14.0),
                     col,
                 );
@@ -268,7 +269,7 @@ impl App {
                     r.left_center() + vec2(34.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     crate::tr(t),
-                    egui::FontId::proportional(12.0),
+                    egui::FontId::proportional(theme::FS_TEXT),
                     col,
                 );
                 resp.clicked()
@@ -299,7 +300,7 @@ impl App {
             egui::UiBuilder::new().max_rect(main.shrink2(vec2(24.0, 18.0))),
             |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(crate::tr("Projekte")).size(18.0).strong());
+                    ui.label(RichText::new(crate::tr("Projekte")).size(theme::FS_PAGE).strong());
                     ui.label(
                         RichText::new(crate::tr(format!("{}", self.home.entries.len())))
                             .color(theme::TEXT_FAINT()),
@@ -363,7 +364,7 @@ impl App {
                                     Sense::click(),
                                 );
                                 if resp.hovered() {
-                                    ui.painter().rect_filled(r, 6.0, theme::BG_RAISED());
+                                    ui.painter().rect_filled(r, theme::R_CARD, theme::BG_RAISED());
                                 }
                                 let tr =
                                     Rect::from_min_size(r.min + vec2(6.0, 6.0), vec2(71.0, 40.0));
@@ -373,7 +374,7 @@ impl App {
                                     pos2(tr.right() + 12.0, r.center().y - 8.0),
                                     egui::Align2::LEFT_CENTER,
                                     crate::tr(&name),
-                                    egui::FontId::proportional(12.5),
+                                    egui::FontId::proportional(theme::FS_TEXT),
                                     theme::TEXT(),
                                 );
                                 ui.painter().text(
@@ -385,14 +386,14 @@ impl App {
                                         size.0,
                                         size.1
                                     )),
-                                    egui::FontId::proportional(10.5),
+                                    egui::FontId::proportional(theme::FS_HINT),
                                     theme::TEXT_FAINT(),
                                 );
                                 ui.painter().text(
                                     r.right_center() - vec2(14.0, 0.0),
                                     egui::Align2::RIGHT_CENTER,
                                     crate::tr(ago(modified)),
-                                    egui::FontId::proportional(10.5),
+                                    egui::FontId::proportional(theme::FS_HINT),
                                     theme::TEXT_DIM(),
                                 );
                                 if resp.clicked() {
@@ -431,7 +432,7 @@ impl App {
                                         let hov = resp.hovered();
                                         ui.painter().rect_filled(
                                             thumb_r,
-                                            8.0,
+                                            theme::R_CARD,
                                             if hov {
                                                 theme::BG_HOVER()
                                             } else {
@@ -440,13 +441,14 @@ impl App {
                                         );
                                         ui.painter().rect_stroke(
                                             thumb_r,
-                                            8.0,
+                                            theme::R_CARD,
                                             Stroke::new(
                                                 1.0_f32,
+                                                // kein Ruhe-Rahmen (Fläche hebt sich schon ab)
                                                 if hov {
                                                     Color32::from_white_alpha(120)
                                                 } else {
-                                                    theme::BORDER()
+                                                    Color32::TRANSPARENT
                                                 },
                                             ),
                                             egui::StrokeKind::Inside,
@@ -460,6 +462,7 @@ impl App {
                                             thumb_r.center() - vec2(0.0, 10.0),
                                             egui::Align2::CENTER_CENTER,
                                             icon::PLUS,
+                                            // Icon-Glyphe
                                             egui::FontId::proportional(18.0),
                                             theme::ACCENT_INK(),
                                         );
@@ -467,14 +470,14 @@ impl App {
                                             thumb_r.center() + vec2(0.0, 24.0),
                                             egui::Align2::CENTER_CENTER,
                                             crate::tr("Neues Projekt"),
-                                            egui::FontId::proportional(12.0),
+                                            egui::FontId::proportional(theme::FS_TEXT),
                                             theme::TEXT(),
                                         );
                                         ui.painter().text(
                                             pos2(r.left() + 2.0, thumb_r.bottom() + 14.0),
                                             egui::Align2::LEFT_CENTER,
                                             crate::tr("Oder Dateien hierher ziehen"),
-                                            egui::FontId::proportional(10.5),
+                                            egui::FontId::proportional(theme::FS_HINT),
                                             theme::TEXT_FAINT(),
                                         );
                                         if resp.clicked() {
@@ -497,14 +500,14 @@ impl App {
                                     if resp.hovered() {
                                         ui.painter().rect_stroke(
                                             thumb_r,
-                                            8.0,
+                                            theme::R_CARD,
                                             Stroke::new(1.5_f32, theme::ACCENT()),
                                             egui::StrokeKind::Inside,
                                         );
                                     }
                                     let badge = ui.painter().layout_no_wrap(
                                         fmt_dur(dur),
-                                        egui::FontId::proportional(10.0),
+                                        egui::FontId::proportional(theme::FS_HINT),
                                         Color32::WHITE,
                                     );
                                     let br = Rect::from_min_size(
@@ -513,7 +516,7 @@ impl App {
                                     );
                                     ui.painter().rect_filled(
                                         br,
-                                        3.0,
+                                        theme::R_CTRL,
                                         Color32::from_black_alpha(170),
                                     );
                                     ui.painter().galley(
@@ -529,14 +532,14 @@ impl App {
                                         pos2(r.left() + 2.0, thumb_r.bottom() + 14.0),
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(&name),
-                                        egui::FontId::proportional(12.5),
+                                        egui::FontId::proportional(theme::FS_TEXT),
                                         theme::TEXT(),
                                     );
                                     np.text(
                                         pos2(r.left() + 2.0, thumb_r.bottom() + 31.0),
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(ago(modified)),
-                                        egui::FontId::proportional(10.5),
+                                        egui::FontId::proportional(theme::FS_HINT),
                                         theme::TEXT_FAINT(),
                                     );
                                     // ⋯-Menü
@@ -554,6 +557,7 @@ impl App {
                                             mr.center(),
                                             egui::Align2::CENTER_CENTER,
                                             icon::DOTS_THREE,
+                                            // Icon-Glyphe
                                             egui::FontId::proportional(16.0),
                                             theme::TEXT(),
                                         );
@@ -579,10 +583,7 @@ impl App {
                                 ui.add_space(gap);
                             }
                             if idx.is_empty() && !q.is_empty() {
-                                ui.label(
-                                    RichText::new(crate::tr("Keine Projekte gefunden"))
-                                        .color(theme::TEXT_DIM()),
-                                );
+                                theme::empty_state(ui, icon::MAGNIFYING_GLASS, "Keine Projekte gefunden", "");
                             }
                         }
                     });
@@ -618,11 +619,11 @@ impl App {
     }
 
     fn paint_thumb(&self, p: &egui::Painter, r: Rect, tex: Option<egui::TextureId>) {
-        p.rect_filled(r, 8.0, theme::BG_RAISED());
+        p.rect_filled(r, theme::R_CARD, theme::BG_RAISED());
         match tex {
             Some(t) => {
                 p.add(
-                    egui::epaint::RectShape::filled(r, 8.0, Color32::WHITE)
+                    egui::epaint::RectShape::filled(r, theme::R_CARD, Color32::WHITE)
                         .with_texture(t, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))),
                 );
             }
@@ -673,7 +674,7 @@ impl App {
                 ui.label(
                     RichText::new(crate::tr("Projekt umbenennen"))
                         .strong()
-                        .size(14.0),
+                        .size(theme::FS_TITLE),
                 );
                 ui.add_space(10.0);
                 let r = ui.add(
@@ -734,7 +735,7 @@ impl App {
             let mut close = false;
             let m = egui::Modal::new(egui::Id::new("delete")).show(ctx, |ui| {
                 ui.set_width(380.0);
-                ui.label(RichText::new(crate::tr("Projekt löschen?")).strong().size(14.0));
+                ui.label(RichText::new(crate::tr("Projekt löschen?")).strong().size(theme::FS_TITLE));
                 ui.add_space(8.0);
                 let name = self.home.entries.iter().find(|e| e.path == path).map(|e| e.name.clone()).unwrap_or_default();
                 ui.label(crate::tr(format!("„{name}“ wird in den Cutline-Papierkorb verschoben. Deine Medien-Dateien bleiben unverändert.")));
@@ -742,8 +743,7 @@ impl App {
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let del = egui::Button::new(RichText::new(crate::tr("Löschen")).color(Color32::WHITE).strong()).fill(theme::DANGER).corner_radius(5).min_size(vec2(0.0, 24.0));
-                        if ui.add(del).clicked() {
+                        if ui.add(theme::danger("Löschen")).clicked() {
                             let trash = paths::data_dir().join("Papierkorb");
                             let _ = std::fs::create_dir_all(&trash);
                             let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);

@@ -79,18 +79,18 @@ impl App {
                 let (r, resp) = ui.allocate_exact_size(vec2(58.0, 50.0), Sense::click());
                 let on = a.ease == e;
                 let p = ui.painter();
-                p.rect_filled(r, 6.0, if on { theme::BG_HOVER() } else { theme::BG_RAISED() });
+                p.rect_filled(r, theme::R_CARD, if on { theme::BG_HOVER() } else { theme::BG_RAISED() });
                 if on {
-                    p.rect_stroke(r, 6.0, Stroke::new(1.5_f32, theme::ACCENT()), egui::StrokeKind::Inside);
+                    p.rect_stroke(r, theme::R_CARD, Stroke::new(1.5_f32, theme::ACCENT()), egui::StrokeKind::Inside);
                 }
-                theme::hover_glow(ui, &resp, 6.0);
+                theme::hover_glow(ui, &resp, theme::R_CARD);
                 let plot = Rect::from_min_max(r.min + vec2(12.0, 9.0), pos2(r.right() - 12.0, r.bottom() - 19.0));
                 draw_curve(p, plot, e, Stroke::new(1.5_f32, if on { theme::ACCENT() } else { theme::TEXT_DIM() }));
                 p.text(
                     pos2(r.center().x, r.bottom() - 9.0),
                     egui::Align2::CENTER_CENTER,
                     crate::tr(name),
-                    egui::FontId::proportional(9.5),
+                    egui::FontId::proportional(theme::FS_HINT),
                     if on { theme::TEXT() } else { theme::TEXT_DIM() },
                 );
                 if resp.on_hover_text(crate::tr(tip)).clicked() {
@@ -100,7 +100,7 @@ impl App {
             }
         });
         // Fortgeschrittene: Griffe ziehen
-        egui::CollapsingHeader::new(RichText::new(crate::tr("Eigene Kurve")).size(11.5).color(theme::TEXT_DIM()))
+        egui::CollapsingHeader::new(RichText::new(crate::tr("Eigene Kurve")).size(theme::FS_UI).color(theme::TEXT_DIM()))
             .id_salt("curve-adv")
             .show(ui, |ui| {
                 let Some((mut x1, mut y1, mut x2, mut y2)) = a.ease.bezier() else {
@@ -113,7 +113,7 @@ impl App {
                 let plot = Rect::from_min_max(r.min + vec2(8.0, 8.0), r.max - vec2(8.0, 8.0));
                 let to = |x: f32, y: f32| pos2(plot.left() + x * plot.width(), plot.bottom() - (y + 0.5) / 2.0 * plot.height());
                 let p = ui.painter().with_clip_rect(r);
-                p.rect_filled(r, 6.0, theme::BG_APP());
+                p.rect_filled(r, theme::R_CARD, theme::BG_APP());
                 let grid = Stroke::new(1.0_f32, theme::BORDER());
                 p.line_segment([to(0.0, 0.0), to(1.0, 0.0)], grid);
                 p.line_segment([to(0.0, 1.0), to(1.0, 1.0)], grid);

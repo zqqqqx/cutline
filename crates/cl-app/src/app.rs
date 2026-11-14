@@ -560,7 +560,7 @@ impl App {
             .default_height((sr.height() * ft).clamp(150.0, 520.0))
             .min_height(120.0)
             .max_height((sr.height() * 0.6).max(140.0))
-            .frame(theme::card(6))
+            .frame(theme::card(theme::PAD_CARD))
             .show(ctx, |ui| self.timeline_panel(ui))
             .response
             .rect;
@@ -2732,8 +2732,8 @@ impl App {
                             1.0_f32,
                             if *err { theme::DANGER } else { theme::BORDER() },
                         ))
-                        .corner_radius(8)
-                        .inner_margin(egui::Margin::symmetric(14, 8))
+                        .corner_radius(theme::R_WIN)
+                        .inner_margin(egui::Margin::symmetric(theme::PAD_CARD_L, theme::PAD_CARD))
                         .shadow(egui::epaint::Shadow {
                             offset: [0, 4],
                             blur: 16,
@@ -2891,7 +2891,7 @@ impl eframe::App for App {
                 egui::Frame::default()
                     .fill(theme::BG_APP())
                     .inner_margin(egui::Margin {
-                        left: 10,
+                        left: theme::PAD_CARD_L,
                         right: 0,
                         top: 0,
                         bottom: 0,
@@ -2984,7 +2984,7 @@ impl eframe::App for App {
                 .default_width((sr.width() * fi).clamp(200.0, 420.0))
                 .min_width(if small { 180.0 } else { 220.0 })
                 .max_width((sr.width() * 0.32).max(200.0))
-                .frame(theme::card(10))
+                .frame(theme::card(theme::PAD_CARD_L))
                 .show(ctx, |ui| fixed_width(ui, |ui| self.inspector_panel(ui)))
                 .response
                 .rect;
@@ -3000,7 +3000,7 @@ impl eframe::App for App {
         }
 
         let r = egui::CentralPanel::default()
-            .frame(theme::card(8))
+            .frame(theme::card(theme::PAD_CARD))
             .show(ctx, |ui| self.player(ui))
             .response
             .rect;
@@ -3189,8 +3189,8 @@ impl App {
                 egui::Frame::default()
                     .fill(theme::BG_RAISED())
                     .stroke(egui::Stroke::new(1.0_f32, theme::BORDER()))
-                    .corner_radius(8)
-                    .inner_margin(egui::Margin::symmetric(8, 5))
+                    .corner_radius(theme::R_WIN)
+                    .inner_margin(egui::Margin::symmetric(theme::PAD_CARD, 4))
                     .shadow(egui::Shadow {
                         offset: [0, 4],
                         blur: 12,
@@ -3199,13 +3199,14 @@ impl App {
                     })
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
+                            // Icon-Glyphe
                             ui.label(egui::RichText::new(glyph).size(16.0).color(theme::ACCENT()));
                             let mut l = label;
                             if l.chars().count() > 28 {
                                 l = format!("{}…", l.chars().take(27).collect::<String>());
                             }
                             if !l.is_empty() {
-                                ui.label(egui::RichText::new(l).size(11.5).color(theme::TEXT()));
+                                ui.label(egui::RichText::new(l).size(theme::FS_UI).color(theme::TEXT()));
                             }
                         });
                     });

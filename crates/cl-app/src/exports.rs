@@ -153,10 +153,10 @@ impl crate::app::App {
             .resizable(false)
             .default_width(420.0)
             .show(ctx, |ui| {
-                ui.label(RichText::new(name).strong().size(13.0));
+                ui.label(RichText::new(name).strong().size(theme::FS_TEXT));
                 ui.add_space(6.0);
                 if list.is_empty() {
-                    ui.label(RichText::new(crate::tr("Noch nichts exportiert")).color(theme::TEXT_DIM()));
+                    theme::empty_state(ui, icon::EXPORT, "Noch nichts exportiert", "");
                 }
                 egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                     for (e, size) in list {

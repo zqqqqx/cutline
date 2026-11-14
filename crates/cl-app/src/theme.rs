@@ -1,7 +1,7 @@
 //! Design-System (Stand Phase 2):
 //! - Monochrom: fast schwarze Flächen, Weiß als einzige Akzentfarbe (aktive Zustände,
 //!   Primäraktion, Auswahl). Farbe kommt nur aus dem Inhalt (Clips, Vorschauen).
-//! - Schwebende Karten mit 6-px-Radius, 4 px Abstand, ein Icon-Stil (Phosphor, Linien)
+//! - Schwebende Karten mit 6-px-Radius (R_CARD), 4 px Abstand, ein Icon-Stil (Phosphor, Linien)
 //! - 8-px-Raster, feste Label-Spalte im Inspektor, gedämpfte Sekundärtexte
 //! - Minimalistische Regler (2-px-Schiene, kleiner Knopf), Schalter statt Häkchen
 
@@ -207,7 +207,7 @@ pub fn DANGER_TEXT() -> Color32 {
     TEXT().lerp_to_gamma(DANGER, 0.35)
 }
 
-pub const RADIUS: u8 = 6;
+pub const RADIUS: u8 = R_CARD as u8;
 pub const GAP: f32 = 4.0;
 
 /// Schriftgrößen-Stufen (für die Vereinheitlichung der Oberfläche):
@@ -265,8 +265,8 @@ pub fn apply(ctx: &egui::Context) {
     v.panel_fill = BG_APP();
     v.window_fill = BG_CARD();
     v.window_stroke = Stroke::new(1.0_f32, BORDER());
-    v.window_corner_radius = CornerRadius::same(10);
-    v.menu_corner_radius = CornerRadius::same(8);
+    v.window_corner_radius = CornerRadius::same(R_WIN as u8);
+    v.menu_corner_radius = CornerRadius::same(R_WIN as u8);
     v.extreme_bg_color = BG_INPUT();
     v.faint_bg_color = BG_RAISED();
     v.override_text_color = Some(TEXT());
@@ -275,7 +275,7 @@ pub fn apply(ctx: &egui::Context) {
     v.selection.stroke = Stroke::new(1.0_f32, ACCENT());
     v.hyperlink_color = ACCENT();
     v.text_cursor.stroke = Stroke::new(1.5_f32, ACCENT());
-    let r = CornerRadius::same(5);
+    let r = CornerRadius::same(R_CTRL as u8);
     for w in [
         &mut v.widgets.noninteractive,
         &mut v.widgets.inactive,
@@ -328,15 +328,15 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.scroll = egui::style::ScrollStyle::thin();
         s.visuals.handle_shape = egui::style::HandleShape::Circle;
         s.text_styles
-            .insert(egui::TextStyle::Body, egui::FontId::proportional(12.0));
+            .insert(egui::TextStyle::Body, egui::FontId::proportional(FS_TEXT));
         s.text_styles
-            .insert(egui::TextStyle::Button, egui::FontId::proportional(12.0));
+            .insert(egui::TextStyle::Button, egui::FontId::proportional(FS_UI));
         s.text_styles
-            .insert(egui::TextStyle::Small, egui::FontId::proportional(10.5));
+            .insert(egui::TextStyle::Small, egui::FontId::proportional(FS_HINT));
         s.text_styles
-            .insert(egui::TextStyle::Heading, egui::FontId::proportional(15.0));
+            .insert(egui::TextStyle::Heading, egui::FontId::proportional(FS_TITLE));
         s.text_styles
-            .insert(egui::TextStyle::Monospace, egui::FontId::monospace(11.0));
+            .insert(egui::TextStyle::Monospace, egui::FontId::monospace(FS_UI));
     });
 }
 
@@ -344,7 +344,7 @@ pub fn apply(ctx: &egui::Context) {
 pub fn card(margin: i8) -> egui::Frame {
     egui::Frame::default()
         .fill(BG_CARD())
-        .corner_radius(RADIUS)
+        .corner_radius(R_CARD)
         .inner_margin(margin)
         .outer_margin(egui::Margin::same((GAP / 2.0) as i8))
 }
@@ -353,7 +353,7 @@ pub fn card(margin: i8) -> egui::Frame {
 pub fn card_header(ui: &mut egui::Ui, title: &str, actions: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         ui.set_min_height(22.0);
-        ui.label(RichText::new(crate::tr(title)).strong().size(12.0));
+        ui.label(RichText::new(crate::tr(title)).strong().size(FS_TEXT));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), actions);
     });
     let r = ui.max_rect();
@@ -390,7 +390,7 @@ pub fn hover_glow(ui: &egui::Ui, r: &egui::Response, radius: f32) {
 impl egui::Widget for Btn {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let r = ui.add(self.0);
-        hover_glow(ui, &r, 5.0);
+        hover_glow(ui, &r, R_CTRL);
         r
     }
 }
@@ -398,28 +398,36 @@ impl egui::Widget for Btn {
 pub fn primary(text: impl Into<String>) -> Btn {
     Btn(egui::Button::new(
         RichText::new(crate::tr(text.into()))
-            .size(11.5)
+            .size(FS_UI)
             .color(ACCENT_INK())
             .strong(),
     )
     .fill(ACCENT())
-    .corner_radius(5)
+    .corner_radius(R_CTRL)
     .min_size(vec2(0.0, 24.0)))
 }
 
 /// Sekundärknopf (dezente Fläche).
 pub fn secondary(text: impl Into<String>) -> Btn {
-    Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(11.5))
+    Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI))
         .fill(BG_RAISED())
-        .corner_radius(5)
+        .corner_radius(R_CTRL)
+        .min_size(vec2(0.0, 24.0)))
+}
+
+/// Gefährliche Aktion (Löschen): rote Fläche, weiße Schrift.
+pub fn danger(text: impl Into<String>) -> Btn {
+    Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI).color(Color32::WHITE).strong())
+        .fill(DANGER)
+        .corner_radius(R_CTRL)
         .min_size(vec2(0.0, 24.0)))
 }
 
 /// Flacher Knopf ohne Fläche (wird beim Überfahren hell).
 pub fn ghost(text: impl Into<String>) -> Btn {
-    Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(11.5))
+    Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI))
         .frame(false)
-        .min_size(vec2(0.0, 22.0)))
+        .min_size(vec2(0.0, 24.0)))
 }
 
 /// Tastenkürzel als gemalte Tastenkappen: einheitliche Höhe, Symbole für Sondertasten.
@@ -435,20 +443,11 @@ pub fn keycaps(ui: &mut egui::Ui, keys: &str) {
         ui.spacing_mut().item_spacing.x = 3.0;
         for k in parts {
             let k = k.trim();
-            let (text, is_icon) = match k {
-                "Umschalt" | "Shift" => (icon::ARROW_FAT_UP, true),
-                "←" => (icon::ARROW_LEFT, true),
-                "→" => (icon::ARROW_RIGHT, true),
-                "↑" => (icon::ARROW_UP, true),
-                "↓" => (icon::ARROW_DOWN, true),
-                "Enter" => (icon::ARROW_ELBOW_DOWN_LEFT, true),
-                "Backspace" => (icon::BACKSPACE, true),
-                "Tab" => (icon::ARROW_LINE_RIGHT, true),
-                _ => (k, false),
-            };
+            let (text, is_icon) = key_symbol(k).map_or((k, false), |s| (s, true));
             let g = ui.painter().layout_no_wrap(
                 text.to_string(),
-                egui::FontId::proportional(if is_icon { 12.0 } else { 10.5 }),
+                // Icon-Glyphe etwas größer als die Schrift, damit sie optisch gleich hoch wirkt
+                egui::FontId::proportional(if is_icon { 12.0 } else { FS_HINT }),
                 TEXT(),
             );
             let (r, resp) = ui.allocate_exact_size(vec2((g.size().x + 11.0).max(20.0), 19.0), egui::Sense::hover());
@@ -457,12 +456,28 @@ pub fn keycaps(ui: &mut egui::Ui, keys: &str) {
             }
             let p = ui.painter();
             // Kappe mit dunklerer Unterkante (wirkt wie eine Taste)
-            p.rect_filled(r, 4.0, BORDER());
+            p.rect_filled(r, R_CTRL, BORDER());
             let top = egui::Rect::from_min_max(r.min + vec2(1.0, 1.0), r.max - vec2(1.0, 2.5));
-            p.rect_filled(top, 3.0, BG_HOVER());
+            // innere Fläche 1 px eingerückt → Radius 1 px kleiner
+            p.rect_filled(top, R_CTRL - 1.0, BG_HOVER());
             p.galley(top.center() - g.size() / 2.0, g, TEXT());
         }
     });
+}
+
+/// Symbol für Sondertasten (gemeinsam für [`keycaps`] und [`key_hint`])
+fn key_symbol(k: &str) -> Option<&'static str> {
+    Some(match k {
+        "Umschalt" | "Shift" => icon::ARROW_FAT_UP,
+        "←" => icon::ARROW_LEFT,
+        "→" => icon::ARROW_RIGHT,
+        "↑" => icon::ARROW_UP,
+        "↓" => icon::ARROW_DOWN,
+        "Enter" => icon::ARROW_ELBOW_DOWN_LEFT,
+        "Backspace" => icon::BACKSPACE,
+        "Tab" => icon::ARROW_LINE_RIGHT,
+        _ => return None,
+    })
 }
 
 /// Icon-Knopf ohne Rahmen, mit Tooltip. `active` hebt ihn hervor.
@@ -480,16 +495,17 @@ pub fn icon_button(
     } else {
         TEXT_DIM()
     };
+    // Icon-Glyphe: 14 px in Bedienelementen
     let btn = egui::Button::new(RichText::new(glyph).size(14.0).color(color))
         .fill(if active {
             overlay(22)
         } else {
             Color32::TRANSPARENT
         })
-        .corner_radius(5)
-        .min_size(vec2(24.0, 22.0));
+        .corner_radius(R_CTRL)
+        .min_size(vec2(24.0, 24.0));
     let r = ui.add_enabled(enabled, btn);
-    hover_glow(ui, &r, 5.0);
+    hover_glow(ui, &r, R_CTRL);
     let tip = crate::tr(tip.into());
     if tip.is_empty() {
         r
@@ -536,11 +552,11 @@ impl egui::Widget for MenuRow {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let enabled = ui.is_enabled();
         let color = if enabled { TEXT() } else { TEXT_FAINT() };
-        let galley = ui.painter().layout_no_wrap(self.text, egui::FontId::proportional(12.0), color);
+        let galley = ui.painter().layout_no_wrap(self.text, egui::FontId::proportional(FS_TEXT), color);
         let kg = if !self.keys.is_empty() {
             Some(ui.fonts(|f| f.layout_job(key_hint(&self.keys))))
         } else if !self.hint.is_empty() {
-            Some(ui.painter().layout_no_wrap(crate::tr(&self.hint), egui::FontId::proportional(10.0), TEXT_FAINT()))
+            Some(ui.painter().layout_no_wrap(crate::tr(&self.hint), egui::FontId::proportional(FS_HINT), TEXT_FAINT()))
         } else {
             None
         };
@@ -555,7 +571,7 @@ impl egui::Widget for MenuRow {
             .animate_bool_with_time(resp.id.with("hover"), enabled && resp.hovered(), anim(0.12));
         let p = ui.painter();
         if t > 0.001 {
-            p.rect_filled(rect, 5.0, BG_HOVER().linear_multiply(t));
+            p.rect_filled(rect, R_CTRL, BG_HOVER().linear_multiply(t));
         }
         p.galley(
             pos2(rect.left() + 8.0 + 2.0 * t, rect.center().y - galley.size().y / 2.0),
@@ -590,13 +606,13 @@ pub fn key_hint(keys: &str) -> egui::text::LayoutJob {
         return job;
     }
     let plus = TextFormat {
-        font_id: egui::FontId::proportional(9.5),
+        font_id: egui::FontId::proportional(FS_HINT),
         color: TEXT_FAINT(),
         ..Default::default()
     };
     let cap = TextFormat {
-        font_id: egui::FontId::proportional(10.0),
-        color: TEXT_DIM(),
+        font_id: egui::FontId::proportional(FS_HINT),
+        color: TEXT(),
         background: BG_HOVER(),
         ..Default::default()
     };
@@ -610,7 +626,9 @@ pub fn key_hint(keys: &str) -> egui::text::LayoutJob {
         if i > 0 {
             job.append("+", 2.0, plus.clone());
         }
-        job.append(&format!("\u{2009}{}\u{2009}", k.trim()), if i > 0 { 2.0 } else { 0.0 }, cap.clone());
+        let k = k.trim();
+        let k = key_symbol(k).unwrap_or(k);
+        job.append(&format!("\u{2009}{k}\u{2009}"), if i > 0 { 2.0 } else { 0.0 }, cap.clone());
     }
     job
 }
@@ -635,10 +653,11 @@ pub fn tip_with_keys(r: egui::Response, tip: &str) -> egui::Response {
 /// Kleiner umrandeter Chip (Player-Leiste).
 pub fn chip(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(crate::tr(text)).size(10.5).color(TEXT_DIM()))
+        egui::Button::new(RichText::new(crate::tr(text)).size(FS_HINT).color(TEXT_DIM()))
             .fill(Color32::TRANSPARENT)
             .stroke(Stroke::new(1.0_f32, BORDER()))
-            .corner_radius(5),
+            .corner_radius(R_CTRL)
+            .min_size(vec2(0.0, 22.0)),
     )
 }
 
@@ -650,10 +669,10 @@ pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
         (TEXT_DIM(), BG_RAISED())
     };
     ui.add(
-        egui::Button::new(RichText::new(crate::tr(text)).size(10.5).color(fg))
+        egui::Button::new(RichText::new(crate::tr(text)).size(FS_HINT).color(fg))
             .fill(bg)
-            .corner_radius(10)
-            .min_size(vec2(0.0, 20.0)),
+            .corner_radius(R_CTRL)
+            .min_size(vec2(0.0, 22.0)),
     )
 }
 
@@ -663,7 +682,7 @@ pub fn row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) ->
         ui.set_min_height(24.0);
         ui.add_sized(
             [LABEL_W, 18.0],
-            egui::Label::new(RichText::new(crate::tr(label)).size(11.5).color(TEXT_DIM())).truncate(),
+            egui::Label::new(RichText::new(crate::tr(label)).size(FS_UI).color(TEXT_DIM())).truncate(),
         );
         add(ui)
     })
@@ -681,7 +700,7 @@ pub fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(9.0);
     ui.label(
         RichText::new(crate::tr(title))
-            .size(11.0)
+            .size(FS_UI)
             .color(TEXT())
             .strong(),
     );
@@ -692,10 +711,13 @@ pub fn section(ui: &mut egui::Ui, title: &str) {
 pub fn empty_state(ui: &mut egui::Ui, glyph: &str, title: &str, hint: &str) {
     ui.vertical_centered(|ui| {
         ui.add_space(26.0);
+        // Icon-Glyphe: leere Zustände nutzen 26 px
         ui.label(RichText::new(glyph).size(26.0).color(TEXT_FAINT()));
         ui.add_space(6.0);
         ui.label(RichText::new(crate::tr(title)).strong());
-        ui.label(RichText::new(crate::tr(hint)).small().color(TEXT_DIM()));
+        if !hint.is_empty() {
+            ui.label(RichText::new(crate::tr(hint)).small().color(TEXT_DIM()));
+        }
         ui.add_space(12.0);
     });
 }
@@ -713,6 +735,7 @@ pub fn logo(painter: &egui::Painter, rect: Rect) {
     let r = |x: f32, y: f32, w: f32, h: f32| {
         Rect::from_min_size(o + vec2(x * s, y * s), vec2(w * s, h * s))
     };
+    // Logo-Geometrie skaliert mit `s` (keine UI-Radien)
     // Logo bleibt neutral: Palettenakzent statt gewählter Akzentfarbe
     painter.rect_filled(r(0.0, 0.0, 64.0, 64.0), 15.0 * s, pal().accent);
     let ink = pal().accent_ink;
@@ -781,6 +804,20 @@ mod tests {
     use super::*;
 
     // Ein Test, weil der Akzent global ist (parallele Tests würden sich überschreiben)
+    /// Vertrag des Design-Systems: 6 Schriftstufen, 3 Radien, 3 Abstände, jeweils aufsteigend
+    #[test]
+    fn tokens_match_brand_guide() {
+        let fs = [FS_HINT, FS_UI, FS_TEXT, FS_TITLE, FS_PAGE, FS_HERO];
+        assert_eq!(fs, [10.5, 11.5, 12.5, 14.0, 18.0, 26.0]);
+        assert!(fs.windows(2).all(|w| w[0] < w[1]));
+        let r = [R_CTRL, R_CARD, R_WIN];
+        assert_eq!(r, [4.0, 6.0, 10.0]);
+        assert!(r.windows(2).all(|w| w[0] < w[1]));
+        let pad = [PAD_CARD, PAD_CARD_L, PAD_DIALOG];
+        assert_eq!(pad, [8, 12, 16]);
+        assert!(pad.windows(2).all(|w| w[0] < w[1]));
+    }
+
     #[test]
     fn accents_readable_on_all_palettes() {
         for (id, ..) in ACCENTS {

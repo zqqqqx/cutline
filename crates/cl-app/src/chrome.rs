@@ -113,6 +113,7 @@ impl App {
                 r.center(),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(glyph),
+                // Icon-Glyphe der Fensterknöpfe
                 egui::FontId::proportional(13.0),
                 col,
             );
@@ -156,7 +157,7 @@ impl App {
                 let (lr, lresp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
                 theme::logo(ui.painter(), lr);
                 if home {
-                    ui.label(RichText::new(crate::tr("Cutline")).strong().size(12.5));
+                    ui.label(RichText::new(crate::tr("Cutline")).strong().size(theme::FS_TEXT));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if theme::icon_button(
                             ui,
@@ -221,7 +222,7 @@ impl App {
                     } else {
                         format!("{glyph} {status}")
                     }))
-                    .size(11.0)
+                    .size(theme::FS_UI)
                     .color(col),
                 );
                 resp.on_hover_text(crate::tr(
@@ -253,6 +254,7 @@ impl App {
                     self.tasks_badge(ui);
                     if self.mcp.is_some() {
                         ui.label(
+                            // Icon-Glyphe als dezente Statusanzeige
                             RichText::new(icon::PLUGS_CONNECTED)
                                 .size(12.0)
                                 .color(theme::TEXT_FAINT()),
@@ -269,7 +271,7 @@ impl App {
             let name = self.project.name.clone();
             let galley =
                 ui.painter()
-                    .layout_no_wrap(name, egui::FontId::proportional(12.0), theme::TEXT());
+                    .layout_no_wrap(name, egui::FontId::proportional(theme::FS_TEXT), theme::TEXT());
             let nr = Rect::from_center_size(bar.center(), galley.size());
             if nr.left() > bar.left() + 330.0 && nr.right() < ctrl_rect.left() - 170.0 {
                 ui.painter().galley(nr.min, galley, theme::TEXT());
@@ -284,7 +286,7 @@ impl App {
                 self.t("menu"),
                 icon::CARET_DOWN
             )))
-            .size(12.0),
+            .size(theme::FS_TEXT),
             |ui| {
                 ui.set_min_width(230.0);
                 let item = |ui: &mut egui::Ui, g: &str, t: &str, k: &str| {

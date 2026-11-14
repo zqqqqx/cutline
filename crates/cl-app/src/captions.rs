@@ -257,7 +257,7 @@ impl App {
                     let on = self.settings.caption_preset == p.id;
                     let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), theme::anim(0.12));
                     let pt = ui.painter();
-                    pt.rect_filled(r, 7.0, Color32::from_rgb(0x1E, 0x24, 0x2C));
+                    pt.rect_filled(r, theme::R_CARD, Color32::from_rgb(0x1E, 0x24, 0x2C));
                     let s = (p.style)();
                     let sample = if p.id == "word" { "Wort".to_string() } else if s.uppercase { "SO SIEHT ES AUS".into() } else { crate::tr("So sieht es aus") };
                     let fam = self.font_family(s.font_family.as_deref());
@@ -267,6 +267,7 @@ impl App {
                     let font = egui::FontId::new(size, fam);
                     if let Some(bg) = s.background {
                         let g = pt.layout_no_wrap(sample.clone(), font.clone(), col);
+                        // Vorschau des Untertitel-Stils (Hintergrundkasten), kein UI-Radius
                         pt.rect_filled(Rect::from_center_size(c, g.size() + vec2(8.0, 2.0)), 3.0, Color32::from_rgba_unmultiplied(bg[0], bg[1], bg[2], bg[3]));
                     }
                     if let Some((_, oc)) = s.outline {
@@ -280,15 +281,16 @@ impl App {
                         pos2(r.left() + 8.0, r.bottom() - 9.0),
                         egui::Align2::LEFT_CENTER,
                         crate::tr(p.name),
-                        egui::FontId::proportional(10.0),
+                        egui::FontId::proportional(theme::FS_HINT),
                         Color32::from_gray(200),
                     );
                     let stroke = if on {
                         egui::Stroke::new(2.0_f32, theme::ACCENT())
                     } else {
-                        egui::Stroke::new(1.0_f32, theme::BORDER().lerp_to_gamma(theme::TEXT_DIM(), hover))
+                        // ohne Ruhe-Rahmen (Fläche hebt sich schon ab), nur Hover/Auswahl
+                        egui::Stroke::new(1.0_f32, theme::TEXT_DIM().gamma_multiply(hover))
                     };
-                    pt.rect_stroke(r, 7.0, stroke, egui::StrokeKind::Inside);
+                    pt.rect_stroke(r, theme::R_CARD, stroke, egui::StrokeKind::Inside);
                     if resp.on_hover_text(crate::tr(p.tip)).clicked() {
                         self.settings.caption_preset = p.id.to_string();
                         self.settings.save();
@@ -389,14 +391,14 @@ impl App {
                 let active = c.contains(self.playhead);
                 egui::Frame::default()
                     .fill(if active { theme::BG_HOVER() } else { theme::BG_RAISED() })
-                    .corner_radius(6)
-                    .inner_margin(egui::Margin::symmetric(8, 5))
+                    .corner_radius(theme::R_CARD)
+                    .inner_margin(egui::Margin::symmetric(theme::PAD_CARD, 4))
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
                             let t = c.start.timecode(fps);
                             if ui
-                                .add(egui::Button::new(RichText::new(&t[3..8]).monospace().size(10.5).color(if active { theme::ACCENT() } else { theme::TEXT_DIM() })).frame(false))
+                                .add(theme::ghost(&t[3..8]))
                                 .on_hover_text(crate::tr("Hinspringen"))
                                 .clicked()
                             {
