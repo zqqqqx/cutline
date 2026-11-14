@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 
 use crate::app::App;
 use crate::library::{Item, Kind};
@@ -319,7 +319,7 @@ impl App {
                                     "{}  Ordner entfernen",
                                     icon::TRASH
                                 )))
-                                .color(Color32::from_rgb(0xE0, 0x80, 0x60)),
+                                .color(theme::WARN),
                             )
                             .clicked()
                         {
@@ -512,7 +512,7 @@ impl App {
             if ui
                 .button(
                     RichText::new(crate::tr(format!("{}  {label}", icon::TRASH)))
-                        .color(Color32::from_rgb(0xE0, 0x80, 0x60)),
+                        .color(theme::WARN),
                 )
                 .clicked()
             {

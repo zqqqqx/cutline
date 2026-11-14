@@ -2706,7 +2706,7 @@ impl App {
                     ui.set_opacity(a);
                     egui::Frame::default()
                         .fill(if *err {
-                            Color32::from_rgb(0x3A, 0x1A, 0x1C)
+                            theme::DANGER_BG()
                         } else {
                             theme::BG_RAISED()
                         })
@@ -2730,7 +2730,7 @@ impl App {
                             };
                             ui.label(RichText::new(crate::tr(format!("{g}  {msg}"))).color(
                                 if *err {
-                                    Color32::from_rgb(0xFF, 0xB4, 0xB4)
+                                    theme::DANGER_TEXT()
                                 } else {
                                     theme::TEXT()
                                 },

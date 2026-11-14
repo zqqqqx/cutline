@@ -1300,13 +1300,13 @@ impl App {
                 pos2(b.min(rect.right()), ruler.bottom()),
             );
             if r.width() > 0.0 {
-                // dezentes Band unten im Lineal (Schleife: blau)
+                // dezentes Band unten im Lineal (Schleife: Akzent)
                 let band = Rect::from_min_max(pos2(r.left(), ruler.bottom() - 5.0), r.max);
                 rp.rect_filled(
                     band,
                     0.0,
                     if self.loop_range {
-                        Color32::from_rgb(0x4A, 0x78, 0xC8)
+                        theme::ACCENT().gamma_multiply(0.7)
                     } else {
                         Color32::from_rgb(0x5A, 0x5A, 0x64)
                     },
@@ -1571,7 +1571,7 @@ impl App {
                             } else {
                                 1.5
                             },
-                            Color32::WHITE,
+                            theme::ACCENT(),
                         ),
                         egui::StrokeKind::Inside,
                     );
@@ -1581,7 +1581,7 @@ impl App {
                                 pos2(gx, cr.center().y),
                                 vec2(4.0, (cr.height() * 0.45).min(20.0)),
                             );
-                            p.rect_filled(g, 2.0, Color32::WHITE);
+                            p.rect_filled(g, 2.0, theme::ACCENT());
                         }
                         // Keyframes
                         for kt in c.keyframes.times() {
@@ -1959,7 +1959,7 @@ impl App {
         if px >= x0 - 1.0 && px <= rect.right() {
             painter.line_segment(
                 [pos2(px, rect.top() + 12.0), pos2(px, rect.bottom())],
-                Stroke::new(1.2_f32, theme::TEXT()),
+                Stroke::new(1.2_f32, theme::ACCENT()),
             );
             let hr = Rect::from_center_size(pos2(px, rect.top() + 7.0), vec2(10.0, 12.0));
             painter.add(egui::Shape::convex_polygon(
@@ -1970,7 +1970,7 @@ impl App {
                     pos2(px, hr.bottom() + 1.0),
                     pos2(hr.left(), hr.bottom() - 4.0),
                 ],
-                theme::TEXT(),
+                theme::ACCENT(),
                 Stroke::NONE,
             ));
         }
@@ -2166,7 +2166,7 @@ impl App {
                 inner.circle_filled(
                     pos2(bx, cr.bottom() - 4.0),
                     2.2,
-                    Color32::from_rgb(0xFF, 0xD8, 0x4D),
+                    theme::SNAP,
                 );
             }
         }
