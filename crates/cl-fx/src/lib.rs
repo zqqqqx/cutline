@@ -1209,7 +1209,7 @@ pub fn preview_graph(
 
 /// `atempo`-Kette für eine Geschwindigkeit (jede Stufe 0,5…2).
 pub fn atempo_chain(speed: f32) -> String {
-    let mut s = speed.clamp(0.1, 100.0) as f64;
+    let mut s = speed.clamp(0.01, 100.0) as f64;
     let mut v = Vec::new();
     while s > 2.0 {
         v.push("atempo=2".to_string());
@@ -1630,6 +1630,9 @@ mod tests {
         assert_eq!(atempo_chain(1.0), "");
         assert_eq!(atempo_chain(4.0), "atempo=2,atempo=2.00000");
         assert_eq!(atempo_chain(0.25), "atempo=0.5,atempo=0.50000");
+        // sehr langsame Stücke einer Tempo-Kurve (z. B. 0,5× mit „Kugel“) nicht kappen
+        let prod: f64 = atempo_chain(0.05).split(',').map(|a| a[7..].parse::<f64>().unwrap()).product();
+        assert!((prod - 0.05).abs() < 1e-4, "{prod}");
         if !cl_media::ffmpeg_available() {
             return;
         }

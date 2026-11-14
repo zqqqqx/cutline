@@ -143,6 +143,8 @@ struct Running {
     started: Instant,
     /// Projektstand beim Start des Exports
     rev: u64,
+    /// Begleitdateien (Untertitel, Kapitel) mit Text vom Start; erst nach Erfolg geschrieben
+    sidecars: Vec<(PathBuf, String)>,
 }
 
 #[derive(Default)]
@@ -175,6 +177,9 @@ pub struct ExportDialog {
     exported: Option<(u64, PathBuf)>,
     /// Zieldatei existiert: Nachfrage vor dem Start
     confirm_overwrite: bool,
+    /// Nachfrage erst in diesem Bild geöffnet: Enter/Esc noch nicht auswerten
+    /// (das Enter, das „Exportieren“ ausgelöst hat, ist im selben Bild noch gedrückt)
+    confirm_fresh: bool,
     /// „Projekt auf 9:16 umstellen“ geklickt (App stellt das Format um)
     switch_aspect: bool,
 }
@@ -303,10 +308,14 @@ impl ExportDialog {
         });
         match finished {
             Some((Some(res), secs)) => {
-                self.running = None;
+                let sidecars = self.running.take().map(|r| r.sidecars).unwrap_or_default();
                 match res {
                     Ok(()) => {
                         self.done = Some((Instant::now(), secs));
+                        let failed: Vec<String> = sidecars
+                            .iter()
+                            .filter_map(|(f, txt)| std::fs::write(f, txt).err().map(|e| format!("{} ({e})", f.display())))
+                            .collect();
                         if let Some(out) = &self.last_output {
                             // unter dem Projektnamen, nicht dem (änderbaren) Dateinamen
                             crate::exports::record(&p.name, self.project_path.as_deref(), out);
@@ -315,7 +324,12 @@ impl ExportDialog {
                         toast = Some(format!(
                             "{} Export fertig ({secs:.1} s)",
                             icon::CHECK_CIRCLE
-                        ))
+                        ));
+                        if !failed.is_empty() {
+                            let msg = format!("{}: {}", crate::tr("Begleitdatei nicht gespeichert"), failed.join(", "));
+                            toast = Some(format!("{} {msg}", icon::WARNING_CIRCLE));
+                            self.error = Some(msg);
+                        }
                     }
                     Err(e) => self.error = Some(e),
                 }
@@ -583,6 +597,7 @@ impl ExportDialog {
         }
         if start && !overwrite && self.output_path(s.format).exists() {
             self.confirm_overwrite = true;
+            self.confirm_fresh = true;
             start = false;
         }
         if self.confirm_overwrite {
@@ -609,7 +624,10 @@ impl ExportDialog {
                     });
                 });
             });
-            if choice.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            let fresh = std::mem::take(&mut self.confirm_fresh);
+            if fresh {
+                ctx.request_repaint();
+            } else if choice.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
                 choice = Some(0);
             } else if choice.is_none() && m.should_close() {
                 choice = Some(2);
@@ -635,14 +653,7 @@ impl ExportDialog {
         if start {
             self.error = None;
             let out = self.output_path(s.format);
-            if self.also_srt {
-                let _ = std::fs::write(out.with_extension("srt"), cl_export::to_srt(p));
-                let _ = std::fs::write(out.with_extension("vtt"), cl_export::to_vtt(p));
-            }
-            // Kapitel wie „YouTube-Kapitel kopieren“ als Textdatei neben das Video
-            if !s.format.audio_only() && !p.timeline.markers.is_empty() {
-                let _ = std::fs::write(out.with_extension("chapters.txt"), crate::navigate::chapters(&p.timeline.markers));
-            }
+            let sidecars = sidecars(p, &s, self.also_srt, &out);
             let fonts = fonts.clone();
             let resolver = move |fam: Option<&str>| fam.and_then(|f| fonts.get(f).cloned());
             match cl_export::build(p, &s, &resolver, &out) {
@@ -673,6 +684,7 @@ impl ExportDialog {
                         cancel,
                         started: Instant::now(),
                         rev: self.rev,
+                        sidecars,
                     });
                     self.last_output = Some(out);
                 }
@@ -683,7 +695,30 @@ impl ExportDialog {
     }
 }
 
-/// Grobe Dateigrößenschätzung (für die Anzeige im Dialog).
+/// Begleitdateien neben `out` (Pfad, Inhalt) für den Exportbereich: Untertitel (SRT, VTT)
+/// und Kapitel wie „YouTube-Kapitel kopieren“, Zeiten ab Bereichsanfang.
+fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(PathBuf, String)> {
+    let mut v = Vec::new();
+    if s.format.audio_only() {
+        return v;
+    }
+    let (a, b) = s.range.unwrap_or((Time::ZERO, p.duration()));
+    if subs {
+        v.push((out.with_extension("srt"), cl_export::to_srt_in(p, a, b)));
+        v.push((out.with_extension("vtt"), cl_export::to_vtt_in(p, a, b)));
+    }
+    let ms = &p.timeline.markers;
+    if ms.iter().any(|m| m.at >= a && m.at < b) {
+        let txt = cl_export::chapter_list(ms, a, b)
+            .iter()
+            .map(|(t, n)| format!("{} {n}", crate::navigate::chapter_time(*t)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        v.push((out.with_extension("chapters.txt"), txt));
+    }
+    v
+}
+
 /// Fortschritt beim Export: weich nachlaufender Balken mit wanderndem Glanz, Prozent und Restzeit.
 fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool) {
     let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, 0.35);
@@ -824,4 +859,66 @@ fn estimate_matches_a_real_1080p30_export() {
     assert!(!exact);
     // echte Datei: 117,6 MB
     assert!((80.0..=160.0).contains(&mb), "{mb}");
+}
+
+#[cfg(test)]
+fn frame(d: &mut ExportDialog, ctx: &egui::Context, p: &Project, enter: bool) {
+    let events = if enter {
+        vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]
+    } else {
+        Vec::new()
+    };
+    let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
+        d.show(ctx, p, &HashMap::new(), None, 0);
+    });
+}
+
+#[test]
+fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
+    let (ctx, p) = (egui::Context::default(), Project::new("t"));
+    let mut d = ExportDialog::default();
+    *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
+    d.open_for(&p, None, 0);
+    // wie nach Enter auf „Exportieren“: Nachfrage im selben Bild geöffnet, Enter noch gedrückt
+    (d.confirm_overwrite, d.confirm_fresh) = (true, true);
+    frame(&mut d, &ctx, &p, true);
+    assert!(d.confirm_overwrite && d.error.is_none());
+    // erst ein neues Enter bestätigt (leeres Projekt: Start scheitert mit Fehler)
+    frame(&mut d, &ctx, &p, true);
+    assert!(!d.confirm_overwrite && d.error.is_some());
+}
+
+#[test]
+fn sidecars_follow_range_and_wait_for_success() {
+    use cl_core::{Clip, ClipContent, Marker, TextStyle, Track, TrackKind};
+    let mut p = Project::new("t");
+    let mut t = Track::new(TrackKind::Text);
+    let txt = |s: &str| ClipContent::Text(TextStyle { text: s.into(), ..Default::default() });
+    t.clips.push(Clip::new(txt("drin"), Time::from_secs_f64(50.0), Time::from_secs_f64(20.0)));
+    t.clips.push(Clip::new(txt("draußen"), Time::from_secs_f64(130.0), Time::from_secs_f64(5.0)));
+    p.timeline.tracks.push(t);
+    let mk = |id, at: f64, name: &str| Marker { id, at: Time::from_secs_f64(at), duration: Time::ZERO, name: name.into(), note: String::new(), color: 0 };
+    p.timeline.markers = vec![mk(1, 75.0, "Mitte"), mk(2, 125.0, "Später")];
+    let mut s = ExportSettings::from_project(&p);
+    s.range = Some((Time::from_secs_f64(60.0), Time::from_secs_f64(120.0)));
+    let dir = tempfile::tempdir().unwrap();
+    let v = sidecars(&p, &s, true, &dir.path().join("a.mp4"));
+    let get = |ext: &str| v.iter().find(|(f, _)| f.to_string_lossy().ends_with(ext)).unwrap().1.clone();
+    assert_eq!(get(".chapters.txt"), "0:00 Intro\n0:15 Mitte");
+    assert_eq!(get(".srt"), "1\n00:00:00,000 --> 00:00:10,000\ndrin\n");
+    // Begleitdateien erst nach erfolgreichem Export schreiben
+    let (ctx, mut d) = (egui::Context::default(), ExportDialog::default());
+    for ok in [false, true] {
+        d.running = Some(Running {
+            progress: Default::default(),
+            measures: false,
+            result: Arc::new(Mutex::new(Some(if ok { Ok(()) } else { Err("x".into()) }))),
+            cancel: Default::default(),
+            started: Instant::now(),
+            rev: 0,
+            sidecars: v.clone(),
+        });
+        frame(&mut d, &ctx, &p, false);
+        assert_eq!(v.iter().all(|(f, _)| f.is_file()), ok);
+    }
 }
