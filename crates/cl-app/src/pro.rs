@@ -911,11 +911,12 @@ impl App {
                 .clicked()
             {
                 if let Some(f) = crate::dialog()
-                    .add_filter("Untertitel", &["srt"])
+                    .add_filter("SubRip", &["srt"])
+                    .add_filter("WebVTT", &["vtt"])
                     .set_file_name(format!("{}.srt", self.project.name))
                     .save_file()
                 {
-                    match std::fs::write(&f, cl_export::to_srt(&self.project)) {
+                    match std::fs::write(&f, cl_export::subtitles_for(&self.project, &f)) {
                         Ok(()) => self.toast("Untertitel gespeichert"),
                         Err(e) => self.toast_err(e.to_string()),
                     }

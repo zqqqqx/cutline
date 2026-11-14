@@ -115,6 +115,17 @@ impl Platform {
     }
 }
 
+/// YouTube-Richtwerte für SDR-Uploads (kbit/s) nach kürzerer Bildkante: bis 30 fps / darüber.
+pub fn youtube_kbps(short_edge: u32, fps: f64) -> Option<u32> {
+    let (lo, hi) = match short_edge {
+        1080 => (8_000, 12_000),
+        1440 => (16_000, 24_000),
+        2160 => (40_000, 60_000),
+        _ => return None,
+    };
+    Some(if fps > 30.5 { hi } else { lo })
+}
+
 fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 {
         a.max(1)
@@ -125,6 +136,8 @@ fn gcd(a: u32, b: u32) -> u32 {
 
 struct Running {
     progress: Arc<Mutex<f32>>,
+    /// Lautheit wird vorher gemessen (erster Teil des Fortschritts)
+    measures: bool,
     result: Arc<Mutex<Option<Result<(), String>>>>,
     cancel: Arc<AtomicBool>,
     started: Instant,
@@ -160,6 +173,10 @@ pub struct ExportDialog {
     rev: u64,
     /// Projektstand und Datei des letzten fertigen Exports („Zur Datei“ statt „Exportieren“)
     exported: Option<(u64, PathBuf)>,
+    /// Zieldatei existiert: Nachfrage vor dem Start
+    confirm_overwrite: bool,
+    /// „Projekt auf 9:16 umstellen“ geklickt (App stellt das Format um)
+    switch_aspect: bool,
 }
 
 impl ExportDialog {
@@ -208,7 +225,7 @@ impl ExportDialog {
         self.preset_hint = None;
         self.platform = None;
         if let Some(pl) = p.settings.platform.as_deref().and_then(platform) {
-            Self::apply_platform(&mut s, &mut self.short_edge, pl);
+            Self::apply_platform(&mut s, &mut self.short_edge, &mut self.custom_kbps, pl);
             self.platform = Some(pl.id);
         }
         self.settings = Some(s);
@@ -226,7 +243,7 @@ impl ExportDialog {
         }
     }
 
-    fn apply_platform(s: &mut ExportSettings, short_edge: &mut u32, pl: &Platform) {
+    fn apply_platform(s: &mut ExportSettings, short_edge: &mut u32, custom_kbps: &mut u32, pl: &Platform) {
         s.format = Format::Mp4;
         s.codec = pl.codec;
         s.quality = pl.quality;
@@ -234,6 +251,19 @@ impl ExportDialog {
         if let Some(f) = pl.fps {
             s.fps = cl_core::Rational::new(f, 1);
         }
+        // YouTube: offizielle Bitraten, AAC 384 kbit/s, Lautheit −14 LUFS
+        let yt = pl.id.starts_with("youtube");
+        s.loudness = yt.then_some(-14.0);
+        s.audio_kbps = yt.then_some(384);
+        if let Some(k) = youtube_kbps(*short_edge, s.fps.as_f64()).filter(|_| yt) {
+            s.quality = Quality::Bitrate(k);
+            *custom_kbps = k;
+        }
+    }
+
+    /// „Projekt auf 9:16 umstellen“ wurde geklickt (einmalig abholen).
+    pub fn take_switch_aspect(&mut self) -> bool {
+        std::mem::take(&mut self.switch_aspect)
     }
 
     /// Im Export gewählte Plattform (einmalig abholen), damit das Projekt sie sich merkt.
@@ -297,7 +327,7 @@ impl ExportDialog {
             return toast;
         }
         // Esc schließt den Dialog (nicht während eines laufenden Exports)
-        if self.running.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if self.running.is_none() && !self.confirm_overwrite && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.open = false;
             return toast;
         }
@@ -306,6 +336,8 @@ impl ExportDialog {
         };
         let mut open = true;
         let mut start = false;
+        // ohne Nachfrage überschreiben (bestätigt oder „Erneut exportieren“)
+        let mut overwrite = false;
         egui::Window::new(RichText::new(crate::tr(format!("{}  Exportieren", icon::EXPORT))).strong())
             .id(egui::Id::new("export-dialog"))
             .collapsible(false)
@@ -330,8 +362,9 @@ impl ExportDialog {
                         ui.add_space(8.0);
                         ui.label(RichText::new(crate::tr(format!("{} {:.1} s  ·  {}×{}", icon::CLOCK, p.duration().as_secs_f64(), s.width, s.height))).small().color(theme::TEXT_DIM()));
                         if !s.format.audio_only() {
-                            let est = estimate_mb(&s, p.duration());
-                            ui.label(RichText::new(crate::tr(format!("{} ca. {est:.0} MB", icon::HARD_DRIVES))).small().color(theme::TEXT_DIM()));
+                            let (est, exact) = estimate_mb(&s, p.duration());
+                            let txt = if exact { format!("{} {est:.0} MB", icon::HARD_DRIVES) } else { format!("{} ca. {est:.0} MB", icon::HARD_DRIVES) };
+                            ui.label(RichText::new(crate::tr(txt)).small().color(theme::TEXT_DIM()));
                         }
                     });
                     ui.add_space(12.0);
@@ -362,7 +395,7 @@ impl ExportDialog {
                                     egui::ComboBox::from_id_salt("exp-preset").selected_text(sel).width(200.0).show_ui(ui, |ui| {
                                         for pl in PLATFORMS {
                                             if ui.selectable_label(self.platform == Some(pl.id), crate::tr(pl.name)).clicked() {
-                                                Self::apply_platform(&mut s, &mut self.short_edge, pl);
+                                                Self::apply_platform(&mut s, &mut self.short_edge, &mut self.custom_kbps, pl);
                                                 self.platform = Some(pl.id);
                                                 self.preset_hint = (!pl.fits(&p.settings)).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Quick Actions → Hochkant-Layout"));
                                                 if pl.fits(&p.settings) {
@@ -374,6 +407,15 @@ impl ExportDialog {
                                 });
                                 if let Some(h) = &self.preset_hint {
                                     ui.label(egui::RichText::new(h).small().color(theme::WARN));
+                                }
+                                // Hochkant-Vorgabe im Querformat-Projekt: Format direkt umstellen
+                                let vertical = self.platform.and_then(platform).filter(|pl| pl.w * 16 == pl.h * 9 && !pl.fits(&p.settings));
+                                if let Some(pl) = vertical.filter(|_| p.settings.width > p.settings.height) {
+                                    if ui.add(theme::secondary(format!("{}  Projekt auf 9:16 umstellen", icon::DEVICE_MOBILE))).clicked() {
+                                        self.switch_aspect = true;
+                                        self.picked_platform = Some(pl.id);
+                                        self.preset_hint = None;
+                                    }
                                 }
                                 theme::row(ui, "Auflösung", |ui| {
                                     let label = |e: u32| match e {
@@ -456,7 +498,8 @@ impl ExportDialog {
                                         });
                                     });
                                     theme::section(ui, "Ton");
-                                    crate::widgets::check(ui, &mut s.include_audio, crate::tr("Ton exportieren (AAC 256 kbit/s, bei WebM Opus)"));
+                                    crate::widgets::check(ui, &mut s.include_audio, crate::tr(format!("Ton exportieren (AAC {} kbit/s, bei WebM Opus)", s.audio_kbps.unwrap_or(256))));
+                                    ui.add_enabled_ui(s.include_audio, |ui| loudness_row(ui, &mut s.loudness));
                                     if let Some((a, b)) = self.range_avail {
                                         let mut only = s.range.is_some();
                                         let fmt = |t: Time| format!("{:02}:{:02}.{:02}", (t.as_secs_f64() / 60.0) as u32, t.as_secs_f64() as u32 % 60, ((t.as_secs_f64().fract()) * 100.0) as u32);
@@ -465,7 +508,11 @@ impl ExportDialog {
                                         }
                                     }
                                 }
-                                crate::widgets::check(ui, &mut self.also_srt, crate::tr("Texte zusätzlich als Untertiteldatei (SRT) speichern"));
+                            } else {
+                                loudness_row(ui, &mut s.loudness);
+                            }
+                            if !s.format.audio_only() {
+                                crate::widgets::check(ui, &mut self.also_srt, crate::tr("Texte zusätzlich als Untertiteldateien (SRT und VTT) speichern"));
                                 let ms = &p.timeline.markers;
                                 if !ms.is_empty() {
                                     theme::section(ui, "Kapitel");
@@ -491,7 +538,7 @@ impl ExportDialog {
                 }
                 if let Some(r) = &self.running {
                     let prog = *r.progress.lock().unwrap();
-                    export_progress(ui, prog, r.started.elapsed().as_secs_f32());
+                    export_progress(ui, prog, r.started.elapsed().as_secs_f32(), r.measures && prog < cl_export::MEASURE_SHARE);
                 } else if let Some((at, secs)) = self.done {
                     if !export_done(ui, at, secs) {
                         self.done = None;
@@ -522,6 +569,7 @@ impl ExportDialog {
                             }
                             if ui.add(theme::secondary(format!("{}  Erneut exportieren", icon::ARROW_CLOCKWISE))).clicked() {
                                 start = true;
+                                overwrite = true;
                             }
                         } else if ui.add(theme::primary(format!("{}  Exportieren", icon::EXPORT))).clicked() {
                             start = true;
@@ -533,16 +581,73 @@ impl ExportDialog {
         if !open {
             self.open = false;
         }
+        if start && !overwrite && self.output_path(s.format).exists() {
+            self.confirm_overwrite = true;
+            start = false;
+        }
+        if self.confirm_overwrite {
+            // 0 = überschreiben, 1 = anderer Name, 2 = abbrechen
+            let mut choice = None;
+            let file = self.output_path(s.format);
+            let m = egui::Modal::new(egui::Id::new("export-overwrite")).show(ctx, |ui| {
+                ui.set_width(380.0);
+                ui.label(RichText::new(crate::tr("Datei existiert bereits")).strong().size(theme::FS_TITLE));
+                ui.add_space(8.0);
+                ui.label(RichText::new(crate::tr(file.display().to_string())).small().color(theme::TEXT_DIM()));
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(theme::primary("Überschreiben")).clicked() {
+                            choice = Some(0);
+                        }
+                        if ui.add(theme::secondary("Anderen Namen")).clicked() {
+                            choice = Some(1);
+                        }
+                        if ui.add(theme::secondary("Abbrechen")).clicked() {
+                            choice = Some(2);
+                        }
+                    });
+                });
+            });
+            if choice.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+                choice = Some(0);
+            } else if choice.is_none() && m.should_close() {
+                choice = Some(2);
+            }
+            match choice {
+                Some(0) => start = true,
+                Some(1) => {
+                    let base = self.name.trim().to_string();
+                    for n in 2.. {
+                        self.name = format!("{base} ({n})");
+                        if !self.output_path(s.format).exists() {
+                            break;
+                        }
+                    }
+                    start = true;
+                }
+                _ => {}
+            }
+            if choice.is_some() {
+                self.confirm_overwrite = false;
+            }
+        }
         if start {
             self.error = None;
             let out = self.output_path(s.format);
             if self.also_srt {
                 let _ = std::fs::write(out.with_extension("srt"), cl_export::to_srt(p));
+                let _ = std::fs::write(out.with_extension("vtt"), cl_export::to_vtt(p));
+            }
+            // Kapitel wie „YouTube-Kapitel kopieren“ als Textdatei neben das Video
+            if !s.format.audio_only() && !p.timeline.markers.is_empty() {
+                let _ = std::fs::write(out.with_extension("chapters.txt"), crate::navigate::chapters(&p.timeline.markers));
             }
             let fonts = fonts.clone();
             let resolver = move |fam: Option<&str>| fam.and_then(|f| fonts.get(f).cloned());
             match cl_export::build(p, &s, &resolver, &out) {
                 Ok(job) => {
+                    let measures = job.measures_loudness();
                     let progress = Arc::new(Mutex::new(0.0));
                     let result = Arc::new(Mutex::new(None));
                     let cancel = Arc::new(AtomicBool::new(false));
@@ -563,6 +668,7 @@ impl ExportDialog {
                     self.done = None;
                     self.running = Some(Running {
                         progress,
+                        measures,
                         result,
                         cancel,
                         started: Instant::now(),
@@ -579,13 +685,13 @@ impl ExportDialog {
 
 /// Grobe Dateigrößenschätzung (für die Anzeige im Dialog).
 /// Fortschritt beim Export: weich nachlaufender Balken mit wanderndem Glanz, Prozent und Restzeit.
-fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32) {
+fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool) {
     let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, 0.35);
     let t = ui.input(|i| i.time) as f32;
     ui.horizontal(|ui| {
         // 14 px wie ein Icon in der Zeile (Standard wäre Zeilenhöhe)
         ui.add(egui::Spinner::new().size(14.0).color(theme::ACCENT()));
-        ui.label(RichText::new(crate::tr("Exportiere …")).color(theme::TEXT()));
+        ui.label(RichText::new(crate::tr(if measuring { "Lautheit messen …" } else { "Exportiere …" })).color(theme::TEXT()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if prog > 0.03 && elapsed > 2.0 {
                 let left = (elapsed / prog * (1.0 - prog)).max(0.0) as u32;
@@ -643,10 +749,29 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
     true
 }
 
-/// Dateigröße grob schätzen. Bei konstanter Qualität (CRF) aus Pixel × Bildrate, geeicht auf
+/// „Lautheit angleichen“: YouTube (−14 LUFS), Sprache (−16 LUFS) oder aus.
+fn loudness_row(ui: &mut egui::Ui, l: &mut Option<f32>) {
+    let name = |l: Option<f32>| match l {
+        Some(x) if x > -15.0 => "YouTube (−14 LUFS)",
+        Some(_) => "Sprache (−16 LUFS)",
+        None => "Aus",
+    };
+    theme::row(ui, "Lautheit angleichen", |ui| {
+        egui::ComboBox::from_id_salt("exp-loud").selected_text(crate::tr(name(*l))).width(200.0).show_ui(ui, |ui| {
+            for v in [Some(-14.0), Some(-16.0), None] {
+                ui.selectable_value(l, v, crate::tr(name(v)));
+            }
+        })
+        .response
+        .on_hover_text(crate::tr("Misst den Ton vorab und hebt oder senkt ihn gleichmäßig, Spitzen höchstens −1 dBTP"));
+    });
+}
+
+/// Dateigröße schätzen; `true` = aus fester Zielbitrate (Video + Ton) × Dauer.
+/// Bei konstanter Qualität (CRF) grob aus Pixel × Bildrate, geeicht auf
 /// 1080p30 „Empfohlen“ ≈ 23 Mbit/s (was libx264 mit CRF 20 tatsächlich liefert);
 /// je +6 CRF etwa halbe Größe (Kleiner = CRF 26, Höher = CRF 16).
-fn estimate_mb(s: &ExportSettings, d: Time) -> f64 {
+fn estimate_mb(s: &ExportSettings, d: Time) -> (f64, bool) {
     let px = (s.width * s.height) as f64;
     let kbps = match s.quality {
         Quality::Bitrate(k) => k as f64,
@@ -659,16 +784,44 @@ fn estimate_mb(s: &ExportSettings, d: Time) -> f64 {
             }
         }
     };
-    let audio = if s.include_audio { 256.0 } else { 0.0 };
+    let exact = matches!(s.quality, Quality::Bitrate(_)) && s.codec != Codec::ProRes && s.format != Format::Gif;
     let secs = s.range.map_or(d.as_secs_f64(), |(a, b)| (b.as_secs_f64() - a.as_secs_f64()).max(0.0));
-    (kbps + audio) * secs / 8.0 / 1000.0
+    ((kbps + s.audio_bitrate() as f64) * secs / 8.0 / 1000.0, exact)
+}
+
+#[test]
+fn youtube_presets_hit_official_bitrates() {
+    let mut s = ExportSettings::from_project(&Project::new("t"));
+    let (mut edge, mut kbps) = (0, 0);
+    for (id, fps, want) in [
+        ("youtube-1080", "30", 8_000),
+        ("youtube-1080", "60", 12_000),
+        ("youtube-1440", "29.97", 16_000),
+        ("youtube-1440", "50", 24_000),
+        ("youtube-4k", "24", 40_000),
+        ("youtube-4k", "60", 60_000),
+    ] {
+        s.fps = cl_core::Rational::parse(fps).unwrap();
+        ExportDialog::apply_platform(&mut s, &mut edge, &mut kbps, platform(id).unwrap());
+        assert_eq!((s.quality, kbps), (Quality::Bitrate(want), want), "{id} {fps}");
+        assert_eq!((s.audio_kbps, s.loudness), (Some(384), Some(-14.0)));
+    }
+    // andere Vorgaben: eigene Qualität, Lautheit aus
+    ExportDialog::apply_platform(&mut s, &mut edge, &mut kbps, platform("small").unwrap());
+    assert_eq!((s.quality, s.audio_kbps, s.loudness), (Quality::Lower, None, None));
+    // Größe aus Zielbitrate: (8000 + 384) kbit/s × 60 s
+    s.quality = Quality::Bitrate(8_000);
+    s.audio_kbps = Some(384);
+    let (mb, exact) = estimate_mb(&s, Time::from_secs_f64(60.0));
+    assert!(exact && (mb - 62.88).abs() < 0.01, "{mb}");
 }
 
 #[test]
 fn estimate_matches_a_real_1080p30_export() {
     let mut s = ExportSettings::from_project(&Project::new("t"));
     (s.width, s.height, s.fps) = (1920, 1080, cl_core::Rational::parse("30").unwrap());
-    let mb = estimate_mb(&s, Time::from_secs_f64(40.0));
+    let (mb, exact) = estimate_mb(&s, Time::from_secs_f64(40.0));
+    assert!(!exact);
     // echte Datei: 117,6 MB
     assert!((80.0..=160.0).contains(&mb), "{mb}");
 }

@@ -688,6 +688,16 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
     Ok(cur)
 }
 
+/// Abschnitte einer Tempo-Kurve: (Quellstart s, Quellende s, Tempo) für gleich lange Stücke
+/// der Clipzeit `dur`; `src` = Länge des Quellbereichs.
+fn curve_pieces(id: &str, src: f64, dur: f64) -> Vec<(f64, f64, f32)> {
+    const N: usize = 24;
+    let at = |k: usize| curve_progress(id, k as f32 / N as f32) as f64 * src;
+    (0..N)
+        .map(|k| (at(k), at(k + 1), ((at(k + 1) - at(k)) / (dur / N as f64).max(1e-6)) as f32))
+        .collect()
+}
+
 /// Ton: alle hörbaren Clips (Geschwindigkeit, Rückwärts, Lautstärke-Keyframes,
 /// Ein-/Ausblenden, Verlängerung mit Stille) werden gemischt.
 pub(crate) fn audio_part(
@@ -709,7 +719,7 @@ pub(crate) fn audio_part(
             let ClipContent::Media { media, kind } = &c.content else {
                 continue;
             };
-            if *kind == MediaKind::Image || c.fx.speed_curve.is_some() {
+            if *kind == MediaKind::Image {
                 continue;
             }
             let Some(m) = p.media(*media) else { continue };
@@ -751,9 +761,30 @@ pub(crate) fn audio_part(
             if c.fx.reverse {
                 chain.push("areverse".into());
             }
-            let at = atempo_chain(c.speed);
-            if !at.is_empty() {
-                chain.push(at);
+            let mut src = format!("{i}:a");
+            if let Some(id) = &c.fx.speed_curve {
+                // Tempo-Kurve: Quelle in Abschnitte teilen, je Abschnitt konstantes atempo
+                let pieces = curve_pieces(id, seg_len.as_secs_f64(), dur);
+                let outs: String = (0..pieces.len()).map(|k| format!("[c{i}p{k}]")).collect();
+                graph.push(format!("[{src}]{},asplit={}{outs}", chain.join(","), pieces.len()));
+                for (k, (a, b, speed)) in pieces.iter().enumerate() {
+                    let at = atempo_chain(*speed);
+                    graph.push(format!(
+                        "[c{i}p{k}]atrim={}:{},asetpts=PTS-STARTPTS,{}[c{i}q{k}]",
+                        f(*a),
+                        f(*b),
+                        if at.is_empty() { "anull".into() } else { at }
+                    ));
+                }
+                let ins: String = (0..pieces.len()).map(|k| format!("[c{i}q{k}]")).collect();
+                graph.push(format!("{ins}concat=n={}:v=0:a=1[c{i}]", pieces.len()));
+                src = format!("c{i}");
+                chain.clear();
+            } else {
+                let at = atempo_chain(c.speed);
+                if !at.is_empty() {
+                    chain.push(at);
+                }
             }
             chain.extend(cl_fx::audio::audio_chain(&c.audio));
             // Länger gezogener Ton: mit Stille auffüllen
@@ -798,11 +829,11 @@ pub(crate) fn audio_part(
                 // Stille aus eigener Quelle davor statt adelay: bei langem Versatz liefert
                 // adelay lange nichts, der Muxer hält dann das Video zurück (kein Fortschritt)
                 let fmt = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
-                graph.push(format!("[{i}:a]{},{fmt}[{label}x]", chain.join(",")));
+                graph.push(format!("[{src}]{},{fmt}[{label}x]", chain.join(",")));
                 graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{},{fmt}[{label}s]", f(t0)));
                 graph.push(format!("[{label}s][{label}x]concat=n=2:v=0:a=1[{label}]"));
             } else {
-                graph.push(format!("[{i}:a]{}[{label}]", chain.join(",")));
+                graph.push(format!("[{src}]{}[{label}]", chain.join(",")));
             }
             labels.push(label);
         }

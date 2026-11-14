@@ -1572,3 +1572,13 @@ Ersetzen	Replace
 Anwenden	Apply
 Musik unter Sprache absenken	Lower music under speech
 Musik an {} Stellen abgesenkt (−{} dB)	Music lowered in {} places (−{} dB)
+Ton exportieren (AAC {} kbit/s, bei WebM Opus)	Export audio (AAC {} kbit/s, Opus for WebM)
+Texte zusätzlich als Untertiteldateien (SRT und VTT) speichern	Also save texts as subtitle files (SRT and VTT)
+YouTube (−14 LUFS)	YouTube (−14 LUFS)
+Sprache (−16 LUFS)	Speech (−16 LUFS)
+Misst den Ton vorab und hebt oder senkt ihn gleichmäßig, Spitzen höchstens −1 dBTP	Measures the audio first and raises or lowers it evenly, peaks at most −1 dBTP
+Lautheit messen …	Measuring loudness …
+Projekt auf 9:16 umstellen	Switch project to 9:16
+Datei existiert bereits	File already exists
+Überschreiben	Overwrite
+Anderen Namen	Different name
