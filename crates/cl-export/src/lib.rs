@@ -32,6 +32,8 @@ pub enum ExportError {
     Ffmpeg(String),
     #[error("Abgebrochen")]
     Cancelled,
+    #[error("Lautheit konnte nicht gemessen werden")]
+    Loudness,
     #[error("E/A-Fehler: {0}")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -261,19 +263,28 @@ fn loudnorm(target: f32) -> String {
 }
 
 /// Zweiter Durchgang aus dem JSON des Messlaufs; Stille (−inf) bleibt unverändert.
-fn second_pass(log: &str, target: f32) -> String {
-    let get = |k: &str| {
+/// `None`: Messergebnis fehlt, obwohl Ton da ist.
+fn second_pass(log: &str, target: f32) -> Option<String> {
+    let raw = |k: &str| {
         let key = format!("\"{k}\" : \"");
         let i = log.rfind(&key)? + key.len();
-        log[i..].split('"').next()?.parse::<f64>().ok().filter(|v| v.is_finite())
+        log[i..].split('"').next()
     };
-    match (get("input_i"), get("input_tp"), get("input_lra"), get("input_thresh"), get("target_offset")) {
-        (Some(i), Some(tp), Some(lra), Some(th), Some(off)) if i > -70.0 => format!(
-            "{}:measured_I={i}:measured_TP={tp}:measured_LRA={lra}:measured_thresh={th}:offset={off}:linear=true:print_format=none,aresample=48000",
-            loudnorm(target)
-        ),
-        _ => "anull".into(),
+    let get = |k: &str| raw(k)?.parse::<f64>().ok().filter(|v| v.is_finite());
+    raw("input_i")?;
+    match get("input_i") {
+        Some(i) if i > -70.0 => {}
+        _ => return Some("anull".into()),
     }
+    let (i, tp, lra, th, off) = (get("input_i")?, get("input_tp")?, get("input_lra")?, get("input_thresh")?, get("target_offset")?);
+    // loudnorm nimmt measured_I/measured_thresh nur bis 0: vorher linear absenken, Messwerte mitschieben
+    let n = (i.max(th) + 2.0).ceil().max(0.0);
+    let pre = if n > 0.0 { format!("volume=-{n}dB,") } else { String::new() };
+    let (i, tp, th) = (i - n, tp - n, th - n);
+    Some(format!(
+        "{pre}{}:measured_I={i}:measured_TP={tp}:measured_LRA={lra}:measured_thresh={th}:offset={off}:linear=true:print_format=none,aresample=48000",
+        loudnorm(target)
+    ))
 }
 
 /// `<stem>.part.<ext>` neben dem Ziel (Endung bleibt, FFmpeg wählt danach den Muxer).
@@ -575,8 +586,11 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
             a.drain(i..i + 2);
         }
         a.extend(["-b:v".into(), format!("{k}k")]);
-        // Deckel knapp über dem Ziel, sonst überziehen vor allem Hardware-Encoder deutlich
-        a.extend(["-maxrate".into(), format!("{}k", k + k / 10), "-bufsize".into(), format!("{}k", k * 2)]);
+        // Deckel knapp über dem Ziel, sonst überziehen vor allem Hardware-Encoder deutlich;
+        // libsvtav1 kennt -maxrate nur im CRF-Modus und bricht sonst ab
+        if !a.iter().any(|x| x == "libsvtav1") {
+            a.extend(["-maxrate".into(), format!("{}k", k + k / 10), "-bufsize".into(), format!("{}k", k * 2)]);
+        }
     }
     a.extend(["-r".into(), format!("{}/{}", s.fps.num, s.fps.den)]);
     if s.include_audio {
@@ -598,7 +612,8 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
 pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
     let r = match &job.measure {
         Some(m) => run_ffmpeg(job, &m.args, &cancel, &mut |x| progress(x * MEASURE_SHARE)).and_then(|log| {
-            let g = format!("{};\n[aout]{}[anorm]", m.graph, second_pass(&log, m.target));
+            let pass = second_pass(&log, m.target).ok_or(ExportError::Loudness)?;
+            let g = format!("{};\n[aout]{pass}[anorm]", m.graph);
             std::fs::write(job.workdir.path().join("graph.txt"), g)?;
             run_ffmpeg(job, &job.args, &cancel, &mut |x| progress(MEASURE_SHARE + x * (1.0 - MEASURE_SHARE)))
         }),
@@ -622,9 +637,10 @@ fn run_ffmpeg(job: &Job, args: &[String], cancel: &AtomicBool, progress: &mut dy
         .spawn()?;
     let stderr = child.stderr.take().expect("piped");
     let err_thread = std::thread::spawn(move || {
-        let mut s = String::new();
-        let _ = std::io::Read::read_to_string(&mut BufReader::new(stderr), &mut s);
-        s
+        // Metadaten im Log können anders kodiert sein: Bytes lesen, nicht an UTF-8 scheitern
+        let mut b = Vec::new();
+        let _ = std::io::Read::read_to_end(&mut BufReader::new(stderr), &mut b);
+        String::from_utf8_lossy(&b).into_owned()
     });
     let total = job.duration.as_secs_f64().max(0.001);
     for line in BufReader::new(child.stdout.take().expect("piped"))
@@ -740,12 +756,22 @@ pub fn spawn_audio_preview(
 
 /// Textclips als SRT (z. B. für Untertitel-Export).
 pub fn to_srt(p: &Project) -> String {
-    subtitles(p, ',')
+    to_srt_in(p, Time::ZERO, Time(i64::MAX))
 }
 
 /// Textclips als WebVTT.
 pub fn to_vtt(p: &Project) -> String {
-    format!("WEBVTT\n\n{}", subtitles(p, '.'))
+    to_vtt_in(p, Time::ZERO, Time(i64::MAX))
+}
+
+/// SRT nur für den Bereich `start..end` (Zeiten ab `start`, am Rand gekürzt).
+pub fn to_srt_in(p: &Project, start: Time, end: Time) -> String {
+    subtitles(p, ',', start, end)
+}
+
+/// WebVTT nur für den Bereich `start..end`.
+pub fn to_vtt_in(p: &Project, start: Time, end: Time) -> String {
+    format!("WEBVTT\n\n{}", subtitles(p, '.', start, end))
 }
 
 /// SRT oder VTT je nach Dateiendung.
@@ -756,7 +782,8 @@ pub fn subtitles_for(p: &Project, path: &Path) -> String {
     }
 }
 
-fn subtitles(p: &Project, ms_sep: char) -> String {
+fn subtitles(p: &Project, ms_sep: char, start: Time, end: Time) -> String {
+    let vtt = ms_sep == '.';
     let ts = |t: Time| {
         let ms = t.as_millis().max(0);
         format!(
@@ -774,7 +801,15 @@ fn subtitles(p: &Project, ms_sep: char) -> String {
         .filter(|t| t.kind == TrackKind::Text && !t.hidden)
         .flat_map(|t| t.clips.iter())
         .filter_map(|c| match &c.content {
-            ClipContent::Text(s) => Some((c.start, c.end(), s.text.clone())),
+            ClipContent::Text(s) if c.end() > start && c.start < end => {
+                // Leerzeilen beenden die Cue; in VTT sind <, >, & Markup und „-->“ trennt Zeiten
+                let mut t = s.text.lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join("\n");
+                if vtt {
+                    t = t.replace("-->", "->").replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+                }
+                let t0 = c.start.max(start) - start;
+                (!t.is_empty()).then(|| (t0, c.end().min(end) - start, t))
+            }
             _ => None,
         })
         .collect();
@@ -2028,6 +2063,80 @@ mod tests {
         }
         s.quality = Quality::Recommended;
         assert!(codec_args(&s).contains(&"-global_quality".to_string()));
+    }
+
+    /// Jede angebotene Codec-Container-Kombination mit Software-Encoder exportiert mit eigener Bitrate.
+    #[test]
+    fn bitrate_export_works_for_every_software_codec() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = sine_project(dir.path(), 0.0);
+        let mut s = ExportSettings::from_project(&p);
+        (s.width, s.height) = (128, 72);
+        s.quality = Quality::Bitrate(800);
+        s.include_audio = false;
+        s.range = Some((Time::ZERO, Time::from_secs_f64(1.0)));
+        for format in [Format::Mp4, Format::Mov, Format::Mkv, Format::WebM] {
+            for codec in Codec::for_format(format) {
+                (s.format, s.codec) = (format, *codec);
+                let out = dir.path().join(format!("{codec:?}.{}", format.extension()));
+                let job = build(&p, &s, &no_fonts, &out).unwrap();
+                run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap_or_else(|e| panic!("{codec:?} in {format:?}: {e}"));
+            }
+        }
+    }
+
+    #[test]
+    fn second_pass_handles_silence_missing_and_loud_input() {
+        let log = |i: &str, th: &str| {
+            format!("{{\n\t\"input_i\" : \"{i}\",\n\t\"input_tp\" : \"{i}\",\n\t\"input_lra\" : \"3.0\",\n\t\"input_thresh\" : \"{th}\",\n\t\"target_offset\" : \"0.5\"\n}}")
+        };
+        let normal = second_pass(&log("-20.00", "-30.00"), -14.0).unwrap();
+        assert!(normal.starts_with("loudnorm=") && normal.contains("measured_I=-20:"), "{normal}");
+        assert_eq!(second_pass(&log("-inf", "-inf"), -14.0).as_deref(), Some("anull"));
+        assert_eq!(second_pass("kein JSON", -14.0), None);
+        assert_eq!(second_pass(&log("-20.00", "-30.00").replace("input_lra", "x"), -14.0), None);
+        // +4 LUFS: loudnorm nimmt measured_I nur bis 0 → vorher um 6 dB absenken
+        let loud = second_pass(&log("4.00", "-6.00"), -14.0).unwrap();
+        assert!(loud.starts_with("volume=-6dB,loudnorm=") && loud.contains("measured_I=-2:") && loud.contains("measured_thresh=-12:"), "{loud}");
+    }
+
+    #[test]
+    fn very_loud_audio_is_normalized() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = sine_project(dir.path(), 0.0);
+        p.timeline.tracks[0].clips[0].volume_db = 30.0;
+        let mut s = wav_settings(&p);
+        s.loudness = Some(-14.0);
+        let out = dir.path().join("sehr-laut.wav");
+        run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let l = lufs(&out);
+        assert!((l + 14.0).abs() <= 1.0, "{l} LUFS");
+    }
+
+    #[test]
+    fn subtitles_escape_and_follow_range() {
+        let mut p = Project::new("x");
+        let mut t = Track::new(TrackKind::Text);
+        let txt = |s: &str| ClipContent::Text(TextStyle { text: s.into(), ..Default::default() });
+        t.clips.push(Clip::new(txt("<3 A --> B & C\n\nzwei"), Time::from_secs_f64(1.0), Time::from_secs_f64(2.0)));
+        t.clips.push(Clip::new(txt("später"), Time::from_secs_f64(5.0), Time::from_secs_f64(1.0)));
+        p.timeline.tracks.push(t);
+        assert_eq!(
+            to_vtt(&p),
+            "WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\n&lt;3 A -&gt; B &amp; C\nzwei\n\n2\n00:00:05.000 --> 00:00:06.000\nspäter\n"
+        );
+        assert!(to_srt(&p).contains("\n<3 A --> B & C\nzwei\n"));
+        // Bereich 2–4 s: erster Text gekürzt und verschoben, zweiter fehlt
+        assert_eq!(
+            to_srt_in(&p, Time::from_secs_f64(2.0), Time::from_secs_f64(4.0)),
+            "1\n00:00:00,000 --> 00:00:01,000\n<3 A --> B & C\nzwei\n"
+        );
     }
 
     #[test]
