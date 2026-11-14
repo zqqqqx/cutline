@@ -1,7 +1,21 @@
 # Cutline brand
 
-Cutline is a calm, honest tool. The brand stays out of the way of the footage: dark, monochrome,
-one bright accent, no gradients on controls, no hype.
+**Cutline – das offene Schnittprogramm für Creator.** / The open video editor for creators.
+Einfach zu bedienen, schnell, komplett auf deinem Rechner. / Easy to use, fast, and entirely on your machine.
+
+It is made for content creators: YouTube, Shorts/TikTok/Reels, streaming, podcasts. The brand stays out of the
+way of the footage: dark, monochrome, one accent, no gradients on controls, no hype. Details and wording
+examples: [`POSITIONING.md`](POSITIONING.md).
+
+## Pillars
+
+1. **Einfach / Simple** – familiar layout, drag in, cut, export; every function is unlocked from the first start.
+2. **Schnell / Fast** – written in Rust, smooth preview with proxies, quick exports with hardware encoders.
+3. **Offen / Open** – open source, runs locally, no account, no subscription, no watermark.
+
+AI is described one way everywhere: "Lokale KI für Untertitel, Freistellen und Entrauschen – nichts wird
+hochgeladen; keine erzeugende KI." / "Local AI for captions, cut-outs and noise removal – nothing is uploaded;
+no generative AI."
 
 ## Name
 
@@ -40,6 +54,9 @@ Defined in `crates/cl-app/src/theme.rs`.
 | `DANGER` | `#E5484D` | Destructive actions only |
 | `SNAP` | `#FFD84D` | Snapping guides only |
 
+One accent colour. The default is white; users can pick a preset or their own colour in Settings. Status colours
+(warning, error, success) and clip colours are not accent colours. The logo tile is never recoloured.
+
 Color in the interface belongs to the user's media: clip colors, waveforms, thumbnails. The chrome
 itself stays neutral.
 
@@ -47,8 +64,8 @@ itself stays neutral.
 
 The interface uses the platform's UI font (Segoe UI on Windows, DejaVu Sans on Linux, SF on macOS) with
 Phosphor icons. Graphics outside the app (banner, social images) use Inter or Segoe UI. Headings are
-bold and tight, body text is regular. Sizes in the app: 28 (welcome), 22 (dialog titles), 16 (tour titles),
-12.5 (labels), 11 (secondary), 10.5 (captions).
+bold and tight, body text is regular. Design tokens going forward: type scale 10.5 / 11.5 / 12.5 / 14 / 18 / 26 and corner radii 4 / 6 / 10.
+Existing sizes (28, 22, 16, 11) move to this scale as screens are touched.
 
 ## Voice
 
@@ -57,6 +74,28 @@ bold and tight, body text is regular. Sizes in the app: 28 (welcome), 22 (dialog
 - Say what happens and where data goes. "Runs locally", "The key stays on this computer".
 - No upsell, no exclamation marks, no fake urgency. Optional things are labeled optional.
 - German and English are both first-class; every UI string goes through `tr()`.
+
+## Wörterbuch
+
+Fixed terms for German UI text and docs. English follows the same split.
+
+| Begriff | Bedeutung / Regel |
+|---|---|
+| Clip | nicht "Element" |
+| Medien | nicht "Material" |
+| Inspektor | Panel für Clip-Einstellungen |
+| Eigenschaften | Info-Fenster per Rechtsklick |
+| Tempo | nicht "Geschwindigkeit" |
+| Vorlage | Projektvorlage |
+| Look | gespeicherte Clip-Einstellungen |
+| Stil | Untertitel- und Textstil |
+| Löschen | endgültig weg |
+| Entfernen | aus einer Liste nehmen |
+| Verbergen | ausblenden |
+| Klinge | Werkzeug (Schneiden) |
+| Teilen | Aktion (Clip am Playhead teilen) |
+| Quick Actions | Creator-Werkzeuge (Menü in der Zeitleiste) |
+| Im Explorer zeigen | Datei im Dateimanager anzeigen |
 
 ## Principles
 
