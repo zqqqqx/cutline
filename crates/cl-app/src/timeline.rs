@@ -7,7 +7,7 @@
 //! - Übergänge als Block auf dem Schnitt, Keyframe-Rauten, Live-Waveform beim Einsprechen
 //! - Mausrad scrollt die Spuren senkrecht, Umschalt+Rad waagerecht, Strg+Rad zoomt
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cl_core::*;
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, RichText, Sense, Stroke};
@@ -22,6 +22,8 @@ const RULER_H: f32 = 22.0;
 const ROW_H: f32 = 34.0;
 const MAIN_ROW_H: f32 = 58.0;
 const AUDIO_ROW_H: f32 = 42.0;
+/// Höhe einer eingeklappten Spur
+const COLLAPSED_H: f32 = 16.0;
 const ROW_GAP: f32 = 5.0;
 const EDGE_PX: f32 = 7.0;
 const SNAP_PX: f32 = 9.0;
@@ -57,7 +59,65 @@ enum Drag {
         origin: Pos2,
         additive: bool,
     },
+    /// Fade-Griff oder Lautstärkelinie auf einem Clip mit Ton (`value`: Sekunden bzw. dB)
+    Audio {
+        clip: ClipId,
+        handle: AudioHandle,
+        value: f32,
+    },
 }
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum AudioHandle {
+    FadeIn,
+    FadeOut,
+    Volume,
+}
+
+/// Lautstärkelinie: −30 dB unten bis +12 dB oben (0 dB bei gut zwei Dritteln)
+const VOL_MIN: f32 = -30.0;
+const VOL_MAX: f32 = 12.0;
+fn vol_y(body: Rect, db: f32) -> f32 {
+    let n = ((db - VOL_MIN) / (VOL_MAX - VOL_MIN)).clamp(0.0, 1.0);
+    body.bottom() - 3.0 - n * (body.height() - 6.0)
+}
+fn y_vol(body: Rect, y: f32) -> f32 {
+    let n = ((body.bottom() - 3.0 - y) / (body.height() - 6.0).max(1.0)).clamp(0.0, 1.0);
+    let db = VOL_MIN + n * (VOL_MAX - VOL_MIN);
+    // bei 0 dB leicht einrasten
+    if db.abs() < 0.8 { 0.0 } else { (db * 2.0).round() / 2.0 }
+}
+
+/// Werkzeug in der Zeitleiste (wie in CapCut: A = Auswählen, B = Teilen)
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum Tool {
+    #[default]
+    Select,
+    Blade,
+    SelectLeft,
+    SelectRight,
+}
+
+impl Tool {
+    pub const ALL: [(Tool, &'static str, &'static str, &'static str); 4] = [
+        (Tool::Select, icon::CURSOR, "Auswählen", "A"),
+        (Tool::Blade, icon::KNIFE, "Teilen", "B"),
+        (Tool::SelectLeft, icon::ARROW_FAT_LINES_LEFT, "Alle Clips links auswählen", ""),
+        (Tool::SelectRight, icon::ARROW_FAT_LINES_RIGHT, "Alle Clips rechts auswählen", ""),
+    ];
+    fn icon(self) -> &'static str {
+        Self::ALL.iter().find(|t| t.0 == self).map(|t| t.1).unwrap_or(icon::CURSOR)
+    }
+}
+
+/// Spurarten zum Hinzufügen (Symbol, Name)
+pub const TRACK_KINDS: [(TrackKind, &str); 5] = [
+    (TrackKind::Video, "Videospur"),
+    (TrackKind::Text, "Textspur"),
+    (TrackKind::Effect, "Effektspur"),
+    (TrackKind::Filter, "Filterspur"),
+    (TrackKind::Audio, "Audiospur"),
+];
 
 #[derive(Clone, Copy, PartialEq)]
 enum CtxTarget {
@@ -83,9 +143,12 @@ pub struct TimelineState {
     ctx: Option<CtxTarget>,
     /// Höhenfaktor je Spur (Rechtsklick → Spurhöhe)
     pub heights: HashMap<TrackId, f32>,
+    /// Eingeklappte Spuren (schmal, bleiben aber sichtbar)
+    pub collapsed: std::collections::HashSet<TrackId>,
     last_click: Option<Pos2>,
     /// Playhead im letzten Bild (Sprünge per Taste → Ansicht folgt)
     last_playhead: Option<Time>,
+    pub tool: Tool,
 }
 
 impl Default for TimelineState {
@@ -97,8 +160,10 @@ impl Default for TimelineState {
             drag: Drag::None,
             ctx: None,
             heights: HashMap::new(),
+            collapsed: Default::default(),
             last_click: None,
             last_playhead: None,
+            tool: Tool::Select,
         }
     }
 }
@@ -110,14 +175,9 @@ struct Row {
 
 fn menu_item(ui: &mut egui::Ui, glyph: &str, text: &str, keys: &str) -> bool {
     let r = ui.add(
-        egui::Button::new(RichText::new(crate::tr(format!("{glyph}   {text}"))).size(12.0))
-            .shortcut_text(
-                RichText::new(crate::tr(keys))
-                    .size(10.5)
-                    .color(theme::TEXT_FAINT),
-            )
-            .frame(false)
-            .min_size(vec2(210.0, 22.0)),
+        theme::menu_row(crate::tr(format!("{glyph}   {text}")))
+            .keys(keys)
+            .min_width(210.0),
     );
     if r.clicked() {
         ui.close_menu();
@@ -126,8 +186,44 @@ fn menu_item(ui: &mut egui::Ui, glyph: &str, text: &str, keys: &str) -> bool {
     false
 }
 
+fn set_audio_handle(c: &mut Clip, h: AudioHandle, v: f32) {
+    let dur = c.duration.as_secs_f64();
+    match h {
+        AudioHandle::FadeIn => {
+            c.fade_in = Time::from_secs_f64((v as f64).clamp(0.0, (dur - c.fade_out.as_secs_f64()).max(0.0)))
+        }
+        AudioHandle::FadeOut => {
+            c.fade_out = Time::from_secs_f64((v as f64).clamp(0.0, (dur - c.fade_in.as_secs_f64()).max(0.0)))
+        }
+        AudioHandle::Volume => c.volume_db = v,
+    }
+}
+
 impl App {
+    /// Fade/Lautstärke aus der Zeitleiste übernehmen – bei Mehrfachauswahl für alle Clips mit Ton.
+    fn apply_audio_handle(&mut self, clip: ClipId, h: AudioHandle, v: f32) {
+        let ids = if self.is_selected(clip) { self.selection() } else { vec![clip] };
+        let ops: Vec<EditOp> = ids
+            .iter()
+            .filter_map(|id| self.project.find_clip(*id).map(|(_, c)| c.clone()))
+            .filter(|c| match &c.content {
+                ClipContent::Media { media, kind } => {
+                    *kind == MediaKind::Audio || self.project.media(*media).is_some_and(|m| m.has_audio)
+                }
+                _ => false,
+            })
+            .map(|mut c| {
+                set_audio_handle(&mut c, h, v);
+                EditOp::ReplaceClip { clip: c }
+            })
+            .collect();
+        self.apply_batch(ops);
+    }
+
     fn row_height(&self, t: &Track) -> f32 {
+        if self.timeline.collapsed.contains(&t.id) {
+            return COLLAPSED_H;
+        }
         let base = if t.main {
             MAIN_ROW_H
         } else if t.kind == TrackKind::Audio {
@@ -159,9 +255,44 @@ impl App {
                 self.redo();
             }
             ui.add(egui::Separator::default().vertical().spacing(10.0));
-            let tools = ui.menu_button(egui::RichText::new(crate::tr(format!("{}  Werkzeuge", icon::MAGIC_WAND))).size(12.0), |ui| self.tools_menu(ui)).response;
+            // Werkzeug wählen (Auswählen, Teilen, alles links/rechts)
+            let cur = self.timeline.tool;
+            ui.menu_button(
+                RichText::new(format!("{} {}", cur.icon(), icon::CARET_DOWN)).size(13.0),
+                |ui| {
+                    for (t, g, name, key) in Tool::ALL {
+                        let mark = if cur == t { icon::CHECK } else { " " };
+                        let r = ui.add(
+                            theme::menu_row(format!("{}   {mark}", crate::tr(format!("{g}   {name}"))))
+                                .keys(key)
+                                .min_width(250.0),
+                        );
+                        if r.clicked() {
+                            self.timeline.tool = t;
+                            ui.close_menu();
+                        }
+                    }
+                },
+            )
+            .response
+            .on_hover_text(crate::tr("Werkzeug"));
+            let tools = ui.menu_button(egui::RichText::new(crate::tr(format!("{}  Quick Actions", icon::LIGHTNING))).size(12.0), |ui| self.tools_menu(ui)).response;
             self.tour_rects.insert("tools", tools.rect);
-            tools.on_hover_text(crate::tr("Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Synchronisieren, Multicam, Hochkant, Thumbnail …"));
+            tools.on_hover_text(crate::tr("Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …"));
+            ui.menu_button(
+                RichText::new(crate::tr(format!("{}  Spur", icon::PLUS))).size(12.0),
+                |ui| {
+                    for (k, name) in TRACK_KINDS {
+                        if menu_item(ui, theme::track_icon(k), name, "") {
+                            // ganz oben (Bildspuren) bzw. ganz unten (Ton)
+                            let index = self.project.timeline.tracks.len();
+                            self.apply(EditOp::InsertTrack { index, kind: k });
+                        }
+                    }
+                },
+            )
+            .response
+            .on_hover_text(crate::tr("Neue Spur hinzufügen"));
             ui.add(egui::Separator::default().vertical().spacing(10.0));
             let has = !self.project.timeline.tracks.is_empty();
             let sel = self.selected.is_some() || !self.sel_extra.is_empty() || self.selected_transition.is_some();
@@ -202,7 +333,7 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 1.0;
                 ui.add_space(4.0);
-                if theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Zeitleiste einpassen", true, false).clicked() {
+                if theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Ganze Zeitleiste zeigen", true, false).clicked() {
                     let w = ui.ctx().screen_rect().width() * 0.6;
                     let d = self.project.duration().as_secs_f64().max(1.0);
                     self.timeline.pps = (w / d as f32).clamp(2.0, 400.0);
@@ -222,9 +353,9 @@ impl App {
                             let nn = ((p.x - track.left()) / track.width()).clamp(0.0, 1.0);
                             z = (2f32.ln() + nn * (400f32.ln() - 2f32.ln())).exp();
                         }
-                        ui.painter().rect_filled(track, 1.0, theme::BG_HOVER);
-                        ui.painter().rect_filled(Rect::from_min_max(track.min, pos2(track.left() + n * track.width(), track.max.y)), 1.0, theme::TEXT_DIM);
-                        ui.painter().circle_filled(pos2(track.left() + n * track.width(), track.center().y), if resp.hovered() { 5.5 } else { 4.5 }, theme::ACCENT);
+                        ui.painter().rect_filled(track, 1.0, theme::BG_HOVER());
+                        ui.painter().rect_filled(Rect::from_min_max(track.min, pos2(track.left() + n * track.width(), track.max.y)), 1.0, theme::TEXT_DIM());
+                        ui.painter().circle_filled(pos2(track.left() + n * track.width(), track.center().y), if resp.hovered() { 5.5 } else { 4.5 }, theme::ACCENT());
                     });
                     let _ = r;
                     self.timeline.pps = z;
@@ -247,8 +378,8 @@ impl App {
                 ui.add(egui::Separator::default().vertical().spacing(10.0));
                 let rec = self.voiceover.recorder.is_some();
                 let mic = ui.add(
-                    egui::Button::new(RichText::new(icon::MICROPHONE).size(14.0).color(if rec { theme::DANGER } else if self.voiceover.open { theme::ACCENT } else { theme::TEXT_DIM }))
-                        .fill(if self.voiceover.open || rec { Color32::from_white_alpha(22) } else { Color32::TRANSPARENT })
+                    egui::Button::new(RichText::new(icon::MICROPHONE).size(14.0).color(if rec { theme::DANGER } else if self.voiceover.open { theme::ACCENT() } else { theme::TEXT_DIM() }))
+                        .fill(if self.voiceover.open || rec { theme::overlay(22) } else { Color32::TRANSPARENT })
                         .corner_radius(5)
                         .min_size(vec2(24.0, 22.0)),
                 );
@@ -400,9 +531,9 @@ impl App {
         for row in &rows {
             let lane = Rect::from_min_max(pos2(x0, row.rect.top()), row.rect.max);
             let fill = if row.track != REC_ROW && tracks[row.track].main {
-                Color32::from_rgb(0x1C, 0x1C, 0x20)
+                theme::BG_RAISED()
             } else {
-                Color32::from_rgb(0x14, 0x14, 0x17)
+                theme::BG_INPUT()
             };
             lane_paint.rect_filled(lane, 5.0, fill);
         }
@@ -489,9 +620,57 @@ impl App {
         let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
         let hovered_clip = resp.hover_pos().and_then(|p| hit(p).map(|h| h.0));
         let head_rect = Rect::from_center_size(pos2(tx(ph), rect.top() + 9.0), vec2(14.0, 18.0));
+        // Clips mit Ton: Fade-Griffe oben an den Ecken, Lautstärkelinie quer über den Clip
+        let audio_media: HashSet<MediaId> = self
+            .project
+            .media
+            .iter()
+            .filter(|m| m.has_audio || m.kind == MediaKind::Audio)
+            .map(|m| m.id)
+            .collect();
+        let has_audio = |c: &Clip| matches!(&c.content, ClipContent::Media { media, .. } if audio_media.contains(media));
+        let clip_body = |id: ClipId| -> Option<(Rect, Clip)> {
+            for row in rows.iter().filter(|r| r.track != REC_ROW) {
+                if let Some(c) = tracks[row.track].clips.iter().find(|c| c.id == id) {
+                    let cr = Rect::from_min_max(
+                        pos2(tx(c.start.as_secs_f64()), row.rect.top()),
+                        pos2(tx(c.end().as_secs_f64()), row.rect.bottom()),
+                    );
+                    let body = Rect::from_min_max(pos2(cr.left(), cr.top() + BAND_H), cr.max);
+                    return Some((body, c.clone()));
+                }
+            }
+            None
+        };
+        let audio_hit = |p: Pos2| -> Option<(ClipId, AudioHandle, f32)> {
+            // Fade-Griffe sitzen in den oberen Ecken und gehen dort dem Trimmen an der Kante vor
+            let (id, edge, _) = hit(p)?;
+            let (body, c) = clip_body(id)?;
+            if !has_audio(&c) || body.width() < 24.0 || body.height() < 14.0 {
+                return None;
+            }
+            let fi = pos2((body.left() + c.fade_in.as_secs_f64() as f32 * pps).max(body.left() + 5.0), body.top() + 5.0);
+            let fo = pos2((body.right() - c.fade_out.as_secs_f64() as f32 * pps).min(body.right() - 5.0), body.top() + 5.0);
+            if p.distance(fi) < 7.0 {
+                return Some((id, AudioHandle::FadeIn, c.fade_in.as_secs_f64() as f32));
+            }
+            if p.distance(fo) < 7.0 {
+                return Some((id, AudioHandle::FadeOut, c.fade_out.as_secs_f64() as f32));
+            }
+            if edge.is_none() && (p.y - vol_y(body, c.volume_db)).abs() < 4.0 {
+                return Some((id, AudioHandle::Volume, c.volume_db));
+            }
+            None
+        };
 
         if let Some(p) = resp.hover_pos() {
-            if matches!(hit(p), Some((_, Some(_), _))) {
+            if let Some((_, h, _)) = audio_hit(p) {
+                ui.ctx().set_cursor_icon(if h == AudioHandle::Volume {
+                    egui::CursorIcon::ResizeVertical
+                } else {
+                    egui::CursorIcon::ResizeHorizontal
+                });
+            } else if matches!(hit(p), Some((_, Some(_), _))) {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             } else if head_rect.contains(p) || (p.x - tx(ph)).abs() < 4.0 && p.x >= x0 {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
@@ -524,7 +703,55 @@ impl App {
                 self.marker_edit = Some(id);
             }
         }
-        if resp.clicked() {
+        let tool = self.timeline.tool;
+        let tool_click = tool != Tool::Select
+            && resp
+                .interact_pointer_pos()
+                .or(resp.hover_pos())
+                .is_some_and(|p| p.y >= ruler.bottom() && p.x >= x0);
+        if tool_click {
+            if let Some(p) = resp.hover_pos() {
+                ui.ctx().set_cursor_icon(if tool == Tool::Blade {
+                    egui::CursorIcon::Text
+                } else {
+                    egui::CursorIcon::PointingHand
+                });
+                // Vorschau: Schnittlinie bzw. Grenze der Auswahl
+                let line_col = if tool == Tool::Blade { theme::ACCENT() } else { theme::overlay(160) };
+                let (top, bottom) = match hit(p).and_then(|h| clip_body(h.0)) {
+                    Some((b, _)) if tool == Tool::Blade => (b.top() - BAND_H, b.bottom()),
+                    _ => (lanes.top(), lanes.bottom()),
+                };
+                painter.line_segment([pos2(p.x, top), pos2(p.x, bottom)], Stroke::new(1.5_f32, line_col));
+            }
+        }
+        if resp.clicked() && tool_click {
+            if let Some(p) = resp.interact_pointer_pos() {
+                let t = Time::from_secs_f64(xt(p.x)).snap_to_frame(fps);
+                match tool {
+                    Tool::Blade => {
+                        if let Some((c, _, _)) = hit(p) {
+                            if let Some(OpOutput::Clip(r)) = self.apply_batch(vec![EditOp::SplitClip { clip: c, at: t }]) {
+                                self.select_only(Some(r));
+                            }
+                        }
+                    }
+                    _ => {
+                        let left = tool == Tool::SelectLeft;
+                        let ids: Vec<ClipId> = tracks
+                            .iter()
+                            .filter(|tr| !tr.locked)
+                            .flat_map(|tr| tr.clips.iter())
+                            .filter(|c| if left { c.start < t } else { c.end() > t })
+                            .map(|c| c.id)
+                            .collect();
+                        self.select_only(None);
+                        self.selected = ids.last().copied();
+                        self.sel_extra = ids.into_iter().collect();
+                    }
+                }
+            }
+        } else if resp.clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
                 if let Some((_, at)) = marker_at(p) {
                     self.stop_playback();
@@ -603,6 +830,10 @@ impl App {
                     || ((p.x - tx(ph)).abs() < 4.0 && p.x >= x0 && hit(p).is_none())
                 {
                     Drag::Scrub
+                } else if self.timeline.tool != Tool::Select {
+                    Drag::None
+                } else if let Some((clip, handle, value)) = audio_hit(p) {
+                    Drag::Audio { clip, handle, value }
                 } else {
                     let alt = ui.input(|i| i.modifiers.alt);
                     // Nachbar, der an dieser Kante direkt anschließt
@@ -878,7 +1109,7 @@ impl App {
                             egui::Align2::CENTER_TOP,
                             crate::tr("Rollen"),
                             egui::FontId::proportional(10.0),
-                            theme::ACCENT,
+                            theme::ACCENT(),
                         );
                     }
                     if resp.drag_stopped() {
@@ -900,7 +1131,7 @@ impl App {
                         egui::Align2::LEFT_TOP,
                         crate::tr(format!("Slippen: Quelle ab {v:.2} s")),
                         egui::FontId::proportional(10.0),
-                        theme::ACCENT,
+                        theme::ACCENT(),
                     );
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
@@ -909,11 +1140,11 @@ impl App {
                 }
                 Drag::Marquee { origin, additive } => {
                     let r = Rect::from_two_pos(origin, p);
-                    painter.rect_filled(r, 2.0, Color32::from_white_alpha(14));
+                    painter.rect_filled(r, 2.0, theme::overlay(14));
                     painter.rect_stroke(
                         r,
                         2.0,
-                        Stroke::new(1.0_f32, Color32::from_white_alpha(120)),
+                        Stroke::new(1.0_f32, theme::overlay(120)),
                         egui::StrokeKind::Inside,
                     );
                     let mut inside = Vec::new();
@@ -942,6 +1173,20 @@ impl App {
                     self.selected_transition = None;
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
+                    }
+                }
+                Drag::Audio { clip, handle, .. } => {
+                    if let Some((body, c)) = clip_body(clip) {
+                        let dur = c.duration.as_secs_f64() as f32;
+                        let value = match handle {
+                            AudioHandle::FadeIn => ((p.x - body.left()) / pps).clamp(0.0, dur),
+                            AudioHandle::FadeOut => ((body.right() - p.x) / pps).clamp(0.0, dur),
+                            AudioHandle::Volume => y_vol(body, p.y),
+                        };
+                        self.timeline.drag = Drag::Audio { clip, handle, value };
+                        if resp.drag_stopped() {
+                            self.apply_audio_handle(clip, handle, value);
+                        }
                     }
                 }
                 Drag::None => {}
@@ -1007,9 +1252,9 @@ impl App {
                     Stroke::new(
                         1.0_f32,
                         if major {
-                            theme::TEXT_FAINT
+                            theme::TEXT_FAINT()
                         } else {
-                            Color32::from_rgb(0x38, 0x38, 0x3E)
+                            theme::BORDER()
                         },
                     ),
                 );
@@ -1030,7 +1275,7 @@ impl App {
                         egui::Align2::LEFT_TOP,
                         crate::tr(label),
                         egui::FontId::proportional(9.5),
-                        theme::TEXT_FAINT,
+                        theme::TEXT_FAINT(),
                     );
                 }
             }
@@ -1041,7 +1286,7 @@ impl App {
                 pos2(rect.left(), ruler.bottom()),
                 pos2(rect.right(), ruler.bottom()),
             ],
-            Stroke::new(1.0_f32, theme::BORDER),
+            Stroke::new(1.0_f32, theme::BORDER()),
         );
         // In/Out-Bereich
         if self.range_in.is_some() || self.range_out.is_some() {
@@ -1082,14 +1327,14 @@ impl App {
                     if x >= x0 {
                         rp.line_segment(
                             [pos2(x, ruler.top()), pos2(x, ruler.bottom())],
-                            Stroke::new(1.5_f32, theme::ACCENT),
+                            Stroke::new(1.5_f32, theme::ACCENT()),
                         );
                         rp.text(
                             pos2(x, ruler.bottom() - 2.0),
                             egui::Align2::CENTER_BOTTOM,
                             glyph,
                             egui::FontId::monospace(11.0),
-                            theme::ACCENT,
+                            theme::ACCENT(),
                         );
                     }
                 }
@@ -1150,7 +1395,7 @@ impl App {
                     r.left_bottom(),
                     r.left_top(),
                 ],
-                Stroke::new(1.0_f32, theme::TEXT_FAINT),
+                Stroke::new(1.0_f32, theme::TEXT_FAINT()),
                 6.0,
                 4.0,
             ));
@@ -1163,7 +1408,7 @@ impl App {
                     self.t("timeline-empty")
                 )),
                 egui::FontId::proportional(12.5),
-                theme::TEXT_DIM,
+                theme::TEXT_DIM(),
             );
         }
 
@@ -1209,7 +1454,7 @@ impl App {
             p.rect_stroke(
                 lane,
                 5.0,
-                Stroke::new(1.0_f32, Color32::from_white_alpha(80)),
+                Stroke::new(1.0_f32, theme::overlay(80)),
                 egui::StrokeKind::Inside,
             );
             let _ = hint;
@@ -1218,13 +1463,23 @@ impl App {
                 egui::Align2::LEFT_CENTER,
                 crate::tr(format!("{}  Neue Spur", icon::PLUS)),
                 egui::FontId::proportional(10.5),
-                theme::TEXT_DIM,
+                theme::TEXT_DIM(),
             );
         }
         for row in rows.iter().filter(|r| r.track != REC_ROW) {
             let tr = &tracks[row.track];
             for c0 in &tr.clips {
-                let c = self.clip_view(c0.id).unwrap_or_else(|| c0.clone());
+                let mut c = self.clip_view(c0.id).unwrap_or_else(|| c0.clone());
+                let audio_drag = match &self.timeline.drag {
+                    Drag::Audio { clip, handle, value }
+                        if has_audio(&c)
+                            && (*clip == c.id || (self.is_selected(*clip) && self.is_selected(c.id))) =>
+                    {
+                        set_audio_handle(&mut c, *handle, *value);
+                        Some((*handle, *value))
+                    }
+                    _ => None,
+                };
                 let (mut s, mut e) = (c.start.as_secs_f64(), c.end().as_secs_f64());
                 let mut r = row.rect;
                 let mut is_ghost = false;
@@ -1239,6 +1494,56 @@ impl App {
                     continue;
                 }
                 self.draw_clip(&p, &c, tr, cr, lanes_clip, rect.right(), x0, is_ghost);
+                if has_audio(&c)
+                    && !is_ghost
+                    && cr.width() >= 24.0
+                    && (hovered_clip == Some(c.id) || audio_drag.is_some())
+                {
+                    let body = Rect::from_min_max(pos2(cr.left(), cr.top() + BAND_H), cr.max);
+                    let ap = p.with_clip_rect(body.intersect(lanes_clip));
+                    let vy = vol_y(body, c.volume_db);
+                    let under = pointer.and_then(audio_hit);
+                    let hot = |h: AudioHandle| {
+                        audio_drag.is_some_and(|d| d.0 == h) || under.is_some_and(|x| x.0 == c.id && x.1 == h)
+                    };
+                    let strong = hot(AudioHandle::Volume);
+                    ap.line_segment(
+                        [pos2(body.left(), vy), pos2(body.right(), vy)],
+                        Stroke::new(
+                            if strong { 2.0_f32 } else { 1.2 },
+                            if strong { Color32::WHITE } else { Color32::from_white_alpha(170) },
+                        ),
+                    );
+                    for (h, x) in [
+                        (
+                            AudioHandle::FadeIn,
+                            (body.left() + c.fade_in.as_secs_f64() as f32 * pps).max(body.left() + 5.0),
+                        ),
+                        (
+                            AudioHandle::FadeOut,
+                            (body.right() - c.fade_out.as_secs_f64() as f32 * pps).min(body.right() - 5.0),
+                        ),
+                    ] {
+                        ap.circle(
+                            pos2(x, body.top() + 5.0),
+                            if hot(h) { 5.0 } else { 3.8 },
+                            Color32::WHITE,
+                            Stroke::new(1.0_f32, Color32::from_black_alpha(140)),
+                        );
+                    }
+                    let own = matches!(&self.timeline.drag, Drag::Audio { clip, .. } if *clip == c.id);
+                    if let Some((h, v)) = audio_drag.filter(|_| own) {
+                        let txt = match h {
+                            AudioHandle::Volume => format!("{v:+.1} dB"),
+                            _ => format!("{v:.1} s"),
+                        };
+                        let at = pointer.unwrap_or(body.center()) + vec2(10.0, -18.0);
+                        let g = p.layout_no_wrap(txt, egui::FontId::proportional(10.5), Color32::WHITE);
+                        let bg = Rect::from_min_size(at, g.size()).expand2(vec2(5.0, 2.0));
+                        p.rect_filled(bg, 4.0, Color32::from_black_alpha(210));
+                        p.galley(at, g, Color32::WHITE);
+                    }
+                }
                 let sel = self.is_selected(c.id);
                 if hovered_clip == Some(c.id) && !sel {
                     p.rect_stroke(
@@ -1252,7 +1557,7 @@ impl App {
                     p.rect_stroke(
                         cr,
                         5.0,
-                        Stroke::new(2.0_f32, theme::ACCENT),
+                        Stroke::new(2.0_f32, theme::ACCENT()),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -1288,7 +1593,7 @@ impl App {
                                     pos2(kx, cr.bottom() - 6.0),
                                     4.0,
                                     Some(if here {
-                                        theme::ACCENT
+                                        theme::ACCENT()
                                     } else {
                                         Color32::from_white_alpha(170)
                                     }),
@@ -1308,11 +1613,11 @@ impl App {
                 *r,
                 5.0,
                 if sel {
-                    theme::ACCENT
+                    theme::ACCENT()
                 } else if hov {
-                    Color32::from_rgb(0x50, 0x50, 0x58)
+                    theme::TEXT_FAINT()
                 } else {
-                    Color32::from_rgb(0x3A, 0x3A, 0x42)
+                    theme::BG_HOVER()
                 },
             );
             p.rect_stroke(
@@ -1326,7 +1631,7 @@ impl App {
                 egui::Align2::CENTER_CENTER,
                 icon::INTERSECT,
                 egui::FontId::proportional(11.0),
-                if sel { theme::ACCENT_INK } else { theme::TEXT },
+                if sel { theme::ACCENT_INK() } else { theme::TEXT() },
             );
         }
         if let Some(cid) = drop_cut {
@@ -1390,7 +1695,7 @@ impl App {
             pos2(rect.left(), lanes.top()),
             pos2(x0 - 4.0, rect.bottom()),
         );
-        painter.rect_filled(head_bg, 0.0, theme::BG_CARD);
+        painter.rect_filled(head_bg, 0.0, theme::BG_CARD());
         let hp = painter.with_clip_rect(head_bg);
         for row in &rows {
             let head = Rect::from_min_size(row.rect.min, vec2(HEADER_W - 8.0, row.rect.height()));
@@ -1412,7 +1717,7 @@ impl App {
                 hp.rect_filled(
                     head.shrink2(vec2(2.0, 1.0)),
                     5.0,
-                    Color32::from_rgb(0x1C, 0x1C, 0x20),
+                    theme::BG_RAISED(),
                 );
             }
             hp.text(
@@ -1421,9 +1726,9 @@ impl App {
                 theme::track_icon(tr.kind),
                 egui::FontId::proportional(13.0),
                 if tr.main {
-                    theme::TEXT
+                    theme::TEXT()
                 } else {
-                    theme::TEXT_DIM
+                    theme::TEXT_DIM()
                 },
             );
             let mut toggles = vec![(
@@ -1466,6 +1771,10 @@ impl App {
                     "Solo (nur diese Spur hören)",
                 ));
             }
+            // eingeklappt: nur Symbol und Name, die Schalter hätten keinen Platz
+            if self.timeline.collapsed.contains(&tr.id) {
+                toggles.clear();
+            }
             // Spurname (eigener Name oder Art + Nummer)
             let name = tr.name.clone().unwrap_or_else(|| {
                 let n = tracks
@@ -1489,9 +1798,9 @@ impl App {
                     name,
                     egui::FontId::proportional(10.5),
                     if tr.name.is_some() {
-                        theme::TEXT_DIM
+                        theme::TEXT_DIM()
                     } else {
-                        theme::TEXT_FAINT
+                        theme::TEXT_FAINT()
                     },
                 );
                 let clip = Rect::from_min_max(
@@ -1501,7 +1810,7 @@ impl App {
                 hp.with_clip_rect(clip.intersect(head_bg)).galley(
                     pos2(name_x, head.center().y - g.size().y / 2.0),
                     g,
-                    theme::TEXT_DIM,
+                    theme::TEXT_DIM(),
                 );
             }
             for (n, (k, glyph, on, tip)) in toggles.iter().enumerate() {
@@ -1514,7 +1823,7 @@ impl App {
                     .interact(r, ui.id().with(("trk", tr.id, *k)), Sense::click())
                     .on_hover_text(crate::tr(*tip));
                 if br.hovered() {
-                    hp.rect_filled(r, 4.0, theme::BG_RAISED);
+                    hp.rect_filled(r, 4.0, theme::BG_RAISED());
                 }
                 hp.text(
                     c,
@@ -1522,9 +1831,9 @@ impl App {
                     crate::tr(*glyph),
                     egui::FontId::proportional(12.0),
                     if *on {
-                        theme::ACCENT
+                        theme::ACCENT()
                     } else {
-                        theme::TEXT_FAINT
+                        theme::TEXT_FAINT()
                     },
                 );
                 if br.clicked() && *k == 3 {
@@ -1562,7 +1871,7 @@ impl App {
             painter.rect_filled(
                 Rect::from_min_size(pos2(bar.left(), y), vec2(bar.width(), h)),
                 2.0,
-                Color32::from_white_alpha(60),
+                theme::overlay(60),
             );
         }
 
@@ -1631,7 +1940,7 @@ impl App {
             ) {
                 painter.line_segment(
                     [pos2(p.x, ruler.bottom()), pos2(p.x, rect.bottom())],
-                    Stroke::new(1.5_f32, theme::ACCENT),
+                    Stroke::new(1.5_f32, theme::ACCENT()),
                 );
             }
         }
@@ -1650,7 +1959,7 @@ impl App {
         if px >= x0 - 1.0 && px <= rect.right() {
             painter.line_segment(
                 [pos2(px, rect.top() + 12.0), pos2(px, rect.bottom())],
-                Stroke::new(1.2_f32, Color32::WHITE),
+                Stroke::new(1.2_f32, theme::TEXT()),
             );
             let hr = Rect::from_center_size(pos2(px, rect.top() + 7.0), vec2(10.0, 12.0));
             painter.add(egui::Shape::convex_polygon(
@@ -1661,7 +1970,7 @@ impl App {
                     pos2(px, hr.bottom() + 1.0),
                     pos2(hr.left(), hr.bottom() - 4.0),
                 ],
-                Color32::WHITE,
+                theme::TEXT(),
                 Stroke::NONE,
             ));
         }
@@ -2118,6 +2427,10 @@ impl App {
                         }
                     }
                 });
+                ui.separator();
+                if menu_item(ui, icon::INFO, "Eigenschaften", "") {
+                    self.props = Some(crate::props::Props::Clip(id));
+                }
                 let _ = tr;
             }
             CtxTarget::Transition(id) => {
@@ -2147,17 +2460,32 @@ impl App {
                 if menu_item(ui, icon::PENCIL_SIMPLE, "Spur umbenennen …", "") {
                     self.track_rename = Some((tr.id, tr.name.clone().unwrap_or_default()));
                 }
-                if menu_item(ui, icon::ARROW_LINE_UP, "Spur darüber einfügen", "") {
-                    self.apply(EditOp::InsertTrack {
-                        index: above,
-                        kind: tr.kind,
+                for (label, glyph, index, show) in [
+                    ("Spur darüber einfügen", icon::ROWS_PLUS_TOP, above, true),
+                    ("Spur darunter einfügen", icon::ROWS_PLUS_BOTTOM, below, !tr.main),
+                ] {
+                    if !show {
+                        continue;
+                    }
+                    ui.menu_button(crate::tr(format!("{glyph}   {label}")), |ui| {
+                        for (k, name) in TRACK_KINDS {
+                            // Ton liegt immer unter den Bildspuren: nur passende Arten anbieten
+                            if (k == TrackKind::Audio) != audio {
+                                continue;
+                            }
+                            if menu_item(ui, theme::track_icon(k), name, "") {
+                                self.apply(EditOp::InsertTrack { index, kind: k });
+                            }
+                        }
                     });
                 }
-                if !tr.main && menu_item(ui, icon::ARROW_LINE_DOWN, "Spur darunter einfügen", "") {
-                    self.apply(EditOp::InsertTrack {
-                        index: below,
-                        kind: tr.kind,
-                    });
+                if !tr.main {
+                    if menu_item(ui, icon::ARROW_UP, "Spur nach oben", "") {
+                        self.apply(EditOp::MoveTrack { track: tid, up: true });
+                    }
+                    if menu_item(ui, icon::ARROW_DOWN, "Spur nach unten", "") {
+                        self.apply(EditOp::MoveTrack { track: tid, up: false });
+                    }
                 }
                 ui.separator();
                 if menu_item(
@@ -2228,6 +2556,15 @@ impl App {
                 if menu_item(ui, icon::ARROWS_IN_LINE_HORIZONTAL, "Lücken schließen", "") {
                     self.apply(EditOp::CloseGaps { track: Some(tid) });
                 }
+                let folded = self.timeline.collapsed.contains(&tid);
+                let (g, label) = if folded {
+                    (icon::CARET_DOWN, "Spur ausklappen")
+                } else {
+                    (icon::CARET_UP, "Spur einklappen")
+                };
+                if menu_item(ui, g, label, "") && !self.timeline.collapsed.remove(&tid) {
+                    self.timeline.collapsed.insert(tid);
+                }
                 ui.menu_button(
                     crate::tr(format!("{}   Spurhöhe", icon::ARROWS_VERTICAL)),
                     |ui| {
@@ -2248,6 +2585,9 @@ impl App {
                         }
                     },
                 );
+                if menu_item(ui, icon::INFO, "Eigenschaften", "") {
+                    self.props = Some(crate::props::Props::Track(tid));
+                }
                 ui.separator();
                 let label = if tr.main {
                     "Hauptspur leeren"
@@ -2285,24 +2625,13 @@ impl App {
                 }
                 ui.separator();
                 let n = self.project.timeline.tracks.len();
-                if menu_item(ui, icon::FILM_STRIP, "Videospur hinzufügen", "") {
-                    self.apply(EditOp::InsertTrack {
-                        index: n,
-                        kind: TrackKind::Video,
-                    });
-                }
-                if menu_item(ui, icon::TEXT_T, "Textspur hinzufügen", "") {
-                    self.apply(EditOp::InsertTrack {
-                        index: n,
-                        kind: TrackKind::Text,
-                    });
-                }
-                if menu_item(ui, icon::MUSIC_NOTES, "Audiospur hinzufügen", "") {
-                    self.apply(EditOp::InsertTrack {
-                        index: n,
-                        kind: TrackKind::Audio,
-                    });
-                }
+                ui.menu_button(crate::tr(format!("{}   Spur hinzufügen", icon::PLUS)), |ui| {
+                    for (k, name) in TRACK_KINDS {
+                        if menu_item(ui, theme::track_icon(k), name, "") {
+                            self.apply(EditOp::InsertTrack { index: n, kind: k });
+                        }
+                    }
+                });
                 if menu_item(ui, icon::TEXT_AA, "Text am Playhead", "") {
                     self.add_text_at(self.playhead, None, None);
                 }

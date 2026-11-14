@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use cl_core::*;
 use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText, Stroke};
 
-use crate::app::{App, ClipTab};
+use crate::app::App;
 use crate::player_edit::Region;
 use crate::tasks::TaskDone;
 use crate::theme::{self, icon};
@@ -49,7 +49,7 @@ fn task_bar(ui: &mut egui::Ui, app: &App, key: &str) -> bool {
         ui.label(
             RichText::new(crate::tr(&t.label))
                 .small()
-                .color(theme::TEXT_DIM),
+                .color(theme::TEXT_DIM()),
         );
         return true;
     }
@@ -189,40 +189,14 @@ impl App {
             self.toast_err("Keine Sprache erkannt");
             return;
         }
-        let style = cl_fx::text::TEMPLATES
-            .iter()
-            .find(|t| t.id == "subtitle-clean")
-            .map(|t| t.make())
-            .unwrap_or_default();
-        let index = self.project.timeline.tracks.len();
-        let Some(OpOutput::Track(t)) = self.apply(EditOp::InsertTrack {
-            index,
-            kind: TrackKind::Text,
-        }) else {
-            return;
+        // Whisper liefert fertige Zeilen: auf die Länge der Vorlage bringen
+        let segs = if engine == "Whisper" {
+            let p = self.caption_preset();
+            cl_analyze::asr::resegment(segs, p.max_chars, p.max_dur)
+        } else {
+            segs.to_vec()
         };
-        let y = self.project.settings.height as f32 * 0.36;
-        let ops: Vec<EditOp> = segs
-            .iter()
-            .filter(|s| s.end > s.start)
-            .map(|s| {
-                let mut c = Clip::new(
-                    ClipContent::Text(TextStyle {
-                        text: s.text.clone(),
-                        ..style.clone()
-                    }),
-                    offset + Time::from_secs_f64(s.start),
-                    Time::from_secs_f64(s.end - s.start),
-                );
-                c.transform.y = y;
-                EditOp::AddClip {
-                    track: Some(t),
-                    clip: c,
-                }
-            })
-            .collect();
-        let n = ops.len();
-        self.apply_batch(ops);
+        let n = self.add_caption_segments(&segs, offset);
         self.toast(format!("{n} Untertitel erzeugt ({engine})"));
     }
 
@@ -342,8 +316,11 @@ impl App {
             return;
         }
         let models = self.models();
+        let pre = self.caption_preset();
         let opt = cl_analyze::asr::Options {
             language: self.caption_lang.clone(),
+            max_chars: pre.max_chars,
+            max_dur: pre.max_dur,
             ..Default::default()
         };
         match only_clip.and_then(|c| self.clip_view(c)) {
@@ -715,7 +692,7 @@ impl App {
                         "Bei entferntem Hintergrund wird nicht stabilisiert",
                     ))
                     .small()
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
                 );
             }
             ui.horizontal_wrapped(|ui| {
@@ -745,7 +722,7 @@ impl App {
             let picking = matches!(self.pick, Some(Pick::Track { clip, .. }) if clip == c.id);
             if task_bar(ui, self, &format!("track:{}", c.id)) {
             } else if picking {
-                ui.label(RichText::new(crate::tr("Ziehe im Player einen Rahmen um das Objekt, dem dieser Clip folgen soll (Esc bricht ab)")).small().color(theme::ACCENT));
+                ui.label(RichText::new(crate::tr("Ziehe im Player einen Rahmen um das Objekt, dem dieser Clip folgen soll (Esc bricht ab)")).small().color(theme::ACCENT()));
             } else if ui
                 .add(theme::secondary(format!(
                     "{}  Objekt verfolgen",
@@ -793,7 +770,7 @@ impl App {
                     ui.label(
                         RichText::new(crate::tr(format!("{} Beats", c.beats.len())))
                             .small()
-                            .color(theme::TEXT_DIM),
+                            .color(theme::TEXT_DIM()),
                     );
                     if theme::icon_button(ui, icon::X, "Beat-Markierungen entfernen", true, false)
                         .clicked()
@@ -819,7 +796,7 @@ impl App {
             None
         };
         egui::Frame::default()
-            .fill(theme::BG_RAISED)
+            .fill(theme::BG_RAISED())
             .corner_radius(8)
             .inner_margin(12)
             .show(ui, |ui| {
@@ -837,7 +814,7 @@ impl App {
                         None => "Noch kein Spracherkennungsmodell installiert".into(),
                     }))
                     .small()
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
                 );
                 ui.add_space(6.0);
                 if engine.is_none() {
@@ -890,7 +867,9 @@ impl App {
                         self.caption_from_clip = src == 1;
                     }
                 });
-                ui.add_space(4.0);
+                ui.add_space(6.0);
+                ui.label(RichText::new(crate::tr("Stil")).small().color(theme::TEXT_DIM()));
+                self.caption_preset_picker(ui);
                 if !task_bar(ui, self, "captions") {
                     if ui
                         .add_sized(
@@ -942,154 +921,8 @@ impl App {
                 }
             }
         });
-        // Editor
-        let mut items: Vec<Clip> = self
-            .project
-            .timeline
-            .tracks
-            .iter()
-            .filter(|t| t.kind == TrackKind::Text)
-            .flat_map(|t| t.clips.iter().cloned())
-            .collect();
-        items.sort_by_key(|c| c.start);
-        theme::section(ui, &format!("Untertitel bearbeiten ({})", items.len()));
-        if items.is_empty() {
-            ui.label(
-                RichText::new(crate::tr(
-                    "Erzeugte oder importierte Untertitel erscheinen hier zum Korrigieren",
-                ))
-                .small()
-                .color(theme::TEXT_DIM),
-            );
-            return;
-        }
-        if let Some(sel) = self
-            .selected
-            .and_then(|s| self.project.find_clip(s))
-            .and_then(|(_, c)| match &c.content {
-                ClipContent::Text(st) => Some((c.id, st.clone())),
-                _ => None,
-            })
-        {
-            if ui
-                .add(theme::ghost(format!(
-                    "{}  Stil der Auswahl auf alle übertragen",
-                    icon::PAINT_BRUSH
-                )))
-                .clicked()
-            {
-                let ops: Vec<EditOp> = items
-                    .iter()
-                    .filter(|c| c.id != sel.0)
-                    .filter_map(|c| {
-                        let ClipContent::Text(st) = &c.content else {
-                            return None;
-                        };
-                        let mut n = c.clone();
-                        n.content = ClipContent::Text(TextStyle {
-                            text: st.text.clone(),
-                            ..sel.1.clone()
-                        });
-                        if let Some((_, s)) = self.project.find_clip(sel.0) {
-                            n.transform = s.transform;
-                        }
-                        Some(EditOp::ReplaceClip { clip: n })
-                    })
-                    .collect();
-                self.apply_batch(ops);
-            }
-        }
-        let fps = self.project.settings.fps;
-        let mut jump = None;
-        let mut commit: Option<Clip> = None;
-        let mut delete = None;
-        egui::ScrollArea::vertical()
-            .id_salt("cap-edit")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for c in &items {
-                    let ClipContent::Text(st) = &c.content else {
-                        continue;
-                    };
-                    let active = c.contains(self.playhead);
-                    egui::Frame::default()
-                        .fill(if active {
-                            theme::BG_HOVER
-                        } else {
-                            theme::BG_RAISED
-                        })
-                        .corner_radius(6)
-                        .inner_margin(egui::Margin::symmetric(8, 5))
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            ui.horizontal(|ui| {
-                                let t = c.start.timecode(fps);
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new(crate::tr(&t[3..8]))
-                                                .monospace()
-                                                .size(10.5)
-                                                .color(if active {
-                                                    theme::ACCENT
-                                                } else {
-                                                    theme::TEXT_DIM
-                                                }),
-                                        )
-                                        .frame(false),
-                                    )
-                                    .on_hover_text(crate::tr("Zum Untertitel springen"))
-                                    .clicked()
-                                {
-                                    jump = Some(c.id);
-                                }
-                                let id = egui::Id::new(("cap-text", c.id));
-                                let mut buf = ui
-                                    .data_mut(|d| d.get_temp::<String>(id))
-                                    .unwrap_or_else(|| st.text.clone());
-                                let r = ui.add(
-                                    egui::TextEdit::singleline(&mut buf)
-                                        .desired_width((ui.available_width() - 34.0).max(40.0))
-                                        .frame(false),
-                                );
-                                if r.changed() {
-                                    ui.data_mut(|d| d.insert_temp(id, buf.clone()));
-                                }
-                                if r.lost_focus() {
-                                    ui.data_mut(|d| d.remove::<String>(id));
-                                    if buf != st.text {
-                                        let mut n = c.clone();
-                                        n.content = ClipContent::Text(TextStyle {
-                                            text: buf,
-                                            ..st.clone()
-                                        });
-                                        commit = Some(n);
-                                    }
-                                }
-                                if theme::icon_button(ui, icon::TRASH, "Löschen", true, false)
-                                    .clicked()
-                                {
-                                    delete = Some(c.id);
-                                }
-                            });
-                        });
-                    ui.add_space(3.0);
-                }
-            });
-        if let Some(id) = jump {
-            if let Some(start) = self.project.find_clip(id).map(|(_, c)| c.start) {
-                self.stop_playback();
-                self.playhead = start;
-            }
-            self.select_only(Some(id));
-            self.clip_tab = ClipTab::Text;
-        }
-        if let Some(c) = commit {
-            self.apply(EditOp::ReplaceClip { clip: c });
-        }
-        if let Some(id) = delete {
-            self.apply(EditOp::RemoveClip { clip: id });
-        }
+        ui.add_space(6.0);
+        self.captions_editor(ui);
     }
 
     // ------------------------------------------------------------ Player-Auswahl
@@ -1120,14 +953,14 @@ impl App {
                 }
             ),
             egui::FontId::proportional(12.0),
-            theme::ACCENT_INK,
+            theme::ACCENT_INK(),
         );
         let br = Rect::from_center_size(
             resp.rect.center_top() + vec2(0.0, 22.0),
             g.size() + vec2(20.0, 10.0),
         );
-        painter.rect_filled(br, 12.0, theme::ACCENT);
-        painter.galley(br.min + vec2(10.0, 5.0), g, theme::ACCENT_INK);
+        painter.rect_filled(br, 12.0, theme::ACCENT());
+        painter.galley(br.min + vec2(10.0, 5.0), g, theme::ACCENT_INK());
         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         let local = |r: &Region, p: egui::Pos2| -> (f32, f32) {
             let d = p - r.center;
@@ -1184,7 +1017,7 @@ impl App {
                         painter.rect_stroke(
                             r,
                             2.0,
-                            Stroke::new(1.5_f32, theme::ACCENT),
+                            Stroke::new(1.5_f32, theme::ACCENT()),
                             egui::StrokeKind::Inside,
                         );
                         painter.rect_filled(r, 2.0, Color32::from_white_alpha(20));
@@ -1268,7 +1101,7 @@ impl App {
                     String::new()
                 }
             );
-            let r = ui.label(RichText::new(txt).size(11.0).color(theme::TEXT_DIM));
+            let r = ui.label(RichText::new(txt).size(11.0).color(theme::TEXT_DIM()));
             if r.on_hover_text(crate::tr("Klicken bricht ab"))
                 .interact(egui::Sense::click())
                 .clicked()
@@ -1285,24 +1118,26 @@ impl App {
     pub fn models_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let m = self.models();
-        ui.label(RichText::new(crate::tr("Läuft lokal auf deinem Rechner, es werden keine Daten hochgeladen.")).small().color(theme::TEXT_DIM));
+        ui.label(RichText::new(crate::tr("Läuft lokal auf deinem Rechner, es werden keine Daten hochgeladen.")).small().color(theme::TEXT_DIM()));
         ui.add_space(6.0);
         ui.add_space(8.0);
         for info in cl_analyze::CATALOG {
             let installed = m.installed(info.id);
             egui::Frame::default()
-                .fill(theme::BG_RAISED)
+                .fill(theme::BG_RAISED())
                 .corner_radius(8)
                 .inner_margin(10)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
+                            // Platz für Knopf/Status rechts lassen, sonst läuft der Text darunter
+                            ui.set_max_width(ui.available_width() - 150.0);
                             ui.label(RichText::new(crate::tr(info.name)).strong());
                             ui.label(
                                 RichText::new(crate::tr(info.about))
                                     .small()
-                                    .color(theme::TEXT_DIM),
+                                    .color(theme::TEXT_DIM()),
                             );
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1317,13 +1152,13 @@ impl App {
                                         icon::CHECK_CIRCLE
                                     )))
                                     .small()
-                                    .color(theme::ACCENT),
+                                    .color(theme::ACCENT()),
                                 );
                             } else if info.id == "onnxruntime" && !cfg!(windows) {
                                 ui.label(
                                     RichText::new(crate::tr("Im Programmpaket enthalten"))
                                         .small()
-                                        .color(theme::TEXT_DIM),
+                                        .color(theme::TEXT_DIM()),
                                 );
                             } else if ui
                                 .add(theme::primary(format!("Laden · {} MB", info.size_mb)))
@@ -1404,6 +1239,25 @@ fn _unused(_: egui::Pos2) -> egui::Pos2 {
 /// Ton-Werkzeuge für Clips und Einsprechen: Störgeräusche, Klang, Audiofilter, Stimmfilter.
 pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
     let mut e = Edit::default();
+    theme::row(ui, "Kanäle", |ui| {
+        let label = a.channels.map(|c| c.name()).unwrap_or("Projekt-Standard");
+        egui::ComboBox::from_id_salt("clip-channels")
+            .selected_text(crate::tr(label))
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(a.channels.is_none(), crate::tr("Projekt-Standard")).clicked() {
+                    a.channels = None;
+                    e.commit = true;
+                }
+                for (c, n) in cl_core::Channels::ALL {
+                    if ui.selectable_label(a.channels == Some(c), crate::tr(n)).clicked() {
+                        a.channels = Some(c);
+                        e.commit = true;
+                    }
+                }
+            })
+            .response
+            .on_hover_text(crate::tr("„Automatisch“ legt Ton, der nur links oder rechts aufgenommen wurde, auf beide Ohren"));
+    });
     theme::section(ui, "Störgeräusche");
     e |= theme::row(ui, "Entrauschen", |ui| {
         Slider::new(&mut a.denoise, 0.0..=1.0).percent().default(0.0).show(ui)
@@ -1450,7 +1304,7 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
                     egui::Align2::CENTER_CENTER,
                     crate::tr(*name),
                     egui::FontId::proportional(11.0),
-                    if cur == *id { theme::ACCENT } else { theme::TEXT },
+                    if cur == *id { theme::ACCENT() } else { theme::TEXT() },
                 );
             });
             if resp.clicked() {

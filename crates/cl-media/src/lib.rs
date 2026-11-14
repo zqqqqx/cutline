@@ -342,6 +342,67 @@ pub fn waveform(path: &Path, per_sec: u32) -> Result<Vec<f32>> {
         .collect())
 }
 
+/// Ist bei einer Stereo-Datei nur ein Kanal belegt? Gibt den Index des stummen Kanals zurück
+/// (0 = links, 1 = rechts). Prüft die ersten 90 s, Ergebnis wird je Datei zwischengespeichert.
+pub fn silent_channel(path: &Path) -> Option<u8> {
+    silent_channel_opt(path, true)
+}
+
+/// Wie [`silent_channel`]; mit `wait = false` wird nie auf FFmpeg gewartet (für die
+/// Wiedergabe): Ist das Ergebnis noch nicht bekannt, wird es im Hintergrund ermittelt und
+/// dieses Mal `None` geliefert.
+pub fn silent_channel_opt(path: &Path, wait: bool) -> Option<u8> {
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Mutex;
+    static CACHE: Mutex<Option<HashMap<PathBuf, Option<u8>>>> = Mutex::new(None);
+    static PENDING: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+    if let Some(r) = CACHE.lock().ok()?.get_or_insert_with(HashMap::new).get(path) {
+        return *r;
+    }
+    if !wait {
+        if PENDING.lock().ok()?.get_or_insert_with(HashSet::new).insert(path.to_path_buf()) {
+            let p = path.to_path_buf();
+            std::thread::spawn(move || {
+                silent_channel_opt(&p, true);
+            });
+        }
+        return None;
+    }
+    let r = (|| {
+        let out = command("ffmpeg")
+            .ok()?
+            .args(["-v", "info", "-nostdin", "-t", "90", "-i"])
+            .arg(path)
+            .args([
+                "-map",
+                "0:a:0",
+                "-af",
+                "astats=measure_overall=none:measure_perchannel=Peak_level",
+                "-f",
+                "null",
+                "-",
+            ])
+            .stdin(Stdio::null())
+            .output()
+            .ok()?;
+        let err = String::from_utf8_lossy(&out.stderr);
+        let peaks: Vec<f64> = err
+            .lines()
+            .filter_map(|l| l.split("Peak level dB:").nth(1))
+            .map(|v| v.trim().parse::<f64>().unwrap_or(f64::NEG_INFINITY))
+            .collect();
+        match peaks[..] {
+            [l, r] if l < -70.0 && r > -50.0 => Some(0),
+            [l, r] if r < -70.0 && l > -50.0 => Some(1),
+            _ => None,
+        }
+    })();
+    if let Ok(mut c) = CACHE.lock() {
+        c.get_or_insert_with(HashMap::new).insert(path.to_path_buf(), r);
+    }
+    r
+}
+
 /// Fortlaufender Frame-Strom für die Wiedergabe (eigener Thread, begrenzter Puffer).
 pub struct FrameStream {
     child: Child,
@@ -453,6 +514,25 @@ impl Drop for FrameStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detects_one_sided_stereo() {
+        let dir = tempfile::tempdir().unwrap();
+        let mk = |name: &str, pan: &str| {
+            let out = dir.path().join(name);
+            let st = command("ffmpeg")
+                .unwrap()
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=2", "-af", pan, "-ac", "2"])
+                .arg(&out)
+                .status()
+                .unwrap();
+            assert!(st.success());
+            out
+        };
+        assert_eq!(silent_channel(&mk("l.wav", "pan=stereo|c0=c0|c1=0*c0")), Some(1));
+        assert_eq!(silent_channel(&mk("r.wav", "pan=stereo|c0=0*c0|c1=c0")), Some(0));
+        assert_eq!(silent_channel(&mk("b.wav", "pan=stereo|c0=c0|c1=c0")), None);
+    }
 
     fn make_clip(dir: &Path) -> PathBuf {
         let out = dir.join("t.mp4");

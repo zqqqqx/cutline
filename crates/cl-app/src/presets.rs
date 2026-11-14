@@ -100,6 +100,7 @@ pub fn save(list: &[Preset]) {
 }
 
 /// Offener Preset-Dialog
+#[derive(Clone)]
 pub enum PresetDialog {
     Save { name: String },
     Rename { index: usize, name: String },
@@ -113,7 +114,7 @@ impl App {
             ui.label(
                 RichText::new(crate::tr("Preset"))
                     .small()
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if theme::icon_button(
@@ -173,7 +174,7 @@ impl App {
                 .map(|(i, p)| (i, p.name.clone()))
                 .collect();
             egui::Frame::default()
-                .fill(theme::BG_RAISED)
+                .fill(theme::BG_RAISED())
                 .corner_radius(6)
                 .inner_margin(6)
                 .show(ui, |ui| {
@@ -181,11 +182,7 @@ impl App {
                     for (i, n) in &matching {
                         ui.horizontal(|ui| {
                             if ui
-                                .add(
-                                    egui::Button::new(n.as_str())
-                                        .frame(false)
-                                        .min_size(egui::vec2(130.0, 22.0)),
-                                )
+                                .add(crate::theme::menu_row(n.as_str()).min_width(130.0))
                                 .on_hover_text(crate::tr("Auf die Auswahl anwenden"))
                                 .clicked()
                             {
@@ -262,6 +259,8 @@ impl App {
         }
         let fresh = pass <= self.preset_dialog_since + 1;
         let (mut ok, mut close) = (false, false);
+        let err = self.dialog_error.clone();
+        let mut edited = false;
         let title = match d {
             PresetDialog::Save { .. } => "Look als Preset speichern",
             PresetDialog::Rename { .. } => "Preset umbenennen",
@@ -277,6 +276,8 @@ impl App {
             if fresh {
                 r.request_focus();
             }
+            edited |= r.changed();
+            theme::field_error(ui, err.as_deref());
             if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
@@ -293,7 +294,14 @@ impl App {
         if modal.should_close() && !fresh {
             close = true;
         }
-        if ok {
+        if edited {
+            self.dialog_error = None;
+        }
+        let empty = matches!(&self.preset_dialog, Some(PresetDialog::Save { name } | PresetDialog::Rename { name, .. }) if name.trim().is_empty());
+        if ok && empty {
+            self.dialog_error = Some("Bitte einen Namen eingeben".into());
+        } else if ok {
+            self.dialog_error = None;
             match self.preset_dialog.take() {
                 Some(PresetDialog::Save { name }) if !name.trim().is_empty() => {
                     if let Some(c) = self.selected.and_then(|s| self.clip_view(s)) {
@@ -311,10 +319,11 @@ impl App {
                         save(&self.presets);
                     }
                 }
-                _ => self.toast_err("Bitte einen Namen eingeben"),
+                _ => {}
             }
         } else if close {
             self.preset_dialog = None;
+            self.dialog_error = None;
         }
     }
 }

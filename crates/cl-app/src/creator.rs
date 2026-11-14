@@ -105,9 +105,7 @@ impl App {
         let item = |ui: &mut egui::Ui, enabled: bool, g: &str, t: &str, tip: &str| -> bool {
             ui.add_enabled(
                 enabled,
-                egui::Button::new(crate::tr(format!("{g}   {t}")))
-                    .frame(false)
-                    .min_size(egui::vec2(250.0, 22.0)),
+                crate::theme::menu_row(crate::tr(format!("{g}   {t}"))).min_width(250.0),
             )
             .on_hover_text(crate::tr(tip))
             .on_disabled_hover_text(crate::tr(tip))
@@ -118,7 +116,7 @@ impl App {
         ui.label(
             egui::RichText::new(crate::tr("Ton und Sprache"))
                 .small()
-                .color(crate::theme::TEXT_FAINT),
+                .color(crate::theme::TEXT_FAINT()),
         );
         if item(
             ui,
@@ -160,7 +158,7 @@ impl App {
         ui.label(
             egui::RichText::new(crate::tr("Mehrere Aufnahmen"))
                 .small()
-                .color(crate::theme::TEXT_FAINT),
+                .color(crate::theme::TEXT_FAINT()),
         );
         if item(ui, n_sel >= 2, icon::WAVEFORM, "Auswahl per Ton synchronisieren", "Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)") {
             act = Some("sync");
@@ -175,7 +173,7 @@ impl App {
         ui.label(
             egui::RichText::new(crate::tr("Bild und Format"))
                 .small()
-                .color(crate::theme::TEXT_FAINT),
+                .color(crate::theme::TEXT_FAINT()),
         );
         if item(
             ui,

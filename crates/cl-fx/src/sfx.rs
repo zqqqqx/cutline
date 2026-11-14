@@ -11,13 +11,30 @@ pub struct Sfx {
     pub source: &'static str,
 }
 
-pub const SFX_CATEGORIES: [&str; 4] = ["Übergang", "Oberfläche", "Spannung", "Natur"];
+pub const SFX_CATEGORIES: [&str; 6] = ["Übergang", "Gaming", "Comedy", "Oberfläche", "Spannung", "Natur"];
 
 pub static SFX: &[Sfx] = &[
     Sfx { id: "whoosh", name: "Whoosh", category: "Übergang", source: "anoisesrc=d=0.8:c=pink:a=0.7,bandpass=f=900:width_type=h:w=700,afade=t=in:d=0.35,afade=t=out:st=0.4:d=0.4" },
     Sfx { id: "swoosh-fast", name: "Swoosh kurz", category: "Übergang", source: "anoisesrc=d=0.4:c=white:a=0.5,highpass=f=1500,afade=t=in:d=0.15,afade=t=out:st=0.15:d=0.25" },
     Sfx { id: "riser", name: "Anstieg", category: "Übergang", source: "aevalsrc='0.35*sin(2*PI*(200*t+300*t*t))*t/2':d=2" },
-    Sfx { id: "impact", name: "Einschlag", category: "Übergang", source: "aevalsrc='0.9*sin(2*PI*52*t)*exp(-t*3)+0.3*sin(2*PI*90*t)*exp(-t*8)':d=1.4" },
+    Sfx { id: "impact", name: "Einschlag", category: "Übergang", source: "aevalsrc='0.85*sin(2*PI*(60*t-8*t*t))*exp(-t*2.6)+0.25*sin(2*PI*120*t)*exp(-t*9)+0.4*(random(0)*2-1)*exp(-t*30)':d=1.6,lowpass=f=6000" },
+    Sfx { id: "boom", name: "Bass-Drop", category: "Übergang", source: "aevalsrc='0.9*sin(2*PI*(80*t-25*t*t))*exp(-t*1.6)':d=2.5" },
+    Sfx { id: "braam", name: "Kino-Braam", category: "Übergang", source: "aevalsrc='0.22*(sin(2*PI*55*t)+0.6*sin(2*PI*110.5*t)+0.4*sin(2*PI*164*t)+0.35*sgn(sin(2*PI*54.6*t)))*min(1,t*8)*exp(-t*0.9)':d=3.5,lowpass=f=900" },
+    Sfx { id: "swipe", name: "Wischen", category: "Übergang", source: "anoisesrc=d=0.3:c=white:a=0.6,bandpass=f=3000:width_type=h:w=2500,afade=t=in:d=0.1,afade=t=out:st=0.1:d=0.2" },
+    Sfx { id: "reverse-cymbal", name: "Rückwärts-Becken", category: "Übergang", source: "anoisesrc=d=2:c=white:a=0.5,highpass=f=4000,afade=t=in:d=1.9:curve=exp,afade=t=out:st=1.9:d=0.1" },
+    Sfx { id: "tapestop", name: "Bandstopp", category: "Übergang", source: "aevalsrc='0.4*sin(2*PI*(220*t-100*t*t))*(1-t/1.2)':d=1.1" },
+    Sfx { id: "levelup", name: "Level Up", category: "Gaming", source: "aevalsrc='0.3*sgn(sin(2*PI*if(lt(t,0.1),523,if(lt(t,0.2),659,if(lt(t,0.3),784,1047)))*t))*exp(-mod(t,0.1)*6)*lt(t,0.6)':d=0.65,lowpass=f=4000" },
+    Sfx { id: "victory", name: "Sieg-Fanfare", category: "Gaming", source: "aevalsrc='0.28*sgn(sin(2*PI*if(lt(t,0.15),523,if(lt(t,0.3),659,if(lt(t,0.45),784,1047)))*t))*(lt(t,0.45)*exp(-mod(t,0.15)*4)+gte(t,0.45)*exp(-(t-0.45)*1.5))':d=1.6,lowpass=f=3500" },
+    Sfx { id: "jump", name: "Sprung", category: "Gaming", source: "aevalsrc='0.3*sgn(sin(2*PI*(300*t+1800*t*t)))*exp(-t*6)':d=0.3,lowpass=f=3500" },
+    Sfx { id: "powerdown", name: "Power-down", category: "Gaming", source: "aevalsrc='0.3*sgn(sin(2*PI*(900*t-700*t*t)))*exp(-t*2)':d=0.6,lowpass=f=2500" },
+    Sfx { id: "hitmarker", name: "Treffer", category: "Gaming", source: "aevalsrc='0.6*sin(2*PI*3200*t)*exp(-t*70)+0.3*(random(0)*2-1)*exp(-t*120)':d=0.1" },
+    Sfx { id: "countdown", name: "Countdown", category: "Gaming", source: "aevalsrc='0.4*sin(2*PI*if(lt(t,3),880,1760)*t)*lt(mod(t,1),0.15)':d=3.3" },
+    Sfx { id: "airhorn", name: "Airhorn", category: "Comedy", source: "aevalsrc='0.2*(sgn(sin(2*PI*415*t))+sgn(sin(2*PI*523*t))+sgn(sin(2*PI*622*t)))*lt(mod(t,0.55),0.42)*lt(t,1.6)':d=1.7,lowpass=f=3000" },
+    Sfx { id: "rimshot", name: "Ba-dum-tss", category: "Comedy", source: "aevalsrc='0.8*sin(2*PI*180*t)*exp(-t*25)+0.8*sin(2*PI*130*max(0,t-0.18))*exp(-max(0,t-0.18)*25)*gte(t,0.18)+0.35*(random(0)*2-1)*exp(-max(0,t-0.45)*4)*gte(t,0.45)':d=1.6" },
+    Sfx { id: "boing", name: "Boing", category: "Comedy", source: "aevalsrc='0.5*sin(2*PI*(180+60*sin(2*PI*14*t)*exp(-t*3))*t)*exp(-t*3)':d=1" },
+    Sfx { id: "scratch", name: "Plattenkratzer", category: "Comedy", source: "aevalsrc='0.6*(random(0)*2-1)*abs(sin(2*PI*3*t))':d=0.7,bandpass=f=1800:width_type=h:w=1500" },
+    Sfx { id: "kaching", name: "Kasse", category: "Comedy", source: "aevalsrc='0.35*(sin(2*PI*2093*t)+0.6*sin(2*PI*2637*t))*exp(-max(0,t-0.12)*5)*gte(t,0.12)+0.5*(random(0)*2-1)*exp(-t*40)':d=1.3" },
+    Sfx { id: "shutter", name: "Kamera", category: "Oberfläche", source: "aevalsrc='(random(0)*2-1)*(exp(-t*60)+0.8*gte(t,0.09)*exp(-(t-0.09)*60))':d=0.3,highpass=f=1500" },
     Sfx { id: "laser", name: "Laser", category: "Übergang", source: "aevalsrc='0.5*sin(2*PI*(1500*t-2500*t*t))*exp(-t*4)':d=0.5" },
     Sfx { id: "glitch", name: "Glitch", category: "Übergang", source: "aevalsrc='0.4*sgn(sin(2*PI*(90+300*gt(sin(2*PI*7*t),0))*t))*gt(sin(2*PI*13*t),-0.3)':d=0.6" },
     Sfx { id: "pop", name: "Pop", category: "Oberfläche", source: "aevalsrc='0.8*sin(2*PI*(600-2000*t)*t)*exp(-t*30)':d=0.15" },
@@ -101,6 +118,12 @@ mod tests {
                 .fold(0.0, f32::max);
             assert!(peak > 0.05, "{} ist stumm ({peak})", s.id);
         }
-        assert!(SFX.len() >= 20);
+        assert!(SFX.len() >= 39);
+        // Kategorien vollständig und eindeutige IDs
+        assert!(SFX.iter().all(|s| SFX_CATEGORIES.contains(&s.category)));
+        let mut ids: Vec<&str> = SFX.iter().map(|s| s.id).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), SFX.len());
     }
 }

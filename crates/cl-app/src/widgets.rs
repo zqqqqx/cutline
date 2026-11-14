@@ -104,6 +104,37 @@ impl<'a> Slider<'a> {
         if resp.drag_stopped() || resp.clicked() {
             out.commit = true;
         }
+        // Gehaltener Griff: ändert sich beim Ziehen der Aufbau darüber (z. B. erscheint ein
+        // Zurücksetzen-Knopf), bekommt der Regler eine neue ID und egui verliert das Ziehen.
+        // Deshalb merkt sich der Regler den Druckpunkt und folgt der Maus, bis sie loslässt.
+        let grab = egui::Id::new("slider-grab");
+        let origin = ui.input(|i| i.pointer.press_origin());
+        if resp.drag_started() || resp.is_pointer_button_down_on() {
+            if let Some(o) = origin {
+                ui.data_mut(|d| d.insert_temp(grab, (o, ui.layer_id())));
+            }
+        }
+        let held = ui.data(|d| d.get_temp::<(egui::Pos2, egui::LayerId)>(grab));
+        // nur der Regler unter dem Druckpunkt, in derselben Ebene (kein verdeckter Regler
+        // dahinter) und nur für genau diesen Mausdruck
+        let down = ui.input(|i| i.pointer.primary_down());
+        if held.is_some_and(|(o, l)| rect.contains(o) && l == ui.layer_id() && (!down || origin == Some(o))) {
+            if down {
+                if let Some(p) = ui.input(|i| i.pointer.latest_pos()) {
+                    let nv = self.from_norm(((p.x - track.left()) / track.width()).clamp(0.0, 1.0));
+                    if !resp.dragged() && (nv - *self.value).abs() > f32::EPSILON {
+                        *self.value = nv;
+                        out.changed = true;
+                    }
+                }
+            } else {
+                ui.data_mut(|d| d.remove::<(egui::Pos2, egui::LayerId)>(grab));
+                out.commit = true;
+            }
+        } else if held.is_some() && !down {
+            // losgelassen, ohne dass der Regler noch unter dem Druckpunkt liegt
+            ui.data_mut(|d| d.remove::<(egui::Pos2, egui::LayerId)>(grab));
+        }
         if resp.double_clicked() {
             if let Some(d) = self.default {
                 *self.value = d;
@@ -113,7 +144,7 @@ impl<'a> Slider<'a> {
         }
         let p = ui.painter();
         let (a, b) = (*self.range.start(), *self.range.end());
-        p.rect_filled(track, 1.0, Color32::from_rgb(0x3A, 0x3A, 0x40));
+        p.rect_filled(track, 1.0, theme::BG_HOVER());
         // Füllung ab 0 (bipolar) bzw. ab Anfang
         let zero_n = if a < 0.0 && b > 0.0 {
             self.to_norm(0.0)
@@ -126,12 +157,12 @@ impl<'a> Slider<'a> {
             pos2(track.left() + fa * track.width(), track.top()),
             pos2(track.left() + fb * track.width(), track.bottom()),
         );
-        p.rect_filled(fill, 1.0, theme::ACCENT);
+        p.rect_filled(fill, 1.0, theme::ACCENT());
         if zero_n > 0.0 {
             let zx = track.left() + zero_n * track.width();
             p.line_segment(
                 [pos2(zx, track.top() - 3.0), pos2(zx, track.bottom() + 3.0)],
-                Stroke::new(1.0_f32, theme::TEXT_FAINT),
+                Stroke::new(1.0_f32, theme::TEXT_FAINT()),
             );
         }
         let knob = pos2(track.left() + n * track.width(), track.center().y);
@@ -141,7 +172,7 @@ impl<'a> Slider<'a> {
             if hot { 6.5 } else { 5.5 },
             Color32::from_black_alpha(90),
         );
-        p.circle_filled(knob, if hot { 6.0 } else { 5.0 }, theme::ACCENT);
+        p.circle_filled(knob, if hot { 6.0 } else { 5.0 }, theme::ACCENT());
         if hot {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
@@ -174,16 +205,16 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> bool {
     }
     let t = ui.ctx().animate_bool(resp.id, *on);
     let p = ui.painter();
-    let bg = if *on { theme::ACCENT } else { theme::BG_HOVER };
+    let bg = if *on { theme::ACCENT() } else { theme::BG_HOVER() };
     p.rect_filled(rect, 8.0, bg);
     let x = egui::lerp(rect.left() + 8.0..=rect.right() - 8.0, t);
     p.circle_filled(
         pos2(x, rect.center().y),
         6.0,
         if *on {
-            theme::ACCENT_INK
+            theme::ACCENT_INK()
         } else {
-            theme::TEXT_DIM
+            theme::TEXT_DIM()
         },
     );
     resp.clicked()
@@ -197,7 +228,7 @@ pub fn toggle_row(ui: &mut egui::Ui, label: &str, on: &mut bool) -> bool {
         ui.label(
             RichText::new(crate::tr(label))
                 .size(11.5)
-                .color(theme::TEXT_DIM),
+                .color(theme::TEXT_DIM()),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             changed = toggle(ui, on);
@@ -221,24 +252,24 @@ pub fn kf_button(ui: &mut egui::Ui, state: Kf) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
     let c = rect.center();
     let col = if resp.hovered() {
-        theme::ACCENT
+        theme::ACCENT()
     } else {
-        theme::TEXT_DIM
+        theme::TEXT_DIM()
     };
     match state {
         Kf::Here => theme::diamond(
             ui.painter(),
             c,
             5.0,
-            Some(theme::ACCENT),
-            Stroke::new(1.0_f32, theme::ACCENT),
+            Some(theme::ACCENT()),
+            Stroke::new(1.0_f32, theme::ACCENT()),
         ),
         Kf::Elsewhere => theme::diamond(
             ui.painter(),
             c,
             5.0,
             None,
-            Stroke::new(1.3_f32, theme::ACCENT),
+            Stroke::new(1.3_f32, theme::ACCENT()),
         ),
         Kf::None => theme::diamond(ui.painter(), c, 4.5, None, Stroke::new(1.0_f32, col)),
     }
@@ -252,7 +283,7 @@ pub fn kf_button(ui: &mut egui::Ui, state: Kf) -> egui::Response {
 pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 24.0), Sense::hover());
-    ui.painter().rect_filled(rect, 6.0, theme::BG_INPUT);
+    ui.painter().rect_filled(rect, 6.0, theme::BG_INPUT());
     let font = egui::FontId::proportional(11.0);
     let texts: Vec<String> = items.iter().map(|it| crate::tr(*it)).collect();
     // Breite je Segment nach Textlänge; Restplatz gleichmäßig verteilt
@@ -272,16 +303,16 @@ pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
         let resp = ui.interact(r, ui.id().with(("seg", i, items[i])), Sense::click());
         let active = *sel == i;
         if active {
-            ui.painter().rect_filled(r, 5.0, theme::BG_HOVER);
+            ui.painter().rect_filled(r, 5.0, theme::BG_HOVER());
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, 5.0, theme::BG_RAISED);
+            ui.painter().rect_filled(r, 5.0, theme::BG_RAISED());
         }
         ui.painter_at(r).text(
             r.center(),
             egui::Align2::CENTER_CENTER,
             t,
             font.clone(),
-            if active { theme::ACCENT } else { theme::TEXT_DIM },
+            if active { theme::ACCENT() } else { theme::TEXT_DIM() },
         );
         if extra < 0.0 {
             resp.clone().on_hover_text(t);
@@ -334,33 +365,33 @@ pub fn tile(
     let area = Rect::from_min_max(r.min, pos2(r.right(), r.bottom() - label_h));
     let resp = ui.interact(r, id, Sense::click_and_drag());
     let p = ui.painter_at(r.expand(2.0));
-    p.rect_filled(area, 6.0, theme::BG_RAISED);
+    p.rect_filled(area, 6.0, theme::BG_RAISED());
     draw(&p.with_clip_rect(area), area);
     if selected {
         p.rect_stroke(
             area,
             6.0,
-            Stroke::new(1.5_f32, theme::ACCENT),
+            Stroke::new(1.5_f32, theme::ACCENT()),
             egui::StrokeKind::Inside,
         );
     } else if resp.hovered() {
         p.rect_stroke(
             area,
             6.0,
-            Stroke::new(1.0_f32, Color32::from_white_alpha(110)),
+            Stroke::new(1.0_f32, theme::overlay(110)),
             egui::StrokeKind::Inside,
         );
     }
     if resp.hovered() {
         // „+“ zum direkten Hinzufügen
         let plus = Rect::from_min_size(area.right_bottom() - vec2(22.0, 22.0), vec2(18.0, 18.0));
-        p.circle_filled(plus.center(), 9.0, theme::ACCENT);
+        p.circle_filled(plus.center(), 9.0, theme::ACCENT());
         p.text(
             plus.center(),
             egui::Align2::CENTER_CENTER,
             icon::PLUS,
             egui::FontId::proportional(11.0),
-            theme::ACCENT_INK,
+            theme::ACCENT_INK(),
         );
     }
     if !label.is_empty() {
@@ -368,9 +399,9 @@ pub fn tile(
             crate::tr(label),
             egui::FontId::proportional(10.5),
             if selected {
-                theme::ACCENT
+                theme::ACCENT()
             } else {
-                theme::TEXT_DIM
+                theme::TEXT_DIM()
             },
             r.width(),
         );
@@ -379,7 +410,7 @@ pub fn tile(
             area.bottom() + 3.0,
         );
         p.with_clip_rect(Rect::from_min_max(pos2(r.left(), area.bottom()), r.max))
-            .galley(pos, g, theme::TEXT_DIM);
+            .galley(pos, g, theme::TEXT_DIM());
     }
     resp
 }

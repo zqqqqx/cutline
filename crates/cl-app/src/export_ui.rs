@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use cl_core::{Project, Time};
 use cl_export::{Codec, Encoder, ExportSettings, Format, Quality};
-use eframe::egui::{self, vec2, Color32, RichText};
+use eframe::egui::{self, vec2, Color32, Rect, RichText};
 
 use crate::theme::{self, icon};
 
@@ -128,6 +128,8 @@ struct Running {
     result: Arc<Mutex<Option<Result<(), String>>>>,
     cancel: Arc<AtomicBool>,
     started: Instant,
+    /// Projektstand beim Start des Exports
+    rev: u64,
 }
 
 #[derive(Default)]
@@ -150,6 +152,12 @@ pub struct ExportDialog {
     running: Option<Running>,
     last_output: Option<PathBuf>,
     error: Option<String>,
+    /// Zeitpunkt und Dauer des letzten erfolgreichen Exports (kurze Erfolgs-Animation)
+    done: Option<(Instant, f32)>,
+    /// Projektstand beim Öffnen des Dialogs
+    rev: u64,
+    /// Projektstand und Datei des letzten fertigen Exports („Zur Datei“ statt „Exportieren“)
+    exported: Option<(u64, PathBuf)>,
 }
 
 impl ExportDialog {
@@ -165,7 +173,8 @@ impl ExportDialog {
         }
     }
 
-    pub fn open_for(&mut self, p: &Project, project_path: Option<&Path>) {
+    pub fn open_for(&mut self, p: &Project, project_path: Option<&Path>, rev: u64) {
+        self.rev = rev;
         if self.running.is_some() {
             self.open = true;
             return;
@@ -246,9 +255,13 @@ impl ExportDialog {
         p: &Project,
         fonts: &HashMap<String, (PathBuf, u32)>,
         cover: Option<(egui::TextureId, egui::Vec2)>,
+        rev: u64,
     ) -> Option<String> {
+        // aktueller Projektstand: nach einer Änderung gilt der letzte Export als veraltet
+        self.rev = rev;
         let mut toast = None;
         // Hintergrund-Export weiterverfolgen, auch wenn der Dialog geschlossen ist
+        let started_rev = self.running.as_ref().map_or(rev, |r| r.rev);
         let finished = self.running.as_ref().map(|r| {
             (
                 r.result.lock().unwrap().take(),
@@ -260,6 +273,11 @@ impl ExportDialog {
                 self.running = None;
                 match res {
                     Ok(()) => {
+                        self.done = Some((Instant::now(), secs));
+                        if let Some(out) = &self.last_output {
+                            crate::exports::record(&self.name, out);
+                            self.exported = Some((started_rev, out.clone()));
+                        }
                         toast = Some(format!(
                             "{} Export fertig ({secs:.1} s)",
                             icon::CHECK_CIRCLE
@@ -306,10 +324,10 @@ impl ExportDialog {
                             ui.painter().image(id, egui::Rect::from_center_size(rect.center(), ts * fit), egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
                         }
                         ui.add_space(8.0);
-                        ui.label(RichText::new(crate::tr(format!("{} {:.1} s  ·  {}×{}", icon::CLOCK, p.duration().as_secs_f64(), s.width, s.height))).small().color(theme::TEXT_DIM));
+                        ui.label(RichText::new(crate::tr(format!("{} {:.1} s  ·  {}×{}", icon::CLOCK, p.duration().as_secs_f64(), s.width, s.height))).small().color(theme::TEXT_DIM()));
                         if !s.format.audio_only() {
                             let est = estimate_mb(&s, p.duration());
-                            ui.label(RichText::new(crate::tr(format!("{} ca. {est:.0} MB", icon::HARD_DRIVES))).small().color(theme::TEXT_DIM));
+                            ui.label(RichText::new(crate::tr(format!("{} ca. {est:.0} MB", icon::HARD_DRIVES))).small().color(theme::TEXT_DIM()));
                         }
                     });
                     ui.add_space(12.0);
@@ -448,7 +466,7 @@ impl ExportDialog {
                                 if !ms.is_empty() {
                                     theme::section(ui, "Kapitel");
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new(format!("{} {}", ms.len(), crate::tr("aus Markern, werden eingebettet"))).small().color(theme::TEXT_DIM));
+                                        ui.label(RichText::new(format!("{} {}", ms.len(), crate::tr("aus Markern, werden eingebettet"))).small().color(theme::TEXT_DIM()));
                                         if ui.add(theme::secondary(format!("{}  YouTube-Kapitel kopieren", icon::COPY))).clicked() {
                                             ui.ctx().copy_text(crate::navigate::chapters(ms));
                                             toast = Some(crate::tr("Kapitel in die Zwischenablage kopiert"));
@@ -469,12 +487,16 @@ impl ExportDialog {
                 }
                 if let Some(r) = &self.running {
                     let prog = *r.progress.lock().unwrap();
-                    ui.add(egui::ProgressBar::new(prog).show_percentage().fill(theme::ACCENT).desired_height(8.0));
+                    export_progress(ui, prog, r.started.elapsed().as_secs_f32());
+                } else if let Some((at, secs)) = self.done {
+                    if !export_done(ui, at, secs) {
+                        self.done = None;
+                    }
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
                     if let Some(out) = &self.last_output {
-                        if self.running.is_none() && out.exists() {
+                        if self.running.is_none() && out.exists() && self.exported.as_ref().is_none_or(|(r, f)| *r != self.rev || f != out) {
                             if ui.add(theme::secondary(format!("{}  Im Ordner zeigen", icon::FOLDER_OPEN))).clicked() {
                                 crate::home::reveal(out);
                             }
@@ -486,6 +508,16 @@ impl ExportDialog {
                                 if let Some(r) = &self.running {
                                     r.cancel.store(true, Ordering::Relaxed);
                                 }
+                            }
+                        } else if self.exported.as_ref().is_some_and(|(r, f)| *r == self.rev && f.is_file() && *f == self.output_path(s.format)) {
+                            // unverändert seit dem letzten Export: direkt zur fertigen Datei
+                            if ui.add(theme::primary(format!("{}  Zur Datei", icon::FOLDER_OPEN))).clicked() {
+                                if let Some((_, f)) = &self.exported {
+                                    crate::home::reveal(f);
+                                }
+                            }
+                            if ui.add(theme::secondary(format!("{}  Erneut exportieren", icon::ARROW_CLOCKWISE))).clicked() {
+                                start = true;
                             }
                         } else if ui.add(theme::primary(format!("{}  Exportieren", icon::EXPORT))).clicked() {
                             start = true;
@@ -524,11 +556,13 @@ impl ExportDialog {
                         *rs.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
                         c2.request_repaint();
                     });
+                    self.done = None;
                     self.running = Some(Running {
                         progress,
                         result,
                         cancel,
                         started: Instant::now(),
+                        rev: self.rev,
                     });
                     self.last_output = Some(out);
                 }
@@ -540,6 +574,69 @@ impl ExportDialog {
 }
 
 /// Grobe Dateigrößenschätzung (für die Anzeige im Dialog).
+/// Fortschritt beim Export: weich nachlaufender Balken mit wanderndem Glanz, Prozent und Restzeit.
+fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32) {
+    let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, 0.35);
+    let t = ui.input(|i| i.time) as f32;
+    ui.horizontal(|ui| {
+        ui.add(egui::Spinner::new().size(14.0).color(theme::ACCENT()));
+        ui.label(RichText::new(crate::tr("Exportiere …")).color(theme::TEXT()));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if prog > 0.03 && elapsed > 2.0 {
+                let left = (elapsed / prog * (1.0 - prog)).max(0.0) as u32;
+                ui.label(
+                    RichText::new(crate::tr(format!("noch ca. {}:{:02}", left / 60, left % 60)))
+                        .color(theme::TEXT_DIM()),
+                );
+            }
+            ui.label(RichText::new(format!("{:.0} %", prog * 100.0)).strong());
+        });
+    });
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 8.0), egui::Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, 4.0, theme::BG_HOVER());
+    let fill = Rect::from_min_size(rect.min, vec2(rect.width() * shown.clamp(0.0, 1.0), rect.height()));
+    p.rect_filled(fill, 4.0, theme::ACCENT());
+    // Glanz wandert über den gefüllten Teil
+    if fill.width() > 12.0 {
+        let x = fill.left() + (t * 0.8).fract() * (fill.width() + 60.0) - 30.0;
+        let glow = Rect::from_center_size(egui::pos2(x, fill.center().y), vec2(36.0, fill.height()));
+        p.with_clip_rect(fill).rect_filled(glow, 4.0, egui::Color32::from_white_alpha(70));
+    }
+    ui.ctx().request_repaint();
+}
+
+/// Erfolg: Häkchen springt kurz auf (ca. 0,4 s), bleibt 6 s sichtbar. `false` = ausgeblendet.
+fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
+    let age = at.elapsed().as_secs_f32();
+    if age > 6.0 {
+        return false;
+    }
+    // „ease out back“: leicht über 1 hinaus, dann zurück
+    let k = (age / 0.4).min(1.0);
+    let c = 1.70158;
+    let pop = 1.0 + (c + 1.0) * (k - 1.0).powi(3) + c * (k - 1.0).powi(2);
+    ui.horizontal(|ui| {
+        let (r, _) = ui.allocate_exact_size(vec2(26.0, 26.0), egui::Sense::hover());
+        let p = ui.painter();
+        p.circle_filled(r.center(), 11.0 * pop, egui::Color32::from_rgb(0x3D, 0xD6, 0x8C));
+        p.text(
+            r.center(),
+            egui::Align2::CENTER_CENTER,
+            icon::CHECK,
+            egui::FontId::proportional(13.0 * pop.max(0.01)),
+            egui::Color32::from_rgb(0x0B, 0x24, 0x18),
+        );
+        ui.label(RichText::new(crate::tr(format!("Fertig in {secs:.1} s"))).strong());
+    });
+    if age < 0.5 {
+        ui.ctx().request_repaint();
+    } else {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+    }
+    true
+}
+
 fn estimate_mb(s: &ExportSettings, d: Time) -> f64 {
     let px = (s.width * s.height) as f64;
     let kbps = match s.quality {

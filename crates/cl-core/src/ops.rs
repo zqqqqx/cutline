@@ -119,6 +119,12 @@ pub enum EditOp {
     RemoveTrack {
         track: TrackId,
     },
+    /// Spur in der Anzeige eine Stelle nach oben/unten (innerhalb Bild- bzw. Tonspuren,
+    /// die Hauptspur bleibt unten). Ganz oben/unten: keine Änderung.
+    MoveTrack {
+        track: TrackId,
+        up: bool,
+    },
     /// Clip auf eine neue Spur an `index` verschieben (Ziehen ins Leere).
     MoveClipToNewTrack {
         clip: ClipId,
@@ -195,6 +201,7 @@ impl EditOp {
             EditOp::ReplaceClip { .. } => "Clip bearbeiten",
             EditOp::InsertTrack { .. } => "Spur hinzufügen",
             EditOp::RemoveTrack { .. } => "Spur löschen",
+            EditOp::MoveTrack { .. } => "Spur verschieben",
             EditOp::MoveClipToNewTrack { .. } => "Auf neue Spur verschieben",
             EditOp::CloseGaps { .. } => "Lücken schließen",
             EditOp::SetMarkers { .. } => "Marker",
@@ -512,6 +519,27 @@ impl EditOp {
                 }
                 p.timeline.tracks.insert(index, t);
                 Ok(OpOutput::Track(id))
+            }
+            EditOp::MoveTrack { track, up } => {
+                let tracks = &mut p.timeline.tracks;
+                let i = tracks
+                    .iter()
+                    .position(|t| t.id == track)
+                    .ok_or(CoreError::TrackNotFound(track))?;
+                let audio = tracks[i].kind == TrackKind::Audio;
+                // Anzeige: Bildspuren mit höherem Index liegen oben, Tonspuren mit kleinerem
+                let peer = |t: &Track| (t.kind == TrackKind::Audio) == audio && !t.main;
+                if peer(&tracks[i]) {
+                    let j = if up != audio {
+                        (i + 1..tracks.len()).find(|&j| peer(&tracks[j]))
+                    } else {
+                        (0..i).rev().find(|&j| peer(&tracks[j]))
+                    };
+                    if let Some(j) = j {
+                        tracks.swap(i, j);
+                    }
+                }
+                Ok(OpOutput::None)
             }
             EditOp::RemoveTrack { track } => {
                 let ti = p

@@ -29,6 +29,64 @@ const TABS: [(LeftTab, &str, &str); 9] = [
 ];
 
 const THUMB: (u32, u32) = (192, 108);
+/// Bilder je Übergangs-Filmstreifen
+const STRIP: u32 = 16;
+/// Bilder für das Durchblättern von Videos beim Hovern
+const SCRUB_N: u32 = 24;
+
+/// Unbearbeitetes Beispielbild (Hover-Vergleich bei Effekten/Filtern)
+fn orig_graph() -> String {
+    format!(
+        "{},trim=start=0.5,setpts=PTS-STARTPTS,format=rgba[out]",
+        sample_source(THUMB.0, THUMB.1, true)
+    )
+}
+
+/// Kachel-Graph für einen Effekt oder Filter auf dem Beispielbild
+fn fx_tile_graph(id: &str, filters: bool) -> String {
+    let mut fx = ClipFx::default();
+    if filters {
+        fx.filter = Some(FxRef::new(id.to_string()));
+    } else {
+        fx.effects.push(FxRef {
+            id: id.to_string(),
+            intensity: 0.8,
+            params: Default::default(),
+        });
+    }
+    let mut lines = vec![format!(
+        "{},trim=start=0.5,setpts=PTS-STARTPTS[s0]",
+        sample_source(THUMB.0, THUMB.1, true)
+    )];
+    lines.extend(cl_fx::fx_graph(
+        &fx,
+        cl_fx::Src {
+            w: THUMB.0,
+            h: THUMB.1,
+            has_alpha: false,
+        },
+        &cl_fx::ChainOpts {
+            t_offset: 0.3,
+            apply_reverse: false,
+            lut: None,
+            matte: None,
+        },
+        "s0",
+        "fx",
+        "t",
+    ));
+    lines.push("[fx]format=rgba[out]".into());
+    lines.join(";")
+}
+
+/// Übergang von Bild A (Strand) zu Bild B (See) als Filmstreifen: `STRIP` Bilder über 1 s
+fn transition_strip_graph(id: &str) -> String {
+    format!(
+        "{}[a];{}[b];[a]format=gbrap[a1];[b]format=gbrap[b1];[a1][b1]xfade=transition={id}:duration=1:offset=0.2,trim=start=0.2,setpts=PTS-STARTPTS,fps={STRIP},format=rgba[out]",
+        sample_source(THUMB.0, THUMB.1, true),
+        sample_source(THUMB.0, THUMB.1, false)
+    )
+}
 
 /// Audiodateien im Musikordner des Benutzers (einmalig im Hintergrund gesucht).
 static MUSIC_LIST: std::sync::Mutex<Option<Vec<PathBuf>>> = std::sync::Mutex::new(None);
@@ -84,7 +142,7 @@ impl App {
                 ne: 0,
                 se: 0,
             },
-            Color32::from_rgb(0x13, 0x13, 0x16),
+            theme::BG_INPUT(),
         );
         // Icon-Leiste
         let mut y = rail.top() + 8.0;
@@ -93,17 +151,17 @@ impl App {
             let resp = ui.interact(r, ui.id().with(("rail", label)), Sense::click());
             let active = self.tab == tab;
             if active {
-                ui.painter().rect_filled(r, 7.0, theme::BG_RAISED);
+                ui.painter().rect_filled(r, 7.0, theme::BG_RAISED());
             } else if resp.hovered() {
                 ui.painter()
-                    .rect_filled(r, 7.0, Color32::from_rgb(0x1C, 0x1C, 0x20));
+                    .rect_filled(r, 7.0, theme::overlay(10));
             }
             let col = if active {
-                theme::ACCENT
+                theme::ACCENT()
             } else if resp.hovered() {
-                theme::TEXT
+                theme::TEXT()
             } else {
-                theme::TEXT_DIM
+                theme::TEXT_DIM()
             };
             ui.painter().text(
                 r.center() - vec2(0.0, 7.0),
@@ -182,27 +240,28 @@ impl App {
             }
         });
         ui.add_space(6.0);
-        // Pexels (Plugin): Stock-Videos und -Fotos statt der Projektmedien
+        // Projekt · Bibliothek (über alle Projekte) · Pexels (Plugin)
+        let mut srcs = vec![("", "Projekt"), ("lib", "Bibliothek")];
         if self.stock_enabled(crate::stock::PEXELS) {
-            let mut sel = self
-                .asset_cat
-                .get("media-src")
-                .is_some_and(|s| s == "pexels") as usize;
-            if widgets::segmented(ui, &["Projekt", "Pexels"], &mut sel) {
-                self.asset_cat.insert(
-                    "media-src",
-                    if sel == 1 {
-                        "pexels".into()
-                    } else {
-                        String::new()
-                    },
-                );
-            }
-            ui.add_space(4.0);
-            if sel == 1 {
+            srcs.push(("pexels", "Pexels"));
+        }
+        let cur = self.asset_cat.get("media-src").cloned().unwrap_or_default();
+        let mut sel = srcs.iter().position(|s| s.0 == cur).unwrap_or(0);
+        let labels: Vec<&str> = srcs.iter().map(|s| s.1).collect();
+        if widgets::segmented(ui, &labels, &mut sel) {
+            self.asset_cat.insert("media-src", srcs[sel].0.into());
+        }
+        ui.add_space(4.0);
+        match srcs[sel].0 {
+            "pexels" => {
                 self.stock_panel(ui, crate::stock::PEXELS);
                 return;
             }
+            "lib" => {
+                self.library_media(ui);
+                return;
+            }
+            _ => {}
         }
         // Ordner und Favoriten gelten pro Projekt
         let area = crate::library_ui::intern(format!("media/{}", self.project.name));
@@ -270,7 +329,33 @@ impl App {
                         .file_name()
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_default();
-                    let thumb = self.thumbs.get(&m.id).map(|t| (t.id(), t.size_vec2()));
+                    // Hover über Videos: Inhalt durchblättern (Position der Maus = Zeit)
+                    let scrub = (m.kind == MediaKind::Video)
+                        .then(|| ui.ctx().pointer_hover_pos().filter(|p| r.contains(*p)))
+                        .flatten()
+                        .map(|p| ((p.x - r.left()) / r.width()).clamp(0.0, 0.999));
+                    // (texture, Größe eines Bildes, v-Bereich im Streifen)
+                    let mut thumb = self.thumbs.get(&m.id).map(|t| (t.id(), t.size_vec2(), (0.0, 1.0)));
+                    // Vorschau-Streifen schon vorab laden, sobald die Kachel sichtbar ist –
+                    // dann klappt das Durchblättern beim ersten Hovern
+                    let strip_key = format!("strip:{}", m.id);
+                    if m.kind == MediaKind::Video
+                        && ui.is_rect_visible(r)
+                        && self.fx_thumbs_requested.insert(strip_key.clone())
+                    {
+                        self.decoder.send(crate::preview::Job::MediaStrip {
+                            key: strip_key.clone(),
+                            path: self.preview_path(m, 90),
+                            dur: m.duration,
+                            n: SCRUB_N,
+                        });
+                    }
+                    if let (Some(f), Some(t)) = (scrub, self.fx_thumbs.get(&strip_key)) {
+                        let k = ((f * SCRUB_N as f32) as u32).min(SCRUB_N - 1) as f32;
+                        let n = SCRUB_N as f32;
+                        let sz = t.size_vec2();
+                        thumb = Some((t.id(), vec2(sz.x, sz.y / n), (k / n, (k + 1.0) / n)));
+                    }
                     let resp = widgets::tile(
                         ui,
                         egui::Id::new(("media", m.id)),
@@ -278,7 +363,7 @@ impl App {
                         &name,
                         false,
                         |p, a| {
-                            if let Some((tid, ts)) = thumb {
+                            if let Some((tid, ts, (v0, v1))) = thumb {
                                 let s = (a.width() / ts.x).max(a.height() / ts.y);
                                 let uv = Rect::from_center_size(
                                     pos2(0.5, 0.5),
@@ -286,6 +371,11 @@ impl App {
                                         (a.width() / (ts.x * s)).min(1.0),
                                         (a.height() / (ts.y * s)).min(1.0),
                                     ),
+                                );
+                                // auf das Bild im Streifen abbilden
+                                let uv = Rect::from_x_y_ranges(
+                                    uv.x_range(),
+                                    (v0 + uv.top() * (v1 - v0))..=(v0 + uv.bottom() * (v1 - v0)),
                                 );
                                 p.add(
                                     egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE)
@@ -302,8 +392,12 @@ impl App {
                                     egui::Align2::CENTER_CENTER,
                                     crate::tr(g),
                                     egui::FontId::proportional(22.0),
-                                    theme::TEXT_DIM,
+                                    theme::TEXT_DIM(),
                                 );
+                            }
+                            if let Some(f) = scrub {
+                                let x = a.left() + a.width() * f;
+                                p.line_segment([pos2(x, a.top()), pos2(x, a.bottom())], egui::Stroke::new(1.5_f32, Color32::WHITE));
                             }
                             if m.kind != MediaKind::Image {
                                 let s = m.duration.as_secs_f64();
@@ -325,7 +419,7 @@ impl App {
                                     egui::Align2::LEFT_TOP,
                                     icon::CHECK_CIRCLE,
                                     egui::FontId::proportional(12.0),
-                                    theme::ACCENT,
+                                    theme::ACCENT(),
                                 );
                             }
                             if self.library.is_favorite(&format!("media:{}", m.id)) {
@@ -334,22 +428,17 @@ impl App {
                                     egui::Align2::RIGHT_TOP,
                                     icon::STAR,
                                     egui::FontId::proportional(11.0),
-                                    theme::ACCENT,
+                                    theme::ACCENT(),
                                 );
                             }
                         },
                     );
                     resp.dnd_set_drag_payload(DragAsset::Media(m.id));
-                    let resp = resp.on_hover_text(crate::tr(format!(
-                        "{}\n{}×{} · {}\nKlick auf + oder Doppelklick fügt am Playhead ein",
-                        m.path.display(),
-                        m.width,
-                        m.height,
-                        m.video_codec
-                            .clone()
-                            .or(m.audio_codec.clone())
-                            .unwrap_or_default()
-                    )));
+                    let resp = if m.kind == MediaKind::Audio {
+                        resp.on_hover_text(name.clone())
+                    } else {
+                        resp.on_hover_text(format!("{name} · {}×{}", m.width, m.height))
+                    };
                     if resp.double_clicked()
                         || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0))
                     {
@@ -361,7 +450,21 @@ impl App {
         for (resp, m) in menus {
             let key = format!("media:{}", m.id);
             let mut ins = false;
+            let mut props = false;
+            let mut to_lib = false;
             self.asset_menu_with(&resp, area, &key, None, &cat, &mut |ui| {
+                if ui.add(theme::menu_row(crate::tr(format!("{}  Eigenschaften", icon::INFO)))).clicked() {
+                    props = true;
+                    ui.close_menu();
+                }
+                if ui
+                    .add(theme::menu_row(crate::tr(format!("{}  Zur Bibliothek hinzufügen", icon::BOOKMARKS))))
+                    .on_hover_text(crate::tr("In allen Projekten unter Medien → Bibliothek"))
+                    .clicked()
+                {
+                    to_lib = true;
+                    ui.close_menu();
+                }
                 if ui
                     .button(crate::tr(format!("{}  Am Playhead einfügen", icon::PLUS)))
                     .clicked()
@@ -384,9 +487,94 @@ impl App {
             if ins {
                 add = Some(m.id);
             }
+            if props {
+                self.props = Some(crate::props::Props::Media(m.id));
+            }
+            if to_lib {
+                let n = self.library.import(crate::library::Kind::Media, crate::library::Kind::DEFAULT_FOLDER, std::slice::from_ref(&m.path));
+                if n > 0 {
+                    self.toast(format!("{} {}", icon::BOOKMARKS, crate::tr("Zur Bibliothek hinzugefügt")));
+                } else {
+                    self.toast_err("Datei nicht gefunden");
+                }
+            }
         }
         if let Some(m) = add {
             self.add_media_at(m, self.playhead, None);
+        }
+    }
+
+    /// Medien → Bibliothek: Dateien für alle Projekte (eigene Ordner und verknüpfte Ordner)
+    fn library_media(&mut self, ui: &mut egui::Ui) {
+        use crate::library::Kind;
+        let (cat, q) = self.asset_bar(ui, "libmedia", &[]);
+        let items = self.lib_items("libmedia", Kind::Media, Vec::new(), &cat, &q);
+        let mut menus: Vec<(egui::Response, crate::library::Item)> = Vec::new();
+        let mut add: Option<PathBuf> = None;
+        let area = egui::ScrollArea::vertical()
+            .id_salt("libmedia")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                if items.is_empty() {
+                    theme::empty_state(
+                        ui,
+                        icon::BOOKMARKS,
+                        "Bibliothek ist leer",
+                        "Dateien hier ablegen, Rechtsklick auf ein Medium → Zur Bibliothek, oder in den Einstellungen einen Ordner verknüpfen",
+                    );
+                }
+                widgets::grid(ui, &items, 104.0, 16.0 / 9.0, 16.0, |ui, r, it| {
+                    let Some(path) = it.path.clone() else { return };
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+                    let audio = crate::library::SOUND_EXT.contains(&ext.as_str());
+                    let key = format!("lib:{}", it.key);
+                    let tex = self.fx_thumbs.get(&key).map(|t| (t.id(), t.size_vec2()));
+                    if tex.is_none() && !audio && ui.is_rect_visible(r) && self.fx_thumbs_requested.insert(key.clone()) {
+                        self.decoder.send(crate::preview::Job::FileThumb {
+                            key,
+                            path: path.clone(),
+                            at: Time::from_secs_f64(0.5),
+                        });
+                    }
+                    let fav = self.library.is_favorite(&it.key);
+                    let resp = widgets::tile(ui, egui::Id::new(("libm", it.key.as_str())), r, &it.name, false, |p, a| {
+                        match tex {
+                            Some((tid, ts)) => {
+                                let s = (a.width() / ts.x).max(a.height() / ts.y);
+                                let uv = Rect::from_center_size(
+                                    pos2(0.5, 0.5),
+                                    vec2((a.width() / (ts.x * s)).min(1.0), (a.height() / (ts.y * s)).min(1.0)),
+                                );
+                                p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(tid, uv));
+                            }
+                            None => {
+                                p.text(
+                                    a.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    if audio { icon::WAVEFORM } else { icon::IMAGE },
+                                    egui::FontId::proportional(22.0),
+                                    theme::TEXT_DIM(),
+                                );
+                            }
+                        }
+                        if fav {
+                            crate::library_ui::fav_badge(p, a);
+                        }
+                    });
+                    resp.dnd_set_drag_payload(DragAsset::File(path.clone()));
+                    if resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0)) {
+                        add = Some(path);
+                    }
+                    menus.push((resp.on_hover_text(it.folder.clone()), it.clone()));
+                });
+            });
+        self.lib_drop = Some((Kind::Media, area.inner_rect));
+        for (r, it) in menus {
+            self.asset_menu(&r, "libmedia", &it.key, it.is_own().then_some(&it), &cat);
+        }
+        if let Some(p) = add {
+            self.library.mark_used(&format!("file:{}", p.display()));
+            self.add_file_at(p, self.playhead, None);
         }
     }
 
@@ -446,6 +634,7 @@ impl App {
                         folder: s.category.to_string(),
                         builtin: Some(s.id),
                         path: None,
+                        linked: false,
                     })
                     .collect();
                 let items = self.lib_items("sfx", Kind::Sound, builtin, &cat, &q);
@@ -464,36 +653,34 @@ impl App {
                         }
                         for it in &items {
                             let key = format!("sfx:{}", it.key);
-                            let playing = self.sfx_preview.as_ref().is_some_and(|(k, _)| *k == key);
                             let fav = self.library.is_favorite(&it.key);
                             let info = if fav {
                                 format!("{}  {}", icon::STAR, it.folder)
                             } else {
                                 it.folder.clone()
                             };
-                            let (play, add, drag) =
-                                self.sound_row(ui, &key, &it.name, &info, playing);
-                            let path = match (it.builtin.and_then(cl_fx::sfx::sfx), &it.path) {
-                                (Some(s), _) => {
-                                    let p = App::sfx_path(s.id);
-                                    if (play || add) && cl_fx::sfx::render(s, &p).is_err() {
-                                        continue;
-                                    }
-                                    if let Some(r) = &drag {
-                                        r.dnd_set_drag_payload(DragAsset::Sfx(s.id));
-                                    }
-                                    p
-                                }
-                                (None, Some(p)) => {
-                                    if let Some(r) = &drag {
-                                        r.dnd_set_drag_payload(DragAsset::File(p.clone()));
-                                    }
-                                    p.clone()
-                                }
+                            let builtin = it.builtin.and_then(cl_fx::sfx::sfx);
+                            let (path, sfx) = match (builtin, &it.path) {
+                                (Some(s), _) => (App::sfx_path(s.id), Some(s.id)),
+                                (None, Some(p)) => (p.clone(), None),
                                 _ => continue,
                             };
+                            let (play, add, drag) = self.sound_row(ui, &key, &it.name, &info, &path, sfx);
+                            if let Some(r) = &drag {
+                                r.dnd_set_drag_payload(match sfx {
+                                    Some(id) => DragAsset::Sfx(id),
+                                    None => DragAsset::File(path.clone()),
+                                });
+                            }
+                            if add {
+                                if let Some(s) = builtin {
+                                    if cl_fx::sfx::render(s, &path).is_err() {
+                                        continue;
+                                    }
+                                }
+                            }
                             if play {
-                                self.preview_sound(key.clone(), &path);
+                                self.preview_sound(key.clone(), &path, sfx);
                             }
                             if add {
                                 self.add_file_at(path, self.playhead, None);
@@ -514,7 +701,7 @@ impl App {
                     None => {
                         ui.label(
                             RichText::new(crate::tr("Musikordner wird durchsucht …"))
-                                .color(theme::TEXT_DIM),
+                                .color(theme::TEXT_DIM()),
                         );
                     }
                     Some(l) if l.is_empty() => theme::empty_state(
@@ -530,7 +717,7 @@ impl App {
                                 l.len()
                             )))
                             .small()
-                            .color(theme::TEXT_DIM),
+                            .color(theme::TEXT_DIM()),
                         );
                         ui.add_space(4.0);
                         // Unterordner des Musik-Ordners als Kategorien (nur Anzeige: umbenennen,
@@ -580,16 +767,14 @@ impl App {
                                     } else {
                                         dir
                                     };
-                                    let playing =
-                                        self.sfx_preview.as_ref().is_some_and(|(k, _)| *k == key);
                                     let (play, add, drag) =
-                                        self.sound_row(ui, &key, &name, &info, playing);
+                                        self.sound_row(ui, &key, &name, &info, &p, None);
                                     if let Some(r) = drag {
                                         r.dnd_set_drag_payload(DragAsset::File(p.clone()));
                                         menus.push((r, key.clone()));
                                     }
                                     if play {
-                                        self.preview_sound(key.clone(), &p);
+                                        self.preview_sound(key.clone(), &p, None);
                                     }
                                     if add {
                                         self.add_file_at(p.clone(), self.playhead, None);
@@ -604,7 +789,7 @@ impl App {
             }
             _ => {
                 let r = egui::Frame::default()
-                    .fill(theme::BG_RAISED)
+                    .fill(theme::BG_RAISED())
                     .corner_radius(8)
                     .inner_margin(12)
                     .show(ui, |ui| {
@@ -613,7 +798,7 @@ impl App {
                             ui.label(
                                 RichText::new(icon::MICROPHONE)
                                     .size(22.0)
-                                    .color(theme::ACCENT),
+                                    .color(theme::ACCENT()),
                             );
                             ui.vertical(|ui| {
                                 ui.label(RichText::new(crate::tr(self.t("voiceover"))).strong());
@@ -622,7 +807,7 @@ impl App {
                                         "Am Playhead einsprechen, die Waveform wächst live mit (R)",
                                     ))
                                     .small()
-                                    .color(theme::TEXT_DIM),
+                                    .color(theme::TEXT_DIM()),
                                 );
                             });
                         });
@@ -650,29 +835,22 @@ impl App {
                     ui.label(
                         RichText::new(crate::tr("Noch keine Aufnahmen in diesem Projekt"))
                             .small()
-                            .color(theme::TEXT_DIM),
+                            .color(theme::TEXT_DIM()),
                     );
                 }
                 for m in recs {
                     let key = format!("rec:{}", m.id);
-                    let playing = self.sfx_preview.as_ref().is_some_and(|(k, _)| *k == key);
                     let name = m
                         .path
                         .file_stem()
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_default();
-                    let (play, add, drag) = self.sound_row(
-                        ui,
-                        &key,
-                        &name,
-                        &format!("{:.1} s", m.duration.as_secs_f64()),
-                        playing,
-                    );
+                    let (play, add, drag) = self.sound_row(ui, &key, &name, "", &m.path, None);
                     if let Some(r) = drag {
                         r.dnd_set_drag_payload(DragAsset::Media(m.id));
                     }
                     if play {
-                        self.preview_sound(key.clone(), &m.path);
+                        self.preview_sound(key.clone(), &m.path, None);
                     }
                     if add {
                         self.add_media_at(m.id, self.playhead, None);
@@ -683,76 +861,131 @@ impl App {
     }
 
     /// Zeile mit Abspielen, Name, Info und „+“. Gibt (abspielen, hinzufügen, Zieh-Antwort) zurück.
+    /// Zeile eines Sounds: Abspielknopf, Name, Kategorie · Länge, Wellenform mit Fortschritt,
+    /// „+“ beim Hovern. Klick auf die Zeile spielt ab, Doppelklick oder „+“ fügt am Playhead ein.
+    /// Gibt (abspielen, hinzufügen, Zieh-Antwort) zurück.
     fn sound_row(
         &mut self,
         ui: &mut egui::Ui,
         key: &str,
         name: &str,
         info: &str,
-        playing: bool,
+        path: &std::path::Path,
+        sfx: Option<&'static str>,
     ) -> (bool, bool, Option<egui::Response>) {
         let (r, resp) =
-            ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::click_and_drag());
-        let p = ui.painter();
-        if resp.hovered() {
-            p.rect_filled(r, 6.0, theme::BG_RAISED);
+            ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click_and_drag());
+        if ui.is_rect_visible(r) {
+            self.request_sound_meta(key, path, sfx);
         }
-        let play_r = Rect::from_center_size(r.left_center() + vec2(18.0, 0.0), vec2(26.0, 26.0));
-        p.circle_filled(
-            play_r.center(),
-            13.0,
-            if playing {
-                theme::ACCENT
-            } else {
-                theme::BG_HOVER
-            },
+        let playing = self.sfx_preview.as_ref().filter(|(k, _)| k == key).map(|(_, a)| {
+            (a.position().as_secs_f64() / self.sfx_preview_len.as_secs_f64().max(0.01)).clamp(0.0, 1.0) as f32
+        });
+        let loading = self.sound_pending.as_deref() == Some(key);
+        let meta = self.sound_meta.get(key);
+        let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), theme::anim(0.12));
+        let p = ui.painter();
+        if hover > 0.0 || playing.is_some() {
+            p.rect_filled(r, 8.0, theme::BG_RAISED().linear_multiply(if playing.is_some() { 1.0 } else { hover }));
+        }
+        // Abspielknopf
+        let play_r = Rect::from_center_size(r.left_center() + vec2(22.0, 0.0), vec2(30.0, 30.0));
+        let on = playing.is_some() || loading;
+        p.rect_filled(play_r, 8.0, if on { theme::ACCENT() } else { theme::BG_HOVER() });
+        if loading {
+            let t = ui.input(|i| i.time) as f32;
+            let c = play_r.center();
+            for k in 0..3 {
+                let a = t * 6.0 + k as f32 * 2.1;
+                p.circle_filled(c + vec2(a.cos(), a.sin()) * 6.0, 1.8, theme::ACCENT_INK());
+            }
+            ui.ctx().request_repaint();
+        } else {
+            p.text(
+                play_r.center(),
+                egui::Align2::CENTER_CENTER,
+                if playing.is_some() { icon::PAUSE } else { icon::PLAY },
+                egui::FontId::proportional(12.0),
+                if on { theme::ACCENT_INK() } else { theme::TEXT() },
+            );
+        }
+        // Rechts: Wellenform (bzw. „+“ beim Hovern)
+        let wave_w = (r.width() * 0.32).clamp(0.0, 96.0);
+        let wave = Rect::from_min_max(
+            pos2(r.right() - 12.0 - wave_w, r.top() + 11.0),
+            pos2(r.right() - 12.0, r.bottom() - 11.0),
         );
-        p.text(
-            play_r.center(),
-            egui::Align2::CENTER_CENTER,
-            crate::tr(if playing { icon::STOP } else { icon::PLAY }),
-            egui::FontId::proportional(11.0),
-            if playing {
-                theme::ACCENT_INK
-            } else {
-                theme::TEXT
-            },
-        );
-        p.text(
-            r.left_center() + vec2(40.0, -7.0),
+        let text_right = if wave_w > 30.0 { wave.left() - 8.0 } else { r.right() - 36.0 };
+        let text_clip = Rect::from_min_max(pos2(r.left() + 44.0, r.top()), pos2(text_right, r.bottom()));
+        let tp = p.with_clip_rect(text_clip);
+        tp.text(
+            r.left_center() + vec2(46.0, -8.0),
             egui::Align2::LEFT_CENTER,
             crate::tr(name),
             egui::FontId::proportional(12.0),
-            theme::TEXT,
+            theme::TEXT(),
         );
-        p.text(
-            r.left_center() + vec2(40.0, 8.0),
+        let len = meta.map(|(m, _)| {
+            let s = m.duration.as_secs_f64();
+            if s >= 60.0 {
+                format!("{}:{:02}", (s / 60.0) as u32, s as u32 % 60)
+            } else {
+                format!("{s:.1} s")
+            }
+        });
+        let sub = match (info.is_empty(), len) {
+            (false, Some(l)) => format!("{} · {l}", crate::tr(info)),
+            (true, Some(l)) => l,
+            (_, None) => crate::tr(info),
+        };
+        tp.text(
+            r.left_center() + vec2(46.0, 8.0),
             egui::Align2::LEFT_CENTER,
-            crate::tr(info),
+            sub,
             egui::FontId::proportional(10.0),
-            theme::TEXT_FAINT,
+            theme::TEXT_FAINT(),
         );
-        let plus_r = Rect::from_center_size(r.right_center() - vec2(16.0, 0.0), vec2(22.0, 22.0));
-        if resp.hovered() {
-            p.circle_filled(plus_r.center(), 10.0, theme::ACCENT);
+        if wave_w > 30.0 {
+            if let Some((_, bars)) = meta {
+                let n = bars.len().max(1);
+                let bw = wave.width() / n as f32;
+                for (i, v) in bars.iter().enumerate() {
+                    let x = wave.left() + (i as f32 + 0.5) * bw;
+                    let h = (v.sqrt() * wave.height()).max(2.0);
+                    let done = playing.is_some_and(|f| (i as f32 + 0.5) / n as f32 <= f);
+                    let col = if done {
+                        theme::ACCENT()
+                    } else {
+                        theme::TEXT_FAINT().linear_multiply(1.0 - 0.6 * hover)
+                    };
+                    p.line_segment(
+                        [pos2(x, wave.center().y - h / 2.0), pos2(x, wave.center().y + h / 2.0)],
+                        egui::Stroke::new((bw * 0.6).clamp(1.0, 2.0), col),
+                    );
+                }
+            }
+        }
+        let plus_r = Rect::from_center_size(r.right_center() - vec2(24.0, 0.0), vec2(24.0, 24.0));
+        if hover > 0.01 {
+            let c = theme::ACCENT().linear_multiply(hover);
+            p.circle_filled(plus_r.center(), 11.0 * (0.8 + 0.2 * hover), c);
             p.text(
                 plus_r.center(),
                 egui::Align2::CENTER_CENTER,
                 icon::PLUS,
-                egui::FontId::proportional(11.0),
-                theme::ACCENT_INK,
+                egui::FontId::proportional(12.0),
+                theme::ACCENT_INK().linear_multiply(hover),
             );
         }
         let pos = resp.interact_pointer_pos();
         let clicked = resp.clicked();
-        let play = clicked && pos.is_some_and(|q| play_r.expand(4.0).contains(q));
-        let add = (clicked && pos.is_some_and(|q| plus_r.expand(4.0).contains(q)))
-            || resp.double_clicked();
-        let _ = key;
+        let on_plus = pos.is_some_and(|q| plus_r.expand(4.0).contains(q));
+        let add = (clicked && on_plus) || resp.double_clicked();
+        let play = clicked && !on_plus;
         (
             play,
             add,
-            Some(resp.on_hover_text(crate::tr("Ziehen oder + fügt am Playhead ein"))),
+            Some(resp.on_hover_text(crate::tr("Klick spielt ab · Doppelklick, + oder Ziehen fügt ein"))),
         )
     }
 
@@ -957,7 +1190,7 @@ impl App {
             ui.label(
                 RichText::new(crate::tr(self.t("font-scope")))
                     .small()
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
             );
             ui.radio_value(&mut self.font_scope_project, false, crate::tr(g));
             ui.radio_value(&mut self.font_scope_project, true, crate::tr(pr));
@@ -972,7 +1205,7 @@ impl App {
                 self.i18n.t_num("fonts-count", "count", fam_count)
             )))
             .small()
-            .color(theme::TEXT_DIM),
+            .color(theme::TEXT_DIM()),
         );
         ui.add_space(6.0);
         let (cat, q) = self.asset_bar(ui, "font", &[]);
@@ -1011,7 +1244,7 @@ impl App {
                     let akey = format!("font:{fam}");
                     let fav = self.library.is_favorite(&akey);
                     let fr = egui::Frame::default()
-                        .fill(theme::BG_RAISED)
+                        .fill(theme::BG_RAISED())
                         .corner_radius(8)
                         .inner_margin(10)
                         .show(ui, |ui| {
@@ -1023,13 +1256,13 @@ impl App {
                                 ui.label(
                                     RichText::new(crate::tr(styles.join(" · ")))
                                         .small()
-                                        .color(theme::TEXT_DIM),
+                                        .color(theme::TEXT_DIM()),
                                 );
                                 if faces.iter().any(|f| f.is_variable()) {
                                     ui.label(
                                         RichText::new(crate::tr(self.t("font-variable")))
                                             .small()
-                                            .color(theme::ACCENT),
+                                            .color(theme::ACCENT()),
                                     );
                                 }
                                 ui.with_layout(
@@ -1132,6 +1365,7 @@ impl App {
                 folder: s.category.to_string(),
                 builtin: Some(s.id),
                 path: None,
+                linked: false,
             })
             .collect();
         let items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
@@ -1211,7 +1445,7 @@ impl App {
                                     egui::Align2::LEFT_TOP,
                                     icon::STAR,
                                     egui::FontId::proportional(11.0),
-                                    theme::ACCENT,
+                                    theme::ACCENT(),
                                 );
                             }
                         },
@@ -1249,6 +1483,11 @@ impl App {
     // ------------------------------------------------------------------ Effekte / Filter
 
     fn fx_thumb(&mut self, key: &str, graph: impl FnOnce() -> String) -> Option<egui::TextureId> {
+        self.fx_strip(key, 1, graph)
+    }
+
+    /// Kachel bzw. Filmstreifen mit `frames` Bildern untereinander (eine Textur, ein FFmpeg-Lauf)
+    fn fx_strip(&mut self, key: &str, frames: u32, graph: impl FnOnce() -> String) -> Option<egui::TextureId> {
         if let Some(t) = self.fx_thumbs.get(key) {
             return Some(t.id());
         }
@@ -1256,16 +1495,33 @@ impl App {
             let cache = crate::paths::data_dir()
                 .join("cache")
                 .join("fx")
-                .join(format!("v2_{}.rgba", key.replace([':', '/', '\\'], "_")));
+                .join(format!("v3_{}.rgba", key.replace([':', '/', '\\'], "_")));
             self.decoder.send(Job::FxThumb {
                 key: key.to_string(),
                 graph: graph(),
                 w: THUMB.0,
                 h: THUMB.1,
+                frames,
                 cache,
             });
         }
         None
+    }
+
+    /// Alle Kacheln (Effekte, Filter, Übergänge) im Hintergrund vorladen – beim ersten Öffnen
+    /// der Tabs ist dann schon alles da.
+    pub fn preload_fx_thumbs(&mut self) {
+        self.fx_thumb("orig", orig_graph);
+        for filters in [false, true] {
+            let pre = if filters { "flt" } else { "fx" };
+            let defs = if filters { cl_fx::FILTERS } else { cl_fx::EFFECTS };
+            for d in defs.iter() {
+                self.fx_thumb(&format!("{pre}:{}", d.id), || fx_tile_graph(d.id, filters));
+            }
+        }
+        for t in cl_fx::TRANSITIONS.iter() {
+            self.fx_strip(&format!("trs:{}", t.0), STRIP, || transition_strip_graph(t.0));
+        }
     }
 
     fn effects_tab(&mut self, ui: &mut egui::Ui, filters: bool) {
@@ -1347,12 +1603,7 @@ impl App {
             })
             .unwrap_or_default();
         let mut chosen = None;
-        let orig = self.fx_thumb("orig", || {
-            format!(
-                "{},trim=start=0.5,setpts=PTS-STARTPTS,format=rgba[out]",
-                sample_source(THUMB.0, THUMB.1, true)
-            )
-        });
+        let orig = self.fx_thumb("orig", orig_graph);
         egui::ScrollArea::vertical()
             .id_salt(if filters { "flt" } else { "eff" })
             .auto_shrink([false, false])
@@ -1370,42 +1621,7 @@ impl App {
                     let tex = if id.is_empty() {
                         orig
                     } else {
-                        let id2 = id.clone();
-                        self.fx_thumb(&key, || {
-                            let mut fx = ClipFx::default();
-                            if filters {
-                                fx.filter = Some(FxRef::new(id2));
-                            } else {
-                                fx.effects.push(FxRef {
-                                    id: id2,
-                                    intensity: 0.8,
-                                    params: Default::default(),
-                                });
-                            }
-                            let mut lines = vec![format!(
-                                "{},trim=start=0.5,setpts=PTS-STARTPTS[s0]",
-                                sample_source(THUMB.0, THUMB.1, true)
-                            )];
-                            lines.extend(cl_fx::fx_graph(
-                                &fx,
-                                cl_fx::Src {
-                                    w: THUMB.0,
-                                    h: THUMB.1,
-                                    has_alpha: false,
-                                },
-                                &cl_fx::ChainOpts {
-                                    t_offset: 0.3,
-                                    apply_reverse: false,
-                                    lut: None,
-                                    matte: None,
-                                },
-                                "s0",
-                                "fx",
-                                "t",
-                            ));
-                            lines.push("[fx]format=rgba[out]".into());
-                            lines.join(";")
-                        })
+                        self.fx_thumb(&key, || fx_tile_graph(id, filters))
                     };
                     let selected = if id.is_empty() {
                         target.is_some() && current.is_empty()
@@ -1449,7 +1665,7 @@ impl App {
                                             icon::SPARKLE
                                         }),
                                         egui::FontId::proportional(18.0),
-                                        theme::TEXT_FAINT,
+                                        theme::TEXT_FAINT(),
                                     );
                                 }
                             }
@@ -1524,30 +1740,29 @@ impl App {
         let mut chosen = None;
         egui::ScrollArea::vertical().id_salt("trans").auto_shrink([false, false]).show(ui, |ui| {
             widgets::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, (id, name)| {
-                let key = format!("tr:{id}");
-                let graph = |start: f32| {
-                    format!(
-                        "{}[a];{}[b];[a]format=gbrap[a1];[b]format=gbrap[b1];[a1][b1]xfade=transition={id}:duration=1:offset=0.2,trim=start={start:.3},setpts=PTS-STARTPTS,format=rgba[out]",
-                        sample_source(THUMB.0, THUMB.1, true),
-                        sample_source(THUMB.0, THUMB.1, false)
-                    )
-                };
-                let mut tex = self.fx_thumb(&key, || graph(0.72));
+                let tex = self.fx_strip(&format!("trs:{id}"), STRIP, || transition_strip_graph(id));
+                // Ruhend: Bild mitten im Übergang (beide Bilder sichtbar). Hover: der ganze Übergang,
+                // am Anfang und Ende kurz stehen bleiben.
+                let mut k = STRIP as f32 * 0.55;
                 if ui.rect_contains_pointer(r) {
-                    // Fortschritt 0…1, am Ende kurz halten
-                    let k = (((ui.input(|i| i.time) * 0.9) % 1.3).min(1.0) * 8.0).round() as u32;
-                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(40));
-                    tex = self.fx_thumb(&format!("{key}@{k}"), || graph(0.2 + k as f32 / 8.0 * 0.98)).or(tex);
+                    let t = (ui.input(|i| i.time) * 0.75) % 1.5;
+                    k = (((t - 0.2) / 1.0).clamp(0.0, 1.0) * (STRIP - 1) as f64) as f32;
+                    ui.ctx().request_repaint();
                 }
+                let frame = k.round().min((STRIP - 1) as f32);
+                let uv = Rect::from_min_max(
+                    pos2(0.0, frame / STRIP as f32),
+                    pos2(1.0, (frame + 1.0) / STRIP as f32),
+                );
                 let akey = format!("tr:{id}");
                 let fav = self.library.is_favorite(&akey);
                 let resp = widgets::tile(ui, egui::Id::new(("tr", *id)), r, name, current.as_deref() == Some(*id), |p, a| {
                     match tex {
                         Some(t) => {
-                            p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))));
+                            p.add(egui::epaint::RectShape::filled(a, 6.0, Color32::WHITE).with_texture(t, uv));
                         }
                         None => {
-                            p.text(a.center(), egui::Align2::CENTER_CENTER, icon::INTERSECT, egui::FontId::proportional(18.0), theme::TEXT_FAINT);
+                            p.text(a.center(), egui::Align2::CENTER_CENTER, icon::INTERSECT, egui::FontId::proportional(18.0), theme::TEXT_FAINT());
                         }
                     }
                     if fav {
@@ -1576,7 +1791,10 @@ impl App {
 
     fn captions_tab(&mut self, ui: &mut egui::Ui) {
         Self::tab_title(ui, "Untertitel", |_| {});
-        self.captions_pro(ui);
+        egui::ScrollArea::vertical()
+            .id_salt("captions-tab")
+            .auto_shrink([false, false])
+            .show(ui, |ui| self.captions_pro(ui));
     }
 
     pub(crate) fn import_srt(&mut self, path: &std::path::Path) {
@@ -1673,7 +1891,7 @@ impl App {
                     .t_num("plugin-effects", "count", self.plugins.asset_count() as i64)
             )))
             .small()
-            .color(theme::TEXT_DIM),
+            .color(theme::TEXT_DIM()),
         );
         ui.add_space(6.0);
         let lang = self.i18n.lang().code().to_string();
@@ -1684,7 +1902,7 @@ impl App {
             let integration = p.manifest.plugin.kind == cl_plugin::PluginKind::Integration;
             let before = p.enabled;
             egui::Frame::default()
-                .fill(theme::BG_RAISED)
+                .fill(theme::BG_RAISED())
                 .corner_radius(8)
                 .inner_margin(10)
                 .show(ui, |ui| {
@@ -1700,7 +1918,7 @@ impl App {
                         ui.label(
                             RichText::new(crate::tr(format!("v{}", p.manifest.plugin.version)))
                                 .small()
-                                .color(theme::TEXT_DIM),
+                                .color(theme::TEXT_DIM()),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             changed |= widgets::toggle(ui, &mut p.enabled);
@@ -1712,7 +1930,7 @@ impl App {
                             &lang,
                         )))
                         .small()
-                        .color(theme::TEXT_DIM),
+                        .color(theme::TEXT_DIM()),
                     );
                     if integration {
                         ui.horizontal(|ui| {
@@ -1722,7 +1940,7 @@ impl App {
                                     p.manifest.plugin.license
                                 )))
                                 .small()
-                                .color(theme::TEXT_FAINT),
+                                .color(theme::TEXT_FAINT()),
                             );
                             if p.enabled
                                 && ui
@@ -1740,7 +1958,7 @@ impl App {
                                 p.manifest.plugin.license
                             )))
                             .small()
-                            .color(theme::TEXT_FAINT),
+                            .color(theme::TEXT_FAINT()),
                         );
                     }
                 });

@@ -269,6 +269,9 @@ impl App {
                         Ok(path) => {
                             self.es.downloads.insert(path.clone(), track.id.clone());
                             self.es.save();
+                            if self.settings.lib_downloads {
+                                self.library.import(crate::library::Kind::Sound, "Epidemic Sound", std::slice::from_ref(&path));
+                            }
                             if let Some(id) = self.add_file_at(path, self.playhead, None) {
                                 if !beats.is_empty() {
                                     if let Some(mut c) =
@@ -554,7 +557,7 @@ impl App {
                 ui.set_width((ui.available_width() - 2.0 * 24.0 - 3.0 * sp - 6.0).max(60.0));
                 ui.add(egui::Label::new(RichText::new(&t.title).size(12.0)).truncate());
                 ui.add(
-                    egui::Label::new(RichText::new(info).size(10.5).color(theme::TEXT_DIM))
+                    egui::Label::new(RichText::new(info).size(10.5).color(theme::TEXT_DIM()))
                         .truncate(),
                 );
             });
@@ -615,7 +618,7 @@ impl App {
     /// Abschnitt „Integrationen“ in den Einstellungen.
     pub fn integrations_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        ui.label(RichText::new(crate::tr("Brauchen ein eigenes Konto. Aus, bis du sie unter Plugins einschaltest.")).small().color(theme::TEXT_DIM));
+        ui.label(RichText::new(crate::tr("Brauchen ein eigenes Konto. Aus, bis du sie unter Plugins einschaltest.")).small().color(theme::TEXT_DIM()));
         self.story_settings(ui);
         self.stock_settings(ui);
         theme::section(ui, "Epidemic Sound");
@@ -655,7 +658,7 @@ impl App {
                         self.es.save();
                     }
                 });
-                ui.label(RichText::new(crate::tr(format!("Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.", cl_epidemic::redirect_uri()))).small().color(theme::TEXT_FAINT));
+                ui.label(RichText::new(crate::tr(format!("Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.", cl_epidemic::redirect_uri()))).small().color(theme::TEXT_FAINT()));
                 ui.add_space(4.0);
                 if let Some(t) = self.es.cfg.tokens.clone() {
                     theme::row(ui, "Status", |ui| {
@@ -669,7 +672,7 @@ impl App {
                                     .map(|u| format!(" als {u}"))
                                     .unwrap_or_default()
                             )))
-                            .color(theme::ACCENT),
+                            .color(theme::ACCENT()),
                         );
                     });
                     if ui.add(theme::secondary("Abmelden")).clicked() {
@@ -683,7 +686,7 @@ impl App {
                         ui.spinner();
                         ui.label(
                             RichText::new(crate::tr("Anmeldung im Browser abschließen …"))
-                                .color(theme::TEXT_DIM),
+                                .color(theme::TEXT_DIM()),
                         );
                     });
                 } else if ui
@@ -724,7 +727,7 @@ impl App {
                         self.es.reset();
                     }
                 });
-                ui.label(RichText::new(crate::tr("Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechner.")).small().color(theme::TEXT_FAINT));
+                ui.label(RichText::new(crate::tr("Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechner.")).small().color(theme::TEXT_FAINT()));
             }
         }
         ui.add_space(4.0);
@@ -739,7 +742,7 @@ impl App {
                 open_url("https://developers.epidemicsound.com/");
             }
         });
-        ui.label(RichText::new(crate::tr("Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.")).small().color(theme::TEXT_FAINT));
+        ui.label(RichText::new(crate::tr("Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.")).small().color(theme::TEXT_FAINT()));
     }
 
     /// Plugin ein-/ausschalten und dauerhaft merken.

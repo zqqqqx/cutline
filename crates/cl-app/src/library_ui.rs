@@ -21,11 +21,51 @@ pub fn area_kind(area: &str) -> Option<Kind> {
     match area {
         "sticker" => Some(Kind::Sticker),
         "sfx" => Some(Kind::Sound),
+        "libmedia" => Some(Kind::Media),
         _ => None,
     }
 }
 
+/// Symbol für eine eingebaute Kategorie (Filter-Chips wie in CapCut)
+pub fn cat_icon(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "Video" => icon::FILM_STRIP,
+        "Audio" => icon::MUSIC_NOTES,
+        "Bilder" => icon::IMAGE,
+        "Gaming" => icon::GAME_CONTROLLER,
+        "Comedy" | "Reaktionen" => icon::SMILEY,
+        "Übergang" => icon::ARROWS_LEFT_RIGHT,
+        "Oberfläche" => icon::CURSOR_CLICK,
+        "Spannung" => icon::HEARTBEAT,
+        "Natur" => icon::TREE,
+        "Formen" => icon::SHAPES,
+        "Pfeile" => icon::ARROW_RIGHT,
+        "Sprechblasen" => icon::CHAT_CIRCLE,
+        "Deko" => icon::SPARKLE,
+        "Creator" => icon::VIDEO_CAMERA,
+        "Titel" => icon::TEXT_H,
+        "Untertitel" => icon::SUBTITLES,
+        "Social" => icon::SHARE_NETWORK,
+        "Hinweis" => icon::INFO,
+        "Basis" => icon::SQUARES_FOUR,
+        "Retro" => icon::FILM_REEL,
+        "Bewegung" => icon::LIGHTNING,
+        "Licht" => icon::SUN,
+        "Stil" => icon::PAINT_BRUSH,
+        "Porträt" => icon::PERSON,
+        "Landschaft" => icon::MOUNTAINS,
+        "Film" => icon::FILM_SLATE,
+        "Schwarzweiß" => icon::CIRCLE_HALF,
+        "Stimmung" => icon::PALETTE,
+        "Wischen" => icon::HAND_SWIPE_RIGHT,
+        "Form" => icon::SHAPES,
+        "Effekt" => icon::SPARKLE,
+        _ => return None,
+    })
+}
+
 /// Offener Dialog der Bibliothek.
+#[derive(Clone)]
 pub enum LibDialog {
     /// Neuer Ordner (Dateiordner bei Sticker/Sounds, sonst Sammelordner); optional gleich mit Eintrag
     NewFolder {
@@ -133,7 +173,7 @@ pub fn fav_badge(p: &egui::Painter, a: egui::Rect) {
         egui::Align2::LEFT_TOP,
         icon::STAR,
         egui::FontId::proportional(11.0),
-        theme::ACCENT,
+        theme::ACCENT(),
     );
 }
 
@@ -163,6 +203,7 @@ impl App {
                 let tip = match k {
                     Kind::Sticker => "Eigene Sticker oder Bilder hinzufügen (auch per Ablegen)",
                     Kind::Sound => "Eigene Sounds hinzufügen (auch per Ablegen)",
+                    Kind::Media => "Dateien zur Bibliothek hinzufügen (auch per Ablegen)",
                 };
                 if theme::icon_button(ui, icon::UPLOAD_SIMPLE, tip, true, false).clicked() {
                     self.lib_pick(k);
@@ -227,7 +268,10 @@ impl App {
             }
             for (i, c) in cats.iter().enumerate() {
                 let label = if c.builtin {
-                    c.label.clone()
+                    match cat_icon(c.key.trim_start_matches("b:")) {
+                        Some(g) => format!("{g} {}", c.label),
+                        None => c.label.clone(),
+                    }
                 } else {
                     format!("{}  {}", icon::FOLDER_SIMPLE, c.label)
                 };
@@ -536,6 +580,7 @@ impl App {
         let label = match kind {
             Kind::Sticker => "Bilder",
             Kind::Sound => "Audio",
+            Kind::Media => "Medien",
         };
         if let Some(files) = crate::dialog()
             .add_filter(crate::tr(label), kind.exts())
@@ -549,6 +594,7 @@ impl App {
         let ckey = match kind {
             Kind::Sticker => "sticker-cat",
             Kind::Sound => "sfx-cat",
+            Kind::Media => "libmedia-cat",
         };
         let cur = self.asset_cat.get(ckey).cloned().unwrap_or_default();
         let folder = cur
@@ -578,6 +624,8 @@ impl App {
         let fresh = pass <= self.lib_dialog_since + 1;
         let mut close = false;
         let mut ok = false;
+        let err = self.dialog_error.clone();
+        let mut edited = false;
         let title = match d {
             LibDialog::NewFolder { .. } => "Neuer Ordner",
             LibDialog::Rename { .. } | LibDialog::RenameCat { .. } => "Umbenennen",
@@ -593,12 +641,14 @@ impl App {
                     if fresh {
                         r.request_focus();
                     }
+                    edited |= r.changed();
+                    theme::field_error(ui, err.as_deref());
                     if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         ok = true;
                     }
                     if let LibDialog::RenameCat { key, .. } = d {
                         if key.starts_with("b:") {
-                            ui.label(RichText::new(crate::tr("Eingebaute Kategorien bekommen nur einen eigenen Anzeigenamen.")).small().color(theme::TEXT_FAINT));
+                            ui.label(RichText::new(crate::tr("Eingebaute Kategorien bekommen nur einen eigenen Anzeigenamen.")).small().color(theme::TEXT_FAINT()));
                         }
                     }
                 }
@@ -627,7 +677,11 @@ impl App {
         if modal.should_close() && !fresh {
             close = true;
         }
+        if edited {
+            self.dialog_error = None;
+        }
         if ok {
+            let backup = self.lib_dialog.clone();
             let res = match self.lib_dialog.take() {
                 Some(LibDialog::NewFolder { area, name, add }) => {
                     let ckey: &'static str = intern(format!("{area}-cat"));
@@ -664,11 +718,17 @@ impl App {
                 }
                 None => Ok(()),
             };
-            if let Err(e) = res {
-                self.toast_err(e);
+            match res {
+                // Dialog bleibt mit der Eingabe offen, der Fehler steht darin
+                Err(e) => {
+                    self.lib_dialog = backup;
+                    self.dialog_error = Some(e);
+                }
+                Ok(()) => self.dialog_error = None,
             }
         } else if close {
             self.lib_dialog = None;
+            self.dialog_error = None;
         }
     }
 

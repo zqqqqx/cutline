@@ -132,6 +132,8 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("duplicate", "Duplizieren", &["Ctrl+D"]),
     ("select_all", "Alle Clips auswählen", &["Ctrl+A"]),
     ("disable", "Clip deaktivieren", &["V"]),
+    ("tool_select", "Werkzeug: Auswählen", &["A"]),
+    ("tool_blade", "Werkzeug: Teilen", &["B"]),
     ("undo", "Rückgängig", &["Ctrl+Z"]),
     ("redo", "Wiederholen", &["Ctrl+Shift+Z", "Ctrl+Y"]),
     ("prev", "Ein Bild zurück", &["ArrowLeft"]),
@@ -210,7 +212,7 @@ impl App {
     /// Einstellungsseite „Tastenkürzel“: Belegung ändern (Klick, dann Tasten drücken).
     pub fn shortcuts_settings(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(crate::tr("Vorlage")).color(theme::TEXT_DIM));
+            ui.label(RichText::new(crate::tr("Vorlage")).color(theme::TEXT_DIM()));
             for (name, diff) in PRESETS {
                 if ui.add(theme::secondary(*name)).clicked() {
                     self.settings.shortcuts = diff
@@ -222,7 +224,7 @@ impl App {
                 }
             }
         });
-        ui.label(RichText::new(crate::tr("Klicke auf eine Belegung und drücke die neue Taste. Entf entfernt die Belegung, Esc bricht ab.")).small().color(theme::TEXT_FAINT));
+        ui.label(RichText::new(crate::tr("Klicke auf eine Belegung und drücke die neue Taste. Entf entfernt die Belegung, Esc bricht ab.")).small().color(theme::TEXT_FAINT()));
         ui.add_space(6.0);
         // Aufnahme einer neuen Belegung
         if let Some(id) = self.capture_key {
@@ -284,38 +286,40 @@ impl App {
             .spacing(egui::vec2(16.0, 6.0))
             .show(ui, |ui| {
                 for (id, what, _) in ACTIONS {
-                    ui.label(RichText::new(crate::tr(*what)).color(theme::TEXT_DIM));
+                    ui.label(RichText::new(crate::tr(*what)).color(theme::TEXT_DIM()));
                     let keys: Vec<String> = all
                         .iter()
                         .filter(|(_, a)| a == id)
                         .map(|(c, _)| c.label())
                         .collect();
                     let capturing = self.capture_key == Some(*id);
-                    let text = if capturing {
-                        "Taste drücken …".to_string()
-                    } else if keys.is_empty() {
-                        "—".to_string()
-                    } else {
-                        keys.join(" / ")
-                    };
-                    if ui
-                        .add(
-                            egui::Button::new(RichText::new(crate::tr(text)).monospace().color(
-                                if capturing {
-                                    theme::ACCENT_INK
-                                } else {
-                                    theme::ACCENT
-                                },
-                            ))
-                            .fill(if capturing {
-                                theme::ACCENT
-                            } else {
-                                theme::BG_RAISED
-                            })
-                            .min_size(egui::vec2(150.0, 22.0)),
-                        )
-                        .clicked()
-                    {
+                    // Belegung als Tastenkappen; die ganze Fläche ist der Knopf
+                    let r = ui
+                        .scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
+                            egui::Frame::default()
+                                .fill(if capturing { theme::ACCENT() } else { theme::BG_RAISED() })
+                                .corner_radius(6)
+                                .inner_margin(egui::Margin::symmetric(6, 3))
+                                .show(ui, |ui| {
+                                    ui.set_min_size(egui::vec2(170.0, 19.0));
+                                    ui.horizontal(|ui| {
+                                        if capturing {
+                                            ui.label(RichText::new(crate::tr("Taste drücken …")).color(theme::ACCENT_INK()));
+                                        } else if keys.is_empty() {
+                                            ui.label(RichText::new("—").color(theme::TEXT_FAINT()));
+                                        }
+                                        for (i, k) in keys.iter().enumerate().filter(|_| !capturing) {
+                                            if i > 0 {
+                                                ui.label(RichText::new("/").small().color(theme::TEXT_FAINT()));
+                                            }
+                                            theme::keycaps(ui, k);
+                                        }
+                                    });
+                                });
+                        })
+                        .response;
+                    theme::hover_glow(ui, &r, 6.0);
+                    if r.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                         self.capture_key = Some(id);
                     }
                     if self.settings.shortcuts.contains_key(*id) {
@@ -338,7 +342,7 @@ impl App {
                 }
             });
         ui.add_space(8.0);
-        ui.label(RichText::new(crate::tr("Außerdem: Strg+C / X / V kopieren, ausschneiden, einfügen · Strg+Mausrad zoomt die Zeitleiste · Umschalt+Mausrad scrollt waagerecht · Alt+Umschalt+Z passt den Player ein")).small().color(theme::TEXT_FAINT));
+        ui.label(RichText::new(crate::tr("Außerdem: Strg+C / X / V kopieren, ausschneiden, einfügen · Strg+Mausrad zoomt die Zeitleiste · Umschalt+Mausrad scrollt waagerecht · Alt+Umschalt+Z passt den Player ein")).small().color(theme::TEXT_FAINT()));
     }
 }
 

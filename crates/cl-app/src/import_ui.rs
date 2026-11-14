@@ -22,6 +22,8 @@ pub struct ImportState {
     running: Option<(String, Receiver<ImportResult>)>,
     /// Bericht des letzten Imports (übersprungene Teile, fehlende Dateien)
     pub report: Option<(String, cl_import::Report)>,
+    /// Schriften aus dem Import, die noch in die Schriftbibliothek müssen
+    fonts: Vec<PathBuf>,
 }
 
 impl App {
@@ -71,6 +73,7 @@ impl App {
             self.project_path = Some(p);
         }
         self.screen = Screen::Editor;
+        self.import.fonts = rep.fonts.clone();
         self.toast(format!(
             "„{name}“ importiert: {} Clips, {} Texte",
             rep.clips, rep.texts
@@ -83,6 +86,14 @@ impl App {
     /// Dialog „Projekt importieren“ und Import-Bericht.
     pub fn import_dialogs(&mut self, ctx: &egui::Context) {
         self.poll_import();
+        // Schriften der importierten Texte übernehmen (still, schon vorhandene werden übersprungen)
+        let fonts = std::mem::take(&mut self.import.fonts);
+        if !fonts.is_empty() {
+            for f in &fonts {
+                let _ = self.fonts.lock().unwrap().import_file(f);
+            }
+            self.register_fonts(ctx);
+        }
         if let Some((name, rep)) = &self.import.report {
             let mut close = false;
             let m = egui::Modal::new(egui::Id::new("import-report")).show(ctx, |ui| {
@@ -100,7 +111,7 @@ impl App {
                     for (w, n) in &rep.skipped {
                         ui.label(
                             RichText::new(format!("·  {}  ×{n}", crate::tr(w)))
-                                .color(theme::TEXT_DIM),
+                                .color(theme::TEXT_DIM()),
                         );
                     }
                 }
@@ -114,7 +125,7 @@ impl App {
                         ui.label(
                             RichText::new(p.display().to_string())
                                 .small()
-                                .color(theme::TEXT_FAINT),
+                                .color(theme::TEXT_FAINT()),
                         );
                     }
                 }
@@ -154,7 +165,7 @@ impl App {
                     }
                 });
             });
-            ui.label(RichText::new(crate::tr("Programmeigene Effekte und Vorlagen werden nicht übernommen.")).small().color(theme::TEXT_DIM));
+            ui.label(RichText::new(crate::tr("Programmeigene Effekte und Vorlagen werden nicht übernommen.")).small().color(theme::TEXT_DIM()));
             ui.add_space(8.0);
             if let Some((label, _)) = &self.import.running {
                 ui.horizontal(|ui| {
@@ -167,13 +178,13 @@ impl App {
                 theme::section(ui, "CapCut-Entwürfe auf diesem Rechner");
                 let drafts = self.import.drafts.clone().unwrap_or_default();
                 if drafts.is_empty() {
-                    ui.label(RichText::new(crate::tr("Keine Entwürfe gefunden")).color(theme::TEXT_DIM));
+                    ui.label(RichText::new(crate::tr("Keine Entwürfe gefunden")).color(theme::TEXT_DIM()));
                 } else {
                     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                         for d in &drafts {
                             ui.horizontal(|ui| {
                                 ui.set_min_height(28.0);
-                                ui.label(RichText::new(icon::FILM_STRIP).color(theme::TEXT_DIM));
+                                ui.label(RichText::new(icon::FILM_STRIP).color(theme::TEXT_DIM()));
                                 ui.add(egui::Label::new(&d.name).truncate());
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     if ui.add_enabled(!busy, theme::secondary("Importieren")).clicked() {
@@ -181,7 +192,7 @@ impl App {
                                     }
                                     if let Some(t) = d.modified {
                                         let s = crate::home::ago(t);
-                                        ui.label(RichText::new(crate::tr(s)).small().color(theme::TEXT_FAINT));
+                                        ui.label(RichText::new(crate::tr(s)).small().color(theme::TEXT_FAINT()));
                                     }
                                 });
                             });
@@ -231,7 +242,7 @@ impl App {
         if self.settings.import_capcut {
             let roots = cl_import::capcut::draft_roots();
             ui.add_space(4.0);
-            ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_FAINT));
+            ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_FAINT()));
         }
         ui.add_space(8.0);
         ui.add_enabled_ui(self.import_enabled(), |ui| {

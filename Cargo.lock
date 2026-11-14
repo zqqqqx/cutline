@@ -833,6 +833,7 @@ name = "cl-import"
 version = "0.6.0"
 dependencies = [
  "cl-core",
+ "cl-fonts",
  "cl-media",
  "roxmltree",
  "serde_json",

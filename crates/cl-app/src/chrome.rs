@@ -100,14 +100,14 @@ impl App {
                     if danger {
                         Color32::from_rgb(0xC4, 0x2B, 0x1C)
                     } else {
-                        theme::BG_RAISED
+                        theme::BG_RAISED()
                     },
                 );
             }
             let col = if resp.hovered() && danger {
                 Color32::WHITE
             } else {
-                theme::TEXT_DIM
+                theme::TEXT_DIM()
             };
             ui.painter().text(
                 r.center(),
@@ -199,19 +199,19 @@ impl App {
                             icon::CHECK_CIRCLE,
                             when.map(|w| format!("Gespeichert {w}"))
                                 .unwrap_or_else(|| "Gespeichert".into()),
-                            theme::TEXT_FAINT,
+                            theme::TEXT_FAINT(),
                         )
                     } else if self.project_path.is_none() && self.revision == self.saved_revision {
                         (
                             icon::CIRCLE_DASHED,
                             "Noch nicht gespeichert".to_string(),
-                            theme::TEXT_FAINT,
+                            theme::TEXT_FAINT(),
                         )
                     } else {
                         (
                             icon::CIRCLE_DASHED,
                             "Wird gespeichert …".to_string(),
-                            theme::TEXT_FAINT,
+                            theme::TEXT_FAINT(),
                         )
                     };
                 let narrow = ui.available_width() < 560.0;
@@ -242,7 +242,7 @@ impl App {
                     if ex.on_hover_text(crate::tr("Strg+E")).clicked() {
                         self.commit_live();
                         self.export
-                            .open_for(&self.project, self.project_path.as_deref());
+                            .open_for(&self.project, self.project_path.as_deref(), self.revision);
                     }
                     if theme::icon_button(ui, icon::GEAR_SIX, "Einstellungen (Strg+,)", true, false)
                         .clicked()
@@ -255,7 +255,7 @@ impl App {
                         ui.label(
                             RichText::new(icon::PLUGS_CONNECTED)
                                 .size(12.0)
-                                .color(theme::TEXT_FAINT),
+                                .color(theme::TEXT_FAINT()),
                         )
                         .on_hover_text(crate::tr(
                             "MCP-Server aktiv (Einstellungen → MCP-Schnittstelle)",
@@ -269,10 +269,10 @@ impl App {
             let name = self.project.name.clone();
             let galley =
                 ui.painter()
-                    .layout_no_wrap(name, egui::FontId::proportional(12.0), theme::TEXT);
+                    .layout_no_wrap(name, egui::FontId::proportional(12.0), theme::TEXT());
             let nr = Rect::from_center_size(bar.center(), galley.size());
             if nr.left() > bar.left() + 330.0 && nr.right() < ctrl_rect.left() - 170.0 {
-                ui.painter().galley(nr.min, galley, theme::TEXT);
+                ui.painter().galley(nr.min, galley, theme::TEXT());
             }
         }
     }
@@ -288,11 +288,7 @@ impl App {
             |ui| {
                 ui.set_min_width(230.0);
                 let item = |ui: &mut egui::Ui, g: &str, t: &str, k: &str| {
-                    ui.add(
-                        egui::Button::new(crate::tr(format!("{g}  {t}")))
-                            .shortcut_text(crate::tr(k))
-                            .frame(false),
-                    )
+                    ui.add(theme::menu_row(crate::tr(format!("{g}  {t}"))).keys(k))
                 };
                 if item(ui, icon::FILE_PLUS, "Neues Projekt", "").clicked() {
                     ui.close_menu();
@@ -331,7 +327,20 @@ impl App {
                     ui.close_menu();
                     self.commit_live();
                     self.export
-                        .open_for(&self.project, self.project_path.as_deref());
+                        .open_for(&self.project, self.project_path.as_deref(), self.revision);
+                }
+                if item(ui, icon::FILE_VIDEO, "Exporte", "").clicked() {
+                    ui.close_menu();
+                    self.exports_for = Some(self.project.name.clone());
+                }
+                if item(ui, icon::CLOCK_COUNTER_CLOCKWISE, "Bearbeitungsverlauf", "").clicked() {
+                    ui.close_menu();
+                    self.show_history();
+                }
+                if item(ui, icon::LAYOUT, "Layout bearbeiten …", "").clicked() {
+                    ui.close_menu();
+                    self.player_max = false;
+                    self.layout_edit = true;
                 }
                 ui.separator();
                 if item(ui, icon::COPY_SIMPLE, "Als Vorlage speichern …", "").clicked() {
@@ -381,7 +390,7 @@ impl App {
                         ui.label(
                             RichText::new(crate::tr("Strg + / Strg − / Strg 0"))
                                 .small()
-                                .color(theme::TEXT_DIM),
+                                .color(theme::TEXT_DIM()),
                         );
                     },
                 );

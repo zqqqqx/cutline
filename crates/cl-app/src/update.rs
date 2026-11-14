@@ -147,9 +147,9 @@ impl App {
                         rel.version
                     )))
                     .size(11.0)
-                    .color(theme::ACCENT),
+                    .color(theme::ACCENT()),
                 )
-                .fill(theme::BG_RAISED)
+                .fill(theme::BG_RAISED())
                 .corner_radius(11)
                 .min_size(vec2(0.0, 22.0));
                 if ui
@@ -169,7 +169,7 @@ impl App {
                         p * 100.0
                     )))
                     .size(11.0)
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
                 );
             }
             UpdateState::Installed(v) => {
@@ -179,9 +179,9 @@ impl App {
                         icon::ARROWS_CLOCKWISE
                     )))
                     .size(11.0)
-                    .color(theme::ACCENT_INK),
+                    .color(theme::ACCENT_INK()),
                 )
-                .fill(theme::ACCENT)
+                .fill(theme::ACCENT())
                 .corner_radius(11)
                 .min_size(vec2(0.0, 22.0));
                 if ui
@@ -209,7 +209,7 @@ impl App {
         theme::row(ui, "Quelle", |ui| {
             ui.label(
                 RichText::new(crate::tr(format!("github.com/{}", cl_update::REPO)))
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
             )
         });
         if widgets::toggle_row(
@@ -219,12 +219,12 @@ impl App {
         ) {
             self.settings.save();
         }
-        ui.label(RichText::new(crate::tr("Dabei wird nur die Release-Liste auf GitHub abgefragt. Installiert wird erst nach deiner Bestätigung, jedes Paket wird per SHA-256 geprüft.")).small().color(theme::TEXT_DIM));
+        ui.label(RichText::new(crate::tr("Dabei wird nur die Release-Liste auf GitHub abgefragt. Installiert wird erst nach deiner Bestätigung, jedes Paket wird per SHA-256 geprüft.")).small().color(theme::TEXT_DIM()));
         theme::section(ui, "Status");
         let state = self.updater.get();
         match &state {
             UpdateState::Idle => {
-                ui.label(RichText::new(crate::tr("Noch nicht gesucht")).color(theme::TEXT_DIM));
+                ui.label(RichText::new(crate::tr("Noch nicht gesucht")).color(theme::TEXT_DIM()));
             }
             UpdateState::Checking => {
                 ui.horizontal(|ui| {
@@ -238,13 +238,13 @@ impl App {
                         "{}  Cutline ist aktuell",
                         icon::CHECK_CIRCLE
                     )))
-                    .color(theme::ACCENT),
+                    .color(theme::ACCENT()),
                 );
             }
             UpdateState::Error(e) => {
                 ui.label(
                     RichText::new(crate::tr(format!("{}  {e}", icon::WARNING_CIRCLE)))
-                        .color(theme::TEXT_DIM),
+                        .color(theme::TEXT_DIM()),
                 );
             }
             UpdateState::Available(rel) => {
@@ -264,13 +264,13 @@ impl App {
                             rel.asset_size as f64 / 1_048_576.0
                         )))
                         .small()
-                        .color(theme::TEXT_DIM),
+                        .color(theme::TEXT_DIM()),
                     );
                 }
                 if !rel.notes.trim().is_empty() {
                     ui.add_space(4.0);
                     egui::Frame::default()
-                        .fill(theme::BG_INPUT)
+                        .fill(theme::BG_INPUT())
                         .corner_radius(6)
                         .inner_margin(10)
                         .show(ui, |ui| {
@@ -301,7 +301,7 @@ impl App {
                                 "Entwicklungs-Build: bitte über Git aktualisieren",
                             ))
                             .small()
-                            .color(theme::TEXT_DIM),
+                            .color(theme::TEXT_DIM()),
                         );
                     }
                     if ui.add(theme::secondary("Auf GitHub ansehen")).clicked() {
@@ -329,7 +329,7 @@ impl App {
                         "{}  Version {v} ist installiert",
                         icon::CHECK_CIRCLE
                     )))
-                    .color(theme::ACCENT),
+                    .color(theme::ACCENT()),
                 );
                 if ui
                     .add(theme::primary(format!(

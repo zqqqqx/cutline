@@ -129,7 +129,7 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
         .iter()
         .map(|(_, l)| {
             ui.painter()
-                .layout_no_wrap(l.to_string(), font.clone(), theme::TEXT)
+                .layout_no_wrap(l.to_string(), font.clone(), theme::TEXT())
                 .size()
                 .x
                 + 14.0
@@ -143,11 +143,11 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
         let resp = ui.interact(r, ui.id().with(("itab", *l)), Sense::click());
         let active = *cur == *t;
         let col = if active {
-            theme::ACCENT
+            theme::ACCENT()
         } else if resp.hovered() {
-            theme::TEXT
+            theme::TEXT()
         } else {
-            theme::TEXT_DIM
+            theme::TEXT_DIM()
         };
         ui.painter().text(
             r.center(),
@@ -162,7 +162,7 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
                     pos2(r.left() + 6.0, r.bottom() - 1.0),
                     pos2(r.right() - 6.0, r.bottom() - 1.0),
                 ],
-                Stroke::new(2.0_f32, theme::ACCENT),
+                Stroke::new(2.0_f32, theme::ACCENT()),
             );
         }
         if resp.clicked() {
@@ -176,7 +176,7 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
             pos2(r.left() - 10.0, rect.bottom()),
             pos2(r.right() + 10.0, rect.bottom()),
         ],
-        Stroke::new(1.0_f32, theme::BORDER),
+        Stroke::new(1.0_f32, theme::BORDER()),
     );
     ui.add_space(8.0);
 }
@@ -254,7 +254,7 @@ impl App {
                 self.delete_selected();
             }
         });
-        ui.label(RichText::new(crate::tr("Gilt für alle ausgewählten Clips")).small().color(theme::TEXT_DIM));
+        ui.label(RichText::new(crate::tr("Gilt für alle ausgewählten Clips")).small().color(theme::TEXT_DIM()));
         ui.add_space(6.0);
     }
 
@@ -438,6 +438,9 @@ impl App {
                     }
                     ClipTab::Audio => self.audio_props(ui, &mut c, &mut e, &mut kf),
                 }
+                if matches!(self.clip_tab, ClipTab::Basic | ClipTab::Audio | ClipTab::Effects | ClipTab::Animation) {
+                    e |= self.curve_ui(ui, &mut c);
+                }
                 ui.add_space(10.0);
                 let fps = self.project.settings.fps;
                 ui.label(
@@ -451,7 +454,7 @@ impl App {
                         crate::tr(format!("ab {}", c.start.timecode(fps)))
                     ))
                     .small()
-                    .color(theme::TEXT_FAINT),
+                    .color(theme::TEXT_FAINT()),
                 );
             });
         if let Some(props) = kf {
@@ -906,7 +909,7 @@ impl App {
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_default();
                     ui.add(
-                        egui::Label::new(RichText::new(crate::tr(name)).color(theme::TEXT))
+                        egui::Label::new(RichText::new(crate::tr(name)).color(theme::TEXT()))
                             .truncate(),
                     )
                     .on_hover_text(crate::tr(l));
@@ -987,12 +990,12 @@ impl App {
                     ui.painter().circle_stroke(
                         r.center(),
                         10.5,
-                        Stroke::new(1.5_f32, theme::ACCENT),
+                        Stroke::new(1.5_f32, theme::ACCENT()),
                     );
                 }
                 if a.hsl[i] != [0.0; 3] {
                     ui.painter()
-                        .circle_filled(r.center() + vec2(7.0, -7.0), 2.5, theme::ACCENT);
+                        .circle_filled(r.center() + vec2(7.0, -7.0), 2.5, theme::ACCENT());
                 }
                 if resp.on_hover_text(crate::tr(*name)).clicked() {
                     k = i;
@@ -1069,7 +1072,7 @@ impl App {
                             egui::Align2::CENTER_CENTER,
                             icon::PROHIBIT,
                             egui::FontId::proportional(18.0),
-                            theme::TEXT_FAINT,
+                            theme::TEXT_FAINT(),
                         );
                         return;
                     }
@@ -1202,7 +1205,7 @@ impl App {
             let new_dur = c.source_span().as_secs_f64() / s.max(0.01) as f64;
             theme::row(ui, "Neue Dauer", |ui| {
                 ui.label(
-                    RichText::new(crate::tr(format!("{:.2} s", new_dur))).color(theme::TEXT_DIM),
+                    RichText::new(crate::tr(format!("{:.2} s", new_dur))).color(theme::TEXT_DIM()),
                 )
             });
             if r.commit && (s - c.speed).abs() > 1e-4 {
@@ -1214,7 +1217,7 @@ impl App {
                 return;
             }
         } else {
-            ui.label(RichText::new(crate::tr("Ton ist bei Kurven stumm")).small().color(theme::TEXT_DIM));
+            ui.label(RichText::new(crate::tr("Ton ist bei Kurven stumm")).small().color(theme::TEXT_DIM()));
             ui.add_space(6.0);
             let mut items: Vec<(&str, &str)> = vec![("", "Keine")];
             items.extend(cl_core::SPEED_CURVES.iter().map(|c| (c.0, c.1)));
@@ -1234,7 +1237,7 @@ impl App {
                                     pos2(a.left() + 8.0, a.center().y),
                                     pos2(a.right() - 8.0, a.center().y),
                                 ],
-                                Stroke::new(1.5_f32, theme::TEXT_DIM),
+                                Stroke::new(1.5_f32, theme::TEXT_DIM()),
                             );
                             return;
                         }
@@ -1252,9 +1255,9 @@ impl App {
                             .collect();
                         p.line_segment(
                             [pos2(g.left(), g.center().y), pos2(g.right(), g.center().y)],
-                            Stroke::new(1.0_f32, theme::BORDER),
+                            Stroke::new(1.0_f32, theme::BORDER()),
                         );
-                        p.add(egui::Shape::line(pts, Stroke::new(1.6_f32, theme::ACCENT)));
+                        p.add(egui::Shape::line(pts, Stroke::new(1.6_f32, theme::ACCENT())));
                     },
                 );
                 if resp.clicked() {
@@ -1278,7 +1281,7 @@ impl App {
                 if widgets::toggle_row(ui, "Flüssige Zeitlupe", &mut c.fx.smooth_slowmo) {
                     e.commit = true;
                 }
-                ui.label(RichText::new(crate::tr("Vorschau angenähert, Export exakt")).small().color(theme::TEXT_DIM));
+                ui.label(RichText::new(crate::tr("Vorschau angenähert, Export exakt")).small().color(theme::TEXT_DIM()));
             }
             theme::section(ui, "Richtung");
             if widgets::toggle_row(ui, "Rückwärts abspielen", &mut c.fx.reverse) {
@@ -1361,7 +1364,7 @@ impl App {
                             c.duration.as_secs_f64() - src
                         )))
                         .small()
-                        .color(theme::TEXT_DIM),
+                        .color(theme::TEXT_DIM()),
                     );
                 }
             }
@@ -1385,7 +1388,7 @@ impl App {
                     egui::Label::new(
                         RichText::new(crate::tr(p.display().to_string()))
                             .small()
-                            .color(theme::TEXT_DIM),
+                            .color(theme::TEXT_DIM()),
                     )
                     .truncate(),
                 )
@@ -1464,7 +1467,7 @@ impl App {
         theme::row(ui, &self.t("resolution"), |ui| {
             let (mut w, mut h) = (settings.width, settings.height);
             let a = ui.add(egui::DragValue::new(&mut w).range(16..=16384));
-            ui.label(RichText::new("×").color(theme::TEXT_DIM));
+            ui.label(RichText::new("×").color(theme::TEXT_DIM()));
             let b = ui.add(egui::DragValue::new(&mut h).range(16..=16384));
             if (a.drag_stopped() || a.lost_focus() || b.drag_stopped() || b.lost_focus())
                 && (w, h) != (settings.width, settings.height)
@@ -1551,7 +1554,7 @@ impl App {
                     self.project.timeline.tracks.len(),
                     self.project.media.len()
                 )))
-                .color(theme::TEXT_DIM),
+                .color(theme::TEXT_DIM()),
             )
         });
         theme::row(ui, "Länge", |ui| {
@@ -1560,49 +1563,157 @@ impl App {
                     self.project.duration().timecode(self.project.settings.fps),
                 ))
                 .monospace()
-                .color(theme::TEXT_DIM),
+                .color(theme::TEXT_DIM()),
             )
         });
         self.marker_list(ui);
     }
 
+    /// Verlauf: oben die rückgängig gemachten Schritte (blass), dann „Jetzt“, darunter die
+    /// bisherigen Änderungen. Klick auf einen Eintrag springt zu dem Stand nach diesem Schritt.
     fn history_inspector(&mut self, ui: &mut egui::Ui) {
-        let entries: Vec<_> = self
-            .doc
-            .lock()
-            .unwrap()
-            .history()
-            .map(|(l, s)| (l, s.clone()))
-            .collect();
-        if entries.is_empty() {
+        type Row = (&'static str, OpSource, std::time::SystemTime);
+        let (done, undone): (Vec<Row>, Vec<Row>) = {
+            let d = self.doc.lock().unwrap();
+            let map = |e: &cl_core::HistoryEntry| (e.label, e.source.clone(), e.at);
+            (d.undo_entries().iter().map(map).collect(), d.redo_entries().iter().map(map).collect())
+        };
+        // Kopf: Rückgängig/Wiederholen und Anzahl
+        ui.horizontal(|ui| {
+            if theme::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, format!("{}  (Strg+Z)", self.t("undo")), !done.is_empty(), false).clicked() {
+                self.history_step(-1);
+            }
+            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, format!("{}  (Strg+Umschalt+Z)", self.t("redo")), !undone.is_empty(), false).clicked() {
+                self.history_step(1);
+            }
+            ui.label(
+                RichText::new(crate::tr(if done.len() == 1 { "1 Schritt".to_string() } else { format!("{} Schritte", done.len()) }))
+                    .small()
+                    .color(theme::TEXT_DIM()),
+            );
+        });
+        if done.is_empty() && undone.is_empty() {
             theme::empty_state(
                 ui,
                 icon::CLOCK_COUNTER_CLOCKWISE,
                 &self.t("history-empty"),
-                "Jede Änderung erscheint hier, auch die von MCP und Plugins",
+                "Jede Änderung erscheint hier und lässt sich mit einem Klick zurückholen",
             );
+            return;
         }
-        for (label, src) in entries.iter().rev().take(80) {
-            let (g, s, col) = match src {
-                OpSource::Ui => (icon::CURSOR, self.t("source-ui"), theme::TEXT_FAINT),
-                OpSource::Mcp(c) => (
-                    icon::PLUGS_CONNECTED,
-                    self.i18n.t_str("source-mcp", "client", c),
-                    theme::TEXT,
-                ),
-                OpSource::Plugin(n) => (
-                    icon::PUZZLE_PIECE,
-                    self.i18n.t_str("source-plugin", "name", n),
-                    theme::TEXT_DIM,
-                ),
-            };
+        let mut q = self.asset_cat.get("hist-q").cloned().unwrap_or_default();
+        ui.add(
+            egui::TextEdit::singleline(&mut q)
+                .hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS)))
+                .desired_width(f32::INFINITY),
+        );
+        self.asset_cat.insert("hist-q", q.clone());
+        let ql = q.to_lowercase();
+        let matches = |l: &str| ql.is_empty() || crate::tr(l).to_lowercase().contains(&ql);
+        let mut jump: Option<isize> = None;
+        egui::ScrollArea::vertical().id_salt("history").auto_shrink([false, false]).show(ui, |ui| {
+            // Zukunft (rückgängig gemacht): der weiteste Schritt oben
+            for (i, (label, src, at)) in undone.iter().enumerate() {
+                if !matches(label) {
+                    continue;
+                }
+                // Abstand vom jetzigen Stand: der nächste Wiederholen-Schritt ist der letzte
+                let dist = (undone.len() - i) as isize;
+                if history_row(ui, label, src, *at, false).on_hover_text(crate::tr("Bis hier wiederholen")).clicked() {
+                    jump = Some(dist);
+                }
+            }
+            // Jetzt
             ui.horizontal(|ui| {
-                ui.label(RichText::new(crate::tr(g)).color(col));
-                ui.label(crate::tr(*label));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(crate::tr(s)).small().color(col))
-                });
+                ui.label(RichText::new(icon::CARET_RIGHT).color(theme::ACCENT()));
+                ui.label(RichText::new(crate::tr("Jetzt")).strong().color(theme::ACCENT()));
             });
+            for (k, (label, src, at)) in done.iter().rev().enumerate() {
+                if !matches(label) {
+                    continue;
+                }
+                if k > 0
+                    && history_row(ui, label, src, *at, true)
+                        .on_hover_text(crate::tr("Zu diesem Stand zurück"))
+                        .clicked()
+                {
+                    jump = Some(-(k as isize));
+                } else if k == 0 {
+                    history_row(ui, label, src, *at, true);
+                }
+            }
+            // Ursprung
+            if !done.is_empty()
+                && ui
+                    .add(theme::menu_row(crate::tr(format!("{}   Projektbeginn", icon::FLAG))))
+                    .on_hover_text(crate::tr("Alle Schritte rückgängig"))
+                    .clicked()
+            {
+                jump = Some(-(done.len() as isize));
+            }
+        });
+        if let Some(n) = jump {
+            self.history_step(n);
         }
     }
+}
+
+/// Symbol je Art der Änderung
+fn history_icon(label: &str) -> &'static str {
+    let l = label.to_lowercase();
+    let has = |w: &str| l.contains(w);
+    if has("lösch") || has("entfern") {
+        icon::TRASH
+    } else if has("teilen") {
+        icon::SCISSORS
+    } else if has("verschieb") {
+        icon::ARROWS_OUT_CARDINAL
+    } else if has("trimm") || has("clip-zeit") || has("kürzen") {
+        icon::ARROWS_IN_LINE_HORIZONTAL
+    } else if has("text") {
+        icon::TEXT_T
+    } else if has("lautstärke") || has("blenden") || has("ton") {
+        icon::SPEAKER_HIGH
+    } else if has("effekt") || has("filter") {
+        icon::SPARKLE
+    } else if has("übergang") {
+        icon::INTERSECT
+    } else if has("keyframe") || has("animation") {
+        icon::DIAMOND
+    } else if has("spur") {
+        icon::ROWS
+    } else if has("import") || has("einfügen") || has("hinzufügen") {
+        icon::PLUS
+    } else if has("geschwindigkeit") || has("tempo") {
+        icon::GAUGE
+    } else if has("marker") {
+        icon::BOOKMARK_SIMPLE
+    } else if has("projekt") {
+        icon::GEAR_SIX
+    } else {
+        icon::PENCIL_SIMPLE
+    }
+}
+
+/// Eine Zeile des Verlaufs; `done = false` → rückgängig gemacht (blass)
+fn history_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    src: &OpSource,
+    at: std::time::SystemTime,
+    done: bool,
+) -> egui::Response {
+    let who = match src {
+        OpSource::Ui => String::new(),
+        OpSource::Mcp(c) => format!("  · {} {c}", icon::PLUGS_CONNECTED),
+        OpSource::Plugin(n) => format!("  · {} {n}", icon::PUZZLE_PIECE),
+    };
+    let when = crate::home::ago(at);
+    let text = format!("{}   {}{who}", history_icon(label), crate::tr(label));
+    let r = ui.add(theme::menu_row(text).hint(&when).min_width(ui.available_width()));
+    if !done {
+        // rückgängig gemachte Schritte blass überdecken
+        ui.painter().rect_filled(r.rect, 5.0, theme::BG_CARD().linear_multiply(0.55));
+    }
+    r
 }

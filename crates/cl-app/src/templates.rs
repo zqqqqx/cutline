@@ -42,6 +42,7 @@ fn safe(name: &str) -> String {
         .collect()
 }
 
+#[derive(Clone)]
 pub enum TplDialog {
     Save { name: String },
     Rename { path: PathBuf, name: String },
@@ -58,7 +59,7 @@ impl App {
         ui.label(
             RichText::new(crate::tr("Aus Vorlage"))
                 .small()
-                .color(theme::TEXT_FAINT),
+                .color(theme::TEXT_FAINT()),
         );
         let mut open: Option<PathBuf> = None;
         let mut rename: Option<(PathBuf, String)> = None;
@@ -127,6 +128,8 @@ impl App {
             return;
         };
         let (mut ok, mut close) = (false, false);
+        let err = self.dialog_error.clone();
+        let mut edited = false;
         let title = match d {
             TplDialog::Save { .. } => "Als Vorlage speichern",
             TplDialog::Rename { .. } => "Vorlage umbenennen",
@@ -137,6 +140,8 @@ impl App {
             };
             let r = ui.add(egui::TextEdit::singleline(name).hint_text(crate::tr("z. B. Folge mit Intro und Endcard")).desired_width(280.0));
             r.request_focus();
+            edited |= r.changed();
+            theme::field_error(ui, err.as_deref());
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
@@ -152,7 +157,12 @@ impl App {
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             close = true;
         }
+        if edited {
+            self.dialog_error = None;
+        }
+        let backup = self.tpl_dialog.clone();
         if ok {
+            self.dialog_error = None;
             match self.tpl_dialog.take() {
                 Some(TplDialog::Save { name }) if !safe(&name).is_empty() => {
                     let _ = std::fs::create_dir_all(dir());
@@ -163,19 +173,27 @@ impl App {
                         p.to_json(),
                     ) {
                         Ok(_) => self.toast(format!("Vorlage „{}“ gespeichert", name.trim())),
-                        Err(e) => self.toast_err(e.to_string()),
+                        Err(e) => {
+                            self.tpl_dialog = backup;
+                            self.dialog_error = Some(e.to_string());
+                        }
                     }
                 }
                 Some(TplDialog::Rename { path, name }) if !safe(&name).is_empty() => {
                     let to = dir().join(format!("{}.cutline", safe(&name)));
                     if let Err(e) = std::fs::rename(&path, &to) {
-                        self.toast_err(e.to_string());
+                        self.tpl_dialog = backup;
+                        self.dialog_error = Some(e.to_string());
                     }
                 }
-                _ => self.toast_err("Bitte einen Namen eingeben"),
+                _ => {
+                    self.tpl_dialog = backup;
+                    self.dialog_error = Some("Bitte einen Namen eingeben".into());
+                }
             }
         } else if close {
             self.tpl_dialog = None;
+            self.dialog_error = None;
         }
     }
 }

@@ -259,7 +259,7 @@ impl App {
                         src.label(&self.project)
                     )))
                     .small()
-                    .color(theme::TEXT_DIM),
+                    .color(theme::TEXT_DIM()),
                 );
                 ui.add_space(4.0);
                 ui.checkbox(

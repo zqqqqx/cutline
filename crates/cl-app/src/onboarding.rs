@@ -279,11 +279,11 @@ fn choice_tile(
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
     let p = ui.painter();
     let fill = if on {
-        theme::BG_HOVER
+        theme::BG_HOVER()
     } else if resp.hovered() {
-        theme::BG_RAISED
+        theme::BG_RAISED()
     } else {
-        theme::BG_INPUT
+        theme::BG_INPUT()
     };
     p.rect(
         r,
@@ -291,7 +291,7 @@ fn choice_tile(
         fill,
         Stroke::new(
             if on { 1.5_f32 } else { 1.0 },
-            if on { theme::ACCENT } else { theme::BORDER },
+            if on { theme::ACCENT() } else { theme::BORDER() },
         ),
         egui::StrokeKind::Inside,
     );
@@ -300,21 +300,21 @@ fn choice_tile(
         Align2::CENTER_CENTER,
         glyph,
         FontId::proportional(20.0),
-        if on { theme::ACCENT } else { theme::TEXT_DIM },
+        if on { theme::ACCENT() } else { theme::TEXT_DIM() },
     );
     p.text(
         pos2(r.left() + 44.0, r.center().y - 8.0),
         Align2::LEFT_CENTER,
         crate::tr(title),
         FontId::proportional(12.5),
-        theme::TEXT,
+        theme::TEXT(),
     );
     p.text(
         pos2(r.left() + 44.0, r.center().y + 9.0),
         Align2::LEFT_CENTER,
         crate::tr(hint),
         FontId::proportional(10.5),
-        theme::TEXT_DIM,
+        theme::TEXT_DIM(),
     );
     if on {
         p.text(
@@ -322,7 +322,7 @@ fn choice_tile(
             Align2::CENTER_CENTER,
             icon::CHECK_CIRCLE,
             FontId::proportional(15.0),
-            theme::ACCENT,
+            theme::ACCENT(),
         );
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -398,11 +398,14 @@ impl App {
             return;
         };
         let screen = ctx.screen_rect();
+        // Titelleiste frei lassen: Fenster verschieben, minimieren, maximieren und schließen
+        // bleiben während der Einführung möglich
+        let below_title = Rect::from_min_max(screen.min + vec2(0.0, theme::TITLE_H), screen.max);
         egui::Area::new(Id::new("ob-dim"))
             .order(Order::Foreground)
-            .fixed_pos(screen.min)
+            .fixed_pos(below_title.min)
             .show(ctx, |ui| {
-                let (r, _) = ui.allocate_exact_size(screen.size(), Sense::click_and_drag());
+                let (r, _) = ui.allocate_exact_size(below_title.size(), Sense::click_and_drag());
                 ui.painter()
                     .rect_filled(r, 0.0, Color32::from_black_alpha(200));
             });
@@ -412,8 +415,8 @@ impl App {
         let mut end = 0u8;
         egui::Area::new(Id::new("ob-card")).order(Order::Tooltip).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
             egui::Frame::default()
-                .fill(theme::BG_CARD)
-                .stroke(Stroke::new(1.0_f32, theme::BORDER))
+                .fill(theme::BG_CARD())
+                .stroke(Stroke::new(1.0_f32, theme::BORDER()))
                 .corner_radius(16)
                 .inner_margin(28)
                 .shadow(egui::Shadow { offset: [0, 12], blur: 40, spread: 0, color: Color32::from_black_alpha(160) })
@@ -441,9 +444,9 @@ impl App {
                     for i in 0..3 {
                         let p = c + vec2((i as f32 - 1.0) * 16.0, 0.0);
                         if i == idx {
-                            ui.painter().rect_filled(Rect::from_center_size(p, vec2(16.0, 6.0)), 3.0, theme::ACCENT);
+                            ui.painter().rect_filled(Rect::from_center_size(p, vec2(16.0, 6.0)), 3.0, theme::ACCENT());
                         } else {
-                            ui.painter().circle_filled(p, 3.0, theme::TEXT_FAINT);
+                            ui.painter().circle_filled(p, 3.0, theme::TEXT_FAINT());
                         }
                     }
                     ui.horizontal(|ui| {
@@ -524,7 +527,7 @@ impl App {
                 .size(22.0)
                 .strong(),
         );
-        ui.label(RichText::new(crate::tr("Alles ist optional und jederzeit unter Einstellungen und Plugins änderbar. Plugins sind ohne dein Okay immer aus.")).color(theme::TEXT_DIM));
+        ui.label(RichText::new(crate::tr("Alles ist optional und jederzeit unter Einstellungen und Plugins änderbar. Plugins sind ohne dein Okay immer aus.")).color(theme::TEXT_DIM()));
         ui.add_space(12.0);
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -536,7 +539,7 @@ impl App {
                         RichText::new(crate::tr("Einschalten und laden"))
                             .small()
                             .strong()
-                            .color(theme::TEXT_DIM),
+                            .color(theme::TEXT_DIM()),
                     );
                     ui.add_space(4.0);
                     for s in actions {
@@ -559,9 +562,9 @@ impl App {
                             r,
                             10.0,
                             if resp.hovered() && !done {
-                                theme::BG_RAISED
+                                theme::BG_RAISED()
                             } else {
-                                theme::BG_INPUT
+                                theme::BG_INPUT()
                             },
                         );
                         p.text(
@@ -569,7 +572,7 @@ impl App {
                             Align2::CENTER_CENTER,
                             s.icon,
                             FontId::proportional(18.0),
-                            theme::TEXT_DIM,
+                            theme::TEXT_DIM(),
                         );
                         let title = if s.note.is_empty() {
                             crate::tr(s.title)
@@ -581,14 +584,14 @@ impl App {
                             Align2::LEFT_CENTER,
                             title,
                             FontId::proportional(12.5),
-                            theme::TEXT,
+                            theme::TEXT(),
                         );
                         p.text(
                             pos2(r.left() + 44.0, r.center().y + 9.0),
                             Align2::LEFT_CENTER,
                             crate::tr(s.text),
                             FontId::proportional(10.5),
-                            theme::TEXT_DIM,
+                            theme::TEXT_DIM(),
                         );
                         let c = pos2(r.right() - 22.0, r.center().y);
                         if done {
@@ -597,7 +600,7 @@ impl App {
                                 Align2::RIGHT_CENTER,
                                 crate::tr("bereits aktiv"),
                                 FontId::proportional(10.5),
-                                theme::TEXT_FAINT,
+                                theme::TEXT_FAINT(),
                             );
                         } else {
                             let b = Rect::from_center_size(c, vec2(16.0, 16.0));
@@ -605,13 +608,13 @@ impl App {
                                 b,
                                 4.0,
                                 if on {
-                                    theme::ACCENT
+                                    theme::ACCENT()
                                 } else {
                                     Color32::TRANSPARENT
                                 },
                                 Stroke::new(
                                     1.5_f32,
-                                    if on { theme::ACCENT } else { theme::TEXT_FAINT },
+                                    if on { theme::ACCENT() } else { theme::TEXT_FAINT() },
                                 ),
                                 egui::StrokeKind::Inside,
                             );
@@ -621,7 +624,7 @@ impl App {
                                     Align2::CENTER_CENTER,
                                     icon::CHECK,
                                     FontId::proportional(12.0),
-                                    theme::ACCENT_INK,
+                                    theme::ACCENT_INK(),
                                 );
                             }
                         }
@@ -642,7 +645,7 @@ impl App {
                         RichText::new(crate::tr("Schon eingebaut"))
                             .small()
                             .strong()
-                            .color(theme::TEXT_DIM),
+                            .color(theme::TEXT_DIM()),
                     );
                     ui.add_space(4.0);
                     for s in tips {
@@ -650,14 +653,14 @@ impl App {
                             ui.add_sized(
                                 [28.0, 20.0],
                                 egui::Label::new(
-                                    RichText::new(s.icon).size(15.0).color(theme::TEXT_DIM),
+                                    RichText::new(s.icon).size(15.0).color(theme::TEXT_DIM()),
                                 ),
                             );
                             ui.label(RichText::new(crate::tr(s.title)).strong());
                             ui.label(
                                 RichText::new(crate::tr(s.text))
                                     .small()
-                                    .color(theme::TEXT_DIM),
+                                    .color(theme::TEXT_DIM()),
                             );
                         });
                         ui.add_space(2.0);
@@ -681,11 +684,14 @@ impl App {
             .tour_rects
             .get(key)
             .map(|r| r.expand(4.0).intersect(screen));
+        // Titelleiste frei lassen: Fenster verschieben, minimieren, maximieren und schließen
+        // bleiben während der Einführung möglich
+        let below_title = Rect::from_min_max(screen.min + vec2(0.0, theme::TITLE_H), screen.max);
         egui::Area::new(Id::new("tour-dim"))
             .order(Order::Foreground)
-            .fixed_pos(screen.min)
+            .fixed_pos(below_title.min)
             .show(ctx, |ui| {
-                let (r, _) = ui.allocate_exact_size(screen.size(), Sense::click_and_drag());
+                let (r, _) = ui.allocate_exact_size(below_title.size(), Sense::click_and_drag());
                 let p = ui.painter();
                 let dim = Color32::from_black_alpha(185);
                 match hole {
@@ -716,7 +722,7 @@ impl App {
                         p.rect_stroke(
                             h,
                             8.0,
-                            Stroke::new(2.0_f32, theme::ACCENT),
+                            Stroke::new(2.0_f32, theme::ACCENT()),
                             egui::StrokeKind::Outside,
                         );
                     }
@@ -755,8 +761,8 @@ impl App {
             .fixed_pos(pos)
             .show(ctx, |ui| {
                 egui::Frame::default()
-                    .fill(theme::BG_CARD)
-                    .stroke(Stroke::new(1.0_f32, theme::BORDER))
+                    .fill(theme::BG_CARD())
+                    .stroke(Stroke::new(1.0_f32, theme::BORDER()))
                     .corner_radius(12)
                     .inner_margin(16)
                     .shadow(egui::Shadow {
@@ -774,12 +780,12 @@ impl App {
                                 TOUR.len()
                             )))
                             .small()
-                            .color(theme::TEXT_FAINT),
+                            .color(theme::TEXT_FAINT()),
                         );
                         ui.add_space(2.0);
                         ui.label(RichText::new(crate::tr(title)).size(16.0).strong());
                         ui.add_space(4.0);
-                        ui.label(RichText::new(crate::tr(text)).color(theme::TEXT_DIM));
+                        ui.label(RichText::new(crate::tr(text)).color(theme::TEXT_DIM()));
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
                             if ui.add(theme::ghost("Beenden")).clicked() {
@@ -845,7 +851,7 @@ fn welcome(ui: &mut egui::Ui) {
                 "Schneiden ohne Konto, ohne Abo und ohne Cloud. Alles läuft auf deinem Rechner.",
             ))
             .size(13.0)
-            .color(theme::TEXT_DIM),
+            .color(theme::TEXT_DIM()),
         );
     });
     ui.add_space(30.0);
@@ -858,14 +864,14 @@ fn welcome(ui: &mut egui::Ui) {
             (icon::SHIELD_CHECK, "Ehrlich", "Kein Wasserzeichen, keine Werbung, kein Upload. Projekte sind offenes JSON."),
             (icon::PUZZLE_PIECE, "Erweiterbar", "Plugins für Musik und Stock-Material, eigene Bibliothek, MCP-Schnittstelle."),
         ] {
-            egui::Frame::default().fill(theme::BG_INPUT).corner_radius(12).inner_margin(14).show(ui, |ui| {
+            egui::Frame::default().fill(theme::BG_INPUT()).corner_radius(12).inner_margin(14).show(ui, |ui| {
                 ui.set_width(cw - 28.0);
                 ui.set_min_height(104.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(g).size(22.0).color(theme::ACCENT));
+                    ui.label(RichText::new(g).size(22.0).color(theme::ACCENT()));
                     ui.add_space(4.0);
                     ui.label(RichText::new(crate::tr(t)).strong());
-                    ui.label(RichText::new(crate::tr(d)).small().color(theme::TEXT_DIM));
+                    ui.label(RichText::new(crate::tr(d)).small().color(theme::TEXT_DIM()));
                 });
             });
         }
@@ -877,7 +883,7 @@ fn welcome(ui: &mut egui::Ui) {
                 "In drei kurzen Schritten richtest du Cutline für deine Videos ein.",
             ))
             .small()
-            .color(theme::TEXT_FAINT),
+            .color(theme::TEXT_FAINT()),
         );
     });
 }
@@ -892,7 +898,7 @@ fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
         RichText::new(crate::tr(
             "Mehrfachauswahl. Danach schlagen wir passende Werkzeuge und Plugins vor.",
         ))
-        .color(theme::TEXT_DIM),
+        .color(theme::TEXT_DIM()),
     );
     ui.add_space(12.0);
     let w = ui.available_width();
@@ -921,7 +927,7 @@ fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
                 icon::KEYBOARD,
                 crate::tr("Tastenkürzel wie in")
             ))
-            .color(theme::TEXT_DIM),
+            .color(theme::TEXT_DIM()),
         );
         ui.add_space(6.0);
         let mut sel = ob.keys;

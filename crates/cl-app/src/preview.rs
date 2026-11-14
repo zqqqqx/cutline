@@ -32,12 +32,33 @@ pub enum Job {
         media: MediaId,
         path: PathBuf,
     },
+    /// Kleines Bild einer Datei bei `at` (Bibliothek, Hover-Vorschau); Ergebnis als `FxThumb`
+    FileThumb {
+        key: String,
+        path: PathBuf,
+        at: Time,
+    },
+    /// `n` Bilder gleichmäßig über ein Video (Hover-Vorschau im Medien-Tab), als ein Streifen
+    MediaStrip {
+        key: String,
+        path: PathBuf,
+        dur: Time,
+        n: u32,
+    },
+    /// Sound aus der Bibliothek vorbereiten: ggf. erzeugen (`sfx`), prüfen, Wellenform
+    SoundMeta {
+        key: String,
+        path: PathBuf,
+        sfx: Option<&'static str>,
+    },
     /// Vorschaubild aus einem Graphen ohne Eingänge (Effekt-/Filter-/Übergangskacheln)
+    /// Kachel für Effekte/Filter/Übergänge. `frames` > 1: Filmstreifen (Bilder untereinander)
     FxThumb {
         key: String,
         graph: String,
         w: u32,
         h: u32,
+        frames: u32,
         cache: PathBuf,
     },
     /// Titelbild eines Projekts für die Startseite
@@ -61,6 +82,11 @@ pub enum Done {
     Wave {
         media: MediaId,
         peaks: Vec<f32>,
+    },
+    SoundMeta {
+        key: String,
+        media: cl_core::MediaRef,
+        bars: Vec<f32>,
     },
     FxThumb {
         key: String,
@@ -116,6 +142,9 @@ impl FrameCache {
 pub struct Decoder {
     tx: Sender<Job>,
     tx_bg: Sender<Job>,
+    /// Kacheln (Effekte, Filter, Übergänge): eigener Thread, bis zu vier FFmpeg parallel,
+    /// damit das Vorladen Thumbnails und Waveforms der Medien nicht aufhält
+    tx_fx: Sender<Job>,
     pub rx: Receiver<Done>,
 }
 
@@ -140,21 +169,77 @@ fn run(job: Job) -> Option<Done> {
         Job::Wave { media, path } => {
             cl_media::waveform(&path, WAVE_PER_SEC).map(|peaks| Done::Wave { media, peaks })
         }
+        Job::FileThumb { key, path, at } => {
+            let (w, h) = cl_media::probe(&path)
+                .map(|m| cl_media::fit_size(m.width.max(1), m.height.max(1), 192, 108))
+                .unwrap_or((192, 108));
+            cl_media::decode_frame(&path, at, w, h).map(|frame| Done::FxThumb { key, frame })
+        }
+        Job::MediaStrip { key, path, dur, n } => {
+            let (w, h) = cl_media::probe(&path)
+                .map(|m| cl_media::fit_size(m.width.max(1), m.height.max(1), 160, 90))
+                .unwrap_or((160, 90));
+            let mut data = Vec::with_capacity((w * h * 4 * n) as usize);
+            let mut last: Option<Vec<u8>> = None;
+            for i in 0..n {
+                let at = Time::from_secs_f64(dur.as_secs_f64() * (i as f64 + 0.5) / n as f64);
+                // fehlt ein Bild (z. B. kurz vor dem Ende), das vorige wiederholen
+                let f = cl_media::decode_frame(&path, at, w, h)
+                    .ok()
+                    .filter(|f| f.data.len() == (w * h * 4) as usize)
+                    .map(|f| f.data)
+                    .or_else(|| last.clone())
+                    .unwrap_or_else(|| vec![0; (w * h * 4) as usize]);
+                data.extend_from_slice(&f);
+                last = Some(f);
+            }
+            Ok(Done::FxThumb {
+                key,
+                frame: RgbaFrame {
+                    width: w,
+                    height: h * n,
+                    data,
+                },
+            })
+        }
+        Job::SoundMeta { key, path, sfx } => {
+            if let Some(s) = sfx.and_then(cl_fx::sfx::sfx) {
+                if let Err(e) = cl_fx::sfx::render(s, &path) {
+                    return Some(Done::Error(e));
+                }
+            }
+            cl_media::probe(&path).and_then(|media| {
+                let peaks = cl_media::waveform(&path, 40)?;
+                // 40 Balken über die ganze Länge, auf den lautesten normiert
+                let n = 40;
+                let max = peaks.iter().copied().fold(1e-4, f32::max);
+                let bars = (0..n)
+                    .map(|i| {
+                        let a = i * peaks.len() / n;
+                        let b = ((i + 1) * peaks.len() / n).max(a + 1).min(peaks.len());
+                        peaks.get(a..b).map(|s| s.iter().copied().fold(0.0, f32::max)).unwrap_or(0.0) / max
+                    })
+                    .collect();
+                Ok(Done::SoundMeta { key, media, bars })
+            })
+        }
         Job::FxThumb {
             key,
             graph,
             w,
             h,
+            frames,
             cache,
         } => {
+            let need = (w * h * 4 * frames) as usize;
             // Zwischenspeicher: rohe RGBA-Bytes
             if let Ok(data) = std::fs::read(&cache) {
-                if data.len() == (w * h * 4) as usize {
+                if data.len() == need {
                     return Some(Done::FxThumb {
                         key,
                         frame: RgbaFrame {
                             width: w,
-                            height: h,
+                            height: h * frames,
                             data,
                         },
                     });
@@ -163,7 +248,8 @@ fn run(job: Job) -> Option<Done> {
             let dir = cache.parent()?.to_path_buf();
             let _ = std::fs::create_dir_all(&dir);
             for (n, b) in SAMPLES {
-                if !dir.join(n).exists() {
+                // neu schreiben, wenn eine ältere App-Version ein anderes Beispielbild abgelegt hat
+                if std::fs::metadata(dir.join(n)).map(|m| m.len()).ok() != Some(b.len() as u64) {
                     let _ = std::fs::write(dir.join(n), b);
                 }
             }
@@ -179,7 +265,7 @@ fn run(job: Job) -> Option<Done> {
                     "-map",
                     "[out]",
                     "-frames:v",
-                    "1",
+                    &frames.to_string(),
                     "-f",
                     "rawvideo",
                     "-pix_fmt",
@@ -189,7 +275,6 @@ fn run(job: Job) -> Option<Done> {
                 .stdin(Stdio::null())
                 .output()
                 .ok()?;
-            let need = (w * h * 4) as usize;
             if out.stdout.len() < need {
                 return Some(Done::Error(format!(
                     "{key}: {}",
@@ -209,7 +294,7 @@ fn run(job: Job) -> Option<Done> {
                 key,
                 frame: RgbaFrame {
                     width: w,
-                    height: h,
+                    height: h * frames,
                     data,
                 },
             })
@@ -300,6 +385,29 @@ impl Decoder {
                 })
                 .expect("Decoder-Thread");
         }
+        let (tx_fx, jobs_fx) = channel::<Job>();
+        {
+            let (done_tx, ctx) = (done_tx.clone(), ctx.clone());
+            std::thread::Builder::new()
+                .name("cl-decoder-fx".into())
+                .spawn(move || {
+                    while let Ok(first) = jobs_fx.recv() {
+                        let mut batch = vec![first];
+                        batch.extend(jobs_fx.try_iter().take(3));
+                        let results: Vec<Option<Done>> = std::thread::scope(|sc| {
+                            let hs: Vec<_> = batch.into_iter().map(|j| sc.spawn(move || run(j))).collect();
+                            hs.into_iter().map(|h| h.join().ok().flatten()).collect()
+                        });
+                        for d in results.into_iter().flatten() {
+                            if done_tx.send(d).is_err() {
+                                return;
+                            }
+                        }
+                        ctx.request_repaint();
+                    }
+                })
+                .expect("Decoder-Thread");
+        }
         // Hintergrund
         let (tx_bg, jobs_bg) = channel::<Job>();
         std::thread::Builder::new()
@@ -315,12 +423,13 @@ impl Decoder {
                 }
             })
             .expect("Decoder-Thread");
-        Self { tx, tx_bg, rx }
+        Self { tx, tx_bg, tx_fx, rx }
     }
 
     pub fn send(&self, job: Job) {
         let _ = match job {
             Job::Frame { .. } => self.tx.send(job),
+            Job::FxThumb { .. } | Job::MediaStrip { .. } | Job::FileThumb { .. } => self.tx_fx.send(job),
             _ => self.tx_bg.send(job),
         };
     }
@@ -392,8 +501,11 @@ impl Playback {
     }
 
     /// Hängt der Strom (beendet oder seit über einer Sekunde abgefragt, ohne fälliges Bild)?
+    /// Vor dem ersten Bild läuft noch die Suche in der Quelle: großzügiger warten, sonst
+    /// würde ein langsamer Start immer wieder neu geöffnet und das Video liefe nie los.
     pub fn stalled(&self) -> bool {
-        self.ended || self.waiting_since.is_some_and(|w| w.elapsed().as_secs_f64() > 1.0)
+        let limit = if self.taken == 0 { 6.0 } else { 1.0 };
+        self.ended || self.waiting_since.is_some_and(|w| w.elapsed().as_secs_f64() > limit)
     }
 }
 
@@ -401,8 +513,8 @@ pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
     egui::ColorImage::from_rgba_unmultiplied([f.width as usize, f.height as usize], &f.data)
 }
 
-/// Beispielbild für Effekt-/Übergangskacheln (CC0-Standbilder von Wikimedia Commons:
-/// „Sunset timelapse on the beach in Libreville, Gabon“ und „Ocean surface waves 06“).
+/// Beispielbild für Effekt-/Übergangskacheln (CC0-Bilder von Wikimedia Commons:
+/// „Sunset timelapse on the beach in Libreville, Gabon“ und „Mavora Lake South“).
 /// Läuft im Ordner der Kachel-Zwischenspeicher, siehe `Job::FxThumb`.
 pub fn sample_source(w: u32, h: u32, warm: bool) -> String {
     let f = if warm { "fx-sample-a.jpg" } else { "fx-sample-b.jpg" };
