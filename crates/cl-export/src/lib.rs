@@ -440,10 +440,10 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     // zweite Ausgabe: ein immer wieder überschriebenes JPEG im Arbeitsordner
     let preview = vlabel.map(|_| {
         args.extend(
-            ["-map", "[pv]", "-an", "-f", "image2", "-update", "1", "-q:v", "6", "-t", &f(dur.as_secs_f64()), "preview.jpg"]
+            ["-map", "[pv]", "-an", "-f", "image2", "-update", "1", "-q:v", "6", "-t", &f(dur.as_secs_f64()), PREVIEW_FILE]
                 .map(String::from),
         );
-        workdir.path().join("preview.jpg")
+        workdir.path().join(PREVIEW_FILE)
     });
     Ok(Job {
         args,
@@ -676,6 +676,24 @@ pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) ->
     r
 }
 
+/// Dateiname des Live-Vorschaubilds im Arbeitsordner
+const PREVIEW_FILE: &str = "preview.jpg";
+
+/// Argumente ohne die Vorschau-Ausgabe; nimmt auch den Vorschau-Zweig aus `graph.txt`.
+/// `None`, wenn `args` keine Vorschau enthält (dann gibt es nichts zu wiederholen).
+fn without_preview(job: &Job, args: &[String]) -> Option<Vec<String>> {
+    // die Vorschau ist die letzte Ausgabe: alles ab ihrem `-map [pv]` fällt weg
+    let i = args.iter().position(|a| a == "[pv]")?.checked_sub(1)?;
+    let file = job.workdir.path().join("graph.txt");
+    let g = std::fs::read_to_string(&file).ok()?;
+    let g = g
+        .replace("split[vmain][pv0]", "null[vmain]")
+        .replace(&format!("[pv0]fps=2,scale={PREVIEW_W}:-2[pv]"), "")
+        .replace(";\n;\n", ";\n");
+    std::fs::write(&file, g).ok()?;
+    Some(args[..i].to_vec())
+}
+
 /// Startet FFmpeg im Arbeitsordner des Jobs; gibt bei Erfolg die Fehlerausgabe (Log) zurück.
 fn run_ffmpeg(job: &Job, args: &[String], cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<String> {
     let mut child: Child = cl_media::ffmpeg_command()?
@@ -712,6 +730,13 @@ fn run_ffmpeg(job: &Job, args: &[String], cancel: &AtomicBool, progress: &mut dy
     let status = child.wait()?;
     let err = err_thread.join().unwrap_or_default();
     if !status.success() {
+        // Das Vorschaubild darf den Export nie kosten: lässt es sich nicht schreiben (z. B. von einem
+        // Virenscanner gesperrt), läuft derselbe Export noch einmal ohne Vorschau.
+        if err.contains(PREVIEW_FILE) {
+            if let Some(plain) = without_preview(job, args) {
+                return run_ffmpeg(job, &plain, cancel, progress);
+            }
+        }
         return Err(ExportError::Ffmpeg(
             err.lines().rev().take(4).collect::<Vec<_>>().join(" | "),
         ));
@@ -1356,6 +1381,35 @@ mod tests {
         assert!(!wav.workdir.path().join("preview.jpg").exists());
     }
 
+    /// Lässt sich das Vorschaubild nicht schreiben, läuft der Export ohne Vorschau durch.
+    #[test]
+    fn blocked_preview_does_not_fail_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = project(dir.path());
+        let mut s = ExportSettings::from_project(&p);
+        s.range = Some((Time::ZERO, Time::from_secs_f64(2.0)));
+        for loudness in [None, Some(-14.0)] {
+            s.loudness = loudness;
+            let out = dir.path().join("blocked.mp4");
+            let job = build(&p, &s, &no_fonts, &out).unwrap();
+            // ein Ordner unter dem Namen der Vorschau: FFmpeg kann die Datei nicht anlegen
+            std::fs::create_dir(job.preview_path().unwrap()).unwrap();
+            let mut seen = Vec::new();
+            run(&job, Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
+            assert_eq!(seen.last(), Some(&1.0));
+            assert!((cl_media::probe(&out).unwrap().duration.as_secs_f64() - 2.0).abs() < 0.15);
+            assert!(job.preview_path().unwrap().is_dir(), "Vorschau wurde nicht geschrieben");
+            std::fs::remove_file(&out).unwrap();
+        }
+        // ohne Vorschau in den Argumenten gibt es nichts zu wiederholen
+        let job = build(&p, &s, &no_fonts, &dir.path().join("x.mp4")).unwrap();
+        let plain = without_preview(&job, &job.args).unwrap();
+        assert!(!plain.iter().any(|a| a == PREVIEW_FILE) && without_preview(&job, &plain).is_none());
+    }
+
     /// Exportdauer mit/ohne Vorschau: `cargo test --release -p cl-export preview_overhead -- --ignored --nocapture`
     #[test]
     #[ignore]
@@ -1385,12 +1439,7 @@ mod tests {
                 let job = build(&p, &s, &no_fonts, &dir.path().join("o.mp4")).unwrap();
                 let mut job = job;
                 if !with {
-                    let i = job.args.iter().position(|a| a == "[pv]").unwrap() - 1;
-                    job.args.truncate(i);
-                    let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
-                    let g = g.replace("split[vmain][pv0]", "null[vmain]").replace(&format!("[pv0]fps=2,scale={PREVIEW_W}:-2[pv]"), "");
-                    let g = g.replace(";\n;\n", ";\n");
-                    std::fs::write(job.workdir.path().join("graph.txt"), g).unwrap();
+                    job.args = without_preview(&job, &job.args).unwrap();
                 }
                 let t0 = std::time::Instant::now();
                 run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
