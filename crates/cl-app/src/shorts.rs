@@ -42,6 +42,10 @@ pub fn short_range(at: f64, len: f64, total: f64) -> (f64, f64) {
 
 /// Medien-Clip neu ins Bild `w`×`h` setzen: füllen (beschneiden) oder ganz einpassen.
 pub fn fit_clip(c: &mut Clip, m: &MediaRef, w: f32, h: f32, fill: bool) {
+    // verkleinerte Overlays (Bild im Bild, Facecam) behalten Lage und Größe
+    if c.transform.scale < 0.95 {
+        return;
+    }
     let (sx, sy) = (w / m.width.max(1) as f32, h / m.height.max(1) as f32);
     // Skalierung 1 = eingepasst (wie im Player/Export)
     c.transform.scale = if fill { sx.max(sy) / sx.min(sy) } else { 1.0 };

@@ -629,6 +629,8 @@ impl EditOp {
                     return Err(CoreError::InvalidDuration);
                 }
                 ensure_unlocked(track_mut(p, track)?)?;
+                // Marker folgen der Hauptspur (oder allem); Schnitte nur auf Nebenspuren lassen sie stehen
+                let move_markers = all_tracks || track_mut(p, track)?.main;
                 let ids: Vec<TrackId> = if all_tracks {
                     p.timeline.tracks.iter().filter(|t| !t.locked).map(|t| t.id).collect()
                 } else {
@@ -659,7 +661,7 @@ impl EditOp {
                         prune_if_empty(p, ti);
                     }
                 }
-                for m in &mut p.timeline.markers {
+                for m in p.timeline.markers.iter_mut().filter(|_| move_markers) {
                     if m.at >= to {
                         m.at = m.at - d;
                     } else if m.at > from {
