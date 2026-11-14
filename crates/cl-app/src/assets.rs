@@ -1070,7 +1070,7 @@ impl App {
                                 name,
                                 false,
                                 |p, a| {
-                                    p.rect_filled(a, 6.0, Color32::from_rgb(0x2A, 0x2D, 0x36));
+                                    p.rect_filled(a, 6.0, theme::BG_RAISED());
                                     self.text_preview(p, &style, a);
                                     if fav {
                                         crate::library_ui::fav_badge(p, a);
@@ -1134,7 +1134,7 @@ impl App {
                                 e.name,
                                 false,
                                 |p, a| {
-                                    p.rect_filled(a, 6.0, Color32::from_rgb(0x2A, 0x2D, 0x36));
+                                    p.rect_filled(a, 6.0, theme::BG_RAISED());
                                     self.text_preview(p, &st, a);
                                     if fav {
                                         crate::library_ui::fav_badge(p, a);
@@ -1329,7 +1329,7 @@ impl App {
                                         self.t("font-restricted")
                                     )))
                                     .small()
-                                    .color(Color32::from_rgb(0xE0, 0xA0, 0x40)),
+                                    .color(theme::WARN),
                                 );
                             }
                         });
@@ -1984,7 +1984,7 @@ impl App {
             ui.label(
                 RichText::new(crate::tr(format!("{} {e}", icon::WARNING)))
                     .small()
-                    .color(Color32::from_rgb(0xE0, 0x80, 0x60)),
+                    .color(theme::WARN),
             );
         }
         if changed {

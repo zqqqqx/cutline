@@ -228,7 +228,7 @@ impl App {
             }
             UpdateState::Checking => {
                 ui.horizontal(|ui| {
-                    ui.spinner();
+                    ui.add(egui::Spinner::new().color(theme::ACCENT()));
                     ui.label(crate::tr("Suche nach Updates …"));
                 });
             }
@@ -315,7 +315,7 @@ impl App {
             }
             UpdateState::Downloading(p) => {
                 ui.add(
-                    egui::ProgressBar::new(*p)
+                    egui::ProgressBar::new(*p).fill(theme::ACCENT())
                         .show_percentage()
                         .desired_height(6.0),
                 );

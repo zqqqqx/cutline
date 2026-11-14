@@ -74,9 +74,86 @@ pub fn select(ctx: &egui::Context, id: &str) {
         id
     };
     let i = PALETTES.iter().position(|p| p.id == id).unwrap_or(0);
-    if CURRENT.swap(i, std::sync::atomic::Ordering::Relaxed) != i || ctx.style().visuals.panel_fill != pal().bg_app {
+    // Auswahlrahmen trägt den zuletzt angewandten Akzent → neuer Akzent wendet die Visuals neu an
+    let st = ctx.style();
+    if CURRENT.swap(i, std::sync::atomic::Ordering::Relaxed) != i
+        || st.visuals.panel_fill != pal().bg_app
+        || st.visuals.selection.stroke.color != ACCENT()
+    {
         apply(ctx);
     }
+}
+
+/// Akzent-Vorgaben: (id, Name, Farbe auf dunklen Themes, Farbe auf hellem Theme).
+/// Auf dunklen Flächen heller/entsättigt (satte Farben „glühen“ dort), alle ≥ 3:1 gegen
+/// `bg_card`; „auto“ ist der neutrale Akzent der Palette.
+pub const ACCENTS: [(&str, &str, Color32, Color32); 8] = [
+    ("auto", "Weiß", PALETTES[0].accent, PALETTES[3].accent),
+    ("blue", "Blau", rgb(0x5B9DFF), rgb(0x2B63D9)),
+    ("teal", "Türkis", rgb(0x3CC8C0), rgb(0x0E7C80)),
+    ("green", "Grün", rgb(0x5CC98A), rgb(0x1F8048)),
+    ("violet", "Violett", rgb(0xA98BFA), rgb(0x7445D6)),
+    ("pink", "Pink", rgb(0xF27AB6), rgb(0xC2317A)),
+    ("orange", "Orange", rgb(0xF59A55), rgb(0xB85A12)),
+    // Koralle statt Reinrot, damit der Akzent nicht wie `DANGER` aussieht
+    ("red", "Rot", rgb(0xFF7E6E), rgb(0xBF5039)),
+];
+
+/// 0 = auto, 1.. = Vorgabe, CUSTOM|rgb = eigene Farbe
+static ACCENT_SPEC: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+const CUSTOM: u32 = 1 << 31;
+
+/// Akzent aus den Einstellungen: „auto“, Vorgabe-id oder „#RRGGBB“. Unbekanntes = auto.
+pub fn set_accent(spec: &str) {
+    let v = match ACCENTS.iter().position(|a| a.0 == spec) {
+        Some(i) => i as u32,
+        None => Color32::from_hex(spec).map_or(0, |c| CUSTOM | (u32::from_be_bytes(c.to_array()) >> 8)),
+    };
+    ACCENT_SPEC.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Relative Leuchtdichte nach WCAG (0 = schwarz, 1 = weiß)
+pub fn luminance(c: Color32) -> f32 {
+    let l = |v: u8| {
+        let v = v as f32 / 255.0;
+        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * l(c.r()) + 0.7152 * l(c.g()) + 0.0722 * l(c.b())
+}
+
+/// Kontrastverhältnis nach WCAG (1 … 21)
+pub fn contrast(a: Color32, b: Color32) -> f32 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
+/// Gewählter Akzent für Palette `p` (eigene Farben werden bis 3:1 gegen `bg_card` aufgehellt
+/// bzw. abgedunkelt, damit aktive Zustände sichtbar bleiben).
+pub fn accent_for(p: &Palette) -> Color32 {
+    match ACCENT_SPEC.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => p.accent,
+        s if s & CUSTOM != 0 => {
+            let mut c = rgb(s & 0xFF_FFFF);
+            let to = if p.dark { Color32::WHITE } else { Color32::BLACK };
+            for _ in 0..60 {
+                if contrast(c, p.bg_card) >= 3.0 {
+                    break;
+                }
+                c = c.lerp_to_gamma(to, 0.05);
+            }
+            c
+        }
+        i => {
+            let a = &ACCENTS[(i as usize).min(ACCENTS.len() - 1)];
+            if p.dark { a.2 } else { a.3 }
+        }
+    }
+}
+
+/// Schrift auf `accent`: dunkle oder helle Tinte der Palette, je nachdem was stärker kontrastiert
+fn ink_for(p: &Palette, accent: Color32) -> Color32 {
+    let (dark, light) = if p.dark { (p.accent_ink, p.text) } else { (p.text, p.accent_ink) };
+    if contrast(dark, accent) >= contrast(light, accent) { dark } else { light }
 }
 
 /// Leichte Überlagerung für Hover/Aktiv: hell auf dunklen Themes, dunkel auf hellem
@@ -107,15 +184,57 @@ pub fn TEXT_DIM() -> Color32 { pal().text_dim }
 #[allow(non_snake_case)]
 pub fn TEXT_FAINT() -> Color32 { pal().text_faint }
 #[allow(non_snake_case)]
-pub fn ACCENT() -> Color32 { pal().accent }
+pub fn ACCENT() -> Color32 { accent_for(pal()) }
 #[allow(non_snake_case)]
-pub fn ACCENT_INK() -> Color32 { pal().accent_ink }
+pub fn ACCENT_INK() -> Color32 { ink_for(pal(), ACCENT()) }
 
 pub const DANGER: Color32 = Color32::from_rgb(0xE5, 0x48, 0x4D);
 pub const SNAP: Color32 = Color32::from_rgb(0xFF, 0xD8, 0x4D);
+/// Warnung/Hinweis (fehlende Datei, Lizenz prüfen …)
+pub const WARN: Color32 = Color32::from_rgb(0xE0, 0x90, 0x50);
+/// Erfolg (Export fertig)
+pub const SUCCESS: Color32 = Color32::from_rgb(0x3D, 0xD6, 0x8C);
+/// Fläche hinter Erfolgsmeldungen
+pub const SUCCESS_BG: Color32 = Color32::from_rgb(0x0B, 0x24, 0x18);
+
+/// Fehler-Toast: getönte Fläche und lesbare Schrift, auf hellem wie dunklem Theme
+#[allow(non_snake_case)]
+pub fn DANGER_BG() -> Color32 {
+    BG_CARD().lerp_to_gamma(DANGER, if pal().dark { 0.18 } else { 0.12 })
+}
+#[allow(non_snake_case)]
+pub fn DANGER_TEXT() -> Color32 {
+    TEXT().lerp_to_gamma(DANGER, 0.35)
+}
 
 pub const RADIUS: u8 = 6;
 pub const GAP: f32 = 4.0;
+
+/// Schriftgrößen-Stufen (für die Vereinheitlichung der Oberfläche):
+/// Hinweise, Fußnoten, Tastenkappen
+pub const FS_HINT: f32 = 10.5;
+/// Bedienelemente, Knöpfe, Labels
+pub const FS_UI: f32 = 11.5;
+/// Fließtext
+pub const FS_TEXT: f32 = 12.5;
+/// Karten- und Abschnittstitel
+pub const FS_TITLE: f32 = 14.0;
+/// Seitentitel (Einstellungen, Startseite)
+pub const FS_PAGE: f32 = 18.0;
+/// Große Überschrift (Willkommen, leere Startseite)
+pub const FS_HERO: f32 = 26.0;
+/// Radius für Bedienelemente, Chips, Tastenkappen
+pub const R_CTRL: f32 = 4.0;
+/// Radius für Karten, Kacheln, Clips
+pub const R_CARD: f32 = 6.0;
+/// Radius für Fenster, Menüs, Toasts
+pub const R_WIN: f32 = 10.0;
+/// Innenabstand kleiner Karten
+pub const PAD_CARD: i8 = 8;
+/// Innenabstand großer Karten
+pub const PAD_CARD_L: i8 = 12;
+/// Innenabstand von Dialogen
+pub const PAD_DIALOG: i8 = 16;
 pub const LABEL_W: f32 = 84.0;
 pub const TITLE_H: f32 = 36.0;
 
@@ -151,7 +270,8 @@ pub fn apply(ctx: &egui::Context) {
     v.extreme_bg_color = BG_INPUT();
     v.faint_bg_color = BG_RAISED();
     v.override_text_color = Some(TEXT());
-    v.selection.bg_fill = overlay(46);
+    // Akzent-Schleier: färbt Fortschrittsbalken/Spinner, markierter Text bleibt lesbar (≥ ~4:1)
+    v.selection.bg_fill = ACCENT().gamma_multiply(if pal().dark { 0.30 } else { 0.35 });
     v.selection.stroke = Stroke::new(1.0_f32, ACCENT());
     v.hyperlink_color = ACCENT();
     v.text_cursor.stroke = Stroke::new(1.5_f32, ACCENT());
@@ -593,8 +713,9 @@ pub fn logo(painter: &egui::Painter, rect: Rect) {
     let r = |x: f32, y: f32, w: f32, h: f32| {
         Rect::from_min_size(o + vec2(x * s, y * s), vec2(w * s, h * s))
     };
-    painter.rect_filled(r(0.0, 0.0, 64.0, 64.0), 15.0 * s, ACCENT());
-    let ink = ACCENT_INK();
+    // Logo bleibt neutral: Palettenakzent statt gewählter Akzentfarbe
+    painter.rect_filled(r(0.0, 0.0, 64.0, 64.0), 15.0 * s, pal().accent);
+    let ink = pal().accent_ink;
     for (x, y, w) in [
         (11.0, 16.0, 20.0),
         (11.0, 28.0, 13.0),
@@ -653,4 +774,33 @@ pub fn window_icon() -> Option<egui::IconData> {
         width: size,
         height: size,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Ein Test, weil der Akzent global ist (parallele Tests würden sich überschreiben)
+    #[test]
+    fn accents_readable_on_all_palettes() {
+        for (id, ..) in ACCENTS {
+            set_accent(id);
+            for p in &PALETTES {
+                let a = accent_for(p);
+                let (c, ci) = (contrast(a, p.bg_card), contrast(ink_for(p, a), a));
+                println!("{id:7} {:10} {} card {c:.2} ink {ci:.2}", p.id, a.to_hex());
+                assert!(c >= 3.0, "{id} auf {}: {c}", p.id);
+                assert!(ci >= 4.5, "Tinte {id} auf {}: {ci}", p.id);
+            }
+        }
+        set_accent("#101010");
+        for p in PALETTES.iter().filter(|p| p.dark) {
+            assert!(contrast(accent_for(p), p.bg_card) >= 3.0, "{}", p.id);
+        }
+        set_accent("#FFFFFF");
+        assert!(contrast(accent_for(&PALETTES[3]), PALETTES[3].bg_card) >= 3.0);
+        set_accent("auto");
+        assert_eq!(accent_for(&PALETTES[0]), PALETTES[0].accent);
+        assert_eq!(ink_for(&PALETTES[3], PALETTES[3].accent), PALETTES[3].accent_ink);
+    }
 }

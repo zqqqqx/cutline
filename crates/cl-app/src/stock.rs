@@ -297,7 +297,7 @@ impl App {
             );
             go = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             if self.stock.busy {
-                ui.spinner();
+                ui.add(egui::Spinner::new().color(theme::ACCENT()));
             }
         });
         if i == 1 {
