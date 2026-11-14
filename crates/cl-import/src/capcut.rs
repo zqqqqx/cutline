@@ -411,7 +411,7 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
                         st.outline = Some((
                             (sw * 60.0) as f32,
                             [
-                                c[0],
+                                c.first().copied().unwrap_or(0),
                                 c.get(1).copied().unwrap_or(0),
                                 c.get(2).copied().unwrap_or(0),
                                 255,
@@ -603,6 +603,27 @@ mod tests {
         let ClipContent::Text(st) = &p.timeline.tracks[2].clips[0].content else { panic!() };
         assert_eq!(st.font_family.as_deref(), Some("Poppins"));
         assert_eq!(rep.fonts, vec![font]);
+    }
+
+    #[test]
+    fn text_size_shadow_animation_and_empty_stroke_color() {
+        // leere Konturfarbe darf nicht abstürzen
+        let content = serde_json::json!({"text": "Hi", "styles": [{"size": 15.0, "strokes": [{"width": 0.1, "content": {"solid": {"color": []}}}]}]}).to_string();
+        let draft = serde_json::json!({
+            "canvas_config": {"width": 1920, "height": 1080},
+            "materials": {
+                "texts": [{"id": "T1", "content": content, "has_shadow": false}],
+                "material_animations": [{"id": "A1", "animations": [{"type": "in", "duration": 300000}]}]
+            },
+            "tracks": [{"type": "text", "segments": [{"material_id": "T1", "extra_material_refs": ["A1"], "target_timerange": {"start": 0, "duration": 1000000}}]}]
+        });
+        let (p, _) = convert(&draft, Path::new("."), "Text").unwrap();
+        let c = &p.timeline.tracks[0].clips[0];
+        let ClipContent::Text(st) = &c.content else { panic!() };
+        assert!((st.size - 172.5).abs() < 1e-3, "{}", st.size);
+        assert!(!st.shadow);
+        assert_eq!(st.outline.unwrap().1, [0, 0, 0, 255]);
+        assert_eq!(c.anim.intro.as_ref().unwrap().id, "fade");
     }
 
     /// Echten Entwurf ansehen: CAPCUT_DRAFT=<Ordner> cargo test -- --ignored real_draft --nocapture

@@ -141,6 +141,41 @@ pub struct AssetEntry {
     pub params: Vec<ParamSpec>,
 }
 
+impl AssetEntry {
+    /// FFmpeg-Kette mit eingesetzten Standardwerten; {intensity} bleibt für den Host.
+    pub fn ffmpeg_filled(&self) -> Option<String> {
+        let mut c = self.ffmpeg.clone()?;
+        for prm in &self.params {
+            let v = match prm {
+                ParamSpec::Float { default, .. } => default.to_string(),
+                ParamSpec::Int { default, .. } => default.to_string(),
+                ParamSpec::Bool { default, .. } => (*default as u8).to_string(),
+                ParamSpec::Color { default, .. } | ParamSpec::Choice { default, .. } => {
+                    default.clone()
+                }
+            };
+            c = c.replace(&format!("{{{}}}", prm.id()), &v);
+        }
+        Some(c)
+    }
+}
+
+/// Kette darf keine eigenen Ein-/Ausgänge, Dateien, Graph-Trenner, Instanznamen (`@`)
+/// oder Filter mit Datei-/Fremdcode-Zugriff enthalten.
+fn ffmpeg_chain_allowed(f: &str) -> bool {
+    const BLOCKED: [&str; 8] = [
+        "movie", "amovie", "frei0r", "ladspa", "lv2", "sendcmd", "zmq", "lut3d",
+    ];
+    if [";", "[", "@", "movie=", "file="].iter().any(|x| f.contains(x)) {
+        return false;
+    }
+    // Filtername = Anfang jedes Kommas-Abschnitts bis `=` (zu streng bei Kommas in Werten, das ist ok)
+    !f.split(',').any(|part| {
+        let name = part.split('=').next().unwrap_or("").trim().to_ascii_lowercase();
+        BLOCKED.contains(&name.as_str()) || name == "azmq" || name == "asendcmd"
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginMeta {
@@ -277,13 +312,8 @@ impl Manifest {
                 ));
             }
             if let Some(f) = &a.ffmpeg {
-                // Kette darf keine eigenen Ein-/Ausgänge, Dateien oder Graph-Trenner enthalten
-                if f.contains(';')
-                    || f.contains('[')
-                    || f.contains("movie=")
-                    || f.contains("amovie=")
-                    || f.contains("file=")
-                {
+                // roh und nach dem Einsetzen der Standardwerte prüfen (Werte könnten Trenner schmuggeln)
+                if !ffmpeg_chain_allowed(f) || !a.ffmpeg_filled().is_some_and(|c| ffmpeg_chain_allowed(&c)) {
                     return bad(format!(
                         "FFmpeg-Kette von '{}' enthält nicht erlaubte Elemente",
                         a.id
@@ -443,19 +473,7 @@ impl Registry {
             .filter(|p| p.enabled)
             .flat_map(|p| {
                 p.manifest.assets.iter().filter_map(move |a| {
-                    let chain = a.ffmpeg.as_ref()?;
-                    // Standardwerte der Parameter einsetzen; {intensity} bleibt für den Host
-                    let mut c = chain.clone();
-                    for prm in &a.params {
-                        let v = match prm {
-                            ParamSpec::Float { default, .. } => default.to_string(),
-                            ParamSpec::Int { default, .. } => default.to_string(),
-                            ParamSpec::Bool { default, .. } => (*default as u8).to_string(),
-                            ParamSpec::Color { default, .. }
-                            | ParamSpec::Choice { default, .. } => default.clone(),
-                        };
-                        c = c.replace(&format!("{{{}}}", prm.id()), &v);
-                    }
+                    let c = a.ffmpeg_filled().filter(|c| ffmpeg_chain_allowed(c))?;
                     Some((
                         format!("{}/{}", p.manifest.plugin.id, a.id),
                         a.kind,
@@ -550,6 +568,22 @@ name={{de='E'}}
 ffmpeg='movie=x.mp4'"
         );
         assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
+        // Standardwert eines Parameters schmuggelt einen zweiten Graphen ein
+        let m = format!(
+            "{base}
+[[asset]]
+id='e'
+kind='video-effect'
+name={{de='E'}}
+ffmpeg='eq=gamma={{g}}'
+params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=x.mp4'}}]"
+        );
+        let err = Manifest::parse(&m, p).unwrap().validate(None).unwrap_err().to_string();
+        assert!(err.contains("nicht erlaubte"), "{err}");
+        for bad in ["movie@m=x.mp4", r"eq=gamma=1,lut3d=C\:/x.cube", "sendcmd=c=x", "frei0r=x", "ladspa=x", " lv2=p=x", "zmq"] {
+            assert!(!ffmpeg_chain_allowed(bad), "{bad}");
+        }
+        assert!(ffmpeg_chain_allowed("gblur=sigma=2,eq=brightness=0.04*{intensity}"));
     }
 
     #[test]
