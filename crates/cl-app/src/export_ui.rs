@@ -373,7 +373,7 @@ impl ExportDialog {
                                     });
                                 });
                                 if let Some(h) = &self.preset_hint {
-                                    ui.label(egui::RichText::new(h).small().color(egui::Color32::from_rgb(0xE0, 0xA0, 0x40)));
+                                    ui.label(egui::RichText::new(h).small().color(theme::WARN));
                                 }
                                 theme::row(ui, "Auflösung", |ui| {
                                     let label = |e: u32| match e {
@@ -623,13 +623,13 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(26.0, 26.0), egui::Sense::hover());
         let p = ui.painter();
-        p.circle_filled(r.center(), 11.0 * pop, egui::Color32::from_rgb(0x3D, 0xD6, 0x8C));
+        p.circle_filled(r.center(), 11.0 * pop, theme::SUCCESS);
         p.text(
             r.center(),
             egui::Align2::CENTER_CENTER,
             icon::CHECK,
             egui::FontId::proportional(13.0 * pop.max(0.01)),
-            egui::Color32::from_rgb(0x0B, 0x24, 0x18),
+            theme::SUCCESS_BG,
         );
         ui.label(RichText::new(crate::tr(format!("Fertig in {secs:.1} s"))).strong());
     });

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use cl_epidemic::{AuthMode, Client, Config, Named, Query, Track};
-use eframe::egui::{self, vec2, Color32, RichText};
+use eframe::egui::{self, vec2, RichText};
 
 use crate::app::{App, DragAsset};
 use crate::paths;
@@ -443,7 +443,7 @@ impl App {
             ui.label(
                 RichText::new(crate::tr(format!("{}  {e}", icon::WARNING)))
                     .small()
-                    .color(Color32::from_rgb(0xE0, 0x80, 0x60)),
+                    .color(theme::WARN),
             );
         }
         let list: Vec<Track> = match self.es.view {
@@ -453,7 +453,7 @@ impl App {
         };
         if list.is_empty() {
             if self.es.busy {
-                ui.vertical_centered(|ui| ui.spinner());
+                ui.vertical_centered(|ui| ui.add(egui::Spinner::new().color(theme::ACCENT())));
             } else if self.es.view == View::Favorites {
                 theme::empty_state(
                     ui,
@@ -678,7 +678,7 @@ impl App {
                     }
                 } else if self.es.login_running {
                     ui.horizontal(|ui| {
-                        ui.spinner();
+                        ui.add(egui::Spinner::new().color(theme::ACCENT()));
                         ui.label(
                             RichText::new(crate::tr("Anmeldung im Browser abschließen …"))
                                 .color(theme::TEXT_DIM()),

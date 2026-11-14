@@ -342,8 +342,8 @@ impl App {
                 painter.circle(
                     *p,
                     4.5,
-                    Color32::WHITE,
-                    Stroke::new(1.0_f32, Color32::from_black_alpha(120)),
+                    theme::ACCENT(),
+                    Stroke::new(1.0_f32, theme::ACCENT_INK()),
                 );
             }
             // ✕ löschen
@@ -369,15 +369,15 @@ impl App {
             painter.circle(
                 rh,
                 8.0,
-                Color32::from_rgb(0x30, 0x30, 0x34),
-                Stroke::new(1.0_f32, Color32::WHITE),
+                theme::ACCENT(),
+                Stroke::new(1.0_f32, theme::ACCENT_INK()),
             );
             painter.text(
                 rh,
                 egui::Align2::CENTER_CENTER,
                 icon::ARROWS_CLOCKWISE,
                 egui::FontId::proportional(10.0),
-                Color32::WHITE,
+                theme::ACCENT_INK(),
             );
             if let Some(b) = badge {
                 let g = painter.layout_no_wrap(b, egui::FontId::proportional(11.0), Color32::BLACK);

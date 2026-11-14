@@ -180,7 +180,7 @@ impl App {
             ui.add_space(8.0);
             if let Some((label, _)) = &self.import.running {
                 ui.horizontal(|ui| {
-                    ui.spinner();
+                    ui.add(egui::Spinner::new().color(theme::ACCENT()));
                     ui.label(crate::tr(format!("„{label}“ wird importiert …")));
                 });
                 ui.add_space(6.0);
