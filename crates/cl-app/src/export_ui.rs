@@ -147,6 +147,92 @@ struct Running {
     sidecars: Vec<(PathBuf, String)>,
     /// Einstellungen beim Start (Fingerabdruck für „Erneut exportieren“)
     settings: ExportSettings,
+    /// Vorschaubild, das FFmpeg während des Exports laufend überschreibt
+    preview: Option<PathBuf>,
+    /// geladene Live-Bilder; Texturen werden mit `Running` freigegeben
+    live: Live,
+}
+
+/// Änderungszeit und Größe der Vorschaudatei
+type Sig = (std::time::SystemTime, u64);
+
+/// Live-Vorschau des laufenden Exports: aktuelles Bild (seit wann) und vorheriges zum Überblenden.
+#[derive(Default)]
+struct Live {
+    sig: Option<Sig>,
+    checked: Option<Instant>,
+    cur: Option<(egui::TextureHandle, Instant)>,
+    prev: Option<egui::TextureHandle>,
+}
+
+impl Live {
+    /// Höchstens alle 400 ms nachsehen; nur eine geänderte, vollständig lesbare Datei ersetzt das Bild.
+    fn poll(&mut self, ctx: &egui::Context, path: &Path) {
+        if self.checked.is_some_and(|t| t.elapsed().as_millis() < 400) {
+            return;
+        }
+        self.checked = Some(Instant::now());
+        let sig = std::fs::metadata(path).ok().and_then(|m| Some((m.modified().ok()?, m.len())));
+        if !changed(self.sig, sig) {
+            return;
+        }
+        // halb geschrieben: still überspringen, das letzte gute Bild bleibt
+        let Some(img) = std::fs::read(path).ok().and_then(|b| decode_jpeg(&b)) else {
+            return;
+        };
+        self.sig = sig;
+        let tex = ctx.load_texture("export-live", img, egui::TextureOptions::LINEAR);
+        self.prev = self.cur.take().map(|c| c.0);
+        self.cur = Some((tex, Instant::now()));
+    }
+}
+
+/// Neu laden? Nur wenn die Datei da ist und sich seit dem letzten Laden geändert hat.
+fn changed(old: Option<Sig>, new: Option<Sig>) -> bool {
+    new.is_some() && new != old
+}
+
+/// Anteil des neuen Bilds beim Überblenden (`dur` 0 = Animationen aus: sofort ganz).
+fn blend(age: f32, dur: f32) -> f32 {
+    if dur <= 0.0 {
+        1.0
+    } else {
+        (age / dur).clamp(0.0, 1.0)
+    }
+}
+
+/// Nur vollständige JPEGs (Endmarke FF D9) dekodieren; FFmpeg schreibt die Datei laufend neu.
+fn decode_jpeg(b: &[u8]) -> Option<egui::ColorImage> {
+    if !b.ends_with(&[0xFF, 0xD9]) {
+        return None;
+    }
+    let img = image::load_from_memory_with_format(b, image::ImageFormat::Jpeg).ok()?.to_rgba8();
+    Some(egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], img.as_raw()))
+}
+
+/// Zeichnet das Live-Bild eingepasst in `rect` (weich überblendet, feine Fortschrittslinie am
+/// unteren Bildrand). `false`: noch kein Bild da.
+fn paint_live(ui: &egui::Ui, rect: Rect, live: &Live, prog: f32) -> bool {
+    let Some((cur, at)) = &live.cur else {
+        return false;
+    };
+    let ts = cur.size_vec2();
+    let fit = (rect.width() / ts.x).min(rect.height() / ts.y);
+    let img = Rect::from_center_size(rect.center(), ts * fit);
+    let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    let p = ui.painter();
+    let k = blend(at.elapsed().as_secs_f32(), theme::anim(0.25));
+    if let Some(prev) = live.prev.as_ref().filter(|_| k < 1.0) {
+        p.image(prev.id(), img, uv, Color32::WHITE);
+    }
+    p.image(cur.id(), img, uv, Color32::WHITE.gamma_multiply(k));
+    if theme::anim(1.0) > 0.0 {
+        // gleicher weich nachlaufender Wert wie der Fortschrittsbalken darunter
+        let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, theme::anim(0.35));
+        let line = Rect::from_min_size(egui::pos2(img.left(), img.bottom() - 2.0), vec2(img.width() * shown.clamp(0.0, 1.0), 2.0));
+        p.rect_filled(line, 0.0, theme::ACCENT().gamma_multiply(0.45));
+    }
+    true
 }
 
 #[derive(Default)]
@@ -384,7 +470,17 @@ impl ExportDialog {
                         let size = vec2(250.0, 250.0 * s.height as f32 / s.width.max(1) as f32).min(vec2(250.0, 300.0));
                         let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                         ui.painter().rect_filled(rect, theme::R_CARD, Color32::BLACK);
-                        if let Some((id, ts)) = cover {
+                        let live = match self.running.as_mut() {
+                            Some(r) => {
+                                if let Some(pv) = &r.preview {
+                                    r.live.poll(ui.ctx(), pv);
+                                }
+                                let prog = *r.progress.lock().unwrap();
+                                paint_live(ui, rect, &r.live, prog)
+                            }
+                            None => false,
+                        };
+                        if let Some((id, ts)) = cover.filter(|_| !live) {
                             let fit = (rect.width() / ts.x).min(rect.height() / ts.y);
                             ui.painter().image(id, egui::Rect::from_center_size(rect.center(), ts * fit), egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
                         }
@@ -394,6 +490,9 @@ impl ExportDialog {
                             let (est, exact) = estimate_mb(&s, p.duration());
                             let txt = if exact { format!("{} {est:.0} MB", icon::HARD_DRIVES) } else { format!("{} ca. {est:.0} MB", icon::HARD_DRIVES) };
                             ui.label(RichText::new(crate::tr(txt)).small().color(theme::TEXT_DIM()));
+                        }
+                        if live {
+                            ui.label(RichText::new(crate::tr("Live-Vorschau")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
                         }
                     });
                     ui.add_space(12.0);
@@ -680,6 +779,7 @@ impl ExportDialog {
             match cl_export::build(p, &s, &resolver, &out) {
                 Ok(job) => {
                     let measures = job.measures_loudness();
+                    let preview = job.preview_path().map(Path::to_path_buf);
                     let progress = Arc::new(Mutex::new(0.0));
                     let result = Arc::new(Mutex::new(None));
                     let cancel = Arc::new(AtomicBool::new(false));
@@ -707,6 +807,8 @@ impl ExportDialog {
                         rev: self.rev,
                         sidecars,
                         settings: s.clone(),
+                        preview,
+                        live: Live::default(),
                     });
                     self.last_output = Some(out);
                 }
@@ -930,6 +1032,37 @@ fn reexport_only_with_unchanged_settings() {
 }
 
 #[test]
+fn live_preview_reload_blend_and_partial_jpeg() {
+    let t = std::time::SystemTime::UNIX_EPOCH;
+    assert!(!changed(None, None) && !changed(Some((t, 5)), None) && !changed(Some((t, 5)), Some((t, 5))));
+    assert!(changed(None, Some((t, 5))) && changed(Some((t, 5)), Some((t, 6))));
+    assert_eq!((blend(0.0, 0.25), blend(0.125, 0.25), blend(1.0, 0.25), blend(0.0, 0.0)), (0.0, 0.5, 1.0, 1.0));
+    let mut jpg = Vec::new();
+    image::RgbImage::from_pixel(48, 27, image::Rgb([200, 30, 30]))
+        .write_to(&mut std::io::Cursor::new(&mut jpg), image::ImageFormat::Jpeg)
+        .unwrap();
+    assert_eq!(decode_jpeg(&jpg).unwrap().size, [48, 27]);
+    // halb geschriebene Datei: übersprungen
+    assert!(decode_jpeg(&jpg[..jpg.len() / 2]).is_none() && decode_jpeg(&[]).is_none());
+    // Datei fehlt noch / unverändert: kein Bild, nichts geladen
+    let ctx = egui::Context::default();
+    let dir = tempfile::tempdir().unwrap();
+    let pv = dir.path().join("preview.jpg");
+    let mut live = Live::default();
+    live.poll(&ctx, &pv);
+    assert!(live.cur.is_none());
+    std::fs::write(&pv, &jpg).unwrap();
+    live.checked = None;
+    live.poll(&ctx, &pv);
+    assert!(live.cur.is_some() && live.prev.is_none());
+    // kaputt überschrieben: letztes gutes Bild bleibt
+    std::fs::write(&pv, &jpg[..10]).unwrap();
+    live.checked = None;
+    live.poll(&ctx, &pv);
+    assert!(live.cur.is_some() && live.prev.is_none());
+}
+
+#[test]
 fn sidecars_follow_range_and_wait_for_success() {
     use cl_core::{Clip, ClipContent, Marker, TextStyle, Track, TrackKind};
     let mut p = Project::new("t");
@@ -959,6 +1092,8 @@ fn sidecars_follow_range_and_wait_for_success() {
             rev: 0,
             sidecars: v.clone(),
             settings: s.clone(),
+            preview: None,
+            live: Live::default(),
         });
         frame(&mut d, &ctx, &p, false);
         assert_eq!(v.iter().all(|(f, _)| f.is_file()), ok);

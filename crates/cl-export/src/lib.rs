@@ -239,7 +239,12 @@ pub struct Job {
     pub part: PathBuf,
     /// Lautheit: erst den Ton messen, dann `[aout]` linear angleichen (siehe [`run`])
     measure: Option<Measure>,
+    /// Live-Vorschau (JPEG, wird während des Exports laufend überschrieben); nur mit Bild
+    preview: Option<PathBuf>,
 }
+
+/// Breite des Live-Vorschaubilds in Pixeln.
+pub const PREVIEW_W: u32 = 480;
 
 struct Measure {
     args: Vec<String>,
@@ -252,6 +257,11 @@ impl Job {
     /// Läuft vor dem Export ein Messlauf für „Lautheit angleichen“?
     pub fn measures_loudness(&self) -> bool {
         self.measure.is_some()
+    }
+
+    /// Vorschaubild des laufenden Exports (existiert erst nach den ersten Bildern).
+    pub fn preview_path(&self) -> Option<&Path> {
+        self.preview.as_deref()
     }
 }
 
@@ -337,7 +347,11 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     };
     let mut vlabel = None;
     if !s.format.audio_only() {
-        let cur = graph::video_part(&mut ctx, p, end, dur)?;
+        let full = graph::video_part(&mut ctx, p, end, dur)?;
+        // Live-Vorschau für den Export-Dialog: zweiter Zweig, 2 Bilder/s, klein
+        ctx.graph.push(format!("[{full}]split[vmain][pv0]"));
+        ctx.graph.push(format!("[pv0]fps=2,scale={PREVIEW_W}:-2[pv]"));
+        let cur = "vmain";
         if s.format == Format::Gif {
             ctx.graph.push(format!(
                 "[{cur}]fps=min(15\\,{}),scale={}:-2:flags=lanczos,split[g0][g1]",
@@ -423,6 +437,14 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     args.extend(["-t".into(), f(dur.as_secs_f64())]);
     let part = part_path(out);
     args.push(part.to_string_lossy().into_owned());
+    // zweite Ausgabe: ein immer wieder überschriebenes JPEG im Arbeitsordner
+    let preview = vlabel.map(|_| {
+        args.extend(
+            ["-map", "[pv]", "-an", "-f", "image2", "-update", "1", "-q:v", "6", "-t", &f(dur.as_secs_f64()), "preview.jpg"]
+                .map(String::from),
+        );
+        workdir.path().join("preview.jpg")
+    });
     Ok(Job {
         args,
         workdir,
@@ -430,6 +452,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         out: out.to_path_buf(),
         part,
         measure,
+        preview,
     })
 }
 
@@ -1285,6 +1308,95 @@ mod tests {
         )
         .unwrap();
         assert!((cl_media::probe(&part).unwrap().duration.as_secs_f64() - 1.5).abs() < 0.15);
+    }
+
+    /// Live-Vorschau: zweite Ausgabe schreibt ein kleines JPEG, die Hauptdatei bleibt wie bisher.
+    #[test]
+    fn export_writes_live_preview_without_changing_output() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = project(dir.path());
+        let mut s = ExportSettings::from_project(&p);
+        s.range = Some((Time::ZERO, Time::from_secs_f64(2.0)));
+        let out = dir.path().join("live.mp4");
+        let job = build(&p, &s, &no_fonts, &out).unwrap();
+        let pv = job.preview_path().unwrap().to_path_buf();
+        let mut seen = Vec::new();
+        run(&job, Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
+        assert!(seen.windows(2).all(|w| w[0] <= w[1]) && seen.last() == Some(&1.0), "{seen:?}");
+        let m = cl_media::probe(&out).unwrap();
+        assert!((m.duration.as_secs_f64() - 2.0).abs() < 0.15, "{}", m.duration);
+        assert_eq!((m.width, m.height), (320, 568));
+        let streams = cl_media::ffprobe_command()
+            .unwrap()
+            .args(["-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0"])
+            .arg(&out)
+            .output()
+            .unwrap();
+        let mut kinds: Vec<String> = String::from_utf8_lossy(&streams.stdout).lines().map(|l| l.trim().to_string()).collect();
+        kinds.sort();
+        assert_eq!(kinds, ["audio", "video"]);
+        let img = cl_media::probe(&pv).unwrap();
+        assert_eq!(img.width, PREVIEW_W);
+        // mit Lautheits-Messlauf: zweiter Durchgang schreibt den Graph samt Vorschau-Zweig neu
+        s.loudness = Some(-14.0);
+        let job = build(&p, &s, &no_fonts, &out).unwrap();
+        let mut seen = Vec::new();
+        run(&job, Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
+        assert!(seen.windows(2).all(|w| w[0] <= w[1]) && seen.last() == Some(&1.0), "{seen:?}");
+        assert!(job.preview_path().unwrap().is_file());
+        assert!((cl_media::probe(&out).unwrap().duration.as_secs_f64() - 2.0).abs() < 0.15);
+        // Ton-Export: keine Vorschau
+        s.format = Format::Wav;
+        let wav = build(&p, &s, &no_fonts, &dir.path().join("live.wav")).unwrap();
+        assert!(wav.preview_path().is_none() && !wav.args.iter().any(|a| a == "preview.jpg"));
+        run(&wav, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        assert!(!wav.workdir.path().join("preview.jpg").exists());
+    }
+
+    /// Exportdauer mit/ohne Vorschau: `cargo test --release -p cl-export preview_overhead -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn preview_overhead() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.mp4");
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30:duration=10", "-f", "lavfi", "-i", "sine=d=10"])
+            .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        let m = cl_media::probe(&src).unwrap();
+        let mut p = Project::new("Messung");
+        p.settings.width = 1920;
+        p.settings.height = 1080;
+        p.media.push(m.clone());
+        let mut t = Track::new(TrackKind::Video);
+        t.main = true;
+        t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, m.duration));
+        p.timeline.tracks.push(t);
+        let s = ExportSettings::from_project(&p);
+        for round in 0..2 {
+            for with in [true, false] {
+                let job = build(&p, &s, &no_fonts, &dir.path().join("o.mp4")).unwrap();
+                let mut job = job;
+                if !with {
+                    let i = job.args.iter().position(|a| a == "[pv]").unwrap() - 1;
+                    job.args.truncate(i);
+                    let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+                    let g = g.replace("split[vmain][pv0]", "null[vmain]").replace(&format!("[pv0]fps=2,scale={PREVIEW_W}:-2[pv]"), "");
+                    let g = g.replace(";\n;\n", ";\n");
+                    std::fs::write(job.workdir.path().join("graph.txt"), g).unwrap();
+                }
+                let t0 = std::time::Instant::now();
+                run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+                eprintln!("Runde {round}, Vorschau {with}: {:.2} s", t0.elapsed().as_secs_f64());
+            }
+        }
     }
 
     #[test]
