@@ -571,7 +571,7 @@ impl App {
     fn timeline_area(&mut self, ctx: &egui::Context, id: &'static str, top: bool, sr: egui::Rect, ft: f32) -> f32 {
         let p = if top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
         let r = p
-            .resizable(true)
+            .resizable(!self.settings.layout_locked)
             .default_height((sr.height() * ft).clamp(150.0, 520.0))
             .min_height(120.0)
             .max_height((sr.height() * 0.6).max(140.0))
@@ -3042,7 +3042,7 @@ impl eframe::App for App {
             }
             let assets = if lay.assets_right { egui::SidePanel::right(id_a) } else { egui::SidePanel::left(id_a) };
             let r = assets
-                .resizable(true)
+                .resizable(!self.settings.layout_locked)
                 .default_width((sr.width() * fa).clamp(200.0, 560.0))
                 .min_width(if small { 180.0 } else { 240.0 })
                 .max_width((sr.width() * 0.38).max(200.0))
@@ -3055,7 +3055,7 @@ impl eframe::App for App {
 
             let insp = if lay.assets_right { egui::SidePanel::left(id_i) } else { egui::SidePanel::right(id_i) };
             let r = insp
-                .resizable(true)
+                .resizable(!self.settings.layout_locked)
                 .default_width((sr.width() * fi).clamp(200.0, 420.0))
                 .min_width(if small { 180.0 } else { 220.0 })
                 .max_width((sr.width() * 0.32).max(200.0))

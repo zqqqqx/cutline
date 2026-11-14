@@ -354,8 +354,12 @@ impl App {
                 }
                 if item(ui, icon::LAYOUT, "Layout bearbeiten …", "").clicked() {
                     ui.close_menu();
-                    self.player_max = false;
-                    self.layout_edit = true;
+                    if self.settings.layout_locked {
+                        self.toast("Layout ist gesperrt (Einstellungen → Allgemein → Anordnung)");
+                    } else {
+                        self.player_max = false;
+                        self.layout_edit = true;
+                    }
                 }
                 ui.separator();
                 if item(ui, icon::COPY_SIMPLE, "Als Vorlage speichern …", "").clicked() {

@@ -101,6 +101,8 @@ pub struct AppSettings {
     /// Aktuelles Layout und eigene Layout-Profile
     pub layout: crate::layout::LayoutProfile,
     pub layouts: Vec<crate::layout::LayoutProfile>,
+    /// Layout sperren: Bereiche lassen sich nicht mehr mit der Maus in der Größe ziehen
+    pub layout_locked: bool,
 }
 
 impl Default for AppSettings {
@@ -149,6 +151,7 @@ impl Default for AppSettings {
             audio_device: None,
             layout: Default::default(),
             layouts: Vec::new(),
+            layout_locked: false,
         }
     }
 }

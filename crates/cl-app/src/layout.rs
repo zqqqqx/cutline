@@ -157,6 +157,14 @@ impl App {
             l.frac = self.layout_frac;
             self.apply_layout(l);
         }
+        if crate::widgets::toggle_row(ui, "Layout sperren", &mut self.settings.layout_locked) {
+            self.settings.save();
+        }
+        ui.label(
+            RichText::new(crate::tr("Gesperrt lassen sich die Bereiche nicht mehr versehentlich in der Größe verziehen."))
+                .size(theme::FS_HINT)
+                .color(theme::TEXT_DIM()),
+        );
     }
 
     /// Profil übernehmen (Größen werden im nächsten Bild gesetzt)
