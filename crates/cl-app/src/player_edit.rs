@@ -357,7 +357,7 @@ impl App {
                 pts[0],
                 egui::Align2::CENTER_CENTER,
                 icon::X,
-                egui::FontId::proportional(9.0),
+                egui::FontId::proportional(9.0), // Icon-Glyphe im kleinen Griffkreis
                 Color32::WHITE,
             );
             // Drehgriff
@@ -376,17 +376,17 @@ impl App {
                 rh,
                 egui::Align2::CENTER_CENTER,
                 icon::ARROWS_CLOCKWISE,
-                egui::FontId::proportional(10.0),
+                egui::FontId::proportional(10.0), // Icon-Glyphe im Drehgriff
                 theme::ACCENT_INK(),
             );
             if let Some(b) = badge {
-                let g = painter.layout_no_wrap(b, egui::FontId::proportional(11.0), Color32::BLACK);
+                let g = painter.layout_no_wrap(b, egui::FontId::proportional(theme::FS_UI), Color32::BLACK);
                 let top = pts.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
                 let br = Rect::from_center_size(
                     pos2(r.center.x, top - 16.0),
                     g.size() + vec2(12.0, 6.0),
                 );
-                painter.rect_filled(br, 9.0, Color32::from_white_alpha(235));
+                painter.rect_filled(br, 9.0, Color32::from_white_alpha(235)); // Pille: Radius = halbe Höhe
                 painter.galley(br.min + vec2(6.0, 3.0), g, Color32::BLACK);
             }
         }

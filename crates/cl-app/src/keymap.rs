@@ -298,7 +298,7 @@ impl App {
                         .scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
                             egui::Frame::default()
                                 .fill(if capturing { theme::ACCENT() } else { theme::BG_RAISED() })
-                                .corner_radius(6)
+                                .corner_radius(theme::R_CARD)
                                 .inner_margin(egui::Margin::symmetric(6, 3))
                                 .show(ui, |ui| {
                                     ui.set_min_size(egui::vec2(170.0, 19.0));

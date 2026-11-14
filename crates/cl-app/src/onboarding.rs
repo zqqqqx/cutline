@@ -287,33 +287,31 @@ fn choice_tile(
     };
     p.rect(
         r,
-        10.0,
+        theme::R_WIN,
         fill,
-        Stroke::new(
-            if on { 1.5_f32 } else { 1.0 },
-            if on { theme::ACCENT() } else { theme::BORDER() },
-        ),
+        // Fläche hebt sich schon ab: Rand nur noch für die Auswahl
+        if on { Stroke::new(1.5_f32, theme::ACCENT()) } else { Stroke::NONE },
         egui::StrokeKind::Inside,
     );
     p.text(
         pos2(r.left() + 22.0, r.center().y),
         Align2::CENTER_CENTER,
         glyph,
-        FontId::proportional(20.0),
+        FontId::proportional(20.0), // Icon-Glyphe der Kachel
         if on { theme::ACCENT() } else { theme::TEXT_DIM() },
     );
     p.text(
         pos2(r.left() + 44.0, r.center().y - 8.0),
         Align2::LEFT_CENTER,
         crate::tr(title),
-        FontId::proportional(12.5),
+        FontId::proportional(theme::FS_TEXT),
         theme::TEXT(),
     );
     p.text(
         pos2(r.left() + 44.0, r.center().y + 9.0),
         Align2::LEFT_CENTER,
         crate::tr(hint),
-        FontId::proportional(10.5),
+        FontId::proportional(theme::FS_HINT),
         theme::TEXT_DIM(),
     );
     if on {
@@ -321,7 +319,7 @@ fn choice_tile(
             pos2(r.right() - 16.0, r.center().y),
             Align2::CENTER_CENTER,
             icon::CHECK_CIRCLE,
-            FontId::proportional(15.0),
+            FontId::proportional(15.0), // Icon-Glyphe (Häkchen)
             theme::ACCENT(),
         );
     }
@@ -417,8 +415,8 @@ impl App {
             egui::Frame::default()
                 .fill(theme::BG_CARD())
                 .stroke(Stroke::new(1.0_f32, theme::BORDER()))
-                .corner_radius(16)
-                .inner_margin(28)
+                .corner_radius(theme::R_WIN)
+                .inner_margin(28) // Hero-Abstand der Einführung
                 .shadow(egui::Shadow { offset: [0, 12], blur: 40, spread: 0, color: Color32::from_black_alpha(160) })
                 .show(ui, |ui| {
                     ui.set_width(w - 56.0);
@@ -524,7 +522,7 @@ impl App {
         }
         ui.label(
             RichText::new(crate::tr("Passend für dich"))
-                .size(22.0)
+                .size(theme::FS_HERO)
                 .strong(),
         );
         ui.label(RichText::new(crate::tr("Alles ist optional und jederzeit unter Einstellungen und Plugins änderbar. Plugins sind ohne dein Okay immer aus.")).color(theme::TEXT_DIM()));
@@ -560,7 +558,7 @@ impl App {
                         let p = ui.painter();
                         p.rect_filled(
                             r,
-                            10.0,
+                            theme::R_WIN,
                             if resp.hovered() && !done {
                                 theme::BG_RAISED()
                             } else {
@@ -571,7 +569,7 @@ impl App {
                             pos2(r.left() + 22.0, r.center().y),
                             Align2::CENTER_CENTER,
                             s.icon,
-                            FontId::proportional(18.0),
+                            FontId::proportional(18.0), // Icon-Glyphe der Zeile
                             theme::TEXT_DIM(),
                         );
                         let title = if s.note.is_empty() {
@@ -583,14 +581,14 @@ impl App {
                             pos2(r.left() + 44.0, r.center().y - 8.0),
                             Align2::LEFT_CENTER,
                             title,
-                            FontId::proportional(12.5),
+                            FontId::proportional(theme::FS_TEXT),
                             theme::TEXT(),
                         );
                         p.text(
                             pos2(r.left() + 44.0, r.center().y + 9.0),
                             Align2::LEFT_CENTER,
                             crate::tr(s.text),
-                            FontId::proportional(10.5),
+                            FontId::proportional(theme::FS_HINT),
                             theme::TEXT_DIM(),
                         );
                         let c = pos2(r.right() - 22.0, r.center().y);
@@ -599,14 +597,14 @@ impl App {
                                 c,
                                 Align2::RIGHT_CENTER,
                                 crate::tr("bereits aktiv"),
-                                FontId::proportional(10.5),
+                                FontId::proportional(theme::FS_HINT),
                                 theme::TEXT_FAINT(),
                             );
                         } else {
                             let b = Rect::from_center_size(c, vec2(16.0, 16.0));
                             p.rect(
                                 b,
-                                4.0,
+                                theme::R_CTRL,
                                 if on {
                                     theme::ACCENT()
                                 } else {
@@ -623,7 +621,7 @@ impl App {
                                     c,
                                     Align2::CENTER_CENTER,
                                     icon::CHECK,
-                                    FontId::proportional(12.0),
+                                    FontId::proportional(12.0), // Icon-Glyphe im Ankreuzfeld
                                     theme::ACCENT_INK(),
                                 );
                             }
@@ -653,7 +651,7 @@ impl App {
                             ui.add_sized(
                                 [28.0, 20.0],
                                 egui::Label::new(
-                                    RichText::new(s.icon).size(15.0).color(theme::TEXT_DIM()),
+                                    RichText::new(s.icon).size(15.0) /* Icon-Glyphe */.color(theme::TEXT_DIM()),
                                 ),
                             );
                             ui.label(RichText::new(crate::tr(s.title)).strong());
@@ -721,7 +719,7 @@ impl App {
                         );
                         p.rect_stroke(
                             h,
-                            8.0,
+                            theme::R_CARD,
                             Stroke::new(2.0_f32, theme::ACCENT()),
                             egui::StrokeKind::Outside,
                         );
@@ -763,8 +761,8 @@ impl App {
                 egui::Frame::default()
                     .fill(theme::BG_CARD())
                     .stroke(Stroke::new(1.0_f32, theme::BORDER()))
-                    .corner_radius(12)
-                    .inner_margin(16)
+                    .corner_radius(theme::R_WIN)
+                    .inner_margin(theme::PAD_DIALOG)
                     .shadow(egui::Shadow {
                         offset: [0, 8],
                         blur: 28,
@@ -783,7 +781,7 @@ impl App {
                             .color(theme::TEXT_FAINT()),
                         );
                         ui.add_space(2.0);
-                        ui.label(RichText::new(crate::tr(title)).size(16.0).strong());
+                        ui.label(RichText::new(crate::tr(title)).size(theme::FS_PAGE).strong());
                         ui.add_space(4.0);
                         ui.label(RichText::new(crate::tr(text)).color(theme::TEXT_DIM()));
                         ui.add_space(10.0);
@@ -842,7 +840,7 @@ fn welcome(ui: &mut egui::Ui) {
         ui.add_space(16.0);
         ui.label(
             RichText::new(crate::tr("Willkommen bei Cutline"))
-                .size(28.0)
+                .size(theme::FS_HERO)
                 .strong(),
         );
         ui.add_space(4.0);
@@ -850,7 +848,7 @@ fn welcome(ui: &mut egui::Ui) {
             RichText::new(crate::tr(
                 "Einfach zu bedienen, schnell, komplett auf deinem Rechner.",
             ))
-            .size(13.0)
+            .size(theme::FS_TEXT)
             .color(theme::TEXT_DIM()),
         );
     });
@@ -864,11 +862,11 @@ fn welcome(ui: &mut egui::Ui) {
             (icon::SHIELD_CHECK, "Schnell arbeiten", "In Rust geschrieben. Flüssige Vorschau mit Proxys, schnelle Exporte mit Hardware-Encodern."),
             (icon::PUZZLE_PIECE, "Offen", "Open Source, läuft lokal, ohne Konto, ohne Abo, ohne Wasserzeichen. Projekte sind offenes JSON."),
         ] {
-            egui::Frame::default().fill(theme::BG_INPUT()).corner_radius(12).inner_margin(14).show(ui, |ui| {
-                ui.set_width(cw - 28.0);
+            egui::Frame::default().fill(theme::BG_INPUT()).corner_radius(theme::R_WIN).inner_margin(theme::PAD_CARD_L).show(ui, |ui| {
+                ui.set_width(cw - 2.0 * theme::PAD_CARD_L as f32);
                 ui.set_min_height(104.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(g).size(22.0).color(theme::ACCENT()));
+                    ui.label(RichText::new(g).size(22.0) /* Icon-Glyphe der Kachel */.color(theme::ACCENT()));
                     ui.add_space(4.0);
                     ui.label(RichText::new(crate::tr(t)).strong());
                     ui.label(RichText::new(crate::tr(d)).small().color(theme::TEXT_DIM()));
@@ -891,7 +889,7 @@ fn welcome(ui: &mut egui::Ui) {
 fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
     ui.label(
         RichText::new(crate::tr("Wofür nutzt du Cutline?"))
-            .size(22.0)
+            .size(theme::FS_HERO)
             .strong(),
     );
     ui.label(
