@@ -415,29 +415,25 @@ impl App {
                 match cl_analyze::audio::envelope(&path, src, Some(span)) {
                     Ok(env) => {
                         let n = ((span / 60.0).ceil() as usize * 3).clamp(3, 40);
-                        let hits: Vec<f64> = cl_analyze::audio::loud_moments(&env, n, 8.0)
+                        // Zeit in der Quelle → Projektzeit, Stärke aus der Hüllkurve
+                        let hits: Vec<crate::shorts::Hit> = cl_analyze::audio::loud_moments(&env, n, 8.0)
                             .into_iter()
-                            .map(|t| start + t / sp)
+                            .map(|t| crate::shorts::Hit {
+                                at: start + t / sp,
+                                strength: crate::shorts::strength(&env, t),
+                                on: true,
+                            })
                             .collect();
                         TaskDone::Run(Box::new(move |app: &mut App| {
                             if hits.is_empty() {
                                 app.toast("Keine auffällig lauten Momente gefunden");
                                 return;
                             }
-                            let mut ms = app.project.timeline.markers.clone();
-                            let first = ms.iter().map(|m| m.id).max().unwrap_or(0) + 1;
-                            for (i, t) in hits.iter().enumerate() {
-                                ms.push(Marker {
-                                    id: first + i as u64,
-                                    at: Time::from_secs_f64(*t),
-                                    duration: Time::ZERO,
-                                    name: format!("Highlight {}", i + 1),
-                                    note: String::new(),
-                                    color: 4,
-                                });
-                            }
-                            app.apply(EditOp::SetMarkers { markers: ms });
-                            app.toast(format!("{} Highlights als Marker gesetzt", hits.len()));
+                            app.shorts = Some(crate::shorts::ShortsState {
+                                hits,
+                                len: 30.0,
+                                captions: false,
+                            });
                         }))
                     }
                     Err(e) => TaskDone::Failed(e),

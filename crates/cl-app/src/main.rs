@@ -33,6 +33,7 @@ mod props;
 mod proxy;
 mod record;
 mod settings;
+mod shorts;
 mod stock;
 mod story;
 mod tasks;
