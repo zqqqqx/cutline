@@ -26,7 +26,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Version aus Tag prüfen
         if: startsWith(github.ref, 'refs/tags/v')
@@ -36,8 +36,10 @@ jobs:
           ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
           if [ "$tag" != "$ver" ]; then echo "Tag $tag passt nicht zu Cargo.toml $ver"; exit 1; fi
 
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable # bei SHA-Pin Pflicht
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # Cache nur lesen: das Hochladen hing beim Testlauf stundenlang
           save-if: false
@@ -56,7 +58,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+          # feste Version mit Prüfsumme (gyan.dev veröffentlicht <datei>.sha256)
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip -OutFile ffmpeg.zip
+          if ((Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash -ne '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba') { throw 'FFmpeg: Prüfsumme stimmt nicht' }
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
           $bin = (Get-ChildItem ffmpeg-dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1).Directory.FullName
           echo "FFBIN=$bin" >> $env:GITHUB_ENV
@@ -74,10 +78,13 @@ jobs:
           mkdir -p pkg
           if [ "${{ runner.os }}" = "Windows" ]; then
             curl -sL -o ort.zip https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-1.31.1.zip
+            echo "5869e26bb25314375f2d5ef1877e3ea06b1543d6c710e6e4a1ec2f7177ab4b2c  ort.zip" | sha256sum -c -
             7z x -y ort.zip > /dev/null
             cp onnxruntime-win-x64-1.31.1/lib/onnxruntime.dll pkg/
           else
-            curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-linux-x64-1.31.1.tgz | tar -xz
+            curl -sL -o ort.tgz https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-linux-x64-1.31.1.tgz
+            echo "c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9  ort.tgz" | sha256sum -c -
+            tar -xzf ort.tgz
             cp -L onnxruntime-linux-x64-1.31.1/lib/libonnxruntime.so pkg/libonnxruntime.so
           fi
 
@@ -112,7 +119,7 @@ jobs:
           "$h  cutline-windows-x64-setup.exe" | Out-File -Encoding ascii -NoNewline cutline-windows-x64-setup.exe.sha256
           Get-Content cutline-windows-x64-setup.exe.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.asset }}
           path: |
@@ -126,11 +133,11 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*
           generate_release_notes: true

@@ -137,6 +137,8 @@ pub struct ExportDialog {
     open: bool,
     name: String,
     folder: PathBuf,
+    /// Projektdatei, für die der Dialog geöffnet wurde (für die Exporte-Liste)
+    project_path: Option<PathBuf>,
     settings: Option<ExportSettings>,
     /// Kürzere Bildkante (720/1080/1440/2160) oder 0 = Projekt
     short_edge: u32,
@@ -183,6 +185,7 @@ impl ExportDialog {
         self.error = None;
         self.last_output = None;
         self.name = p.name.clone();
+        self.project_path = project_path.map(Path::to_path_buf);
         if self.folder.as_os_str().is_empty() {
             self.folder = project_path
                 .and_then(|pp| pp.parent().map(Path::to_path_buf))
@@ -275,7 +278,8 @@ impl ExportDialog {
                     Ok(()) => {
                         self.done = Some((Instant::now(), secs));
                         if let Some(out) = &self.last_output {
-                            crate::exports::record(&self.name, out);
+                            // unter dem Projektnamen, nicht dem (änderbaren) Dateinamen
+                            crate::exports::record(&p.name, self.project_path.as_deref(), out);
                             self.exported = Some((started_rev, out.clone()));
                         }
                         toast = Some(format!(

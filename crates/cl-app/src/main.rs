@@ -168,7 +168,7 @@ fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> anyhow::Result<()> {
     let server = cl_mcp::McpServer::new(doc.clone(), fonts);
     server.serve_stdio()?;
     if let Some(p) = project {
-        std::fs::write(&p, doc.lock().unwrap().project().to_json())?;
+        paths::write_atomic(&p, doc.lock().unwrap().project().to_json())?;
         eprintln!("Projekt gespeichert: {}", p.display());
     }
     Ok(())

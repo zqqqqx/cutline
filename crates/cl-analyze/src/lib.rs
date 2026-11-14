@@ -24,6 +24,8 @@ use std::process::Stdio;
 use std::sync::OnceLock;
 
 /// Lädbare Modelle: (id, Name, Beschreibung, Größe MB, Dateien (Ziel relativ zum Modellordner, URL)).
+/// URLs zeigen auf feste Commits; `#sha256=<hex>` am Ende wird von `cl_update::download_to`
+/// vor dem Umbenennen geprüft (fehlt bei Dateien ohne veröffentlichte Prüfsumme).
 pub struct ModelInfo {
     pub id: &'static str,
     pub name: &'static str,
@@ -32,7 +34,7 @@ pub struct ModelInfo {
     pub files: &'static [(&'static str, &'static str)],
 }
 
-const PK: &str = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/";
+const PK: &str = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/";
 
 pub static CATALOG: &[ModelInfo] = &[
     ModelInfo {
@@ -40,7 +42,7 @@ pub static CATALOG: &[ModelInfo] = &[
         name: "ONNX Runtime 1.31",
         about: "Laufzeit für Parakeet und Freistellen (Microsoft, MIT-Lizenz)",
         size_mb: 17,
-        files: &[("onnxruntime.zip", "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-1.31.1.zip")],
+        files: &[("onnxruntime.zip", "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-1.31.1.zip#sha256=5869e26bb25314375f2d5ef1877e3ea06b1543d6c710e6e4a1ec2f7177ab4b2c")],
     },
     ModelInfo {
         id: "parakeet",
@@ -48,11 +50,11 @@ pub static CATALOG: &[ModelInfo] = &[
         about: "Beste Spracherkennung für Deutsch und 24 weitere europäische Sprachen, Wort-genaue Zeiten (NVIDIA, CC-BY-4.0)",
         size_mb: 670,
         files: &[
-            ("parakeet-tdt-0.6b-v3/config.json", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/config.json"),
-            ("parakeet-tdt-0.6b-v3/vocab.txt", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt"),
-            ("parakeet-tdt-0.6b-v3/nemo128.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx"),
-            ("parakeet-tdt-0.6b-v3/decoder_joint-model.int8.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.int8.onnx"),
-            ("parakeet-tdt-0.6b-v3/encoder-model.int8.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.int8.onnx"),
+            ("parakeet-tdt-0.6b-v3/config.json", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/config.json"),
+            ("parakeet-tdt-0.6b-v3/vocab.txt", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/vocab.txt"),
+            ("parakeet-tdt-0.6b-v3/nemo128.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/nemo128.onnx#sha256=a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f"),
+            ("parakeet-tdt-0.6b-v3/decoder_joint-model.int8.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/decoder_joint-model.int8.onnx#sha256=eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70"),
+            ("parakeet-tdt-0.6b-v3/encoder-model.int8.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/encoder-model.int8.onnx#sha256=6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09"),
         ],
     },
     ModelInfo {
@@ -60,7 +62,7 @@ pub static CATALOG: &[ModelInfo] = &[
         name: "Whisper Base",
         about: "Rückfall-Spracherkennung, 99 Sprachen (OpenAI, MIT-Lizenz)",
         size_mb: 148,
-        files: &[("ggml-base.bin", "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin")],
+        files: &[("ggml-base.bin", "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin#sha256=60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe")],
     },
     ModelInfo {
         id: "rvm",

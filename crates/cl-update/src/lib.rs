@@ -266,6 +266,12 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
     if files.is_empty() {
         return Err("Paket ist leer".into());
     }
+    // Liste der umbenannten Dateien: cleanup_old löscht nur diese, nie fremde `*.old`.
+    let mut list = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(target.join(OLD_LIST))
+        .map_err(|e| e.to_string())?;
     for rel in &files {
         let dst = target.join(rel);
         if let Some(d) = dst.parent() {
@@ -275,6 +281,8 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
             let old = old_name(&dst);
             let _ = std::fs::remove_file(&old);
             std::fs::rename(&dst, &old).map_err(|e| format!("{}: {e}", dst.display()))?;
+            writeln!(list, "{}", old_name(rel).to_string_lossy().replace('\\', "/"))
+                .map_err(|e| e.to_string())?;
         }
         std::fs::rename(staging.join(rel), &dst).map_err(|e| format!("{}: {e}", dst.display()))?;
     }
@@ -289,12 +297,14 @@ fn old_name(p: &Path) -> PathBuf {
 }
 
 /// Datei laden (für Modelle). Schreibt erst `*.part` und benennt am Ende um.
+/// Endet die URL auf `#sha256=<hex>`, wird die Datei vorher gegen diese Prüfsumme geprüft.
 pub fn download_to(
     url: &str,
     dest: &Path,
     mut progress: impl FnMut(u64, u64),
     cancel: &AtomicBool,
 ) -> Result<(), String> {
+    let (url, want) = split_sha(url);
     let resp = agent()
         .get(url)
         .set("User-Agent", "cutline")
@@ -312,6 +322,7 @@ pub fn download_to(
     let mut r = resp.into_reader();
     let mut buf = vec![0u8; 256 * 1024];
     let mut done = 0u64;
+    let mut hasher = Sha256::new();
     loop {
         if cancel.load(Ordering::Relaxed) {
             drop(f);
@@ -323,6 +334,7 @@ pub fn download_to(
             break;
         }
         f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        hasher.update(&buf[..n]);
         done += n as u64;
         progress(done, total);
     }
@@ -332,7 +344,22 @@ pub fn download_to(
         let _ = std::fs::remove_file(&part);
         return Err("Download unvollständig".into());
     }
+    if let Some(want) = want {
+        let got: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        if !got.eq_ignore_ascii_case(want) {
+            let _ = std::fs::remove_file(&part);
+            return Err(format!("{url}: Prüfsumme stimmt nicht"));
+        }
+    }
     std::fs::rename(&part, dest).map_err(|e| e.to_string())
+}
+
+/// `url#sha256=<hex>` → (url, Some(hex)); sonst (url, None).
+fn split_sha(url: &str) -> (&str, Option<&str>) {
+    match url.split_once("#sha256=") {
+        Some((u, h)) => (u, Some(h)),
+        None => (url, None),
+    }
 }
 
 /// ZIP-Archiv in einen Ordner entpacken (unsichere Pfade werden abgelehnt).
@@ -360,20 +387,24 @@ pub fn extract_zip(zip_path: &Path, dir: &Path) -> Result<usize, String> {
     Ok(n)
 }
 
-/// Reste eines früheren Updates (`*.old`) entfernen.
+/// Datei im Programmordner mit den von [`install`] umbenannten `*.old`-Dateien.
+const OLD_LIST: &str = ".update-old.txt";
+
+/// Reste eines früheren Updates entfernen: nur die in [`OLD_LIST`] verzeichneten Dateien.
 pub fn cleanup_old(dir: &Path) {
-    fn walk(d: &Path, depth: u8) {
-        let Ok(rd) = std::fs::read_dir(d) else { return };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() && depth < 4 {
-                walk(&p, depth + 1);
-            } else if p.extension().is_some_and(|x| x == "old") {
-                let _ = std::fs::remove_file(&p);
+    if let Ok(list) = std::fs::read_to_string(dir.join(OLD_LIST)) {
+        for line in list.lines().map(str::trim).filter(|l| !l.is_empty()) {
+            let rel = Path::new(line);
+            // Nur relative Pfade ohne `..` – nichts außerhalb des Programmordners löschen.
+            if rel
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)))
+            {
+                let _ = std::fs::remove_file(dir.join(rel));
             }
         }
+        let _ = std::fs::remove_file(dir.join(OLD_LIST));
     }
-    walk(dir, 0);
     let _ = std::fs::remove_dir_all(dir.join(".update-staging"));
 }
 
@@ -443,6 +474,30 @@ mod tests {
     }
 
     #[test]
+    fn download_verifies_sha_from_url() {
+        // kleiner lokaler HTTP-Server, liefert immer „hallo“
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for c in l.incoming().take(2) {
+                let mut c = c.unwrap();
+                let mut b = [0u8; 1024];
+                let _ = c.read(&mut b);
+                let _ = c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhallo");
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!("http://127.0.0.1:{port}/f");
+        let good = format!("{url}#sha256={}", sha256_hex(b"hallo"));
+        let bad = format!("{url}#sha256={}", sha256_hex(b"anders"));
+        let no = AtomicBool::new(false);
+        assert!(download_to(&bad, &dir.path().join("b"), |_, _| {}, &no).is_err());
+        assert!(!dir.path().join("b").exists());
+        download_to(&good, &dir.path().join("g"), |_, _| {}, &no).unwrap();
+        assert_eq!(std::fs::read(dir.path().join("g")).unwrap(), b"hallo");
+    }
+
+    #[test]
     fn install_replaces_files_and_keeps_old_until_cleanup() {
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("app");
@@ -467,7 +522,16 @@ mod tests {
         assert_eq!(std::fs::read(app.join("cutline.exe.old")).unwrap(), b"alt");
         assert_eq!(std::fs::read(app.join("ffmpeg/ffmpeg.exe")).unwrap(), b"ff");
         assert!(!app.join(".update-staging").exists());
+        std::fs::write(app.join("fremd.old"), b"x").unwrap();
+        std::fs::write(dir.path().join("x.old"), b"x").unwrap();
+        // Manipulierte Liste: Pfad außerhalb des Ordners wird ignoriert.
+        let mut l = std::fs::OpenOptions::new().append(true).open(app.join(OLD_LIST)).unwrap();
+        writeln!(l, "../x.old").unwrap();
+        drop(l);
         cleanup_old(&app);
+        assert!(app.join("fremd.old").exists());
+        assert!(dir.path().join("x.old").exists());
+        assert!(!app.join(OLD_LIST).exists());
         assert!(!app.join("cutline.exe.old").exists());
         assert!(!app.join("plugins/basis/plugin.toml.old").exists());
         assert!(app.join("cutline.exe").exists());

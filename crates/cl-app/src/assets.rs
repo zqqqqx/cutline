@@ -89,10 +89,10 @@ fn transition_strip_graph(id: &str) -> String {
 }
 
 /// Audiodateien im Musikordner des Benutzers (einmalig im Hintergrund gesucht).
-static MUSIC_LIST: std::sync::Mutex<Option<Vec<PathBuf>>> = std::sync::Mutex::new(None);
+static MUSIC_LIST: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
 static MUSIC_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-fn music_files() -> Option<Vec<PathBuf>> {
+fn music_files() -> Option<&'static [PathBuf]> {
     if !MUSIC_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         std::thread::spawn(|| {
             fn walk(d: &std::path::Path, out: &mut Vec<PathBuf>, depth: u8) {
@@ -122,10 +122,10 @@ fn music_files() -> Option<Vec<PathBuf>> {
                 }
             }
             out.sort();
-            *MUSIC_LIST.lock().unwrap() = Some(out);
+            let _ = MUSIC_LIST.set(out);
         });
     }
-    MUSIC_LIST.lock().ok().and_then(|g| g.clone())
+    MUSIC_LIST.get().map(|v| v.as_slice())
 }
 
 impl App {
@@ -319,6 +319,13 @@ impl App {
             .collect();
         let mut add: Option<MediaId> = None;
         let mut menus: Vec<(egui::Response, MediaRef)> = Vec::new();
+        // Streifen kosten je 25 FFmpeg-Aufrufe: sichtbare nur nachladen, solange wenige ausstehen
+        let mut outstanding = self
+            .fx_thumbs_requested
+            .iter()
+            .filter(|k| k.starts_with("strip:") && !self.fx_thumbs.contains_key(*k))
+            .count();
+        let mut wanted = std::collections::HashSet::new();
         egui::ScrollArea::vertical()
             .id_salt("media")
             .auto_shrink([false, false])
@@ -336,13 +343,21 @@ impl App {
                         .map(|p| ((p.x - r.left()) / r.width()).clamp(0.0, 0.999));
                     // (texture, Größe eines Bildes, v-Bereich im Streifen)
                     let mut thumb = self.thumbs.get(&m.id).map(|t| (t.id(), t.size_vec2(), (0.0, 1.0)));
-                    // Vorschau-Streifen schon vorab laden, sobald die Kachel sichtbar ist –
-                    // dann klappt das Durchblättern beim ersten Hovern
+                    // Vorschau-Streifen vorab laden, sobald die Kachel sichtbar ist (dann klappt
+                    // das Durchblättern beim ersten Hovern); die gehoverte Kachel immer sofort
                     let strip_key = format!("strip:{}", m.id);
+                    if m.kind == MediaKind::Video && ui.is_rect_visible(r) {
+                        wanted.insert(strip_key.clone());
+                    }
                     if m.kind == MediaKind::Video
                         && ui.is_rect_visible(r)
+                        && (scrub.is_some() || outstanding < 4)
                         && self.fx_thumbs_requested.insert(strip_key.clone())
                     {
+                        outstanding += 1;
+                        // gleich als gewünscht eintragen, sonst überspringt der Worker den Auftrag
+                        // womöglich, bevor die Liste am Ende dieses Bildes steht
+                        self.decoder.strips_wanted.lock().unwrap_or_else(|e| e.into_inner()).insert(strip_key.clone());
                         self.decoder.send(crate::preview::Job::MediaStrip {
                             key: strip_key.clone(),
                             path: self.preview_path(m, 90),
@@ -447,6 +462,7 @@ impl App {
                     menus.push((resp, m.clone()));
                 });
             });
+        *self.decoder.strips_wanted.lock().unwrap_or_else(|e| e.into_inner()) = wanted;
         for (resp, m) in menus {
             let key = format!("media:{}", m.id);
             let mut ins = false;
@@ -734,7 +750,7 @@ impl App {
                         let dir_refs: Vec<&str> = dirs.iter().map(|s| s.as_str()).collect();
                         let (cat, q) = self.asset_bar(ui, "music", &dir_refs);
                         let l: Vec<PathBuf> = l
-                            .into_iter()
+                            .iter()
                             .filter(|p| {
                                 let name = p
                                     .file_stem()
@@ -749,6 +765,7 @@ impl App {
                                     &dir_of(p),
                                 )
                             })
+                            .cloned()
                             .collect();
                         let mut menus: Vec<(egui::Response, String)> = Vec::new();
                         egui::ScrollArea::vertical()

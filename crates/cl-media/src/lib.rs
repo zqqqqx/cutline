@@ -126,6 +126,17 @@ struct ProbeStream {
     nb_frames: Option<String>,
     #[serde(default)]
     disposition: Disposition,
+    #[serde(default)]
+    side_data_list: Vec<SideData>,
+    tags: Option<StreamTags>,
+}
+#[derive(Deserialize)]
+struct SideData {
+    rotation: Option<f64>,
+}
+#[derive(Deserialize)]
+struct StreamTags {
+    rotate: Option<String>,
 }
 #[derive(Deserialize, Default)]
 struct Disposition {
@@ -214,6 +225,23 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
             .find(|r| r.num > 0)
     });
 
+    // Hochkant-Handyvideos: gespeichert quer mit ±90°-Drehung, FFmpeg dreht beim Dekodieren
+    let rotation = video
+        .and_then(|v| {
+            v.side_data_list
+                .iter()
+                .find_map(|d| d.rotation)
+                .or_else(|| v.tags.as_ref()?.rotate.as_deref()?.trim().parse().ok())
+        })
+        .unwrap_or(0.0);
+    let (mut width, mut height) = (
+        video.and_then(|v| v.width).unwrap_or(0),
+        video.and_then(|v| v.height).unwrap_or(0),
+    );
+    if (rotation.round() as i64).rem_euclid(180) == 90 {
+        std::mem::swap(&mut width, &mut height);
+    }
+
     Ok(MediaRef {
         id: MediaId::new(),
         path: path.to_path_buf(),
@@ -223,8 +251,8 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
         } else {
             duration
         },
-        width: video.and_then(|v| v.width).unwrap_or(0),
-        height: video.and_then(|v| v.height).unwrap_or(0),
+        width,
+        height,
         fps: if kind == MediaKind::Video { fps } else { None },
         has_audio: audio.is_some(),
         video_codec: video.and_then(|v| v.codec_name.clone()),
@@ -562,6 +590,29 @@ mod tests {
             .unwrap();
         assert!(st.success());
         out
+    }
+
+    #[test]
+    fn probe_swaps_size_for_rotated_video() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = make_clip(dir.path());
+        let rot = dir.path().join("rot.mp4");
+        // Hochkant-Handyvideo nachbilden: quer gespeichert, Drehung als Seitendaten
+        let st = command("ffmpeg")
+            .unwrap()
+            .args(["-v", "error", "-y", "-display_rotation", "90", "-i"])
+            .arg(&src)
+            .args(["-c", "copy"])
+            .arg(&rot)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let m = probe(&rot).unwrap();
+        assert_eq!((m.width, m.height), (180, 320));
+        assert_eq!((probe(&src).unwrap().width, probe(&src).unwrap().height), (320, 180));
     }
 
     #[test]

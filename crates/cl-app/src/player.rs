@@ -59,6 +59,9 @@ impl App {
                     self.fx_thumbs.insert(key, tex);
                 }
                 Done::ProjectThumb { out } => self.home.thumb_ready(&out),
+                Done::Skipped(key) => {
+                    self.fx_thumbs_requested.remove(&key);
+                }
                 Done::Error(e) => eprintln!("Decoder: {e}"),
             }
         }
@@ -78,6 +81,11 @@ impl App {
                 let t =
                     ctx.load_texture(format!("frame-{clip}"), img, egui::TextureOptions::LINEAR);
                 self.frames.insert(clip, (key, t));
+                // Texturen gelöschter Clips nicht ewig halten
+                if self.frames.len() > 64 {
+                    let tl = &self.project.timeline;
+                    self.frames.retain(|id, _| tl.tracks.iter().any(|t| t.clips.iter().any(|c| c.id == *id)));
+                }
             }
         }
     }
@@ -93,7 +101,8 @@ impl App {
             .filter(|tr| !tr.hidden && tr.kind != TrackKind::Audio)
         {
             for (i, c0) in tr.clips.iter().enumerate() {
-                let c = self.clip_view(c0.id).unwrap_or_else(|| c0.clone());
+                // erst das Zeitfenster prüfen, dann klonen
+                let c = self.clip_ref(c0);
                 if c.disabled {
                     continue;
                 }
@@ -127,7 +136,7 @@ impl App {
                 }
                 let t_rel = Time::from_secs_f64((ts - s).clamp(0.0, (e - s - 1e-3).max(0.0)));
                 out.push(Layer {
-                    clip: c,
+                    clip: c.clone(),
                     t_rel,
                     alpha,
                 });
@@ -338,7 +347,7 @@ impl App {
                     .get(&id)
                     .is_some_and(|p| p.key == key && p.t0 <= self.playhead && p.stalled())
             {
-                if std::env::var_os("CUTLINE_PERF").is_some() {
+                if crate::app::perf() {
                     eprintln!("perf: Strom hing bei {:.2} s, neu geöffnet", self.playhead.as_secs_f64());
                 }
                 self.playbacks.remove(&id);
@@ -680,8 +689,8 @@ impl App {
             return;
         }
         let vid = egui::ViewportId::from_hash_of("cutline-preview");
-        // In den ersten Bildern nach dem Öffnen ausdrücklich nach vorn holen: die Angabe im
-        // Builder allein wirkt unter Windows nicht, das Fenster läge hinter dem Hauptfenster
+        // In den ersten Bildern nach dem Öffnen ausdrücklich nach vorn holen: eine Angabe im
+        // Builder wirkt unter Windows nicht, das Fenster läge hinter dem Hauptfenster
         let n = ctx.data(|d| d.get_temp::<u8>(init)).unwrap_or(0);
         if n < 4 {
             ctx.data_mut(|d| d.insert_temp(init, n + 1));
@@ -690,12 +699,9 @@ impl App {
             ctx.request_repaint();
         }
         let mut builder = egui::ViewportBuilder::default()
-            .with_title("Cutline – Vorschau")
+            .with_title(crate::tr("Cutline – Vorschau"))
             .with_inner_size([960.0, 540.0])
-            .with_min_inner_size([320.0, 180.0])
-            // immer vor dem Hauptfenster: sonst rutscht die Vorschau beim Öffnen dahinter
-            // und lässt sich nicht mehr greifen
-            .with_always_on_top();
+            .with_min_inner_size([320.0, 180.0]);
         // Erst auf dem Bildschirm des Hauptfensters öffnen; von dort auf den zweiten ziehen
         // nur beim Öffnen: eine dauerhaft gesetzte Position hält das Fenster fest
         if let Some(r) = ctx.input(|i| i.viewport().outer_rect).filter(|_| n < 4) {
