@@ -1216,7 +1216,7 @@ Offen	Open
 Open Source, läuft lokal, ohne Konto, ohne Abo, ohne Wasserzeichen. Projekte sind offenes JSON.	Open source, runs locally, no account, no subscription, no watermark. Projects are open JSON.
 In drei kurzen Schritten richtest du Cutline für deine Videos ein.	Set up Cutline for your videos in three short steps.
 Wofür nutzt du Cutline?	What do you use Cutline for?
-Mehrfachauswahl. Danach schlagen wir passende Werkzeuge und Plugins vor.	Pick as many as you like. We'll suggest matching tools and plugins next.
+Mehrfachauswahl. Danach schlagen wir passende Quick Actions und Plugins vor.	Pick as many as you like. We'll suggest matching Quick Actions and plugins next.
 Tastenkürzel wie in	Shortcuts like in
 Rundgang	Tour
 Einführung wiederholen	Repeat introduction
@@ -1582,3 +1582,8 @@ Projekt auf 9:16 umstellen	Switch project to 9:16
 Datei existiert bereits	File already exists
 Überschreiben	Overwrite
 Anderen Namen	Different name
+{} Clips auf anderen Spuren mit entfernt (Alles mitziehen)	{} clips on other tracks removed as well (move everything)
+Musik-Clip auswählen. Abgesenkt wird, wo auf anderen Tonspuren gesprochen wird.	Select the music clip. It is lowered wherever other audio tracks have speech.
+Intro-Titel	Intro title
+Endkarte	End card
+Kapitel-Titel	Chapter title

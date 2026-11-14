@@ -210,8 +210,25 @@ impl App {
     /// Bereiche (Spur, von, bis) als ein Undo-Schritt entfernen und alles dahinter nachziehen.
     /// Gemeinsamer Weg für Ripple-Löschen, Lücken schließen, Pausen und Füllwörter.
     pub fn ripple_ranges(&mut self, ranges: Vec<(TrackId, Time, Time)>) -> bool {
-        let ops = cl_core::ripple_ops(ranges, self.project.settings.ripple_all_tracks);
-        self.apply_batch(ops).is_some()
+        let all = self.project.settings.ripple_all_tracks;
+        // „Alles mitziehen“ nimmt Clips anderer Spuren mit, die ganz im Bereich liegen: das sagen wir
+        let inside = |tid: TrackId, c: &cl_core::Clip, own: bool| {
+            ranges.iter().any(|r| (r.0 == tid) == own && r.1 <= c.start && c.end() <= r.2)
+        };
+        let extra = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .filter(|t| all && !t.locked)
+            .flat_map(|t| t.clips.iter().map(move |c| (t.id, c)))
+            .filter(|(tid, c)| inside(*tid, c, false) && !inside(*tid, c, true))
+            .count();
+        let ok = self.apply_batch(cl_core::ripple_ops(ranges, all)).is_some();
+        if ok && extra > 0 {
+            self.toast(format!("{extra} Clips auf anderen Spuren mit entfernt (Alles mitziehen)"));
+        }
+        ok
     }
 
     /// Lücken einer Spur oder (None) aller Spuren schließen. Mit „Alles mitziehen“ und
@@ -239,7 +256,9 @@ impl App {
         if ranges.is_empty() {
             self.toast("Keine Lücken");
         } else {
-            self.ripple_ranges(ranges);
+            // eine einzelne Spur: nur sie rückt zusammen (sonst fiele Inhalt anderer Spuren weg)
+            let all = track.is_none() && self.project.settings.ripple_all_tracks;
+            self.apply_batch(cl_core::ripple_ops(ranges, all));
         }
     }
 
