@@ -1,4 +1,4 @@
-//! Quick Actions (Menü in der Zeitleiste):
+//! Schnellaktionen (Menü in der Zeitleiste):
 //! Pausen entfernen (Jump Cuts), Füllwörter entfernen, Highlights als Marker, Auto-Ducking,
 //! Zoom-Punch-in, Aufnahmen per Ton synchronisieren, Multicam-Schnitt, Rückblick erstellen,
 //! Hochkant-Layout, Thumbnail exportieren, Sprecher-Aufnahmen importieren.
@@ -90,7 +90,7 @@ impl App {
             .and_then(|s| self.project.find_clip(s).map(|(_, c)| c.clone()))
     }
 
-    /// Menü „Quick Actions“ (in der Werkzeugleiste der Zeitleiste)
+    /// Menü „Schnellaktionen“ (in der Werkzeugleiste der Zeitleiste)
     pub fn tools_menu(&mut self, ui: &mut egui::Ui) {
         let sel = self.selected_clip();
         let has_audio = sel.as_ref().is_some_and(|c| clip_audio(self, c).is_some());

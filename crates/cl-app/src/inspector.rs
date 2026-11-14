@@ -212,13 +212,11 @@ pub fn strip_end(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], off:
         }
         let r = Rect::from_min_size(pos2(x, rect.top()), vec2(STRIP_ARROW, rect.height()));
         ui.painter().rect_filled(r, 0.0, bg);
-        let layout = egui::Layout::centered_and_justified(egui::Direction::TopDown);
-        let clicked = ui
-            .allocate_new_ui(egui::UiBuilder::new().max_rect(r).layout(layout), |ui| {
-                theme::icon_button(ui, glyph, "", true, false).clicked()
-            })
-            .inner;
-        if clicked {
+        let resp = ui.interact(r, id.with(glyph), Sense::click());
+        let col = if resp.hovered() { theme::TEXT() } else { theme::TEXT_DIM() };
+        // Icon-Glyphe: 14 px wie in `icon_button`
+        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(14.0), col);
+        if resp.clicked() {
             let n = strip_step(widths, off, view, dir);
             let last: (f32, (Option<usize>, f32)) = ui.data(|d| d.get_temp(id)).unwrap_or((off, (None, view)));
             ui.data_mut(|d| d.insert_temp(id, (n, last.1)));

@@ -172,7 +172,7 @@ const SUGGESTIONS: &[Sug] = &[
         id: "t_jump",
         icon: icon::SCISSORS,
         title: "Pausen entfernen",
-        text: "Quick Actions → Pausen entfernen schneidet Stille aus Sprechpassagen.",
+        text: "Schnellaktionen → Pausen entfernen schneidet Stille aus Sprechpassagen.",
         note: "",
         act: Act::Tip,
         uses: &["talk", "vlog", "work", "gaming"],
@@ -181,7 +181,7 @@ const SUGGESTIONS: &[Sug] = &[
         id: "t_high",
         icon: icon::STAR,
         title: "Highlights finden",
-        text: "Quick Actions → Highlights setzt Marker an lauten Momenten langer Aufnahmen.",
+        text: "Schnellaktionen → Highlights setzt Marker an lauten Momenten langer Aufnahmen.",
         note: "",
         act: Act::Tip,
         uses: &["gaming"],
@@ -190,7 +190,7 @@ const SUGGESTIONS: &[Sug] = &[
         id: "t_vert",
         icon: icon::DEVICE_MOBILE,
         title: "Hochkant-Layout",
-        text: "Quick Actions → Hochkant-Layout macht aus 16:9 ein 9:16-Video mit Facecam oben.",
+        text: "Schnellaktionen → Hochkant-Layout macht aus 16:9 ein 9:16-Video mit Facecam oben.",
         note: "",
         act: Act::Tip,
         uses: &["shorts", "gaming"],
@@ -209,7 +209,7 @@ const SUGGESTIONS: &[Sug] = &[
         id: "t_duck",
         icon: icon::SPEAKER_LOW,
         title: "Auto-Ducking",
-        text: "Quick Actions → Musik unter Sprache absenken, ohne Keyframes von Hand.",
+        text: "Schnellaktionen → Musik unter Sprache absenken, ohne Keyframes von Hand.",
         note: "",
         act: Act::Tip,
         uses: &["talk", "vlog", "work"],
@@ -236,7 +236,7 @@ const SUGGESTIONS: &[Sug] = &[
         id: "t_recap",
         icon: icon::FILM_SLATE,
         title: "Rückblick aus Markern",
-        text: "Quick Actions → Rückblick schneidet markierte Momente zu einem „Was bisher geschah“.",
+        text: "Schnellaktionen → Rückblick schneidet markierte Momente zu einem „Was bisher geschah“.",
         note: "",
         act: Act::Tip,
         uses: &["story"],
@@ -263,7 +263,7 @@ pub const TOUR: &[(&str, &str, &str)] = &[
     ("inspector", "Inspektor", "Alles zum ausgewählten Clip: Bild, Ton, Tempo, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker."),
     // die Tastenkürzel hängt `tour_overlay` mit der wirklichen Belegung an
     ("timeline", "Zeitleiste", "Hier entsteht dein Video. Der Magnet hält die Hauptspur lückenlos."),
-    ("tools", "Quick Actions", "Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Layout und Thumbnail mit einem Klick."),
+    ("tools", "Schnellaktionen", "Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Layout und Thumbnail mit einem Klick."),
     ("export", "Exportieren", "Vorlagen für YouTube, Shorts, TikTok, Instagram und Twitch. Ohne Wasserzeichen, bis 4K."),
     ("menu", "Menü", "Projekte, Vorlagen, Sicherungen, Einstellungen und Tastenkürzel. Den Rundgang findest du hier jederzeit wieder."),
 ];
@@ -923,7 +923,7 @@ fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
     );
     ui.label(
         RichText::new(crate::tr(
-            "Mehrfachauswahl. Danach schlagen wir passende Quick Actions und Plugins vor.",
+            "Mehrfachauswahl. Danach schlagen wir passende Schnellaktionen und Plugins vor.",
         ))
         .color(theme::TEXT_DIM()),
     );

@@ -226,6 +226,12 @@ fn set_audio_handle(c: &mut Clip, h: AudioHandle, v: f32) {
     }
 }
 
+/// Rechte Gruppe der Werkzeugleiste bei `room` px freier Breite: (Zoom-Regler zeigen, Zoom-Knöpfe zeigen).
+/// Schalter und Mikrofon bleiben immer.
+fn toolbar_room(room: f32) -> (bool, bool) {
+    (room >= 300.0, room >= 210.0)
+}
+
 impl App {
     /// Fade/Lautstärke aus der Zeitleiste übernehmen – bei Mehrfachauswahl für alle Clips mit Ton.
     fn apply_audio_handle(&mut self, clip: ClipId, h: AudioHandle, v: f32) {
@@ -303,9 +309,10 @@ impl App {
             )
             .response
             .on_hover_text(crate::tr("Werkzeug"));
-            let tools = ui.menu_button(egui::RichText::new(crate::tr(format!("{}  Quick Actions", icon::LIGHTNING))).size(theme::FS_TEXT), |ui| self.tools_menu(ui)).response;
+            // nur das Symbol; der Name steht im Tooltip
+            let tools = ui.menu_button(egui::RichText::new(icon::LIGHTNING).size(14.0), |ui| self.tools_menu(ui)).response;
             self.tour_rects.insert("tools", tools.rect);
-            tools.on_hover_text(crate::tr("Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …"));
+            tools.on_hover_text(format!("{}: {}", crate::tr("Schnellaktionen"), crate::tr("Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …")));
             ui.menu_button(
                 RichText::new(crate::tr(format!("{}  Spur", icon::PLUS))).size(theme::FS_TEXT),
                 |ui| {
@@ -360,15 +367,18 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 1.0;
                 ui.add_space(4.0);
-                if theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Ganze Zeitleiste zeigen", true, false).clicked() {
+                // schmale Zeitleiste: sonst liegen diese Knöpfe über denen der linken Gruppe
+                let (slider, zoom) = toolbar_room(ui.available_width());
+                if zoom && theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Ganze Zeitleiste zeigen", true, false).clicked() {
                     let w = ui.ctx().screen_rect().width() * 0.6;
                     let d = self.project.duration().as_secs_f64().max(1.0);
                     self.timeline.pps = (w / d as f32).clamp(2.0, 400.0);
                     self.timeline.scroll = 0.0;
                 }
-                if theme::icon_button(ui, icon::PLUS, "Vergrößern (Strg+Mausrad)", true, false).clicked() {
+                if zoom && theme::icon_button(ui, icon::PLUS, "Vergrößern (Strg+Mausrad)", true, false).clicked() {
                     self.timeline.pps = (self.timeline.pps * 1.25).min(400.0);
                 }
+                if slider {
                 ui.allocate_ui(vec2(90.0, 20.0), |ui| {
                     let mut z = self.timeline.pps;
                     ui.spacing_mut().item_spacing.x = 0.0;
@@ -387,10 +397,13 @@ impl App {
                     let _ = r;
                     self.timeline.pps = z;
                 });
-                if theme::icon_button(ui, icon::MINUS, "Verkleinern", true, false).clicked() {
-                    self.timeline.pps = (self.timeline.pps / 1.25).max(2.0);
                 }
-                ui.add(egui::Separator::default().vertical().spacing(10.0));
+                if zoom {
+                    if theme::icon_button(ui, icon::MINUS, "Verkleinern", true, false).clicked() {
+                        self.timeline.pps = (self.timeline.pps / 1.25).max(2.0);
+                    }
+                    ui.add(egui::Separator::default().vertical().spacing(10.0));
+                }
                 let s = self.project.settings.clone();
                 if theme::icon_button(ui, icon::ARROWS_IN_LINE_HORIZONTAL, with_key(&self.t("snapping"), &self.key_of("snap")), true, s.snapping).clicked() {
                     let mut n = s.clone();
@@ -2467,8 +2480,8 @@ impl App {
                         }
                     });
                 }
-                // dieselbe Liste wie „Quick Actions“ in der Leiste (nicht passende sind ausgegraut)
-                theme::submenu(ui, icon::LIGHTNING, "Quick Actions", |ui| {
+                // dieselbe Liste wie „Schnellaktionen“ in der Leiste (nicht passende sind ausgegraut)
+                theme::submenu(ui, icon::LIGHTNING, "Schnellaktionen", |ui| {
                     self.tools_menu(ui)
                 });
                 if self.next_adjacent(id).is_some() {
@@ -2779,6 +2792,13 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn narrow_toolbar_drops_zoom_before_toggles() {
+        assert_eq!(toolbar_room(400.0), (true, true));
+        assert_eq!(toolbar_room(250.0), (false, true));
+        assert_eq!(toolbar_room(150.0), (false, false));
+    }
 
     #[test]
     fn volume_line_round_trip() {

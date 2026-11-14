@@ -1,6 +1,6 @@
 //! Plugin „Story-Werkzeuge“ (eingebaut, standardmäßig aus): Figuren mit Name, Farbe und
 //! Porträt; Dialogbox und Namensschild für eine Figur am Playhead einfügen.
-//! Einstellungen unter Einstellungen → Plugins und Konten, Werkzeuge im Menü „Quick Actions“.
+//! Einstellungen unter Einstellungen → Plugins und Konten, Werkzeuge im Menü „Schnellaktionen“.
 
 use std::path::PathBuf;
 

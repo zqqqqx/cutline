@@ -103,7 +103,7 @@ Fixed terms for German UI text and docs. English follows the same split.
 | Verbergen | ausblenden |
 | Klinge | Werkzeug (Schneiden) |
 | Teilen | Aktion (Clip am Playhead teilen) |
-| Quick Actions | Creator-Werkzeuge (Menü in der Zeitleiste) |
+| Schnellaktionen | Creator-Werkzeuge (Menü in der Zeitleiste); englisch „Quick Actions“ |
 | Im Explorer zeigen | Datei im Dateimanager anzeigen |
 
 ## Principles

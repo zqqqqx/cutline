@@ -132,6 +132,16 @@ fn music_files() -> Option<&'static [PathBuf]> {
     MUSIC_LIST.get().map(|v| v.as_slice())
 }
 
+/// Abstand der Einträge der senkrechten Symbolleiste und ob nur Symbole gezeigt werden.
+/// Reicht die Höhe nicht für alle Einträge mit Beschriftung, rücken sie zusammen.
+fn rail_step(height: f32, n: usize, top: bool) -> (f32, bool) {
+    if top {
+        return (50.0, false);
+    }
+    let step = ((height - 16.0) / n.max(1) as f32).clamp(30.0, 50.0);
+    (step, step < 44.0)
+}
+
 impl App {
     pub fn assets_panel(&mut self, ui: &mut egui::Ui) {
         let full = ui.max_rect();
@@ -164,11 +174,12 @@ impl App {
         };
         let painter = ui.painter_at(if top { strip } else { rail });
         let mut y = rail.top() + 8.0;
+        let (step, compact) = rail_step(rail.height(), TABS.len(), top);
         for (i, (tab, glyph, label)) in TABS.into_iter().enumerate() {
             let r = if top {
                 Rect::from_min_size(pos2(strip.left() - off + i as f32 * RAIL_ITEM_W + 2.0, rail.top() + 5.0), vec2(RAIL_W - 10.0, 46.0))
             } else {
-                Rect::from_min_size(pos2(rail.left() + 5.0, y), vec2(RAIL_W - 10.0, 46.0))
+                Rect::from_min_size(pos2(rail.left() + 5.0, y), vec2(RAIL_W - 10.0, step - 4.0))
             };
             let hit = r.intersect(strip);
             if top && hit.width() <= 0.0 {
@@ -189,7 +200,7 @@ impl App {
                 theme::TEXT_DIM()
             };
             painter.text(
-                r.center() - vec2(0.0, 7.0),
+                r.center() - vec2(0.0, if compact { 0.0 } else { 7.0 }),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(glyph),
                 // Icon-Glyphe der Leiste
@@ -197,20 +208,22 @@ impl App {
                 col,
             );
             // Akzent nur am Icon (Zustand), der Text bleibt neutral
-            painter.text(
-                r.center() + vec2(0.0, 12.0),
-                egui::Align2::CENTER_CENTER,
-                crate::tr(label),
-                egui::FontId::proportional(theme::FS_HINT),
-                if active { theme::TEXT() } else { col },
-            );
+            if !compact {
+                painter.text(
+                    r.center() + vec2(0.0, 12.0),
+                    egui::Align2::CENTER_CENTER,
+                    crate::tr(label),
+                    egui::FontId::proportional(theme::FS_HINT),
+                    if active { theme::TEXT() } else { col },
+                );
+            }
             if resp.clicked() {
                 self.tab = tab;
             }
-            y += 50.0;
-            if !top && y > rail.bottom() - 46.0 {
-                break;
+            if compact {
+                resp.on_hover_text(crate::tr(label));
             }
+            y += step;
         }
         if top {
             crate::inspector::strip_end(ui, strip, "rail", &widths, off, theme::BG_INPUT());
@@ -2052,5 +2065,21 @@ impl App {
             );
             self.invalidate_preview();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rail_keeps_all_entries_when_short() {
+        // genug Höhe: voller Abstand mit Beschriftung
+        assert_eq!(rail_step(600.0, 9, false), (50.0, false));
+        // wenig Höhe: enger und nur Symbole, aber alle neun passen hinein
+        let (step, compact) = rail_step(300.0, 9, false);
+        assert!(compact && step * 9.0 <= 300.0);
+        // waagrechte Leiste ist davon unberührt
+        assert_eq!(rail_step(40.0, 9, true), (50.0, false));
     }
 }

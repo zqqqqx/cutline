@@ -1,4 +1,4 @@
-//! Quick Actions mit Einstellungen: Pausen entfernen, Füllwörter, Ducking, Zoom-Punch-in.
+//! Schnellaktionen mit Einstellungen: Pausen entfernen, Füllwörter, Ducking, Zoom-Punch-in.
 //! Ein gemeinsames Fenster: Werte einstellen, bei Pausen und Füllwörtern erst analysieren,
 //! Treffer prüfen (Klick springt hin, einzeln abwählbar), „Anwenden“ schneidet.
 //! Esc schließt, Enter löst die Hauptaktion aus.
@@ -365,7 +365,7 @@ impl App {
                     }
                     if let Some(hits) = &mut q.hits {
                         let on: Vec<&Hit> = hits.iter().filter(|h| h.on).collect();
-                        let secs: f64 = on.iter().map(|h| (h.to - h.from).as_secs_f64()).sum();
+                        let secs: f64 = on.iter().map(|h| (h.to - h.from).as_secs_f64()).sum::<f64>().abs();
                         let sum = if kind == QuickKind::Pauses {
                             format!("{} Pausen, {secs:.0} s kürzer", on.len())
                         } else {

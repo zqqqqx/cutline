@@ -16,7 +16,7 @@ Content creators: YouTube, Shorts/TikTok/Reels, streaming, podcasts. Not narrowe
 | | Einfach / Simple | Schnell / Fast | Offen / Open |
 |---|---|---|---|
 | Claim | Vertraute Bedienung: reinziehen, schneiden, exportieren. Jede Funktion ab dem ersten Start freigeschaltet. | In Rust geschrieben, flüssige Vorschau, schneller Export. | Open Source, lokal, ohne Konto, ohne Abo, ohne Wasserzeichen. |
-| Proof 1 | Quick Actions: Pausen entfernen, Füllwörter, Auto-Ducking, Hochkant-Layout (`timeline.rs`) | Proxy-Medien für flüssige Wiedergabe großer Aufnahmen (`app.rs`) | Kein Konto, kein Abo, kein Wasserzeichen; Projekte sind JSON, Code unter MPL-2.0 |
+| Proof 1 | Schnellaktionen: Pausen entfernen, Füllwörter, Auto-Ducking, Hochkant-Layout (`timeline.rs`) | Proxy-Medien für flüssige Wiedergabe großer Aufnahmen (`app.rs`) | Kein Konto, kein Abo, kein Wasserzeichen; Projekte sind JSON, Code unter MPL-2.0 |
 | Proof 2 | Export-Vorlagen für YouTube, Shorts, TikTok, Instagram, Twitch (`cl-export`) | Hardware-Encoder NVENC, Quick Sync, AMF (`cl-export/src/lib.rs`) | Lokale KI (Untertitel mit Parakeet/Whisper, Freistellen, Entrauschen), MCP-Schnittstelle (`--mcp`) und Plugin-System |
 
 ## AI wording / KI-Formulierung

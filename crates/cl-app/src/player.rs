@@ -1054,7 +1054,7 @@ impl App {
         });
     }
 
-    /// Rechtsklick in den Player: dieselben Befehle wie in der Player-Leiste und den Quick Actions.
+    /// Rechtsklick in den Player: dieselben Befehle wie in der Player-Leiste und den Schnellaktionen.
     fn player_menu(&mut self, ui: &mut egui::Ui) {
         use crate::timeline::menu_item;
         if menu_item(ui, icon::IMAGE, "Standbild speichern …", "") {

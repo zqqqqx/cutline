@@ -402,7 +402,11 @@ impl ExportDialog {
                         ui.add_enabled_ui(!busy, |ui| {
                             theme::row(ui, "Name", |ui| ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(300.0)));
                             theme::row(ui, "Speichern in", |ui| {
-                                ui.add(egui::Label::new(RichText::new(crate::tr(self.folder.display().to_string())).small()).truncate());
+                                // Platz für den Ordner-Knopf lassen, sonst ragt die Zeile über das Fenster hinaus
+                                let w = (ui.available_width() - 32.0).max(40.0);
+                                ui.allocate_ui(vec2(w, 20.0), |ui| {
+                                    ui.add(egui::Label::new(RichText::new(crate::tr(self.folder.display().to_string())).small()).truncate());
+                                });
                                 if theme::icon_button(ui, icon::FOLDER_OPEN, "Ordner wählen", true, false).clicked() {
                                     if let Some(d) = crate::dialog().set_directory(&self.folder).pick_folder() {
                                         self.folder = d;
@@ -426,7 +430,7 @@ impl ExportDialog {
                                             if ui.selectable_label(self.platform == Some(pl.id), crate::tr(pl.name)).clicked() {
                                                 Self::apply_platform(&mut s, &mut self.short_edge, &mut self.custom_kbps, pl);
                                                 self.platform = Some(pl.id);
-                                                self.preset_hint = (!pl.fits(&p.settings)).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Quick Actions → Hochkant-Layout"));
+                                                self.preset_hint = (!pl.fits(&p.settings)).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Schnellaktionen → Hochkant-Layout"));
                                                 if pl.fits(&p.settings) {
                                                     self.picked_platform = Some(pl.id);
                                                 }
