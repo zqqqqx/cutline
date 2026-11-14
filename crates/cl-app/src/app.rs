@@ -179,6 +179,8 @@ pub struct App {
     pub aspect_fit: Option<cl_core::ProjectSettings>,
     /// Hilfslinien für Plattform-Bedienelemente im Player
     pub safe_area: bool,
+    /// Multicam: Index des Blickwinkels, dessen Ton durchgehend läuft
+    pub multicam_audio: usize,
     /// Figuren (Plugin „Story-Werkzeuge“)
     pub characters: Vec<crate::story::Character>,
     /// Plugins Freesound und Pexels
@@ -404,6 +406,7 @@ impl App {
             shorts: None,
             aspect_fit: None,
             safe_area: false,
+            multicam_audio: 0,
             characters: crate::story::load(),
             stock: Default::default(),
             last_backup: None,

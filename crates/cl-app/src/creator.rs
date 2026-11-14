@@ -523,7 +523,7 @@ impl App {
             return;
         }
         self.multicam = Some((angles.into_iter().map(|a| a.1).collect(), Vec::new()));
-        self.toast("Multicam: Wiedergabe starten und mit 1–9 den Blickwinkel wählen, Stopp übernimmt den Schnitt");
+        self.multicam_audio = 0; // Hinweisfenster (templates.rs) zeigt Erklärung und Tonquelle
     }
 
     /// Taste 1–9 im Multicam-Modus
@@ -578,9 +578,12 @@ impl App {
                 n.duration = Time(b.0 - a.0);
                 n.source_in =
                     Time(c.source_in.0 + ((a.0 - c.start.0) as f64 * c.speed as f64) as i64);
-                n.disabled = active != ai;
-                if active != ai {
-                    n.volume_db = c.volume_db; // Ton der anderen Spuren bleibt, nur das Bild wird ausgeblendet
+                // Ton nur von der Hauptquelle, das Bild wechselt
+                let (off, op, mute) = crate::templates::cam_piece(ai, self.multicam_audio, active == ai);
+                n.disabled = off;
+                n.opacity = c.opacity * op;
+                if mute {
+                    n.volume_db = -60.0;
                 }
                 n.keyframes = Keyframes::default();
                 ops.push(EditOp::AddClip {

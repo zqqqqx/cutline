@@ -364,6 +364,10 @@ impl App {
                         name: self.project.name.clone(),
                     });
                 }
+                if item(ui, icon::COPY_SIMPLE, "Aus Vorlage einfügen …", "").clicked() {
+                    ui.close_menu();
+                    self.tpl_dialog = Some(crate::templates::TplDialog::Insert);
+                }
                 if item(ui, icon::ARCHIVE, "Projekt archivieren …", "")
                     .on_hover_text(crate::tr(
                         "Projekt mit allen Medien und Schriften in einen Ordner kopieren",
