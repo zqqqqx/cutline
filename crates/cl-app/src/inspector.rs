@@ -816,7 +816,7 @@ impl App {
                     "",
                     false,
                     |p, a| {
-                        p.rect_filled(a, 6.0, Color32::from_rgb(0x2A, 0x2D, 0x36));
+                        p.rect_filled(a, 6.0, theme::BG_RAISED());
                         let k = (a.height() * 0.5) / 64.0;
                         self.draw_text(p, &s2, a.center(), k, 0.0, 1.0, a.width());
                     },
