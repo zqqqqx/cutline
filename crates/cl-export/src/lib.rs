@@ -482,6 +482,33 @@ fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time) -> Option<Str
     Some(out)
 }
 
+/// AV1 in Software: SVT-AV1, wenn das FFmpeg ihn mitbringt, sonst libaom (das mitgelieferte
+/// Windows-FFmpeg hat kein SVT-AV1). Endet auf `-crf`, der Wert folgt.
+fn av1_software(svt: bool) -> &'static [&'static str] {
+    if svt {
+        &["-c:v", "libsvtav1", "-preset", "8", "-crf"]
+    } else {
+        &["-c:v", "libaom-av1", "-cpu-used", "6", "-row-mt", "1", "-b:v", "0", "-crf"]
+    }
+}
+
+/// Kennt das benutzte FFmpeg den Encoder libsvtav1? (einmal je Programmlauf geprüft)
+fn has_svtav1() -> bool {
+    static HAS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *HAS.get_or_init(|| {
+        cl_media::ffmpeg_command()
+            .ok()
+            .and_then(|mut c| {
+                c.args(["-hide_banner", "-encoders"])
+                    .stdin(Stdio::null())
+                    .stderr(Stdio::null())
+                    .output()
+                    .ok()
+            })
+            .is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains("libsvtav1"))
+    })
+}
+
 fn codec_args(s: &ExportSettings) -> Vec<String> {
     let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     let mut a = Vec::new();
@@ -545,7 +572,7 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
             .chain([crf(30, 24, 19).to_string()]),
         ),
         (Codec::Av1, _) => a.extend(
-            v(&["-c:v", "libsvtav1", "-preset", "8", "-crf"])
+            v(av1_software(has_svtav1()))
                 .into_iter()
                 .chain([crf(38, 32, 26).to_string()]),
         ),
@@ -2085,6 +2112,30 @@ mod tests {
                 let job = build(&p, &s, &no_fonts, &out).unwrap();
                 run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap_or_else(|e| panic!("{codec:?} in {format:?}: {e}"));
             }
+        }
+    }
+
+    /// Das mitgelieferte Windows-FFmpeg hat kein SVT-AV1: der Ersatz (libaom) muss dort laufen,
+    /// mit Qualität und mit fester Bitrate samt Deckel.
+    #[test]
+    fn av1_fallback_encoder_works() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        for extra in [&["32"][..], &["32", "-b:v", "800k", "-maxrate", "880k", "-bufsize", "1600k"][..]] {
+            let out = dir.path().join("a.mkv");
+            let st = cl_media::ffmpeg_command()
+                .unwrap()
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=128x72:rate=30:duration=0.5"])
+                .args(av1_software(false))
+                .args(extra)
+                .arg(&out)
+                .stdin(Stdio::null())
+                .status()
+                .unwrap();
+            assert!(st.success(), "libaom-av1 mit {extra:?}");
+            assert!(out.metadata().unwrap().len() > 0);
         }
     }
 
