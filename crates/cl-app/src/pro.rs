@@ -257,15 +257,30 @@ impl App {
     }
 
     fn apply_reframe(&mut self, clip: ClipId, pts: &[(f64, f32, f32)]) {
-        let Some(mut c) = self.clip_view(clip) else {
+        self.apply_reframes(&[(clip, pts.to_vec())]);
+    }
+
+    /// Ergebnisse mehrerer Reframe-Analysen als ein Undo-Schritt anwenden.
+    pub fn apply_reframes(&mut self, list: &[(ClipId, Vec<(f64, f32, f32)>)]) {
+        let ops: Vec<EditOp> = list
+            .iter()
+            .filter_map(|(id, pts)| self.reframed(*id, pts))
+            .map(|clip| EditOp::ReplaceClip { clip })
+            .collect();
+        if ops.is_empty() {
             return;
-        };
+        }
+        self.live = None;
+        self.apply_batch(ops);
+        self.toast("Auto-Reframe angewendet");
+    }
+
+    fn reframed(&self, clip: ClipId, pts: &[(f64, f32, f32)]) -> Option<Clip> {
+        let mut c = self.clip_view(clip)?;
         let ClipContent::Media { media, .. } = c.content else {
-            return;
+            return None;
         };
-        let Some(m) = self.project.media(media) else {
-            return;
-        };
+        let m = self.project.media(media)?;
         let (w, h) = (
             self.project.settings.width as f32,
             self.project.settings.height as f32,
@@ -296,9 +311,7 @@ impl App {
                     .set(Prop::Y, tl, ((0.5 - fy) * dh).clamp(-my, my));
             }
         }
-        self.live = None;
-        self.apply(EditOp::ReplaceClip { clip: c });
-        self.toast("Auto-Reframe angewendet");
+        Some(c)
     }
 
     // ------------------------------------------------------------ Starten

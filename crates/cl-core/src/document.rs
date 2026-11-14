@@ -194,6 +194,18 @@ mod tests {
     }
 
     #[test]
+    fn add_clip_without_track_respects_locked_main() {
+        let (mut d, _) = doc_with_clip();
+        let m = d.project().media[0].clone();
+        let main = d.project().timeline.tracks[0].id;
+        d.apply(EditOp::SetTrackFlags { track: main, locked: true, hidden: false, muted: false }, OpSource::Ui)
+            .unwrap();
+        let r = d.apply(EditOp::AddClip { track: None, clip: video_clip(&m, 99.0, 5.0) }, OpSource::Ui);
+        assert!(matches!(r, Err(CoreError::TrackLocked)), "{r:?}");
+        assert_eq!(d.project().timeline.tracks[0].clips.len(), 1);
+    }
+
+    #[test]
     fn video_goes_to_main_track_and_magnet_appends() {
         let (mut d, _) = doc_with_clip();
         let m = d.project().media[0].clone();

@@ -366,7 +366,7 @@ impl App {
                 }
                 if item(ui, icon::COPY_SIMPLE, "Aus Vorlage einfügen …", "").clicked() {
                     ui.close_menu();
-                    self.tpl_dialog = Some(crate::templates::TplDialog::Insert);
+                    self.tpl_dialog = Some(crate::templates::TplDialog::Insert(crate::templates::load_all()));
                 }
                 if item(ui, icon::ARCHIVE, "Projekt archivieren …", "")
                     .on_hover_text(crate::tr(

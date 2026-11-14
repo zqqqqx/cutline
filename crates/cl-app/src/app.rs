@@ -3088,7 +3088,10 @@ impl eframe::App for App {
             self.set_aspect(cl_core::AspectPreset::Ratio(9, 16));
         }
         if let Some(id) = self.export.take_picked_platform() {
-            if self.project.settings.platform.as_deref() != Some(id) {
+            if let Some(s) = &mut self.aspect_fit {
+                // Formatwechsel wartet auf „Clips neu einpassen?“: Plattform kommt mit (Esc verwirft beides)
+                s.platform = Some(id.to_string());
+            } else if self.project.settings.platform.as_deref() != Some(id) {
                 let mut s = self.project.settings.clone();
                 s.platform = Some(id.to_string());
                 self.apply(EditOp::SetSettings { settings: s });
