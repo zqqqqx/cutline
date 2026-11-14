@@ -907,7 +907,8 @@ impl App {
         let on = playing.is_some() || loading;
         p.rect_filled(play_r, theme::R_CARD, if on { theme::ACCENT() } else { theme::BG_HOVER() });
         if loading {
-            let t = ui.input(|i| i.time) as f32;
+            // ohne Animationen stehende Punkte
+            let t = if theme::anim(1.0) > 0.0 { ui.input(|i| i.time) as f32 } else { 0.0 };
             let c = play_r.center();
             for k in 0..3 {
                 let a = t * 6.0 + k as f32 * 2.1;
@@ -958,7 +959,7 @@ impl App {
             egui::Align2::LEFT_CENTER,
             sub,
             egui::FontId::proportional(theme::FS_HINT),
-            theme::TEXT_FAINT(),
+            theme::TEXT_DIM(),
         );
         if wave_w > 30.0 {
             if let Some((_, bars)) = meta {
@@ -1339,7 +1340,7 @@ impl App {
                                         self.t("font-restricted")
                                     )))
                                     .small()
-                                    .color(theme::WARN),
+                                    .color(theme::WARN_TEXT()),
                                 );
                             }
                         });
@@ -1648,7 +1649,7 @@ impl App {
                     let akey = format!("{pre}:{id}");
                     let fav = self.library.is_favorite(&akey);
                     // Hover: Vorher/Nachher-Wischblende über dem Beispielbild
-                    let wipe = (!id.is_empty() && ui.rect_contains_pointer(r)).then(|| {
+                    let wipe = (!id.is_empty() && theme::anim(1.0) > 0.0 && ui.rect_contains_pointer(r)).then(|| {
                         ui.ctx().request_repaint();
                         0.5 + 0.45 * (ui.input(|i| i.time) as f32 * 2.4).sin()
                     });
@@ -1762,7 +1763,7 @@ impl App {
                 // Ruhend: Bild mitten im Übergang (beide Bilder sichtbar). Hover: der ganze Übergang,
                 // am Anfang und Ende kurz stehen bleiben.
                 let mut k = STRIP as f32 * 0.55;
-                if ui.rect_contains_pointer(r) {
+                if theme::anim(1.0) > 0.0 && ui.rect_contains_pointer(r) {
                     let t = (ui.input(|i| i.time) * 0.75) % 1.5;
                     k = (((t - 0.2) / 1.0).clamp(0.0, 1.0) * (STRIP - 1) as f64) as f32;
                     ui.ctx().request_repaint();
@@ -1959,7 +1960,7 @@ impl App {
                                     p.manifest.plugin.license
                                 )))
                                 .small()
-                                .color(theme::TEXT_FAINT()),
+                                .color(theme::TEXT_DIM()),
                             );
                             if p.enabled
                                 && ui
@@ -1977,7 +1978,7 @@ impl App {
                                 p.manifest.plugin.license
                             )))
                             .small()
-                            .color(theme::TEXT_FAINT()),
+                            .color(theme::TEXT_DIM()),
                         );
                     }
                 });
@@ -1997,7 +1998,7 @@ impl App {
             ui.label(
                 RichText::new(crate::tr(format!("{} {e}", icon::WARNING)))
                     .small()
-                    .color(theme::WARN),
+                    .color(theme::WARN_TEXT()),
             );
         }
         if changed {

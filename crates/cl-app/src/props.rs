@@ -204,7 +204,7 @@ impl App {
                 });
                 if let Some(path) = &path {
                     ui.add_space(8.0);
-                    ui.label(RichText::new(path.display().to_string()).small().color(theme::TEXT_FAINT()));
+                    ui.label(RichText::new(path.display().to_string()).small().color(theme::TEXT_DIM()));
                     ui.horizontal(|ui| {
                         if ui.add(theme::secondary(format!("{}  Pfad kopieren", icon::COPY))).clicked() {
                             ui.ctx().copy_text(path.display().to_string());

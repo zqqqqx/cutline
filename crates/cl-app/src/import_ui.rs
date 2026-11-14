@@ -136,7 +136,7 @@ impl App {
                         ui.label(
                             RichText::new(p.display().to_string())
                                 .small()
-                                .color(theme::TEXT_FAINT()),
+                                .color(theme::TEXT_DIM()),
                         );
                     }
                 }
@@ -203,7 +203,7 @@ impl App {
                                     }
                                     if let Some(t) = d.modified {
                                         let s = crate::home::ago(t);
-                                        ui.label(RichText::new(crate::tr(s)).small().color(theme::TEXT_FAINT()));
+                                        ui.label(RichText::new(crate::tr(s)).small().color(theme::TEXT_DIM()));
                                     }
                                 });
                             });
@@ -253,7 +253,7 @@ impl App {
         if self.settings.import_capcut {
             let roots = cl_import::capcut::draft_roots();
             ui.add_space(4.0);
-            ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_FAINT()));
+            ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_DIM()));
         }
         // Importieren selbst: Hauptmenü → „Projekt aus anderem Programm importieren …“
         let _ = vec2(0.0, 0.0);

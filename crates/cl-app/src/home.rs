@@ -290,7 +290,7 @@ impl App {
                         env!("CARGO_PKG_VERSION")
                     )))
                     .small()
-                    .color(theme::TEXT_FAINT()),
+                    .color(theme::TEXT_DIM()),
                 );
             });
         });
@@ -303,7 +303,7 @@ impl App {
                     ui.label(RichText::new(crate::tr("Projekte")).size(theme::FS_PAGE).strong());
                     ui.label(
                         RichText::new(crate::tr(format!("{}", self.home.entries.len())))
-                            .color(theme::TEXT_FAINT()),
+                            .color(theme::TEXT_DIM()),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if theme::icon_button(ui, icon::LIST, "Liste", true, self.home.list_view)
@@ -389,7 +389,7 @@ impl App {
                                         size.1
                                     )),
                                     egui::FontId::proportional(theme::FS_HINT),
-                                    theme::TEXT_FAINT(),
+                                    theme::TEXT_DIM(),
                                 );
                                 ui.painter().text(
                                     r.right_center() - vec2(14.0, 0.0),
@@ -480,7 +480,7 @@ impl App {
                                             egui::Align2::LEFT_CENTER,
                                             crate::tr("Oder Dateien hierher ziehen"),
                                             egui::FontId::proportional(theme::FS_HINT),
-                                            theme::TEXT_FAINT(),
+                                            theme::TEXT_DIM(),
                                         );
                                         if resp.clicked() {
                                             self.new_project();
@@ -542,7 +542,7 @@ impl App {
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(ago(modified)),
                                         egui::FontId::proportional(theme::FS_HINT),
-                                        theme::TEXT_FAINT(),
+                                        theme::TEXT_DIM(),
                                     );
                                     // ⋯-Menü
                                     let mr = Rect::from_center_size(
@@ -741,7 +741,7 @@ impl App {
                 ui.add_space(8.0);
                 let name = self.home.entries.iter().find(|e| e.path == path).map(|e| e.name.clone()).unwrap_or_default();
                 ui.label(crate::tr(format!("„{name}“ wird in den Cutline-Papierkorb verschoben. Deine Medien-Dateien bleiben unverändert.")));
-                ui.label(RichText::new(crate::tr(paths::data_dir().join("Papierkorb").display().to_string())).small().color(theme::TEXT_FAINT()));
+                ui.label(RichText::new(crate::tr(paths::data_dir().join("Papierkorb").display().to_string())).small().color(theme::TEXT_DIM()));
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

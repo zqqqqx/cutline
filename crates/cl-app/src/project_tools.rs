@@ -216,7 +216,7 @@ impl App {
                     ui.horizontal(|ui| {
                         let local = chrono_like(t);
                         ui.label(RichText::new(local).monospace());
-                        ui.label(RichText::new(crate::tr(crate::home::ago(t))).small().color(theme::TEXT_FAINT()));
+                        ui.label(RichText::new(crate::tr(crate::home::ago(t))).small().color(theme::TEXT_DIM()));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.add(theme::ghost("Wiederherstellen")).clicked() {
                                 restore = Some(p.clone());
@@ -279,7 +279,7 @@ impl App {
                             pick = Some(*id);
                         }
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            ui.label(RichText::new(icon::WARNING).color(theme::DANGER));
+                            ui.label(RichText::new(icon::WARNING).color(theme::DANGER_TEXT()));
                             ui.add(egui::Label::new(RichText::new(p.display().to_string()).small()).truncate()).on_hover_text(p.display().to_string());
                         });
                     });

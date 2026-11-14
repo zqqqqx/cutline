@@ -443,7 +443,7 @@ impl App {
             ui.label(
                 RichText::new(crate::tr(format!("{}  {e}", icon::WARNING)))
                     .small()
-                    .color(theme::WARN),
+                    .color(theme::WARN_TEXT()),
             );
         }
         let list: Vec<Track> = match self.es.view {
@@ -653,7 +653,7 @@ impl App {
                         self.es.save();
                     }
                 });
-                ui.label(RichText::new(crate::tr(format!("Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.", cl_epidemic::redirect_uri()))).small().color(theme::TEXT_FAINT()));
+                ui.label(RichText::new(crate::tr(format!("Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.", cl_epidemic::redirect_uri()))).small().color(theme::TEXT_DIM()));
                 ui.add_space(4.0);
                 if let Some(t) = self.es.cfg.tokens.clone() {
                     theme::row(ui, "Status", |ui| {
@@ -722,7 +722,7 @@ impl App {
                         self.es.reset();
                     }
                 });
-                ui.label(RichText::new(crate::tr("Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechner.")).small().color(theme::TEXT_FAINT()));
+                ui.label(RichText::new(crate::tr("Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechner.")).small().color(theme::TEXT_DIM()));
             }
         }
         ui.add_space(4.0);
@@ -737,7 +737,7 @@ impl App {
                 open_url("https://developers.epidemicsound.com/");
             }
         });
-        ui.label(RichText::new(crate::tr("Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.")).small().color(theme::TEXT_FAINT()));
+        ui.label(RichText::new(crate::tr("Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.")).small().color(theme::TEXT_DIM()));
     }
 
     /// Plugin ein-/ausschalten und dauerhaft merken.

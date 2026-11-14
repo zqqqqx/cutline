@@ -420,7 +420,7 @@ impl ExportDialog {
                                     });
                                 });
                                 if let Some(h) = &self.preset_hint {
-                                    ui.label(egui::RichText::new(h).small().color(theme::WARN));
+                                    ui.label(egui::RichText::new(h).small().color(theme::WARN_TEXT()));
                                 }
                                 // Hochkant-Vorgabe im Querformat-Projekt: Format direkt umstellen
                                 let vertical = self.platform.and_then(platform).filter(|pl| pl.w * 16 == pl.h * 9 && !pl.fits(&p.settings));
@@ -538,7 +538,7 @@ impl ExportDialog {
                                         }
                                     });
                                     if let Some(w) = crate::navigate::chapter_issue(ms, p.duration()) {
-                                        ui.label(RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w))).small().color(theme::SNAP));
+                                        ui.label(RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w))).small().color(theme::WARN_TEXT()));
                                     }
                                 }
                             }
@@ -548,7 +548,7 @@ impl ExportDialog {
 
                 ui.add_space(12.0);
                 if let Some(e) = &self.error {
-                    ui.label(RichText::new(crate::tr(format!("{} {e}", icon::WARNING_CIRCLE))).color(theme::DANGER));
+                    ui.label(RichText::new(crate::tr(format!("{} {e}", icon::WARNING_CIRCLE))).color(theme::DANGER_TEXT()));
                 }
                 if let Some(r) = &self.running {
                     let prog = *r.progress.lock().unwrap();
@@ -721,7 +721,7 @@ fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(Pat
 
 /// Fortschritt beim Export: weich nachlaufender Balken mit wanderndem Glanz, Prozent und Restzeit.
 fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool) {
-    let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, 0.35);
+    let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, theme::anim(0.35));
     let t = ui.input(|i| i.time) as f32;
     ui.horizontal(|ui| {
         // 14 px wie ein Icon in der Zeile (Standard wäre Zeilenhöhe)
@@ -744,8 +744,8 @@ fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool) 
     p.rect_filled(rect, 4.0, theme::BG_HOVER());
     let fill = Rect::from_min_size(rect.min, vec2(rect.width() * shown.clamp(0.0, 1.0), rect.height()));
     p.rect_filled(fill, 4.0, theme::ACCENT());
-    // Glanz wandert über den gefüllten Teil
-    if fill.width() > 12.0 {
+    // Glanz wandert über den gefüllten Teil (nicht bei ausgeschalteten Animationen)
+    if fill.width() > 12.0 && theme::anim(1.0) > 0.0 {
         let x = fill.left() + (t * 0.8).fract() * (fill.width() + 60.0) - 30.0;
         let glow = Rect::from_center_size(egui::pos2(x, fill.center().y), vec2(36.0, fill.height()));
         p.with_clip_rect(fill).rect_filled(glow, 4.0, egui::Color32::from_white_alpha(70));
@@ -760,7 +760,7 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
         return false;
     }
     // „ease out back“: leicht über 1 hinaus, dann zurück
-    let k = (age / 0.4).min(1.0);
+    let k = if theme::anim(0.4) > 0.0 { (age / 0.4).min(1.0) } else { 1.0 };
     let c = 1.70158;
     let pop = 1.0 + (c + 1.0) * (k - 1.0).powi(3) + c * (k - 1.0).powi(2);
     ui.horizontal(|ui| {
@@ -776,7 +776,7 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
         );
         ui.label(RichText::new(crate::tr(format!("Fertig in {secs:.1} s"))).strong());
     });
-    if age < 0.5 {
+    if age < theme::anim(0.5) {
         ui.ctx().request_repaint();
     } else {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));

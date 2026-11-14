@@ -78,7 +78,7 @@ impl App {
                 (c.start + b.t).timecode(fps)
             ))
             .small()
-            .color(theme::TEXT_FAINT()),
+            .color(theme::TEXT_DIM()),
         );
         let mut pick: Option<Ease> = None;
         // Einsteiger: Kacheln
@@ -154,7 +154,7 @@ impl App {
                     RichText::new(format!("{x1:.2} · {y1:.2} · {x2:.2} · {y2:.2}"))
                         .small()
                         .monospace()
-                        .color(theme::TEXT_FAINT()),
+                        .color(theme::TEXT_DIM()),
                 )
                 .on_hover_text(crate::tr("Griffe ziehen: links der Start, rechts die Ankunft. Über die Linien hinaus = Ausholen bzw. Überschwingen."));
             });

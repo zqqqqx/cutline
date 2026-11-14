@@ -2761,23 +2761,25 @@ impl App {
 
     fn draw_toasts(&mut self, ctx: &egui::Context) {
         self.toasts
-            .retain(|(_, t, _)| t.elapsed() < Duration::from_secs(4));
+            .retain(|(_, t, err)| t.elapsed().as_secs_f32() < toast_secs(*err));
         if self.toasts.is_empty() {
             return;
         }
+        // weich ein- (0,15 s) und ausblenden (letzte 0,4 s), ohne Animationen sofort
+        let (fade_in, fade_out) = (theme::anim(0.15), theme::anim(0.4));
+        let mut close = None;
         egui::Area::new(egui::Id::new("toasts"))
             .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -24.0))
             .order(egui::Order::Foreground)
-            .interactable(false)
+            // nur Fehler-Toasts schließen per Klick; sonst bleibt die Fläche durchklickbar
+            .interactable(self.toasts.iter().any(|t| t.2))
             .show(ctx, |ui| {
                 // Meldungen nicht Wort für Wort umbrechen (die Fläche hat keine feste Breite)
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                for (msg, at, err) in self.toasts.iter().rev().take(3) {
-                    // weich ein- (0,15 s) und ausblenden (letzte 0,4 s)
+                for (i, (msg, at, err)) in self.toasts.iter().enumerate().rev().take(3) {
                     let age = at.elapsed().as_secs_f32();
-                    let a = (age / 0.15).min(1.0).min((4.0 - age) / 0.4).clamp(0.0, 1.0);
-                    ui.set_opacity(a);
-                    egui::Frame::default()
+                    ui.set_opacity(toast_alpha(age, toast_secs(*err), fade_in, fade_out));
+                    let r = egui::Frame::default()
                         .fill(if *err {
                             theme::DANGER_BG()
                         } else {
@@ -2808,13 +2810,20 @@ impl App {
                                     theme::TEXT()
                                 },
                             ));
-                        });
+                        })
+                        .response;
+                    if *err && r.interact(egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        close = Some(i);
+                    }
                     ui.add_space(4.0);
                 }
             });
-        let fading = self.toasts.iter().any(|(_, t, _)| {
+        if let Some(i) = close {
+            self.toasts.remove(i);
+        }
+        let fading = self.toasts.iter().any(|(_, t, err)| {
             let a = t.elapsed().as_secs_f32();
-            !(0.15..=3.6).contains(&a)
+            !(fade_in..=toast_secs(*err) - fade_out).contains(&a)
         });
         ctx.request_repaint_after(Duration::from_millis(if fading { 16 } else { 250 }));
     }
@@ -3331,4 +3340,32 @@ pub fn fixed_width(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
     add(&mut child);
     ui.allocate_rect(rect, egui::Sense::hover());
+}
+
+/// Standzeit eines Toasts: Fehler bleiben länger stehen (und schließen per Klick)
+fn toast_secs(err: bool) -> f32 {
+    if err { 10.0 } else { 4.0 }
+}
+
+/// Deckkraft eines Toasts im Alter `age` (s); Ein-/Ausblenddauer 0 = sofort da/weg
+fn toast_alpha(age: f32, life: f32, fade_in: f32, fade_out: f32) -> f32 {
+    let a_in = if fade_in > 0.0 { age / fade_in } else { 1.0 };
+    let a_out = if fade_out > 0.0 { (life - age) / fade_out } else if age < life { 1.0 } else { 0.0 };
+    a_in.min(a_out).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod toast_tests {
+    use super::*;
+
+    #[test]
+    fn toast_alpha_without_animation() {
+        assert_eq!(toast_alpha(0.0, 4.0, 0.0, 0.0), 1.0);
+        assert_eq!(toast_alpha(3.99, 4.0, 0.0, 0.0), 1.0);
+        assert_eq!(toast_alpha(4.0, 4.0, 0.0, 0.0), 0.0);
+        // mit Animationen wie bisher
+        assert_eq!(toast_alpha(0.0, 4.0, 0.15, 0.4), 0.0);
+        assert!((toast_alpha(3.8, 4.0, 0.15, 0.4) - 0.5).abs() < 1e-4);
+        assert!(toast_secs(true) > toast_secs(false));
+    }
 }

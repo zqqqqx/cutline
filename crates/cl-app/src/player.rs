@@ -917,9 +917,9 @@ impl App {
             let col = if db(v) > -1.0 {
                 theme::DANGER
             } else if db(v) > -9.0 {
-                Color32::from_rgb(0xE8, 0xC0, 0x50)
+                theme::WARN
             } else {
-                Color32::from_rgb(0x5C, 0xC8, 0x7A)
+                theme::SUCCESS
             };
             p.rect_filled(
                 Rect::from_min_max(pos2(bar.left(), y_of(v)), bar.max),

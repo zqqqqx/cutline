@@ -29,6 +29,8 @@ pub struct Palette {
     pub accent: Color32,
     /// Schrift auf Akzentflächen
     pub accent_ink: Color32,
+    /// Warn-/Hinweistext (≥ 4,5:1 auf `bg_card` und `bg_raised`)
+    pub warn_text: Color32,
 }
 
 const fn rgb(h: u32) -> Color32 {
@@ -36,10 +38,10 @@ const fn rgb(h: u32) -> Color32 {
 }
 
 pub const PALETTES: [Palette; 4] = [
-    Palette { name: "Dunkel", id: "dark", dark: true, bg_app: rgb(0x0C0C0E), bg_card: rgb(0x17171A), bg_raised: rgb(0x222226), bg_hover: rgb(0x2B2B30), bg_input: rgb(0x101012), border: rgb(0x29292E), text: rgb(0xECECEE), text_dim: rgb(0x8C8C93), text_faint: rgb(0x58585F), accent: rgb(0xF4F4F6), accent_ink: rgb(0x101012) },
-    Palette { name: "Dunkelgrau", id: "darkgray", dark: true, bg_app: rgb(0x1A1A1C), bg_card: rgb(0x252528), bg_raised: rgb(0x303034), bg_hover: rgb(0x3A3A3F), bg_input: rgb(0x1E1E21), border: rgb(0x37373C), text: rgb(0xEDEDEF), text_dim: rgb(0x9C9CA3), text_faint: rgb(0x68686F), accent: rgb(0xF4F4F6), accent_ink: rgb(0x141416) },
-    Palette { name: "Grau", id: "gray", dark: true, bg_app: rgb(0x38383C), bg_card: rgb(0x444449), bg_raised: rgb(0x505055), bg_hover: rgb(0x5C5C62), bg_input: rgb(0x313135), border: rgb(0x58585E), text: rgb(0xF4F4F6), text_dim: rgb(0xB8B8BE), text_faint: rgb(0x8A8A91), accent: rgb(0xFFFFFF), accent_ink: rgb(0x202024) },
-    Palette { name: "Hell", id: "light", dark: false, bg_app: rgb(0xE9E9EC), bg_card: rgb(0xFBFBFC), bg_raised: rgb(0xEFEFF2), bg_hover: rgb(0xE2E2E7), bg_input: rgb(0xF4F4F6), border: rgb(0xD8D8DE), text: rgb(0x18181B), text_dim: rgb(0x5A5A62), text_faint: rgb(0x96969E), accent: rgb(0x18181B), accent_ink: rgb(0xFFFFFF) },
+    Palette { name: "Dunkel", id: "dark", dark: true, bg_app: rgb(0x0C0C0E), bg_card: rgb(0x17171A), bg_raised: rgb(0x222226), bg_hover: rgb(0x2B2B30), bg_input: rgb(0x101012), border: rgb(0x29292E), text: rgb(0xECECEE), text_dim: rgb(0x8C8C93), text_faint: rgb(0x58585F), accent: rgb(0xF4F4F6), accent_ink: rgb(0x101012), warn_text: WARN },
+    Palette { name: "Dunkelgrau", id: "darkgray", dark: true, bg_app: rgb(0x1A1A1C), bg_card: rgb(0x252528), bg_raised: rgb(0x303034), bg_hover: rgb(0x3A3A3F), bg_input: rgb(0x1E1E21), border: rgb(0x37373C), text: rgb(0xEDEDEF), text_dim: rgb(0x9C9CA3), text_faint: rgb(0x68686F), accent: rgb(0xF4F4F6), accent_ink: rgb(0x141416), warn_text: WARN },
+    Palette { name: "Grau", id: "gray", dark: true, bg_app: rgb(0x38383C), bg_card: rgb(0x444449), bg_raised: rgb(0x505055), bg_hover: rgb(0x5C5C62), bg_input: rgb(0x313135), border: rgb(0x58585E), text: rgb(0xF4F4F6), text_dim: rgb(0xC8C8CE), text_faint: rgb(0x8A8A91), accent: rgb(0xFFFFFF), accent_ink: rgb(0x202024), warn_text: rgb(0xF5BA88) },
+    Palette { name: "Hell", id: "light", dark: false, bg_app: rgb(0xE9E9EC), bg_card: rgb(0xFBFBFC), bg_raised: rgb(0xEFEFF2), bg_hover: rgb(0xE2E2E7), bg_input: rgb(0xF4F4F6), border: rgb(0xD8D8DE), text: rgb(0x18181B), text_dim: rgb(0x5A5A62), text_faint: rgb(0x96969E), accent: rgb(0x18181B), accent_ink: rgb(0xFFFFFF), warn_text: rgb(0x9A5210) },
 ];
 
 static CURRENT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -127,27 +129,26 @@ pub fn contrast(a: Color32, b: Color32) -> f32 {
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
-/// Gewählter Akzent für Palette `p` (eigene Farben werden bis 3:1 gegen `bg_card` aufgehellt
+/// Gewählter Akzent für Palette `p` (Vorgaben und eigene Farben werden bis 3:1 gegen `bg_card` und `bg_raised` aufgehellt
 /// bzw. abgedunkelt, damit aktive Zustände sichtbar bleiben).
 pub fn accent_for(p: &Palette) -> Color32 {
-    match ACCENT_SPEC.load(std::sync::atomic::Ordering::Relaxed) {
-        0 => p.accent,
-        s if s & CUSTOM != 0 => {
-            let mut c = rgb(s & 0xFF_FFFF);
-            let to = if p.dark { Color32::WHITE } else { Color32::BLACK };
-            for _ in 0..60 {
-                if contrast(c, p.bg_card) >= 3.0 {
-                    break;
-                }
-                c = c.lerp_to_gamma(to, 0.05);
-            }
-            c
-        }
+    let mut c = match ACCENT_SPEC.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => return p.accent,
+        s if s & CUSTOM != 0 => rgb(s & 0xFF_FFFF),
         i => {
             let a = &ACCENTS[(i as usize).min(ACCENTS.len() - 1)];
             if p.dark { a.2 } else { a.3 }
         }
+    };
+    // Vorgaben passen meist schon; im Design „Grau“ werden Blau/Violett so leicht aufgehellt
+    let to = if p.dark { Color32::WHITE } else { Color32::BLACK };
+    for _ in 0..60 {
+        if contrast(c, p.bg_card) >= 3.0 && contrast(c, p.bg_raised) >= 3.0 {
+            break;
+        }
+        c = c.lerp_to_gamma(to, 0.05);
     }
+    c
 }
 
 /// Schrift auf `accent`: dunkle oder helle Tinte der Palette, je nachdem was stärker kontrastiert
@@ -181,6 +182,8 @@ pub fn BORDER() -> Color32 { pal().border }
 pub fn TEXT() -> Color32 { pal().text }
 #[allow(non_snake_case)]
 pub fn TEXT_DIM() -> Color32 { pal().text_dim }
+/// Nur für Deaktiviertes, Platzhalter in leeren Feldern, Trenner und reine Dekoration
+/// (zu wenig Kontrast für Lesetext). Alles, was Information trägt, nimmt `TEXT_DIM()`.
 #[allow(non_snake_case)]
 pub fn TEXT_FAINT() -> Color32 { pal().text_faint }
 #[allow(non_snake_case)]
@@ -203,9 +206,15 @@ pub fn DANGER_BG() -> Color32 {
     BG_CARD().lerp_to_gamma(DANGER, if pal().dark { 0.18 } else { 0.12 })
 }
 #[allow(non_snake_case)]
-pub fn DANGER_TEXT() -> Color32 {
-    TEXT().lerp_to_gamma(DANGER, 0.35)
+pub fn DANGER_TEXT() -> Color32 { danger_text(pal()) }
+fn danger_text(p: &Palette) -> Color32 {
+    p.text.lerp_to_gamma(DANGER, 0.35)
 }
+/// Warn-/Hinweistext; `WARN` selbst ist auf hellen Flächen zu schwach
+#[allow(non_snake_case)]
+pub fn WARN_TEXT() -> Color32 { pal().warn_text }
+/// Füllung roter Knöpfe: weiße Schrift ≥ 4,5:1 (`DANGER` hat nur 3,9:1)
+pub const DANGER_FILL: Color32 = rgb(0xC9302C);
 
 pub const RADIUS: u8 = R_CARD as u8;
 pub const GAP: f32 = 4.0;
@@ -403,9 +412,14 @@ impl egui::Widget for Btn {
         let hov = last.as_ref().is_some_and(|r| r.enabled() && r.hovered());
         let t = ui.ctx().animate_bool_with_time(id.with("hover"), hov, anim(0.14));
         let down = last.is_some_and(|r| r.is_pointer_button_down_on());
-        let to = if luminance(fill) > 0.4 { Color32::BLACK } else { Color32::WHITE };
-        ui.add(self.0.fill(fill.lerp_to_gamma(to, t * if down { 0.2 } else { 0.1 })))
+        ui.add(self.0.fill(hover_fill(fill, t, down)))
     }
+}
+
+/// Knopffüllung beim Überfahren/Drücken; rote Knöpfe dunkeln ab, damit die weiße Schrift lesbar bleibt
+fn hover_fill(fill: Color32, t: f32, down: bool) -> Color32 {
+    let to = if luminance(fill) > 0.4 || fill == DANGER_FILL { Color32::BLACK } else { Color32::WHITE };
+    fill.lerp_to_gamma(to, t * if down { 0.2 } else { 0.1 })
 }
 
 pub fn primary(text: impl Into<String>) -> Btn {
@@ -431,7 +445,7 @@ pub fn secondary(text: impl Into<String>) -> Btn {
 pub fn danger(text: impl Into<String>) -> Btn {
     Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI).color(Color32::WHITE).strong())
         .corner_radius(R_CTRL)
-        .min_size(vec2(0.0, 24.0)), Some(DANGER))
+        .min_size(vec2(0.0, 24.0)), Some(DANGER_FILL))
 }
 
 /// Flacher Knopf ohne Fläche (wird beim Überfahren hell).
@@ -567,7 +581,7 @@ impl egui::Widget for MenuRow {
         let kg = if !self.keys.is_empty() {
             Some(ui.fonts(|f| f.layout_job(key_hint(&self.keys))))
         } else if !self.hint.is_empty() {
-            Some(ui.painter().layout_no_wrap(crate::tr(&self.hint), egui::FontId::proportional(FS_HINT), TEXT_FAINT()))
+            Some(ui.painter().layout_no_wrap(crate::tr(&self.hint), egui::FontId::proportional(FS_HINT), TEXT_DIM()))
         } else {
             None
         };
@@ -620,7 +634,7 @@ pub fn submenu<R>(
 pub fn field_error(ui: &mut egui::Ui, err: Option<&str>) {
     if let Some(e) = err {
         ui.add_space(4.0);
-        ui.label(RichText::new(format!("{}  {}", icon::WARNING_CIRCLE, crate::tr(e))).small().color(DANGER));
+        ui.label(RichText::new(format!("{}  {}", icon::WARNING_CIRCLE, crate::tr(e))).small().color(DANGER_TEXT()));
     }
 }
 
@@ -880,19 +894,48 @@ mod tests {
             for p in &PALETTES {
                 let a = accent_for(p);
                 let (c, ci) = (contrast(a, p.bg_card), contrast(ink_for(p, a), a));
-                println!("{id:7} {:10} {} card {c:.2} ink {ci:.2}", p.id, a.to_hex());
+                let cr = contrast(a, p.bg_raised);
+                println!("{id:7} {:10} {} card {c:.2} raised {cr:.2} ink {ci:.2}", p.id, a.to_hex());
                 assert!(c >= 3.0, "{id} auf {}: {c}", p.id);
+                assert!(cr >= 3.0, "{id} auf {} (raised): {cr}", p.id);
                 assert!(ci >= 4.5, "Tinte {id} auf {}: {ci}", p.id);
             }
         }
         set_accent("#101010");
         for p in PALETTES.iter().filter(|p| p.dark) {
             assert!(contrast(accent_for(p), p.bg_card) >= 3.0, "{}", p.id);
+            assert!(contrast(accent_for(p), p.bg_raised) >= 3.0, "{}", p.id);
         }
         set_accent("#FFFFFF");
         assert!(contrast(accent_for(&PALETTES[3]), PALETTES[3].bg_card) >= 3.0);
         set_accent("auto");
         assert_eq!(accent_for(&PALETTES[0]), PALETTES[0].accent);
         assert_eq!(ink_for(&PALETTES[3], PALETTES[3].accent), PALETTES[3].accent_ink);
+    }
+
+    /// Lesetext (`text_dim`) und Statustexte erreichen WCAG AA (4,5:1) in allen Designs
+    #[test]
+    fn text_readable_on_all_palettes() {
+        for p in &PALETTES {
+            for (bg, name) in [(p.bg_app, "app"), (p.bg_card, "card"), (p.bg_input, "input"), (p.bg_raised, "raised")] {
+                let c = contrast(p.text_dim, bg);
+                assert!(c >= 4.5, "text_dim auf {name} in {}: {c:.2}", p.id);
+            }
+            for (col, name) in [(danger_text(p), "danger"), (p.warn_text, "warn")] {
+                for bg in [p.bg_card, p.bg_raised] {
+                    let c = contrast(col, bg);
+                    assert!(c >= 4.5, "{name} in {}: {c:.2}", p.id);
+                }
+            }
+        }
+    }
+
+    /// Roter Knopf: weiße Schrift ≥ 4,5:1 in Ruhe, beim Überfahren und Drücken
+    #[test]
+    fn danger_button_readable() {
+        for (t, down) in [(0.0, false), (1.0, false), (1.0, true)] {
+            let c = contrast(Color32::WHITE, hover_fill(DANGER_FILL, t, down));
+            assert!(c >= 4.5, "t {t} down {down}: {c:.2}");
+        }
     }
 }

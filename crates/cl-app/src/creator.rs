@@ -110,7 +110,7 @@ impl App {
         ui.label(
             egui::RichText::new(crate::tr("Ton und Sprache"))
                 .small()
-                .color(crate::theme::TEXT_FAINT()),
+                .color(crate::theme::TEXT_DIM()),
         );
         if item(
             ui,
@@ -152,7 +152,7 @@ impl App {
         ui.label(
             egui::RichText::new(crate::tr("Mehrere Aufnahmen"))
                 .small()
-                .color(crate::theme::TEXT_FAINT()),
+                .color(crate::theme::TEXT_DIM()),
         );
         if item(ui, n_sel >= 2, icon::WAVEFORM, "Auswahl per Ton synchronisieren", "Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)") {
             act = Some("sync");
@@ -167,7 +167,7 @@ impl App {
         ui.label(
             egui::RichText::new(crate::tr("Bild und Format"))
                 .small()
-                .color(crate::theme::TEXT_FAINT()),
+                .color(crate::theme::TEXT_DIM()),
         );
         if item(
             ui,

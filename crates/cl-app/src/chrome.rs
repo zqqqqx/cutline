@@ -200,19 +200,19 @@ impl App {
                             icon::CHECK_CIRCLE,
                             when.map(|w| format!("Gespeichert {w}"))
                                 .unwrap_or_else(|| "Gespeichert".into()),
-                            theme::TEXT_FAINT(),
+                            theme::TEXT_DIM(),
                         )
                     } else if self.project_path.is_none() && self.revision == self.saved_revision {
                         (
                             icon::CIRCLE_DASHED,
                             "Noch nicht gespeichert".to_string(),
-                            theme::TEXT_FAINT(),
+                            theme::TEXT_DIM(),
                         )
                     } else {
                         (
                             icon::CIRCLE_DASHED,
                             "Wird gespeichert …".to_string(),
-                            theme::TEXT_FAINT(),
+                            theme::TEXT_DIM(),
                         )
                     };
                 let narrow = ui.available_width() < 560.0;
@@ -257,7 +257,7 @@ impl App {
                             // Icon-Glyphe als dezente Statusanzeige
                             RichText::new(icon::PLUGS_CONNECTED)
                                 .size(12.0)
-                                .color(theme::TEXT_FAINT()),
+                                .color(theme::TEXT_DIM()),
                         )
                         .on_hover_text(crate::tr(
                             "MCP-Server aktiv (Einstellungen → MCP-Schnittstelle)",

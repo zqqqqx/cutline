@@ -53,7 +53,7 @@ impl App {
         ui.label(
             RichText::new(crate::tr("Story"))
                 .small()
-                .color(theme::TEXT_FAINT()),
+                .color(theme::TEXT_DIM()),
         );
         let chars = self.characters.clone();
         if chars.is_empty() {

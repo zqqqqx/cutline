@@ -253,7 +253,7 @@ impl App {
                     bytes as f64 / 1e6
                 )))
                 .small()
-                .color(theme::TEXT_FAINT()),
+                .color(theme::TEXT_DIM()),
             );
             if n > 0
                 && ui

@@ -1312,7 +1312,7 @@ impl App {
                         egui::Align2::LEFT_TOP,
                         crate::tr(label),
                         egui::FontId::proportional(theme::FS_HINT),
-                        theme::TEXT_FAINT(),
+                        theme::TEXT_DIM(),
                     );
                 }
             }
@@ -1345,7 +1345,7 @@ impl App {
                     if self.loop_range {
                         theme::ACCENT().gamma_multiply(0.7)
                     } else {
-                        Color32::from_rgb(0x5A, 0x5A, 0x64)
+                        theme::TEXT_FAINT()
                     },
                 );
                 let lp = painter.with_clip_rect(lanes);
@@ -1353,7 +1353,7 @@ impl App {
                     if x > x0 && x < rect.right() - 1.0 {
                         lp.line_segment(
                             [pos2(x, ruler.bottom()), pos2(x, rect.bottom())],
-                            Stroke::new(1.0_f32, Color32::from_rgb(0x4A, 0x4A, 0x55)),
+                            Stroke::new(1.0_f32, theme::TEXT_FAINT()),
                         );
                     }
                 }
@@ -1696,7 +1696,7 @@ impl App {
                 pos2(tx(*start), row.rect.top()),
                 pos2(tx(start + elapsed), row.rect.bottom()),
             );
-            p.rect_filled(cr, theme::R_CTRL, Color32::from_rgb(0x5A, 0x22, 0x26));
+            p.rect_filled(cr, theme::R_CTRL, theme::DANGER_BG());
             let base = cr.bottom() - 3.0;
             let wh = cr.height() - BAND_H - 6.0;
             let mut x = cr.left().max(x0);
@@ -1711,7 +1711,7 @@ impl App {
                 let hh = (v.sqrt() * wh).max(1.0);
                 p.line_segment(
                     [pos2(x, base), pos2(x, base - hh)],
-                    Stroke::new(1.5_f32, Color32::from_rgb(0xFF, 0x9A, 0x9A)),
+                    Stroke::new(1.5_f32, theme::DANGER_TEXT()),
                 );
                 x += 2.0;
             }
@@ -1835,11 +1835,7 @@ impl App {
                 let g = hp.layout_no_wrap(
                     name,
                     egui::FontId::proportional(theme::FS_HINT),
-                    if tr.name.is_some() {
-                        theme::TEXT_DIM()
-                    } else {
-                        theme::TEXT_FAINT()
-                    },
+                    theme::TEXT_DIM(),
                 );
                 let clip = Rect::from_min_max(
                     pos2(name_x, head.top()),
@@ -1871,7 +1867,7 @@ impl App {
                     if *on {
                         theme::ACCENT()
                     } else {
-                        theme::TEXT_FAINT()
+                        theme::TEXT_DIM()
                     },
                 );
                 if br.clicked() && *k == 3 {

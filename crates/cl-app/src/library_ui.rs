@@ -302,7 +302,7 @@ impl App {
                                     "{}  Ordner entfernen",
                                     icon::TRASH
                                 )))
-                                .color(theme::WARN),
+                                .color(theme::WARN_TEXT()),
                             )
                             .clicked()
                         {
@@ -473,7 +473,7 @@ impl App {
             if ui
                 .button(
                     RichText::new(crate::tr(format!("{}  {label}", icon::TRASH)))
-                        .color(theme::WARN),
+                        .color(theme::WARN_TEXT()),
                 )
                 .clicked()
             {
@@ -609,7 +609,7 @@ impl App {
                     }
                     if let LibDialog::RenameCat { key, .. } = d {
                         if key.starts_with("b:") {
-                            ui.label(RichText::new(crate::tr("Eingebaute Kategorien bekommen nur einen eigenen Anzeigenamen.")).small().color(theme::TEXT_FAINT()));
+                            ui.label(RichText::new(crate::tr("Eingebaute Kategorien bekommen nur einen eigenen Anzeigenamen.")).small().color(theme::TEXT_DIM()));
                         }
                     }
                 }

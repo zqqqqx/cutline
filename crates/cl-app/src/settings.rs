@@ -430,7 +430,7 @@ impl App {
                 .inner_margin(theme::PAD_CARD)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("{}  {e}", icon::WARNING_CIRCLE)).color(theme::DANGER));
+                        ui.label(RichText::new(format!("{}  {e}", icon::WARNING_CIRCLE)).color(theme::DANGER_TEXT()));
                         if theme::icon_button(ui, icon::X, "", true, false).clicked() {
                             self.settings_error = None;
                         }
@@ -601,7 +601,7 @@ impl App {
                         self.change_projects_dir(paths::data_dir().join("Projects"));
                     }
                 });
-                ui.label(RichText::new(crate::tr("Vorhandene Projekte werden mit verschoben.")).small().color(theme::TEXT_FAINT()));
+                ui.label(RichText::new(crate::tr("Vorhandene Projekte werden mit verschoben.")).small().color(theme::TEXT_DIM()));
                 theme::section(ui, "Speichern");
                 widgets::toggle_row(ui, "Automatisch speichern", &mut self.settings.autosave);
                 theme::row(ui, "Sicherung alle", |ui| {
@@ -648,7 +648,7 @@ impl App {
                 }
                 theme::section(ui, "Plugins");
                 widgets::toggle_row(ui, "Downloads in die Bibliothek übernehmen", &mut self.settings.lib_downloads);
-                ui.label(RichText::new(crate::tr("Musik von Epidemic Sound und Videos von Pexels stehen dann auch in anderen Projekten bereit. Freesound-Sounds landen immer in der Bibliothek.")).small().color(theme::TEXT_FAINT()));
+                ui.label(RichText::new(crate::tr("Musik von Epidemic Sound und Videos von Pexels stehen dann auch in anderen Projekten bereit. Freesound-Sounds landen immer in der Bibliothek.")).small().color(theme::TEXT_DIM()));
             }
             Section::Audio => {
                 // Geräteliste einmal je Öffnen abfragen (die Abfrage ist nicht billig)
@@ -688,7 +688,7 @@ impl App {
                             }
                         });
                 });
-                ui.label(RichText::new(crate::tr("Standard für neue Projekte. „Automatisch“ legt Ton, der nur auf einer Seite aufgenommen wurde, auf beide Ohren. Pro Clip änderbar.")).small().color(theme::TEXT_FAINT()));
+                ui.label(RichText::new(crate::tr("Standard für neue Projekte. „Automatisch“ legt Ton, der nur auf einer Seite aufgenommen wurde, auf beide Ohren. Pro Clip änderbar.")).small().color(theme::TEXT_DIM()));
                 // Kanäle des offenen Projekts: Projekt-Reiter → Format
             }
             Section::Editing => {
@@ -766,7 +766,7 @@ impl App {
                             }
                         });
                 });
-                ui.label(RichText::new(crate::tr("Wird beim Programmstart geprüft.")).small().color(theme::TEXT_FAINT()));
+                ui.label(RichText::new(crate::tr("Wird beim Programmstart geprüft.")).small().color(theme::TEXT_DIM()));
             }
             Section::Mcp => {
                 ui.label(RichText::new(crate::tr("Nur auf diesem Rechner erreichbar (127.0.0.1), mit Token. Jede Änderung lässt sich rückgängig machen.")).small().color(theme::TEXT_DIM()));
@@ -846,7 +846,7 @@ impl App {
                             paths::data_dir().join("mcp.json").display()
                         )))
                         .small()
-                        .color(theme::TEXT_FAINT()),
+                        .color(theme::TEXT_DIM()),
                     );
                 } else if self.settings.mcp_enabled {
                     ui.label(

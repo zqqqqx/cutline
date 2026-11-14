@@ -487,7 +487,7 @@ impl App {
             ui.label(
                 RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w)))
                     .small()
-                    .color(theme::SNAP),
+                    .color(theme::WARN_TEXT()),
             );
         }
         if ui

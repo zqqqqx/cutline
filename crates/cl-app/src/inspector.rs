@@ -452,7 +452,7 @@ impl App {
                         crate::tr(format!("ab {}", c.start.timecode(fps)))
                     ))
                     .small()
-                    .color(theme::TEXT_FAINT()),
+                    .color(theme::TEXT_DIM()),
                 );
             });
         if let Some(props) = kf {
@@ -1032,7 +1032,8 @@ impl App {
         let time = ui.input(|i| i.time);
         let mut chosen: Option<String> = None;
         widgets::grid(ui, &items, 66.0, 1.0, 16.0, |ui, r, (id, name)| {
-            let hovered = ui.rect_contains_pointer(r);
+            // ohne Animationen bleibt die Ruhe-Darstellung stehen
+            let hovered = theme::anim(1.0) > 0.0 && ui.rect_contains_pointer(r);
             let resp = widgets::tile(
                 ui,
                 egui::Id::new(("anim", slot, *id)),
