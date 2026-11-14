@@ -606,7 +606,7 @@ impl App {
                         "reveal" => reveal(&p),
                         "props" => self.props = Some(crate::props::Props::Project(p)),
                         "exports" => {
-                            self.exports_for = self.home.entries.iter().find(|e| e.path == p).map(|e| e.name.clone());
+                            self.exports_for = self.home.entries.iter().find(|e| e.path == p).map(|e| crate::exports::ExportsList::new(&e.name, Some(&e.path)));
                         }
                         "delete" => self.home.confirm_delete = Some(p),
                         _ => {}
@@ -708,27 +708,21 @@ impl App {
                     .and_then(|s| Project::from_json(&s).ok())
                 {
                     let mut proj = proj;
-                    crate::exports::rename_project(&proj.name, name.trim());
-                    proj.name = name.trim().to_string();
-                    let _ = std::fs::write(&path, proj.to_json());
-                    // Datei im Projektordner mit umbenennen
-                    if path.starts_with(paths::projects_dir()) {
-                        let clean: String = proj
-                            .name
-                            .chars()
-                            .map(|c| {
-                                if c.is_alphanumeric() || c == ' ' || c == '-' {
-                                    c
-                                } else {
-                                    '_'
-                                }
-                            })
-                            .collect();
-                        let np = path.with_file_name(format!("{clean}.cutline"));
-                        if !np.exists() && std::fs::rename(&path, &np).is_ok() {
-                            let _ = std::fs::rename(thumb_path(&path), thumb_path(&np));
-                            self.settings.recent.retain(|r| r != &path);
+                    let old = std::mem::replace(&mut proj.name, name.trim().to_string());
+                    if let Err(e) = paths::write_atomic(&path, proj.to_json()) {
+                        self.toast_err(e.to_string());
+                    } else {
+                        let mut now = path.clone();
+                        // Datei im Projektordner mit umbenennen
+                        if path.starts_with(paths::projects_dir()) {
+                            let np = path.with_file_name(format!("{}.cutline", paths::safe_name(&proj.name)));
+                            if !np.exists() && std::fs::rename(&path, &np).is_ok() {
+                                let _ = std::fs::rename(thumb_path(&path), thumb_path(&np));
+                                self.settings.recent.retain(|r| r != &path);
+                                now = np;
+                            }
                         }
+                        crate::exports::rename_project(&path, &now, &old, &proj.name);
                     }
                 }
                 self.home.refresh();
@@ -797,7 +791,7 @@ fn project_menu(ui: &mut egui::Ui, path: &Path, action: &mut Option<(&'static st
     }
 }
 
-fn fmt_dur(t: Time) -> String {
+pub fn fmt_dur(t: Time) -> String {
     let s = t.as_secs_f64().round() as i64;
     format!("{}:{:02}", s / 60, s % 60)
 }

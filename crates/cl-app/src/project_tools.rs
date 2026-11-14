@@ -47,7 +47,7 @@ pub fn write_backup(project: &Path, json: &str, keep: usize) -> std::io::Result<
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let p = dir.join(format!("{stamp}.cutline"));
-    std::fs::write(&p, json)?;
+    paths::write_atomic(&p, json)?;
     for (old, _) in list_backups(project).into_iter().skip(keep.max(1)) {
         let _ = std::fs::remove_file(old);
     }
@@ -126,13 +126,9 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
             out.project_fonts.push(t);
         }
     }
-    std::fs::write(dir.join(format!("{safe}.cutline")), out.to_json())
+    paths::write_atomic(&dir.join(format!("{safe}.cutline")), out.to_json())
         .map_err(|e| e.to_string())?;
     Ok(dir)
-}
-
-fn ago(t: SystemTime) -> String {
-    crate::home::ago(t)
 }
 
 impl App {
@@ -218,7 +214,7 @@ impl App {
                     ui.horizontal(|ui| {
                         let local = chrono_like(t);
                         ui.label(RichText::new(local).monospace());
-                        ui.label(RichText::new(crate::tr(ago(t))).small().color(theme::TEXT_FAINT()));
+                        ui.label(RichText::new(crate::tr(crate::home::ago(t))).small().color(theme::TEXT_FAINT()));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.add(theme::ghost("Wiederherstellen")).clicked() {
                                 restore = Some(p.clone());

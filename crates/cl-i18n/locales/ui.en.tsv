@@ -1495,3 +1495,8 @@ Nie	Never
 Wird beim Programmstart geprüft.	Checked when the app starts.
 Animation (als Blende übernommen)	Animation (imported as a fade)
 Aufräumen	Clean up
+Diesen Namen gibt es schon	This name already exists
+Automatisch speichern fehlgeschlagen: {}	Autosave failed: {}
+Projekt konnte nicht gespeichert werden: {}	Could not save the project: {}
+Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet	This project is already open in another Cutline window
+„{}“ enthält Dateien, die im offenen Projekt verwendet werden, und bleibt deshalb erhalten	"{}" contains files used by the open project and is kept

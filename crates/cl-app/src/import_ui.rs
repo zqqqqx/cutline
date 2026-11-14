@@ -64,7 +64,9 @@ impl App {
 
     fn open_imported(&mut self, proj: Project, rep: cl_import::Report) {
         let name = proj.name.clone();
-        self.new_project();
+        if !self.new_project() {
+            return;
+        }
         *self.doc.lock().unwrap() = Document::new(proj);
         self.revision = u64::MAX;
         self.sync_project();
