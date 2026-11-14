@@ -105,11 +105,11 @@ pub fn ago(t: SystemTime) -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     match s {
-        0..=59 => "gerade eben".into(),
-        60..=3599 => format!("vor {} Min.", s / 60),
-        3600..=86399 => format!("vor {} Std.", s / 3600),
-        86400..=172799 => "gestern".into(),
-        _ => format!("vor {} Tagen", s / 86400),
+        0..=59 => crate::tr("gerade eben"),
+        60..=3599 => crate::tr(format!("vor {} Min.", s / 60)),
+        3600..=86399 => crate::tr(format!("vor {} Std.", s / 3600)),
+        86400..=172799 => crate::tr("gestern"),
+        _ => crate::tr(format!("vor {} Tagen", s / 86400)),
     }
 }
 

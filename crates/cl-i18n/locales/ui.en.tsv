@@ -1500,3 +1500,5 @@ Automatisch speichern fehlgeschlagen: {}	Autosave failed: {}
 Projekt konnte nicht gespeichert werden: {}	Could not save the project: {}
 Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet	This project is already open in another Cutline window
 „{}“ enthält Dateien, die im offenen Projekt verwendet werden, und bleibt deshalb erhalten	"{}" contains files used by the open project and is kept
+gestern	yesterday
+Cutline – Vorschau	Cutline – Preview

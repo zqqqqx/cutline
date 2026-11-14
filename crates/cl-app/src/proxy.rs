@@ -195,7 +195,7 @@ impl App {
             self.tasks.spawn(
                 ctx,
                 "proxy",
-                format!("Proxy wird erstellt: {name}"),
+                crate::tr(format!("Proxy wird erstellt: {name}")),
                 move |p, cancel| match build(&m.path, &out, height, dur, p, cancel) {
                     Ok(()) => TaskDone::Proxy {
                         media: id,

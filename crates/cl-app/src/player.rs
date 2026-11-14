@@ -699,7 +699,7 @@ impl App {
             ctx.request_repaint();
         }
         let mut builder = egui::ViewportBuilder::default()
-            .with_title("Cutline – Vorschau")
+            .with_title(crate::tr("Cutline – Vorschau"))
             .with_inner_size([960.0, 540.0])
             .with_min_inner_size([320.0, 180.0]);
         // Erst auf dem Bildschirm des Hauptfensters öffnen; von dort auf den zweiten ziehen

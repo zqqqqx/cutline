@@ -1411,6 +1411,8 @@ impl App {
             egui::ComboBox::from_id_salt("proj-platform")
                 .selected_text(crate::tr(cur.map(|p| p.name).unwrap_or("Keine")))
                 .width((ui.available_width() - 12.0).max(60.0))
+                // lange Namen kürzen statt die Spalte breiter zu machen
+                .truncate()
                 .show_ui(ui, |ui| {
                     if ui
                         .selectable_label(cur.is_none(), crate::tr("Keine"))
