@@ -2566,7 +2566,8 @@ impl App {
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
         // offenes Kontextmenü: Esc gehört dem Menü (sonst verbraucht das Kürzel die Taste)
-        if ctx.wants_keyboard_input() || self.settings_open || ctx.is_context_menu_open() {
+        let dialog = self.quick.open.is_some() || self.shorts.is_some() || self.aspect_fit.is_some() || self.tpl_dialog.is_some();
+        if ctx.wants_keyboard_input() || self.settings_open || dialog || ctx.is_context_menu_open() {
             return;
         }
         let mut actions: Vec<&str> = Vec::new();

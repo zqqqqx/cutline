@@ -90,12 +90,14 @@ fn load_all() -> Vec<(String, Result<Project, String>)> {
 /// Umrechnung Vorlage + Zielprojekt + Zeit -> Ops (für einen Batch): Medien aufnehmen,
 /// Inhalt ab `at` um die Vorlagenlänge nach hinten schieben, Vorlagen-Clips setzen.
 /// Fehlende Spuren legt `AddClip` selbst an.
+/// Vorlagen ohne Hauptspur-Clips (Titel, Endkarte) sind Überlagerungen: sie verschieben nichts.
 /// shortcut: Clips, die `at` überspannen, bleiben liegen; die Hauptspur mit Magnet schiebt sich
 /// nur durch eingefügte Hauptspur-Clips.
 pub fn insert_ops(tpl: &Project, target: &Project, at: Time) -> Vec<EditOp> {
     let len = tpl.duration();
+    let pushes = tpl.timeline.tracks.iter().any(|t| t.main && !t.clips.is_empty());
     let mut ops: Vec<EditOp> = tpl.media.iter().map(|m| EditOp::ImportMedia { media: m.clone() }).collect();
-    for t in target.timeline.tracks.iter().filter(|t| !t.locked && !(t.main && target.settings.main_track_magnet)) {
+    for t in target.timeline.tracks.iter().filter(|t| pushes && !t.locked && !(t.main && target.settings.main_track_magnet)) {
         let mut v: Vec<&Clip> = t.clips.iter().filter(|c| c.start >= at).collect();
         v.sort_by_key(|c| std::cmp::Reverse(c.start)); // hinterste zuerst, damit nichts kollidiert
         ops.extend(v.into_iter().map(|c| EditOp::MoveClip { clip: c.id, track: Some(t.id), start: c.start + len }));
@@ -218,7 +220,7 @@ impl App {
             for (name, proj) in load_all() {
                 let Ok(proj) = proj else { continue };
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(&name).size(theme::FS_UI));
+                    ui.label(RichText::new(crate::tr(name.as_str())).size(theme::FS_UI));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         for (mode, t) in [(2u8, "Am Ende"), (1, "Am Playhead"), (0, "Am Anfang")] {
                             if ui.add(theme::secondary(t)).clicked() {
@@ -371,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_shifts_later_clips_in_one_step() {
+    fn overlay_template_inserts_in_one_step_without_shifting() {
         let mut tpl = Project::new("t");
         let mut tt = text_track(&[]);
         tt.clips.push(Clip::new(ClipContent::Text(TextStyle::default()), Time::ZERO, Time::from_secs_f64(2.0)));
@@ -385,7 +387,7 @@ mod tests {
         assert_eq!(d.history().count(), n + 1);
         let mut starts: Vec<f64> = d.project().timeline.tracks.iter().flat_map(|t| &t.clips).map(|c| c.start.as_secs_f64()).collect();
         starts.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        assert_eq!(starts, vec![0.0, 3.0, 7.0]);
+        assert_eq!(starts, vec![0.0, 3.0, 5.0]);
     }
 
     #[test]

@@ -894,7 +894,7 @@ fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
     );
     ui.label(
         RichText::new(crate::tr(
-            "Mehrfachauswahl. Danach schlagen wir passende Werkzeuge und Plugins vor.",
+            "Mehrfachauswahl. Danach schlagen wir passende Quick Actions und Plugins vor.",
         ))
         .color(theme::TEXT_DIM()),
     );

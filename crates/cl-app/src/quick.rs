@@ -272,9 +272,10 @@ impl App {
                     }
                     QuickKind::Fillers => {
                         ui.label(RichText::new(crate::tr("Wörter (durch Komma getrennt)")).size(theme::FS_UI).color(theme::TEXT_DIM()));
-                        changed |= ui.add(egui::TextEdit::singleline(&mut q.words).desired_width(f32::INFINITY)).changed();
+                        changed |= ui.add(egui::TextEdit::multiline(&mut q.words).desired_rows(2).desired_width(f32::INFINITY)).changed();
                     }
                     QuickKind::Ducking => {
+                        ui.label(RichText::new(crate::tr("Musik-Clip auswählen. Abgesenkt wird, wo auf anderen Tonspuren gesprochen wird.")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
                         theme::row(ui, "Absenkung", |ui| {
                             Slider::new(&mut q.duck_db, 1.0..=40.0).default(12.0).suffix(" dB").show(ui);
                         });
