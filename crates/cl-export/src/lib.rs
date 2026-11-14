@@ -161,6 +161,12 @@ pub struct ExportSettings {
     /// Transparenter Hintergrund (nur ProRes 4444 in MOV und VP9 in WebM)
     #[serde(default)]
     pub transparent: bool,
+    /// Lautheit angleichen auf dieses Ziel (LUFS), zweistufig mit `loudnorm`, Spitze −1 dBTP
+    #[serde(default)]
+    pub loudness: Option<f32>,
+    /// AAC-Tonbitrate in kbit/s (`None` = 256)
+    #[serde(default)]
+    pub audio_kbps: Option<u32>,
 }
 
 impl ExportSettings {
@@ -176,6 +182,18 @@ impl ExportSettings {
             include_audio: true,
             range: None,
             transparent: false,
+            loudness: None,
+            audio_kbps: None,
+        }
+    }
+
+    /// Tatsächliche Tonbitrate im Video (kbit/s, 0 = ohne Ton), wie in `codec_args`.
+    pub fn audio_bitrate(&self) -> u32 {
+        match (self.format, self.codec) {
+            _ if !self.include_audio || self.format == Format::Gif => 0,
+            (Format::WebM, _) => 192,
+            (_, Codec::ProRes) => 1536,
+            _ => self.audio_kbps.unwrap_or(256),
         }
     }
 
@@ -217,6 +235,45 @@ pub struct Job {
     /// Ziel; FFmpeg schreibt nach `part`, erst bei Erfolg wird umbenannt
     pub out: PathBuf,
     pub part: PathBuf,
+    /// Lautheit: erst den Ton messen, dann `[aout]` linear angleichen (siehe [`run`])
+    measure: Option<Measure>,
+}
+
+struct Measure {
+    args: Vec<String>,
+    target: f32,
+    /// Graph des Exports ohne die Angleichung
+    graph: String,
+}
+
+impl Job {
+    /// Läuft vor dem Export ein Messlauf für „Lautheit angleichen“?
+    pub fn measures_loudness(&self) -> bool {
+        self.measure.is_some()
+    }
+}
+
+/// Anteil des Messlaufs am gemeldeten Fortschritt (bei „Lautheit angleichen“).
+pub const MEASURE_SHARE: f32 = 0.1;
+
+fn loudnorm(target: f32) -> String {
+    format!("loudnorm=I={target:.1}:TP=-1:LRA=50")
+}
+
+/// Zweiter Durchgang aus dem JSON des Messlaufs; Stille (−inf) bleibt unverändert.
+fn second_pass(log: &str, target: f32) -> String {
+    let get = |k: &str| {
+        let key = format!("\"{k}\" : \"");
+        let i = log.rfind(&key)? + key.len();
+        log[i..].split('"').next()?.parse::<f64>().ok().filter(|v| v.is_finite())
+    };
+    match (get("input_i"), get("input_tp"), get("input_lra"), get("input_thresh"), get("target_offset")) {
+        (Some(i), Some(tp), Some(lra), Some(th), Some(off)) if i > -70.0 => format!(
+            "{}:measured_I={i}:measured_TP={tp}:measured_LRA={lra}:measured_thresh={th}:offset={off}:linear=true:print_format=none,aresample=48000",
+            loudnorm(target)
+        ),
+        _ => "anull".into(),
+    }
 }
 
 /// `<stem>.part.<ext>` neben dem Ziel (Endung bleibt, FFmpeg wählt danach den Muxer).
@@ -290,7 +347,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         vlabel = Some("vout");
     }
     let wants_audio = s.format.audio_only() || (s.include_audio && s.format != Format::Gif);
-    let alabel = wants_audio.then(|| {
+    let mut alabel = wants_audio.then(|| {
         graph::audio_part(
             p,
             start,
@@ -303,6 +360,26 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     });
 
     std::fs::write(workdir.path().join("graph.txt"), ctx.graph.join(";\n"))?;
+    // Messlauf nur über den Ton (gleicher Graph wie die Vorschau), nicht über das ganze Video
+    let measure = match (s.loudness, &alabel) {
+        (Some(target), Some(_)) => {
+            let (mut inputs, mut graph, mut n) = (Vec::new(), Vec::new(), 0);
+            let l = graph::audio_part(p, start, end, &mut inputs, &mut n, &mut graph, true);
+            graph.push(format!("[{l}]{}:print_format=json[m]", loudnorm(target)));
+            std::fs::write(workdir.path().join("measure.txt"), graph.join(";\n"))?;
+            let mut args: Vec<String> = ["-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats"]
+                .map(String::from)
+                .into();
+            args.extend(inputs);
+            args.extend(
+                ["-/filter_complex", "measure.txt", "-map", "[m]", "-t", &f(dur.as_secs_f64()), "-f", "null", "-"]
+                    .map(String::from),
+            );
+            alabel = Some("anorm".into());
+            Some(Measure { args, target, graph: ctx.graph.join(";\n") })
+        }
+        _ => None,
+    };
     let mut args: Vec<String> = vec![
         "-y".into(),
         "-v".into(),
@@ -341,6 +418,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         duration: dur,
         out: out.to_path_buf(),
         part,
+        measure,
     })
 }
 
@@ -501,7 +579,7 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
         match (s.format, codec) {
             (Format::WebM, _) => a.extend(v(&["-c:a", "libopus", "-b:a", "192k"])),
             (_, Codec::ProRes) => a.extend(v(&["-c:a", "pcm_s16le"])),
-            _ => a.extend(v(&["-c:a", "aac", "-b:a", "256k"])),
+            _ => a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), format!("{}k", s.audio_bitrate())]),
         }
     }
     if matches!(s.format, Format::Mp4 | Format::Mov) {
@@ -512,18 +590,27 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
 
 /// Läuft einen Job und meldet den Fortschritt (0..1). `cancel` bricht ab.
 /// Eine vorhandene Zieldatei bleibt bei Abbruch oder Fehler unverändert.
-pub fn run(job: &Job, cancel: Arc<AtomicBool>, progress: impl FnMut(f32)) -> Result<()> {
-    let r = run_ffmpeg(job, cancel, progress)
-        .and_then(|()| std::fs::rename(&job.part, &job.out).map_err(Into::into));
+/// Mit „Lautheit angleichen“ läuft vorher der Messlauf (erste [`MEASURE_SHARE`] des Fortschritts).
+pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
+    let r = match &job.measure {
+        Some(m) => run_ffmpeg(job, &m.args, &cancel, &mut |x| progress(x * MEASURE_SHARE)).and_then(|log| {
+            let g = format!("{};\n[aout]{}[anorm]", m.graph, second_pass(&log, m.target));
+            std::fs::write(job.workdir.path().join("graph.txt"), g)?;
+            run_ffmpeg(job, &job.args, &cancel, &mut |x| progress(MEASURE_SHARE + x * (1.0 - MEASURE_SHARE)))
+        }),
+        None => run_ffmpeg(job, &job.args, &cancel, &mut progress),
+    }
+    .and_then(|_| std::fs::rename(&job.part, &job.out).map_err(Into::into));
     if r.is_err() {
         let _ = std::fs::remove_file(&job.part);
     }
     r
 }
 
-fn run_ffmpeg(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
+/// Startet FFmpeg im Arbeitsordner des Jobs; gibt bei Erfolg die Fehlerausgabe (Log) zurück.
+fn run_ffmpeg(job: &Job, args: &[String], cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<String> {
     let mut child: Child = cl_media::ffmpeg_command()?
-        .args(&job.args)
+        .args(args)
         .current_dir(job.workdir.path())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -560,7 +647,7 @@ fn run_ffmpeg(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32))
         ));
     }
     progress(1.0);
-    Ok(())
+    Ok(err)
 }
 
 /// Prüft, welche Hardware-Encoder auf diesem Rechner wirklich funktionieren (kurzer Testlauf).
@@ -649,10 +736,27 @@ pub fn spawn_audio_preview(
 
 /// Textclips als SRT (z. B. für Untertitel-Export).
 pub fn to_srt(p: &Project) -> String {
+    subtitles(p, ',')
+}
+
+/// Textclips als WebVTT.
+pub fn to_vtt(p: &Project) -> String {
+    format!("WEBVTT\n\n{}", subtitles(p, '.'))
+}
+
+/// SRT oder VTT je nach Dateiendung.
+pub fn subtitles_for(p: &Project, path: &Path) -> String {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(e) if e.eq_ignore_ascii_case("vtt") => to_vtt(p),
+        _ => to_srt(p),
+    }
+}
+
+fn subtitles(p: &Project, ms_sep: char) -> String {
     let ts = |t: Time| {
         let ms = t.as_millis().max(0);
         format!(
-            "{:02}:{:02}:{:02},{:03}",
+            "{:02}:{:02}:{:02}{ms_sep}{:03}",
             ms / 3_600_000,
             (ms / 60_000) % 60,
             (ms / 1000) % 60,
@@ -1758,6 +1862,68 @@ mod tests {
         assert!(out.is_file());
     }
 
+    /// Integrierte Lautheit (LUFS) einer Datei laut `ebur128`.
+    fn lufs(path: &Path) -> f64 {
+        let o = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "info", "-nostdin", "-i"])
+            .arg(path)
+            .args(["-af", "ebur128", "-f", "null", "-"])
+            .output()
+            .unwrap();
+        let log = String::from_utf8_lossy(&o.stderr);
+        let i = log.rfind("I:").expect("ebur128-Zusammenfassung");
+        log[i + 2..].split_whitespace().next().unwrap().parse().unwrap()
+    }
+
+    #[test]
+    fn loudness_is_normalized_in_two_passes() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = sine_project(dir.path(), 0.0);
+        let mut s = wav_settings(&p);
+        s.loudness = Some(-14.0);
+        let out = dir.path().join("laut.wav");
+        let mut seen = Vec::new();
+        run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
+        let l = lufs(&out);
+        assert!((l + 14.0).abs() <= 1.0, "{l} LUFS");
+        // Messlauf meldet sich im ersten Teil des Fortschritts
+        assert!(seen.iter().any(|x| *x <= MEASURE_SHARE) && seen.last() == Some(&1.0), "{seen:?}");
+        // Projekt ohne hörbaren Ton: Stille bleibt, kein Fehler
+        p.timeline.tracks[0].muted = true;
+        run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        assert!(peaks_db(&out, 0.0, 2.0).iter().all(|v| *v < -60.0));
+    }
+
+    #[test]
+    fn speed_curve_keeps_audio() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = sine_project(dir.path(), 0.0);
+        p.timeline.tracks[0].clips[0].fx.speed_curve = Some("montage".into());
+        let out = dir.path().join("kurve.wav");
+        run(&build(&p, &wav_settings(&p), &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let tone = peaks_db(&out, 0.05, 1.9);
+        assert!(!tone.is_empty() && tone.iter().all(|v| *v > -30.0), "{tone:?}");
+        let secs = cl_media::probe(&out).unwrap().duration.as_secs_f64();
+        assert!((secs - 2.0).abs() < 0.05, "{secs}");
+    }
+
+    #[test]
+    fn audio_bitrate_follows_settings() {
+        let mut s = ExportSettings::from_project(&Project::new("a"));
+        assert_eq!(s.audio_bitrate(), 256);
+        s.audio_kbps = Some(384);
+        assert!(codec_args(&s).contains(&"384k".to_string()));
+        s.include_audio = false;
+        assert_eq!(s.audio_bitrate(), 0);
+    }
+
     #[test]
     fn cancelled_export_keeps_existing_file() {
         if !cl_media::ffmpeg_available() {
@@ -1883,5 +2049,7 @@ mod tests {
         ));
         p.timeline.tracks.push(t);
         assert_eq!(to_srt(&p), "1\n00:00:01,500 --> 00:00:03,500\nHallo\n");
+        assert_eq!(to_vtt(&p), "WEBVTT\n\n1\n00:00:01.500 --> 00:00:03.500\nHallo\n");
+        assert!(subtitles_for(&p, Path::new("a.VTT")).starts_with("WEBVTT"));
     }
 }

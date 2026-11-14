@@ -1192,8 +1192,6 @@ impl App {
                 return;
             }
         } else {
-            ui.label(RichText::new(crate::tr("Ton ist bei Kurven stumm")).small().color(theme::TEXT_DIM()));
-            ui.add_space(6.0);
             let mut items: Vec<(&str, &str)> = vec![("", "Keine")];
             items.extend(cl_core::SPEED_CURVES.iter().map(|c| (c.0, c.1)));
             let cur = c.fx.speed_curve.clone().unwrap_or_default();
