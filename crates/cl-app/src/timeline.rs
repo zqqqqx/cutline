@@ -283,7 +283,7 @@ impl App {
             // Werkzeug wählen (Auswählen, Teilen, alles links/rechts)
             let cur = self.timeline.tool;
             ui.menu_button(
-                RichText::new(format!("{} {}", cur.icon(), icon::CARET_DOWN)).size(13.0),
+                RichText::new(format!("{} {}", cur.icon(), icon::CARET_DOWN)).size(14.0) /* Icon-Glyphen im Werkzeugknopf */,
                 |ui| {
                     for (t, g, name, key) in Tool::ALL {
                         let mark = if cur == t { icon::CHECK } else { " " };
@@ -301,11 +301,11 @@ impl App {
             )
             .response
             .on_hover_text(crate::tr("Werkzeug"));
-            let tools = ui.menu_button(egui::RichText::new(crate::tr(format!("{}  Quick Actions", icon::LIGHTNING))).size(12.0), |ui| self.tools_menu(ui)).response;
+            let tools = ui.menu_button(egui::RichText::new(crate::tr(format!("{}  Quick Actions", icon::LIGHTNING))).size(theme::FS_TEXT), |ui| self.tools_menu(ui)).response;
             self.tour_rects.insert("tools", tools.rect);
             tools.on_hover_text(crate::tr("Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …"));
             ui.menu_button(
-                RichText::new(crate::tr(format!("{}  Spur", icon::PLUS))).size(12.0),
+                RichText::new(crate::tr(format!("{}  Spur", icon::PLUS))).size(theme::FS_TEXT),
                 |ui| {
                     for (k, name) in TRACK_KINDS {
                         if menu_item(ui, theme::track_icon(k), name, "") {
@@ -402,10 +402,11 @@ impl App {
                 }
                 ui.add(egui::Separator::default().vertical().spacing(10.0));
                 let rec = self.voiceover.recorder.is_some();
+                // Eigener Knopf statt icon_button: bei laufender Aufnahme rot (icon_button kennt nur aktiv = Akzent)
                 let mic = ui.add(
                     egui::Button::new(RichText::new(icon::MICROPHONE).size(14.0).color(if rec { theme::DANGER } else if self.voiceover.open { theme::ACCENT() } else { theme::TEXT_DIM() }))
                         .fill(if self.voiceover.open || rec { theme::overlay(22) } else { Color32::TRANSPARENT })
-                        .corner_radius(5)
+                        .corner_radius(theme::R_CTRL)
                         .min_size(vec2(24.0, 22.0)),
                 );
                 if mic.on_hover_text(crate::tr(format!("{}  (R)", self.t("voiceover")))).clicked() {
@@ -560,7 +561,7 @@ impl App {
             } else {
                 theme::BG_INPUT()
             };
-            lane_paint.rect_filled(lane, 5.0, fill);
+            lane_paint.rect_filled(lane, theme::R_CTRL, fill);
         }
 
         // ---------- Treffer ----------
@@ -1139,7 +1140,7 @@ impl App {
                             pos2(tx(t), ruler.bottom() + 2.0),
                             egui::Align2::CENTER_TOP,
                             crate::tr("Rollen"),
-                            egui::FontId::proportional(10.0),
+                            egui::FontId::proportional(theme::FS_HINT),
                             theme::ACCENT(),
                         );
                     }
@@ -1161,7 +1162,7 @@ impl App {
                         pos2(cx + 4.0, ruler.bottom() + 2.0),
                         egui::Align2::LEFT_TOP,
                         crate::tr(format!("Slippen: Quelle ab {v:.2} s")),
-                        egui::FontId::proportional(10.0),
+                        egui::FontId::proportional(theme::FS_HINT),
                         theme::ACCENT(),
                     );
                     if resp.drag_stopped() {
@@ -1305,7 +1306,7 @@ impl App {
                         pos2(x + 3.0, ruler.top() + 3.0),
                         egui::Align2::LEFT_TOP,
                         crate::tr(label),
-                        egui::FontId::proportional(9.5),
+                        egui::FontId::proportional(theme::FS_HINT),
                         theme::TEXT_FAINT(),
                     );
                 }
@@ -1364,7 +1365,7 @@ impl App {
                             pos2(x, ruler.bottom() - 2.0),
                             egui::Align2::CENTER_BOTTOM,
                             glyph,
-                            egui::FontId::monospace(11.0),
+                            egui::FontId::monospace(11.0), // Glyphe der In-/Out-Marke am Lineal
                             theme::ACCENT(),
                         );
                     }
@@ -1438,7 +1439,7 @@ impl App {
                     icon::FILM_STRIP,
                     self.t("timeline-empty")
                 )),
-                egui::FontId::proportional(12.5),
+                egui::FontId::proportional(theme::FS_TEXT),
                 theme::TEXT_DIM(),
             );
         }
@@ -1484,7 +1485,7 @@ impl App {
             let lane = Rect::from_min_max(pos2(x0, gr.top()), gr.max);
             p.rect_stroke(
                 lane,
-                5.0,
+                theme::R_CTRL,
                 Stroke::new(1.0_f32, theme::overlay(80)),
                 egui::StrokeKind::Inside,
             );
@@ -1493,7 +1494,7 @@ impl App {
                 pos2(rect.left() + 8.0, gr.center().y),
                 egui::Align2::LEFT_CENTER,
                 crate::tr(format!("{}  Neue Spur", icon::PLUS)),
-                egui::FontId::proportional(10.5),
+                egui::FontId::proportional(theme::FS_HINT),
                 theme::TEXT_DIM(),
             );
         }
@@ -1569,9 +1570,9 @@ impl App {
                             _ => format!("{v:.1} s"),
                         };
                         let at = pointer.unwrap_or(body.center()) + vec2(10.0, -18.0);
-                        let g = p.layout_no_wrap(txt, egui::FontId::proportional(10.5), Color32::WHITE);
+                        let g = p.layout_no_wrap(txt, egui::FontId::proportional(theme::FS_HINT), Color32::WHITE);
                         let bg = Rect::from_min_size(at, g.size()).expand2(vec2(5.0, 2.0));
-                        p.rect_filled(bg, 4.0, Color32::from_black_alpha(210));
+                        p.rect_filled(bg, theme::R_CTRL, Color32::from_black_alpha(210));
                         p.galley(at, g, Color32::WHITE);
                     }
                 }
@@ -1579,7 +1580,7 @@ impl App {
                 if hovered_clip == Some(c.id) && !sel {
                     p.rect_stroke(
                         cr,
-                        5.0,
+                        theme::R_CTRL,
                         Stroke::new(1.0_f32, Color32::from_white_alpha(90)),
                         egui::StrokeKind::Inside,
                     );
@@ -1587,7 +1588,7 @@ impl App {
                 if drop_clip == Some(c.id) {
                     p.rect_stroke(
                         cr,
-                        5.0,
+                        theme::R_CTRL,
                         Stroke::new(2.0_f32, theme::ACCENT()),
                         egui::StrokeKind::Inside,
                     );
@@ -1595,7 +1596,7 @@ impl App {
                 if sel {
                     p.rect_stroke(
                         cr,
-                        5.0,
+                        theme::R_CTRL,
                         Stroke::new(
                             if self.selected == Some(c.id) {
                                 2.0_f32
@@ -1642,7 +1643,7 @@ impl App {
             let hov = pointer.is_some_and(|pp| r.contains(pp));
             p.rect_filled(
                 *r,
-                5.0,
+                theme::R_CTRL,
                 if sel {
                     theme::ACCENT()
                 } else if hov {
@@ -1653,7 +1654,7 @@ impl App {
             );
             p.rect_stroke(
                 *r,
-                5.0,
+                theme::R_CTRL,
                 Stroke::new(1.0_f32, Color32::from_black_alpha(140)),
                 egui::StrokeKind::Outside,
             );
@@ -1661,7 +1662,7 @@ impl App {
                 r.center(),
                 egui::Align2::CENTER_CENTER,
                 icon::INTERSECT,
-                egui::FontId::proportional(11.0),
+                egui::FontId::proportional(11.0), // Icon-Glyphe im Übergangsblock
                 if sel { theme::ACCENT_INK() } else { theme::TEXT() },
             );
         }
@@ -1676,7 +1677,7 @@ impl App {
                             pos2(x, row.rect.center().y),
                             vec2(22.0, row.rect.height() - 6.0),
                         ),
-                        5.0,
+                        theme::R_CTRL,
                         Color32::from_white_alpha(70),
                     );
                 }
@@ -1690,7 +1691,7 @@ impl App {
                 pos2(tx(*start), row.rect.top()),
                 pos2(tx(start + elapsed), row.rect.bottom()),
             );
-            p.rect_filled(cr, 5.0, Color32::from_rgb(0x5A, 0x22, 0x26));
+            p.rect_filled(cr, theme::R_CTRL, Color32::from_rgb(0x5A, 0x22, 0x26));
             let base = cr.bottom() - 3.0;
             let wh = cr.height() - BAND_H - 6.0;
             let mut x = cr.left().max(x0);
@@ -1713,7 +1714,7 @@ impl App {
                 cr.left_top() + vec2(6.0, 2.0),
                 egui::Align2::LEFT_TOP,
                 crate::tr(format!("{}  Aufnahme {:.1} s", icon::RECORD, elapsed)),
-                egui::FontId::proportional(10.0),
+                egui::FontId::proportional(theme::FS_HINT),
                 Color32::WHITE,
             );
             if self.playing && cr.right() > rect.right() - 60.0 {
@@ -1738,7 +1739,7 @@ impl App {
                     head.left_center() + vec2(8.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     icon::MICROPHONE,
-                    egui::FontId::proportional(13.0),
+                    egui::FontId::proportional(13.0), // Icon-Glyphe im Spurkopf
                     theme::DANGER,
                 );
                 continue;
@@ -1747,7 +1748,7 @@ impl App {
             if tr.main {
                 hp.rect_filled(
                     head.shrink2(vec2(2.0, 1.0)),
-                    5.0,
+                    theme::R_CTRL,
                     theme::BG_RAISED(),
                 );
             }
@@ -1755,7 +1756,7 @@ impl App {
                 head.left_center() + vec2(9.0, 0.0),
                 egui::Align2::LEFT_CENTER,
                 theme::track_icon(tr.kind),
-                egui::FontId::proportional(13.0),
+                egui::FontId::proportional(13.0), // Icon-Glyphe im Spurkopf
                 if tr.main {
                     theme::TEXT()
                 } else {
@@ -1828,7 +1829,7 @@ impl App {
             if name_x < head.right() - 16.0 {
                 let g = hp.layout_no_wrap(
                     name,
-                    egui::FontId::proportional(10.5),
+                    egui::FontId::proportional(theme::FS_HINT),
                     if tr.name.is_some() {
                         theme::TEXT_DIM()
                     } else {
@@ -1855,13 +1856,13 @@ impl App {
                     .interact(r, ui.id().with(("trk", tr.id, *k)), Sense::click())
                     .on_hover_text(crate::tr(*tip));
                 if br.hovered() {
-                    hp.rect_filled(r, 4.0, theme::BG_RAISED());
+                    hp.rect_filled(r, theme::R_CTRL, theme::BG_RAISED());
                 }
                 hp.text(
                     c,
                     egui::Align2::CENTER_CENTER,
                     crate::tr(*glyph),
-                    egui::FontId::proportional(12.0),
+                    egui::FontId::proportional(12.0), // Icon-Glyphe der Spurkopf-Schalter
                     if *on {
                         theme::ACCENT()
                     } else {
@@ -2049,7 +2050,7 @@ impl App {
         if ghost {
             col = col.gamma_multiply(0.85);
         }
-        p.rect_filled(cr, 5.0, col);
+        p.rect_filled(cr, theme::R_CTRL, col);
         let band = Rect::from_min_max(
             cr.min,
             pos2(cr.right(), (cr.top() + BAND_H).min(cr.bottom())),
@@ -2057,7 +2058,7 @@ impl App {
         if c.group.is_some() {
             p.rect_stroke(
                 cr.shrink(0.5),
-                5.0,
+                theme::R_CTRL,
                 Stroke::new(1.0_f32, Color32::from_white_alpha(140)),
                 egui::StrokeKind::Inside,
             );
@@ -2067,8 +2068,8 @@ impl App {
             p.rect_filled(
                 band,
                 egui::CornerRadius {
-                    nw: 5,
-                    ne: 5,
+                    nw: theme::R_CTRL as u8,
+                    ne: theme::R_CTRL as u8,
                     sw: 0,
                     se: 0,
                 },
@@ -2206,8 +2207,8 @@ impl App {
         p.rect_filled(
             band,
             egui::CornerRadius {
-                nw: 5,
-                ne: 5,
+                nw: theme::R_CTRL as u8,
+                ne: theme::R_CTRL as u8,
                 sw: 0,
                 se: 0,
             },
@@ -2255,7 +2256,7 @@ impl App {
                 pos2(band.left().max(x0) + 6.0, band.center().y),
                 egui::Align2::LEFT_CENTER,
                 label,
-                egui::FontId::proportional(10.0),
+                egui::FontId::proportional(theme::FS_HINT),
                 Color32::from_white_alpha(230),
             );
         // Ton-Fades als Rampen

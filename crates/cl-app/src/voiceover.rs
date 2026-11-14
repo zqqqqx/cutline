@@ -32,7 +32,7 @@ impl App {
         .default_pos(ctx.screen_rect().right_top() + vec2(-360.0, 70.0))
         .fixed_size(vec2(300.0, 0.0))
         .open(&mut open)
-        .frame(egui::Frame::window(&ctx.style()).inner_margin(16))
+        .frame(egui::Frame::window(&ctx.style()).inner_margin(theme::PAD_DIALOG))
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let (rect, resp) = ui.allocate_exact_size(vec2(48.0, 48.0), egui::Sense::click());
@@ -46,7 +46,7 @@ impl App {
                 if recording {
                     ui.painter().rect_filled(
                         Rect::from_center_size(rect.center(), vec2(16.0, 16.0)),
-                        3.0,
+                        theme::R_CTRL,
                         theme::DANGER,
                     );
                 } else if counting {
@@ -54,7 +54,7 @@ impl App {
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         icon::X,
-                        egui::FontId::proportional(20.0),
+                        egui::FontId::proportional(20.0), // Icon-Glyphe im runden Aufnahmeknopf
                         theme::TEXT(),
                     );
                 } else {
@@ -95,7 +95,7 @@ impl App {
                     } else {
                         ("00:00".into(), "Startet am Playhead".into())
                     };
-                    ui.label(RichText::new(crate::tr(time)).size(20.0).monospace());
+                    ui.label(RichText::new(crate::tr(time)).size(theme::FS_PAGE).monospace());
                     ui.label(
                         RichText::new(crate::tr(state))
                             .small()
@@ -107,7 +107,7 @@ impl App {
             // Live-Waveform der letzten Sekunden
             let (bar, _) =
                 ui.allocate_exact_size(vec2(ui.available_width(), 34.0), egui::Sense::hover());
-            ui.painter().rect_filled(bar, 5.0, theme::BG_INPUT());
+            ui.painter().rect_filled(bar, theme::R_CTRL, theme::BG_INPUT());
             if let Some(r) = &self.voiceover.recorder {
                 let peaks = r.peaks();
                 let n = (bar.width() / 2.0) as usize;

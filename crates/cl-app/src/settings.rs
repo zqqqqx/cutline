@@ -301,12 +301,12 @@ impl App {
                     egui::Frame::default()
                         .fill(theme::BG_APP())
                         .corner_radius(egui::CornerRadius {
-                            nw: 10,
-                            sw: 10,
+                            nw: theme::R_WIN as u8,
+                            sw: theme::R_WIN as u8,
                             ne: 0,
                             se: 0,
                         })
-                        .inner_margin(12)
+                        .inner_margin(theme::PAD_CARD_L)
                         .show(ui, |ui| {
                             ui.vertical(|ui| {
                                 ui.set_width(170.0);
@@ -314,7 +314,7 @@ impl App {
                                 ui.label(
                                     RichText::new(crate::tr("Einstellungen"))
                                         .strong()
-                                        .size(14.0),
+                                        .size(theme::FS_TITLE),
                                 );
                                 ui.add_space(12.0);
                                 for (s, g, label) in SECTIONS {
@@ -324,9 +324,9 @@ impl App {
                                         egui::Sense::click(),
                                     );
                                     if active {
-                                        ui.painter().rect_filled(r, 6.0, theme::BG_RAISED());
+                                        ui.painter().rect_filled(r, theme::R_CARD, theme::BG_RAISED());
                                     } else if resp.hovered() {
-                                        ui.painter().rect_filled(r, 6.0, theme::BG_CARD());
+                                        ui.painter().rect_filled(r, theme::R_CARD, theme::BG_CARD());
                                     }
                                     let col = if active {
                                         theme::ACCENT()
@@ -337,14 +337,14 @@ impl App {
                                         r.left_center() + vec2(10.0, 0.0),
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(g),
-                                        egui::FontId::proportional(14.0),
+                                        egui::FontId::proportional(14.0), // Icon-Glyphe im Bedienelement
                                         col,
                                     );
                                     ui.painter().text(
                                         r.left_center() + vec2(32.0, 0.0),
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(label),
-                                        egui::FontId::proportional(12.0),
+                                        egui::FontId::proportional(theme::FS_TEXT),
                                         col,
                                     );
                                     if resp.clicked() {
@@ -365,7 +365,7 @@ impl App {
                                 .find(|s| s.0 == self.settings_section)
                                 .map(|s| s.2)
                                 .unwrap_or("");
-                            ui.label(RichText::new(crate::tr(title)).strong().size(14.0));
+                            ui.label(RichText::new(crate::tr(title)).strong().size(theme::FS_TITLE));
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
@@ -424,8 +424,8 @@ impl App {
         if let Some(e) = self.settings_error.clone() {
             egui::Frame::default()
                 .fill(theme::DANGER.linear_multiply(0.15))
-                .corner_radius(6)
-                .inner_margin(8)
+                .corner_radius(theme::R_CARD)
+                .inner_margin(theme::PAD_CARD)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{}  {e}", icon::WARNING_CIRCLE)).color(theme::DANGER));
@@ -468,17 +468,17 @@ impl App {
                             let sw = egui::Rect::from_min_size(r.min, egui::vec2(66.0, 34.0));
                             match pal {
                                 Some(p) => {
-                                    pnt.rect_filled(sw, 6.0, p.bg_app);
-                                    pnt.rect_filled(sw.shrink2(egui::vec2(8.0, 7.0)), 3.0, p.bg_card);
+                                    pnt.rect_filled(sw, theme::R_CARD, p.bg_app);
+                                    pnt.rect_filled(sw.shrink2(egui::vec2(8.0, 7.0)), theme::R_CTRL, p.bg_card);
                                     pnt.rect_filled(egui::Rect::from_min_size(sw.min + egui::vec2(14.0, 12.0), egui::vec2(26.0, 4.0)), 2.0, theme::accent_for(p));
                                     pnt.rect_filled(egui::Rect::from_min_size(sw.min + egui::vec2(14.0, 19.0), egui::vec2(18.0, 3.0)), 1.5, p.text_dim);
                                 }
                                 None => {
                                     let (a, b) = (&theme::PALETTES[0], &theme::PALETTES[3]);
-                                    pnt.rect_filled(sw, 6.0, b.bg_app);
+                                    pnt.rect_filled(sw, theme::R_CARD, b.bg_app);
                                     let left = egui::Rect::from_min_max(sw.min, egui::pos2(sw.center().x, sw.bottom()));
-                                    pnt.with_clip_rect(left).rect_filled(sw, 6.0, a.bg_app);
-                                    pnt.text(sw.center(), egui::Align2::CENTER_CENTER, icon::CIRCLE_HALF, egui::FontId::proportional(15.0), egui::Color32::from_gray(140));
+                                    pnt.with_clip_rect(left).rect_filled(sw, theme::R_CARD, a.bg_app);
+                                    pnt.text(sw.center(), egui::Align2::CENTER_CENTER, icon::CIRCLE_HALF, egui::FontId::proportional(15.0), egui::Color32::from_gray(140)); // Icon-Glyphe in der Mini-Vorschau
                                 }
                             }
                             let stroke = if on {
@@ -488,12 +488,12 @@ impl App {
                             } else {
                                 egui::Stroke::new(1.0_f32, theme::BORDER())
                             };
-                            pnt.rect_stroke(sw, 6.0, stroke, egui::StrokeKind::Outside);
+                            pnt.rect_stroke(sw, theme::R_CARD, stroke, egui::StrokeKind::Outside);
                             pnt.text(
                                 egui::pos2(sw.center().x, r.bottom() - 6.0),
                                 egui::Align2::CENTER_CENTER,
                                 crate::tr(name),
-                                egui::FontId::proportional(10.5),
+                                egui::FontId::proportional(theme::FS_HINT),
                                 if on { theme::TEXT() } else { theme::TEXT_DIM() },
                             );
                             if resp.clicked() {

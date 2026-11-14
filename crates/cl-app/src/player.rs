@@ -503,7 +503,7 @@ impl App {
                 canvas.left_top() + vec2(24.0, 14.0),
                 egui::Align2::LEFT_CENTER,
                 crate::tr("REC"),
-                egui::FontId::proportional(11.0),
+                egui::FontId::proportional(theme::FS_UI),
                 Color32::WHITE,
             );
         }
@@ -512,14 +512,14 @@ impl App {
                 canvas.center() - vec2(0.0, 10.0),
                 egui::Align2::CENTER_CENTER,
                 icon::FILM_SLATE,
-                egui::FontId::proportional(28.0),
+                egui::FontId::proportional(26.0), // Icon-Glyphe im leeren Zustand
                 theme::TEXT_FAINT(),
             );
             painter.text(
                 canvas.center() + vec2(0.0, 18.0),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(self.t("drop-hint")),
-                egui::FontId::proportional(12.0),
+                egui::FontId::proportional(theme::FS_TEXT),
                 theme::TEXT_DIM(),
             );
         }
@@ -974,6 +974,7 @@ impl App {
         };
         let pr = ui.put(
             Rect::from_center_size(bar.center(), vec2(36.0, 28.0)),
+            // Icon-Glyphe: großer Abspielknopf, per ui.put mittig platziert (icon_button kann weder Größe noch put)
             egui::Button::new(RichText::new(crate::tr(glyph)).size(19.0)).frame(false),
         );
         if pr
