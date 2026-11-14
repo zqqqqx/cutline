@@ -572,7 +572,7 @@ Natürlich	Natural
 Porträt	Portrait
 Lebendig	Vivid
 Pastell	Pastel
-Hell	Bright
+Hell	Light
 Warm	Warm
 Landschaft	Landscape
 Kühl	Cool
@@ -803,7 +803,7 @@ Transparent (VP9 mit Alpha)	Transparent (VP9 with alpha)
 Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen	Empty areas and cut-out people stay transparent, e.g. for overlays in other apps
 nur Ton	audio only
 # Integrationen und Bibliothek
-Integrationen und Plugins	Integrations and plugins
+Plugins und Konten	Plugins and accounts
 Integration	Integration
 Einrichten	Set up
 Plugin aktiv	Plugin enabled
@@ -822,7 +822,7 @@ Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechne
 Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.	Exports with Epidemic music are reported to Epidemic Sound (track IDs only), as their terms require.
 Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.	Client ID of your app in the Epidemic Developer Portal; register {} there as the redirect URI.
 Epidemic Sound ist noch nicht verbunden	Epidemic Sound isn't connected yet
-Melde dich unter Einstellungen → Integrationen und Plugins an	Sign in under Settings → Integrations and plugins
+Melde dich unter Einstellungen → Plugins und Konten an	Sign in under Settings → Plugins and accounts
 Entdecken	Discover
 Favoriten	Favorites
 Gefällt mir	Liked
@@ -872,7 +872,7 @@ Ungültiger Name	Invalid name
 # Presets
 Preset	Preset
 Keine Presets	No presets
-{} anwenden …	Apply ({}) …
+Looks ({})	Looks ({})
 Look als Preset speichern	Save look as preset
 Auf die Auswahl anwenden	Apply to selection
 Preset entfernen	Remove preset
@@ -920,7 +920,7 @@ Bereich in Schleife abspielen	Loop the range
 Marker setzen	Add marker
 Nächster Marker	Next marker
 Vorheriger Marker	Previous marker
-Löschen und Lücke schließen	Ripple delete
+Löschen und Lücke schließen	Delete and close gap
 Zum vorherigen Schnitt	Previous edit
 Zum nächsten Schnitt	Next edit
 Zum Anfang	Go to start
@@ -1110,7 +1110,7 @@ Schlüssel ungültig oder ohne Zugriff	Key invalid or without access
 Dienst antwortet mit {}	Service responded with {}
 Keine Verbindung ({})	No connection ({})
 API-Schlüssel fehlt	API key missing
-Unter Einstellungen → Integrationen und Plugins eintragen	Enter it under Settings → Integrations and plugins
+Unter Einstellungen → Plugins und Konten eintragen	Enter it under Settings → Plugins and accounts
 Einrichten …	Set up …
 Suchbegriff eingeben und Enter drücken	Type a search term and press Enter
 Laden und am Playhead einfügen	Download and insert at the playhead
@@ -1189,7 +1189,7 @@ Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Lay
 Vorlagen für YouTube, Shorts, TikTok, Instagram und Twitch. Ohne Wasserzeichen, bis 4K.	Presets for YouTube, Shorts, TikTok, Instagram and Twitch. No watermark, up to 4K.
 Menü	Menu
 Projekte, Vorlagen, Sicherungen, Einstellungen und Tastenkürzel. Den Rundgang findest du hier jederzeit wieder.	Projects, templates, backups, settings and shortcuts. You can restart the tour here at any time.
-Schlüssel bzw. Anmeldung unter Einstellungen → Integrationen eintragen	Enter keys or sign in under Settings → Integrations
+Schlüssel bzw. Anmeldung unter Einstellungen → Plugins und Konten eintragen	Enter keys or sign in under Settings → Plugins and accounts
 Zurück	Back
 Überspringen	Skip
 Die Einführung findest du später unter Menü → Einführung wiederholen	You can find the introduction later under Menu → Repeat introduction
@@ -1520,3 +1520,4 @@ Eigene Farbe	Custom colour
 Weiß	White
 Türkis	Teal
 Violett	Violet
+Wort	Word

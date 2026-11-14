@@ -57,6 +57,15 @@ Defined in `crates/cl-app/src/theme.rs`.
 One accent colour. The default is white; users can pick a preset or their own colour in Settings. Status colours
 (warning, error, success) and clip colours are not accent colours. The logo tile is never recoloured.
 
+The accent marks **state and the one primary action**, never content:
+
+- Accent: selected clip or tile, active-tab indicator, toggles that are on, slider fill and knob, the primary
+  button, playhead, focus ring and text cursor, progress, keyframes, in/out marks, drop targets.
+- Not accent: window title, wordmark, page and panel headings, section titles, labels, body text, numbers,
+  timecode, empty-state titles. These use `TEXT` or `TEXT_DIM`.
+- Active text items (tabs, navigation, segments) keep neutral text; only their small indicator takes the accent.
+- Icons are neutral unless they show an ON state.
+
 Color in the interface belongs to the user's media: clip colors, waveforms, thumbnails. The chrome
 itself stays neutral.
 

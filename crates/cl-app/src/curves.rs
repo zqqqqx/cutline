@@ -41,6 +41,15 @@ fn draw_curve(p: &egui::Painter, r: Rect, e: Ease, stroke: Stroke) {
     p.add(egui::Shape::line(pts, stroke));
 }
 
+/// Gleiche Kurvenform? Vergleicht die Steuerpunkte statt der Variante (EaseIn = Bezier(0.42, 0, 1, 1))
+fn same_curve(a: Ease, b: Ease) -> bool {
+    match (a.bezier(), b.bezier()) {
+        (Some(x), Some(y)) => [x.0 - y.0, x.1 - y.1, x.2 - y.2, x.3 - y.3].iter().all(|d| d.abs() < 1e-3),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
 impl App {
     /// Kurven-Auswahl für den Abschnitt am Playhead; gilt für alle animierten Eigenschaften
     /// des Clips in diesem Abschnitt.
@@ -77,21 +86,23 @@ impl App {
             ui.spacing_mut().item_spacing = vec2(5.0, 5.0);
             for (name, tip, e) in PRESETS {
                 let (r, resp) = ui.allocate_exact_size(vec2(58.0, 50.0), Sense::click());
-                let on = a.ease == e;
+                let on = same_curve(a.ease, e);
+                let hov = ui.ctx().animate_bool_with_time(resp.id.with("hover"), resp.hovered(), theme::anim(0.12));
                 let p = ui.painter();
-                p.rect_filled(r, theme::R_CARD, if on { theme::BG_HOVER() } else { theme::BG_RAISED() });
+                // Hover nur als leicht hellere Fläche unter dem Inhalt; Auswahl = Akzent-Rahmen
+                p.rect_filled(r, theme::R_CARD, theme::BG_RAISED().lerp_to_gamma(theme::BG_HOVER(), hov));
                 if on {
                     p.rect_stroke(r, theme::R_CARD, Stroke::new(1.5_f32, theme::ACCENT()), egui::StrokeKind::Inside);
                 }
-                theme::hover_glow(ui, &resp, theme::R_CARD);
                 let plot = Rect::from_min_max(r.min + vec2(12.0, 9.0), pos2(r.right() - 12.0, r.bottom() - 19.0));
-                draw_curve(p, plot, e, Stroke::new(1.5_f32, if on { theme::ACCENT() } else { theme::TEXT_DIM() }));
+                let ink = if on || hov > 0.5 { theme::TEXT() } else { theme::TEXT_DIM() };
+                draw_curve(p, plot, e, Stroke::new(1.5_f32, ink));
                 p.text(
                     pos2(r.center().x, r.bottom() - 9.0),
                     egui::Align2::CENTER_CENTER,
                     crate::tr(name),
                     egui::FontId::proportional(theme::FS_HINT),
-                    if on { theme::TEXT() } else { theme::TEXT_DIM() },
+                    ink,
                 );
                 if resp.on_hover_text(crate::tr(tip)).clicked() {
                     pick = Some(e);
@@ -167,4 +178,11 @@ fn segment_picks_the_keyframe_before_the_playhead() {
     assert_eq!(segment(&l, Time::from_secs_f64(2.5)), Some(1));
     assert_eq!(segment(&l, Time::from_secs_f64(9.0)), Some(1), "hinter dem letzten: letzter Abschnitt");
     assert_eq!(segment(&l[..1], Time::ZERO), None);
+}
+
+#[test]
+fn same_curve_matches_equal_shapes() {
+    assert!(same_curve(Ease::EaseIn, Ease::Bezier(0.42, 0.0, 1.0, 1.0)));
+    assert!(same_curve(Ease::Hold, Ease::Hold));
+    assert!(!same_curve(Ease::Linear, Ease::EaseOut));
 }

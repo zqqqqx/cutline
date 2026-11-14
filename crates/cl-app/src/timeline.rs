@@ -2361,8 +2361,10 @@ impl App {
                 }
                 ui.separator();
                 if visual {
-                    ui.menu_button(
-                        crate::tr(format!("{}   Bearbeiten", icon::PENCIL_SIMPLE)),
+                    theme::submenu(
+                        ui,
+                        icon::PENCIL_SIMPLE,
+                        "Bearbeiten",
                         |ui| {
                             ui.set_min_width(200.0);
                             if video && menu_item(ui, icon::SNOWFLAKE, "Standbild", "") {
@@ -2422,8 +2424,10 @@ impl App {
                         ..
                     }
                 ) {
-                    ui.menu_button(
-                        crate::tr(format!("{}   Tempo", icon::GAUGE)),
+                    theme::submenu(
+                        ui,
+                        icon::GAUGE,
+                        "Tempo",
                         |ui| {
                             for s in [0.25f32, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0] {
                                 if ui
@@ -2450,7 +2454,7 @@ impl App {
                     .map(|(i, p)| (i, p.name.clone()))
                     .collect();
                 if !looks.is_empty() {
-                    ui.menu_button(crate::tr(format!("{}   Look anwenden", icon::SWATCHES)), |ui| {
+                    theme::submenu(ui, icon::SWATCHES, "Look anwenden", |ui| {
                         for (i, n) in &looks {
                             if ui.add(theme::menu_row(n.as_str()).min_width(160.0)).clicked() {
                                 self.apply_preset(*i);
@@ -2460,7 +2464,7 @@ impl App {
                     });
                 }
                 // dieselbe Liste wie „Quick Actions“ in der Leiste (nicht passende sind ausgegraut)
-                ui.menu_button(crate::tr(format!("{}   Quick Actions", icon::LIGHTNING)), |ui| {
+                theme::submenu(ui, icon::LIGHTNING, "Quick Actions", |ui| {
                     self.tools_menu(ui)
                 });
                 if self.next_adjacent(id).is_some() {
@@ -2489,7 +2493,7 @@ impl App {
                 ) {
                     self.toggle_disabled();
                 }
-                ui.menu_button(crate::tr(format!("{}   Farbe", icon::PALETTE)), |ui| {
+                theme::submenu(ui, icon::PALETTE, "Farbe", |ui| {
                     ui.set_min_width(150.0);
                     if menu_item(ui, icon::X, "Keine", "") {
                         self.modify_selection(|x| x.label = None);
@@ -2590,7 +2594,7 @@ impl App {
                     if !show {
                         continue;
                     }
-                    ui.menu_button(crate::tr(format!("{glyph}   {label}")), |ui| {
+                    theme::submenu(ui, glyph, label, |ui| {
                         for (k, name) in TRACK_KINDS {
                             // Ton liegt immer unter den Bildspuren: nur passende Arten anbieten
                             if (k == TrackKind::Audio) != audio {
@@ -2700,8 +2704,10 @@ impl App {
                 if menu_item(ui, g, label, "") && !self.timeline.collapsed.remove(&tid) {
                     self.timeline.collapsed.insert(tid);
                 }
-                ui.menu_button(
-                    crate::tr(format!("{}   Spurhöhe", icon::ARROWS_VERTICAL)),
+                theme::submenu(
+                    ui,
+                    icon::ARROWS_VERTICAL,
+                    "Spurhöhe",
                     |ui| {
                         let cur = self.timeline.heights.get(&tid).copied().unwrap_or(1.0);
                         for (n, f) in [
@@ -2750,7 +2756,7 @@ impl App {
                 }
                 ui.separator();
                 let n = self.project.timeline.tracks.len();
-                ui.menu_button(crate::tr(format!("{}   Spur hinzufügen", icon::PLUS)), |ui| {
+                theme::submenu(ui, icon::PLUS, "Spur hinzufügen", |ui| {
                     for (k, name) in TRACK_KINDS {
                         if menu_item(ui, theme::track_icon(k), name, "") {
                             self.apply(EditOp::InsertTrack { index: n, kind: k });

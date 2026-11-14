@@ -65,10 +65,12 @@ impl App {
         let mut rename: Option<(PathBuf, String)> = None;
         let mut remove: Option<PathBuf> = None;
         for (name, p) in list {
-            let r = ui.add_sized(
-                [ui.available_width(), 26.0],
-                theme::ghost(format!("{}  {name}", icon::COPY_SIMPLE)),
-            );
+            // linksbündig wie die übrigen Einträge der Spalte (add_sized zentriert)
+            let r = ui
+                .with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
+                    ui.add(theme::ghost(format!("{}  {name}", icon::COPY_SIMPLE)).min_size(egui::vec2(0.0, 26.0)))
+                })
+                .inner;
             if r.clicked() {
                 open = Some(p.clone());
             }

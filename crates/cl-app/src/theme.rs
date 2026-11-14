@@ -299,7 +299,8 @@ pub fn apply(ctx: &egui::Context) {
     v.widgets.active.weak_bg_fill = overlay(40);
     v.widgets.active.bg_fill = overlay(40);
     v.widgets.active.bg_stroke = Stroke::NONE;
-    v.widgets.active.fg_stroke = Stroke::new(1.0_f32, ACCENT());
+    // nicht Akzent: egui färbt damit auch jeden `.strong()`-Text (Titel, Überschriften)
+    v.widgets.active.fg_stroke = Stroke::new(1.0_f32, TEXT());
     v.widgets.open.weak_bg_fill = BG_HOVER();
     v.window_shadow = egui::epaint::Shadow {
         offset: [0, 10],
@@ -368,11 +369,13 @@ pub fn card_header(ui: &mut egui::Ui, title: &str, actions: impl FnOnce(&mut egu
 /// Primärknopf (weiße Fläche, dunkle Schrift).
 /// Knopf mit weich eingeblendetem Hover (egui selbst schaltet hart um, und Knöpfe mit
 /// eigener Füllfarbe zeigen sonst gar kein Hover).
-pub struct Btn(egui::Button<'static>);
+/// Zweites Feld: Füllfarbe gefüllter Knöpfe (primär/Gefahr); deren Hover tönt die Fläche statt
+/// eines Schleiers über der Schrift (der Schleier wäscht die Beschriftung aus).
+pub struct Btn(egui::Button<'static>, Option<Color32>);
 
 impl Btn {
     pub fn min_size(self, s: egui::Vec2) -> Self {
-        Btn(self.0.min_size(s))
+        Btn(self.0.min_size(s), self.1)
     }
 }
 
@@ -389,9 +392,19 @@ pub fn hover_glow(ui: &egui::Ui, r: &egui::Response, radius: f32) {
 
 impl egui::Widget for Btn {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let r = ui.add(self.0);
-        hover_glow(ui, &r, R_CTRL);
-        r
+        let Some(fill) = self.1 else {
+            let r = ui.add(self.0);
+            hover_glow(ui, &r, R_CTRL);
+            return r;
+        };
+        // Hover-Zustand vom letzten Frame: die Füllung muss vor dem Zeichnen feststehen
+        let id = ui.next_auto_id();
+        let last = ui.ctx().read_response(id);
+        let hov = last.as_ref().is_some_and(|r| r.enabled() && r.hovered());
+        let t = ui.ctx().animate_bool_with_time(id.with("hover"), hov, anim(0.14));
+        let down = last.is_some_and(|r| r.is_pointer_button_down_on());
+        let to = if luminance(fill) > 0.4 { Color32::BLACK } else { Color32::WHITE };
+        ui.add(self.0.fill(fill.lerp_to_gamma(to, t * if down { 0.2 } else { 0.1 })))
     }
 }
 
@@ -402,9 +415,8 @@ pub fn primary(text: impl Into<String>) -> Btn {
             .color(ACCENT_INK())
             .strong(),
     )
-    .fill(ACCENT())
     .corner_radius(R_CTRL)
-    .min_size(vec2(0.0, 24.0)))
+    .min_size(vec2(0.0, 24.0)), Some(ACCENT()))
 }
 
 /// Sekundärknopf (dezente Fläche).
@@ -412,22 +424,21 @@ pub fn secondary(text: impl Into<String>) -> Btn {
     Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI))
         .fill(BG_RAISED())
         .corner_radius(R_CTRL)
-        .min_size(vec2(0.0, 24.0)))
+        .min_size(vec2(0.0, 24.0)), None)
 }
 
 /// Gefährliche Aktion (Löschen): rote Fläche, weiße Schrift.
 pub fn danger(text: impl Into<String>) -> Btn {
     Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI).color(Color32::WHITE).strong())
-        .fill(DANGER)
         .corner_radius(R_CTRL)
-        .min_size(vec2(0.0, 24.0)))
+        .min_size(vec2(0.0, 24.0)), Some(DANGER))
 }
 
 /// Flacher Knopf ohne Fläche (wird beim Überfahren hell).
 pub fn ghost(text: impl Into<String>) -> Btn {
     Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI))
         .frame(false)
-        .min_size(vec2(0.0, 24.0)))
+        .min_size(vec2(0.0, 24.0)), None)
 }
 
 /// Tastenkürzel als gemalte Tastenkappen: einheitliche Höhe, Symbole für Sondertasten.
@@ -589,6 +600,22 @@ impl egui::Widget for MenuRow {
     }
 }
 
+/// Untermenü-Zeile, die wie [`menu_row`] aussieht (Höhe 24, FS_TEXT, Icon in derselben Spalte).
+/// egui zeichnet Untermenüs sonst kleiner und enger (Menüstil: Innenabstand 2 px).
+pub fn submenu<R>(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    label: &str,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    let old = ui.spacing().clone();
+    ui.spacing_mut().button_padding = vec2(8.0, 0.0);
+    ui.spacing_mut().interact_size.y = 24.0;
+    let r = ui.menu_button(RichText::new(crate::tr(format!("{glyph}   {label}"))).size(FS_TEXT), add_contents);
+    *ui.spacing_mut() = old;
+    r
+}
+
 /// Fehler direkt unter einem Eingabefeld (statt Meldung am unteren Rand)
 pub fn field_error(ui: &mut egui::Ui, err: Option<&str>) {
     if let Some(e) = err {
@@ -676,14 +703,42 @@ pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     )
 }
 
+/// Weicher Rand (18 px) an waagrecht scrollbaren Zeilen auf Kartengrund: zeigt, dass links
+/// bzw. rechts noch mehr kommt. Ändert nichts an der Bedienung.
+pub fn edge_fade<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput<R>) {
+    let (r, x) = (out.inner_rect, out.state.offset.x);
+    let more_right = out.content_size.x - r.width() - x > 1.0;
+    for (show, left) in [(x > 1.0, true), (more_right, false)] {
+        if !show {
+            continue;
+        }
+        let w = 18.0;
+        let f = if left {
+            Rect::from_min_size(r.min, vec2(w, r.height()))
+        } else {
+            Rect::from_min_size(pos2(r.right() - w, r.top()), vec2(w, r.height()))
+        };
+        let (a, b) = if left { (BG_CARD(), Color32::TRANSPARENT) } else { (Color32::TRANSPARENT, BG_CARD()) };
+        let mut m = egui::Mesh::default();
+        m.colored_vertex(f.left_top(), a);
+        m.colored_vertex(f.right_top(), b);
+        m.colored_vertex(f.right_bottom(), b);
+        m.colored_vertex(f.left_bottom(), a);
+        m.add_triangle(0, 1, 2);
+        m.add_triangle(0, 2, 3);
+        ui.painter().add(m);
+    }
+}
+
 /// Zeile mit fester Label-Spalte (Inspektor).
 pub fn row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     ui.horizontal(|ui| {
         ui.set_min_height(24.0);
-        ui.add_sized(
-            [LABEL_W, 18.0],
-            egui::Label::new(RichText::new(crate::tr(label)).size(FS_UI).color(TEXT_DIM())).truncate(),
-        );
+        // linksbündig in der Label-Spalte (add_sized zentriert, das wirkte wie im Feld daneben)
+        ui.allocate_ui_with_layout(vec2(LABEL_W, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_min_width(LABEL_W);
+            ui.add(egui::Label::new(RichText::new(crate::tr(label)).size(FS_UI).color(TEXT_DIM())).truncate());
+        });
         add(ui)
     })
     .inner

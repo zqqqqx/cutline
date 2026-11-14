@@ -172,12 +172,13 @@ impl App {
                 egui::FontId::proportional(17.0),
                 col,
             );
+            // Akzent nur am Icon (Zustand), der Text bleibt neutral
             ui.painter().text(
                 r.center() + vec2(0.0, 12.0),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(label),
                 egui::FontId::proportional(theme::FS_HINT),
-                col,
+                if active { theme::TEXT() } else { col },
             );
             if resp.clicked() {
                 self.tab = tab;
@@ -810,7 +811,7 @@ impl App {
                                 // Icon-Glyphe
                                 RichText::new(icon::MICROPHONE)
                                     .size(22.0)
-                                    .color(theme::ACCENT()),
+                                    .color(theme::TEXT_DIM()),
                             );
                             ui.vertical(|ui| {
                                 ui.label(RichText::new(crate::tr(self.t("voiceover"))).strong());
@@ -1277,7 +1278,7 @@ impl App {
                                     ui.label(
                                         RichText::new(crate::tr(self.t("font-variable")))
                                             .small()
-                                            .color(theme::ACCENT()),
+                                            .color(theme::TEXT_DIM()),
                                     );
                                 }
                                 ui.with_layout(

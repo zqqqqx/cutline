@@ -248,7 +248,7 @@ const SECTIONS: [(Section, &str, &str); 13] = [
     (Section::Shortcuts, icon::KEYBOARD, "Tastenkürzel"),
     (Section::Models, icon::CPU, "Modelle (lokale KI)"),
     (Section::Updates, icon::ARROW_CIRCLE_UP, "Updates"),
-    (Section::Integrations, icon::PUZZLE_PIECE, "Integrationen und Plugins"),
+    (Section::Integrations, icon::PUZZLE_PIECE, "Plugins und Konten"),
     (Section::Import, icon::DOWNLOAD_SIMPLE, "Import"),
     (Section::About, icon::INFO, "Über Cutline"),
 ];
@@ -340,12 +340,13 @@ impl App {
                                         egui::FontId::proportional(14.0), // Icon-Glyphe im Bedienelement
                                         col,
                                     );
+                                    // Akzent nur am Icon, der Text bleibt neutral
                                     ui.painter().text(
                                         r.left_center() + vec2(32.0, 0.0),
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(label),
                                         egui::FontId::proportional(theme::FS_TEXT),
-                                        col,
+                                        if active { theme::TEXT() } else { col },
                                     );
                                     if resp.clicked() {
                                         self.settings_section = s;
@@ -677,7 +678,7 @@ impl App {
                 widgets::toggle_row(ui, "Ton beim Ziehen des Playheads", &mut self.settings.scrub_audio);
                 widgets::toggle_row(ui, "Hinweiston, wenn ein Export fertig ist", &mut self.settings.export_sound);
                 ui.add_space(6.0);
-                theme::row(ui, "Kanäle (neue Projekte)", |ui| {
+                theme::row(ui, "Kanäle", |ui| {
                     egui::ComboBox::from_id_salt("set-channels")
                         .selected_text(crate::tr(self.settings.new_channels.name()))
                         .show_ui(ui, |ui| {
@@ -803,7 +804,7 @@ impl App {
                                 icon::CIRCLE,
                                 if ro { " · nur lesen" } else { "" }
                             )))
-                            .color(theme::ACCENT()),
+                            .color(theme::TEXT()),
                         )
                     });
                     theme::row(ui, "Adresse", |ui| {

@@ -122,62 +122,55 @@ fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
     e
 }
 
-/// Reiterleiste mit Unterstrich.
+/// Reiterleiste mit Unterstrich. Freier Platz wird gleichmäßig verteilt; reicht die Breite
+/// nicht (7 Reiter auf Englisch), scrollt die Leiste waagrecht statt sich zu überlappen.
 fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut T) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(vec2(w, 28.0), Sense::hover());
     let font = egui::FontId::proportional(theme::FS_UI);
-    let widths: Vec<f32> = tabs
+    // gemessen wird der übersetzte Text (so wie er gezeichnet wird)
+    let labels: Vec<String> = tabs.iter().map(|(_, l)| crate::tr(*l)).collect();
+    let text: Vec<f32> = labels
         .iter()
-        .map(|(_, l)| {
-            ui.painter()
-                .layout_no_wrap(l.to_string(), font.clone(), theme::TEXT())
-                .size()
-                .x
-                + 14.0
-        })
+        .map(|l| ui.painter().layout_no_wrap(l.clone(), font.clone(), theme::TEXT()).size().x)
         .collect();
-    let total: f32 = widths.iter().sum();
-    let k = if total > w { w / total } else { 1.0 };
-    let mut x = rect.left();
-    for (i, (t, l)) in tabs.iter().enumerate() {
-        let r = Rect::from_min_size(pos2(x, rect.top()), vec2(widths[i] * k, rect.height()));
-        let resp = ui.interact(r, ui.id().with(("itab", *l)), Sense::click());
-        let active = *cur == *t;
-        let col = if active {
-            theme::ACCENT()
-        } else if resp.hovered() {
-            theme::TEXT()
-        } else {
-            theme::TEXT_DIM()
-        };
-        ui.painter().text(
-            r.center(),
-            egui::Align2::CENTER_CENTER,
-            crate::tr(*l),
-            font.clone(),
-            col,
-        );
-        if active {
-            ui.painter().line_segment(
-                [
-                    pos2(r.left() + 6.0, r.bottom() - 1.0),
-                    pos2(r.right() - 6.0, r.bottom() - 1.0),
-                ],
-                Stroke::new(2.0_f32, theme::ACCENT()),
-            );
+    let sum: f32 = text.iter().sum();
+    let pad = ((w - sum) / tabs.len() as f32).clamp(12.0, 28.0);
+    let total = sum + pad * tabs.len() as f32;
+    let line_y = ui.cursor().top() + 28.0;
+    let mut draw = |ui: &mut egui::Ui| {
+        let (rect, _) = ui.allocate_exact_size(vec2(total, 28.0), Sense::hover());
+        let mut x = rect.left();
+        for (i, (t, l)) in tabs.iter().enumerate() {
+            let r = Rect::from_min_size(pos2(x, rect.top()), vec2(text[i] + pad, rect.height()));
+            let resp = ui.interact(r, ui.id().with(("itab", *l)), Sense::click());
+            let active = *cur == *t;
+            // aktiver Reiter: Text neutral, nur der Unterstrich im Akzent
+            let col = if active || resp.hovered() { theme::TEXT() } else { theme::TEXT_DIM() };
+            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, &labels[i], font.clone(), col);
+            if active {
+                ui.painter().line_segment(
+                    [pos2(r.left() + 6.0, r.bottom() - 1.0), pos2(r.right() - 6.0, r.bottom() - 1.0)],
+                    Stroke::new(2.0_f32, theme::ACCENT()),
+                );
+            }
+            if resp.clicked() {
+                *cur = *t;
+            }
+            x += r.width();
         }
-        if resp.clicked() {
-            *cur = *t;
-        }
-        x += widths[i] * k;
+    };
+    if total > w + 0.5 {
+        let row = egui::ScrollArea::horizontal()
+            .id_salt("itab-scroll")
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .show(ui, |ui| draw(ui));
+        theme::edge_fade(ui, &row);
+    } else {
+        draw(ui);
     }
     let r = ui.max_rect();
     ui.painter().line_segment(
-        [
-            pos2(r.left() - 10.0, rect.bottom()),
-            pos2(r.right() + 10.0, rect.bottom()),
-        ],
+        [pos2(r.left() - 10.0, line_y), pos2(r.right() + 10.0, line_y)],
         Stroke::new(1.0_f32, theme::BORDER()),
     );
     ui.add_space(8.0);
@@ -1239,7 +1232,7 @@ impl App {
                             [pos2(g.left(), g.center().y), pos2(g.right(), g.center().y)],
                             Stroke::new(1.0_f32, theme::BORDER()),
                         );
-                        p.add(egui::Shape::line(pts, Stroke::new(1.6_f32, theme::ACCENT())));
+                        p.add(egui::Shape::line(pts, Stroke::new(1.6_f32, theme::TEXT())));
                     },
                 );
                 if resp.clicked() {
@@ -1614,7 +1607,7 @@ impl App {
             // Jetzt
             ui.horizontal(|ui| {
                 ui.label(RichText::new(icon::CARET_RIGHT).color(theme::ACCENT()));
-                ui.label(RichText::new(crate::tr("Jetzt")).strong().color(theme::ACCENT()));
+                ui.label(RichText::new(crate::tr("Jetzt")).strong().color(theme::TEXT()));
             });
             for (k, (label, src, at)) in done.iter().rev().enumerate() {
                 if !matches(label) {
