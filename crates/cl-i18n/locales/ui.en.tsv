@@ -1588,3 +1588,6 @@ Intro-Titel	Intro title
 Endkarte	End card
 Kapitel-Titel	Chapter title
 Lautheit	Loudness
+Clips mit Tempo-Kurve werden übersprungen	Clips with a speed curve are skipped
+Projekt hat sich geändert – bitte erneut ausführen	The project has changed – please run again
+Bei mehreren Spuren wird nur geschnitten, wo alle still sind	With several tracks, cuts are made only where all are silent

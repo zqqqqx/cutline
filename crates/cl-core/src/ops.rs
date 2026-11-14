@@ -324,7 +324,21 @@ impl EditOp {
                 right.duration = c.end() - at;
                 let rel = at - c.start;
                 let rel_src = Time((rel.0 as f64 * c.speed.max(0.01) as f64).round() as i64);
-                if c.fx.reverse {
+                if c.fx.speed_curve.is_some() {
+                    // shortcut: Kurve wird beim Teilen zu konstantem Tempo je Teil, ausbauen wenn Kurven teilbar sein sollen
+                    let (s0, s1, s_at) = (c.source_in, c.source_in + c.source_span(), c.source_time(at));
+                    // vorwärts: links [s0, s_at), rechts [s_at, s1); rückwärts umgekehrt
+                    let (l_src, r_src) = if c.fx.reverse { ((s_at, s1), (s0, s_at)) } else { ((s0, s_at), (s_at, s1)) };
+                    let tempo = |src: (Time, Time), d: Time| {
+                        ((src.1 - src.0).0 as f64 / d.0.max(1) as f64).clamp(0.1, 100.0) as f32
+                    };
+                    c.fx.speed_curve = None;
+                    right.fx.speed_curve = None;
+                    c.speed = tempo(l_src, rel);
+                    right.speed = tempo(r_src, right.duration);
+                    c.source_in = l_src.0;
+                    right.source_in = r_src.0;
+                } else if c.fx.reverse {
                     // Rückwärts: der linke Teil zeigt das Ende des Quellbereichs
                     right.source_in = c.source_in;
                     c.source_in = c.source_in + c.source_span() - rel_src;

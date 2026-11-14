@@ -190,6 +190,7 @@ impl App {
             .timeline
             .tracks
             .iter()
+            .filter(|t| !t.locked) // gesperrte Spuren bleiben unberührt, statt den Batch scheitern zu lassen
             .flat_map(|t| {
                 t.clips
                     .iter()
@@ -197,6 +198,9 @@ impl App {
                     .map(move |c| (t.id, c.start, c.end()))
             })
             .collect();
+        if ranges.is_empty() {
+            return;
+        }
         let first = ranges.iter().map(|r| r.1).min();
         self.select_only(None);
         if self.ripple_ranges(ranges) {

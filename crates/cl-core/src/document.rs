@@ -304,6 +304,39 @@ mod tests {
     }
 
     #[test]
+    fn split_with_speed_curve_keeps_source_time_at_cut() {
+        for reverse in [false, true] {
+            let (mut d, id) = doc_with_clip(); // 0–10 s, Quelle 10 s
+            let mut c = d.project().find_clip(id).unwrap().1.clone();
+            c.fx.speed_curve = Some("montage".into());
+            c.fx.reverse = reverse;
+            d.apply(EditOp::ReplaceClip { clip: c.clone() }, OpSource::Ui).unwrap();
+            let at = Time::from_secs_f64(4.0);
+            let want = c.source_time(at);
+            let OpOutput::Clip(right) = d.apply(EditOp::SplitClip { clip: id, at }, OpSource::Ui).unwrap() else {
+                panic!()
+            };
+            let p = d.project();
+            let (l, r) = (p.find_clip(id).unwrap().1, p.find_clip(right).unwrap().1);
+            assert!(l.fx.speed_curve.is_none() && r.fx.speed_curve.is_none());
+            let near = |a: Time, b: Time| assert!((a.0 - b.0).abs() <= 2, "{a:?} vs {b:?} (rückwärts {reverse})");
+            near(l.source_time(l.end()), want);
+            near(r.source_time(r.start), want);
+            // Außenkanten bleiben, wo sie waren
+            near(l.source_time(l.start), c.source_time(c.start));
+            near(r.source_time(r.end()), c.source_time(c.end()));
+        }
+        // ohne Kurve: Tempo bleibt
+        let (mut d, id) = doc_with_clip();
+        let OpOutput::Clip(right) = d.apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(4.0) }, OpSource::Ui).unwrap() else {
+            panic!()
+        };
+        let p = d.project();
+        assert_eq!((p.find_clip(id).unwrap().1.speed, p.find_clip(right).unwrap().1.speed), (1.0, 1.0));
+        assert_eq!(p.find_clip(right).unwrap().1.source_in, Time::from_secs_f64(4.0));
+    }
+
+    #[test]
     fn reversed_clip_keeps_frames_on_split_and_trim() {
         let (mut d, id) = doc_with_clip(); // 0–10 s, Quelle 10 s
         let before = |t: f64| Time::from_secs_f64(9.0 - t); // Quellzeit an Zeitleistenposition t

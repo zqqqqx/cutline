@@ -46,6 +46,8 @@ pub struct Quick {
     pub hits: Option<Vec<Hit>>,
     /// Projektstand der Analyse: ändert sich das Projekt, ist die Liste veraltet
     hits_rev: u64,
+    /// Analysierte Clipbereiche (Spur, von, bis): außerhalb gilt eine Spur als still
+    cover: Vec<(TrackId, Time, Time)>,
     confirm_replace: bool,
 }
 
@@ -65,6 +67,7 @@ impl Default for Quick {
             whole_track: false,
             hits: None,
             hits_rev: 0,
+            cover: Vec::new(),
             confirm_replace: false,
         }
     }
@@ -85,6 +88,34 @@ fn norm(w: &str) -> String {
     w.chars().filter(|c| c.is_alphabetic()).collect::<String>().to_lowercase()
 }
 
+/// Wortliste: getrennt an Komma, Semikolon und jedem Leerraum (auch Zeilenumbruch)
+fn filler_words(s: &str) -> Vec<String> {
+    s.split(|c: char| c == ',' || c == ';' || c.is_whitespace()).map(norm).filter(|w| !w.is_empty()).collect()
+}
+
+/// Bereiche `v` ohne den Bereich `cut`
+fn minus(v: Vec<(Time, Time)>, (c0, c1): (Time, Time)) -> Vec<(Time, Time)> {
+    v.into_iter().flat_map(|(a, b)| [(a, b.min(c0)), (a.max(c1), b)]).filter(|(a, b)| b > a).collect()
+}
+
+/// Mehrere Spuren mit „Alles mitziehen“: nur dort schneiden, wo alle analysierten Spuren still
+/// sind. Eine Spur spricht innerhalb ihrer Clips (`cover`) überall, wo sie keinen Treffer hat.
+pub fn common_cuts(hits: &[(TrackId, Time, Time)], cover: &[(TrackId, Time, Time)]) -> Vec<(TrackId, Time, Time)> {
+    let speaking: Vec<(TrackId, (Time, Time))> = cover
+        .iter()
+        .flat_map(|&(t, a, b)| {
+            let own = hits.iter().filter(|h| h.0 == t).fold(vec![(a, b)], |v, h| minus(v, (h.1, h.2)));
+            own.into_iter().map(move |r| (t, r))
+        })
+        .collect();
+    hits.iter()
+        .flat_map(|&(t, a, b)| {
+            let rest = speaking.iter().filter(|s| s.0 != t).fold(vec![(a, b)], |v, s| minus(v, s.1));
+            rest.into_iter().map(move |(a, b)| (t, a, b))
+        })
+        .collect()
+}
+
 /// Ton-Quelle eines Ziel-Clips für die Analyse
 struct Src {
     track: TrackId,
@@ -94,6 +125,8 @@ struct Src {
     src: f64,
     span: f64,
     sp: f64,
+    rev: bool,
+    curve: bool,
 }
 
 fn mmss(t: Time) -> String {
@@ -129,20 +162,33 @@ impl App {
                     src,
                     span,
                     sp,
+                    rev: c.fx.reverse,
+                    curve: c.fx.speed_curve.is_some(),
                 })
             })
             .collect()
     }
 
     fn quick_analyze(&mut self, ctx: &egui::Context, kind: QuickKind) {
-        let srcs = self.quick_sources();
+        // Tempo-Kurven lassen sich nicht linear umrechnen: solche Clips überspringen
+        let (curved, srcs): (Vec<Src>, Vec<Src>) = self.quick_sources().into_iter().partition(|s| s.curve);
+        if !curved.is_empty() {
+            self.toast_err("Clips mit Tempo-Kurve werden übersprungen");
+        }
         if srcs.is_empty() {
-            self.toast_err("Kein ausgewählter Clip mit Ton");
+            if curved.is_empty() {
+                self.toast_err("Kein ausgewählter Clip mit Ton");
+            }
             return;
         }
+        let cover: Vec<(TrackId, Time, Time)> = srcs
+            .iter()
+            .map(|s| (s.track, Time::from_secs_f64(s.start), Time::from_secs_f64(s.start + s.dur)))
+            .collect();
+        let rev = self.revision;
         let q = &self.quick;
         let (db, min, before, after) = (q.thresh_db, q.min_pause as f64, q.pad_before as f64, q.pad_after as f64);
-        let words: Vec<String> = q.words.split([',', ' ', ';']).map(norm).filter(|w| !w.is_empty()).collect();
+        let words = filler_words(&q.words);
         let models = self.models();
         if kind == QuickKind::Fillers && models.parakeet().is_none() {
             self.toast_err("Benötigt: Parakeet TDT 0.6B v3 (Einstellungen → Modelle)");
@@ -154,6 +200,7 @@ impl App {
             let n = srcs.len() as f32;
             for (i, s) in srcs.iter().enumerate() {
                 let step = |f: f32| p((i as f32 + f) / n);
+                let clip = |a: f64, b: f64| crate::creator::src_range_to_clip(a, b, s.span, s.sp, s.rev);
                 // (von, bis) in Clipzeit und Bezeichnung
                 let cuts: Vec<(f64, f64, String)> = if kind == QuickKind::Pauses {
                     step(0.3);
@@ -164,14 +211,20 @@ impl App {
                     // Pause (a, b): Sprache endet bei a, setzt bei b wieder ein
                     cl_analyze::audio::silences(&env, db, min)
                         .into_iter()
-                        .map(|(a, b)| ((a + after) / s.sp, (b - before) / s.sp, String::new()))
+                        .map(|(a, b)| {
+                            let (a, b) = clip(a + after, b - before);
+                            (a, b, String::new())
+                        })
                         .collect()
                 } else {
                     match cl_analyze::asr::parakeet(&models, &s.path, s.src, s.span, &step, cancel) {
                         Ok(ws) => ws
                             .iter()
                             .filter(|w| words.contains(&norm(&w.text)))
-                            .map(|w| ((w.start - 0.03).max(0.0) / s.sp, (w.end + 0.03) / s.sp, format!("„{}“", w.text.trim())))
+                            .map(|w| {
+                                let (a, b) = clip((w.start - 0.03).max(0.0), w.end + 0.03);
+                                (a, b, format!("„{}“", w.text.trim()))
+                            })
                             .collect(),
                         Err(e) => return TaskDone::Failed(e),
                     }
@@ -186,7 +239,9 @@ impl App {
             TaskDone::Run(Box::new(move |app: &mut App| {
                 if app.quick.open == Some(kind) {
                     app.quick.hits = Some(hits);
-                    app.quick.hits_rev = app.revision;
+                    // Stand vom Analysestart: wurde inzwischen geändert, verwirft der Dialog die Liste
+                    app.quick.hits_rev = rev;
+                    app.quick.cover = cover;
                 }
             }))
         });
@@ -198,10 +253,13 @@ impl App {
                 let Some(hits) = self.quick.hits.take() else {
                     return false;
                 };
-                let on: Vec<&Hit> = hits.iter().filter(|h| h.on).collect();
-                let total: f64 = on.iter().map(|h| (h.to - h.from).as_secs_f64()).sum();
-                let n = on.len();
-                if self.ripple_ranges(on.iter().map(|h| (h.track, h.from, h.to)).collect()) {
+                let mut ranges: Vec<(TrackId, Time, Time)> = hits.iter().filter(|h| h.on).map(|h| (h.track, h.from, h.to)).collect();
+                if self.project.settings.ripple_all_tracks {
+                    ranges = common_cuts(&ranges, &self.quick.cover);
+                }
+                let total: f64 = ranges.iter().map(|r| (r.2 - r.1).as_secs_f64()).sum();
+                let n = ranges.len();
+                if self.ripple_ranges(ranges) {
                     self.toast(if kind == QuickKind::Pauses {
                         format!("{n} Pausen entfernt ({total:.1} s)")
                     } else {
@@ -238,7 +296,10 @@ impl App {
         let analyzes = matches!(kind, QuickKind::Pauses | QuickKind::Fillers);
         let busy = self.tasks.running("tool").is_some();
         let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-        let mut main = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+        // Enter im Textfeld (Wortliste, Zahlenfeld) ist Eingabe, keine Hauptaktion
+        let mut main = ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !ctx.wants_keyboard_input();
+        let multi = self.project.settings.ripple_all_tracks
+            && self.quick.cover.iter().any(|c| self.quick.cover.first().is_some_and(|f| f.0 != c.0));
         let mut jump: Option<Time> = None;
         let title = match kind {
             QuickKind::Pauses => "Pausen entfernen",
@@ -323,6 +384,9 @@ impl App {
                                 });
                             }
                         });
+                        if multi {
+                            ui.label(RichText::new(crate::tr("Bei mehreren Spuren wird nur geschnitten, wo alle still sind")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
+                        }
                     }
                 }
                 if kind == QuickKind::Ducking && q.confirm_replace {
@@ -378,5 +442,26 @@ mod tests {
         let r = clip_cuts(10.0, 5.0, &[(0.03, 1.0), (2.0, 2.01), (3.0, 4.98), (-1.0, -0.5)]);
         assert_eq!(r, vec![(s(10.0), s(11.0)), (s(13.0), s(15.0))]);
         assert_eq!(norm("Ähm,"), "ähm");
+    }
+
+    #[test]
+    fn filler_words_split_on_any_whitespace() {
+        assert_eq!(filler_words("ähm\nalso, äh;uh\tum"), vec!["ähm", "also", "äh", "uh", "um"]);
+    }
+
+    #[test]
+    fn multi_track_cuts_only_where_all_are_silent() {
+        let s = Time::from_secs_f64;
+        let (a, b) = (TrackId::new(), TrackId::new());
+        // A: Clip 0–20, Pausen 2–4 und 10–12. B: Clip 0–15, Pause 3–5 (spricht bei 10–12)
+        let hits = [(a, s(2.0), s(4.0)), (a, s(10.0), s(12.0)), (b, s(3.0), s(5.0))];
+        let cover = [(a, s(0.0), s(20.0)), (b, s(0.0), s(15.0))];
+        let r = common_cuts(&hits, &cover);
+        assert_eq!(r, vec![(a, s(3.0), s(4.0)), (b, s(3.0), s(4.0))]);
+        // B hat nach 15 s keinen Clip: dort gilt B als still
+        let r = common_cuts(&[(a, s(16.0), s(18.0))], &cover);
+        assert_eq!(r, vec![(a, s(16.0), s(18.0))]);
+        // eine Spur: unverändert
+        assert_eq!(common_cuts(&hits[..2], &cover[..1]), hits[..2].to_vec());
     }
 }
