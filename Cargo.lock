@@ -725,11 +725,8 @@ dependencies = [
 name = "cl-analyze"
 version = "0.7.0"
 dependencies = [
- "cl-core",
  "cl-media",
  "ort",
- "serde",
- "serde_json",
  "tempfile",
 ]
 
@@ -847,7 +844,6 @@ dependencies = [
  "cl-core",
  "cl-fonts",
  "cl-media",
- "serde",
  "serde_json",
  "uuid",
 ]
