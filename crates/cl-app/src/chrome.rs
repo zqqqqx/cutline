@@ -331,7 +331,7 @@ impl App {
                 }
                 if item(ui, icon::FILE_VIDEO, "Exporte", "").clicked() {
                     ui.close_menu();
-                    self.exports_for = Some(self.project.name.clone());
+                    self.exports_for = Some(crate::exports::ExportsList::new(&self.project.name, self.project_path.as_deref()));
                 }
                 if item(ui, icon::CLOCK_COUNTER_CLOCKWISE, "Bearbeitungsverlauf", "").clicked() {
                     ui.close_menu();

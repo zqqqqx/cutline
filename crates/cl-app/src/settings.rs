@@ -134,10 +134,7 @@ impl AppSettings {
         paths::data_dir().join("settings.json")
     }
     pub fn load() -> Self {
-        let mut s: AppSettings = std::fs::read_to_string(Self::path())
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
+        let mut s: AppSettings = paths::read_json_or_quarantine(&Self::path());
         // Übernahme aus Phase 1 (eigene Datei für die Oberflächengröße)
         if !Self::path().is_file() {
             s.ui_scale = crate::chrome::load_ui_scale();
@@ -157,9 +154,9 @@ impl AppSettings {
         if s.cache_days > 0 {
             let days = s.cache_days;
             std::thread::spawn(move || {
-                for d in ["cache", "thumbs"] {
-                    paths::remove_older(&paths::data_dir().join(d), std::time::Duration::from_secs(days as u64 * 86_400));
-                }
+                let age = std::time::Duration::from_secs(days as u64 * 86_400);
+                paths::remove_older(&paths::data_dir().join("cache"), age, paths::CACHE_KEEP);
+                paths::remove_older(&paths::data_dir().join("thumbs"), age, &[]);
             });
         }
         s
@@ -725,8 +722,9 @@ impl App {
                         .on_hover_text(crate::tr("Proxys, Vorschaubilder und Projektbilder. Werden bei Bedarf neu erzeugt."))
                         .clicked()
                     {
-                        let _ = std::fs::remove_dir_all(paths::data_dir().join("cache"));
-                        let _ = std::fs::remove_dir_all(paths::data_dir().join("thumbs"));
+                        // Masken und SVG-Bilder älterer Projekte liegen auch im Cache: stehen lassen
+                        paths::clear_dir(&paths::data_dir().join("cache"), paths::CACHE_KEEP);
+                        paths::clear_dir(&paths::data_dir().join("thumbs"), &[]);
                         self.fx_thumbs.clear();
                         self.fx_thumbs_requested.clear();
                         self.cache_size = None;

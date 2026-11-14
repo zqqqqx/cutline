@@ -98,7 +98,9 @@ impl App {
         if let Some(p) = remove {
             let trash = paths::data_dir().join("Papierkorb");
             let _ = std::fs::create_dir_all(&trash);
-            if std::fs::rename(&p, trash.join(p.file_name().unwrap_or_default())).is_ok() {
+            // eindeutiger Name: eine früher entfernte gleichnamige Vorlage bleibt erhalten
+            let to = crate::library::unique(&trash, p.file_name().unwrap_or_default().to_string_lossy().into_owned());
+            if std::fs::rename(&p, to).is_ok() {
                 self.toast("Vorlage in den Papierkorb verschoben");
             }
         }
@@ -110,7 +112,9 @@ impl App {
             .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
         {
             Ok(mut proj) => {
-                self.new_project();
+                if !self.new_project() {
+                    return;
+                }
                 proj.name = crate::home::next_project_name();
                 *self.doc.lock().unwrap() = Document::new(proj);
                 self.revision = u64::MAX;
@@ -164,12 +168,16 @@ impl App {
         if ok {
             self.dialog_error = None;
             match self.tpl_dialog.take() {
+                Some(TplDialog::Save { name }) if dir().join(format!("{}.cutline", safe(&name))).exists() => {
+                    self.tpl_dialog = backup;
+                    self.dialog_error = Some("Diesen Namen gibt es schon".into());
+                }
                 Some(TplDialog::Save { name }) if !safe(&name).is_empty() => {
                     let _ = std::fs::create_dir_all(dir());
                     let mut p = self.project.clone();
                     p.name = name.trim().to_string();
-                    match std::fs::write(
-                        dir().join(format!("{}.cutline", safe(&name))),
+                    match paths::write_atomic(
+                        &dir().join(format!("{}.cutline", safe(&name))),
                         p.to_json(),
                     ) {
                         Ok(_) => self.toast(format!("Vorlage „{}“ gespeichert", name.trim())),
@@ -181,7 +189,12 @@ impl App {
                 }
                 Some(TplDialog::Rename { path, name }) if !safe(&name).is_empty() => {
                     let to = dir().join(format!("{}.cutline", safe(&name)));
-                    if let Err(e) = std::fs::rename(&path, &to) {
+                    // vorhandene Vorlage nicht ersetzen (nur Groß-/Kleinschreibung ändern geht)
+                    let same = to.to_string_lossy().to_lowercase() == path.to_string_lossy().to_lowercase();
+                    if to.exists() && !same {
+                        self.tpl_dialog = backup;
+                        self.dialog_error = Some("Diesen Namen gibt es schon".into());
+                    } else if let Err(e) = std::fs::rename(&path, &to) {
                         self.tpl_dialog = backup;
                         self.dialog_error = Some(e.to_string());
                     }
