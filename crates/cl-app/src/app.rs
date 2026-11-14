@@ -181,6 +181,8 @@ pub struct App {
     pub safe_area: bool,
     /// Multicam: Index des Blickwinkels, dessen Ton durchgehend läuft
     pub multicam_audio: usize,
+    /// Quick-Action-Fenster (Pausen, Füllwörter, Ducking, Punch-in)
+    pub quick: crate::quick::Quick,
     /// Figuren (Plugin „Story-Werkzeuge“)
     pub characters: Vec<crate::story::Character>,
     /// Plugins Freesound und Pexels
@@ -407,6 +409,7 @@ impl App {
             aspect_fit: None,
             safe_area: false,
             multicam_audio: 0,
+            quick: Default::default(),
             characters: crate::story::load(),
             stock: Default::default(),
             last_backup: None,
@@ -3090,6 +3093,7 @@ impl eframe::App for App {
         self.preset_dialogs(ctx);
         self.import_dialogs(ctx);
         self.marker_dialog(ctx);
+        self.quick_dialog(ctx);
         self.track_rename_dialog(ctx);
         self.project_tools(ctx);
         self.paste_attrs_dialog(ctx);

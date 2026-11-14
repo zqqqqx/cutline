@@ -1549,3 +1549,26 @@ Am Playhead	At playhead
 Am Ende	At end
 Vorlage eingefügt	Template inserted
 Ton von (läuft durchgehend)	Audio from (plays throughout)
+Bereich entfernen	Remove range
+Alles mitziehen: Ripple-Schnitte verschieben alle Spuren und Marker	Move everything: ripple edits shift all tracks and markers
+Keine Lücken	No gaps
+Kein ausgewählter Clip mit Ton	No selected clip with audio
+Schwelle	Threshold
+Mindestlänge	Minimum length
+Rand davor	Margin before
+Rand danach	Margin after
+Wörter (durch Komma getrennt)	Words (comma-separated)
+Absenkung	Reduction
+Rampe	Ramp
+Alle Clips der Spur	All clips on the track
+{} Pausen, {} s kürzer	{} pauses, {} s shorter
+{} Füllwörter, {} s kürzer	{} filler words, {} s shorter
+Nichts gefunden	Nothing found
+Werte anpassen und erneut analysieren	Adjust the values and analyze again
+Zum Treffer springen	Jump to this result
+Der Clip hat schon Lautstärke-Keyframes. Ersetzen?	The clip already has volume keyframes. Replace them?
+Analysieren	Analyze
+Ersetzen	Replace
+Anwenden	Apply
+Musik unter Sprache absenken	Lower music under speech
+Musik an {} Stellen abgesenkt (−{} dB)	Music lowered in {} places (−{} dB)
