@@ -51,7 +51,16 @@ impl App {
         let Some((_, rx)) = &self.import.running else {
             return;
         };
-        let Ok(res) = rx.try_recv() else { return };
+        let res = match rx.try_recv() {
+            Ok(res) => res,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            // Import-Thread abgestürzt: sonst dreht sich die Anzeige ewig
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.import.running = None;
+                self.toast_err("Import fehlgeschlagen (interner Fehler)");
+                return;
+            }
+        };
         self.import.running = None;
         match res {
             Ok((proj, rep)) => {

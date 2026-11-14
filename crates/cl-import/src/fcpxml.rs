@@ -17,6 +17,10 @@ pub fn parse_time(s: &str) -> f64 {
     }
 }
 
+fn hex_byte(h: &[u8]) -> Option<u8> {
+    u8::from_str_radix(std::str::from_utf8(h).ok()?, 16).ok()
+}
+
 fn url_to_path(src: &str) -> PathBuf {
     let s = src
         .strip_prefix("file://localhost")
@@ -28,7 +32,8 @@ fn url_to_path(src: &str) -> PathBuf {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+            // auf Bytes dekodieren: ein &str-Schnitt mitten in „€“ würde abstürzen
+            if let Some(v) = hex_byte(&b[i + 1..i + 3]) {
                 out.push(v);
                 i += 3;
                 continue;
@@ -219,6 +224,12 @@ fn make_clip(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn percent_decoding_survives_multibyte() {
+        assert_eq!(url_to_path("file:///a%1€b"), PathBuf::from("/a%1€b"));
+        assert_eq!(url_to_path("file:///a%20b"), PathBuf::from("/a b"));
+    }
 
     #[test]
     fn parses_times_and_spine() {
