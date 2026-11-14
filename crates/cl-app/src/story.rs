@@ -50,11 +50,10 @@ pub fn enabled(app: &App) -> bool {
 impl App {
     /// Einträge im Menü „Werkzeuge“
     pub fn story_menu(&mut self, ui: &mut egui::Ui) {
-        ui.label(
-            RichText::new(crate::tr("Story"))
-                .small()
-                .color(theme::TEXT_DIM()),
-        );
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            ui.label(RichText::new(crate::tr("Story")).small().color(theme::TEXT_DIM()));
+        });
         let chars = self.characters.clone();
         if chars.is_empty() {
             if ui

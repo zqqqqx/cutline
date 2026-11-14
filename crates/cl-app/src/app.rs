@@ -2548,7 +2548,15 @@ impl App {
     /// Läuft vor den Kürzeln, sonst verbraucht dort „escape“ die Taste und hebt nur die Auswahl auf.
     /// Ein Dialog, der Esc/Enter selbst auswertet, ist offen
     fn dialog_open(&self) -> bool {
-        self.quick.open.is_some() || self.shorts.is_some() || self.aspect_fit.is_some() || self.tpl_dialog.is_some()
+        self.quick.open.is_some()
+            || self.shorts.is_some()
+            || self.aspect_fit.is_some()
+            || self.tpl_dialog.is_some()
+            || self.paste_attrs_open
+            || self.marker_edit.is_some()
+            || self.track_rename.is_some()
+            || self.lib_dialog.is_some()
+            || self.preset_dialog.is_some()
     }
 
     fn esc_closes(&mut self, ctx: &egui::Context) -> bool {

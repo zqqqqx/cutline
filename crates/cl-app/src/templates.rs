@@ -157,7 +157,7 @@ impl App {
         ui.label(
             RichText::new(crate::tr("Aus Vorlage"))
                 .small()
-                .color(theme::TEXT_FAINT()),
+                .color(theme::TEXT_DIM()),
         );
         let mut open: Option<PathBuf> = None;
         let mut rename: Option<(PathBuf, String)> = None;
@@ -290,7 +290,7 @@ impl App {
             cancel |= crate::dialog::title(ui, "Multicam");
             ui.label(RichText::new(crate::tr("Multicam: Wiedergabe starten und mit 1–9 den Blickwinkel wählen, Stopp übernimmt den Schnitt")).size(theme::FS_UI));
             ui.add_space(6.0);
-            ui.label(RichText::new(crate::tr("Ton von (läuft durchgehend)")).small().color(theme::TEXT_FAINT()));
+            ui.label(RichText::new(crate::tr("Ton von (läuft durchgehend)")).small().color(theme::TEXT_DIM()));
             let names: Vec<String> = (1..=n).map(|i| format!("{} {i}", crate::tr("Kamera"))).collect();
             let items: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
             crate::widgets::segmented(ui, &items, &mut sel);

@@ -214,7 +214,7 @@ impl App {
                     ui.label(
                         RichText::new(crate::tr("Keine Untertitel im Projekt – erst Untertitel erzeugen"))
                             .small()
-                            .color(theme::TEXT_FAINT()),
+                            .color(theme::TEXT_DIM()),
                     );
                 }
                 let n = st.hits.iter().filter(|h| h.on).count();

@@ -1667,10 +1667,10 @@ impl App {
         };
         // Kopf: Rückgängig/Wiederholen und Anzahl
         ui.horizontal(|ui| {
-            if theme::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, format!("{}  (Strg+Z)", self.t("undo")), !done.is_empty(), false).clicked() {
+            if theme::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, crate::keymap::with_key(&self.t("undo"), &self.key_of("undo")), !done.is_empty(), false).clicked() {
                 self.history_step(-1);
             }
-            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, format!("{}  (Strg+Umschalt+Z)", self.t("redo")), !undone.is_empty(), false).clicked() {
+            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, crate::keymap::with_key(&self.t("redo"), &self.key_of("redo")), !undone.is_empty(), false).clicked() {
                 self.history_step(1);
             }
             ui.label(

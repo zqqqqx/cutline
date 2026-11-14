@@ -246,13 +246,12 @@ impl App {
             return;
         };
         let mut a = self.paste_attrs;
-        let (mut ok, mut close) = (false, false);
-        egui::Window::new(crate::tr("Attribute einfügen"))
-            .id(egui::Id::new("paste-attrs"))
-            .collapsible(false)
-            .resizable(false)
+        // Esc schließt, Enter bestätigt wie „Einfügen“
+        let (mut close, mut ok) = crate::dialog::keys(ctx);
+        crate::dialog::window(ctx, crate::tr("Attribute einfügen"), "paste-attrs")
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0))
             .show(ctx, |ui| {
+                close |= crate::dialog::title(ui, "Attribute einfügen");
                 ui.label(
                     RichText::new(crate::tr(format!(
                         "Von „{}“ auf die Auswahl übertragen:",
@@ -278,24 +277,11 @@ impl App {
                 );
                 crate::widgets::check(ui, &mut a.speed, crate::tr("Tempokurve und Richtung"));
                 crate::widgets::check(ui, &mut a.text, crate::tr("Textstil (bei Texten)"));
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.add(theme::primary("Einfügen")).clicked() {
-                        ok = true;
-                    }
-                    if ui.add(theme::secondary("Abbrechen")).clicked() {
-                        close = true;
-                    }
-                });
+                let (m, c) = crate::dialog::buttons(ui, theme::primary("Einfügen"), true);
+                ok |= m;
+                close |= c;
             });
         self.paste_attrs = a;
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            close = true;
-        }
-        // Enter bestätigt wie „Einfügen“
-        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-            ok = true;
-        }
         if ok {
             let src2 = src.clone();
             self.modify_selection(|c| a.apply(&src2, c));

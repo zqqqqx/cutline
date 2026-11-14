@@ -616,7 +616,7 @@ impl App {
                                 Align2::RIGHT_CENTER,
                                 crate::tr("bereits aktiv"),
                                 FontId::proportional(theme::FS_HINT),
-                                theme::TEXT_FAINT(),
+                                theme::TEXT_DIM(),
                             );
                         } else {
                             let b = Rect::from_center_size(c, vec2(16.0, 16.0));
@@ -807,7 +807,7 @@ impl App {
                                 TOUR.len()
                             )))
                             .small()
-                            .color(theme::TEXT_FAINT()),
+                            .color(theme::TEXT_DIM()),
                         );
                         ui.add_space(2.0);
                         ui.label(RichText::new(crate::tr(title)).size(theme::FS_PAGE).strong());
@@ -910,7 +910,7 @@ fn welcome(ui: &mut egui::Ui) {
                 "In drei kurzen Schritten richtest du Cutline für deine Videos ein.",
             ))
             .small()
-            .color(theme::TEXT_FAINT()),
+            .color(theme::TEXT_DIM()),
         );
     });
 }
