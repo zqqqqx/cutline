@@ -8,7 +8,7 @@ use std::path::Path;
 use cl_core::*;
 use cl_fx::{atempo_chain, fx_graph, piecewise_expr, speed_setpts, ChainOpts, Src};
 
-use crate::{default_font, f, FontResolver, Result};
+use crate::{default_font, f, ExportError, FontResolver, Result};
 
 /// Laufender Aufbau eines Filtergraphen.
 pub(crate) struct Ctx<'a> {
@@ -342,7 +342,7 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         _ => "C",
     };
     let mut dt = format!(
-        "drawtext=fontfile={font_file}:textfile={text_file}:fontsize={size:.1}:fontcolor={}:text_align={align}:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing={:.1}",
+        "drawtext=fontfile={font_file}:textfile={text_file}:expansion=none:fontsize={size:.1}:fontcolor={}:text_align={align}:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing={:.1}",
         rgba(st.color),
         size * 0.3 * ls + size * (ls - 1.0).max(0.0)
     );
@@ -521,7 +521,10 @@ fn sprite_for(ctx: &mut Ctx, p: &Project, c: &Clip) -> Result<Option<Sprite>> {
             media,
             kind: kind @ (MediaKind::Video | MediaKind::Image),
         } => {
-            let m = p.media(*media).expect("geprüft").clone();
+            let m = p
+                .media(*media)
+                .ok_or_else(|| ExportError::MissingMedia(media.to_string()))?
+                .clone();
             media_sprite(ctx, c, &m, *kind == MediaKind::Image).map(Some)
         }
         ClipContent::Text(st) => text_sprite(ctx, c, st),
@@ -578,11 +581,16 @@ fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Optio
             Some((a, a_len)) => {
                 let tr = group[k - 1].transition_out.as_ref().expect("Gruppe");
                 let out = ctx.label("xf");
+                // Id kommt ungeprüft aus Projektdatei/MCP: nur bekannte Übergänge in den Graphen
+                let id = cl_fx::TRANSITIONS
+                    .iter()
+                    .find(|t| t.0 == tr.id)
+                    .map_or("fade", |t| t.0);
                 let d = d_prev.max(0.04);
                 let off = (a_len - d).max(0.0);
                 ctx.graph.push(format!(
                     "[{a}][{layer}]xfade=transition={}:duration={}:offset={}[{out}]",
-                    tr.id,
+                    id,
                     f(d),
                     f(off)
                 ));
@@ -705,6 +713,10 @@ pub(crate) fn audio_part(
                 continue;
             }
             let Some(m) = p.media(*media) else { continue };
+            // Nur lokale Dateien (sonst lädt FFmpeg z. B. eine URL aus der Projektdatei)
+            if !m.path.is_file() {
+                continue;
+            }
             if !m.has_audio || (c.volume_db <= -59.9 && c.keyframes.get(Prop::Volume).is_empty()) {
                 continue;
             }
@@ -763,14 +775,17 @@ pub(crate) fn audio_part(
                     piecewise_expr(&pts, "t")
                 ));
             }
-            if c.fade_in > Time::ZERO {
-                chain.push(format!("afade=t=in:d={}", f(c.fade_in.as_secs_f64())));
+            // Blenden höchstens so lang wie der Clip (Teilen/Tempo/Trimmen kürzen ihn), sonst
+            // lehnt FFmpeg ein negatives `st` ab
+            let (fade_in, fade_out) = (c.fade_in.as_secs_f64().min(dur), c.fade_out.as_secs_f64().min(dur));
+            if fade_in > 0.0 {
+                chain.push(format!("afade=t=in:d={}", f(fade_in)));
             }
-            if c.fade_out > Time::ZERO {
+            if fade_out > 0.0 {
                 chain.push(format!(
                     "afade=t=out:st={}:d={}",
-                    f(dur - c.fade_out.as_secs_f64()),
-                    f(c.fade_out.as_secs_f64())
+                    f((dur - fade_out).max(0.0)),
+                    f(fade_out)
                 ));
             }
             let t0 = (c.start - start).as_secs_f64();

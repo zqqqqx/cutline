@@ -325,6 +325,9 @@ impl EditOp {
                 right.anim.intro = None;
                 c.anim.outro = None;
                 c.transition_out = None;
+                // Blenden nur an den Außenkanten, sonst Blende länger als die Hälfte
+                right.fade_in = Time::ZERO;
+                c.fade_out = Time::ZERO;
                 c.duration = rel;
                 let rid = right.id;
                 track.clips.push(right);
@@ -333,13 +336,18 @@ impl EditOp {
             }
             EditOp::TrimClip { clip, edge, to } => {
                 let ti = clip_track_index(p, clip)?;
-                let (src_len, is_audio) = {
+                let (src_len, is_audio, has_source) = {
                     let c = p.timeline.tracks[ti]
                         .clips
                         .iter()
                         .find(|c| c.id == clip)
                         .expect("geprüft");
-                    (source_length(p, c), c.kind() == TrackKind::Audio)
+                    // Nach Inhalt statt nach bekannter Länge (Dauer 0 = unbekannt)
+                    let has_source = matches!(
+                        c.content,
+                        ClipContent::Media { kind: MediaKind::Video | MediaKind::Audio, .. }
+                    );
+                    (source_length(p, c), c.kind() == TrackKind::Audio, has_source)
                 };
                 let track = &mut p.timeline.tracks[ti];
                 ensure_unlocked(track)?;
@@ -374,7 +382,7 @@ impl EditOp {
                         if new_dur <= Time::ZERO {
                             return Err(CoreError::InvalidDuration);
                         }
-                        if src_len.is_some() && !rev {
+                        if has_source && !rev {
                             c.source_in = Time((c.source_in + to_src(delta)).0.max(0));
                         }
                         c.keyframes.shift(delta);
@@ -490,6 +498,11 @@ impl EditOp {
                 Ok(OpOutput::None)
             }
             EditOp::ReplaceClip { clip } => {
+                if let ClipContent::Media { media, .. } = &clip.content {
+                    if p.media(*media).is_none() {
+                        return Err(CoreError::MediaNotFound(*media));
+                    }
+                }
                 let c = clip_mut(p, clip.id)?;
                 if c.kind() != clip.kind() {
                     return Err(CoreError::KindMismatch {

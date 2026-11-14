@@ -751,4 +751,49 @@ mod tests {
         s.apply_aspect(AspectPreset::Ratio(1, 1));
         assert_eq!((s.width, s.height), (1080, 1080));
     }
+    #[test]
+    fn split_keeps_fades_only_at_outer_edges() {
+        let (mut d, id) = doc_with_clip();
+        let fades = EditOp::SetFades { clip: id, fade_in: Time::from_secs_f64(2.0), fade_out: Time::from_secs_f64(2.0) };
+        d.apply(fades, OpSource::Ui).unwrap();
+        let OpOutput::Clip(right) = d
+            .apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(1.0) }, OpSource::Ui)
+            .unwrap()
+        else {
+            panic!()
+        };
+        let (_, l) = d.project().find_clip(id).unwrap();
+        assert_eq!((l.fade_in, l.fade_out), (Time::from_secs_f64(2.0), Time::ZERO));
+        let (_, r) = d.project().find_clip(right).unwrap();
+        assert_eq!((r.fade_in, r.fade_out), (Time::ZERO, Time::from_secs_f64(2.0)));
+    }
+
+    #[test]
+    fn replace_clip_rejects_unknown_media() {
+        let (mut d, id) = doc_with_clip();
+        let mut c = d.project().find_clip(id).unwrap().1.clone();
+        c.content = ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video };
+        assert!(matches!(
+            d.apply(EditOp::ReplaceClip { clip: c }, OpSource::Ui),
+            Err(CoreError::MediaNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn start_trim_moves_source_with_unknown_duration() {
+        // Probe ohne Dauer speichert 0: Quelle muss trotzdem mitwandern
+        let mut d = Document::new(Project::new("Test"));
+        let m = media(0.0);
+        d.apply(EditOp::ImportMedia { media: m.clone() }, OpSource::Ui).unwrap();
+        let OpOutput::Clip(id) = d
+            .apply(EditOp::AddClip { track: None, clip: video_clip(&m, 0.0, 5.0) }, OpSource::Ui)
+            .unwrap()
+        else {
+            panic!()
+        };
+        d.apply(EditOp::TrimClip { clip: id, edge: Edge::Start, to: Time::from_secs_f64(2.0) }, OpSource::Ui)
+            .unwrap();
+        let (_, c) = d.project().find_clip(id).unwrap();
+        assert_eq!(c.source_time(c.start), Time::from_secs_f64(2.0));
+    }
 }
