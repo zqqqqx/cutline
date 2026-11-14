@@ -1,6 +1,6 @@
 [package]
 name = "cl-app"
-description = "Cutline: Desktop-App (egui auf wgpu)"
+description = "Cutline – das offene Schnittprogramm für Creator (Desktop-App)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

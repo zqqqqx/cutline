@@ -80,7 +80,6 @@ Zur Projektübersicht	Back to projects
 Projekt öffnen …	Open project …
 Projektordner	Project folder
 Cutline {} · Open Source · MPL-2.0	Cutline {} · Open source · MPL-2.0
-Lokal · ohne Konto · ohne Werbung	Local · no account · no ads
 Liste	List
 Kacheln	Grid
 Projekte suchen	Search projects
@@ -441,7 +440,7 @@ Server startet …	Server starting …
 Ohne laufende App (stdio)	Without the running app (stdio)
 Werkzeuge: Projekt lesen, Medien importieren, Clips einfügen, teilen, trimmen, löschen, Format setzen, beliebige EditOps, Rückgängig/Wiederholen.	Tools: read project, import media, insert, split, trim and delete clips, set format, arbitrary EditOps, undo/redo.
 Version {} · MPL-2.0	Version {} · MPL-2.0
-Open-Source-Videoeditor in Rust. Lokal, ohne Konto, ohne Abo, ohne Werbung, ohne generative KI.	Open-source video editor written in Rust. Local, no account, no subscription, no ads, no generative AI.
+Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner. Lokale KI für Untertitel, Freistellen und Entrauschen – nichts wird hochgeladen; keine erzeugende KI.	The open video editor for creators. Easy to use, fast, and entirely on your machine. Local AI for captions, cut-outs and noise removal – nothing is uploaded; no generative AI.
 {} Effekte · {} Filter · {} Übergänge · {} Sticker · {} Soundeffekte · {} Textvorlagen	{} effects · {} filters · {} transitions · {} stickers · {} sound effects · {} text templates
 {} Effekte	{} effects
 {} Filter	{} filters
@@ -1208,13 +1207,13 @@ Rundgang · {} von {}	Tour · {} of {}
 Beenden	End
 Rundgang und Einführung findest du jederzeit im Menü	You can find the tour and introduction in the menu at any time
 Willkommen bei Cutline	Welcome to Cutline
-Schneiden ohne Konto, ohne Abo und ohne Cloud. Alles läuft auf deinem Rechner.	Edit without an account, subscription or cloud. Everything runs on your computer.
-Alles lokal	Fully local
-Untertitel, Freistellen und Analysen laufen mit offenen Modellen auf deinem Rechner.	Captions, background removal and analysis run with open models on your computer.
-Ehrlich	Honest
-Kein Wasserzeichen, keine Werbung, kein Upload. Projekte sind offenes JSON.	No watermark, no ads, no upload. Projects are open JSON.
-Erweiterbar	Extensible
-Plugins für Musik und Stock-Material, eigene Bibliothek, MCP-Schnittstelle.	Plugins for music and stock footage, your own library, MCP interface.
+Einfach zu bedienen, schnell, komplett auf deinem Rechner.	Easy to use, fast, and entirely on your machine.
+Einfach schneiden	Simple
+Vertraute Bedienung: reinziehen, schneiden, exportieren. Jede Funktion ist ab dem ersten Start freigeschaltet.	Familiar layout: drag in, cut, export. Every function is unlocked from the first start.
+Schnell arbeiten	Fast
+In Rust geschrieben. Flüssige Vorschau mit Proxys, schnelle Exporte mit Hardware-Encodern.	Written in Rust. Smooth preview with proxies, quick exports with hardware encoders.
+Offen	Open
+Open Source, läuft lokal, ohne Konto, ohne Abo, ohne Wasserzeichen. Projekte sind offenes JSON.	Open source, runs locally, no account, no subscription, no watermark. Projects are open JSON.
 In drei kurzen Schritten richtest du Cutline für deine Videos ein.	Set up Cutline for your videos in three short steps.
 Wofür nutzt du Cutline?	What do you use Cutline for?
 Mehrfachauswahl. Danach schlagen wir passende Werkzeuge und Plugins vor.	Pick as many as you like. We'll suggest matching tools and plugins next.
