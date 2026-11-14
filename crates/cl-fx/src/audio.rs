@@ -34,18 +34,6 @@ pub static FILTERS: &[(&str, &str, &str)] = &[
     ("wide", "Breiter", "extrastereo=m=2"),
 ];
 
-pub fn filter_name(id: &str) -> &'static str {
-    FILTERS.iter().find(|v| v.0 == id).map(|v| v.1).unwrap_or("Audiofilter")
-}
-
-pub fn voice_name(id: &str) -> &'static str {
-    VOICES
-        .iter()
-        .find(|v| v.0 == id)
-        .map(|v| v.1)
-        .unwrap_or("Stimmfilter")
-}
-
 /// Kette für die Ton-Bearbeitung (leer, wenn nichts eingestellt ist).
 pub fn audio_chain(a: &AudioFx) -> Vec<String> {
     let mut v = Vec::new();

@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use cl_core::*;
-use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText, Stroke};
+use eframe::egui::{self, vec2, Color32, Rect, RichText, Stroke};
 
 use crate::app::App;
 use crate::player_edit::Region;
@@ -63,8 +63,8 @@ fn matte_cache(path: &std::path::Path) -> PathBuf {
         m.len().hash(&mut h);
         m.modified().ok().hash(&mut h);
     }
-    crate::paths::data_dir()
-        .join("cache")
+    // nicht im Cache: das Projekt zeigt dauerhaft auf die Maske
+    crate::paths::generated_dir()
         .join("matte")
         .join(format!("{:016x}.mkv", h.finish()))
 }
@@ -1229,11 +1229,6 @@ impl App {
             },
         );
     }
-}
-
-#[allow(dead_code)]
-fn _unused(_: egui::Pos2) -> egui::Pos2 {
-    pos2(0.0, 0.0)
 }
 
 /// Ton-Werkzeuge für Clips und Einsprechen: Störgeräusche, Klang, Audiofilter, Stimmfilter.

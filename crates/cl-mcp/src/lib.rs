@@ -525,14 +525,22 @@ impl McpServer {
         stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
         let mut reader = BufReader::new(stream.try_clone()?);
         let mut out = stream;
+        // Kopfzeilen vor der Anmeldung höchstens 64 KiB lesen (sonst unbegrenzter Speicher)
+        let mut head = (&mut reader).take(64 * 1024);
         let mut request_line = String::new();
-        reader.read_line(&mut request_line)?;
+        head.read_line(&mut request_line)?;
         let mut parts = request_line.split_whitespace();
         let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
-        let (mut len, mut auth, mut origin) = (0usize, String::new(), None::<String>);
+        let (mut len, mut auth, mut origin, mut host) =
+            (0usize, String::new(), None::<String>, String::new());
+        let mut complete = false;
         loop {
             let mut h = String::new();
-            if reader.read_line(&mut h)? == 0 || h == "\r\n" || h == "\n" {
+            if head.read_line(&mut h)? == 0 {
+                break;
+            }
+            if h == "\r\n" || h == "\n" {
+                complete = true;
                 break;
             }
             if let Some((k, v)) = h.split_once(':') {
@@ -540,6 +548,7 @@ impl McpServer {
                     "content-length" => len = v.trim().parse().unwrap_or(0),
                     "authorization" => auth = v.trim().to_string(),
                     "origin" => origin = Some(v.trim().to_string()),
+                    "host" => host = v.trim().to_ascii_lowercase(),
                     _ => {}
                 }
             }
@@ -547,9 +556,15 @@ impl McpServer {
         let reply = |out: &mut TcpStream, status: &str, body: &str| -> std::io::Result<()> {
             write!(out, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
         };
-        // Schutz gegen DNS-Rebinding: Browser-Origins außer localhost werden abgewiesen.
+        if !complete {
+            return reply(&mut out, "431 Request Header Fields Too Large", "{}");
+        }
+        // Schutz gegen DNS-Rebinding: Host und Origin müssen genau localhost sein.
+        if !local_authority(&host) {
+            return reply(&mut out, "403 Forbidden", r#"{"error":"host"}"#);
+        }
         if let Some(o) = origin {
-            if !(o.starts_with("http://127.0.0.1") || o.starts_with("http://localhost")) {
+            if !o.strip_prefix("http://").is_some_and(local_authority) {
                 return reply(&mut out, "403 Forbidden", r#"{"error":"origin"}"#);
             }
         }
@@ -587,6 +602,16 @@ impl McpServer {
             ),
         }
     }
+}
+
+/// `127.0.0.1` oder `localhost`, optional mit `:<Port>` – sonst nichts (kein Präfixvergleich).
+fn local_authority(a: &str) -> bool {
+    let (host, port) = match a.split_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (a, None),
+    };
+    matches!(host, "127.0.0.1" | "localhost")
+        && port.is_none_or(|p| (1..=5).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn timeline_json(p: &Project) -> Value {
@@ -730,7 +755,7 @@ mod tests {
         let (addr, _h) = s.serve_http(0, "geheim".into()).unwrap();
         let post = |auth: &str, body: &str| -> String {
             let mut c = TcpStream::connect(addr).unwrap();
-            write!(c, "POST /mcp HTTP/1.1\r\nHost: x\r\nAuthorization: {auth}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+            write!(c, "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: {auth}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", addr.port(), body.len()).unwrap();
             let mut s = String::new();
             c.read_to_string(&mut s).unwrap();
             s
@@ -740,5 +765,32 @@ mod tests {
         let ok = post("Bearer geheim", body);
         assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
         assert!(ok.contains(r#""result":{}"#));
+        let raw = |req: &[u8]| -> String {
+            let mut c = TcpStream::connect(addr).unwrap();
+            let _ = c.write_all(req);
+            let mut s = String::new();
+            let _ = c.read_to_string(&mut s);
+            s
+        };
+        let req = |host: &str, origin: &str| {
+            format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\n{origin}Authorization: Bearer geheim\r\nContent-Length: {}\r\n\r\n{body}", body.len())
+        };
+        // DNS-Rebinding: fremder Host
+        assert!(raw(req("evil.com", "").as_bytes()).starts_with("HTTP/1.1 403"));
+        // Origin nur exakt, kein Präfix
+        assert!(raw(req("localhost", "Origin: http://localhost.evil.com\r\n").as_bytes()).starts_with("HTTP/1.1 403"));
+        assert!(raw(req("localhost:9", "Origin: http://localhost:9\r\n").as_bytes()).starts_with("HTTP/1.1 200"));
+        // Kopfbereich ohne Ende nach 64 KiB wird nicht weiter gelesen
+        let mut big = b"POST /mcp HTTP/1.1\r\nX: ".to_vec();
+        big.resize(64 * 1024, b'a'); // genau die Grenze: Server liest alles, kein RST
+        assert!(raw(&big).starts_with("HTTP/1.1 431"));
+    }
+
+    #[test]
+    fn local_authority_is_exact() {
+        assert!(local_authority("127.0.0.1") && local_authority("localhost:8080"));
+        for bad in ["localhost.evil.com", "127.0.0.1.evil", "localhost:", "localhost:80x", "x"] {
+            assert!(!local_authority(bad), "{bad}");
+        }
     }
 }

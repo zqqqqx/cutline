@@ -43,8 +43,11 @@ fn secs(t: Time) -> String {
     }
 }
 
+/// Titel, Zeilen und Pfad des Eigenschaften-Fensters
+pub type PropsRows = (String, Vec<(&'static str, String)>, Option<PathBuf>);
+
 impl App {
-    fn props_rows(&self, p: &Props) -> (String, Vec<(&'static str, String)>, Option<PathBuf>) {
+    fn props_rows(&self, p: &Props) -> PropsRows {
         let kind_name = |k: MediaKind| match k {
             MediaKind::Video => "Video",
             MediaKind::Audio => "Audio",
@@ -165,8 +168,19 @@ impl App {
     }
 
     pub fn props_window(&mut self, ctx: &egui::Context) {
-        let Some(p) = self.props.clone() else { return };
-        let (title, rows, path) = self.props_rows(&p);
+        let Some(p) = self.props.clone() else {
+            self.props_cache = None;
+            return;
+        };
+        // Zeilen lesen Dateien (Größe, Projektdatei): nur beim Öffnen und nach Änderungen
+        let (title, rows, path) = match &self.props_cache {
+            Some((k, rev, r)) if *k == p && *rev == self.revision => r.clone(),
+            _ => {
+                let r = self.props_rows(&p);
+                self.props_cache = Some((p.clone(), self.revision, r.clone()));
+                r
+            }
+        };
         if rows.is_empty() {
             self.props = None;
             return;

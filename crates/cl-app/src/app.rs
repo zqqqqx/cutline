@@ -247,9 +247,11 @@ pub struct App {
     /// Rechtsklick → Eigenschaften
     pub props: Option<crate::props::Props>,
     /// Fenster „Exporte“ für dieses Projekt (Name)
-    pub exports_for: Option<String>,
-    /// Ton beim Ziehen: (letzte Stelle, Zeitpunkt, laufendes Stück)
-    pub scrub: Option<(Time, Instant, Option<AudioPlayer>)>,
+    pub exports_for: Option<crate::exports::ExportsList>,
+    /// Sperrdatei des offenen Projekts (siehe `take_lock`)
+    lock_file: Option<PathBuf>,
+    /// Ton beim Ziehen: (letzte Stelle, Zeitpunkt, Stopp-Signal des laufenden Stücks)
+    pub scrub: Option<(Time, Instant, Option<Arc<std::sync::atomic::AtomicBool>>)>,
     /// Pause mit offenen Strömen: (Playhead, Revision) beim Anhalten
     pub paused: Option<(Time, u64)>,
     /// Untertitel, dessen Textfeld im nächsten Bild den Fokus bekommt
@@ -274,6 +276,16 @@ pub struct App {
     registered_fonts: HashSet<String>,
     /// egui übernimmt `set_fonts` erst im nächsten Frame. Bis dahin bleiben neue Familien hier.
     pending_fonts: Option<HashSet<String>>,
+    /// Schriftnamen für den Inspektor (sortiert, höchstens alle 2 s neu gelesen)
+    pub font_names: Option<(Instant, Arc<Vec<String>>)>,
+    /// Stereo-Prüfung (ein Kanal stumm?) schon angestoßen: Dateien, zuletzt geprüfte Revision
+    silent_warmed: (HashSet<PathBuf>, u64),
+    /// Letzte Suche nach fehlenden Proxys (Zeit, Anzahl Medien)
+    pub proxy_scan: Option<(Instant, usize)>,
+    /// Proxy-Ordner zuletzt gezählt: (Zeit, Anzahl, Bytes)
+    pub proxy_stats: Option<(Instant, u64, u64)>,
+    /// Eigenschaften-Fenster: Zeilen einmal berechnet (Ziel, Revision, Zeilen)
+    pub props_cache: Option<(crate::props::Props, u64, crate::props::PropsRows)>,
 }
 
 impl App {
@@ -449,6 +461,7 @@ impl App {
             fx_thumbs_requested: HashSet::new(),
             props: None,
             exports_for: None,
+            lock_file: None,
             scrub: None,
             paused: None,
             caption_focus: None,
@@ -467,6 +480,11 @@ impl App {
             caption_from_clip: false,
             registered_fonts: HashSet::new(),
             pending_fonts: None,
+            font_names: None,
+            silent_warmed: (HashSet::new(), u64::MAX),
+            proxy_scan: None,
+            proxy_stats: None,
+            props_cache: None,
         };
         app.register_fonts(&cc.egui_ctx);
         cc.egui_ctx.set_zoom_factor(app.ui_scale);
@@ -498,7 +516,7 @@ impl App {
 
     /// Einziger Weg für Änderungen aus der Oberfläche.
     pub fn apply(&mut self, op: EditOp) -> Option<OpOutput> {
-        let r = self.doc.lock().unwrap().apply(op, OpSource::Ui);
+        let r = self.doc.lock().unwrap_or_else(|e| e.into_inner()).apply(op, OpSource::Ui);
         match r {
             Ok(o) => {
                 self.sync_project();
@@ -525,7 +543,7 @@ impl App {
 
     pub fn undo(&mut self) {
         self.live = None;
-        let r = self.doc.lock().unwrap().undo();
+        let r = self.doc.lock().unwrap_or_else(|e| e.into_inner()).undo();
         match r {
             Ok(l) => self.toast(format!("{}: {}", self.t("undo"), crate::tr(l))),
             Err(e) => self.toast_err(e.to_string()),
@@ -551,7 +569,7 @@ impl App {
     pub fn history_step(&mut self, steps: isize) {
         self.commit_live();
         self.live = None;
-        let n = self.doc.lock().unwrap().step(steps);
+        let n = self.doc.lock().unwrap_or_else(|e| e.into_inner()).step(steps);
         if n > 0 {
             let what = if steps < 0 { self.t("undo") } else { self.t("redo") };
             self.toast(format!("{what}: {n} {}", crate::tr(if n == 1 { "Schritt" } else { "Schritte" })));
@@ -567,7 +585,7 @@ impl App {
 
     pub fn redo(&mut self) {
         self.live = None;
-        let r = self.doc.lock().unwrap().redo();
+        let r = self.doc.lock().unwrap_or_else(|e| e.into_inner()).redo();
         match r {
             Ok(l) => self.toast(format!("{}: {}", self.t("redo"), crate::tr(l))),
             Err(e) => self.toast_err(e.to_string()),
@@ -575,7 +593,7 @@ impl App {
     }
 
     pub fn sync_project(&mut self) {
-        let doc = self.doc.lock().unwrap();
+        let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
         if doc.revision() != self.revision {
             self.revision = doc.revision();
             self.project = doc.project().clone();
@@ -698,6 +716,14 @@ impl App {
         match &self.live {
             Some(l) if l.id == id => Some(l.clone()),
             _ => self.project.find_clip(id).map(|(_, c)| c.clone()),
+        }
+    }
+
+    /// Wie `clip_view` für einen schon vorliegenden Clip: ohne Suche und ohne Klon
+    pub fn clip_ref<'a>(&'a self, c: &'a Clip) -> &'a Clip {
+        match &self.live {
+            Some(l) if l.id == c.id => l,
+            _ => c,
         }
     }
 
@@ -963,6 +989,29 @@ impl App {
     // ---------- Medien ----------
 
     pub fn import_media(&mut self, files: Vec<PathBuf>) -> Vec<MediaId> {
+        // ffprobe für neue Dateien vorab parallel (bis zu 8 Threads), übernommen wird unten
+        // wie bisher der Reihe nach
+        let mut todo: Vec<&PathBuf> = files
+            .iter()
+            .filter(|f| {
+                let ext = f.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+                !cl_fonts::FONT_EXTENSIONS.contains(&ext.as_str())
+                    && !self.project.media.iter().any(|m| m.path == **f)
+            })
+            .collect();
+        todo.sort();
+        todo.dedup();
+        let mut probed = HashMap::new();
+        std::thread::scope(|sc| {
+            let per = todo.len().div_ceil(8).max(1);
+            let hs: Vec<_> = todo
+                .chunks(per)
+                .map(|c| sc.spawn(move || c.iter().map(|f| ((*f).clone(), cl_media::probe(f))).collect::<Vec<_>>()))
+                .collect();
+            for h in hs {
+                probed.extend(h.join().unwrap_or_default());
+            }
+        });
         let mut ids = Vec::new();
         for f in files {
             let ext = f
@@ -978,7 +1027,7 @@ impl App {
                 ids.push(m.id);
                 continue;
             }
-            match cl_media::probe(&f) {
+            match probed.remove(&f).unwrap_or_else(|| cl_media::probe(&f)) {
                 Ok(m) => {
                     let id = m.id;
                     if self.apply(EditOp::ImportMedia { media: m }).is_some() {
@@ -1035,7 +1084,7 @@ impl App {
             .project
             .media(media)
             .cloned()
-            .or_else(|| self.doc.lock().unwrap().project().media(media).cloned())?;
+            .or_else(|| self.doc.lock().unwrap_or_else(|e| e.into_inner()).project().media(media).cloned())?;
         let dur = if m.kind == MediaKind::Image || m.duration <= Time::ZERO {
             Time::from_secs_f64(self.settings.image_duration as f64)
         } else {
@@ -1788,18 +1837,7 @@ impl App {
     // ---------- Projekte ----------
 
     pub fn default_project_path(&self) -> PathBuf {
-        let name: String = self
-            .project
-            .name
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == ' ' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
+        let name: String = paths::safe_name(&self.project.name);
         let dir = paths::projects_dir();
         let mut p = dir.join(format!("{}.cutline", name.trim()));
         let mut n = 2;
@@ -1889,9 +1927,21 @@ impl App {
                         .project_path
                         .clone()
                         .unwrap_or_else(|| self.default_project_path());
-                    if self.write_project(&p).is_ok() {
-                        self.project_path = Some(p);
-                        self.settings.save();
+                    match self.write_project(&p) {
+                        Ok(()) => {
+                            self.project_path = Some(p);
+                            self.settings.save();
+                        }
+                        // höchstens einmal pro Minute melden, sonst jeder Frame
+                        Err(e) => {
+                            static LAST_ERR: Mutex<Option<Instant>> = Mutex::new(None);
+                            let mut le = LAST_ERR.lock().unwrap();
+                            if le.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
+                                *le = Some(Instant::now());
+                                drop(le);
+                                self.toast_err(format!("Automatisch speichern fehlgeschlagen: {e}"));
+                            }
+                        }
                     }
                 }
             }
@@ -1915,13 +1965,57 @@ impl App {
         self.playhead = Time::ZERO;
         self.timeline = TimelineState::default();
         self.frames.clear();
+        // Zwischenspeicher des alten Projekts freigeben und seine wartenden Aufträge verwerfen;
+        // Effekt-/Filter-/Übergangskacheln gelten für alle Projekte und bleiben
+        self.decoder.next_generation();
+        self.thumbs.clear();
+        self.waves.clear();
+        let project_key = |k: &String| k.starts_with("strip:") || k.starts_with("lib:");
+        self.fx_thumbs.retain(|k, _| !project_key(k));
+        self.fx_thumbs_requested.retain(|k| !project_key(k));
+        self.sound_meta.clear();
+        self.sound_meta_req.clear();
         self.invalidate_preview();
         self.player_zoom = 1.0;
         self.player_pan = egui::Vec2::ZERO;
     }
 
-    pub fn new_project(&mut self) {
-        self.flush_before_leaving();
+    /// Beim Beenden: laufende Hintergrundaufgaben abbrechen, damit ihre FFmpeg-Prozesse enden
+    pub fn cancel_background_work(&mut self) {
+        for t in &self.tasks.list {
+            t.cancel();
+        }
+    }
+
+    /// Stereo-Prüfung der Medien vorab anstoßen (Import, geladenes Projekt): sonst klingt das
+    /// erste Abspielen einseitig, solange das Ergebnis fehlt. Nacheinander in einem Thread.
+    fn warm_silent_channels(&mut self) {
+        if self.silent_warmed.1 == self.revision {
+            return;
+        }
+        self.silent_warmed.1 = self.revision;
+        let new: Vec<PathBuf> = self
+            .project
+            .media
+            .iter()
+            .filter(|m| m.has_audio && m.kind != MediaKind::Image)
+            .filter(|m| self.silent_warmed.0.insert(m.path.clone()))
+            .map(|m| m.path.clone())
+            .collect();
+        if !new.is_empty() {
+            std::thread::spawn(move || {
+                for p in new {
+                    cl_media::silent_channel_opt(&p, true);
+                }
+            });
+        }
+    }
+
+    /// `false`: altes Projekt ließ sich nicht speichern, es bleibt offen.
+    pub fn new_project(&mut self) -> bool {
+        if !self.flush_before_leaving() {
+            return false;
+        }
         self.reset_editor();
         let n = crate::home::next_project_name();
         let mut p = Project::new(n);
@@ -1933,6 +2027,7 @@ impl App {
         self.saved_revision = self.revision;
         self.project_path = None;
         self.screen = Screen::Editor;
+        true
     }
 
     /// Projektordner ändern und vorhandene Projekte mitnehmen. Fehler bleiben im
@@ -1944,41 +2039,49 @@ impl App {
         }
         // offenes Projekt erst sichern und Dateien freigeben (laufende Wiedergabe hält sie offen)
         self.stop_playback();
-        self.flush_before_leaving();
+        if !self.flush_before_leaving() {
+            return;
+        }
         let mut reopen = None;
-        let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
-        match paths::move_projects(&old, &new, |a, b| moved.push((a.to_path_buf(), b.to_path_buf()))) {
-            Ok(n) => {
-                crate::exports::move_dir(&old, &new);
-                for (a, b) in &moved {
-                    let _ = std::fs::rename(crate::home::thumb_path(a), crate::home::thumb_path(b));
-                    for r in &mut self.settings.recent {
-                        if r == a {
-                            *r = b.clone();
-                        }
-                    }
-                    if self.project_path.as_ref() == Some(a) {
-                        reopen = Some(b.clone());
-                    }
+        let (moved, errs) = paths::move_projects(&old, &new);
+        // was umgezogen ist, wird nachgetragen – auch wenn anderes fehlschlug
+        if !moved.is_empty() {
+            crate::exports::move_dir(&old, &new);
+            crate::exports::move_projects(&moved);
+        }
+        for (a, b) in &moved {
+            let _ = std::fs::rename(crate::home::thumb_path(a), crate::home::thumb_path(b));
+            for r in &mut self.settings.recent {
+                if r == a {
+                    *r = b.clone();
                 }
-                let default = paths::data_dir().join("Projects");
-                self.settings.projects_dir = (new != default).then_some(new.clone());
-                paths::set_projects_dir(self.settings.projects_dir.clone());
-                self.settings.save();
-                self.settings_error = None;
-                self.home.refresh();
-                // das offene Projekt vom neuen Ort laden (seine Medienpfade wurden umgeschrieben)
-                if let Some(p) = reopen {
-                    self.open_project(&p);
-                }
-                self.toast(crate::tr(format!("{} {n} Projekte verschoben", icon::CHECK)));
             }
-            Err(e) => self.settings_error = Some(e),
+            if self.project_path.as_ref() == Some(a) {
+                reopen = Some(b.clone());
+            }
+        }
+        // Ordner nur wechseln, wenn nichts zurückgeblieben ist
+        if errs.is_empty() {
+            let default = paths::data_dir().join("Projects");
+            self.settings.projects_dir = (new != default).then_some(new.clone());
+            paths::set_projects_dir(self.settings.projects_dir.clone());
+            self.settings_error = None;
+            self.toast(crate::tr(format!("{} {} Projekte verschoben", icon::CHECK, moved.len())));
+        } else {
+            self.settings_error = Some(errs.join("\n"));
+        }
+        self.settings.save();
+        self.home.refresh();
+        // das offene Projekt vom neuen Ort laden (seine Medienpfade wurden umgeschrieben)
+        if let Some(p) = reopen {
+            self.open_project(&p);
         }
     }
 
     pub fn open_project(&mut self, p: &Path) {
-        self.flush_before_leaving();
+        if !self.flush_before_leaving() {
+            return;
+        }
         match std::fs::read_to_string(p)
             .map_err(|e| e.to_string())
             .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
@@ -2000,6 +2103,7 @@ impl App {
                 self.sync_project();
                 self.saved_revision = self.revision;
                 self.project_path = Some(p.to_path_buf());
+                self.take_lock(p);
                 self.settings.add_recent(p);
                 self.settings.save();
                 self.screen = Screen::Editor;
@@ -2022,8 +2126,9 @@ impl App {
         }
     }
 
-    /// Vor dem Verlassen eines Projekts: offene Änderungen speichern.
-    fn flush_before_leaving(&mut self) {
+    /// Vor dem Verlassen eines Projekts: offene Änderungen speichern. `false`, wenn das nicht
+    /// ging – dann bleibt das Projekt offen, sonst wären die Änderungen weg.
+    fn flush_before_leaving(&mut self) -> bool {
         self.commit_live();
         if self.voiceover.recorder.is_some() {
             self.stop_voiceover();
@@ -2035,15 +2140,47 @@ impl App {
                 .project_path
                 .clone()
                 .unwrap_or_else(|| self.default_project_path());
-            if self.write_project(&p).is_ok() {
-                self.project_path = Some(p);
+            if let Err(e) = self.write_project(&p) {
+                self.toast_err(format!("Projekt konnte nicht gespeichert werden: {e}"));
+                return false;
             }
+            self.project_path = Some(p);
         }
         self.settings.save();
+        self.release_lock();
+        true
+    }
+
+    /// Sperrdatei `<Projekt>.lock` (Inhalt: PID): warnt, wenn ein zweites Fenster dasselbe
+    /// Projekt öffnet – beide würden sich sonst still gegenseitig überschreiben.
+    fn take_lock(&mut self, p: &Path) {
+        let lock = lock_path(p);
+        let me = std::process::id().to_string();
+        let fresh = std::fs::metadata(&lock)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|d| d < Duration::from_secs(12 * 3600));
+        if fresh && std::fs::read_to_string(&lock).is_ok_and(|s| s.trim() != me) {
+            self.toast_err("Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet");
+        }
+        let _ = std::fs::write(&lock, me);
+        self.lock_file = Some(lock);
+    }
+
+    fn release_lock(&mut self) {
+        if let Some(l) = self.lock_file.take() {
+            // nur die eigene Sperre entfernen
+            if std::fs::read_to_string(&l).is_ok_and(|s| s.trim() == std::process::id().to_string()) {
+                let _ = std::fs::remove_file(l);
+            }
+        }
     }
 
     pub fn go_home(&mut self) {
-        self.flush_before_leaving();
+        if !self.flush_before_leaving() {
+            return;
+        }
         self.stop_playback();
         self.home.refresh();
         self.screen = Screen::Home;
@@ -2173,23 +2310,29 @@ impl App {
             let due = self.scrub.as_ref().is_none_or(|(_, at, _)| at.elapsed() > Duration::from_millis(250));
             // erster Aufruf nach dem Start merkt sich nur die Stelle
             if due && self.scrub.is_some() {
-                let a = AudioPlayer::start(&self.project, self.playhead).ok();
-                if std::env::var_os("CUTLINE_PERF").is_some() {
-                    eprintln!("scrub: Ton ab {:.2} s, ok={}", self.playhead.as_secs_f64(), a.is_some());
+                use std::sync::atomic::{AtomicBool, Ordering};
+                // Starten (FFmpeg, Audiogerät) und Beenden blockieren: beides im eigenen Thread.
+                // Der cpal-Strom ist nicht Send, also lebt das Stück ganz dort; die Oberfläche
+                // hält nur das Stopp-Signal und beendet damit das vorige Stück.
+                if let Some((_, _, Some(old))) = &self.scrub {
+                    old.store(true, Ordering::Relaxed);
                 }
-                self.scrub = Some((self.playhead, Instant::now(), a));
+                let stop = Arc::new(AtomicBool::new(false));
+                let (project, at, s) = (self.project.clone(), self.playhead, stop.clone());
+                std::thread::spawn(move || {
+                    let a = AudioPlayer::start(&project, at).ok();
+                    if perf() {
+                        eprintln!("scrub: Ton ab {:.2} s, ok={}", at.as_secs_f64(), a.is_some());
+                    }
+                    // Stück nach 350 ms beenden (oder früher, wenn das nächste beginnt)
+                    let t0 = Instant::now();
+                    while a.is_some() && !s.load(Ordering::Relaxed) && t0.elapsed() < Duration::from_millis(350) {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                });
+                self.scrub = Some((self.playhead, Instant::now(), Some(stop)));
             } else if self.scrub.is_none() {
                 self.scrub = Some((self.playhead, Instant::now(), None));
-            }
-        }
-        // Stück nach 350 ms beenden
-        if let Some((_, at, a)) = &mut self.scrub {
-            if a.is_some() {
-                if at.elapsed() > Duration::from_millis(350) {
-                    *a = None;
-                } else {
-                    ctx.request_repaint_after(Duration::from_millis(60));
-                }
             }
         }
     }
@@ -2326,7 +2469,7 @@ impl App {
             .as_ref()
             .and_then(|p| {
                 p.parent()
-                    .map(|d| d.join(format!("{}-media", self.project.name)))
+                    .map(|d| d.join(format!("{}-media", paths::safe_name(&self.project.name))))
             })
             .unwrap_or_else(|| paths::data_dir().join("Recordings"));
         let stamp = std::time::SystemTime::now()
@@ -2630,8 +2773,8 @@ impl App {
             self.open_project(p);
             return;
         }
-        if self.screen == Screen::Home {
-            self.new_project();
+        if self.screen == Screen::Home && !self.new_project() {
+            return;
         }
         let (fonts, media): (Vec<_>, Vec<_>) = rest.into_iter().partition(|p| {
             p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
@@ -2669,7 +2812,7 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
-        if std::env::var_os("CUTLINE_PERF").is_some() {
+        if perf() {
             self.perf_ui += 1;
             let el = self.perf_since.elapsed().as_secs_f64();
             if el >= 1.0 {
@@ -2714,6 +2857,7 @@ impl eframe::App for App {
         }
         self.sync_project();
         self.handle_dropped_files(ctx);
+        self.warm_silent_channels();
         self.receive_decoded(ctx);
         self.poll_tasks();
         self.poll_epidemic(ctx);
@@ -2847,7 +2991,8 @@ impl eframe::App for App {
         self.layout_editor(ctx);
         self.voiceover_window(ctx);
         self.settings_window(ctx);
-        let fonts_owned = self.font_files();
+        // nur der offene Dialog startet Exporte und braucht die Schriften
+        let fonts_owned = if self.export.is_open() { self.font_files() } else { HashMap::new() };
         // Titelbild: der Clip der Hauptspur am Playhead (sonst irgendein sichtbares Bild)
         let main = self
             .project
@@ -2864,7 +3009,12 @@ impl eframe::App for App {
             // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen)
             if msg.contains("Export fertig") {
                 self.report_epidemic_export(ctx);
-                if self.settings.export_sound && !self.playing {
+                // nur wenn nichts vorgehört wird: `preview_sound` schaltet um und würde es abbrechen
+                if self.settings.export_sound
+                    && !self.playing
+                    && self.sfx_preview.is_none()
+                    && self.sound_pending.is_none()
+                {
                     self.preview_sound("builtin:sfx:notify".into(), &Self::sfx_path("notify"), Some("notify"));
                 }
             }
@@ -2895,8 +3045,30 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
-        self.flush_before_leaving();
+        self.cancel_background_work();
+        if !self.flush_before_leaving() {
+            // letzter Ausweg: Stand in die Sicherungen schreiben
+            let stem = self
+                .project_path
+                .as_ref()
+                .and_then(|p| p.file_stem())
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| paths::safe_name(&self.project.name));
+            let dir = paths::data_dir().join("Backups").join(stem);
+            let _ = std::fs::create_dir_all(&dir);
+            let p = dir.join(format!("exit-{}.cutline", paths::unix_secs()));
+            if let Err(e) = paths::write_atomic(&p, self.project.to_json()) {
+                eprintln!("{}: {e}", p.display());
+            }
+            self.release_lock();
+        }
     }
+}
+
+fn lock_path(p: &Path) -> PathBuf {
+    let mut l = p.as_os_str().to_owned();
+    l.push(".lock");
+    PathBuf::from(l)
 }
 
 /// Fingerabdruck aller hörbaren Eigenschaften (Spuren, Tonclips, Lautstärke, Tempo, Ton-Effekte).
@@ -3023,13 +3195,22 @@ impl App {
     }
 }
 
+/// Messung mit `CUTLINE_PERF` (Variable einmal gelesen, nicht in jedem Bild)
+pub fn perf() -> bool {
+    static P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *P.get_or_init(|| std::env::var_os("CUTLINE_PERF").is_some())
+}
+
 /// Für Dokumentation: Mit `CUTLINE_SHOTS=<Ordner>` speichert Cutline das Fensterbild als PNG,
 /// sobald dort eine Datei `take` liegt (direkt aus der App, ohne überlagernde Fenster).
 fn dev_screenshot(ctx: &egui::Context) {
-    let Some(dir) = std::env::var_os("CUTLINE_SHOTS").filter(|d| !d.is_empty()) else {
+    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    let Some(dir) = DIR
+        .get_or_init(|| std::env::var_os("CUTLINE_SHOTS").filter(|d| !d.is_empty()).map(PathBuf::from))
+        .as_ref()
+    else {
         return;
     };
-    let dir = std::path::PathBuf::from(dir);
     let trigger = dir.join("take");
     if trigger.is_file() {
         let _ = std::fs::remove_file(&trigger);

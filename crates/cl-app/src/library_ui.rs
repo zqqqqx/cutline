@@ -659,6 +659,7 @@ impl App {
                         format!("Der Ordner „{label}“ wird entfernt. Die Einträge darin bleiben erhalten.")
                     };
                     ui.label(crate::tr(text));
+                    theme::field_error(ui, err.as_deref());
                 }
             }
             ui.add_space(10.0);
@@ -714,7 +715,8 @@ impl App {
                         })
                 }
                 Some(LibDialog::DeleteCat { area, key, .. }) => {
-                    self.library.delete_cat(area, &key, area_kind(area))
+                    let used: Vec<PathBuf> = self.project.media.iter().map(|m| m.path.clone()).collect();
+                    self.library.delete_cat(area, &key, area_kind(area), &used)
                 }
                 None => Ok(()),
             };
@@ -745,10 +747,14 @@ impl App {
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
         {
-            let out = crate::paths::data_dir()
-                .join("cache")
-                .join("svg")
-                .join(format!("{}.png", path.file_stem()?.to_string_lossy()));
+            // nicht im Cache (das Projekt zeigt darauf); Pfad-Kennung trennt gleichnamige SVGs
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(path, &mut h);
+            let out = crate::paths::generated_dir().join("svg").join(format!(
+                "{}-{:016x}.png",
+                path.file_stem()?.to_string_lossy(),
+                std::hash::Hasher::finish(&h)
+            ));
             if !out.is_file() {
                 let svg = std::fs::read_to_string(path).ok()?;
                 let px = cl_fx::stickers::render_svg(&svg, 512)?;

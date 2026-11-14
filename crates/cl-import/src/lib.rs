@@ -59,6 +59,3 @@ pub fn import(path: &Path) -> Result<(Project, Report)> {
         _ => Err("Unbekanntes Projektformat".into()),
     }
 }
-
-/// Dateiendungen für den Öffnen-Dialog
-pub const EXTENSIONS: &[&str] = &["json", "fcpxml", "xml"];
