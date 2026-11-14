@@ -81,7 +81,7 @@ impl App {
         for (k, r) in rects {
             let title = match k {
                 "assets" => "Medien",
-                "inspector" => "Eigenschaften",
+                "inspector" => "Inspektor",
                 "timeline" => "Zeitleiste",
                 _ => "Player",
             };

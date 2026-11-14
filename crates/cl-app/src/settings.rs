@@ -13,6 +13,25 @@ use crate::paths;
 use crate::theme::{self, icon};
 use crate::widgets::{self, Slider};
 
+/// Bildraten zur Auswahl – gleiche Liste für neue Projekte (Einstellungen) und den Projekt-Reiter.
+pub const FPS_CHOICES: [&str; 9] = [
+    "23.976", "24", "25", "29.97", "30", "50", "59.94", "60", "120",
+];
+
+/// Ältere Einstellungen speichern die Bildrate als ganze Zahl (z. B. 30)
+fn fps_compat<'de, D: serde::Deserializer<'de>>(d: D) -> Result<cl_core::Rational, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Fps {
+        Whole(u32),
+        Exact(cl_core::Rational),
+    }
+    Ok(match Fps::deserialize(d)? {
+        Fps::Whole(n) => cl_core::Rational::new(n.clamp(1, 240), 1),
+        Fps::Exact(r) => r,
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -59,7 +78,8 @@ pub struct AppSettings {
     pub backup_minutes: u32,
     pub backup_keep: usize,
     /// Neue Projekte: Bildrate und Umgang mit Tonkanälen
-    pub new_fps: u32,
+    #[serde(deserialize_with = "fps_compat")]
+    pub new_fps: cl_core::Rational,
     pub new_channels: cl_core::Channels,
     /// Höhe der Proxys (540, 720, 1080)
     pub proxy_h: u32,
@@ -114,7 +134,7 @@ impl Default for AppSettings {
             projects_dir: None,
             backup_minutes: 5,
             backup_keep: 30,
-            new_fps: 30,
+            new_fps: cl_core::Rational::new(30, 1),
             new_channels: Default::default(),
             proxy_h: 720,
             lib_downloads: true,
@@ -224,7 +244,7 @@ const SECTIONS: [(Section, &str, &str); 13] = [
     (Section::Shortcuts, icon::KEYBOARD, "Tastenkürzel"),
     (Section::Models, icon::CPU, "Modelle (lokale KI)"),
     (Section::Updates, icon::ARROW_CIRCLE_UP, "Updates"),
-    (Section::Integrations, icon::PUZZLE_PIECE, "Integrationen"),
+    (Section::Integrations, icon::PUZZLE_PIECE, "Integrationen und Plugins"),
     (Section::Import, icon::DOWNLOAD_SIMPLE, "Import"),
     (Section::About, icon::INFO, "Über Cutline"),
 ];
@@ -501,25 +521,7 @@ impl App {
                     "Beim Start die Projektübersicht zeigen",
                     &mut self.settings.start_on_home,
                 );
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(theme::secondary(format!(
-                            "{}  Einführung wiederholen",
-                            icon::HAND_WAVING
-                        )))
-                        .clicked()
-                    {
-                        self.settings_open = false;
-                        self.start_onboarding();
-                    }
-                    if ui
-                        .add(theme::secondary(format!("{}  Rundgang", icon::COMPASS)))
-                        .clicked()
-                    {
-                        self.settings_open = false;
-                        self.start_tour();
-                    }
-                });
+                // Rundgang und Einführung stehen im Hauptmenü
             }
             Section::Projects => {
                 theme::row(ui, "Projektordner", |ui| {
@@ -570,13 +572,14 @@ impl App {
                 });
                 theme::section(ui, "Neue Projekte");
                 theme::row(ui, "Bildrate", |ui| {
-                    let opts = [24u32, 25, 30, 50, 60];
-                    let names: Vec<String> = opts.iter().map(|f| format!("{f}")).collect();
-                    let names: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
-                    let mut i = opts.iter().position(|f| *f == self.settings.new_fps).unwrap_or(2);
-                    if widgets::segmented(ui, &names, &mut i) {
-                        self.settings.new_fps = opts[i];
-                    }
+                    egui::ComboBox::from_id_salt("set-new-fps")
+                        .selected_text(crate::tr(format!("{:.3} fps", self.settings.new_fps.as_f64())))
+                        .show_ui(ui, |ui| {
+                            for f in FPS_CHOICES {
+                                let r = cl_core::Rational::parse(f).unwrap_or_default();
+                                ui.selectable_value(&mut self.settings.new_fps, r, crate::tr(format!("{f} fps")));
+                            }
+                        });
                 });
             }
             Section::Library => {
@@ -630,7 +633,7 @@ impl App {
                 widgets::toggle_row(ui, "Ton beim Ziehen des Playheads", &mut self.settings.scrub_audio);
                 widgets::toggle_row(ui, "Hinweiston, wenn ein Export fertig ist", &mut self.settings.export_sound);
                 ui.add_space(6.0);
-                theme::row(ui, "Kanäle", |ui| {
+                theme::row(ui, "Kanäle (neue Projekte)", |ui| {
                     egui::ComboBox::from_id_salt("set-channels")
                         .selected_text(crate::tr(self.settings.new_channels.name()))
                         .show_ui(ui, |ui| {
@@ -640,20 +643,7 @@ impl App {
                         });
                 });
                 ui.label(RichText::new(crate::tr("Standard für neue Projekte. „Automatisch“ legt Ton, der nur auf einer Seite aufgenommen wurde, auf beide Ohren. Pro Clip änderbar.")).small().color(theme::TEXT_FAINT()));
-                ui.add_space(6.0);
-                let mut s = self.project.settings.clone();
-                theme::row(ui, "Dieses Projekt", |ui| {
-                    egui::ComboBox::from_id_salt("proj-channels")
-                        .selected_text(crate::tr(s.channels.name()))
-                        .show_ui(ui, |ui| {
-                            for (c, n) in cl_core::Channels::ALL {
-                                ui.selectable_value(&mut s.channels, c, crate::tr(n));
-                            }
-                        });
-                });
-                if s != self.project.settings {
-                    self.apply(cl_core::EditOp::SetSettings { settings: s });
-                }
+                // Kanäle des offenen Projekts: Projekt-Reiter → Format
             }
             Section::Editing => {
                 theme::row(ui, "Bilddauer", |ui| {
@@ -684,26 +674,11 @@ impl App {
                         .default(0.5)
                         .show(ui)
                 });
-                ui.add_space(6.0);
-                let mut s = self.project.settings.clone();
-                let a = widgets::toggle_row(ui, "Hauptspur-Magnet (P)", &mut s.main_track_magnet);
-                let b = widgets::toggle_row(ui, "Einrasten (N)", &mut s.snapping);
-                if a || b {
-                    self.apply(cl_core::EditOp::SetSettings { settings: s });
-                }
+                // Magnet und Einrasten: Zeitleisten-Leiste (P / N)
             }
             Section::Performance => {
-                theme::row(ui, "Vorschau", |ui| {
-                    let mut i = match self.settings.preview_div {
-                        1 => 0,
-                        2 => 1,
-                        _ => 2,
-                    };
-                    if widgets::segmented(ui, &["Voll", "Halb", "Viertel"], &mut i) {
-                        self.settings.preview_div = [1, 2, 4][i];
-                        self.invalidate_preview();
-                    }
-                });
+                // Vorschauqualität nur noch am Player-Chip (eine Stelle)
+                ui.label(RichText::new(crate::tr("Die Vorschauqualität stellst du direkt am Player ein.")).small().color(theme::TEXT_DIM()));
                 ui.label(RichText::new(crate::tr("Export immer in voller Auflösung")).small().color(theme::TEXT_DIM()));
                 self.proxy_settings(ui);
                 ui.add_space(8.0);
@@ -878,5 +853,21 @@ impl App {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_fps_reads_old_whole_numbers_and_exact_rates() {
+        let old: AppSettings = serde_json::from_str(r#"{"new_fps":25}"#).unwrap();
+        assert_eq!(old.new_fps, cl_core::Rational::new(25, 1));
+        let mut s = AppSettings::default();
+        s.new_fps = cl_core::Rational::parse("29.97").unwrap();
+        let back: AppSettings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back.new_fps, s.new_fps);
+        assert!(FPS_CHOICES.iter().all(|f| cl_core::Rational::parse(f).is_some()));
     }
 }

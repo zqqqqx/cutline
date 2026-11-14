@@ -525,7 +525,7 @@ impl App {
 
     // ------------------------------------------------------------ Inspektor
 
-    /// Zusätze im Reiter „Basis“ (Video/Bild/Text).
+    /// Reiter „Smart“ (Video/Bild); bei Text nur „Bewegung verfolgen“ im Reiter „Basis“.
     pub fn pro_visual(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let ctx = ui.ctx().clone();
         let is_video = matches!(
@@ -750,7 +750,8 @@ impl App {
     pub fn pro_audio(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let ctx = ui.ctx().clone();
         *e |= audio_fx_ui(ui, &mut c.audio);
-        theme::section(ui, "Beats");
+        // Beats: im letzten Abschnitt, kein eigener Abschnitt für einen Knopf
+        ui.add_space(6.0);
         if !task_bar(ui, self, &format!("beats:{}", c.id)) {
             ui.horizontal(|ui| {
                 if ui

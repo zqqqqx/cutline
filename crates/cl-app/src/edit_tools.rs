@@ -189,14 +189,14 @@ impl App {
         // Quellgrenzen beachten: rechts braucht Material davor, links danach
         let r_src = r.source_in.as_secs_f64() + delta * r.speed as f64;
         if r_src < 0.0 {
-            self.toast_err("Am Anfang des rechten Clips ist kein weiteres Material");
+            self.toast_err("Am Anfang des rechten Clips gibt es keine weiteren Medien");
             return;
         }
         if let Some(lim) = source_limit(self, &l) {
             let need = l.source_in.as_secs_f64() + (to - l.start.as_secs_f64()) * l.speed as f64;
             let len = lim + l.duration.as_secs_f64() * l.speed as f64;
             if need > len + 1e-3 {
-                self.toast_err("Am Ende des linken Clips ist kein weiteres Material");
+                self.toast_err("Am Ende des linken Clips gibt es keine weiteren Medien");
                 return;
             }
         }
@@ -291,6 +291,10 @@ impl App {
         self.paste_attrs = a;
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             close = true;
+        }
+        // Enter bestätigt wie „Einfügen“
+        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            ok = true;
         }
         if ok {
             let src2 = src.clone();

@@ -74,21 +74,44 @@ enum AudioHandle {
     Volume,
 }
 
-/// Lautstärkelinie: −30 dB unten bis +12 dB oben (0 dB bei gut zwei Dritteln)
-const VOL_MIN: f32 = -30.0;
-const VOL_MAX: f32 = 12.0;
+/// Lautstärke −60…+12 dB (Zeitleiste und Inspektor). Die Linie ist nicht linear: die oberen
+/// zwei Drittel decken −12…+12 dB ab (dort wird fein gemischt), das untere Drittel −60…−12 dB.
+const VOL_MIN: f32 = -60.0;
+pub const VOL_MAX: f32 = 12.0;
+const VOL_KNEE: f32 = -12.0;
+/// dB → Anteil der Höhe (0 = unten, 1 = oben)
+fn vol_norm(db: f32) -> f32 {
+    let db = db.clamp(VOL_MIN, VOL_MAX);
+    if db >= VOL_KNEE {
+        1.0 / 3.0 + (db - VOL_KNEE) / (VOL_MAX - VOL_KNEE) * 2.0 / 3.0
+    } else {
+        (db - VOL_MIN) / (VOL_KNEE - VOL_MIN) / 3.0
+    }
+}
+/// Anteil der Höhe → dB (Umkehrung von `vol_norm`)
+fn norm_vol(n: f32) -> f32 {
+    let n = n.clamp(0.0, 1.0);
+    if n >= 1.0 / 3.0 {
+        VOL_KNEE + (n - 1.0 / 3.0) * 1.5 * (VOL_MAX - VOL_KNEE)
+    } else {
+        VOL_MIN + n * 3.0 * (VOL_KNEE - VOL_MIN)
+    }
+}
 fn vol_y(body: Rect, db: f32) -> f32 {
-    let n = ((db - VOL_MIN) / (VOL_MAX - VOL_MIN)).clamp(0.0, 1.0);
-    body.bottom() - 3.0 - n * (body.height() - 6.0)
+    body.bottom() - 3.0 - vol_norm(db) * (body.height() - 6.0)
 }
 fn y_vol(body: Rect, y: f32) -> f32 {
-    let n = ((body.bottom() - 3.0 - y) / (body.height() - 6.0).max(1.0)).clamp(0.0, 1.0);
-    let db = VOL_MIN + n * (VOL_MAX - VOL_MIN);
+    let db = norm_vol((body.bottom() - 3.0 - y) / (body.height() - 6.0).max(1.0));
     // bei 0 dB leicht einrasten
     if db.abs() < 0.8 { 0.0 } else { (db * 2.0).round() / 2.0 }
 }
 
-/// Werkzeug in der Zeitleiste (wie in CapCut: A = Auswählen, B = Teilen)
+/// Längste erlaubte Blende: Cliplänge minus die andere Blende (Zeitleiste und Inspektor).
+pub fn fade_max(duration: f64, other_fade: f64) -> f64 {
+    (duration - other_fade).max(0.0)
+}
+
+/// Werkzeug in der Zeitleiste (wie in CapCut: A = Auswählen, B = Klinge)
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Tool {
     #[default]
@@ -101,7 +124,7 @@ pub enum Tool {
 impl Tool {
     pub const ALL: [(Tool, &'static str, &'static str, &'static str); 4] = [
         (Tool::Select, icon::CURSOR, "Auswählen", "A"),
-        (Tool::Blade, icon::KNIFE, "Teilen", "B"),
+        (Tool::Blade, icon::KNIFE, "Klinge", "B"),
         (Tool::SelectLeft, icon::ARROW_FAT_LINES_LEFT, "Alle Clips links auswählen", ""),
         (Tool::SelectRight, icon::ARROW_FAT_LINES_RIGHT, "Alle Clips rechts auswählen", ""),
     ];
@@ -125,6 +148,8 @@ enum CtxTarget {
     Track(TrackId),
     Empty(Option<TrackId>),
     Transition(ClipId),
+    /// Lineal; mit Marker-ID, wenn der Rechtsklick einen Marker traf
+    Ruler(Option<u64>),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -173,7 +198,7 @@ struct Row {
     rect: Rect,
 }
 
-fn menu_item(ui: &mut egui::Ui, glyph: &str, text: &str, keys: &str) -> bool {
+pub(crate) fn menu_item(ui: &mut egui::Ui, glyph: &str, text: &str, keys: &str) -> bool {
     let r = ui.add(
         theme::menu_row(crate::tr(format!("{glyph}   {text}")))
             .keys(keys)
@@ -190,10 +215,10 @@ fn set_audio_handle(c: &mut Clip, h: AudioHandle, v: f32) {
     let dur = c.duration.as_secs_f64();
     match h {
         AudioHandle::FadeIn => {
-            c.fade_in = Time::from_secs_f64((v as f64).clamp(0.0, (dur - c.fade_out.as_secs_f64()).max(0.0)))
+            c.fade_in = Time::from_secs_f64((v as f64).clamp(0.0, fade_max(dur, c.fade_out.as_secs_f64())))
         }
         AudioHandle::FadeOut => {
-            c.fade_out = Time::from_secs_f64((v as f64).clamp(0.0, (dur - c.fade_in.as_secs_f64()).max(0.0)))
+            c.fade_out = Time::from_secs_f64((v as f64).clamp(0.0, fade_max(dur, c.fade_in.as_secs_f64())))
         }
         AudioHandle::Volume => c.volume_db = v,
     }
@@ -315,13 +340,13 @@ impl App {
                 self.freeze_frame();
             }
             let rev = self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| c.fx.reverse);
-            if theme::icon_button(ui, icon::ARROWS_LEFT_RIGHT, "Rückwärts abspielen", video_sel, rev).clicked() {
+            if theme::icon_button(ui, icon::ARROWS_LEFT_RIGHT, "Rückwärts", video_sel, rev).clicked() {
                 self.modify_selection(|c| c.fx.reverse = !c.fx.reverse);
             }
             if theme::icon_button(ui, icon::FLIP_HORIZONTAL, "Spiegeln", visual_sel, false).clicked() {
                 self.modify_selection(|c| c.fx.flip_h = !c.fx.flip_h);
             }
-            if theme::icon_button(ui, icon::ARROW_CLOCKWISE, "90° drehen", visual_sel, false).clicked() {
+            if theme::icon_button(ui, icon::ARROWS_CLOCKWISE, "90° drehen", visual_sel, false).clicked() {
                 self.modify_selection(|c| c.transform.rotation_deg = ((c.transform.rotation_deg + 90.0 + 180.0).rem_euclid(360.0)) - 180.0);
             }
             if theme::icon_button(ui, icon::WAVEFORM, "Ton extrahieren", video_sel, false).clicked() {
@@ -797,7 +822,13 @@ impl App {
         }
         if resp.secondary_clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
-                self.timeline.ctx = Some(if let Some(b) = hit_block(p) {
+                self.timeline.ctx = Some(if p.y < ruler.bottom() && p.x >= x0 {
+                    // Lineal: Playhead an die Stelle (bzw. auf den Marker), das Menü wirkt dort
+                    let m = marker_at(p);
+                    let at = m.map(|m| m.1).unwrap_or(Time::from_secs_f64(xt(p.x)));
+                    self.set_playhead_ui(at, false);
+                    CtxTarget::Ruler(m.map(|m| m.0))
+                } else if let Some(b) = hit_block(p) {
                     CtxTarget::Transition(b)
                 } else if let Some((c, _, _)) = hit(p) {
                     if !self.is_selected(c) {
@@ -1739,7 +1770,7 @@ impl App {
                     icon::LOCK_SIMPLE_OPEN
                 },
                 tr.locked,
-                "Sperren",
+                if tr.locked { "Entsperren" } else { "Sperren" },
             )];
             if tr.kind != TrackKind::Audio {
                 toggles.push((
@@ -1750,7 +1781,7 @@ impl App {
                         icon::EYE
                     },
                     tr.hidden,
-                    "Spur ausblenden",
+                    if tr.hidden { "Spur einblenden" } else { "Spur ausblenden" },
                 ));
             }
             if matches!(tr.kind, TrackKind::Video | TrackKind::Audio) {
@@ -1762,13 +1793,14 @@ impl App {
                         icon::SPEAKER_HIGH
                     },
                     tr.muted,
-                    "Stumm",
+                    if tr.muted { "Stumm aufheben" } else { "Stumm" },
                 ));
+                let solo = self.solo.contains(&tr.id);
                 toggles.push((
                     3,
                     icon::HEADPHONES,
-                    self.solo.contains(&tr.id),
-                    "Solo (nur diese Spur hören)",
+                    solo,
+                    if solo { "Solo aufheben" } else { "Solo (nur diese Spur hören)" },
                 ));
             }
             // eingeklappt: nur Symbol und Name, die Schalter hätten keinen Platz
@@ -2287,20 +2319,43 @@ impl App {
                 {
                     self.paste();
                 }
-                if menu_item(ui, icon::COPY_SIMPLE, "Duplizieren", "Strg+D") {
+                // ausgegraut, solange nichts kopiert ist
+                let attrs_key = self.key_of("paste_attrs");
+                if ui
+                    .add_enabled_ui(!self.clipboard.is_empty(), |ui| {
+                        menu_item(ui, icon::CLIPBOARD, "Attribute einfügen", &attrs_key)
+                    })
+                    .inner
+                {
+                    self.paste_attrs_open = true;
+                }
+                if menu_item(ui, icon::COPY_SIMPLE, "Duplizieren", &self.key_of("duplicate")) {
                     self.duplicate_selection();
+                }
+                if self.selection().len() >= 2
+                    && menu_item(ui, icon::BOUNDING_BOX, "Gruppieren", &self.key_of("group"))
+                {
+                    self.group_selection(true);
+                }
+                if c.group.is_some()
+                    && menu_item(ui, icon::SELECTION_SLASH, "Gruppe auflösen", &self.key_of("ungroup"))
+                {
+                    self.group_selection(false);
                 }
                 if menu_item(ui, icon::TRASH, "Löschen", "Entf") {
                     self.delete_selected();
                 }
+                if menu_item(ui, icon::TRASH_SIMPLE, "Löschen und Lücke schließen", &self.key_of("ripple_delete")) {
+                    self.ripple_delete();
+                }
                 ui.separator();
-                if menu_item(ui, icon::SCISSORS, "Teilen", "Strg+B") {
+                if menu_item(ui, icon::SCISSORS, "Teilen", &self.key_of("split")) {
                     self.split_at_playhead();
                 }
-                if menu_item(ui, icon::ARROW_LINE_LEFT, "Links löschen", "Q") {
+                if menu_item(ui, icon::ARROW_LINE_LEFT, "Links vom Playhead löschen", &self.key_of("del_left")) {
                     self.delete_side(true);
                 }
-                if menu_item(ui, icon::ARROW_LINE_RIGHT, "Rechts löschen", "W") {
+                if menu_item(ui, icon::ARROW_LINE_RIGHT, "Rechts vom Playhead löschen", &self.key_of("del_right")) {
                     self.delete_side(false);
                 }
                 ui.separator();
@@ -2332,7 +2387,7 @@ impl App {
                             if menu_item(ui, icon::FLIP_VERTICAL, "Vertikal spiegeln", "") {
                                 self.modify_selection(|c| c.fx.flip_v = !c.fx.flip_v);
                             }
-                            if menu_item(ui, icon::ARROW_CLOCKWISE, "90° drehen", "") {
+                            if menu_item(ui, icon::ARROWS_CLOCKWISE, "90° drehen", "") {
                                 self.modify_selection(|c| {
                                     c.transform.rotation_deg =
                                         ((c.transform.rotation_deg + 90.0 + 180.0)
@@ -2367,7 +2422,7 @@ impl App {
                     }
                 ) {
                     ui.menu_button(
-                        crate::tr(format!("{}   Geschwindigkeit", icon::GAUGE)),
+                        crate::tr(format!("{}   Tempo", icon::GAUGE)),
                         |ui| {
                             for s in [0.25f32, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0] {
                                 if ui
@@ -2384,6 +2439,29 @@ impl App {
                         },
                     );
                 }
+                // gespeicherte Looks (wie die Preset-Leiste im Inspektor); ohne Presets kein Menü
+                let is_text = matches!(c.content, ClipContent::Text(_));
+                let looks: Vec<(usize, String)> = self
+                    .presets
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| p.is_text() == is_text)
+                    .map(|(i, p)| (i, p.name.clone()))
+                    .collect();
+                if !looks.is_empty() {
+                    ui.menu_button(crate::tr(format!("{}   Look anwenden", icon::SWATCHES)), |ui| {
+                        for (i, n) in &looks {
+                            if ui.add(theme::menu_row(n.as_str()).min_width(160.0)).clicked() {
+                                self.apply_preset(*i);
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                }
+                // dieselbe Liste wie „Quick Actions“ in der Leiste (nicht passende sind ausgegraut)
+                ui.menu_button(crate::tr(format!("{}   Quick Actions", icon::LIGHTNING)), |ui| {
+                    self.tools_menu(ui)
+                });
                 if self.next_adjacent(id).is_some() {
                     if c.transition_out.is_some() {
                         if menu_item(ui, icon::INTERSECT, "Übergang entfernen", "") {
@@ -2412,16 +2490,20 @@ impl App {
                 }
                 ui.menu_button(crate::tr(format!("{}   Farbe", icon::PALETTE)), |ui| {
                     ui.set_min_width(150.0);
-                    if ui.button(crate::tr("Keine")).clicked() {
+                    if menu_item(ui, icon::X, "Keine", "") {
                         self.modify_selection(|x| x.label = None);
-                        ui.close_menu();
                     }
                     for (i, (n, _)) in cl_core::MARKER_COLORS.iter().enumerate() {
-                        let col = crate::navigate::marker_color(i as u8);
-                        if ui
-                            .button(RichText::new(crate::tr(format!("●  {n}"))).color(col))
-                            .clicked()
-                        {
+                        // Zeile wie die übrigen Menüs; der Farbpunkt sitzt an der Stelle des Symbols
+                        let r = ui.add(
+                            theme::menu_row(format!("      {}", crate::tr(*n))).min_width(150.0),
+                        );
+                        ui.painter().circle_filled(
+                            pos2(r.rect.left() + 14.0, r.rect.center().y),
+                            4.5,
+                            crate::navigate::marker_color(i as u8),
+                        );
+                        if r.clicked() {
                             self.modify_selection(|x| x.label = Some(i as u8));
                             ui.close_menu();
                         }
@@ -2436,6 +2518,46 @@ impl App {
             CtxTarget::Transition(id) => {
                 if menu_item(ui, icon::TRASH, "Übergang entfernen", "Entf") {
                     self.set_transition(id, None);
+                }
+            }
+            CtxTarget::Ruler(marker) => {
+                // dieselben Aktionen wie die Tasten (M, I, O, Alt+X, Strg+L)
+                let ctx = ui.ctx().clone();
+                if menu_item(ui, icon::BOOKMARK_SIMPLE, "Marker hier setzen", &self.key_of("marker")) {
+                    self.run_action(&ctx, "marker");
+                }
+                if let Some(id) = marker {
+                    if menu_item(ui, icon::PENCIL_SIMPLE, "Marker bearbeiten …", "") {
+                        self.marker_draft = None;
+                        self.marker_edit = Some(id);
+                    }
+                    if menu_item(ui, icon::TRASH, "Marker löschen", "") {
+                        let mut ms = self.project.timeline.markers.clone();
+                        ms.retain(|m| m.id != id);
+                        self.apply(EditOp::SetMarkers { markers: ms });
+                    }
+                }
+                ui.separator();
+                for (g, label, action) in [
+                    (icon::BRACKETS_SQUARE, "In-Punkt setzen", "mark_in"),
+                    (icon::BRACKETS_SQUARE, "Out-Punkt setzen", "mark_out"),
+                    (icon::X, "In/Out löschen", "clear_range"),
+                ] {
+                    if menu_item(ui, g, label, &self.key_of(action)) {
+                        self.run_action(&ctx, action);
+                    }
+                }
+                let mark = if self.loop_range { icon::CHECK } else { icon::REPEAT };
+                if menu_item(ui, mark, "Bereich wiederholen", &self.key_of("loop")) {
+                    self.run_action(&ctx, "loop");
+                }
+                ui.separator();
+                let has = !self.project.timeline.markers.is_empty();
+                if ui
+                    .add_enabled_ui(has, |ui| menu_item(ui, icon::COPY, "YouTube-Kapitel kopieren", ""))
+                    .inner
+                {
+                    self.copy_chapters(&ctx);
                 }
             }
             CtxTarget::Track(tid) => {
@@ -2536,7 +2658,7 @@ impl App {
                         } else {
                             icon::SPEAKER_SLASH
                         },
-                        if tr.muted { "Ton an" } else { "Stummschalten" },
+                        if tr.muted { "Stumm aufheben" } else { "Stumm" },
                         "",
                     )
                 {
@@ -2547,13 +2669,25 @@ impl App {
                         muted: !tr.muted,
                     });
                 }
+                // Solo wie im Spurkopf (nur Vorschau, nicht im Export)
+                let solo = self.solo.contains(&tid);
+                if matches!(tr.kind, TrackKind::Video | TrackKind::Audio)
+                    && menu_item(ui, icon::HEADPHONES, if solo { "Solo aufheben" } else { "Solo" }, "")
+                {
+                    if !self.solo.remove(&tid) {
+                        self.solo.insert(tid);
+                    }
+                    if self.playing {
+                        self.restart_audio();
+                    }
+                }
                 ui.separator();
                 if menu_item(ui, icon::SELECTION_ALL, "Alle Clips der Spur auswählen", "") {
                     self.select_only(None);
                     self.sel_extra = tr.clips.iter().map(|c| c.id).collect();
                     self.selected = tr.clips.last().map(|c| c.id);
                 }
-                if menu_item(ui, icon::ARROWS_IN_LINE_HORIZONTAL, "Lücken schließen", "") {
+                if menu_item(ui, icon::ARROWS_MERGE, "Lücken schließen", "") {
                     self.apply(EditOp::CloseGaps { track: Some(tid) });
                 }
                 let folded = self.timeline.collapsed.contains(&tid);
@@ -2606,21 +2740,11 @@ impl App {
                     self.select_all();
                 }
                 if let Some(t) = track {
-                    if menu_item(
-                        ui,
-                        icon::ARROWS_IN_LINE_HORIZONTAL,
-                        "Lücken dieser Spur schließen",
-                        "",
-                    ) {
+                    if menu_item(ui, icon::ARROWS_MERGE, "Lücken schließen", "") {
                         self.apply(EditOp::CloseGaps { track: Some(t) });
                     }
                 }
-                if menu_item(
-                    ui,
-                    icon::ARROWS_IN_LINE_HORIZONTAL,
-                    "Alle Lücken schließen",
-                    "",
-                ) {
+                if menu_item(ui, icon::ARROWS_MERGE, "Alle Lücken schließen", "") {
                     self.apply(EditOp::CloseGaps { track: None });
                 }
                 ui.separator();
@@ -2638,5 +2762,45 @@ impl App {
             }
         }
         let _ = Slider::new;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn volume_line_round_trip() {
+        let body = Rect::from_min_size(pos2(0.0, 100.0), vec2(200.0, 60.0));
+        let mut db = VOL_MIN;
+        while db <= VOL_MAX {
+            let back = y_vol(body, vol_y(body, db));
+            // 0,5-dB-Raster; um 0 dB rastet die Linie ein
+            let tol = if db.abs() < 0.8 { 0.8 } else { 0.26 };
+            assert!((back - db).abs() <= tol, "{db} dB -> {back} dB");
+            db += 0.25;
+        }
+        // Knick: −12 dB auf einem Drittel, 0 dB bei zwei Dritteln, Grenzen an den Rändern
+        assert!((vol_norm(-12.0) - 1.0 / 3.0).abs() < 1e-6);
+        assert!((vol_norm(0.0) - 2.0 / 3.0).abs() < 1e-6);
+        assert_eq!(vol_norm(VOL_MIN), 0.0);
+        assert!((vol_norm(VOL_MAX) - 1.0).abs() < 1e-6);
+        // alte Werte über +12 dB bleiben gespeichert, die Linie steht nur oben an
+        assert!((vol_norm(20.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn fades_never_overlap() {
+        assert_eq!(fade_max(4.0, 1.5), 2.5);
+        assert_eq!(fade_max(1.0, 3.0), 0.0);
+        let mut c = Clip::new(
+            ClipContent::Text(TextStyle::default()),
+            Time::ZERO,
+            Time::from_secs_f64(4.0),
+        );
+        set_audio_handle(&mut c, AudioHandle::FadeOut, 3.0);
+        set_audio_handle(&mut c, AudioHandle::FadeIn, 3.0);
+        assert!((c.fade_in.as_secs_f64() - 1.0).abs() < 1e-6);
+        assert!(c.fade_in + c.fade_out <= c.duration);
     }
 }

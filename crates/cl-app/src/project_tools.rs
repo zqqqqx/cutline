@@ -224,7 +224,7 @@ impl App {
                 }
             });
         });
-        if !open {
+        if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.backups_open = false;
         }
         if let Some(p) = restore {
@@ -288,7 +288,7 @@ impl App {
                 search = true;
             }
         });
-        if !open {
+        if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.missing_open = false;
         }
         if let Some(id) = pick {

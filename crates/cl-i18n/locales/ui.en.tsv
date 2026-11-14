@@ -465,8 +465,8 @@ Neue Spur	New track
 Sperren	Lock
 Stumm	Mute
 Lege den Übergang auf einen Schnitt zwischen zwei Clips	Drop the transition on a cut between two clips
-Links löschen	Delete left
-Rechts löschen	Delete right
+Links vom Playhead löschen	Delete left of playhead
+Rechts vom Playhead löschen	Delete right of playhead
 Standbild	Freeze frame
 Vorwärts abspielen	Play forward
 Rückwärts	Reverse
@@ -480,7 +480,7 @@ Clip aktivieren	Enable clip
 Spur darüber einfügen	Insert track above
 Spur darunter einfügen	Insert track below
 Entsperren	Unlock
-Ton an	Unmute
+Stumm aufheben	Unmute
 Stummschalten	Mute
 Alle Clips der Spur auswählen	Select all clips on track
 Lücken schließen	Close gaps
@@ -804,7 +804,7 @@ Transparent (VP9 mit Alpha)	Transparent (VP9 with alpha)
 Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen	Empty areas and cut-out people stay transparent, e.g. for overlays in other apps
 nur Ton	audio only
 # Integrationen und Bibliothek
-Integrationen	Integrations
+Integrationen und Plugins	Integrations and plugins
 Integration	Integration
 Einrichten	Set up
 Plugin aktiv	Plugin enabled
@@ -823,7 +823,7 @@ Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechne
 Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.	Exports with Epidemic music are reported to Epidemic Sound (track IDs only), as their terms require.
 Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.	Client ID of your app in the Epidemic Developer Portal; register {} there as the redirect URI.
 Epidemic Sound ist noch nicht verbunden	Epidemic Sound isn't connected yet
-Melde dich unter Einstellungen → Integrationen an	Sign in under Settings → Integrations
+Melde dich unter Einstellungen → Integrationen und Plugins an	Sign in under Settings → Integrations and plugins
 Entdecken	Discover
 Favoriten	Favorites
 Gefällt mir	Liked
@@ -1002,8 +1002,8 @@ Ziehen oder tippen; Bilder als m:ss.ff	Drag or type; frames as m:ss.ff
 Slippen: anderer Ausschnitt der Quelle, Lage und Länge bleiben (Alt+Ziehen im Clip)	Slip: different part of the source, position and length stay (Alt+drag on the clip)
 Rollen	Roll
 Slippen: Quelle ab {} s	Slip: source from {} s
-Am Anfang des rechten Clips ist kein weiteres Material	No more material at the start of the right clip
-Am Ende des linken Clips ist kein weiteres Material	No more material at the end of the left clip
+Am Anfang des rechten Clips gibt es keine weiteren Medien	No more media at the start of the right clip
+Am Ende des linken Clips gibt es keine weiteren Medien	No more media at the end of the left clip
 Attribute einfügen	Paste attributes
 Erst einen Clip kopieren (Strg+C)	Copy a clip first (Ctrl+C)
 Von „{}“ auf die Auswahl übertragen:	Transfer from “{}” to the selection:
@@ -1111,7 +1111,7 @@ Schlüssel ungültig oder ohne Zugriff	Key invalid or without access
 Dienst antwortet mit {}	Service responded with {}
 Keine Verbindung ({})	No connection ({})
 API-Schlüssel fehlt	API key missing
-Unter Einstellungen → Integrationen eintragen	Enter it under Settings → Integrations
+Unter Einstellungen → Integrationen und Plugins eintragen	Enter it under Settings → Integrations and plugins
 Einrichten …	Set up …
 Suchbegriff eingeben und Enter drücken	Type a search term and press Enter
 Laden und am Playhead einfügen	Download and insert at the playhead
@@ -1226,9 +1226,9 @@ Wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änd
 Setzt Größe und Bildrate; der Export übernimmt die passende Vorlage	Sets size and frame rate; export uses the matching preset
 Klick wendet auf den ausgewählten Clip an. Ziehen auf einen Clip: nur dieser Clip; ins Freie der Zeitleiste: eigenes Element für alles darunter	Click applies to the selected clip. Drag onto a clip: only that clip; into an empty spot of the timeline: its own element for everything below
 Klick legt ein Element am Playhead an, das auf alle Spuren darunter wirkt. Auf einen Clip ziehen: nur dieser Clip	Click adds an element at the playhead that affects all tracks below. Drag onto a clip: only that clip
-Filter als Element eingefügt – wirkt auf alle Spuren darunter	Filter added as an element – affects all tracks below
-Effekt als Element eingefügt – wirkt auf alle Spuren darunter	Effect added as an element – affects all tracks below
-Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Werkzeuge → Hochkant-Layout	The project has a different aspect ratio – change the format in the Project tab or use Tools → Vertical layout
+Filter als Clip eingefügt – wirkt auf alle Spuren darunter	Filter added as a clip – affects all tracks below
+Effekt als Clip eingefügt – wirkt auf alle Spuren darunter	Effect added as a clip – affects all tracks below
+Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Quick Actions → Hochkant-Layout	The project has a different aspect ratio – change the format in the Project tab or use Quick Actions → Vertical layout
 Plattform	Platform
 Einfach	Basic
 Einzelheiten	Details
@@ -1271,7 +1271,7 @@ Tiefe Störgeräusche unter 90 Hz entfernen	Remove low noise below 90 Hz
 Gilt für alle ausgewählten Clips	Applies to all selected clips
 Ton ist bei Kurven stumm	Audio is muted with curves
 Vorschau angenähert, Export exakt	Preview approximated, export exact
-Brauchen ein eigenes Konto. Aus, bis du sie unter Plugins einschaltest.	Need their own account. Off until you turn them on under Plugins.
+Story-Werkzeuge, Pexels und Epidemic Sound sind Plugins: hier oder im Reiter Plugins einschalten. Pexels und Epidemic Sound brauchen ein eigenes Konto.	Story tools, Pexels and Epidemic Sound are plugins: turn them on here or in the Plugins tab. Pexels and Epidemic Sound need their own account.
 Export immer in voller Auflösung	Export always uses full resolution
 Nur auf diesem Rechner erreichbar (127.0.0.1), mit Token. Jede Änderung lässt sich rückgängig machen.	Only reachable on this computer (127.0.0.1), with a token. Every change can be undone.
 Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes. Der Export nutzt immer die Originale.	For videos above 1080p, above 30 fps or in HEVC/AV1/ProRes. Export always uses the originals.
@@ -1295,7 +1295,7 @@ Filterspur	Filter track
 Audiospur	Audio track
 Werkzeug	Tool
 Werkzeug: Auswählen	Tool: select
-Werkzeug: Teilen	Tool: split
+Werkzeug: Klinge	Tool: blade
 Eigenschaften	Properties
 Dateigröße	File size
 Video-Codec	Video codec
@@ -1328,7 +1328,7 @@ Sicherung alle	Backup every
 Sicherungen behalten	Keep backups
 Neue Projekte	New projects
 Kanäle	Channels
-Dieses Projekt	This project
+Kanäle (neue Projekte)	Channels (new projects)
 Projekt-Standard	Project default
 Stereo	Stereo
 Nur links	Left only
@@ -1502,3 +1502,17 @@ Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet	This project
 „{}“ enthält Dateien, die im offenen Projekt verwendet werden, und bleibt deshalb erhalten	"{}" contains files used by the open project and is kept
 gestern	yesterday
 Cutline – Vorschau	Cutline – Preview
+Klinge	Blade
+Solo	Solo
+Solo aufheben	Unsolo
+Drehung	Rotation
+Smart	Smart
+Marker hier setzen	Add marker here
+Marker bearbeiten …	Edit marker …
+Marker löschen	Delete marker
+Bereich wiederholen	Loop range
+Standbild speichern …	Save still frame …
+Vorschau in eigenem Fenster	Preview in its own window
+Look anwenden	Apply look
+Projekt aus anderem Programm importieren …	Import project from another app …
+Die Vorschauqualität stellst du direkt am Player ein.	Set the preview quality right on the player.

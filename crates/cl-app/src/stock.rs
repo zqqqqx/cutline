@@ -277,7 +277,7 @@ impl App {
                 ui,
                 icon::KEY,
                 "API-Schlüssel fehlt",
-                "Unter Einstellungen → Integrationen eintragen",
+                "Unter Einstellungen → Integrationen und Plugins eintragen",
             );
             ui.vertical_centered(|ui| {
                 if ui.add(theme::primary("Einrichten …")).clicked() {

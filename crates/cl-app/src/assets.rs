@@ -12,6 +12,7 @@ use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText, Sense};
 use crate::app::{App, ClipTab, DragAsset, LeftTab};
 use crate::preview::{sample_source, Job};
 use crate::theme::{self, icon};
+use crate::timeline::menu_item;
 use crate::widgets;
 
 const RAIL_W: f32 = 58.0;
@@ -469,34 +470,22 @@ impl App {
             let mut props = false;
             let mut to_lib = false;
             self.asset_menu_with(&resp, area, &key, None, &cat, &mut |ui| {
-                if ui.add(theme::menu_row(crate::tr(format!("{}  Eigenschaften", icon::INFO)))).clicked() {
+                if menu_item(ui, icon::INFO, "Eigenschaften", "") {
                     props = true;
-                    ui.close_menu();
                 }
                 if ui
-                    .add(theme::menu_row(crate::tr(format!("{}  Zur Bibliothek hinzufügen", icon::BOOKMARKS))))
+                    .add(theme::menu_row(crate::tr(format!("{}   Zur Bibliothek hinzufügen", icon::BOOKMARKS))).min_width(210.0))
                     .on_hover_text(crate::tr("In allen Projekten unter Medien → Bibliothek"))
                     .clicked()
                 {
                     to_lib = true;
                     ui.close_menu();
                 }
-                if ui
-                    .button(crate::tr(format!("{}  Am Playhead einfügen", icon::PLUS)))
-                    .clicked()
-                {
+                if menu_item(ui, icon::PLUS, "Am Playhead einfügen", "") {
                     ins = true;
-                    ui.close_menu();
                 }
-                if ui
-                    .button(crate::tr(format!(
-                        "{}  Im Explorer zeigen",
-                        icon::FOLDER_OPEN
-                    )))
-                    .clicked()
-                {
+                if menu_item(ui, icon::FOLDER_OPEN, "Im Explorer zeigen", "") {
                     crate::home::reveal(&m.path);
-                    ui.close_menu();
                 }
                 ui.separator();
             });
@@ -1726,9 +1715,9 @@ impl App {
                     let at = self.playhead;
                     if self.add_fx_clip(&id, filters, at, None).is_some() {
                         self.toast(if filters {
-                            "Filter als Element eingefügt – wirkt auf alle Spuren darunter"
+                            "Filter als Clip eingefügt – wirkt auf alle Spuren darunter"
                         } else {
-                            "Effekt als Element eingefügt – wirkt auf alle Spuren darunter"
+                            "Effekt als Clip eingefügt – wirkt auf alle Spuren darunter"
                         });
                     }
                 }

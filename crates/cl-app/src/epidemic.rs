@@ -1,5 +1,5 @@
 //! Epidemic-Sound-Integration in der Oberfläche: Musik im Audio-Tab (Entdecken, Favoriten,
-//! „Gefällt mir“), Anmeldung unter Einstellungen → Integrationen, Nutzungsmeldung beim Export.
+//! „Gefällt mir“), Anmeldung unter Einstellungen → Integrationen und Plugins, Nutzungsmeldung beim Export.
 //! Alles Netzwerk läuft in Hintergrund-Threads; Ergebnisse kommen über einen Kanal zurück.
 
 use std::collections::BTreeMap;
@@ -352,7 +352,7 @@ impl App {
                 ui,
                 icon::MUSIC_NOTES,
                 "Epidemic Sound ist noch nicht verbunden",
-                "Melde dich unter Einstellungen → Integrationen an",
+                "Melde dich unter Einstellungen → Integrationen und Plugins an",
             );
             ui.vertical_centered(|ui| {
                 if ui.add(theme::primary("Verbinden …")).clicked() {
@@ -610,10 +610,10 @@ impl App {
         let _ = DragAsset::Sfx;
     }
 
-    /// Abschnitt „Integrationen“ in den Einstellungen.
+    /// Abschnitt „Integrationen und Plugins“ in den Einstellungen.
     pub fn integrations_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        ui.label(RichText::new(crate::tr("Brauchen ein eigenes Konto. Aus, bis du sie unter Plugins einschaltest.")).small().color(theme::TEXT_DIM()));
+        ui.label(RichText::new(crate::tr("Story-Werkzeuge, Pexels und Epidemic Sound sind Plugins: hier oder im Reiter Plugins einschalten. Pexels und Epidemic Sound brauchen ein eigenes Konto.")).small().color(theme::TEXT_DIM()));
         self.story_settings(ui);
         self.stock_settings(ui);
         theme::section(ui, "Epidemic Sound");

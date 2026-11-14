@@ -398,9 +398,14 @@ impl App {
         }
     }
 
-    /// Marker-Liste (Projekt-Inspektor).
+    /// YouTube-Kapitel aus den Markern in die Zwischenablage (Marker-Reiter, Lineal-Menü).
+    pub fn copy_chapters(&mut self, ctx: &egui::Context) {
+        ctx.copy_text(chapters(&self.project.timeline.markers));
+        self.toast("Kapitel in die Zwischenablage kopiert");
+    }
+
+    /// Marker-Liste (Inspektor-Reiter „Marker“).
     pub fn marker_list(&mut self, ui: &mut egui::Ui) {
-        theme::section(ui, "Marker");
         let ms = self.project.timeline.markers.clone();
         if ms.is_empty() {
             ui.label(
@@ -461,8 +466,7 @@ impl App {
             .on_hover_text(crate::tr("Für die Videobeschreibung"))
             .clicked()
         {
-            ui.ctx().copy_text(chapters(&ms));
-            self.toast("Kapitel in die Zwischenablage kopiert");
+            self.copy_chapters(ui.ctx());
         }
     }
 }

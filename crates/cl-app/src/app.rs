@@ -51,6 +51,7 @@ pub enum LeftTab {
 pub enum InspectorTab {
     Project,
     History,
+    Markers,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -59,6 +60,8 @@ pub enum ClipTab {
     Text,
     Effects,
     Adjust,
+    /// Freistellen, Greenscreen, Bildqualität, Stabilisieren & Co. (Video/Bild)
+    Smart,
     Animation,
     Speed,
     Audio,
@@ -2019,7 +2022,7 @@ impl App {
         self.reset_editor();
         let n = crate::home::next_project_name();
         let mut p = Project::new(n);
-        p.settings.fps = Rational::new(self.settings.new_fps.clamp(1, 240), 1);
+        p.settings.fps = self.settings.new_fps;
         p.settings.channels = self.settings.new_channels;
         *self.doc.lock().unwrap() = Document::new(p);
         self.revision = u64::MAX;
@@ -2525,8 +2528,6 @@ impl App {
         if ctx.wants_keyboard_input() || self.settings_open {
             return;
         }
-        let fps = self.project.settings.fps;
-        let frame = Time::from_secs_f64(1.0 / fps.as_f64());
         let mut actions: Vec<&str> = Vec::new();
         let binds = crate::keymap::bindings(&self.settings.shortcuts);
         let multicam_on = self.multicam.is_some();
@@ -2594,6 +2595,23 @@ impl App {
             self.paste();
         }
         for a in actions {
+            self.run_action(ctx, a);
+        }
+    }
+
+    /// Erste Belegung einer Aktion als Text (für Menüzeilen), leer ohne Belegung.
+    pub fn key_of(&self, action: &str) -> String {
+        crate::keymap::bindings(&self.settings.shortcuts)
+            .into_iter()
+            .find(|(_, a)| *a == action)
+            .map(|(c, _)| c.label())
+            .unwrap_or_default()
+    }
+
+    /// Eine Aktion aus `keymap::ACTIONS` ausführen – Tastenkürzel und Menüs teilen sich das.
+    pub fn run_action(&mut self, ctx: &egui::Context, a: &str) {
+        let frame = Time::from_secs_f64(1.0 / self.project.settings.fps.as_f64());
+        {
             match a {
                 "play" => self.toggle_play(),
                 "split" => self.split_at_playhead(),
