@@ -173,6 +173,8 @@ pub struct App {
     pub perf_max_gap: f64,
     /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
+    /// Multicam: Index des Blickwinkels, dessen Ton durchgehend läuft
+    pub multicam_audio: usize,
     /// Figuren (Plugin „Story-Werkzeuge“)
     pub characters: Vec<crate::story::Character>,
     /// Plugins Freesound und Pexels
@@ -395,6 +397,7 @@ impl App {
             perf_last_frame: None,
             perf_max_gap: 0.0,
             multicam: None,
+            multicam_audio: 0,
             characters: crate::story::load(),
             stock: Default::default(),
             last_backup: None,
