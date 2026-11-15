@@ -11,6 +11,8 @@
 //!
 //! Es werden keine Daten übertragen außer der normalen HTTP-Anfrage an api.github.com.
 
+pub mod changelog;
+
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -177,7 +179,7 @@ pub fn parse_sha_file(s: &str) -> Option<String> {
 pub fn download(
     rel: &Release,
     dir: &Path,
-    mut progress: impl FnMut(f32),
+    mut progress: impl FnMut(u64, u64),
     cancel: &AtomicBool,
 ) -> Result<PathBuf, String> {
     let sha_url = rel
@@ -215,7 +217,7 @@ pub fn download(
             break;
         }
         data.extend_from_slice(&buf[..n]);
-        progress((data.len() as f64 / total as f64).min(1.0) as f32);
+        progress(data.len() as u64, total);
     }
     let got = sha256_hex(&data);
     if got != expected {
@@ -729,21 +731,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // falsche Prüfsumme
         let base = serve(vec![ok(sha256_hex(b"anders").as_bytes(), None), ok(b"hallo", None)]);
-        assert!(download(&release(&base), dir.path(), |_| {}, &no).unwrap_err().contains("Prüfsumme"));
+        assert!(download(&release(&base), dir.path(), |_, _| {}, &no).unwrap_err().contains("Prüfsumme"));
         // ohne Prüfsumme gar nicht erst laden
         let mut r = release(&base);
         r.sha_url = None;
-        assert!(download(&r, dir.path(), |_| {}, &no).is_err());
+        assert!(download(&r, dir.path(), |_, _| {}, &no).is_err());
         // abgebrochen
         let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
-        assert_eq!(download(&release(&base), dir.path(), |_| {}, &AtomicBool::new(true)).unwrap_err(), "Abgebrochen");
+        assert_eq!(download(&release(&base), dir.path(), |_, _| {}, &AtomicBool::new(true)).unwrap_err(), "Abgebrochen");
         // kaputte Prüfsummendatei
         let base = serve(vec![ok(b"<html>404</html>", None)]);
-        assert!(download(&release(&base), dir.path(), |_| {}, &no).is_err());
+        assert!(download(&release(&base), dir.path(), |_, _| {}, &no).is_err());
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "nichts geschrieben");
         // richtig
         let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
-        let p = download(&release(&base), dir.path(), |_| {}, &no).unwrap();
+        let p = download(&release(&base), dir.path(), |_, _| {}, &no).unwrap();
         assert_eq!(std::fs::read(p).unwrap(), b"hallo");
     }
 
@@ -752,7 +754,7 @@ mod tests {
     fn download_survives_absurd_content_length() {
         let dir = tempfile::tempdir().unwrap();
         let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", Some(1 << 62))]);
-        let r = download(&release(&base), dir.path(), |_| {}, &AtomicBool::new(false));
+        let r = download(&release(&base), dir.path(), |_, _| {}, &AtomicBool::new(false));
         assert!(r.is_err(), "{r:?}");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }

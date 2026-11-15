@@ -1,0 +1,2 @@
+# Skripte laufen auch unter Windows (Git Bash) nur mit LF
+*.sh text eol=lf

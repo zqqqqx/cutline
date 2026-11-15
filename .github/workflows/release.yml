@@ -35,6 +35,8 @@ jobs:
           tag="${GITHUB_REF_NAME#v}"
           ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
           if [ "$tag" != "$ver" ]; then echo "Tag $tag passt nicht zu Cargo.toml $ver"; exit 1; fi
+          # kein Release ohne Abschnitt in CHANGELOG.md (früh scheitern, nicht erst nach dem Bauen)
+          sh .github/release-notes.sh "$tag" > /dev/null
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -133,6 +135,10 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Release-Text = Abschnitt der Version aus CHANGELOG.md; GitHub hängt den „Full Changelog“-Link an
+      - name: Release-Text aus CHANGELOG.md
+        run: sh .github/release-notes.sh "$GITHUB_REF_NAME" > release-notes.md
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
@@ -140,5 +146,6 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*
+          body_path: release-notes.md
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
