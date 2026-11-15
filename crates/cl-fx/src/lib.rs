@@ -1731,4 +1731,92 @@ mod tests {
             }
         }
     }
+
+    /// Jede eingebaute und jede mitgelieferte Paket-Kette läuft bei Stärke 0, 0,5 und 1 auch bei
+    /// ungeraden Maßen und winzigen Bildern und behält die Bildgröße.
+    #[test]
+    fn every_chain_runs_at_odd_sizes_and_strengths() {
+        chains_at_sizes(&[(161, 91, 2, &[0.0, 0.5, 1.0]), (64, 64, 1, &[1.0])]);
+    }
+
+    /// Dasselbe in Hochkant-Full-HD (dauert ~1 min): `cargo test -p cl-fx -- --ignored portrait`
+    #[test]
+    #[ignore]
+    fn every_chain_runs_in_portrait_full_hd() {
+        chains_at_sizes(&[(1080, 1920, 1, &[0.0, 1.0])]);
+    }
+
+    /// (Breite, Höhe, Bilder, Stärken)
+    fn chains_at_sizes(sizes: &[(u32, u32, usize, &[f32])]) {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        // Paket-Ketten aller mitgelieferten Pakete (Zeilen wie in `effekte_pack_chains_run`)
+        let mut packs = Vec::new();
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins");
+        for d in std::fs::read_dir(root).unwrap().flatten() {
+            let Ok(src) = std::fs::read_to_string(d.path().join("plugin.toml")) else { continue };
+            let mut kind = "";
+            for l in src.lines() {
+                if let Some(k) = l.strip_prefix("kind = \"") {
+                    kind = k.trim_end_matches('"');
+                }
+                if let Some(c) = l.strip_prefix("ffmpeg = \"") {
+                    // weitere Parameter (`{radius}` …) mit 1 füllen, wie ein Standardwert
+                    let mut c = c.trim_end_matches('"').replace("{intensity}", "\u{1}");
+                    while let (Some(a), Some(b)) = (c.find('{'), c.find('}')) {
+                        c.replace_range(a..=b.max(a), "1");
+                    }
+                    packs.push((kind == "filter", c.replace('\u{1}', "{intensity}")));
+                }
+            }
+        }
+        assert!(!packs.is_empty());
+        let o = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: None };
+        let mut failed = Vec::new();
+        // (Breite, Höhe, Bilder, Stärken)
+        for &(w, h, n, strengths) in sizes {
+            let src = Src { w, h, has_alpha: false };
+            let mut graphs: Vec<(String, String)> = Vec::new();
+            for &i in strengths {
+                for def in EFFECTS.iter().chain(FILTERS.iter()) {
+                    let mut fx = ClipFx::default();
+                    let r = FxRef { id: def.id.into(), intensity: i, params: Default::default() };
+                    if FILTERS.iter().any(|f| f.id == def.id) {
+                        fx.filter = Some(r);
+                    } else {
+                        fx.effects.push(r);
+                    }
+                    graphs.push((format!("{} {i}", def.id), fx_graph(&fx, src, &o, "0:v", "f", "x").join(";")));
+                }
+                for (filter, c) in &packs {
+                    let mut g = GraphBuilder::new("0:v", "e");
+                    if *filter {
+                        g.blended(&c.replace("{intensity}", "1.000"), i);
+                    } else {
+                        g.push(c.replace("{intensity}", &format!("{i:.3}")));
+                    }
+                    graphs.push((format!("{c} {i}"), g.finish("f").join(";")));
+                }
+            }
+            for (name, g) in graphs {
+                let graph = format!("{g};[f]format=rgba[out]");
+                let out = cl_media::ffmpeg_command()
+                    .unwrap()
+                    .args(["-v", "error", "-nostdin", "-threads", "2", "-filter_complex_threads", "2", "-f", "lavfi", "-i"])
+                    // testsrc2 rundet auf gerade Maße: größer erzeugen, in RGBA zuschneiden
+                    .arg(format!("testsrc2=s={}x{}:r=10:d={},format=rgba,crop={w}:{h}:0:0", w + 1, h + 1, n as f64 / 10.0))
+                    .args(["-filter_complex", &graph, "-map", "[out]", "-frames:v", &n.to_string(), "-f", "rawvideo", "-"])
+                    .stdin(Stdio::null())
+                    .output()
+                    .unwrap();
+                if !out.status.success() {
+                    failed.push(format!("{w}x{h} {name}: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("")));
+                } else if out.stdout.len() != (w * h * 4) as usize * n {
+                    failed.push(format!("{w}x{h} {name}: {} statt {} Bytes", out.stdout.len(), (w * h * 4) as usize * n));
+                }
+            }
+        }
+        assert!(failed.is_empty(), "{} Ketten scheitern:\n{}", failed.len(), failed.join("\n"));
+    }
 }
