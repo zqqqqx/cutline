@@ -201,6 +201,10 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
     }
     let flavor = be_u32(d, 4)?;
     let num = be_u16(d, 12)? as usize;
+    // 0 oder mehr Tabellen, als die 16-Bit-Kopffelder fassen: keine gültige Schrift
+    if num == 0 || num > 4095 {
+        return Err(FontError::Corrupt("WOFF-Tabellenzahl".into()));
+    }
     let mut tables = Vec::with_capacity(num);
     for i in 0..num {
         let e = 44 + i * 20;
