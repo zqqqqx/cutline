@@ -1654,4 +1654,71 @@ mod tests {
         )
         .unwrap();
     }
+
+    /// Paket „Effekte und Filter“ (`plugins/cutline-effekte`): jede Kette läuft in FFmpeg wie in
+    /// Vorschau (RGBA) und Export (YUV), behält die Bildgröße, und Effekte tun bei Stärke 0
+    /// praktisch nichts.
+    #[test]
+    fn effekte_pack_chains_run() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../plugins/cutline-effekte/plugin.toml"
+        ))
+        .unwrap();
+        // shortcut: Zeilen lesen statt TOML parsen (cl-fx hängt nicht an toml); das Paket schreibt
+        // jede Kette in eine Zeile `ffmpeg = "…"` nach ihrer Zeile `kind = "…"`
+        let mut assets = Vec::new();
+        let mut kind = "";
+        for l in src.lines() {
+            if let Some(k) = l.strip_prefix("kind = \"") {
+                kind = k.trim_end_matches('"');
+            }
+            if let Some(c) = l.strip_prefix("ffmpeg = \"") {
+                assets.push((kind == "filter", c.trim_end_matches('"').to_string()));
+            }
+        }
+        assert!(assets.len() >= 30, "{}", assets.len());
+        assert!(assets.iter().all(|(f, c)| *f || c.contains("{intensity}")));
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let (w, h, n) = (202usize, 114usize, 12usize);
+        // Bilder als RGBA-Bytes; `fx` = (Kette, Stärke, ist Filter)
+        let render = |fmt: &str, fx: Option<(&str, f32, bool)>| -> Vec<u8> {
+            let mut g = GraphBuilder::new("0:v", "e");
+            g.push(format!("format={fmt}"));
+            match fx {
+                Some((c, i, true)) => g.blended(&c.replace("{intensity}", "1.000"), i),
+                Some((c, i, false)) => g.push(c.replace("{intensity}", &format!("{i:.3}"))),
+                None => {}
+            }
+            g.push("format=rgba");
+            let graph = g.finish("out").join(";");
+            let out = cl_media::ffmpeg_command()
+                .unwrap()
+                .args(["-v", "error", "-nostdin", "-f", "lavfi", "-i"])
+                .arg(format!("testsrc2=s={w}x{h}:r=24:d=0.5"))
+                .args(["-filter_complex", &graph, "-map", "[out]", "-f", "rawvideo", "-"])
+                .stdin(Stdio::null())
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{graph}\n{}", String::from_utf8_lossy(&out.stderr));
+            assert_eq!(out.stdout.len(), w * h * 4 * n, "Bildgröße/Bildzahl: {graph}");
+            out.stdout
+        };
+        let plain = render("yuv420p", None);
+        for (filter, c) in &assets {
+            for fmt in ["yuv420p", "rgba"] {
+                render(fmt, Some((c, 0.6, *filter)));
+                render(fmt, Some((c, 1.0, *filter)));
+            }
+            if !filter {
+                let zero = render("yuv420p", Some((c, 0.0, false)));
+                let diff = zero.iter().zip(&plain).map(|(a, b)| a.abs_diff(*b) as u64).sum::<u64>()
+                    as f64
+                    / plain.len() as f64;
+                assert!(diff < 2.0, "Stärke 0 verändert das Bild ({diff:.2}): {c}");
+            }
+        }
+    }
 }
