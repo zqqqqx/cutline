@@ -5,17 +5,22 @@
 //! Phase 1 ersetzt das durch libav-Bindings mit Hardware-Decode und Zero-Copy nach wgpu.
 //! Die öffentliche API (probe / decode_frame / FrameStream) bleibt dabei gleich.
 
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, TryRecvError};
-use std::thread::JoinHandle;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use cl_core::{MediaId, MediaKind, MediaRef, Rational, Time};
 use serde::Deserialize;
 
 mod anim;
+mod proc;
 pub use anim::{animation, Animation};
+pub use proc::{cpu_time, lower_priority, suspend};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
@@ -29,6 +34,8 @@ pub enum MediaError {
     Io(#[from] std::io::Error),
     #[error("Unerwartete FFprobe-Ausgabe: {0}")]
     Parse(#[from] serde_json::Error),
+    #[error("Abgebrochen")]
+    Cancelled,
 }
 
 pub type Result<T> = std::result::Result<T, MediaError>;
@@ -86,7 +93,9 @@ fn tool(name: &str) -> Result<PathBuf> {
         .ok_or(MediaError::FfmpegMissing)
 }
 
-/// FFmpeg-Befehl (ohne Konsolenfenster) für andere Crates, z. B. den Export.
+/// FFmpeg-Befehl (ohne Konsolenfenster) für andere Crates, z. B. den Export. Der gestartete
+/// Prozess endet mit der App, auch wenn sie hart beendet wird (Windows: Job-Objekt; Linux: endet
+/// mit dem startenden Thread, siehe `proc::prepare`).
 pub fn ffmpeg_command() -> Result<Command> {
     command("ffmpeg")
 }
@@ -101,13 +110,8 @@ pub fn ffmpeg_available() -> bool {
 }
 
 fn command(name: &str) -> Result<Command> {
-    #[allow(unused_mut)]
     let mut cmd = Command::new(tool(name)?);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: kein Konsolenfenster aufblitzen lassen
-    }
+    proc::prepare(&mut cmd);
     Ok(cmd)
 }
 
@@ -303,32 +307,129 @@ pub fn decode_frame_fx(
     h: u32,
     graph: Option<&str>,
 ) -> Result<RgbaFrame> {
+    decode_frame_opts(path, at, w, h, graph, false, None).map(|(f, _)| f)
+}
+
+/// Wie ein Einzelbild entstand (für Messpunkte).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DecodeInfo {
+    /// mit Hardware-Decodierung
+    pub hw: bool,
+    /// CPU-Zeit des FFmpeg-Prozesses (nicht auf jedem System ermittelbar)
+    pub cpu: Option<Duration>,
+}
+
+/// Abbruch eines laufenden Einzelbild-Auftrags von einem anderen Thread aus: beendet den
+/// FFmpeg sofort, der Auftrag endet mit [`MediaError::Cancelled`].
+#[derive(Default)]
+pub struct KillSwitch(Mutex<(bool, Option<Child>)>);
+
+impl KillSwitch {
+    pub fn kill(&self) {
+        let mut g = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        g.0 = true;
+        if let Some(c) = g.1.as_mut() {
+            let _ = c.kill();
+        }
+    }
+    pub fn is_killed(&self) -> bool {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).0
+    }
+    fn hold(&self, mut c: Child) -> Result<()> {
+        let mut g = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if g.0 {
+            let _ = c.kill();
+            let _ = c.wait();
+            return Err(MediaError::Cancelled);
+        }
+        g.1 = Some(c);
+        Ok(())
+    }
+    fn release(&self) -> Option<Child> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).1.take()
+    }
+}
+
+/// Einzelbild mit Optionen. `hw`: Hardware-Decodierung versuchen; scheitert sie, kommt das Bild
+/// aus der Software, und die Datei wird für den Rest der Sitzung nur noch in Software gelesen.
+/// `kill`: Auftrag von außen abbrechen.
+pub fn decode_frame_opts(
+    path: &Path,
+    at: Time,
+    w: u32,
+    h: u32,
+    graph: Option<&str>,
+    hw: bool,
+    kill: Option<&KillSwitch>,
+) -> Result<(RgbaFrame, DecodeInfo)> {
+    if let Some(slot) = if hw { HwSlot::acquire(path) } else { None } {
+        match decode_once(path, at, w, h, graph, Some(slot.accel), kill) {
+            Ok((f, cpu)) => return Ok((f, DecodeInfo { hw: true, cpu })),
+            Err(MediaError::Cancelled) => return Err(MediaError::Cancelled),
+            Err(_) => {
+                drop(slot);
+                let (f, cpu) = decode_once(path, at, w, h, graph, None, kill)?;
+                // nur merken, wenn Software an derselben Stelle ein Bild hat
+                hw_failed(path);
+                return Ok((f, DecodeInfo { hw: false, cpu }));
+            }
+        }
+    }
+    decode_once(path, at, w, h, graph, None, kill).map(|(f, cpu)| (f, DecodeInfo { hw: false, cpu }))
+}
+
+fn decode_once(
+    path: &Path,
+    at: Time,
+    w: u32,
+    h: u32,
+    graph: Option<&str>,
+    accel: Option<&str>,
+    kill: Option<&KillSwitch>,
+) -> Result<(RgbaFrame, Option<Duration>)> {
     let mut cmd = command("ffmpeg")?;
-    cmd.args(["-v", "error", "-nostdin"])
-        .args(["-ss", &format!("{:.6}", at.as_secs_f64().max(0.0))])
+    cmd.args(["-v", "error", "-nostdin"]);
+    if let Some(a) = accel {
+        cmd.args(["-hwaccel", a]);
+    }
+    cmd.args(["-ss", &format!("{:.6}", at.as_secs_f64().max(0.0))])
         .arg("-i")
         .arg(path);
     match graph {
         Some(g) => cmd.args(["-filter_complex", g, "-map", "[out]"]),
         None => cmd.args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba")]),
     };
-    let out = cmd
-        .args([
-            "-frames:v",
-            "1",
-            "-an",
-            "-sn",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgba",
-            "-",
-        ])
+    let mut child = cmd
+        .args(["-frames:v", "1", "-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .stdin(Stdio::null())
-        .output()?;
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut out = child.stdout.take().expect("piped");
+    let mut err = child.stderr.take().expect("piped");
+    // stderr nebenher lesen: ein voller Puffer würde FFmpeg anhalten
+    let err = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = err.read_to_string(&mut s);
+        s
+    });
+    let local = KillSwitch::default();
+    let ks = kill.unwrap_or(&local);
+    ks.hold(child)?;
     let need = (w * h * 4) as usize;
-    if out.stdout.len() < need {
-        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let mut data = Vec::with_capacity(need);
+    let _ = out.read_to_end(&mut data);
+    let mut child = ks.release();
+    if let Some(c) = child.as_mut() {
+        let _ = c.wait();
+    }
+    let cpu = child.as_ref().and_then(cpu_time);
+    let err = err.join().unwrap_or_default();
+    if ks.is_killed() {
+        return Err(MediaError::Cancelled);
+    }
+    if data.len() < need {
+        let err = err.trim().to_string();
         // ohne Fehlertext: an dieser Stelle gibt es kein Bild (z. B. hinter dem letzten)
         return Err(MediaError::Unreadable(if err.is_empty() {
             format!("kein Bild bei {:.3} s in {}", at.as_secs_f64(), path.display())
@@ -336,13 +437,75 @@ pub fn decode_frame_fx(
             err
         }));
     }
-    let mut data = out.stdout;
     data.truncate(need);
-    Ok(RgbaFrame {
-        width: w,
-        height: h,
-        data,
-    })
+    Ok((RgbaFrame { width: w, height: h, data }, cpu))
+}
+
+/// Höchstzahl gleichzeitiger Hardware-Decoder (NVDEC-Sitzungen u. Ä. sind begrenzt); jeder
+/// weitere Auftrag läuft in Software.
+pub const MAX_HW_DECODERS: usize = 3;
+static HW_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+
+/// `-hwaccel` dieses Systems: Windows D3D11VA, macOS VideoToolbox, sonst keiner (ungeprüft).
+/// `CUTLINE_NO_HWDEC` schaltet die Hardware-Decodierung der Vorschau ab.
+pub fn hwaccel() -> Option<&'static str> {
+    if std::env::var_os("CUTLINE_NO_HWDEC").is_some() {
+        return None;
+    }
+    if cfg!(windows) {
+        Some("d3d11va")
+    } else if cfg!(target_os = "macos") {
+        Some("videotoolbox")
+    } else {
+        None
+    }
+}
+
+fn hw_broken() -> std::sync::MutexGuard<'static, HashSet<PathBuf>> {
+    static B: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    B.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn hw_failed(path: &Path) {
+    hw_broken().insert(path.to_path_buf());
+}
+
+/// Ist der Hardware-Weg für diese Datei in dieser Sitzung gescheitert?
+pub fn hw_decode_failed(path: &Path) -> bool {
+    hw_broken().contains(path)
+}
+
+/// Einen Platz unter `max` belegen (zählt hoch, wenn frei).
+fn take_slot(n: &AtomicUsize, max: usize) -> bool {
+    let mut v = n.load(Ordering::Acquire);
+    while v < max {
+        match n.compare_exchange_weak(v, v + 1, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return true,
+            Err(x) => v = x,
+        }
+    }
+    false
+}
+
+/// Belegter Hardware-Decoder; gibt den Platz beim Verwerfen frei.
+struct HwSlot {
+    accel: &'static str,
+}
+
+impl HwSlot {
+    fn acquire(path: &Path) -> Option<Self> {
+        let accel = hwaccel()?;
+        if hw_decode_failed(path) || !take_slot(&HW_ACTIVE, MAX_HW_DECODERS) {
+            return None;
+        }
+        Some(Self { accel })
+    }
+}
+
+impl Drop for HwSlot {
+    fn drop(&mut self) {
+        HW_ACTIVE.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 /// Spitzenpegel (0..1) für die Waveform-Anzeige, `per_sec` Werte pro Sekunde.
@@ -449,14 +612,51 @@ pub fn silent_channel_opt(path: &Path, wait: bool) -> Option<u8> {
 }
 
 /// Fortlaufender Frame-Strom für die Wiedergabe (eigener Thread, begrenzter Puffer).
+/// Verwerfen blockiert nicht: Der Prozess wird nur beendet, abgeholt wird er im Lese-Thread.
 pub struct FrameStream {
-    child: Child,
-    rx: Option<Receiver<RgbaFrame>>,
-    reader: Option<JoinHandle<()>>,
+    shared: Arc<StreamShared>,
+    rx: Receiver<RgbaFrame>,
     pub width: u32,
     pub height: u32,
     pub fps: Rational,
     pub start: Time,
+}
+
+struct StreamShared {
+    child: Mutex<Option<Child>>,
+    stop: AtomicBool,
+}
+
+fn spawn_stream(
+    path: &Path,
+    start: Time,
+    (w, h): (u32, u32),
+    fps: Rational,
+    graph: Option<&str>,
+    accel: Option<&str>,
+) -> Result<Child> {
+    let mut cmd = command("ffmpeg")?;
+    cmd.args(["-v", "error", "-nostdin"]);
+    if let Some(a) = accel {
+        cmd.args(["-hwaccel", a]);
+    }
+    cmd.args(["-ss", &format!("{:.6}", start.as_secs_f64().max(0.0))])
+        .arg("-i")
+        .arg(path)
+        .args(["-an", "-sn"]);
+    match graph {
+        Some(g) => cmd.args(["-filter_complex", g, "-map", "[out]"]),
+        None => cmd.args([
+            "-vf",
+            &format!("fps={}/{},scale={w}:{h}:flags=bilinear,format=rgba", fps.num, fps.den),
+        ]),
+    };
+    Ok(cmd
+        .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?)
 }
 
 impl FrameStream {
@@ -473,53 +673,89 @@ impl FrameStream {
         fps: Rational,
         graph: Option<&str>,
     ) -> Result<Self> {
-        let mut cmd = command("ffmpeg")?;
-        cmd.args(["-v", "error", "-nostdin"])
-            .args(["-ss", &format!("{:.6}", start.as_secs_f64().max(0.0))])
-            .arg("-i")
-            .arg(path)
-            .args(["-an", "-sn"]);
-        match graph {
-            Some(g) => cmd.args(["-filter_complex", g, "-map", "[out]"]),
-            None => cmd.args([
-                "-vf",
-                &format!(
-                    "fps={}/{},scale={w}:{h}:flags=bilinear,format=rgba",
-                    fps.num, fps.den
-                ),
-            ]),
+        Self::open_opts(path, start, w, h, fps, graph, false)
+    }
+
+    /// Wie [`FrameStream::open_fx`]; `hw`: Hardware-Decodierung versuchen (höchstens
+    /// [`MAX_HW_DECODERS`] gleichzeitig). Liefert der Hardware-Weg kein einziges Bild, läuft
+    /// derselbe Strom in Software weiter.
+    pub fn open_opts(
+        path: &Path,
+        start: Time,
+        w: u32,
+        h: u32,
+        fps: Rational,
+        graph: Option<&str>,
+        hw: bool,
+    ) -> Result<Self> {
+        let mut slot = if hw { HwSlot::acquire(path) } else { None };
+        let spawn = {
+            let (path, graph) = (path.to_path_buf(), graph.map(str::to_string));
+            move |accel: Option<&str>| spawn_stream(&path, start, (w, h), fps, graph.as_deref(), accel)
         };
-        let mut child = cmd
-            .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+        let mut child = spawn(slot.as_ref().map(|s| s.accel))?;
         let mut stdout = child.stdout.take().expect("piped");
+        let shared = Arc::new(StreamShared {
+            child: Mutex::new(Some(child)),
+            stop: AtomicBool::new(false),
+        });
         let (tx, rx) = sync_channel::<RgbaFrame>(6);
         let frame_len = (w * h * 4) as usize;
-        let reader = std::thread::Builder::new()
+        let sh = shared.clone();
+        let path = path.to_path_buf();
+        std::thread::Builder::new()
             .name("cl-frame-stream".into())
-            .spawn(move || loop {
-                let mut buf = vec![0u8; frame_len];
-                if stdout.read_exact(&mut buf).is_err() {
-                    break;
+            .spawn(move || {
+                let mut retried = false;
+                loop {
+                    let mut n = 0u64;
+                    loop {
+                        let mut buf = vec![0u8; frame_len];
+                        if stdout.read_exact(&mut buf).is_err() {
+                            break;
+                        }
+                        n += 1;
+                        if tx.send(RgbaFrame { width: w, height: h, data: buf }).is_err() {
+                            sh.stop.store(true, Ordering::Release);
+                            break;
+                        }
+                    }
+                    if retried && n > 0 {
+                        hw_failed(&path);
+                    }
+                    // Hardware-Weg ohne ein einziges Bild: in Software noch einmal
+                    if n > 0 || slot.is_none() || sh.stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    slot = None;
+                    retried = true;
+                    let mut g = sh.child.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some(mut old) = g.take() {
+                        let _ = old.kill();
+                        let _ = old.wait();
+                    }
+                    if sh.stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    match spawn(None) {
+                        Ok(mut c) => {
+                            stdout = c.stdout.take().expect("piped");
+                            *g = Some(c);
+                        }
+                        Err(_) => break,
+                    }
                 }
-                if tx
-                    .send(RgbaFrame {
-                        width: w,
-                        height: h,
-                        data: buf,
-                    })
-                    .is_err()
-                {
-                    break;
+                drop(slot);
+                // Aufräumen hier statt im UI-Thread
+                let c = sh.child.lock().unwrap_or_else(|e| e.into_inner()).take();
+                if let Some(mut c) = c {
+                    let _ = c.kill();
+                    let _ = c.wait();
                 }
             })?;
         Ok(Self {
-            child,
-            rx: Some(rx),
-            reader: Some(reader),
+            shared,
+            rx,
             width: w,
             height: h,
             fps,
@@ -529,8 +765,7 @@ impl FrameStream {
 
     /// Nächstes Bild, falls schon dekodiert. `Ok(None)` = noch nicht bereit, `Err` = Ende.
     pub fn try_next(&self) -> std::result::Result<Option<RgbaFrame>, ()> {
-        let Some(rx) = &self.rx else { return Err(()) };
-        match rx.try_recv() {
+        match self.rx.try_recv() {
             Ok(f) => Ok(Some(f)),
             Err(TryRecvError::Empty) => Ok(None),
             Err(TryRecvError::Disconnected) => Err(()),
@@ -539,19 +774,17 @@ impl FrameStream {
 
     /// Blockierend (für Tests und Export).
     pub fn next_blocking(&self) -> Option<RgbaFrame> {
-        self.rx.as_ref()?.recv().ok()
+        self.rx.recv().ok()
     }
 }
 
 impl Drop for FrameStream {
     fn drop(&mut self) {
-        // Zuerst den Empfänger verwerfen: Ein im vollen Kanal blockierter Leser-Thread
-        // bekommt so einen Sendefehler und endet, sonst würde join() ewig warten.
-        drop(self.rx.take());
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        if let Some(r) = self.reader.take() {
-            let _ = r.join();
+        // Nur beenden, nicht warten: Der Lese-Thread bekommt einen Lese- bzw. Sendefehler
+        // (der Empfänger wird gleich danach verworfen) und holt den Prozess selbst ab.
+        self.shared.stop.store(true, Ordering::Release);
+        if let Some(c) = self.shared.child.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            let _ = c.kill();
         }
     }
 }
@@ -700,10 +933,131 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(500)); // Kanal läuft voll
         let t = std::time::Instant::now();
         drop(s);
+        // nur beenden, nicht warten (der UI-Thread darf hier nicht hängen)
         assert!(
-            t.elapsed() < std::time::Duration::from_secs(3),
-            "Drop hat blockiert"
+            t.elapsed() < std::time::Duration::from_millis(250),
+            "Drop hat blockiert: {:?}",
+            t.elapsed()
         );
+    }
+
+    #[test]
+    fn hw_slots_are_limited() {
+        let n = AtomicUsize::new(0);
+        assert!((0..3).all(|_| take_slot(&n, 3)));
+        assert!(!take_slot(&n, 3), "vierter Hardware-Decoder");
+        n.fetch_sub(1, Ordering::AcqRel);
+        assert!(take_slot(&n, 3));
+        assert!(!take_slot(&AtomicUsize::new(0), 0));
+    }
+
+    #[test]
+    fn killed_job_returns_cancelled() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let clip = make_clip(dir.path());
+        let k = KillSwitch::default();
+        k.kill();
+        let r = decode_frame_opts(&clip, Time::from_millis(500), 32, 18, None, false, Some(&k));
+        assert!(matches!(r, Err(MediaError::Cancelled)));
+        let (f, info) =
+            decode_frame_opts(&clip, Time::from_millis(500), 32, 18, None, false, Some(&KillSwitch::default())).unwrap();
+        assert_eq!((f.data.len(), info.hw), (32 * 18 * 4, false));
+    }
+
+    fn mean_diff(a: &[u8], b: &[u8]) -> f64 {
+        a.iter().zip(b).map(|(x, y)| x.abs_diff(*y) as f64).sum::<f64>() / a.len().max(1) as f64
+    }
+
+    /// Hardware- und Software-Decodierung liefern an derselben Stelle dasselbe Bild (Toleranz
+    /// für Rundung der Farbumrechnung). Ohne Hardware-Decoder übersprungen.
+    #[test]
+    fn hw_and_sw_frames_match() {
+        if !ffmpeg_available() || hwaccel().is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let clip = gen(
+            dir.path(),
+            "hd.mp4",
+            &["-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=2", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "15"],
+        );
+        let at = Time::from_millis(1234);
+        let (sw, _) = decode_frame_opts(&clip, at, 480, 270, None, false, None).unwrap();
+        let (hw, info) = decode_frame_opts(&clip, at, 480, 270, None, true, None).unwrap();
+        if !info.hw {
+            eprintln!("kein Hardware-Decoder: Vergleich übersprungen");
+            return;
+        }
+        let d = mean_diff(&sw.data, &hw.data);
+        assert!(d < 2.0, "mittlere Abweichung HW/SW {d:.2}");
+        // Strom: gleiche Bildzahl und gleiches erstes Bild
+        let count = |hw: bool| {
+            let s = FrameStream::open_opts(&clip, Time::from_secs_f64(1.0), 480, 270, Rational::new(30, 1), None, hw).unwrap();
+            let first = s.next_blocking().unwrap();
+            (1 + std::iter::from_fn(|| s.next_blocking()).count(), first.data)
+        };
+        let (n_sw, f_sw) = count(false);
+        let (n_hw, f_hw) = count(true);
+        assert_eq!(n_sw, n_hw);
+        assert!(mean_diff(&f_sw, &f_hw) < 2.0);
+    }
+
+    /// Scheitert der Hardware-Weg (hier: Datei ohne Bild am Ende), kommt kein falsches
+    /// „kaputt“-Merken zustande, solange auch Software kein Bild hat.
+    #[test]
+    fn hw_failure_is_only_remembered_when_software_works() {
+        if !ffmpeg_available() || hwaccel().is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let clip = make_clip(dir.path());
+        assert!(decode_frame_opts(&clip, Time::from_secs_f64(9.0), 32, 18, None, true, None).is_err());
+        assert!(!hw_decode_failed(&clip));
+    }
+
+    /// Mess-Test (von Hand): Einzelbild aus dem Original an 10 Stellen, Software gegen
+    /// Hardware, Wanduhr und CPU-Zeit des FFmpeg.
+    /// `cargo test --release -p cl-media -- --ignored --nocapture measure_still_frames`
+    #[test]
+    #[ignore]
+    fn measure_still_frames() {
+        let files = [
+            "F:/cutline-testmedien/1080p60_gop10s.mp4",
+            "F:/cutline-testmedien/4k60_h264_80mbit.mp4",
+            "F:/cutline-testmedien/4k60_hevc10_50mbit.mp4",
+        ];
+        for f in files.iter().map(Path::new).filter(|p| p.is_file()) {
+            let m = probe(f).unwrap();
+            let (w, h) = fit_size(m.width, m.height, 696, 392);
+            // abwechselnd SW und HW an derselben Stelle: gleiche Last für beide
+            let mut wall = [Vec::new(), Vec::new()];
+            let mut cpu = [Duration::ZERO; 2];
+            let mut used_hw = 0;
+            for i in 0..10 {
+                let at = Time::from_secs_f64(m.duration.as_secs_f64() * (i as f64 + 0.37) / 10.5);
+                for hw in [false, true] {
+                    let t = std::time::Instant::now();
+                    let (_, info) = decode_frame_opts(f, at, w, h, None, hw, None).unwrap();
+                    wall[hw as usize].push(t.elapsed().as_millis() as u64);
+                    cpu[hw as usize] += info.cpu.unwrap_or_default();
+                    used_hw += info.hw as u32;
+                }
+            }
+            for (i, label) in ["SW", "HW"].iter().enumerate() {
+                wall[i].sort();
+                println!(
+                    "{} {label}: Median {} ms, max {} ms, CPU je Bild {} ms",
+                    f.file_name().unwrap().to_string_lossy(),
+                    wall[i][5],
+                    wall[i][9],
+                    cpu[i].as_millis() / 10
+                );
+            }
+            assert_eq!(used_hw, 10, "Hardware-Weg nicht benutzt");
+        }
     }
 
     #[test]
