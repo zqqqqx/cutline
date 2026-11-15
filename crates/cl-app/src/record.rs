@@ -100,7 +100,7 @@ impl Recorder {
         let bucket =
             ((rate as usize * channels as usize) / crate::preview::WAVE_PER_SEC as usize).max(1);
         let cfg: cpal::StreamConfig = config.clone().into();
-        let err = |e| eprintln!("Mikrofon: {e}");
+        let err = |e| log::warn!("Mikrofon: {e}");
         macro_rules! build {
             ($t:ty, $conv:expr) => {{
                 let (tx, level, peaks) = (tx.clone(), level.clone(), peaks.clone());

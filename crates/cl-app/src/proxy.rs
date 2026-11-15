@@ -349,7 +349,7 @@ fn build_with(
     };
     if crate::app::perf() {
         let mb = std::fs::metadata(out).map_or(0.0, |x| x.len() as f64 / 1e6);
-        eprintln!(
+        crate::applog::perf_line!(
             "perf: proxy {} enc={:?}{} {:.1}× echtzeit {:.1} MB/min pausiert {:.1} s",
             m.path.file_name().unwrap_or_default().to_string_lossy(),
             enc,
@@ -451,7 +451,7 @@ impl App {
             crate::tr(format!("Proxy wird erstellt: {name}")),
             move |p, cancel| TaskDone::Proxy {
                 media: id,
-                ok: build(&m, &out, &spec, p, cancel).is_ok(),
+                ok: crate::applog::outcome("proxy", &name, std::time::Instant::now(), build(&m, &out, &spec, p, cancel)).is_ok(),
             },
         );
     }

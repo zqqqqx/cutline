@@ -354,7 +354,7 @@ fn frame_dispatcher(
                 match res {
                     Ok((frame, info)) => {
                         if crate::app::perf() {
-                            eprintln!(
+                            crate::applog::perf_line!(
                                 "perf: einzelbild {ms:.0} ms {} {}{}{}",
                                 if proxy { "Proxy" } else { "Original" },
                                 if info.hw { "HW" } else { "SW" },
@@ -382,7 +382,7 @@ fn frame_dispatcher(
 
 fn perf_discarded() {
     if crate::app::perf() {
-        eprintln!("perf: einzelbild verworfen (veraltet)");
+        crate::applog::perf_line!("perf: einzelbild verworfen (veraltet)");
     }
 }
 
@@ -521,7 +521,7 @@ fn run(job: Job) -> Option<Done> {
                         });
                     }
                     Ok(_) => {}
-                    Err(e) => eprintln!("Shader-Kachel {key}: {e}"),
+                    Err(e) => log::warn!("Shader-Kachel {key}: {e}"),
                 }
             }
             let out = ffmpeg(&graph, frames)?;
