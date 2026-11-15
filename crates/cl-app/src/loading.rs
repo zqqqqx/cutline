@@ -75,6 +75,8 @@ impl Presence {
     pub fn set_all(&mut self, m: HashMap<PathBuf, bool>, media: usize) {
         self.known = m;
         self.checked = Some((Instant::now(), media));
+        // laufende Prüfung gehört zum alten Stand (anderes Projekt): ihr Ergebnis verwerfen
+        self.pending = None;
     }
 
     /// Neue Prüfung fällig? Bei geänderter Medienzahl sofort, sonst alle `RECHECK`.
@@ -428,6 +430,24 @@ mod tests {
         assert!(Presence::due(None, 0, false));
         let old = Instant::now().checked_sub(RECHECK + Duration::from_millis(1)).map(|t| (t, 1));
         assert!(Presence::due(old, 1, false));
+    }
+
+    /// Prüfung des alten Projekts läuft noch, das neue setzt seinen Stand: das alte Ergebnis
+    /// darf ihn nicht überschreiben (sonst gelten fehlende Dateien als vorhanden).
+    #[test]
+    fn old_check_does_not_overwrite_new_project() {
+        let mut pr = Presence::default();
+        let (tx, rx) = channel();
+        tx.send(HashMap::from([(PathBuf::from("alt"), true)])).unwrap();
+        pr.pending = Some(rx);
+        pr.set_all(HashMap::from([(PathBuf::from("neu"), false)]), 1);
+        let mut p = Project::new("neu");
+        p.media.push(serde_json::from_value(serde_json::json!({
+            "id": cl_core::MediaId::new(), "path": "neu", "kind": "Image", "duration": 0,
+            "width": 4, "height": 4, "fps": null, "has_audio": false, "video_codec": null, "audio_codec": null
+        })).unwrap());
+        pr.tick(&p, &egui::Context::default());
+        assert!(!pr.get(Path::new("neu")));
     }
 
     #[test]
