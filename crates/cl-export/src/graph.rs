@@ -231,7 +231,6 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     let bw = ((m.width as f64 * fit).round() as u32).max(2) & !1;
     let bh = ((m.height as f64 * fit).round() as u32).max(2) & !1;
     let mut pre = vec!["setpts=PTS-STARTPTS".to_string()];
-    let _ = &pre;
     if !image {
         if c.fx.reverse {
             pre.push("reverse".into());
