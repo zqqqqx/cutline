@@ -713,4 +713,42 @@ mod tests {
         // `%` vor einem Mehrbyte-Zeichen darf nicht abstürzen
         assert_eq!(parse_query("a=%1€").len(), 1);
     }
+
+    #[test]
+    fn query_parsing_config_and_lengths() {
+        let q = |s: &str| parse_query(s);
+        assert_eq!(q("a=%E2%82%AC"), vec![("a".into(), "€".into())]);
+        assert_eq!(q("a=b=c&x&=y&"), vec![("a".into(), "b=c".into()), ("".into(), "y".into())]);
+        assert_eq!(q("a=%zz1"), vec![("a".into(), "?1".into())]);
+        assert_eq!(q("a=%"), vec![("a".into(), "%".into())]);
+        assert_eq!(q("a=%4"), vec![("a".into(), "%4".into())]);
+        assert_eq!(q("a=%41"), vec![("a".into(), "A".into())]);
+        assert_eq!(q("a=%FF%FE"), vec![("a".into(), "\u{fffd}\u{fffd}".into())]);
+        assert!(q("").is_empty());
+        for junk in ["%%%%", "=&=&=", "a=%€€", "🎬=🎬"] {
+            let _ = q(junk);
+        }
+        // Länge: Sekunden oder Millisekunden
+        let t = |l: Option<f64>| Track { length: l, ..Default::default() }.seconds();
+        assert_eq!((t(None), t(Some(180.0)), t(Some(180_000.0)), t(Some(3600.0))), (None, Some(180.0), Some(180.0), Some(3600.0)));
+        let a = Track { main_artists: vec![Named { id: "1".into(), name: "A".into() }, Named { id: "2".into(), name: "B 🎬".into() }], ..Default::default() };
+        assert_eq!(a.artists(), "A, B 🎬");
+        assert_eq!(Track::default().artists(), "");
+        // Konfiguration: leer, unbekannte Felder, Nutzerkennung stabil
+        let c: Config = serde_json::from_str("{}").unwrap();
+        assert_eq!(c, Config::default());
+        let c: Config = serde_json::from_str(r#"{"api_key":"  ","mode":"ApiKey","neu":1}"#).unwrap();
+        assert!(!c.ready(), "nur Leerzeichen sind kein Schlüssel");
+        assert!(serde_json::from_str::<Config>(r#"{"mode":"Zauber"}"#).is_err());
+        let mut c = Config::default();
+        c.ensure_user_id();
+        let id = c.user_id.clone();
+        c.ensure_user_id();
+        assert!(id.starts_with("cl-") && id.len() > 10 && c.user_id == id);
+        assert_eq!(c.base(), DEFAULT_BASE);
+        assert!(redirect_uri().starts_with("http://127.0.0.1:"));
+        assert!(start_login("   ").is_err());
+        // Zufallswerte unterscheiden sich
+        assert_ne!(pkce().0, pkce().0);
+    }
 }
