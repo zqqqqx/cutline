@@ -772,6 +772,31 @@ fn stills_in_stand_replace_running_requests_and_drive_the_wait_line() {
     assert_eq!(core.held(), Some(1));
 }
 
+/// Befund aus dem Review: ein gescheitertes Einzelbild blieb als Auftrag stehen – Ladelinie für
+/// immer, beim Abspielen stand das Bild bis `STILL_PATIENCE`.
+#[test]
+fn failed_still_ends_the_request_and_the_next_is_requested() {
+    let mut core: PlayCore<Sim> = PlayCore::default();
+    assert!(core.still(1, 10, 0.0));
+    assert!(core.has_requests());
+    core.still_failed(1, 9); // veraltet: ändert nichts
+    assert!(core.has_requests());
+    core.still_failed(1, 10);
+    assert!(!core.has_requests(), "Ladeanzeige endet");
+    assert!(!core.waiting());
+    assert!(!core.still(1, 10, 0.1), "derselbe nicht in jedem UI-Bild neu");
+    assert!(core.still(1, 11, 0.2), "das nächste wird angefordert");
+    // beim Abspielen (Rückwärts-Clip): das nächste sofort, nicht erst nach STILL_PATIENCE
+    core.shuttle(2.0, Time::ZERO, 1.0);
+    assert!(core.still(1, 20, 1.0));
+    assert!(!core.still(1, 21, 1.1), "laufender Auftrag wird nicht ersetzt");
+    core.still_failed(1, 20);
+    assert!(core.still(1, 21, 1.2));
+    // ein gelieferter Auftrag zählt ebenfalls nicht mehr als offen
+    assert!(core.still_done(1, 21));
+    assert!(!core.has_requests());
+}
+
 #[test]
 fn play_during_buffering_seek_and_stop_from_every_state() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);

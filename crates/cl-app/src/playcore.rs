@@ -267,7 +267,7 @@ pub struct PlayCore<S: Source> {
     wanted: Vec<Lid>,
     /// höchste Stufe der automatischen Qualität (aus dem Takt)
     max_level: usize,
-    /// Einzelbilder: angefordert (Schlüssel, seit) und gezeigt
+    /// Einzelbilder: angefordert (Schlüssel, seit) und erledigt (gezeigt oder gescheitert)
     requested: HashMap<Lid, (u64, f64)>,
     shown: HashMap<Lid, u64>,
     /// zuletzt mit einem Bild versorgte Ebene (es gibt ein anzeigbares Bild)
@@ -449,9 +449,9 @@ impl<S: Source> PlayCore<S> {
         self.mode == Mode::Pause && self.paused == Some((at, revision))
     }
 
-    /// Gibt es Einzelbild-Aufträge (Ladeanzeige beim Öffnen eines Projekts)?
+    /// Gibt es offene Einzelbild-Aufträge (Ladeanzeige beim Öffnen eines Projekts)?
     pub fn has_requests(&self) -> bool {
-        !self.requested.is_empty()
+        self.requested.iter().any(|(id, (k, _))| self.shown.get(id) != Some(k))
     }
 
     /// Pause. Nur mit laufendem Ton bei Tempo 1 (`can_hold`, z. B. nicht bei Mehrkamera) bleiben
@@ -867,6 +867,15 @@ impl<S: Source> PlayCore<S> {
             true
         } else {
             false
+        }
+    }
+
+    /// Einzelbild ließ sich nicht decodieren: der Auftrag ist beendet (Ladeanzeige endet, beim
+    /// Abspielen wird gleich das nächste angefordert). Derselbe Schlüssel wird nicht sofort
+    /// wieder versucht (sonst ein FFmpeg je UI-Bild), erst nach einer Änderung.
+    pub fn still_failed(&mut self, id: Lid, key: u64) {
+        if self.requested.get(&id).is_some_and(|(k, _)| *k == key) {
+            self.shown.insert(id, key);
         }
     }
 

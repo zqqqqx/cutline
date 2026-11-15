@@ -156,6 +156,12 @@ pub enum Done {
         key: u64,
         frame: RgbaFrame,
     },
+    /// Player-Bild ließ sich nicht decodieren (der Auftrag ist damit beendet)
+    FrameFailed {
+        clip: ClipId,
+        key: u64,
+        error: String,
+    },
     Thumb {
         media: MediaId,
         frame: RgbaFrame,
@@ -442,7 +448,7 @@ fn frame_dispatcher(
                         current.then_some(Done::Frame { clip, key, frame })
                     }
                     Err(cl_media::MediaError::Cancelled) => None,
-                    Err(e) => current.then(|| Done::Error(e.to_string())),
+                    Err(e) => current.then(|| Done::FrameFailed { clip, key, error: e.to_string() }),
                 }
             }
         };
@@ -1043,7 +1049,7 @@ mod tests {
             match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("kein Bild") {
                 Done::Frame { key: k, .. } if k == key => return std::time::Instant::now(),
                 Done::Frame { .. } => *other += 1,
-                Done::Error(e) => panic!("{e}"),
+                Done::Error(e) | Done::FrameFailed { error: e, .. } => panic!("{e}"),
                 _ => {}
             }
         }

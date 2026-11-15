@@ -1060,6 +1060,10 @@ impl App {
                         self.set_frame(ctx, clip, key, &frame);
                     }
                 }
+                Done::FrameFailed { clip, key, error } => {
+                    log::warn!("Decoder: {error}");
+                    self.core.still_failed(lid(clip), key);
+                }
                 Done::Thumb { media, frame } => {
                     let tex = ctx.load_texture(
                         format!("thumb-{media}"),
@@ -1451,10 +1455,8 @@ impl App {
             )
         });
         let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx, fxh, fps);
-        if self.core.still(lid(id), key, now) {
-            if !m.is_local() {
-                return;
-            }
+        // fehlende Datei (Hintergrund-Prüfung): gar nicht erst anfordern, sonst bliebe der Auftrag offen
+        if self.presence.get(&m.path) && self.core.still(lid(id), key, now) {
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
             self.decoder.send(Job::Frame {
                 clip: id,

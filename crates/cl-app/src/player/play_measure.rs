@@ -194,12 +194,16 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
             }};
         }
         while let Ok(d) = decoder.rx.try_recv() {
-            if let Done::Frame { clip, key, .. } = d {
-                if core.still_done(lid(clip), key) {
-                    run.stills_shown += 1;
-                    any_frame = t;
-                    got!(clip, key);
+            match d {
+                Done::Frame { clip, key, .. } => {
+                    if core.still_done(lid(clip), key) {
+                        run.stills_shown += 1;
+                        any_frame = t;
+                        got!(clip, key);
+                    }
                 }
+                Done::FrameFailed { clip, key, .. } => core.still_failed(lid(clip), key),
+                _ => {}
             }
         }
         let (div, half) = steps[core.quality.level.min(steps.len() - 1)];
