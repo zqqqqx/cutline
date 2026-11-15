@@ -316,6 +316,7 @@ pub(crate) fn f(x: f64) -> String {
 
 /// Erzeugt den kompletten Export-Aufruf.
 pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -> Result<Job> {
+    let p = &in_edit_ranges(p);
     let total = p.duration();
     if total <= Time::ZERO {
         return Err(ExportError::Empty);
@@ -332,6 +333,10 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     }
     let (start, end) = s.range.unwrap_or((Time::ZERO, total));
     let dur = end - start;
+    // leerer oder verkehrter Bereich (In = Out): FFmpeg bekäme `-t 0` bzw. eine negative Länge
+    if dur <= Time::ZERO {
+        return Err(ExportError::Empty);
+    }
     let workdir = tempfile::Builder::new()
         .prefix("cutline-export-")
         .tempdir()?;
@@ -356,7 +361,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         let full = graph::video_part(&mut ctx, p, end, dur)?;
         // Live-Vorschau für den Export-Dialog: zweiter Zweig, 2 Bilder/s, klein
         ctx.graph.push(format!("[{full}]split[vmain][pv0]"));
-        ctx.graph.push(format!("[pv0]fps=2,scale={PREVIEW_W}:-2[pv]"));
+        ctx.graph.push(format!("[pv0]fps=2:eof_action=pass,scale={PREVIEW_W}:-2[pv]"));
         let cur = "vmain";
         if s.format == Format::Gif {
             ctx.graph.push(format!(
@@ -463,6 +468,23 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         passes,
         frames: dur.as_secs_f64() * s.fps.num as f64 / s.fps.den.max(1) as f64,
     })
+}
+
+/// Lautstärke und Tempo in die Bereiche der Bearbeitung (wie `EditOp::SetVolume`/`SetSpeed`):
+/// Projektdateien und MCP können mehr enthalten, +1000 dB bzw. Tempo 0,001 brachen den
+/// AAC-Encoder ab.
+fn in_edit_ranges(p: &Project) -> Project {
+    let mut p = p.clone();
+    for c in p.timeline.tracks.iter_mut().flat_map(|t| t.clips.iter_mut()) {
+        c.volume_db = c.volume_db.clamp(-60.0, 20.0);
+        c.speed = c.speed.clamp(0.1, 100.0);
+        if let Some(v) = c.keyframes.0.get_mut(&Prop::Volume) {
+            for k in v {
+                k.v = k.v.clamp(-60.0, 20.0);
+            }
+        }
+    }
+    p
 }
 
 /// Kapitel (Start relativ zu `start`, Titel) aus den Markern im Bereich `start..end`.
@@ -825,7 +847,7 @@ fn without_preview(job: &Job, args: &[String]) -> Option<Vec<String>> {
     let g = std::fs::read_to_string(&file).ok()?;
     let g = g
         .replace("split[vmain][pv0]", "null[vmain]")
-        .replace(&format!("[pv0]fps=2,scale={PREVIEW_W}:-2[pv]"), "")
+        .replace(&format!("[pv0]fps=2:eof_action=pass,scale={PREVIEW_W}:-2[pv]"), "")
         .replace(";\n;\n", ";\n");
     std::fs::write(&file, g).ok()?;
     Some(args[..i].to_vec())
@@ -926,6 +948,7 @@ pub fn spawn_audio_preview(
     from: Time,
     rate: u32,
 ) -> Result<(Child, tempfile::TempDir)> {
+    let p = &in_edit_ranges(p);
     let end = p.duration();
     if end <= from {
         return Err(ExportError::Empty);
