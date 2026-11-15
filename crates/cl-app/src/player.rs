@@ -38,7 +38,12 @@ struct Layer {
 /// und welche Übergänge fürs Abspielen zu langsam waren.
 #[derive(Default)]
 pub struct ShaderPreview {
-    cpu: std::collections::HashMap<ClipId, (u64, cl_media::RgbaFrame)>,
+    cpu: std::collections::HashMap<ClipId, (u64, std::sync::Arc<cl_media::RgbaFrame>)>,
+    /// mischt im Hintergrund (das Mischen kostet auf der CPU 10–150 ms je Bild)
+    mixer: Option<Mixer>,
+    /// beauftragte Mischung (höchstens eine) und die fertige, noch nicht übernommene
+    pending: Option<u64>,
+    ready: Option<MixDone>,
     /// außer den Clips mit Übergang: diese Bilder (Fassungen mit Effekt-Elementen) auch behalten
     wanted: Vec<ClipId>,
     tex: Option<egui::TextureHandle>,
@@ -97,6 +102,83 @@ impl ShaderPreview {
                 self.slow.push(pair);
             }
         }
+    }
+}
+
+/// Mischauftrag an den Hintergrund-Thread: Bildpaare (Clips, dann Fassungen mit Effekt-Elementen)
+/// mit Lage, Fläche und Fortschritt.
+struct MixJob {
+    id: u64,
+    pair: (ClipId, ClipId),
+    plan: cl_fx::catalog::TransitionPlan,
+    frames: Vec<(std::sync::Arc<cl_media::RgbaFrame>, std::sync::Arc<cl_media::RgbaFrame>)>,
+    /// je Bildpaar ab dem zweiten: Maske und Stärke des Effekt-Elements
+    sets: Vec<(Option<Mask>, f32)>,
+    ev: (Evaluated, Evaluated),
+    size: (u32, u32),
+    proj: (f32, f32),
+    p: f32,
+}
+
+/// Fertige Mischung: Mischbild (unmaskierte Elemente eingerechnet), dann je maskiertem Element
+/// dessen gemischte Fassung. Leer, wenn das Mischen scheiterte.
+struct MixDone {
+    id: u64,
+    pair: (ClipId, ClipId),
+    images: Vec<egui::ColorImage>,
+    masked: Vec<(Option<Mask>, f32)>,
+    secs: f64,
+}
+
+fn run_mix(j: MixJob) -> MixDone {
+    let t0 = std::time::Instant::now();
+    let (cw, ch) = j.size;
+    let mixed: Option<Vec<Vec<u8>>> = j
+        .frames
+        .iter()
+        .map(|(fa, fb)| mix_layers(&j.plan, (fa, &j.ev.0), (fb, &j.ev.1), (cw, ch), j.proj, j.p))
+        .collect();
+    let (mut images, mut masked) = (Vec::new(), Vec::new());
+    if let Some(mixed) = mixed {
+        // unmaskierte Elemente ins Mischbild einrechnen, maskierte zeichnet `draw_layers` in der Form
+        let mut it = mixed.into_iter();
+        let mut base = it.next().unwrap_or_default();
+        let mut rest = Vec::new();
+        for (img, x) in it.zip(&j.sets) {
+            if x.0.is_none() {
+                fold_fx(&mut base, &img, x.1);
+            } else {
+                rest.push(img);
+                masked.push(*x);
+            }
+        }
+        images = std::iter::once(base)
+            .chain(rest)
+            .map(|img| egui::ColorImage::from_rgba_unmultiplied([cw as usize, ch as usize], &img))
+            .collect();
+    }
+    MixDone { id: j.id, pair: j.pair, images, masked, secs: t0.elapsed().as_secs_f64() }
+}
+
+/// Hintergrund-Thread für Übergangs-Mischungen (das Ergebnis erscheint ein Bild später).
+struct Mixer {
+    tx: std::sync::mpsc::Sender<MixJob>,
+    rx: std::sync::mpsc::Receiver<MixDone>,
+}
+
+impl Mixer {
+    fn spawn(ctx: egui::Context) -> Self {
+        let (tx, jobs) = std::sync::mpsc::channel::<MixJob>();
+        let (done, rx) = std::sync::mpsc::channel();
+        let _ = std::thread::Builder::new().name("cl-mix".into()).spawn(move || {
+            while let Ok(j) = jobs.recv() {
+                if done.send(run_mix(j)).is_err() {
+                    return;
+                }
+                ctx.request_repaint();
+            }
+        });
+        Self { tx, rx }
     }
 }
 
@@ -787,6 +869,35 @@ mod transition_tests {
     }
 
     #[test]
+    fn background_mix_matches_direct_mix_with_elements() {
+        // gleiche Rechnung wie vorher im Oberflächen-Thread: Mischbild, unmaskiertes Element
+        // eingerechnet, maskiertes als eigenes Bild
+        let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0 };
+        let f = |v: u8| std::sync::Arc::new(cl_media::RgbaFrame { width: 32, height: 18, data: [v, 255 - v, 90, 255].repeat(32 * 18) });
+        let plan = cl_fx::catalog::transition_plan("circleopen");
+        let mask = Mask::new(MaskShape::Circle);
+        let job = MixJob {
+            id: 7,
+            pair: (ClipId::new(), ClipId::new()),
+            plan: plan.clone(),
+            frames: vec![(f(10), f(200)), (f(60), f(120)), (f(250), f(5))],
+            sets: vec![(None, 0.5), (Some(mask), 0.8)],
+            ev: (ev, ev),
+            size: (32, 18),
+            proj: (1920.0, 1080.0),
+            p: 0.4,
+        };
+        let d = run_mix(job);
+        assert_eq!((d.id, d.images.len(), d.masked.len()), (7, 2, 1));
+        let mix = |a: u8, b: u8| mix_layers(&plan, (&f(a), &ev), (&f(b), &ev), (32, 18), (1920.0, 1080.0), 0.4).unwrap();
+        let mut base = mix(10, 200);
+        fold_fx(&mut base, &mix(60, 120), 0.5);
+        assert_eq!(d.images[0], egui::ColorImage::from_rgba_unmultiplied([32, 18], &base));
+        assert_eq!(d.images[1], egui::ColorImage::from_rgba_unmultiplied([32, 18], &mix(250, 5)));
+        assert_eq!(d.masked[0], (Some(mask), 0.8));
+    }
+
+    #[test]
     fn mix_area_is_limited_while_playing() {
         let px = egui::vec2(2560.0, 1440.0);
         assert_eq!(mix_size(1920.0, 1080.0, px, false), (1920, 1080));
@@ -883,7 +994,7 @@ impl App {
             if cpu.len() >= 16 && !cpu.contains_key(&clip) {
                 cpu.clear();
             }
-            cpu.insert(clip, (key, f.clone()));
+            cpu.insert(clip, (key, std::sync::Arc::new(f.clone())));
         }
         let img = to_color_image(f);
         match self.frames.get_mut(&clip) {
@@ -922,6 +1033,11 @@ impl App {
     fn shader_mix(&mut self, ctx: &egui::Context, layers: &[Layer], canvas_px: egui::Vec2) {
         let sp = &mut self.shader_preview;
         sp.current = None;
+        let mixer = sp.mixer.get_or_insert_with(|| Mixer::spawn(ctx.clone()));
+        while let Ok(d) = mixer.rx.try_recv() {
+            sp.pending = None;
+            sp.ready = Some(d);
+        }
         if !sp.warmed || (self.playing && !sp.was_playing) {
             warm_shaders(&self.project);
             sp.warmed = true;
@@ -947,7 +1063,7 @@ impl App {
             }
             wanted.extend(sets.iter().flat_map(|x| [x.0, x.1]));
             let sp = &mut self.shader_preview;
-            let frames: Option<Vec<_>> = sets.iter().map(|x| Some((sp.cpu.get(&x.0)?, sp.cpu.get(&x.1)?))).collect();
+            let frames: Option<Vec<_>> = sets.iter().map(|x| Some((sp.cpu.get(&x.0)?.clone(), sp.cpu.get(&x.1)?.clone()))).collect();
             match sp.step(pair, frames.is_some()) {
                 Step::Skip => continue,
                 Step::Hold => {
@@ -971,59 +1087,66 @@ impl App {
                 }
                 h.finish()
             };
-            if sp.last != Some(id) || sp.tex.is_none() {
-                let t0 = std::time::Instant::now();
-                let mixed: Option<Vec<Vec<u8>>> = frames
-                    .iter()
-                    .map(|((_, fa), (_, fb))| mix_layers(&plan, (fa, &ea), (fb, &eb), (cw, ch), (pw, ph), p))
-                    .collect();
-                let Some(mixed) = mixed else { continue };
-                // unmaskierte Elemente ins Mischbild einrechnen, maskierte zeichnet `draw_layers` in der Form
-                let mut it = mixed.into_iter();
-                let mut mixed = vec![it.next().unwrap_or_default()];
-                let mut masked = Vec::new();
-                for (img, x) in it.zip(&sets[1..]) {
-                    if x.2.is_none() {
-                        fold_fx(&mut mixed[0], &img, x.3);
-                    } else {
-                        mixed.push(img);
-                        masked.push((x.2, x.3));
-                    }
-                }
+            // fertige Mischung dieses Übergangs übernehmen
+            if let Some(d) = sp.ready.take_if(|d| d.pair == pair) {
                 let fps = self.project.settings.fps;
                 let interval = fps.den.max(1) as f64 / fps.num.max(1) as f64;
                 if self.core.mode() == Mode::Spielen {
-                    sp.note_time(pair, t0.elapsed().as_secs_f64(), interval);
+                    sp.note_time(pair, d.secs, interval);
                 }
                 if crate::app::perf() {
-                    eprintln!("perf: Übergang gemischt ({}×{}, {} Bild(er)) in {:.1} ms", cw, ch, sets.len(), t0.elapsed().as_secs_f64() * 1e3);
+                    eprintln!("perf: Übergang gemischt ({}×{}, {} Bild(er)) in {:.1} ms (im Hintergrund)", cw, ch, sets.len(), d.secs * 1e3);
                 }
-                // vorhandene Texturen weiterverwenden: Mischbild, dann je Effekt-Element
-                let mut old = sp.tex.take().into_iter().chain(sp.fx.drain(..).map(|f| f.0));
-                let mut texs: Vec<egui::TextureHandle> = mixed
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, img)| {
-                        let ci = egui::ColorImage::from_rgba_unmultiplied([cw as usize, ch as usize], &img);
-                        match old.next() {
+                sp.last = Some(d.id);
+                if !d.images.is_empty() {
+                    // vorhandene Texturen weiterverwenden: Mischbild, dann je Effekt-Element
+                    let mut old = sp.tex.take().into_iter().chain(sp.fx.drain(..).map(|f| f.0));
+                    let mut texs: Vec<egui::TextureHandle> = d
+                        .images
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, ci)| match old.next() {
                             Some(mut t) => {
                                 t.set(ci, egui::TextureOptions::LINEAR);
                                 t
                             }
                             None => ctx.load_texture(format!("shader-mix-{i}"), ci, egui::TextureOptions::LINEAR),
-                        }
-                    })
-                    .collect();
-                drop(old);
-                let rest = texs.split_off(1);
-                sp.tex = texs.pop();
-                sp.fx = rest.into_iter().zip(masked).map(|(t, (m, k))| (t, m, k)).collect();
-                sp.last = Some(id);
+                        })
+                        .collect();
+                    drop(old);
+                    let rest = texs.split_off(1);
+                    sp.tex = texs.pop();
+                    sp.fx = rest.into_iter().zip(d.masked).map(|(t, (m, k))| (t, m, k)).collect();
+                    sp.shown = Some(pair);
+                }
             }
-            sp.shown = Some(pair);
+            // andere Bilder, anderer Übergang, andere Lage oder Fläche: neu mischen (im Hintergrund)
+            if sp.last != Some(id) && sp.pending.is_none() {
+                let job = MixJob {
+                    id,
+                    pair,
+                    plan: plan.clone(),
+                    frames: frames.iter().map(|((_, a), (_, b))| (a.clone(), b.clone())).collect(),
+                    sets: sets[1..].iter().map(|x| (x.2, x.3)).collect(),
+                    ev: (ea, eb),
+                    size: (cw, ch),
+                    proj: (pw, ph),
+                    p,
+                };
+                if let Some(m) = &sp.mixer {
+                    if m.tx.send(job).is_ok() {
+                        sp.pending = Some(id);
+                    }
+                }
+            }
+            // noch kein Mischbild dieses Übergangs: so lange überblenden
+            if sp.shown != Some(pair) || sp.tex.is_none() {
+                continue;
+            }
             sp.current = Some(pair);
             break;
         }
+        self.shader_preview.ready = None;
         self.shader_preview.wanted = wanted;
     }
 
