@@ -196,19 +196,59 @@ pub fn relative_inside(f: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-/// Kette darf keine eigenen Ein-/Ausgänge, Dateien, Graph-Trenner, Instanznamen (`@`)
-/// oder Filter mit Datei-/Fremdcode-Zugriff enthalten.
+/// Filter, die Paket-Ketten nutzen dürfen: nur Bildberechnung, kein Datei-, Netz- oder
+/// Prozesszugriff. Neue Filter hier eintragen (Test: jede Kette der mitgelieferten Pakete).
+pub const ALLOWED_FILTERS: &[&str] = &[
+    "avgblur", "boxblur", "cas", "chromashift", "colorbalance", "colorchannelmixer",
+    "colorcontrast", "colorize", "colorlevels", "colortemperature", "convolution", "crop", "curves",
+    "deband", "drawbox", "drawgrid", "edgedetect", "eq", "exposure", "format", "gblur", "geq",
+    "gradfun", "hflip", "hue", "huesaturation", "lagfun", "lenscorrection", "lutrgb", "lutyuv",
+    "monochrome", "negate", "noise", "overlay", "pixelize", "rgbashift", "scale", "shuffleplanes",
+    "smartblur", "split", "tmix", "unsharp", "vflip", "vibrance", "vignette",
+];
+
+/// Teile von `s` an `sep` außerhalb von '…' (FFmpeg-Quoting). `None` bei offenem Anführungszeichen.
+fn split_top(s: &str, sep: char) -> Option<Vec<&str>> {
+    let (mut out, mut start, mut quoted) = (Vec::new(), 0, false);
+    for (i, c) in s.char_indices() {
+        if c == '\'' {
+            quoted = !quoted;
+        } else if c == sep && !quoted {
+            out.push(&s[start..i]);
+            start = i + 1;
+        }
+    }
+    out.push(&s[start..]);
+    (!quoted).then_some(out)
+}
+
+/// Kette aus einem Paket: nur Filter aus [`ALLOWED_FILTERS`], keine eigenen Ein-/Ausgänge,
+/// Graph-Trenner, Instanznamen (`@`) oder Escapes, keine Option mit Dateibezug.
 pub fn ffmpeg_chain_allowed(f: &str) -> bool {
-    const BLOCKED: [&str; 8] = [
-        "movie", "amovie", "frei0r", "ladspa", "lv2", "sendcmd", "zmq", "lut3d",
-    ];
-    if [";", "[", "@", "movie=", "file="].iter().any(|x| f.contains(x)) {
+    if f.contains([';', '[', ']', '@', '\\']) {
         return false;
     }
-    // Filtername = Anfang jedes Kommas-Abschnitts bis `=` (zu streng bei Kommas in Werten, das ist ok)
-    !f.split(',').any(|part| {
-        let name = part.split('=').next().unwrap_or("").trim().to_ascii_lowercase();
-        BLOCKED.contains(&name.as_str()) || name == "azmq" || name == "asendcmd"
+    let Some(filters) = split_top(f, ',') else {
+        return false;
+    };
+    filters.iter().all(|part| {
+        let (name, args) = part.split_once('=').unwrap_or((part, ""));
+        let name = name.trim();
+        if !ALLOWED_FILTERS.contains(&name) {
+            return false;
+        }
+        let Some(opts) = split_top(args, ':') else {
+            return false;
+        };
+        opts.iter().enumerate().all(|(i, o)| match o.split_once('=') {
+            Some((k, _)) => {
+                let k = k.trim().to_ascii_lowercase();
+                !(k.contains("file") || k == "result" || k == "url")
+            }
+            // Optionen ohne Namen (`unsharp=5:5:0.6`): bei Filtern mit Datei-Option nur die erste,
+            // sonst fiele eine per Position auf sie (`curves`: 7. Option `psfile`)
+            None => i == 0 || name != "curves",
+        })
     })
 }
 
@@ -651,6 +691,12 @@ mod tests {
         assert!(reg.assets(AssetKind::Transition).count() >= 1);
         assert!(reg.assets(AssetKind::VideoEffect).count() >= 1);
         assert!(reg.assets(AssetKind::Filter).count() >= 1);
+        // jede Kette aller mitgelieferten Pakete besteht die Liste erlaubter Filter
+        let chains: Vec<String> = reg.plugins.iter().flat_map(|p| p.manifest.assets.iter()).filter_map(|a| a.ffmpeg_filled()).collect();
+        assert!(chains.len() >= 30, "{}", chains.len());
+        for c in &chains {
+            assert!(ffmpeg_chain_allowed(c), "{c}");
+        }
     }
 
     #[test]
@@ -720,6 +766,21 @@ params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=
             assert!(!ffmpeg_chain_allowed(bad), "{bad}");
         }
         assert!(ffmpeg_chain_allowed("gblur=sigma=2,eq=brightness=0.04*{intensity}"));
+        // Filter, die Dateien schreiben oder lesen, kamen an der alten Sperrliste vorbei
+        for bad in [
+            r"signature=filename=C\:/Users/x/a.docx",
+            "signature=filename='C:/Users/x/a.docx'",
+            "eq,vidstabdetect=result=x.trf",
+            "curves=psfile=x.acv",
+            "curves=none:0/0 1/1:0/0 1/1:0/0 1/1:0/0 1/1:0/0 1/1:x.acv",
+            "drawtext=textfile=x.txt",
+            "eq=gamma='1",
+            "eq=gamma=1\\,movie=x.mp4",
+            "unbekannt=1",
+        ] {
+            assert!(!ffmpeg_chain_allowed(bad), "{bad}");
+        }
+        assert!(ffmpeg_chain_allowed("format=rgba,split,overlay=x='W*sin(t)':y='max(1,H/2)'"));
         // Shader-Übergänge brauchen einen Rückfall und Zahlen-Parameter
         let tr = |extra: &str| format!("{base}
 [[asset]]
