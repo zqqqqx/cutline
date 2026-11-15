@@ -361,7 +361,10 @@ fn run(job: Job) -> Option<Done> {
             if let Some(d) = cache.parent() {
                 let _ = std::fs::create_dir_all(d);
             }
-            let _ = std::fs::write(&cache, &data);
+            // Rückfall eines Shader-Übergangs nicht festschreiben: beim nächsten Start neu versuchen
+            if shader.is_none() {
+                let _ = std::fs::write(&cache, &data);
+            }
             Ok(Done::FxThumb {
                 key,
                 frame: RgbaFrame {
@@ -638,3 +641,39 @@ const SAMPLES: [(&str, &[u8]); 2] = [
     ("fx-sample-a.jpg", include_bytes!("../assets/fx-sample-a.jpg")),
     ("fx-sample-b.jpg", include_bytes!("../assets/fx-sample-b.jpg")),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Kachel eines Shader-Übergangs: Bildpaar wird richtig geteilt, Bild 0 = A, Streifen hat
+    /// `frames` Bilder; ohne GPU ein Fehler (dann gilt die Kachel des Rückfalls).
+    #[test]
+    fn shader_strip_splits_pair_and_starts_with_a() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("x.wgsl");
+        std::fs::write(
+            &file,
+            "fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f { return mix(from_color(uv), to_color(uv), progress); }",
+        )
+        .unwrap();
+        let s = ShaderTile { file, params: vec![], pair_graph: String::new() };
+        let (w, h) = (4u32, 2u32);
+        // links rot, rechts blau
+        let pair: Vec<u8> = (0..h)
+            .flat_map(|_| (0..w * 2).flat_map(|x| if x < w { [255, 0, 0, 255] } else { [0, 0, 255, 255] }))
+            .collect();
+        let r = shader_strip(&s, &pair, w, h, 4);
+        if cl_gpu::gpu().is_none() {
+            assert!(r.is_err());
+            return;
+        }
+        let r = r.unwrap();
+        assert_eq!(r.len(), (w * h * 4 * 4) as usize);
+        assert!(r[..(w * h * 4) as usize].chunks(4).all(|p| p == [255, 0, 0, 255]));
+        // Bild 2 von 4: halb gemischt
+        let mid = &r[(w * h * 4 * 2) as usize..][..4];
+        assert!(mid[0].abs_diff(128) <= 1 && mid[2].abs_diff(128) <= 1, "{mid:?}");
+        assert!(shader_strip(&s, &pair[..8], w, h, 4).is_err());
+    }
+}

@@ -20,6 +20,72 @@ struct Layer {
     t_rel: Time,
     /// Zusätzliche Deckkraft (Übergänge)
     alpha: f32,
+    /// Übergang vom vorigen Clip: (dessen ID, Fortschritt 0…1)
+    from: Option<(ClipId, f32)>,
+}
+
+/// Vorschau von Shader-Übergängen: letzte Bilder der beteiligten Clips (CPU), das gemischte Bild
+/// und ob es fürs Abspielen zu langsam war.
+#[derive(Default)]
+pub struct ShaderPreview {
+    cpu: std::collections::HashMap<ClipId, (u64, cl_media::RgbaFrame)>,
+    tex: Option<egui::TextureHandle>,
+    /// zuletzt gemischt: (Bild A, Bild B, Fortschritt)
+    last: Option<(u64, u64, u32)>,
+    /// gerade gezeigt statt A und B: (A, B)
+    current: Option<(ClipId, ClipId)>,
+    /// beim Abspielen länger als ein Bild-Intervall: bis zum Anhalten wieder Überblendung
+    slow: bool,
+    /// Anzahl zu langsamer Bilder (das erste je Shader enthält das Übersetzen der Pipeline)
+    slow_hits: u8,
+}
+
+/// Fortschritt eines Übergangs der Länge `d` um den Schnitt `cut` (wie im Export:
+/// Fenster `cut − d/2 … cut + d/2`), `None` außerhalb.
+pub(crate) fn transition_progress(ts: f64, cut: f64, d: f64) -> Option<f32> {
+    if d <= 0.0 || ts < cut - d / 2.0 || ts >= cut + d / 2.0 {
+        return None;
+    }
+    Some(((ts - (cut - d / 2.0)) / d).clamp(0.0, 1.0) as f32)
+}
+
+/// Shader-Vorschau möglich? Nur wenn beide Bilder ohne eigene Lage, Größe, Drehung und
+/// Deckkraft das ganze Bild füllen (Seitenverhältnis wie das Projekt).
+// shortcut: sonst Überblendung wie bisher; ausbauen, wenn verschobene/skalierte Clips in
+// Shader-Übergängen häufig sind (dann Ebenen erst auf Projektgröße zusammensetzen)
+pub(crate) fn shader_preview_fits(evs: [&Evaluated; 2], aspects: [f32; 2], project_aspect: f32) -> bool {
+    evs.iter().all(|e| {
+        e.x.abs() < 0.5 && e.y.abs() < 0.5 && (e.scale - 1.0).abs() < 1e-3 && e.rotation_deg.abs() < 1e-3 && e.opacity >= 0.999
+    }) && aspects.iter().all(|a| (a / project_aspect - 1.0).abs() < 0.01)
+}
+
+#[cfg(test)]
+mod shader_tests {
+    use super::*;
+
+    #[test]
+    fn progress_is_centered_on_the_cut() {
+        assert_eq!(transition_progress(0.69, 1.0, 0.6), None);
+        assert_eq!(transition_progress(0.7, 1.0, 0.6), Some(0.0));
+        assert!((transition_progress(1.0, 1.0, 0.6).unwrap() - 0.5).abs() < 1e-6);
+        assert_eq!(transition_progress(1.3, 1.0, 0.6), None);
+        assert_eq!(transition_progress(1.0, 1.0, 0.0), None);
+    }
+
+    #[test]
+    fn shader_preview_only_for_untransformed_full_frames() {
+        let id = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0 };
+        let r = 16.0 / 9.0;
+        assert!(shader_preview_fits([&id, &id], [r, r], r));
+        let moved = Evaluated { x: 20.0, ..id };
+        assert!(!shader_preview_fits([&id, &moved], [r, r], r));
+        let small = Evaluated { scale: 0.8, ..id };
+        assert!(!shader_preview_fits([&small, &id], [r, r], r));
+        let faded = Evaluated { opacity: 0.5, ..id };
+        assert!(!shader_preview_fits([&id, &faded], [r, r], r));
+        // Hochkant-Video im Querformat-Projekt füllt nicht
+        assert!(!shader_preview_fits([&id, &id], [r, 9.0 / 16.0], r));
+    }
 }
 
 impl App {
@@ -71,6 +137,13 @@ impl App {
         if matches!(self.pick, Some(crate::pro::Pick::Chroma(c)) if c == clip) {
             self.frame_cpu = Some((clip, f.clone()));
         }
+        if self.in_shader_transition(clip) {
+            let cpu = &mut self.shader_preview.cpu;
+            if cpu.len() >= 8 && !cpu.contains_key(&clip) {
+                cpu.clear();
+            }
+            cpu.insert(clip, (key, f.clone()));
+        }
         let img = to_color_image(f);
         match self.frames.get_mut(&clip) {
             Some((k, t)) if t.size() == [f.width as usize, f.height as usize] => {
@@ -87,6 +160,88 @@ impl App {
                     self.frames.retain(|id, _| tl.tracks.iter().any(|t| t.clips.iter().any(|c| c.id == *id)));
                 }
             }
+        }
+    }
+
+    /// Hat der Clip einen Shader-Übergang am Anfang oder Ende? (Nur dann CPU-Bilder behalten.)
+    fn in_shader_transition(&self, clip: ClipId) -> bool {
+        let shader = |c: &Clip| {
+            c.transition_out
+                .as_ref()
+                .is_some_and(|t| cl_fx::catalog::transition_plan(&t.id).shader.is_some())
+        };
+        self.project.timeline.tracks.iter().any(|tr| {
+            tr.clips.iter().enumerate().any(|(i, c)| {
+                c.id == clip && (shader(c) || i.checked_sub(1).and_then(|p| tr.clips.get(p)).is_some_and(shader))
+            })
+        })
+    }
+
+    /// Steht der Playhead in einem Shader-Übergang, A und B mit cl-gpu mischen (gleiche Funktion
+    /// wie der Export). Sonst, ohne GPU, zu langsam oder ohne passende Bilder: Überblendung.
+    fn shader_mix(&mut self, ctx: &egui::Context, layers: &[Layer]) {
+        self.shader_preview.current = None;
+        if !self.playing {
+            self.shader_preview.slow = false;
+            self.shader_preview.slow_hits = 0;
+        }
+        if self.shader_preview.slow {
+            return;
+        }
+        let s = &self.project.settings;
+        let (pw, ph) = (s.width.max(2) as f32, s.height.max(2) as f32);
+        for b in layers {
+            let Some((a_id, p)) = b.from else { continue };
+            let Some(a) = layers.iter().find(|l| l.clip.id == a_id && l.alpha >= 0.999) else {
+                continue;
+            };
+            let Some(tr) = &a.clip.transition_out else { continue };
+            let Some((file, params)) = cl_fx::catalog::transition_plan(&tr.id).shader else {
+                continue;
+            };
+            let aspect = |c: &Clip| match &c.content {
+                ClipContent::Media { media, kind: MediaKind::Video | MediaKind::Image } => {
+                    self.project.media(*media).map(|m| m.width.max(1) as f32 / m.height.max(1) as f32)
+                }
+                _ => None,
+            };
+            let (Some(ra), Some(rb)) = (aspect(&a.clip), aspect(&b.clip)) else { continue };
+            let (ea, eb) = (a.clip.eval_at(a.t_rel, pw, ph), b.clip.eval_at(b.t_rel, pw, ph));
+            if !shader_preview_fits([&ea, &eb], [ra, rb], pw / ph) {
+                continue;
+            }
+            let (Some((ka, fa)), Some((kb, fb))) = (self.shader_preview.cpu.get(&a_id), self.shader_preview.cpu.get(&b.clip.id)) else {
+                continue;
+            };
+            let id = (*ka, *kb, p.to_bits());
+            if self.shader_preview.last != Some(id) || self.shader_preview.tex.is_none() {
+                let Ok(src) = std::fs::read_to_string(&file) else { continue };
+                let t0 = std::time::Instant::now();
+                let img = cl_gpu::render(
+                    &src,
+                    &crate::preview::shader_params(&params),
+                    cl_gpu::Frame { rgba: &fa.data, width: fa.width, height: fa.height },
+                    cl_gpu::Frame { rgba: &fb.data, width: fb.width, height: fb.height },
+                    (fa.width, fa.height),
+                    p,
+                );
+                let Ok(img) = img else { continue };
+                let fps = self.project.settings.fps;
+                let interval = fps.den.max(1) as f64 / fps.num.max(1) as f64;
+                // Abspielen darf nicht ruckeln: zu langsam → bis zum Anhalten Überblendung
+                if self.playing && t0.elapsed().as_secs_f64() > interval {
+                    self.shader_preview.slow_hits += 1;
+                    self.shader_preview.slow = self.shader_preview.slow_hits >= 2;
+                }
+                let ci = egui::ColorImage::from_rgba_unmultiplied([fa.width as usize, fa.height as usize], &img);
+                match &mut self.shader_preview.tex {
+                    Some(t) => t.set(ci, egui::TextureOptions::LINEAR),
+                    None => self.shader_preview.tex = Some(ctx.load_texture("shader-mix", ci, egui::TextureOptions::LINEAR)),
+                }
+                self.shader_preview.last = Some(id);
+            }
+            self.shader_preview.current = Some((a_id, b.clip.id));
+            return;
         }
     }
 
@@ -129,16 +284,19 @@ impl App {
                     continue;
                 }
                 let mut alpha = 1.0;
+                let mut from = None;
                 if let Some(d) = tr_in {
                     // Einblenden über dem Vorgänger
-                    let p = ((ts - (s - d / 2.0)) / d).clamp(0.0, 1.0) as f32;
+                    let p = transition_progress(ts, s, d).unwrap_or(1.0);
                     alpha = p;
+                    from = prev.map(|pc| (pc.id, p));
                 }
                 let t_rel = Time::from_secs_f64((ts - s).clamp(0.0, (e - s - 1e-3).max(0.0)));
                 out.push(Layer {
                     clip: c.clone(),
                     t_rel,
                     alpha,
+                    from,
                 });
             }
         }
@@ -257,6 +415,7 @@ impl App {
                         clip: x.clone(),
                         t_rel: e.start - c.start,
                         alpha: l.alpha,
+                        from: None,
                     };
                     self.request_frame(ctx, did, &x, &m, &at, canvas_px, Some(e.start));
                 }
@@ -286,6 +445,7 @@ impl App {
                     clip: c.clone(),
                     t_rel: Time::ZERO,
                     alpha: 1.0,
+                    from: None,
                 };
                 self.request_frame(ctx, c.id, &c, &m, &at, canvas_px, Some(c.start));
             }
@@ -471,6 +631,7 @@ impl App {
         let ppp = ui.ctx().pixels_per_point();
         let layers = self.layers_at(self.playhead);
         self.update_layers(ui.ctx(), &layers, canvas_size * ppp);
+        self.shader_mix(ui.ctx(), &layers);
 
         let painter = ui.painter_at(area);
         painter.rect_filled(canvas, 0.0, Color32::BLACK);
@@ -575,12 +736,21 @@ impl App {
                 scale: ev.scale,
                 rotation_deg: ev.rotation_deg,
             };
-            let alpha = (ev.opacity * l.alpha).clamp(0.0, 1.0);
+            let mut alpha = (ev.opacity * l.alpha).clamp(0.0, 1.0);
             let center = canvas.center() + vec2(ev.x, ev.y) * scale;
             let angle = ev.rotation_deg.to_radians();
             match &c.content {
                 ClipContent::Media { .. } => {
-                    let Some((_, tex)) = self.frames.get(&c.id) else {
+                    // Shader-Übergang: das gemischte Bild statt A, B entfällt
+                    let mixed = match (self.shader_preview.current, &self.shader_preview.tex) {
+                        (Some((_, b)), _) if b == c.id => continue,
+                        (Some((a, _)), Some(t)) if a == c.id => Some(t),
+                        _ => None,
+                    };
+                    if mixed.is_some() {
+                        alpha = 1.0;
+                    }
+                    let Some(tex) = mixed.or_else(|| self.frames.get(&c.id).map(|f| &f.1)) else {
                         continue;
                     };
                     let ts = tex.size_vec2();

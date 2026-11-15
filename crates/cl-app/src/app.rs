@@ -286,6 +286,8 @@ pub struct App {
     pub pick: Option<crate::pro::Pick>,
     pub pick_origin: Option<egui::Pos2>,
     pub frame_cpu: Option<(ClipId, cl_media::RgbaFrame)>,
+    /// Vorschau von Shader-Übergängen (cl-gpu)
+    pub shader_preview: crate::player::ShaderPreview,
     pub caption_lang: String,
     pub caption_from_clip: bool,
     registered_fonts: HashSet<String>,
@@ -480,6 +482,7 @@ impl App {
             pick: None,
             pick_origin: None,
             frame_cpu: None,
+            shader_preview: Default::default(),
             caption_lang: "auto".into(),
             caption_from_clip: false,
             registered_fonts: HashSet::new(),
