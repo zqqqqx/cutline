@@ -531,6 +531,22 @@ pub const ANIMATIONS: &[(&str, &str)] = &[
     ("rise", "Aufsteigen"),
     ("drop", "Fallen"),
     ("swing", "Schwingen"),
+    ("bounce-in", "Hüpfen"),
+    ("elastic", "Elastisch"),
+    ("stamp", "Stempel"),
+    ("punch", "Schlag"),
+    ("snap-left", "Schnell von links"),
+    ("snap-right", "Schnell von rechts"),
+    ("snap-down", "Schnell von oben"),
+    ("snap-up", "Schnell von unten"),
+    ("unfold", "Aufklappen"),
+    ("roll-in", "Hereinrollen"),
+    ("whirl", "Wirbel"),
+    ("tilt-in", "Einkippen"),
+    ("wipe-fade", "Wischen"),
+    ("flicker", "Neon-Start"),
+    ("glitch-in", "Glitch"),
+    ("shake-in", "Rütteln"),
 ];
 
 /// Kombi-Animationen über die ganze Dauer (id, Name).
@@ -539,7 +555,27 @@ pub const COMBO_ANIMATIONS: &[(&str, &str)] = &[
     ("wobble", "Wackeln"),
     ("float", "Schweben"),
     ("spin-loop", "Rotieren"),
+    ("shake", "Zittern"),
+    ("pendulum", "Pendeln"),
+    ("heartbeat", "Herzschlag"),
+    ("breathe", "Atmen"),
+    ("bob", "Wippen"),
+    ("blink", "Blinken"),
+    ("rock", "Schaukeln"),
+    ("ken-burns", "Langsamer Zoom"),
+    ("glitch", "Glitch-Schleife"),
 ];
+
+/// Ausholen und Überschwingen (endet bei p = 1 exakt auf 1), `s` = Stärke
+fn back_out(p: f32, s: f32) -> f32 {
+    let x = p - 1.0;
+    1.0 + (s + 1.0) * x * x * x + s * x * x
+}
+
+/// Feste Pseudo-Zufallszahl −1…1 je Schritt (gleich in Vorschau und Export)
+fn jitter(i: u32) -> f32 {
+    ((i.wrapping_add(7).wrapping_mul(2_654_435_761) >> 16) & 0xffff) as f32 / 32767.5 - 1.0
+}
 
 pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
     let p = p.clamp(0.0, 1.0);
@@ -585,6 +621,89 @@ pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
             d.rot_add = 25.0 * q * (p * 12.0).cos();
             d.opacity_mul = p;
         }
+        "bounce-in" => {
+            // fällt von oben und springt zweimal nach
+            let r = 1.0 - p;
+            d.dy = -0.3 * r * r * (p * std::f32::consts::PI * 3.5).cos().abs();
+            d.opacity_mul = (p * 4.0).min(1.0);
+        }
+        "elastic" => {
+            let r = 1.0 - p;
+            d.scale_mul = (1.0 - r.powi(4) * (p * std::f32::consts::PI * 4.6).cos()).max(0.01);
+            d.opacity_mul = (p * 5.0).min(1.0);
+        }
+        "stamp" => {
+            // groß → kurz zu klein (Aufprall) → normal
+            d.scale_mul = if p < 0.5 {
+                2.2 - 1.28 * (p / 0.5).powi(2)
+            } else {
+                let u = (p - 0.5) / 0.5;
+                1.0 - 0.08 * (1.0 - u) * (u * std::f32::consts::PI * 1.5).cos()
+            };
+            d.rot_add = -6.0 * q;
+            d.opacity_mul = (p * 3.0).min(1.0);
+        }
+        "punch" => {
+            // über das Ziel hinaus, zurück, kurz nachfedern
+            let r = 1.0 - p;
+            d.scale_mul = (1.0 - 0.4 * r * r * (p * std::f32::consts::PI * 4.0).cos()).max(0.01);
+            d.opacity_mul = (p * 6.0).min(1.0);
+        }
+        "snap-left" | "snap-right" | "snap-up" | "snap-down" => {
+            let off = 1.2 * (1.0 - back_out(p, 1.3));
+            match id {
+                "snap-left" => d.dx = -off,
+                "snap-right" => d.dx = off,
+                "snap-up" => d.dy = off,
+                _ => d.dy = -off,
+            }
+        }
+        "unfold" => {
+            // weiche S-Kurve aus dem Nichts, ohne Überschwingen
+            let s = p * p * p * (p * (p * 6.0 - 15.0) + 10.0);
+            d.scale_mul = 0.02 + 0.98 * s;
+            d.opacity_mul = (p * 2.0).min(1.0);
+        }
+        "roll-in" => {
+            let c = 1.0 - (1.0 - p).powi(3);
+            d.dx = -0.5 * (1.0 - c);
+            d.rot_add = -360.0 * (1.0 - c);
+            d.opacity_mul = (p * 3.0).min(1.0);
+        }
+        "whirl" => {
+            d.rot_add = 540.0 * q;
+            d.scale_mul = 0.05 + 0.95 * e;
+            d.opacity_mul = p;
+        }
+        "tilt-in" => {
+            let r = 1.0 - back_out(p, 2.0);
+            d.rot_add = 30.0 * r;
+            d.dy = 0.05 * r;
+            d.opacity_mul = (p * 3.0).min(1.0);
+        }
+        "wipe-fade" => {
+            d.dx = -0.08 * q;
+            d.opacity_mul = e;
+        }
+        "flicker" => {
+            // Leuchtröhre springt an: feste Helligkeitsstufen
+            const STEPS: [f32; 10] = [0.0, 0.8, 0.1, 0.0, 1.0, 0.3, 1.0, 0.6, 1.0, 1.0];
+            d.opacity_mul = STEPS[((p * 10.0) as usize).min(9)];
+        }
+        "glitch-in" => {
+            let i = (p * 24.0) as u32;
+            d.dx = 0.06 * q * jitter(i);
+            d.dy = 0.02 * q * jitter(i + 101);
+            d.opacity_mul = if jitter(i + 57) > 0.5 && p < 0.9 {
+                0.3
+            } else {
+                (p * 3.0).min(1.0)
+            };
+        }
+        "shake-in" => {
+            d.dx = 0.05 * (1.0 - p) * (p * 60.0).sin();
+            d.opacity_mul = (p * 3.0).min(1.0);
+        }
         _ => {}
     }
     d
@@ -599,6 +718,53 @@ pub fn combo_delta(id: &str, t: f32, period: f32) -> AnimDelta {
         "wobble" => d.rot_add = 6.0 * w.sin(),
         "float" => d.dy = 0.02 * w.sin(),
         "spin-loop" => d.rot_add = 360.0 * (t / period.max(0.05)).fract(),
+        "shake" => {
+            d.dx = 0.006 * ((7.0 * w).sin() + 0.5 * (13.0 * w).sin());
+            d.dy = 0.006 * (11.0 * w).sin();
+        }
+        "pendulum" => {
+            d.rot_add = 15.0 * w.sin();
+            d.dy = -0.01 * (1.0 - (2.0 * w).cos()) / 2.0;
+        }
+        "heartbeat" => {
+            // zwei Schläge kurz hintereinander, dann Pause
+            let u = (t / period.max(0.05)).fract();
+            let bump = |a: f32, b: f32| {
+                if (a..b).contains(&u) {
+                    (std::f32::consts::PI * (u - a) / (b - a)).sin().powi(2)
+                } else {
+                    0.0
+                }
+            };
+            d.scale_mul = 1.0 + 0.12 * bump(0.0, 0.15) + 0.08 * bump(0.2, 0.35);
+        }
+        "breathe" => {
+            let k = (1.0 - w.cos()) / 2.0;
+            d.scale_mul = 1.0 + 0.04 * k;
+            d.opacity_mul = 1.0 - 0.15 * k;
+        }
+        "bob" => d.dy = -0.03 * (w / 2.0).sin().abs(),
+        "blink" => {
+            let u = (t / period.max(0.05)).fract();
+            if (0.3..0.65).contains(&u) {
+                d.opacity_mul = 0.1;
+            }
+        }
+        "rock" => {
+            d.rot_add = 5.0 * w.sin();
+            d.dx = 0.012 * w.sin();
+            d.dy = 0.008 * (2.0 * w).sin();
+        }
+        "ken-burns" => d.scale_mul = 1.0 + 0.08 * (1.0 - w.cos()) / 2.0,
+        "glitch" => {
+            // kurzer Ausreißer im Takt, sonst ruhig
+            let u = (t / period.max(0.05)).fract();
+            if (0.2..0.4).contains(&u) {
+                let i = (u * 40.0) as u32;
+                d.dx = 0.02 * jitter(i);
+                d.dy = 0.008 * jitter(i + 31);
+            }
+        }
         _ => {}
     }
     d
@@ -718,6 +884,60 @@ mod tests {
             assert!((d.scale_mul - 1.0).abs() < 1e-3, "{id}");
         }
         assert_eq!(anim_delta("fade", 0.0).opacity_mul, 0.0);
+    }
+
+    fn rest_dist(d: AnimDelta) -> f32 {
+        // Drehung um volle Umdrehungen ist Ruhezustand (Rotieren)
+        let rot = (d.rot_add + 180.0).rem_euclid(360.0) - 180.0;
+        d.dx.abs() + d.dy.abs() + (d.scale_mul - 1.0).abs() + rot.abs() / 90.0 + (d.opacity_mul - 1.0).abs()
+    }
+
+    fn sane(d: AnimDelta) -> bool {
+        [d.dx, d.dy, d.scale_mul, d.rot_add, d.opacity_mul].iter().all(|v| v.is_finite())
+            && d.dx.abs() <= 2.0
+            && d.dy.abs() <= 2.0
+            && d.scale_mul > 0.0
+            && d.scale_mul <= 4.0
+            && (0.0..=1.0).contains(&d.opacity_mul)
+    }
+
+    #[test]
+    fn intro_animations_are_distinct_bounded_and_end_without_jump() {
+        let ids: std::collections::HashSet<_> = ANIMATIONS.iter().map(|a| a.0).collect();
+        assert_eq!(ids.len(), ANIMATIONS.len(), "doppelte id");
+        for (id, _) in ANIMATIONS {
+            assert!(rest_dist(anim_delta(id, 0.3)) > 1e-3, "{id} tut nichts");
+            assert!(rest_dist(anim_delta(id, 1.0)) < 1e-4, "{id} endet nicht in Ruhe");
+            assert!(rest_dist(anim_delta(id, 0.995)) < 0.05, "{id} springt am Ende");
+            for i in 0..=200 {
+                let d = anim_delta(id, i as f32 / 200.0);
+                assert!(sane(d), "{id} bei {i}: {d:?}");
+            }
+        }
+        // bestehende Animationen behalten ihr Verhalten (gespeicherte Projekte)
+        assert!((anim_delta("pop", 0.35).scale_mul - 0.575).abs() < 1e-4);
+        assert!((anim_delta("slide-left", 0.5).dx + 0.25).abs() < 1e-6);
+        assert!((anim_delta("spin", 0.0).rot_add + 180.0).abs() < 1e-4);
+        assert_eq!(anim_delta("gibt-es-nicht", 0.3), AnimDelta::NONE);
+    }
+
+    #[test]
+    fn combo_animations_loop_seamlessly() {
+        let ids: std::collections::HashSet<_> = COMBO_ANIMATIONS.iter().map(|a| a.0).collect();
+        assert_eq!(ids.len(), COMBO_ANIMATIONS.len(), "doppelte id");
+        let period = 1.2;
+        for (id, _) in COMBO_ANIMATIONS {
+            assert!(rest_dist(combo_delta(id, 0.3 * period, period)) > 1e-3, "{id} tut nichts");
+            for t in [0.0, period, 3.0 * period] {
+                assert!(rest_dist(combo_delta(id, t, period)) < 1e-3, "{id} bei {t}");
+            }
+            assert!(rest_dist(combo_delta(id, period * 0.999, period)) < 0.05, "{id} Schleife springt");
+            for i in 0..=240 {
+                let d = combo_delta(id, i as f32 / 100.0, period);
+                assert!(sane(d), "{id} bei {i}: {d:?}");
+            }
+        }
+        assert!((combo_delta("pulse", 0.3, 1.2).scale_mul - 1.06).abs() < 1e-4);
     }
 
     #[test]

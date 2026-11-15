@@ -139,7 +139,173 @@ pub static PRESETS: &[CapPreset] = &[
             })
         },
     },
+    CapPreset {
+        id: "yellow-box",
+        name: "Gelb auf Schwarz",
+        tip: "Hoher Kontrast auf jedem Bild",
+        max_chars: 30,
+        max_dur: 3.5,
+        y: 0.30,
+        intro: None,
+        style: || {
+            st(|s| {
+                s.size = 50.0;
+                s.font_family = Some("Archivo Black".into());
+                s.color = [255, 221, 0, 255];
+                s.background = Some([0, 0, 0, 225]);
+                s.shadow = false;
+            })
+        },
+    },
+    CapPreset {
+        id: "pop",
+        name: "Pop",
+        tip: "Ein bis drei Wörter, springen ins Bild",
+        max_chars: 12,
+        max_dur: 1.2,
+        y: 0.10,
+        intro: Some("elastic"),
+        style: || {
+            st(|s| {
+                s.size = 96.0;
+                s.font_family = Some("Titan One".into());
+                s.color = [255, 255, 255, 255];
+                s.outline = Some((8.0, [0, 0, 0, 255]));
+                s.shadow = true;
+            })
+        },
+    },
+    CapPreset {
+        id: "light-box",
+        name: "Helle Box",
+        tip: "Dunkle Schrift auf weißer Fläche",
+        max_chars: 32,
+        max_dur: 3.5,
+        y: 0.28,
+        intro: Some("wipe-fade"),
+        style: || {
+            st(|s| {
+                s.size = 48.0;
+                s.font_family = Some("Varela Round".into());
+                s.color = [20, 20, 24, 255];
+                s.background = Some([255, 255, 255, 240]);
+                s.shadow = false;
+            })
+        },
+    },
+    CapPreset {
+        id: "neon",
+        name: "Neon",
+        tip: "Leuchtfarbe mit dunkler Kontur",
+        max_chars: 20,
+        max_dur: 2.5,
+        y: 0.18,
+        intro: Some("flicker"),
+        style: || {
+            st(|s| {
+                s.size = 70.0;
+                s.font_family = Some("Righteous".into());
+                s.color = [90, 255, 240, 255];
+                s.outline = Some((5.0, [0, 40, 70, 255]));
+                s.shadow = true;
+            })
+        },
+    },
+    CapPreset {
+        id: "typewriter",
+        name: "Schreibmaschine",
+        tip: "Festbreitenschrift auf dunkler Fläche",
+        max_chars: 32,
+        max_dur: 3.5,
+        y: 0.32,
+        intro: Some("fade"),
+        style: || {
+            st(|s| {
+                s.size = 42.0;
+                s.font_family = Some("Space Mono".into());
+                s.color = [255, 255, 255, 255];
+                s.background = Some([0, 0, 0, 200]);
+                s.shadow = false;
+            })
+        },
+    },
+    CapPreset {
+        id: "docu",
+        name: "Doku",
+        tip: "Klein und zurückhaltend",
+        max_chars: 48,
+        max_dur: 5.0,
+        y: 0.42,
+        intro: None,
+        style: || {
+            st(|s| {
+                s.size = 36.0;
+                s.font_family = Some("Varela Round".into());
+                s.color = [255, 255, 255, 255];
+                s.outline = Some((2.0, [0, 0, 0, 200]));
+                s.shadow = true;
+            })
+        },
+    },
+    CapPreset {
+        id: "podcast",
+        name: "Podcast",
+        tip: "Zwei ruhige Zeilen",
+        max_chars: 64,
+        max_dur: 6.0,
+        y: 0.33,
+        intro: Some("fade"),
+        style: || {
+            st(|s| {
+                s.size = 44.0;
+                s.font_family = Some("Varela Round".into());
+                s.color = [255, 255, 255, 255];
+                s.background = Some([12, 12, 16, 170]);
+                s.shadow = false;
+                s.line_spacing = 1.15;
+            })
+        },
+    },
+    CapPreset {
+        id: "gaming",
+        name: "Gaming",
+        tip: "Kantig und grell",
+        max_chars: 18,
+        max_dur: 2.0,
+        y: 0.15,
+        intro: Some("glitch-in"),
+        style: || {
+            st(|s| {
+                s.size = 72.0;
+                s.font_family = Some("Russo One".into());
+                s.uppercase = true;
+                s.color = [90, 255, 130, 255];
+                s.outline = Some((6.0, [0, 0, 0, 255]));
+                s.shadow = true;
+            })
+        },
+    },
 ];
+
+/// Längere Zeilen auf zwei möglichst gleich lange Zeilen verteilen (Stil „Podcast“)
+fn two_lines(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let flat = words.join(" ");
+    if words.len() < 2 || flat.chars().count() < 24 {
+        return flat;
+    }
+    let half = flat.chars().count() as f32 / 2.0;
+    let mut best = (f32::MAX, 1);
+    let mut len = 0;
+    for (i, w) in words.iter().enumerate().take(words.len() - 1) {
+        len += w.chars().count() + usize::from(i > 0);
+        let d = (len as f32 - half).abs();
+        if d < best.0 {
+            best = (d, i + 1);
+        }
+    }
+    format!("{}\n{}", words[..best.1].join(" "), words[best.1..].join(" "))
+}
 
 pub fn preset(id: &str) -> &'static CapPreset {
     PRESETS.iter().find(|p| p.id == id).unwrap_or(&PRESETS[0])
@@ -205,9 +371,10 @@ impl App {
     /// Untertitel-Clip im gewählten Stil
     pub fn caption_clip(&self, text: &str, start: Time, dur: Time) -> Clip {
         let p = self.caption_preset();
+        let text = if p.id == "podcast" { two_lines(text) } else { text.to_string() };
         let mut c = Clip::new(
             ClipContent::Text(TextStyle {
-                text: text.to_string(),
+                text,
                 ..(p.style)()
             }),
             start,
@@ -548,5 +715,26 @@ mod tests {
             assert!((p.style)().size > 10.0);
         }
         assert_eq!(preset("gibt-es-nicht").id, "classic");
+        let ids: std::collections::HashSet<_> = PRESETS.iter().map(|p| p.id).collect();
+        assert_eq!(ids.len(), PRESETS.len());
+        for (i, id) in ["classic", "box", "punchy", "word", "soft", "cinema"].iter().enumerate() {
+            assert_eq!(PRESETS[i].id, *id, "vorhandene Stile bleiben");
+        }
+        // lesbar auf hellem und dunklem Bild: Kontur oder Fläche
+        for p in PRESETS {
+            let s = (p.style)();
+            assert!(s.outline.is_some() || s.background.is_some() || p.id == "cinema", "{}", p.id);
+        }
+    }
+
+    #[test]
+    fn podcast_splits_into_two_balanced_lines() {
+        assert_eq!(two_lines("kurz"), "kurz");
+        assert_eq!(two_lines("  zwei   Wörter "), "zwei Wörter");
+        let t = two_lines("Heute reden wir über\nSchnitt und Ton in langen Videos");
+        let lines: Vec<&str> = t.lines().collect();
+        assert_eq!(lines.len(), 2, "{t}");
+        assert!(lines[0].len().abs_diff(lines[1].len()) <= 8, "{t}");
+        assert_eq!(t.replace('\n', " "), "Heute reden wir über Schnitt und Ton in langen Videos");
     }
 }

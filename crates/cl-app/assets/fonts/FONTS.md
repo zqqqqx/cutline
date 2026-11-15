@@ -16,5 +16,13 @@ frei verwendet, eingebettet und weitergegeben werden.
 | Poppins-ExtraBold.ttf | SIL OFL 1.1 | Copyright 2020 The Poppins Project Authors |
 | TitanOne-Regular.ttf | SIL OFL 1.1 | Copyright (c) 2011, Rodrigo Fuenzalida |
 | LuckiestGuy-Regular.ttf | Apache 2.0 | Astigmatic (AOETI) |
+| ArchivoBlack-Regular.ttf | SIL OFL 1.1 | Copyright 2017 The Archivo Black Project Authors |
+| DMSerifDisplay-Regular.ttf | SIL OFL 1.1 | Copyright 2014-2018 Adobe, with Reserved Font Name 'Source'; Copyright 2019 Google LLC |
+| FjallaOne-Regular.ttf | SIL OFL 1.1 | Copyright 2012 The Fjalla One Project Authors |
+| Pacifico-Regular.ttf | SIL OFL 1.1 | Copyright 2018 The Pacifico Project Authors |
+| Righteous-Regular.ttf | SIL OFL 1.1 | Copyright (c) 2011 by Brian J. Bonislawsky DBA Astigmatic (AOETI), Reserved Font Name "Righteous" |
+| SpaceMono-Regular.ttf | SIL OFL 1.1 | Copyright 2016 The Space Mono Project Authors |
+| VarelaRound-Regular.ttf | SIL OFL 1.1 | Copyright 2023 The Varela Round Project Authors, Reserved Font Names 'Varela' and 'Varela Round' |
+| PermanentMarker-Regular.ttf | Apache 2.0 | Copyright (c) 2010 by Font Diner, Inc. |
 
 Lizenztexte: `OFL-1.1.txt` und `LICENSE-Apache-2.0.txt`.
