@@ -151,7 +151,7 @@ impl Default for AppSettings {
             backup_keep: 30,
             new_fps: cl_core::Rational::new(30, 1),
             new_channels: Default::default(),
-            proxy_h: 720,
+            proxy_h: 540,
             lib_downloads: true,
             caption_preset: "classic".into(),
             export_sound: true,
@@ -1114,7 +1114,10 @@ mod tests {
         assert_eq!((s.transition_duration, s.anim_duration), (0.1, 0.1));
         assert_eq!((s.backup_minutes, s.backup_keep), (1, 500));
         assert_eq!(s.new_fps, cl_core::Rational::new(30, 1), "Bildrate mit Nenner 0");
-        assert_eq!(s.proxy_h, 720);
+        assert_eq!(s.proxy_h, 540);
+        // gespeicherte Wahl bleibt, neue Einstellungen starten mit 540p
+        let kept: AppSettings = serde_json::from_str(r#"{"proxy_h":720}"#).unwrap();
+        assert_eq!((kept.proxy_h, AppSettings::default().proxy_h), (720, 540));
         for bad in [r#"{"num":0,"den":1}"#, r#"{"num":100000,"den":1}"#, "0", "100000"] {
             let mut s: AppSettings = serde_json::from_str(&format!(r#"{{"new_rate":{bad}}}"#)).unwrap();
             s.sanitize();
