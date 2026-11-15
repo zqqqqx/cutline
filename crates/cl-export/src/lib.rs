@@ -3877,4 +3877,46 @@ mod tests {
         let w: Vec<String> = take_audio_warnings().into_iter().filter(|w| w.contains("kaputt_c2.wav")).collect();
         assert_eq!(w.len(), 1, "{w:?}");
     }
+
+    /// Shader-Übergang, durch den eine Abschnittsgrenze läuft (Grenze bei 1,5 s, Fenster
+    /// 1,2–1,8 s): beide Abschnitte rechnen ihren Vorlauf, das Ergebnis ist bildgleich mit dem
+    /// Durchgang (ohne GPU: der Rückfall, ebenso gleich).
+    #[test]
+    fn shader_transition_across_section_boundary() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        shader_pack();
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = shader_project(dir.path(), "t.shader/wipe", false);
+        // zweite Spur mit kurzen Clips: zwingt Abschnittsgrenzen alle 0,5 s
+        let c = color_video(dir.path(), "c.mp4", "green", 1.0, "320x180");
+        let mut t = Track::new(TrackKind::Video);
+        for i in 0..6 {
+            let mut k = Clip::new(ClipContent::Media { media: c.id, kind: MediaKind::Video }, Time::from_secs_f64(0.5 * i as f64), Time::from_secs_f64(0.5));
+            k.transform.scale = 0.2;
+            k.transform.x = -100.0;
+            t.clips.push(k);
+        }
+        p.media.push(c);
+        p.timeline.tracks.push(t);
+        let mut s = ExportSettings::from_project(&p);
+        (s.format, s.codec) = (Format::Mov, Codec::ProRes);
+        let (one, cut) = (dir.path().join("eins.mov"), dir.path().join("teile.mov"));
+        let job = build(&p, &s, &no_fonts, &one).unwrap();
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let job = build_limited(&p, &s, &no_fonts, &cut, 3).unwrap();
+        let bounds: Vec<f64> = job.sections.iter().map(|x| x.from.as_secs_f64()).collect();
+        assert!(bounds.iter().any(|b| *b > 1.2 && *b < 1.8), "Grenze im Übergang: {bounds:?}");
+        assert!(job.sections.iter().filter(|x| !x.passes.is_empty()).count() >= 2, "Vorlauf in beiden Abschnitten");
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        for n in 0..90 {
+            let d = mean_diff(&frame_n(&one, n).data, &frame_n(&cut, n).data);
+            assert!(d < 0.05, "Bild {n}: Abweichung {d}");
+        }
+        if cl_gpu::gpu().is_some() {
+            let used = job.sections.iter().filter(|x| std::fs::read_to_string(job.workdir.path().join(&x.graph)).unwrap().contains("movie=shader_")).count();
+            assert!(used >= 2, "Shader statt Rückfall in beiden Abschnitten: {used}");
+        }
+    }
 }
