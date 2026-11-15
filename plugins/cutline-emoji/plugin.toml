@@ -1113,3 +1113,531 @@ name = { de = "Sektkorken", en = "Popping cork" }
 category = ["Tiere & Essen"]
 file = "svg/bottle-with-popping-cork.svg"
 tags = ["emoji", "popping cork"]
+
+[[asset]]
+id = "face-with-tears-of-joy-bewegt"
+kind = "sticker"
+name = { de = "Lachen mit Tränen (bewegt)", en = "Tears of joy (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/face-with-tears-of-joy.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "tears of joy"]
+
+[[asset]]
+id = "rolling-on-the-floor-laughing-bewegt"
+kind = "sticker"
+name = { de = "Vor Lachen am Boden (bewegt)", en = "Rolling on the floor (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/rolling-on-the-floor-laughing.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "rolling on the floor"]
+
+[[asset]]
+id = "smiling-face-with-heart-eyes-bewegt"
+kind = "sticker"
+name = { de = "Herzaugen (bewegt)", en = "Heart eyes (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/smiling-face-with-heart-eyes.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "heart eyes"]
+
+[[asset]]
+id = "star-struck-bewegt"
+kind = "sticker"
+name = { de = "Begeistert (bewegt)", en = "Star-struck (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/star-struck.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "star-struck"]
+
+[[asset]]
+id = "partying-face-bewegt"
+kind = "sticker"
+name = { de = "Party-Gesicht (bewegt)", en = "Partying face (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/partying-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "partying face"]
+
+[[asset]]
+id = "smiling-face-with-sunglasses-bewegt"
+kind = "sticker"
+name = { de = "Cool (bewegt)", en = "Cool (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/smiling-face-with-sunglasses.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "cool"]
+
+[[asset]]
+id = "loudly-crying-face-bewegt"
+kind = "sticker"
+name = { de = "Heulen (bewegt)", en = "Sobbing (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/loudly-crying-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "sobbing"]
+
+[[asset]]
+id = "crying-face-bewegt"
+kind = "sticker"
+name = { de = "Weinen (bewegt)", en = "Crying (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/crying-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "crying"]
+
+[[asset]]
+id = "exploding-head-bewegt"
+kind = "sticker"
+name = { de = "Explodierender Kopf (bewegt)", en = "Exploding head (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/exploding-head.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "exploding head"]
+
+[[asset]]
+id = "thinking-face-bewegt"
+kind = "sticker"
+name = { de = "Nachdenken (bewegt)", en = "Thinking (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/thinking-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "thinking"]
+
+[[asset]]
+id = "pleading-face-bewegt"
+kind = "sticker"
+name = { de = "Bettelblick (bewegt)", en = "Pleading (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/pleading-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "pleading"]
+
+[[asset]]
+id = "face-screaming-in-fear-bewegt"
+kind = "sticker"
+name = { de = "Schreien vor Angst (bewegt)", en = "Screaming in fear (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/face-screaming-in-fear.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "screaming in fear"]
+
+[[asset]]
+id = "angry-face-bewegt"
+kind = "sticker"
+name = { de = "Wütend (bewegt)", en = "Angry (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/angry-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "angry"]
+
+[[asset]]
+id = "skull-bewegt"
+kind = "sticker"
+name = { de = "Totenkopf (bewegt)", en = "Skull (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/skull.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "skull"]
+
+[[asset]]
+id = "ghost-bewegt"
+kind = "sticker"
+name = { de = "Geist (bewegt)", en = "Ghost (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/ghost.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "ghost"]
+
+[[asset]]
+id = "melting-face-bewegt"
+kind = "sticker"
+name = { de = "Schmelzen (bewegt)", en = "Melting (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/melting-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "melting"]
+
+[[asset]]
+id = "winking-face-bewegt"
+kind = "sticker"
+name = { de = "Zwinkern (bewegt)", en = "Wink (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/winking-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "wink"]
+
+[[asset]]
+id = "face-with-rolling-eyes-bewegt"
+kind = "sticker"
+name = { de = "Augenrollen (bewegt)", en = "Eye roll (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/face-with-rolling-eyes.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "eye roll"]
+
+[[asset]]
+id = "zany-face-bewegt"
+kind = "sticker"
+name = { de = "Verrückt (bewegt)", en = "Zany (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/zany-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "zany"]
+
+[[asset]]
+id = "smirking-face-bewegt"
+kind = "sticker"
+name = { de = "Grinsen frech (bewegt)", en = "Smirk (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/smirking-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "smirk"]
+
+[[asset]]
+id = "yawning-face-bewegt"
+kind = "sticker"
+name = { de = "Gähnen (bewegt)", en = "Yawn (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/yawning-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "yawn"]
+
+[[asset]]
+id = "nerd-face-bewegt"
+kind = "sticker"
+name = { de = "Nerd (bewegt)", en = "Nerd (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/nerd-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "nerd"]
+
+[[asset]]
+id = "money-mouth-face-bewegt"
+kind = "sticker"
+name = { de = "Geldgesicht (bewegt)", en = "Money face (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/money-mouth-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "money face"]
+
+[[asset]]
+id = "hugging-face-bewegt"
+kind = "sticker"
+name = { de = "Umarmung (bewegt)", en = "Hug (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/hugging-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "hug"]
+
+[[asset]]
+id = "shushing-face-bewegt"
+kind = "sticker"
+name = { de = "Psst (bewegt)", en = "Shushing (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/shushing-face.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "shushing"]
+
+[[asset]]
+id = "smiling-face-with-tear-bewegt"
+kind = "sticker"
+name = { de = "Gerührt (bewegt)", en = "Touched (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/smiling-face-with-tear.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "touched"]
+
+[[asset]]
+id = "thumbs-up-bewegt"
+kind = "sticker"
+name = { de = "Daumen hoch (bewegt)", en = "Thumbs up (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/thumbs-up.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "thumbs up"]
+
+[[asset]]
+id = "thumbs-down-bewegt"
+kind = "sticker"
+name = { de = "Daumen runter (bewegt)", en = "Thumbs down (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/thumbs-down.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "thumbs down"]
+
+[[asset]]
+id = "clapping-hands-bewegt"
+kind = "sticker"
+name = { de = "Klatschen (bewegt)", en = "Clapping (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/clapping-hands.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "clapping"]
+
+[[asset]]
+id = "folded-hands-bewegt"
+kind = "sticker"
+name = { de = "Bitte danke (bewegt)", en = "Folded hands (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/folded-hands.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "folded hands"]
+
+[[asset]]
+id = "raised-fist-bewegt"
+kind = "sticker"
+name = { de = "Faust (bewegt)", en = "Raised fist (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/raised-fist.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "raised fist"]
+
+[[asset]]
+id = "flexed-biceps-bewegt"
+kind = "sticker"
+name = { de = "Bizeps (bewegt)", en = "Flexed biceps (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/flexed-biceps.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "flexed biceps"]
+
+[[asset]]
+id = "waving-hand-bewegt"
+kind = "sticker"
+name = { de = "Winken (bewegt)", en = "Waving (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/waving-hand.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "waving"]
+
+[[asset]]
+id = "victory-hand-bewegt"
+kind = "sticker"
+name = { de = "Victory (bewegt)", en = "Victory (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/victory-hand.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "victory"]
+
+[[asset]]
+id = "raising-hands-bewegt"
+kind = "sticker"
+name = { de = "Hände hoch (bewegt)", en = "Raising hands (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/raising-hands.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "raising hands"]
+
+[[asset]]
+id = "handshake-bewegt"
+kind = "sticker"
+name = { de = "Handschlag (bewegt)", en = "Handshake (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/handshake.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "handshake"]
+
+[[asset]]
+id = "heart-hands-bewegt"
+kind = "sticker"
+name = { de = "Herz-Hände (bewegt)", en = "Heart hands (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/heart-hands.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "heart hands"]
+
+[[asset]]
+id = "fire-bewegt"
+kind = "sticker"
+name = { de = "Feuer (bewegt)", en = "Fire (animated)" }
+category = ["Symbole"]
+file = "bewegt/fire.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "fire"]
+
+[[asset]]
+id = "hundred-points-bewegt"
+kind = "sticker"
+name = { de = "100 Punkte (bewegt)", en = "100 points (animated)" }
+category = ["Symbole"]
+file = "bewegt/hundred-points.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "100 points"]
+
+[[asset]]
+id = "red-heart-bewegt"
+kind = "sticker"
+name = { de = "Rotes Herz (bewegt)", en = "Red heart (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/red-heart.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "red heart"]
+
+[[asset]]
+id = "broken-heart-bewegt"
+kind = "sticker"
+name = { de = "Gebrochenes Herz (bewegt)", en = "Broken heart (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/broken-heart.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "broken heart"]
+
+[[asset]]
+id = "party-popper-bewegt"
+kind = "sticker"
+name = { de = "Konfetti-Kanone (bewegt)", en = "Party popper (animated)" }
+category = ["Symbole"]
+file = "bewegt/party-popper.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "party popper"]
+
+[[asset]]
+id = "rocket-bewegt"
+kind = "sticker"
+name = { de = "Rakete (bewegt)", en = "Rocket (animated)" }
+category = ["Symbole"]
+file = "bewegt/rocket.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "rocket"]
+
+[[asset]]
+id = "eyes-bewegt"
+kind = "sticker"
+name = { de = "Augen (bewegt)", en = "Eyes (animated)" }
+category = ["Reaktionen"]
+file = "bewegt/eyes.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "eyes"]
+
+[[asset]]
+id = "high-voltage-bewegt"
+kind = "sticker"
+name = { de = "Blitz (bewegt)", en = "High voltage (animated)" }
+category = ["Symbole"]
+file = "bewegt/high-voltage.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "high voltage"]
+
+[[asset]]
+id = "glowing-star-bewegt"
+kind = "sticker"
+name = { de = "Leuchtender Stern (bewegt)", en = "Glowing star (animated)" }
+category = ["Symbole"]
+file = "bewegt/glowing-star.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "glowing star"]
+
+[[asset]]
+id = "alarm-clock-bewegt"
+kind = "sticker"
+name = { de = "Wecker (bewegt)", en = "Alarm clock (animated)" }
+category = ["Symbole"]
+file = "bewegt/alarm-clock.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "alarm clock"]
+
+[[asset]]
+id = "bottle-with-popping-cork-bewegt"
+kind = "sticker"
+name = { de = "Sektkorken (bewegt)", en = "Popping cork (animated)" }
+category = ["Symbole"]
+file = "bewegt/bottle-with-popping-cork.png"
+license = "MIT"
+author = "Microsoft Corporation"
+source = "https://github.com/microsoft/fluentui-emoji-animated"
+tags = ["bewegt", "emoji", "popping cork"]

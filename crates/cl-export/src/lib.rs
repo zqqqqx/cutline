@@ -2377,4 +2377,80 @@ mod tests {
         assert_eq!(to_vtt(&p), "WEBVTT\n\n1\n00:00:01.500 --> 00:00:03.500\nHallo\n");
         assert!(subtitles_for(&p, Path::new("a.VTT")).starts_with("WEBVTT"));
     }
+    /// Bewegtes Bild (1 s, Streifen läuft nach rechts) als 4-s-Bild-Clip über blauem Video:
+    /// einmalig → steht bei 3,5 s auf dem letzten Bild; Schleife → läuft weiter. Transparenz
+    /// bleibt (daneben Hintergrund). Früher brach der Export mit „Option loop not found“ ab.
+    #[test]
+    fn animated_image_clips_hold_or_loop() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let ff = |args: &[&str]| {
+            let st = cl_media::ffmpeg_command()
+                .unwrap()
+                .args(["-v", "error", "-y"])
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(st.success(), "{args:?}");
+        };
+        let p = |n: &str| dir.path().join(n).to_string_lossy().into_owned();
+        ff(&["-f", "lavfi", "-i", "color=blue:size=320x320:rate=30:duration=4", "-pix_fmt", "yuv420p", &p("bg.mp4")]);
+        let band = "color=red:size=64x64:rate=10:duration=1,format=rgba,geq=r=255:g=0:b=0:a='if(between(X-T*48,0,15),255,0)'";
+        ff(&["-f", "lavfi", "-i", band, "-plays", "0", "-f", "apng", &p("loop.png")]);
+        ff(&["-f", "lavfi", "-i", band, "-plays", "1", "-f", "apng", &p("once.png")]);
+        let pal = "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse=alpha_threshold=128";
+        ff(&["-f", "lavfi", "-i", band, "-vf", pal, "-loop", "-1", &p("once.gif")]);
+        // Spalte (0..64) mit rotem Element bzw. blauem Hintergrund?
+        let col = |f: &cl_media::RgbaFrame, x: u32| {
+            let i = ((32 * f.width + x) * 4) as usize;
+            let px = &f.data[i..i + 3];
+            if px[0] > 180 && px[2] < 90 {
+                'r'
+            } else if px[2] > 180 && px[0] < 90 {
+                'b'
+            } else {
+                '?'
+            }
+        };
+        for (file, looping) in [("once.png", false), ("once.gif", false), ("loop.png", true)] {
+            let bg = cl_media::probe(Path::new(&p("bg.mp4"))).unwrap();
+            let el = cl_media::probe(Path::new(&p(file))).unwrap();
+            assert_eq!(el.kind, MediaKind::Image, "{file}");
+            let mut pr = Project::new("Bewegtes Bild");
+            pr.settings.width = 320;
+            pr.settings.height = 320;
+            let mut v = Track::new(TrackKind::Video);
+            v.clips.push(Clip::new(
+                ClipContent::Media { media: bg.id, kind: MediaKind::Video },
+                Time::ZERO,
+                Time::from_secs_f64(4.0),
+            ));
+            let mut o = Track::new(TrackKind::Video);
+            o.clips.push(Clip::new(
+                ClipContent::Media { media: el.id, kind: MediaKind::Image },
+                Time::ZERO,
+                Time::from_secs_f64(4.0),
+            ));
+            pr.media = vec![bg, el];
+            pr.timeline.tracks = vec![v, o];
+            let out = dir.path().join(format!("{file}.mp4"));
+            let s = ExportSettings::from_project(&pr);
+            run(&build(&pr, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {})
+                .unwrap_or_else(|e| panic!("{file}: {e}"));
+            assert!((cl_media::probe(&out).unwrap().duration.as_secs_f64() - 4.0).abs() < 0.15);
+            let at = |t: f64| cl_media::decode_frame(&out, Time::from_secs_f64(t), 64, 64).unwrap();
+            let (f30, f35) = (at(3.0), at(3.5));
+            if looping {
+                // 3,0 s = Anfang der dritten Runde (Streifen links), 3,5 s = Mitte
+                assert_eq!((col(&f30, 8), col(&f35, 8), col(&f35, 32), col(&f35, 55)), ('r', 'b', 'r', 'b'), "{file}");
+            } else {
+                // letztes Bild (Streifen bei 43..58) steht, links Hintergrund
+                for f in [&f30, &f35] {
+                    assert_eq!((col(f, 8), col(f, 32), col(f, 50)), ('b', 'b', 'r'), "{file}");
+                }
+            }
+        }
+    }
 }

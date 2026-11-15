@@ -169,9 +169,9 @@ impl AssetEntry {
 
 /// Erlaubte Endungen für Paket-Sounds (wie die eigene Bibliothek).
 pub const SOUND_EXT: &[&str] = &["wav", "mp3", "ogg", "flac", "m4a", "aac", "opus"];
-/// Erlaubte Endungen für Paket-Sticker. GIF/APNG fehlen bewusst: Sticker werden als Bild-Clip
-/// eingefügt, und der Export liest Bild-Clips mit `-loop 1`, das der GIF-/APNG-Leser ablehnt.
-pub const STICKER_EXT: &[&str] = &["png", "webp", "svg", "jpg", "jpeg"];
+/// Erlaubte Endungen für Paket-Sticker. Bewegte Sticker: GIF oder APNG mit Endung `.png`
+/// (erkannt am Inhalt, siehe `cl_media::animation`).
+pub const STICKER_EXT: &[&str] = &["png", "webp", "svg", "jpg", "jpeg", "gif"];
 
 /// Relativer Pfad ohne `..`, Wurzel oder Laufwerk (bleibt im Plugin-Ordner).
 pub fn relative_inside(f: &str) -> bool {
@@ -786,8 +786,11 @@ license = "CC-BY-4.0"
         // Sticker brauchen eine Datei
         let t = PACK.replace("kind = \"sound\"", "kind = \"sticker\"").replace("file = \"ding.wav\"", "");
         assert!(Manifest::parse(&t, Path::new("x")).unwrap().validate(None).is_err());
-        let t = PACK.replace("kind = \"sound\"", "kind = \"sticker\"").replace("ding.wav", "a.svg");
-        Manifest::parse(&t, Path::new("x")).unwrap().validate(None).unwrap();
+        for (f, ok) in [("a.svg", true), ("a.gif", true), ("a.png", true), ("a.wav", false)] {
+            let t = PACK.replace("kind = \"sound\"", "kind = \"sticker\"").replace("ding.wav", f);
+            let r = Manifest::parse(&t, Path::new("x")).unwrap().validate(None);
+            assert_eq!(r.is_ok(), ok, "{f}: {r:?}");
+        }
     }
 
     fn zip_with(path: &Path, files: &[(&str, &[u8])]) {

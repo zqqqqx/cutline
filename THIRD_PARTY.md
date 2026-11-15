@@ -11,11 +11,21 @@
 - Lizenz: CC0-1.0
 - Autor: Cutline-Projekt
 
+## Bewegte Elemente (cutline.elemente)
+
+- Lizenz: CC0-1.0
+- Autor: Cutline-Projekt
+- Quelle: https://github.com/zqqqqx/cutline
+
 ## Emoji (cutline.emoji)
 
 - Lizenz: MIT
 - Autor: Microsoft Corporation
 - Quelle: https://github.com/microsoft/fluentui-emoji
+
+Abweichende Angaben:
+
+- Lachen mit Tränen (bewegt), Vor Lachen am Boden (bewegt), Herzaugen (bewegt), Begeistert (bewegt), Party-Gesicht (bewegt), Cool (bewegt), Heulen (bewegt), Weinen (bewegt), Explodierender Kopf (bewegt), Nachdenken (bewegt), Bettelblick (bewegt), Schreien vor Angst (bewegt), Wütend (bewegt), Totenkopf (bewegt), Geist (bewegt), Schmelzen (bewegt), Zwinkern (bewegt), Augenrollen (bewegt), Verrückt (bewegt), Grinsen frech (bewegt), Gähnen (bewegt), Nerd (bewegt), Geldgesicht (bewegt), Umarmung (bewegt), Psst (bewegt), Gerührt (bewegt), Daumen hoch (bewegt), Daumen runter (bewegt), Klatschen (bewegt), Bitte danke (bewegt), Faust (bewegt), Bizeps (bewegt), Winken (bewegt), Victory (bewegt), Hände hoch (bewegt), Handschlag (bewegt), Herz-Hände (bewegt), Feuer (bewegt), 100 Punkte (bewegt), Rotes Herz (bewegt), Gebrochenes Herz (bewegt), Konfetti-Kanone (bewegt), Rakete (bewegt), Augen (bewegt), Blitz (bewegt), Leuchtender Stern (bewegt), Wecker (bewegt), Sektkorken (bewegt): Lizenz MIT · Autor Microsoft Corporation · Quelle https://github.com/microsoft/fluentui-emoji-animated
 
 ## Sounds für Creator (cutline.sounds)
 

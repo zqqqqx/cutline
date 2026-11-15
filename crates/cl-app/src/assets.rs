@@ -1442,7 +1442,12 @@ impl App {
         use crate::library::{Item, Kind};
         Self::tab_title(ui, "Elemente", |_| {});
         let entries = cl_fx::catalog::list(cl_fx::catalog::Kind::Sticker);
-        let cats = tab_cats(&cl_fx::stickers::STICKER_CATEGORIES, &entries);
+        // eingebaute Ordner ohne Inhalt (z. B. ohne Emoji-Paket) nicht zeigen
+        let filled: Vec<&str> = cl_fx::stickers::STICKER_CATEGORIES
+            .into_iter()
+            .filter(|c| entries.iter().any(|e| e.category() == *c))
+            .collect();
+        let cats = tab_cats(&filled, &entries);
         let cats: Vec<&str> = cats.iter().map(String::as_str).collect();
         let (cat, q) = self.asset_bar(ui, "sticker", &cats);
         let builtin: Vec<Item> = entries
@@ -1478,8 +1483,8 @@ impl App {
                     theme::empty_state(
                         ui,
                         icon::STICKER,
-                        "Keine Sticker gefunden",
-                        "Eigene Bilder per Knopf oder Ablegen hinzufügen",
+                        "Keine Elemente gefunden",
+                        "",
                     );
                 }
                 widgets::grid(ui, &items, 70.0, 1.0, 16.0, |ui, r, it| {

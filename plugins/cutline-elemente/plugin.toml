@@ -1,0 +1,460 @@
+# Erzeugt von crates/cl-fx/examples/gen_elemente.rs – nicht von Hand ändern.
+# Schleife oder einmalig steht in der Datei selbst (APNG-Wiederholungen); das Schlagwort
+# „schleife“ dient nur der Suche.
+[plugin]
+id = "cutline.elemente"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Bewegte Elemente", en = "Animated elements" }
+description = { de = "Eigene bewegte Elemente zum Drüberlegen", en = "Original animated overlay elements" }
+authors = ["Cutline-Projekt"]
+license = "CC0-1.0"
+source = "https://github.com/zqqqqx/cutline"
+
+[[asset]]
+id = "abonnieren-rot"
+kind = "sticker"
+name = { de = "Abonnieren (rot)", en = "Subscribe, German (red)" }
+category = ["Aufrufe"]
+file = "elemente/abonnieren-rot.png"
+
+[[asset]]
+id = "abonnieren-weiss"
+kind = "sticker"
+name = { de = "Abonnieren (weiß)", en = "Subscribe, German (white)" }
+category = ["Aufrufe"]
+file = "elemente/abonnieren-weiss.png"
+
+[[asset]]
+id = "subscribe-rot"
+kind = "sticker"
+name = { de = "Subscribe (rot)", en = "Subscribe (red)" }
+category = ["Aufrufe"]
+file = "elemente/subscribe-rot.png"
+
+[[asset]]
+id = "subscribe-weiss"
+kind = "sticker"
+name = { de = "Subscribe (weiß)", en = "Subscribe (white)" }
+category = ["Aufrufe"]
+file = "elemente/subscribe-weiss.png"
+
+[[asset]]
+id = "glocke-weiss"
+kind = "sticker"
+name = { de = "Glocke (weiß)", en = "Bell (white)" }
+category = ["Aufrufe"]
+file = "elemente/glocke-weiss.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "glocke-gelb"
+kind = "sticker"
+name = { de = "Glocke (gelb)", en = "Bell (yellow)" }
+category = ["Aufrufe"]
+file = "elemente/glocke-gelb.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "daumen-hoch-blau"
+kind = "sticker"
+name = { de = "Daumen hoch (blau)", en = "Thumbs up (blue)" }
+category = ["Aufrufe"]
+file = "elemente/daumen-hoch-blau.png"
+
+[[asset]]
+id = "daumen-hoch-rot"
+kind = "sticker"
+name = { de = "Daumen hoch (rot)", en = "Thumbs up (red)" }
+category = ["Aufrufe"]
+file = "elemente/daumen-hoch-rot.png"
+
+[[asset]]
+id = "herz-puls-rot"
+kind = "sticker"
+name = { de = "Herz pulsiert (rot)", en = "Beating heart (red)" }
+category = ["Aufrufe"]
+file = "elemente/herz-puls-rot.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "herz-puls-rosa"
+kind = "sticker"
+name = { de = "Herz pulsiert (rosa)", en = "Beating heart (pink)" }
+category = ["Aufrufe"]
+file = "elemente/herz-puls-rosa.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "teilen-weiss"
+kind = "sticker"
+name = { de = "Teilen (weiß)", en = "Share (white)" }
+category = ["Aufrufe"]
+file = "elemente/teilen-weiss.png"
+
+[[asset]]
+id = "teilen-gelb"
+kind = "sticker"
+name = { de = "Teilen (gelb)", en = "Share (yellow)" }
+category = ["Aufrufe"]
+file = "elemente/teilen-gelb.png"
+
+[[asset]]
+id = "link-unten"
+kind = "sticker"
+name = { de = "Link in der Beschreibung", en = "Link in description, German" }
+category = ["Aufrufe"]
+file = "elemente/link-unten.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "link-below"
+kind = "sticker"
+name = { de = "Link in description", en = "Link in description" }
+category = ["Aufrufe"]
+file = "elemente/link-below.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "neu-gelb"
+kind = "sticker"
+name = { de = "Neu (gelb)", en = "New, German (yellow)" }
+category = ["Aufrufe"]
+file = "elemente/neu-gelb.png"
+
+[[asset]]
+id = "neu-rot"
+kind = "sticker"
+name = { de = "Neu (rot)", en = "New, German (red)" }
+category = ["Aufrufe"]
+file = "elemente/neu-rot.png"
+
+[[asset]]
+id = "new-gelb"
+kind = "sticker"
+name = { de = "New (gelb)", en = "New (yellow)" }
+category = ["Aufrufe"]
+file = "elemente/new-gelb.png"
+
+[[asset]]
+id = "new-rot"
+kind = "sticker"
+name = { de = "New (rot)", en = "New (red)" }
+category = ["Aufrufe"]
+file = "elemente/new-rot.png"
+
+[[asset]]
+id = "pfeil-gerade-rot"
+kind = "sticker"
+name = { de = "Pfeil zeichnet sich (rot)", en = "Drawn arrow (red)" }
+category = ["Zeigen"]
+file = "elemente/pfeil-gerade-rot.png"
+
+[[asset]]
+id = "pfeil-gerade-gelb"
+kind = "sticker"
+name = { de = "Pfeil zeichnet sich (gelb)", en = "Drawn arrow (yellow)" }
+category = ["Zeigen"]
+file = "elemente/pfeil-gerade-gelb.png"
+
+[[asset]]
+id = "pfeil-gerade-weiss"
+kind = "sticker"
+name = { de = "Pfeil zeichnet sich (weiß)", en = "Drawn arrow (white)" }
+category = ["Zeigen"]
+file = "elemente/pfeil-gerade-weiss.png"
+
+[[asset]]
+id = "pfeil-geschwungen-rot"
+kind = "sticker"
+name = { de = "Pfeil geschwungen (rot)", en = "Curved arrow (red)" }
+category = ["Zeigen"]
+file = "elemente/pfeil-geschwungen-rot.png"
+
+[[asset]]
+id = "pfeil-geschwungen-gelb"
+kind = "sticker"
+name = { de = "Pfeil geschwungen (gelb)", en = "Curved arrow (yellow)" }
+category = ["Zeigen"]
+file = "elemente/pfeil-geschwungen-gelb.png"
+
+[[asset]]
+id = "pfeil-geschwungen-weiss"
+kind = "sticker"
+name = { de = "Pfeil geschwungen (weiß)", en = "Curved arrow (white)" }
+category = ["Zeigen"]
+file = "elemente/pfeil-geschwungen-weiss.png"
+
+[[asset]]
+id = "kreis-markierung-rot"
+kind = "sticker"
+name = { de = "Einkreisen (rot)", en = "Circle it (red)" }
+category = ["Zeigen"]
+file = "elemente/kreis-markierung-rot.png"
+
+[[asset]]
+id = "kreis-markierung-gelb"
+kind = "sticker"
+name = { de = "Einkreisen (gelb)", en = "Circle it (yellow)" }
+category = ["Zeigen"]
+file = "elemente/kreis-markierung-gelb.png"
+
+[[asset]]
+id = "unterstreichen-rot"
+kind = "sticker"
+name = { de = "Unterstreichen (rot)", en = "Underline (red)" }
+category = ["Zeigen"]
+file = "elemente/unterstreichen-rot.png"
+
+[[asset]]
+id = "unterstreichen-gelb"
+kind = "sticker"
+name = { de = "Unterstreichen (gelb)", en = "Underline (yellow)" }
+category = ["Zeigen"]
+file = "elemente/unterstreichen-gelb.png"
+
+[[asset]]
+id = "ausrufezeichen-rot"
+kind = "sticker"
+name = { de = "Ausrufezeichen (rot)", en = "Exclamation mark (red)" }
+category = ["Zeigen"]
+file = "elemente/ausrufezeichen-rot.png"
+
+[[asset]]
+id = "ausrufezeichen-gelb"
+kind = "sticker"
+name = { de = "Ausrufezeichen (gelb)", en = "Exclamation mark (yellow)" }
+category = ["Zeigen"]
+file = "elemente/ausrufezeichen-gelb.png"
+
+[[asset]]
+id = "fragezeichen-rot"
+kind = "sticker"
+name = { de = "Fragezeichen (rot)", en = "Question mark (red)" }
+category = ["Zeigen"]
+file = "elemente/fragezeichen-rot.png"
+
+[[asset]]
+id = "fragezeichen-gelb"
+kind = "sticker"
+name = { de = "Fragezeichen (gelb)", en = "Question mark (yellow)" }
+category = ["Zeigen"]
+file = "elemente/fragezeichen-gelb.png"
+
+[[asset]]
+id = "fokus-weiss"
+kind = "sticker"
+name = { de = "Fokus-Ecken (weiß)", en = "Focus corners (white)" }
+category = ["Zeigen"]
+file = "elemente/fokus-weiss.png"
+
+[[asset]]
+id = "fokus-gelb"
+kind = "sticker"
+name = { de = "Fokus-Ecken (gelb)", en = "Focus corners (yellow)" }
+category = ["Zeigen"]
+file = "elemente/fokus-gelb.png"
+
+[[asset]]
+id = "zielkreuz-rot"
+kind = "sticker"
+name = { de = "Zielkreuz (rot)", en = "Crosshair (red)" }
+category = ["Zeigen"]
+file = "elemente/zielkreuz-rot.png"
+
+[[asset]]
+id = "zielkreuz-weiss"
+kind = "sticker"
+name = { de = "Zielkreuz (weiß)", en = "Crosshair (white)" }
+category = ["Zeigen"]
+file = "elemente/zielkreuz-weiss.png"
+
+[[asset]]
+id = "countdown-3-rot"
+kind = "sticker"
+name = { de = "Countdown 3-2-1 (rot)", en = "Countdown 3-2-1 (red)" }
+category = ["Zeit"]
+file = "elemente/countdown-3-rot.png"
+
+[[asset]]
+id = "countdown-5-rot"
+kind = "sticker"
+name = { de = "Countdown 5-4-3-2-1 (rot)", en = "Countdown 5-4-3-2-1 (red)" }
+category = ["Zeit"]
+file = "elemente/countdown-5-rot.png"
+
+[[asset]]
+id = "fortschritt-5-rot"
+kind = "sticker"
+name = { de = "Fortschritt 5 s (rot)", en = "Progress 5 s (red)" }
+category = ["Zeit"]
+file = "elemente/fortschritt-5-rot.png"
+
+[[asset]]
+id = "fortschritt-5-weiss"
+kind = "sticker"
+name = { de = "Fortschritt 5 s (weiß)", en = "Progress 5 s (white)" }
+category = ["Zeit"]
+file = "elemente/fortschritt-5-weiss.png"
+
+[[asset]]
+id = "fortschritt-10-rot"
+kind = "sticker"
+name = { de = "Fortschritt 10 s (rot)", en = "Progress 10 s (red)" }
+category = ["Zeit"]
+file = "elemente/fortschritt-10-rot.png"
+
+[[asset]]
+id = "fortschritt-10-weiss"
+kind = "sticker"
+name = { de = "Fortschritt 10 s (weiß)", en = "Progress 10 s (white)" }
+category = ["Zeit"]
+file = "elemente/fortschritt-10-weiss.png"
+
+[[asset]]
+id = "rec"
+kind = "sticker"
+name = { de = "REC", en = "REC" }
+category = ["Zeit"]
+file = "elemente/rec.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "laden-weiss"
+kind = "sticker"
+name = { de = "Lade-Kreis (weiß)", en = "Loading circle (white)" }
+category = ["Zeit"]
+file = "elemente/laden-weiss.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "laden-blau"
+kind = "sticker"
+name = { de = "Lade-Kreis (blau)", en = "Loading circle (blue)" }
+category = ["Zeit"]
+file = "elemente/laden-blau.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "konfetti-regen"
+kind = "sticker"
+name = { de = "Konfetti-Regen", en = "Confetti rain" }
+category = ["Partikel"]
+file = "elemente/konfetti-regen.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "konfetti-knall"
+kind = "sticker"
+name = { de = "Konfetti-Knall", en = "Confetti pop" }
+category = ["Partikel"]
+file = "elemente/konfetti-knall.png"
+
+[[asset]]
+id = "funken-gelb"
+kind = "sticker"
+name = { de = "Funken (gelb)", en = "Sparks (yellow)" }
+category = ["Partikel"]
+file = "elemente/funken-gelb.png"
+
+[[asset]]
+id = "funken-blau"
+kind = "sticker"
+name = { de = "Funken (blau)", en = "Sparks (blue)" }
+category = ["Partikel"]
+file = "elemente/funken-blau.png"
+
+[[asset]]
+id = "glitzer-gelb"
+kind = "sticker"
+name = { de = "Sterne-Glitzer (gelb)", en = "Twinkling stars (yellow)" }
+category = ["Partikel"]
+file = "elemente/glitzer-gelb.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "glitzer-weiss"
+kind = "sticker"
+name = { de = "Sterne-Glitzer (weiß)", en = "Twinkling stars (white)" }
+category = ["Partikel"]
+file = "elemente/glitzer-weiss.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "herzen"
+kind = "sticker"
+name = { de = "Herzen steigen auf", en = "Rising hearts" }
+category = ["Partikel"]
+file = "elemente/herzen.png"
+tags = ["schleife"]
+
+[[asset]]
+id = "sprechblase-weiss"
+kind = "sticker"
+name = { de = "Sprechblase (weiß)", en = "Speech bubble (white)" }
+category = ["Sprechblasen"]
+file = "elemente/sprechblase-weiss.png"
+
+[[asset]]
+id = "sprechblase-gelb"
+kind = "sticker"
+name = { de = "Sprechblase (gelb)", en = "Speech bubble (yellow)" }
+category = ["Sprechblasen"]
+file = "elemente/sprechblase-gelb.png"
+
+[[asset]]
+id = "denkblase-weiss"
+kind = "sticker"
+name = { de = "Denkblase (weiß)", en = "Thought bubble (white)" }
+category = ["Sprechblasen"]
+file = "elemente/denkblase-weiss.png"
+
+[[asset]]
+id = "bauchbinde-rot"
+kind = "sticker"
+name = { de = "Bauchbinde (rot)", en = "Lower third (red)" }
+category = ["Rahmen"]
+file = "elemente/bauchbinde-rot.png"
+
+[[asset]]
+id = "bauchbinde-blau"
+kind = "sticker"
+name = { de = "Bauchbinde (blau)", en = "Lower third (blue)" }
+category = ["Rahmen"]
+file = "elemente/bauchbinde-blau.png"
+
+[[asset]]
+id = "bauchbinde-gelb"
+kind = "sticker"
+name = { de = "Bauchbinde (gelb)", en = "Lower third (yellow)" }
+category = ["Rahmen"]
+file = "elemente/bauchbinde-gelb.png"
+
+[[asset]]
+id = "ecken-weiss"
+kind = "sticker"
+name = { de = "Bildecken (weiß)", en = "Frame corners (white)" }
+category = ["Rahmen"]
+file = "elemente/ecken-weiss.png"
+
+[[asset]]
+id = "ecken-gelb"
+kind = "sticker"
+name = { de = "Bildecken (gelb)", en = "Frame corners (yellow)" }
+category = ["Rahmen"]
+file = "elemente/ecken-gelb.png"
+
+[[asset]]
+id = "rahmen-weiss"
+kind = "sticker"
+name = { de = "Bildrahmen (weiß)", en = "Picture frame (white)" }
+category = ["Rahmen"]
+file = "elemente/rahmen-weiss.png"
+
+[[asset]]
+id = "rahmen-rot"
+kind = "sticker"
+name = { de = "Bildrahmen (rot)", en = "Picture frame (red)" }
+category = ["Rahmen"]
+file = "elemente/rahmen-rot.png"
