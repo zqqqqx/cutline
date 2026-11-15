@@ -46,6 +46,23 @@ pub(crate) fn fps_from(fps: f64) -> Option<cl_core::Rational> {
 
 /// Format anhand der Datei erkennen und importieren.
 pub fn import(path: &Path) -> Result<(Project, Report)> {
+    let (mut p, rep) = import_any(path)?;
+    keep_gaps(&mut p);
+    Ok((p, rep))
+}
+
+/// Übernommene Lücken der Hauptspur behalten: der Magnet schöbe sie bei der ersten Änderung
+/// zusammen, die Nebenspuren blieben stehen – Bild und Ton liefen auseinander.
+fn keep_gaps(p: &mut Project) {
+    if let Some(t) = p.timeline.tracks.iter().find(|t| t.main) {
+        let mut cursor = cl_core::Time::ZERO;
+        if t.clips.iter().any(|c| std::mem::replace(&mut cursor, c.end()) != c.start) {
+            p.settings.main_track_magnet = false;
+        }
+    }
+}
+
+fn import_any(path: &Path) -> Result<(Project, Report)> {
     let name = path
         .extension()
         .and_then(|e| e.to_str())
@@ -62,5 +79,28 @@ pub fn import(path: &Path) -> Result<(Project, Report)> {
         "fcpxml" | "xml" => fcpxml::import(path),
         "json" => capcut::import(path),
         _ => Err("Unbekanntes Projektformat".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cl_core::{Clip, ClipContent, Document, Edge, EditOp, OpSource, TextStyle, Time, Track, TrackKind};
+
+    #[test]
+    fn imported_gaps_survive_first_edit() {
+        let s = Time::from_secs_f64;
+        let mut p = Project::new("x");
+        let mut t = Track::new(TrackKind::Video);
+        t.main = true;
+        for at in [0.0, 5.0] {
+            t.clips.push(Clip::new(ClipContent::Text(TextStyle::default()), s(at), s(2.0)));
+        }
+        let (a, b) = (t.clips[0].id, t.clips[1].id);
+        p.timeline.tracks.push(t);
+        keep_gaps(&mut p);
+        let mut d = Document::new(p);
+        d.apply(EditOp::TrimClip { clip: a, edge: Edge::End, to: s(1.0) }, OpSource::Ui).unwrap();
+        assert_eq!(d.project().find_clip(b).unwrap().1.start, s(5.0));
     }
 }
