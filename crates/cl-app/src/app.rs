@@ -2696,8 +2696,7 @@ impl App {
                 "export" => {
                     self.commit_live();
                     self.export
-                        .open_for(&self.project, self.project_path.as_deref(), self.revision);
-                    self.export.set_range(self.range_in.zip(self.range_out));
+                        .open_for(&self.project, self.project_path.as_deref(), self.revision, self.range_in.zip(self.range_out));
                 }
                 "select_all" => self.select_all(),
                 "duplicate" => self.duplicate_selection(),

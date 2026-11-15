@@ -243,7 +243,7 @@ impl App {
                     if ex.on_hover_text(crate::tr("Strg+E")).clicked() {
                         self.commit_live();
                         self.export
-                            .open_for(&self.project, self.project_path.as_deref(), self.revision);
+                            .open_for(&self.project, self.project_path.as_deref(), self.revision, self.range_in.zip(self.range_out));
                     }
                     if theme::icon_button(ui, icon::GEAR_SIX, "Einstellungen (Strg+,)", true, false)
                         .clicked()
@@ -342,7 +342,7 @@ impl App {
                     ui.close_menu();
                     self.commit_live();
                     self.export
-                        .open_for(&self.project, self.project_path.as_deref(), self.revision);
+                        .open_for(&self.project, self.project_path.as_deref(), self.revision, self.range_in.zip(self.range_out));
                 }
                 if item(ui, icon::FILE_VIDEO, "Exporte", "").clicked() {
                     ui.close_menu();

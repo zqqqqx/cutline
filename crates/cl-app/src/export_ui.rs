@@ -279,21 +279,16 @@ impl ExportDialog {
         self.open
     }
 
-    /// In/Out-Bereich aus der Zeitleiste anbieten (vorausgewählt).
-    pub fn set_range(&mut self, r: Option<(Time, Time)>) {
-        self.range_avail = r.filter(|(a, b)| b > a);
-        if let Some(s) = &mut self.settings {
-            s.range = self.range_avail;
-        }
-    }
-
-    pub fn open_for(&mut self, p: &Project, project_path: Option<&Path>, rev: u64) {
+    /// Dialog öffnen; `range` = In/Out-Bereich der Zeitleiste (angeboten und vorausgewählt), gleich über
+    /// welchen Weg (Knopf, Menü, Tastenkürzel) exportiert wird.
+    pub fn open_for(&mut self, p: &Project, project_path: Option<&Path>, rev: u64, range: Option<(Time, Time)>) {
         self.rev = rev;
         if self.running.is_some() {
             self.open = true;
             return;
         }
         self.open = true;
+        self.range_avail = range.filter(|(a, b)| b > a);
         self.error = None;
         self.missing = cl_fx::catalog::missing(p).into_iter().map(|m| cl_fx::fx_name(&m.0)).collect();
         self.missing.sort();
@@ -312,6 +307,7 @@ impl ExportDialog {
                 .unwrap_or_else(|| PathBuf::from("."));
         }
         let mut s = ExportSettings::from_project(p);
+        s.range = self.range_avail;
         if let Some(old) = &self.settings {
             s.format = old.format;
             s.codec = old.codec;
@@ -1015,11 +1011,23 @@ fn frame(d: &mut ExportDialog, ctx: &egui::Context, p: &Project, enter: bool) {
 }
 
 #[test]
+fn in_out_range_is_preselected_on_every_open() {
+    let p = Project::new("t");
+    let mut d = ExportDialog::default();
+    let r = (Time::from_secs_f64(2.0), Time::from_secs_f64(5.0));
+    d.open_for(&p, None, 0, Some(r));
+    assert_eq!(d.settings.as_ref().unwrap().range, Some(r));
+    // Bereich inzwischen gelöscht: kein alter Bereich mehr
+    d.open_for(&p, None, 0, None);
+    assert_eq!((d.settings.as_ref().unwrap().range, d.range_avail), (None, None));
+}
+
+#[test]
 fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
     let (ctx, p) = (egui::Context::default(), Project::new("t"));
     let mut d = ExportDialog::default();
     *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
-    d.open_for(&p, None, 0);
+    d.open_for(&p, None, 0, None);
     // wie nach Enter auf „Exportieren“: Nachfrage im selben Bild geöffnet, Enter noch gedrückt
     (d.confirm_overwrite, d.confirm_fresh) = (true, true);
     frame(&mut d, &ctx, &p, true);
