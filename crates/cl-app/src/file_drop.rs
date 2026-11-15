@@ -130,12 +130,16 @@ pub fn layout(items: &[Item], at: Time, default: Time) -> Vec<Time> {
         .collect()
 }
 
-/// Spur für Dateien der Art `k` beim Ablegen an `p` – dieselben Regeln wie beim Ablegen aus dem
-/// Medien-Menü: passende Spur → dort (Hauptspur: wie ohne Ziel), unpassende oder gesperrte →
-/// neue Spur an dieser Stelle, über bzw. unter allen Spuren → neue Spur. `rows` = Zeilen in
-/// Anzeige-Reihenfolge (Spurindex, Fläche), `row_gap` = Abstand zwischen zwei Zeilen.
-pub fn lane_at(tracks: &[Track], rows: &[(usize, Rect)], p: Pos2, k: TrackKind, row_gap: f32) -> Lane {
-    let row = rows.iter().position(|(_, r)| p.y >= r.top() - row_gap / 2.0 && p.y < r.bottom() + row_gap / 2.0);
+/// Spur für Elemente der Art `k` beim Ablegen an `p` (Dateien von außen und aus dem Medien-Menü):
+/// passende Spur → dort (Hauptspur: wie ohne Ziel), unpassende oder gesperrte → neue Spur an
+/// dieser Stelle, über bzw. unter allen Spuren → neue Spur. `rows` = Zeilen in
+/// Anzeige-Reihenfolge (Spurindex, Fläche), `lanes` = sichtbarer Spurbereich (Zeilen unter dem
+/// Lineal zählen nicht), `row_gap` = Abstand zwischen zwei Zeilen.
+pub fn lane_at(tracks: &[Track], rows: &[(usize, Rect)], lanes: Rect, p: Pos2, k: TrackKind, row_gap: f32) -> Lane {
+    let row = rows
+        .iter()
+        .position(|(_, r)| p.y >= r.top() - row_gap / 2.0 && p.y < r.bottom() + row_gap / 2.0)
+        .filter(|_| lanes.contains(p));
     if let Some(r) = row {
         let t = &tracks[rows[r].0];
         if !fits(t, k) {
@@ -537,22 +541,34 @@ mod tests {
         let v = TrackKind::Video;
         let a = TrackKind::Audio;
         // Zeile 0 = eingeklappte Textspur: Video passt nicht → neue Spur darüber/darunter
-        assert!(matches!(lane_at(&t, &rows, at(0, 2.0), v, 5.0), Lane::New { gap: 0, .. }));
-        assert!(matches!(lane_at(&t, &rows, at(0, 10.0), v, 5.0), Lane::New { gap: 1, .. }));
+        assert!(matches!(lane_at(&t, &rows, Rect::EVERYTHING, at(0, 2.0), v, 5.0), Lane::New { gap: 0, .. }));
+        assert!(matches!(lane_at(&t, &rows, Rect::EVERYTHING, at(0, 10.0), v, 5.0), Lane::New { gap: 1, .. }));
         // Zeile 1 = Videospur: dort; Hauptspur: wie ohne Ziel
-        assert_eq!(lane_at(&t, &rows, at(1, 10.0), v, 5.0), Lane::Track(t[1].id));
-        assert_eq!(lane_at(&t, &rows, at(2, 10.0), v, 5.0), Lane::Auto);
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, at(1, 10.0), v, 5.0), Lane::Track(t[1].id));
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, at(2, 10.0), v, 5.0), Lane::Auto);
         // Ton über der Videospur → neue Tonspur (nur unter den Bildspuren erlaubt)
-        assert!(matches!(lane_at(&t, &rows, at(1, 10.0), a, 5.0), Lane::New { gap: 3, .. }));
-        assert_eq!(lane_at(&t, &rows, at(3, 10.0), a, 5.0), Lane::Track(t[3].id));
+        assert!(matches!(lane_at(&t, &rows, Rect::EVERYTHING, at(1, 10.0), a, 5.0), Lane::New { gap: 3, .. }));
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, at(3, 10.0), a, 5.0), Lane::Track(t[3].id));
         // gesperrte passende Spur → neue
         let mut l = t.clone();
         l[3].locked = true;
-        assert!(matches!(lane_at(&l, &rows, at(3, 10.0), a, 5.0), Lane::New { .. }));
+        assert!(matches!(lane_at(&l, &rows, Rect::EVERYTHING, at(3, 10.0), a, 5.0), Lane::New { .. }));
         // über allen Spuren: neues Bild oben; unter allen: neuer Ton unten; sonst wie ohne Ziel
-        assert_eq!(lane_at(&t, &rows, pos2(0.0, 50.0), v, 5.0), Lane::New { index: 4, gap: 0 });
-        assert_eq!(lane_at(&t, &rows, pos2(0.0, 50.0), a, 5.0), Lane::Auto);
-        assert_eq!(lane_at(&t, &rows, pos2(0.0, 400.0), a, 5.0), Lane::New { index: 4, gap: 4 });
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, pos2(0.0, 50.0), v, 5.0), Lane::New { index: 4, gap: 0 });
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, pos2(0.0, 50.0), a, 5.0), Lane::Auto);
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, pos2(0.0, 400.0), a, 5.0), Lane::New { index: 4, gap: 4 });
+    }
+
+    /// Senkrecht gerollt: die Textspur liegt halb unter dem Lineal. Über dem Lineal gilt sie nicht
+    /// (Video wie ohne Ziel auf die Hauptspur, wie beim Ablegen aus dem Medien-Menü), im sichtbaren
+    /// Teil schon (Video passt nicht → neue Spur darunter).
+    #[test]
+    fn rows_under_the_ruler_do_not_count() {
+        let (t, rows) = tracks();
+        let lanes = Rect::from_min_max(pos2(0.0, 106.0), pos2(800.0, 400.0));
+        let v = TrackKind::Video;
+        assert_eq!(lane_at(&t, &rows, lanes, pos2(300.0, 103.0), v, 5.0), Lane::Auto);
+        assert!(matches!(lane_at(&t, &rows, lanes, pos2(300.0, 109.0), v, 5.0), Lane::New { gap: 1, .. }));
     }
 
     fn media(kind: MediaKind, secs: f64, name: &str) -> MediaRef {
@@ -669,8 +685,8 @@ mod tests {
         let p = pos2(300.0, rows[2].1.bottom() - 4.0);
         let target = Target {
             at: Time::ZERO,
-            video: lane_at(&tracks, &rows, p, TrackKind::Video, 6.0),
-            audio: lane_at(&tracks, &rows, p, TrackKind::Audio, 6.0),
+            video: lane_at(&tracks, &rows, Rect::EVERYTHING, p, TrackKind::Video, 6.0),
+            audio: lane_at(&tracks, &rows, Rect::EVERYTHING, p, TrackKind::Audio, 6.0),
         };
         assert!(matches!((target.video, target.audio), (Lane::New { .. }, Lane::New { .. })));
         let d = pending(Some(target), vec![State::Ready(media(MediaKind::Video, 2.0, "a.mp4")), State::Ready(media(MediaKind::Audio, 2.0, "b.wav"))]);

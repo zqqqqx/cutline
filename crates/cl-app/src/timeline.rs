@@ -2109,25 +2109,23 @@ impl App {
         let drop_hover = resp.dnd_hover_payload::<DragAsset>();
         let mut drop_clip: Option<ClipId> = None;
         let mut drop_cut: Option<ClipId> = None;
-        // Element über einer unpassenden oder gesperrten Spur: neue Spur daneben (Zeile, obere
-        // Hälfte, Art). Effekt/Filter auf einem Clip mit Bild wirkt dagegen auf diesen Clip.
-        let asset_slot = |a: &DragAsset, k: Option<TrackKind>, p: Pos2| -> Option<(usize, bool, TrackKind)> {
-            let k = k?;
-            let r = row_idx_at(p).filter(|_| p.x >= rect.left() && lanes.contains(p))?;
-            if fits(&tracks[rows[r].track], k) {
-                return None;
-            }
+        // Spur beim Ablegen: dieselbe Regel wie für Dateien von außen ([`crate::file_drop::lane_at`]).
+        // Effekt/Filter auf einem Clip mit Bild wirkt dagegen auf diesen Clip.
+        let drows: Vec<(usize, Rect)> = rows.iter().filter(|r| r.track != REC_ROW).map(|r| (r.track, r.rect)).collect();
+        let asset_lane = |a: &DragAsset, k: Option<TrackKind>, p: Pos2| -> crate::file_drop::Lane {
             let on_visual = hit(p).and_then(|h| tracks[h.2].clips.iter().find(|c| c.id == h.0)).is_some_and(|c| {
                 matches!(c.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Image, .. })
             });
-            if on_visual && matches!(a, DragAsset::Effect(_) | DragAsset::Filter(_)) {
-                return None;
+            match k {
+                Some(k) if !(on_visual && matches!(a, DragAsset::Effect(_) | DragAsset::Filter(_))) => {
+                    crate::file_drop::lane_at(&tracks, &drows, lanes, p, k, ROW_GAP)
+                }
+                _ => crate::file_drop::Lane::Auto,
             }
-            Some((r, p.y < rows[r].rect.center().y, k))
         };
         if let (Some(payload), Some(p)) = (&drop_hover, pointer) {
-            if let Some((r, upper, k)) = asset_slot(payload, asset_kind(&self.project, payload), p) {
-                insert_lines.push(gap_y(new_track_gap(&tracks, r, upper, k)));
+            if let crate::file_drop::Lane::New { gap, .. } = asset_lane(payload, asset_kind(&self.project, payload), p) {
+                insert_lines.push(gap_y(gap));
             }
         }
         if let (Some(payload), Some(p)) = (&drop_hover, pointer) {
@@ -2161,7 +2159,6 @@ impl App {
 
         // ---------- Dateien von außen (Explorer): Ziel und Platzhalter ----------
         self.drops.timeline_rect = Some(rect);
-        let drows: Vec<(usize, Rect)> = rows.iter().filter(|r| r.track != REC_ROW).map(|r| (r.track, r.rect)).collect();
         let image_len = Time::from_secs_f64(self.settings.image_duration as f64);
         // (Balken, Name, Platzhalter nach dem Ablegen?)
         let mut file_ghosts: Vec<(Rect, String, bool)> = Vec::new();
@@ -2189,8 +2186,8 @@ impl App {
             let at = Time::from_secs_f64(snap_to(t, &snap_cands(&[])).unwrap_or(t)).snap_to_frame(fps);
             let target = crate::file_drop::Target {
                 at,
-                video: crate::file_drop::lane_at(&tracks, &drows, p, TrackKind::Video, ROW_GAP),
-                audio: crate::file_drop::lane_at(&tracks, &drows, p, TrackKind::Audio, ROW_GAP),
+                video: crate::file_drop::lane_at(&tracks, &drows, lanes, p, TrackKind::Video, ROW_GAP),
+                audio: crate::file_drop::lane_at(&tracks, &drows, lanes, p, TrackKind::Audio, ROW_GAP),
             };
             for (l, audio) in [(target.video, false), (target.audio, true)] {
                 if let (crate::file_drop::Lane::New { gap, .. }, true) = (l, items.iter().any(|i| i.audio == audio)) {
@@ -2955,43 +2952,18 @@ impl App {
             });
             let at = at.unwrap_or(self.playhead);
             let kind = asset_kind(&self.project, &payload);
-            let slot = pointer.and_then(|p| asset_slot(&payload, kind, p));
-            let mut track = pointer
-                .and_then(row_at)
-                .filter(|t| kind.is_some_and(|k| tracks[*t].kind.accepts(k)) && !tracks[*t].main)
-                .map(|t| tracks[t].id);
-            // Ins Leere über den Spuren (bzw. unter Audio) = neue Spur
-            let first_top = rows
-                .iter()
-                .filter(|r| r.track != REC_ROW)
-                .map(|r| r.rect.top())
-                .fold(f32::INFINITY, f32::min);
-            let last_bottom = rows
-                .iter()
-                .filter(|r| r.track != REC_ROW)
-                .map(|r| r.rect.bottom())
-                .fold(f32::NEG_INFINITY, f32::max);
             // neue Spur und Ablegen sind ein Verlaufsschritt (sonst bliebe nach Rückgängig eine leere Spur)
             let rev = self.doc.lock().unwrap_or_else(|e| e.into_inner()).revision();
-            if let Some((r, upper, k)) = slot {
-                let index = gap_index(&tracks, new_track_gap(&tracks, r, upper, k), k);
-                track = None;
-                if let Some(OpOutput::Track(t)) = self.apply(EditOp::InsertTrack { index, kind: k }) {
-                    track = Some(t);
-                    self.timeline.reveal = Some((t, now_s, self.timeline.vscroll));
-                }
-            } else if let (Some(p), Some(k)) = (pointer, kind) {
-                let above = p.y < first_top - ROW_GAP && k != TrackKind::Audio;
-                let below = p.y > last_bottom + ROW_GAP && k == TrackKind::Audio;
-                if (above || below) && !tracks.is_empty() && track.is_none() {
-                    if let Some(OpOutput::Track(t)) = self.apply(EditOp::InsertTrack {
-                        index: tracks.len(),
-                        kind: k,
-                    }) {
+            let mut track = None;
+            match (pointer.map(|p| asset_lane(&payload, kind, p)), kind) {
+                (Some(crate::file_drop::Lane::Track(t)), _) => track = Some(t),
+                (Some(crate::file_drop::Lane::New { index, .. }), Some(k)) => {
+                    if let Some(OpOutput::Track(t)) = self.apply(EditOp::InsertTrack { index, kind: k }) {
                         track = Some(t);
                         self.timeline.reveal = Some((t, now_s, self.timeline.vscroll));
                     }
                 }
+                _ => {}
             }
             let on = match &*payload {
                 DragAsset::Transition(_) => drop_cut,
