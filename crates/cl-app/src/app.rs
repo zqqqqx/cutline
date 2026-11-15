@@ -3347,6 +3347,8 @@ impl eframe::App for App {
         // laufenden Export sauber abbrechen: kein verwaistes FFmpeg, keine .part-Datei
         self.export.cancel_and_wait(Duration::from_secs(5));
         self.cancel_background_work();
+        // laufender Import räumt sein halbes Projekt weg, ffprobe-Prüfungen enden
+        self.cancel_import();
         let flushed = self.flush_before_leaving();
         // alles Wartende schreiben lassen (Speicher-Thread), bevor das Programm endet
         if !self.saver.wait_idle(Duration::from_secs(60)) {

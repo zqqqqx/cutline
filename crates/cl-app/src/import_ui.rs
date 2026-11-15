@@ -101,6 +101,11 @@ pub fn run_import(
         let _ = fonts.lock().unwrap_or_else(|e| e.into_inner()).import_file(f);
     }
     progress.tick("");
+    // während der Schriften abgebrochen: auch dann bleibt kein Projekt liegen
+    if progress.cancelled() {
+        let _ = std::fs::remove_file(&path);
+        return Err(cl_import::CANCELLED.into());
+    }
     if crate::app::perf() {
         eprintln!(
             "perf: Import „{}“ {:.1} s, {} Medien, {} Clips, {} Texte",
@@ -164,7 +169,7 @@ impl App {
     }
 
     /// Alle Importe dieser Runde abbrechen (wirkt sofort; der Thread räumt hinter sich auf).
-    fn cancel_import(&mut self) {
+    pub(crate) fn cancel_import(&mut self) {
         if let Some(j) = self.import.job.take() {
             j.progress.cancel();
         }
@@ -473,6 +478,38 @@ mod tests {
         app.open_imported(0);
         assert_eq!(app.project.timeline.tracks[0].clips.len(), 1);
         assert!(app.missing_open && !app.presence.get(&gone));
+    }
+
+    /// Abbrechen während „Schriften übernehmen“ (nach dem Schreiben): kein Projekt bleibt liegen.
+    #[test]
+    fn cancel_during_fonts_leaves_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let src = draft_dir(root.path());
+        let out = root.path().join("Projekte");
+        let fonts = Mutex::new(cl_fonts::FontLibrary::default());
+        let slot: Arc<std::sync::OnceLock<std::sync::Weak<Progress>>> = Arc::default();
+        let sl = slot.clone();
+        let p = Arc::new(Progress::new(move || {
+            let Some(p) = sl.get().and_then(|w| w.upgrade()) else { return };
+            let st = p.status();
+            if st.step == Step::Save && st.done >= st.total {
+                p.cancel();
+            }
+        }));
+        slot.set(Arc::downgrade(&p)).unwrap();
+        assert_eq!(run_import(&src, &out, &fonts, &p).err().as_deref(), Some(cl_import::CANCELLED));
+        assert_eq!(std::fs::read_dir(&out).map_or(0, |d| d.count()), 0, "kein halbes Projekt");
+    }
+
+    /// Beenden bricht einen laufenden Import ab (sonst laufen seine Prüfungen weiter).
+    #[test]
+    fn exit_cancels_running_import() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let progress = Arc::new(Progress::default());
+        let (_tx, rx) = channel();
+        app.import.job = Some(Job { label: "x".into(), progress: progress.clone(), rx });
+        eframe::App::on_exit(&mut app);
+        assert!(progress.cancelled());
     }
 
     #[test]
