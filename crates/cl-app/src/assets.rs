@@ -1171,7 +1171,7 @@ impl App {
                                 name,
                                 false,
                                 |p, a| {
-                                    p.rect_filled(a, theme::R_CARD, theme::BG_RAISED());
+                                    p.rect_filled(a, theme::R_CARD, theme::STAGE);
                                     self.text_preview(p, &style, a);
                                     if fav {
                                         crate::library_ui::fav_badge(p, a);
@@ -1235,7 +1235,7 @@ impl App {
                                 e.name,
                                 false,
                                 |p, a| {
-                                    p.rect_filled(a, theme::R_CARD, theme::BG_RAISED());
+                                    p.rect_filled(a, theme::R_CARD, theme::STAGE);
                                     self.text_preview(p, &st, a);
                                     if fav {
                                         crate::library_ui::fav_badge(p, a);

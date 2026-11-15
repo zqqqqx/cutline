@@ -403,7 +403,7 @@ impl App {
                     let on = self.settings.caption_preset == p.id;
                     let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), theme::anim(0.12));
                     let pt = ui.painter();
-                    pt.rect_filled(r, theme::R_CARD, Color32::from_rgb(0x1E, 0x24, 0x2C));
+                    pt.rect_filled(r, theme::R_CARD, theme::STAGE);
                     let s = (p.style)();
                     let sample = if p.id == "word" { crate::tr("Wort") } else if s.uppercase { crate::tr("So sieht es aus").to_uppercase() } else { crate::tr("So sieht es aus") };
                     let fam = self.font_family(s.font_family.as_deref());

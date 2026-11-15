@@ -166,6 +166,9 @@ pub fn overlay(alpha: u8) -> Color32 {
     }
 }
 
+/// Fläche hinter Textvorschauen: Texte sind für Video gemacht, deshalb in jedem Design dunkel
+pub const STAGE: Color32 = Color32::from_rgb(0x1E, 0x24, 0x2C);
+
 #[allow(non_snake_case)]
 pub fn BG_APP() -> Color32 { pal().bg_app }
 #[allow(non_snake_case)]
