@@ -34,7 +34,7 @@ pub fn read_json_or_quarantine<T: serde::de::DeserializeOwned + Default>(p: &Pat
         Err(e) => {
             let mut bad = p.as_os_str().to_owned();
             bad.push(format!(".bad-{}", unix_secs()));
-            eprintln!("{}: {e}", p.display());
+            log::warn!("{}: {e}", p.display());
             let _ = std::fs::rename(p, bad);
             T::default()
         }
@@ -462,6 +462,11 @@ pub fn data_dir() -> PathBuf {
         return PathBuf::from(h).join(".local/share/cutline");
     }
     PathBuf::from(".cutline")
+}
+
+/// Protokolldateien (`applog`)
+pub fn logs_dir() -> PathBuf {
+    data_dir().join("logs")
 }
 
 pub fn font_dir() -> PathBuf {

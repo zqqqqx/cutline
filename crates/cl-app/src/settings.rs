@@ -1071,6 +1071,8 @@ impl App {
                     .small()
                     .color(theme::TEXT_DIM()),
                 );
+                ui.add_space(8.0);
+                crate::applog::about_buttons(self, ui);
             }
         }
     }
