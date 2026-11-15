@@ -61,6 +61,13 @@ pub fn cat_icon(name: &str) -> Option<&'static str> {
         "Wischen" => icon::HAND_SWIPE_RIGHT,
         "Form" => icon::SHAPES,
         "Effekt" => icon::SPARKLE,
+        "Aufrufe" => icon::BELL_RINGING,
+        "Zeigen" => icon::HAND_POINTING,
+        "Zeit" => icon::TIMER,
+        "Partikel" => icon::CONFETTI,
+        "Rahmen" => icon::FRAME_CORNERS,
+        "Symbole" => icon::STAR_FOUR,
+        "Tiere & Essen" => icon::PAW_PRINT,
         _ => return None,
     })
 }
