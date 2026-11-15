@@ -845,4 +845,20 @@ permissions=['net']
         remove_pack(&root, &root.join("test.sounds")).unwrap();
         assert!(!root.join("test.sounds").exists());
     }
+
+    /// Jeder mitgelieferte Sound hat ein Rezept (selbst erzeugt) und eine CC0-Lizenz.
+    #[test]
+    fn bundled_sounds_have_recipes() {
+        let dir = bundled().join("cutline-sounds");
+        let recipes = std::fs::read_to_string(dir.join("RECIPES.md")).unwrap();
+        let reg = Registry::scan([bundled().as_path()]);
+        let p = reg.plugins.iter().find(|p| p.manifest.plugin.id == "cutline.sounds").unwrap();
+        assert_eq!(p.manifest.plugin.license, "CC0-1.0");
+        let mut n = 0;
+        for a in p.manifest.assets.iter().filter(|a| a.kind == AssetKind::Sound) {
+            assert!(recipes.contains(&format!("## {} (", a.id)), "kein Rezept für {}", a.id);
+            n += 1;
+        }
+        assert!(n >= 50, "{n}");
+    }
 }

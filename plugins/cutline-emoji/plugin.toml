@@ -1,0 +1,1115 @@
+# Emoji für Reaktionen: Microsoft Fluent Emoji (MIT), unbewegt. Auswahl und Namen: Cutline-Projekt.
+[plugin]
+id = "cutline.emoji"
+version = "0.1.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Emoji", en = "Emoji" }
+description = { de = "Fluent Emoji für Reaktionen: Gesichter, Hände, Herzen, Symbole, Tiere und Essen", en = "Fluent emoji for reactions: faces, hands, hearts, symbols, animals and food" }
+authors = ["Microsoft Corporation"]
+license = "MIT"
+source = "https://github.com/microsoft/fluentui-emoji"
+
+[[asset]]
+id = "face-with-tears-of-joy"
+kind = "sticker"
+name = { de = "Lachen mit Tränen", en = "Tears of joy" }
+category = ["Reaktionen"]
+file = "svg/face-with-tears-of-joy.svg"
+tags = ["emoji", "tears of joy"]
+
+[[asset]]
+id = "rolling-on-the-floor-laughing"
+kind = "sticker"
+name = { de = "Vor Lachen am Boden", en = "Rolling on the floor" }
+category = ["Reaktionen"]
+file = "svg/rolling-on-the-floor-laughing.svg"
+tags = ["emoji", "rolling on the floor"]
+
+[[asset]]
+id = "grinning-face"
+kind = "sticker"
+name = { de = "Grinsen", en = "Grinning face" }
+category = ["Reaktionen"]
+file = "svg/grinning-face.svg"
+tags = ["emoji", "grinning face"]
+
+[[asset]]
+id = "grinning-face-with-big-eyes"
+kind = "sticker"
+name = { de = "Grinsen große Augen", en = "Grinning, big eyes" }
+category = ["Reaktionen"]
+file = "svg/grinning-face-with-big-eyes.svg"
+tags = ["emoji", "grinning, big eyes"]
+
+[[asset]]
+id = "smiling-face-with-smiling-eyes"
+kind = "sticker"
+name = { de = "Lächeln", en = "Smiling" }
+category = ["Reaktionen"]
+file = "svg/smiling-face-with-smiling-eyes.svg"
+tags = ["emoji", "smiling"]
+
+[[asset]]
+id = "winking-face"
+kind = "sticker"
+name = { de = "Zwinkern", en = "Wink" }
+category = ["Reaktionen"]
+file = "svg/winking-face.svg"
+tags = ["emoji", "wink"]
+
+[[asset]]
+id = "zany-face"
+kind = "sticker"
+name = { de = "Verrückt", en = "Zany" }
+category = ["Reaktionen"]
+file = "svg/zany-face.svg"
+tags = ["emoji", "zany"]
+
+[[asset]]
+id = "smirking-face"
+kind = "sticker"
+name = { de = "Grinsen frech", en = "Smirk" }
+category = ["Reaktionen"]
+file = "svg/smirking-face.svg"
+tags = ["emoji", "smirk"]
+
+[[asset]]
+id = "unamused-face"
+kind = "sticker"
+name = { de = "Genervt", en = "Unamused" }
+category = ["Reaktionen"]
+file = "svg/unamused-face.svg"
+tags = ["emoji", "unamused"]
+
+[[asset]]
+id = "face-with-rolling-eyes"
+kind = "sticker"
+name = { de = "Augenrollen", en = "Eye roll" }
+category = ["Reaktionen"]
+file = "svg/face-with-rolling-eyes.svg"
+tags = ["emoji", "eye roll"]
+
+[[asset]]
+id = "thinking-face"
+kind = "sticker"
+name = { de = "Nachdenken", en = "Thinking" }
+category = ["Reaktionen"]
+file = "svg/thinking-face.svg"
+tags = ["emoji", "thinking"]
+
+[[asset]]
+id = "nerd-face"
+kind = "sticker"
+name = { de = "Nerd", en = "Nerd" }
+category = ["Reaktionen"]
+file = "svg/nerd-face.svg"
+tags = ["emoji", "nerd"]
+
+[[asset]]
+id = "smiling-face-with-sunglasses"
+kind = "sticker"
+name = { de = "Cool", en = "Cool" }
+category = ["Reaktionen"]
+file = "svg/smiling-face-with-sunglasses.svg"
+tags = ["emoji", "cool"]
+
+[[asset]]
+id = "star-struck"
+kind = "sticker"
+name = { de = "Begeistert", en = "Star-struck" }
+category = ["Reaktionen"]
+file = "svg/star-struck.svg"
+tags = ["emoji", "star-struck"]
+
+[[asset]]
+id = "partying-face"
+kind = "sticker"
+name = { de = "Party-Gesicht", en = "Partying face" }
+category = ["Reaktionen"]
+file = "svg/partying-face.svg"
+tags = ["emoji", "partying face"]
+
+[[asset]]
+id = "smiling-face-with-heart-eyes"
+kind = "sticker"
+name = { de = "Herzaugen", en = "Heart eyes" }
+category = ["Reaktionen"]
+file = "svg/smiling-face-with-heart-eyes.svg"
+tags = ["emoji", "heart eyes"]
+
+[[asset]]
+id = "face-blowing-a-kiss"
+kind = "sticker"
+name = { de = "Kusshand", en = "Blowing a kiss" }
+category = ["Reaktionen"]
+file = "svg/face-blowing-a-kiss.svg"
+tags = ["emoji", "blowing a kiss"]
+
+[[asset]]
+id = "smiling-face-with-halo"
+kind = "sticker"
+name = { de = "Engel", en = "Angel" }
+category = ["Reaktionen"]
+file = "svg/smiling-face-with-halo.svg"
+tags = ["emoji", "angel"]
+
+[[asset]]
+id = "smiling-face-with-horns"
+kind = "sticker"
+name = { de = "Teufelchen", en = "Devilish" }
+category = ["Reaktionen"]
+file = "svg/smiling-face-with-horns.svg"
+tags = ["emoji", "devilish"]
+
+[[asset]]
+id = "angry-face-with-horns"
+kind = "sticker"
+name = { de = "Böser Teufel", en = "Angry devil" }
+category = ["Reaktionen"]
+file = "svg/angry-face-with-horns.svg"
+tags = ["emoji", "angry devil"]
+
+[[asset]]
+id = "smiling-face-with-tear"
+kind = "sticker"
+name = { de = "Gerührt", en = "Touched" }
+category = ["Reaktionen"]
+file = "svg/smiling-face-with-tear.svg"
+tags = ["emoji", "touched"]
+
+[[asset]]
+id = "pleading-face"
+kind = "sticker"
+name = { de = "Bettelblick", en = "Pleading" }
+category = ["Reaktionen"]
+file = "svg/pleading-face.svg"
+tags = ["emoji", "pleading"]
+
+[[asset]]
+id = "loudly-crying-face"
+kind = "sticker"
+name = { de = "Heulen", en = "Sobbing" }
+category = ["Reaktionen"]
+file = "svg/loudly-crying-face.svg"
+tags = ["emoji", "sobbing"]
+
+[[asset]]
+id = "crying-face"
+kind = "sticker"
+name = { de = "Weinen", en = "Crying" }
+category = ["Reaktionen"]
+file = "svg/crying-face.svg"
+tags = ["emoji", "crying"]
+
+[[asset]]
+id = "face-holding-back-tears"
+kind = "sticker"
+name = { de = "Tränen zurückhalten", en = "Holding back tears" }
+category = ["Reaktionen"]
+file = "svg/face-holding-back-tears.svg"
+tags = ["emoji", "holding back tears"]
+
+[[asset]]
+id = "sad-but-relieved-face"
+kind = "sticker"
+name = { de = "Traurig erleichtert", en = "Sad but relieved" }
+category = ["Reaktionen"]
+file = "svg/sad-but-relieved-face.svg"
+tags = ["emoji", "sad but relieved"]
+
+[[asset]]
+id = "disappointed-face"
+kind = "sticker"
+name = { de = "Enttäuscht", en = "Disappointed" }
+category = ["Reaktionen"]
+file = "svg/disappointed-face.svg"
+tags = ["emoji", "disappointed"]
+
+[[asset]]
+id = "worried-face"
+kind = "sticker"
+name = { de = "Besorgt", en = "Worried" }
+category = ["Reaktionen"]
+file = "svg/worried-face.svg"
+tags = ["emoji", "worried"]
+
+[[asset]]
+id = "fearful-face"
+kind = "sticker"
+name = { de = "Ängstlich", en = "Fearful" }
+category = ["Reaktionen"]
+file = "svg/fearful-face.svg"
+tags = ["emoji", "fearful"]
+
+[[asset]]
+id = "face-screaming-in-fear"
+kind = "sticker"
+name = { de = "Schreien vor Angst", en = "Screaming in fear" }
+category = ["Reaktionen"]
+file = "svg/face-screaming-in-fear.svg"
+tags = ["emoji", "screaming in fear"]
+
+[[asset]]
+id = "downcast-face-with-sweat"
+kind = "sticker"
+name = { de = "Kalter Schweiß", en = "Cold sweat" }
+category = ["Reaktionen"]
+file = "svg/downcast-face-with-sweat.svg"
+tags = ["emoji", "cold sweat"]
+
+[[asset]]
+id = "weary-face"
+kind = "sticker"
+name = { de = "Erschöpft", en = "Weary" }
+category = ["Reaktionen"]
+file = "svg/weary-face.svg"
+tags = ["emoji", "weary"]
+
+[[asset]]
+id = "yawning-face"
+kind = "sticker"
+name = { de = "Gähnen", en = "Yawn" }
+category = ["Reaktionen"]
+file = "svg/yawning-face.svg"
+tags = ["emoji", "yawn"]
+
+[[asset]]
+id = "sleeping-face"
+kind = "sticker"
+name = { de = "Schlafen", en = "Sleeping" }
+category = ["Reaktionen"]
+file = "svg/sleeping-face.svg"
+tags = ["emoji", "sleeping"]
+
+[[asset]]
+id = "pouting-face"
+kind = "sticker"
+name = { de = "Schmollen", en = "Pouting" }
+category = ["Reaktionen"]
+file = "svg/pouting-face.svg"
+tags = ["emoji", "pouting"]
+
+[[asset]]
+id = "angry-face"
+kind = "sticker"
+name = { de = "Wütend", en = "Angry" }
+category = ["Reaktionen"]
+file = "svg/angry-face.svg"
+tags = ["emoji", "angry"]
+
+[[asset]]
+id = "face-with-symbols-on-mouth"
+kind = "sticker"
+name = { de = "Fluchen", en = "Cursing" }
+category = ["Reaktionen"]
+file = "svg/face-with-symbols-on-mouth.svg"
+tags = ["emoji", "cursing"]
+
+[[asset]]
+id = "exploding-head"
+kind = "sticker"
+name = { de = "Explodierender Kopf", en = "Exploding head" }
+category = ["Reaktionen"]
+file = "svg/exploding-head.svg"
+tags = ["emoji", "exploding head"]
+
+[[asset]]
+id = "astonished-face"
+kind = "sticker"
+name = { de = "Erstaunt", en = "Astonished" }
+category = ["Reaktionen"]
+file = "svg/astonished-face.svg"
+tags = ["emoji", "astonished"]
+
+[[asset]]
+id = "face-with-open-mouth"
+kind = "sticker"
+name = { de = "Offener Mund", en = "Open mouth" }
+category = ["Reaktionen"]
+file = "svg/face-with-open-mouth.svg"
+tags = ["emoji", "open mouth"]
+
+[[asset]]
+id = "face-with-hand-over-mouth"
+kind = "sticker"
+name = { de = "Hand vor dem Mund", en = "Hand over mouth" }
+category = ["Reaktionen"]
+file = "svg/face-with-hand-over-mouth.svg"
+tags = ["emoji", "hand over mouth"]
+
+[[asset]]
+id = "shushing-face"
+kind = "sticker"
+name = { de = "Psst", en = "Shushing" }
+category = ["Reaktionen"]
+file = "svg/shushing-face.svg"
+tags = ["emoji", "shushing"]
+
+[[asset]]
+id = "melting-face"
+kind = "sticker"
+name = { de = "Schmelzen", en = "Melting" }
+category = ["Reaktionen"]
+file = "svg/melting-face.svg"
+tags = ["emoji", "melting"]
+
+[[asset]]
+id = "hugging-face"
+kind = "sticker"
+name = { de = "Umarmung", en = "Hug" }
+category = ["Reaktionen"]
+file = "svg/hugging-face.svg"
+tags = ["emoji", "hug"]
+
+[[asset]]
+id = "money-mouth-face"
+kind = "sticker"
+name = { de = "Geldgesicht", en = "Money face" }
+category = ["Reaktionen"]
+file = "svg/money-mouth-face.svg"
+tags = ["emoji", "money face"]
+
+[[asset]]
+id = "knocked-out-face"
+kind = "sticker"
+name = { de = "K.o.", en = "Knocked out" }
+category = ["Reaktionen"]
+file = "svg/knocked-out-face.svg"
+tags = ["emoji", "knocked out"]
+
+[[asset]]
+id = "clown-face"
+kind = "sticker"
+name = { de = "Clown", en = "Clown" }
+category = ["Reaktionen"]
+file = "svg/clown-face.svg"
+tags = ["emoji", "clown"]
+
+[[asset]]
+id = "ghost"
+kind = "sticker"
+name = { de = "Geist", en = "Ghost" }
+category = ["Reaktionen"]
+file = "svg/ghost.svg"
+tags = ["emoji", "ghost"]
+
+[[asset]]
+id = "skull"
+kind = "sticker"
+name = { de = "Totenkopf", en = "Skull" }
+category = ["Reaktionen"]
+file = "svg/skull.svg"
+tags = ["emoji", "skull"]
+
+[[asset]]
+id = "alien"
+kind = "sticker"
+name = { de = "Alien", en = "Alien" }
+category = ["Reaktionen"]
+file = "svg/alien.svg"
+tags = ["emoji", "alien"]
+
+[[asset]]
+id = "robot"
+kind = "sticker"
+name = { de = "Roboter", en = "Robot" }
+category = ["Reaktionen"]
+file = "svg/robot.svg"
+tags = ["emoji", "robot"]
+
+[[asset]]
+id = "pile-of-poo"
+kind = "sticker"
+name = { de = "Haufen", en = "Pile of poo" }
+category = ["Reaktionen"]
+file = "svg/pile-of-poo.svg"
+tags = ["emoji", "pile of poo"]
+
+[[asset]]
+id = "thumbs-up"
+kind = "sticker"
+name = { de = "Daumen hoch", en = "Thumbs up" }
+category = ["Reaktionen"]
+file = "svg/thumbs-up.svg"
+tags = ["emoji", "thumbs up"]
+
+[[asset]]
+id = "thumbs-down"
+kind = "sticker"
+name = { de = "Daumen runter", en = "Thumbs down" }
+category = ["Reaktionen"]
+file = "svg/thumbs-down.svg"
+tags = ["emoji", "thumbs down"]
+
+[[asset]]
+id = "clapping-hands"
+kind = "sticker"
+name = { de = "Klatschen", en = "Clapping" }
+category = ["Reaktionen"]
+file = "svg/clapping-hands.svg"
+tags = ["emoji", "clapping"]
+
+[[asset]]
+id = "folded-hands"
+kind = "sticker"
+name = { de = "Bitte danke", en = "Folded hands" }
+category = ["Reaktionen"]
+file = "svg/folded-hands.svg"
+tags = ["emoji", "folded hands"]
+
+[[asset]]
+id = "raised-fist"
+kind = "sticker"
+name = { de = "Faust", en = "Raised fist" }
+category = ["Reaktionen"]
+file = "svg/raised-fist.svg"
+tags = ["emoji", "raised fist"]
+
+[[asset]]
+id = "flexed-biceps"
+kind = "sticker"
+name = { de = "Bizeps", en = "Flexed biceps" }
+category = ["Reaktionen"]
+file = "svg/flexed-biceps.svg"
+tags = ["emoji", "flexed biceps"]
+
+[[asset]]
+id = "waving-hand"
+kind = "sticker"
+name = { de = "Winken", en = "Waving" }
+category = ["Reaktionen"]
+file = "svg/waving-hand.svg"
+tags = ["emoji", "waving"]
+
+[[asset]]
+id = "victory-hand"
+kind = "sticker"
+name = { de = "Victory", en = "Victory" }
+category = ["Reaktionen"]
+file = "svg/victory-hand.svg"
+tags = ["emoji", "victory"]
+
+[[asset]]
+id = "crossed-fingers"
+kind = "sticker"
+name = { de = "Daumen drücken", en = "Crossed fingers" }
+category = ["Reaktionen"]
+file = "svg/crossed-fingers.svg"
+tags = ["emoji", "crossed fingers"]
+
+[[asset]]
+id = "raising-hands"
+kind = "sticker"
+name = { de = "Hände hoch", en = "Raising hands" }
+category = ["Reaktionen"]
+file = "svg/raising-hands.svg"
+tags = ["emoji", "raising hands"]
+
+[[asset]]
+id = "handshake"
+kind = "sticker"
+name = { de = "Handschlag", en = "Handshake" }
+category = ["Reaktionen"]
+file = "svg/handshake.svg"
+tags = ["emoji", "handshake"]
+
+[[asset]]
+id = "heart-hands"
+kind = "sticker"
+name = { de = "Herz-Hände", en = "Heart hands" }
+category = ["Reaktionen"]
+file = "svg/heart-hands.svg"
+tags = ["emoji", "heart hands"]
+
+[[asset]]
+id = "backhand-index-pointing-right"
+kind = "sticker"
+name = { de = "Zeigen rechts", en = "Pointing right" }
+category = ["Reaktionen"]
+file = "svg/backhand-index-pointing-right.svg"
+tags = ["emoji", "pointing right"]
+
+[[asset]]
+id = "backhand-index-pointing-down"
+kind = "sticker"
+name = { de = "Zeigen nach unten", en = "Pointing down" }
+category = ["Reaktionen"]
+file = "svg/backhand-index-pointing-down.svg"
+tags = ["emoji", "pointing down"]
+
+[[asset]]
+id = "eyes"
+kind = "sticker"
+name = { de = "Augen", en = "Eyes" }
+category = ["Reaktionen"]
+file = "svg/eyes.svg"
+tags = ["emoji", "eyes"]
+
+[[asset]]
+id = "red-heart"
+kind = "sticker"
+name = { de = "Rotes Herz", en = "Red heart" }
+category = ["Reaktionen"]
+file = "svg/red-heart.svg"
+tags = ["emoji", "red heart"]
+
+[[asset]]
+id = "green-heart"
+kind = "sticker"
+name = { de = "Grünes Herz", en = "Green heart" }
+category = ["Reaktionen"]
+file = "svg/green-heart.svg"
+tags = ["emoji", "green heart"]
+
+[[asset]]
+id = "blue-heart"
+kind = "sticker"
+name = { de = "Blaues Herz", en = "Blue heart" }
+category = ["Reaktionen"]
+file = "svg/blue-heart.svg"
+tags = ["emoji", "blue heart"]
+
+[[asset]]
+id = "purple-heart"
+kind = "sticker"
+name = { de = "Lila Herz", en = "Purple heart" }
+category = ["Reaktionen"]
+file = "svg/purple-heart.svg"
+tags = ["emoji", "purple heart"]
+
+[[asset]]
+id = "broken-heart"
+kind = "sticker"
+name = { de = "Gebrochenes Herz", en = "Broken heart" }
+category = ["Reaktionen"]
+file = "svg/broken-heart.svg"
+tags = ["emoji", "broken heart"]
+
+[[asset]]
+id = "heart-on-fire"
+kind = "sticker"
+name = { de = "Brennendes Herz", en = "Heart on fire" }
+category = ["Reaktionen"]
+file = "svg/heart-on-fire.svg"
+tags = ["emoji", "heart on fire"]
+
+[[asset]]
+id = "fire"
+kind = "sticker"
+name = { de = "Feuer", en = "Fire" }
+category = ["Symbole"]
+file = "svg/fire.svg"
+tags = ["emoji", "fire"]
+
+[[asset]]
+id = "hundred-points"
+kind = "sticker"
+name = { de = "100 Punkte", en = "100 points" }
+category = ["Symbole"]
+file = "svg/hundred-points.svg"
+tags = ["emoji", "100 points"]
+
+[[asset]]
+id = "glowing-star"
+kind = "sticker"
+name = { de = "Leuchtender Stern", en = "Glowing star" }
+category = ["Symbole"]
+file = "svg/glowing-star.svg"
+tags = ["emoji", "glowing star"]
+
+[[asset]]
+id = "star"
+kind = "sticker"
+name = { de = "Stern", en = "Star" }
+category = ["Symbole"]
+file = "svg/star.svg"
+tags = ["emoji", "star"]
+
+[[asset]]
+id = "sparkles"
+kind = "sticker"
+name = { de = "Funkeln", en = "Sparkles" }
+category = ["Symbole"]
+file = "svg/sparkles.svg"
+tags = ["emoji", "sparkles"]
+
+[[asset]]
+id = "high-voltage"
+kind = "sticker"
+name = { de = "Blitz", en = "High voltage" }
+category = ["Symbole"]
+file = "svg/high-voltage.svg"
+tags = ["emoji", "high voltage"]
+
+[[asset]]
+id = "collision"
+kind = "sticker"
+name = { de = "Knall", en = "Collision" }
+category = ["Symbole"]
+file = "svg/collision.svg"
+tags = ["emoji", "collision"]
+
+[[asset]]
+id = "party-popper"
+kind = "sticker"
+name = { de = "Konfetti-Kanone", en = "Party popper" }
+category = ["Symbole"]
+file = "svg/party-popper.svg"
+tags = ["emoji", "party popper"]
+
+[[asset]]
+id = "balloon"
+kind = "sticker"
+name = { de = "Luftballon", en = "Balloon" }
+category = ["Symbole"]
+file = "svg/balloon.svg"
+tags = ["emoji", "balloon"]
+
+[[asset]]
+id = "wrapped-gift"
+kind = "sticker"
+name = { de = "Geschenk", en = "Gift" }
+category = ["Symbole"]
+file = "svg/wrapped-gift.svg"
+tags = ["emoji", "gift"]
+
+[[asset]]
+id = "trophy"
+kind = "sticker"
+name = { de = "Pokal", en = "Trophy" }
+category = ["Symbole"]
+file = "svg/trophy.svg"
+tags = ["emoji", "trophy"]
+
+[[asset]]
+id = "1st-place-medal"
+kind = "sticker"
+name = { de = "Goldmedaille", en = "Gold medal" }
+category = ["Symbole"]
+file = "svg/1st-place-medal.svg"
+tags = ["emoji", "gold medal"]
+
+[[asset]]
+id = "crown"
+kind = "sticker"
+name = { de = "Krone", en = "Crown" }
+category = ["Symbole"]
+file = "svg/crown.svg"
+tags = ["emoji", "crown"]
+
+[[asset]]
+id = "gem-stone"
+kind = "sticker"
+name = { de = "Edelstein", en = "Gem" }
+category = ["Symbole"]
+file = "svg/gem-stone.svg"
+tags = ["emoji", "gem"]
+
+[[asset]]
+id = "money-bag"
+kind = "sticker"
+name = { de = "Geldsack", en = "Money bag" }
+category = ["Symbole"]
+file = "svg/money-bag.svg"
+tags = ["emoji", "money bag"]
+
+[[asset]]
+id = "dollar-banknote"
+kind = "sticker"
+name = { de = "Dollarschein", en = "Dollar bill" }
+category = ["Symbole"]
+file = "svg/dollar-banknote.svg"
+tags = ["emoji", "dollar bill"]
+
+[[asset]]
+id = "rocket"
+kind = "sticker"
+name = { de = "Rakete", en = "Rocket" }
+category = ["Symbole"]
+file = "svg/rocket.svg"
+tags = ["emoji", "rocket"]
+
+[[asset]]
+id = "bullseye"
+kind = "sticker"
+name = { de = "Volltreffer", en = "Bullseye" }
+category = ["Symbole"]
+file = "svg/bullseye.svg"
+tags = ["emoji", "bullseye"]
+
+[[asset]]
+id = "bomb"
+kind = "sticker"
+name = { de = "Bombe", en = "Bomb" }
+category = ["Symbole"]
+file = "svg/bomb.svg"
+tags = ["emoji", "bomb"]
+
+[[asset]]
+id = "crossed-swords"
+kind = "sticker"
+name = { de = "Gekreuzte Schwerter", en = "Crossed swords" }
+category = ["Symbole"]
+file = "svg/crossed-swords.svg"
+tags = ["emoji", "crossed swords"]
+
+[[asset]]
+id = "video-game"
+kind = "sticker"
+name = { de = "Controller", en = "Game controller" }
+category = ["Symbole"]
+file = "svg/video-game.svg"
+tags = ["emoji", "game controller"]
+
+[[asset]]
+id = "game-die"
+kind = "sticker"
+name = { de = "Würfel", en = "Die" }
+category = ["Symbole"]
+file = "svg/game-die.svg"
+tags = ["emoji", "die"]
+
+[[asset]]
+id = "puzzle-piece"
+kind = "sticker"
+name = { de = "Puzzleteil", en = "Puzzle piece" }
+category = ["Symbole"]
+file = "svg/puzzle-piece.svg"
+tags = ["emoji", "puzzle piece"]
+
+[[asset]]
+id = "warning"
+kind = "sticker"
+name = { de = "Warnung", en = "Warning" }
+category = ["Symbole"]
+file = "svg/warning.svg"
+tags = ["emoji", "warning"]
+
+[[asset]]
+id = "check-mark-button"
+kind = "sticker"
+name = { de = "Haken", en = "Check mark" }
+category = ["Symbole"]
+file = "svg/check-mark-button.svg"
+tags = ["emoji", "check mark"]
+
+[[asset]]
+id = "cross-mark"
+kind = "sticker"
+name = { de = "Kreuz", en = "Cross mark" }
+category = ["Symbole"]
+file = "svg/cross-mark.svg"
+tags = ["emoji", "cross mark"]
+
+[[asset]]
+id = "prohibited"
+kind = "sticker"
+name = { de = "Verboten", en = "Prohibited" }
+category = ["Symbole"]
+file = "svg/prohibited.svg"
+tags = ["emoji", "prohibited"]
+
+[[asset]]
+id = "red-question-mark"
+kind = "sticker"
+name = { de = "Fragezeichen", en = "Question mark" }
+category = ["Symbole"]
+file = "svg/red-question-mark.svg"
+tags = ["emoji", "question mark"]
+
+[[asset]]
+id = "red-exclamation-mark"
+kind = "sticker"
+name = { de = "Ausrufezeichen", en = "Exclamation mark" }
+category = ["Symbole"]
+file = "svg/red-exclamation-mark.svg"
+tags = ["emoji", "exclamation mark"]
+
+[[asset]]
+id = "right-arrow"
+kind = "sticker"
+name = { de = "Pfeil rechts", en = "Right arrow" }
+category = ["Symbole"]
+file = "svg/right-arrow.svg"
+tags = ["emoji", "right arrow"]
+
+[[asset]]
+id = "left-arrow"
+kind = "sticker"
+name = { de = "Pfeil links", en = "Left arrow" }
+category = ["Symbole"]
+file = "svg/left-arrow.svg"
+tags = ["emoji", "left arrow"]
+
+[[asset]]
+id = "up-arrow"
+kind = "sticker"
+name = { de = "Pfeil nach oben", en = "Up arrow" }
+category = ["Symbole"]
+file = "svg/up-arrow.svg"
+tags = ["emoji", "up arrow"]
+
+[[asset]]
+id = "down-arrow"
+kind = "sticker"
+name = { de = "Pfeil nach unten", en = "Down arrow" }
+category = ["Symbole"]
+file = "svg/down-arrow.svg"
+tags = ["emoji", "down arrow"]
+
+[[asset]]
+id = "counterclockwise-arrows-button"
+kind = "sticker"
+name = { de = "Wiederholen", en = "Repeat" }
+category = ["Symbole"]
+file = "svg/counterclockwise-arrows-button.svg"
+tags = ["emoji", "repeat"]
+
+[[asset]]
+id = "play-button"
+kind = "sticker"
+name = { de = "Abspielen", en = "Play" }
+category = ["Symbole"]
+file = "svg/play-button.svg"
+tags = ["emoji", "play"]
+
+[[asset]]
+id = "pause-button"
+kind = "sticker"
+name = { de = "Pause", en = "Pause" }
+category = ["Symbole"]
+file = "svg/pause-button.svg"
+tags = ["emoji", "pause"]
+
+[[asset]]
+id = "speaker-high-volume"
+kind = "sticker"
+name = { de = "Lautsprecher", en = "Speaker" }
+category = ["Symbole"]
+file = "svg/speaker-high-volume.svg"
+tags = ["emoji", "speaker"]
+
+[[asset]]
+id = "megaphone"
+kind = "sticker"
+name = { de = "Megafon", en = "Megaphone" }
+category = ["Symbole"]
+file = "svg/megaphone.svg"
+tags = ["emoji", "megaphone"]
+
+[[asset]]
+id = "bell"
+kind = "sticker"
+name = { de = "Glocke", en = "Bell" }
+category = ["Symbole"]
+file = "svg/bell.svg"
+tags = ["emoji", "bell"]
+
+[[asset]]
+id = "microphone"
+kind = "sticker"
+name = { de = "Mikrofon", en = "Microphone" }
+category = ["Symbole"]
+file = "svg/microphone.svg"
+tags = ["emoji", "microphone"]
+
+[[asset]]
+id = "headphone"
+kind = "sticker"
+name = { de = "Kopfhörer", en = "Headphones" }
+category = ["Symbole"]
+file = "svg/headphone.svg"
+tags = ["emoji", "headphones"]
+
+[[asset]]
+id = "musical-notes"
+kind = "sticker"
+name = { de = "Noten", en = "Musical notes" }
+category = ["Symbole"]
+file = "svg/musical-notes.svg"
+tags = ["emoji", "musical notes"]
+
+[[asset]]
+id = "video-camera"
+kind = "sticker"
+name = { de = "Videokamera", en = "Video camera" }
+category = ["Symbole"]
+file = "svg/video-camera.svg"
+tags = ["emoji", "video camera"]
+
+[[asset]]
+id = "camera-with-flash"
+kind = "sticker"
+name = { de = "Kamera mit Blitz", en = "Camera with flash" }
+category = ["Symbole"]
+file = "svg/camera-with-flash.svg"
+tags = ["emoji", "camera with flash"]
+
+[[asset]]
+id = "clapper-board"
+kind = "sticker"
+name = { de = "Klappe", en = "Clapper board" }
+category = ["Symbole"]
+file = "svg/clapper-board.svg"
+tags = ["emoji", "clapper board"]
+
+[[asset]]
+id = "light-bulb"
+kind = "sticker"
+name = { de = "Glühbirne", en = "Light bulb" }
+category = ["Symbole"]
+file = "svg/light-bulb.svg"
+tags = ["emoji", "light bulb"]
+
+[[asset]]
+id = "magnifying-glass-tilted-left"
+kind = "sticker"
+name = { de = "Lupe", en = "Magnifying glass" }
+category = ["Symbole"]
+file = "svg/magnifying-glass-tilted-left.svg"
+tags = ["emoji", "magnifying glass"]
+
+[[asset]]
+id = "chart-increasing"
+kind = "sticker"
+name = { de = "Kurs steigt", en = "Chart up" }
+category = ["Symbole"]
+file = "svg/chart-increasing.svg"
+tags = ["emoji", "chart up"]
+
+[[asset]]
+id = "speech-balloon"
+kind = "sticker"
+name = { de = "Sprechblase", en = "Speech balloon" }
+category = ["Symbole"]
+file = "svg/speech-balloon.svg"
+tags = ["emoji", "speech balloon"]
+
+[[asset]]
+id = "alarm-clock"
+kind = "sticker"
+name = { de = "Wecker", en = "Alarm clock" }
+category = ["Symbole"]
+file = "svg/alarm-clock.svg"
+tags = ["emoji", "alarm clock"]
+
+[[asset]]
+id = "hourglass-done"
+kind = "sticker"
+name = { de = "Sanduhr", en = "Hourglass" }
+category = ["Symbole"]
+file = "svg/hourglass-done.svg"
+tags = ["emoji", "hourglass"]
+
+[[asset]]
+id = "stopwatch"
+kind = "sticker"
+name = { de = "Stoppuhr", en = "Stopwatch" }
+category = ["Symbole"]
+file = "svg/stopwatch.svg"
+tags = ["emoji", "stopwatch"]
+
+[[asset]]
+id = "rainbow"
+kind = "sticker"
+name = { de = "Regenbogen", en = "Rainbow" }
+category = ["Symbole"]
+file = "svg/rainbow.svg"
+tags = ["emoji", "rainbow"]
+
+[[asset]]
+id = "dog-face"
+kind = "sticker"
+name = { de = "Hund", en = "Dog" }
+category = ["Tiere & Essen"]
+file = "svg/dog-face.svg"
+tags = ["emoji", "dog"]
+
+[[asset]]
+id = "cat-face"
+kind = "sticker"
+name = { de = "Katze", en = "Cat" }
+category = ["Tiere & Essen"]
+file = "svg/cat-face.svg"
+tags = ["emoji", "cat"]
+
+[[asset]]
+id = "bear"
+kind = "sticker"
+name = { de = "Bär", en = "Bear" }
+category = ["Tiere & Essen"]
+file = "svg/bear.svg"
+tags = ["emoji", "bear"]
+
+[[asset]]
+id = "panda"
+kind = "sticker"
+name = { de = "Panda", en = "Panda" }
+category = ["Tiere & Essen"]
+file = "svg/panda.svg"
+tags = ["emoji", "panda"]
+
+[[asset]]
+id = "frog"
+kind = "sticker"
+name = { de = "Frosch", en = "Frog" }
+category = ["Tiere & Essen"]
+file = "svg/frog.svg"
+tags = ["emoji", "frog"]
+
+[[asset]]
+id = "penguin"
+kind = "sticker"
+name = { de = "Pinguin", en = "Penguin" }
+category = ["Tiere & Essen"]
+file = "svg/penguin.svg"
+tags = ["emoji", "penguin"]
+
+[[asset]]
+id = "pizza"
+kind = "sticker"
+name = { de = "Pizza", en = "Pizza" }
+category = ["Tiere & Essen"]
+file = "svg/pizza.svg"
+tags = ["emoji", "pizza"]
+
+[[asset]]
+id = "hamburger"
+kind = "sticker"
+name = { de = "Burger", en = "Burger" }
+category = ["Tiere & Essen"]
+file = "svg/hamburger.svg"
+tags = ["emoji", "burger"]
+
+[[asset]]
+id = "french-fries"
+kind = "sticker"
+name = { de = "Pommes", en = "Fries" }
+category = ["Tiere & Essen"]
+file = "svg/french-fries.svg"
+tags = ["emoji", "fries"]
+
+[[asset]]
+id = "doughnut"
+kind = "sticker"
+name = { de = "Donut", en = "Doughnut" }
+category = ["Tiere & Essen"]
+file = "svg/doughnut.svg"
+tags = ["emoji", "doughnut"]
+
+[[asset]]
+id = "beer-mug"
+kind = "sticker"
+name = { de = "Bier", en = "Beer" }
+category = ["Tiere & Essen"]
+file = "svg/beer-mug.svg"
+tags = ["emoji", "beer"]
+
+[[asset]]
+id = "bottle-with-popping-cork"
+kind = "sticker"
+name = { de = "Sektkorken", en = "Popping cork" }
+category = ["Tiere & Essen"]
+file = "svg/bottle-with-popping-cork.svg"
+tags = ["emoji", "popping cork"]
