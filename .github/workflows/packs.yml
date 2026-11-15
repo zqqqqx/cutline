@@ -1,0 +1,51 @@
+# Inhaltspakete: bei jedem Push auf `packs` je Paketordner eine ZIP (plugin.toml im Stamm, wie
+# cl-plugin::install_zip es erwartet) und index.json bauen und an das feste Release `packs` hängen.
+# Das Release ist eine Vorabversion: GitHubs `releases/latest` (Updater der App) sieht es nie.
+name: Pakete
+
+on:
+  push:
+    branches: [packs]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: packs-release
+  cancel-in-progress: false
+
+jobs:
+  packs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: ZIPs bauen
+        run: |
+          set -euo pipefail
+          mkdir dist
+          for d in */; do
+            d="${d%/}"
+            [ -f "$d/plugin.toml" ] || continue
+            (cd "$d" && zip -q -X -r -9 "../dist/$d.zip" .)
+          done
+          ls -l dist
+
+      - name: index.json
+        run: |
+          python3 tools/index.py . dist
+          (cd dist && sha256sum *.zip)
+
+      - name: Release „packs“ anlegen (falls nötig) und Dateien hochladen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view packs >/dev/null 2>&1; then
+            gh release create packs --target packs --prerelease --latest=false \
+              --title "Inhaltspakete" \
+              --notes "Nachladbare Inhaltspakete für Cutline (Zweig packs). Kein App-Update."
+          fi
+          gh release upload packs dist/*.zip dist/index.json --clobber
