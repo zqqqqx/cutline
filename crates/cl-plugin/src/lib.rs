@@ -187,10 +187,13 @@ pub const SOUND_EXT: &[&str] = &["wav", "mp3", "ogg", "flac", "m4a", "aac", "opu
 /// (erkannt am Inhalt, siehe `cl_media::animation`).
 pub const STICKER_EXT: &[&str] = &["png", "webp", "svg", "jpg", "jpeg", "gif"];
 
-/// Relativer Pfad ohne `..`, Wurzel oder Laufwerk (bleibt im Plugin-Ordner).
+/// Relativer Pfad ohne `..`, Wurzel oder Laufwerk (bleibt im Plugin-Ordner). `:` und `\` sind auf
+/// jedem System verboten: ein Paket wird überall gleich geprüft (Laufwerkspfade gelten sonst nur
+/// unter Windows als absolut).
 pub fn relative_inside(f: &str) -> bool {
     !f.is_empty()
         && !f.contains("..")
+        && !f.contains([':', '\\'])
         && Path::new(f)
             .components()
             .all(|c| matches!(c, std::path::Component::Normal(_)))
