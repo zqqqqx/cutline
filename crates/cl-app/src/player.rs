@@ -1068,8 +1068,8 @@ impl App {
                     );
                     self.thumbs.insert(media, tex);
                 }
-                Done::Wave { media, peaks } => {
-                    self.waves.insert(media, peaks);
+                Done::Wave { media, stream, peaks } => {
+                    self.waves.insert((media, stream), peaks);
                 }
                 Done::SoundMeta { key, media, bars } => {
                     if self.sound_pending.as_deref() == Some(key.as_str()) {
@@ -1096,7 +1096,7 @@ impl App {
                 Done::Skipped(key) => {
                     self.fx_thumbs_requested.remove(&key);
                 }
-                Done::Error(e) => eprintln!("Decoder: {e}"),
+                Done::Error(e) => log::warn!("Decoder: {e}"),
             }
         }
     }
@@ -1211,7 +1211,7 @@ impl App {
                     sp.note_time(pair, d.secs, interval);
                 }
                 if crate::app::perf() {
-                    eprintln!("perf: Übergang gemischt ({}×{}, {} Bild(er)) in {:.1} ms (im Hintergrund)", cw, ch, sets.len(), d.secs * 1e3);
+                    crate::applog::perf_line!("perf: Übergang gemischt ({}×{}, {} Bild(er)) in {:.1} ms (im Hintergrund)", cw, ch, sets.len(), d.secs * 1e3);
                 }
                 sp.last = Some(d.id);
                 if !d.images.is_empty() {

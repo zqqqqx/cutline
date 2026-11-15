@@ -930,7 +930,11 @@ pub(crate) fn audio_part(
         if c.fx.reverse {
             chain.push("areverse".into());
         }
-        let mut src = format!("{i}:a");
+        // gewählte Tonspur der Datei; fehlt sie (andere Datei verknüpft), die erste
+        let mut src = match c.audio_stream.filter(|&n| n > 0 && n < m.audio_streams) {
+            Some(n) => format!("{i}:a:{n}"),
+            None => format!("{i}:a"),
+        };
         if let Some(id) = &c.fx.speed_curve {
             // Tempo-Kurve: Quelle in Abschnitte teilen, je Abschnitt konstantes atempo
             let pieces = curve_pieces(id, seg_len.as_secs_f64(), dur);

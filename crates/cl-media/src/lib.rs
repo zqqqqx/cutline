@@ -264,6 +264,7 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
         height,
         fps: if kind == MediaKind::Video { fps } else { None },
         has_audio: audio.is_some(),
+        audio_streams: p.streams.iter().filter(|s| s.codec_type.as_deref() == Some("audio")).count() as u32,
         video_codec: video.and_then(|v| v.codec_name.clone()),
         audio_codec: audio.and_then(|a| a.codec_name.clone()),
     })
@@ -519,9 +520,21 @@ pub fn waveform(path: &Path, per_sec: u32) -> Result<Vec<f32>> {
 
 /// Wie [`waveform`], aber nur die ersten `max_secs` Sekunden (stundenlange Dateien: Zeit und Speicher).
 pub fn waveform_head(path: &Path, per_sec: u32, max_secs: Option<f64>) -> Result<Vec<f32>> {
+    waveform_of(path, per_sec, max_secs, 0)
+}
+
+/// Wie [`waveform`] für die Tonspur `stream` der Datei (0 = erste).
+pub fn waveform_stream(path: &Path, per_sec: u32, stream: u32) -> Result<Vec<f32>> {
+    waveform_of(path, per_sec, None, stream)
+}
+
+fn waveform_of(path: &Path, per_sec: u32, max_secs: Option<f64>, stream: u32) -> Result<Vec<f32>> {
     const RATE: u32 = 8000;
     let mut cmd = command("ffmpeg")?;
     cmd.args(["-v", "error", "-nostdin", "-i"]).arg(path);
+    if stream > 0 {
+        cmd.args(["-map", &format!("0:a:{stream}")]);
+    }
     if let Some(t) = max_secs {
         cmd.args(["-t", &format!("{t:.3}")]);
     }

@@ -463,6 +463,7 @@ impl ExportDialog {
         match finished {
             Some((Some(res), secs)) => {
                 let (sidecars, used) = self.running.take().map(|r| (r.sidecars, Some(r.settings))).unwrap_or_default();
+                log::info!(target: "export", "{} nach {secs:.1} s: {} · {:?}", if res.is_ok() { "fertig" } else { "Fehler" }, self.last_output.as_deref().map(|p| p.display().to_string()).unwrap_or_default(), used.as_ref().map(|s| (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio)));
                 match res {
                     Ok(()) => {
                         self.done = Some((Instant::now(), secs));
@@ -890,6 +891,7 @@ impl ExportDialog {
                             *pr.lock().unwrap() = x;
                             c2.request_repaint();
                         });
+                        if let Err(e) = &r { log::error!(target: "export", "{e} · Befehl: ffmpeg {}", job.args.join(" ")); }
                         *rs.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
                         c2.request_repaint();
                     });

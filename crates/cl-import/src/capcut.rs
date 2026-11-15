@@ -257,7 +257,12 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
         if kind == TrackKind::Video && ty == "video" && first_video {
             track.main = true;
             first_video = false;
+            // „Originalton der Hauptspur aus“
+            track.muted = d.pointer("/config/video_mute").and_then(|v| v.as_bool()).unwrap_or(false);
         }
+        // Stummschalter am Spurkopf (Bit 0); CapCut setzt dabei die Clips auf 0 und merkt sich
+        // die Lautstärke in `last_nonzero_volume` – in Cutline bleibt die Spur stumm (ein Klick hebt es auf)
+        track.muted |= t.get("attribute").and_then(|v| v.as_i64()).unwrap_or(0) & 1 == 1;
         for s in t
             .get("segments")
             .and_then(|s| s.as_array())
@@ -436,7 +441,14 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
             // gemeinsame Eigenschaften
             let speed = s.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
             clip.speed = speed.clamp(0.1, 10.0) as f32;
-            let vol = s.get("volume").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            let mut vol = s.get("volume").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            if vol <= 0.0001 && track.muted {
+                vol = s.get("last_nonzero_volume").and_then(|v| v.as_f64()).unwrap_or(vol);
+            }
+            // Ton vom Video getrennt: er liegt als eigener Ton-Clip vor (wie „Ton extrahieren“)
+            if mkind == "videos" && m.get("has_sound_separated").and_then(|v| v.as_bool()).unwrap_or(false) {
+                vol = 0.0;
+            }
             clip.volume_db = if vol <= 0.0001 {
                 -60.0
             } else {
@@ -466,8 +478,21 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
             // wird jede als weiche Blende mit gleicher Dauer übernommen
             for r in s.get("extra_material_refs").and_then(|v| v.as_array()).into_iter().flatten() {
                 let Some((k, am)) = r.as_str().and_then(|id| by_id.get(id)) else { continue };
-                if k != "material_animations" {
-                    continue;
+                let us_of = |key: &str| Time(am.get(key).and_then(|v| v.as_i64()).unwrap_or(0).clamp(0, duration.0));
+                match k.as_str() {
+                    // Tonspur der Datei, 1-basiert (1 = Standard); ohne Verweis die erste
+                    "audio_track_indexes" => {
+                        let n = am.get("audio_track_index").and_then(|v| v.as_i64()).unwrap_or(1);
+                        clip.audio_stream = (n > 1).then(|| (n - 1) as u32);
+                        continue;
+                    }
+                    "audio_fades" => {
+                        clip.fade_in = us_of("fade_in_duration");
+                        clip.fade_out = us_of("fade_out_duration");
+                        continue;
+                    }
+                    "material_animations" => {}
+                    _ => continue,
                 }
                 for a in am.get("animations").and_then(|v| v.as_array()).into_iter().flatten() {
                     let anim = cl_core::AnimRef {
@@ -502,6 +527,9 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
             .unwrap_or(if kind == TrackKind::Text { 14000 } else { 0 });
         layer.insert(track.id, ri);
         if !track.clips.is_empty() {
+            if track.muted && matches!(kind, TrackKind::Video | TrackKind::Audio) {
+                rep.skip("Spur stumm übernommen");
+            }
             p.timeline.tracks.push(track);
         }
     }
@@ -515,6 +543,7 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
         }
         let fits = |m: &Track, t: &Track| {
             m.kind == t.kind
+                && m.muted == t.muted
                 && !m.main
                 && t.clips.iter().all(|c| {
                     m.clips
@@ -725,5 +754,82 @@ mod tests {
         assert_eq!(st.color, [255, 0, 0, 255]);
         assert_eq!(st.align, 0);
         assert_eq!(p.timeline.tracks.last().unwrap().kind, TrackKind::Audio);
+    }
+
+    /// Stummschaltung (Spur-Bit, `video_mute`, `last_nonzero_volume`), getrennter Originalton,
+    /// Tonspur der Datei und Tonblenden – alle Kombinationen.
+    #[test]
+    fn mute_separated_sound_stream_and_fades() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let v = dir.path().join("zwei.mp4");
+        let ok = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=4", "-f", "lavfi", "-i", "sine=f=300:d=4"])
+            .args(["-f", "lavfi", "-i", "sine=f=900:d=4", "-map", "0", "-map", "1", "-map", "2", "-c:a", "aac", "-pix_fmt", "yuv420p", "-shortest"])
+            .arg(&v)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let seg = |mid: &str, start: i64, vol: f64, lnz: Option<f64>, refs: &[&str]| {
+            let mut s = serde_json::json!({"material_id": mid, "target_timerange": {"start": start * 1_000_000, "duration": 1_000_000},
+                "source_timerange": {"start": 0, "duration": 1_000_000}, "speed": 1.0, "volume": vol, "extra_material_refs": refs});
+            if let Some(l) = lnz {
+                s["last_nonzero_volume"] = l.into();
+            }
+            s
+        };
+        let path = v.to_string_lossy();
+        let draft = |video_mute: bool, main_attr: i64| {
+            serde_json::json!({
+                "config": {"video_mute": video_mute},
+                "materials": {
+                    "videos": [{"id": "V", "type": "video", "path": path}, {"id": "VS", "type": "video", "path": path, "has_sound_separated": true}],
+                    "audios": [{"id": "O", "type": "video_original_sound", "video_id": "VS", "path": path}],
+                    "audio_track_indexes": [{"id": "I2", "audio_track_index": 2, "default_audio_track_index": 1}, {"id": "I1", "audio_track_index": 1, "default_audio_track_index": 1}],
+                    "audio_fades": [{"id": "F", "fade_in_duration": 0, "fade_out_duration": 600_000}]
+                },
+                "tracks": [
+                    {"type": "video", "attribute": main_attr, "segments": [seg("V", 0, 0.0, Some(0.8), &[]), seg("V", 1, 1.0, None, &[]), seg("VS", 2, 1.0, None, &["I2"])]},
+                    {"type": "video", "attribute": 1, "segments": [seg("V", 0, 0.0, None, &[])]},
+                    {"type": "audio", "attribute": 0, "segments": [seg("O", 2, 1.0, None, &["I2", "F"]), seg("V", 4, 0.0, Some(1.0), &[]), seg("V", 5, 0.5, None, &["I1"])]},
+                    {"type": "audio", "attribute": 1, "segments": [seg("O", 8, 0.0, Some(1.0), &[])]},
+                    {"type": "audio", "attribute": 0, "segments": [seg("O", 9, 0.0, None, &[])]}
+                ]
+            })
+        };
+        let vol = |c: &Clip| (c.volume_db * 10.0).round() / 10.0;
+        // Hauptspur über das Spur-Bit stumm: Lautstärke aus `last_nonzero_volume`, Spur stumm
+        let (p, rep) = convert(&draft(false, 1), dir.path(), "T").unwrap();
+        assert_eq!(p.media[0].audio_streams, 2);
+        let tr = &p.timeline.tracks;
+        let main = tr.iter().find(|t| t.main).unwrap();
+        assert!(main.muted);
+        assert_eq!(main.clips.iter().map(vol).collect::<Vec<_>>(), [-1.9, 0.0, -60.0], "0,8 übernommen; getrennter Ton stumm wie „Ton extrahieren“");
+        assert_eq!(main.clips[2].audio_stream, Some(1));
+        // zweite Bildspur: stumm, Lautstärke 0 ohne `last_nonzero_volume` bleibt 0
+        let v2 = tr.iter().find(|t| t.kind == TrackKind::Video && !t.main).unwrap();
+        assert!(v2.muted && vol(&v2.clips[0]) == -60.0);
+        // Tonspuren: stumme und hörbare werden nicht zusammengelegt
+        let audio: Vec<&Track> = tr.iter().filter(|t| t.kind == TrackKind::Audio).collect();
+        let loud = audio.iter().find(|t| !t.muted && t.clips.len() == 4).unwrap();
+        let c = &loud.clips;
+        assert_eq!((c[0].audio_stream, c[0].fade_in, c[0].fade_out), (Some(1), Time::ZERO, Time(600_000)));
+        assert_eq!(vol(&c[1]), -60.0, "Clip-Lautstärke 0 auf hörbarer Spur bleibt 0");
+        assert_eq!((vol(&c[2]), c[2].audio_stream), (-6.0, None), "Index 1 = erste Spur");
+        assert_eq!(vol(&c[3]), -60.0);
+        let muted = audio.iter().find(|t| t.muted).unwrap();
+        assert_eq!(vol(&muted.clips[0]), 0.0);
+        assert_eq!(rep.skipped.iter().find(|(w, _)| w == "Spur stumm übernommen").map(|x| x.1), Some(3));
+        // `video_mute` schaltet die Hauptspur stumm, auch ohne Spur-Bit; ohne beides ist sie hörbar
+        let (p, _) = convert(&draft(true, 0), dir.path(), "T").unwrap();
+        let main = p.timeline.tracks.iter().find(|t| t.main).unwrap();
+        assert!(main.muted && vol(&main.clips[0]) == -1.9);
+        let (p, _) = convert(&draft(false, 0), dir.path(), "T").unwrap();
+        let main = p.timeline.tracks.iter().find(|t| t.main).unwrap();
+        assert!(!main.muted && vol(&main.clips[0]) == -60.0);
     }
 }

@@ -375,6 +375,7 @@ impl App {
     }
 
     pub fn settings_window(&mut self, ctx: &egui::Context) {
+        self.poll_pack_downloads();
         if !self.settings_open {
             return;
         }
@@ -1079,6 +1080,8 @@ impl App {
                     .small()
                     .color(theme::TEXT_DIM()),
                 );
+                ui.add_space(8.0);
+                crate::applog::about_buttons(self, ui);
             }
         }
     }

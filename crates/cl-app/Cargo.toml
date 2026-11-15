@@ -28,6 +28,7 @@ serde.workspace = true
 tempfile.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
+log = "0.4"
 eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "x11", "wayland"] }
 rfd = "0.15"
 raw-window-handle = "0.6"
@@ -40,6 +41,8 @@ bytemuck = "1"
 
 [dev-dependencies]
 tempfile.workspace = true
+# Testpakete bauen (wie cl-plugin)
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 winresource = "0.1"

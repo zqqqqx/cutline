@@ -12,6 +12,7 @@
 //! Es werden keine Daten übertragen außer der normalen HTTP-Anfrage an api.github.com.
 
 pub mod changelog;
+pub mod packs;
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};

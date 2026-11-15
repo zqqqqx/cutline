@@ -318,7 +318,7 @@ fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shar
             // damit das nächste Fenster an der richtigen Stelle anschließt
             if want > 0 && !sh.stop.load(Ordering::Relaxed) {
                 if crate::app::perf() {
-                    eprintln!("perf: Ton-Fenster ab Frame {} mit {} Frames Stille aufgefüllt", plan.first, want / 2);
+                    crate::applog::perf_line!("perf: Ton-Fenster ab Frame {} mit {} Frames Stille aufgefüllt", plan.first, want / 2);
                 }
                 ready2.get_or_init(Instant::now);
                 q2.lock().unwrap().extend(std::iter::repeat_n(0.0, want as usize));
@@ -342,7 +342,7 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
                 match open_window(&project, plan, rate, &shared) {
                     Ok(w) => next = Some(w),
                     Err(e) => {
-                        eprintln!("Ton: {e}");
+                        log::warn!("Ton: {e}");
                         break;
                     }
                 }
@@ -366,7 +366,7 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
                 // Vorlauf: wie lange das nächste Fenster schon Ton bereithielt; Versatz: Abweichung
                 // des Fensteranfangs vom durchgehenden Sample-Zähler (muss 0 sein)
                 let lead = n.ready.get().map(|r| r.elapsed().as_secs_f64() * 1000.0);
-                eprintln!(
+                crate::applog::perf_line!(
                     "perf: Ton-Fensterwechsel bei Frame {}: Vorlauf {} ms (Start nach {:.0} ms), Versatz {} Samples",
                     n.plan.first,
                     lead.map_or("–".into(), |l| format!("{l:.0}")),
@@ -504,7 +504,7 @@ impl AudioPlayer {
             return Ok(Self { ctl, failed, shared, peaks, rate, start: from });
         };
         let out = move || -> Result<(), String> {
-            let err = |e| eprintln!("Audio: {e}");
+            let err = |e| log::warn!("Audio: {e}");
             let cfg: cpal::StreamConfig = config.clone().into();
             macro_rules! build {
                 ($t:ty, $conv:expr) => {{
@@ -562,7 +562,7 @@ impl AudioPlayer {
             .name("cl-audio-out".into())
             .spawn(move || {
                 if let Err(e) = out() {
-                    eprintln!("Ton: {e}");
+                    log::warn!("Ton: {e}");
                     fail.store(true, Ordering::Relaxed);
                 }
             })

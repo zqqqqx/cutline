@@ -1,6 +1,7 @@
 //! Eigene, minimalistische Steuerelemente: Regler (2-px-Schiene, kleiner Knopf, Wert
 //! rechts direkt editierbar), Schalter, Keyframe-Raute, Segment-Umschalter und Kacheln.
 
+use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
 use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText, Sense, Stroke};
@@ -399,18 +400,158 @@ pub fn grid<T>(
     let avail = grid_avail(ui.available_width(), ui.cursor().left(), ui.clip_rect().right() - 2.0);
     let (cols, w) = grid_cols(avail, min_w, gap);
     let h = (w / aspect).round();
-    for chunk in items.chunks(cols) {
-        let (row, _) = ui.allocate_exact_size(vec2(avail, h + label_h), Sense::hover());
-        let visible = ui.is_rect_visible(row);
-        for (i, it) in chunk.iter().enumerate().filter(|_| visible) {
-            let r = Rect::from_min_size(
-                pos2(row.left() + i as f32 * (w + gap), row.top()),
-                vec2(w, h + label_h),
-            );
+    let order = ui
+        .data_mut(|d| d.remove_temp::<GridOrder>(grid_order_id()))
+        .filter(|o| o.keys.len() == items.len());
+    let Some(order) = order else {
+        for chunk in items.chunks(cols) {
+            let (row, _) = ui.allocate_exact_size(vec2(avail, h + label_h), Sense::hover());
+            let visible = ui.is_rect_visible(row);
+            for (i, it) in chunk.iter().enumerate().filter(|_| visible) {
+                let r = Rect::from_min_size(
+                    pos2(row.left() + i as f32 * (w + gap), row.top()),
+                    vec2(w, h + label_h),
+                );
+                tile(ui, r, it);
+            }
+            ui.add_space(gap - ui.spacing().item_spacing.y);
+        }
+        return;
+    };
+    // Mit Reihenfolge: erst alle Zeilen belegen, dann jede Kachel an ihren Platz (gleitend)
+    let rows: Vec<Rect> = items
+        .chunks(cols)
+        .map(|_| {
+            let (row, _) = ui.allocate_exact_size(vec2(avail, h + label_h), Sense::hover());
+            ui.add_space(gap - ui.spacing().item_spacing.y);
+            row
+        })
+        .collect();
+    let Some(first) = rows.first().copied() else {
+        return;
+    };
+    let cell = vec2(w + gap, rows.get(1).map_or(h + label_h + gap, |r| r.top() - first.top()));
+    let slot_pos = |s: usize| vec2((s % cols) as f32 * cell.x, (s / cols) as f32 * cell.y);
+    // Ziehen im Bearbeiten-Modus: die übrigen rücken zur Seite, der gezogene liegt blass in der Lücke
+    let held = egui::DragAndDrop::payload::<ReorderPayload>(ui.ctx());
+    let from = held.and_then(|p| order.keys[..order.movable].iter().position(|k| *k == p.0)).filter(|_| order.editing);
+    let area = Rect::from_min_max(first.min, rows.last().map_or(first.max, |r| r.max));
+    let pointer = ui.input(|i| i.pointer.latest_pos()).filter(|p| area.expand(gap).contains(*p));
+    let slots = match (from, pointer) {
+        (Some(from), Some(p)) => {
+            let to = slot_at(p - first.min, cols, cell, order.movable);
+            let before = gap_before(&order.keys[..order.movable], from, to);
+            ui.data_mut(|d| d.insert_temp(grid_drop_id(), GridDrop(order.keys[from].clone(), before)));
+            gap_slots(items.len(), from, to)
+        }
+        _ => (0..items.len()).collect(),
+    };
+    let now = ui.input(|i| i.time);
+    let store = ui.id().with("grid-glide");
+    let mut glides = ui.data_mut(|d| d.get_temp::<GridGlides>(store)).unwrap_or_default();
+    // andere Spaltenzahl (Breite geändert): sofort neu umbrechen, nicht gleiten
+    let fresh = glides.cols != cols;
+    let mut next = GridGlides { cols, at: HashMap::with_capacity(items.len()) };
+    let mut moving = false;
+    for (i, it) in items.iter().enumerate() {
+        let to = slot_pos(slots[i]);
+        let g = match glides.at.remove(&order.keys[i]) {
+            Some(g) if !fresh && g.to == to => g,
+            Some(g) if !fresh => SlotGlide { from: g.at(now), to, t0: now },
+            _ => SlotGlide { from: to, to, t0: now },
+        };
+        let at = g.at(now);
+        moving |= at != to;
+        next.at.insert(order.keys[i].clone(), g);
+        let r = Rect::from_min_size(first.min + at, vec2(w, h + label_h));
+        if ui.is_rect_visible(r) {
             tile(ui, r, it);
         }
-        ui.add_space(gap - ui.spacing().item_spacing.y);
     }
+    if moving {
+        ui.ctx().request_repaint();
+    }
+    ui.data_mut(|d| d.insert_temp(store, next));
+}
+
+/// Für das nächste [`grid`]: Schlüssel je Eintrag (in Anzeigereihenfolge), davon die ersten
+/// `movable` verschiebbar; `editing` = Bearbeiten-Modus (Ziehen macht Platz). Mit Schlüsseln
+/// gleiten Kacheln an ihren neuen Platz, wenn sich die Reihenfolge ändert (Ablegen, Anpinnen).
+#[derive(Clone, Default)]
+pub struct GridOrder {
+    pub keys: std::sync::Arc<Vec<String>>,
+    pub movable: usize,
+    pub editing: bool,
+}
+
+pub fn grid_order_id() -> egui::Id {
+    egui::Id::new("grid-order")
+}
+
+/// Nutzlast beim Umsortieren (Schlüssel des Eintrags); die Zeitleiste nimmt sie nicht an.
+pub struct ReorderPayload(pub String);
+
+/// Ziel beim Ziehen, von [`grid`] gesetzt: gezogener Schlüssel, landet vor diesem (bzw. am Ende)
+#[derive(Clone, Default)]
+pub struct GridDrop(pub String, pub Option<String>);
+
+pub fn grid_drop_id() -> egui::Id {
+    egui::Id::new("grid-drop")
+}
+
+/// Gleiten einer Kachel zwischen zwei Plätzen (relativ zur ersten Kachel)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SlotGlide {
+    from: egui::Vec2,
+    to: egui::Vec2,
+    t0: f64,
+}
+
+impl SlotGlide {
+    fn at(&self, now: f64) -> egui::Vec2 {
+        let age = (now - self.t0) as f32;
+        let secs = theme::anim(theme::MOTION);
+        vec2(theme::glide_at(self.from.x, self.to.x, age, secs), theme::glide_at(self.from.y, self.to.y, age, secs))
+    }
+}
+
+#[derive(Clone, Default)]
+struct GridGlides {
+    cols: usize,
+    at: HashMap<String, SlotGlide>,
+}
+
+/// Anzeigeplatz je Eintrag, während Eintrag `from` an Platz `to` gezogen wird: die übrigen rücken
+/// zusammen und lassen dort die Lücke (in der der gezogene Eintrag liegt).
+pub fn gap_slots(n: usize, from: usize, to: usize) -> Vec<usize> {
+    (0..n)
+        .map(|i| {
+            if i == from {
+                return to;
+            }
+            let j = if i > from { i - 1 } else { i };
+            if j >= to {
+                j + 1
+            } else {
+                j
+            }
+        })
+        .collect()
+}
+
+/// Platz im Raster unter dem Zeiger (`p` relativ zur ersten Kachel), begrenzt auf `0..n`
+pub fn slot_at(p: egui::Vec2, cols: usize, cell: egui::Vec2, n: usize) -> usize {
+    let col = ((p.x / cell.x).floor().max(0.0) as usize).min(cols.max(1) - 1);
+    let row = (p.y / cell.y).floor().max(0.0) as usize;
+    (row * cols + col).min(n.saturating_sub(1))
+}
+
+/// Ablegen: vor welchem Schlüssel landet `keys[from]` auf Platz `to` (`None` = ans Ende)?
+pub fn gap_before(keys: &[String], from: usize, to: usize) -> Option<String> {
+    let mut v: Vec<&String> = keys.iter().collect();
+    let k = v.remove(from);
+    v.insert(to.min(v.len()), k);
+    v.get(to + 1).map(|s| s.to_string())
 }
 
 /// Fügt dieses Klick-Ereignis einer Kachel ein? `clicks`: 0 = kein Klick, sonst 1/2/3 (Doppel-/
@@ -775,6 +916,86 @@ mod tests {
         let (med, max) = (times[times.len() / 2], times[times.len() - 1]);
         println!("Platzhalter-Raster 300 Kacheln: Median {med:.2} ms, Max {max:.2} ms je Bild");
         assert!(med < 8.0, "{med}");
+    }
+
+    #[test]
+    fn dragging_makes_room_at_the_target() {
+        use super::{gap_before, gap_slots, slot_at};
+        // ohne Bewegung (an den eigenen Platz): alles bleibt
+        assert_eq!(gap_slots(5, 2, 2), vec![0, 1, 2, 3, 4]);
+        // Eintrag 0 nach Platz 3: 1..3 rücken nach vorn, der gezogene liegt in der Lücke
+        assert_eq!(gap_slots(5, 0, 3), vec![3, 0, 1, 2, 4]);
+        // Eintrag 4 nach vorn: alle davor rücken einen Platz weiter
+        assert_eq!(gap_slots(5, 4, 0), vec![1, 2, 3, 4, 0]);
+        // jeder Platz genau einmal belegt
+        for (from, to) in [(0, 4), (3, 1), (2, 0), (1, 1)] {
+            let mut s = gap_slots(5, from, to);
+            assert_eq!(s[from], to);
+            s.sort();
+            assert_eq!(s, vec![0, 1, 2, 3, 4]);
+        }
+        // Ablegen landet vor dem Nachfolger in der neuen Reihenfolge, am Ende ohne Nachfolger
+        let k: Vec<String> = ["a", "b", "c", "d"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(gap_before(&k, 0, 2).as_deref(), Some("d"));
+        assert_eq!(gap_before(&k, 3, 0).as_deref(), Some("a"));
+        assert_eq!(gap_before(&k, 1, 3), None);
+        assert_eq!(gap_before(&k, 2, 2).as_deref(), Some("d"), "an den eigenen Platz");
+        // Zeiger → Platz: Spalten, Zeilen, Ränder und Ende begrenzt
+        let cell = vec2(100.0, 80.0);
+        assert_eq!(slot_at(vec2(150.0, 10.0), 3, cell, 10), 1);
+        assert_eq!(slot_at(vec2(250.0, 90.0), 3, cell, 10), 5);
+        assert_eq!(slot_at(vec2(-30.0, -5.0), 3, cell, 10), 0);
+        assert_eq!(slot_at(vec2(900.0, 10.0), 3, cell, 10), 2, "rechts neben der letzten Spalte");
+        assert_eq!(slot_at(vec2(50.0, 900.0), 3, cell, 4), 3, "hinter dem letzten Eintrag");
+    }
+
+    #[test]
+    fn grid_tiles_glide_to_their_new_place() {
+        use super::SlotGlide;
+        let g = SlotGlide { from: vec2(0.0, 0.0), to: vec2(100.0, 80.0), t0: 1.0 };
+        if crate::theme::animations_on() {
+            assert_eq!(g.at(1.0), vec2(0.0, 0.0), "Anfang");
+            let mid = g.at(1.0 + crate::theme::MOTION as f64 / 2.0);
+            assert!(mid.x > 50.0 && mid.x < 100.0 && mid.y > 40.0 && mid.y < 80.0, "Mitte (auslaufend): {mid:?}");
+        }
+        assert_eq!(g.at(1.0 + crate::theme::MOTION as f64), vec2(100.0, 80.0), "Ende");
+    }
+
+    /// Bearbeiten-Modus im Raster: Ziehen von „a“ über die dritte Kachel lässt die anderen
+    /// aufrücken (Ziel kommt vom Raster), ohne Ziehen stehen alle an ihrem Platz.
+    #[test]
+    fn grid_with_order_places_tiles_by_drag_target() {
+        use super::{grid, grid_drop_id, grid_order_id, GridDrop, GridOrder, ReorderPayload};
+        let ctx = eframe::egui::Context::default();
+        let keys: Vec<String> = (0..6).map(|i| format!("k{i}")).collect();
+        let mut placed = Vec::new();
+        let frame = |drag: bool, placed: &mut Vec<(String, eframe::egui::Pos2)>| {
+            placed.clear();
+            let input = eframe::egui::RawInput {
+                screen_rect: Some(eframe::egui::Rect::from_min_size(Default::default(), vec2(400.0, 600.0))),
+                // Zeiger über der dritten Kachel der ersten Zeile
+                events: vec![eframe::egui::Event::PointerMoved(eframe::egui::pos2(300.0, 40.0))],
+                ..Default::default()
+            };
+            if drag {
+                eframe::egui::DragAndDrop::set_payload(&ctx, ReorderPayload("k0".into()));
+            }
+            let _ = ctx.run(input, |ctx| {
+                eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                    let order = GridOrder { keys: std::sync::Arc::new(keys.clone()), movable: keys.len(), editing: true };
+                    ui.data_mut(|d| d.insert_temp(grid_order_id(), order));
+                    grid(ui, &keys, 100.0, 1.0, 0.0, |_, r, k| placed.push((k.clone(), r.min)));
+                });
+            });
+        };
+        frame(false, &mut placed);
+        let home = placed.clone();
+        assert!(ctx.data(|d| d.get_temp::<GridDrop>(grid_drop_id())).is_none());
+        frame(true, &mut placed);
+        let drop = ctx.data(|d| d.get_temp::<GridDrop>(grid_drop_id())).expect("Ziel");
+        assert_eq!(drop.0, "k0");
+        let target = home.iter().position(|(_, p)| p.x <= 300.0 && p.x + 100.0 >= 300.0 && p.y <= 40.0).expect("Platz unter dem Zeiger");
+        assert_eq!(drop.1, keys.get(target + 1).cloned(), "landet vor dem Nachfolger");
     }
 
     #[test]

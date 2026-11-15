@@ -176,6 +176,7 @@ mod tests {
                     height: 1,
                     fps: None,
                     has_audio: kind == Audio,
+                    audio_streams: (kind == Audio) as u32,
                     video_codec: None,
                     audio_codec: None,
                 };
