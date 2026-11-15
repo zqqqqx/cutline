@@ -1,0 +1,2574 @@
+# Erzeugt von tools/bau.py aus Kenney-Paketen (CC0) – nicht von Hand ändern.
+[plugin]
+id = "kenney.treffer"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Treffer und Geräusche (Kenney)", en = "Impacts and foley (Kenney)" }
+description = { de = "Aufprall, Schritte, Alltagsgeräusche, Karten und Würfel", en = "Impacts, footsteps, everyday foley, cards and dice" }
+authors = ["Kenney"]
+license = "CC0-1.0"
+source = "https://kenney.nl/assets"
+
+[[asset]]
+id = "treffer-schritt-teppich-1"
+kind = "sound"
+name = { de = "Schritt Teppich 1", en = "Footstep carpet 1" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-teppich-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep carpet", "schritt teppich", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-teppich-2"
+kind = "sound"
+name = { de = "Schritt Teppich 2", en = "Footstep carpet 2" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-teppich-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep carpet", "schritt teppich", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-teppich-3"
+kind = "sound"
+name = { de = "Schritt Teppich 3", en = "Footstep carpet 3" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-teppich-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep carpet", "schritt teppich", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-beton-1"
+kind = "sound"
+name = { de = "Schritt Beton 1", en = "Footstep concrete 1" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-beton-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep concrete", "schritt beton", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-beton-2"
+kind = "sound"
+name = { de = "Schritt Beton 2", en = "Footstep concrete 2" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-beton-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep concrete", "schritt beton", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-beton-3"
+kind = "sound"
+name = { de = "Schritt Beton 3", en = "Footstep concrete 3" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-beton-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep concrete", "schritt beton", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-beton-4"
+kind = "sound"
+name = { de = "Schritt Beton 4", en = "Footstep concrete 4" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-beton-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep concrete", "schritt beton", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-beton-5"
+kind = "sound"
+name = { de = "Schritt Beton 5", en = "Footstep concrete 5" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-beton-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep concrete", "schritt beton", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-gras-1"
+kind = "sound"
+name = { de = "Schritt Gras 1", en = "Footstep grass 1" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-gras-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep grass", "schritt gras", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-gras-2"
+kind = "sound"
+name = { de = "Schritt Gras 2", en = "Footstep grass 2" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-gras-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep grass", "schritt gras", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-gras-3"
+kind = "sound"
+name = { de = "Schritt Gras 3", en = "Footstep grass 3" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-gras-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep grass", "schritt gras", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-gras-4"
+kind = "sound"
+name = { de = "Schritt Gras 4", en = "Footstep grass 4" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-gras-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep grass", "schritt gras", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-gras-5"
+kind = "sound"
+name = { de = "Schritt Gras 5", en = "Footstep grass 5" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-gras-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep grass", "schritt gras", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-schnee-1"
+kind = "sound"
+name = { de = "Schritt Schnee 1", en = "Footstep snow 1" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-schnee-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep snow", "schritt schnee", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-schnee-2"
+kind = "sound"
+name = { de = "Schritt Schnee 2", en = "Footstep snow 2" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-schnee-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep snow", "schritt schnee", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-schnee-3"
+kind = "sound"
+name = { de = "Schritt Schnee 3", en = "Footstep snow 3" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-schnee-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep snow", "schritt schnee", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-schnee-4"
+kind = "sound"
+name = { de = "Schritt Schnee 4", en = "Footstep snow 4" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-schnee-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep snow", "schritt schnee", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-schnee-5"
+kind = "sound"
+name = { de = "Schritt Schnee 5", en = "Footstep snow 5" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-schnee-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep snow", "schritt schnee", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-holz-1"
+kind = "sound"
+name = { de = "Schritt Holz 1", en = "Footstep wood 1" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-holz-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep wood", "schritt holz", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-holz-2"
+kind = "sound"
+name = { de = "Schritt Holz 2", en = "Footstep wood 2" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-holz-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep wood", "schritt holz", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-holz-3"
+kind = "sound"
+name = { de = "Schritt Holz 3", en = "Footstep wood 3" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-holz-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep wood", "schritt holz", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-holz-4"
+kind = "sound"
+name = { de = "Schritt Holz 4", en = "Footstep wood 4" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-holz-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep wood", "schritt holz", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-holz-5"
+kind = "sound"
+name = { de = "Schritt Holz 5", en = "Footstep wood 5" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-holz-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["footstep wood", "schritt holz", "kenney"]
+
+[[asset]]
+id = "treffer-glocke-schwer-1"
+kind = "sound"
+name = { de = "Glocke schwer 1", en = "Impact bell heavy 1" }
+category = ["Aufprall"]
+file = "audio/treffer-glocke-schwer-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact bell heavy", "glocke schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glocke-schwer-2"
+kind = "sound"
+name = { de = "Glocke schwer 2", en = "Impact bell heavy 2" }
+category = ["Aufprall"]
+file = "audio/treffer-glocke-schwer-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact bell heavy", "glocke schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glocke-schwer-3"
+kind = "sound"
+name = { de = "Glocke schwer 3", en = "Impact bell heavy 3" }
+category = ["Aufprall"]
+file = "audio/treffer-glocke-schwer-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact bell heavy", "glocke schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glocke-schwer-4"
+kind = "sound"
+name = { de = "Glocke schwer 4", en = "Impact bell heavy 4" }
+category = ["Aufprall"]
+file = "audio/treffer-glocke-schwer-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact bell heavy", "glocke schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glocke-schwer-5"
+kind = "sound"
+name = { de = "Glocke schwer 5", en = "Impact bell heavy 5" }
+category = ["Aufprall"]
+file = "audio/treffer-glocke-schwer-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact bell heavy", "glocke schwer", "kenney"]
+
+[[asset]]
+id = "treffer-aufprall-leicht-1"
+kind = "sound"
+name = { de = "Aufprall leicht 1", en = "Impact generic light 1" }
+category = ["Aufprall"]
+file = "audio/treffer-aufprall-leicht-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact generic light", "aufprall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-aufprall-leicht-2"
+kind = "sound"
+name = { de = "Aufprall leicht 2", en = "Impact generic light 2" }
+category = ["Aufprall"]
+file = "audio/treffer-aufprall-leicht-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact generic light", "aufprall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-aufprall-leicht-3"
+kind = "sound"
+name = { de = "Aufprall leicht 3", en = "Impact generic light 3" }
+category = ["Aufprall"]
+file = "audio/treffer-aufprall-leicht-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact generic light", "aufprall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-aufprall-leicht-4"
+kind = "sound"
+name = { de = "Aufprall leicht 4", en = "Impact generic light 4" }
+category = ["Aufprall"]
+file = "audio/treffer-aufprall-leicht-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact generic light", "aufprall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-aufprall-leicht-5"
+kind = "sound"
+name = { de = "Aufprall leicht 5", en = "Impact generic light 5" }
+category = ["Aufprall"]
+file = "audio/treffer-aufprall-leicht-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact generic light", "aufprall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-glas-schwer-1"
+kind = "sound"
+name = { de = "Glas schwer 1", en = "Impact glass heavy 1" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-schwer-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass heavy", "glas schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glas-schwer-2"
+kind = "sound"
+name = { de = "Glas schwer 2", en = "Impact glass heavy 2" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-schwer-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass heavy", "glas schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glas-schwer-3"
+kind = "sound"
+name = { de = "Glas schwer 3", en = "Impact glass heavy 3" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-schwer-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass heavy", "glas schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glas-schwer-4"
+kind = "sound"
+name = { de = "Glas schwer 4", en = "Impact glass heavy 4" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-schwer-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass heavy", "glas schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glas-schwer-5"
+kind = "sound"
+name = { de = "Glas schwer 5", en = "Impact glass heavy 5" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-schwer-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass heavy", "glas schwer", "kenney"]
+
+[[asset]]
+id = "treffer-glas-leicht-1"
+kind = "sound"
+name = { de = "Glas leicht 1", en = "Impact glass light 1" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-leicht-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass light", "glas leicht", "kenney"]
+
+[[asset]]
+id = "treffer-glas-leicht-2"
+kind = "sound"
+name = { de = "Glas leicht 2", en = "Impact glass light 2" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-leicht-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass light", "glas leicht", "kenney"]
+
+[[asset]]
+id = "treffer-glas-leicht-3"
+kind = "sound"
+name = { de = "Glas leicht 3", en = "Impact glass light 3" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-leicht-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass light", "glas leicht", "kenney"]
+
+[[asset]]
+id = "treffer-glas-leicht-4"
+kind = "sound"
+name = { de = "Glas leicht 4", en = "Impact glass light 4" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-leicht-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass light", "glas leicht", "kenney"]
+
+[[asset]]
+id = "treffer-glas-leicht-5"
+kind = "sound"
+name = { de = "Glas leicht 5", en = "Impact glass light 5" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-leicht-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass light", "glas leicht", "kenney"]
+
+[[asset]]
+id = "treffer-glas-mittel-1"
+kind = "sound"
+name = { de = "Glas mittel 1", en = "Impact glass medium 1" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-mittel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass medium", "glas mittel", "kenney"]
+
+[[asset]]
+id = "treffer-glas-mittel-2"
+kind = "sound"
+name = { de = "Glas mittel 2", en = "Impact glass medium 2" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-mittel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass medium", "glas mittel", "kenney"]
+
+[[asset]]
+id = "treffer-glas-mittel-3"
+kind = "sound"
+name = { de = "Glas mittel 3", en = "Impact glass medium 3" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-mittel-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass medium", "glas mittel", "kenney"]
+
+[[asset]]
+id = "treffer-glas-mittel-4"
+kind = "sound"
+name = { de = "Glas mittel 4", en = "Impact glass medium 4" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-mittel-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass medium", "glas mittel", "kenney"]
+
+[[asset]]
+id = "treffer-glas-mittel-5"
+kind = "sound"
+name = { de = "Glas mittel 5", en = "Impact glass medium 5" }
+category = ["Aufprall"]
+file = "audio/treffer-glas-mittel-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact glass medium", "glas mittel", "kenney"]
+
+[[asset]]
+id = "treffer-metall-schwer-1"
+kind = "sound"
+name = { de = "Metall schwer 1", en = "Impact metal heavy 1" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-schwer-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal heavy", "metall schwer", "kenney"]
+
+[[asset]]
+id = "treffer-metall-schwer-2"
+kind = "sound"
+name = { de = "Metall schwer 2", en = "Impact metal heavy 2" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-schwer-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal heavy", "metall schwer", "kenney"]
+
+[[asset]]
+id = "treffer-metall-schwer-3"
+kind = "sound"
+name = { de = "Metall schwer 3", en = "Impact metal heavy 3" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-schwer-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal heavy", "metall schwer", "kenney"]
+
+[[asset]]
+id = "treffer-metall-schwer-4"
+kind = "sound"
+name = { de = "Metall schwer 4", en = "Impact metal heavy 4" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-schwer-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal heavy", "metall schwer", "kenney"]
+
+[[asset]]
+id = "treffer-metall-schwer-5"
+kind = "sound"
+name = { de = "Metall schwer 5", en = "Impact metal heavy 5" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-schwer-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal heavy", "metall schwer", "kenney"]
+
+[[asset]]
+id = "treffer-metall-leicht-1"
+kind = "sound"
+name = { de = "Metall leicht 1", en = "Impact metal light 1" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-leicht-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal light", "metall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-metall-leicht-2"
+kind = "sound"
+name = { de = "Metall leicht 2", en = "Impact metal light 2" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-leicht-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal light", "metall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-metall-leicht-3"
+kind = "sound"
+name = { de = "Metall leicht 3", en = "Impact metal light 3" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-leicht-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal light", "metall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-metall-leicht-4"
+kind = "sound"
+name = { de = "Metall leicht 4", en = "Impact metal light 4" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-leicht-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal light", "metall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-metall-leicht-5"
+kind = "sound"
+name = { de = "Metall leicht 5", en = "Impact metal light 5" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-leicht-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal light", "metall leicht", "kenney"]
+
+[[asset]]
+id = "treffer-metall-mittel-1"
+kind = "sound"
+name = { de = "Metall mittel 1", en = "Impact metal medium 1" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-mittel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal medium", "metall mittel", "kenney"]
+
+[[asset]]
+id = "treffer-metall-mittel-2"
+kind = "sound"
+name = { de = "Metall mittel 2", en = "Impact metal medium 2" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-mittel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal medium", "metall mittel", "kenney"]
+
+[[asset]]
+id = "treffer-metall-mittel-3"
+kind = "sound"
+name = { de = "Metall mittel 3", en = "Impact metal medium 3" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-mittel-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal medium", "metall mittel", "kenney"]
+
+[[asset]]
+id = "treffer-metall-mittel-4"
+kind = "sound"
+name = { de = "Metall mittel 4", en = "Impact metal medium 4" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-mittel-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal medium", "metall mittel", "kenney"]
+
+[[asset]]
+id = "treffer-metall-mittel-5"
+kind = "sound"
+name = { de = "Metall mittel 5", en = "Impact metal medium 5" }
+category = ["Aufprall"]
+file = "audio/treffer-metall-mittel-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact metal medium", "metall mittel", "kenney"]
+
+[[asset]]
+id = "treffer-spitzhacke-1"
+kind = "sound"
+name = { de = "Spitzhacke 1", en = "Impact mining 1" }
+category = ["Aufprall"]
+file = "audio/treffer-spitzhacke-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact mining", "spitzhacke", "kenney"]
+
+[[asset]]
+id = "treffer-spitzhacke-2"
+kind = "sound"
+name = { de = "Spitzhacke 2", en = "Impact mining 2" }
+category = ["Aufprall"]
+file = "audio/treffer-spitzhacke-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact mining", "spitzhacke", "kenney"]
+
+[[asset]]
+id = "treffer-spitzhacke-3"
+kind = "sound"
+name = { de = "Spitzhacke 3", en = "Impact mining 3" }
+category = ["Aufprall"]
+file = "audio/treffer-spitzhacke-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact mining", "spitzhacke", "kenney"]
+
+[[asset]]
+id = "treffer-spitzhacke-4"
+kind = "sound"
+name = { de = "Spitzhacke 4", en = "Impact mining 4" }
+category = ["Aufprall"]
+file = "audio/treffer-spitzhacke-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact mining", "spitzhacke", "kenney"]
+
+[[asset]]
+id = "treffer-spitzhacke-5"
+kind = "sound"
+name = { de = "Spitzhacke 5", en = "Impact mining 5" }
+category = ["Aufprall"]
+file = "audio/treffer-spitzhacke-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact mining", "spitzhacke", "kenney"]
+
+[[asset]]
+id = "treffer-brett-1"
+kind = "sound"
+name = { de = "Brett 1", en = "Impact plank medium 1" }
+category = ["Aufprall"]
+file = "audio/treffer-brett-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plank medium", "brett", "kenney"]
+
+[[asset]]
+id = "treffer-brett-2"
+kind = "sound"
+name = { de = "Brett 2", en = "Impact plank medium 2" }
+category = ["Aufprall"]
+file = "audio/treffer-brett-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plank medium", "brett", "kenney"]
+
+[[asset]]
+id = "treffer-brett-3"
+kind = "sound"
+name = { de = "Brett 3", en = "Impact plank medium 3" }
+category = ["Aufprall"]
+file = "audio/treffer-brett-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plank medium", "brett", "kenney"]
+
+[[asset]]
+id = "treffer-brett-4"
+kind = "sound"
+name = { de = "Brett 4", en = "Impact plank medium 4" }
+category = ["Aufprall"]
+file = "audio/treffer-brett-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plank medium", "brett", "kenney"]
+
+[[asset]]
+id = "treffer-brett-5"
+kind = "sound"
+name = { de = "Brett 5", en = "Impact plank medium 5" }
+category = ["Aufprall"]
+file = "audio/treffer-brett-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plank medium", "brett", "kenney"]
+
+[[asset]]
+id = "treffer-platte-schwer-1"
+kind = "sound"
+name = { de = "Platte schwer 1", en = "Impact plate heavy 1" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-schwer-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate heavy", "platte schwer", "kenney"]
+
+[[asset]]
+id = "treffer-platte-schwer-2"
+kind = "sound"
+name = { de = "Platte schwer 2", en = "Impact plate heavy 2" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-schwer-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate heavy", "platte schwer", "kenney"]
+
+[[asset]]
+id = "treffer-platte-schwer-3"
+kind = "sound"
+name = { de = "Platte schwer 3", en = "Impact plate heavy 3" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-schwer-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate heavy", "platte schwer", "kenney"]
+
+[[asset]]
+id = "treffer-platte-schwer-4"
+kind = "sound"
+name = { de = "Platte schwer 4", en = "Impact plate heavy 4" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-schwer-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate heavy", "platte schwer", "kenney"]
+
+[[asset]]
+id = "treffer-platte-schwer-5"
+kind = "sound"
+name = { de = "Platte schwer 5", en = "Impact plate heavy 5" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-schwer-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate heavy", "platte schwer", "kenney"]
+
+[[asset]]
+id = "treffer-platte-leicht-1"
+kind = "sound"
+name = { de = "Platte leicht 1", en = "Impact plate light 1" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-leicht-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate light", "platte leicht", "kenney"]
+
+[[asset]]
+id = "treffer-platte-leicht-2"
+kind = "sound"
+name = { de = "Platte leicht 2", en = "Impact plate light 2" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-leicht-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate light", "platte leicht", "kenney"]
+
+[[asset]]
+id = "treffer-platte-leicht-3"
+kind = "sound"
+name = { de = "Platte leicht 3", en = "Impact plate light 3" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-leicht-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate light", "platte leicht", "kenney"]
+
+[[asset]]
+id = "treffer-platte-leicht-4"
+kind = "sound"
+name = { de = "Platte leicht 4", en = "Impact plate light 4" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-leicht-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate light", "platte leicht", "kenney"]
+
+[[asset]]
+id = "treffer-platte-leicht-5"
+kind = "sound"
+name = { de = "Platte leicht 5", en = "Impact plate light 5" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-leicht-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate light", "platte leicht", "kenney"]
+
+[[asset]]
+id = "treffer-platte-mittel-1"
+kind = "sound"
+name = { de = "Platte mittel 1", en = "Impact plate medium 1" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-mittel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate medium", "platte mittel", "kenney"]
+
+[[asset]]
+id = "treffer-platte-mittel-2"
+kind = "sound"
+name = { de = "Platte mittel 2", en = "Impact plate medium 2" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-mittel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate medium", "platte mittel", "kenney"]
+
+[[asset]]
+id = "treffer-platte-mittel-3"
+kind = "sound"
+name = { de = "Platte mittel 3", en = "Impact plate medium 3" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-mittel-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate medium", "platte mittel", "kenney"]
+
+[[asset]]
+id = "treffer-platte-mittel-4"
+kind = "sound"
+name = { de = "Platte mittel 4", en = "Impact plate medium 4" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-mittel-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate medium", "platte mittel", "kenney"]
+
+[[asset]]
+id = "treffer-platte-mittel-5"
+kind = "sound"
+name = { de = "Platte mittel 5", en = "Impact plate medium 5" }
+category = ["Aufprall"]
+file = "audio/treffer-platte-mittel-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact plate medium", "platte mittel", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-schwer-1"
+kind = "sound"
+name = { de = "Schlag schwer 1", en = "Impact punch heavy 1" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-schwer-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch heavy", "schlag schwer", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-schwer-2"
+kind = "sound"
+name = { de = "Schlag schwer 2", en = "Impact punch heavy 2" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-schwer-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch heavy", "schlag schwer", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-schwer-3"
+kind = "sound"
+name = { de = "Schlag schwer 3", en = "Impact punch heavy 3" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-schwer-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch heavy", "schlag schwer", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-schwer-4"
+kind = "sound"
+name = { de = "Schlag schwer 4", en = "Impact punch heavy 4" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-schwer-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch heavy", "schlag schwer", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-schwer-5"
+kind = "sound"
+name = { de = "Schlag schwer 5", en = "Impact punch heavy 5" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-schwer-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch heavy", "schlag schwer", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-mittel-1"
+kind = "sound"
+name = { de = "Schlag mittel 1", en = "Impact punch medium 1" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-mittel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch medium", "schlag mittel", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-mittel-2"
+kind = "sound"
+name = { de = "Schlag mittel 2", en = "Impact punch medium 2" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-mittel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch medium", "schlag mittel", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-mittel-3"
+kind = "sound"
+name = { de = "Schlag mittel 3", en = "Impact punch medium 3" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-mittel-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch medium", "schlag mittel", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-mittel-4"
+kind = "sound"
+name = { de = "Schlag mittel 4", en = "Impact punch medium 4" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-mittel-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch medium", "schlag mittel", "kenney"]
+
+[[asset]]
+id = "treffer-schlag-mittel-5"
+kind = "sound"
+name = { de = "Schlag mittel 5", en = "Impact punch medium 5" }
+category = ["Aufprall"]
+file = "audio/treffer-schlag-mittel-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact punch medium", "schlag mittel", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-schwer-1"
+kind = "sound"
+name = { de = "Dumpf schwer 1", en = "Impact soft heavy 1" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-schwer-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft heavy", "dumpf schwer", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-schwer-2"
+kind = "sound"
+name = { de = "Dumpf schwer 2", en = "Impact soft heavy 2" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-schwer-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft heavy", "dumpf schwer", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-schwer-3"
+kind = "sound"
+name = { de = "Dumpf schwer 3", en = "Impact soft heavy 3" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-schwer-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft heavy", "dumpf schwer", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-schwer-4"
+kind = "sound"
+name = { de = "Dumpf schwer 4", en = "Impact soft heavy 4" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-schwer-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft heavy", "dumpf schwer", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-schwer-5"
+kind = "sound"
+name = { de = "Dumpf schwer 5", en = "Impact soft heavy 5" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-schwer-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft heavy", "dumpf schwer", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-mittel-1"
+kind = "sound"
+name = { de = "Dumpf mittel 1", en = "Impact soft medium 1" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-mittel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft medium", "dumpf mittel", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-mittel-2"
+kind = "sound"
+name = { de = "Dumpf mittel 2", en = "Impact soft medium 2" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-mittel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft medium", "dumpf mittel", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-mittel-3"
+kind = "sound"
+name = { de = "Dumpf mittel 3", en = "Impact soft medium 3" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-mittel-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft medium", "dumpf mittel", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-mittel-4"
+kind = "sound"
+name = { de = "Dumpf mittel 4", en = "Impact soft medium 4" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-mittel-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft medium", "dumpf mittel", "kenney"]
+
+[[asset]]
+id = "treffer-dumpf-mittel-5"
+kind = "sound"
+name = { de = "Dumpf mittel 5", en = "Impact soft medium 5" }
+category = ["Aufprall"]
+file = "audio/treffer-dumpf-mittel-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact soft medium", "dumpf mittel", "kenney"]
+
+[[asset]]
+id = "treffer-blech-1"
+kind = "sound"
+name = { de = "Blech 1", en = "Impact tin medium 1" }
+category = ["Aufprall"]
+file = "audio/treffer-blech-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact tin medium", "blech", "kenney"]
+
+[[asset]]
+id = "treffer-blech-2"
+kind = "sound"
+name = { de = "Blech 2", en = "Impact tin medium 2" }
+category = ["Aufprall"]
+file = "audio/treffer-blech-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact tin medium", "blech", "kenney"]
+
+[[asset]]
+id = "treffer-blech-3"
+kind = "sound"
+name = { de = "Blech 3", en = "Impact tin medium 3" }
+category = ["Aufprall"]
+file = "audio/treffer-blech-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact tin medium", "blech", "kenney"]
+
+[[asset]]
+id = "treffer-blech-4"
+kind = "sound"
+name = { de = "Blech 4", en = "Impact tin medium 4" }
+category = ["Aufprall"]
+file = "audio/treffer-blech-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact tin medium", "blech", "kenney"]
+
+[[asset]]
+id = "treffer-blech-5"
+kind = "sound"
+name = { de = "Blech 5", en = "Impact tin medium 5" }
+category = ["Aufprall"]
+file = "audio/treffer-blech-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact tin medium", "blech", "kenney"]
+
+[[asset]]
+id = "treffer-holz-schwer-1"
+kind = "sound"
+name = { de = "Holz schwer 1", en = "Impact wood heavy 1" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-schwer-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood heavy", "holz schwer", "kenney"]
+
+[[asset]]
+id = "treffer-holz-schwer-2"
+kind = "sound"
+name = { de = "Holz schwer 2", en = "Impact wood heavy 2" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-schwer-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood heavy", "holz schwer", "kenney"]
+
+[[asset]]
+id = "treffer-holz-schwer-3"
+kind = "sound"
+name = { de = "Holz schwer 3", en = "Impact wood heavy 3" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-schwer-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood heavy", "holz schwer", "kenney"]
+
+[[asset]]
+id = "treffer-holz-schwer-4"
+kind = "sound"
+name = { de = "Holz schwer 4", en = "Impact wood heavy 4" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-schwer-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood heavy", "holz schwer", "kenney"]
+
+[[asset]]
+id = "treffer-holz-schwer-5"
+kind = "sound"
+name = { de = "Holz schwer 5", en = "Impact wood heavy 5" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-schwer-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood heavy", "holz schwer", "kenney"]
+
+[[asset]]
+id = "treffer-holz-leicht-1"
+kind = "sound"
+name = { de = "Holz leicht 1", en = "Impact wood light 1" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-leicht-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood light", "holz leicht", "kenney"]
+
+[[asset]]
+id = "treffer-holz-leicht-2"
+kind = "sound"
+name = { de = "Holz leicht 2", en = "Impact wood light 2" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-leicht-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood light", "holz leicht", "kenney"]
+
+[[asset]]
+id = "treffer-holz-leicht-3"
+kind = "sound"
+name = { de = "Holz leicht 3", en = "Impact wood light 3" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-leicht-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood light", "holz leicht", "kenney"]
+
+[[asset]]
+id = "treffer-holz-leicht-4"
+kind = "sound"
+name = { de = "Holz leicht 4", en = "Impact wood light 4" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-leicht-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood light", "holz leicht", "kenney"]
+
+[[asset]]
+id = "treffer-holz-leicht-5"
+kind = "sound"
+name = { de = "Holz leicht 5", en = "Impact wood light 5" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-leicht-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood light", "holz leicht", "kenney"]
+
+[[asset]]
+id = "treffer-holz-mittel-1"
+kind = "sound"
+name = { de = "Holz mittel 1", en = "Impact wood medium 1" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-mittel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood medium", "holz mittel", "kenney"]
+
+[[asset]]
+id = "treffer-holz-mittel-2"
+kind = "sound"
+name = { de = "Holz mittel 2", en = "Impact wood medium 2" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-mittel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood medium", "holz mittel", "kenney"]
+
+[[asset]]
+id = "treffer-holz-mittel-3"
+kind = "sound"
+name = { de = "Holz mittel 3", en = "Impact wood medium 3" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-mittel-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood medium", "holz mittel", "kenney"]
+
+[[asset]]
+id = "treffer-holz-mittel-4"
+kind = "sound"
+name = { de = "Holz mittel 4", en = "Impact wood medium 4" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-mittel-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood medium", "holz mittel", "kenney"]
+
+[[asset]]
+id = "treffer-holz-mittel-5"
+kind = "sound"
+name = { de = "Holz mittel 5", en = "Impact wood medium 5" }
+category = ["Aufprall"]
+file = "audio/treffer-holz-mittel-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/impact-sounds"
+tags = ["impact wood medium", "holz mittel", "kenney"]
+
+[[asset]]
+id = "treffer-guertel-1"
+kind = "sound"
+name = { de = "Gürtel 1", en = "Belt handle 1" }
+category = ["Alltag"]
+file = "audio/treffer-guertel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["belt handle", "gürtel", "kenney"]
+
+[[asset]]
+id = "treffer-guertel-2"
+kind = "sound"
+name = { de = "Gürtel 2", en = "Belt handle 2" }
+category = ["Alltag"]
+file = "audio/treffer-guertel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["belt handle", "gürtel", "kenney"]
+
+[[asset]]
+id = "treffer-buch-zuklappen"
+kind = "sound"
+name = { de = "Buch zuklappen", en = "Book close" }
+category = ["Alltag"]
+file = "audio/treffer-buch-zuklappen.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["book close", "buch zuklappen", "kenney"]
+
+[[asset]]
+id = "treffer-buch-blaettern-1"
+kind = "sound"
+name = { de = "Buch blättern 1", en = "Book flip 1" }
+category = ["Alltag"]
+file = "audio/treffer-buch-blaettern-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["book flip", "buch blättern", "kenney"]
+
+[[asset]]
+id = "treffer-buch-blaettern-2"
+kind = "sound"
+name = { de = "Buch blättern 2", en = "Book flip 2" }
+category = ["Alltag"]
+file = "audio/treffer-buch-blaettern-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["book flip", "buch blättern", "kenney"]
+
+[[asset]]
+id = "treffer-buch-blaettern-3"
+kind = "sound"
+name = { de = "Buch blättern 3", en = "Book flip 3" }
+category = ["Alltag"]
+file = "audio/treffer-buch-blaettern-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["book flip", "buch blättern", "kenney"]
+
+[[asset]]
+id = "treffer-buch-aufschlagen"
+kind = "sound"
+name = { de = "Buch aufschlagen", en = "Book open" }
+category = ["Alltag"]
+file = "audio/treffer-buch-aufschlagen.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["book open", "buch aufschlagen", "kenney"]
+
+[[asset]]
+id = "treffer-buch-ablegen-1"
+kind = "sound"
+name = { de = "Buch ablegen 1", en = "Book place 1" }
+category = ["Alltag"]
+file = "audio/treffer-buch-ablegen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["book place", "buch ablegen", "kenney"]
+
+[[asset]]
+id = "treffer-buch-ablegen-2"
+kind = "sound"
+name = { de = "Buch ablegen 2", en = "Book place 2" }
+category = ["Alltag"]
+file = "audio/treffer-buch-ablegen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["book place", "buch ablegen", "kenney"]
+
+[[asset]]
+id = "treffer-buch-ablegen-3"
+kind = "sound"
+name = { de = "Buch ablegen 3", en = "Book place 3" }
+category = ["Alltag"]
+file = "audio/treffer-buch-ablegen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["book place", "buch ablegen", "kenney"]
+
+[[asset]]
+id = "treffer-hacken"
+kind = "sound"
+name = { de = "Hacken", en = "Chop" }
+category = ["Alltag"]
+file = "audio/treffer-hacken.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["chop", "hacken", "kenney"]
+
+[[asset]]
+id = "treffer-stoff-1"
+kind = "sound"
+name = { de = "Stoff 1", en = "Cloth 1" }
+category = ["Alltag"]
+file = "audio/treffer-stoff-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["cloth", "stoff", "kenney"]
+
+[[asset]]
+id = "treffer-stoff-2"
+kind = "sound"
+name = { de = "Stoff 2", en = "Cloth 2" }
+category = ["Alltag"]
+file = "audio/treffer-stoff-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["cloth", "stoff", "kenney"]
+
+[[asset]]
+id = "treffer-stoff-3"
+kind = "sound"
+name = { de = "Stoff 3", en = "Cloth 3" }
+category = ["Alltag"]
+file = "audio/treffer-stoff-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["cloth", "stoff", "kenney"]
+
+[[asset]]
+id = "treffer-stoff-4"
+kind = "sound"
+name = { de = "Stoff 4", en = "Cloth 4" }
+category = ["Alltag"]
+file = "audio/treffer-stoff-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["cloth", "stoff", "kenney"]
+
+[[asset]]
+id = "treffer-stoff-und-guertel-1"
+kind = "sound"
+name = { de = "Stoff und Gürtel 1", en = "Cloth belt 1" }
+category = ["Alltag"]
+file = "audio/treffer-stoff-und-guertel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["cloth belt", "stoff und gürtel", "kenney"]
+
+[[asset]]
+id = "treffer-stoff-und-guertel-2"
+kind = "sound"
+name = { de = "Stoff und Gürtel 2", en = "Cloth belt 2" }
+category = ["Alltag"]
+file = "audio/treffer-stoff-und-guertel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["cloth belt", "stoff und gürtel", "kenney"]
+
+[[asset]]
+id = "treffer-knarren-1"
+kind = "sound"
+name = { de = "Knarren 1", en = "Creak 1" }
+category = ["Alltag"]
+file = "audio/treffer-knarren-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["creak", "knarren", "kenney"]
+
+[[asset]]
+id = "treffer-knarren-2"
+kind = "sound"
+name = { de = "Knarren 2", en = "Creak 2" }
+category = ["Alltag"]
+file = "audio/treffer-knarren-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["creak", "knarren", "kenney"]
+
+[[asset]]
+id = "treffer-knarren-3"
+kind = "sound"
+name = { de = "Knarren 3", en = "Creak 3" }
+category = ["Alltag"]
+file = "audio/treffer-knarren-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["creak", "knarren", "kenney"]
+
+[[asset]]
+id = "treffer-tuer-zu-1"
+kind = "sound"
+name = { de = "Tür zu 1", en = "Door close 1" }
+category = ["Alltag"]
+file = "audio/treffer-tuer-zu-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["door close", "tür zu", "kenney"]
+
+[[asset]]
+id = "treffer-tuer-zu-2"
+kind = "sound"
+name = { de = "Tür zu 2", en = "Door close 2" }
+category = ["Alltag"]
+file = "audio/treffer-tuer-zu-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["door close", "tür zu", "kenney"]
+
+[[asset]]
+id = "treffer-tuer-zu-3"
+kind = "sound"
+name = { de = "Tür zu 3", en = "Door close 3" }
+category = ["Alltag"]
+file = "audio/treffer-tuer-zu-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["door close", "tür zu", "kenney"]
+
+[[asset]]
+id = "treffer-tuer-zu-4"
+kind = "sound"
+name = { de = "Tür zu 4", en = "Door close 4" }
+category = ["Alltag"]
+file = "audio/treffer-tuer-zu-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["door close", "tür zu", "kenney"]
+
+[[asset]]
+id = "treffer-tuer-auf-1"
+kind = "sound"
+name = { de = "Tür auf 1", en = "Door open 1" }
+category = ["Alltag"]
+file = "audio/treffer-tuer-auf-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["door open", "tür auf", "kenney"]
+
+[[asset]]
+id = "treffer-tuer-auf-2"
+kind = "sound"
+name = { de = "Tür auf 2", en = "Door open 2" }
+category = ["Alltag"]
+file = "audio/treffer-tuer-auf-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["door open", "tür auf", "kenney"]
+
+[[asset]]
+id = "treffer-messer-ziehen-1"
+kind = "sound"
+name = { de = "Messer ziehen 1", en = "Draw knife 1" }
+category = ["Alltag"]
+file = "audio/treffer-messer-ziehen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["draw knife", "messer ziehen", "kenney"]
+
+[[asset]]
+id = "treffer-messer-ziehen-2"
+kind = "sound"
+name = { de = "Messer ziehen 2", en = "Draw knife 2" }
+category = ["Alltag"]
+file = "audio/treffer-messer-ziehen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["draw knife", "messer ziehen", "kenney"]
+
+[[asset]]
+id = "treffer-messer-ziehen-3"
+kind = "sound"
+name = { de = "Messer ziehen 3", en = "Draw knife 3" }
+category = ["Alltag"]
+file = "audio/treffer-messer-ziehen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["draw knife", "messer ziehen", "kenney"]
+
+[[asset]]
+id = "treffer-leder-fallen-lassen"
+kind = "sound"
+name = { de = "Leder fallen lassen", en = "Drop leather" }
+category = ["Alltag"]
+file = "audio/treffer-leder-fallen-lassen.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["drop leather", "leder fallen lassen", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-1"
+kind = "sound"
+name = { de = "Schritt 1", en = "Footstep 1" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-2"
+kind = "sound"
+name = { de = "Schritt 2", en = "Footstep 2" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-3"
+kind = "sound"
+name = { de = "Schritt 3", en = "Footstep 3" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-4"
+kind = "sound"
+name = { de = "Schritt 4", en = "Footstep 4" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-5"
+kind = "sound"
+name = { de = "Schritt 5", en = "Footstep 5" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-6"
+kind = "sound"
+name = { de = "Schritt 6", en = "Footstep 6" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-7"
+kind = "sound"
+name = { de = "Schritt 7", en = "Footstep 7" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-8"
+kind = "sound"
+name = { de = "Schritt 8", en = "Footstep 8" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-9"
+kind = "sound"
+name = { de = "Schritt 9", en = "Footstep 9" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-schritt-10"
+kind = "sound"
+name = { de = "Schritt 10", en = "Footstep 10" }
+category = ["Schritte"]
+file = "audio/treffer-schritt-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["footstep", "schritt", "kenney"]
+
+[[asset]]
+id = "treffer-muenzen-1"
+kind = "sound"
+name = { de = "Münzen 1", en = "Handle coins 1" }
+category = ["Alltag"]
+file = "audio/treffer-muenzen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["handle coins", "münzen", "kenney"]
+
+[[asset]]
+id = "treffer-muenzen-2"
+kind = "sound"
+name = { de = "Münzen 2", en = "Handle coins 2" }
+category = ["Alltag"]
+file = "audio/treffer-muenzen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["handle coins", "münzen", "kenney"]
+
+[[asset]]
+id = "treffer-lederbeutel-1"
+kind = "sound"
+name = { de = "Lederbeutel 1", en = "Handle small leather 1" }
+category = ["Alltag"]
+file = "audio/treffer-lederbeutel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["handle small leather", "lederbeutel", "kenney"]
+
+[[asset]]
+id = "treffer-lederbeutel-2"
+kind = "sound"
+name = { de = "Lederbeutel 2", en = "Handle small leather 2" }
+category = ["Alltag"]
+file = "audio/treffer-lederbeutel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["handle small leather", "lederbeutel", "kenney"]
+
+[[asset]]
+id = "treffer-messerschnitt-1"
+kind = "sound"
+name = { de = "Messerschnitt 1", en = "Knife slice 1" }
+category = ["Alltag"]
+file = "audio/treffer-messerschnitt-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["knife slice", "messerschnitt", "kenney"]
+
+[[asset]]
+id = "treffer-messerschnitt-2"
+kind = "sound"
+name = { de = "Messerschnitt 2", en = "Knife slice 2" }
+category = ["Alltag"]
+file = "audio/treffer-messerschnitt-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["knife slice", "messerschnitt", "kenney"]
+
+[[asset]]
+id = "treffer-metallklick"
+kind = "sound"
+name = { de = "Metallklick", en = "Metal click" }
+category = ["Alltag"]
+file = "audio/treffer-metallklick.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["metal click", "metallklick", "kenney"]
+
+[[asset]]
+id = "treffer-riegel"
+kind = "sound"
+name = { de = "Riegel", en = "Metal latch" }
+category = ["Alltag"]
+file = "audio/treffer-riegel.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["metal latch", "riegel", "kenney"]
+
+[[asset]]
+id = "treffer-topf-1"
+kind = "sound"
+name = { de = "Topf 1", en = "Metal pot 1" }
+category = ["Alltag"]
+file = "audio/treffer-topf-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["metal pot", "topf", "kenney"]
+
+[[asset]]
+id = "treffer-topf-2"
+kind = "sound"
+name = { de = "Topf 2", en = "Metal pot 2" }
+category = ["Alltag"]
+file = "audio/treffer-topf-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["metal pot", "topf", "kenney"]
+
+[[asset]]
+id = "treffer-topf-3"
+kind = "sound"
+name = { de = "Topf 3", en = "Metal pot 3" }
+category = ["Alltag"]
+file = "audio/treffer-topf-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/rpg-audio"
+tags = ["metal pot", "topf", "kenney"]
+
+[[asset]]
+id = "treffer-karten-auffaechern-1"
+kind = "sound"
+name = { de = "Karten auffächern 1", en = "Card fan 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karten-auffaechern-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card fan", "karten auffächern", "kenney"]
+
+[[asset]]
+id = "treffer-karten-auffaechern-2"
+kind = "sound"
+name = { de = "Karten auffächern 2", en = "Card fan 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karten-auffaechern-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card fan", "karten auffächern", "kenney"]
+
+[[asset]]
+id = "treffer-karte-ablegen-1"
+kind = "sound"
+name = { de = "Karte ablegen 1", en = "Card place 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-ablegen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card place", "karte ablegen", "kenney"]
+
+[[asset]]
+id = "treffer-karte-ablegen-2"
+kind = "sound"
+name = { de = "Karte ablegen 2", en = "Card place 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-ablegen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card place", "karte ablegen", "kenney"]
+
+[[asset]]
+id = "treffer-karte-ablegen-3"
+kind = "sound"
+name = { de = "Karte ablegen 3", en = "Card place 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-ablegen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card place", "karte ablegen", "kenney"]
+
+[[asset]]
+id = "treffer-karte-ablegen-4"
+kind = "sound"
+name = { de = "Karte ablegen 4", en = "Card place 4" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-ablegen-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card place", "karte ablegen", "kenney"]
+
+[[asset]]
+id = "treffer-karte-schieben-1"
+kind = "sound"
+name = { de = "Karte schieben 1", en = "Card shove 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-schieben-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card shove", "karte schieben", "kenney"]
+
+[[asset]]
+id = "treffer-karte-schieben-2"
+kind = "sound"
+name = { de = "Karte schieben 2", en = "Card shove 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-schieben-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card shove", "karte schieben", "kenney"]
+
+[[asset]]
+id = "treffer-karte-schieben-3"
+kind = "sound"
+name = { de = "Karte schieben 3", en = "Card shove 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-schieben-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card shove", "karte schieben", "kenney"]
+
+[[asset]]
+id = "treffer-karte-schieben-4"
+kind = "sound"
+name = { de = "Karte schieben 4", en = "Card shove 4" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-schieben-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card shove", "karte schieben", "kenney"]
+
+[[asset]]
+id = "treffer-karten-mischen"
+kind = "sound"
+name = { de = "Karten mischen", en = "Card shuffle" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karten-mischen.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card shuffle", "karten mischen", "kenney"]
+
+[[asset]]
+id = "treffer-karte-gleiten-1"
+kind = "sound"
+name = { de = "Karte gleiten 1", en = "Card slide 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-gleiten-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card slide", "karte gleiten", "kenney"]
+
+[[asset]]
+id = "treffer-karte-gleiten-2"
+kind = "sound"
+name = { de = "Karte gleiten 2", en = "Card slide 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-gleiten-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card slide", "karte gleiten", "kenney"]
+
+[[asset]]
+id = "treffer-karte-gleiten-3"
+kind = "sound"
+name = { de = "Karte gleiten 3", en = "Card slide 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-gleiten-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card slide", "karte gleiten", "kenney"]
+
+[[asset]]
+id = "treffer-karte-gleiten-4"
+kind = "sound"
+name = { de = "Karte gleiten 4", en = "Card slide 4" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-gleiten-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card slide", "karte gleiten", "kenney"]
+
+[[asset]]
+id = "treffer-karte-gleiten-5"
+kind = "sound"
+name = { de = "Karte gleiten 5", en = "Card slide 5" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-gleiten-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card slide", "karte gleiten", "kenney"]
+
+[[asset]]
+id = "treffer-karte-gleiten-6"
+kind = "sound"
+name = { de = "Karte gleiten 6", en = "Card slide 6" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-gleiten-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card slide", "karte gleiten", "kenney"]
+
+[[asset]]
+id = "treffer-karte-gleiten-7"
+kind = "sound"
+name = { de = "Karte gleiten 7", en = "Card slide 7" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-gleiten-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card slide", "karte gleiten", "kenney"]
+
+[[asset]]
+id = "treffer-karte-gleiten-8"
+kind = "sound"
+name = { de = "Karte gleiten 8", en = "Card slide 8" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karte-gleiten-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["card slide", "karte gleiten", "kenney"]
+
+[[asset]]
+id = "treffer-kartenpaeckchen-oeffnen-1"
+kind = "sound"
+name = { de = "Kartenpäckchen öffnen 1", en = "Cards pack open 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-kartenpaeckchen-oeffnen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["cards pack open", "kartenpäckchen öffnen", "kenney"]
+
+[[asset]]
+id = "treffer-kartenpaeckchen-oeffnen-2"
+kind = "sound"
+name = { de = "Kartenpäckchen öffnen 2", en = "Cards pack open 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-kartenpaeckchen-oeffnen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["cards pack open", "kartenpäckchen öffnen", "kenney"]
+
+[[asset]]
+id = "treffer-karten-herausnehmen-1"
+kind = "sound"
+name = { de = "Karten herausnehmen 1", en = "Cards pack take out 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karten-herausnehmen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["cards pack take out", "karten herausnehmen", "kenney"]
+
+[[asset]]
+id = "treffer-karten-herausnehmen-2"
+kind = "sound"
+name = { de = "Karten herausnehmen 2", en = "Cards pack take out 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-karten-herausnehmen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["cards pack take out", "karten herausnehmen", "kenney"]
+
+[[asset]]
+id = "treffer-chip-setzen-1"
+kind = "sound"
+name = { de = "Chip setzen 1", en = "Chip lay 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chip-setzen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chip lay", "chip setzen", "kenney"]
+
+[[asset]]
+id = "treffer-chip-setzen-2"
+kind = "sound"
+name = { de = "Chip setzen 2", en = "Chip lay 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chip-setzen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chip lay", "chip setzen", "kenney"]
+
+[[asset]]
+id = "treffer-chip-setzen-3"
+kind = "sound"
+name = { de = "Chip setzen 3", en = "Chip lay 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chip-setzen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chip lay", "chip setzen", "kenney"]
+
+[[asset]]
+id = "treffer-chips-klackern-1"
+kind = "sound"
+name = { de = "Chips klackern 1", en = "Chips collide 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-klackern-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips collide", "chips klackern", "kenney"]
+
+[[asset]]
+id = "treffer-chips-klackern-2"
+kind = "sound"
+name = { de = "Chips klackern 2", en = "Chips collide 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-klackern-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips collide", "chips klackern", "kenney"]
+
+[[asset]]
+id = "treffer-chips-klackern-3"
+kind = "sound"
+name = { de = "Chips klackern 3", en = "Chips collide 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-klackern-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips collide", "chips klackern", "kenney"]
+
+[[asset]]
+id = "treffer-chips-klackern-4"
+kind = "sound"
+name = { de = "Chips klackern 4", en = "Chips collide 4" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-klackern-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips collide", "chips klackern", "kenney"]
+
+[[asset]]
+id = "treffer-chips-greifen-1"
+kind = "sound"
+name = { de = "Chips greifen 1", en = "Chips handle 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-greifen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips handle", "chips greifen", "kenney"]
+
+[[asset]]
+id = "treffer-chips-greifen-2"
+kind = "sound"
+name = { de = "Chips greifen 2", en = "Chips handle 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-greifen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips handle", "chips greifen", "kenney"]
+
+[[asset]]
+id = "treffer-chips-greifen-3"
+kind = "sound"
+name = { de = "Chips greifen 3", en = "Chips handle 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-greifen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips handle", "chips greifen", "kenney"]
+
+[[asset]]
+id = "treffer-chips-greifen-4"
+kind = "sound"
+name = { de = "Chips greifen 4", en = "Chips handle 4" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-greifen-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips handle", "chips greifen", "kenney"]
+
+[[asset]]
+id = "treffer-chips-greifen-5"
+kind = "sound"
+name = { de = "Chips greifen 5", en = "Chips handle 5" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-greifen-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips handle", "chips greifen", "kenney"]
+
+[[asset]]
+id = "treffer-chips-greifen-6"
+kind = "sound"
+name = { de = "Chips greifen 6", en = "Chips handle 6" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-greifen-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips handle", "chips greifen", "kenney"]
+
+[[asset]]
+id = "treffer-chips-stapeln-1"
+kind = "sound"
+name = { de = "Chips stapeln 1", en = "Chips stack 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-stapeln-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips stack", "chips stapeln", "kenney"]
+
+[[asset]]
+id = "treffer-chips-stapeln-2"
+kind = "sound"
+name = { de = "Chips stapeln 2", en = "Chips stack 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-stapeln-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips stack", "chips stapeln", "kenney"]
+
+[[asset]]
+id = "treffer-chips-stapeln-3"
+kind = "sound"
+name = { de = "Chips stapeln 3", en = "Chips stack 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-stapeln-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips stack", "chips stapeln", "kenney"]
+
+[[asset]]
+id = "treffer-chips-stapeln-4"
+kind = "sound"
+name = { de = "Chips stapeln 4", en = "Chips stack 4" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-stapeln-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips stack", "chips stapeln", "kenney"]
+
+[[asset]]
+id = "treffer-chips-stapeln-5"
+kind = "sound"
+name = { de = "Chips stapeln 5", en = "Chips stack 5" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-stapeln-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips stack", "chips stapeln", "kenney"]
+
+[[asset]]
+id = "treffer-chips-stapeln-6"
+kind = "sound"
+name = { de = "Chips stapeln 6", en = "Chips stack 6" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-chips-stapeln-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["chips stack", "chips stapeln", "kenney"]
+
+[[asset]]
+id = "treffer-wuerfel-greifen-1"
+kind = "sound"
+name = { de = "Würfel greifen 1", en = "Dice grab 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-wuerfel-greifen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["dice grab", "würfel greifen", "kenney"]
+
+[[asset]]
+id = "treffer-wuerfel-greifen-2"
+kind = "sound"
+name = { de = "Würfel greifen 2", en = "Dice grab 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-wuerfel-greifen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["dice grab", "würfel greifen", "kenney"]
+
+[[asset]]
+id = "treffer-wuerfel-schuetteln-1"
+kind = "sound"
+name = { de = "Würfel schütteln 1", en = "Dice shake 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-wuerfel-schuetteln-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["dice shake", "würfel schütteln", "kenney"]
+
+[[asset]]
+id = "treffer-wuerfel-schuetteln-2"
+kind = "sound"
+name = { de = "Würfel schütteln 2", en = "Dice shake 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-wuerfel-schuetteln-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["dice shake", "würfel schütteln", "kenney"]
+
+[[asset]]
+id = "treffer-wuerfel-schuetteln-3"
+kind = "sound"
+name = { de = "Würfel schütteln 3", en = "Dice shake 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-wuerfel-schuetteln-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["dice shake", "würfel schütteln", "kenney"]
+
+[[asset]]
+id = "treffer-wuerfel-werfen-1"
+kind = "sound"
+name = { de = "Würfel werfen 1", en = "Dice throw 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-wuerfel-werfen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["dice throw", "würfel werfen", "kenney"]
+
+[[asset]]
+id = "treffer-wuerfel-werfen-2"
+kind = "sound"
+name = { de = "Würfel werfen 2", en = "Dice throw 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-wuerfel-werfen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["dice throw", "würfel werfen", "kenney"]
+
+[[asset]]
+id = "treffer-wuerfel-werfen-3"
+kind = "sound"
+name = { de = "Würfel werfen 3", en = "Dice throw 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-wuerfel-werfen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["dice throw", "würfel werfen", "kenney"]
+
+[[asset]]
+id = "treffer-einzelner-wuerfel-1"
+kind = "sound"
+name = { de = "Einzelner Würfel 1", en = "Die throw 1" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-einzelner-wuerfel-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["die throw", "einzelner würfel", "kenney"]
+
+[[asset]]
+id = "treffer-einzelner-wuerfel-2"
+kind = "sound"
+name = { de = "Einzelner Würfel 2", en = "Die throw 2" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-einzelner-wuerfel-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["die throw", "einzelner würfel", "kenney"]
+
+[[asset]]
+id = "treffer-einzelner-wuerfel-3"
+kind = "sound"
+name = { de = "Einzelner Würfel 3", en = "Die throw 3" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-einzelner-wuerfel-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["die throw", "einzelner würfel", "kenney"]
+
+[[asset]]
+id = "treffer-einzelner-wuerfel-4"
+kind = "sound"
+name = { de = "Einzelner Würfel 4", en = "Die throw 4" }
+category = ["Karten und Würfel"]
+file = "audio/treffer-einzelner-wuerfel-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/casino-audio"
+tags = ["die throw", "einzelner würfel", "kenney"]

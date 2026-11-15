@@ -1,0 +1,946 @@
+# Erzeugt von tools/bau.py aus Kenney-Paketen (CC0) – nicht von Hand ändern.
+[plugin]
+id = "kenney.jingles"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Jingles (Kenney)", en = "Jingles (Kenney)" }
+description = { de = "Kurze Musikstücke: 8-Bit, Hits, Pizzicato, Saxofon, Steeldrum", en = "Short music stings: 8-bit, hits, pizzicato, sax, steel drum" }
+authors = ["Kenney"]
+license = "CC0-1.0"
+source = "https://kenney.nl/assets"
+
+[[asset]]
+id = "jingles-8-bit-jingle-1"
+kind = "sound"
+name = { de = "8-Bit-Jingle 1", en = "Jingles nes 1" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-2"
+kind = "sound"
+name = { de = "8-Bit-Jingle 2", en = "Jingles nes 2" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-3"
+kind = "sound"
+name = { de = "8-Bit-Jingle 3", en = "Jingles nes 3" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-4"
+kind = "sound"
+name = { de = "8-Bit-Jingle 4", en = "Jingles nes 4" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-5"
+kind = "sound"
+name = { de = "8-Bit-Jingle 5", en = "Jingles nes 5" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-6"
+kind = "sound"
+name = { de = "8-Bit-Jingle 6", en = "Jingles nes 6" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-7"
+kind = "sound"
+name = { de = "8-Bit-Jingle 7", en = "Jingles nes 7" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-8"
+kind = "sound"
+name = { de = "8-Bit-Jingle 8", en = "Jingles nes 8" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-9"
+kind = "sound"
+name = { de = "8-Bit-Jingle 9", en = "Jingles nes 9" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-10"
+kind = "sound"
+name = { de = "8-Bit-Jingle 10", en = "Jingles nes 10" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-11"
+kind = "sound"
+name = { de = "8-Bit-Jingle 11", en = "Jingles nes 11" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-11.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-12"
+kind = "sound"
+name = { de = "8-Bit-Jingle 12", en = "Jingles nes 12" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-12.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-13"
+kind = "sound"
+name = { de = "8-Bit-Jingle 13", en = "Jingles nes 13" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-13.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-14"
+kind = "sound"
+name = { de = "8-Bit-Jingle 14", en = "Jingles nes 14" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-14.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-15"
+kind = "sound"
+name = { de = "8-Bit-Jingle 15", en = "Jingles nes 15" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-15.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-16"
+kind = "sound"
+name = { de = "8-Bit-Jingle 16", en = "Jingles nes 16" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-16.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-8-bit-jingle-17"
+kind = "sound"
+name = { de = "8-Bit-Jingle 17", en = "Jingles nes 17" }
+category = ["8-Bit"]
+file = "audio/jingles-8-bit-jingle-17.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles nes", "8-bit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-1"
+kind = "sound"
+name = { de = "Hit-Jingle 1", en = "Jingles hit 1" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-2"
+kind = "sound"
+name = { de = "Hit-Jingle 2", en = "Jingles hit 2" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-3"
+kind = "sound"
+name = { de = "Hit-Jingle 3", en = "Jingles hit 3" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-4"
+kind = "sound"
+name = { de = "Hit-Jingle 4", en = "Jingles hit 4" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-5"
+kind = "sound"
+name = { de = "Hit-Jingle 5", en = "Jingles hit 5" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-6"
+kind = "sound"
+name = { de = "Hit-Jingle 6", en = "Jingles hit 6" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-7"
+kind = "sound"
+name = { de = "Hit-Jingle 7", en = "Jingles hit 7" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-8"
+kind = "sound"
+name = { de = "Hit-Jingle 8", en = "Jingles hit 8" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-9"
+kind = "sound"
+name = { de = "Hit-Jingle 9", en = "Jingles hit 9" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-10"
+kind = "sound"
+name = { de = "Hit-Jingle 10", en = "Jingles hit 10" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-11"
+kind = "sound"
+name = { de = "Hit-Jingle 11", en = "Jingles hit 11" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-11.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-12"
+kind = "sound"
+name = { de = "Hit-Jingle 12", en = "Jingles hit 12" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-12.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-13"
+kind = "sound"
+name = { de = "Hit-Jingle 13", en = "Jingles hit 13" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-13.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-14"
+kind = "sound"
+name = { de = "Hit-Jingle 14", en = "Jingles hit 14" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-14.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-15"
+kind = "sound"
+name = { de = "Hit-Jingle 15", en = "Jingles hit 15" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-15.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-16"
+kind = "sound"
+name = { de = "Hit-Jingle 16", en = "Jingles hit 16" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-16.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-hit-jingle-17"
+kind = "sound"
+name = { de = "Hit-Jingle 17", en = "Jingles hit 17" }
+category = ["Hits"]
+file = "audio/jingles-hit-jingle-17.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles hit", "hit-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-1"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 1", en = "Jingles pizzi 1" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-2"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 2", en = "Jingles pizzi 2" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-3"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 3", en = "Jingles pizzi 3" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-4"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 4", en = "Jingles pizzi 4" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-5"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 5", en = "Jingles pizzi 5" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-6"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 6", en = "Jingles pizzi 6" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-7"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 7", en = "Jingles pizzi 7" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-8"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 8", en = "Jingles pizzi 8" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-9"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 9", en = "Jingles pizzi 9" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-10"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 10", en = "Jingles pizzi 10" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-11"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 11", en = "Jingles pizzi 11" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-11.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-12"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 12", en = "Jingles pizzi 12" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-12.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-13"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 13", en = "Jingles pizzi 13" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-13.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-14"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 14", en = "Jingles pizzi 14" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-14.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-15"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 15", en = "Jingles pizzi 15" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-15.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-16"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 16", en = "Jingles pizzi 16" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-16.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-pizzicato-jingle-17"
+kind = "sound"
+name = { de = "Pizzicato-Jingle 17", en = "Jingles pizzi 17" }
+category = ["Pizzicato"]
+file = "audio/jingles-pizzicato-jingle-17.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles pizzi", "pizzicato-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-1"
+kind = "sound"
+name = { de = "Saxofon-Jingle 1", en = "Jingles sax 1" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-2"
+kind = "sound"
+name = { de = "Saxofon-Jingle 2", en = "Jingles sax 2" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-3"
+kind = "sound"
+name = { de = "Saxofon-Jingle 3", en = "Jingles sax 3" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-4"
+kind = "sound"
+name = { de = "Saxofon-Jingle 4", en = "Jingles sax 4" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-5"
+kind = "sound"
+name = { de = "Saxofon-Jingle 5", en = "Jingles sax 5" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-6"
+kind = "sound"
+name = { de = "Saxofon-Jingle 6", en = "Jingles sax 6" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-7"
+kind = "sound"
+name = { de = "Saxofon-Jingle 7", en = "Jingles sax 7" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-8"
+kind = "sound"
+name = { de = "Saxofon-Jingle 8", en = "Jingles sax 8" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-9"
+kind = "sound"
+name = { de = "Saxofon-Jingle 9", en = "Jingles sax 9" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-10"
+kind = "sound"
+name = { de = "Saxofon-Jingle 10", en = "Jingles sax 10" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-11"
+kind = "sound"
+name = { de = "Saxofon-Jingle 11", en = "Jingles sax 11" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-11.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-12"
+kind = "sound"
+name = { de = "Saxofon-Jingle 12", en = "Jingles sax 12" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-12.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-13"
+kind = "sound"
+name = { de = "Saxofon-Jingle 13", en = "Jingles sax 13" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-13.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-14"
+kind = "sound"
+name = { de = "Saxofon-Jingle 14", en = "Jingles sax 14" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-14.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-15"
+kind = "sound"
+name = { de = "Saxofon-Jingle 15", en = "Jingles sax 15" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-15.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-16"
+kind = "sound"
+name = { de = "Saxofon-Jingle 16", en = "Jingles sax 16" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-16.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-saxofon-jingle-17"
+kind = "sound"
+name = { de = "Saxofon-Jingle 17", en = "Jingles sax 17" }
+category = ["Saxofon"]
+file = "audio/jingles-saxofon-jingle-17.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles sax", "saxofon-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-1"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 1", en = "Jingles steel 1" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-2"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 2", en = "Jingles steel 2" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-3"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 3", en = "Jingles steel 3" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-4"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 4", en = "Jingles steel 4" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-5"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 5", en = "Jingles steel 5" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-6"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 6", en = "Jingles steel 6" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-7"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 7", en = "Jingles steel 7" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-8"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 8", en = "Jingles steel 8" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-9"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 9", en = "Jingles steel 9" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-10"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 10", en = "Jingles steel 10" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-11"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 11", en = "Jingles steel 11" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-11.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-12"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 12", en = "Jingles steel 12" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-12.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-13"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 13", en = "Jingles steel 13" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-13.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-14"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 14", en = "Jingles steel 14" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-14.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-15"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 15", en = "Jingles steel 15" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-15.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-16"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 16", en = "Jingles steel 16" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-16.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]
+
+[[asset]]
+id = "jingles-steeldrum-jingle-17"
+kind = "sound"
+name = { de = "Steeldrum-Jingle 17", en = "Jingles steel 17" }
+category = ["Steeldrum"]
+file = "audio/jingles-steeldrum-jingle-17.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/music-jingles"
+tags = ["jingles steel", "steeldrum-jingle", "kenney"]

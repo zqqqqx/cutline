@@ -1,0 +1,1529 @@
+# Erzeugt von tools/bau.py aus Kenney-Paketen (CC0) – nicht von Hand ändern.
+[plugin]
+id = "kenney.stimmen"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Ansagen (Kenney)", en = "Voice-overs (Kenney)" }
+description = { de = "Englische Ansagen: Zahlen, Runden, Sieg und Niederlage, Kampfrufe", en = "English announcer lines: numbers, rounds, win and lose, battle calls" }
+authors = ["Kenney"]
+license = "CC0-1.0"
+source = "https://kenney.nl/assets"
+
+[[asset]]
+id = "stimmen-eins-one-w"
+kind = "sound"
+name = { de = "Eins („One“)", en = "One" }
+category = ["Weiblich"]
+file = "audio/stimmen-eins-one-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "one", "eins", "kenney"]
+
+[[asset]]
+id = "stimmen-zwei-two-w"
+kind = "sound"
+name = { de = "Zwei („Two“)", en = "Two" }
+category = ["Weiblich"]
+file = "audio/stimmen-zwei-two-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "two", "zwei", "kenney"]
+
+[[asset]]
+id = "stimmen-drei-three-w"
+kind = "sound"
+name = { de = "Drei („Three“)", en = "Three" }
+category = ["Weiblich"]
+file = "audio/stimmen-drei-three-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "three", "drei", "kenney"]
+
+[[asset]]
+id = "stimmen-vier-four-w"
+kind = "sound"
+name = { de = "Vier („Four“)", en = "Four" }
+category = ["Weiblich"]
+file = "audio/stimmen-vier-four-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "four", "vier", "kenney"]
+
+[[asset]]
+id = "stimmen-fuenf-five-w"
+kind = "sound"
+name = { de = "Fünf („Five“)", en = "Five" }
+category = ["Weiblich"]
+file = "audio/stimmen-fuenf-five-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "five", "fünf", "kenney"]
+
+[[asset]]
+id = "stimmen-sechs-six-w"
+kind = "sound"
+name = { de = "Sechs („Six“)", en = "Six" }
+category = ["Weiblich"]
+file = "audio/stimmen-sechs-six-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "six", "sechs", "kenney"]
+
+[[asset]]
+id = "stimmen-sieben-seven-w"
+kind = "sound"
+name = { de = "Sieben („Seven“)", en = "Seven" }
+category = ["Weiblich"]
+file = "audio/stimmen-sieben-seven-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "seven", "sieben", "kenney"]
+
+[[asset]]
+id = "stimmen-acht-eight-w"
+kind = "sound"
+name = { de = "Acht („Eight“)", en = "Eight" }
+category = ["Weiblich"]
+file = "audio/stimmen-acht-eight-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "eight", "acht", "kenney"]
+
+[[asset]]
+id = "stimmen-neun-nine-w"
+kind = "sound"
+name = { de = "Neun („Nine“)", en = "Nine" }
+category = ["Weiblich"]
+file = "audio/stimmen-neun-nine-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "nine", "neun", "kenney"]
+
+[[asset]]
+id = "stimmen-zehn-ten-w"
+kind = "sound"
+name = { de = "Zehn („Ten“)", en = "Ten" }
+category = ["Weiblich"]
+file = "audio/stimmen-zehn-ten-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "ten", "zehn", "kenney"]
+
+[[asset]]
+id = "stimmen-glueckwunsch-congratulations-w"
+kind = "sound"
+name = { de = "Glückwunsch („Congratulations“)", en = "Congratulations" }
+category = ["Weiblich"]
+file = "audio/stimmen-glueckwunsch-congratulations-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "congratulations", "glückwunsch", "kenney"]
+
+[[asset]]
+id = "stimmen-richtig-correct-w"
+kind = "sound"
+name = { de = "Richtig („Correct“)", en = "Correct" }
+category = ["Weiblich"]
+file = "audio/stimmen-richtig-correct-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "correct", "richtig", "kenney"]
+
+[[asset]]
+id = "stimmen-letzte-runde-final-round-w"
+kind = "sound"
+name = { de = "Letzte Runde („Final round“)", en = "Final round" }
+category = ["Weiblich"]
+file = "audio/stimmen-letzte-runde-final-round-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "final round", "letzte runde", "kenney"]
+
+[[asset]]
+id = "stimmen-spiel-vorbei-game-over-w"
+kind = "sound"
+name = { de = "Spiel vorbei („Game over“)", en = "Game over" }
+category = ["Weiblich"]
+file = "audio/stimmen-spiel-vorbei-game-over-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "game over", "spiel vorbei", "kenney"]
+
+[[asset]]
+id = "stimmen-los-go-w"
+kind = "sound"
+name = { de = "Los („Go“)", en = "Go" }
+category = ["Weiblich"]
+file = "audio/stimmen-los-go-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "go", "los", "kenney"]
+
+[[asset]]
+id = "stimmen-beeil-dich-hurry-up-w"
+kind = "sound"
+name = { de = "Beeil dich („Hurry up“)", en = "Hurry up" }
+category = ["Weiblich"]
+file = "audio/stimmen-beeil-dich-hurry-up-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "hurry up", "beeil dich", "kenney"]
+
+[[asset]]
+id = "stimmen-unentschieden-it-s-a-tie-w"
+kind = "sound"
+name = { de = "Unentschieden („It's a tie“)", en = "It's a tie" }
+category = ["Weiblich"]
+file = "audio/stimmen-unentschieden-it-s-a-tie-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "it's a tie", "unentschieden", "kenney"]
+
+[[asset]]
+id = "stimmen-level-level-w"
+kind = "sound"
+name = { de = "Level („Level“)", en = "Level" }
+category = ["Weiblich"]
+file = "audio/stimmen-level-level-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "level", "kenney"]
+
+[[asset]]
+id = "stimmen-level-aufgestiegen-level-up-w"
+kind = "sound"
+name = { de = "Level aufgestiegen („Level up“)", en = "Level up" }
+category = ["Weiblich"]
+file = "audio/stimmen-level-aufgestiegen-level-up-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "level up", "level aufgestiegen", "kenney"]
+
+[[asset]]
+id = "stimmen-mission-erfuellt-mission-completed-w"
+kind = "sound"
+name = { de = "Mission erfüllt („Mission completed“)", en = "Mission completed" }
+category = ["Weiblich"]
+file = "audio/stimmen-mission-erfuellt-mission-completed-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "mission completed", "mission erfüllt", "kenney"]
+
+[[asset]]
+id = "stimmen-mission-gescheitert-mission-failed-w"
+kind = "sound"
+name = { de = "Mission gescheitert („Mission failed“)", en = "Mission failed" }
+category = ["Weiblich"]
+file = "audio/stimmen-mission-gescheitert-mission-failed-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "mission failed", "mission gescheitert", "kenney"]
+
+[[asset]]
+id = "stimmen-neuer-rekord-new-highscore-w"
+kind = "sound"
+name = { de = "Neuer Rekord („New highscore“)", en = "New highscore" }
+category = ["Weiblich"]
+file = "audio/stimmen-neuer-rekord-new-highscore-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "new highscore", "neuer rekord", "kenney"]
+
+[[asset]]
+id = "stimmen-ziel-erreicht-objective-achieved-w"
+kind = "sound"
+name = { de = "Ziel erreicht („Objective achieved“)", en = "Objective achieved" }
+category = ["Weiblich"]
+file = "audio/stimmen-ziel-erreicht-objective-achieved-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "objective achieved", "ziel erreicht", "kenney"]
+
+[[asset]]
+id = "stimmen-power-up-power-up-w"
+kind = "sound"
+name = { de = "Power-up („Power up“)", en = "Power up" }
+category = ["Weiblich"]
+file = "audio/stimmen-power-up-power-up-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "power up", "power-up", "kenney"]
+
+[[asset]]
+id = "stimmen-bereit-ready-w"
+kind = "sound"
+name = { de = "Bereit („Ready“)", en = "Ready" }
+category = ["Weiblich"]
+file = "audio/stimmen-bereit-ready-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "ready", "bereit", "kenney"]
+
+[[asset]]
+id = "stimmen-runde-round-w"
+kind = "sound"
+name = { de = "Runde („Round“)", en = "Round" }
+category = ["Weiblich"]
+file = "audio/stimmen-runde-round-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "round", "runde", "kenney"]
+
+[[asset]]
+id = "stimmen-fertig-set-w"
+kind = "sound"
+name = { de = "Fertig („Set“)", en = "Set" }
+category = ["Weiblich"]
+file = "audio/stimmen-fertig-set-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "set", "fertig", "kenney"]
+
+[[asset]]
+id = "stimmen-zeit-abgelaufen-time-over-w"
+kind = "sound"
+name = { de = "Zeit abgelaufen („Time over“)", en = "Time over" }
+category = ["Weiblich"]
+file = "audio/stimmen-zeit-abgelaufen-time-over-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "time over", "zeit abgelaufen", "kenney"]
+
+[[asset]]
+id = "stimmen-verstaerkung-rufen-call-for-backup-w"
+kind = "sound"
+name = { de = "Verstärkung rufen („Call for backup“)", en = "Call for backup" }
+category = ["Weiblich"]
+file = "audio/stimmen-verstaerkung-rufen-call-for-backup-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "call for backup", "verstärkung rufen", "kenney"]
+
+[[asset]]
+id = "stimmen-gib-mir-deckung-cover-me-w"
+kind = "sound"
+name = { de = "Gib mir Deckung („Cover me“)", en = "Cover me" }
+category = ["Weiblich"]
+file = "audio/stimmen-gib-mir-deckung-cover-me-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "cover me", "gib mir deckung", "kenney"]
+
+[[asset]]
+id = "stimmen-achtung-sprengung-fire-in-the-hole-w"
+kind = "sound"
+name = { de = "Achtung, Sprengung („Fire in the hole“)", en = "Fire in the hole" }
+category = ["Weiblich"]
+file = "audio/stimmen-achtung-sprengung-fire-in-the-hole-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "fire in the hole", "achtung, sprengung", "kenney"]
+
+[[asset]]
+id = "stimmen-in-deckung-get-down-w"
+kind = "sound"
+name = { de = "In Deckung („Get down“)", en = "Get down" }
+category = ["Weiblich"]
+file = "audio/stimmen-in-deckung-get-down-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "get down", "in deckung", "kenney"]
+
+[[asset]]
+id = "stimmen-los-los-los-go-go-go-w"
+kind = "sound"
+name = { de = "Los, los, los („Go go go“)", en = "Go go go" }
+category = ["Weiblich"]
+file = "audio/stimmen-los-los-los-go-go-go-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "go go go", "los, los, los", "kenney"]
+
+[[asset]]
+id = "stimmen-position-halten-hold-w"
+kind = "sound"
+name = { de = "Position halten („Hold“)", en = "Hold" }
+category = ["Weiblich"]
+file = "audio/stimmen-position-halten-hold-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "hold", "position halten", "kenney"]
+
+[[asset]]
+id = "stimmen-vorsicht-look-out-w"
+kind = "sound"
+name = { de = "Vorsicht („Look out“)", en = "Look out" }
+category = ["Weiblich"]
+file = "audio/stimmen-vorsicht-look-out-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "look out", "vorsicht", "kenney"]
+
+[[asset]]
+id = "stimmen-sanitaeter-medic-w"
+kind = "sound"
+name = { de = "Sanitäter („Medic“)", en = "Medic" }
+category = ["Weiblich"]
+file = "audio/stimmen-sanitaeter-medic-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "medic", "sanitäter", "kenney"]
+
+[[asset]]
+id = "stimmen-lade-nach-reloading-w"
+kind = "sound"
+name = { de = "Lade nach („Reloading“)", en = "Reloading" }
+category = ["Weiblich"]
+file = "audio/stimmen-lade-nach-reloading-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "reloading", "lade nach", "kenney"]
+
+[[asset]]
+id = "stimmen-panzerfaust-rpg-w"
+kind = "sound"
+name = { de = "Panzerfaust („RPG“)", en = "RPG" }
+category = ["Weiblich"]
+file = "audio/stimmen-panzerfaust-rpg-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "rpg", "panzerfaust", "kenney"]
+
+[[asset]]
+id = "stimmen-scharfschuetze-sniper-w"
+kind = "sound"
+name = { de = "Scharfschütze („Sniper“)", en = "Sniper" }
+category = ["Weiblich"]
+file = "audio/stimmen-scharfschuetze-sniper-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "sniper", "scharfschütze", "kenney"]
+
+[[asset]]
+id = "stimmen-sperrfeuer-suppressing-fire-w"
+kind = "sound"
+name = { de = "Sperrfeuer („Suppressing fire“)", en = "Suppressing fire" }
+category = ["Weiblich"]
+file = "audio/stimmen-sperrfeuer-suppressing-fire-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "suppressing fire", "sperrfeuer", "kenney"]
+
+[[asset]]
+id = "stimmen-ziel-zerstoert-target-destroyed-w"
+kind = "sound"
+name = { de = "Ziel zerstört („Target destroyed“)", en = "Target destroyed" }
+category = ["Weiblich"]
+file = "audio/stimmen-ziel-zerstoert-target-destroyed-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "target destroyed", "ziel zerstört", "kenney"]
+
+[[asset]]
+id = "stimmen-ziel-im-visier-target-engaged-w"
+kind = "sound"
+name = { de = "Ziel im Visier („Target engaged“)", en = "Target engaged" }
+category = ["Weiblich"]
+file = "audio/stimmen-ziel-im-visier-target-engaged-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "target engaged", "ziel im visier", "kenney"]
+
+[[asset]]
+id = "stimmen-rueckendeckung-watch-my-back-w"
+kind = "sound"
+name = { de = "Rückendeckung („Watch my back“)", en = "Watch my back" }
+category = ["Weiblich"]
+file = "audio/stimmen-rueckendeckung-watch-my-back-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "watch my back", "rückendeckung", "kenney"]
+
+[[asset]]
+id = "stimmen-falsch-wrong-w"
+kind = "sound"
+name = { de = "Falsch („Wrong“)", en = "Wrong" }
+category = ["Weiblich"]
+file = "audio/stimmen-falsch-wrong-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "wrong", "falsch", "kenney"]
+
+[[asset]]
+id = "stimmen-verloren-you-lose-w"
+kind = "sound"
+name = { de = "Verloren („You lose“)", en = "You lose" }
+category = ["Weiblich"]
+file = "audio/stimmen-verloren-you-lose-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "you lose", "verloren", "kenney"]
+
+[[asset]]
+id = "stimmen-gewonnen-you-win-w"
+kind = "sound"
+name = { de = "Gewonnen („You win“)", en = "You win" }
+category = ["Weiblich"]
+file = "audio/stimmen-gewonnen-you-win-w.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "weiblich", "you win", "gewonnen", "kenney"]
+
+[[asset]]
+id = "stimmen-eins-one-m"
+kind = "sound"
+name = { de = "Eins („One“)", en = "One" }
+category = ["Männlich"]
+file = "audio/stimmen-eins-one-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "one", "eins", "kenney"]
+
+[[asset]]
+id = "stimmen-zwei-two-m"
+kind = "sound"
+name = { de = "Zwei („Two“)", en = "Two" }
+category = ["Männlich"]
+file = "audio/stimmen-zwei-two-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "two", "zwei", "kenney"]
+
+[[asset]]
+id = "stimmen-drei-three-m"
+kind = "sound"
+name = { de = "Drei („Three“)", en = "Three" }
+category = ["Männlich"]
+file = "audio/stimmen-drei-three-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "three", "drei", "kenney"]
+
+[[asset]]
+id = "stimmen-vier-four-m"
+kind = "sound"
+name = { de = "Vier („Four“)", en = "Four" }
+category = ["Männlich"]
+file = "audio/stimmen-vier-four-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "four", "vier", "kenney"]
+
+[[asset]]
+id = "stimmen-fuenf-five-m"
+kind = "sound"
+name = { de = "Fünf („Five“)", en = "Five" }
+category = ["Männlich"]
+file = "audio/stimmen-fuenf-five-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "five", "fünf", "kenney"]
+
+[[asset]]
+id = "stimmen-sechs-six-m"
+kind = "sound"
+name = { de = "Sechs („Six“)", en = "Six" }
+category = ["Männlich"]
+file = "audio/stimmen-sechs-six-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "six", "sechs", "kenney"]
+
+[[asset]]
+id = "stimmen-sieben-seven-m"
+kind = "sound"
+name = { de = "Sieben („Seven“)", en = "Seven" }
+category = ["Männlich"]
+file = "audio/stimmen-sieben-seven-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "seven", "sieben", "kenney"]
+
+[[asset]]
+id = "stimmen-acht-eight-m"
+kind = "sound"
+name = { de = "Acht („Eight“)", en = "Eight" }
+category = ["Männlich"]
+file = "audio/stimmen-acht-eight-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "eight", "acht", "kenney"]
+
+[[asset]]
+id = "stimmen-neun-nine-m"
+kind = "sound"
+name = { de = "Neun („Nine“)", en = "Nine" }
+category = ["Männlich"]
+file = "audio/stimmen-neun-nine-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "nine", "neun", "kenney"]
+
+[[asset]]
+id = "stimmen-zehn-ten-m"
+kind = "sound"
+name = { de = "Zehn („Ten“)", en = "Ten" }
+category = ["Männlich"]
+file = "audio/stimmen-zehn-ten-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "ten", "zehn", "kenney"]
+
+[[asset]]
+id = "stimmen-glueckwunsch-congratulations-m"
+kind = "sound"
+name = { de = "Glückwunsch („Congratulations“)", en = "Congratulations" }
+category = ["Männlich"]
+file = "audio/stimmen-glueckwunsch-congratulations-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "congratulations", "glückwunsch", "kenney"]
+
+[[asset]]
+id = "stimmen-richtig-correct-m"
+kind = "sound"
+name = { de = "Richtig („Correct“)", en = "Correct" }
+category = ["Männlich"]
+file = "audio/stimmen-richtig-correct-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "correct", "richtig", "kenney"]
+
+[[asset]]
+id = "stimmen-letzte-runde-final-round-m"
+kind = "sound"
+name = { de = "Letzte Runde („Final round“)", en = "Final round" }
+category = ["Männlich"]
+file = "audio/stimmen-letzte-runde-final-round-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "final round", "letzte runde", "kenney"]
+
+[[asset]]
+id = "stimmen-spiel-vorbei-game-over-m"
+kind = "sound"
+name = { de = "Spiel vorbei („Game over“)", en = "Game over" }
+category = ["Männlich"]
+file = "audio/stimmen-spiel-vorbei-game-over-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "game over", "spiel vorbei", "kenney"]
+
+[[asset]]
+id = "stimmen-los-go-m"
+kind = "sound"
+name = { de = "Los („Go“)", en = "Go" }
+category = ["Männlich"]
+file = "audio/stimmen-los-go-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "go", "los", "kenney"]
+
+[[asset]]
+id = "stimmen-halt-hold-m"
+kind = "sound"
+name = { de = "Halt („Hold“)", en = "Hold" }
+category = ["Männlich"]
+file = "audio/stimmen-halt-hold-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "hold", "halt", "kenney"]
+
+[[asset]]
+id = "stimmen-beeil-dich-hurry-up-m"
+kind = "sound"
+name = { de = "Beeil dich („Hurry up“)", en = "Hurry up" }
+category = ["Männlich"]
+file = "audio/stimmen-beeil-dich-hurry-up-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "hurry up", "beeil dich", "kenney"]
+
+[[asset]]
+id = "stimmen-unentschieden-it-s-a-tie-m"
+kind = "sound"
+name = { de = "Unentschieden („It's a tie“)", en = "It's a tie" }
+category = ["Männlich"]
+file = "audio/stimmen-unentschieden-it-s-a-tie-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "it's a tie", "unentschieden", "kenney"]
+
+[[asset]]
+id = "stimmen-level-level-m"
+kind = "sound"
+name = { de = "Level („Level“)", en = "Level" }
+category = ["Männlich"]
+file = "audio/stimmen-level-level-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "level", "kenney"]
+
+[[asset]]
+id = "stimmen-level-aufgestiegen-level-up-m"
+kind = "sound"
+name = { de = "Level aufgestiegen („Level up“)", en = "Level up" }
+category = ["Männlich"]
+file = "audio/stimmen-level-aufgestiegen-level-up-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "level up", "level aufgestiegen", "kenney"]
+
+[[asset]]
+id = "stimmen-mission-erfuellt-mission-completed-m"
+kind = "sound"
+name = { de = "Mission erfüllt („Mission completed“)", en = "Mission completed" }
+category = ["Männlich"]
+file = "audio/stimmen-mission-erfuellt-mission-completed-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "mission completed", "mission erfüllt", "kenney"]
+
+[[asset]]
+id = "stimmen-mission-gescheitert-mission-failed-m"
+kind = "sound"
+name = { de = "Mission gescheitert („Mission failed“)", en = "Mission failed" }
+category = ["Männlich"]
+file = "audio/stimmen-mission-gescheitert-mission-failed-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "mission failed", "mission gescheitert", "kenney"]
+
+[[asset]]
+id = "stimmen-neuer-rekord-new-highscore-m"
+kind = "sound"
+name = { de = "Neuer Rekord („New highscore“)", en = "New highscore" }
+category = ["Männlich"]
+file = "audio/stimmen-neuer-rekord-new-highscore-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "new highscore", "neuer rekord", "kenney"]
+
+[[asset]]
+id = "stimmen-ziel-erreicht-objective-achieved-m"
+kind = "sound"
+name = { de = "Ziel erreicht („Objective achieved“)", en = "Objective achieved" }
+category = ["Männlich"]
+file = "audio/stimmen-ziel-erreicht-objective-achieved-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "objective achieved", "ziel erreicht", "kenney"]
+
+[[asset]]
+id = "stimmen-power-up-power-up-m"
+kind = "sound"
+name = { de = "Power-up („Power up“)", en = "Power up" }
+category = ["Männlich"]
+file = "audio/stimmen-power-up-power-up-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "power up", "power-up", "kenney"]
+
+[[asset]]
+id = "stimmen-bereit-ready-m"
+kind = "sound"
+name = { de = "Bereit („Ready“)", en = "Ready" }
+category = ["Männlich"]
+file = "audio/stimmen-bereit-ready-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "ready", "bereit", "kenney"]
+
+[[asset]]
+id = "stimmen-runde-round-m"
+kind = "sound"
+name = { de = "Runde („Round“)", en = "Round" }
+category = ["Männlich"]
+file = "audio/stimmen-runde-round-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "round", "runde", "kenney"]
+
+[[asset]]
+id = "stimmen-fertig-set-m"
+kind = "sound"
+name = { de = "Fertig („Set“)", en = "Set" }
+category = ["Männlich"]
+file = "audio/stimmen-fertig-set-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "set", "fertig", "kenney"]
+
+[[asset]]
+id = "stimmen-zeit-abgelaufen-time-over-m"
+kind = "sound"
+name = { de = "Zeit abgelaufen („Time over“)", en = "Time over" }
+category = ["Männlich"]
+file = "audio/stimmen-zeit-abgelaufen-time-over-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "time over", "zeit abgelaufen", "kenney"]
+
+[[asset]]
+id = "stimmen-verstaerkung-rufen-call-for-backup-m"
+kind = "sound"
+name = { de = "Verstärkung rufen („Call for backup“)", en = "Call for backup" }
+category = ["Männlich"]
+file = "audio/stimmen-verstaerkung-rufen-call-for-backup-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "call for backup", "verstärkung rufen", "kenney"]
+
+[[asset]]
+id = "stimmen-gib-mir-deckung-cover-me-m"
+kind = "sound"
+name = { de = "Gib mir Deckung („Cover me“)", en = "Cover me" }
+category = ["Männlich"]
+file = "audio/stimmen-gib-mir-deckung-cover-me-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "cover me", "gib mir deckung", "kenney"]
+
+[[asset]]
+id = "stimmen-achtung-sprengung-fire-in-the-hole-m"
+kind = "sound"
+name = { de = "Achtung, Sprengung („Fire in the hole“)", en = "Fire in the hole" }
+category = ["Männlich"]
+file = "audio/stimmen-achtung-sprengung-fire-in-the-hole-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "fire in the hole", "achtung, sprengung", "kenney"]
+
+[[asset]]
+id = "stimmen-in-deckung-get-down-m"
+kind = "sound"
+name = { de = "In Deckung („Get down“)", en = "Get down" }
+category = ["Männlich"]
+file = "audio/stimmen-in-deckung-get-down-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "get down", "in deckung", "kenney"]
+
+[[asset]]
+id = "stimmen-los-los-los-go-go-go-m"
+kind = "sound"
+name = { de = "Los, los, los („Go go go“)", en = "Go go go" }
+category = ["Männlich"]
+file = "audio/stimmen-los-los-los-go-go-go-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "go go go", "los, los, los", "kenney"]
+
+[[asset]]
+id = "stimmen-vorsicht-look-out-m"
+kind = "sound"
+name = { de = "Vorsicht („Look out“)", en = "Look out" }
+category = ["Männlich"]
+file = "audio/stimmen-vorsicht-look-out-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "look out", "vorsicht", "kenney"]
+
+[[asset]]
+id = "stimmen-sanitaeter-medic-m"
+kind = "sound"
+name = { de = "Sanitäter („Medic“)", en = "Medic" }
+category = ["Männlich"]
+file = "audio/stimmen-sanitaeter-medic-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "medic", "sanitäter", "kenney"]
+
+[[asset]]
+id = "stimmen-lade-nach-reloading-m"
+kind = "sound"
+name = { de = "Lade nach („Reloading“)", en = "Reloading" }
+category = ["Männlich"]
+file = "audio/stimmen-lade-nach-reloading-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "reloading", "lade nach", "kenney"]
+
+[[asset]]
+id = "stimmen-panzerfaust-rpg-m"
+kind = "sound"
+name = { de = "Panzerfaust („RPG“)", en = "RPG" }
+category = ["Männlich"]
+file = "audio/stimmen-panzerfaust-rpg-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "rpg", "panzerfaust", "kenney"]
+
+[[asset]]
+id = "stimmen-scharfschuetze-sniper-m"
+kind = "sound"
+name = { de = "Scharfschütze („Sniper“)", en = "Sniper" }
+category = ["Männlich"]
+file = "audio/stimmen-scharfschuetze-sniper-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "sniper", "scharfschütze", "kenney"]
+
+[[asset]]
+id = "stimmen-sperrfeuer-suppressing-fire-m"
+kind = "sound"
+name = { de = "Sperrfeuer („Suppressing fire“)", en = "Suppressing fire" }
+category = ["Männlich"]
+file = "audio/stimmen-sperrfeuer-suppressing-fire-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "suppressing fire", "sperrfeuer", "kenney"]
+
+[[asset]]
+id = "stimmen-ziel-zerstoert-target-destroyed-m"
+kind = "sound"
+name = { de = "Ziel zerstört („Target destroyed“)", en = "Target destroyed" }
+category = ["Männlich"]
+file = "audio/stimmen-ziel-zerstoert-target-destroyed-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "target destroyed", "ziel zerstört", "kenney"]
+
+[[asset]]
+id = "stimmen-ziel-im-visier-target-engaged-m"
+kind = "sound"
+name = { de = "Ziel im Visier („Target engaged“)", en = "Target engaged" }
+category = ["Männlich"]
+file = "audio/stimmen-ziel-im-visier-target-engaged-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "target engaged", "ziel im visier", "kenney"]
+
+[[asset]]
+id = "stimmen-rueckendeckung-watch-my-back-m"
+kind = "sound"
+name = { de = "Rückendeckung („Watch my back“)", en = "Watch my back" }
+category = ["Männlich"]
+file = "audio/stimmen-rueckendeckung-watch-my-back-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "watch my back", "rückendeckung", "kenney"]
+
+[[asset]]
+id = "stimmen-falsch-wrong-m"
+kind = "sound"
+name = { de = "Falsch („Wrong“)", en = "Wrong" }
+category = ["Männlich"]
+file = "audio/stimmen-falsch-wrong-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "wrong", "falsch", "kenney"]
+
+[[asset]]
+id = "stimmen-verloren-you-lose-m"
+kind = "sound"
+name = { de = "Verloren („You lose“)", en = "You lose" }
+category = ["Männlich"]
+file = "audio/stimmen-verloren-you-lose-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "you lose", "verloren", "kenney"]
+
+[[asset]]
+id = "stimmen-gewonnen-you-win-m"
+kind = "sound"
+name = { de = "Gewonnen („You win“)", en = "You win" }
+category = ["Männlich"]
+file = "audio/stimmen-gewonnen-you-win-m.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack"
+tags = ["voice", "ansage", "männlich", "you win", "gewonnen", "kenney"]
+
+[[asset]]
+id = "stimmen-eins-one"
+kind = "sound"
+name = { de = "Eins („One“)", en = "One" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-eins-one.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "one", "eins", "kenney"]
+
+[[asset]]
+id = "stimmen-zwei-two"
+kind = "sound"
+name = { de = "Zwei („Two“)", en = "Two" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-zwei-two.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "two", "zwei", "kenney"]
+
+[[asset]]
+id = "stimmen-drei-three"
+kind = "sound"
+name = { de = "Drei („Three“)", en = "Three" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-drei-three.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "three", "drei", "kenney"]
+
+[[asset]]
+id = "stimmen-vier-four"
+kind = "sound"
+name = { de = "Vier („Four“)", en = "Four" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-vier-four.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "four", "vier", "kenney"]
+
+[[asset]]
+id = "stimmen-fuenf-five"
+kind = "sound"
+name = { de = "Fünf („Five“)", en = "Five" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-fuenf-five.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "five", "fünf", "kenney"]
+
+[[asset]]
+id = "stimmen-sechs-six"
+kind = "sound"
+name = { de = "Sechs („Six“)", en = "Six" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-sechs-six.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "six", "sechs", "kenney"]
+
+[[asset]]
+id = "stimmen-sieben-seven"
+kind = "sound"
+name = { de = "Sieben („Seven“)", en = "Seven" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-sieben-seven.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "seven", "sieben", "kenney"]
+
+[[asset]]
+id = "stimmen-acht-eight"
+kind = "sound"
+name = { de = "Acht („Eight“)", en = "Eight" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-acht-eight.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "eight", "acht", "kenney"]
+
+[[asset]]
+id = "stimmen-neun-nine"
+kind = "sound"
+name = { de = "Neun („Nine“)", en = "Nine" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-neun-nine.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "nine", "neun", "kenney"]
+
+[[asset]]
+id = "stimmen-zehn-ten"
+kind = "sound"
+name = { de = "Zehn („Ten“)", en = "Ten" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-zehn-ten.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "ten", "zehn", "kenney"]
+
+[[asset]]
+id = "stimmen-arcade-modus-arcade-mode"
+kind = "sound"
+name = { de = "Arcade-Modus („Arcade mode“)", en = "Arcade mode" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-arcade-modus-arcade-mode.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "arcade mode", "arcade-modus", "kenney"]
+
+[[asset]]
+id = "stimmen-kampfmodus-battle-mode"
+kind = "sound"
+name = { de = "Kampfmodus („Battle mode“)", en = "Battle mode" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-kampfmodus-battle-mode.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "battle mode", "kampfmodus", "kenney"]
+
+[[asset]]
+id = "stimmen-beginnt-begin"
+kind = "sound"
+name = { de = "Beginnt („Begin“)", en = "Begin" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-beginnt-begin.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "begin", "beginnt", "kenney"]
+
+[[asset]]
+id = "stimmen-meisterschaft-championship-mode"
+kind = "sound"
+name = { de = "Meisterschaft („Championship mode“)", en = "Championship mode" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-meisterschaft-championship-mode.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "championship mode", "meisterschaft", "kenney"]
+
+[[asset]]
+id = "stimmen-figur-waehlen-choose-your-character"
+kind = "sound"
+name = { de = "Figur wählen („Choose your character“)", en = "Choose your character" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-figur-waehlen-choose-your-character.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "choose your character", "figur wählen", "kenney"]
+
+[[asset]]
+id = "stimmen-kombo-combo"
+kind = "sound"
+name = { de = "Kombo („Combo“)", en = "Combo" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-kombo-combo.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "combo", "kombo", "kenney"]
+
+[[asset]]
+id = "stimmen-kombo-gebrochen-combo-breaker"
+kind = "sound"
+name = { de = "Kombo gebrochen („Combo breaker“)", en = "Combo breaker" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-kombo-gebrochen-combo-breaker.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "combo breaker", "kombo gebrochen", "kenney"]
+
+[[asset]]
+id = "stimmen-deathmatch-deathmatch"
+kind = "sound"
+name = { de = "Deathmatch („Deathmatch“)", en = "Deathmatch" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-deathmatch-deathmatch.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "deathmatch", "kenney"]
+
+[[asset]]
+id = "stimmen-kampf-fight"
+kind = "sound"
+name = { de = "Kampf („Fight“)", en = "Fight" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-kampf-fight.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "fight", "kampf", "kenney"]
+
+[[asset]]
+id = "stimmen-letzte-runde-final-round"
+kind = "sound"
+name = { de = "Letzte Runde („Final round“)", en = "Final round" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-letzte-runde-final-round.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "final round", "letzte runde", "kenney"]
+
+[[asset]]
+id = "stimmen-makelloser-sieg-flawless-victory"
+kind = "sound"
+name = { de = "Makelloser Sieg („Flawless victory“)", en = "Flawless victory" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-makelloser-sieg-flawless-victory.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "flawless victory", "makelloser sieg", "kenney"]
+
+[[asset]]
+id = "stimmen-spiel-vorbei-game-over"
+kind = "sound"
+name = { de = "Spiel vorbei („Game over“)", en = "Game over" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-spiel-vorbei-game-over.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "game over", "spiel vorbei", "kenney"]
+
+[[asset]]
+id = "stimmen-unentschieden-it-s-a-tie"
+kind = "sound"
+name = { de = "Unentschieden („It's a tie“)", en = "It's a tie" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-unentschieden-it-s-a-tie.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "it's a tie", "unentschieden", "kenney"]
+
+[[asset]]
+id = "stimmen-erledige-sie-kill-her"
+kind = "sound"
+name = { de = "Erledige sie („Kill her“)", en = "Kill her" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-erledige-sie-kill-her.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "kill her", "erledige sie", "kenney"]
+
+[[asset]]
+id = "stimmen-erledige-ihn-kill-him"
+kind = "sound"
+name = { de = "Erledige ihn („Kill him“)", en = "Kill him" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-erledige-ihn-kill-him.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "kill him", "erledige ihn", "kenney"]
+
+[[asset]]
+id = "stimmen-erledige-es-kill-it"
+kind = "sound"
+name = { de = "Erledige es („Kill it“)", en = "Kill it" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-erledige-es-kill-it.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "kill it", "erledige es", "kenney"]
+
+[[asset]]
+id = "stimmen-verlierer-loser"
+kind = "sound"
+name = { de = "Verlierer („Loser“)", en = "Loser" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-verlierer-loser.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "loser", "verlierer", "kenney"]
+
+[[asset]]
+id = "stimmen-mehrfachtreffer-multi-kill"
+kind = "sound"
+name = { de = "Mehrfachtreffer („Multi kill“)", en = "Multi kill" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-mehrfachtreffer-multi-kill.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "multi kill", "mehrfachtreffer", "kenney"]
+
+[[asset]]
+id = "stimmen-spieler-1-player-1"
+kind = "sound"
+name = { de = "Spieler 1 („Player 1“)", en = "Player 1" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-spieler-1-player-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "player 1", "spieler 1", "kenney"]
+
+[[asset]]
+id = "stimmen-spieler-2-player-2"
+kind = "sound"
+name = { de = "Spieler 2 („Player 2“)", en = "Player 2" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-spieler-2-player-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "player 2", "spieler 2", "kenney"]
+
+[[asset]]
+id = "stimmen-mach-dich-bereit-prepare-yourself"
+kind = "sound"
+name = { de = "Mach dich bereit („Prepare yourself“)", en = "Prepare yourself" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-mach-dich-bereit-prepare-yourself.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "prepare yourself", "mach dich bereit", "kenney"]
+
+[[asset]]
+id = "stimmen-bereit-ready"
+kind = "sound"
+name = { de = "Bereit („Ready“)", en = "Ready" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-bereit-ready.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "ready", "bereit", "kenney"]
+
+[[asset]]
+id = "stimmen-runde-1-round-1"
+kind = "sound"
+name = { de = "Runde 1 („Round 1“)", en = "Round 1" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-runde-1-round-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "round 1", "runde 1", "kenney"]
+
+[[asset]]
+id = "stimmen-runde-2-round-2"
+kind = "sound"
+name = { de = "Runde 2 („Round 2“)", en = "Round 2" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-runde-2-round-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "round 2", "runde 2", "kenney"]
+
+[[asset]]
+id = "stimmen-runde-3-round-3"
+kind = "sound"
+name = { de = "Runde 3 („Round 3“)", en = "Round 3" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-runde-3-round-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "round 3", "runde 3", "kenney"]
+
+[[asset]]
+id = "stimmen-runde-4-round-4"
+kind = "sound"
+name = { de = "Runde 4 („Round 4“)", en = "Round 4" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-runde-4-round-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "round 4", "runde 4", "kenney"]
+
+[[asset]]
+id = "stimmen-runde-5-round-5"
+kind = "sound"
+name = { de = "Runde 5 („Round 5“)", en = "Round 5" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-runde-5-round-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "round 5", "runde 5", "kenney"]
+
+[[asset]]
+id = "stimmen-story-modus-story-mode"
+kind = "sound"
+name = { de = "Story-Modus („Story mode“)", en = "Story mode" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-story-modus-story-mode.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "story mode", "story-modus", "kenney"]
+
+[[asset]]
+id = "stimmen-sudden-death-sudden-death"
+kind = "sound"
+name = { de = "Sudden Death („Sudden death“)", en = "Sudden death" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-sudden-death-sudden-death.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "sudden death", "kenney"]
+
+[[asset]]
+id = "stimmen-ueberlebensmodus-survival-mode"
+kind = "sound"
+name = { de = "Überlebensmodus („Survival mode“)", en = "Survival mode" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-ueberlebensmodus-survival-mode.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "survival mode", "überlebensmodus", "kenney"]
+
+[[asset]]
+id = "stimmen-gleichstand-tie"
+kind = "sound"
+name = { de = "Gleichstand („Tie“)", en = "Tie" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-gleichstand-tie.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "tie", "gleichstand", "kenney"]
+
+[[asset]]
+id = "stimmen-entscheidung-tie-breaker"
+kind = "sound"
+name = { de = "Entscheidung („Tie breaker“)", en = "Tie breaker" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-entscheidung-tie-breaker.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "tie breaker", "entscheidung", "kenney"]
+
+[[asset]]
+id = "stimmen-zeit-time"
+kind = "sound"
+name = { de = "Zeit („Time“)", en = "Time" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-zeit-time.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "time", "zeit", "kenney"]
+
+[[asset]]
+id = "stimmen-sieger-winner"
+kind = "sound"
+name = { de = "Sieger („Winner“)", en = "Winner" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-sieger-winner.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "winner", "sieger", "kenney"]
+
+[[asset]]
+id = "stimmen-verloren-you-lose"
+kind = "sound"
+name = { de = "Verloren („You lose“)", en = "You lose" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-verloren-you-lose.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "you lose", "verloren", "kenney"]
+
+[[asset]]
+id = "stimmen-gewonnen-you-win"
+kind = "sound"
+name = { de = "Gewonnen („You win“)", en = "You win" }
+category = ["Kampfansagen"]
+file = "audio/stimmen-gewonnen-you-win.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/voiceover-pack-fighter"
+tags = ["voice", "ansage", "kampfansagen", "you win", "gewonnen", "kenney"]

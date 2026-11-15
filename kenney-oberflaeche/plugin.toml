@@ -1,0 +1,2354 @@
+# Erzeugt von tools/bau.py aus Kenney-Paketen (CC0) – nicht von Hand ändern.
+[plugin]
+id = "kenney.oberflaeche"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Oberfläche (Kenney)", en = "Interface (Kenney)" }
+description = { de = "Klicks, Schalter, Fenster- und Hinweistöne, digitale Effekte", en = "Clicks, switches, window and notification sounds, digital effects" }
+authors = ["Kenney"]
+license = "CC0-1.0"
+source = "https://kenney.nl/assets"
+
+[[asset]]
+id = "oberflaeche-zurueck-1"
+kind = "sound"
+name = { de = "Zurück 1", en = "Back 1" }
+category = ["Fenster"]
+file = "audio/oberflaeche-zurueck-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["back", "zurück", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zurueck-2"
+kind = "sound"
+name = { de = "Zurück 2", en = "Back 2" }
+category = ["Fenster"]
+file = "audio/oberflaeche-zurueck-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["back", "zurück", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zurueck-3"
+kind = "sound"
+name = { de = "Zurück 3", en = "Back 3" }
+category = ["Fenster"]
+file = "audio/oberflaeche-zurueck-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["back", "zurück", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zurueck-4"
+kind = "sound"
+name = { de = "Zurück 4", en = "Back 4" }
+category = ["Fenster"]
+file = "audio/oberflaeche-zurueck-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["back", "zurück", "kenney"]
+
+[[asset]]
+id = "oberflaeche-gong"
+kind = "sound"
+name = { de = "Gong", en = "Bong" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-gong.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["bong", "gong", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-1"
+kind = "sound"
+name = { de = "Klick 1", en = "Click 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-2"
+kind = "sound"
+name = { de = "Klick 2", en = "Click 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-3"
+kind = "sound"
+name = { de = "Klick 3", en = "Click 3" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-4"
+kind = "sound"
+name = { de = "Klick 4", en = "Click 4" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-5"
+kind = "sound"
+name = { de = "Klick 5", en = "Click 5" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schliessen-1"
+kind = "sound"
+name = { de = "Schließen 1", en = "Close 1" }
+category = ["Fenster"]
+file = "audio/oberflaeche-schliessen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["close", "schließen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schliessen-2"
+kind = "sound"
+name = { de = "Schließen 2", en = "Close 2" }
+category = ["Fenster"]
+file = "audio/oberflaeche-schliessen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["close", "schließen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schliessen-3"
+kind = "sound"
+name = { de = "Schließen 3", en = "Close 3" }
+category = ["Fenster"]
+file = "audio/oberflaeche-schliessen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["close", "schließen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schliessen-4"
+kind = "sound"
+name = { de = "Schließen 4", en = "Close 4" }
+category = ["Fenster"]
+file = "audio/oberflaeche-schliessen-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["close", "schließen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-bestaetigung-1"
+kind = "sound"
+name = { de = "Bestätigung 1", en = "Confirmation 1" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-bestaetigung-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["confirmation", "bestätigung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-bestaetigung-2"
+kind = "sound"
+name = { de = "Bestätigung 2", en = "Confirmation 2" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-bestaetigung-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["confirmation", "bestätigung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-bestaetigung-3"
+kind = "sound"
+name = { de = "Bestätigung 3", en = "Confirmation 3" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-bestaetigung-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["confirmation", "bestätigung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-bestaetigung-4"
+kind = "sound"
+name = { de = "Bestätigung 4", en = "Confirmation 4" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-bestaetigung-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["confirmation", "bestätigung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-ablegen-1"
+kind = "sound"
+name = { de = "Ablegen 1", en = "Drop 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-ablegen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["drop", "ablegen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-ablegen-2"
+kind = "sound"
+name = { de = "Ablegen 2", en = "Drop 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-ablegen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["drop", "ablegen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-ablegen-3"
+kind = "sound"
+name = { de = "Ablegen 3", en = "Drop 3" }
+category = ["Klicks"]
+file = "audio/oberflaeche-ablegen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["drop", "ablegen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-ablegen-4"
+kind = "sound"
+name = { de = "Ablegen 4", en = "Drop 4" }
+category = ["Klicks"]
+file = "audio/oberflaeche-ablegen-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["drop", "ablegen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-fehler-1"
+kind = "sound"
+name = { de = "Fehler 1", en = "Error 1" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-fehler-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["error", "fehler", "kenney"]
+
+[[asset]]
+id = "oberflaeche-fehler-2"
+kind = "sound"
+name = { de = "Fehler 2", en = "Error 2" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-fehler-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["error", "fehler", "kenney"]
+
+[[asset]]
+id = "oberflaeche-fehler-3"
+kind = "sound"
+name = { de = "Fehler 3", en = "Error 3" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-fehler-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["error", "fehler", "kenney"]
+
+[[asset]]
+id = "oberflaeche-fehler-4"
+kind = "sound"
+name = { de = "Fehler 4", en = "Error 4" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-fehler-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["error", "fehler", "kenney"]
+
+[[asset]]
+id = "oberflaeche-fehler-5"
+kind = "sound"
+name = { de = "Fehler 5", en = "Error 5" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-fehler-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["error", "fehler", "kenney"]
+
+[[asset]]
+id = "oberflaeche-fehler-6"
+kind = "sound"
+name = { de = "Fehler 6", en = "Error 6" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-fehler-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["error", "fehler", "kenney"]
+
+[[asset]]
+id = "oberflaeche-fehler-7"
+kind = "sound"
+name = { de = "Fehler 7", en = "Error 7" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-fehler-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["error", "fehler", "kenney"]
+
+[[asset]]
+id = "oberflaeche-fehler-8"
+kind = "sound"
+name = { de = "Fehler 8", en = "Error 8" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-fehler-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["error", "fehler", "kenney"]
+
+[[asset]]
+id = "oberflaeche-glas-ton-1"
+kind = "sound"
+name = { de = "Glas-Ton 1", en = "Glass 1" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-glas-ton-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glass", "glas-ton", "kenney"]
+
+[[asset]]
+id = "oberflaeche-glas-ton-2"
+kind = "sound"
+name = { de = "Glas-Ton 2", en = "Glass 2" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-glas-ton-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glass", "glas-ton", "kenney"]
+
+[[asset]]
+id = "oberflaeche-glas-ton-3"
+kind = "sound"
+name = { de = "Glas-Ton 3", en = "Glass 3" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-glas-ton-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glass", "glas-ton", "kenney"]
+
+[[asset]]
+id = "oberflaeche-glas-ton-4"
+kind = "sound"
+name = { de = "Glas-Ton 4", en = "Glass 4" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-glas-ton-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glass", "glas-ton", "kenney"]
+
+[[asset]]
+id = "oberflaeche-glas-ton-5"
+kind = "sound"
+name = { de = "Glas-Ton 5", en = "Glass 5" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-glas-ton-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glass", "glas-ton", "kenney"]
+
+[[asset]]
+id = "oberflaeche-glas-ton-6"
+kind = "sound"
+name = { de = "Glas-Ton 6", en = "Glass 6" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-glas-ton-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glass", "glas-ton", "kenney"]
+
+[[asset]]
+id = "oberflaeche-stoerung-1"
+kind = "sound"
+name = { de = "Störung 1", en = "Glitch 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-stoerung-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glitch", "störung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-stoerung-2"
+kind = "sound"
+name = { de = "Störung 2", en = "Glitch 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-stoerung-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glitch", "störung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-stoerung-3"
+kind = "sound"
+name = { de = "Störung 3", en = "Glitch 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-stoerung-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glitch", "störung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-stoerung-4"
+kind = "sound"
+name = { de = "Störung 4", en = "Glitch 4" }
+category = ["Digital"]
+file = "audio/oberflaeche-stoerung-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["glitch", "störung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-1"
+kind = "sound"
+name = { de = "Vergrößern 1", en = "Maximize 1" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-2"
+kind = "sound"
+name = { de = "Vergrößern 2", en = "Maximize 2" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-3"
+kind = "sound"
+name = { de = "Vergrößern 3", en = "Maximize 3" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-4"
+kind = "sound"
+name = { de = "Vergrößern 4", en = "Maximize 4" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-5"
+kind = "sound"
+name = { de = "Vergrößern 5", en = "Maximize 5" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-6"
+kind = "sound"
+name = { de = "Vergrößern 6", en = "Maximize 6" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-7"
+kind = "sound"
+name = { de = "Vergrößern 7", en = "Maximize 7" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-8"
+kind = "sound"
+name = { de = "Vergrößern 8", en = "Maximize 8" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-vergroessern-9"
+kind = "sound"
+name = { de = "Vergrößern 9", en = "Maximize 9" }
+category = ["Fenster"]
+file = "audio/oberflaeche-vergroessern-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["maximize", "vergrößern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-1"
+kind = "sound"
+name = { de = "Verkleinern 1", en = "Minimize 1" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-2"
+kind = "sound"
+name = { de = "Verkleinern 2", en = "Minimize 2" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-3"
+kind = "sound"
+name = { de = "Verkleinern 3", en = "Minimize 3" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-4"
+kind = "sound"
+name = { de = "Verkleinern 4", en = "Minimize 4" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-5"
+kind = "sound"
+name = { de = "Verkleinern 5", en = "Minimize 5" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-6"
+kind = "sound"
+name = { de = "Verkleinern 6", en = "Minimize 6" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-7"
+kind = "sound"
+name = { de = "Verkleinern 7", en = "Minimize 7" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-8"
+kind = "sound"
+name = { de = "Verkleinern 8", en = "Minimize 8" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-verkleinern-9"
+kind = "sound"
+name = { de = "Verkleinern 9", en = "Minimize 9" }
+category = ["Fenster"]
+file = "audio/oberflaeche-verkleinern-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["minimize", "verkleinern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-oeffnen-1"
+kind = "sound"
+name = { de = "Öffnen 1", en = "Open 1" }
+category = ["Fenster"]
+file = "audio/oberflaeche-oeffnen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["open", "öffnen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-oeffnen-2"
+kind = "sound"
+name = { de = "Öffnen 2", en = "Open 2" }
+category = ["Fenster"]
+file = "audio/oberflaeche-oeffnen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["open", "öffnen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-oeffnen-3"
+kind = "sound"
+name = { de = "Öffnen 3", en = "Open 3" }
+category = ["Fenster"]
+file = "audio/oberflaeche-oeffnen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["open", "öffnen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-oeffnen-4"
+kind = "sound"
+name = { de = "Öffnen 4", en = "Open 4" }
+category = ["Fenster"]
+file = "audio/oberflaeche-oeffnen-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["open", "öffnen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zupfen-1"
+kind = "sound"
+name = { de = "Zupfen 1", en = "Pluck 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-zupfen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["pluck", "zupfen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zupfen-2"
+kind = "sound"
+name = { de = "Zupfen 2", en = "Pluck 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-zupfen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["pluck", "zupfen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-frage-1"
+kind = "sound"
+name = { de = "Frage 1", en = "Question 1" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-frage-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["question", "frage", "kenney"]
+
+[[asset]]
+id = "oberflaeche-frage-2"
+kind = "sound"
+name = { de = "Frage 2", en = "Question 2" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-frage-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["question", "frage", "kenney"]
+
+[[asset]]
+id = "oberflaeche-frage-3"
+kind = "sound"
+name = { de = "Frage 3", en = "Question 3" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-frage-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["question", "frage", "kenney"]
+
+[[asset]]
+id = "oberflaeche-frage-4"
+kind = "sound"
+name = { de = "Frage 4", en = "Question 4" }
+category = ["Hinweise"]
+file = "audio/oberflaeche-frage-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["question", "frage", "kenney"]
+
+[[asset]]
+id = "oberflaeche-kratzen-1"
+kind = "sound"
+name = { de = "Kratzen 1", en = "Scratch 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-kratzen-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scratch", "kratzen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-kratzen-2"
+kind = "sound"
+name = { de = "Kratzen 2", en = "Scratch 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-kratzen-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scratch", "kratzen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-kratzen-3"
+kind = "sound"
+name = { de = "Kratzen 3", en = "Scratch 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-kratzen-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scratch", "kratzen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-kratzen-4"
+kind = "sound"
+name = { de = "Kratzen 4", en = "Scratch 4" }
+category = ["Digital"]
+file = "audio/oberflaeche-kratzen-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scratch", "kratzen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-kratzen-5"
+kind = "sound"
+name = { de = "Kratzen 5", en = "Scratch 5" }
+category = ["Digital"]
+file = "audio/oberflaeche-kratzen-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scratch", "kratzen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-blaettern-1"
+kind = "sound"
+name = { de = "Blättern 1", en = "Scroll 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-blaettern-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scroll", "blättern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-blaettern-2"
+kind = "sound"
+name = { de = "Blättern 2", en = "Scroll 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-blaettern-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scroll", "blättern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-blaettern-3"
+kind = "sound"
+name = { de = "Blättern 3", en = "Scroll 3" }
+category = ["Klicks"]
+file = "audio/oberflaeche-blaettern-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scroll", "blättern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-blaettern-4"
+kind = "sound"
+name = { de = "Blättern 4", en = "Scroll 4" }
+category = ["Klicks"]
+file = "audio/oberflaeche-blaettern-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scroll", "blättern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-blaettern-5"
+kind = "sound"
+name = { de = "Blättern 5", en = "Scroll 5" }
+category = ["Klicks"]
+file = "audio/oberflaeche-blaettern-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["scroll", "blättern", "kenney"]
+
+[[asset]]
+id = "oberflaeche-auswahl-1"
+kind = "sound"
+name = { de = "Auswahl 1", en = "Select 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-auswahl-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["select", "auswahl", "kenney"]
+
+[[asset]]
+id = "oberflaeche-auswahl-2"
+kind = "sound"
+name = { de = "Auswahl 2", en = "Select 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-auswahl-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["select", "auswahl", "kenney"]
+
+[[asset]]
+id = "oberflaeche-auswahl-3"
+kind = "sound"
+name = { de = "Auswahl 3", en = "Select 3" }
+category = ["Klicks"]
+file = "audio/oberflaeche-auswahl-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["select", "auswahl", "kenney"]
+
+[[asset]]
+id = "oberflaeche-auswahl-4"
+kind = "sound"
+name = { de = "Auswahl 4", en = "Select 4" }
+category = ["Klicks"]
+file = "audio/oberflaeche-auswahl-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["select", "auswahl", "kenney"]
+
+[[asset]]
+id = "oberflaeche-auswahl-5"
+kind = "sound"
+name = { de = "Auswahl 5", en = "Select 5" }
+category = ["Klicks"]
+file = "audio/oberflaeche-auswahl-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["select", "auswahl", "kenney"]
+
+[[asset]]
+id = "oberflaeche-auswahl-6"
+kind = "sound"
+name = { de = "Auswahl 6", en = "Select 6" }
+category = ["Klicks"]
+file = "audio/oberflaeche-auswahl-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["select", "auswahl", "kenney"]
+
+[[asset]]
+id = "oberflaeche-auswahl-7"
+kind = "sound"
+name = { de = "Auswahl 7", en = "Select 7" }
+category = ["Klicks"]
+file = "audio/oberflaeche-auswahl-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["select", "auswahl", "kenney"]
+
+[[asset]]
+id = "oberflaeche-auswahl-8"
+kind = "sound"
+name = { de = "Auswahl 8", en = "Select 8" }
+category = ["Klicks"]
+file = "audio/oberflaeche-auswahl-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["select", "auswahl", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-1"
+kind = "sound"
+name = { de = "Schalter 1", en = "Switch 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-2"
+kind = "sound"
+name = { de = "Schalter 2", en = "Switch 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-3"
+kind = "sound"
+name = { de = "Schalter 3", en = "Switch 3" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-4"
+kind = "sound"
+name = { de = "Schalter 4", en = "Switch 4" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-5"
+kind = "sound"
+name = { de = "Schalter 5", en = "Switch 5" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-6"
+kind = "sound"
+name = { de = "Schalter 6", en = "Switch 6" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-7"
+kind = "sound"
+name = { de = "Schalter 7", en = "Switch 7" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-ticken-1"
+kind = "sound"
+name = { de = "Ticken 1", en = "Tick 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-ticken-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["tick", "ticken", "kenney"]
+
+[[asset]]
+id = "oberflaeche-ticken-2"
+kind = "sound"
+name = { de = "Ticken 2", en = "Tick 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-ticken-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["tick", "ticken", "kenney"]
+
+[[asset]]
+id = "oberflaeche-ticken-3"
+kind = "sound"
+name = { de = "Ticken 3", en = "Tick 3" }
+category = ["Klicks"]
+file = "audio/oberflaeche-ticken-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["tick", "ticken", "kenney"]
+
+[[asset]]
+id = "oberflaeche-umschalten-1"
+kind = "sound"
+name = { de = "Umschalten 1", en = "Toggle 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-umschalten-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["toggle", "umschalten", "kenney"]
+
+[[asset]]
+id = "oberflaeche-umschalten-2"
+kind = "sound"
+name = { de = "Umschalten 2", en = "Toggle 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-umschalten-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["toggle", "umschalten", "kenney"]
+
+[[asset]]
+id = "oberflaeche-umschalten-3"
+kind = "sound"
+name = { de = "Umschalten 3", en = "Toggle 3" }
+category = ["Klicks"]
+file = "audio/oberflaeche-umschalten-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["toggle", "umschalten", "kenney"]
+
+[[asset]]
+id = "oberflaeche-umschalten-4"
+kind = "sound"
+name = { de = "Umschalten 4", en = "Toggle 4" }
+category = ["Klicks"]
+file = "audio/oberflaeche-umschalten-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/interface-sounds"
+tags = ["toggle", "umschalten", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-6"
+kind = "sound"
+name = { de = "Klick 6", en = "Click 6" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-7"
+kind = "sound"
+name = { de = "Klick 7", en = "Click 7" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-8"
+kind = "sound"
+name = { de = "Klick 8", en = "Click 8" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-9"
+kind = "sound"
+name = { de = "Klick 9", en = "Click 9" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-klick-10"
+kind = "sound"
+name = { de = "Klick 10", en = "Click 10" }
+category = ["Klicks"]
+file = "audio/oberflaeche-klick-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["click", "klick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-mausklick"
+kind = "sound"
+name = { de = "Mausklick", en = "Mouseclick" }
+category = ["Klicks"]
+file = "audio/oberflaeche-mausklick.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["mouseclick", "mausklick", "kenney"]
+
+[[asset]]
+id = "oberflaeche-maus-loslassen"
+kind = "sound"
+name = { de = "Maus loslassen", en = "Mouserelease" }
+category = ["Klicks"]
+file = "audio/oberflaeche-maus-loslassen.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["mouserelease", "maus loslassen", "kenney"]
+
+[[asset]]
+id = "oberflaeche-darueberfahren-1"
+kind = "sound"
+name = { de = "Darüberfahren 1", en = "Rollover 1" }
+category = ["Klicks"]
+file = "audio/oberflaeche-darueberfahren-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["rollover", "darüberfahren", "kenney"]
+
+[[asset]]
+id = "oberflaeche-darueberfahren-2"
+kind = "sound"
+name = { de = "Darüberfahren 2", en = "Rollover 2" }
+category = ["Klicks"]
+file = "audio/oberflaeche-darueberfahren-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["rollover", "darüberfahren", "kenney"]
+
+[[asset]]
+id = "oberflaeche-darueberfahren-3"
+kind = "sound"
+name = { de = "Darüberfahren 3", en = "Rollover 3" }
+category = ["Klicks"]
+file = "audio/oberflaeche-darueberfahren-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["rollover", "darüberfahren", "kenney"]
+
+[[asset]]
+id = "oberflaeche-darueberfahren-4"
+kind = "sound"
+name = { de = "Darüberfahren 4", en = "Rollover 4" }
+category = ["Klicks"]
+file = "audio/oberflaeche-darueberfahren-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["rollover", "darüberfahren", "kenney"]
+
+[[asset]]
+id = "oberflaeche-darueberfahren-5"
+kind = "sound"
+name = { de = "Darüberfahren 5", en = "Rollover 5" }
+category = ["Klicks"]
+file = "audio/oberflaeche-darueberfahren-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["rollover", "darüberfahren", "kenney"]
+
+[[asset]]
+id = "oberflaeche-darueberfahren-6"
+kind = "sound"
+name = { de = "Darüberfahren 6", en = "Rollover 6" }
+category = ["Klicks"]
+file = "audio/oberflaeche-darueberfahren-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["rollover", "darüberfahren", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-8"
+kind = "sound"
+name = { de = "Schalter 8", en = "Switch 8" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-9"
+kind = "sound"
+name = { de = "Schalter 9", en = "Switch 9" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-10"
+kind = "sound"
+name = { de = "Schalter 10", en = "Switch 10" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-11"
+kind = "sound"
+name = { de = "Schalter 11", en = "Switch 11" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-11.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-12"
+kind = "sound"
+name = { de = "Schalter 12", en = "Switch 12" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-12.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-13"
+kind = "sound"
+name = { de = "Schalter 13", en = "Switch 13" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-13.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-14"
+kind = "sound"
+name = { de = "Schalter 14", en = "Switch 14" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-14.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-15"
+kind = "sound"
+name = { de = "Schalter 15", en = "Switch 15" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-15.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-16"
+kind = "sound"
+name = { de = "Schalter 16", en = "Switch 16" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-16.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-17"
+kind = "sound"
+name = { de = "Schalter 17", en = "Switch 17" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-17.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-18"
+kind = "sound"
+name = { de = "Schalter 18", en = "Switch 18" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-18.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-19"
+kind = "sound"
+name = { de = "Schalter 19", en = "Switch 19" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-19.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-20"
+kind = "sound"
+name = { de = "Schalter 20", en = "Switch 20" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-20.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-21"
+kind = "sound"
+name = { de = "Schalter 21", en = "Switch 21" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-21.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-22"
+kind = "sound"
+name = { de = "Schalter 22", en = "Switch 22" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-22.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-23"
+kind = "sound"
+name = { de = "Schalter 23", en = "Switch 23" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-23.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-24"
+kind = "sound"
+name = { de = "Schalter 24", en = "Switch 24" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-24.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-25"
+kind = "sound"
+name = { de = "Schalter 25", en = "Switch 25" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-25.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-26"
+kind = "sound"
+name = { de = "Schalter 26", en = "Switch 26" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-26.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-27"
+kind = "sound"
+name = { de = "Schalter 27", en = "Switch 27" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-27.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-28"
+kind = "sound"
+name = { de = "Schalter 28", en = "Switch 28" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-28.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-29"
+kind = "sound"
+name = { de = "Schalter 29", en = "Switch 29" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-29.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-30"
+kind = "sound"
+name = { de = "Schalter 30", en = "Switch 30" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-30.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-31"
+kind = "sound"
+name = { de = "Schalter 31", en = "Switch 31" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-31.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-32"
+kind = "sound"
+name = { de = "Schalter 32", en = "Switch 32" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-32.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-33"
+kind = "sound"
+name = { de = "Schalter 33", en = "Switch 33" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-33.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-34"
+kind = "sound"
+name = { de = "Schalter 34", en = "Switch 34" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-34.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-35"
+kind = "sound"
+name = { de = "Schalter 35", en = "Switch 35" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-35.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-36"
+kind = "sound"
+name = { de = "Schalter 36", en = "Switch 36" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-36.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-37"
+kind = "sound"
+name = { de = "Schalter 37", en = "Switch 37" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-37.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-38"
+kind = "sound"
+name = { de = "Schalter 38", en = "Switch 38" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-38.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-39"
+kind = "sound"
+name = { de = "Schalter 39", en = "Switch 39" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-39.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-40"
+kind = "sound"
+name = { de = "Schalter 40", en = "Switch 40" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-40.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-41"
+kind = "sound"
+name = { de = "Schalter 41", en = "Switch 41" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-41.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-42"
+kind = "sound"
+name = { de = "Schalter 42", en = "Switch 42" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-42.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-43"
+kind = "sound"
+name = { de = "Schalter 43", en = "Switch 43" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-43.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-44"
+kind = "sound"
+name = { de = "Schalter 44", en = "Switch 44" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-44.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-schalter-45"
+kind = "sound"
+name = { de = "Schalter 45", en = "Switch 45" }
+category = ["Klicks"]
+file = "audio/oberflaeche-schalter-45.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/ui-audio"
+tags = ["switch", "schalter", "kenney"]
+
+[[asset]]
+id = "oberflaeche-hoch-fallend"
+kind = "sound"
+name = { de = "Hoch fallend", en = "High down" }
+category = ["Digital"]
+file = "audio/oberflaeche-hoch-fallend.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["high down", "hoch fallend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-hoch-steigend"
+kind = "sound"
+name = { de = "Hoch steigend", en = "High up" }
+category = ["Digital"]
+file = "audio/oberflaeche-hoch-steigend.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["high up", "hoch steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-1"
+kind = "sound"
+name = { de = "Laser 1", en = "Laser 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-2"
+kind = "sound"
+name = { de = "Laser 2", en = "Laser 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-3"
+kind = "sound"
+name = { de = "Laser 3", en = "Laser 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-4"
+kind = "sound"
+name = { de = "Laser 4", en = "Laser 4" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-5"
+kind = "sound"
+name = { de = "Laser 5", en = "Laser 5" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-6"
+kind = "sound"
+name = { de = "Laser 6", en = "Laser 6" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-7"
+kind = "sound"
+name = { de = "Laser 7", en = "Laser 7" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-8"
+kind = "sound"
+name = { de = "Laser 8", en = "Laser 8" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-laser-9"
+kind = "sound"
+name = { de = "Laser 9", en = "Laser 9" }
+category = ["Digital"]
+file = "audio/oberflaeche-laser-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["laser", "kenney"]
+
+[[asset]]
+id = "oberflaeche-tief-fallend"
+kind = "sound"
+name = { de = "Tief fallend", en = "Low down" }
+category = ["Digital"]
+file = "audio/oberflaeche-tief-fallend.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["low down", "tief fallend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-tief-zufaellig"
+kind = "sound"
+name = { de = "Tief zufällig", en = "Low random" }
+category = ["Digital"]
+file = "audio/oberflaeche-tief-zufaellig.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["low random", "tief zufällig", "kenney"]
+
+[[asset]]
+id = "oberflaeche-tiefer-dreiklang"
+kind = "sound"
+name = { de = "Tiefer Dreiklang", en = "Low three tone" }
+category = ["Digital"]
+file = "audio/oberflaeche-tiefer-dreiklang.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["low three tone", "tiefer dreiklang", "kenney"]
+
+[[asset]]
+id = "oberflaeche-pep-1"
+kind = "sound"
+name = { de = "Pep 1", en = "Pep sound 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-pep-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["pep sound", "pep", "kenney"]
+
+[[asset]]
+id = "oberflaeche-pep-2"
+kind = "sound"
+name = { de = "Pep 2", en = "Pep sound 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-pep-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["pep sound", "pep", "kenney"]
+
+[[asset]]
+id = "oberflaeche-pep-3"
+kind = "sound"
+name = { de = "Pep 3", en = "Pep sound 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-pep-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["pep sound", "pep", "kenney"]
+
+[[asset]]
+id = "oberflaeche-pep-4"
+kind = "sound"
+name = { de = "Pep 4", en = "Pep sound 4" }
+category = ["Digital"]
+file = "audio/oberflaeche-pep-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["pep sound", "pep", "kenney"]
+
+[[asset]]
+id = "oberflaeche-pep-5"
+kind = "sound"
+name = { de = "Pep 5", en = "Pep sound 5" }
+category = ["Digital"]
+file = "audio/oberflaeche-pep-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["pep sound", "pep", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phasensprung-1"
+kind = "sound"
+name = { de = "Phasensprung 1", en = "Phase jump 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-phasensprung-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phase jump", "phasensprung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phasensprung-2"
+kind = "sound"
+name = { de = "Phasensprung 2", en = "Phase jump 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-phasensprung-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phase jump", "phasensprung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phasensprung-3"
+kind = "sound"
+name = { de = "Phasensprung 3", en = "Phase jump 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-phasensprung-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phase jump", "phasensprung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phasensprung-4"
+kind = "sound"
+name = { de = "Phasensprung 4", en = "Phase jump 4" }
+category = ["Digital"]
+file = "audio/oberflaeche-phasensprung-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phase jump", "phasensprung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phasensprung-5"
+kind = "sound"
+name = { de = "Phasensprung 5", en = "Phase jump 5" }
+category = ["Digital"]
+file = "audio/oberflaeche-phasensprung-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phase jump", "phasensprung", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-fallend-1"
+kind = "sound"
+name = { de = "Phaser fallend 1", en = "Phaser down 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-fallend-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser down", "phaser fallend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-fallend-2"
+kind = "sound"
+name = { de = "Phaser fallend 2", en = "Phaser down 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-fallend-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser down", "phaser fallend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-fallend-3"
+kind = "sound"
+name = { de = "Phaser fallend 3", en = "Phaser down 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-fallend-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser down", "phaser fallend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-steigend-1"
+kind = "sound"
+name = { de = "Phaser steigend 1", en = "Phaser up 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-steigend-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser up", "phaser steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-steigend-2"
+kind = "sound"
+name = { de = "Phaser steigend 2", en = "Phaser up 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-steigend-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser up", "phaser steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-steigend-3"
+kind = "sound"
+name = { de = "Phaser steigend 3", en = "Phaser up 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-steigend-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser up", "phaser steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-steigend-4"
+kind = "sound"
+name = { de = "Phaser steigend 4", en = "Phaser up 4" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-steigend-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser up", "phaser steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-steigend-5"
+kind = "sound"
+name = { de = "Phaser steigend 5", en = "Phaser up 5" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-steigend-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser up", "phaser steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-steigend-6"
+kind = "sound"
+name = { de = "Phaser steigend 6", en = "Phaser up 6" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-steigend-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser up", "phaser steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-phaser-steigend-7"
+kind = "sound"
+name = { de = "Phaser steigend 7", en = "Phaser up 7" }
+category = ["Digital"]
+file = "audio/oberflaeche-phaser-steigend-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["phaser up", "phaser steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-1"
+kind = "sound"
+name = { de = "Power-up 1", en = "Power up 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-2"
+kind = "sound"
+name = { de = "Power-up 2", en = "Power up 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-3"
+kind = "sound"
+name = { de = "Power-up 3", en = "Power up 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-4"
+kind = "sound"
+name = { de = "Power-up 4", en = "Power up 4" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-5"
+kind = "sound"
+name = { de = "Power-up 5", en = "Power up 5" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-6"
+kind = "sound"
+name = { de = "Power-up 6", en = "Power up 6" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-6.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-7"
+kind = "sound"
+name = { de = "Power-up 7", en = "Power up 7" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-7.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-8"
+kind = "sound"
+name = { de = "Power-up 8", en = "Power up 8" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-8.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-9"
+kind = "sound"
+name = { de = "Power-up 9", en = "Power up 9" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-9.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-10"
+kind = "sound"
+name = { de = "Power-up 10", en = "Power up 10" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-10.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-11"
+kind = "sound"
+name = { de = "Power-up 11", en = "Power up 11" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-11.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-power-up-12"
+kind = "sound"
+name = { de = "Power-up 12", en = "Power up 12" }
+category = ["Digital"]
+file = "audio/oberflaeche-power-up-12.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["power up", "power-up", "kenney"]
+
+[[asset]]
+id = "oberflaeche-weltraumschrott-1"
+kind = "sound"
+name = { de = "Weltraumschrott 1", en = "Space trash 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-weltraumschrott-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["space trash", "weltraumschrott", "kenney"]
+
+[[asset]]
+id = "oberflaeche-weltraumschrott-2"
+kind = "sound"
+name = { de = "Weltraumschrott 2", en = "Space trash 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-weltraumschrott-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["space trash", "weltraumschrott", "kenney"]
+
+[[asset]]
+id = "oberflaeche-weltraumschrott-3"
+kind = "sound"
+name = { de = "Weltraumschrott 3", en = "Space trash 3" }
+category = ["Digital"]
+file = "audio/oberflaeche-weltraumschrott-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["space trash", "weltraumschrott", "kenney"]
+
+[[asset]]
+id = "oberflaeche-weltraumschrott-4"
+kind = "sound"
+name = { de = "Weltraumschrott 4", en = "Space trash 4" }
+category = ["Digital"]
+file = "audio/oberflaeche-weltraumschrott-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["space trash", "weltraumschrott", "kenney"]
+
+[[asset]]
+id = "oberflaeche-weltraumschrott-5"
+kind = "sound"
+name = { de = "Weltraumschrott 5", en = "Space trash 5" }
+category = ["Digital"]
+file = "audio/oberflaeche-weltraumschrott-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["space trash", "weltraumschrott", "kenney"]
+
+[[asset]]
+id = "oberflaeche-dreiklang-1"
+kind = "sound"
+name = { de = "Dreiklang 1", en = "Three tone 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-dreiklang-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["three tone", "dreiklang", "kenney"]
+
+[[asset]]
+id = "oberflaeche-dreiklang-2"
+kind = "sound"
+name = { de = "Dreiklang 2", en = "Three tone 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-dreiklang-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["three tone", "dreiklang", "kenney"]
+
+[[asset]]
+id = "oberflaeche-ton"
+kind = "sound"
+name = { de = "Ton", en = "Tone" }
+category = ["Digital"]
+file = "audio/oberflaeche-ton.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["tone", "ton", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zweiklang-1"
+kind = "sound"
+name = { de = "Zweiklang 1", en = "Two tone 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-zweiklang-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["two tone", "zweiklang", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zweiklang-2"
+kind = "sound"
+name = { de = "Zweiklang 2", en = "Two tone 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-zweiklang-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["two tone", "zweiklang", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zap-1"
+kind = "sound"
+name = { de = "Zap 1", en = "Zap 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-zap-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["zap", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zap-2"
+kind = "sound"
+name = { de = "Zap 2", en = "Zap 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-zap-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["zap", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zap-dreiklang-fallend"
+kind = "sound"
+name = { de = "Zap-Dreiklang fallend", en = "Zap three tone down" }
+category = ["Digital"]
+file = "audio/oberflaeche-zap-dreiklang-fallend.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["zap three tone down", "zap-dreiklang fallend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zap-dreiklang-steigend"
+kind = "sound"
+name = { de = "Zap-Dreiklang steigend", en = "Zap three tone up" }
+category = ["Digital"]
+file = "audio/oberflaeche-zap-dreiklang-steigend.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["zap three tone up", "zap-dreiklang steigend", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zap-zweiklang-1"
+kind = "sound"
+name = { de = "Zap-Zweiklang 1", en = "Zap two tone 1" }
+category = ["Digital"]
+file = "audio/oberflaeche-zap-zweiklang-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["zap two tone", "zap-zweiklang", "kenney"]
+
+[[asset]]
+id = "oberflaeche-zap-zweiklang-2"
+kind = "sound"
+name = { de = "Zap-Zweiklang 2", en = "Zap two tone 2" }
+category = ["Digital"]
+file = "audio/oberflaeche-zap-zweiklang-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/digital-audio"
+tags = ["zap two tone", "zap-zweiklang", "kenney"]

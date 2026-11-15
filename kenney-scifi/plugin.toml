@@ -1,0 +1,814 @@
+# Erzeugt von tools/bau.py aus Kenney-Paketen (CC0) – nicht von Hand ändern.
+[plugin]
+id = "kenney.scifi"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Sci-Fi (Kenney)", en = "Sci-fi (Kenney)" }
+description = { de = "Laser, Raumschiffe, Explosionen und Technik", en = "Lasers, spaceships, explosions and machines" }
+authors = ["Kenney"]
+license = "CC0-1.0"
+source = "https://kenney.nl/assets"
+
+[[asset]]
+id = "scifi-computer-1"
+kind = "sound"
+name = { de = "Computer 1", en = "Computer noise 1" }
+category = ["Technik"]
+file = "audio/scifi-computer-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["computer noise", "computer", "kenney"]
+
+[[asset]]
+id = "scifi-computer-2"
+kind = "sound"
+name = { de = "Computer 2", en = "Computer noise 2" }
+category = ["Technik"]
+file = "audio/scifi-computer-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["computer noise", "computer", "kenney"]
+
+[[asset]]
+id = "scifi-computer-3"
+kind = "sound"
+name = { de = "Computer 3", en = "Computer noise 3" }
+category = ["Technik"]
+file = "audio/scifi-computer-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["computer noise", "computer", "kenney"]
+
+[[asset]]
+id = "scifi-computer-4"
+kind = "sound"
+name = { de = "Computer 4", en = "Computer noise 4" }
+category = ["Technik"]
+file = "audio/scifi-computer-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["computer noise", "computer", "kenney"]
+
+[[asset]]
+id = "scifi-schiebetuer-zu-1"
+kind = "sound"
+name = { de = "Schiebetür zu 1", en = "Door close 1" }
+category = ["Technik"]
+file = "audio/scifi-schiebetuer-zu-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["door close", "schiebetür zu", "kenney"]
+
+[[asset]]
+id = "scifi-schiebetuer-zu-2"
+kind = "sound"
+name = { de = "Schiebetür zu 2", en = "Door close 2" }
+category = ["Technik"]
+file = "audio/scifi-schiebetuer-zu-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["door close", "schiebetür zu", "kenney"]
+
+[[asset]]
+id = "scifi-schiebetuer-zu-3"
+kind = "sound"
+name = { de = "Schiebetür zu 3", en = "Door close 3" }
+category = ["Technik"]
+file = "audio/scifi-schiebetuer-zu-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["door close", "schiebetür zu", "kenney"]
+
+[[asset]]
+id = "scifi-schiebetuer-auf-1"
+kind = "sound"
+name = { de = "Schiebetür auf 1", en = "Door open 1" }
+category = ["Technik"]
+file = "audio/scifi-schiebetuer-auf-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["door open", "schiebetür auf", "kenney"]
+
+[[asset]]
+id = "scifi-schiebetuer-auf-2"
+kind = "sound"
+name = { de = "Schiebetür auf 2", en = "Door open 2" }
+category = ["Technik"]
+file = "audio/scifi-schiebetuer-auf-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["door open", "schiebetür auf", "kenney"]
+
+[[asset]]
+id = "scifi-schiebetuer-auf-3"
+kind = "sound"
+name = { de = "Schiebetür auf 3", en = "Door open 3" }
+category = ["Technik"]
+file = "audio/scifi-schiebetuer-auf-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["door open", "schiebetür auf", "kenney"]
+
+[[asset]]
+id = "scifi-antrieb-kreisend-1"
+kind = "sound"
+name = { de = "Antrieb kreisend 1", en = "Engine circular 1" }
+category = ["Antriebe"]
+file = "audio/scifi-antrieb-kreisend-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["engine circular", "antrieb kreisend", "kenney"]
+
+[[asset]]
+id = "scifi-antrieb-kreisend-2"
+kind = "sound"
+name = { de = "Antrieb kreisend 2", en = "Engine circular 2" }
+category = ["Antriebe"]
+file = "audio/scifi-antrieb-kreisend-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["engine circular", "antrieb kreisend", "kenney"]
+
+[[asset]]
+id = "scifi-antrieb-kreisend-3"
+kind = "sound"
+name = { de = "Antrieb kreisend 3", en = "Engine circular 3" }
+category = ["Antriebe"]
+file = "audio/scifi-antrieb-kreisend-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["engine circular", "antrieb kreisend", "kenney"]
+
+[[asset]]
+id = "scifi-antrieb-kreisend-4"
+kind = "sound"
+name = { de = "Antrieb kreisend 4", en = "Engine circular 4" }
+category = ["Antriebe"]
+file = "audio/scifi-antrieb-kreisend-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["engine circular", "antrieb kreisend", "kenney"]
+
+[[asset]]
+id = "scifi-antrieb-kreisend-5"
+kind = "sound"
+name = { de = "Antrieb kreisend 5", en = "Engine circular 5" }
+category = ["Antriebe"]
+file = "audio/scifi-antrieb-kreisend-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["engine circular", "antrieb kreisend", "kenney"]
+
+[[asset]]
+id = "scifi-explosion-1"
+kind = "sound"
+name = { de = "Explosion 1", en = "Explosion crunch 1" }
+category = ["Explosionen"]
+file = "audio/scifi-explosion-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["explosion crunch", "explosion", "kenney"]
+
+[[asset]]
+id = "scifi-explosion-2"
+kind = "sound"
+name = { de = "Explosion 2", en = "Explosion crunch 2" }
+category = ["Explosionen"]
+file = "audio/scifi-explosion-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["explosion crunch", "explosion", "kenney"]
+
+[[asset]]
+id = "scifi-explosion-3"
+kind = "sound"
+name = { de = "Explosion 3", en = "Explosion crunch 3" }
+category = ["Explosionen"]
+file = "audio/scifi-explosion-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["explosion crunch", "explosion", "kenney"]
+
+[[asset]]
+id = "scifi-explosion-4"
+kind = "sound"
+name = { de = "Explosion 4", en = "Explosion crunch 4" }
+category = ["Explosionen"]
+file = "audio/scifi-explosion-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["explosion crunch", "explosion", "kenney"]
+
+[[asset]]
+id = "scifi-explosion-5"
+kind = "sound"
+name = { de = "Explosion 5", en = "Explosion crunch 5" }
+category = ["Explosionen"]
+file = "audio/scifi-explosion-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["explosion crunch", "explosion", "kenney"]
+
+[[asset]]
+id = "scifi-kraftfeld-1"
+kind = "sound"
+name = { de = "Kraftfeld 1", en = "Force field 1" }
+category = ["Technik"]
+file = "audio/scifi-kraftfeld-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["force field", "kraftfeld", "kenney"]
+
+[[asset]]
+id = "scifi-kraftfeld-2"
+kind = "sound"
+name = { de = "Kraftfeld 2", en = "Force field 2" }
+category = ["Technik"]
+file = "audio/scifi-kraftfeld-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["force field", "kraftfeld", "kenney"]
+
+[[asset]]
+id = "scifi-kraftfeld-3"
+kind = "sound"
+name = { de = "Kraftfeld 3", en = "Force field 3" }
+category = ["Technik"]
+file = "audio/scifi-kraftfeld-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["force field", "kraftfeld", "kenney"]
+
+[[asset]]
+id = "scifi-kraftfeld-4"
+kind = "sound"
+name = { de = "Kraftfeld 4", en = "Force field 4" }
+category = ["Technik"]
+file = "audio/scifi-kraftfeld-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["force field", "kraftfeld", "kenney"]
+
+[[asset]]
+id = "scifi-kraftfeld-5"
+kind = "sound"
+name = { de = "Kraftfeld 5", en = "Force field 5" }
+category = ["Technik"]
+file = "audio/scifi-kraftfeld-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["force field", "kraftfeld", "kenney"]
+
+[[asset]]
+id = "scifi-metallschlag-1"
+kind = "sound"
+name = { de = "Metallschlag 1", en = "Impact metal 1" }
+category = ["Technik"]
+file = "audio/scifi-metallschlag-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["impact metal", "metallschlag", "kenney"]
+
+[[asset]]
+id = "scifi-metallschlag-2"
+kind = "sound"
+name = { de = "Metallschlag 2", en = "Impact metal 2" }
+category = ["Technik"]
+file = "audio/scifi-metallschlag-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["impact metal", "metallschlag", "kenney"]
+
+[[asset]]
+id = "scifi-metallschlag-3"
+kind = "sound"
+name = { de = "Metallschlag 3", en = "Impact metal 3" }
+category = ["Technik"]
+file = "audio/scifi-metallschlag-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["impact metal", "metallschlag", "kenney"]
+
+[[asset]]
+id = "scifi-metallschlag-4"
+kind = "sound"
+name = { de = "Metallschlag 4", en = "Impact metal 4" }
+category = ["Technik"]
+file = "audio/scifi-metallschlag-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["impact metal", "metallschlag", "kenney"]
+
+[[asset]]
+id = "scifi-metallschlag-5"
+kind = "sound"
+name = { de = "Metallschlag 5", en = "Impact metal 5" }
+category = ["Technik"]
+file = "audio/scifi-metallschlag-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["impact metal", "metallschlag", "kenney"]
+
+[[asset]]
+id = "scifi-laser-gross-1"
+kind = "sound"
+name = { de = "Laser groß 1", en = "Laser large 1" }
+category = ["Laser"]
+file = "audio/scifi-laser-gross-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser large", "laser groß", "kenney"]
+
+[[asset]]
+id = "scifi-laser-gross-2"
+kind = "sound"
+name = { de = "Laser groß 2", en = "Laser large 2" }
+category = ["Laser"]
+file = "audio/scifi-laser-gross-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser large", "laser groß", "kenney"]
+
+[[asset]]
+id = "scifi-laser-gross-3"
+kind = "sound"
+name = { de = "Laser groß 3", en = "Laser large 3" }
+category = ["Laser"]
+file = "audio/scifi-laser-gross-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser large", "laser groß", "kenney"]
+
+[[asset]]
+id = "scifi-laser-gross-4"
+kind = "sound"
+name = { de = "Laser groß 4", en = "Laser large 4" }
+category = ["Laser"]
+file = "audio/scifi-laser-gross-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser large", "laser groß", "kenney"]
+
+[[asset]]
+id = "scifi-laser-gross-5"
+kind = "sound"
+name = { de = "Laser groß 5", en = "Laser large 5" }
+category = ["Laser"]
+file = "audio/scifi-laser-gross-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser large", "laser groß", "kenney"]
+
+[[asset]]
+id = "scifi-laser-retro-1"
+kind = "sound"
+name = { de = "Laser retro 1", en = "Laser retro 1" }
+category = ["Laser"]
+file = "audio/scifi-laser-retro-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser retro", "kenney"]
+
+[[asset]]
+id = "scifi-laser-retro-2"
+kind = "sound"
+name = { de = "Laser retro 2", en = "Laser retro 2" }
+category = ["Laser"]
+file = "audio/scifi-laser-retro-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser retro", "kenney"]
+
+[[asset]]
+id = "scifi-laser-retro-3"
+kind = "sound"
+name = { de = "Laser retro 3", en = "Laser retro 3" }
+category = ["Laser"]
+file = "audio/scifi-laser-retro-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser retro", "kenney"]
+
+[[asset]]
+id = "scifi-laser-retro-4"
+kind = "sound"
+name = { de = "Laser retro 4", en = "Laser retro 4" }
+category = ["Laser"]
+file = "audio/scifi-laser-retro-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser retro", "kenney"]
+
+[[asset]]
+id = "scifi-laser-retro-5"
+kind = "sound"
+name = { de = "Laser retro 5", en = "Laser retro 5" }
+category = ["Laser"]
+file = "audio/scifi-laser-retro-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser retro", "kenney"]
+
+[[asset]]
+id = "scifi-laser-klein-1"
+kind = "sound"
+name = { de = "Laser klein 1", en = "Laser small 1" }
+category = ["Laser"]
+file = "audio/scifi-laser-klein-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser small", "laser klein", "kenney"]
+
+[[asset]]
+id = "scifi-laser-klein-2"
+kind = "sound"
+name = { de = "Laser klein 2", en = "Laser small 2" }
+category = ["Laser"]
+file = "audio/scifi-laser-klein-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser small", "laser klein", "kenney"]
+
+[[asset]]
+id = "scifi-laser-klein-3"
+kind = "sound"
+name = { de = "Laser klein 3", en = "Laser small 3" }
+category = ["Laser"]
+file = "audio/scifi-laser-klein-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser small", "laser klein", "kenney"]
+
+[[asset]]
+id = "scifi-laser-klein-4"
+kind = "sound"
+name = { de = "Laser klein 4", en = "Laser small 4" }
+category = ["Laser"]
+file = "audio/scifi-laser-klein-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser small", "laser klein", "kenney"]
+
+[[asset]]
+id = "scifi-laser-klein-5"
+kind = "sound"
+name = { de = "Laser klein 5", en = "Laser small 5" }
+category = ["Laser"]
+file = "audio/scifi-laser-klein-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["laser small", "laser klein", "kenney"]
+
+[[asset]]
+id = "scifi-explosion-tief-1"
+kind = "sound"
+name = { de = "Explosion tief 1", en = "Low frequency explosion 1" }
+category = ["Explosionen"]
+file = "audio/scifi-explosion-tief-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["low frequency explosion", "explosion tief", "kenney"]
+
+[[asset]]
+id = "scifi-explosion-tief-2"
+kind = "sound"
+name = { de = "Explosion tief 2", en = "Low frequency explosion 2" }
+category = ["Explosionen"]
+file = "audio/scifi-explosion-tief-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["low frequency explosion", "explosion tief", "kenney"]
+
+[[asset]]
+id = "scifi-schleim-1"
+kind = "sound"
+name = { de = "Schleim 1", en = "Slime 1" }
+category = ["Technik"]
+file = "audio/scifi-schleim-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["slime", "schleim", "kenney"]
+
+[[asset]]
+id = "scifi-schleim-2"
+kind = "sound"
+name = { de = "Schleim 2", en = "Slime 2" }
+category = ["Technik"]
+file = "audio/scifi-schleim-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["slime", "schleim", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-gross-1"
+kind = "sound"
+name = { de = "Raumschiff groß 1", en = "Space engine large 1" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-gross-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine large", "raumschiff groß", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-gross-2"
+kind = "sound"
+name = { de = "Raumschiff groß 2", en = "Space engine large 2" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-gross-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine large", "raumschiff groß", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-gross-3"
+kind = "sound"
+name = { de = "Raumschiff groß 3", en = "Space engine large 3" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-gross-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine large", "raumschiff groß", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-gross-4"
+kind = "sound"
+name = { de = "Raumschiff groß 4", en = "Space engine large 4" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-gross-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine large", "raumschiff groß", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-gross-5"
+kind = "sound"
+name = { de = "Raumschiff groß 5", en = "Space engine large 5" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-gross-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine large", "raumschiff groß", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-tief-1"
+kind = "sound"
+name = { de = "Raumschiff tief 1", en = "Space engine low 1" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-tief-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine low", "raumschiff tief", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-tief-2"
+kind = "sound"
+name = { de = "Raumschiff tief 2", en = "Space engine low 2" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-tief-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine low", "raumschiff tief", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-tief-3"
+kind = "sound"
+name = { de = "Raumschiff tief 3", en = "Space engine low 3" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-tief-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine low", "raumschiff tief", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-tief-4"
+kind = "sound"
+name = { de = "Raumschiff tief 4", en = "Space engine low 4" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-tief-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine low", "raumschiff tief", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-tief-5"
+kind = "sound"
+name = { de = "Raumschiff tief 5", en = "Space engine low 5" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-tief-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine low", "raumschiff tief", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-klein-1"
+kind = "sound"
+name = { de = "Raumschiff klein 1", en = "Space engine small 1" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-klein-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine small", "raumschiff klein", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-klein-2"
+kind = "sound"
+name = { de = "Raumschiff klein 2", en = "Space engine small 2" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-klein-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine small", "raumschiff klein", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-klein-3"
+kind = "sound"
+name = { de = "Raumschiff klein 3", en = "Space engine small 3" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-klein-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine small", "raumschiff klein", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-klein-4"
+kind = "sound"
+name = { de = "Raumschiff klein 4", en = "Space engine small 4" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-klein-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine small", "raumschiff klein", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-klein-5"
+kind = "sound"
+name = { de = "Raumschiff klein 5", en = "Space engine small 5" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-klein-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine small", "raumschiff klein", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-1"
+kind = "sound"
+name = { de = "Raumschiff 1", en = "Space engine 1" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine", "raumschiff", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-2"
+kind = "sound"
+name = { de = "Raumschiff 2", en = "Space engine 2" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine", "raumschiff", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-3"
+kind = "sound"
+name = { de = "Raumschiff 3", en = "Space engine 3" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine", "raumschiff", "kenney"]
+
+[[asset]]
+id = "scifi-raumschiff-4"
+kind = "sound"
+name = { de = "Raumschiff 4", en = "Space engine 4" }
+category = ["Antriebe"]
+file = "audio/scifi-raumschiff-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["space engine", "raumschiff", "kenney"]
+
+[[asset]]
+id = "scifi-triebwerk-1"
+kind = "sound"
+name = { de = "Triebwerk 1", en = "Thruster fire 1" }
+category = ["Antriebe"]
+file = "audio/scifi-triebwerk-1.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["thruster fire", "triebwerk", "kenney"]
+
+[[asset]]
+id = "scifi-triebwerk-2"
+kind = "sound"
+name = { de = "Triebwerk 2", en = "Thruster fire 2" }
+category = ["Antriebe"]
+file = "audio/scifi-triebwerk-2.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["thruster fire", "triebwerk", "kenney"]
+
+[[asset]]
+id = "scifi-triebwerk-3"
+kind = "sound"
+name = { de = "Triebwerk 3", en = "Thruster fire 3" }
+category = ["Antriebe"]
+file = "audio/scifi-triebwerk-3.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["thruster fire", "triebwerk", "kenney"]
+
+[[asset]]
+id = "scifi-triebwerk-4"
+kind = "sound"
+name = { de = "Triebwerk 4", en = "Thruster fire 4" }
+category = ["Antriebe"]
+file = "audio/scifi-triebwerk-4.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["thruster fire", "triebwerk", "kenney"]
+
+[[asset]]
+id = "scifi-triebwerk-5"
+kind = "sound"
+name = { de = "Triebwerk 5", en = "Thruster fire 5" }
+category = ["Antriebe"]
+file = "audio/scifi-triebwerk-5.ogg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/sci-fi-sounds"
+tags = ["thruster fire", "triebwerk", "kenney"]
