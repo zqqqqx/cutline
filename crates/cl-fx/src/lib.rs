@@ -16,6 +16,7 @@ pub mod catalog;
 pub mod sfx;
 pub mod stickers;
 pub mod text;
+pub mod xfade;
 
 use cl_core::*;
 
@@ -124,8 +125,24 @@ pub static EFFECTS: &[FxDef] = &[
         name: "VHS",
         category: "Retro",
         native_intensity: false,
-        build: |_, _| {
-            "rgbashift=rh=-5:bh=5:gv=1,noise=alls=18:allf=t,eq=saturation=1.35:contrast=1.08,gblur=sigma=0.7,drawgrid=w=0:h=3:t=1:c=black@0.18".into()
+        // Pixelmaße auf 1080 Zeilen bezogen: die Vorschau rechnet die Kette auf ihrem kleineren
+        // Bild, sonst wären Farbversatz und Zeilen dort viel kräftiger als im Export
+        build: |_, s| {
+            let k = s.w.min(s.h).max(1) as f32 / 1080.0;
+            let shift = (5.0 * k).round() as i32;
+            // Zeilen: ¹⁄₁₈ Abdunklung im Mittel; zu klein für 1-px-Linien → gleichmäßig
+            let lines = if 3.0 * k >= 2.0 {
+                let (t, h) = ((k.round() as i32).max(1), (3.0 * k).round() as i32);
+                format!("drawgrid=w=0:h={h}:t={t}:c=black@{:.3}", 0.06 * h as f32 / t as f32)
+            } else {
+                "drawbox=c=black@0.06:t=fill".into()
+            };
+            format!(
+                "rgbashift=rh={}:bh={shift}:gv={},noise=alls=18:allf=t,eq=saturation=1.35:contrast=1.08,gblur=sigma={:.2},{lines}",
+                -shift,
+                k.round() as i32,
+                (0.7 * k).max(0.1)
+            )
         },
     },
     FxDef {
@@ -597,6 +614,18 @@ pub fn transition_name(id: &str) -> String {
         .map(|t| t.1.to_string())
         .or_else(|| catalog::name_any(id))
         .unwrap_or_else(|| "Übergang".into())
+}
+
+/// Wirksame Länge (s) des Übergangs am Ende von `a` zum Nachbarn `b`: höchstens so lang wie jeder
+/// der beiden Clips. Je die Hälfte ragt in die Clips hinein, so teilen sich zwei Übergänge an
+/// einem Clip dessen Länge. Vorschau und Export rechnen beide hiermit.
+pub fn transition_secs(a: &Clip, b: &Clip) -> f64 {
+    a.transition_out
+        .as_ref()
+        .map_or(0.0, |t| t.duration.as_secs_f64())
+        .min(a.duration.as_secs_f64())
+        .min(b.duration.as_secs_f64())
+        .max(0.0)
 }
 
 /// Pfad als Wert einer Filteroption im Filtergraphen escapen (`C:/x.cube` → `C\\:/x.cube`).
@@ -1279,6 +1308,39 @@ mod tests {
             }
         }
         assert!(failed.is_empty(), "laufen nicht als Strom: {failed:?}");
+    }
+
+    /// VHS auf dem kleinen Vorschaubild sieht aus wie der Full-HD-Export, verkleinert auf dieselbe
+    /// Größe: Zeilenmuster und Farbversatz gleich stark (vorher in der Vorschau viel kräftiger).
+    #[test]
+    fn vhs_preview_size_looks_like_the_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        // Bild nach der Kette auf 480×270: (Zeilenmuster, Farbversatz Rot−Blau am senkrechten Rand)
+        let look = |w: u32, h: u32| -> (f64, f64) {
+            let vhs = (effect("vhs").unwrap().build)(1.0, Src { w, h, has_alpha: false });
+            let out = cl_media::ffmpeg_command()
+                .unwrap()
+                .args(["-v", "error", "-nostdin", "-threads", "2", "-f", "lavfi", "-i"])
+                .arg("color=c=0x808080:s=1920x1080:d=0.1,drawbox=x=960:y=0:w=960:h=1080:c=white:t=fill")
+                .args(["-frames:v", "1", "-vf"])
+                .arg(format!("scale={w}:{h}:flags=area,format=rgb24,{vhs},scale=480:270:flags=area,format=rgb24"))
+                .args(["-f", "rawvideo", "-"])
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            let px = |x: usize, y: usize, c: usize| out.stdout[(y * 480 + x) * 3 + c] as f64;
+            let rows: Vec<f64> = (0..270).map(|y| (0..200).map(|x| px(x, y, 1)).sum::<f64>() / 200.0).collect();
+            let stripes = (1..269).map(|y| (rows[y] - (rows[y - 1] + rows[y + 1]) / 2.0).abs()).sum::<f64>() / 268.0;
+            // Rot läuft nach links, Blau nach rechts: Spalten neben der Kante bei x = 240
+            let shift = (0..270).map(|y| (230..250).map(|x| (px(x, y, 0) - px(x, y, 2)).abs()).sum::<f64>()).sum::<f64>() / (270.0 * 20.0);
+            (stripes, shift)
+        };
+        // alte Kette: Zeilen 14,6 statt 3,7, Farbversatz 76 statt 21
+        let (export, preview) = (look(1920, 1080), look(480, 270));
+        assert!((export.0 - preview.0).abs() < 4.0, "Zeilen: Export {export:?}, Vorschau {preview:?}");
+        assert!((export.1 - preview.1).abs() < 4.0, "Farbversatz: Export {export:?}, Vorschau {preview:?}");
     }
 
     fn run_graph(graph: &str, extra_inputs: &[&str]) -> std::result::Result<(), String> {

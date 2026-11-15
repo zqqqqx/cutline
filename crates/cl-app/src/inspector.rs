@@ -368,6 +368,13 @@ impl App {
         theme::row(ui, "Art", |ui| {
             ui.label(RichText::new(crate::tr(cl_fx::transition_name(&tr.id))).strong())
         });
+        // Paket-Übergang ohne eingeschaltetes Paket: gerechnet wird der Ersatz
+        let plan = cl_fx::catalog::transition_plan(&tr.id);
+        if plan.shader.is_none() && !cl_fx::TRANSITIONS.iter().any(|t| t.0 == tr.id) {
+            let alt = crate::tr(cl_fx::transition_name(plan.xfade));
+            let why = if cl_fx::catalog::name_any(&tr.id).is_some() { "Paket ausgeschaltet" } else { "Paket fehlt" };
+            ui.label(RichText::new(crate::tr(format!("{}  {why} – wird als „{alt}“ gerechnet", icon::WARNING))).small().color(theme::WARN_TEXT()));
+        }
         let next_len = self
             .next_adjacent(c.id)
             .and_then(|n| self.project.find_clip(n))

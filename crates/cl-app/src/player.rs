@@ -59,9 +59,39 @@ pub(crate) fn shader_preview_fits(evs: [&Evaluated; 2], aspects: [f32; 2], proje
     }) && aspects.iter().all(|a| (a / project_aspect - 1.0).abs() < 0.01)
 }
 
+/// Längen der Übergänge am Anfang und Ende von `c` (Clip `i` der Spur, ggf. in Bearbeitung
+/// verändert): nur zu direkt anschließenden, aktiven Nachbarn, Länge wie im Export.
+pub(crate) fn transition_spans(clips: &[Clip], i: usize, c: &Clip) -> (Option<f64>, Option<f64>) {
+    let next = clips.get(i + 1).filter(|n| (n.start.0 - c.end().0).abs() < 2000 && !n.disabled);
+    let tr_out = next.filter(|_| c.transition_out.is_some()).map(|n| cl_fx::transition_secs(c, n));
+    let prev = i.checked_sub(1).and_then(|k| clips.get(k));
+    let tr_in = prev
+        .filter(|p| (c.start.0 - p.end().0).abs() < 2000 && !p.disabled && p.transition_out.is_some())
+        .map(|p| cl_fx::transition_secs(p, c));
+    (tr_in, tr_out)
+}
+
 #[cfg(test)]
 mod shader_tests {
     use super::*;
+
+    #[test]
+    fn short_clip_between_two_long_transitions_matches_export() {
+        // 0,2-s-Clip mit zwei 0,5-s-Übergängen: beide auf 0,2 s begrenzt, auch beim Nachbarn
+        let tr = |s: f64, d: f64| {
+            let mut c = Clip::new(ClipContent::Text(Default::default()), Time::from_secs_f64(s), Time::from_secs_f64(d));
+            c.transition_out = Some(cl_core::TransitionRef { id: "fade".into(), duration: Time::from_secs_f64(0.5) });
+            c
+        };
+        let clips = [tr(0.0, 2.0), tr(2.0, 0.2), tr(2.2, 2.0)];
+        let span = |i: usize| transition_spans(&clips, i, &clips[i]);
+        assert_eq!(span(0), (None, Some(0.2)));
+        assert_eq!(span(1), (Some(0.2), Some(0.2)));
+        assert_eq!(span(2), (Some(0.2), None));
+        // halbe Übergänge ragen zusammen höchstens über die ganze Länge des kurzen Clips
+        let (a, b) = span(1);
+        assert!(a.unwrap() / 2.0 + b.unwrap() / 2.0 <= 0.2 + 1e-9);
+    }
 
     #[test]
     fn progress_is_centered_on_the_cut() {
@@ -163,12 +193,14 @@ impl App {
         }
     }
 
-    /// Hat der Clip einen Shader-Übergang am Anfang oder Ende? (Nur dann CPU-Bilder behalten.)
+    /// Hat der Clip einen Shader- oder gemischten `xfade`-Übergang (nicht bloß Überblenden) am
+    /// Anfang oder Ende? (Nur dann CPU-Bilder behalten.)
     fn in_shader_transition(&self, clip: ClipId) -> bool {
         let shader = |c: &Clip| {
-            c.transition_out
-                .as_ref()
-                .is_some_and(|t| cl_fx::catalog::transition_plan(&t.id).shader.is_some())
+            c.transition_out.as_ref().is_some_and(|t| {
+                let plan = cl_fx::catalog::transition_plan(&t.id);
+                plan.shader.is_some() || (plan.xfade != "fade" && cl_fx::xfade::supported(plan.xfade))
+            })
         };
         self.project.timeline.tracks.iter().any(|tr| {
             tr.clips.iter().enumerate().any(|(i, c)| {
@@ -178,7 +210,9 @@ impl App {
     }
 
     /// Steht der Playhead in einem Shader-Übergang, A und B mit cl-gpu mischen (gleiche Funktion
-    /// wie der Export). Sonst, ohne GPU, zu langsam oder ohne passende Bilder: Überblendung.
+    /// wie der Export); eingebaute Übergänge (auch der Rückfall eines ausgeschalteten Pakets)
+    /// mischt `cl_fx::xfade` mit den Formeln von FFmpegs `xfade`. Sonst, ohne GPU, zu langsam
+    /// oder ohne passende Bilder: Überblendung.
     fn shader_mix(&mut self, ctx: &egui::Context, layers: &[Layer]) {
         self.shader_preview.current = None;
         if !self.playing {
@@ -196,9 +230,10 @@ impl App {
                 continue;
             };
             let Some(tr) = &a.clip.transition_out else { continue };
-            let Some((file, params)) = cl_fx::catalog::transition_plan(&tr.id).shader else {
+            let plan = cl_fx::catalog::transition_plan(&tr.id);
+            if plan.shader.is_none() && (plan.xfade == "fade" || !cl_fx::xfade::supported(plan.xfade)) {
                 continue;
-            };
+            }
             let aspect = |c: &Clip| match &c.content {
                 ClipContent::Media { media, kind: MediaKind::Video | MediaKind::Image } => {
                     self.project.media(*media).map(|m| m.width.max(1) as f32 / m.height.max(1) as f32)
@@ -213,19 +248,34 @@ impl App {
             let (Some((ka, fa)), Some((kb, fb))) = (self.shader_preview.cpu.get(&a_id), self.shader_preview.cpu.get(&b.clip.id)) else {
                 continue;
             };
-            let id = (*ka, *kb, p.to_bits());
+            // anderer Übergang mit denselben Bildern: neu mischen
+            let kind = {
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                (plan.xfade, &plan.shader.as_ref().map(|s| &s.0)).hash(&mut h);
+                h.finish()
+            };
+            let id = (*ka ^ kind, *kb, p.to_bits());
             if self.shader_preview.last != Some(id) || self.shader_preview.tex.is_none() {
-                let Ok(src) = std::fs::read_to_string(&file) else { continue };
                 let t0 = std::time::Instant::now();
-                let img = cl_gpu::render(
-                    &src,
-                    &crate::preview::shader_params(&params),
-                    cl_gpu::Frame { rgba: &fa.data, width: fa.width, height: fa.height },
-                    cl_gpu::Frame { rgba: &fb.data, width: fb.width, height: fb.height },
-                    (fa.width, fa.height),
-                    p,
-                );
-                let Ok(img) = img else { continue };
+                let img = match &plan.shader {
+                    Some((file, params)) => {
+                        let Ok(src) = std::fs::read_to_string(file) else { continue };
+                        cl_gpu::render(
+                            &src,
+                            &crate::preview::shader_params(params),
+                            cl_gpu::Frame { rgba: &fa.data, width: fa.width, height: fa.height },
+                            cl_gpu::Frame { rgba: &fb.data, width: fb.width, height: fb.height },
+                            (fa.width, fa.height),
+                            p,
+                        )
+                        .ok()
+                    }
+                    None if (fa.width, fa.height) == (fb.width, fb.height) => {
+                        cl_fx::xfade::mix(plan.xfade, &fa.data, &fb.data, fa.width, fa.height, p)
+                    }
+                    None => None,
+                };
+                let Some(img) = img else { continue };
                 let fps = self.project.settings.fps;
                 let interval = fps.den.max(1) as f64 / fps.num.max(1) as f64;
                 // Abspielen darf nicht ruckeln: zu langsam → bis zum Anhalten Überblendung
@@ -261,21 +311,8 @@ impl App {
                 if c.disabled {
                     continue;
                 }
-                // Übergang am Ende dieses Clips?
-                let next = tr
-                    .clips
-                    .get(i + 1)
-                    .filter(|n| (n.start.0 - c.end().0).abs() < 2000 && !n.disabled);
-                let tr_out = c
-                    .transition_out
-                    .as_ref()
-                    .filter(|_| next.is_some())
-                    .map(|x| x.duration.as_secs_f64().min(c.duration.as_secs_f64()));
+                let (tr_in, tr_out) = transition_spans(&tr.clips, i, &c);
                 let prev = if i > 0 { tr.clips.get(i - 1) } else { None };
-                let tr_in = prev
-                    .filter(|p| (c.start.0 - p.end().0).abs() < 2000 && !p.disabled)
-                    .and_then(|p| p.transition_out.as_ref())
-                    .map(|x| x.duration.as_secs_f64().min(c.duration.as_secs_f64()));
                 let ts = t.as_secs_f64();
                 let (s, e) = (c.start.as_secs_f64(), c.end().as_secs_f64());
                 let lo = s - tr_in.map(|d| d / 2.0).unwrap_or(0.0);
