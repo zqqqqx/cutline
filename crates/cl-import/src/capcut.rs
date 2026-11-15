@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use cl_core::{
-    AspectPreset, Clip, ClipContent, MediaKind, MediaRef, Project, Rational, TextStyle, Time,
+    AspectPreset, Clip, ClipContent, MediaKind, MediaRef, Project, TextStyle, Time,
     Track, TrackId, TrackKind,
 };
 use serde_json::Value;
@@ -177,12 +177,9 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
         a
     };
     p.settings.aspect = AspectPreset::Ratio(w / g, h / g);
-    let fps = f(d, &["fps"]).unwrap_or(30.0);
-    p.settings.fps = if (fps - 29.97).abs() < 0.01 {
-        Rational::new(30000, 1001)
-    } else {
-        Rational::new(fps.round().max(1.0) as u32, 1)
-    };
+    if let Some(fps) = f(d, &["fps"]).and_then(crate::fps_from) {
+        p.settings.fps = fps;
+    }
 
     // Materialien nach ID
     let mats = d.get("materials").cloned().unwrap_or_default();
@@ -273,7 +270,8 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
             };
             let target = s.get("target_timerange");
             let source = s.get("source_timerange");
-            let start = Time(us(target, "start"));
+            // kaputte Entwürfe: nichts vor 0
+            let start = Time(us(target, "start").max(0));
             let duration = Time(us(target, "duration").max(1));
             let mut clip = match mkind.as_str() {
                 "videos" | "audios" => {
@@ -305,7 +303,7 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
                         start,
                         duration,
                     );
-                    c.source_in = Time(us(source, "start"));
+                    c.source_in = Time(us(source, "start").max(0));
                     rep.clips += 1;
                     c
                 }
