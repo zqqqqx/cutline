@@ -475,6 +475,7 @@ impl App {
             })
             .collect();
         let mut add: Option<MediaId> = None;
+        let mut play: Option<(String, PathBuf)> = None;
         let mut menus: Vec<(egui::Response, MediaRef)> = Vec::new();
         // Streifen kosten je 25 FFmpeg-Aufrufe: sichtbare nur nachladen, solange wenige ausstehen
         let mut outstanding = self
@@ -529,6 +530,9 @@ impl App {
                         let sz = t.size_vec2();
                         thumb = Some((t.id(), vec2(sz.x, sz.y / n), (k / n, (k + 1.0) / n)));
                     }
+                    // Ton: Wellenform und Vorhören wie im Sounds-Tab (Schlüssel = Datei, gilt in jedem Projekt)
+                    let snd_key = format!("file:{}", m.path.display());
+                    let snd = (m.kind == MediaKind::Audio).then(|| self.sound_look(ui, r, &snd_key, &m.path, None));
                     let resp = widgets::tile(
                         ui,
                         egui::Id::new(("media", m.id)),
@@ -554,6 +558,8 @@ impl App {
                                     egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE)
                                         .with_texture(tid, uv),
                                 );
+                            } else if let Some(st) = &snd {
+                                st.paint(p, a, false);
                             } else {
                                 let g = match m.kind {
                                     MediaKind::Audio => icon::WAVEFORM,
@@ -624,11 +630,16 @@ impl App {
                         && (resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0)))
                     {
                         add = Some(m.id);
+                    } else if !editing && snd.is_some() && resp.clicked() {
+                        play = Some((snd_key, m.path.clone()));
                     }
                     menus.push((resp, m.clone()));
                 });
             });
         self.reorder_done(ui, ed, list.inner_rect);
+        if let Some((key, path)) = play {
+            self.preview_sound(key, &path, None);
+        }
         *self.decoder.strips_wanted.lock().unwrap_or_else(|e| e.into_inner()) = wanted;
         for (resp, m) in menus {
             let key = format!("media:{}", m.id);
@@ -690,6 +701,7 @@ impl App {
         let ed = self.reorder(ui, "libmedia", &cat, &items, |i| i.key.clone());
         let mut menus: Vec<(egui::Response, crate::library::Item)> = Vec::new();
         let mut add: Option<PathBuf> = None;
+        let mut play: Option<(String, PathBuf)> = None;
         let area = egui::ScrollArea::vertical()
             .id_salt("libmedia")
             .auto_shrink([false, false])
@@ -716,6 +728,8 @@ impl App {
                         });
                     }
                     let fav = self.library.is_favorite(&it.key);
+                    let snd_key = format!("file:{}", path.display());
+                    let snd = audio.then(|| self.sound_look(ui, r, &snd_key, &path, None));
                     let resp = widgets::tile(ui, egui::Id::new(("libm", it.key.as_str())), r, &it.name, false, |p, a| {
                         match tex {
                             Some((tid, ts)) => {
@@ -725,6 +739,11 @@ impl App {
                                     vec2((a.width() / (ts.x * s)).min(1.0), (a.height() / (ts.y * s)).min(1.0)),
                                 );
                                 p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(tid, uv));
+                            }
+                            None if snd.is_some() => {
+                                if let Some(st) = &snd {
+                                    st.paint(p, a, true);
+                                }
                             }
                             None => {
                                 p.text(
@@ -747,11 +766,16 @@ impl App {
                     }
                     if !editing && (resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0))) {
                         add = Some(path);
+                    } else if !editing && snd.is_some() && resp.clicked() {
+                        play = Some((snd_key, path));
                     }
                     menus.push((resp.on_hover_text(it.folder.clone()), it.clone()));
                 });
             });
         self.reorder_done(ui, ed, area.inner_rect);
+        if let Some((key, path)) = play {
+            self.preview_sound(key, &path, None);
+        }
         self.lib_drop = Some((Kind::Media, area.inner_rect));
         for (r, it) in menus {
             let Some(path) = it.path.clone() else { continue };
@@ -1193,25 +1217,65 @@ impl App {
         path: &std::path::Path,
         sfx: Option<&'static str>,
     ) -> (bool, bool, egui::Response) {
-        // Wellenform kommt aus dem gemerkten Bestand; Fehlendes rechnet der Hintergrund nach
+        let st = self.sound_look(ui, r, key, path, sfx);
+        let resp = widgets::tile(ui, egui::Id::new(("sfx-tile", key)), r, name, false, |p, a| {
+            st.paint(p, a, true);
+            if fav {
+                crate::library_ui::fav_badge(p, a);
+            }
+        });
+        let on_plus = widgets::hit_plus(&resp, r, 16.0);
+        let add = (resp.clicked() && on_plus) || resp.double_clicked();
+        let play = resp.clicked() && !on_plus;
+        (play, add, resp)
+    }
+
+    /// Zustand einer Ton-Kachel für dieses Bild (Wellenform aus dem gemerkten Bestand; Fehlendes
+    /// rechnet der Hintergrund nach). `key` ist auch der Schlüssel des Vorhörens.
+    fn sound_look(&mut self, ui: &egui::Ui, r: Rect, key: &str, path: &std::path::Path, sfx: Option<&'static str>) -> SoundLook {
         self.sound_bars.ensure(key, path, sfx);
-        let playing = self
-            .sfx_preview
-            .as_ref()
-            .filter(|(k, _)| k == key)
-            .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len));
         let loading = self.sound_pending.as_deref() == Some(key);
-        let meta = self.sound_bars.get(key);
-        let id = egui::Id::new(("sfx-tile", key));
-        let hover = ui.ctx().animate_bool_with_time(id.with("h"), ui.rect_contains_pointer(r), theme::anim(0.12));
         let moving = theme::anim(1.0) > 0.0;
-        let t = ui.input(|i| i.time) as f32;
         if loading && moving {
             ui.ctx().request_repaint();
         }
-        let resp = widgets::tile(ui, id, r, name, false, |p, a| {
+        SoundLook {
+            playing: self
+                .sfx_preview
+                .as_ref()
+                .filter(|(k, _)| k == key)
+                .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len)),
+            loading,
+            bars: self.sound_bars.get(key),
+            hover: ui.ctx().animate_bool_with_time(
+                egui::Id::new(("sfx-tile", key, "h")),
+                ui.rect_contains_pointer(r),
+                theme::anim(0.12),
+            ),
+            moving,
+            t: ui.input(|i| i.time) as f32,
+        }
+    }
+}
+
+/// Aussehen einer Ton-Kachel: Wellenform, Abspielstand, Play/Stopp.
+struct SoundLook {
+    playing: Option<f32>,
+    loading: bool,
+    bars: Option<crate::soundbars::Bars>,
+    hover: f32,
+    moving: bool,
+    t: f32,
+}
+
+impl SoundLook {
+    /// In die Kachelfläche `a` zeichnen; `len`: Dauer unten rechts (Kacheln ohne eigene Zeitangabe).
+    fn paint(&self, p: &egui::Painter, a: Rect, len: bool) {
+        let (playing, loading, hover, moving, t) = (self.playing, self.loading, self.hover, self.moving, self.t);
+        let meta = &self.bars;
+        {
             let wave = Rect::from_min_max(a.min + vec2(8.0, 8.0), a.max - vec2(8.0, 16.0));
-            match &meta {
+            match meta {
                 Some(b) if !b.bars.is_empty() => {
                     let n = b.bars.len();
                     let bw = wave.width() / n as f32;
@@ -1245,7 +1309,7 @@ impl App {
                     );
                 }
             }
-            if let Some(b) = meta.as_ref().filter(|_| hover < 0.99) {
+            if let Some(b) = meta.as_ref().filter(|_| len && hover < 0.99) {
                 // Dauer unten rechts; beim Hovern liegt dort das „+“
                 p.text(
                     a.right_bottom() - vec2(6.0, 4.0),
@@ -1277,16 +1341,11 @@ impl App {
                     );
                 }
             }
-            if fav {
-                crate::library_ui::fav_badge(p, a);
-            }
-        });
-        let on_plus = widgets::hit_plus(&resp, r, 16.0);
-        let add = (resp.clicked() && on_plus) || resp.double_clicked();
-        let play = resp.clicked() && !on_plus;
-        (play, add, resp)
+        }
     }
+}
 
+impl App {
     // ------------------------------------------------------------------ Text
 
     fn text_tab(&mut self, ui: &mut egui::Ui) {
