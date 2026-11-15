@@ -486,6 +486,8 @@ fn round_px(x: f32, ppp: f32) -> f32 {
 struct WaveKey {
     geo: [u32; 12],
     peaks: (usize, usize),
+    /// Spur stumm: Wellenform blass (gehört zum Aussehen des Netzes)
+    muted: bool,
 }
 
 /// Wellenform-Netze je Clip (aus dem Zwischenspeicher geliehen) und ein Tessellierer für dieses Bild
@@ -3069,7 +3071,8 @@ impl App {
                 .media(*media)
                 .map(|m| m.duration.as_secs_f64())
                 .unwrap_or(f64::MAX);
-            if let Some(peaks) = self.waves.get(media).filter(|w| !w.is_empty()) {
+            let stream = c.audio_stream.filter(|&n| self.project.media(*media).is_some_and(|m| n < m.audio_streams)).unwrap_or(0);
+            if let Some(peaks) = self.waves.get(&(*media, stream)).filter(|w| !w.is_empty()) {
                 let ps = peaks.as_ptr() as usize;
                 let audio = *mk == MediaKind::Audio;
                 let wave_h = if audio {
@@ -3083,6 +3086,8 @@ impl App {
                 } else {
                     Color32::from_rgba_unmultiplied(0xC8, 0xF0, 0xF2, 160)
                 };
+                // Ton stumm (Spur stumm oder −60 dB), obwohl die Datei Ton hat: Wellenform blass
+                let wcol = if tr.muted || c.volume_db <= -59.9 { wcol.gamma_multiply(0.35) } else { wcol };
                 if !audio {
                     inner.rect_filled(
                         Rect::from_min_max(
@@ -3125,6 +3130,7 @@ impl App {
                     geo: [body.min.x, body.min.y, body.max.x, body.max.y, x0, x_end, pps, c.volume_db, cl.min.x, cl.min.y, cl.max.x, cl.max.y]
                         .map(f32::to_bits),
                     peaks: (ps, peaks.len()),
+                    muted: tr.muted,
                 };
                 match waves {
                     Some(w) => {
@@ -4231,6 +4237,7 @@ mod tests {
                 height: 1080,
                 fps: None,
                 has_audio: audio,
+                audio_streams: audio as u32,
                 video_codec: None,
                 audio_codec: None,
             };
@@ -4297,7 +4304,7 @@ mod tests {
                 }
                 if m.has_audio {
                     let n = (m.duration.as_secs_f64() * WAVE_PER_SEC as f64) as usize;
-                    app.waves.insert(m.id, (0..n.max(1)).map(|i| ((i as f32 * 0.37).sin() * 0.5 + 0.5).powi(2)).collect());
+                    app.waves.insert((m.id, 0), (0..n.max(1)).map(|i| ((i as f32 * 0.37).sin() * 0.5 + 0.5).powi(2)).collect());
                 }
             }
             app.set_doc(p);

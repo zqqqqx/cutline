@@ -34,6 +34,8 @@ pub enum Job {
     Wave {
         media: MediaId,
         path: PathBuf,
+        /// Tonspur der Datei (0 = erste)
+        stream: u32,
     },
     /// Kleines Bild einer Datei bei `at` (Bibliothek, Hover-Vorschau); Ergebnis als `FxThumb`
     FileThumb {
@@ -160,6 +162,7 @@ pub enum Done {
     },
     Wave {
         media: MediaId,
+        stream: u32,
         peaks: Vec<f32>,
     },
     SoundMeta {
@@ -418,8 +421,8 @@ fn run(job: Job) -> Option<Done> {
                 .unwrap_or((192, 108));
             cl_media::decode_frame(&path, at, w, h).map(|frame| Done::Thumb { media, frame })
         }
-        Job::Wave { media, path } => {
-            cl_media::waveform(&path, WAVE_PER_SEC).map(|peaks| Done::Wave { media, peaks })
+        Job::Wave { media, path, stream } => {
+            cl_media::waveform_stream(&path, WAVE_PER_SEC, stream).map(|peaks| Done::Wave { media, stream, peaks })
         }
         Job::FileThumb { key, path, at } => {
             let (w, h) = cl_media::probe(&path)
@@ -862,6 +865,7 @@ mod tests {
             height: h,
             fps: Some(Rational::new(60, 1)),
             has_audio: false,
+            audio_streams: 0,
             video_codec: Some(codec.into()),
             audio_codec: None,
         };
