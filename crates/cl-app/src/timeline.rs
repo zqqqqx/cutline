@@ -123,8 +123,10 @@ fn ruler_label(t: f64, step: f64) -> String {
 fn vol_line_hit(body: Rect, db: f32, y: f32) -> bool {
     (y - vol_y(body, db)).abs() <= (body.height() / 10.0).clamp(1.5, 4.0)
 }
-/// Text im Clipkopf: Name, Kennzeichen, Dauer. Wird es eng, fallen zuerst die Kennzeichen weg,
+/// Text im Clipkopf (Vorbild von `clip_head_measured`): Name, Kennzeichen, Dauer. Wird es eng,
+/// fallen zuerst die Kennzeichen weg,
 /// dann wird der Name mit „…“ gekürzt; die Dauer bleibt so lange wie möglich sichtbar.
+#[cfg(test)]
 fn clip_head(name: &str, tags: &str, dur: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
     let sep = if dur.is_empty() { "" } else { "  " };
     let full = format!("{name}{tags}{sep}{dur}");
@@ -138,6 +140,193 @@ fn clip_head(name: &str, tags: &str, dur: &str, max_w: f32, width: impl Fn(&str)
     }
     theme::elide(name, max_w, &width)
 }
+
+/// Text mit vorab gemessenen Zeichenbreiten: kürzt wie `theme::elide` bzw. `clip_head`, ohne je
+/// Versuch neu zu setzen. Rechnet wie egui: Unterschneidung zum vorigen Zeichen, Zeichen auf ganze
+/// Pixel gerundet, die Breite endet mit dem ungerundeten Vorschub des letzten Zeichens.
+#[derive(Clone, Debug, PartialEq)]
+struct Measured {
+    chars: Vec<char>,
+    /// Breite der ersten k Zeichen (k = 0…n)
+    ends: Vec<f32>,
+    /// Breite der ersten k Zeichen mit „…“ dahinter
+    ell_at: Vec<f32>,
+}
+
+impl Measured {
+    fn new(text: &str, ppp: f32, adv: impl Fn(char) -> f32, mut kern: impl FnMut(char, char) -> f32) -> Self {
+        let chars: Vec<char> = text.chars().collect();
+        let ell = adv('…');
+        let (mut ends, mut ell_at) = (Vec::with_capacity(chars.len() + 1), Vec::with_capacity(chars.len() + 1));
+        ends.push(0.0);
+        ell_at.push(ell);
+        let mut x = 0.0;
+        for (i, &c) in chars.iter().enumerate() {
+            if i > 0 {
+                x += kern(chars[i - 1], c);
+            }
+            let a = adv(c);
+            ends.push(x + a);
+            x = round_px(x + a, ppp);
+            ell_at.push(x + kern(c, '…') + ell);
+        }
+        Self { chars, ends, ell_at }
+    }
+    fn width(&self) -> f32 {
+        *self.ends.last().unwrap_or(&0.0)
+    }
+    fn text(&self) -> String {
+        self.chars.iter().collect()
+    }
+    /// Wie `theme::elide` für die ersten `n` Zeichen
+    fn cut(&self, n: usize, max_w: f32) -> String {
+        if self.ends[n] <= max_w {
+            return self.chars[..n].iter().collect();
+        }
+        (0..n)
+            .rev()
+            .map(|m| m - self.chars[..m].iter().rev().take_while(|c| c.is_whitespace()).count())
+            .find(|k| self.ell_at[*k] <= max_w)
+            .map(|k| self.chars[..k].iter().chain(['…'].iter()).collect())
+            .unwrap_or_default()
+    }
+}
+
+/// Unterschneidung je Zeichenpaar und Schrift, einmal gemessen (egui gibt sie nicht heraus):
+/// Breite von „ab“ minus gerundeter Vorschub von a minus Vorschub von b.
+#[derive(Default)]
+struct Kerning(HashMap<(u32, egui::FontFamily, char, char), f32>);
+
+/// Höchstens so viele Zeichenpaare (darüber: neu beginnen)
+const KERN_CAP: usize = 50_000;
+
+impl Kerning {
+    fn measured(&mut self, f: &egui::epaint::Fonts, font: &egui::FontId, text: &str) -> Measured {
+        let ppp = f.pixels_per_point();
+        if self.0.len() > KERN_CAP {
+            self.0.clear();
+        }
+        Measured::new(text, ppp, |c| f.glyph_width(font, c), |a, b| {
+            *self.0.entry((font.size.to_bits(), font.family.clone(), a, b)).or_insert_with(|| {
+                let w = f.layout_no_wrap(format!("{a}{b}"), font.clone(), Color32::WHITE).size().x;
+                w - round_px(f.glyph_width(font, a), ppp) - f.glyph_width(font, b)
+            })
+        })
+    }
+}
+
+fn round_px(x: f32, ppp: f32) -> f32 {
+    (x * ppp).round() / ppp
+}
+
+/// Wellenform eines Clips: Lage, Ausschnitt, Zoom, Lautstärke und Daten, für die das Netz gilt
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct WaveKey {
+    geo: [u32; 12],
+    peaks: (usize, usize),
+}
+
+/// Wellenform-Netze je Clip (aus dem Zwischenspeicher geliehen) und ein Tessellierer für dieses Bild
+struct WaveMeshes {
+    map: HashMap<ClipId, (WaveKey, std::sync::Arc<egui::Mesh>)>,
+    tess: Option<egui::epaint::Tessellator>,
+}
+
+impl WaveMeshes {
+    /// Formen genau so zu einem Netz machen, wie es egui beim Zeichnen täte
+    fn tessellate(&mut self, ctx: &egui::Context, clip: Rect, shapes: Vec<egui::Shape>) -> std::sync::Arc<egui::Mesh> {
+        let t = self.tess.get_or_insert_with(|| {
+            let opts = ctx.tessellation_options(|o| *o);
+            let (size, discs) = ctx.fonts(|f| (f.font_image_size(), f.texture_atlas().lock().prepared_discs()));
+            egui::epaint::Tessellator::new(ctx.pixels_per_point(), opts, size, discs)
+        });
+        t.set_clip_rect(clip);
+        let mut mesh = egui::Mesh::default();
+        for s in shapes {
+            t.tessellate_shape(s, &mut mesh);
+        }
+        std::sync::Arc::new(mesh)
+    }
+}
+
+/// Projektstand, für den der Zwischenspeicher gilt: Änderung am Projekt, Sprache, Skalierung
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct CacheKey {
+    epoch: u64,
+    lang: cl_i18n::Lang,
+    ppp: f32,
+}
+
+/// Höchstens so viele Clip-Texte im Zwischenspeicher (darüber: neu beginnen)
+const HEAD_CAP: usize = 20_000;
+/// Fehlende Dateien so oft neu prüfen (s); eine Projektänderung prüft sofort
+const MISSING_RECHECK: f64 = 2.0;
+
+/// Texte eines Clips: Kopfzeile und (Textclips) Text im Clip, gemessen; dazu der zuletzt
+/// gezeigte, fertig gesetzte Stand je Breite.
+struct Head {
+    full: Measured,
+    name_n: usize,
+    tail: Measured,
+    body: Option<(egui::FontFamily, Measured)>,
+    shown: Option<(f32, std::sync::Arc<egui::Galley>)>,
+    body_shown: Option<(f32, std::sync::Arc<egui::Galley>)>,
+}
+
+/// Zwischenspeicher der Zeitleiste für einen Projektstand: Spuren (statt Klon je Bild),
+/// fehlende Dateien (statt Dateiprüfung je Clip und Bild), Clip-Texte (statt Setzen je Bild).
+#[derive(Default)]
+struct ViewCache {
+    key: Option<CacheKey>,
+    tracks: std::sync::Arc<Vec<Track>>,
+    missing: HashSet<MediaId>,
+    missing_at: Option<f64>,
+    heads: HashMap<ClipId, Head>,
+    kern: Kerning,
+    waves: HashMap<ClipId, (WaveKey, std::sync::Arc<egui::Mesh>)>,
+}
+
+impl ViewCache {
+    /// Auf Stand `key` bringen; `true`, wenn sich der Stand geändert hat (alles neu).
+    fn sync(&mut self, key: CacheKey, tracks: impl FnOnce() -> Vec<Track>) -> bool {
+        if self.key == Some(key) {
+            return false;
+        }
+        self.key = Some(key);
+        self.tracks = std::sync::Arc::new(tracks());
+        self.heads.clear();
+        self.kern.0.clear();
+        self.waves.clear();
+        self.missing_at = None;
+        true
+    }
+    /// Fehlende Dateien neu prüfen? (neuer Stand oder `MISSING_RECHECK` vergangen)
+    fn missing_due(&self, now: f64) -> bool {
+        self.missing_at.is_none_or(|t| now - t >= MISSING_RECHECK || now < t)
+    }
+    /// Eintrag für `id` (neu mit `make`); bei voller Obergrenze wird zuerst geleert.
+    fn head(&mut self, id: ClipId, make: impl FnOnce(&mut Kerning) -> Head) -> &mut Head {
+        if self.heads.len() >= HEAD_CAP && !self.heads.contains_key(&id) {
+            self.heads.clear();
+        }
+        let Self { heads, kern, .. } = self;
+        heads.entry(id).or_insert_with(|| make(kern))
+    }
+}
+
+/// `clip_head` über vorab gemessene Teile: `full` = Name + Kennzeichen + Abstand + Dauer,
+/// `name_n` = Zeichen des Namens, `tail` = Abstand + Dauer.
+fn clip_head_measured(full: &Measured, name_n: usize, tail: &Measured, max_w: f32) -> String {
+    if full.width() <= max_w {
+        return full.text();
+    }
+    let short = full.cut(name_n, max_w - tail.width());
+    if !short.is_empty() {
+        return short + &tail.text();
+    }
+    full.cut(name_n, max_w)
+}
+
 fn y_vol(body: Rect, y: f32) -> f32 {
     let db = norm_vol((body.bottom() - 3.0 - y) / (body.height() - 6.0).max(1.0));
     // bei 0 dB leicht einrasten
@@ -249,6 +438,7 @@ pub struct TimelineState {
     last_playhead: Option<Time>,
     pub tool: Tool,
     track_drag: Option<TrackDrag>,
+    cache: ViewCache,
 }
 
 impl Default for TimelineState {
@@ -265,6 +455,7 @@ impl Default for TimelineState {
             last_playhead: None,
             tool: Tool::Select,
             track_drag: None,
+            cache: ViewCache::default(),
         }
     }
 }
@@ -298,6 +489,89 @@ fn set_audio_handle(c: &mut Clip, h: AudioHandle, v: f32) {
         }
         AudioHandle::Volume => c.volume_db = v,
     }
+}
+
+/// Liegt der Clip (Fläche `cr`) sichtbar in der Spurfläche `view`? Unsichtbare werden gar nicht
+/// erst gebaut – waagrecht wie senkrecht (Spuren außerhalb des Bildlaufs).
+fn clip_visible(cr: Rect, view: Rect) -> bool {
+    cr.width() >= 1.0 && cr.right() >= view.left() && cr.left() <= view.right() && cr.bottom() >= view.top() && cr.top() <= view.bottom()
+}
+
+/// Lage der Clip-Texte: (x der Kopfzeile, Breite der Kopfzeile, Breite des Texts im Clip)
+fn clip_rooms(cr: Rect, lanes_clip: Rect, missing: bool) -> (f32, f32, f32) {
+    let x = cr.left().max(lanes_clip.left()) + 6.0 + if missing { 14.0 } else { 0.0 };
+    let right = cr.right().min(lanes_clip.right()) - 4.0;
+    (x, right - x, right - (cr.left() + 8.0))
+}
+
+/// Texte eines Clips messen (einmal je Projektstand): Kopfzeile (Name, Kennzeichen, Dauer) und
+/// bei Textclips der Text im Clip in seiner Schrift.
+fn make_head(ctx: &egui::Context, kern: &mut Kerning, c: &Clip, project: &Project, fam: Option<egui::FontFamily>) -> Head {
+    let mut tags = String::new();
+    if c.speed != 1.0 || c.fx.speed_curve.is_some() {
+        tags.push_str(&format!(" {} {:.2}x", icon::GAUGE, c.speed));
+    }
+    if c.fx.reverse {
+        tags.push_str(&format!(" {}", icon::ARROWS_LEFT_RIGHT));
+    }
+    if !c.fx.effects.is_empty() || c.fx.filter.is_some() || !c.fx.adjust.is_identity() {
+        tags.push_str(&format!(" {}", icon::SPARKLE));
+    }
+    if c.fx.mask.is_some() {
+        tags.push_str(&format!(" {}", icon::CIRCLE_DASHED));
+    }
+    if !c.anim.is_empty() {
+        tags.push_str(&format!(" {}", icon::FILM_REEL));
+    }
+    if c.disabled {
+        tags.push_str(&format!(" {}", icon::EYE_SLASH));
+    }
+    let (name, dur) = match &c.content {
+        ClipContent::Text(_) => (icon::TEXT_T.to_string(), String::new()),
+        ClipContent::Effect(r) => (format!("{}  {}", icon::SPARKLE, crate::tr(cl_fx::fx_name(&r.id))), String::new()),
+        ClipContent::Filter(r) => (format!("{}  {}", icon::CIRCLE_HALF, crate::tr(cl_fx::fx_name(&r.id))), String::new()),
+        _ => (crate::contents::clip_title(c, project), theme::secs(c.duration.as_secs_f64(), 1)),
+    };
+    let sep = if dur.is_empty() { "" } else { "  " };
+    let font = egui::FontId::proportional(theme::FS_HINT);
+    ctx.fonts(|f| {
+        let body = match (&c.content, fam) {
+            (ClipContent::Text(st), Some(fam)) => {
+                let bf = egui::FontId::new(11.5, fam.clone());
+                Some((fam, kern.measured(f, &bf, &st.text)))
+            }
+            _ => None,
+        };
+        Head {
+            full: kern.measured(f, &font, &format!("{name}{tags}{sep}{dur}")),
+            name_n: name.chars().count(),
+            tail: kern.measured(f, &font, &format!("{sep}{dur}")),
+            body,
+            shown: None,
+            body_shown: None,
+        }
+    })
+}
+
+/// Kopfzeile und Text im Clip für die Breiten `room`/`body_room`; neu gesetzt wird nur, wenn sich
+/// die Breite seit dem letzten Bild geändert hat.
+fn head_galleys(h: &mut Head, ctx: &egui::Context, room: f32, body_room: f32) -> (Option<std::sync::Arc<egui::Galley>>, Option<std::sync::Arc<egui::Galley>>) {
+    let col = Color32::from_white_alpha(230);
+    if h.shown.as_ref().is_none_or(|(w, _)| *w != room) {
+        let text = clip_head_measured(&h.full, h.name_n, &h.tail, room);
+        let g = ctx.fonts(|f| f.layout_no_wrap(text, egui::FontId::proportional(theme::FS_HINT), col));
+        h.shown = Some((room, g));
+    }
+    if let Some((fam, m)) = &h.body {
+        if h.body_shown.as_ref().is_none_or(|(w, _)| *w != body_room) {
+            let text = m.cut(m.chars.len(), body_room);
+            let g = ctx.fonts(|f| f.layout_no_wrap(text, egui::FontId::new(11.5, fam.clone()), col));
+            h.body_shown = Some((body_room, g));
+        }
+    }
+    // leere Texte gar nicht erst als Form ausgeben
+    let some = |g: &std::sync::Arc<egui::Galley>| (!g.text().is_empty()).then(|| g.clone());
+    (h.shown.as_ref().and_then(|s| some(&s.1)), h.body_shown.as_ref().and_then(|b| some(&b.1)))
 }
 
 /// Rechte Gruppe der Werkzeugleiste bei `room` px freier Breite: (Zoom-Regler zeigen, Zoom-Knöpfe zeigen).
@@ -503,7 +777,14 @@ impl App {
         let pps = self.timeline.pps;
         let fps = self.project.settings.fps;
         let snapping = self.project.settings.snapping;
-        let tracks = self.project.timeline.tracks.clone();
+        let key = CacheKey { epoch: self.project_epoch, lang: cl_i18n::ui_lang(), ppp: ui.ctx().pixels_per_point() };
+        self.timeline.cache.sync(key, || self.project.timeline.tracks.clone());
+        let tracks = self.timeline.cache.tracks.clone();
+        let now_s = ui.input(|i| i.time);
+        if self.timeline.cache.missing_due(now_s) {
+            self.timeline.cache.missing = self.project.media.iter().filter(|m| !m.is_local()).map(|m| m.id).collect();
+            self.timeline.cache.missing_at = Some(now_s);
+        }
         let total_t = self.project.duration().as_secs_f64();
         let recording = self.voiceover.recorder.as_ref().map(|r| {
             (
@@ -755,7 +1036,7 @@ impl App {
         let ph = self.playhead.as_secs_f64();
         let snap_cands = |ignore: &[ClipId]| -> Vec<f64> {
             let mut v = vec![0.0, ph];
-            for tr in &tracks {
+            for tr in tracks.iter() {
                 for c in tr.clips.iter().filter(|c| !ignore.contains(&c.id)) {
                     v.push(c.start.as_secs_f64());
                     v.push(c.end().as_secs_f64());
@@ -1601,34 +1882,60 @@ impl App {
         // ---------- Clips ----------
         let lanes_clip = Rect::from_min_max(pos2(x0, lanes.top()), rect.max);
         let p = painter.with_clip_rect(lanes_clip);
+        let mut waves = WaveMeshes { map: std::mem::take(&mut self.timeline.cache.waves), tess: None };
         for row in rows.iter().filter(|r| r.track != REC_ROW) {
             let tr = &tracks[row.track];
             for c0 in &tr.clips {
-                let mut c = self.clip_ref(c0).clone();
-                let audio_drag = match &self.timeline.drag {
-                    Drag::Audio { clip, handle, value }
-                        if has_audio(&c)
-                            && (*clip == c.id || (self.is_selected(*clip) && self.is_selected(c.id))) =>
-                    {
-                        set_audio_handle(&mut c, *handle, *value);
-                        Some((*handle, *value))
-                    }
-                    _ => None,
-                };
-                let (mut s, mut e) = (c.start.as_secs_f64(), c.end().as_secs_f64());
+                let (mut s, mut e) = (c0.start.as_secs_f64(), c0.end().as_secs_f64());
                 let mut r = row.rect;
                 let mut is_ghost = false;
-                if let Some((_, gs, ge, gt)) = ghost.iter().find(|g| g.0 == c.id) {
+                if let Some((_, gs, ge, gt)) = ghost.iter().find(|g| g.0 == c0.id) {
                     s = *gs;
                     e = *ge;
                     r = gt.unwrap_or(row.rect);
                     is_ghost = true;
                 }
                 let cr = Rect::from_min_max(pos2(tx(s), r.top()), pos2(tx(e), r.bottom()));
-                if cr.right() < x0 || cr.left() > rect.right() || cr.width() < 1.0 {
+                if !clip_visible(cr, lanes_clip) {
                     continue;
                 }
-                let missing = self.draw_clip(&p, &c, tr, cr, lanes_clip, rect.right(), x0, is_ghost);
+                let live = self.live.as_ref().is_some_and(|l| l.id == c0.id);
+                let missing = matches!(&c0.content, ClipContent::Media { media, .. } if self.timeline.cache.missing.contains(media));
+                let rooms = clip_rooms(cr, lanes_clip, missing);
+                let ctx = ui.ctx();
+                // Texte: laufende Inspektor-Bearbeitung frisch, sonst aus dem Zwischenspeicher
+                let labels = {
+                    // wie `clip_ref`, nur ohne `self` ganz zu leihen
+                    let shown = match &self.live {
+                        Some(l) if live => l,
+                        _ => c0,
+                    };
+                    let fam = match &shown.content {
+                        ClipContent::Text(st) => Some(self.font_family(st.font_family.as_deref())),
+                        _ => None,
+                    };
+                    if live {
+                        let h = &mut make_head(ctx, &mut self.timeline.cache.kern, shown, &self.project, fam);
+                        head_galleys(h, ctx, rooms.1, rooms.2)
+                    } else {
+                        let project = &self.project;
+                        let h = self.timeline.cache.head(c0.id, |k| make_head(ctx, k, c0, project, fam));
+                        head_galleys(h, ctx, rooms.1, rooms.2)
+                    }
+                };
+                let mut c = std::borrow::Cow::Borrowed(self.clip_ref(c0));
+                let audio_drag = match &self.timeline.drag {
+                    Drag::Audio { clip, handle, value }
+                        if has_audio(&c)
+                            && (*clip == c.id || (self.is_selected(*clip) && self.is_selected(c.id))) =>
+                    {
+                        set_audio_handle(c.to_mut(), *handle, *value);
+                        Some((*handle, *value))
+                    }
+                    _ => None,
+                };
+                let w = (!live && matches!(c, std::borrow::Cow::Borrowed(_))).then_some(&mut waves);
+                self.draw_clip(&p, &c, tr, cr, lanes_clip, rect.right(), x0, is_ghost, missing, rooms.0, labels, w);
                 if missing && hovered_clip == Some(c.id) {
                     egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new(("missing", c.id)), |ui| {
                         ui.label(crate::tr("Datei fehlt"));
@@ -1745,6 +2052,7 @@ impl App {
                 }
             }
         }
+        self.timeline.cache.waves = waves.map;
         // Übergänge
         for (cid, r) in &tblocks {
             let sel = self.selected_transition == Some(*cid);
@@ -2170,7 +2478,11 @@ impl App {
         right: f32,
         x0: f32,
         ghost: bool,
-    ) -> bool {
+        missing: bool,
+        head_x: f32,
+        (head, body_text): (Option<std::sync::Arc<egui::Galley>>, Option<std::sync::Arc<egui::Galley>>),
+        waves: Option<&mut WaveMeshes>,
+    ) {
         let pps = self.timeline.pps;
         let kind = c.kind();
         let mut col = theme::clip_color(kind);
@@ -2239,6 +2551,7 @@ impl App {
                 .map(|m| m.duration.as_secs_f64())
                 .unwrap_or(f64::MAX);
             if let Some(peaks) = self.waves.get(media).filter(|w| !w.is_empty()) {
+                let ps = peaks.as_ptr() as usize;
                 let audio = *mk == MediaKind::Audio;
                 let wave_h = if audio {
                     body.height() - 4.0
@@ -2261,35 +2574,61 @@ impl App {
                         Color32::from_black_alpha(100),
                     );
                 }
-                let mut x = body.left().max(x0);
                 let x_end = body.right().min(right);
-                while x < x_end {
-                    let rel = Time::from_secs_f64(((x - body.left()) / pps) as f64);
-                    let t_src = c.source_time(c.start + rel).as_secs_f64();
-                    if t_src < src_len {
-                        let i = (t_src * WAVE_PER_SEC as f64) as usize;
-                        let j =
-                            (((t_src + 2.0 * c.speed as f64 / pps as f64) * WAVE_PER_SEC as f64)
-                                as usize)
-                                .max(i + 1);
-                        let v = peaks
-                            .get(i..j.min(peaks.len()))
-                            .map(|s| s.iter().copied().fold(0.0f32, f32::max))
-                            .unwrap_or(0.0);
-                        let h = (v.sqrt() * wave_h * 10f32.powf(c.volume_db.min(6.0) / 40.0))
-                            .clamp(1.0, wave_h.max(1.0));
-                        inner.line_segment(
-                            [pos2(x, base), pos2(x, base - h)],
-                            Stroke::new(1.5_f32, wcol),
-                        );
-                    } else {
-                        // verlängert: Stille
-                        inner.line_segment(
-                            [pos2(x, base), pos2(x, base - 1.0)],
-                            Stroke::new(1.0_f32, Color32::from_white_alpha(50)),
-                        );
+                let bars = |out: &mut Vec<egui::Shape>| {
+                    let mut x = body.left().max(x0);
+                    while x < x_end {
+                        let rel = Time::from_secs_f64(((x - body.left()) / pps) as f64);
+                        let t_src = c.source_time(c.start + rel).as_secs_f64();
+                        if t_src < src_len {
+                            let i = (t_src * WAVE_PER_SEC as f64) as usize;
+                            let j = (((t_src + 2.0 * c.speed as f64 / pps as f64) * WAVE_PER_SEC as f64) as usize).max(i + 1);
+                            let v = peaks
+                                .get(i..j.min(peaks.len()))
+                                .map(|s| s.iter().copied().fold(0.0f32, f32::max))
+                                .unwrap_or(0.0);
+                            let h = (v.sqrt() * wave_h * 10f32.powf(c.volume_db.min(6.0) / 40.0)).clamp(1.0, wave_h.max(1.0));
+                            out.push(egui::Shape::line_segment([pos2(x, base), pos2(x, base - h)], Stroke::new(1.5_f32, wcol)));
+                        } else {
+                            // verlängert: Stille
+                            out.push(egui::Shape::line_segment(
+                                [pos2(x, base), pos2(x, base - 1.0)],
+                                Stroke::new(1.0_f32, Color32::from_white_alpha(50)),
+                            ));
+                        }
+                        x += 2.0;
                     }
-                    x += 2.0;
+                };
+                // Balken als fertiges Netz zwischenspeichern (eine Form statt einer je 2 px);
+                // laufende Bearbeitung im Inspektor wird frisch gezeichnet
+                let cl = inner.clip_rect();
+                let key = WaveKey {
+                    geo: [body.min.x, body.min.y, body.max.x, body.max.y, x0, x_end, pps, c.volume_db, cl.min.x, cl.min.y, cl.max.x, cl.max.y]
+                        .map(f32::to_bits),
+                    peaks: (ps, peaks.len()),
+                };
+                match waves {
+                    Some(w) => {
+                        let mesh = match w.map.get(&c.id) {
+                            Some((k, m)) if *k == key => m.clone(),
+                            _ => {
+                                let mut shapes = Vec::new();
+                                bars(&mut shapes);
+                                let m = w.tessellate(p.ctx(), cl, shapes);
+                                if w.map.len() >= HEAD_CAP {
+                                    w.map.clear();
+                                }
+                                w.map.insert(c.id, (key, m.clone()));
+                                m
+                            }
+                        };
+                        inner.add(egui::Shape::Mesh(mesh));
+                    }
+                    None => {
+                        let mut shapes = Vec::new();
+                        bars(&mut shapes);
+                        inner.extend(shapes);
+                    }
                 }
             }
             // Stille-Bereich bei verlängertem Ton schraffieren
@@ -2311,17 +2650,9 @@ impl App {
                 }
             }
         }
-        if let ClipContent::Text(st) = &c.content {
-            let font = egui::FontId::new(11.5, self.font_family(st.font_family.as_deref()));
-            let room = body.right().min(lanes_clip.right()) - 4.0 - (body.left() + 8.0);
-            let ctx = p.ctx().clone();
-            inner.text(
-                body.left_center() + vec2(8.0, 0.0),
-                egui::Align2::LEFT_CENTER,
-                theme::elide(&st.text, room, |s| theme::text_width(&ctx, s, font.clone())),
-                font,
-                Color32::from_white_alpha(230),
-            );
+        if let Some(g) = body_text {
+            let at = egui::Align2::LEFT_CENTER.anchor_size(body.left_center() + vec2(8.0, 0.0), g.size()).min;
+            inner.galley(at, g, Color32::from_white_alpha(230));
         }
         // Beat-Markierungen
         for b in c.beat_times() {
@@ -2347,56 +2678,20 @@ impl App {
             },
             Color32::from_black_alpha(80),
         );
-        let mut tags = String::new();
-        if c.speed != 1.0 || c.fx.speed_curve.is_some() {
-            tags.push_str(&format!(" {} {:.2}x", icon::GAUGE, c.speed));
-        }
-        if c.fx.reverse {
-            tags.push_str(&format!(" {}", icon::ARROWS_LEFT_RIGHT));
-        }
-        if !c.fx.effects.is_empty() || c.fx.filter.is_some() || !c.fx.adjust.is_identity() {
-            tags.push_str(&format!(" {}", icon::SPARKLE));
-        }
-        if c.fx.mask.is_some() {
-            tags.push_str(&format!(" {}", icon::CIRCLE_DASHED));
-        }
-        if !c.anim.is_empty() {
-            tags.push_str(&format!(" {}", icon::FILM_REEL));
-        }
-        if c.disabled {
-            tags.push_str(&format!(" {}", icon::EYE_SLASH));
-        }
-        // shortcut: prüft die Datei je sichtbarem Clip und Bild; bei langsamen Laufwerken zwischenspeichern
-        let missing = matches!(&c.content, ClipContent::Media { media, .. } if self.project.media(*media).is_some_and(|m| !m.is_local()));
-        let (name, dur) = match &c.content {
-            ClipContent::Text(_) => (icon::TEXT_T.to_string(), String::new()),
-            ClipContent::Effect(r) => (format!("{}  {}", icon::SPARKLE, crate::tr(cl_fx::fx_name(&r.id))), String::new()),
-            ClipContent::Filter(r) => (format!("{}  {}", icon::CIRCLE_HALF, crate::tr(cl_fx::fx_name(&r.id))), String::new()),
-            _ => (crate::contents::clip_title(c, &self.project), theme::secs(c.duration.as_secs_f64(), 1)),
-        };
-        let font = egui::FontId::proportional(theme::FS_HINT);
-        let mut tx = band.left().max(x0) + 6.0;
         if missing {
             p.with_clip_rect(band.intersect(lanes_clip)).text(
-                pos2(tx, band.center().y),
+                pos2(band.left().max(x0) + 6.0, band.center().y),
                 egui::Align2::LEFT_CENTER,
                 icon::WARNING,
-                font.clone(),
+                egui::FontId::proportional(theme::FS_HINT),
                 theme::WARN_TEXT(),
             );
-            tx += 14.0;
         }
-        let ctx = p.ctx().clone();
-        let room = band.right().min(lanes_clip.right()) - 4.0 - tx;
-        let label = clip_head(&name, &tags, &dur, room, |s| theme::text_width(&ctx, s, font.clone()));
-        p.with_clip_rect(band.shrink2(vec2(4.0, 0.0)).intersect(lanes_clip))
-            .text(
-                pos2(tx, band.center().y),
-                egui::Align2::LEFT_CENTER,
-                label,
-                font,
-                Color32::from_white_alpha(230),
-            );
+        if let Some(head) = head {
+            let at = egui::Align2::LEFT_CENTER.anchor_size(pos2(head_x, band.center().y), head.size()).min;
+            p.with_clip_rect(band.shrink2(vec2(4.0, 0.0)).intersect(lanes_clip))
+                .galley(at, head, Color32::from_white_alpha(230));
+        }
         // Ton-Fades als Rampen
         if c.fade_in > Time::ZERO || c.fade_out > Time::ZERO {
             let fi = c.fade_in.as_secs_f64() as f32 * pps;
@@ -2425,7 +2720,6 @@ impl App {
         if tr.locked || tr.hidden {
             p.rect_filled(cr, theme::R_CTRL, Color32::from_black_alpha(110));
         }
-        missing
     }
 
     fn timeline_menu(&mut self, ui: &mut egui::Ui) {
@@ -3000,6 +3294,106 @@ mod tests {
         assert!(h.ends_with('…') && w(&h) <= 40.0, "{h}");
     }
 
+    /// Breitenmodell wie egui (Vorschub je Zeichen, Unterschneidung, Rundung auf Pixel), als
+    /// Vorbild für `Measured`; ungerade Werte, damit Rundung und Unterschneidung zählen.
+    fn model_adv(c: char) -> f32 {
+        match c {
+            ' ' => 2.6,
+            '…' => 7.3,
+            'i' | 'l' | '.' => 2.4,
+            'm' | 'w' => 8.7,
+            c if c.is_uppercase() => 6.9,
+            _ => 5.45,
+        }
+    }
+    fn model_kern(a: char, b: char) -> f32 {
+        if (a, b) == ('a', 'v') || (a, b) == ('V', 'a') {
+            -0.8
+        } else {
+            0.0
+        }
+    }
+    fn model_width(s: &str, ppp: f32) -> f32 {
+        let (mut x, mut w, mut prev) = (0.0, 0.0, None);
+        for c in s.chars() {
+            if let Some(p) = prev {
+                x += model_kern(p, c);
+            }
+            w = x + model_adv(c);
+            x = round_px(w, ppp);
+            prev = Some(c);
+        }
+        w
+    }
+
+    #[test]
+    fn measured_text_cuts_like_elide_and_clip_head() {
+        for ppp in [1.0f32, 1.25, 2.0] {
+            for (name, tags, dur) in [("Java vavoom.mp4", " ✧ 1.50x", "4,3 s"), ("a b  c", "", "1 s"), ("Text", "", ""), ("", " x", "2 s")] {
+                let sep = if dur.is_empty() { "" } else { "  " };
+                let mk = |t: &str| Measured::new(t, ppp, model_adv, model_kern);
+                let (full, tail, m) = (mk(&format!("{name}{tags}{sep}{dur}")), mk(&format!("{sep}{dur}")), mk(name));
+                let width = |s: &str| model_width(s, ppp);
+                for w in (0..300).map(|w| w as f32 * 0.25) {
+                    assert_eq!(clip_head_measured(&full, name.chars().count(), &tail, w), clip_head(name, tags, dur, w, width), "{name} {w} {ppp}");
+                    assert_eq!(m.cut(m.chars.len(), w), theme::elide(name, w, width), "{name} {w} {ppp}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn view_cache_follows_project_state_and_stays_bounded() {
+        let key = |epoch| CacheKey { epoch, lang: cl_i18n::Lang::De, ppp: 1.0 };
+        let mut c = ViewCache::default();
+        let head = |_: &mut Kerning| Head {
+            full: Measured::new("a", 1.0, |_| 5.0, |_, _| 0.0),
+            name_n: 1,
+            tail: Measured::new("", 1.0, |_| 5.0, |_, _| 0.0),
+            body: None,
+            shown: None,
+            body_shown: None,
+        };
+        let one = Track::new(TrackKind::Video);
+        // erster Stand: Spuren übernommen, fehlende Dateien gleich prüfen
+        assert!(c.sync(key(1), || vec![one.clone()]));
+        assert!(c.missing_due(0.0));
+        c.missing_at = Some(10.0);
+        assert!(!c.missing_due(11.0) && c.missing_due(10.0 + MISSING_RECHECK));
+        c.head(ClipId::new(), head);
+        // gleicher Stand: nichts neu (der Spuren-Klon wird gar nicht erst gebaut)
+        assert!(!c.sync(key(1), || unreachable!()));
+        assert_eq!(c.heads.len(), 1);
+        // neuer Stand, andere Sprache oder Skalierung: alles verworfen
+        for k in [key(2), CacheKey { lang: cl_i18n::Lang::En, ..key(2) }, CacheKey { ppp: 2.0, ..key(2) }] {
+            c.head(ClipId::new(), head);
+            assert!(c.sync(k, Vec::new));
+            assert!(c.heads.is_empty() && c.tracks.is_empty() && c.missing_due(10.0));
+        }
+        // Obergrenze: beim Überlauf neu beginnen
+        for _ in 0..HEAD_CAP + 5 {
+            c.head(ClipId::new(), head);
+        }
+        assert!(c.heads.len() <= HEAD_CAP && c.heads.len() >= 5);
+    }
+
+    #[test]
+    fn only_visible_clips_are_built() {
+        let view = Rect::from_min_max(pos2(172.0, 50.0), pos2(1000.0, 400.0));
+        let clip = |x0: f32, x1: f32, y: f32| Rect::from_min_max(pos2(x0, y), pos2(x1, y + 30.0));
+        assert!(clip_visible(clip(100.0, 200.0, 100.0), view), "links angeschnitten");
+        assert!(clip_visible(clip(990.0, 1200.0, 100.0), view), "rechts angeschnitten");
+        assert!(!clip_visible(clip(10.0, 171.0, 100.0), view), "links außerhalb");
+        assert!(!clip_visible(clip(1001.0, 1100.0, 100.0), view), "rechts außerhalb");
+        assert!(!clip_visible(clip(300.0, 400.0, 0.0), view), "Spur über dem Bildlauf");
+        assert!(!clip_visible(clip(300.0, 400.0, 401.0), view), "Spur darunter");
+        assert!(clip_visible(clip(300.0, 400.0, 380.0), view), "halb sichtbare Spur");
+        assert!(!clip_visible(clip(300.0, 300.5, 100.0), view), "schmaler als ein Pixel");
+        // Texte: Kopfzeile ab der sichtbaren Kante (+ Platz für das Warnzeichen)
+        let (x, room, body) = clip_rooms(clip(100.0, 400.0, 100.0), view, true);
+        assert_eq!((x, room, body), (172.0 + 6.0 + 14.0, 396.0 - 192.0, 396.0 - 108.0));
+    }
+
     #[test]
     fn fades_never_overlap() {
         assert_eq!(fade_max(4.0, 1.5), 2.5);
@@ -3013,5 +3407,247 @@ mod tests {
         set_audio_handle(&mut c, AudioHandle::FadeIn, 3.0);
         assert!((c.fade_in.as_secs_f64() - 1.0).abs() < 1e-6);
         assert!(c.fade_in + c.fade_out <= c.duration);
+    }
+
+    /// Messung der Zeitleiste ohne Fenster (von Hand):
+    /// `cargo test --release -p cl-app -- --ignored timeline_frame_time --nocapture --test-threads=1`
+    mod bench {
+        use super::*;
+        use std::hash::{Hash, Hasher};
+
+
+        /// Projekt wie `qa/PL_schnitt.cutline` (gleiche Spuren und Anteile), auf `n` Clips skaliert.
+        pub(crate) fn synth_project(n: usize, file: &std::path::Path) -> Project {
+            let mut p = Project::new("Messung");
+            let media = |kind, audio, secs: f64| MediaRef {
+                id: MediaId::new(),
+                path: file.to_path_buf(),
+                kind,
+                duration: Time::from_secs_f64(secs),
+                width: 1920,
+                height: 1080,
+                fps: None,
+                has_audio: audio,
+                video_codec: None,
+                audio_codec: None,
+            };
+            let v = media(MediaKind::Video, false, 1400.0);
+            let va = media(MediaKind::Video, true, 1400.0);
+            let a = media(MediaKind::Audio, true, 1400.0);
+            let img = media(MediaKind::Image, false, 0.0);
+            let sfx = media(MediaKind::Audio, true, 2.0);
+            let total = 644.0;
+            // (Spurart, Clips in PL_schnitt, Inhalt, Clipdauer-Anteil)
+            let plan: [(TrackKind, usize, u8, f64); 9] = [
+                (TrackKind::Video, 150, 0, 1.0),
+                (TrackKind::Audio, 150, 1, 1.0),
+                (TrackKind::Video, 23, 2, 0.5),
+                (TrackKind::Sticker, 39, 3, 0.3),
+                (TrackKind::Text, 15, 4, 0.2),
+                (TrackKind::Text, 249, 5, 0.9),
+                (TrackKind::Effect, 6, 6, 0.3),
+                (TrackKind::Audio, 1, 7, 1.0),
+                (TrackKind::Audio, 24, 8, 0.1),
+            ];
+            for (k, (kind, count, what, frac)) in plan.into_iter().enumerate() {
+                let count = ((count * n) as f64 / 657.0).round().max(1.0) as usize;
+                let mut t = Track::new(kind);
+                t.main = k == 0;
+                let slot = total / count as f64;
+                for i in 0..count {
+                    let start = Time::from_secs_f64(i as f64 * slot);
+                    let dur = Time::from_secs_f64(slot * frac);
+                    let content = match what {
+                        0 => ClipContent::Media { media: v.id, kind: MediaKind::Video },
+                        1 => ClipContent::Media { media: va.id, kind: MediaKind::Audio },
+                        2 => ClipContent::Media { media: va.id, kind: MediaKind::Video },
+                        3 => ClipContent::Media { media: img.id, kind: MediaKind::Image },
+                        4 => ClipContent::Text(TextStyle { text: format!("Teil {}", i + 1), ..TextStyle::default() }),
+                        5 => ClipContent::Text(TextStyle { text: "dabei vom schiefgehen Heute Ende was".into(), ..TextStyle::default() }),
+                        6 => ClipContent::Effect(cl_core::FxRef::new("cutline.effekte/super8")),
+                        7 => ClipContent::Media { media: a.id, kind: MediaKind::Audio },
+                        _ => ClipContent::Media { media: sfx.id, kind: MediaKind::Audio },
+                    };
+                    let mut c = Clip::new(content, start, dur);
+                    c.source_in = Time::from_secs_f64((i as f64 * 7.3) % 600.0);
+                    t.clips.push(c);
+                }
+                p.timeline.tracks.push(t);
+            }
+            p.media = vec![v, va, a, img, sfx];
+            p
+        }
+
+        pub(crate) fn bench_app(ctx: &egui::Context, home: &std::path::Path) -> App {
+            std::env::set_var("CUTLINE_HOME", home);
+            std::env::set_var("CUTLINE_NO_UPDATE", "1");
+            std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
+            App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None)
+        }
+
+        /// Projekt setzen; Vorschaubilder und Wellenformen liegen schon vor (kein Decoder-Auftrag).
+        pub(crate) fn load(app: &mut App, ctx: &egui::Context, p: Project) {
+            for m in &p.media {
+                if m.kind != MediaKind::Audio {
+                    let img = egui::ColorImage::new([64, 36], Color32::from_gray(120));
+                    app.thumbs.insert(m.id, ctx.load_texture("bench", img, Default::default()));
+                }
+                if m.has_audio {
+                    let n = (m.duration.as_secs_f64() * WAVE_PER_SEC as f64) as usize;
+                    app.waves.insert(m.id, (0..n.max(1)).map(|i| ((i as f32 * 0.37).sin() * 0.5 + 0.5).powi(2)).collect());
+                }
+            }
+            app.set_doc(p);
+        }
+
+        thread_local!(pub(crate) static TESS: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) });
+        pub(crate) const SCREEN: egui::Vec2 = egui::vec2(1600.0, 1000.0);
+        pub(crate) const PANEL_H: f32 = 470.0;
+
+        /// Ein Bild: Zeitleiste in der unteren Leiste, Zeiger über den Clips. Gibt (ms, Formen, Prüfsumme).
+        pub(crate) fn frame(app: &mut App, ctx: &egui::Context, t: f64, pointer: Pos2) -> (f64, usize, u64) {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)),
+                time: Some(t),
+                events: vec![egui::Event::PointerMoved(pointer)],
+                ..Default::default()
+            };
+            let t0 = std::time::Instant::now();
+            let out = ctx.run(input, |ctx| {
+                egui::TopBottomPanel::bottom("tl").exact_height(PANEL_H).show(ctx, |ui| app.timeline_panel(ui));
+            });
+            let n = out.shapes.len();
+            let run_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            TESS.with(|t| t.set(run_ms));
+            static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let nf = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Some(d) = std::env::var_os("CUTLINE_BENCH_DUMP").filter(|_| nf == 31) {
+                let txt: Vec<String> = out.shapes.iter().map(|c| {
+                    let extra = match &c.shape { egui::Shape::Text(t) => format!("{:?} @{:?}", t.galley.text(), t.pos), s => format!("{:?}", s.visual_bounding_rect()) };
+                    format!("{:?} {}", c.clip_rect, extra)
+                }).collect();
+                let _ = std::fs::write(d, txt.join("
+"));
+            }
+            let prims = ctx.tessellate(out.shapes, out.pixels_per_point);
+            let ms = t0.elapsed().as_secs_f64() * 1000.0;
+            (ms, n, fingerprint(&prims))
+        }
+
+        /// Prüfsumme des fertigen Bildes: alle Dreiecke in Zeichenreihenfolge mit Ausschnitt, Ecken,
+        /// Farben und Textur – unabhängig davon, wie der Tessellierer sie zu Netzen bündelt.
+        pub(crate) fn fingerprint(prims: &[egui::ClippedPrimitive]) -> u64 {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            let q = |v: f32| (v * 4.0).round() as i32;
+            for p in prims {
+                let r = p.clip_rect;
+                if let egui::epaint::Primitive::Mesh(m) = &p.primitive {
+                    // Schrift-Atlas: Lage der Zeichen darin hängt von der Reihenfolge des ersten Setzens ab
+                    let font = m.texture_id == egui::TextureId::default();
+                    let tex = format!("{:?}", m.texture_id);
+                    for i in &m.indices {
+                        let v = m.vertices[*i as usize];
+                        [q(r.min.x), q(r.min.y), q(r.max.x), q(r.max.y)].hash(&mut h);
+                        tex.hash(&mut h);
+                        [q(v.pos.x), q(v.pos.y)].hash(&mut h);
+                        if !font {
+                            [q(v.uv.x * 64.0), q(v.uv.y * 64.0)].hash(&mut h);
+                        }
+                        v.color.to_array().hash(&mut h);
+                    }
+                }
+            }
+            h.finish()
+        }
+
+        /// Gemessene Kopfzeilen und Clip-Texte gleichen dem Setzen je Versuch (`clip_head`,
+        /// `theme::elide`) mit den echten Schriften der App.
+        #[test]
+        #[ignore]
+        fn measured_labels_match_layout() {
+            let home = tempfile::tempdir().unwrap();
+            let ctx = egui::Context::default();
+            let _app = bench_app(&ctx, home.path());
+            let _ = ctx.run(Default::default(), |_| {});
+            let font = egui::FontId::proportional(theme::FS_HINT);
+            let tags = format!(" {} 1.50x {}", icon::GAUGE, icon::SPARKLE);
+            let mut bad = Vec::new();
+            for (name, tags, dur) in [
+                ("videoplayback.mp4", tags.as_str(), "4,3 s"),
+                ("Sunset Libreville.webm", "", "12,0 s"),
+                ("dabei vom schiefgehen Heute Ende was", "", ""),
+                ("a b  c", " x", "1 s"),
+            ] {
+                let sep = if dur.is_empty() { "" } else { "  " };
+                let mut kern = Kerning::default();
+                let (full, tail, m) = ctx.fonts(|f| {
+                    (kern.measured(f, &font, &format!("{name}{tags}{sep}{dur}")), kern.measured(f, &font, &format!("{sep}{dur}")), kern.measured(f, &font, name))
+                });
+                for w in (0..500).map(|w| w as f32 * 0.5) {
+                    let a = clip_head(name, tags, dur, w, |s| theme::text_width(&ctx, s, font.clone()));
+                    let b = clip_head_measured(&full, name.chars().count(), &tail, w);
+                    if a != b {
+                        bad.push(format!("{w}: {a:?} != {b:?}"));
+                    }
+                    let c = theme::elide(name, w, |s| theme::text_width(&ctx, s, font.clone()));
+                    if c != m.cut(m.chars.len(), w) {
+                        bad.push(format!("elide {w}: {c:?} != {:?}", m.cut(m.chars.len(), w)));
+                    }
+                }
+            }
+            assert!(bad.is_empty(), "{} Abweichungen:\n{}", bad.len(), bad[..bad.len().min(20)].join("\n"));
+        }
+
+        pub(crate) fn stats(mut v: Vec<f64>) -> (f64, f64) {
+            v.sort_by(f64::total_cmp);
+            (v[v.len() / 2], v[v.len() - 1])
+        }
+
+        /// Bildzeit (Rechnen + Tessellieren) bei voll sichtbarer Zeitleiste: Stand und Abspielen.
+        #[test]
+        #[ignore]
+        fn timeline_frame_time() {
+            let home = tempfile::tempdir().unwrap();
+            let file = std::env::current_exe().unwrap();
+            let ctx = egui::Context::default();
+            let mut app = bench_app(&ctx, home.path());
+            for n in [657usize, 50] {
+                load(&mut app, &ctx, synth_project(n, &file));
+                let clips: usize = app.project.timeline.tracks.iter().map(|t| t.clips.len()).sum();
+                app.timeline.pps = (SCREEN.x - HEADER_W - 16.0) / 644.0;
+                app.timeline.scroll = 0.0;
+                app.timeline.vscroll = 0.0;
+                let pointer = pos2(700.0, SCREEN.y - PANEL_H + 80.0);
+                let mut t = 0.0;
+                for playing in [false, true] {
+                    app.playing = playing;
+                    app.playhead = Time::from_secs_f64(100.0);
+                    let mut times = Vec::new();
+                    let mut runs = Vec::new();
+                    let (mut shapes, mut sum) = (0, 0);
+                    for f in 0..150 {
+                        t += 1.0 / 60.0;
+                        if playing {
+                            app.playhead = app.playhead + Time::from_secs_f64(1.0 / 30.0);
+                        }
+                        let (ms, s, fp) = frame(&mut app, &ctx, t, pointer);
+                        if f >= 30 {
+                            times.push(ms);
+                            runs.push(TESS.with(|t| t.get()));
+                        }
+                        if f == 30 {
+                            (shapes, sum) = (s, fp);
+                        }
+                    }
+                    let (med, max) = stats(times);
+                    let (run, _) = stats(runs);
+                    println!(
+                        "Zeitleiste {clips} Clips, {}: Median {med:.2} ms (davon Rechnen {run:.2} ms), Max {max:.2} ms, {shapes} Formen, Prüfsumme {sum:016x}",
+                        if playing { "Abspielen" } else { "Stand" }
+                    );
+                }
+            }
+            app.playing = false;
+        }
     }
 }
