@@ -111,10 +111,83 @@ fn ruler_label(t: f64, step: f64) -> String {
     let unit = 10i64.pow(digits);
     let n = (t.max(0.0) * unit as f64).round() as i64;
     let secs = n / unit;
-    let mm_ss = format!("{:02}:{:02}", secs / 60, secs % 60);
+    // ab einer Stunde h:mm:ss
+    let mm_ss = if secs >= 3600 {
+        format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
+    } else {
+        format!("{:02}:{:02}", secs / 60, secs % 60)
+    };
     match digits {
         0 => mm_ss,
         d => format!("{mm_ss}.{:0w$}", n % unit, w = d as usize),
+    }
+}
+
+/// Schritte der Hauptstriche im Lineal (s): bis zu Stunden für weit herausgezoomte, lange Projekte
+const RULER_STEPS: [f64; 22] = [
+    0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 900.0, 1800.0, 3600.0, 7200.0,
+    10_800.0, 21_600.0, 43_200.0, 86_400.0, 172_800.0,
+];
+
+/// Kleinster Schritt, dessen Beschriftungen bei `pps` mindestens 70 px auseinanderliegen
+fn ruler_step(pps: f32) -> f64 {
+    RULER_STEPS.into_iter().find(|s| *s as f32 * pps >= 70.0).unwrap_or(RULER_STEPS[RULER_STEPS.len() - 1])
+}
+
+/// Größter Maßstab (px je Sekunde)
+const PPS_MAX: f32 = 400.0;
+
+/// Kleinster Maßstab bei sichtbarer Breite `width` (px) und Projektlänge `dur` (s): das ganze
+/// Projekt (leer bzw. kurz: 5 Minuten) belegt höchstens die Hälfte der Breite, rechts bleibt
+/// freier Platz. Nie enger als der frühere feste Wert von 2 px/s.
+fn min_pps(dur: f64, width: f32) -> f32 {
+    (0.5 * width.max(1.0) / dur.max(300.0) as f32).min(2.0)
+}
+
+/// „Ganze Zeitleiste zeigen“: (Maßstab, Bildlauf) mit 5 % Rand links und rechts
+fn fit_all(dur: f64, width: f32, lo: f32) -> (f32, f64) {
+    let d = dur.max(1.0);
+    let pps = (width.max(1.0) / (d * 1.1) as f32).clamp(lo, PPS_MAX);
+    (pps, -0.05 * d)
+}
+
+/// Zoom-Regler: Maßstab → Stellung 0…1 (logarithmisch zwischen `lo` und `PPS_MAX`)
+fn zoom_norm(pps: f32, lo: f32) -> f32 {
+    ((pps.ln() - lo.ln()) / (PPS_MAX.ln() - lo.ln())).clamp(0.0, 1.0)
+}
+
+/// Zoom-Regler: Stellung 0…1 → Maßstab
+fn norm_zoom(n: f32, lo: f32) -> f32 {
+    (lo.ln() + n.clamp(0.0, 1.0) * (PPS_MAX.ln() - lo.ln())).exp()
+}
+
+/// Was beim weichen Zoomen fest bleibt
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Anchor {
+    /// Zeit `t` bleibt `x` px rechts der Spurkante (unter dem Zeiger); Bildlauf nicht unter `floor`
+    At { t: f64, x: f32, floor: f64 },
+    /// Bildlauf gleitet von → nach
+    Scroll(f64, f64),
+}
+
+/// Weicher Wechsel von Maßstab und Bildlauf (Zoom, „Ganze Zeitleiste zeigen“, Playhead folgen)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ViewGlide {
+    pps: (f32, f32),
+    anchor: Anchor,
+    t0: f64,
+}
+
+impl ViewGlide {
+    /// (Maßstab, Bildlauf, fertig) `age` s nach dem Start; Maßstab gleitet logarithmisch
+    fn at(&self, age: f32, secs: f32) -> (f32, f64, bool) {
+        let k = if secs <= 0.0 { 1.0 } else { theme::ease(age / secs) };
+        let pps = if k >= 1.0 || self.pps.0 == self.pps.1 { self.pps.1 } else { (self.pps.0.ln() + (self.pps.1.ln() - self.pps.0.ln()) * k).exp() };
+        let scroll = match self.anchor {
+            Anchor::At { t, x, floor } => (t - (x / pps) as f64).max(floor),
+            Anchor::Scroll(a, b) => a + (b - a) * k as f64,
+        };
+        (pps, scroll, k >= 1.0)
     }
 }
 
@@ -439,6 +512,45 @@ pub struct TimelineState {
     pub tool: Tool,
     track_drag: Option<TrackDrag>,
     cache: ViewCache,
+    /// laufender weicher Zoom/Bildlauf
+    view_glide: Option<ViewGlide>,
+    /// sichtbare Breite der Spuren im letzten Bild (für die Zoom-Grenzen der Werkzeugleiste)
+    view_w: f32,
+}
+
+impl TimelineState {
+    /// Maßstab, auf den gerade gezoomt wird (Ziel einer laufenden Bewegung)
+    fn target_pps(&self) -> f32 {
+        self.view_glide.map_or(self.pps, |g| g.pps.1)
+    }
+    /// Maßstab/Bildlauf weich ändern (Animationen aus: sofort)
+    fn glide_view(&mut self, pps: f32, anchor: Anchor, now: f64) {
+        let g = ViewGlide { pps: (self.pps, pps), anchor, t0: now };
+        self.view_glide = Some(g);
+        self.step_view(now);
+    }
+    /// Zoomen um den Punkt `x` px rechts der Spurkante
+    fn zoom_to(&mut self, pps: f32, x: f32, now: f64) {
+        let t = self.scroll + (x / self.pps) as f64;
+        self.glide_view(pps, Anchor::At { t, x, floor: self.scroll.min(0.0) }, now);
+    }
+    /// Bildlauf weich zu `scroll` (Maßstab bleibt)
+    fn scroll_to(&mut self, scroll: f64, now: f64) {
+        self.glide_view(self.pps, Anchor::Scroll(self.scroll, scroll), now);
+    }
+    /// Laufende Bewegung fortschreiben; `true` = läuft noch
+    fn step_view(&mut self, now: f64) -> bool {
+        let Some(g) = self.view_glide else {
+            return false;
+        };
+        let (pps, scroll, done) = g.at((now - g.t0) as f32, theme::anim(theme::MOTION));
+        self.pps = pps;
+        self.scroll = scroll;
+        if done {
+            self.view_glide = None;
+        }
+        !done
+    }
 }
 
 impl Default for TimelineState {
@@ -456,6 +568,8 @@ impl Default for TimelineState {
             tool: Tool::Select,
             track_drag: None,
             cache: ViewCache::default(),
+            view_glide: None,
+            view_w: 1000.0,
         }
     }
 }
@@ -495,6 +609,33 @@ fn set_audio_handle(c: &mut Clip, h: AudioHandle, v: f32) {
 /// erst gebaut – waagrecht wie senkrecht (Spuren außerhalb des Bildlaufs).
 fn clip_visible(cr: Rect, view: Rect) -> bool {
     cr.width() >= 1.0 && cr.right() >= view.left() && cr.left() <= view.right() && cr.bottom() >= view.top() && cr.top() <= view.bottom()
+}
+
+/// Schmaler als das (px): nur ein schlichter Balken ohne Text, Filmstreifen und Wellenform
+const TINY_PX: f32 = 3.0;
+/// Mindestbreite eines Clips bzw. Balkens (px), damit er weit herausgezoomt sichtbar bleibt
+const BAR_MIN: f32 = 1.5;
+
+/// Schmalen Clip `r` an den laufenden Balken hängen (berührt ihn und gleiche Farbe), sonst den
+/// alten Balken zum Zeichnen zurückgeben und mit `r` neu beginnen.
+fn merge_bar(bar: &mut Option<(Rect, Color32)>, r: Rect, col: Color32) -> Option<(Rect, Color32)> {
+    match bar {
+        Some((b, c)) if *c == col && r.left() <= b.right() + 1.0 => {
+            b.max.x = b.max.x.max(r.right());
+            None
+        }
+        _ => bar.replace((r, col)),
+    }
+}
+
+/// Farbe eines Clip-Balkens (wie die Clipfläche in `draw_clip`)
+fn bar_color(tr: &Track, c: &Clip) -> Color32 {
+    let col = theme::clip_color(c.kind());
+    if tr.hidden || (tr.muted && c.kind() == TrackKind::Audio) || c.disabled || tr.locked {
+        col.gamma_multiply(0.4)
+    } else {
+        col
+    }
 }
 
 /// Lage der Clip-Texte: (x der Kopfzeile, Breite der Kopfzeile, Breite des Texts im Clip)
@@ -703,38 +844,38 @@ impl App {
                 ui.add_space(4.0);
                 // schmale Zeitleiste: sonst liegen diese Knöpfe über denen der linken Gruppe
                 let (slider, zoom) = toolbar_room(ui.available_width());
+                let now = ui.input(|i| i.time);
+                let dur = self.project.duration().as_secs_f64();
+                let lo = min_pps(dur, self.timeline.view_w);
+                let target = self.timeline.target_pps();
                 if zoom && theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Ganze Zeitleiste zeigen", true, false).clicked() {
-                    let w = ui.ctx().screen_rect().width() * 0.6;
-                    let d = self.project.duration().as_secs_f64().max(1.0);
-                    self.timeline.pps = (w / d as f32).clamp(2.0, 400.0);
-                    self.timeline.scroll = 0.0;
+                    let (pps, scroll) = fit_all(dur, self.timeline.view_w, lo);
+                    let from = self.timeline.scroll;
+                    self.timeline.glide_view(pps, Anchor::Scroll(from, scroll), now);
                 }
                 if zoom && theme::icon_button(ui, icon::PLUS, "Vergrößern (Strg+Mausrad)", true, false).clicked() {
-                    self.timeline.pps = (self.timeline.pps * 1.25).min(400.0);
+                    self.timeline.zoom_to((target * 1.25).min(PPS_MAX), 0.0, now);
                 }
                 if slider {
                 ui.allocate_ui(vec2(90.0, 20.0), |ui| {
-                    let mut z = self.timeline.pps;
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let r = ui.allocate_ui(vec2(90.0, 18.0), |ui| {
-                        let (rect, resp) = ui.allocate_exact_size(vec2(90.0, 18.0), Sense::click_and_drag());
-                        let track = Rect::from_center_size(rect.center(), vec2(80.0, 2.0));
-                        let n = ((z.ln() - 2f32.ln()) / (400f32.ln() - 2f32.ln())).clamp(0.0, 1.0);
-                        if let Some(p) = resp.interact_pointer_pos() {
-                            let nn = ((p.x - track.left()) / track.width()).clamp(0.0, 1.0);
-                            z = (2f32.ln() + nn * (400f32.ln() - 2f32.ln())).exp();
+                    let (rect, resp) = ui.allocate_exact_size(vec2(90.0, 18.0), Sense::click_and_drag());
+                    let track = Rect::from_center_size(rect.center(), vec2(80.0, 2.0));
+                    let n = zoom_norm(target, lo);
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        let z = norm_zoom(((p.x - track.left()) / track.width()).clamp(0.0, 1.0), lo);
+                        if (z - target).abs() > target * 1e-4 {
+                            self.timeline.zoom_to(z, 0.0, now);
                         }
-                        ui.painter().rect_filled(track, 1.0, theme::BG_HOVER());
-                        ui.painter().rect_filled(Rect::from_min_max(track.min, pos2(track.left() + n * track.width(), track.max.y)), 1.0, theme::TEXT_DIM());
-                        ui.painter().circle_filled(pos2(track.left() + n * track.width(), track.center().y), if resp.hovered() { 5.5 } else { 4.5 }, theme::ACCENT());
-                    });
-                    let _ = r;
-                    self.timeline.pps = z;
+                    }
+                    ui.painter().rect_filled(track, 1.0, theme::BG_HOVER());
+                    ui.painter().rect_filled(Rect::from_min_max(track.min, pos2(track.left() + n * track.width(), track.max.y)), 1.0, theme::TEXT_DIM());
+                    ui.painter().circle_filled(pos2(track.left() + n * track.width(), track.center().y), if resp.hovered() { 5.5 } else { 4.5 }, theme::ACCENT());
                 });
                 }
                 if zoom {
                     if theme::icon_button(ui, icon::MINUS, "Verkleinern", true, false).clicked() {
-                        self.timeline.pps = (self.timeline.pps / 1.25).max(2.0);
+                        self.timeline.zoom_to((target / 1.25).max(lo), 0.0, now);
                     }
                     ui.add(egui::Separator::default().vertical().spacing(10.0));
                 }
@@ -774,6 +915,10 @@ impl App {
         let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         let x0 = rect.left() + HEADER_W;
+        self.timeline.view_w = (rect.right() - x0).max(1.0);
+        if self.timeline.step_view(ui.input(|i| i.time)) {
+            ui.ctx().request_repaint();
+        }
         let pps = self.timeline.pps;
         let fps = self.project.settings.fps;
         let snapping = self.project.settings.snapping;
@@ -827,24 +972,27 @@ impl App {
                     i.pointer.hover_pos(),
                 )
             });
-            let xt0 = |x: f32| (((x - x0) / pps) as f64 + self.timeline.scroll).max(0.0);
+            // Bildlauf links höchstens bis 0:00 – oder bis zum Rand, den „Ganze Zeitleiste zeigen“ ließ
+            let floor = self.timeline.scroll.min(0.0);
             if ctrl && dy != 0.0 {
-                let anchor = pointer.map(|p| xt0(p.x)).unwrap_or(self.timeline.scroll);
-                self.timeline.pps = (pps * (1.0 + dy * 0.0015)).clamp(2.0, 400.0);
-                self.timeline.scroll = (anchor
-                    - ((pointer.map(|p| p.x).unwrap_or(x0) - x0) / self.timeline.pps) as f64)
-                    .max(0.0);
+                // Zoom gleitet um die Zeigerposition; weitere Rad-Schritte setzen das Ziel fort
+                let lo = min_pps(total_t, self.timeline.view_w);
+                let to = (self.timeline.target_pps() * (1.0 + dy * 0.0015)).clamp(lo, PPS_MAX);
+                let ax = pointer.map_or(0.0, |p| (p.x - x0).max(0.0));
+                self.timeline.zoom_to(to, ax, now_s);
             } else if shift || overflow <= 0.0 || pointer.is_some_and(|p| p.y < ruler.bottom()) {
                 let d = if dx != 0.0 { dx } else { dy };
                 if d != 0.0 {
-                    self.timeline.scroll = (self.timeline.scroll - (d / pps) as f64).max(0.0);
+                    self.timeline.view_glide = None;
+                    self.timeline.scroll = (self.timeline.scroll - (d / pps) as f64).max(floor);
                 }
             } else {
                 if dy != 0.0 {
                     self.timeline.vscroll = (self.timeline.vscroll - dy).clamp(0.0, overflow);
                 }
                 if dx != 0.0 {
-                    self.timeline.scroll = (self.timeline.scroll - (dx / pps) as f64).max(0.0);
+                    self.timeline.view_glide = None;
+                    self.timeline.scroll = (self.timeline.scroll - (dx / pps) as f64).max(floor);
                 }
             }
         }
@@ -864,8 +1012,9 @@ impl App {
                 if v != 0.0 {
                     let dt = ui.input(|i| i.stable_dt).clamp(0.001, 0.05) as f64;
                     let visible = ((r - x0) / pps) as f64;
+                    self.timeline.view_glide = None;
                     self.timeline.scroll =
-                        (self.timeline.scroll + v as f64 * visible * 0.8 * dt).max(0.0);
+                        (self.timeline.scroll + v as f64 * visible * 0.8 * dt).max(self.timeline.scroll.min(0.0));
                     ui.ctx().request_repaint();
                 }
             }
@@ -876,7 +1025,7 @@ impl App {
             let t = self.playhead.as_secs_f64();
             let visible = ((lanes.right() - x0) / pps) as f64;
             if t < self.timeline.scroll || t > self.timeline.scroll + visible {
-                self.timeline.scroll = (t - visible * 0.3).max(0.0);
+                self.timeline.scroll_to((t - visible * 0.3).max(0.0), now_s);
             }
         }
         self.timeline.last_playhead = Some(self.playhead);
@@ -1704,12 +1853,7 @@ impl App {
         }
 
         // ---------- Ruler ----------
-        let step = [
-            0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0,
-        ]
-        .into_iter()
-        .find(|s| *s as f32 * pps >= 70.0)
-        .unwrap_or(1200.0);
+        let step = ruler_step(pps);
         let minor = step / 5.0;
         // Zeit aus dem Strichindex statt aufsummiert: keine Rundungsfehler bei vielen Strichen
         let mut k = (scroll / minor).floor() as i64;
@@ -1720,7 +1864,8 @@ impl App {
         ));
         while tx(t) < rect.right() {
             let x = tx(t);
-            if x >= x0 - 1.0 {
+            // vor 0:00 (Rand von „Ganze Zeitleiste zeigen“) keine Striche
+            if x >= x0 - 1.0 && t > -1e-9 {
                 let major = k.rem_euclid(5) == 0;
                 let hh = if major { 7.0 } else { 3.0 };
                 rp.line_segment(
@@ -1885,6 +2030,8 @@ impl App {
         let mut waves = WaveMeshes { map: std::mem::take(&mut self.timeline.cache.waves), tess: None };
         for row in rows.iter().filter(|r| r.track != REC_ROW) {
             let tr = &tracks[row.track];
+            // weit herausgezoomt: sehr schmale Clips als schlichte Balken, Nachbarn verschmolzen
+            let mut bar: Option<(Rect, Color32)> = None;
             for c0 in &tr.clips {
                 let (mut s, mut e) = (c0.start.as_secs_f64(), c0.end().as_secs_f64());
                 let mut r = row.rect;
@@ -1896,8 +2043,23 @@ impl App {
                     is_ghost = true;
                 }
                 let cr = Rect::from_min_max(pos2(tx(s), r.top()), pos2(tx(e), r.bottom()));
+                let tiny = cr.width() < TINY_PX
+                    && !is_ghost
+                    && !self.is_selected(c0.id)
+                    && hovered_clip != Some(c0.id)
+                    && drop_clip != Some(c0.id);
+                let cr = Rect::from_min_max(cr.min, pos2(cr.right().max(cr.left() + BAR_MIN), cr.bottom()));
                 if !clip_visible(cr, lanes_clip) {
                     continue;
+                }
+                if tiny {
+                    if let Some((b, col)) = merge_bar(&mut bar, cr, bar_color(tr, c0)) {
+                        p.rect_filled(b, 1.0, col);
+                    }
+                    continue;
+                }
+                if let Some((b, col)) = bar.take() {
+                    p.rect_filled(b, 1.0, col);
                 }
                 let live = self.live.as_ref().is_some_and(|l| l.id == c0.id);
                 let missing = matches!(&c0.content, ClipContent::Media { media, .. } if self.timeline.cache.missing.contains(media));
@@ -2051,6 +2213,9 @@ impl App {
                     }
                 }
             }
+            if let Some((b, col)) = bar {
+                p.rect_filled(b, 1.0, col);
+            }
         }
         self.timeline.cache.waves = waves.map;
         // Übergänge
@@ -2134,6 +2299,7 @@ impl App {
                 Color32::WHITE,
             );
             if self.playing && cr.right() > rect.right() - 60.0 {
+                self.timeline.view_glide = None;
                 self.timeline.scroll = (start + elapsed) - ((rect.right() - x0) / pps * 0.5) as f64;
             }
         }
@@ -2445,8 +2611,9 @@ impl App {
                 Stroke::NONE,
             ));
         }
-        if self.playing && recording.is_none() && (px > rect.right() - 40.0 || px < x0) {
-            self.timeline.scroll = (self.playhead.as_secs_f64() - 1.0).max(0.0);
+        // Playhead folgen: kurz hinterhergleiten (blättern) statt hart umspringen
+        if self.playing && recording.is_none() && (px > rect.right() - 40.0 || px < x0) && self.timeline.view_glide.is_none() {
+            self.timeline.scroll_to((self.playhead.as_secs_f64() - 1.0).max(0.0), now_s);
         }
 
         // ---------- Kontextmenüs ----------
@@ -3260,14 +3427,97 @@ mod tests {
         assert_eq!(ruler_label(0.75, 0.25), "00:00.75");
         assert_eq!(ruler_label(1.5, 0.5), "00:01.5");
         assert_eq!(ruler_label(61.0, 1.0), "01:01");
+        assert_eq!(ruler_label(3600.0, 600.0), "1:00:00");
+        assert_eq!(ruler_label(5.0 * 3600.0 + 61.0, 1.0), "5:01:01");
+        // Text → Sekunden (mm:ss[.f] bzw. h:mm:ss)
+        let secs = |l: &str| l.split(':').fold(0.0, |a, p| a * 60.0 + p.parse::<f64>().unwrap());
         // jede Schrittweite: aufeinanderfolgende Hauptstriche streng aufsteigend, keine doppelten Texte
-        for step in [0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0] {
+        for step in RULER_STEPS {
             let minor = step / 5.0;
-            let labels: Vec<String> = (0..2000i64).filter(|k| k % 5 == 0).map(|k| k as f64 * minor).take_while(|t| *t < 5990.0).map(|t| ruler_label(t, step)).collect();
+            let labels: Vec<String> = (0..4000i64).filter(|k| k % 5 == 0).map(|k| k as f64 * minor).take_while(|t| *t < 200_000.0).map(|t| ruler_label(t, step)).collect();
             for w in labels.windows(2) {
-                assert!(w[0] < w[1], "{step}: {} vor {}", w[0], w[1]);
+                assert!(secs(&w[0]) < secs(&w[1]), "{step}: {} vor {}", w[0], w[1]);
             }
         }
+        // ganz herausgezoomt (10 s … 6 h, schmal bis breit): Beschriftungen ≥ 70 px auseinander,
+        // und es gibt höchstens rund zwei Dutzend
+        for dur in [10.0, 600.0, 3600.0, 6.0 * 3600.0] {
+            for w in [400.0f32, 1400.0, 3800.0] {
+                let pps = min_pps(dur, w);
+                let step = ruler_step(pps);
+                assert!(step as f32 * pps >= 70.0, "{dur} {w}");
+                assert!(w / (step as f32 * pps) < 60.0, "{dur} {w}: zu viele Striche");
+            }
+        }
+    }
+
+    #[test]
+    fn zoom_out_shows_whole_project_with_room() {
+        for dur in [0.0, 10.0, 644.0, 3600.0, 6.0 * 3600.0] {
+            for w in [300.0f32, 1400.0, 3800.0] {
+                let lo = min_pps(dur, w);
+                // ganz herausgezoomt: Projekt (mind. 5 min) höchstens halb so breit wie die Ansicht
+                assert!(dur.max(300.0) as f32 * lo <= 0.5 * w + 1e-3, "{dur} {w}");
+                assert!(lo > 0.0 && lo <= 2.0);
+                // „alles zeigen“: ganzes Projekt mit 5 % Rand links und rechts
+                let (pps, scroll) = fit_all(dur, w, lo);
+                if dur >= 1.0 && pps < PPS_MAX {
+                    let x_end = ((dur - scroll) as f32) * pps;
+                    assert!((((0.0 - scroll) as f32 * pps) / w - 0.05 / 1.1).abs() < 1e-3, "Rand links {dur} {w}");
+                    assert!((x_end / w - 1.05 / 1.1).abs() < 1e-3, "Rand rechts {dur} {w}");
+                }
+                assert!(pps >= lo);
+                // Regler: ganzer Bereich, hin und zurück
+                assert_eq!(zoom_norm(lo, lo), 0.0);
+                assert_eq!(zoom_norm(PPS_MAX, lo), 1.0);
+                for n in [0.0f32, 0.25, 0.5, 0.9, 1.0] {
+                    assert!((zoom_norm(norm_zoom(n, lo), lo) - n).abs() < 1e-4, "{n}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn view_glide_keeps_time_under_pointer_and_ends_at_target() {
+        let g = ViewGlide { pps: (10.0, 80.0), anchor: Anchor::At { t: 100.0, x: 300.0, floor: 0.0 }, t0: 0.0 };
+        for age in [0.0f32, 0.04, 0.08, 0.12, 0.16, 0.5] {
+            let (pps, scroll, done) = g.at(age, theme::MOTION);
+            // Zeit unter dem Zeiger (300 px rechts der Kante) bleibt gleich
+            assert!((scroll + (300.0 / pps) as f64 - 100.0).abs() < 1e-3, "{age}");
+            assert_eq!(done, age >= theme::MOTION);
+        }
+        assert_eq!(g.at(0.0, theme::MOTION).0, 10.0, "Anfang");
+        let mid = g.at(theme::MOTION / 2.0, theme::MOTION).0;
+        assert!(mid > (10.0f32 * 80.0).sqrt() && mid < 80.0, "Mitte (auslaufend, logarithmisch): {mid}");
+        assert_eq!(g.at(1.0, theme::MOTION).0, 80.0, "Ende genau am Ziel");
+        // Animationen aus: sofort am Ziel
+        assert_eq!(g.at(0.0, 0.0), (80.0, 100.0 - 300.0 / 80.0, true));
+        // weit herausgezoomt am Anfang: Bildlauf nicht vor den erlaubten Rand
+        let z = ViewGlide { pps: (100.0, 2.0), anchor: Anchor::At { t: 1.0, x: 600.0, floor: -3.0 }, t0: 0.0 };
+        assert_eq!(z.at(1.0, theme::MOTION).1, -3.0);
+        // Bildlauf gleitet (Maßstab bleibt), Ziel ändert sich mittendrin: weiter vom aktuellen Stand
+        let mut st = TimelineState { pps: 50.0, scroll: 0.0, ..Default::default() };
+        st.scroll_to(100.0, 0.0);
+        st.step_view(theme::MOTION as f64 / 2.0);
+        let half = st.scroll;
+        assert!(half > 50.0 && half < 100.0 && st.pps == 50.0, "{half}");
+        st.scroll_to(0.0, theme::MOTION as f64 / 2.0);
+        assert_eq!(st.scroll, half, "neues Ziel beginnt am aktuellen Stand");
+        assert!(!st.step_view(10.0));
+        assert_eq!((st.scroll, st.view_glide), (0.0, None));
+    }
+
+    #[test]
+    fn tiny_clips_merge_into_bars() {
+        let r = |a: f32, b: f32| Rect::from_min_max(pos2(a, 0.0), pos2(b, 10.0));
+        let (red, blue) = (Color32::RED, Color32::BLUE);
+        let mut bar = None;
+        assert_eq!(merge_bar(&mut bar, r(10.0, 11.5), red), None);
+        assert_eq!(merge_bar(&mut bar, r(12.0, 13.5), red), None, "berührt: verschmolzen");
+        assert_eq!(bar, Some((r(10.0, 13.5), red)));
+        assert_eq!(merge_bar(&mut bar, r(20.0, 21.5), red), Some((r(10.0, 13.5), red)), "Lücke: alter Balken fertig");
+        assert_eq!(merge_bar(&mut bar, r(21.0, 22.5), blue), Some((r(20.0, 21.5), red)), "andere Farbe");
+        assert_eq!(bar, Some((r(21.0, 22.5), blue)));
     }
 
     #[test]
