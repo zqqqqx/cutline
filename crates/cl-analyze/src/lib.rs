@@ -273,17 +273,6 @@ pub fn gray_frames(
     Ok(n)
 }
 
-/// Pfad für FFmpeg-Filteroptionen escapen.
-pub(crate) fn esc(p: &Path) -> String {
-    format!(
-        "'{}'",
-        p.to_string_lossy()
-            .replace('\\', "/")
-            .replace(':', "\\:")
-            .replace('\'', "")
-    )
-}
-
 #[cfg(test)]
 pub(crate) mod testutil {
     use super::*;

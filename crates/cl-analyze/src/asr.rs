@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use ort::value::Tensor;
 
-use crate::{decode_audio, esc, session, Models};
+use crate::{decode_audio, session, Models};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Word {
@@ -405,6 +405,15 @@ pub fn whisper(
     whisper_in(&dir, model, path, start, dur, language, progress)
 }
 
+fn whisper_filter(model: &Path, language: &str, srt: &Path) -> String {
+    let esc = |p: &Path| cl_media::escape_path(&p.to_string_lossy());
+    format!(
+        "aresample=16000,whisper=model={}:language={language}:format=srt:destination={}:queue=10",
+        esc(model),
+        esc(srt)
+    )
+}
+
 fn whisper_in(
     dir: &Path,
     model: &Path,
@@ -419,12 +428,7 @@ fn whisper_in(
     let srt = dir.join("out.srt");
     let _ = std::fs::remove_file(&srt);
     progress(0.05);
-    let af = format!(
-        "aresample=16000,whisper=model={}:language={}:format=srt:destination={}:queue=10",
-        esc(model),
-        language,
-        esc(&srt)
-    );
+    let af = whisper_filter(model, language, &srt);
     let out = ffmpeg
         .args([
             "-v",
@@ -494,6 +498,13 @@ pub fn _unused(_: PathBuf) {}
 mod tests {
     use super::*;
     use crate::testutil;
+
+    #[test]
+    fn whisper_paths_keep_the_apostrophe() {
+        let f = whisper_filter(Path::new("/home/O'Brien/m.bin"), "de", Path::new("/tmp/O'Brien/out.srt"));
+        assert!(f.contains(r"model=/home/O\\\'Brien/m.bin:"), "{f}");
+        assert!(f.contains(r"destination=/tmp/O\\\'Brien/out.srt:"), "{f}");
+    }
 
     #[test]
     fn whisper_error_leaves_no_temp_dir() {
