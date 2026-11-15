@@ -220,9 +220,7 @@ impl App {
             return;
         }
         proj.name = crate::home::next_project_name();
-        *self.doc.lock().unwrap() = Document::new(proj);
-        self.revision = u64::MAX;
-        self.sync_project();
+        self.set_doc(proj);
         self.screen = Screen::Editor;
         self.toast("Neues Projekt aus Vorlage");
     }

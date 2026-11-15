@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 
-use cl_core::{Document, Project};
+use cl_core::Project;
 use eframe::egui::{self, vec2, RichText};
 
 use crate::app::{App, Screen};
@@ -76,9 +76,7 @@ impl App {
         if !self.new_project() {
             return;
         }
-        *self.doc.lock().unwrap() = Document::new(proj);
-        self.revision = u64::MAX;
-        self.sync_project();
+        self.set_doc(proj);
         let p = self.default_project_path();
         if self.write_project(&p).is_ok() {
             self.project_path = Some(p);

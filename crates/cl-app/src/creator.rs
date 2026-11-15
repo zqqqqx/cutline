@@ -780,9 +780,7 @@ impl App {
         if !self.new_project() {
             return;
         }
-        *self.doc.lock().unwrap() = Document::new(p);
-        self.revision = u64::MAX;
-        self.sync_project();
+        self.set_doc(p);
         self.toast(format!("Rückblick aus {} Markern erstellt", ms.len()));
     }
 }

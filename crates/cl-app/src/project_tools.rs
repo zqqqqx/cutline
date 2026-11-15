@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
-use cl_core::{Document, EditOp, Project};
+use cl_core::{EditOp, Project};
 use eframe::egui::{self, RichText};
 
 use crate::app::App;
@@ -241,9 +241,7 @@ impl App {
                     if let Some(path) = &self.project_path {
                         let _ = write_backup(path, &self.project.to_json(), self.settings.backup_keep);
                     }
-                    *self.doc.lock().unwrap() = Document::new(proj);
-                    self.revision = u64::MAX;
-                    self.sync_project();
+                    self.set_doc(proj);
                     self.backups_open = false;
                     self.toast("Sicherung wiederhergestellt");
                 }

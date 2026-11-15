@@ -2023,6 +2023,15 @@ impl App {
         }
     }
 
+    /// Projekt in den Editor setzen. Es gilt als ungespeichert (ein neues `Document` beginnt
+    /// wieder bei Revision 0 – sonst hielte man eine Wiederherstellung für gespeichert).
+    pub fn set_doc(&mut self, proj: Project) {
+        *self.doc.lock().unwrap() = Document::new(proj);
+        self.revision = u64::MAX;
+        self.sync_project();
+        self.saved_revision = UNSAVED;
+    }
+
     /// `false`: altes Projekt ließ sich nicht speichern, es bleibt offen.
     pub fn new_project(&mut self) -> bool {
         if !self.flush_before_leaving() {
@@ -2033,9 +2042,7 @@ impl App {
         let mut p = Project::new(n);
         p.settings.fps = self.settings.new_fps;
         p.settings.channels = self.settings.new_channels;
-        *self.doc.lock().unwrap() = Document::new(p);
-        self.revision = u64::MAX;
-        self.sync_project();
+        self.set_doc(p);
         self.saved_revision = self.revision;
         self.project_path = None;
         self.screen = Screen::Editor;
@@ -2110,9 +2117,7 @@ impl App {
                         _ => None,
                     })
                     .collect();
-                *self.doc.lock().unwrap() = Document::new(proj);
-                self.revision = u64::MAX;
-                self.sync_project();
+                self.set_doc(proj);
                 self.saved_revision = self.revision;
                 self.project_path = Some(p.to_path_buf());
                 self.take_lock(p);
@@ -3366,9 +3371,20 @@ fn toast_alpha(age: f32, life: f32, fade_in: f32, fade_out: f32) -> f32 {
     a_in.min(a_out).clamp(0.0, 1.0)
 }
 
+/// `saved_revision` nach `set_doc`: keine echte Revision trifft diesen Wert.
+pub const UNSAVED: u64 = u64::MAX - 1;
+
 #[cfg(test)]
 mod toast_tests {
     use super::*;
+
+    #[test]
+    fn replaced_document_counts_as_unsaved() {
+        // Wiederherstellen/Vorlage/Rückblick ersetzen das Dokument: Revision beginnt bei 0
+        let rev = Document::new(Project::new("x")).revision();
+        assert_ne!(rev, UNSAVED);
+        assert_ne!(rev, u64::MAX);
+    }
 
     #[test]
     fn toast_alpha_without_animation() {
