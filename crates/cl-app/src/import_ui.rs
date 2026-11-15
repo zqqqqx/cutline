@@ -160,10 +160,8 @@ impl App {
             close |= crate::dialog::title(ui, "Projekt importieren");
             ui.add_space(8.0);
             if let Some((label, _)) = &self.import.running {
-                ui.horizontal(|ui| {
-                    ui.add(egui::Spinner::new().color(theme::ACCENT()));
-                    ui.label(crate::tr(format!("„{label}“ wird importiert …")));
-                });
+                ui.label(crate::tr(format!("„{label}“ wird importiert …")));
+                widgets::busy_row(ui, egui::Id::new("import-busy"), true);
                 ui.add_space(6.0);
             }
             if self.settings.import_capcut {

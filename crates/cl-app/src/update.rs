@@ -247,10 +247,8 @@ impl App {
                 ui.label(RichText::new(crate::tr("Noch nicht gesucht")).color(theme::TEXT_DIM()));
             }
             UpdateState::Checking => {
-                ui.horizontal(|ui| {
-                    ui.add(egui::Spinner::new().color(theme::ACCENT()));
-                    ui.label(crate::tr("Suche nach Updates …"));
-                });
+                ui.label(crate::tr("Suche nach Updates …"));
+                widgets::busy_row(ui, egui::Id::new("update-check"), true);
             }
             UpdateState::UpToDate => {
                 ui.label(
@@ -334,11 +332,9 @@ impl App {
                 });
             }
             UpdateState::Downloading(p) => {
-                ui.add(
-                    egui::ProgressBar::new(*p).fill(theme::ACCENT())
-                        .show_percentage()
-                        .desired_height(6.0),
-                );
+                ui.label(RichText::new(format!("{:.0} %", *p * 100.0)).color(theme::TEXT_DIM()));
+                let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 3.0), egui::Sense::hover());
+                widgets::task_line(ui.painter(), egui::Id::new("update-download"), r, *p);
                 if ui.add(theme::secondary("Abbrechen")).clicked() {
                     self.updater.cancel();
                 }

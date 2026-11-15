@@ -296,10 +296,8 @@ impl App {
                     .desired_width(w),
             );
             go = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if self.stock.busy {
-                ui.add(egui::Spinner::new().color(theme::ACCENT()));
-            }
         });
+        widgets::busy_row(ui, egui::Id::new(("stock-busy", i)), self.stock.busy);
         if i == 1 {
             let mut sel = self.stock.photos as usize;
             if widgets::segmented(ui, &["Videos", "Fotos"], &mut sel) {
