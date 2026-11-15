@@ -760,6 +760,7 @@ dependencies = [
  "tempfile",
  "ureq",
  "winresource",
+ "zip",
 ]
 
 [[package]]

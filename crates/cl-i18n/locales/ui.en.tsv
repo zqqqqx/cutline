@@ -1728,3 +1728,20 @@ Jetzt aktualisieren	Update now
 Update ansehen	View update
 Jetzt prüfen	Check now
 {} Aufgaben	{} tasks
+Verfügbar	Available
+Liste neu laden	Reload list
+Laden	Download
+Aktualisieren	Update
+Wartet …	Waiting …
+Nachladen ist ausgeschaltet	Downloads are turned off
+Neuere Version nötig	Newer version required
+Liste nicht erreichbar	List not reachable
+Alle Pakete sind installiert	All packs are installed
+Braucht eine neuere Version von Cutline	Needs a newer version of Cutline
+Paket „{}“ installiert	Pack “{}” installed
+Prüfsumme stimmt nicht	Checksum does not match
+Paket ist größer als angegeben	Pack is larger than stated
+Paket-ID „{}“ passt nicht zur Liste	Pack ID “{}” does not match the list
+GitHub antwortet mit {}	GitHub responds with {}
+Keine Verbindung zu GitHub ({})	Can't reach GitHub ({})
+Liste zu groß	List too large

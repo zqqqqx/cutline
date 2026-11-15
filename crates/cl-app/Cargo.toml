@@ -38,6 +38,8 @@ hound = "3.5"
 
 [dev-dependencies]
 tempfile.workspace = true
+# Testpakete bauen (wie cl-plugin)
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 winresource = "0.1"

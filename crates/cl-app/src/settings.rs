@@ -372,6 +372,7 @@ impl App {
     }
 
     pub fn settings_window(&mut self, ctx: &egui::Context) {
+        self.poll_pack_downloads();
         if !self.settings_open {
             return;
         }

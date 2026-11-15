@@ -288,6 +288,8 @@ pub struct App {
     pub settings_error: Option<String>,
     /// Rückfrage/Fenster der Einstellungsseite „Inhalte“
     pub contents_dialog: Option<crate::contents::ContentsDialog>,
+    /// Nachladbare Pakete: Liste und Downloads
+    pub packs: crate::contents::PackDownloads,
     /// Belegter Cache (zuletzt gezählt, Bytes)
     pub cache_size: Option<(Instant, u64)>,
     pub sticker_tex: HashMap<&'static str, egui::TextureHandle>,
@@ -495,6 +497,7 @@ impl App {
             layout_name: String::new(),
             settings_error: None,
             contents_dialog: None,
+            packs: Default::default(),
             cache_size: None,
             sticker_tex: HashMap::new(),
             updater: Default::default(),
