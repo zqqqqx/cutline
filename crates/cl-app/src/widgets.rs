@@ -744,9 +744,16 @@ pub fn busy_line(p: &egui::Painter, rect: Rect) {
     let (a, b) = busy_segment(p.ctx().input(|i| i.time), moving);
     let seg = Rect::from_x_y_ranges(egui::lerp(rect.x_range(), a)..=egui::lerp(rect.x_range(), b), rect.y_range());
     p.rect_filled(seg, r, if moving { theme::ACCENT() } else { theme::ACCENT().gamma_multiply(0.5) });
-    if moving {
-        p.ctx().request_repaint();
+    let visible = rect.width() > 0.0 && p.clip_rect().intersects(rect);
+    if let Some(gap) = line_repaint_gap(true, moving && visible) {
+        p.ctx().request_repaint_after(gap);
     }
+}
+
+/// Abstand bis zum nächsten Bild für eine laufende Aufgabe: Lauflinie flüssig (nur solange sie
+/// sichtbar ist und animiert), Fortschritt ändert sich langsam (~10 Bilder/s genügen).
+pub fn line_repaint_gap(busy: bool, animating: bool) -> Option<std::time::Duration> {
+    animating.then(|| std::time::Duration::from_millis(if busy { 16 } else { 100 }))
 }
 
 /// Platzhalter in Zielgröße, solange Inhalt (Bild, Wellenform …) fehlt: ruhige Fläche mit sehr
@@ -833,8 +840,16 @@ pub fn busy_row(ui: &mut egui::Ui, id: egui::Id, busy: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{grid_avail, grid_cols};
+    use super::{grid_avail, grid_cols, line_repaint_gap};
     use eframe::egui::vec2;
+
+    #[test]
+    fn task_lines_repaint_only_when_needed_and_progress_slowly() {
+        let ms = |d: Option<std::time::Duration>| d.map(|d| d.as_millis());
+        assert_eq!(ms(line_repaint_gap(true, true)), Some(16));
+        assert_eq!(ms(line_repaint_gap(false, true)), Some(100));
+        assert_eq!(line_repaint_gap(true, false), None);
+    }
 
     #[test]
     fn a_double_click_inserts_only_once() {

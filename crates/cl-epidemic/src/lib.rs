@@ -30,7 +30,65 @@ pub fn redirect_uri() -> String {
     format!("http://127.0.0.1:{REDIRECT_PORT}/callback")
 }
 
-pub type Result<T> = std::result::Result<T, String>;
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Fehler der Schnittstelle. Anmeldung abgelaufen, Limit und „zu schnell“ sind eigene Fälle,
+/// damit die App sie behandelt, statt Meldungstexte zu vergleichen.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Error {
+    /// Refresh-Token abgelaufen bzw. 401 im Modus Connect: neu verbinden
+    LoginExpired,
+    /// 429; Wartezeit in Sekunden aus `Retry-After`, falls genannt
+    RateLimited(Option<u64>),
+    /// 406: zu schnell hintereinander geladen
+    TooFast,
+    Other(String),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::LoginExpired => f.write_str("Anmeldung abgelaufen – bitte neu verbinden"),
+            Error::RateLimited(Some(n)) => write!(f, "Limit erreicht, in {n} s wieder möglich"),
+            Error::RateLimited(None) => f.write_str("Limit erreicht, bitte später erneut versuchen"),
+            Error::TooFast => f.write_str("Zu schnell hintereinander geladen, bitte kurz warten"),
+            Error::Other(s) => f.write_str(s),
+        }
+    }
+}
+
+impl From<String> for Error {
+    fn from(s: String) -> Self {
+        Error::Other(s)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(s: &str) -> Self {
+        Error::Other(s.into())
+    }
+}
+
+/// Wartezeit aus dem `Retry-After`-Kopf (nur Sekunden; Datumsform oder Unsinn = unbekannt).
+pub fn retry_after(header: Option<&str>) -> Option<u64> {
+    header?.trim().parse::<u64>().ok()
+}
+
+/// So lange keine neuen Anfragen derselben Art: genannte Wartezeit (1 s … 1 h), sonst 30 s.
+pub fn limit_wait(secs: Option<u64>) -> Duration {
+    Duration::from_secs(secs.map_or(30, |s| s.clamp(1, 3600)))
+}
+
+/// Eine Wiederholung nach „zu schnell“ (406): `wait` (≥ 2 s) und noch ein Versuch, erst dann Fehler.
+pub fn retry_once_if_too_fast<T>(mut f: impl FnMut() -> Result<T>, wait: impl FnOnce()) -> Result<T> {
+    match f() {
+        Err(Error::TooFast) => {
+            wait();
+            f()
+        }
+        r => r,
+    }
+}
 
 // ------------------------------------------------------------------ Einstellungen
 
@@ -201,6 +259,7 @@ pub struct Query {
 // ------------------------------------------------------------------ Client
 
 pub struct Client {
+    mode: AuthMode,
     base: String,
     bearer: String,
     user_id: String,
@@ -214,12 +273,13 @@ fn agent() -> ureq::Agent {
         .build()
 }
 
-fn err(e: ureq::Error) -> String {
+fn err(e: ureq::Error, mode: AuthMode) -> Error {
     match e {
-        ureq::Error::Status(401, _) => "Anmeldung abgelaufen oder ungültig".into(),
+        ureq::Error::Status(401, _) if mode == AuthMode::Connect => Error::LoginExpired,
+        ureq::Error::Status(401, _) => "Schlüssel ungültig".into(),
         ureq::Error::Status(403, _) => "Kein Zugriff: Der Titel ist in deinem Plan oder Abo nicht enthalten".into(),
-        ureq::Error::Status(406, _) => "Zu schnell hintereinander geladen, bitte kurz warten".into(),
-        ureq::Error::Status(429, _) => "Zu viele Anfragen, bitte kurz warten".into(),
+        ureq::Error::Status(406, _) => Error::TooFast,
+        ureq::Error::Status(429, r) => Error::RateLimited(retry_after(r.header("Retry-After"))),
         ureq::Error::Status(c, r) => format!(
             "Epidemic Sound antwortet mit {c}: {}",
             r.into_string()
@@ -227,8 +287,9 @@ fn err(e: ureq::Error) -> String {
                 .chars()
                 .take(160)
                 .collect::<String>()
-        ),
-        ureq::Error::Transport(t) => format!("Keine Verbindung zu Epidemic Sound ({t})"),
+        )
+        .into(),
+        ureq::Error::Transport(t) => format!("Keine Verbindung zu Epidemic Sound ({t})").into(),
     }
 }
 
@@ -257,6 +318,7 @@ impl Client {
             }
         };
         Ok(Self {
+            mode: cfg.mode,
             base: cfg.base().trim_end_matches('/').to_string(),
             bearer,
             user_id: cfg.user_id.clone(),
@@ -274,9 +336,9 @@ impl Client {
             r = r.query(k, v);
         }
         r.call()
-            .map_err(err)?
+            .map_err(|e| err(e, self.mode))?
             .into_json::<serde_json::Value>()
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string().into())
     }
 
     /// Suche (`/v0/tracks/search`) bzw. Stöbern nach Filtern (`/v0/tracks`).
@@ -304,12 +366,12 @@ impl Client {
             params.push(("order", "desc".into()));
             "/v0/tracks/search"
         };
-        serde_json::from_value(self.get(path, &params)?).map_err(|e| e.to_string())
+        serde_json::from_value(self.get(path, &params)?).map_err(|e| e.to_string().into())
     }
 
     fn list(&self, path: &str, key: &str) -> Result<Vec<Named>> {
         let v = self.get(path, &[("limit", "20".into()), ("type", "featured".into())])?;
-        serde_json::from_value(v.get(key).cloned().unwrap_or_default()).map_err(|e| e.to_string())
+        serde_json::from_value(v.get(key).cloned().unwrap_or_default()).map_err(|e| e.to_string().into())
     }
 
     /// Hervorgehobene Stimmungen
@@ -348,8 +410,14 @@ impl Client {
 
     /// Lädt den Titel als MP3 nach `dest`.
     pub fn download(&self, id: &str, dest: &std::path::Path) -> Result<()> {
-        let url = self.download_url(id, true)?;
-        let resp = self.agent.get(&url).call().map_err(err)?;
+        // 406: zu schnell hintereinander geladen – einmal nach 2 s noch einmal
+        let resp = retry_once_if_too_fast(
+            || {
+                let url = self.download_url(id, true)?;
+                self.agent.get(&url).call().map_err(|e| err(e, self.mode))
+            },
+            || std::thread::sleep(Duration::from_secs(2)),
+        )?;
         if let Some(d) = dest.parent() {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
@@ -357,7 +425,7 @@ impl Client {
         let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
         std::io::copy(&mut resp.into_reader(), &mut f).map_err(|e| e.to_string())?;
         drop(f);
-        std::fs::rename(&tmp, dest).map_err(|e| e.to_string())
+        std::fs::rename(&tmp, dest).map_err(|e| e.to_string().into())
     }
 
     /// Schläge eines Titels in Sekunden (Beta-Endpunkt; leer, wenn nicht verfügbar).
@@ -382,7 +450,7 @@ impl Client {
             "/v0/users/me/liked/tracks",
             &[("offset", offset.to_string())],
         )?)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string().into())
     }
 
     /// Angemeldeter Nutzer (Name für die Anzeige).
@@ -405,7 +473,7 @@ impl Client {
             .set("Authorization", &format!("Bearer {}", self.bearer))
             .set("x-partner-user-id", &self.user_id)
             .send_json(body)
-            .map_err(err)?;
+            .map_err(|e| err(e, self.mode))?;
         Ok(())
     }
 }
@@ -491,7 +559,7 @@ impl Login {
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 }
-                Err(e) => return Err(e.to_string()),
+                Err(e) => return Err(e.to_string().into()),
             }
         };
         stream.set_nonblocking(false).ok();
@@ -513,7 +581,8 @@ impl Login {
         if !ok {
             return Err(get("error_description")
                 .or_else(|| get("error"))
-                .unwrap_or_else(|| "Ungültiger Rückruf".into()));
+                .unwrap_or_else(|| "Ungültiger Rückruf".into())
+                .into());
         }
         exchange(
             &self.client_id,
@@ -556,11 +625,19 @@ struct TokenResponse {
     expires_in: u64,
 }
 
-fn token_request(form: &[(&str, &str)]) -> Result<Tokens> {
+/// Fehler der Token-Anfrage; beim Refresh heißt 400/401 (`invalid_grant`): Refresh-Token abgelaufen.
+fn token_err(e: ureq::Error, refreshing: bool) -> Error {
+    match e {
+        ureq::Error::Status(400 | 401, _) if refreshing => Error::LoginExpired,
+        e => err(e, AuthMode::Connect),
+    }
+}
+
+fn token_request(form: &[(&str, &str)], refreshing: bool) -> Result<Tokens> {
     let r: TokenResponse = agent()
         .post(TOKEN_URL)
         .send_form(form)
-        .map_err(err)?
+        .map_err(|e| token_err(e, refreshing))?
         .into_json()
         .map_err(|e| e.to_string())?;
     Ok(Tokens {
@@ -577,7 +654,7 @@ fn exchange(client_id: &str, code: &str, verifier: &str) -> Result<Tokens> {
         ("redirect_uri", &redirect_uri()),
         ("code_verifier", verifier),
         ("client_id", client_id),
-    ])
+    ], false)
 }
 
 pub fn refresh(client_id: &str, refresh_token: &str) -> Result<Tokens> {
@@ -585,7 +662,7 @@ pub fn refresh(client_id: &str, refresh_token: &str) -> Result<Tokens> {
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
         ("client_id", client_id),
-    ])
+    ], true)
 }
 
 /// Abmelden (Refresh-Token beim Anbieter ungültig machen).
@@ -599,6 +676,65 @@ pub fn logout(client_id: &str, refresh_token: &str) {
 mod tests {
     use super::*;
     use std::io::Read;
+
+    fn status(c: u16) -> ureq::Error {
+        ureq::Error::Status(c, ureq::Response::new(c, "x", "").unwrap())
+    }
+
+    #[test]
+    fn statuses_become_typed_errors() {
+        // Connect: 401 heißt neu anmelden, mit API-Schlüssel „ungültig“
+        assert_eq!(err(status(401), AuthMode::Connect), Error::LoginExpired);
+        assert_eq!(err(status(401), AuthMode::ApiKey), Error::Other("Schlüssel ungültig".into()));
+        assert_eq!(err(status(406), AuthMode::Connect), Error::TooFast);
+        assert_eq!(err(status(429), AuthMode::Connect), Error::RateLimited(None));
+        let r: ureq::Response = "HTTP/1.1 429 Too Many Requests
+Retry-After: 17
+
+".parse().unwrap();
+        assert_eq!(err(ureq::Error::Status(429, r), AuthMode::Connect), Error::RateLimited(Some(17)));
+    }
+
+    #[test]
+    fn an_expired_refresh_token_is_its_own_error() {
+        assert_eq!(token_err(status(400), true), Error::LoginExpired);
+        assert_eq!(token_err(status(401), true), Error::LoginExpired);
+        // beim ersten Anmelden (Code-Tausch) ist 400 ein gewöhnlicher Fehler
+        assert!(matches!(token_err(status(400), false), Error::Other(_)));
+    }
+
+    #[test]
+    fn retry_after_and_wait_are_read_safely() {
+        assert_eq!(retry_after(None), None);
+        assert_eq!(retry_after(Some("Wed, 21 Oct 2026 07:28:00 GMT")), None);
+        assert_eq!(retry_after(Some("-5")), None);
+        assert_eq!(limit_wait(None), Duration::from_secs(30));
+        assert_eq!(limit_wait(Some(0)), Duration::from_secs(1));
+        assert_eq!(limit_wait(Some(12)), Duration::from_secs(12));
+        assert_eq!(limit_wait(Some(999_999)), Duration::from_secs(3600));
+        assert_eq!(Error::RateLimited(Some(12)).to_string(), "Limit erreicht, in 12 s wieder möglich");
+        assert_eq!(Error::RateLimited(None).to_string(), "Limit erreicht, bitte später erneut versuchen");
+    }
+
+    #[test]
+    fn too_fast_is_retried_exactly_once() {
+        use std::cell::Cell;
+        let (calls, waits) = (Cell::new(0), Cell::new(0));
+        let run = |fail_times: u32| {
+            calls.set(0);
+            waits.set(0);
+            retry_once_if_too_fast(
+                || {
+                    calls.set(calls.get() + 1);
+                    if calls.get() <= fail_times { Err(Error::TooFast) } else { Ok(7) }
+                },
+                || waits.set(waits.get() + 1),
+            )
+        };
+        assert_eq!((run(0), calls.get(), waits.get()), (Ok(7), 1, 0));
+        assert_eq!((run(1), calls.get(), waits.get()), (Ok(7), 2, 1));
+        assert_eq!((run(2), calls.get(), waits.get()), (Err(Error::TooFast), 2, 1));
+    }
 
     /// Mini-HTTP-Server, der auf jede Anfrage mit `body` antwortet und die Anfragezeile zurückgibt.
     fn serve(body: &'static str, n: usize) -> (String, std::sync::mpsc::Receiver<String>) {

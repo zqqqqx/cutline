@@ -312,7 +312,7 @@ impl PackDownloads {
             let r = match packs::fetch_index(&src) {
                 Ok(v) => ListState::Ready(v),
                 Err(IndexError::Newer) => ListState::Newer,
-                Err(IndexError::Unreachable(e) | IndexError::Broken(e)) => ListState::Failed(e),
+                Err(IndexError::Unreachable(e) | IndexError::Broken(e)) => ListState::Failed(cl_update::friendly(&crate::applog::warned("paket", e))),
             };
             lock(&shared).list = r;
             ctx.request_repaint();
@@ -356,7 +356,7 @@ impl PackDownloads {
             match r {
                 Ok(()) => s.installed.push(p),
                 Err(_) if cancel.load(Ordering::Relaxed) => {}
-                Err(e) => drop(s.errors.insert(p.id.clone(), e)),
+                Err(e) => drop(s.errors.insert(p.id.clone(), cl_update::friendly(&crate::applog::warned("paket", e)))),
             }
             drop(s);
             ctx.request_repaint();
