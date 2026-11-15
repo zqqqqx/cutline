@@ -541,24 +541,10 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
         }
         _ => None,
     };
-    let mut args: Vec<String> = vec![
-        "-y".into(),
-        "-v".into(),
-        "error".into(),
-        "-nostdin".into(),
-        "-progress".into(),
-        "pipe:1".into(),
-        "-nostats".into(),
-    ];
+    let mut args = head();
     args.extend(std::mem::take(&mut ctx.inputs));
-    // Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel)
-    let chapters = (s.chapters && matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a))
-        .then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name))
-        .flatten();
-    if let Some(meta) = chapters {
-        std::fs::write(workdir.path().join("chapters.txt"), meta)?;
-        args.extend(["-f".into(), "ffmetadata".into(), "-i".into(), "chapters.txt".into()]);
-    }
+    let chapters = chapters_input(p, s, (start, end), workdir.path())?;
+    args.extend(chapters.iter().cloned());
     args.extend(["-/filter_complex".into(), "graph.txt".into()]);
     if let Some(v) = vlabel {
         args.extend(["-map".into(), format!("[{v}]")]);
@@ -566,7 +552,7 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
     if let Some(a) = &alabel {
         args.extend(["-map".into(), format!("[{a}]")]);
     }
-    if args.iter().any(|a| a == "chapters.txt") {
+    if !chapters.is_empty() {
         args.extend(["-map_chapters".into(), ctx.n_input.to_string()]);
     }
     args.extend(codec_args(s));
@@ -610,13 +596,28 @@ fn pix_fmt(s: &ExportSettings) -> &'static str {
 
 /// Ein FFmpeg-Aufruf eines Abschnitts: Graph in die Datei `gfile`, Eingänge, Ausgänge.
 fn section_run(dir: &Path, gfile: &str, inputs: Vec<String>, graph: &[String], outs: Vec<String>) -> Result<Vec<String>> {
-    std::fs::write(dir.join(gfile), graph.join(";
-"))?;
-    let mut args: Vec<String> = ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into();
+    std::fs::write(dir.join(gfile), graph.join(";\n"))?;
+    let mut args = head();
     args.extend(inputs);
     args.extend(["-/filter_complex".into(), gfile.into()]);
     args.extend(outs);
     Ok(args)
+}
+
+/// Feste Kopf-Argumente jedes Export-Laufs (Fortschritt über stdout).
+fn head() -> Vec<String> {
+    ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into()
+}
+
+/// Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel):
+/// schreibt `chapters.txt` in `dir` und gibt den Eingang dafür zurück (leer ohne Kapitel).
+fn chapters_input(p: &Project, s: &ExportSettings, (start, end): (Time, Time), dir: &Path) -> Result<Vec<String>> {
+    let fits = matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a);
+    let Some(meta) = (s.chapters && fits).then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name)).flatten() else {
+        return Ok(Vec::new());
+    };
+    std::fs::write(dir.join("chapters.txt"), meta)?;
+    Ok(["-f", "ffmetadata", "-i", "chapters.txt"].map(String::from).into())
 }
 
 /// Erstes Sample (48 kHz) zur Zeit `t` ab `start` (auf dem Abschnittsraster ganzzahlig).
@@ -684,7 +685,6 @@ fn build_sections(
     let (w, h) = (s.width & !1, s.height & !1);
     let fps = format!("{}/{}", s.fps.num, s.fps.den);
     let ext = if gif { "nut" } else { s.format.extension() };
-    let head = || -> Vec<String> { ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into() };
     let (mut uniq, mut pass_base) = (0, 0);
     let mut secs = Vec::new();
     for (k, &(a, b)) in plan.iter().enumerate() {
@@ -794,13 +794,8 @@ fn build_sections(
         }
         _ => None,
     };
-    let chapters = (s.chapters && matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a))
-        .then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name))
-        .flatten();
-    if let Some(meta) = &chapters {
-        std::fs::write(workdir.path().join("chapters.txt"), meta)?;
-        args.extend(["-f".into(), "ffmetadata".into(), "-i".into(), "chapters.txt".into()]);
-    }
+    let chapters = chapters_input(p, s, (start, end), workdir.path())?;
+    args.extend(chapters.iter().cloned());
     if !graph.is_empty() {
         std::fs::write(workdir.path().join("graph.txt"), graph.join(";\n"))?;
         args.extend(["-/filter_complex".into(), "graph.txt".into()]);
@@ -811,7 +806,7 @@ fn build_sections(
     if let Some(a) = alabel {
         args.extend(["-map".into(), format!("[{a}]")]);
     }
-    if chapters.is_some() {
+    if !chapters.is_empty() {
         args.extend(["-map_chapters".into(), n.to_string()]);
     }
     if gif {
