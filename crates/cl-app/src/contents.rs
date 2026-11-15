@@ -125,6 +125,7 @@ pub fn counts_text(counts: &BTreeMap<Kind, usize>) -> String {
             crate::tr(match k {
                 Kind::Effect if one => format!("{n} Effekt"),
                 Kind::Effect => format!("{n} Effekte"),
+                // „1 Filter“/„1 Sticker“: eigene Wörterbuchzeilen (deutsch gleich, englisch Einzahl)
                 Kind::Filter => format!("{n} Filter"),
                 Kind::Transition if one => format!("{n} Übergang"),
                 Kind::Transition => format!("{n} Übergänge"),
@@ -424,6 +425,8 @@ license = "CC-BY-4.0"
         assert_eq!((st.license.as_str(), st.author.as_str()), ("CC-BY-4.0", "Jemand"));
         assert_eq!(st.category(), "Test pack", "ohne Kategorie: Ordner mit dem Paketnamen");
         assert_eq!(counts_text(&catalog::packs_in(&packs)[1].counts), "1 Sound · 1 Sticker");
+        let dict: std::collections::HashMap<_, _> = cl_i18n::ui_entries().into_iter().collect();
+        assert_eq!((dict.get("1 Filter"), dict.get("1 Sticker")), (Some(&"1 filter"), Some(&"1 sticker")), "englische Einzahl");
         // ausgeschaltet: verschwunden
         reg.apply_states(&[("test.pack".to_string(), false)].into_iter().collect());
         let packs = catalog_packs(&reg, "en");
