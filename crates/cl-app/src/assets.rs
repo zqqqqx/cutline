@@ -24,7 +24,7 @@ const TABS: [(LeftTab, &str, &str); 8] = [
     (LeftTab::Media, icon::FILM_STRIP, "Medien"),
     (LeftTab::Audio, icon::MUSIC_NOTES, "Audio"),
     (LeftTab::Text, icon::TEXT_T, "Text"),
-    (LeftTab::Stickers, icon::STICKER, "Sticker"),
+    (LeftTab::Stickers, icon::STICKER, "Elemente"),
     (LeftTab::Effects, icon::SPARKLE, "Effekte"),
     (LeftTab::Transitions, icon::INTERSECT, "Übergänge"),
     (LeftTab::Filters, icon::CIRCLE_HALF, "Filter"),
@@ -89,6 +89,41 @@ fn transition_strip_graph(id: &str) -> String {
         sample_source(THUMB.0, THUMB.1, true),
         sample_source(THUMB.0, THUMB.1, false)
     )
+}
+
+/// Ordner eines Tabs: eingebaute Kategorien, dahinter neue Kategorien aus Paketen
+/// (in Reihenfolge des ersten Auftretens).
+fn tab_cats(builtin: &[&str], entries: &[cl_fx::catalog::Entry]) -> Vec<String> {
+    let mut v: Vec<String> = builtin.iter().map(|s| s.to_string()).collect();
+    for e in entries {
+        let c = e.category();
+        if !c.is_empty() && !v.iter().any(|x| x == c) {
+            v.push(c.to_string());
+        }
+    }
+    v
+}
+
+/// Eintrag des Sound- bzw. Elemente-Tabs: eingebaut (statische ID) oder Datei aus einem Paket.
+fn catalog_item(
+    e: cl_fx::catalog::Entry,
+    builtin_key: &str,
+    find: impl Fn(&str) -> Option<&'static str>,
+) -> Option<crate::library::Item> {
+    let (key, builtin, path) = match &e.payload {
+        cl_fx::catalog::Payload::Builtin => (format!("{builtin_key}{}", e.id), Some(find(&e.id)?), None),
+        cl_fx::catalog::Payload::File(p) => (format!("pack:{}", e.id), None, Some(p.clone())),
+        cl_fx::catalog::Payload::Ffmpeg(_) => return None,
+    };
+    Some(crate::library::Item {
+        key,
+        folder: e.category().to_string(),
+        name: e.name,
+        builtin,
+        path,
+        // Paketdateien: nicht umbenennen, verschieben oder löschen
+        linked: true,
+    })
 }
 
 /// Audiodateien im Musikordner des Benutzers (einmalig im Hintergrund gesucht).
@@ -677,17 +712,13 @@ impl App {
         match sel {
             0 => {
                 use crate::library::{Item, Kind};
-                let (cat, q) = self.asset_bar(ui, "sfx", &cl_fx::sfx::SFX_CATEGORIES);
-                let builtin: Vec<Item> = cl_fx::sfx::SFX
-                    .iter()
-                    .map(|s| Item {
-                        key: format!("builtin:sfx:{}", s.id),
-                        name: s.name.to_string(),
-                        folder: s.category.to_string(),
-                        builtin: Some(s.id),
-                        path: None,
-                        linked: false,
-                    })
+                let entries = cl_fx::catalog::list(cl_fx::catalog::Kind::Sound);
+                let cats = tab_cats(&cl_fx::sfx::SFX_CATEGORIES, &entries);
+                let cats: Vec<&str> = cats.iter().map(String::as_str).collect();
+                let (cat, q) = self.asset_bar(ui, "sfx", &cats);
+                let builtin: Vec<Item> = entries
+                    .into_iter()
+                    .filter_map(|e| catalog_item(e, "builtin:sfx:", |id| cl_fx::sfx::sfx(id).map(|s| s.id)))
                     .collect();
                 let items = self.lib_items("sfx", Kind::Sound, builtin, &cat, &q);
                 let mut menu: Vec<(egui::Response, Item)> = Vec::new();
@@ -735,6 +766,9 @@ impl App {
                                 self.preview_sound(key.clone(), &path, sfx);
                             }
                             if add {
+                                if it.key.starts_with("pack:") {
+                                    self.library.mark_used(&it.key);
+                                }
                                 self.add_file_at(path, self.playhead, None);
                             }
                             if let Some(r) = drag {
@@ -1406,18 +1440,14 @@ impl App {
 
     fn sticker_tab(&mut self, ui: &mut egui::Ui) {
         use crate::library::{Item, Kind};
-        Self::tab_title(ui, "Sticker", |_| {});
-        let (cat, q) = self.asset_bar(ui, "sticker", &cl_fx::stickers::STICKER_CATEGORIES);
-        let builtin: Vec<Item> = cl_fx::stickers::STICKERS
-            .iter()
-            .map(|s| Item {
-                key: format!("builtin:st:{}", s.id),
-                name: s.name.to_string(),
-                folder: s.category.to_string(),
-                builtin: Some(s.id),
-                path: None,
-                linked: false,
-            })
+        Self::tab_title(ui, "Elemente", |_| {});
+        let entries = cl_fx::catalog::list(cl_fx::catalog::Kind::Sticker);
+        let cats = tab_cats(&cl_fx::stickers::STICKER_CATEGORIES, &entries);
+        let cats: Vec<&str> = cats.iter().map(String::as_str).collect();
+        let (cat, q) = self.asset_bar(ui, "sticker", &cats);
+        let builtin: Vec<Item> = entries
+            .into_iter()
+            .filter_map(|e| catalog_item(e, "builtin:st:", |id| cl_fx::stickers::sticker(id).map(|s| s.id)))
             .collect();
         let items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
         for it in &items {
@@ -1525,6 +1555,9 @@ impl App {
                     self.add_sticker_at(st.id, self.playhead, None);
                 }
                 (None, Some(p)) => {
+                    if it.key.starts_with("pack:") {
+                        self.library.mark_used(&it.key);
+                    }
                     self.add_own_sticker_at(&p, self.playhead, None);
                 }
                 _ => {}
@@ -1566,9 +1599,9 @@ impl App {
         self.fx_thumb("orig", orig_graph);
         for filters in [false, true] {
             let pre = if filters { "flt" } else { "fx" };
-            let defs = if filters { cl_fx::FILTERS } else { cl_fx::EFFECTS };
-            for d in defs.iter() {
-                self.fx_thumb(&format!("{pre}:{}", d.id), || fx_tile_graph(d.id, filters));
+            let kind = if filters { cl_fx::catalog::Kind::Filter } else { cl_fx::catalog::Kind::Effect };
+            for d in cl_fx::catalog::list(kind) {
+                self.fx_thumb(&format!("{pre}:{}", d.id), || fx_tile_graph(&d.id, filters));
             }
         }
         for t in cl_fx::TRANSITIONS.iter() {
@@ -1608,40 +1641,27 @@ impl App {
             }
         });
         ui.add_space(6.0);
-        let plugin: Vec<cl_fx::PluginFx> = cl_fx::plugin_fx()
-            .into_iter()
-            .filter(|p| p.is_filter == filters)
-            .collect();
-        let mut cats: Vec<&str> = if filters {
-            cl_fx::FILTER_CATEGORIES.to_vec()
+        let entries = cl_fx::catalog::list(if filters {
+            cl_fx::catalog::Kind::Filter
         } else {
-            cl_fx::EFFECT_CATEGORIES.to_vec()
-        };
-        if !plugin.is_empty() {
-            cats.push("Plugins");
-        }
+            cl_fx::catalog::Kind::Effect
+        });
+        let cats = tab_cats(
+            if filters { &cl_fx::FILTER_CATEGORIES } else { &cl_fx::EFFECT_CATEGORIES },
+            &entries,
+        );
+        let cats: Vec<&str> = cats.iter().map(String::as_str).collect();
         let area: &'static str = if filters { "filter" } else { "effect" };
         let pre = if filters { "flt" } else { "fx" };
         let (cat, q) = self.asset_bar(ui, area, &cats);
-        let mut all: Vec<(String, String, String)> = if filters {
-            cl_fx::FILTERS.iter()
-        } else {
-            cl_fx::EFFECTS.iter()
-        }
-        .map(|d| (d.id.to_string(), d.name.to_string(), d.category.to_string()))
-        .collect();
-        all.extend(
-            plugin
-                .iter()
-                .map(|p| (p.id.clone(), p.name.clone(), "Plugins".to_string())),
-        );
-        let mut items: Vec<(String, String)> = all
+        let mut items: Vec<(String, String)> = entries
             .into_iter()
-            .filter(|(id, name, c)| {
+            .map(|e| (e.category().to_string(), e.id, e.name))
+            .filter(|(c, id, name)| {
                 self.library
                     .visible(area, &cat, &q, &format!("{pre}:{id}"), name, c)
             })
-            .map(|(id, name, _)| (id, name))
+            .map(|(_, id, name)| (id, name))
             .collect();
         let mut menus: Vec<(egui::Response, String)> = Vec::new();
         let current: Vec<String> = target
@@ -1937,5 +1957,17 @@ mod tests {
         assert!(compact && step * 9.0 <= 300.0);
         // waagrechte Leiste ist davon unberührt
         assert_eq!(rail_step(40.0, 9, true), (50.0, false));
+    }
+
+    /// Paket-Kategorien: bekannter Name → eingebauter Ordner, sonst neuer Ordner dahinter.
+    #[test]
+    fn pack_categories_join_builtin_folders() {
+        let e = |c: &str| {
+            let mut x = cl_fx::catalog::list_in(&[], cl_fx::catalog::Kind::Effect).remove(0);
+            x.categories = vec![c.into()];
+            x
+        };
+        let cats = tab_cats(&["Basis", "Licht"], &[e("Licht"), e("Neu"), e("Alt"), e("Neu")]);
+        assert_eq!(cats, ["Basis", "Licht", "Neu", "Alt"]);
     }
 }

@@ -257,6 +257,8 @@ pub struct ExportDialog {
     running: Option<Running>,
     last_output: Option<PathBuf>,
     error: Option<String>,
+    /// Effekte/Filter, die der Katalog nicht kennt (fallen im Export weg)
+    missing: Vec<String>,
     /// Zeitpunkt und Dauer des letzten erfolgreichen Exports (kurze Erfolgs-Animation)
     done: Option<(Instant, f32)>,
     /// Projektstand beim Öffnen des Dialogs
@@ -293,6 +295,9 @@ impl ExportDialog {
         }
         self.open = true;
         self.error = None;
+        self.missing = cl_fx::catalog::missing(p).into_iter().map(|m| m.0).collect();
+        self.missing.sort();
+        self.missing.dedup();
         self.last_output = None;
         self.name = p.name.clone();
         self.project_path = project_path.map(Path::to_path_buf);
@@ -665,6 +670,18 @@ impl ExportDialog {
                 });
 
                 ui.add_space(12.0);
+                if !self.missing.is_empty() && self.running.is_none() {
+                    ui.label(
+                        RichText::new(crate::tr(format!(
+                            "{}  {} Inhalte fehlen und werden ohne sie exportiert: {}",
+                            icon::WARNING,
+                            self.missing.len(),
+                            self.missing.join(", ")
+                        )))
+                        .small()
+                        .color(theme::WARN_TEXT()),
+                    );
+                }
                 if let Some(e) = &self.error {
                     ui.label(RichText::new(crate::tr(format!("{} {e}", icon::WARNING_CIRCLE))).color(theme::DANGER_TEXT()));
                 }

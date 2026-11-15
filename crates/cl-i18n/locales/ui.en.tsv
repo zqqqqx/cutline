@@ -1149,7 +1149,7 @@ M setzt Marker, im Projekt-Reiter werden daraus YouTube-Kapitel.	M adds markers,
 Rückblick aus Markern	Recap from markers
 Schnellaktionen → Rückblick schneidet markierte Momente zu einem „Was bisher geschah“.	Quick Actions → Recap cuts marked moments into a “previously on”.
 Bibliothek	Library
-Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Sticker, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an.	Import media or simply drag it here. The toolbar of the media panel holds audio, text, stickers, effects, transitions, filters and captions. Star items as favorites and create your own folders.
+Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Elemente, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an.	Import media or simply drag it here. The toolbar of the media panel holds audio, text, elements, effects, transitions, filters and captions. Star items as favorites and create your own folders.
 Zeigt das Bild am Playhead. Clips verschiebst, skalierst und drehst du direkt hier. Leertaste spielt ab, J/K/L spult.	Shows the frame at the playhead. Move, scale and rotate clips right here. Space plays, J/K/L shuttles.
 Inspektor	Inspector
 Alles zum ausgewählten Clip: Bild, Ton, Tempo, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker.	Everything about the selected clip: picture, audio, speed, animations and keyframes. Without a selection you see the project and its markers here.
@@ -1578,3 +1578,24 @@ aus Markern	from markers
 Ton von	Audio from
 Alles ist optional und jederzeit in den Einstellungen änderbar.	Everything is optional and can be changed in Settings at any time.
 Dateien hierher ziehen	Drop files here
+Elemente	Elements
+Inhalte	Content
+Grundausstattung	Essentials
+Eingebaute Effekte, Filter, Übergänge, Sounds und Sticker	Built-in effects, filters, transitions, sounds and stickers
+{} Sounds	{} sounds
+Paket hinzufügen …	Add pack …
+Paket-Ordner öffnen	Open pack folder
+Quellen und Lizenzen	Sources and licenses
+Paket ersetzen?	Replace pack?
+„{}“ ist schon installiert. Durch das neue Paket ersetzen?	“{}” is already installed. Replace it with the new pack?
+Paket entfernen?	Remove pack?
+„{}“ wird gelöscht. Projekte, die seine Inhalte nutzen, melden sie danach als fehlend.	“{}” will be deleted. Projects that use its content will report it as missing.
+„{}“ ist schon mitgeliefert	“{}” already ships with Cutline
+Paket „{}“ hinzugefügt	Pack “{}” added
+Paket entfernt	Pack removed
+In die Zwischenablage kopiert	Copied to the clipboard
+{} Inhalte fehlen: {} – Paket in Einstellungen → Inhalte einschalten	{} items are missing: {} – turn on their pack in Settings → Content
+{} Inhalte fehlen und werden ohne sie exportiert: {}	{} items are missing; the export continues without them: {}
+Lizenz	License
+Autor	Author
+Abweichende Angaben	Different details

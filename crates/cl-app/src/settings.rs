@@ -246,16 +246,6 @@ impl AppSettings {
     }
 }
 
-/// Effekte und Filter (FFmpeg-Ketten) aus den aktiven Plugins
-pub fn plugin_fx(reg: &cl_plugin::Registry, lang: &str) -> Vec<cl_fx::PluginFx> {
-    use cl_plugin::AssetKind::{Filter, VideoEffect};
-    reg.ffmpeg_assets(lang)
-        .into_iter()
-        .filter(|a| matches!(a.1, VideoEffect | Filter))
-        .map(|(id, kind, name, chain)| cl_fx::PluginFx { id, name, is_filter: kind == Filter, chain })
-        .collect()
-}
-
 /// Laufender MCP-Server.
 pub struct McpRunning {
     pub port: u16,
@@ -275,6 +265,7 @@ pub enum Section {
     #[default]
     General,
     Library,
+    Contents,
     Projects,
     Audio,
     Editing,
@@ -295,8 +286,9 @@ impl Section {
     }
 }
 
-const SECTIONS: [(Section, &str, &str); 13] = [
+const SECTIONS: [(Section, &str, &str); 14] = [
     (Section::Library, icon::BOOKMARKS, "Bibliothek"),
+    (Section::Contents, icon::PACKAGE, "Inhalte"),
     (Section::General, icon::GEAR_SIX, "Allgemein"),
     (Section::Projects, icon::FOLDERS, "Projekte"),
     (Section::Editing, icon::SCISSORS, "Bearbeiten"),
@@ -484,7 +476,8 @@ impl App {
                     });
                 });
             });
-        if modal.should_close() {
+        self.contents_dialog(ctx);
+        if modal.should_close() && self.contents_dialog.is_none() {
             self.settings_open = false;
         }
         if !self.settings_open {
@@ -492,17 +485,16 @@ impl App {
         }
     }
 
-    /// Effekte und Filter aus Plugins neu anmelden (nach Ein- oder Ausschalten)
-    pub fn refresh_plugin_fx(&mut self) {
-        cl_fx::register_plugin_fx(plugin_fx(&self.plugins, self.i18n.lang().code()));
-        self.invalidate_preview();
-    }
-
-    /// Alle Plugins mit Schalter; ausgeschaltete sind ausgegraut.
+    /// Integrationen mit Schalter; ausgeschaltete sind ausgegraut. Inhaltspakete stehen unter „Inhalte“.
     pub fn plugins_settings(&mut self, ui: &mut egui::Ui) {
         let lang = self.i18n.lang().code().to_string();
         let mut toggled = None;
-        for p in &self.plugins.plugins {
+        for p in self
+            .plugins
+            .plugins
+            .iter()
+            .filter(|p| p.manifest.plugin.kind == cl_plugin::PluginKind::Integration)
+        {
             let m = &p.manifest.plugin;
             let mut on = p.enabled;
             egui::Frame::default()
@@ -530,14 +522,6 @@ impl App {
         }
         if let Some((id, on)) = toggled {
             self.set_plugin_enabled(&id, on);
-        }
-        for e in &self.plugins.errors {
-            ui.label(RichText::new(format!("{} {e}", icon::WARNING)).small().color(theme::WARN_TEXT()));
-        }
-        if ui.add(theme::ghost(format!("{}  Plugin-Ordner öffnen", icon::FOLDER_OPEN))).clicked() {
-            let d = paths::data_dir().join("Plugins");
-            let _ = std::fs::create_dir_all(&d);
-            crate::home::reveal(&d);
         }
     }
 
@@ -601,6 +585,8 @@ impl App {
                                 {
                                     self.i18n.set_lang(l);
                                     self.settings.lang = l.code().into();
+                                    // Paketnamen in der neuen Sprache
+                                    self.refresh_catalog();
                                 }
                             }
                         });
@@ -1006,6 +992,7 @@ impl App {
             Section::Shortcuts => self.shortcuts_settings(ui),
             Section::Updates => self.updates_settings(ui),
             Section::Integrations => self.integrations_settings(ui),
+            Section::Contents => self.contents_settings(ui),
             Section::Import => self.import_settings(ui),
             Section::Models => self.models_settings(ui),
             Section::About => {

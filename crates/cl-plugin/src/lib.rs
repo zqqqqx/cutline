@@ -132,8 +132,15 @@ pub struct AssetEntry {
     /// FFmpeg-Filterkette (Effekt/Filter) bzw. `xfade`-Name oder `custom:<Ausdruck>` (Übergang).
     /// Platzhalter: `{intensity}` (0…1) und `{<param-id>}`.
     pub ffmpeg: Option<String>,
+    /// Datei relativ zum Plugin-Ordner (Sound/Sticker: Pflicht, Endung siehe [`SOUND_EXT`]/[`STICKER_EXT`]).
     pub file: Option<String>,
     pub preview: Option<String>,
+    /// Abweichende Angaben für dieses Asset (Standard: die des Pakets)
+    pub license: Option<String>,
+    pub author: Option<String>,
+    pub source: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// Benötigte Analysen, z. B. "segmentation" für Körpereffekte.
     #[serde(default)]
     pub requires: Vec<String>,
@@ -160,9 +167,24 @@ impl AssetEntry {
     }
 }
 
+/// Erlaubte Endungen für Paket-Sounds (wie die eigene Bibliothek).
+pub const SOUND_EXT: &[&str] = &["wav", "mp3", "ogg", "flac", "m4a", "aac", "opus"];
+/// Erlaubte Endungen für Paket-Sticker. GIF/APNG fehlen bewusst: Sticker werden als Bild-Clip
+/// eingefügt, und der Export liest Bild-Clips mit `-loop 1`, das der GIF-/APNG-Leser ablehnt.
+pub const STICKER_EXT: &[&str] = &["png", "webp", "svg", "jpg", "jpeg"];
+
+/// Relativer Pfad ohne `..`, Wurzel oder Laufwerk (bleibt im Plugin-Ordner).
+pub fn relative_inside(f: &str) -> bool {
+    !f.is_empty()
+        && !f.contains("..")
+        && Path::new(f)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
 /// Kette darf keine eigenen Ein-/Ausgänge, Dateien, Graph-Trenner, Instanznamen (`@`)
 /// oder Filter mit Datei-/Fremdcode-Zugriff enthalten.
-fn ffmpeg_chain_allowed(f: &str) -> bool {
+pub fn ffmpeg_chain_allowed(f: &str) -> bool {
     const BLOCKED: [&str; 8] = [
         "movie", "amovie", "frei0r", "ladspa", "lv2", "sendcmd", "zmq", "lut3d",
     ];
@@ -189,6 +211,8 @@ pub struct PluginMeta {
     #[serde(default)]
     pub authors: Vec<String>,
     pub license: String,
+    /// Herkunft (URL), für die Danksagung
+    pub source: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
     /// WASM-Komponente bzw. CLAP-Bundle relativ zum Plugin-Ordner, bei Integrationen `builtin:<name>`.
@@ -350,16 +374,43 @@ impl Manifest {
                     _ => {}
                 }
             }
+            let exts = match a.kind {
+                AssetKind::Sound => Some(SOUND_EXT),
+                AssetKind::Sticker => Some(STICKER_EXT),
+                _ => None,
+            };
+            if let Some(exts) = exts {
+                let Some(f) = &a.file else {
+                    return bad(format!("Asset '{}' braucht eine Datei ('file')", a.id));
+                };
+                let ext = Path::new(f)
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                    .unwrap_or_default();
+                if !exts.contains(&ext.as_str()) {
+                    return bad(format!("Dateityp von '{f}' nicht erlaubt (erlaubt: {})", exts.join(", ")));
+                }
+            }
+            for f in [&a.shader, &a.lut, &a.file, &a.preview].into_iter().flatten() {
+                if f.contains("..") || Path::new(f).is_absolute() || !relative_inside(f) {
+                    return bad(format!("Pfad '{f}' muss innerhalb des Plugins liegen"));
+                }
+            }
             if let Some(dir) = dir {
                 for f in [&a.shader, &a.lut, &a.file, &a.preview]
                     .into_iter()
                     .flatten()
                 {
-                    if f.contains("..") || Path::new(f).is_absolute() {
-                        return bad(format!("Pfad '{f}' muss innerhalb des Plugins liegen"));
-                    }
                     if !dir.join(f).is_file() {
                         return bad(format!("Datei '{f}' fehlt"));
+                    }
+                    // auch über Verknüpfungen nicht aus dem Ordner heraus
+                    let inside = match (dir.join(f).canonicalize(), dir.canonicalize()) {
+                        (Ok(a), Ok(d)) => a.starts_with(d),
+                        _ => false,
+                    };
+                    if !inside {
+                        return bad(format!("Pfad '{f}' muss innerhalb des Plugins liegen"));
                     }
                 }
             }
@@ -494,6 +545,94 @@ impl Registry {
     }
 }
 
+/// Ergebnis von [`install_zip`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum Installed {
+    /// Paket mit dieser ID liegt jetzt unter `root/<id>`
+    Done(String),
+    /// Paket gleicher ID ist schon da (nichts geändert; mit `replace` erneut aufrufen)
+    Exists(String),
+}
+
+/// Asset-Paket aus einer ZIP-Datei nach `root/<id>` entpacken. Das Manifest liegt im Stamm des
+/// Archivs oder in genau einem Unterordner. Unsichere Pfade, ein ungültiges Manifest oder eine
+/// andere Art als `asset-pack` brechen ab; dann bleibt `root` unverändert.
+pub fn install_zip(zip_path: &Path, root: &Path, replace: bool) -> Result<Installed, String> {
+    std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let staging = root.join(format!(".install-{}-{nanos}", std::process::id()));
+    let r = install_staged(zip_path, root, &staging, replace);
+    let _ = std::fs::remove_dir_all(&staging);
+    r
+}
+
+fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool) -> Result<Installed, String> {
+    let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Keine gültige ZIP-Datei: {e}"))?;
+    for i in 0..zip.len() {
+        let mut e = zip.by_index(i).map_err(|e| e.to_string())?;
+        let Some(rel) = e.enclosed_name() else {
+            return Err(format!("Unsicherer Pfad im Paket: {}", e.name().unwrap_or_default()));
+        };
+        let dst = staging.join(rel);
+        if e.is_dir() {
+            std::fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
+            continue;
+        }
+        if let Some(d) = dst.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        let mut out = std::fs::File::create(&dst).map_err(|e| e.to_string())?;
+        std::io::copy(&mut e, &mut out).map_err(|e| e.to_string())?;
+    }
+    let dir = if staging.join(MANIFEST_FILE).is_file() {
+        staging.to_path_buf()
+    } else {
+        let subs: Vec<PathBuf> = std::fs::read_dir(staging)
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.join(MANIFEST_FILE).is_file())
+            .collect();
+        match subs.as_slice() {
+            [one] => one.clone(),
+            _ => return Err(format!("Kein {MANIFEST_FILE} im Paket")),
+        }
+    };
+    let path = dir.join(MANIFEST_FILE);
+    let m = Manifest::parse(&std::fs::read_to_string(&path).map_err(|e| e.to_string())?, &path)
+        .map_err(|e| e.to_string())?;
+    m.validate(Some(&dir)).map_err(|e| e.to_string())?;
+    if m.plugin.kind != PluginKind::AssetPack {
+        return Err("Nur Inhaltspakete (asset-pack) lassen sich hinzufügen".into());
+    }
+    let id = m.plugin.id.clone();
+    let target = root.join(&id);
+    if target.exists() {
+        if !replace {
+            return Ok(Installed::Exists(id));
+        }
+        std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&dir, &target).map_err(|e| e.to_string())?;
+    Ok(Installed::Done(id))
+}
+
+/// Paketordner löschen – nur, wenn er unterhalb von `root` liegt (eigene Pakete).
+pub fn remove_pack(root: &Path, dir: &Path) -> Result<(), String> {
+    let (r, d) = (
+        root.canonicalize().map_err(|e| e.to_string())?,
+        dir.canonicalize().map_err(|e| e.to_string())?,
+    );
+    if d == r || !d.starts_with(&r) {
+        return Err("Nur eigene Pakete lassen sich entfernen".into());
+    }
+    std::fs::remove_dir_all(&d).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,5 +744,105 @@ params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=
                 .collect(),
         );
         assert!(reg.integration_enabled("epidemic-sound"));
+    }
+
+    const PACK: &str = r#"
+[plugin]
+id = "test.sounds"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Testpaket" }
+license = "CC0-1.0"
+
+[[asset]]
+id = "ding"
+kind = "sound"
+name = { de = "Ding" }
+file = "ding.wav"
+license = "CC-BY-4.0"
+"#;
+
+    #[test]
+    fn sound_and_sticker_files_stay_inside_and_have_allowed_types() {
+        let dir = tempfile::tempdir().unwrap();
+        let pack = dir.path().join("p");
+        std::fs::create_dir_all(&pack).unwrap();
+        std::fs::write(pack.join("ding.wav"), b"RIFF").unwrap();
+        std::fs::write(dir.path().join("x.wav"), b"RIFF").unwrap();
+        let m = Manifest::parse(PACK, Path::new("x")).unwrap();
+        m.validate(Some(&pack)).unwrap();
+        assert_eq!(m.assets[0].license.as_deref(), Some("CC-BY-4.0"));
+        for bad in ["../x.wav", "/x.wav", "C:/x.wav", r"C:x.wav", "sub/../../x.wav"] {
+            let t = PACK.replace("file = \"ding.wav\"", &format!("file = '{bad}'"));
+            let err = Manifest::parse(&t, Path::new("x")).unwrap().validate(Some(&pack)).unwrap_err().to_string();
+            assert!(err.contains("innerhalb"), "{bad}: {err}");
+        }
+        for (f, ok) in [("ding.exe", false), ("ding.gif", false), ("ding", false), ("DING.WAV", true)] {
+            let t = PACK.replace("ding.wav", f);
+            let r = Manifest::parse(&t, Path::new("x")).unwrap().validate(None);
+            assert_eq!(r.is_ok(), ok, "{f}: {r:?}");
+        }
+        // Sticker brauchen eine Datei
+        let t = PACK.replace("kind = \"sound\"", "kind = \"sticker\"").replace("file = \"ding.wav\"", "");
+        assert!(Manifest::parse(&t, Path::new("x")).unwrap().validate(None).is_err());
+        let t = PACK.replace("kind = \"sound\"", "kind = \"sticker\"").replace("ding.wav", "a.svg");
+        Manifest::parse(&t, Path::new("x")).unwrap().validate(None).unwrap();
+    }
+
+    fn zip_with(path: &Path, files: &[(&str, &[u8])]) {
+        use std::io::Write;
+        let mut w = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        for (n, d) in files {
+            w.start_file(*n, zip::write::SimpleFileOptions::default()).unwrap();
+            w.write_all(d).unwrap();
+        }
+        w.finish().unwrap();
+    }
+
+    #[test]
+    fn install_zip_is_safe_and_asks_before_replacing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Plugins");
+        let zp = dir.path().join("p.zip");
+        // Manifest in einem Unterordner
+        zip_with(&zp, &[("pack/plugin.toml", PACK.as_bytes()), ("pack/ding.wav", b"RIFF")]);
+        assert_eq!(install_zip(&zp, &root, false).unwrap(), Installed::Done("test.sounds".into()));
+        assert!(root.join("test.sounds/ding.wav").is_file());
+        // gleiche ID: erst fragen, dann ersetzen
+        zip_with(&zp, &[("plugin.toml", PACK.as_bytes()), ("ding.wav", b"RIFF2")]);
+        assert_eq!(install_zip(&zp, &root, false).unwrap(), Installed::Exists("test.sounds".into()));
+        assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF");
+        assert_eq!(install_zip(&zp, &root, true).unwrap(), Installed::Done("test.sounds".into()));
+        assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF2");
+        // bösartiger Pfad: nichts wird übernommen
+        let evil = dir.path().join("evil.zip");
+        zip_with(&evil, &[("plugin.toml", PACK.replace("test.sounds", "test.evil").as_bytes()), ("ding.wav", b"x"), ("../boese.txt", b"x")]);
+        assert!(install_zip(&evil, &root, true).is_err());
+        assert!(!dir.path().join("boese.txt").exists());
+        assert!(!root.join("test.evil").exists());
+        // ungültiges Manifest (Datei fehlt) und Integrationen werden abgelehnt
+        zip_with(&evil, &[("plugin.toml", PACK.replace("test.sounds", "test.evil").as_bytes())]);
+        assert!(install_zip(&evil, &root, true).is_err());
+        let integ = "[plugin]
+id='test.int'
+version='1.0.0'
+api=1
+kind='integration'
+entry='builtin:x'
+name={de='I'}
+license='MIT'
+permissions=['net']
+";
+        zip_with(&evil, &[("plugin.toml", integ.as_bytes())]);
+        assert!(install_zip(&evil, &root, true).is_err());
+        // nur Ordner mit test.sounds übrig, kein Zwischenordner
+        let left: Vec<_> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(left, vec![std::ffi::OsString::from("test.sounds")]);
+        // Entfernen nur unterhalb von root
+        assert!(remove_pack(&root, dir.path()).is_err());
+        assert!(remove_pack(&root, &root).is_err());
+        remove_pack(&root, &root.join("test.sounds")).unwrap();
+        assert!(!root.join("test.sounds").exists());
     }
 }
