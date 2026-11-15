@@ -1434,6 +1434,27 @@ impl App {
         c.fade_out = Time::from_secs_f64(fo as f64);
         *e |= r1;
         *e |= r2;
+        // Datei mit mehreren Tonspuren (z. B. Spiel und Mikrofon): welche dieser Clip spielt
+        let streams = match &c.content {
+            ClipContent::Media { media, .. } => self.project.media(*media).map_or(0, |m| m.audio_streams),
+            _ => 0,
+        };
+        if streams > 1 {
+            let mut cur = c.audio_stream.unwrap_or(0).min(streams - 1);
+            theme::row(ui, "Tonspur der Datei", |ui| {
+                egui::ComboBox::from_id_salt("clip-audio-stream")
+                    .selected_text(format!("{} {}", crate::tr("Spur"), cur + 1))
+                    .width((ui.available_width() - 12.0).max(60.0))
+                    .show_ui(ui, |ui| {
+                        for n in 0..streams {
+                            if ui.selectable_value(&mut cur, n, format!("{} {}", crate::tr("Spur"), n + 1)).changed() {
+                                c.audio_stream = (cur > 0).then_some(cur);
+                                e.commit = true;
+                            }
+                        }
+                    });
+            });
+        }
         if matches!(c.content, ClipContent::Media { kind: MediaKind::Audio, .. }) {
             disabled_toggle(ui, c, e, &self.key_of("disable"));
         }

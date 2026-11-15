@@ -264,7 +264,8 @@ pub struct App {
     /// Abspielen, sobald die Daten dieses Sounds da sind
     pub sound_pending: Option<String>,
     pub thumbs: HashMap<MediaId, egui::TextureHandle>,
-    pub waves: HashMap<MediaId, Vec<f32>>,
+    /// Wellenform je Datei und Tonspur (0 = erste)
+    pub waves: HashMap<(MediaId, u32), Vec<f32>>,
     pub fx_thumbs: HashMap<String, egui::TextureHandle>,
     pub fx_thumbs_requested: HashSet<String>,
     /// Rechtsklick → Eigenschaften
@@ -672,11 +673,12 @@ impl App {
                 }
             }
             for m in self.project.media.iter().filter(|m| m.is_local()) {
-                if m.has_audio && !self.waves.contains_key(&m.id) {
-                    self.waves.insert(m.id, Vec::new()); // Platzhalter: Auftrag nur einmal senden
+                if m.has_audio && !self.waves.contains_key(&(m.id, 0)) {
+                    self.waves.insert((m.id, 0), Vec::new()); // Platzhalter: Auftrag nur einmal senden
                     self.decoder.send(Job::Wave {
                         media: m.id,
                         path: m.path.clone(),
+                        stream: 0,
                     });
                 }
                 if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) {
@@ -687,6 +689,15 @@ impl App {
                         path: m.path.clone(),
                         at,
                     });
+                }
+            }
+            // weitere Tonspuren nur, wenn ein Clip sie spielt
+            for c in self.project.timeline.tracks.iter().flat_map(|t| t.clips.iter()) {
+                let (ClipContent::Media { media, .. }, Some(n)) = (&c.content, c.audio_stream) else { continue };
+                let Some(m) = self.project.media(*media).filter(|m| n > 0 && n < m.audio_streams && m.is_local()) else { continue };
+                if !self.waves.contains_key(&(m.id, n)) {
+                    self.waves.insert((m.id, n), Vec::new());
+                    self.decoder.send(Job::Wave { media: m.id, path: m.path.clone(), stream: n });
                 }
             }
         }
@@ -2595,7 +2606,7 @@ impl App {
                 let ids = self.import_media(vec![path]);
                 if let Some(id) = ids.first() {
                     // Live-Waveform übernehmen, bis die genaue berechnet ist
-                    self.waves.entry(*id).or_insert(peaks);
+                    self.waves.entry((*id, 0)).or_insert(peaks);
                     if let Some(c) = self.add_media_at(*id, start, None) {
                         // Einstellungen aus dem Einsprech-Fenster übernehmen
                         let tuned = self.voiceover.volume_db.abs() > 0.01 || !self.voiceover.audio.is_empty();
@@ -3364,7 +3375,7 @@ fn audio_signature(p: &Project) -> u64 {
                 c.fx.reverse,
             )
                 .hash(&mut h);
-            (c.speed.to_bits(), c.volume_db.to_bits()).hash(&mut h);
+            (c.speed.to_bits(), c.volume_db.to_bits(), c.audio_stream).hash(&mut h);
             serde_json::to_string(&c.audio)
                 .unwrap_or_default()
                 .hash(&mut h);

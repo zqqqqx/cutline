@@ -527,6 +527,7 @@ mod tests {
             height: h,
             fps: Some(fps),
             has_audio: false,
+            audio_streams: 0,
             video_codec: Some(codec.into()),
             audio_codec: None,
         }

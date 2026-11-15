@@ -859,8 +859,8 @@ impl App {
                     );
                     self.thumbs.insert(media, tex);
                 }
-                Done::Wave { media, peaks } => {
-                    self.waves.insert(media, peaks);
+                Done::Wave { media, stream, peaks } => {
+                    self.waves.insert((media, stream), peaks);
                 }
                 Done::SoundMeta { key, media, bars } => {
                     if self.sound_pending.as_deref() == Some(key.as_str()) {

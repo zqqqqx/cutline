@@ -2238,7 +2238,8 @@ impl App {
                 .media(*media)
                 .map(|m| m.duration.as_secs_f64())
                 .unwrap_or(f64::MAX);
-            if let Some(peaks) = self.waves.get(media).filter(|w| !w.is_empty()) {
+            let stream = c.audio_stream.filter(|&n| self.project.media(*media).is_some_and(|m| n < m.audio_streams)).unwrap_or(0);
+            if let Some(peaks) = self.waves.get(&(*media, stream)).filter(|w| !w.is_empty()) {
                 let audio = *mk == MediaKind::Audio;
                 let wave_h = if audio {
                     body.height() - 4.0
@@ -2251,6 +2252,8 @@ impl App {
                 } else {
                     Color32::from_rgba_unmultiplied(0xC8, 0xF0, 0xF2, 160)
                 };
+                // Ton stumm (Spur stumm oder −60 dB), obwohl die Datei Ton hat: Wellenform blass
+                let wcol = if tr.muted || c.volume_db <= -59.9 { wcol.gamma_multiply(0.35) } else { wcol };
                 if !audio {
                     inner.rect_filled(
                         Rect::from_min_max(

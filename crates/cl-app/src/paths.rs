@@ -381,6 +381,7 @@ fn moves_projects_and_media_folders() {
         height: 0,
         fps: None,
         has_audio: true,
+        audio_streams: 1,
         video_codec: None,
         audio_codec: None,
     };
