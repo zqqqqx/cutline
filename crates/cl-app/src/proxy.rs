@@ -898,12 +898,9 @@ impl App {
         static CLEANED: std::sync::Once = std::sync::Once::new();
         CLEANED.call_once(|| parts::cleanup(&dir()));
         self.update_focus(ctx);
-        if self.tasks.running("proxy").is_some() {
-            // nach Ende einer Aufgabe sofort weitersuchen
-            self.proxy_scan = None;
-            return;
-        }
-        // Dateisystem höchstens alle 2 s prüfen (oder wenn sich die Medienliste ändert)
+        // Dateisystem höchstens alle 2 s prüfen (oder wenn sich die Medienliste ändert; nach dem
+        // Ende einer Aufgabe sofort). Auch während eines Baus: ein neues Medium am Playhead bekommt
+        // seinen Eintrag, und der laufende Bau gibt den Vorrang ab (siehe `other_media_first`).
         let n = self.project.media.len();
         if self
             .proxy_scan
@@ -921,7 +918,7 @@ impl App {
             .filter(|m| wants_proxy(m) && m.path.is_file() && refresh_entry(&root, m, h, fps, playing) && !self.proxy_failed.contains(&m.id))
             .map(|m| m.id)
             .collect();
-        if missing.is_empty() {
+        if missing.is_empty() || self.tasks.running("proxy").is_some() {
             return;
         }
         let (mut at, mut vis) = (HashSet::new(), HashSet::new());
