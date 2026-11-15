@@ -1,7 +1,7 @@
 //! Player-Kern: der Ablauf der Wiedergabe als reine Logik – ohne egui, ohne Prozesse und ohne
 //! eigene Uhr (die Zeit kommt als Eingabe `now` in Sekunden). Die App ist nur der Treiber: sie
 //! meldet Ereignisse (Play, Pause, Sprung, Bearbeitung, Ton-Zustand), fragt je Ebene, ob ein
-//! Bildstrom zu öffnen ist ([`PlayCore::want`]), hängt geöffnete Ströme an ([`PlayCore::attach`]),
+//! Bildstrom zu öffnen ist ([`PlayCore::want`]), hängt geöffnete Ströme an ([`PlayCore::attach_alias`]),
 //! holt fällige Bilder ([`PlayCore::pull`]) und führt die Ton-Aufträge aus ([`PlayCore::cmds`]).
 //!
 //! Zustände und Übergänge:
@@ -91,6 +91,10 @@ pub struct Want {
     pub end: Time,
     /// beginnt erst gleich: nur vorab öffnen, noch keine Bilder holen
     pub prefetch: bool,
+    /// gleiches Bild aus derselben Quelle (Datei, Quellzeit je Zeitleistenstelle, Effekte, Größe),
+    /// unabhängig von der Clip-ID: nach Teilen übernimmt der neue Clip den laufenden Strom
+    /// (0 = keiner)
+    pub alias: u64,
 }
 
 /// Auftrag „Strom ab `at` öffnen“ (Antwort auf [`PlayCore::want`]).
@@ -142,20 +146,31 @@ pub struct Stats {
 
 /// Rückstand, ab dem gezielt aufgeholt wird: zwei Bildintervalle …
 const LAG_FRAMES: f64 = 2.0;
-/// … länger als diese Zeit (so bleibt der Rückstand samt Neustart unter 0,5 s)
+/// … länger als diese Zeit: dann eine Qualitätsstufe kleiner (Strom zu langsam)
 pub const CATCH_UP_AFTER: f64 = 0.2;
-/// Puffern endet spätestens nach dieser Zeit (dann läuft die Uhr mit gehaltenem Bild)
-const WARM_MAX: f64 = 1.0;
+/// Neu öffnen kostet die Suche ab dem Keyframe (bei langen GOPs Sekunden): nur wenn die
+/// Qualität schon unten ist und der Rückstand trotzdem diese Größe erreicht …
+const REOPEN_LAG: f64 = 1.0;
+/// … und höchstens einmal in dieser Zeit je Ebene (auch bei hängenden Strömen: keine Schleife)
+const REOPEN_BLOCK: f64 = 5.0;
+/// Hängt ein Strom: so lange ganz ohne Bild (vor dem ersten Bild: Suche in der Quelle)
+const STALL: f64 = 2.0;
+const STALL_FIRST: f64 = 6.0;
+/// Puffern endet spätestens nach dieser Zeit (dann läuft die Uhr, das Bild holt auf)
+const WARM_MAX: f64 = 0.5;
 /// Hörbare Änderungen beim Abspielen: Ton erst so lange nach der letzten Änderung neu
 pub const AUDIO_DEBOUNCE: f64 = 0.15;
 /// Öffnen schlug fehl: so lange nicht erneut versuchen
 const RETRY_OPEN: f64 = 1.0;
-/// Einzelbild beim Abspielen (Rückwärts, Tempo-Kurve): laufenden Auftrag so lange nicht ersetzen
-const STILL_PATIENCE: f64 = 0.6;
+/// Einzelbild beim Abspielen (Rückwärts, Tempo-Kurve, bewegte Bilder): ein laufender Auftrag wird
+/// nicht ersetzt, nur weil die Uhr weiter ist – sein Bild wird gezeigt, auch wenn es einige Bilder
+/// alt ist (sonst verhungert jeder Auftrag). Nur als Sicherung nach so langer Zeit neu.
+const STILL_PATIENCE: f64 = 10.0;
 
 struct Slot<S> {
     src: S,
     key: u64,
+    alias: u64,
     /// Zeitleistenstelle des ersten Bildes
     t0: Time,
     fps: f64,
@@ -171,7 +186,7 @@ struct Slot<S> {
 
 impl<S: Source> Slot<S> {
     fn new(src: S, key: u64, t0: Time, fps: f64, now: f64) -> Self {
-        Self { src, key, t0, fps: fps.max(1.0), taken: 0, ended: false, waiting_since: None, opened: now, first: None, behind_since: None, win_frames: 0 }
+        Self { src, key, alias: 0, t0, fps: fps.max(1.0), taken: 0, ended: false, waiting_since: None, opened: now, first: None, behind_since: None, win_frames: 0 }
     }
 
     /// Alle fälligen Bilder holen, das neueste zurückgeben (Rest zählt als übersprungen).
@@ -215,16 +230,16 @@ impl<S: Source> Slot<S> {
         (self.taken > 0 && pos >= self.t0).then(|| pos.as_secs_f64() - (self.t0.as_secs_f64() + (self.taken - 1) as f64 / self.fps))
     }
 
-    /// Strom beendet oder seit über einer Sekunde ohne fälliges Bild (vor dem ersten Bild läuft
-    /// noch die Suche in der Quelle: großzügiger)
+    /// Strom beendet oder seit [`STALL`] ganz ohne Bild (vor dem ersten Bild läuft noch die Suche
+    /// in der Quelle: großzügiger). Ein langsamer Strom, der noch liefert, hängt nicht.
     fn stalled(&self, now: f64) -> bool {
-        let limit = if self.taken == 0 { 6.0 } else { 1.0 };
+        let limit = if self.taken == 0 { STALL_FIRST } else { STALL };
         self.ended || self.waiting_since.is_some_and(|w| now - w > limit)
     }
 
     /// Anlaufzeit dieses Stroms (Öffnen bis erstes Bild), für das Aufholen
     fn lead(&self) -> f64 {
-        self.first.map_or(0.3, |f| f - self.opened).clamp(0.05, 1.0)
+        self.first.map_or(0.3, |f| f - self.opened).clamp(0.05, 3.0)
     }
 }
 
@@ -246,6 +261,12 @@ pub struct PlayCore<S: Source> {
     /// gezielt neu öffnen ab dieser Stelle
     reopen: HashMap<Lid, Time>,
     failed: HashMap<Lid, (u64, f64)>,
+    /// zuletzt neu geöffnet (Hängen, Aufholen): Sperrfrist [`REOPEN_BLOCK`]
+    reopened: HashMap<Lid, f64>,
+    /// in diesem UI-Bild gewollte Ebenen (ein Strom wird nur von einer nicht mehr gewollten übernommen)
+    wanted: Vec<Lid>,
+    /// höchste Stufe der automatischen Qualität (aus dem Takt)
+    max_level: usize,
     /// Einzelbilder: angefordert (Schlüssel, seit) und gezeigt
     requested: HashMap<Lid, (u64, f64)>,
     shown: HashMap<Lid, u64>,
@@ -280,6 +301,9 @@ impl<S: Source> Default for PlayCore<S> {
             seq: 0,
             reopen: HashMap::new(),
             failed: HashMap::new(),
+            reopened: HashMap::new(),
+            wanted: Vec::new(),
+            max_level: 0,
             requested: HashMap::new(),
             shown: HashMap::new(),
             held: None,
@@ -366,6 +390,9 @@ impl<S: Source> PlayCore<S> {
     }
 
     fn clear_streams(&mut self) {
+        // Sprung: laufende Einzelbilder gehören zur alten Stelle
+        self.requested.clear();
+        self.reopened.clear();
         self.cur.clear();
         self.next.clear();
         self.opening.clear();
@@ -535,6 +562,7 @@ impl<S: Source> PlayCore<S> {
             Mode::Puffern => self.warm(t),
             Mode::Spielen => self.run(t),
         }
+        self.max_level = t.max_quality_level;
         self.measure(now, t.max_quality_level);
         self.pos
     }
@@ -656,7 +684,7 @@ impl<S: Source> PlayCore<S> {
     }
 
     /// Soll für die Ebene `w` ein Strom geöffnet werden? `Some(open)`: ab `open.at` öffnen und mit
-    /// [`Self::attach`] (oder [`Self::open_failed`]) zurückmelden. Nur beim Abspielen mit Tempo 1.
+    /// [`Self::attach_alias`] (oder [`Self::open_failed`]) zurückmelden. Nur beim Abspielen mit Tempo 1.
     pub fn want(&mut self, w: &Want, now: f64) -> Option<Open> {
         if !self.streaming() {
             return None;
@@ -665,16 +693,33 @@ impl<S: Source> PlayCore<S> {
         if self.failed.get(&id).is_some_and(|(k, t)| *k == w.key && now - t < RETRY_OPEN) {
             return None;
         }
+        self.wanted.push(id);
         // hängender oder vorzeitig beendeter Strom: an der aktuellen Stelle neu (das letzte Bild
-        // bleibt stehen, bis der neue liefert)
+        // bleibt stehen, bis der neue liefert), mit Sperrfrist gegen eine Neustart-Schleife
         if !w.prefetch
             && self.mode == Mode::Spielen
             && (w.end - self.pos).as_secs_f64() > 0.25
+            && self.reopened.get(&id).is_none_or(|t| now - t >= REOPEN_BLOCK)
             && self.cur.get(&id).is_some_and(|s| s.key == w.key && s.t0 <= self.pos && s.stalled(now))
         {
             self.cur.remove(&id);
             self.next.remove(&id);
+            self.reopened.insert(id, now);
             self.stats.stalls += 1;
+        }
+        // nach Teilen u. Ä.: laufenden Strom gleicher Quelle von einer nicht mehr gewollten Ebene übernehmen
+        if w.alias != 0 && !w.prefetch && !self.cur.contains_key(&id) && !self.opening.contains_key(&id) {
+            let donor = self.cur.iter().find(|(o, s)| s.alias == w.alias && !self.wanted.contains(o) && s.t0 <= self.pos).map(|(o, _)| *o);
+            if let Some(o) = donor {
+                if let Some(mut s) = self.cur.remove(&o) {
+                    s.key = w.key;
+                    self.next.remove(&o);
+                    self.cur.insert(id, s);
+                    if let Some(k) = self.shown.remove(&o) {
+                        self.shown.insert(id, k);
+                    }
+                }
+            }
         }
         let cur = self.cur.get(&id).is_some_and(|s| s.key == w.key);
         let next = self.next.get(&id).is_some_and(|s| s.key == w.key);
@@ -702,7 +747,8 @@ impl<S: Source> PlayCore<S> {
 
     /// Geöffneten Strom anhängen. Veraltete (anderes Projekt, Schlüssel nicht mehr gewollt,
     /// nicht mehr beim Abspielen) werden verworfen (beendet beim Fallenlassen).
-    pub fn attach(&mut self, o: Open, fps: f64, src: S, now: f64) -> bool {
+    /// `alias`: Quell-Fingerabdruck des Stroms (siehe [`Want::alias`]).
+    pub fn attach_alias(&mut self, o: Open, fps: f64, src: S, now: f64, alias: u64) -> bool {
         if o.gen != self.gen || !self.streaming() {
             return false;
         }
@@ -710,7 +756,8 @@ impl<S: Source> PlayCore<S> {
             return false;
         };
         self.opening.remove(&o.id);
-        let slot = Slot::new(src, key, o.at, fps, now);
+        let mut slot = Slot::new(src, key, o.at, fps, now);
+        slot.alias = alias;
         if replace && self.cur.contains_key(&o.id) {
             self.next.insert(o.id, slot);
         } else {
@@ -753,17 +800,30 @@ impl<S: Source> PlayCore<S> {
         if got.is_none() {
             got = s.drain(pos, now, &mut self.stats, true);
         }
-        // Rückstand: länger als CATCH_UP_AFTER über zwei Bildintervalle → ab Uhr + Anlaufzeit neu
+        // Rückstand über zwei Bildintervalle länger als CATCH_UP_AFTER: Strom zu langsam → eine
+        // Qualitätsstufe kleiner (fällige Bilder werden ohnehin bis zur Uhr übersprungen). Neu ab
+        // Uhr + Anlaufzeit nur, wenn die Qualität schon unten ist und der Rückstand groß wird –
+        // ein Neustart sucht ab dem Keyframe und kostet selbst Zeit.
         if let Some(lag) = s.lag(pos).filter(|_| self.mode == Mode::Spielen) {
             self.stats.max_lag = self.stats.max_lag.max(lag);
             if lag > LAG_FRAMES / s.fps {
                 let since = *s.behind_since.get_or_insert(now);
-                if self.catch_up && now - since >= CATCH_UP_AFTER && !self.next.contains_key(&id) && !self.opening.contains_key(&id) {
+                if now - since >= CATCH_UP_AFTER {
+                    self.win_catch_up = true;
+                }
+                let bottom = self.quality.level >= self.max_level;
+                if self.catch_up
+                    && bottom
+                    && lag >= REOPEN_LAG
+                    && self.reopened.get(&id).is_none_or(|t| now - t >= REOPEN_BLOCK)
+                    && !self.next.contains_key(&id)
+                    && !self.opening.contains_key(&id)
+                {
                     s.behind_since = None;
                     let at = pos + Time::from_secs_f64(s.lead());
                     self.reopen.insert(id, at);
+                    self.reopened.insert(id, now);
                     self.stats.catch_ups += 1;
-                    self.win_catch_up = true;
                 }
             } else {
                 s.behind_since = None;
@@ -811,6 +871,8 @@ impl<S: Source> PlayCore<S> {
 
     /// Nur diese Ebenen sind noch sichtbar bzw. gleich dran: alles andere freigeben
     pub fn visible(&mut self, ids: &[Lid]) {
+        self.wanted.clear();
+        self.reopened.retain(|id, _| ids.contains(id));
         self.cur.retain(|id, _| ids.contains(id));
         self.next.retain(|id, _| ids.contains(id));
         self.opening.retain(|id, _| ids.contains(id));

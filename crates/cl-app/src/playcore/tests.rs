@@ -135,10 +135,12 @@ struct Clip {
     still_only: bool,
     /// schon so lange vor `start` sichtbar (Übergang vom Vorgänger)
     lead_in: f64,
+    /// Quell-Fingerabdruck (gleiche Quelle nach Teilen), 0 = keiner
+    alias: u64,
 }
 
 fn clip(id: Lid, start: f64, end: f64) -> Clip {
-    Clip { id, start, end, ver: 0, dec: Dec::default(), still_only: false, lead_in: 0.0 }
+    Clip { id, start, end, ver: 0, dec: Dec::default(), still_only: false, lead_in: 0.0, alias: 0 }
 }
 
 /// Treiber wie in der App, aber mit simulierten Strömen, Einzelbildern und Ton.
@@ -157,7 +159,7 @@ struct World {
     stills: Vec<(Lid, u64, f64)>,
     still_time: f64,
     /// geöffnete, noch nicht angehängte Ströme (Starter-Thread): (fertig um, Auftrag, Decoder)
-    opening: Vec<(f64, Open, Dec, u64)>,
+    opening: Vec<(f64, Open, Dec, u64, u64)>,
     /// je Ebene zuletzt gezeigtes Strombild (Zeitleistenzeit)
     last_frame: HashMap<Lid, f64>,
     /// (Wandzeit, Stelle, Ebene, Bildzeit) aller gezeigten Strombilder
@@ -257,10 +259,10 @@ impl World {
         // Starter-Thread: fertige Ströme anhängen (alte Projekte werden abgelehnt)
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.opening).into_iter().partition(|o| o.0 <= now);
         self.opening = rest;
-        for (_, o, d, level) in ready {
+        for (_, o, d, level, alias) in ready {
             let per_frame = d.per_frame / 2f64.powi(level as i32 * 2);
             let sim = Sim { clock: self.clock.clone(), opened: now, d, per_frame, n: 0, t0: o.at.as_secs_f64(), fps: self.fps };
-            let accepted = self.core.attach(o, self.fps, sim, now);
+            let accepted = self.core.attach_alias(o, self.fps, sim, now, alias);
             assert!(!accepted || o.gen == self.core.gen(), "Strom eines alten Projekts angehängt");
             self.attached.push((o, accepted));
         }
@@ -275,13 +277,13 @@ impl World {
             }
             vis.push(c.id);
             if self.core.streaming() && !c.still_only {
-                let w = Want { id: c.id, key: self.key(c), start: Time::from_secs_f64(c.start), end: Time::from_secs_f64(c.end), prefetch: !active };
+                let w = Want { id: c.id, key: self.key(c), start: Time::from_secs_f64(c.start), end: Time::from_secs_f64(c.end), prefetch: !active, alias: c.alias };
                 if let Some(o) = self.core.want(&w, now) {
                     self.opens += 1;
                     if c.dec.fail_open {
                         self.core.open_failed(o, now);
                     } else {
-                        self.opening.push((now + 0.004, o, c.dec, self.core.quality.level as u64));
+                        self.opening.push((now + 0.004, o, c.dec, self.core.quality.level as u64, c.alias));
                     }
                 }
                 if active {
@@ -381,10 +383,10 @@ fn warmup_ends_after_deadline_if_decoder_never_delivers() {
     c.dec.never = true;
     let mut w = World::new(vec![c]);
     w.play();
-    w.run(0.9, DT);
+    w.run(0.4, DT);
     assert_eq!(w.core.mode(), Mode::Puffern);
     w.run(0.2, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen, "kein Hänger: nach 1 s läuft die Uhr");
+    assert_eq!(w.core.mode(), Mode::Spielen, "kein Hänger: nach 0,5 s läuft die Uhr");
     w.run(2.0, DT);
     assert!(w.core.pos().as_secs_f64() > 1.5);
 }
@@ -658,11 +660,11 @@ fn slow_stream_catches_up_instead_of_drifting() {
     w.play();
     w.run(10.0, DT);
     let st = w.core.take_stats();
-    assert!(st.catch_ups >= 3, "{st:?}");
-    // Rückstand bleibt begrenzt (ohne Aufholen wüchse er auf über 3 s)
-    assert!(st.max_lag < 0.5, "Rückstand {} s", st.max_lag);
-    let (_, p, _, f) = *w.shown.last().unwrap();
-    assert!(p - f < 0.5);
+    assert!(st.catch_ups >= 1, "{st:?}");
+    // ohne automatische Qualität: Rückstand bleibt begrenzt (ohne Aufholen wüchse er auf über 3 s),
+    // neu geöffnet wird höchstens alle 5 s
+    assert!(st.max_lag < 2.0, "Rückstand {} s", st.max_lag);
+    assert!(st.catch_ups <= 2, "{st:?}");
 }
 
 #[test]
@@ -907,4 +909,63 @@ fn incoming_clip_in_transition_shows_its_first_frame_before_its_start() {
     assert!(early.iter().all(|s| (s.3 - 2.0).abs() < 1e-6), "vor dem Anfang nur das erste Bild");
     w.run(1.0, DT);
     assert!(w.gap(2, 2.1, 2.9) <= 2.0 / 30.0 + 0.01);
+}
+
+/// Mangel aus dem Klicktest: Einzelbilder beim Abspielen (Rückwärts, Tempo-Kurve, bewegte Bilder)
+/// wurden je Bild der Oberfläche neu angefordert und der laufende Auftrag dabei beendet – dauert
+/// einer länger als ein paar Bilder, kam nie eins an (Standbild bei laufendem Ton).
+#[test]
+fn slow_stills_during_play_are_finished_and_shown() {
+    let mut c = clip(1, 0.0, 20.0);
+    c.still_only = true;
+    let mut w = World::new(vec![c]);
+    w.still_time = 1.5; // unter Last: 1,5 s je Einzelbild
+    w.play();
+    w.run(8.0, DT);
+    assert!(w.stills_shown >= 4, "{} Einzelbilder in 8 s", w.stills_shown);
+    // Sprung: der laufende Auftrag gehört zur alten Stelle und wird ersetzt
+    let before = w.stills.len();
+    w.playhead = Time::from_secs_f64(15.0);
+    w.run(0.1, DT);
+    assert!(w.stills.len() > before || w.stills.iter().any(|s| s.2 > w.now()), "neuer Auftrag nach dem Sprung");
+}
+
+/// Mangel aus dem Klicktest: ein Strom, der nichts mehr liefert, wurde jede Sekunde neu geöffnet
+/// (bei langer GOP holt er so nie auf). Jetzt: erst nach 2 s ohne Bild, dann höchstens alle 5 s.
+#[test]
+fn hanging_stream_is_reopened_rarely() {
+    let mut c = clip(1, 0.0, 60.0);
+    c.dec.len = Some(30); // liefert eine Sekunde, dann nichts mehr (FFmpeg beendet)
+    c.dec.delay = 0.1;
+    let mut w = World::new(vec![c]);
+    w.play();
+    w.run(20.0, DT);
+    // erster Strom + Neustarts nach Ende, je höchstens alle 5 s
+    assert!(w.opens <= 6, "{} Ströme in 20 s", w.opens);
+    assert!(w.opens >= 3);
+}
+
+/// Mangel aus dem Klicktest: Teilen während Play hielt das Bild an (neuer Clip = neuer Strom ab
+/// dem Keyframe). Jetzt übernimmt der rechte Teil den laufenden Strom derselben Quelle.
+#[test]
+fn split_during_play_takes_over_the_running_stream() {
+    let mut a = clip(1, 0.0, 10.0);
+    a.alias = 77;
+    a.dec.delay = 1.5; // neuer Strom bräuchte 1,5 s (lange GOP)
+    let mut w = World::new(vec![a]);
+    w.play();
+    w.run(1.0 + w.clips[0].dec.delay, DT);
+    // Teilen am Playhead: links bleibt Clip 1 (bis hier), rechts neuer Clip 2 aus derselben Quelle
+    let cut = w.core.pos().as_secs_f64();
+    let mut b = w.clips[0].clone();
+    (b.id, b.start) = (2, cut);
+    w.clips[0].end = cut;
+    w.clips.push(b);
+    w.rev += 1;
+    w.core.edit(true, w.now());
+    let (opens, t) = (w.opens, w.now());
+    w.run(2.0, DT);
+    assert_eq!(w.opens, opens, "kein neuer Strom");
+    let gap = w.shown.iter().filter(|s| s.0 >= t - 0.1).map(|s| s.0).collect::<Vec<_>>().windows(2).map(|x| x[1] - x[0]).fold(0.0, f64::max);
+    assert!(gap <= 2.0 / 30.0 + 0.01, "Lücke {gap} s nach dem Teilen");
 }

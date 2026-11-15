@@ -43,6 +43,11 @@ struct Run {
     /// Klick beim Abspielen → erstes Bild an der neuen Stelle (ms)
     click_ms: f64,
     clock_audio: bool,
+    /// Einzelbilder beim Abspielen: angefordert / gezeigt
+    stills_req: u32,
+    stills_shown: u32,
+    /// größte Zeit ohne neues Bild irgendeiner Ebene bei laufender Uhr (ms)
+    freeze_ms: f64,
 }
 
 /// Unterste Video-Ebene am Playhead (nicht vorab, keine Element-Fassung)
@@ -86,6 +91,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let mut first_any: Option<f64> = None;
     let mut moving: Option<f64> = None;
     let mut warm_until = f64::MAX; // Lücken erst nach dem Anlauf zählen
+    let mut any_frame = f64::NAN;
     core.play(start, revision, now());
     let t_play = now();
     while now() - t_play < secs {
@@ -160,10 +166,10 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
         }
         run.clock_audio |= matches!(ain, AudioIn::Running(_));
         run.level_max = run.level_max.max(core.quality.level);
-        while let Ok((o, f, s)) = starter.rx.try_recv() {
+        while let Ok((o, f, alias, s)) = starter.rx.try_recv() {
             match s {
                 Some(s) => {
-                    core.attach(o, f, s, t);
+                    core.attach_alias(o, f, s, t, alias);
                 }
                 None => core.open_failed(o, t),
             }
@@ -190,6 +196,8 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
         while let Ok(d) = decoder.rx.try_recv() {
             if let Done::Frame { clip, key, .. } = d {
                 if core.still_done(lid(clip), key) {
+                    run.stills_shown += 1;
+                    any_frame = t;
                     got!(clip, key);
                 }
             }
@@ -208,17 +216,19 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 if edited.is_some_and(|e| e.1 == n.id) && edit_key.is_none() {
                     edit_key = Some((n.id, key));
                 }
-                let want = Want { id: lid(n.id), key, start: n.prefetch.unwrap_or(playhead), end: c.end(), prefetch: n.prefetch.is_some() };
+                let alias = stream_alias(c, m, (w, h), sfps, fx_hash_of(c));
+                let want = Want { id: lid(n.id), key, start: n.prefetch.unwrap_or(playhead), end: c.end(), prefetch: n.prefetch.is_some(), alias };
                 if let Some(o) = core.want(&want, t) {
                     let p = path();
                     run.proxy |= p != m.path;
-                    let j = open_job(o, c, m, p, (w, h), sfps);
+                    let j = open_job(o, c, m, p, (w, h), sfps, alias);
                     if std::env::var_os("CUTLINE_QA_DEBUG").is_some() {
                         eprintln!("öffnen {:.2} s: {} ab {:.3} {}×{} hw={} graph={:?}", o.at.as_secs_f64(), j.path.display(), j.source_at.as_secs_f64(), w, h, j.hw, j.graph);
                     }
                     starter.send(j);
                 }
                 if n.prefetch.is_none() && core.pull(lid(n.id), t, n.overlay.is_none()).is_some() {
+                    any_frame = t;
                     got!(n.id, key);
                     if moving.is_none() && core.mode() == Mode::Spielen && playhead > start {
                         moving = Some(t);
@@ -230,12 +240,18 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 let src = still_src(c, m, n.layer.t_rel, fps);
                 let key = App::frame_key(n.id, c, src, w, h, n.layer.t_rel, false, fx_hash_of(c), fps);
                 if core.still(lid(n.id), key, t) {
+                    run.stills_req += 1;
                     let graph = cl_fx::preview_graph(c, w, h, n.layer.t_rel.as_secs_f64(), None, None);
                     decoder.send(Job::Frame { clip: n.id, key, path: path(), at: src, w, h, graph });
                 }
             }
         }
         core.visible(&ids);
+        // Stillstand: Uhr läuft, aber keine Ebene bekommt ein neues Bild (nicht während Anlauf/Klick)
+        let in_click = clicked.is_some_and(|c| c.0 <= t && run.click_ms == 0.0);
+        if core.mode() == Mode::Spielen && t >= warm_until && any_frame.is_finite() && !in_click {
+            run.freeze_ms = run.freeze_ms.max((t - any_frame) * 1000.0);
+        }
         if core.mode() == Mode::Spielen {
             if let Some(l) = core.av_offset_ms() {
                 lags.push(l);
@@ -291,11 +307,27 @@ fn play_measure() {
     // Effekte und Übergänge der mitgelieferten Pakete (wie beim Start der App)
     let reg = cl_plugin::Registry::scan([std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins"))]);
     cl_fx::catalog::load_packs(crate::contents::catalog_packs(&reg, "de"));
+    // künstliche Volllast: so viele rechnende Threads (wie andere Programme auf dem Rechner)
+    let stress: usize = std::env::var("CUTLINE_QA_STRESS").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let workers: Vec<_> = (0..stress)
+        .map(|_| {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                let mut x = 1u64;
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    for _ in 0..100_000 {
+                        x = std::hint::black_box(x.wrapping_mul(6364136223846793005).wrapping_add(1));
+                    }
+                }
+            })
+        })
+        .collect();
     let secs: f64 = std::env::var("CUTLINE_QA_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(30.0);
     let only = std::env::var("CUTLINE_QA_ONLY").ok();
     let plan: [(&str, [f64; 5]); 3] = [
-        ("PL_einfach", [109.0, 300.0, 600.0, 900.0, 1222.0]),
-        ("PL_schnitt", [3.0, 37.0, 128.0, 571.0, 625.0]),
+        ("PL_einfach", [37.0, 109.0, 335.0, 600.0, 1222.0]),
+        ("PL_schnitt", [3.0, 37.0, 128.0, 335.0, 571.0]),
         ("PL_gross", [0.0, 40.0, 120.0, 335.0, 475.0]),
     ];
     let mut rows = Vec::new();
@@ -318,13 +350,18 @@ fn play_measure() {
             rows.push(r);
         }
     }
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    for w in workers {
+        let _ = w.join();
+    }
+    eprintln!("\nkünstliche Last: {stress} rechnende Threads");
     eprintln!(
-        "\n| Lauf | Proxy | Play→Bild | Play→bewegt | Bilder/s (Soll) | größte Lücke | verworfen/s | Rückstand max/Ø | Ton-Aussetzer | aufgeholt | Stufe | Bearb.: Lücke / sichtbar | Klick→Bild |"
+        "\n| Lauf | Proxy | Play→Bild | Play→bewegt | Bilder/s (Soll) | größte Lücke | verworfen/s | Rückstand max/Ø | Ton-Aussetzer | aufgeholt | Stufe | Bearb.: Lücke / sichtbar | Klick→Bild | Stillstand max | Einzelbilder angef./gezeigt |"
     );
-    eprintln!("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+    eprintln!("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
     for r in &rows {
         eprintln!(
-            "| {} | {} | {:.0} ms | {:.0} ms | {:.1} ({:.0}) | {:.0} ms | {:.1} | {:.0} / {:.0} ms | {}× {:.0} ms | {} | {} | {:.0} / {:.0} ms | {:.0} ms |",
+            "| {} | {} | {:.0} ms | {:.0} ms | {:.1} ({:.0}) | {:.0} ms | {:.1} | {:.0} / {:.0} ms | {}× {:.0} ms | {} | {} | {:.0} / {:.0} ms | {:.0} ms | {:.0} ms | {} / {} |",
             r.label,
             if r.proxy { "ja" } else { "nein" },
             r.first_ms,
@@ -341,7 +378,10 @@ fn play_measure() {
             r.level_max,
             r.edit_gap_ms,
             r.edit_visible_ms,
-            r.click_ms
+            r.click_ms,
+            r.freeze_ms,
+            r.stills_req,
+            r.stills_shown
         );
     }
     // großzügige Grenzwerte (Fremdlast auf dem Rechner darf nicht stören)

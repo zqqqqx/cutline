@@ -759,6 +759,8 @@ impl Decoder {
 /// Auftrag an den [`Starter`]: Strom ab `source_at` öffnen (Antwort trägt `open` zurück).
 pub struct OpenJob {
     pub open: crate::playcore::Open,
+    /// Quell-Fingerabdruck (siehe `playcore::Want::alias`), kommt mit dem Strom zurück
+    pub alias: u64,
     pub path: PathBuf,
     pub source_at: Time,
     pub w: u32,
@@ -773,7 +775,7 @@ pub struct OpenJob {
 /// startenden Thread (siehe `cl_media::proc`) – ein Strom aus einem kurzlebigen Thread endete mit ihm.
 pub struct Starter {
     tx: Sender<OpenJob>,
-    pub rx: Receiver<(crate::playcore::Open, f64, Option<FrameStream>)>,
+    pub rx: Receiver<(crate::playcore::Open, f64, u64, Option<FrameStream>)>,
 }
 
 impl Starter {
@@ -785,7 +787,7 @@ impl Starter {
             .spawn(move || {
                 while let Ok(j) = jobs.recv() {
                     let s = FrameStream::open_opts(&j.path, j.source_at, j.w, j.h, j.fps, j.graph.as_deref(), j.hw).ok();
-                    if done.send((j.open, j.fps.as_f64(), s)).is_err() {
+                    if done.send((j.open, j.fps.as_f64(), j.alias, s)).is_err() {
                         return;
                     }
                     ctx.request_repaint();
@@ -800,16 +802,18 @@ impl Starter {
 }
 
 /// Hardware-Decodierung für einen Abspiel-Strom? Nur für Originale, deren Software-Decodierung
-/// bremst: über 1080p oder HEVC/AV1/VP9 ab 1080p (gemessen: 4K-HEVC-10-Bit 3,6 → 0,9 Kerne,
-/// 4K-H.264 2,3 → 0,6). 1080p-H.264 und Proxys sind in Software schnell genug, und das Öffnen
-/// eines Hardware-Decoders kostet 200–300 ms. Einzelbilder bleiben deshalb ganz in Software
-/// (Klick → Bild mit D3D11VA 0,2–0,4 s langsamer).
+/// bremst: über 1080p, HEVC/AV1/VP9 ab 1080p und 1080p ab 50 Bildern/s (gemessen: 4K-HEVC-10-Bit
+/// 3,6 → 0,9 Kerne, 4K-H.264 2,3 → 0,6; 1080p60-H.264 unter Volllast 6,1 → 3,6 s CPU je 10 s Video –
+/// in Software kam ein einzelner 1080p60-Strom unter Fremdlast nicht mehr in Echtzeit mit). Proxys
+/// und 1080p30 sind in Software schnell genug, und das Öffnen eines Hardware-Decoders kostet
+/// 200–300 ms. Einzelbilder bleiben ganz in Software (Klick → Bild mit D3D11VA 0,2–0,4 s langsamer).
 pub fn stream_hw(m: &cl_core::MediaRef, path: &std::path::Path) -> bool {
     let codec = m.video_codec.as_deref().unwrap_or("").to_ascii_lowercase();
+    let high_rate = m.fps.is_some_and(|f| f.as_f64() >= 50.0);
     path == m.path
         && (m.width > 1920
             || m.height > 1080
-            || (m.width.min(m.height) >= 1080 && ["hevc", "av1", "vp9"].iter().any(|c| codec.contains(c))))
+            || (m.width.min(m.height) >= 1080 && (high_rate || ["hevc", "av1", "vp9"].iter().any(|c| codec.contains(c)))))
 }
 
 /// Bild für eine Textur. Videobilder sind fast immer deckend: dann ohne Umrechnung kopieren
@@ -845,6 +849,29 @@ const SAMPLES: [(&str, &[u8]); 2] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hardware_streams_for_large_or_fast_originals() {
+        let m = |w, h, fps: u32, codec: &str| cl_core::MediaRef {
+            path: "a.mp4".into(),
+            width: w,
+            height: h,
+            fps: Some(Rational::new(fps, 1)),
+            video_codec: Some(codec.into()),
+            id: MediaId::new(),
+            kind: cl_core::MediaKind::Video,
+            duration: Time::ZERO,
+            has_audio: false,
+            audio_codec: None,
+        };
+        let p = std::path::Path::new("a.mp4");
+        assert!(stream_hw(&m(1920, 1080, 60, "h264"), p), "1080p60: Hardware");
+        assert!(!stream_hw(&m(1920, 1080, 30, "h264"), p), "1080p30-H.264: Software reicht");
+        assert!(stream_hw(&m(1920, 1080, 30, "hevc"), p));
+        assert!(stream_hw(&m(3840, 2160, 30, "h264"), p));
+        assert!(!stream_hw(&m(1280, 720, 60, "h264"), p));
+        assert!(!stream_hw(&m(1920, 1080, 60, "h264"), std::path::Path::new("proxy.mp4")), "Proxy: Software");
+    }
 
     #[test]
     fn color_image_fast_path_matches_unmultiplied() {
@@ -964,7 +991,8 @@ mod tests {
         assert!(stream_hw(&m(3840, 2160, "h264"), orig));
         assert!(stream_hw(&m(1920, 1080, "hevc"), orig));
         assert!(stream_hw(&m(1080, 1920, "hevc"), orig), "Hochkant");
-        assert!(!stream_hw(&m(1920, 1080, "h264"), orig));
+        // 1080p60-H.264 seit dem Lasttest auch in Hardware (1080p30 bleibt Software, eigener Test)
+        assert!(stream_hw(&m(1920, 1080, "h264"), orig));
         assert!(!stream_hw(&m(1280, 720, "hevc"), orig));
         assert!(!stream_hw(&m(3840, 2160, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
     }

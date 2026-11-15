@@ -515,11 +515,22 @@ pub(crate) fn stream_spec(id: ClipId, c: &Clip, m: &MediaRef, canvas_px: egui::V
 }
 
 /// Auftrag, den Strom ab der Zeitleistenstelle `o.at` zu öffnen (Quellzeit und Effekt-Graph dazu)
-pub(crate) fn open_job(o: crate::playcore::Open, c: &Clip, m: &MediaRef, path: std::path::PathBuf, (w, h): (u32, u32), fps: Rational) -> OpenJob {
+/// Quell-Fingerabdruck eines Stroms: Datei, Quellzeit je Zeitleistenstelle (bleibt beim Teilen
+/// gleich), Tempo, Effekte, Größe, Bildrate – ohne Clip-ID (siehe `playcore::Want::alias`)
+pub(crate) fn stream_alias(c: &Clip, m: &MediaRef, (w, h): (u32, u32), fps: Rational, fxh: u64) -> u64 {
+    let offset = ((c.source_in.0 as f64 - c.start.0 as f64 * c.speed.max(0.01) as f64) / 1000.0).round() as i64;
+    let mut hs = std::collections::hash_map::DefaultHasher::new();
+    (m.id, offset, c.speed.to_bits(), fxh, w, h, fps.num, fps.den).hash(&mut hs);
+    hs.finish() | 1
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn open_job(o: crate::playcore::Open, c: &Clip, m: &MediaRef, path: std::path::PathBuf, (w, h): (u32, u32), fps: Rational, alias: u64) -> OpenJob {
     let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_fx::escape_path);
     let t_rel = Time((o.at - c.start).0.clamp(0, (c.duration.0 - 1000).max(0)));
     OpenJob {
         open: o,
+        alias,
         source_at: c.source_time(c.start + t_rel),
         graph: cl_fx::preview_graph(c, w, h, t_rel.as_secs_f64(), Some(fps), lut),
         hw: crate::preview::stream_hw(m, &path),
@@ -1328,10 +1339,10 @@ impl App {
         };
         // im Hintergrund geöffnete Ströme anhängen (veraltete verwirft der Kern)
         let now = self.core_now();
-        while let Ok((o, fps, s)) = self.starter.rx.try_recv() {
+        while let Ok((o, fps, alias, s)) = self.starter.rx.try_recv() {
             match s {
                 Some(s) => {
-                    self.core.attach(o, fps, s, now);
+                    self.core.attach_alias(o, fps, s, now, alias);
                 }
                 None => self.core.open_failed(o, now),
             }
@@ -1391,19 +1402,21 @@ impl App {
         // Auch während Übergängen: der vorab geöffnete Strom beginnt genau am Clipanfang
         if self.core.streaming() && streamable(c) {
             let (key, w, h) = stream_spec(id, c, m, canvas_px, div, stream_fps, fxh);
+            let alias = stream_alias(c, m, (w, h), stream_fps, fxh);
             let want = Want {
                 id: lid(id),
                 key,
                 start: prefetch_at.unwrap_or(self.playhead),
                 end: c.end(),
                 prefetch: prefetch_at.is_some(),
+                alias,
             };
             if m.is_local() {
                 // Der Kern sagt, ob und ab wo: erster Strom, Ersatz nach einer Änderung (der alte
                 // zeigt weiter, bis der neue liefert), Aufholen, hängender Strom
                 if let Some(o) = self.core.want(&want, now) {
                     let path = self.preview_path(m, h);
-                    self.starter.send(open_job(o, c, m, path, (w, h), stream_fps));
+                    self.starter.send(open_job(o, c, m, path, (w, h), stream_fps, alias));
                 }
             }
             if prefetch_at.is_some() {

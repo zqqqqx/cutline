@@ -21,6 +21,13 @@ use crate::theme::{self, icon};
 use crate::{paths, timeline::TimelineState};
 
 /// Fokus aus Textfeldern nehmen (Tastenkürzel gehen dann wieder an die App).
+/// Wird gerade Text eingegeben? Nur ein fokussiertes Textfeld (auch ein Zahlenfeld im
+/// Eingabemodus) – nicht irgendein Widget mit Fokus: ein fokussierter Knopf oder eine Kachel
+/// (z. B. nach dem Ziehen eines Übergangs) schluckte sonst alle Tastenkürzel, auch die Leertaste.
+pub fn typing(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| m.focused()).is_some_and(|id| egui::text_edit::TextEditState::load(ctx, id).is_some())
+}
+
 pub fn release_text_focus(ctx: &egui::Context) {
     ctx.memory_mut(|m| {
         if let Some(id) = m.focused() {
@@ -2617,8 +2624,13 @@ impl App {
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
         // offenes Kontextmenü: Esc gehört dem Menü (sonst verbraucht das Kürzel die Taste)
-        if ctx.wants_keyboard_input() || self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
+        if typing(ctx) || self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
             return;
+        }
+        // Fokus auf einem Knopf, einer Kachel o. Ä. (kein Textfeld): abgeben, sonst löst die
+        // Leertaste dort einen Klick aus statt Abspielen
+        if ctx.wants_keyboard_input() {
+            release_text_focus(ctx);
         }
         let mut actions: Vec<&str> = Vec::new();
         let binds = crate::keymap::bindings(&self.settings.shortcuts);
@@ -3686,6 +3698,31 @@ mod toast_tests {
 #[cfg(test)]
 mod frame_rate_tests {
     use super::*;
+
+    /// Mangel aus dem Klicktest: Leertaste startete nicht, solange ein Knopf/eine Kachel den
+    /// Fokus hatte; ein Textfeld mit Fokus behält dagegen die Tasten.
+    #[test]
+    fn only_text_fields_block_shortcuts() {
+        let ctx = egui::Context::default();
+        let mut text = String::new();
+        let mut pass = |ctx: &egui::Context| {
+            let mut ids = (egui::Id::NULL, egui::Id::NULL);
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ids.0 = ui.button("Kachel").id;
+                    ids.1 = ui.text_edit_singleline(&mut text).id;
+                });
+            });
+            ids
+        };
+        let ids = pass(&ctx);
+        ctx.memory_mut(|m| m.request_focus(ids.0));
+        pass(&ctx);
+        assert!(ctx.wants_keyboard_input() && !typing(&ctx), "Knopf mit Fokus ist keine Texteingabe");
+        ctx.memory_mut(|m| m.request_focus(ids.1));
+        pass(&ctx);
+        assert!(typing(&ctx), "Textfeld mit Fokus");
+    }
 
     #[test]
     fn next_frame_is_due_on_the_frame_grid_without_drift() {
