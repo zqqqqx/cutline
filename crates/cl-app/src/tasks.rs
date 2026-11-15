@@ -58,6 +58,8 @@ pub struct Task {
     pub key: String,
     progress: Arc<AtomicU32>,
     cancel: Arc<AtomicBool>,
+    /// Projekt beim Start (siehe [`Tasks::next_generation`])
+    generation: u64,
 }
 
 impl Task {
@@ -74,6 +76,7 @@ pub struct Tasks {
     next: u64,
     tx: Sender<(u64, TaskDone)>,
     rx: Receiver<(u64, TaskDone)>,
+    generation: u64,
 }
 
 impl Default for Tasks {
@@ -84,6 +87,7 @@ impl Default for Tasks {
             next: 1,
             tx,
             rx,
+            generation: 0,
         }
     }
 }
@@ -115,6 +119,7 @@ impl Tasks {
             key,
             progress: progress.clone(),
             cancel: cancel.clone(),
+            generation: self.generation,
         });
         let tx = self.tx.clone();
         let ctx = ctx.clone();
@@ -134,15 +139,52 @@ impl Tasks {
             .expect("Task-Thread");
     }
 
-    /// Fertige Aufgaben abholen.
+    /// Anderes Projekt im Editor: Ergebnisse älterer Aufgaben gehören nicht mehr dazu.
+    pub fn next_generation(&mut self) {
+        self.generation += 1;
+    }
+
+    /// Fertige Aufgaben abholen. Projektbezogene Ergebnisse aus einem anderen Projekt werden
+    /// zur Meldung statt ins offene Projekt eingefügt.
     pub fn poll(&mut self) -> Vec<(String, TaskDone)> {
         let mut out = Vec::new();
         while let Ok((id, done)) = self.rx.try_recv() {
             if let Some(i) = self.list.iter().position(|t| t.id == id) {
                 let t = self.list.remove(i);
+                let global = matches!(done, TaskDone::Failed(_) | TaskDone::Model { .. } | TaskDone::Proxy { .. });
+                let done = if t.generation == self.generation || global {
+                    done
+                } else {
+                    TaskDone::Failed("Ergebnis verworfen, weil inzwischen ein anderes Projekt geöffnet wurde".into())
+                };
                 out.push((t.key, done));
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn results_from_a_left_project_are_dropped() {
+        let ctx = egui::Context::default();
+        let mut t = Tasks::default();
+        t.spawn(&ctx, "asr", "Untertitel", |_, _| TaskDone::Captions { segments: Vec::new(), offset: Time::ZERO, engine: "x" });
+        t.spawn(&ctx, "model", "Modell", |_, _| TaskDone::Model { id: "m" });
+        t.next_generation();
+        let mut got = Vec::new();
+        while got.len() < 2 {
+            got.extend(t.poll());
+            std::thread::yield_now();
+        }
+        for (k, d) in got {
+            match k.as_str() {
+                "asr" => assert!(matches!(d, TaskDone::Failed(_))),
+                _ => assert!(matches!(d, TaskDone::Model { .. })),
+            }
+        }
     }
 }

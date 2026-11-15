@@ -2027,6 +2027,7 @@ impl App {
     /// wieder bei Revision 0 – sonst hielte man eine Wiederherstellung für gespeichert).
     pub fn set_doc(&mut self, proj: Project) {
         *self.doc.lock().unwrap() = Document::new(proj);
+        self.tasks.next_generation();
         self.revision = u64::MAX;
         self.sync_project();
         self.saved_revision = UNSAVED;
