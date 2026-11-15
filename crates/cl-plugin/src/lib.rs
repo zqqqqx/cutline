@@ -541,6 +541,20 @@ pub enum Installed {
     Exists(String),
 }
 
+/// Höchstens so viel wird aus einem Paket entpackt (die mitgelieferten haben unter 10 MB).
+const MAX_UNPACKED: u64 = 2 << 30;
+
+/// Eintrag kopieren, ohne mehr als `left` Bytes zu schreiben: die Größenangaben im ZIP sind
+/// nicht vertrauenswürdig (gepackte „Bomben“ füllen sonst die Platte).
+fn copy_capped(r: &mut impl std::io::Read, w: &mut impl std::io::Write, left: &mut u64) -> Result<(), String> {
+    let n = std::io::copy(&mut r.take(*left + 1), w).map_err(|e| e.to_string())?;
+    if n > *left {
+        return Err("Paket ist entpackt zu groß".into());
+    }
+    *left -= n;
+    Ok(())
+}
+
 /// Asset-Paket aus einer ZIP-Datei nach `root/<id>` entpacken. Das Manifest liegt im Stamm des
 /// Archivs oder in genau einem Unterordner. Unsichere Pfade, ein ungültiges Manifest oder eine
 /// andere Art als `asset-pack` brechen ab; dann bleibt `root` unverändert.
@@ -559,6 +573,7 @@ pub fn install_zip(zip_path: &Path, root: &Path, replace: bool) -> Result<Instal
 fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool) -> Result<Installed, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Keine gültige ZIP-Datei: {e}"))?;
+    let mut left = MAX_UNPACKED;
     for i in 0..zip.len() {
         let mut e = zip.by_index(i).map_err(|e| e.to_string())?;
         let Some(rel) = e.enclosed_name() else {
@@ -573,7 +588,7 @@ fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool) -
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
         let mut out = std::fs::File::create(&dst).map_err(|e| e.to_string())?;
-        std::io::copy(&mut e, &mut out).map_err(|e| e.to_string())?;
+        copy_capped(&mut e, &mut out, &mut left)?;
     }
     let dir = if staging.join(MANIFEST_FILE).is_file() {
         staging.to_path_buf()
@@ -801,6 +816,18 @@ license = "CC-BY-4.0"
             w.write_all(d).unwrap();
         }
         w.finish().unwrap();
+    }
+
+    #[test]
+    fn zip_entries_are_capped() {
+        let dir = tempfile::tempdir().unwrap();
+        let zp = dir.path().join("b.zip");
+        zip_with(&zp, &[("null.bin", &vec![0u8; 1 << 20])]);
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&zp).unwrap()).unwrap();
+        let mut out = Vec::new();
+        let mut left = 1000;
+        assert!(copy_capped(&mut zip.by_index(0).unwrap(), &mut out, &mut left).is_err());
+        assert!(out.len() <= 1001);
     }
 
     #[test]

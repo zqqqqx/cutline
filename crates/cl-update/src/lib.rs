@@ -236,6 +236,7 @@ pub fn download(
 pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Paket beschädigt: {e}"))?;
+    let mut left = MAX_UNPACKED;
     // Erst alles prüfen und in einen Zwischenordner entpacken, dann austauschen:
     // so bleibt bei einem Fehler die alte Installation unangetastet.
     let staging = target.join(".update-staging");
@@ -255,7 +256,7 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
         let mut out = std::fs::File::create(&dst).map_err(|e| e.to_string())?;
-        std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
+        copy_capped(&mut entry, &mut out, &mut left)?;
         out.flush().map_err(|e| e.to_string())?;
         #[cfg(unix)]
         if let Some(mode) = entry.unix_mode() {
@@ -384,11 +385,26 @@ fn split_sha(url: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Höchstens so viel wird aus einem Archiv entpackt (Update, Laufzeiten für Modelle).
+const MAX_UNPACKED: u64 = 4 << 30;
+
+/// Eintrag kopieren, ohne mehr als `left` Bytes zu schreiben: die Größenangaben im ZIP sind
+/// nicht vertrauenswürdig (gepackte „Bomben“ füllen sonst die Platte).
+fn copy_capped(r: &mut impl Read, w: &mut impl Write, left: &mut u64) -> Result<(), String> {
+    let n = std::io::copy(&mut r.take(*left + 1), w).map_err(|e| e.to_string())?;
+    if n > *left {
+        return Err("Archiv ist entpackt zu groß".into());
+    }
+    *left -= n;
+    Ok(())
+}
+
 /// ZIP-Archiv in einen Ordner entpacken (unsichere Pfade werden abgelehnt).
 pub fn extract_zip(zip_path: &Path, dir: &Path) -> Result<usize, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(f).map_err(|e| e.to_string())?;
     let mut n = 0;
+    let mut left = MAX_UNPACKED;
     for i in 0..zip.len() {
         let mut e = zip.by_index(i).map_err(|e| e.to_string())?;
         let Some(rel) = e.enclosed_name() else {
@@ -403,7 +419,7 @@ pub fn extract_zip(zip_path: &Path, dir: &Path) -> Result<usize, String> {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
         let mut out = std::fs::File::create(&dst).map_err(|e| e.to_string())?;
-        std::io::copy(&mut e, &mut out).map_err(|e| e.to_string())?;
+        copy_capped(&mut e, &mut out, &mut left)?;
         n += 1;
     }
     Ok(n)
@@ -581,6 +597,27 @@ mod tests {
         assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"alt");
         assert!(!app.join("cutline.exe.old").exists());
         assert!(!app.join("neu.dll").exists());
+    }
+
+    #[test]
+    fn unpacking_stops_at_the_size_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let zp = dir.path().join("bombe.zip");
+        {
+            let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
+            let o = zip::write::SimpleFileOptions::default();
+            w.start_file("null.bin", o).unwrap();
+            w.write_all(&vec![0u8; 1 << 20]).unwrap();
+            w.finish().unwrap();
+        }
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&zp).unwrap()).unwrap();
+        let mut out = Vec::new();
+        let mut left = 1000;
+        assert!(copy_capped(&mut zip.by_index(0).unwrap(), &mut out, &mut left).is_err());
+        assert!(out.len() <= 1001, "schreibt nicht weiter als die Grenze");
+        let (mut out, mut left) = (Vec::new(), 2 << 20);
+        copy_capped(&mut zip.by_index(0).unwrap(), &mut out, &mut left).unwrap();
+        assert_eq!((out.len(), left), (1 << 20, 1 << 20));
     }
 
     #[test]
