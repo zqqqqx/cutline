@@ -515,11 +515,7 @@ pub fn fx_name(id: &str) -> String {
     effect(id)
         .or_else(|| filter(id))
         .map(|d| d.name.to_string())
-        .or_else(|| {
-            catalog::get(catalog::Kind::Effect, id)
-                .or_else(|| catalog::get(catalog::Kind::Filter, id))
-                .map(|e| e.name)
-        })
+        .or_else(|| catalog::name_any(id))
         .unwrap_or_else(|| id.to_string())
 }
 
@@ -599,7 +595,7 @@ pub fn transition_name(id: &str) -> String {
         .iter()
         .find(|t| t.0 == id)
         .map(|t| t.1.to_string())
-        .or_else(|| catalog::get(catalog::Kind::Transition, id).map(|e| e.name))
+        .or_else(|| catalog::name_any(id))
         .unwrap_or_else(|| "Übergang".into())
 }
 

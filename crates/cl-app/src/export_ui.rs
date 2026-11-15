@@ -295,7 +295,7 @@ impl ExportDialog {
         }
         self.open = true;
         self.error = None;
-        self.missing = cl_fx::catalog::missing(p).into_iter().map(|m| m.0).collect();
+        self.missing = cl_fx::catalog::missing(p).into_iter().map(|m| cl_fx::fx_name(&m.0)).collect();
         self.missing.sort();
         self.missing.dedup();
         self.last_output = None;

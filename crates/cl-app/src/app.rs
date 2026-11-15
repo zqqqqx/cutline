@@ -2144,7 +2144,7 @@ impl App {
                 if !missing.is_empty() {
                     self.toast_err(format!("Fehlende Schriften: {}", missing.join(", ")));
                 }
-                let mut gone: Vec<String> = cl_fx::catalog::missing(&self.project).into_iter().map(|m| m.0).collect();
+                let mut gone: Vec<String> = cl_fx::catalog::missing(&self.project).into_iter().map(|m| cl_fx::fx_name(&m.0)).collect();
                 gone.sort();
                 gone.dedup();
                 if !gone.is_empty() {

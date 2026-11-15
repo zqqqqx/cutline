@@ -220,6 +220,15 @@ pub fn get(kind: Kind, id: &str) -> Option<Entry> {
     read(|p| get_in(p, kind, id))
 }
 
+/// Name eines Paket-Eintrags, auch bei ausgeschaltetem Paket (fehlende Inhalte lesbar benennen).
+pub fn name_any_in(packs: &[Pack], id: &str) -> Option<String> {
+    packs.iter().flat_map(|p| p.entries.iter()).find(|e| e.id == id).map(|e| e.name.clone())
+}
+
+pub fn name_any(id: &str) -> Option<String> {
+    read(|p| name_any_in(p, id))
+}
+
 /// FFmpeg-Kette eines Paket-Effekts/-Filters mit eingesetzter Stärke.
 pub(crate) fn pack_chain(kind: Kind, id: &str, intensity: f32) -> Option<String> {
     read(|packs| {
@@ -436,6 +445,9 @@ mod tests {
             ]
         );
         assert_eq!(missing_in(&[pack(true)], &p).len(), 1);
+        // Name auch bei ausgeschaltetem Paket; nur ganz fehlende Pakete bleiben bei der Kennung
+        assert_eq!(name_any_in(&[pack(false)], "t.pack/warm").as_deref(), Some("warm"));
+        assert_eq!(name_any_in(&[pack(false)], "weg/filter"), None);
     }
 
     fn shader_pack(enabled: bool) -> Pack {
