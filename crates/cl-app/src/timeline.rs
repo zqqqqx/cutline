@@ -191,6 +191,195 @@ impl ViewGlide {
     }
 }
 
+// ---------- Bewegung der Clips und Spuren ----------
+
+/// Höchstens so viele Clips gleiten (bzw. blenden ein/aus) gleichzeitig; bei mehr springen sie
+/// sofort an ihren Platz, damit die Zeitleiste auch dann unter 8 ms je Bild bleibt.
+const MAX_GLIDES: usize = 300;
+
+/// Lage eines Clips im Modell
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Place {
+    s: f64,
+    e: f64,
+    track: TrackId,
+}
+
+/// Gleiten eines Clips von seiner alten zur neuen Lage: Start (Beginn, Ende), senkrechter Versatz
+/// am Start (Spurwechsel, px; gleitet zu 0) und Startzeit.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct ClipGlide {
+    s0: f64,
+    e0: f64,
+    dy0: f32,
+    t0: f64,
+}
+
+impl ClipGlide {
+    /// Angezeigte Lage `age` s nach dem Start: (Beginn, Ende, Versatz); `secs` = 0 → sofort am Ziel
+    fn at(&self, to: Place, age: f32, secs: f32) -> (f64, f64, f32) {
+        if secs <= 0.0 || age >= secs {
+            return (to.s, to.e, 0.0);
+        }
+        let k = theme::ease(age / secs);
+        let k64 = k as f64;
+        (self.s0 + (to.s - self.s0) * k64, self.e0 + (to.e - self.e0) * k64, self.dy0 * (1.0 - k))
+    }
+}
+
+/// Was sich zwischen zwei Projektständen bewegt hat (je sortiert)
+#[derive(Default, Debug, PartialEq)]
+struct Changes {
+    moved: Vec<ClipId>,
+    born: Vec<ClipId>,
+    gone: Vec<ClipId>,
+}
+
+fn places(tracks: &[Track]) -> HashMap<ClipId, Place> {
+    tracks
+        .iter()
+        .flat_map(|t| t.clips.iter().map(move |c| (c.id, Place { s: c.start.as_secs_f64(), e: c.end().as_secs_f64(), track: t.id })))
+        .collect()
+}
+
+/// Bewegte, neue und gelöschte Clips. Nur der Beginn oder die Spur zählt als „bewegt“ (eine
+/// geänderte Länge bei gleichem Beginn, etwa beim Teilen, springt). Neue Clips an einer Stelle, wo
+/// vorher ein Clip derselben Spur lag (Teilen, Ersetzen), blenden nicht ein. Gar nichts, wenn
+/// es ein anderes Projekt ist (kein gemeinsamer Clip); je Art nichts über `MAX_GLIDES`.
+fn changes(prev: &HashMap<ClipId, Place>, next: &HashMap<ClipId, Place>, skip: &HashSet<ClipId>) -> Changes {
+    if prev.is_empty() || (!next.is_empty() && !next.keys().any(|k| prev.contains_key(k))) {
+        return Changes::default();
+    }
+    let mut ch = Changes::default();
+    for (id, p) in next {
+        match prev.get(id) {
+            Some(q) if ((q.s - p.s).abs() > 1e-6 || q.track != p.track) && !skip.contains(id) => ch.moved.push(*id),
+            Some(_) => {}
+            None => ch.born.push(*id),
+        }
+    }
+    ch.gone = prev.keys().filter(|k| !next.contains_key(k)).copied().collect();
+    if ch.born.len() <= MAX_GLIDES {
+        ch.born.retain(|id| {
+            let p = next[id];
+            !prev.values().any(|q| q.track == p.track && q.s < p.e && p.s < q.e)
+        });
+    }
+    for v in [&mut ch.moved, &mut ch.born, &mut ch.gone] {
+        if v.len() > MAX_GLIDES {
+            v.clear();
+        }
+        v.sort();
+    }
+    ch
+}
+
+/// Gelöschter Clip, der mit seinem letzten Aussehen kurz ausblendet
+struct GoneClip {
+    clip: Clip,
+    /// Spur (ohne Clips) für Farbe/Sperre
+    track: Track,
+    s: f64,
+    e: f64,
+    top: f32,
+    h: f32,
+    t0: f64,
+}
+
+/// Höhe einer Spur, die gleitet: (von, nach, Start)
+type HeightGlide = (f32, f32, f64);
+
+/// Bewegungszustand der Zeitleiste
+#[derive(Default)]
+struct Motion {
+    places: HashMap<ClipId, Place>,
+    glides: HashMap<ClipId, ClipGlide>,
+    born: HashMap<ClipId, f64>,
+    gone: Vec<GoneClip>,
+    /// vom Nutzer selbst gezogen/getrimmt: folgen dem Zeiger, gleiten nach dem Loslassen nicht
+    skip: HashSet<ClipId>,
+    /// Oberkante (Bildschirm) und Höhe je Spur im letzten Bild
+    rows: HashMap<TrackId, (f32, f32)>,
+    /// Spuren im letzten Bild in Anzeigereihenfolge
+    order: Vec<TrackId>,
+    heights: HashMap<TrackId, HeightGlide>,
+    /// weggefallene Spur: Platz über der Spur `anchor` (`None` = unten), schrumpft von `h` auf 0
+    spacers: Vec<(Option<TrackId>, f32, f64)>,
+}
+
+impl Motion {
+    /// Neuer Projektstand `next` (vorher `prev`); `row_top` = Oberkante je Spur in diesem Bild
+    fn update(&mut self, prev: &[Track], next: &[Track], row_top: &HashMap<TrackId, f32>, now: f64) {
+        let target = places(next);
+        let ch = changes(&self.places, &target, &self.skip);
+        let (secs, fast) = (theme::anim(theme::MOTION), theme::anim(theme::MOTION_FAST));
+        if ch == Changes::default() && !self.places.is_empty() && !target.keys().any(|k| self.places.contains_key(k)) {
+            // anderes Projekt: laufende Bewegungen verwerfen
+            self.glides.clear();
+            self.born.clear();
+            self.gone.clear();
+        }
+        // angezeigte Lage jetzt (läuft schon eine Bewegung, startet die neue dort)
+        let shown = |m: &Self, id: ClipId, p: Place| match m.glides.get(&id) {
+            Some(g) => g.at(p, (now - g.t0) as f32, secs),
+            None => (p.s, p.e, 0.0),
+        };
+        if secs > 0.0 {
+            for id in &ch.moved {
+                let (from, to) = (self.places[id], target[id]);
+                let (s0, e0, dy) = shown(self, *id, from);
+                let old_top = self.rows.get(&from.track).map_or(0.0, |r| r.0);
+                let new_top = row_top.get(&to.track).copied().unwrap_or(old_top);
+                let dy0 = if from.track != to.track { old_top + dy - new_top } else { dy };
+                self.glides.insert(*id, ClipGlide { s0, e0, dy0, t0: now });
+            }
+        }
+        if fast > 0.0 {
+            for id in &ch.born {
+                self.born.insert(*id, now);
+            }
+            for id in &ch.gone {
+                let from = self.places[id];
+                let Some((t, c)) = prev.iter().find_map(|t| t.clips.iter().find(|c| c.id == *id).map(|c| (t, c))) else {
+                    continue;
+                };
+                let (s, e, dy) = shown(self, *id, from);
+                let (top, h) = self.rows.get(&t.id).copied().unwrap_or((0.0, 0.0));
+                let track = Track { clips: Vec::new(), ..t.clone() };
+                self.gone.push(GoneClip { clip: c.clone(), track, s, e, top: top + dy, h, t0: now });
+            }
+        }
+        for id in &ch.gone {
+            self.glides.remove(id);
+        }
+        self.places = target;
+        self.skip.clear();
+    }
+}
+
+/// Angezeigte Höhe einer Spur mit Ziel `to`: neues Ziel startet am aktuellen Stand; eine neue Spur
+/// (`appear`) wächst von 0. Gibt (Zustand, Höhe) zurück.
+fn height_at(state: Option<HeightGlide>, to: f32, appear: bool, now: f64, secs: f32) -> (HeightGlide, f32) {
+    let cur = |g: HeightGlide| theme::glide_at(g.0, g.1, (now - g.2) as f32, secs);
+    let g = match state {
+        Some(g) if g.1 == to => g,
+        Some(g) => (cur(g), to, now),
+        None if appear => (0.0, to, now),
+        None => (to, to, now),
+    };
+    (g, cur(g))
+}
+
+/// Alpha eines ein- bzw. ausblendenden Clips `age` s nach dem Start
+fn fade_alpha(age: f32, secs: f32, appear: bool) -> f32 {
+    let k = if secs <= 0.0 { 1.0 } else { theme::ease(age / secs) };
+    if appear {
+        k
+    } else {
+        1.0 - k
+    }
+}
+
 /// Zeiger greift die Lautstärkelinie nur dicht daran; auf flachen Clips (Tonspur) liegt die
 /// Linie sonst mitten im Clip und Ziehen in der Mitte verschiebt den Clip nicht mehr.
 fn vol_line_hit(body: Rect, db: f32, y: f32) -> bool {
@@ -523,6 +712,7 @@ pub struct TimelineState {
     view_glide: Option<ViewGlide>,
     /// sichtbare Breite der Spuren im letzten Bild (für die Zoom-Grenzen der Werkzeugleiste)
     view_w: f32,
+    motion: Motion,
 }
 
 impl TimelineState {
@@ -577,6 +767,7 @@ impl Default for TimelineState {
             cache: ViewCache::default(),
             view_glide: None,
             view_w: 1000.0,
+            motion: Motion::default(),
         }
     }
 }
@@ -930,7 +1121,8 @@ impl App {
         let fps = self.project.settings.fps;
         let snapping = self.project.settings.snapping;
         let key = CacheKey { epoch: self.project_epoch, lang: cl_i18n::ui_lang(), ppp: ui.ctx().pixels_per_point() };
-        self.timeline.cache.sync(key, || self.project.timeline.tracks.clone());
+        let old_tracks = self.timeline.cache.tracks.clone();
+        let changed = self.timeline.cache.sync(key, || self.project.timeline.tracks.clone());
         let tracks = self.timeline.cache.tracks.clone();
         let now_s = ui.input(|i| i.time);
         if self.timeline.cache.missing_due(now_s) {
@@ -956,17 +1148,45 @@ impl App {
         if recording.is_some() {
             order.push(REC_ROW);
         }
+        // Spurhöhen gleiten (ein-/ausklappen, Spurhöhe, neue Spur wächst aus 0); nicht beim ersten
+        // Bild und nicht, wenn ein anderes Projekt geladen wurde
+        let secs = theme::anim(theme::MOTION);
+        let known: HashSet<TrackId> = self.timeline.motion.order.iter().copied().collect();
+        let animate_tracks = !known.is_empty() && tracks.iter().any(|t| known.contains(&t.id));
+        let mut old_h = std::mem::take(&mut self.timeline.motion.heights);
+        let mut new_h = HashMap::new();
         let heights: Vec<f32> = order
             .iter()
             .map(|i| {
                 if *i == REC_ROW {
                     AUDIO_ROW_H
                 } else {
-                    self.row_height(&tracks[*i])
+                    let t = &tracks[*i];
+                    let appear = animate_tracks && !known.contains(&t.id);
+                    let (g, h) = height_at(old_h.remove(&t.id), self.row_height(t), appear, now_s, secs);
+                    new_h.insert(t.id, g);
+                    h
                 }
             })
             .collect();
-        let content_h: f32 = heights.iter().map(|h| h + ROW_GAP).sum::<f32>() + 24.0;
+        self.timeline.motion.heights = new_h;
+        // weggefallene Spuren: ihr Platz schrumpft (über der nächsten noch vorhandenen Spur)
+        if animate_tracks && secs > 0.0 {
+            let m = &mut self.timeline.motion;
+            for (i, id) in m.order.iter().enumerate() {
+                if !tracks.iter().any(|t| t.id == *id) {
+                    let anchor = m.order[i + 1..].iter().find(|a| tracks.iter().any(|t| t.id == **a)).copied();
+                    let h = m.rows.get(id).map_or(0.0, |r| r.1) + ROW_GAP;
+                    m.spacers.push((anchor, h, now_s));
+                }
+            }
+        }
+        self.timeline.motion.spacers.retain(|s| ((now_s - s.2) as f32) < secs);
+        let spacers = self.timeline.motion.spacers.clone();
+        let spacer = |anchor: Option<TrackId>| -> f32 {
+            spacers.iter().filter(|s| s.0 == anchor).map(|s| theme::glide_at(s.1, 0.0, (now_s - s.2) as f32, secs)).sum()
+        };
+        let content_h: f32 = heights.iter().map(|h| h + ROW_GAP).sum::<f32>() + 24.0 + self.timeline.motion.spacers.iter().map(|s| s.1).sum::<f32>();
         let view_h = lanes.height();
         let overflow = (content_h - view_h).max(0.0);
         if resp.hovered() || resp.dnd_hover_payload::<DragAsset>().is_some() {
@@ -1050,11 +1270,21 @@ impl App {
         };
         let mut rows = Vec::new();
         for (k, i) in order.iter().enumerate() {
+            if *i != REC_ROW {
+                y += spacer(Some(tracks[*i].id));
+            }
             rows.push(Row {
                 track: *i,
                 rect: Rect::from_min_size(pos2(rect.left(), y), vec2(rect.width(), heights[k])),
             });
             y += heights[k] + ROW_GAP;
+        }
+        // Projektstand neu: bewegte Clips gleiten von ihrer angezeigten Lage, neue blenden ein,
+        // gelöschte blenden mit ihrem letzten Aussehen aus
+        if changed {
+            let row_top: HashMap<TrackId, f32> =
+                rows.iter().filter(|r| r.track != REC_ROW).map(|r| (tracks[r.track].id, r.rect.top())).collect();
+            self.timeline.motion.update(&old_tracks, &tracks, &row_top, now_s);
         }
         // Zeile (Anzeige-Index in `rows`) unter dem Zeiger; der Spalt zwischen zwei Zeilen zählt halb dazu
         let row_idx_at = |p: Pos2| {
@@ -1620,6 +1850,7 @@ impl App {
                     }
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
+                        self.timeline.motion.skip.extend(ids.iter().map(|x| x.0));
                         let fr = |t: f64| Time::from_secs_f64(t).snap_to_frame(fps);
                         let ops: Vec<EditOp> = match target {
                             Target::New(k, upper) => {
@@ -1691,6 +1922,7 @@ impl App {
                     ghost.push((clip, s, e, None));
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
+                        self.timeline.motion.skip.insert(clip);
                         let to = if edge == Edge::Start { s } else { e };
                         if (to - if edge == Edge::Start { cs } else { ce }).abs() > 1e-4 {
                             self.apply(EditOp::TrimClip {
@@ -1723,6 +1955,7 @@ impl App {
                     }
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
+                        self.timeline.motion.skip.extend([left, right]);
                         self.roll_edit(left, right, t);
                         ghost.clear();
                     }
@@ -2035,6 +2268,27 @@ impl App {
         let lanes_clip = Rect::from_min_max(pos2(x0, lanes.top()), rect.max);
         let p = painter.with_clip_rect(lanes_clip);
         let mut waves = WaveMeshes { map: std::mem::take(&mut self.timeline.cache.waves), tess: None };
+        let fast = theme::anim(theme::MOTION_FAST);
+        let glides = std::mem::take(&mut self.timeline.motion.glides);
+        let born = std::mem::take(&mut self.timeline.motion.born);
+        // gelöschte Clips zuerst (unter den übrigen), mit ihrem letzten Aussehen ausblendend
+        let gone = std::mem::take(&mut self.timeline.motion.gone);
+        for g in &gone {
+            let top = rows
+                .iter()
+                .find(|r| r.track != REC_ROW && tracks[r.track].id == g.track.id)
+                .map_or(g.top, |r| r.rect.top());
+            let cr = Rect::from_min_max(pos2(tx(g.s), top), pos2(tx(g.e), top + g.h));
+            if !clip_visible(cr, lanes_clip) {
+                continue;
+            }
+            let mut q = p.clone();
+            q.multiply_opacity(fade_alpha((now_s - g.t0) as f32, fast, false));
+            let rooms = clip_rooms(cr, lanes_clip, false);
+            let mut h = make_head(ui.ctx(), &mut self.timeline.cache.kern, &g.clip, &self.project, None);
+            let labels = head_galleys(&mut h, ui.ctx(), rooms.1, rooms.2);
+            self.draw_clip(&q, &g.clip, &g.track, cr, lanes_clip, rect.right(), x0, false, false, rooms.0, labels, None);
+        }
         for row in rows.iter().filter(|r| r.track != REC_ROW) {
             let tr = &tracks[row.track];
             // weit herausgezoomt: sehr schmale Clips als schlichte Balken, Nachbarn verschmolzen
@@ -2043,6 +2297,11 @@ impl App {
                 let (mut s, mut e) = (c0.start.as_secs_f64(), c0.end().as_secs_f64());
                 let mut r = row.rect;
                 let mut is_ghost = false;
+                // gleitet noch: angezeigte Lage (Treffer-Tests bleiben an der Lage im Modell)
+                if let Some(g) = glides.get(&c0.id) {
+                    let (gs, ge, dy) = g.at(Place { s, e, track: tr.id }, (now_s - g.t0) as f32, secs);
+                    (s, e, r) = (gs, ge, r.translate(vec2(0.0, dy)));
+                }
                 if let Some((_, gs, ge, gt)) = ghost.iter().find(|g| g.0 == c0.id) {
                     s = *gs;
                     e = *ge;
@@ -2104,7 +2363,18 @@ impl App {
                     _ => None,
                 };
                 let w = (!live && matches!(c, std::borrow::Cow::Borrowed(_))).then_some(&mut waves);
-                self.draw_clip(&p, &c, tr, cr, lanes_clip, rect.right(), x0, is_ghost, missing, rooms.0, labels, w);
+                // neu: blendet ein
+                let faded;
+                let pc = match born.get(&c0.id) {
+                    Some(t0) => {
+                        let mut q = p.clone();
+                        q.multiply_opacity(fade_alpha((now_s - t0) as f32, fast, true));
+                        faded = q;
+                        &faded
+                    }
+                    None => &p,
+                };
+                self.draw_clip(pc, &c, tr, cr, lanes_clip, rect.right(), x0, is_ghost, missing, rooms.0, labels, w);
                 if missing && hovered_clip == Some(c.id) {
                     egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new(("missing", c.id)), |ui| {
                         ui.label(crate::tr("Datei fehlt"));
@@ -2225,6 +2495,21 @@ impl App {
             }
         }
         self.timeline.cache.waves = waves.map;
+        // abgelaufene Bewegungen entfernen; solange etwas läuft, weiter zeichnen
+        let m = &mut self.timeline.motion;
+        m.glides = glides;
+        m.glides.retain(|_, g| ((now_s - g.t0) as f32) < secs);
+        m.born = born;
+        m.born.retain(|_, t| ((now_s - *t) as f32) < fast);
+        m.gone = gone;
+        m.gone.retain(|g| ((now_s - g.t0) as f32) < fast);
+        let moving = !m.glides.is_empty() || !m.born.is_empty() || !m.gone.is_empty() || !m.spacers.is_empty()
+            || m.heights.values().any(|g| g.0 != g.1 && ((now_s - g.2) as f32) < secs);
+        if moving {
+            ui.ctx().request_repaint();
+        }
+        m.rows = rows.iter().filter(|r| r.track != REC_ROW).map(|r| (tracks[r.track].id, (r.rect.top(), r.rect.height()))).collect();
+        m.order = rows.iter().filter(|r| r.track != REC_ROW).map(|r| tracks[r.track].id).collect();
         // Übergänge
         for (cid, r) in &tblocks {
             let sel = self.selected_transition == Some(*cid);
@@ -3429,6 +3714,149 @@ mod tests {
         assert_eq!(toggle_count(&Track::new(TrackKind::Video), true), 0, "eingeklappt");
     }
 
+    fn place(s: f64, e: f64, track: TrackId) -> Place {
+        Place { s, e, track }
+    }
+
+    #[test]
+    fn gliding_clip_moves_from_old_to_new_place() {
+        let tr = TrackId::new();
+        let g = ClipGlide { s0: 10.0, e0: 14.0, dy0: -40.0, t0: 5.0 };
+        let to = place(20.0, 24.0, tr);
+        let secs = theme::MOTION;
+        assert_eq!(g.at(to, 0.0, secs), (10.0, 14.0, -40.0), "Anfang: alte Stelle");
+        let (s, e, dy) = g.at(to, secs / 2.0, secs);
+        assert!(s > 15.0 && s < 20.0 && (e - s - 4.0).abs() < 1e-9 && dy > -20.0 && dy < 0.0, "Mitte, auslaufend: {s} {dy}");
+        assert_eq!(g.at(to, secs, secs), (20.0, 24.0, 0.0), "Ende: Ziel");
+        assert_eq!(g.at(to, 0.0, 0.0), (20.0, 24.0, 0.0), "Animationen aus: sofort am Ziel");
+    }
+
+    #[test]
+    fn target_change_mid_glide_starts_from_shown_place() {
+        let tr = TrackId::new();
+        let mut a = Track::new(TrackKind::Video);
+        a.id = tr;
+        let mut c = Clip::new(ClipContent::Text(TextStyle::default()), Time::ZERO, Time::from_secs_f64(2.0));
+        a.clips.push(c.clone());
+        let rows = HashMap::from([(tr, 100.0f32)]);
+        let mut m = Motion::default();
+        m.update(&[], std::slice::from_ref(&a), &rows, 0.0);
+        assert!(m.glides.is_empty(), "erster Stand: nichts bewegt sich");
+        // nach rechts verschoben (Rückgängig, Lücke schließen …)
+        let mut b = a.clone();
+        c.start = Time::from_secs_f64(10.0);
+        b.clips[0] = c.clone();
+        m.update(std::slice::from_ref(&a), std::slice::from_ref(&b), &rows, 1.0);
+        let secs = theme::anim(theme::MOTION);
+        if secs == 0.0 {
+            assert!(m.glides.is_empty(), "Animationen aus: springt");
+            return;
+        }
+        let g = m.glides[&c.id];
+        assert_eq!((g.s0, g.t0), (0.0, 1.0));
+        // halb unterwegs neues Ziel: die neue Bewegung beginnt an der gezeigten Stelle
+        let half = g.at(place(10.0, 12.0, tr), secs / 2.0, secs).0;
+        let mut d = b.clone();
+        d.clips[0].start = Time::from_secs_f64(30.0);
+        m.update(std::slice::from_ref(&b), std::slice::from_ref(&d), &rows, 1.0 + secs as f64 / 2.0);
+        let g2 = m.glides[&c.id];
+        assert!((g2.s0 - half).abs() < 1e-6, "{} != {half}", g2.s0);
+        assert_eq!(g2.at(place(30.0, 32.0, tr), secs, secs).0, 30.0);
+    }
+
+    #[test]
+    fn track_change_glides_vertically_and_own_drag_jumps() {
+        let (t1, t2) = (TrackId::new(), TrackId::new());
+        let id = ClipId::new();
+        let mut m = Motion { places: HashMap::from([(id, place(0.0, 2.0, t1))]), ..Default::default() };
+        m.rows = HashMap::from([(t1, (100.0, 34.0)), (t2, (200.0, 34.0))]);
+        let mut nt = Track::new(TrackKind::Video);
+        nt.id = t2;
+        let mut c = Clip::new(ClipContent::Text(TextStyle::default()), Time::ZERO, Time::from_secs_f64(2.0));
+        c.id = id;
+        nt.clips.push(c);
+        let rows = HashMap::from([(t1, 100.0f32), (t2, 200.0)]);
+        // vom Nutzer gezogen: folgt dem Zeiger, kein Nachgleiten
+        m.skip.insert(id);
+        m.update(&[], std::slice::from_ref(&nt), &rows, 0.0);
+        assert!(m.glides.is_empty() && m.skip.is_empty());
+        // durch etwas anderes (Rückgängig) auf die andere Spur: gleitet von 100 nach 200 senkrecht
+        m.places.insert(id, place(0.0, 2.0, t1));
+        m.update(&[], std::slice::from_ref(&nt), &rows, 0.0);
+        if theme::anim(theme::MOTION) > 0.0 {
+            assert_eq!(m.glides[&id].dy0, -100.0);
+        }
+    }
+
+    #[test]
+    fn changes_find_moved_new_and_deleted_clips() {
+        let (a, b) = (TrackId::new(), TrackId::new());
+        let ids: Vec<ClipId> = (0..5).map(|_| ClipId::new()).collect();
+        let prev = HashMap::from([
+            (ids[0], place(0.0, 2.0, a)),
+            (ids[1], place(2.0, 4.0, a)),
+            (ids[2], place(4.0, 6.0, a)),
+            (ids[3], place(0.0, 9.0, b)),
+        ]);
+        let next = HashMap::from([
+            (ids[0], place(0.0, 1.0, a)), // nur kürzer (Teilen): springt
+            (ids[1], place(1.0, 3.0, a)), // Lücke geschlossen: gleitet
+            (ids[3], place(0.0, 9.0, a)), // andere Spur: gleitet
+            (ids[4], place(1.0, 2.0, a)), // Rest nach dem Teilen, lag schon dort: blendet nicht ein
+        ]);
+        let mut ch = changes(&prev, &next, &HashSet::new());
+        let mut moved = vec![ids[1], ids[3]];
+        moved.sort();
+        assert_eq!(ch.moved, moved);
+        assert!(ch.born.is_empty());
+        assert_eq!(ch.gone, vec![ids[2]]);
+        // neuer Clip an freier Stelle blendet ein
+        let mut next2 = next.clone();
+        let fresh = ClipId::new();
+        next2.insert(fresh, place(50.0, 52.0, b));
+        ch = changes(&prev, &next2, &HashSet::new());
+        assert_eq!(ch.born, vec![fresh]);
+        // selbst gezogener Clip gleitet nicht
+        assert!(!changes(&prev, &next, &HashSet::from([ids[1]])).moved.contains(&ids[1]));
+        // anderes Projekt (kein gemeinsamer Clip) bzw. erster Stand: nichts
+        let other = HashMap::from([(ClipId::new(), place(0.0, 1.0, a))]);
+        assert_eq!(changes(&prev, &other, &HashSet::new()), Changes::default());
+        assert_eq!(changes(&HashMap::new(), &next, &HashSet::new()), Changes::default());
+    }
+
+    #[test]
+    fn too_many_moving_clips_jump() {
+        let a = TrackId::new();
+        for (n, glide) in [(MAX_GLIDES, true), (MAX_GLIDES + 1, false)] {
+            let ids: Vec<ClipId> = (0..n + 1).map(|_| ClipId::new()).collect();
+            let prev: HashMap<ClipId, Place> = ids.iter().enumerate().map(|(i, id)| (*id, place(i as f64, i as f64 + 1.0, a))).collect();
+            // alle bis auf den ersten rücken eine Sekunde weiter
+            let next: HashMap<ClipId, Place> =
+                ids.iter().enumerate().map(|(i, id)| (*id, place(i as f64 + (i > 0) as u8 as f64, i as f64 + 2.0, a))).collect();
+            assert_eq!(changes(&prev, &next, &HashSet::new()).moved.len(), if glide { n } else { 0 }, "{n}");
+        }
+    }
+
+    #[test]
+    fn track_height_glides_and_new_track_grows() {
+        let secs = theme::MOTION;
+        // erstes Bild: sofort am Ziel
+        let (g, h) = height_at(None, 34.0, false, 0.0, secs);
+        assert_eq!(h, 34.0);
+        // einklappen: gleitet von 34 auf 16
+        let (g, h) = height_at(Some(g), 16.0, false, 1.0, secs);
+        assert_eq!(h, 34.0);
+        let (_, mid) = height_at(Some(g), 16.0, false, 1.0 + secs as f64 / 2.0, secs);
+        assert!(mid > 16.0 && mid < 25.0, "{mid}");
+        assert_eq!(height_at(Some(g), 16.0, false, 2.0, secs).1, 16.0);
+        // neue Spur wächst aus 0; Animationen aus: sofort
+        assert_eq!(height_at(None, 34.0, true, 0.0, secs).1, 0.0);
+        assert_eq!(height_at(None, 34.0, true, 0.0, 0.0).1, 34.0);
+        // ein-/ausblenden
+        assert_eq!((fade_alpha(0.0, 0.09, true), fade_alpha(0.09, 0.09, true)), (0.0, 1.0));
+        assert_eq!((fade_alpha(0.0, 0.09, false), fade_alpha(0.0, 0.0, false)), (1.0, 0.0));
+    }
+
     #[test]
     fn track_names_start_in_one_column() {
         // eine Spalte für alle Spurarten, eingeklappt oder nicht: immer hinter den eigenen Schaltern
@@ -3867,9 +4295,10 @@ mod tests {
             assert!(bad.is_empty(), "{} Abweichungen:\n{}", bad.len(), bad[..bad.len().min(20)].join("\n"));
         }
 
-        pub(crate) fn stats(mut v: Vec<f64>) -> (f64, f64) {
+        /// (Median, Max, 10-%-Wert) – der 10-%-Wert ist auf belastetem Rechner am verlässlichsten
+        pub(crate) fn stats(mut v: Vec<f64>) -> (f64, f64, f64) {
             v.sort_by(f64::total_cmp);
-            (v[v.len() / 2], v[v.len() - 1])
+            (v[v.len() / 2], v[v.len() - 1], v[v.len() / 10])
         }
 
         /// Bildzeit (Rechnen + Tessellieren) bei voll sichtbarer Zeitleiste: Stand und Abspielen.
@@ -3908,13 +4337,73 @@ mod tests {
                             (shapes, sum) = (s, fp);
                         }
                     }
-                    let (med, max) = stats(times);
-                    let (run, _) = stats(runs);
+                    let (med, max, p10) = stats(times);
+                    let (run, ..) = stats(runs);
                     println!(
-                        "Zeitleiste {clips} Clips, {}: Median {med:.2} ms (davon Rechnen {run:.2} ms), Max {max:.2} ms, {shapes} Formen, Prüfsumme {sum:016x}",
+                        "Zeitleiste {clips} Clips, {}: Median {med:.2} ms (davon Rechnen {run:.2} ms), 10 % {p10:.2} ms, Max {max:.2} ms, {shapes} Formen, Prüfsumme {sum:016x}",
                         if playing { "Abspielen" } else { "Stand" }
                     );
                 }
+                // Bewegung (nur 657): 300 Clips gleiten hin und her, weicher Zoom, Abspielen gezoomt mit Blättern
+                if n != 657 {
+                    continue;
+                }
+                app.playing = false;
+                let base = app.project.clone();
+                let mut times = Vec::new();
+                for round in 0..12 {
+                    let mut p2 = base.clone();
+                    let shift = if round % 2 == 0 { 0.5 } else { 0.0 };
+                    let mut k = 0;
+                    for tr in &mut p2.timeline.tracks {
+                        for c in &mut tr.clips {
+                            if k < MAX_GLIDES {
+                                c.start = c.start + Time::from_secs_f64(shift);
+                                k += 1;
+                            }
+                        }
+                    }
+                    app.set_doc(p2);
+                    for f in 0..12 {
+                        t += 1.0 / 60.0;
+                        let (ms, ..) = frame(&mut app, &ctx, t, pointer);
+                        if f == 0 && round > 0 {
+                            assert_eq!(app.timeline.motion.glides.len(), MAX_GLIDES);
+                        }
+                        if round > 0 {
+                            times.push(ms);
+                        }
+                    }
+                }
+                let (med, max, p10) = stats(times);
+                println!("Zeitleiste {clips} Clips, 300 Clips gleiten: Median {med:.2} ms, 10 % {p10:.2} ms, Max {max:.2} ms");
+                let full = app.timeline.pps;
+                let mut times = Vec::new();
+                for f in 0..120 {
+                    t += 1.0 / 60.0;
+                    if f % 12 == 0 {
+                        let to = if f % 24 == 0 { full * 3.0 } else { full };
+                        app.timeline.zoom_to(to, 600.0, t);
+                    }
+                    let (ms, ..) = frame(&mut app, &ctx, t, pointer);
+                    times.push(ms);
+                }
+                let (med, max, p10) = stats(times);
+                println!("Zeitleiste {clips} Clips, weicher Zoom (ganze Breite ↔ 3×): Median {med:.2} ms, 10 % {p10:.2} ms, Max {max:.2} ms");
+                app.timeline.pps = 60.0;
+                app.timeline.view_glide = None;
+                app.playing = true;
+                app.playhead = Time::from_secs_f64(100.0);
+                let mut times = Vec::new();
+                for _ in 0..600 {
+                    t += 1.0 / 60.0;
+                    app.playhead = app.playhead + Time::from_secs_f64(1.0 / 30.0);
+                    let (ms, ..) = frame(&mut app, &ctx, t, pointer);
+                    times.push(ms);
+                }
+                let (med, max, p10) = stats(times);
+                println!("Zeitleiste {clips} Clips, Abspielen gezoomt (60 px/s, Playhead folgt): Median {med:.2} ms, 10 % {p10:.2} ms, Max {max:.2} ms");
+                app.playing = false;
             }
             app.playing = false;
         }
