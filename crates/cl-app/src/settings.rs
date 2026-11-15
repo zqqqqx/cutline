@@ -172,9 +172,7 @@ impl AppSettings {
         {
             s.ui_scale = v;
         }
-        s.ui_scale = s.ui_scale.clamp(0.6, 2.0);
-        s.backup_minutes = s.backup_minutes.clamp(1, 120);
-        s.backup_keep = s.backup_keep.clamp(1, 500);
+        s.sanitize();
         paths::set_projects_dir(s.projects_dir.clone());
         crate::theme::set_animations(s.animations);
         crate::theme::set_accent(&s.accent);
@@ -189,6 +187,28 @@ impl AppSettings {
         }
         s
     }
+    /// Werte von Hand bearbeiteter oder fremder Dateien in die Bereiche der Regler holen
+    /// (sonst z. B. Bildrate 0 im neuen Projekt oder Clips mit 10^30 s Länge).
+    fn sanitize(&mut self) {
+        let c = |v: f32, lo: f32, hi: f32, d: f32| if v.is_finite() { v.clamp(lo, hi) } else { d };
+        let d = Self::default();
+        self.ui_scale = c(self.ui_scale, 0.6, 2.0, d.ui_scale);
+        self.image_duration = c(self.image_duration, 0.5, 30.0, d.image_duration);
+        self.text_duration = c(self.text_duration, 0.5, 30.0, d.text_duration);
+        self.transition_duration = c(self.transition_duration, 0.1, 3.0, d.transition_duration);
+        self.anim_duration = c(self.anim_duration, 0.1, 3.0, d.anim_duration);
+        self.backup_minutes = self.backup_minutes.clamp(1, 120);
+        self.backup_keep = self.backup_keep.clamp(1, 500);
+        let f = self.new_fps.as_f64();
+        if self.new_fps.den == 0 || !(f > 0.0 && f <= 240.0) {
+            self.new_fps = d.new_fps;
+        }
+        // Proxy-Höhe 0 ergäbe Proxys ohne Bild
+        if !crate::proxy::PROXY_HEIGHTS.iter().any(|p| p.0 == self.proxy_h) {
+            self.proxy_h = d.proxy_h;
+        }
+    }
+
     pub fn save(&self) {
         let _ = std::fs::create_dir_all(paths::data_dir());
         let _ = paths::write_atomic(
@@ -1048,6 +1068,37 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"new_rate\"") && !json.contains("\"new_fps\""));
         assert!(FPS_CHOICES.iter().all(|f| cl_core::Rational::parse(f).is_some()));
+    }
+
+    /// Von Hand bearbeitete, fremde oder alte Dateien: fremde Felder stören nicht, fehlende kommen
+    /// vom Standard, Unsinnswerte landen im erlaubten Bereich.
+    #[test]
+    fn odd_settings_files_are_sanitized() {
+        let mut s: AppSettings = serde_json::from_str(
+            r#"{"lang":"en","unbekannt":{"x":[1,2]},"ui_scale":99,"image_duration":-3,"text_duration":1e30,
+                "transition_duration":0,"anim_duration":1e-9,"backup_minutes":0,"backup_keep":999999,
+                "new_rate":{"num":30,"den":0},"proxy_h":0}"#,
+        )
+        .unwrap();
+        assert_eq!(s.lang, "en");
+        s.sanitize();
+        assert_eq!((s.ui_scale, s.image_duration, s.text_duration), (2.0, 0.5, 30.0));
+        assert_eq!((s.transition_duration, s.anim_duration), (0.1, 0.1));
+        assert_eq!((s.backup_minutes, s.backup_keep), (1, 500));
+        assert_eq!(s.new_fps, cl_core::Rational::new(30, 1), "Bildrate mit Nenner 0");
+        assert_eq!(s.proxy_h, 720);
+        for bad in [r#"{"num":0,"den":1}"#, r#"{"num":100000,"den":1}"#, "0", "100000"] {
+            let mut s: AppSettings = serde_json::from_str(&format!(r#"{{"new_rate":{bad}}}"#)).unwrap();
+            s.sanitize();
+            let f = s.new_fps.as_f64();
+            assert!(f > 0.0 && f <= 240.0, "{bad}: {f}");
+        }
+        let mut ok: AppSettings = serde_json::from_str(r#"{"new_rate":{"num":24000,"den":1001}}"#).unwrap();
+        ok.sanitize();
+        assert_eq!(ok.new_fps, cl_core::Rational::new(24000, 1001));
+        assert!(serde_json::from_str::<AppSettings>("{}").is_ok());
+        // falscher Typ: Fehler, die Datei wird beiseitegelegt (paths::read_json_or_quarantine)
+        assert!(serde_json::from_str::<AppSettings>(r#"{"ui_scale":"groß"}"#).is_err());
     }
 
     /// Jeder Bereich setzt genau seine Werte zurück; Verlauf, Sprache, Projektordner und Bereiche mit
