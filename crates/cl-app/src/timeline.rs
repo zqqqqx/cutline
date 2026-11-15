@@ -4512,6 +4512,37 @@ mod tests {
                 app.playing = false;
             }
             app.playing = false;
+            // echtes Projekt (z. B. `qa/PL_schnitt.cutline`), falls angegeben: CUTLINE_BENCH_PROJECT=Datei
+            let Some(path) = std::env::var_os("CUTLINE_BENCH_PROJECT").filter(|p| std::path::Path::new(p).is_file()) else {
+                return;
+            };
+            let proj = Project::from_json(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let dur = proj.duration().as_secs_f64();
+            load(&mut app, &ctx, proj);
+            let clips: usize = app.project.timeline.tracks.iter().map(|t| t.clips.len()).sum();
+            app.timeline.pps = (SCREEN.x - HEADER_W - 16.0) / dur as f32;
+            app.timeline.scroll = 0.0;
+            let pointer = pos2(700.0, SCREEN.y - PANEL_H + 80.0);
+            for playing in [false, true] {
+                app.playing = playing;
+                app.playhead = Time::from_secs_f64(100.0);
+                let mut times = Vec::new();
+                for f in 0..150 {
+                    if playing {
+                        app.playhead = app.playhead + Time::from_secs_f64(1.0 / 30.0);
+                    }
+                    let (ms, ..) = frame(&mut app, &ctx, 100.0 + f as f64 / 60.0, pointer);
+                    if f >= 30 {
+                        times.push(ms);
+                    }
+                }
+                let (med, max, p10) = stats(times);
+                println!(
+                    "Projektdatei {clips} Clips, ganze Breite, {}: Median {med:.2} ms, 10 % {p10:.2} ms, Max {max:.2} ms",
+                    if playing { "Abspielen" } else { "Stand" }
+                );
+            }
+            app.playing = false;
         }
     }
 }
