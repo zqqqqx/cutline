@@ -432,7 +432,19 @@ fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, 
             return Ok(job);
         }
     }
-    build_sections(p, s, fonts, out, (start, end), &units, base, lim)
+    match build_sections(p, s, fonts, out, (start, end), &units, base, lim) {
+        // Übergangskette mit mehr Eingängen, als ein Abschnitt fassen darf (Diashow): ein
+        // Durchgang wie bisher, solange die Befehlszeile passt
+        Err(ExportError::TooManyClips(t)) => {
+            let job = build_single(p, s, fonts, out, start, end)?;
+            if sections::cmd_len(&job.args) + 300 <= sections::HARD_CMD {
+                Ok(job)
+            } else {
+                Err(ExportError::TooManyClips(t))
+            }
+        }
+        r => r,
+    }
 }
 
 /// Mit Ton? (Nur-Ton-Formate immer, GIF nie)

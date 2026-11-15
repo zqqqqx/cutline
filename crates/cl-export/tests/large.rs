@@ -530,3 +530,66 @@ fn audio_length_under_load() {
     });
     assert!(lens.iter().all(|&(a, b)| a == 576_000 && b == 576_000), "Samples (Durchgang, Abschnitte): {lens:?}");
 }
+
+/// Diashow: `n` Bild-Clips (je `len` s) mit Überblendungen zwischen allen – eine einzige
+/// Übergangsgruppe mit `n` Eingängen.
+fn slideshow(img: &Path, n: usize, len: f64) -> Project {
+    let m = MediaRef {
+        id: MediaId::new(),
+        path: img.to_path_buf(),
+        kind: MediaKind::Image,
+        duration: Time::ZERO,
+        width: 32,
+        height: 18,
+        fps: None,
+        has_audio: false,
+        audio_streams: 0,
+        video_codec: None,
+        audio_codec: None,
+    };
+    let mut p = Project::new("Diashow");
+    p.settings.width = 32;
+    p.settings.height = 18;
+    p.settings.fps = Rational::new(10, 1);
+    p.media.push(m.clone());
+    let mut t = Track::new(TrackKind::Video);
+    for i in 0..n {
+        let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Image }, Time::from_secs_f64(i as f64 * len), Time::from_secs_f64(len));
+        if i + 1 < n {
+            c.transition_out = Some(TransitionRef { id: "fade".into(), duration: Time::from_secs_f64(len / 3.0) });
+        }
+        t.clips.push(c);
+    }
+    p.timeline.tracks.push(t);
+    p
+}
+
+/// 160 Fotos mit Übergängen (mehr Eingänge als ein Abschnitt fasst, Kette unteilbar): ein
+/// Durchgang wie in 0.11.1 statt „Zu viele gleichzeitige Clips“.
+#[test]
+fn long_transition_chain_builds_as_one_pass() {
+    let dir = tempfile::tempdir().unwrap();
+    let img = dir.path().join("foto.png");
+    std::fs::write(&img, b"x").unwrap();
+    let p = slideshow(&img, 160, 3.0);
+    let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("d.mp4")).unwrap();
+    assert_eq!(job.sections(), 0);
+    assert_eq!(job.args.iter().filter(|a| *a == "-i").count(), 160);
+}
+
+/// Kette über der Eingangs-Grenze (hier 4) exportiert mit echtem FFmpeg vollständig.
+#[test]
+fn long_transition_chain_exports() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let img = dir.path().join("foto.png");
+    ffmpeg(&["-f", "lavfi", "-i", "testsrc2=s=32x18", "-frames:v", "1"], &img);
+    let p = slideshow(&img, 6, 0.6);
+    let out = dir.path().join("kette.mp4");
+    let job = cl_export::build_limited(&p, &ExportSettings::from_project(&p), &no_fonts, &out, 4).unwrap();
+    assert_eq!(job.sections(), 0);
+    run_job(&job);
+    assert_eq!(frame_times(&out).len(), 36);
+}
