@@ -142,6 +142,26 @@ impl Document {
         self.undo.push(last);
     }
 
+    /// `f` als EIN Verlaufsschritt; scheitert `f`, bleibt das Projekt wie vorher und ohne
+    /// Verlaufseintrag (ein schon geleerter Wiederholen-Stapel bleibt leer).
+    pub fn transaction<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        let rev = self.revision;
+        let before = self.project.clone();
+        let r = f(self);
+        match r {
+            Ok(_) => self.squash_since(rev),
+            Err(_) => {
+                let n = (self.revision.saturating_sub(rev) as usize).min(self.undo.len());
+                self.undo.truncate(self.undo.len() - n);
+                if self.project != before {
+                    self.project = before;
+                    self.revision += 1;
+                }
+            }
+        }
+        r
+    }
+
     /// Rückgängig machbare Schritte (älteste zuerst)
     pub fn undo_entries(&self) -> &[HistoryEntry] {
         &self.undo
