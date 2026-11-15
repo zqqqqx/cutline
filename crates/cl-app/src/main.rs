@@ -96,6 +96,7 @@ pub fn dialog() -> rfd::FileDialog {
 }
 
 fn main() -> anyhow::Result<()> {
+    app::perf_mark("main");
     let args: Vec<String> = std::env::args().collect();
 
     // Headless-MCP über stdio: `cutline --mcp projekt.cutline`

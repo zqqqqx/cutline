@@ -126,10 +126,50 @@ pub fn restart(ctx: &egui::Context) {
     }
 }
 
-/// Beim Start: Reste alter Updates entfernen.
+/// Beim Start: Reste alter Updates entfernen, dazu Arbeitsordner abgebrochener Läufe in %TEMP%.
 pub fn startup_cleanup() {
     if let Some(d) = exe_dir() {
         cl_update::cleanup_old(&d);
+    }
+    std::thread::spawn(|| cleanup_temp(&std::env::temp_dir(), std::time::Duration::from_secs(2 * 86_400)));
+}
+
+/// Arbeitsordner von Ton-Vorschau, Export und Whisper bleiben nur nach einem Absturz oder einem
+/// erzwungenen Beenden liegen (Exporte bis zu einigen MB). Entfernt werden nur eigene Ordner, die
+/// länger als `age` unverändert sind – laufende Instanzen benutzen ihre Ordner nicht so lange.
+fn cleanup_temp(dir: &std::path::Path, age: std::time::Duration) {
+    const OWN: [&str; 3] = ["cutline-audio-", "cutline-export-", "cutline-whisper-"];
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let own = OWN.iter().any(|p| e.file_name().to_string_lossy().starts_with(p));
+        let old = e
+            .metadata()
+            .ok()
+            .filter(|m| m.is_dir())
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|a| a >= age);
+        if own && old {
+            let _ = std::fs::remove_dir_all(e.path());
+        }
+    }
+}
+
+#[cfg(test)]
+mod temp_tests {
+    #[test]
+    fn cleanup_temp_removes_only_own_old_dirs() {
+        let t = tempfile::tempdir().unwrap();
+        for d in ["cutline-audio-x1", "cutline-export-x2", "cutline-whisper-1-0", "cutline-models", "fremd"] {
+            std::fs::create_dir(t.path().join(d)).unwrap();
+        }
+        std::fs::write(t.path().join("cutline-export-datei"), "x").unwrap();
+        // frisch angelegt: bleibt (könnte einer laufenden Instanz gehören)
+        super::cleanup_temp(t.path(), std::time::Duration::from_secs(3600));
+        assert!(t.path().join("cutline-audio-x1").exists());
+        super::cleanup_temp(t.path(), std::time::Duration::ZERO);
+        let mut left: Vec<String> = std::fs::read_dir(t.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        left.sort();
+        assert_eq!(left, ["cutline-export-datei", "cutline-models", "fremd"]);
     }
 }
 

@@ -2528,7 +2528,8 @@ mod tests {
         static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
         ONCE.get_or_init(|| {
             use cl_fx::catalog::{Entry, Kind, Pack, PackInfo, Payload};
-            let dir = std::env::temp_dir().join(format!("cutline-shader-test-{}", std::process::id()));
+            // fester Name: je Testlauf ein neuer Ordner sammelte sich in %TEMP% (Inhalt ist immer gleich)
+            let dir = std::env::temp_dir().join("cutline-shader-test");
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join("wipe.wgsl"), WIPE).unwrap();
             std::fs::write(dir.join("broken.wgsl"), "fn transition( kaputt").unwrap();

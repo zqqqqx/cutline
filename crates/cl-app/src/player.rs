@@ -71,6 +71,14 @@ pub(crate) fn transition_spans(clips: &[Clip], i: usize, c: &Clip) -> (Option<f6
     (tr_in, tr_out)
 }
 
+/// Quellzeit für ein Einzelbild der Vorschau: aufs Bildraster gerundet, höchstens anderthalb
+/// Bilder vor dem Ende von Clip bzw. Datei. FFmpeg liefert das erste Bild ab `-ss`; eine Zeit im
+/// letzten Bild (oder aufs Ende gerundet) ergab gar keins – „Datei kann nicht gelesen werden: “.
+fn still_seek(t: Time, source_in: Time, end: Time, fps: Rational) -> Time {
+    let last = end - Time::from_secs_f64(1.5 / fps.as_f64().max(1.0));
+    Time(t.snap_to_frame(fps).0.min(last.0).max(source_in.0))
+}
+
 #[cfg(test)]
 mod shader_tests {
     use super::*;
@@ -91,6 +99,19 @@ mod shader_tests {
         // halbe Übergänge ragen zusammen höchstens über die ganze Länge des kurzen Clips
         let (a, b) = span(1);
         assert!(a.unwrap() / 2.0 + b.unwrap() / 2.0 <= 0.2 + 1e-9);
+    }
+
+    #[test]
+    fn still_seek_never_lands_behind_the_last_frame() {
+        let fps = Rational { num: 25, den: 1 };
+        let end = Time::from_millis(6400);
+        // vorher: 6,38 s (Ende − 20 ms) aufs Raster gerundet = 6,40 s → kein Bild
+        let t = still_seek(Time::from_millis(6390), Time::ZERO, end, fps);
+        assert!(t > Time::from_millis(6320) && t <= Time::from_millis(6360), "{t:?}");
+        // mitten im Clip unverändert aufs Raster
+        assert_eq!(still_seek(Time::from_millis(1013), Time::ZERO, end, fps), Time::from_millis(1000));
+        // nie vor den Quell-Anfang
+        assert_eq!(still_seek(Time::ZERO, Time::from_millis(6390), end, fps), Time::from_millis(6390));
     }
 
     #[test]
@@ -184,11 +205,6 @@ impl App {
                 let t =
                     ctx.load_texture(format!("frame-{clip}"), img, egui::TextureOptions::LINEAR);
                 self.frames.insert(clip, (key, t));
-                // Texturen gelöschter Clips nicht ewig halten
-                if self.frames.len() > 64 {
-                    let tl = &self.project.timeline;
-                    self.frames.retain(|id, _| tl.tracks.iter().any(|t| t.clips.iter().any(|c| c.id == *id)));
-                }
             }
         }
     }
@@ -488,6 +504,12 @@ impl App {
             }
         }
         self.fx_overlays = overlays;
+        // Bilder von Clips, die nicht mehr unter dem Playhead liegen, verwirft `receive_decoded`
+        // (beim Scrubben über viele Spuren kamen sonst Dutzende auf einmal); kehrt der Playhead
+        // zurück, kommt das Bild erneut aus dem Zwischenspeicher des Decoders. Ebenso die
+        // Texturen: sonst hielt ein großes Projekt nach dem Scrubben eine je Clip (in Vorschaugröße je 1–8 MB).
+        self.requested.retain(|id, _| visible.contains(id));
+        self.frames.retain(|id, _| visible.contains(id));
         self.playbacks.retain(|id, _| visible.contains(id));
         self.playbacks_next.retain(|id, _| visible.contains(id));
     }
@@ -615,13 +637,11 @@ impl App {
             return;
         }
         let src = if is_video {
-            let span_end = c.source_in + c.source_span() - Time::from_millis(20);
-            Time(
-                c.source_time(c.start + l.t_rel)
-                    .0
-                    .clamp(c.source_in.0, span_end.0.max(c.source_in.0)),
-            )
-            .snap_to_frame(m.fps.unwrap_or(fps))
+            let mut end = c.source_in + c.source_span();
+            if m.duration > Time::ZERO {
+                end = Time(end.0.min(m.duration.0));
+            }
+            still_seek(c.source_time(c.start + l.t_rel), c.source_in, end, m.fps.unwrap_or(fps))
         } else {
             // Bewegtes Bild: dasselbe Einzelbild wie im Export (Schleife bzw. letztes Bild halten)
             // shortcut: beim Abspielen ein Einzelbild-Auftrag je Bild statt Strom, ausbauen falls es ruckelt

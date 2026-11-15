@@ -12,7 +12,10 @@ use cl_core::{Project, Time};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 pub struct AudioPlayer {
-    stream: cpal::Stream,
+    /// Steuerung des Ausgabe-Threads (true = abspielen, false = anhalten); fallen lassen beendet ihn
+    ctl: std::sync::mpsc::Sender<bool>,
+    /// Ausgabe ließ sich nicht öffnen (dann kommt nie Ton, das Bild läuft nach Systemzeit)
+    failed: Arc<AtomicBool>,
     child: Child,
     _workdir: tempfile::TempDir,
     reader: Option<JoinHandle<()>>,
@@ -98,8 +101,13 @@ impl AudioPlayer {
             std::sync::atomic::AtomicU32::new(0),
             std::sync::atomic::AtomicU32::new(0),
         ]);
-        let stream = {
-            let (buffer, played, pk) = (buffer.clone(), played_frames.clone(), peaks.clone());
+        // Das Öffnen der Ausgabe (WASAPI) dauert mehrere hundert Millisekunden: im eigenen Thread,
+        // damit die Oberfläche beim Abspielen nicht steht. Der cpal-Strom ist nicht Send und lebt
+        // deshalb ganz dort; er endet, sobald `ctl` fallen gelassen wird.
+        let (ctl, ctl_rx) = std::sync::mpsc::channel::<bool>();
+        let failed = Arc::new(AtomicBool::new(false));
+        let (buffer, played, pk, fail) = (buffer.clone(), played_frames.clone(), peaks.clone(), failed.clone());
+        let out = move || -> Result<(), String> {
             let err = |e| eprintln!("Audio: {e}");
             let cfg: cpal::StreamConfig = config.clone().into();
             macro_rules! build {
@@ -138,7 +146,7 @@ impl AudioPlayer {
                     )
                 };
             }
-            match config.sample_format() {
+            let stream = match config.sample_format() {
                 cpal::SampleFormat::F32 => build!(f32, |v: f32| v),
                 cpal::SampleFormat::I16 => {
                     build!(i16, |v: f32| (v.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
@@ -148,11 +156,25 @@ impl AudioPlayer {
                     as u16),
                 f => return Err(format!("Sample-Format {f:?} nicht unterstützt")),
             }
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+            stream.play().map_err(|e| e.to_string())?;
+            while let Ok(play) = ctl_rx.recv() {
+                let _ = if play { stream.play().is_ok() } else { stream.pause().is_ok() };
+            }
+            Ok(())
         };
-        stream.play().map_err(|e| e.to_string())?;
+        std::thread::Builder::new()
+            .name("cl-audio-out".into())
+            .spawn(move || {
+                if let Err(e) = out() {
+                    eprintln!("Ton: {e}");
+                    fail.store(true, Ordering::Relaxed);
+                }
+            })
+            .map_err(|e| e.to_string())?;
         Ok(Self {
-            stream,
+            ctl,
+            failed,
             child,
             _workdir: workdir,
             reader: Some(reader),
@@ -166,10 +188,15 @@ impl AudioPlayer {
 
     /// Ausgabe anhalten bzw. fortsetzen (Puffer und Uhr bleiben erhalten → sofort weiter)
     pub fn pause(&self) -> bool {
-        self.stream.pause().is_ok()
+        !self.failed() && self.ctl.send(false).is_ok()
     }
     pub fn resume(&self) -> bool {
-        self.stream.play().is_ok()
+        !self.failed() && self.ctl.send(true).is_ok()
+    }
+
+    /// Ausgabe ließ sich nicht öffnen (es kommt kein Ton mehr)
+    pub fn failed(&self) -> bool {
+        self.failed.load(Ordering::Relaxed)
     }
 
     /// Aktuelle Wiedergabeposition nach Audio-Clock.

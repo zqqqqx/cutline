@@ -315,13 +315,17 @@ impl App {
         let onboard = (!settings.onboarding_done
             && std::env::var_os("CUTLINE_NO_ONBOARDING").is_none())
         .then(|| crate::onboarding::Onboard::new(&settings.use_cases));
+        perf_mark("Einstellungen");
         paths::install_bundled_fonts();
         let fonts = cl_fonts::FontLibrary::open(paths::font_dir()).unwrap_or_default();
+        perf_mark("Schriften");
         let plugin_dirs = paths::plugin_dirs();
         let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
         plugins.apply_states(&settings.plugin_states);
         let lang = settings.lang();
+        perf_mark("Plugins");
         cl_fx::catalog::load_packs(crate::contents::catalog_packs(&plugins, lang.code()));
+        perf_mark("Katalog");
 
         let system_font_count = Arc::new(Mutex::new(None));
         {
@@ -505,6 +509,7 @@ impl App {
         if let Some(p) = open {
             app.open_project(&p);
         }
+        perf_mark("App bereit");
         app
     }
 
@@ -2210,7 +2215,9 @@ impl App {
         if !self.flush_before_leaving() {
             return;
         }
-        self.stop_playback();
+        // jeder Weg zurück in den Editor setzt ihn ohnehin zurück: Bilder, Texturen und
+        // Decoder-Zwischenspeicher des Projekts schon jetzt freigeben
+        self.reset_editor();
         self.home.refresh();
         self.screen = Screen::Home;
     }
@@ -2271,6 +2278,7 @@ impl App {
     }
 
     /// Nach einer Pause an derselben Stelle und ohne Änderung direkt weiterlaufen.
+    /// (Sonst gibt `update` die offenen Ströme gleich frei, siehe [`pause_is_stale`].)
     fn try_resume(&mut self) -> bool {
         let Some((at, rev)) = self.paused.take() else { return false };
         if at != self.playhead || rev != self.revision || self.audio.is_none() {
@@ -2391,6 +2399,11 @@ impl App {
                 self.restart_audio();
             }
             return;
+        }
+        // Ausgabe ließ sich nicht öffnen: ohne Ton nach Systemzeit weiter
+        if self.audio.as_ref().is_some_and(|a| a.failed()) {
+            self.audio = None;
+            self.play_clock = Some((Instant::now(), self.playhead));
         }
         match &self.audio {
             Some(a) if a.started() => self.playhead = a.position(),
@@ -2913,17 +2926,23 @@ impl eframe::App for App {
         if (want - zoom).abs() > 0.005 {
             ctx.set_zoom_factor(want);
         }
+        limit_frame_rate();
+        let _frame_time = perf().then(|| PerfFrame(Instant::now()));
         if perf() {
+            static FIRST: std::sync::Once = std::sync::Once::new();
+            FIRST.call_once(|| perf_mark("erstes Bild"));
             self.perf_ui += 1;
             let el = self.perf_since.elapsed().as_secs_f64();
             if el >= 1.0 {
                 eprintln!(
-                    "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}",
+                    "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}, Bildzeit Ø {:.2} / max {:.1} ms",
                     self.perf_ui as f64 / el,
                     self.perf_frames as f64 / el,
                     self.perf_opens,
                     self.perf_max_gap * 1000.0,
-                    self.playing
+                    self.playing,
+                    PERF_SUM_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0 / self.perf_ui.max(1) as f64,
+                    PERF_MAX_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0
                 );
                 self.perf_max_gap = 0.0;
                 self.perf_ui = 0;
@@ -3013,6 +3032,9 @@ impl eframe::App for App {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
         self.advance_playhead();
+        if pause_is_stale(self.paused, self.playhead, self.revision) {
+            self.stop_playback();
+        }
         if self.playing {
             ctx.request_repaint_after(self.play_repaint_delay());
         }
@@ -3318,6 +3340,53 @@ pub fn perf() -> bool {
     *P.get_or_init(|| std::env::var_os("CUTLINE_PERF").is_some())
 }
 
+/// Messung: Rechenzeit je UI-Bild (Summe und Maximum seit der letzten `perf`-Zeile, µs)
+static PERF_SUM_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PERF_MAX_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+struct PerfFrame(Instant);
+impl Drop for PerfFrame {
+    fn drop(&mut self) {
+        let us = self.0.elapsed().as_micros() as u64;
+        PERF_SUM_US.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
+        PERF_MAX_US.fetch_max(us, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Pause mit offenen Strömen, aber Playhead verschoben oder Projekt geändert: Fortsetzen geht
+/// nicht mehr, die wartenden FFmpeg-Prozesse (Bild und Ton) können sofort enden.
+fn pause_is_stale(paused: Option<(Time, u64)>, playhead: Time, revision: u64) -> bool {
+    paused.is_some_and(|(at, rev)| at != playhead || rev != revision)
+}
+
+/// Kürzester Abstand zweier UI-Bilder (höchstens 125 je Sekunde). Ohne VSync (siehe `main.rs`)
+/// zeichnet egui bei jeder Animation (Hover-Kacheln, Einblenden) sonst ungebremst mehrere hundert
+/// Bilder je Sekunde und belegt einen ganzen Kern. Abspielen fordert seltener an (`play_repaint_delay`).
+const MIN_FRAME: Duration = Duration::from_millis(8);
+
+/// Wartezeit vor dem nächsten UI-Bild, wenn das letzte vor `since_last` begann
+fn frame_wait(since_last: Duration) -> Duration {
+    MIN_FRAME.saturating_sub(since_last)
+}
+
+fn limit_frame_rate() {
+    thread_local!(static LAST: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) });
+    LAST.with(|last| {
+        if let Some(wait) = last.get().map(|t| frame_wait(t.elapsed())).filter(|w| !w.is_zero()) {
+            std::thread::sleep(wait);
+        }
+        last.set(Some(Instant::now()));
+    });
+}
+
+/// Messpunkt beim Start (`CUTLINE_PERF`): Zeit seit dem ersten Aufruf (in `main`)
+pub fn perf_mark(what: &str) {
+    static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    let t0 = *T0.get_or_init(Instant::now);
+    if perf() {
+        eprintln!("perf: Start {what} nach {} ms", t0.elapsed().as_millis());
+    }
+}
+
 /// Für Dokumentation: Mit `CUTLINE_SHOTS=<Ordner>` speichert Cutline das Fensterbild als PNG,
 /// sobald dort eine Datei `take` liegt (direkt aus der App, ohne überlagernde Fenster).
 fn dev_screenshot(ctx: &egui::Context) {
@@ -3457,5 +3526,28 @@ mod toast_tests {
         assert_eq!(toast_alpha(0.0, 4.0, 0.15, 0.4), 0.0);
         assert!((toast_alpha(3.8, 4.0, 0.15, 0.4) - 0.5).abs() < 1e-4);
         assert!(toast_secs(true) > toast_secs(false));
+    }
+}
+
+#[cfg(test)]
+mod frame_rate_tests {
+    use super::*;
+
+    #[test]
+    fn moved_or_edited_pause_releases_streams() {
+        let t = Time::from_millis(500);
+        assert!(!pause_is_stale(None, t, 3));
+        assert!(!pause_is_stale(Some((t, 3)), t, 3));
+        assert!(pause_is_stale(Some((t, 3)), Time::from_millis(900), 3));
+        assert!(pause_is_stale(Some((t, 3)), t, 4));
+    }
+
+    #[test]
+    fn frame_wait_caps_ui_rate() {
+        assert_eq!(frame_wait(Duration::from_millis(2)), Duration::from_millis(6));
+        assert_eq!(frame_wait(Duration::ZERO), MIN_FRAME);
+        // seltene Bilder (Leerlauf, Abspielen) warten nie
+        assert_eq!(frame_wait(Duration::from_millis(30)), Duration::ZERO);
+        assert!(1.0 / MIN_FRAME.as_secs_f64() <= 125.0);
     }
 }

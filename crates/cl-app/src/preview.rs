@@ -151,6 +151,8 @@ struct FrameCache {
     order: std::collections::VecDeque<u64>,
     bytes: usize,
     budget: usize,
+    /// Projektgeneration der Bilder: nach einem Projektwechsel wird alles freigegeben
+    gen: u64,
 }
 
 impl FrameCache {
@@ -160,6 +162,13 @@ impl FrameCache {
             order: Default::default(),
             bytes: 0,
             budget,
+            gen: 0,
+        }
+    }
+    /// Bilder eines verlassenen Projekts freigeben (sonst blieben bis zu `budget` Bytes belegt)
+    fn set_generation(&mut self, gen: u64) {
+        if gen != self.gen {
+            *self = Self { gen, ..Self::new(self.budget) };
         }
     }
     fn get(&self, key: u64) -> Option<&RgbaFrame> {
@@ -404,13 +413,21 @@ impl Decoder {
         let (done_tx, rx) = channel::<Done>();
         // Player-Bilder
         let (tx, jobs) = channel::<Job>();
+        let generation = Arc::new(AtomicU64::new(0));
         {
-            let (done_tx, ctx) = (done_tx.clone(), ctx.clone());
+            let (done_tx, ctx, gen) = (done_tx.clone(), ctx.clone(), generation.clone());
             std::thread::Builder::new()
                 .name("cl-decoder".into())
                 .spawn(move || {
                     let mut cache = FrameCache::new(384 << 20);
-                    while let Ok(first) = jobs.recv() {
+                    loop {
+                        // auch ohne neue Aufträge nachsehen, ob das Projekt gewechselt wurde
+                        cache.set_generation(gen.load(Ordering::Relaxed));
+                        let first = match jobs.recv_timeout(std::time::Duration::from_secs(1)) {
+                            Ok(j) => j,
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                        };
                         let mut pending = vec![first];
                         pending.extend(jobs.try_iter());
                         // je Clip nur den neuesten Auftrag
@@ -461,7 +478,6 @@ impl Decoder {
                 .expect("Decoder-Thread");
         }
         let strips_wanted: Arc<Mutex<HashSet<String>>> = Default::default();
-        let generation = Arc::new(AtomicU64::new(0));
         let (tx_fx, jobs_fx) = channel::<(u64, Job)>();
         {
             let (done_tx, ctx) = (done_tx.clone(), ctx.clone());
@@ -675,5 +691,22 @@ mod tests {
         let mid = &r[(w * h * 4 * 2) as usize..][..4];
         assert!(mid[0].abs_diff(128) <= 1 && mid[2].abs_diff(128) <= 1, "{mid:?}");
         assert!(shader_strip(&s, &pair[..8], w, h, 4).is_err());
+    }
+
+    #[test]
+    fn frame_cache_is_bounded_and_freed_on_project_change() {
+        let frame = || RgbaFrame { width: 10, height: 10, data: vec![0; 400] };
+        let mut c = FrameCache::new(1000);
+        for k in 0..5 {
+            c.put(k, frame());
+        }
+        // Obergrenze: älteste fallen heraus
+        assert!(c.bytes <= 1000 && c.get(0).is_none() && c.get(4).is_some());
+        c.set_generation(0);
+        assert!(c.get(4).is_some());
+        // Projektwechsel: alles frei
+        c.set_generation(1);
+        assert_eq!((c.bytes, c.map.len(), c.order.len()), (0, 0, 0));
+        assert_eq!(c.budget, 1000);
     }
 }

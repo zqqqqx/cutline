@@ -373,7 +373,8 @@ pub fn grid_avail(available: f32, left: f32, clip_right: f32) -> f32 {
     available.min(clip_right - left).max(1.0)
 }
 
-/// Kachel-Raster: berechnet Spalten und ruft `tile` für jedes Element mit seinem Rechteck.
+/// Kachel-Raster: berechnet Spalten und ruft `tile` für jedes sichtbare Element mit seinem Rechteck.
+/// Zeilen außerhalb des sichtbaren Bereichs belegen nur ihren Platz (Pakete mit hunderten Kacheln).
 pub fn grid<T>(
     ui: &mut egui::Ui,
     items: &[T],
@@ -389,7 +390,8 @@ pub fn grid<T>(
     let h = (w / aspect).round();
     for chunk in items.chunks(cols) {
         let (row, _) = ui.allocate_exact_size(vec2(avail, h + label_h), Sense::hover());
-        for (i, it) in chunk.iter().enumerate() {
+        let visible = ui.is_rect_visible(row);
+        for (i, it) in chunk.iter().enumerate().filter(|_| visible) {
             let r = Rect::from_min_size(
                 pos2(row.left() + i as f32 * (w + gap), row.top()),
                 vec2(w, h + label_h),
@@ -496,6 +498,7 @@ pub fn color_button(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{grid_avail, grid_cols};
+    use eframe::egui::vec2;
 
     #[test]
     fn grid_stays_inside_visible_width() {
@@ -526,5 +529,35 @@ mod tests {
             let (c, w) = grid_cols(avail, 100.0, 8.0);
             assert!(c as f32 * w + (c as f32 - 1.0) * 8.0 <= avail + 0.01, "{avail}");
         }
+    }
+
+    #[test]
+    fn grid_builds_only_visible_rows() {
+        let ctx = eframe::egui::Context::default();
+        let items: Vec<usize> = (0..300).collect();
+        let (mut built, mut height) = (Vec::new(), 0.0);
+        let input = || eframe::egui::RawInput {
+            screen_rect: Some(eframe::egui::Rect::from_min_size(Default::default(), vec2(400.0, 600.0))),
+            ..Default::default()
+        };
+        // erstes Bild ist der Mess-Durchgang von egui, gezählt wird das zweite
+        let _ = ctx.run(input(), |ctx| {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                eframe::egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| super::grid(ui, &items, 70.0, 1.0, 16.0, |_, _, _| {}));
+            });
+        });
+        let _ = ctx.run(input(), |ctx| {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                ui.set_width(240.0);
+                let out = eframe::egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                    super::grid(ui, &items, 70.0, 1.0, 16.0, |_, _, i| built.push(*i));
+                });
+                height = out.content_size.y;
+            });
+        });
+        // 300 px hoch, Zeilen ~88 px: nur die paar sichtbaren Zeilen, der Rest belegt nur Platz
+        assert!(!built.is_empty() && built.len() <= 30, "{}", built.len());
+        assert_eq!(built[0], 0);
+        assert!(height > 300.0 / 6.0 * 80.0, "Inhalt muss so hoch bleiben wie alle Zeilen: {height}");
     }
 }
