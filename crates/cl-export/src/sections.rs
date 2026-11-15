@@ -77,7 +77,7 @@ pub(crate) fn units(p: &Project, start: Time, end: Time, video: bool, audio: boo
     v
 }
 
-fn gcd(a: u64, b: u64) -> u64 {
+fn gcd(a: u128, b: u128) -> u128 {
     if b == 0 {
         a
     } else {
@@ -85,17 +85,23 @@ fn gcd(a: u64, b: u64) -> u64 {
     }
 }
 
-fn lcm(a: u64, b: u64) -> u64 {
+fn lcm(a: u128, b: u128) -> u128 {
     a / gcd(a, b) * b
 }
 
 /// Raster der Abschnittsgrenzen: kleinste Bildzahl, die ganze Mikrosekunden und ganze Samples
-/// (48 kHz) ergibt (60 fps: 3 Bilder = 50 ms; 29,97 fps: 15 Bilder ≈ 0,5 s).
+/// (48 kHz) ergibt (60 fps: 3 Bilder = 50 ms; 29,97 fps: 15 Bilder ≈ 0,5 s). Bei krummen Raten
+/// wäre das riesig (12,345 fps: 2469 Bilder ≈ 200 s): dann ein Bild, auf µs gerundet (den Rest
+/// beim Ton gleicht `append_exact` aus).
 pub fn grid_step(fps: Rational) -> Time {
-    let (num, den) = (fps.num.max(1) as u64, fps.den.max(1) as u64);
-    let need = |rate: u64| num / gcd(num, den * rate);
-    let g = lcm(need(1_000_000), need(48_000));
-    Time((g * den * 1_000_000 / num) as i64)
+    let (num, den) = (fps.num.max(1) as u128, fps.den.max(1) as u128);
+    let need = |rate: u128| num / gcd(num, den * rate);
+    let step = lcm(need(1_000_000), need(48_000)) * den * 1_000_000 / num;
+    if step > 1_000_000 {
+        Time(((den * 1_000_000 + num / 2) / num).max(1) as i64)
+    } else {
+        Time(step as i64)
+    }
 }
 
 /// Grenzen für einen Abschnitt.
@@ -262,6 +268,15 @@ mod tests {
         }
         // kaputte Rate: kein Absturz, positiver Schritt
         assert!(grid_step(Rational::new(0, 0)).0 > 0);
+    }
+
+    /// Krumme Raten (Import, Projektdatei, MCP): kein Überlauf, Schritt ein Bild statt Minuten.
+    #[test]
+    fn odd_rates_fall_back_to_whole_frames() {
+        assert_eq!(grid_step(Rational::new(12345, 1000)), Time(81_004), "1 Bild statt 2469");
+        assert_eq!(grid_step(Rational::new(1_000_000_007, 1_000_000)), Time(1_000));
+        assert!(grid_step(Rational::new(u32::MAX, 1)).0 > 0);
+        assert_eq!(grid_step(Rational::new(1, u32::MAX)).0, u32::MAX as i64 * 1_000_000);
     }
 
     #[test]
