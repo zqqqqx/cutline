@@ -60,6 +60,25 @@ pub fn lower_priority(cmd: &mut Command) {
     let _ = cmd;
 }
 
+/// Priorität über normal für die Prozesse der Wiedergabe (Bildströme, Einzelbilder des Players,
+/// Ton-Fenster): unter Volllast durch andere Programme bekommen sie sonst zu wenig Rechenzeit und
+/// das Bild bleibt stehen, obwohl der Ton läuft. `false`, wenn das System es nicht erlaubt (unter
+/// Linux/macOS braucht Anheben Rechte – dort bleibt es bei normal).
+pub fn raise_priority(child: &Child) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        const ABOVE_NORMAL_PRIORITY_CLASS: u32 = 0x0000_8000;
+        // SAFETY: gültiges Prozess-Handle des noch nicht abgeholten Kindes.
+        unsafe { win::SetPriorityClass(child.as_raw_handle(), ABOVE_NORMAL_PRIORITY_CLASS) != 0 }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = child;
+        false
+    }
+}
+
 /// Hält einen Prozess an (`true`) oder setzt ihn fort. `false`, wenn das System es nicht kann.
 pub fn suspend(child: &Child, on: bool) -> bool {
     #[cfg(windows)]
@@ -172,6 +191,7 @@ pub(crate) mod win {
         fn Process32FirstW(snap: Handle, e: *mut ProcessEntry) -> i32;
         fn Process32NextW(snap: Handle, e: *mut ProcessEntry) -> i32;
         fn GetCurrentProcessId() -> u32;
+        pub fn SetPriorityClass(h: Handle, class: u32) -> i32;
         pub fn GetProcessTimes(h: Handle, c: *mut u64, e: *mut u64, k: *mut u64, u: *mut u64) -> i32;
         #[cfg(test)]
         pub fn WaitForSingleObject(h: Handle, ms: u32) -> u32;
@@ -282,6 +302,23 @@ pub(crate) mod win {
 
 #[cfg(test)]
 mod tests {
+    /// Wiedergabe-Prozesse laufen über normaler Priorität (Windows); anderswo bleibt es still bei normal.
+    #[test]
+    fn playback_processes_can_be_raised() {
+        if !crate::ffmpeg_available() {
+            return;
+        }
+        let mut c = crate::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-nostdin", "-re", "-f", "lavfi", "-i", "nullsrc=s=16x16:r=5", "-t", "3", "-f", "null", "-"])
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        assert_eq!(super::raise_priority(&c), cfg!(windows));
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+
     #[cfg(windows)]
     #[test]
     fn scan_is_dense_right_after_a_start() {

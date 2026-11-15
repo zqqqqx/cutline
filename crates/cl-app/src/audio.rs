@@ -270,6 +270,7 @@ impl Drop for Win {
 fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shared>) -> Result<Win, String> {
     let (mut child, workdir) = cl_export::spawn_audio_window(project, plan.mix_from, plan.mix_to, rate)
         .map_err(|e| e.to_string())?;
+    cl_media::raise_priority(&child);
     let mut stdout = child.stdout.take().ok_or("kein stdout")?;
     let child = Arc::new(Mutex::new(child));
     {
