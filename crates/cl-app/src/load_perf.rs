@@ -71,6 +71,8 @@ struct Headless {
 
 fn headless() -> Headless {
     let home = tempfile::tempdir().unwrap();
+    // CUTLINE_HOME gilt prozessweit: Sperre für die ganze Messung halten
+    std::mem::forget(crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
     std::env::set_var("CUTLINE_HOME", home.path());
     std::env::set_var("CUTLINE_NO_UPDATE", "1");
     std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
@@ -116,9 +118,18 @@ fn load_perf_import_big_draft() {
     h.app.import.open = true;
     h.app.start_import(dir.join("grosser_entwurf"), &h.ctx.clone());
     let mut st = Stats::default();
-    while h.app.screen != Screen::Editor || h.app.import_busy() {
+    while h.app.import_busy() {
         st.add(h.frame());
         assert!(t.elapsed() < Duration::from_secs(600), "Import hängt");
+    }
+    println!("Import fertig: {:.1} s", t.elapsed().as_secs_f64());
+    // Zusammenfassung zeigen, dann „Projekt öffnen“
+    for _ in 0..5 {
+        st.add(h.frame());
+    }
+    h.app.open_imported(0);
+    while h.app.screen != Screen::Editor {
+        st.add(h.frame());
     }
     println!("Import bis Editor: {:.1} s", t.elapsed().as_secs_f64());
     st.print("während Import");
@@ -174,12 +185,23 @@ fn big_project(dir: &Path) -> Project {
 #[test]
 #[ignore]
 fn load_perf_open_big_project() {
-    let Some(dir) = material() else { return };
+    // eigenes Projekt (Kopie, das Original bleibt unberührt): CUTLINE_OPEN_FILE=<.cutline>
+    let own = std::env::var_os("CUTLINE_OPEN_FILE").map(PathBuf::from);
+    let Some(dir) = material().or_else(|| own.clone()) else { return };
     let mut h = headless();
     h.frame();
-    let p = big_project(&dir);
     let file = h._home.path().join("gross.cutline");
-    std::fs::write(&file, p.to_json()).unwrap();
+    let p = match &own {
+        Some(f) => {
+            std::fs::copy(f, &file).unwrap();
+            Project::from_json(&std::fs::read_to_string(&file).unwrap()).unwrap()
+        }
+        None => {
+            let p = big_project(&dir);
+            std::fs::write(&file, p.to_json()).unwrap();
+            p
+        }
+    };
     println!(
         "Projekt: {} Medien, {} Clips, {} KB",
         p.media.len(),
@@ -194,8 +216,13 @@ fn load_perf_open_big_project() {
         st.add(h.frame());
         assert!(t.elapsed() < Duration::from_secs(60), "Öffnen hängt");
     }
+    println!("bis Editor: {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
     st.print("bis geöffnet");
-    h.frames_for(20.0, "20 s nach dem Öffnen (Proxys/Vorschaubilder laufen)");
+    let t = Instant::now();
+    h.frame();
+    println!("erstes Bild im Editor: {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
+    let secs = std::env::var("CUTLINE_PERF_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(20.0);
+    h.frames_for(secs, "nach dem Öffnen (Proxys/Vorschaubilder laufen)");
     // Speichern eines großen Projekts
     let mut s = h.app.project.settings.clone();
     s.main_track_magnet = !s.main_track_magnet;
