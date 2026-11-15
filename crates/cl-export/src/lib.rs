@@ -26,8 +26,9 @@ use serde::{Deserialize, Serialize};
 pub enum ExportError {
     #[error("Das Projekt ist leer")]
     Empty,
-    #[error("Medium fehlt: {0}")]
-    MissingMedia(String),
+    /// Dateinamen der fehlenden Medien im Exportbereich
+    #[error("{}", missing_text(.0))]
+    MissingMedia(Vec<String>),
     #[error("FFmpeg: {0}")]
     Ffmpeg(String),
     #[error("Abgebrochen")]
@@ -199,6 +200,16 @@ impl ExportSettings {
         }
     }
 
+    /// Größe der geschriebenen Datei (gerade Maße); GIF höchstens [`GIF_MAX_W`] breit.
+    pub fn output_size(&self) -> (u32, u32) {
+        let (w, h) = (self.width.max(2) & !1, self.height.max(2) & !1);
+        if self.format == Format::Gif && w > GIF_MAX_W {
+            let gh = (h as f64 * GIF_MAX_W as f64 / w as f64).round() as u32;
+            return (GIF_MAX_W, gh.max(2) & !1);
+        }
+        (w, h)
+    }
+
     /// Unterstützen Container und Codec einen Alphakanal?
     pub fn alpha_possible(&self) -> bool {
         matches!(
@@ -212,6 +223,10 @@ impl ExportSettings {
         self.transparent && self.alpha_possible()
     }
 }
+
+/// GIF: höchstens so breit und so viele Bilder je Sekunde (Dateigröße).
+pub const GIF_MAX_W: u32 = 720;
+pub const GIF_FPS: u32 = 15;
 
 /// Schriftauflösung für Textclips: Familie → (Datei, Face-Index).
 pub type FontResolver<'a> = &'a dyn Fn(Option<&str>) -> Option<(PathBuf, u32)>;
@@ -321,17 +336,11 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     if total <= Time::ZERO {
         return Err(ExportError::Empty);
     }
-    // Nur Medien prüfen, die ein aktiver Clip nutzt (ungenutzte dürfen fehlen)
-    for c in p.timeline.tracks.iter().flat_map(|t| &t.clips).filter(|c| !c.disabled) {
-        if let ClipContent::Media { media, .. } = &c.content {
-            match p.media(*media) {
-                Some(m) if m.is_local() => {}
-                Some(m) => return Err(ExportError::MissingMedia(m.path.display().to_string())),
-                None => return Err(ExportError::MissingMedia(media.to_string())),
-            }
-        }
-    }
     let (start, end) = s.range.unwrap_or((Time::ZERO, total));
+    let missing = missing_media(p, start, end);
+    if !missing.is_empty() {
+        return Err(ExportError::MissingMedia(missing));
+    }
     let dur = end - start;
     // leerer oder verkehrter Bereich (In = Out): FFmpeg bekäme `-t 0` bzw. eine negative Länge
     if dur <= Time::ZERO {
@@ -364,10 +373,10 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         ctx.graph.push(format!("[pv0]fps=2:eof_action=pass,scale={PREVIEW_W}:-2[pv]"));
         let cur = "vmain";
         if s.format == Format::Gif {
+            let (gw, gh) = s.output_size();
             ctx.graph.push(format!(
-                "[{cur}]fps=min(15\\,{}),scale={}:-2:flags=lanczos,split[g0][g1]",
-                ctx.fps,
-                w.min(720)
+                "[{cur}]fps=min({GIF_FPS}\\,{}),scale={gw}:{gh}:flags=lanczos,split[g0][g1]",
+                ctx.fps
             ));
             ctx.graph.push("[g0]palettegen=stats_mode=diff[pal]".into());
             ctx.graph
@@ -470,6 +479,42 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     })
 }
 
+/// Dateinamen fehlender Medien, die ein aktiver Clip im Bereich `start..end` nutzt (samt den
+/// über Übergänge verbundenen Nachbarn, die der Export mitliest); ungenutzte dürfen fehlen.
+fn missing_media(p: &Project, start: Time, end: Time) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for g in p.timeline.tracks.iter().flat_map(graph::transition_groups) {
+        if g.last().is_none_or(|c| c.end() <= start) || g[0].start >= end {
+            continue;
+        }
+        for c in g {
+            let ClipContent::Media { media, .. } = &c.content else { continue };
+            let name = match p.media(*media) {
+                Some(m) if m.is_local() => continue,
+                Some(m) => m.path.file_name().map_or_else(|| m.path.display().to_string(), |n| n.to_string_lossy().into_owned()),
+                None => media.to_string(),
+            };
+            if !v.contains(&name) {
+                v.push(name);
+            }
+        }
+    }
+    v
+}
+
+/// „Datei fehlt: a.mp4“ bzw. „4 Dateien fehlen: a.mp4, b.wav, c.png …“
+pub fn missing_text(names: &[String]) -> String {
+    match names {
+        [one] => format!("Datei fehlt: {one}"),
+        _ => format!(
+            "{} Dateien fehlen: {}{}",
+            names.len(),
+            names.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
+            if names.len() > 3 { " …" } else { "" }
+        ),
+    }
+}
+
 /// Lautstärke und Tempo in die Bereiche der Bearbeitung (wie `EditOp::SetVolume`/`SetSpeed`):
 /// Projektdateien und MCP können mehr enthalten, +1000 dB bzw. Tempo 0,001 brachen den
 /// AAC-Encoder ab.
@@ -489,17 +534,22 @@ fn in_edit_ranges(p: &Project) -> Project {
 
 /// Kapitel (Start relativ zu `start`, Titel) aus den Markern im Bereich `start..end`.
 /// YouTube verlangt ein Kapitel bei 0:00: Ein Marker in der ersten Sekunde wird dorthin
-/// gezogen, sonst kommt „Intro“ davor.
+/// gezogen, sonst kommt davor das Kapitel, das am Bereichsanfang läuft (letzter Marker davor),
+/// ohne solchen Marker „Intro“.
 pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time) -> Vec<(Time, String)> {
+    let name = |m: &cl_core::Marker| if m.name.is_empty() { "Kapitel".to_string() } else { m.name.clone() };
     let mut v: Vec<(Time, String)> = markers
         .iter()
         .filter(|m| m.at >= start && m.at < end)
-        .map(|m| (m.at - start, if m.name.is_empty() { "Kapitel".into() } else { m.name.clone() }))
+        .map(|m| (m.at - start, name(m)))
         .collect();
     v.sort_by_key(|m| m.0);
     match v.first_mut() {
         Some(f) if f.0 < Time::from_secs_f64(1.0) => f.0 = Time::ZERO,
-        _ => v.insert(0, (Time::ZERO, "Intro".into())),
+        _ => {
+            let running = markers.iter().filter(|m| m.at < start).max_by_key(|m| m.at);
+            v.insert(0, (Time::ZERO, running.map_or_else(|| "Intro".into(), name)));
+        }
     }
     // zwei Marker in derselben Sekunde ergäben zweimal dieselbe Zeit: der erste gewinnt
     v.dedup_by(|b, a| (b.0 - a.0) < Time::from_secs_f64(1.0));
@@ -1060,6 +1110,56 @@ fn subtitles(p: &Project, ms_sep: char, start: Time, end: Time) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn range_chapters_start_with_the_running_marker() {
+        let mk = |at: f64, name: &str| Marker { id: 0, at: Time::from_secs_f64(at), duration: Time::ZERO, name: name.into(), note: String::new(), color: 0 };
+        let ms = [mk(0.0, "Intro"), mk(10.0, "Thema"), mk(24.93, "Highlights"), mk(35.13, "Interview"), mk(40.0, "Ende")];
+        let s = |x: f64| Time::from_secs_f64(x);
+        let v = chapter_list(&ms, s(34.13), s(36.13));
+        assert_eq!(v, vec![(Time::ZERO, "Highlights".to_string()), (s(35.13) - s(34.13), "Interview".to_string())]);
+        // ganze Datei: wie bisher
+        assert_eq!(chapter_list(&ms[1..], Time::ZERO, s(50.0))[0].1, "Intro");
+        // Kapiteldatei mit denselben Namen und Zeiten ab Bereichsanfang
+        let meta = ffmetadata(&ms, s(34.13), s(36.13)).unwrap();
+        assert!(meta.contains("START=0\nEND=1000\ntitle=Highlights\n") && meta.contains("START=1000\nEND=2000\ntitle=Interview\n"), "{meta}");
+    }
+
+    #[test]
+    fn missing_media_only_blocks_clips_in_the_range() {
+        let mut p = Project::new("T");
+        let gone = |name: &str| MediaRef {
+            id: MediaId::new(),
+            path: PathBuf::from(format!("C:/weg/{name}")),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(60.0),
+            width: 320,
+            height: 180,
+            fps: None,
+            has_audio: false,
+            video_codec: None,
+            audio_codec: None,
+        };
+        let mut t = Track::new(TrackKind::Video);
+        for (i, n) in ["a.mp4", "b.mp4", "c.mp4"].iter().enumerate() {
+            let m = gone(n);
+            t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::from_secs_f64(i as f64 * 10.0), Time::from_secs_f64(10.0)));
+            p.media.push(m);
+        }
+        p.timeline.tracks.push(t);
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = ExportSettings::from_project(&p);
+        let none = |_: Option<&str>| None;
+        // alle drei fehlen: alle genannt
+        match build(&p, &s, &none, &dir.path().join("o.mp4")) {
+            Err(ExportError::MissingMedia(v)) => assert_eq!(v, ["a.mp4", "b.mp4", "c.mp4"]),
+            Err(e) => panic!("{e}"),
+            Ok(_) => panic!("Export trotz fehlender Medien"),
+        }
+        // Bereich nur im zweiten Clip: nur dessen Datei zählt
+        s.range = Some((Time::from_secs_f64(12.0), Time::from_secs_f64(15.0)));
+        assert!(matches!(build(&p, &s, &none, &dir.path().join("o.mp4")), Err(ExportError::MissingMedia(v)) if v == ["b.mp4"]));
+    }
 
     #[test]
     fn text_clips_share_one_font_copy() {

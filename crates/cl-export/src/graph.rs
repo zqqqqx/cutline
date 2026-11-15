@@ -339,6 +339,9 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     })
 }
 
+/// Neigung kursiver Schrift: obere Kante um ¼ der Höhe nach rechts (wie egui in der Vorschau).
+const ITALIC_SHEAR: f32 = 0.25;
+
 fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>> {
     let Some((font_path, idx)) =
         (ctx.fonts)(st.font_family.as_deref()).or_else(|| default_font().map(|p| (p, 0)))
@@ -389,7 +392,9 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     let outline = st.outline.map(|o| o.0).unwrap_or(0.0);
     let pad = (size * 0.4 + outline * 2.0 + 8.0).ceil();
     // sehr lange Zeilen ohne Umbruch: Fläche begrenzen (Rest liegt ohnehin außerhalb des Bilds)
-    let lw = (((tw + pad * 2.0).ceil() as u32 + 1) & !1).min(8192);
+    // kursiv: Scherung braucht seitlich Platz
+    let slant = if st.italic { ITALIC_SHEAR * th } else { 0.0 };
+    let lw = (((tw + pad * 2.0 + slant).ceil() as u32 + 1) & !1).min(8192);
     let lh = (((th + pad * 2.0).ceil() as u32 + 1) & !1).min(8192);
     let text_file = format!("text_{n}.txt");
     std::fs::write(ctx.workdir.join(&text_file), txt.as_bytes())?;
@@ -407,11 +412,14 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         a if a > 0 => "R",
         _ => "C",
     };
-    let mut dt = format!(
-        "drawtext=fontfile={font_file}:textfile={text_file}:expansion=none:fontsize={size:.1}:fontcolor={}:text_align={align}:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing={:.1}",
-        rgba(st.color),
-        size * 0.3 * ls + size * (ls - 1.0).max(0.0)
-    );
+    let core = |dx: f32| {
+        format!(
+            "drawtext=fontfile={font_file}:textfile={text_file}:expansion=none:fontsize={size:.1}:fontcolor={}:text_align={align}:x=(w-text_w)/2+{dx:.1}:y=(h-text_h)/2:line_spacing={:.1}",
+            rgba(st.color),
+            size * 0.3 * ls + size * (ls - 1.0).max(0.0)
+        )
+    };
+    let mut dt = core(0.0);
     if let Some((bw, col)) = st.outline {
         dt.push_str(&format!(":borderw={bw:.1}:bordercolor={}", rgba(col)));
     }
@@ -424,6 +432,15 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     }
     if st.shadow {
         dt.push_str(":shadowx=3:shadowy=3:shadowcolor=black@0.6");
+    }
+    // Fett und kursiv wie die Vorschau (`draw_text` im Player) aus den Schaltern des Stils, nicht
+    // aus dem Schnitt der Schriftdatei: zweiter Abdruck um 3 % der Größe versetzt, Scherung
+    if st.bold {
+        dt.push(',');
+        dt.push_str(&core(size * 0.03));
+    }
+    if st.italic {
+        dt.push_str(&format!(",shear=shx={ITALIC_SHEAR}:fillcolor=black@0"));
     }
     let dur = c.duration.as_secs_f64();
     let src = ctx.label("tx");
@@ -563,7 +580,7 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
 }
 
 /// Clips einer Spur in Gruppen, die über Übergänge verbunden sind.
-fn transition_groups(tr: &Track) -> Vec<Vec<&Clip>> {
+pub(crate) fn transition_groups(tr: &Track) -> Vec<Vec<&Clip>> {
     let mut groups: Vec<Vec<&Clip>> = Vec::new();
     for c in tr.clips.iter().filter(|c| !c.disabled) {
         let joined = groups.last().and_then(|g| g.last()).is_some_and(|prev| {
@@ -589,7 +606,7 @@ fn sprite_for(ctx: &mut Ctx, p: &Project, c: &Clip) -> Result<Option<Sprite>> {
         } => {
             let m = p
                 .media(*media)
-                .ok_or_else(|| ExportError::MissingMedia(media.to_string()))?
+                .ok_or_else(|| ExportError::MissingMedia(vec![media.to_string()]))?
                 .clone();
             media_sprite(ctx, c, &m, *kind == MediaKind::Image).map(Some)
         }
@@ -608,24 +625,9 @@ fn group_layer(ctx: &mut Ctx, p: &Project, group: &[&Clip], k: usize) -> Result<
     };
     {
         let len = c.duration.as_secs_f64();
-        let d_of = |cl: &Clip| {
-            cl.transition_out
-                .as_ref()
-                .map(|t| t.duration.as_secs_f64())
-                .unwrap_or(0.0)
-        };
-        let d_prev = if k > 0 {
-            d_of(group[k - 1])
-                .min(len)
-                .min(group[k - 1].duration.as_secs_f64())
-        } else {
-            0.0
-        };
-        let d_next = if k + 1 < group.len() {
-            d_of(c).min(len).min(group[k + 1].duration.as_secs_f64())
-        } else {
-            0.0
-        };
+        // gleiche Regel wie die Vorschau
+        let d_prev = if k > 0 { cl_fx::transition_secs(group[k - 1], c) } else { 0.0 };
+        let d_next = if k + 1 < group.len() { cl_fx::transition_secs(c, group[k + 1]) } else { 0.0 };
         let canvas = ctx.label("cv");
         ctx.graph.push(format!(
             "color=c=black@0.0:s={w}x{h}:r={}:d={},format=rgba[{canvas}]",
