@@ -6,6 +6,8 @@
 //! Von Hand ausführen (Projekte `PL_einfach/PL_schnitt/PL_gross.cutline` im Ordner):
 //! `CUTLINE_QA_DIR=<Ordner> cargo test --release -p cl-app --bin cutline play_measure -- --ignored --nocapture`
 //! Proxys werden genutzt, wenn sie im Datenordner (`CUTLINE_HOME`) liegen – wie in der App.
+//! Dauerlauf (Speicher): `CUTLINE_QA_SECS=150 CUTLINE_QA_JUMP=8` springt nach dem Klick alle 8 s
+//! und gibt die Größe aller Zwischenspeicher nach dem Anlauf und am Ende aus (`mem`).
 
 use std::time::Instant;
 
@@ -48,6 +50,52 @@ struct Run {
     stills_shown: u32,
     /// größte Zeit ohne neues Bild irgendeiner Ebene bei laufender Uhr (ms)
     freeze_ms: f64,
+    /// Zwischenspeicher nach dem Anlauf und am Ende (Dauerlauf, `CUTLINE_QA_JUMP`)
+    mem: Vec<String>,
+}
+
+/// Privater Speicher des Prozesses (MB), soweit ermittelbar
+fn private_mb() -> f64 {
+    #[cfg(windows)]
+    {
+        #[repr(C)]
+        #[derive(Default)]
+        struct Counters {
+            cb: u32,
+            faults: u32,
+            peak_ws: usize,
+            ws: usize,
+            quota: [usize; 4],
+            pagefile: usize,
+            peak_pagefile: usize,
+            private: usize,
+        }
+        extern "system" {
+            fn GetCurrentProcess() -> *mut std::ffi::c_void;
+            fn K32GetProcessMemoryInfo(p: *mut std::ffi::c_void, c: *mut Counters, cb: u32) -> i32;
+        }
+        let mut c = Counters { cb: std::mem::size_of::<Counters>() as u32, ..Default::default() };
+        // SAFETY: Struktur in der Größe von PROCESS_MEMORY_COUNTERS_EX
+        if unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb) } != 0 {
+            return c.private as f64 / 1048576.0;
+        }
+    }
+    f64::NAN
+}
+
+/// Alle Zwischenspeicher des Players (Kern, Verteiler, Starter-Warteschlange) und Prozess-Speicher
+fn sizes(core: &PlayCore<cl_media::FrameStream>, decoder: &Decoder, starter_queue: i64, t: f64) -> String {
+    use std::sync::atomic::Ordering::Relaxed;
+    let h = &decoder.held;
+    format!(
+        "{t:.0} s: privat {:.0} MB | Kern {} | Einzelbilder {} ({:.0} MB), Animationen {} ({:.0} MB) | Starter wartend {starter_queue}",
+        private_mb(),
+        core.sizes(),
+        h[0].load(Relaxed),
+        h[1].load(Relaxed) as f64 / 1048576.0,
+        h[2].load(Relaxed),
+        h[3].load(Relaxed) as f64 / 1048576.0,
+    )
 }
 
 /// Unterste Video-Ebene am Playhead (nicht vorab, keine Element-Fassung)
@@ -92,6 +140,10 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let mut moving: Option<f64> = None;
     let mut warm_until = f64::MAX; // Lücken erst nach dem Anlauf zählen
     let mut any_frame = f64::NAN;
+    // Dauerlauf: alle so viele Sekunden ein Sprung (zusätzlich zum Klick)
+    let jump_every: Option<f64> = std::env::var("CUTLINE_QA_JUMP").ok().and_then(|s| s.parse().ok());
+    let mut last_jump = 0.0;
+    let mut starter_queue = 0i64;
     core.play(start, revision, now());
     let t_play = now();
     while now() - t_play < secs {
@@ -117,6 +169,14 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
             let to = Time::from_secs_f64((playhead.as_secs_f64() + 37.0) % (d - 5.0).max(1.0));
             playhead = to;
             clicked = Some((t, to));
+        }
+        if let Some(j) = jump_every.filter(|j| rel - last_jump >= *j && rel > click_at + 3.0) {
+            let d = project.duration().as_secs_f64();
+            playhead = Time::from_secs_f64((playhead.as_secs_f64() + 37.0 + j) % (d - 5.0).max(1.0));
+            last_jump = rel;
+        }
+        if run.mem.is_empty() && rel >= 3.0 {
+            run.mem.push(sizes(&core, &decoder, starter_queue, rel));
         }
         let ain = match &audio {
             None => AudioIn::None,
@@ -167,6 +227,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
         run.clock_audio |= matches!(ain, AudioIn::Running(_));
         run.level_max = run.level_max.max(core.quality.level);
         while let Ok((o, f, alias, s)) = starter.rx.try_recv() {
+            starter_queue -= 1;
             match s {
                 Some(s) => {
                     core.attach_alias(o, f, s, t, alias);
@@ -230,6 +291,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                         eprintln!("öffnen {:.2} s: {} ab {:.3} {}×{} hw={} graph={:?}", o.at.as_secs_f64(), j.path.display(), j.source_at.as_secs_f64(), w, h, j.hw, j.graph);
                     }
                     starter.send(j);
+                    starter_queue += 1;
                 }
                 if n.prefetch.is_none() && core.pull(lid(n.id), t, n.overlay.is_none()).is_some() {
                     any_frame = t;
@@ -276,6 +338,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
         run.catch_ups += st.catch_ups;
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
+    run.mem.push(sizes(&core, &decoder, starter_queue, now() - t_play));
     run.first_ms = first_any.map_or(f64::NAN, |f| (f - t_play) * 1000.0);
     run.moving_ms = moving.map_or(f64::NAN, |f| (f - t_play) * 1000.0);
     let ruhig: Vec<f64> = prim_frames.iter().copied().filter(|f| *f - t_play >= 2.0 && *f - t_play < edit_at).collect();
@@ -388,7 +451,11 @@ fn play_measure() {
             r.stills_shown
         );
     }
-    // großzügige Grenzwerte (Fremdlast auf dem Rechner darf nicht stören)
+    // großzügige Grenzwerte (Fremdlast auf dem Rechner darf nicht stören); im Dauerlauf mit
+    // Sprüngen zählt jeder Anlauf als Rückstand – dort nur die Zwischenspeicher ansehen
+    if std::env::var_os("CUTLINE_QA_JUMP").is_some() {
+        return;
+    }
     for r in &rows {
         assert!(r.first_ms < 3000.0, "{}: Play → Bild {:.0} ms", r.label, r.first_ms);
         assert!(r.lag_max_ms < 1500.0, "{}: Rückstand {:.0} ms", r.label, r.lag_max_ms);

@@ -371,6 +371,24 @@ impl<S: Source> PlayCore<S> {
         self.cur.iter().map(|(id, s)| (*id, s.key, false)).chain(self.next.iter().map(|(id, s)| (*id, s.key, true))).collect()
     }
 
+    /// Größe aller Listen des Kerns (Dauerlauf-Messung)
+    #[cfg(test)]
+    pub fn sizes(&self) -> String {
+        format!(
+            "cur {} next {} opening {} reopen {} failed {} reopened {} wanted {} requested {} shown {} cmds {}",
+            self.cur.len(),
+            self.next.len(),
+            self.opening.len(),
+            self.reopen.len(),
+            self.failed.len(),
+            self.reopened.len(),
+            self.wanted.len(),
+            self.requested.len(),
+            self.shown.len(),
+            self.cmds.len()
+        )
+    }
+
     /// Offene Ströme (laufend und Ersatz)
     #[cfg(test)]
     pub fn stream_count(&self) -> usize {

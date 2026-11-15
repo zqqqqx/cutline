@@ -250,6 +250,10 @@ pub struct Decoder {
     pub strips_wanted: Arc<Mutex<HashSet<String>>>,
     /// Projektgeneration: Aufträge eines verlassenen Projekts verwirft der Worker
     pub generation: Arc<AtomicU64>,
+    /// Zwischenspeicher des Verteilers: Bilder (Anzahl, Bytes), Animationen (Anzahl, Bytes);
+    /// liest der Dauerlauf-Mess-Test
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub held: Arc<[AtomicUsize; 4]>,
 }
 
 /// Nachricht an den Verteiler der Player-Bilder: neuer Auftrag oder fertiges Ergebnis.
@@ -365,6 +369,7 @@ fn frame_dispatcher(
     ctx: egui::Context,
     gen: Arc<AtomicU64>,
     busy: Arc<AtomicUsize>,
+    held: Arc<[AtomicUsize; 4]>,
 ) {
     let mut cache = FrameCache::new(384 << 20);
     let mut anims = Anims::default();
@@ -453,6 +458,9 @@ fn frame_dispatcher(
             }
         };
         busy.store(inflight.len(), Ordering::Relaxed);
+        for (a, v) in held.iter().zip([cache.map.len(), cache.bytes, anims.map.len(), anims.bytes]) {
+            a.store(v, Ordering::Relaxed);
+        }
         if let Some(d) = out {
             if done_tx.send(d).is_err() {
                 return;
@@ -666,11 +674,12 @@ impl Decoder {
         let (tx, jobs) = channel::<Msg>();
         let generation = Arc::new(AtomicU64::new(0));
         let busy = Arc::new(AtomicUsize::new(0));
+        let held: Arc<[AtomicUsize; 4]> = Default::default();
         {
-            let (done_tx, ctx, gen, busy, tx) = (done_tx.clone(), ctx.clone(), generation.clone(), busy.clone(), tx.clone());
+            let (done_tx, ctx, gen, busy, tx, held) = (done_tx.clone(), ctx.clone(), generation.clone(), busy.clone(), tx.clone(), held.clone());
             std::thread::Builder::new()
                 .name("cl-decoder".into())
-                .spawn(move || frame_dispatcher(jobs, tx, done_tx, ctx, gen, busy))
+                .spawn(move || frame_dispatcher(jobs, tx, done_tx, ctx, gen, busy, held))
                 .expect("Decoder-Thread");
         }
         let strips_wanted: Arc<Mutex<HashSet<String>>> = Default::default();
@@ -741,6 +750,7 @@ impl Decoder {
             rx,
             strips_wanted,
             generation,
+            held,
         }
     }
 
