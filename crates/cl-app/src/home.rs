@@ -46,6 +46,31 @@ pub fn thumb_path(project: &Path) -> PathBuf {
         .join(format!("{:016x}.rgba", h.finish()))
 }
 
+/// Freier Dateiname für ein dupliziertes Projekt: `<Name> (Kopie).cutline`, dann `(Kopie 2)` …
+/// Sonderzeichen im Namen (`/`, `:`, `?` …) werden ersetzt.
+fn copy_path(dir: &Path, name: &str) -> PathBuf {
+    let base = paths::safe_name(name);
+    let mut out = dir.join(format!("{base} (Kopie).cutline"));
+    let mut n = 2;
+    while out.exists() {
+        out = dir.join(format!("{base} (Kopie {n}).cutline"));
+        n += 1;
+    }
+    out
+}
+
+#[cfg(test)]
+#[test]
+fn copy_name_survives_special_characters() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = copy_path(dir.path(), "Urlaub: Tag 1/2?");
+    assert_eq!(p.parent(), Some(dir.path()));
+    std::fs::write(&p, "{}").unwrap();
+    let q = copy_path(dir.path(), "Urlaub: Tag 1/2?");
+    assert_ne!(p, q);
+    std::fs::write(&q, "{}").unwrap();
+}
+
 /// Datei/Ordner im Explorer zeigen (Datei wird markiert).
 ///
 /// Der Explorer versteht `/select,"C:\pfad mit leerzeichen\datei"` nur in genau dieser Form:
@@ -642,27 +667,23 @@ impl App {
     }
 
     fn duplicate_project(&mut self, p: &Path) {
-        let Ok(s) = std::fs::read_to_string(p) else {
-            return;
-        };
-        let Ok(mut proj) = Project::from_json(&s) else {
-            return;
-        };
-        proj.name = format!("{} (Kopie)", proj.name);
-        let dir = paths::projects_dir();
-        let mut out = dir.join(format!("{}.cutline", proj.name));
-        let mut n = 2;
-        while out.exists() {
-            out = dir.join(format!(
-                "{} (Kopie {n}).cutline",
-                proj.name.trim_end_matches(" (Kopie)")
-            ));
-            n += 1;
-        }
-        let _ = std::fs::create_dir_all(&dir);
-        if std::fs::write(&out, proj.to_json()).is_ok() {
-            let _ = std::fs::copy(thumb_path(p), thumb_path(&out));
-            self.toast("Projekt dupliziert");
+        let r = std::fs::read_to_string(p)
+            .map_err(|e| e.to_string())
+            .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
+            .and_then(|mut proj| {
+                let dir = paths::projects_dir();
+                let out = copy_path(&dir, &proj.name);
+                proj.name = format!("{} (Kopie)", proj.name);
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                paths::write_atomic(&out, proj.to_json()).map_err(|e| e.to_string())?;
+                Ok(out)
+            });
+        match r {
+            Ok(out) => {
+                let _ = std::fs::copy(thumb_path(p), thumb_path(&out));
+                self.toast("Projekt dupliziert");
+            }
+            Err(e) => self.toast_err(format!("Duplizieren fehlgeschlagen: {e}")),
         }
         self.home.refresh();
     }
