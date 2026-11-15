@@ -141,6 +141,12 @@ pub(crate) fn progress_text(done: u64, total: u64, comma: bool) -> String {
     format!("{pct:.0} % · {} / {total_mb}", done_mb.trim_end_matches(" MB"))
 }
 
+/// Zwischenordner für das geprüfte Update-Paket: im eigenen Datenordner, nicht im geteilten Temp-Ordner
+/// (unter Linux könnte dort ein anderer Nutzer die ZIP zwischen Prüfen und Entpacken tauschen)
+fn update_dir() -> std::path::PathBuf {
+    crate::paths::data_dir().join("update")
+}
+
 /// Ergebnis der Suche → Zustand (kurze Meldung) und Protokollzeile (mit Rohtext, etwa TLS-/Proxy-/DNS-Fehler)
 fn check_outcome(r: Result<Option<Release>, String>) -> (UpdateState, String) {
     match r {
@@ -212,7 +218,7 @@ impl Updater {
         *self.state.lock().unwrap() = UpdateState::Downloading(Box::new(rel.clone()), 0, rel.asset_size);
         let (state, cancel, ctx) = (self.state.clone(), self.cancel.clone(), ctx.clone());
         std::thread::spawn(move || {
-            let tmp = std::env::temp_dir().join("cutline-update");
+            let tmp = update_dir();
             let st = state.clone();
             let c2 = ctx.clone();
             let boxed = Box::new(rel.clone());
