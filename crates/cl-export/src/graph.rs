@@ -884,8 +884,7 @@ pub(crate) fn audio_part(
                 continue;
             }
             let Some(m) = p.media(*media) else { continue };
-            // Nur lokale Dateien (sonst lädt FFmpeg z. B. eine URL aus der Projektdatei)
-            if !m.path.is_file() {
+            if !m.is_local() {
                 continue;
             }
             if !m.has_audio || (c.volume_db <= -59.9 && c.keyframes.get(Prop::Volume).is_empty()) {

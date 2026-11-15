@@ -285,7 +285,7 @@ impl App {
             .project
             .media
             .iter()
-            .filter(|m| !m.path.is_file() && !m.path.to_string_lossy().contains("://"))
+            .filter(|m| !m.is_local())
             .map(|m| (m.id, m.path.clone()))
             .collect();
         let mut open = true;

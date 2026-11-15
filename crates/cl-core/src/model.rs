@@ -202,6 +202,15 @@ pub struct MediaRef {
     pub audio_codec: Option<String>,
 }
 
+impl MediaRef {
+    /// Liegt die Datei lokal vor? Nur dann darf sie an FFmpeg (Vorschau wie Export) – ein Pfad
+    /// wie `http://…` aus der Projektdatei ließe FFmpeg sonst ins Netz gehen. Sonst gilt sie
+    /// als fehlend (neu verknüpfen).
+    pub fn is_local(&self) -> bool {
+        self.path.is_file()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaKind {
     Video,

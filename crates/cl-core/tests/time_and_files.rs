@@ -246,3 +246,15 @@ fn unknown_fields_and_old_files_still_load() {
     apply(&mut d, EditOp::SplitClip { clip: id, at: Time(1) });
     check(d.project(), "alte Datei");
 }
+
+/// Fehler: eine URL als Medienpfad ging an FFmpeg (Netz) und galt beim Neu-Verknüpfen nicht als fehlend.
+#[test]
+fn only_local_files_count_as_media() {
+    let mut m: MediaRef = serde_json::from_value(serde_json::json!({
+        "id": MediaId::new(), "path": "http://example.invalid/a.mp4", "kind": "Video", "duration": 1000000,
+        "width": 2, "height": 2, "fps": null, "has_audio": false, "video_codec": null, "audio_codec": null
+    })).unwrap();
+    assert!(!m.is_local());
+    m.path = std::env::current_exe().unwrap();
+    assert!(m.is_local());
+}

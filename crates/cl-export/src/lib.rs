@@ -324,7 +324,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     for c in p.timeline.tracks.iter().flat_map(|t| &t.clips).filter(|c| !c.disabled) {
         if let ClipContent::Media { media, .. } = &c.content {
             match p.media(*media) {
-                Some(m) if m.path.is_file() => {}
+                Some(m) if m.is_local() => {}
                 Some(m) => return Err(ExportError::MissingMedia(m.path.display().to_string())),
                 None => return Err(ExportError::MissingMedia(media.to_string())),
             }

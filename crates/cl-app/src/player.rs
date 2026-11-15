@@ -514,7 +514,7 @@ impl App {
             }
             let current = self.playbacks.get(&id).is_some_and(|p| p.key == key);
             let pending = self.playbacks_next.get(&id).is_some_and(|p| p.key == key);
-            if !current && !pending {
+            if !current && !pending && m.is_local() {
                 // Vorab: ab dem Startpunkt des Clips/Elements; sonst ab dem Playhead
                 let t0 = prefetch_at.unwrap_or(self.playhead);
                 let at = c.source_time(c.start + l.t_rel);
@@ -606,6 +606,9 @@ impl App {
         let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx);
         if self.requested.get(&id) != Some(&key) {
             self.requested.insert(id, key);
+            if !m.is_local() {
+                return;
+            }
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
             self.decoder.send(Job::Frame {
                 clip: id,

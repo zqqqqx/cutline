@@ -636,7 +636,7 @@ impl App {
                     self.restart_audio(); // hörbare Änderungen sofort hörbar
                 }
             }
-            for m in &self.project.media {
+            for m in self.project.media.iter().filter(|m| m.is_local()) {
                 if m.has_audio && !self.waves.contains_key(&m.id) {
                     self.waves.insert(m.id, Vec::new()); // Platzhalter: Auftrag nur einmal senden
                     self.decoder.send(Job::Wave {
@@ -1881,6 +1881,7 @@ impl App {
                 ClipContent::Media { media, .. } => self
                     .project
                     .media(*media)
+                    .filter(|m| m.is_local())
                     .map(|m| (m.path.clone(), c.source_time(c.start))),
                 _ => None,
             })
@@ -2015,7 +2016,7 @@ impl App {
             .project
             .media
             .iter()
-            .filter(|m| m.has_audio && m.kind != MediaKind::Image)
+            .filter(|m| m.has_audio && m.kind != MediaKind::Image && m.is_local())
             .filter(|m| self.silent_warmed.0.insert(m.path.clone()))
             .map(|m| m.path.clone())
             .collect();
@@ -2136,7 +2137,7 @@ impl App {
                     .project
                     .media
                     .iter()
-                    .any(|m| !m.path.is_file() && !m.path.to_string_lossy().contains("://"));
+                    .any(|m| !m.is_local());
                 let known = self.font_files();
                 let missing: Vec<String> = needed
                     .into_iter()

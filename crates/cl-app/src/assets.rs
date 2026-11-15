@@ -452,6 +452,7 @@ impl App {
                         && ui.is_rect_visible(r)
                         && (scrub.is_some() || outstanding < 4)
                         && self.fx_thumbs_requested.insert(strip_key.clone())
+                        && m.is_local()
                     {
                         outstanding += 1;
                         // gleich als gewünscht eintragen, sonst überspringt der Worker den Auftrag
