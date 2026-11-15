@@ -370,6 +370,7 @@ impl<S: Source> PlayCore<S> {
     }
 
     /// Offene Ströme (laufend und Ersatz)
+    #[cfg(test)]
     pub fn stream_count(&self) -> usize {
         self.cur.len() + self.next.len()
     }
