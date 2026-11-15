@@ -11,6 +11,7 @@ mod curves;
 mod devinput;
 mod dialog;
 mod exports;
+mod file_drop;
 mod creator;
 mod edit_tools;
 mod epidemic;

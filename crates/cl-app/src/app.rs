@@ -322,6 +322,8 @@ pub struct App {
     pub load: Option<crate::loading::Load>,
     /// Medien vorhanden? (im Hintergrund geprüft, nie je Bild)
     pub presence: crate::loading::Presence,
+    /// Dateien von außen in die Zeitleiste ziehen
+    pub drops: crate::file_drop::Drops,
     /// Speichern, Autosave und Sicherungen im Hintergrund
     pub saver: crate::saving::Saver,
     /// Vorschaubild schon angefordert (Medium, Pfad): nicht bei jeder Änderung erneut
@@ -525,6 +527,7 @@ impl App {
             props_cache: None,
             load: None,
             presence: Default::default(),
+            drops: Default::default(),
             saver: crate::saving::Saver::new(cc.egui_ctx.clone()),
             thumb_requested: HashSet::new(),
             proxies: Default::default(),
@@ -2136,6 +2139,7 @@ impl App {
     pub fn set_doc(&mut self, proj: Project) {
         *self.doc.lock().unwrap() = Document::new(proj);
         self.tasks.next_generation();
+        self.drops.list.clear();
         self.revision = u64::MAX;
         self.sync_project();
         self.saved_revision = UNSAVED;
@@ -2912,7 +2916,7 @@ impl App {
         }
         // Über der Sticker- bzw. Soundliste abgelegt: in die eigene Bibliothek
         if let (Some((kind, rect)), Some(pos)) =
-            (self.lib_drop, ctx.input(|i| i.pointer.hover_pos()))
+            (self.lib_drop, ctx.input(|i| i.pointer.hover_pos()).or(self.drops.pos))
         {
             if rect.contains(pos) {
                 self.lib_import(kind, dropped);
@@ -2937,8 +2941,14 @@ impl App {
         if !fonts.is_empty() {
             self.import_fonts(ctx, fonts);
         }
-        if !media.is_empty() {
-            let n = self.import_media(media).len();
+        // Mediendateien im Hintergrund, über der Zeitleiste abgelegt auch gleich dorthin
+        let (files, other): (Vec<_>, Vec<_>) = media.into_iter().partition(|p| crate::file_drop::is_media(p));
+        let target = if self.screen == Screen::Editor { self.drop_target() } else { None };
+        if !files.is_empty() {
+            self.start_file_drop(ctx, files, target);
+        }
+        if !other.is_empty() {
+            let n = self.import_media(other).len();
             if n > 0 {
                 self.toast(self.i18n.t_num("media-imported", "count", n as i64));
             }
@@ -3003,7 +3013,7 @@ impl eframe::App for App {
         crate::devinput::feed(ctx, raw);
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
         // Oberflächengröße an die Fenstergröße binden: Dialoge passen immer ins Fenster
         let zoom = ctx.zoom_factor();
@@ -3081,6 +3091,7 @@ impl eframe::App for App {
         }
         self.poll_saves();
         self.poll_load(ctx);
+        self.drops_frame(ctx, frame);
         self.handle_dropped_files(ctx);
         self.warm_silent_channels();
         {
@@ -3090,6 +3101,7 @@ impl eframe::App for App {
         {
             let _s = section("Aufgaben");
             self.poll_tasks();
+            self.poll_file_drops();
         }
         self.poll_epidemic(ctx);
         self.poll_stock();
