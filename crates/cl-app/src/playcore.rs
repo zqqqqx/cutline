@@ -175,11 +175,13 @@ impl<S: Source> Slot<S> {
     }
 
     /// Alle fälligen Bilder holen, das neueste zurückgeben (Rest zählt als übersprungen).
-    fn drain(&mut self, pos: Time, now: f64, st: &mut Stats) -> Option<S::Frame> {
-        if pos < self.t0 {
+    /// `early`: vor dem Start schon das erste Bild holen (sichtbarer Clip im Übergang vor seinem
+    /// Anfang zeigt bis dahin sein erstes Bild); sonst ist vor `t0` nichts fällig.
+    fn drain(&mut self, pos: Time, now: f64, st: &mut Stats, early: bool) -> Option<S::Frame> {
+        if pos < self.t0 && !(early && self.taken == 0) {
             return None; // vorab geöffnet: noch nicht dran
         }
-        let target = ((pos - self.t0).as_secs_f64() * self.fps + 1e-6).floor() as u64;
+        let target = ((pos - self.t0).as_secs_f64().max(0.0) * self.fps + 1e-6).floor() as u64;
         let (mut latest, mut n) = (None, 0u64);
         while self.taken <= target {
             match self.src.try_next() {
@@ -732,7 +734,7 @@ impl<S: Source> PlayCore<S> {
         let pos = self.pos;
         let mut got = None;
         if let Some(n) = self.next.get_mut(&id) {
-            if let Some(f) = n.drain(pos, now, &mut self.stats) {
+            if let Some(f) = n.drain(pos, now, &mut self.stats, false) {
                 // erst übernehmen, wenn der Ersatz nicht hinter dem bisherigen Strom liegt (nie ein
                 // älteres Bild zeigen); bis dahin holt er auf und seine Bilder verfallen
                 let behind = |s: &Slot<S>| s.lag(pos).unwrap_or(f64::MAX);
@@ -749,7 +751,7 @@ impl<S: Source> PlayCore<S> {
         }
         let s = self.cur.get_mut(&id)?;
         if got.is_none() {
-            got = s.drain(pos, now, &mut self.stats);
+            got = s.drain(pos, now, &mut self.stats, true);
         }
         // Rückstand: länger als CATCH_UP_AFTER über zwei Bildintervalle → ab Uhr + Anlaufzeit neu
         if let Some(lag) = s.lag(pos).filter(|_| self.mode == Mode::Spielen) {

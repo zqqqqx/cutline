@@ -133,10 +133,12 @@ struct Clip {
     dec: Dec,
     /// Rückwärts/Tempo-Kurve: nur Einzelbilder
     still_only: bool,
+    /// schon so lange vor `start` sichtbar (Übergang vom Vorgänger)
+    lead_in: f64,
 }
 
 fn clip(id: Lid, start: f64, end: f64) -> Clip {
-    Clip { id, start, end, ver: 0, dec: Dec::default(), still_only: false }
+    Clip { id, start, end, ver: 0, dec: Dec::default(), still_only: false, lead_in: 0.0 }
 }
 
 /// Treiber wie in der App, aber mit simulierten Strömen, Einzelbildern und Ton.
@@ -266,7 +268,7 @@ impl World {
         let mut vis = Vec::new();
         let clips = self.clips.clone();
         for (i, c) in clips.iter().enumerate() {
-            let active = c.start <= p && p < c.end;
+            let active = c.start - c.lead_in <= p && p < c.end;
             let soon = self.core.streaming() && c.start > p && c.start - p <= 1.5;
             if !active && !soon {
                 continue;
@@ -284,7 +286,8 @@ impl World {
                 }
                 if active {
                     if let Some(f) = self.core.pull(c.id, now, i == 0) {
-                        assert!(f <= p + 1e-6, "Bild aus der Zukunft: {f} bei {p}");
+                        // aus der Zukunft höchstens das erste Bild eines Clips, der im Übergang schon sichtbar ist
+                        assert!(f <= p.max(c.start) + 1e-6, "Bild aus der Zukunft: {f} bei {p}");
                         if let Some(&last) = self.last_frame.get(&c.id) {
                             assert!(f >= last - 1.01 / self.fps, "älteres Bild gezeigt: {f} nach {last}");
                         }
@@ -890,4 +893,18 @@ fn stream_opened_before_a_seek_is_not_attached() {
     let stale: Vec<_> = w.attached.iter().filter(|(o, _)| o.at < Time::from_secs_f64(9.0)).collect();
     assert!(stale.iter().all(|(_, ok)| !ok), "Strom von vor dem Sprung angehängt: {stale:?}");
     assert!(w.shown.iter().all(|s| s.3 >= 9.0));
+}
+
+#[test]
+fn incoming_clip_in_transition_shows_its_first_frame_before_its_start() {
+    let mut b = clip(2, 2.0, 6.0);
+    b.lead_in = 0.25; // Übergang: B ist ab 1,75 s sichtbar, sein Strom beginnt bei 2 s
+    let mut w = World::new(vec![clip(1, 0.0, 2.25), b]);
+    w.play();
+    w.run(1.9, DT);
+    let early: Vec<_> = w.shown.iter().filter(|s| s.2 == 2 && s.1 < 2.0).collect();
+    assert!(!early.is_empty(), "B zeigt im Übergang vor seinem Anfang nichts");
+    assert!(early.iter().all(|s| (s.3 - 2.0).abs() < 1e-6), "vor dem Anfang nur das erste Bild");
+    w.run(1.0, DT);
+    assert!(w.gap(2, 2.1, 2.9) <= 2.0 / 30.0 + 0.01);
 }

@@ -263,6 +263,10 @@ impl Drop for Win {
     }
 }
 
+/// Startet das FFmpeg eines Fensters. Aufgerufen aus dem Thread, der den Ton startet (Oberfläche
+/// bzw. der Scrub-Thread, der den Ton bis zum Ende hält), und aus `cl-audio-feed`, der bis zum
+/// Ende des Tons lebt – wichtig unter Linux: `PR_SET_PDEATHSIG` beendet das Kind mit dem
+/// *startenden Thread* (siehe `cl_media::proc`), nicht erst mit dem Prozess.
 fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shared>) -> Result<Win, String> {
     let (mut child, workdir) = cl_export::spawn_audio_window(project, plan.mix_from, plan.mix_to, rate)
         .map_err(|e| e.to_string())?;
