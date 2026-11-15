@@ -30,6 +30,9 @@ struct Shared {
     map: Mutex<HashMap<String, Bars>>,
     queue: Mutex<VecDeque<Job>>,
     wake: Condvar,
+    /// Speichern nacheinander: mehrere Rechner teilen sich eine Datei (und `write_atomic` eine
+    /// Zwischendatei je Prozess); der Stand wird erst unter der Sperre genommen, der letzte gewinnt
+    save: Mutex<()>,
 }
 
 pub struct SoundBars {
@@ -70,6 +73,30 @@ fn store(file: &Path, map: &HashMap<String, Bars>) {
     }
 }
 
+/// Aktuellen Stand sichern (von jedem Rechner aus aufrufbar).
+fn save(sh: &Shared, file: &Path) {
+    let _one = sh.save.lock().unwrap_or_else(|e| e.into_inner());
+    let snap = sh.map.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    store(file, &snap);
+}
+
+const PER_SEC: u32 = 40;
+/// Vorab höchstens so viel einer Datei decodieren (stundenlange Dateien: Zeit und Speicher)
+const HEAD_SECS: f64 = 600.0;
+
+/// Wellenform der ersten `limit` Sekunden; die Länge stimmt auch darüber hinaus (ffprobe).
+// shortcut: bei längeren Dateien zeigt die Kachel nur den Anfang als Wellenform, für Sound-Kacheln genügt das
+fn bars_for(path: &Path, st: u64, limit: f64) -> Option<Bars> {
+    let peaks = cl_media::waveform_head(path, PER_SEC, Some(limit)).ok()?;
+    let mut b = quantize(&peaks, PER_SEC, st);
+    if peaks.len() as f64 >= limit * PER_SEC as f64 - 1.0 {
+        if let Ok(m) = cl_media::probe(path) {
+            b.secs = m.duration.as_secs_f64() as f32;
+        }
+    }
+    Some(b)
+}
+
 fn work(sh: &Shared, file: &Path) {
     let mut changed = false;
     loop {
@@ -82,16 +109,18 @@ fn work(sh: &Shared, file: &Path) {
                 // Warteschlange leer: Ergebnis sichern, dann schlafen
                 if std::mem::take(&mut changed) {
                     drop(q);
-                    let snap = sh.map.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                    store(file, &snap);
+                    save(sh, file);
                     q = sh.queue.lock().unwrap_or_else(|e| e.into_inner());
                     continue;
                 }
                 q = sh.wake.wait(q).unwrap_or_else(|e| e.into_inner());
             }
         };
-        const PER_SEC: u32 = 40;
-        let fresh = |sh: &Shared| !stale(sh.map.lock().unwrap_or_else(|e| e.into_inner()).get(&job.key), stamp(&job.path));
+        // Datei erst prüfen, dann sperren: die Oberfläche liest dieselbe Tabelle
+        let fresh = |sh: &Shared| {
+            let now = stamp(&job.path);
+            !stale(sh.map.lock().unwrap_or_else(|e| e.into_inner()).get(&job.key), now)
+        };
         if fresh(sh) {
             continue;
         }
@@ -104,10 +133,10 @@ fn work(sh: &Shared, file: &Path) {
                 continue;
             }
         }
-        let (Some(st), Ok(peaks)) = (stamp(&job.path), cl_media::waveform(&job.path, PER_SEC)) else {
+        let Some(b) = stamp(&job.path).and_then(|st| bars_for(&job.path, st, HEAD_SECS)) else {
             continue;
         };
-        sh.map.lock().unwrap_or_else(|e| e.into_inner()).insert(job.key, quantize(&peaks, PER_SEC, st));
+        sh.map.lock().unwrap_or_else(|e| e.into_inner()).insert(job.key, b);
         changed = true;
     }
 }
@@ -165,5 +194,48 @@ mod tests {
         // kaputte Datei: leer statt Fehler
         std::fs::write(&file, b"{kaputt").unwrap();
         assert!(read(&file).is_empty());
+    }
+
+    #[test]
+    fn parallel_savers_leave_the_newest_complete_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("bars.json");
+        let sh = Shared::default();
+        let b = quantize(&[0.5; 8], 4, 1);
+        std::thread::scope(|s| {
+            for t in 0..8 {
+                let (sh, file, b) = (&sh, &file, &b);
+                s.spawn(move || {
+                    for i in 0..25 {
+                        sh.map.lock().unwrap().insert(format!("{t}-{i}"), b.clone());
+                        save(sh, file);
+                    }
+                });
+            }
+        });
+        // der zuletzt gesicherte Stand enthält alles
+        assert_eq!(read(&file).len(), 200);
+    }
+
+    #[test]
+    fn long_files_are_read_only_at_the_start_but_keep_their_length() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let snd = dir.path().join("lang.wav");
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=12", "-ac", "1"])
+            .arg(&snd)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let b = bars_for(&snd, 1, 4.0).unwrap();
+        assert!((b.secs - 12.0).abs() < 0.2, "{}", b.secs);
+        // kurze Datei: ganz gelesen, Länge aus den Werten
+        let b = bars_for(&snd, 1, 60.0).unwrap();
+        assert!((b.secs - 12.0).abs() < 0.2, "{}", b.secs);
+        assert!(cl_media::waveform_head(&snd, PER_SEC, Some(4.0)).unwrap().len() <= 4 * PER_SEC as usize + 1);
     }
 }

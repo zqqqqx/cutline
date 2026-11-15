@@ -347,10 +347,18 @@ pub fn decode_frame_fx(
 
 /// Spitzenpegel (0..1) für die Waveform-Anzeige, `per_sec` Werte pro Sekunde.
 pub fn waveform(path: &Path, per_sec: u32) -> Result<Vec<f32>> {
+    waveform_head(path, per_sec, None)
+}
+
+/// Wie [`waveform`], aber nur die ersten `max_secs` Sekunden (stundenlange Dateien: Zeit und Speicher).
+pub fn waveform_head(path: &Path, per_sec: u32, max_secs: Option<f64>) -> Result<Vec<f32>> {
     const RATE: u32 = 8000;
-    let out = command("ffmpeg")?
-        .args(["-v", "error", "-nostdin", "-i"])
-        .arg(path)
+    let mut cmd = command("ffmpeg")?;
+    cmd.args(["-v", "error", "-nostdin", "-i"]).arg(path);
+    if let Some(t) = max_secs {
+        cmd.args(["-t", &format!("{t:.3}")]);
+    }
+    let out = cmd
         .args([
             "-vn",
             "-ac",
