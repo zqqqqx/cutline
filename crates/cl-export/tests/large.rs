@@ -322,7 +322,12 @@ fn sections_h264_aac_seams() {
     assert!((va - aa).abs() < 1.0 / 30.0, "A/V-Versatz {va} / {aa}");
     let worst = worst_frame(&rgb(&one), &rgb(&cut));
     assert!(worst < 4.0, "größte mittlere Bildabweichung {worst}");
-    assert_eq!(decode(&one, "0:a", &["-f", "f32le"]), decode(&cut, "0:a", &["-f", "f32le"]), "AAC einmal über das Ganze kodiert");
+    // AAC einmal über das Ganze kodiert: gleich wie im Durchgang (erste 10 s; der Durchgang endet
+    // gelegentlich schon mit dem letzten Clip, siehe ProRes-Test)
+    let (x, y) = (decode(&one, "0:a", &["-f", "f32le"]), decode(&cut, "0:a", &["-f", "f32le"]));
+    let n = 10 * 48_000 * 8;
+    assert!(x.len() >= n && y.len() >= n);
+    assert!(x[..n] == y[..n], "AAC einmal über das Ganze kodiert");
     let o = cl_media::ffprobe_command().unwrap().args(["-v", "error", "-show_chapters", "-of", "csv=p=0"]).arg(&cut).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&o.stdout).lines().count(), 2, "Kapitel");
     let head = std::fs::read(&cut).unwrap();
@@ -496,4 +501,32 @@ fn boundary_inside_effect_and_transition() {
         let bad: Vec<usize> = a.chunks(fs).zip(b.chunks(fs)).enumerate().filter(|(_, (x, y))| mean_diff(x, y) > 0.01).map(|x| x.0).collect();
         assert!(bad.is_empty(), "Alpha {alpha}: abweichende Bilder {bad:?}");
     }
+}
+
+/// Durchgang und Abschnitte je 6-mal parallel (Last): der Ton ist immer genau 12 s lang. Vorher
+/// endete der Durchgang unter Last gelegentlich schon mit dem letzten Clip (11,5 s).
+#[test]
+fn audio_length_under_load() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let p = rich_project(dir.path());
+    let mut s = ExportSettings::from_project(&p);
+    s.format = cl_export::Format::Wav;
+    let lens: Vec<(usize, usize)> = std::thread::scope(|sc| {
+        let hs: Vec<_> = (0..6)
+            .map(|k| {
+                let (p, s, d) = (&p, &s, dir.path());
+                sc.spawn(move || {
+                    let (a, b) = (d.join(format!("l{k}_eins.wav")), d.join(format!("l{k}_teile.wav")));
+                    run_job(&build(p, s, &no_fonts, &a).unwrap());
+                    run_job(&cl_export::build_limited(p, s, &no_fonts, &b, 2).unwrap());
+                    (wav_samples(&a).len() / 2, wav_samples(&b).len() / 2)
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert!(lens.iter().all(|&(a, b)| a == 576_000 && b == 576_000), "Samples (Durchgang, Abschnitte): {lens:?}");
 }

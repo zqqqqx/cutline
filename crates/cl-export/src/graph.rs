@@ -1152,11 +1152,15 @@ pub(crate) fn audio_part(
     if labels.is_empty() {
         graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{dur}[aout]"));
     } else {
-        let ins: String = labels.iter().map(|l| format!("[{l}]")).collect();
+        // Stille über die ganze Länge als letzter Eingang: amix endet so genau am Ende. Allein mit
+        // apad endete der Ton unter Last gelegentlich schon mit dem letzten Clip (gemessen: 6 von
+        // 6 parallelen Exporten, davon 2 um 0,5 s zu kurz)
+        graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{dur},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[afull]"));
+        let ins: String = labels.iter().map(|l| format!("[{l}]")).chain(["[afull]".to_string()]).collect();
         let limit = if o.limiter { format!("{},", limiter()) } else { String::new() };
         graph.push(format!(
             "{ins}amix=inputs={}:normalize=0:duration=longest,{limit}apad=whole_dur={dur},atrim=0:{dur},aformat=sample_fmts=fltp:channel_layouts=stereo[aout]",
-            labels.len(),
+            labels.len() + 1,
         ));
     }
     "aout".into()
