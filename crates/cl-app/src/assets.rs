@@ -806,6 +806,7 @@ impl App {
                     .filter_map(|e| catalog_item(e, "builtin:sfx:", |id| cl_fx::sfx::sfx(id).map(|s| s.id)))
                     .collect();
                 let items = self.lib_items("sfx", Kind::Sound, builtin, &cat, &q);
+                let ed = self.reorder(ui, "sfx", &cat, &items, |i| i.key.clone());
                 let mut menu: Vec<(egui::Response, Item)> = Vec::new();
                 let area = egui::ScrollArea::vertical()
                     .id_salt("sfx")
@@ -829,10 +830,15 @@ impl App {
                                 _ => return,
                             };
                             let (play, add, resp) = self.sound_tile(ui, r, &key, &it.name, fav, &path, sfx);
-                            resp.dnd_set_drag_payload(match sfx {
-                                Some(id) => DragAsset::Sfx(id),
-                                None => DragAsset::File(path.clone()),
-                            });
+                            // Bearbeiten-Modus: Ziehen sortiert um, Klicks spielen nichts ab und fügen nichts ein
+                            let editing = ed.tile(ui, &resp, &it.key, true);
+                            let (play, add) = (play && !editing, add && !editing);
+                            if !editing {
+                                resp.dnd_set_drag_payload(match sfx {
+                                    Some(id) => DragAsset::Sfx(id),
+                                    None => DragAsset::File(path.clone()),
+                                });
+                            }
                             let resp = if it.folder.is_empty() { resp } else { resp.on_hover_text(crate::tr(&it.folder)) };
                             menu.push((resp, it.clone()));
                             if add {
@@ -853,6 +859,7 @@ impl App {
                             }
                         });
                     });
+                self.reorder_done(ui, ed, area.inner_rect);
                 self.lib_drop = Some((Kind::Sound, area.inner_rect));
                 for (r, it) in menu {
                     self.asset_menu(&r, "sfx", &it.key, it.is_own().then_some(&it), &cat);
