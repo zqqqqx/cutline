@@ -1922,9 +1922,7 @@ impl App {
         if !self.settings.autosave || self.screen != Screen::Editor {
             return;
         }
-        if self.revision == self.saved_revision
-            || self.project.duration() == Time::ZERO && self.project.media.is_empty()
-        {
+        if !needs_save(self.revision, self.saved_revision, self.project_path.is_some(), &self.project) {
             return;
         }
         if self.doc.lock().unwrap().revision() != self.revision {
@@ -2168,9 +2166,7 @@ impl App {
         if self.voiceover.recorder.is_some() {
             self.stop_voiceover();
         }
-        if self.revision != self.saved_revision
-            && !(self.project.media.is_empty() && self.project.duration() == Time::ZERO)
-        {
+        if needs_save(self.revision, self.saved_revision, self.project_path.is_some(), &self.project) {
             let p = self
                 .project_path
                 .clone()
@@ -3379,6 +3375,12 @@ fn toast_alpha(age: f32, life: f32, fade_in: f32, fade_out: f32) -> f32 {
 /// `saved_revision` nach `set_doc`: keine echte Revision trifft diesen Wert.
 pub const UNSAVED: u64 = u64::MAX - 1;
 
+/// Ungespeicherte Änderungen schreiben? Ein leeres neues Projekt legt keine Datei an; ein
+/// gespeichertes, das leer geräumt wurde, wird gespeichert (sonst käme der alte Stand wieder).
+fn needs_save(rev: u64, saved: u64, has_file: bool, p: &Project) -> bool {
+    rev != saved && (has_file || !(p.media.is_empty() && p.duration() == Time::ZERO))
+}
+
 #[cfg(test)]
 mod toast_tests {
     use super::*;
@@ -3386,9 +3388,17 @@ mod toast_tests {
     #[test]
     fn replaced_document_counts_as_unsaved() {
         // Wiederherstellen/Vorlage/Rückblick ersetzen das Dokument: Revision beginnt bei 0
-        let rev = Document::new(Project::new("x")).revision();
-        assert_ne!(rev, UNSAVED);
-        assert_ne!(rev, u64::MAX);
+        let p = Project::new("x");
+        let rev = Document::new(p.clone()).revision();
+        assert!(needs_save(rev, UNSAVED, true, &p));
+    }
+
+    #[test]
+    fn emptied_saved_project_is_saved() {
+        let empty = Project::new("x");
+        assert!(needs_save(5, 3, true, &empty), "gespeichert und leer geräumt");
+        assert!(!needs_save(5, 3, false, &empty), "neues leeres Projekt: keine Datei");
+        assert!(!needs_save(3, 3, true, &empty));
     }
 
     #[test]
