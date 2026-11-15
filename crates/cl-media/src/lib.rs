@@ -19,7 +19,7 @@ use serde::Deserialize;
 
 mod anim;
 mod proc;
-pub use anim::{animation, Animation};
+pub use anim::{animation, decode_all as decode_animation, frame_index as animation_frame, Animation};
 pub use proc::{cpu_time, lower_priority, suspend};
 
 #[derive(Debug, thiserror::Error)]

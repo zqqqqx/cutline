@@ -49,6 +49,40 @@ pub fn animation(path: &Path) -> Option<Animation> {
     a
 }
 
+/// Alle Einzelbilder eines bewegten Bildes in `w`×`h` (RGBA, Reihenfolge wie `starts`) mit einem
+/// FFmpeg-Lauf: die Vorschau hält sie im Speicher, statt je Bild ein FFmpeg zu starten. `None`, wenn
+/// es kein bewegtes Bild ist, mehr als `max_bytes` würden oder FFmpeg nicht alle Bilder liefert.
+pub fn decode_all(path: &Path, w: u32, h: u32, max_bytes: usize) -> Option<Vec<crate::RgbaFrame>> {
+    let a = animation(path)?;
+    let len = (w as usize) * (h as usize) * 4;
+    if len == 0 || a.starts.len().saturating_mul(len) > max_bytes {
+        return None;
+    }
+    let out = crate::ffmpeg_command()
+        .ok()?
+        .args(["-v", "error", "-nostdin", "-i"])
+        .arg(path)
+        // wie das Einzelbild (`decode_frame`): gleiche Skalierung, jedes Bild genau einmal
+        .args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba"), "-fps_mode", "passthrough"])
+        .args(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let frames: Vec<crate::RgbaFrame> = out
+        .stdout
+        .chunks_exact(len)
+        .take(a.starts.len())
+        .map(|c| crate::RgbaFrame { width: w, height: h, data: c.to_vec() })
+        .collect();
+    (frames.len() == a.starts.len()).then_some(frames)
+}
+
+/// Index des Bildes, das die Suchzeit `seek` (aus [`Animation::seek_time`]) trifft
+pub fn frame_index(a: &Animation, seek: Time) -> usize {
+    a.starts.partition_point(|s| s.0 <= seek.0 + 1000).saturating_sub(1)
+}
+
 fn parse(b: &[u8]) -> Option<Animation> {
     let (delays, looping) = if b.starts_with(b"\x89PNG\r\n\x1a\n") {
         apng(b)?
@@ -176,6 +210,36 @@ mod tests {
         }
         assert!(animation(Path::new(&p("still.png"))).is_none());
         assert!(animation(Path::new(&p("fehlt.gif"))).is_none());
+    }
+
+    /// Alle Bilder auf einmal (Vorschau im Speicher) = dieselben Bilder wie einzeln mit `-ss`.
+    #[test]
+    fn decode_all_matches_single_frames() {
+        if !crate::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = "testsrc2=size=48x32:rate=10:duration=0.8";
+        for (n, args) in [("a.png", vec!["-plays", "0", "-f", "apng"]), ("a.gif", vec!["-loop", "0"])] {
+            let f = dir.path().join(n);
+            let fs = f.to_string_lossy().into_owned();
+            let mut all = vec!["-f", "lavfi", "-i", src];
+            all.extend(args);
+            all.push(&fs);
+            ffmpeg(&all);
+            let a = animation(&f).unwrap();
+            let frames = decode_all(&f, 24, 16, 1 << 20).unwrap_or_else(|| panic!("{n}"));
+            assert_eq!(frames.len(), a.starts.len());
+            for (i, s) in a.starts.iter().enumerate() {
+                let seek = a.seek_time(*s);
+                assert_eq!(frame_index(&a, seek), i);
+                let one = crate::decode_frame(&f, seek, 24, 16).unwrap();
+                assert!(one.data == frames[i].data, "{n}: Bild {i} weicht ab");
+            }
+            // zu groß: nicht im Speicher
+            assert!(decode_all(&f, 24, 16, 100).is_none());
+        }
+        assert!(decode_all(&dir.path().join("fehlt.gif"), 24, 16, 1 << 20).is_none());
     }
 
     /// Die Vorschau dekodiert mit `-ss seek_time` genau das Bild, das der Export zeigt.

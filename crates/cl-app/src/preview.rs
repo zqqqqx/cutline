@@ -253,6 +253,54 @@ enum Msg {
         ms: f64,
         proxy: bool,
     },
+    /// Bewegtes Bild ganz decodiert (`None`: zu groß oder nicht lesbar → Einzelbilder wie bisher)
+    Anim {
+        key: (PathBuf, u32, u32),
+        frames: Option<Arc<Vec<RgbaFrame>>>,
+    },
+}
+
+/// Bewegte Bilder (GIF/APNG) der Vorschau im Speicher: je Datei und Größe alle Einzelbilder, damit
+/// ein animiertes Element beim Abspielen nicht je Bild ein FFmpeg braucht. Begrenzt: höchstens
+/// [`ANIM_ONE`] je Animation und [`ANIM_ALL`] zusammen (dann wird von vorn begonnen).
+#[derive(Default)]
+struct Anims {
+    map: HashMap<(PathBuf, u32, u32), Option<Arc<Vec<RgbaFrame>>>>,
+    bytes: usize,
+}
+
+const ANIM_ONE: usize = 64 << 20;
+const ANIM_ALL: usize = 192 << 20;
+
+impl Anims {
+    /// Bild für `at` (Suchzeit aus `Animation::seek_time`), falls die Animation im Speicher liegt.
+    /// `Err(true)`: noch nie angefragt (jetzt decodieren), `Err(false)`: läuft schon oder geht nicht.
+    fn get(&mut self, path: &std::path::Path, w: u32, h: u32, at: Time) -> Result<RgbaFrame, bool> {
+        // nur Bilddateien ansehen (`animation` liest die ganze Datei)
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        if !["gif", "png", "apng"].contains(&ext.as_str()) {
+            return Err(false);
+        }
+        let Some(a) = cl_media::animation(path) else { return Err(false) };
+        let key = (path.to_path_buf(), w, h);
+        match self.map.get(&key) {
+            Some(Some(frames)) => frames.get(cl_media::animation_frame(&a, at).min(frames.len().saturating_sub(1))).cloned().ok_or(false),
+            Some(None) => Err(false),
+            None => {
+                self.map.insert(key, None);
+                Err(true)
+            }
+        }
+    }
+    fn put(&mut self, key: (PathBuf, u32, u32), frames: Option<Arc<Vec<RgbaFrame>>>) {
+        let n: usize = frames.as_ref().map_or(0, |f| f.iter().map(|x| x.data.len()).sum());
+        if self.bytes + n > ANIM_ALL {
+            self.map.retain(|_, v| v.is_none());
+            self.bytes = 0;
+        }
+        self.bytes += n;
+        self.map.insert(key, frames);
+    }
 }
 
 /// Laufende Player-Bilder: höchstens ein Auftrag je Clip. Ein neuer Auftrag für denselben Clip
@@ -310,10 +358,14 @@ fn frame_dispatcher(
     busy: Arc<AtomicUsize>,
 ) {
     let mut cache = FrameCache::new(384 << 20);
+    let mut anims = Anims::default();
     let mut inflight = InFlight::default();
     let proxies = crate::proxy::dir();
     loop {
         // auch ohne neue Aufträge nachsehen, ob das Projekt gewechselt wurde
+        if cache.gen != gen.load(Ordering::Relaxed) {
+            anims = Anims::default();
+        }
         cache.set_generation(gen.load(Ordering::Relaxed));
         let msg = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
             Ok(m) => m,
@@ -323,7 +375,24 @@ fn frame_dispatcher(
         let out = match msg {
             Msg::Job(Job::Frame { clip, key, path, at, w, h, graph }) => {
                 crate::proxy::note_activity();
-                if let Some(frame) = cache.get(key).cloned() {
+                // bewegtes Bild ohne Effekte: aus dem Speicher (beim ersten Mal im Hintergrund ganz decodieren)
+                let anim = if graph.is_none() {
+                    match anims.get(&path, w, h, at) {
+                        Ok(f) => Some(f),
+                        Err(true) => {
+                            let (tx, path) = (tx.clone(), path.clone());
+                            std::thread::spawn(move || {
+                                let frames = cl_media::decode_animation(&path, w, h, ANIM_ONE).map(Arc::new);
+                                let _ = tx.send(Msg::Anim { key: (path, w, h), frames });
+                            });
+                            None
+                        }
+                        Err(false) => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some(frame) = anim.or_else(|| cache.get(key).cloned()) {
                     if let Some(k) = inflight.cancel(clip) {
                         k.kill();
                         perf_discarded();
@@ -348,6 +417,10 @@ fn frame_dispatcher(
                 }
             }
             Msg::Job(j) => run(j),
+            Msg::Anim { key, frames } => {
+                anims.put(key, frames);
+                None
+            }
             Msg::Done { clip, key, res, ms, proxy } => {
                 crate::proxy::note_activity();
                 let current = inflight.finish(clip, key);
@@ -759,6 +832,37 @@ const SAMPLES: [(&str, &[u8]); 2] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bewegte Bilder: einmal im Hintergrund decodieren, danach jedes Bild aus dem Speicher;
+    /// Videos und Standbilder gehen den bisherigen Weg.
+    #[test]
+    fn animations_are_served_from_memory_after_one_decode() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("a.gif");
+        let ok = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=32x32:rate=10:duration=0.5", "-loop", "0"])
+            .arg(&f)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let a = cl_media::animation(&f).unwrap();
+        let mut an = Anims::default();
+        let at = a.seek_time(a.starts[3]);
+        assert_eq!(an.get(&f, 16, 16, at).err(), Some(true), "erstes Mal: decodieren");
+        assert_eq!(an.get(&f, 16, 16, at).err(), Some(false), "läuft schon: nicht doppelt");
+        let frames = cl_media::decode_animation(&f, 16, 16, ANIM_ONE).map(Arc::new);
+        assert!(frames.is_some());
+        an.put((f.clone(), 16, 16), frames.clone());
+        assert_eq!(an.get(&f, 16, 16, at).unwrap().data, frames.unwrap()[3].data);
+        // andere Größe: eigener Eintrag; Video: nie
+        assert_eq!(an.get(&f, 8, 8, at).err(), Some(true));
+        assert_eq!(an.get(std::path::Path::new("x.mp4"), 16, 16, at).err(), Some(false));
+    }
 
     /// Kachel eines Shader-Übergangs: Bildpaar wird richtig geteilt, Bild 0 = A, Streifen hat
     /// `frames` Bilder; ohne GPU ein Fehler (dann gilt die Kachel des Rückfalls).
