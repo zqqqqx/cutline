@@ -216,6 +216,9 @@ pub struct MediaRef {
     pub height: u32,
     pub fps: Option<Rational>,
     pub has_audio: bool,
+    /// Zahl der Tonspuren der Datei (0 = unbekannt, ältere Projekte; dann wie eine)
+    #[serde(default)]
+    pub audio_streams: u32,
     pub video_codec: Option<String>,
     pub audio_codec: Option<String>,
 }
@@ -373,6 +376,9 @@ pub struct Clip {
     pub fade_out: Time,
     #[serde(default)]
     pub audio: AudioFx,
+    /// Tonspur der Datei (0 = erste); `None` = erste
+    #[serde(default)]
+    pub audio_stream: Option<u32>,
     /// Erkannte Beats (Quellzeit), für Markierungen und Einrasten
     #[serde(default)]
     pub beats: Vec<Time>,
@@ -411,6 +417,7 @@ impl Clip {
             fade_in: Time::ZERO,
             fade_out: Time::ZERO,
             audio: AudioFx::default(),
+            audio_stream: None,
             beats: Vec::new(),
             label: None,
             group: None,

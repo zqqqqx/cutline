@@ -961,8 +961,12 @@ pub(crate) struct AudioOpts {
 
 /// Tonspur der Datei, die ein Clip hört (Stromangabe hinter der Eingangsnummer, z. B. `a`).
 /// Die einzige Stelle, an der die Spur gewählt wird – Export, Abschnitte und Vorschau.
-pub(crate) fn audio_stream(_c: &Clip, _m: &MediaRef) -> String {
-    "a".into()
+pub(crate) fn audio_stream(c: &Clip, m: &MediaRef) -> String {
+    // gewählte Tonspur der Datei; fehlt sie (andere Datei verknüpft), die erste
+    match c.audio_stream.filter(|&n| n > 0 && n < m.audio_streams) {
+        Some(n) => format!("a:{n}"),
+        None => "a".into(),
+    }
 }
 
 /// Eingänge zusammenlegen: Quellbereiche `(Schlüssel, Start, Ende)` mit gleichem Schlüssel, die

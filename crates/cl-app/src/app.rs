@@ -105,6 +105,8 @@ pub struct App {
     /// Kopie des Projekts für die Darstellung, erneuert bei jeder Revision.
     pub project: Project,
     pub revision: u64,
+    /// Zählt jeden Wechsel von `project` (auch neues Dokument mit gleicher Revision)
+    pub project_epoch: u64,
     pub screen: Screen,
     pub settings: AppSettings,
     pub settings_open: bool,
@@ -264,7 +266,8 @@ pub struct App {
     /// Abspielen, sobald die Daten dieses Sounds da sind
     pub sound_pending: Option<String>,
     pub thumbs: HashMap<MediaId, egui::TextureHandle>,
-    pub waves: HashMap<MediaId, Vec<f32>>,
+    /// Wellenform je Datei und Tonspur (0 = erste)
+    pub waves: HashMap<(MediaId, u32), Vec<f32>>,
     pub fx_thumbs: HashMap<String, egui::TextureHandle>,
     pub fx_thumbs_requested: HashSet<String>,
     /// Rechtsklick → Eigenschaften
@@ -288,6 +291,8 @@ pub struct App {
     pub settings_error: Option<String>,
     /// Rückfrage/Fenster der Einstellungsseite „Inhalte“
     pub contents_dialog: Option<crate::contents::ContentsDialog>,
+    /// Nachladbare Pakete: Liste und Downloads
+    pub packs: crate::contents::PackDownloads,
     /// Belegter Cache (zuletzt gezählt, Bytes)
     pub cache_size: Option<(Instant, u64)>,
     pub sticker_tex: HashMap<&'static str, egui::TextureHandle>,
@@ -359,6 +364,7 @@ impl App {
             doc: Arc::new(Mutex::new(Document::new(project.clone()))),
             project,
             revision: 0,
+            project_epoch: 0,
             screen,
             ui_scale: settings.ui_scale,
             settings,
@@ -495,6 +501,7 @@ impl App {
             layout_name: String::new(),
             settings_error: None,
             contents_dialog: None,
+            packs: Default::default(),
             cache_size: None,
             sticker_tex: HashMap::new(),
             updater: Default::default(),
@@ -524,6 +531,7 @@ impl App {
             app.updater.check(&cc.egui_ctx);
         }
         app.note_started_version();
+        crate::applog::startup(cc, &app.settings);
         if let Some(p) = open {
             app.open_project(&p);
         }
@@ -536,12 +544,16 @@ impl App {
     }
 
     pub fn toast(&mut self, msg: impl Into<String>) {
+        let msg = msg.into();
+        log::info!(target: "meldung", "{msg}");
         self.toasts
-            .push((crate::tr(msg.into()), Instant::now(), false));
+            .push((crate::tr(msg), Instant::now(), false));
     }
     pub fn toast_err(&mut self, msg: impl Into<String>) {
+        let msg = msg.into();
+        log::error!(target: "meldung", "{msg}");
         self.toasts
-            .push((crate::tr(msg.into()), Instant::now(), true));
+            .push((crate::tr(msg), Instant::now(), true));
     }
 
     /// Einziger Weg für Änderungen aus der Oberfläche.
@@ -635,6 +647,7 @@ impl App {
         if doc.revision() != self.revision {
             self.revision = doc.revision();
             self.project = doc.project().clone();
+            self.project_epoch += 1;
             drop(doc);
             if let Some(s) = self.selected {
                 if self.project.find_clip(s).is_none() {
@@ -671,14 +684,9 @@ impl App {
                     }
                 }
             }
+            // Vorschaubilder zuerst: Sie sind schnell und sollen nicht hinter den Wellenformen langer
+            // Dateien warten (die Aufträge laufen der Reihe nach)
             for m in self.project.media.iter().filter(|m| m.is_local()) {
-                if m.has_audio && !self.waves.contains_key(&m.id) {
-                    self.waves.insert(m.id, Vec::new()); // Platzhalter: Auftrag nur einmal senden
-                    self.decoder.send(Job::Wave {
-                        media: m.id,
-                        path: m.path.clone(),
-                    });
-                }
                 if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) {
                     let anim = if m.kind == MediaKind::Image { cl_media::animation(&m.path) } else { None };
                     let at = thumb_time(m.kind, m.duration, anim.as_ref());
@@ -687,6 +695,25 @@ impl App {
                         path: m.path.clone(),
                         at,
                     });
+                }
+            }
+            for m in self.project.media.iter().filter(|m| m.is_local()) {
+                if m.has_audio && !self.waves.contains_key(&(m.id, 0)) {
+                    self.waves.insert((m.id, 0), Vec::new()); // Platzhalter: Auftrag nur einmal senden
+                    self.decoder.send(Job::Wave {
+                        media: m.id,
+                        path: m.path.clone(),
+                        stream: 0,
+                    });
+                }
+            }
+            // weitere Tonspuren nur, wenn ein Clip sie spielt
+            for c in self.project.timeline.tracks.iter().flat_map(|t| t.clips.iter()) {
+                let (ClipContent::Media { media, .. }, Some(n)) = (&c.content, c.audio_stream) else { continue };
+                let Some(m) = self.project.media(*media).filter(|m| n > 0 && n < m.audio_streams && m.is_local()) else { continue };
+                if !self.waves.contains_key(&(m.id, n)) {
+                    self.waves.insert((m.id, n), Vec::new());
+                    self.decoder.send(Job::Wave { media: m.id, path: m.path.clone(), stream: n });
                 }
             }
         }
@@ -1088,6 +1115,7 @@ impl App {
                 }
             }
         }
+        log::info!(target: "import", "{} Medien übernommen", ids.len());
         ids
     }
 
@@ -1933,6 +1961,7 @@ impl App {
     }
 
     pub fn save(&mut self, save_as: bool) {
+        let t0 = Instant::now();
         self.commit_live();
         let path = match (&self.project_path, save_as) {
             (Some(p), false) => Some(p.clone()),
@@ -1945,6 +1974,7 @@ impl App {
         if let Some(p) = path {
             match self.write_project(&p) {
                 Ok(()) => {
+                    crate::applog::project("gespeichert", Some(&p), &self.project, Some(t0));
                     self.toast(format!("{} Gespeichert", icon::CHECK));
                     self.project_path = Some(p);
                     self.settings.save();
@@ -2141,6 +2171,7 @@ impl App {
     }
 
     pub fn open_project(&mut self, p: &Path) {
+        let t0 = Instant::now();
         if !self.flush_before_leaving() {
             return;
         }
@@ -2161,6 +2192,7 @@ impl App {
                     })
                     .collect();
                 self.set_doc(proj);
+                crate::applog::project("geöffnet", Some(p), &self.project, Some(t0));
                 self.saved_revision = self.revision;
                 self.project_path = Some(p.to_path_buf());
                 self.take_lock(p);
@@ -2247,6 +2279,7 @@ impl App {
         if !self.flush_before_leaving() {
             return;
         }
+        crate::applog::project("geschlossen", self.project_path.as_deref(), &self.project, None);
         // jeder Weg zurück in den Editor setzt ihn ohnehin zurück: Bilder, Texturen und
         // Decoder-Zwischenspeicher des Projekts schon jetzt freigeben
         self.reset_editor();
@@ -2378,7 +2411,7 @@ impl App {
                     }
                     self.audio = Some(a);
                 }
-                Err(e) => eprintln!("Ton: {e}"),
+                Err(e) => log::warn!("Ton: {e}"),
             }
         }
     }
@@ -2403,7 +2436,7 @@ impl App {
                 std::thread::spawn(move || {
                     let a = AudioPlayer::start(&project, at).ok();
                     if perf() {
-                        eprintln!("scrub: Ton ab {:.2} s, ok={}", at.as_secs_f64(), a.is_some());
+                        crate::applog::perf_line!("scrub: Ton ab {:.2} s, ok={}", at.as_secs_f64(), a.is_some());
                     }
                     // Stück nach 350 ms beenden (oder früher, wenn das nächste beginnt)
                     let t0 = Instant::now();
@@ -2599,7 +2632,7 @@ impl App {
                 let ids = self.import_media(vec![path]);
                 if let Some(id) = ids.first() {
                     // Live-Waveform übernehmen, bis die genaue berechnet ist
-                    self.waves.entry(*id).or_insert(peaks);
+                    self.waves.entry((*id, 0)).or_insert(peaks);
                     if let Some(c) = self.add_media_at(*id, start, None) {
                         // Einstellungen aus dem Einsprech-Fenster übernehmen
                         let tuned = self.voiceover.volume_db.abs() > 0.01 || !self.voiceover.audio.is_empty();
@@ -2843,6 +2876,7 @@ impl App {
     }
 
     fn draw_toasts(&mut self, ctx: &egui::Context) {
+        crate::applog::crash_notice(ctx, self);
         self.toasts
             .retain(|(_, t, err)| t.elapsed().as_secs_f32() < toast_secs(*err));
         if self.toasts.is_empty() {
@@ -2983,7 +3017,7 @@ impl App {
         if let (Some(p), Some(t)) = (&mut self.perf_play, a.first_sound()) {
             if !p.sound {
                 p.sound = true;
-                eprintln!(
+                crate::applog::perf_line!(
                     "perf: {} → erster Ton {:.0} ms",
                     p.what,
                     t.saturating_duration_since(p.pressed).as_secs_f64() * 1000.0
@@ -2992,7 +3026,7 @@ impl App {
         }
         let (n, d) = a.take_underruns();
         if n > 0 {
-            eprintln!("perf: Ton-Aussetzer {n}× zusammen {:.0} ms bei {:.2} s", d.as_secs_f64() * 1000.0, self.playhead.as_secs_f64());
+            crate::applog::perf_line!("perf: Ton-Aussetzer {n}× zusammen {:.0} ms bei {:.2} s", d.as_secs_f64() * 1000.0, self.playhead.as_secs_f64());
         }
     }
 
@@ -3000,7 +3034,7 @@ impl App {
     pub fn perf_frame_shown(&mut self) {
         if let Some(p) = self.perf_play.as_mut().filter(|p| !p.frame && self.playhead > p.at) {
             p.frame = true;
-            eprintln!("perf: {} → erstes Bild weitergeschaltet {:.0} ms", p.what, p.pressed.elapsed().as_secs_f64() * 1000.0);
+            crate::applog::perf_line!("perf: {} → erstes Bild weitergeschaltet {:.0} ms", p.what, p.pressed.elapsed().as_secs_f64() * 1000.0);
         }
     }
 
@@ -3045,7 +3079,7 @@ impl eframe::App for App {
             self.perf_ui += 1;
             let el = self.perf_since.elapsed().as_secs_f64();
             if el >= 1.0 {
-                eprintln!(
+                crate::applog::perf_line!(
                     "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}, Bildzeit Ø {:.2} / max {:.1} ms",
                     self.perf_ui as f64 / el,
                     self.perf_frames as f64 / el,
@@ -3058,7 +3092,7 @@ impl eframe::App for App {
                 if self.playing && self.play_warmup.is_none() {
                     if let Some(ms) = self.perf_av_offset() {
                         let clock = if self.audio.as_ref().is_some_and(|a| a.started()) { "Ton-Uhr" } else { "Systemuhr" };
-                        eprintln!("perf: Bild-Ton-Versatz {ms:.0} ms ({clock})");
+                        crate::applog::perf_line!("perf: Bild-Ton-Versatz {ms:.0} ms ({clock})");
                     }
                 }
                 self.perf_max_gap = 0.0;
@@ -3330,10 +3364,11 @@ impl eframe::App for App {
             let _ = std::fs::create_dir_all(&dir);
             let p = dir.join(format!("exit-{}.cutline", paths::unix_secs()));
             if let Err(e) = paths::write_atomic(&p, self.project.to_json()) {
-                eprintln!("{}: {e}", p.display());
+                log::error!("{}: {e}", p.display());
             }
             self.release_lock();
         }
+        crate::applog::session_end();
     }
 }
 
@@ -3368,7 +3403,7 @@ fn audio_signature(p: &Project) -> u64 {
                 c.fx.reverse,
             )
                 .hash(&mut h);
-            (c.speed.to_bits(), c.volume_db.to_bits()).hash(&mut h);
+            (c.speed.to_bits(), c.volume_db.to_bits(), c.audio_stream).hash(&mut h);
             serde_json::to_string(&c.audio)
                 .unwrap_or_default()
                 .hash(&mut h);
@@ -3597,7 +3632,7 @@ pub fn perf_mark(what: &str) {
     static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     let t0 = *T0.get_or_init(Instant::now);
     if perf() {
-        eprintln!("perf: Start {what} nach {} ms", t0.elapsed().as_millis());
+        crate::applog::perf_line!("perf: Start {what} nach {} ms", t0.elapsed().as_millis());
     }
 }
 

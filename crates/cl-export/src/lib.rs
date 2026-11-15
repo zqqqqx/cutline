@@ -1662,7 +1662,7 @@ mod tests {
         let media = |name: &str, audio: bool, kind: MediaKind| {
             let path = dir.path().join(name);
             std::fs::write(&path, b"x").unwrap();
-            MediaRef { id: MediaId::new(), path, kind, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: audio, video_codec: None, audio_codec: None }
+            MediaRef { id: MediaId::new(), path, kind, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: audio, audio_streams: audio as u32, video_codec: None, audio_codec: None }
         };
         let s = Time::from_secs_f64;
         let (snd, mute_vid, img) = (media("a.wav", true, MediaKind::Audio), media("v.mp4", false, MediaKind::Video), media("i.png", false, MediaKind::Image));
@@ -1713,6 +1713,7 @@ mod tests {
             height: 180,
             fps: None,
             has_audio: false,
+            audio_streams: 0,
             video_codec: None,
             audio_codec: None,
         };
@@ -3655,5 +3656,129 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Aufteilung von `codec_args` in Bild/Ton/Container: Argumente wie zuvor (Reihenfolge inklusive).
+    #[test]
+    fn codec_args_unchanged_by_split() {
+        let p = Project::new("C");
+        let s = |f: Format, c: Codec, q: Quality, audio: bool, transparent: bool| {
+            let mut s = ExportSettings::from_project(&p);
+            (s.format, s.codec, s.quality, s.include_audio, s.transparent) = (f, c, q, audio, transparent);
+            codec_args(&s).join(" ")
+        };
+        assert_eq!(s(Format::Mp4, Codec::H264, Quality::Recommended, true, false), "-c:v libx264 -preset medium -crf 20 -r 30/1 -c:a aac -b:a 256k -movflags +faststart");
+        assert_eq!(s(Format::Mov, Codec::Hevc, Quality::Higher, true, false), "-c:v libx265 -preset medium -tag:v hvc1 -crf 19 -r 30/1 -c:a aac -b:a 256k -movflags +faststart");
+        assert_eq!(s(Format::Mkv, Codec::H264, Quality::Bitrate(4000), false, false), "-c:v libx264 -preset medium -b:v 4000k -maxrate 4400k -bufsize 8000k -r 30/1");
+        assert_eq!(s(Format::WebM, Codec::Vp9, Quality::Lower, true, true), "-c:v libvpx-vp9 -b:v 0 -row-mt 1 -crf 38 -pix_fmt yuva420p -auto-alt-ref 0 -r 30/1 -c:a libopus -b:a 192k");
+        assert_eq!(s(Format::Mov, Codec::ProRes, Quality::Recommended, true, false), "-c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le -r 30/1 -c:a pcm_s16le -movflags +faststart");
+        assert_eq!(s(Format::Gif, Codec::H264, Quality::Recommended, true, false), "-loop 0");
+        assert_eq!(s(Format::M4a, Codec::H264, Quality::Recommended, true, false), "-c:a aac -b:a 256k");
+    }
+
+    /// Kleines Projekt: ein Durchgang mit genau dem Aufruf von `build_single` (keine Abschnitte).
+    #[test]
+    fn small_project_builds_one_pass_as_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.wav");
+        std::fs::write(&path, b"x").unwrap();
+        let m = MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(60.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+        let mut p = Project::new("K");
+        p.media.push(m.clone());
+        let mut t = Track::new(TrackKind::Audio);
+        for i in 0..20 {
+            t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::from_secs_f64(i as f64), Time::from_secs_f64(1.0)));
+        }
+        p.timeline.tracks.push(t);
+        let mut s = ExportSettings::from_project(&p);
+        s.format = Format::Wav;
+        let out = dir.path().join("o.wav");
+        let job = build(&p, &s, &|_| None, &out).unwrap();
+        assert_eq!(job.sections(), 0);
+        let single = build_single(&in_edit_ranges(&p), &s, &|_| None, &out, Time::ZERO, p.duration()).unwrap();
+        assert_eq!(job.args, single.args);
+        let g = |j: &Job| std::fs::read_to_string(j.workdir.path().join("graph.txt")).unwrap();
+        assert_eq!(g(&job), g(&single));
+        assert!(g(&job).contains("alimiter"), "Begrenzer im Durchgang");
+    }
+
+    /// Dichter Schnitt im Vorschau-Fenster (300 Clips à 0,1 s in 20 s, lange Pfade): Clips einer
+    /// Datei teilen sich Eingänge, die Befehlszeile bleibt klein; mit 300 verschiedenen Dateien
+    /// gibt es eine klare Meldung statt eines stillen Fehlstarts.
+    #[test]
+    fn dense_preview_window_stays_below_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let deep = dir.path().join("x".repeat(120)).join("y".repeat(60));
+        std::fs::create_dir_all(&deep).unwrap();
+        let media = |n: usize| {
+            let path = deep.join(format!("datei_{n}.wav"));
+            std::fs::write(&path, b"x").unwrap();
+            MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None }
+        };
+        let dense = |files: usize| {
+            let ms: Vec<MediaRef> = (0..files).map(media).collect();
+            let mut p = Project::new("Dicht");
+            p.media.extend(ms.iter().cloned());
+            let mut t = Track::new(TrackKind::Audio);
+            for i in 0..300 {
+                let m = &ms[i % files]; // 300 Clips à 0,1 s, davon 200 im 20-s-Fenster
+                let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::from_secs_f64(i as f64 * 0.1), Time::from_secs_f64(0.1));
+                c.source_in = Time::from_secs_f64(30.0 + i as f64 * 0.37);
+                c.audio_stream = Some((i % 2) as u32);
+                t.clips.push(c);
+            }
+            p.timeline.tracks.push(t);
+            p
+        };
+        let p = dense(1);
+        let (inputs, graph, _) = audio_window_graph(&p, Time::ZERO, Time::from_secs_f64(20.0)).unwrap();
+        let n = inputs.iter().filter(|a| *a == "-i").count();
+        assert!(n <= 4, "{n} Eingänge");
+        assert!(sections::cmd_len(&inputs) < sections::MAX_CMD);
+        let g = graph.join(";\n");
+        assert!(g.contains(":a:1]asplit") && g.contains(":a]asplit"), "Tonspur je Clip auch bei gemeinsamen Eingängen");
+        assert_eq!(g.matches("atrim=start=").count(), 200, "200 Clips im Fenster");
+        // viele verschiedene Dateien: verständlicher Fehler mit Zeit
+        let e = audio_window_graph(&dense(300), Time::ZERO, Time::from_secs_f64(20.0)).unwrap_err();
+        assert!(matches!(e, ExportError::TooManyClips(_)), "{e}");
+    }
+
+    #[test]
+    fn shared_inputs_group_nearby_ranges_of_one_file() {
+        // Datei 0: 10–11, 12–13 (nah), 100–101 (weit); Datei 1: 10–11
+        let r = [(0, 10.0, 11.0), (1, 10.0, 11.0), (0, 100.0, 101.0), (0, 12.0, 13.0)];
+        let (of, groups) = graph::share_inputs(&r, 10.0);
+        assert_eq!(groups.len(), 3);
+        assert_eq!(of[0], of[3]);
+        assert_ne!(of[0], of[2]);
+        assert_eq!(groups[of[0]], (0, 10.0, 13.0));
+    }
+
+    #[test]
+    fn lead_skip_only_for_plain_long_clips() {
+        let s = Time::from_secs_f64;
+        let mut c = Clip::new(ClipContent::Text(TextStyle::default()), s(10.0), s(100.0));
+        assert_eq!(graph::lead_skip(&c, s(11.5)), 0.0, "zu nah am Anfang");
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 29.0, "ganze Sekunden, ≥ 1 s Vorlauf");
+        c.speed = 2.0;
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "Tempo");
+        c.speed = 1.0;
+        c.fx.reverse = true;
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "rückwärts");
+    }
+
+    /// Kaputte Datei: die Vorschau lässt sie aus und meldet sie einmal.
+    #[test]
+    fn unreadable_audio_is_left_out_and_reported_once() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let bad = dir.path().join("kaputt_c2.wav");
+        std::fs::write(&bad, b"kein Ton").unwrap();
+        assert!(!audio_readable(&bad, true));
+        assert!(!audio_readable(&bad, false), "Ergebnis gemerkt");
+        let w: Vec<String> = take_audio_warnings().into_iter().filter(|w| w.contains("kaputt_c2.wav")).collect();
+        assert_eq!(w.len(), 1, "{w:?}");
     }
 }

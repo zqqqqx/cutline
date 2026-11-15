@@ -414,6 +414,7 @@ mod tests {
             height: 1080,
             fps: None,
             has_audio: true,
+            audio_streams: 1,
             video_codec: None,
             audio_codec: None,
         };
@@ -455,6 +456,7 @@ mod tests {
             height: 1080,
             fps: None,
             has_audio: true,
+            audio_streams: 1,
             video_codec: None,
             audio_codec: None,
         };

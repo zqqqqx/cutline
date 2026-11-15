@@ -200,6 +200,7 @@ mod tests {
             height: 1080,
             fps: Some(Rational::new(30, 1)),
             has_audio: true,
+            audio_streams: 1,
             video_codec: Some("h264".into()),
             audio_codec: Some("aac".into()),
         }

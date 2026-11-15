@@ -842,7 +842,7 @@ pub fn tip_with_keys(r: egui::Response, tip: &str) -> egui::Response {
                 });
             })
         }
-        None => r.on_hover_text(tip),
+        None => r.on_hover_text(tip).on_disabled_hover_text(tip),
     }
 }
 

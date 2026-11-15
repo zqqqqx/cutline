@@ -45,6 +45,7 @@ pub fn media(kind: MediaKind, dur: f64) -> MediaRef {
         height: 1080,
         fps: Some(Rational::new(30, 1)),
         has_audio: kind != MediaKind::Image,
+        audio_streams: (kind != MediaKind::Image) as u32,
         video_codec: None,
         audio_codec: None,
     }
