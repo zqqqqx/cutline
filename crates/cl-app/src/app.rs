@@ -210,6 +210,10 @@ pub struct App {
     /// Ausgewählter Übergang (Clip, dessen `transition_out` gemeint ist)
     pub selected_transition: Option<ClipId>,
     pub clipboard: Vec<Clip>,
+    /// Herkunftsspur je Clip der Zwischenablage (gleiche Reihenfolge)
+    pub clipboard_src: Vec<TrackId>,
+    /// Spur, in die nach dem Kopieren geklickt wurde: dorthin fügt Strg+V ein (sonst Herkunftsspur)
+    pub paste_track: Option<TrackId>,
     /// Beim nächsten Frame eine Markierung in die System-Zwischenablage legen
     pub copy_marker: bool,
     /// Clip mit laufender Bearbeitung im Inspektor (Vorschau, noch nicht im Verlauf)
@@ -422,6 +426,8 @@ impl App {
             sel_extra: HashSet::new(),
             selected_transition: None,
             clipboard: Vec::new(),
+            clipboard_src: Vec::new(),
+            paste_track: None,
             copy_marker: false,
             live: None,
             playhead: Time::ZERO,
@@ -556,6 +562,14 @@ impl App {
                 ops,
             }),
         }
+    }
+
+    /// Alles, was `f` am Projekt ändert, als EIN Verlaufsschritt (z. B. neue Spur + Clip darin).
+    pub fn one_step<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let rev = self.doc.lock().unwrap_or_else(|e| e.into_inner()).revision();
+        let r = f(self);
+        self.doc.lock().unwrap_or_else(|e| e.into_inner()).squash_since(rev);
+        r
     }
 
     pub fn undo(&mut self) {
@@ -1163,13 +1177,17 @@ impl App {
         self.add_image_overlay_at(path, at, track)
     }
 
-    /// Bild als Sticker-Clip (verkleinert) auf eine freie Overlay-Spur legen.
+    /// Bild als Sticker-Clip (verkleinert) auf eine freie Overlay-Spur legen (ein Verlaufsschritt).
     pub fn add_image_overlay_at(
         &mut self,
         path: PathBuf,
         at: Time,
         track: Option<TrackId>,
     ) -> Option<ClipId> {
+        self.one_step(|s| s.add_image_overlay_step(path, at, track))
+    }
+
+    fn add_image_overlay_step(&mut self, path: PathBuf, at: Time, track: Option<TrackId>) -> Option<ClipId> {
         let media = *self.import_media(vec![path]).first()?;
         let clip = Clip::new(
             ClipContent::Media {
@@ -1302,7 +1320,8 @@ impl App {
         })
     }
 
-    /// Effekt oder Filter als eigenes Element (3 s) bei `at` einfügen.
+    /// Effekt oder Filter als eigenes Element (3 s) bei `at` einfügen; eine dafür angelegte Spur
+    /// gehört zum selben Verlaufsschritt.
     pub fn add_fx_clip(
         &mut self,
         id: &str,
@@ -1310,6 +1329,10 @@ impl App {
         at: Time,
         track: Option<TrackId>,
     ) -> Option<ClipId> {
+        self.one_step(|s| s.add_fx_clip_step(id, filter, at, track))
+    }
+
+    fn add_fx_clip_step(&mut self, id: &str, filter: bool, at: Time, track: Option<TrackId>) -> Option<ClipId> {
         let r = FxRef::new(id);
         let content = if filter {
             ClipContent::Filter(r)
@@ -1602,19 +1625,21 @@ impl App {
     }
 
     pub fn copy_selection(&mut self) {
-        let mut clips: Vec<Clip> = self
+        let mut clips: Vec<(TrackId, Clip)> = self
             .selection()
             .iter()
-            .filter_map(|c| self.project.find_clip(*c).map(|(_, c)| c.clone()))
+            .filter_map(|c| self.project.find_clip(*c).map(|(t, c)| (t.id, c.clone())))
             .collect();
-        clips.sort_by_key(|c| c.start);
+        clips.sort_by_key(|c| c.1.start);
         if !clips.is_empty() {
             self.toast(format!(
                 "{} {} kopiert",
                 clips.len(),
                 if clips.len() == 1 { "Clip" } else { "Clips" }
             ));
-            self.clipboard = clips;
+            // Ziel zurück auf die Herkunftsspur, bis wieder in eine Spur geklickt wird
+            self.paste_track = None;
+            (self.clipboard_src, self.clipboard) = clips.into_iter().unzip();
             self.copy_marker = true;
         }
     }
@@ -1628,26 +1653,14 @@ impl App {
         if self.clipboard.is_empty() {
             return;
         }
-        let first = self
-            .clipboard
-            .iter()
-            .map(|c| c.start)
-            .min()
-            .unwrap_or(Time::ZERO);
-        let ops: Vec<EditOp> = self
-            .clipboard
-            .iter()
-            .map(|c| {
-                let mut n = c.clone();
-                n.id = ClipId::new();
-                n.start = self.playhead + (c.start - first);
-                EditOp::AddClip {
-                    track: None,
-                    clip: n,
-                }
-            })
-            .collect();
-        if let Some(OpOutput::Clip(c)) = self.apply_batch(ops) {
+        // Herkunftsspur bzw. zuletzt angeklickte Spur am Playhead; belegt: Nachfolgende schieben
+        let clips: Vec<(TrackId, Clip)> = self.clipboard_src.iter().copied().zip(self.clipboard.iter().cloned()).collect();
+        let items = cl_core::paste_targets(&self.project, &clips, self.paste_track, self.playhead);
+        let out = self.one_step(|s| {
+            s.apply_batch(cl_core::paste_splits(&s.project, &items));
+            s.apply_batch(cl_core::paste_ops(&s.project, &items))
+        });
+        if let Some(OpOutput::Clip(c)) = out {
             self.select_only(Some(c));
         }
     }
@@ -3029,7 +3042,13 @@ impl eframe::App for App {
             return;
         }
 
-        if !self.export.is_open() && self.onboard.is_none() && self.tour.is_none() && !self.esc_closes(ctx) {
+        if !self.export.is_open()
+            && self.onboard.is_none()
+            && self.tour.is_none()
+            && !self.esc_closes(ctx)
+            // Esc im Bearbeiten-Modus der Reihenfolge beendet nur diesen
+            && (self.settings_open || self.dialog_open() || !crate::library_ui::esc_order_edit(ctx))
+        {
             self.shortcuts(ctx);
         }
         // Countdown vor der Voiceover-Aufnahme

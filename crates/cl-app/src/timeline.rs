@@ -904,6 +904,12 @@ impl App {
         if resp.clicked() {
             self.timeline.last_click = resp.interact_pointer_pos();
         }
+        // Klick in eine Spur (Fläche, Clip, Spurkopf; auch Rechtsklick): dorthin fügt Strg+V ein
+        if resp.clicked() || resp.secondary_clicked() {
+            if let Some(t) = resp.interact_pointer_pos().filter(|p| p.y >= ruler.bottom()).and_then(row_at) {
+                self.paste_track = Some(tracks[t].id);
+            }
+        }
         // ---------- Ziehen beginnen ----------
         if resp.drag_started_by(egui::PointerButton::Primary) {
             if let Some(p) = ui
@@ -1993,6 +1999,8 @@ impl App {
                 .filter(|r| r.track != REC_ROW)
                 .map(|r| r.rect.bottom())
                 .fold(f32::NEG_INFINITY, f32::max);
+            // neue Spur und Ablegen sind ein Verlaufsschritt (sonst bliebe nach Rückgängig eine leere Spur)
+            let rev = self.doc.lock().unwrap_or_else(|e| e.into_inner()).revision();
             if let (Some(p), Some(k)) = (pointer, kind) {
                 let above = p.y < first_top - ROW_GAP && k != TrackKind::Audio;
                 let below = p.y > last_bottom + ROW_GAP && k == TrackKind::Audio;
@@ -2014,6 +2022,7 @@ impl App {
             } else {
                 self.drop_asset(&payload, at, track, on);
             }
+            self.doc.lock().unwrap_or_else(|e| e.into_inner()).squash_since(rev);
         } else if let (Some(payload), Some(p)) = (&drop_hover, pointer) {
             if !matches!(
                 &**payload,

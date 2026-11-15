@@ -8,12 +8,14 @@ mod document;
 mod fx;
 mod model;
 mod ops;
+mod paste;
 mod time;
 
 pub use document::{Document, HistoryEntry, OpSource};
 pub use fx::*;
 pub use model::*;
 pub use ops::{gaps, ripple_ops, Edge, EditOp, OpOutput};
+pub use paste::{paste_ops, paste_splits, paste_targets};
 pub use time::{Rational, Time};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

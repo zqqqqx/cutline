@@ -128,6 +128,20 @@ impl Document {
         n
     }
 
+    /// Alle Schritte seit Revision `rev` (vorher mit [`Self::revision`] gemerkt) zu EINEM
+    /// zusammenfassen, z. B. neue Spur + Clip darin: Rückgängig nimmt dann beides zurück.
+    /// Bezeichnung und Quelle des letzten Schritts bleiben. Dazwischen kein Rückgängig/Wiederholen.
+    pub fn squash_since(&mut self, rev: u64) {
+        let n = (self.revision.saturating_sub(rev) as usize).min(self.undo.len());
+        if n < 2 {
+            return;
+        }
+        let mut tail = self.undo.split_off(self.undo.len() - n);
+        let mut last = tail.pop().expect("n >= 2");
+        last.snapshot = tail.swap_remove(0).snapshot;
+        self.undo.push(last);
+    }
+
     /// Rückgängig machbare Schritte (älteste zuerst)
     pub fn undo_entries(&self) -> &[HistoryEntry] {
         &self.undo
@@ -718,6 +732,33 @@ mod tests {
         assert!(d.project().timeline.tracks.is_empty());
         d.undo().unwrap();
         assert_eq!(d.project().timeline.tracks[0].clips.len(), 2);
+    }
+
+    #[test]
+    fn new_track_and_its_clip_are_undone_together() {
+        let mut d = Document::new(Project::new("T"));
+        let start = d.revision();
+        let OpOutput::Track(t) = d
+            .apply(EditOp::InsertTrack { index: 0, kind: TrackKind::Effect }, OpSource::Ui)
+            .unwrap()
+        else {
+            panic!()
+        };
+        let c = Clip::new(ClipContent::Effect(FxRef::new("glow")), Time::ZERO, Time::from_secs_f64(3.0));
+        d.apply(EditOp::AddClip { track: Some(t), clip: c }, OpSource::Ui).unwrap();
+        d.squash_since(start);
+        assert_eq!(d.undo_entries().len(), 1);
+        assert_eq!(d.undo_entries()[0].label, "Clip hinzufügen");
+        // Rückgängig: keine leere Spur bleibt zurück; Wiederholen bringt beides
+        d.undo().unwrap();
+        assert!(d.project().timeline.tracks.is_empty());
+        d.redo().unwrap();
+        assert_eq!(d.project().timeline.tracks[0].clips.len(), 1);
+        // nur ein Schritt seit `rev`: nichts zusammenzufassen
+        let rev = d.revision();
+        d.apply(EditOp::InsertTrack { index: 0, kind: TrackKind::Text }, OpSource::Ui).unwrap();
+        d.squash_since(rev);
+        assert_eq!(d.undo_entries().len(), 2);
     }
 
     #[test]
