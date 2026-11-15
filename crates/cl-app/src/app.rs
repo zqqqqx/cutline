@@ -2919,6 +2919,7 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
+        limit_frame_rate();
         let _frame_time = perf().then(|| PerfFrame(Instant::now()));
         if perf() {
             static FIRST: std::sync::Once = std::sync::Once::new();
@@ -3334,6 +3335,26 @@ impl Drop for PerfFrame {
     }
 }
 
+/// Kürzester Abstand zweier UI-Bilder (höchstens 125 je Sekunde). Ohne VSync (siehe `main.rs`)
+/// zeichnet egui bei jeder Animation (Hover-Kacheln, Einblenden) sonst ungebremst mehrere hundert
+/// Bilder je Sekunde und belegt einen ganzen Kern. Abspielen fordert seltener an (`play_repaint_delay`).
+const MIN_FRAME: Duration = Duration::from_millis(8);
+
+/// Wartezeit vor dem nächsten UI-Bild, wenn das letzte vor `since_last` begann
+fn frame_wait(since_last: Duration) -> Duration {
+    MIN_FRAME.saturating_sub(since_last)
+}
+
+fn limit_frame_rate() {
+    thread_local!(static LAST: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) });
+    LAST.with(|last| {
+        if let Some(wait) = last.get().map(|t| frame_wait(t.elapsed())).filter(|w| !w.is_zero()) {
+            std::thread::sleep(wait);
+        }
+        last.set(Some(Instant::now()));
+    });
+}
+
 /// Messpunkt beim Start (`CUTLINE_PERF`): Zeit seit dem ersten Aufruf (in `main`)
 pub fn perf_mark(what: &str) {
     static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
@@ -3440,5 +3461,19 @@ mod toast_tests {
         assert_eq!(toast_alpha(0.0, 4.0, 0.15, 0.4), 0.0);
         assert!((toast_alpha(3.8, 4.0, 0.15, 0.4) - 0.5).abs() < 1e-4);
         assert!(toast_secs(true) > toast_secs(false));
+    }
+}
+
+#[cfg(test)]
+mod frame_rate_tests {
+    use super::*;
+
+    #[test]
+    fn frame_wait_caps_ui_rate() {
+        assert_eq!(frame_wait(Duration::from_millis(2)), Duration::from_millis(6));
+        assert_eq!(frame_wait(Duration::ZERO), MIN_FRAME);
+        // seltene Bilder (Leerlauf, Abspielen) warten nie
+        assert_eq!(frame_wait(Duration::from_millis(30)), Duration::ZERO);
+        assert!(1.0 / MIN_FRAME.as_secs_f64() <= 125.0);
     }
 }
