@@ -270,6 +270,60 @@ pub fn tilde(text: &str, home: &str) -> String {
     out
 }
 
+/// Inhalte unkenntlich machen (für Meldungen und Export-Fehler; Protokolle landen in öffentlichen Issues):
+/// Namen in „…“ werden `***`, Pfade (`C:\`, `C:/`, `\\`, `~/`, `~\` oder `/` am Wortanfang, bis Zeilenende
+/// oder `: `, `"`, `'`, `)`, `“`) werden `<pfad>` mit Endung.
+pub fn anon(s: &str) -> String {
+    let mut q = String::with_capacity(s.len());
+    let mut parts = s.split('„');
+    q.push_str(parts.next().unwrap_or_default());
+    for p in parts {
+        q.push('„');
+        match p.split_once('“') {
+            Some((_, rest)) => {
+                q.push_str("***“");
+                q.push_str(rest);
+            }
+            None => q.push_str(p),
+        }
+    }
+    let (s, b) = (q.as_str(), q.as_bytes());
+    let mut out = String::with_capacity(s.len());
+    let (mut i, mut copied) = (0, 0);
+    while i < b.len() {
+        let after = |k: usize| b.get(i + k).copied();
+        let lead = i == 0 || matches!(b[i - 1], b' ' | b'\t' | b'\n' | b'"' | b'\'' | b'(' | b'=' | b'[');
+        let start = lead
+            && ((b[i].is_ascii_alphabetic() && after(1) == Some(b':') && matches!(after(2), Some(b'\\' | b'/')))
+                || (b[i] == b'\\' && after(1) == Some(b'\\'))
+                || (b[i] == b'~' && matches!(after(1), Some(b'\\' | b'/')))
+                || (b[i] == b'/' && after(1).is_some_and(|c| is_word(c) || c == b'.')));
+        if !start {
+            i += 1;
+            continue;
+        }
+        let mut e = i + 1;
+        while e < b.len()
+            && !matches!(b[e], b'\n' | b'\r' | b'"' | b'\'' | b')')
+            && !(b[e] == b':' && matches!(b.get(e + 1), None | Some(b' ')))
+            && !b[e..].starts_with("“".as_bytes())
+        {
+            e += 1;
+        }
+        let name = s[i..e].trim_end().rsplit(['/', '\\']).next().unwrap_or_default();
+        let ext = name.rsplit_once('.').map(|x| x.1).filter(|x| (1..=8).contains(&x.len()) && x.bytes().all(|c| c.is_ascii_alphanumeric()));
+        out.push_str(&s[copied..i]);
+        out.push_str("<pfad>");
+        if let Some(x) = ext {
+            out.push('.');
+            out.push_str(x);
+        }
+        (i, copied) = (e, e);
+    }
+    out.push_str(&s[copied..]);
+    out
+}
+
 fn home() -> String {
     let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
     std::env::var(var).unwrap_or_default()
@@ -601,11 +655,16 @@ pub fn counts(p: &cl_core::Project) -> String {
     )
 }
 
-/// Projekt geöffnet/gespeichert/geschlossen
-pub fn project(what: &str, path: Option<&Path>, p: &cl_core::Project, t0: Option<std::time::Instant>) {
+/// Projekt geöffnet/gespeichert/geschlossen – nur Kennzahlen, kein Name und kein Pfad
+pub fn project(what: &str, p: &cl_core::Project, t0: Option<std::time::Instant>) {
     let ms = t0.map(|t| format!(" in {} ms", t.elapsed().as_millis())).unwrap_or_default();
-    let path = path.map(|p| format!(" ({})", p.display())).unwrap_or_default();
-    log::info!(target: "projekt", "{what}{ms}: „{}“{path} · {}", p.name, counts(p));
+    log::info!(target: "projekt", "{what}{ms}: {}", counts(p));
+}
+
+/// FFmpeg-Befehlszeile fürs Protokoll: Aufbau bleibt, Pfade werden unkenntlich (Texte stehen in Dateien)
+pub fn ffmpeg_cmd(args: &[String]) -> String {
+    let a: Vec<String> = args.iter().map(|x| anon(x)).collect();
+    format!("ffmpeg {}", a.join(" "))
 }
 
 // ---------- System ----------
@@ -897,6 +956,29 @@ mod tests {
 
     fn rec(ms: i64, level: Level, msg: &str) -> Rec {
         Rec { ms, level, area: "test".into(), msg: msg.into() }
+    }
+
+    #[test]
+    fn names_paths_and_texts_stay_out_of_the_log() {
+        assert_eq!(anon("„Bewerbung Firma X“ importiert: 3 Clips"), "„***“ importiert: 3 Clips");
+        assert_eq!(anon(r"Archiv erstellt: D:\Kunden\Firma X\a.zip"), "Archiv erstellt: <pfad>.zip");
+        assert_eq!(anon("Stand gesichert in /home/u/Firma X/p.cutline"), "Stand gesichert in <pfad>.cutline");
+        assert_eq!(
+            anon("Error opening input C:/Firma X/b.mp4: No such file\n~/x/y.wav: denied"),
+            "Error opening input <pfad>.mp4: No such file\n<pfad>.wav: denied"
+        );
+        // keine Pfade: bleibt
+        for s in ["10 MB/s", "-/filter_complex", "https://a.b/c", "und/oder", "1/2", "Paket entfernt"] {
+            assert_eq!(anon(s), s);
+        }
+        let args: Vec<String> =
+            ["-y", "-i", r"D:\Kunden\Firma X\clip.mov", "-/filter_complex", "graph.txt", "-c:v", "libx264", "/home/u/out.mp4"]
+                .map(String::from)
+                .into();
+        assert_eq!(
+            ffmpeg_cmd(&args),
+            "ffmpeg -y -i <pfad>.mov -/filter_complex graph.txt -c:v libx264 <pfad>.mp4"
+        );
     }
 
     fn read_all(dir: &Path) -> String {
