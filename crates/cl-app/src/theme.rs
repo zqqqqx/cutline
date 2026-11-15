@@ -747,6 +747,24 @@ pub fn text_width(ctx: &egui::Context, text: &str, font: egui::FontId) -> f32 {
     ctx.fonts(|f| f.layout_no_wrap(text.to_string(), font, Color32::WHITE).size().x)
 }
 
+/// Schräge Pfeile in Namen (↖ ↗ ↙ ↘) als Symbole der Icon-Schrift: die Grundschrift hat nicht
+/// alle, der Rückfall auf eine andere Schrift sieht dann ungleich aus.
+pub fn icon_arrows(s: &str) -> String {
+    s.replace('↖', icon::ARROW_UP_LEFT)
+        .replace('↗', icon::ARROW_UP_RIGHT)
+        .replace('↙', icon::ARROW_DOWN_LEFT)
+        .replace('↘', icon::ARROW_DOWN_RIGHT)
+}
+
+/// Dauer in Sekunden für die Oberfläche („6,40 s“ deutsch, „6.40 s“ englisch).
+pub fn secs(v: f64, decimals: usize) -> String {
+    secs_text(v, decimals, cl_i18n::ui_lang() == cl_i18n::Lang::De)
+}
+fn secs_text(v: f64, decimals: usize, comma: bool) -> String {
+    let s = format!("{v:.decimals$} s");
+    if comma { s.replace('.', ",") } else { s }
+}
+
 /// Zählertext mit richtiger Einzahl: `one`/`many` sind deutsche Vorlagen mit `{}` für die Zahl
 /// (beide stehen im Wörterbuch, `tr` übersetzt das Ergebnis).
 pub fn count_text(n: usize, one: &str, many: &str) -> String {
@@ -990,6 +1008,18 @@ pub fn window_icon() -> Option<egui::IconData> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagonal_arrows_use_icon_font() {
+        let s = icon_arrows("Wischen ↖ ↗ ↙ ↘");
+        assert!(!s.contains(['↖', '↗', '↙', '↘']) && s.starts_with("Wischen "), "{s}");
+    }
+
+    #[test]
+    fn seconds_use_language_decimal_mark() {
+        assert_eq!(secs_text(6.4, 2, true), "6,40 s");
+        assert_eq!(secs_text(6.4, 1, false), "6.4 s");
+    }
 
     #[test]
     fn count_text_uses_singular_for_one() {

@@ -645,11 +645,8 @@ impl App {
                     });
                 }
                 if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) {
-                    let at = if m.kind == MediaKind::Video {
-                        Time::from_secs_f64((m.duration.as_secs_f64() * 0.1).min(1.0))
-                    } else {
-                        Time::ZERO
-                    };
+                    let anim = if m.kind == MediaKind::Image { cl_media::animation(&m.path) } else { None };
+                    let at = thumb_time(m.kind, m.duration, anim.as_ref());
                     self.decoder.send(Job::Thumb {
                         media: m.id,
                         path: m.path.clone(),
@@ -3389,9 +3386,31 @@ fn needs_save(rev: u64, saved: u64, has_file: bool, p: &Project) -> bool {
     rev != saved && (has_file || !(p.media.is_empty() && p.duration() == Time::ZERO))
 }
 
+/// Zeitpunkt des Vorschaubilds eines Mediums: Video kurz nach Beginn, bewegtes Bild (APNG/GIF) in
+/// der Mitte – viele Elemente beginnen mit einem leeren Bild und blenden erst dann ein.
+fn thumb_time(kind: MediaKind, dur: Time, anim: Option<&cl_media::Animation>) -> Time {
+    match (kind, anim) {
+        (MediaKind::Video, _) => Time::from_secs_f64((dur.as_secs_f64() * 0.1).min(1.0)),
+        (_, Some(a)) => a.seek_time(Time(a.duration.0 / 2)),
+        _ => Time::ZERO,
+    }
+}
+
 #[cfg(test)]
 mod toast_tests {
     use super::*;
+
+    #[test]
+    fn animated_image_thumb_is_not_first_frame() {
+        let a = cl_media::Animation {
+            starts: (0..10).map(|i| Time::from_secs_f64(i as f64 * 0.1)).collect(),
+            duration: Time::from_secs_f64(1.0),
+            looping: false,
+        };
+        assert!(thumb_time(MediaKind::Image, Time::ZERO, Some(&a)) >= Time::from_secs_f64(0.4));
+        assert_eq!(thumb_time(MediaKind::Image, Time::ZERO, None), Time::ZERO);
+        assert_eq!(thumb_time(MediaKind::Video, Time::from_secs_f64(60.0), None), Time::from_secs_f64(1.0));
+    }
 
     #[test]
     fn replaced_document_counts_as_unsaved() {

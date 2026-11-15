@@ -24,6 +24,54 @@ pub enum ContentsDialog {
     Credits(String),
 }
 
+/// Anzeigename eines Medienpfads, den Cutline selbst angelegt hat oder der aus einem Paket kommt:
+/// Standbild, eingebautes Element/Geräusch (Datei heißt nach der Kennung) oder Katalog-Eintrag.
+/// `None` für eigene Dateien (dann bleibt der Dateiname).
+fn media_title(path: &Path, data: &Path, pack: impl Fn(&Path) -> Option<String>) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+    let dir = path.parent()?;
+    if dir == data.join("Freeze") {
+        Some("Standbild".into())
+    } else if dir == data.join("Stickers") {
+        cl_fx::stickers::sticker(stem).map(|s| s.name.to_string())
+    } else if dir == data.join("Sfx") {
+        cl_fx::sfx::sfx(stem.rsplit_once('-')?.0).map(|s| s.name.to_string())
+    } else {
+        pack(path)
+    }
+}
+
+/// Paketdateien → Name (wird bei `refresh_catalog` geleert)
+static PACK_NAMES: std::sync::Mutex<Option<std::collections::HashMap<PathBuf, String>>> = std::sync::Mutex::new(None);
+
+/// Name eines Clips für Zeitleiste und Inspektor (übersetzt): Katalogname bzw. „Standbild“ statt
+/// technischer Dateinamen, sonst wie [`cl_core::Clip::label`].
+pub fn clip_title(c: &cl_core::Clip, p: &cl_core::Project) -> String {
+    if let cl_core::ClipContent::Media { media, .. } = &c.content {
+        if let Some(m) = p.media(*media) {
+            let pack = |path: &Path| {
+                let mut g = PACK_NAMES.lock().unwrap_or_else(|e| e.into_inner());
+                g.get_or_insert_with(|| {
+                    [Kind::Sticker, Kind::Sound]
+                        .into_iter()
+                        .flat_map(catalog::list)
+                        .filter_map(|e| match e.payload {
+                            Payload::File(f) => Some((f, e.name)),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .get(path)
+                .cloned()
+            };
+            if let Some(t) = media_title(&m.path, &paths::data_dir(), pack) {
+                return crate::tr(t);
+            }
+        }
+    }
+    c.label(p)
+}
+
 /// Ordner für eigene Pakete
 pub fn user_root() -> PathBuf {
     paths::data_dir().join("Plugins")
@@ -142,6 +190,7 @@ impl App {
     /// Katalog neu anmelden (nach Ein-/Ausschalten, Sprachwechsel, neuen Paketen).
     pub fn refresh_catalog(&mut self) {
         catalog::load_packs(catalog_packs(&self.plugins, self.i18n.lang().code()));
+        *PACK_NAMES.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.invalidate_preview();
     }
 
@@ -323,6 +372,20 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_media_get_readable_titles() {
+        let data = Path::new("C:/daten");
+        let none = |_: &Path| None;
+        assert_eq!(media_title(&data.join("Freeze").join("freeze-1794710580502.png"), data, none).as_deref(), Some("Standbild"));
+        let st = &cl_fx::stickers::STICKERS[0];
+        assert_eq!(media_title(&data.join("Stickers").join(format!("{}.png", st.id)), data, none).as_deref(), Some(st.name));
+        assert_eq!(media_title(&data.join("Sfx").join("riser-0a1b2c3d.wav"), data, none).as_deref(), Some("Anstieg"));
+        let pack = |p: &Path| p.ends_with("abonnieren-rot.png").then(|| "Abonnieren (rot)".to_string());
+        assert_eq!(media_title(Path::new("D:/p/elemente/abonnieren-rot.png"), data, pack).as_deref(), Some("Abonnieren (rot)"));
+        // eigene Datei: Dateiname bleibt
+        assert_eq!(media_title(Path::new("D:/Videos/urlaub.mp4"), data, none), None);
+    }
 
     fn bundled() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins")

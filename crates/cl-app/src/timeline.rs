@@ -2289,7 +2289,7 @@ impl App {
             ClipContent::Text(_) => (icon::TEXT_T.to_string(), String::new()),
             ClipContent::Effect(r) => (format!("{}  {}", icon::SPARKLE, crate::tr(cl_fx::fx_name(&r.id))), String::new()),
             ClipContent::Filter(r) => (format!("{}  {}", icon::CIRCLE_HALF, crate::tr(cl_fx::fx_name(&r.id))), String::new()),
-            _ => (c.label(&self.project), crate::tr(format!("{:.1}s", c.duration.as_secs_f64()))),
+            _ => (crate::contents::clip_title(c, &self.project), theme::secs(c.duration.as_secs_f64(), 1)),
         };
         let font = egui::FontId::proportional(theme::FS_HINT);
         let mut tx = band.left().max(x0) + 6.0;

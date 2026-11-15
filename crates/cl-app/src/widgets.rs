@@ -446,7 +446,7 @@ pub fn tile(
     let mut resp = resp;
     if !label.is_empty() {
         // eine Zeile, zu lange Namen mit „…“ gekürzt; voller Name im Tooltip
-        let full = crate::tr(label);
+        let full = theme::icon_arrows(&crate::tr(label));
         let font = egui::FontId::proportional(theme::FS_HINT);
         let shown = theme::elide(&full, r.width(), |t| theme::text_width(ui.ctx(), t, font.clone()));
         if shown != full {

@@ -39,7 +39,7 @@ fn secs(t: Time) -> String {
     if s >= 60.0 {
         format!("{}:{:05.2}", (s / 60.0) as u64, s % 60.0)
     } else {
-        format!("{s:.2} s")
+        crate::theme::secs(s, 2)
     }
 }
 

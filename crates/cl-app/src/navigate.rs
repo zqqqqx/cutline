@@ -130,7 +130,7 @@ impl App {
             color: 0,
         });
         self.apply(EditOp::SetMarkers { markers: ms });
-        // gleich benennen; bleibt der Name leer, steht „Unbenannt“ in der Liste
+        // gleich benennen; bleibt der Name leer, heißt er „Kapitel“ (Liste und Export)
         self.marker_draft = None;
         self.marker_edit = Some(id);
     }
@@ -471,7 +471,7 @@ impl App {
                     self.playhead = m.at;
                 }
                 let name = if m.name.is_empty() {
-                    crate::tr("Ohne Namen")
+                    crate::tr("Kapitel") // wie im Export (cl_export::chapter_list)
                 } else {
                     m.name.clone()
                 };

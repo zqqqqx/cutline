@@ -547,12 +547,12 @@ impl App {
                 let fps = self.project.settings.fps;
                 ui.label(
                     RichText::new(format!(
-                        "{} · {:.2} s · {}",
-                        crate::tr(match &c.content {
-                            ClipContent::Effect(r) | ClipContent::Filter(r) => cl_fx::fx_name(&r.id),
-                            _ => c.label(&self.project),
-                        }),
-                        c.duration.as_secs_f64(),
+                        "{} · {} · {}",
+                        match &c.content {
+                            ClipContent::Effect(r) | ClipContent::Filter(r) => crate::tr(cl_fx::fx_name(&r.id)),
+                            _ => crate::contents::clip_title(&c, &self.project),
+                        },
+                        theme::secs(c.duration.as_secs_f64(), 2),
                         crate::tr(format!("ab {}", c.start.timecode(fps)))
                     ))
                     .small()
@@ -1290,7 +1290,7 @@ impl App {
             let new_dur = c.source_span().as_secs_f64() / s.max(0.01) as f64;
             theme::row(ui, "Neue Dauer", |ui| {
                 ui.label(
-                    RichText::new(crate::tr(format!("{:.2} s", new_dur))).color(theme::TEXT_DIM()),
+                    RichText::new(theme::secs(new_dur, 2)).color(theme::TEXT_DIM()),
                 )
             });
             if r.commit && (s - c.speed).abs() > 1e-4 {
