@@ -676,3 +676,67 @@ fn unproven_hardware_encoders_encode_once() {
     }
 }
 
+/// Sprung an den Abschnitt (`lead_skip`) bei Projekten mit 29,97 und 23,976 fps und Quellen mit
+/// gleicher oder anderer Bildrate: ProRes bildgleich mit dem Durchgang. Vorher setzte `setpts` den
+/// Versatz abgeschnitten statt gerundet (Clips ein Bild versetzt), und Sprünge um ganze Sekunden
+/// verfehlen bei 29,97 fps ab etwa 17 s die Quellbilder.
+#[test]
+fn lead_skip_with_ntsc_project_and_other_source_rate() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let src = |r: &str| {
+        let f = dir.path().join(format!("e_{}.mp4", r.replace('/', "_")));
+        if !f.is_file() {
+            ffmpeg(&["-f", "lavfi", "-i", &format!("testsrc2=s=96x54:r={r}:d=60"), "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", "-pix_fmt", "yuv420p"], &f);
+        }
+        cl_media::probe(&f).unwrap()
+    };
+    let s = Time::from_secs_f64;
+    // (Projekt, Quelle; None = 60 fps, Bereich ab 25 s mit langem Hintergrund), springt?
+    let ntsc = Rational::new(30000, 1001);
+    for (fps, rate, long, jumps) in [
+        (ntsc, None, false, false),
+        (Rational::new(24000, 1001), Some("30000/1001"), false, true),
+        (ntsc, Some("24000/1001"), false, true),
+        (ntsc, Some("30000/1001"), true, true),
+    ] {
+        let mut q = rich_project(dir.path());
+        q.settings.fps = fps;
+        q.timeline.tracks[1].hidden = true;
+        if let Some(r) = rate {
+            let m = src(r);
+            let ClipContent::Media { media, .. } = &mut q.timeline.tracks[0].clips[0].content else { panic!() };
+            *media = m.id;
+            q.media.push(m);
+        }
+        let mut st = ExportSettings::from_project(&q);
+        if long {
+            // Hintergrund 40 s, Bereich 25–28 s, kurze Tonclips erzwingen Grenzen bei 26 und 27 s
+            q.timeline.tracks[0].clips[0].duration = s(40.0);
+            let mu = q.timeline.tracks[4].clips[0].clone();
+            for k in 0..3 {
+                let mut c = mu.clone();
+                c.id = ClipId::new();
+                (c.start, c.duration, c.fade_in, c.fade_out) = (s(25.0 + k as f64), s(1.0), Time::ZERO, Time::ZERO);
+                c.keyframes = Default::default();
+                q.timeline.tracks[4].clips.push(c);
+            }
+            st = ExportSettings::from_project(&q);
+            st.range = Some((s(25.0), s(28.0)));
+        }
+        st.format = cl_export::Format::Mov;
+        st.codec = cl_export::Codec::ProRes;
+        let name = format!("ntsc{}_{}{}", fps.num, rate.unwrap_or("60").replace('/', "_"), if long { "_lang" } else { "" });
+        let (one, cut, n) = both(&q, &st, dir.path(), &name, if long { 2 } else { 3 });
+        let job = cl_export::build_limited(&q, &st, &no_fonts, &cut, if long { 2 } else { 3 }).unwrap();
+        let skipped = (0..n).any(|k| std::fs::read_to_string(job.workdir.path().join(format!("graph_{k}.txt"))).unwrap().contains("start_time="));
+        assert_eq!(skipped, jumps, "{name}: Sprung");
+        let fs = 128 * 72 * 3;
+        let (a, b) = (rgb(&one), rgb(&cut));
+        assert_eq!(a.len(), b.len(), "{name}: Bilder");
+        let bad: Vec<usize> = a.chunks(fs).zip(b.chunks(fs)).enumerate().filter(|(_, (x, y))| mean_diff(x, y) > 0.01).map(|x| x.0).collect();
+        assert!(bad.is_empty(), "{name} ({n} Abschnitte): abweichende Bilder {bad:?}");
+    }
+}

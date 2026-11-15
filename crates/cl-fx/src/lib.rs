@@ -937,7 +937,8 @@ pub fn fx_graph(
     if o.apply_reverse && fx.reverse {
         g.push("reverse");
     }
-    g.push(format!("setpts=PTS-STARTPTS+{:.6}/TB", o.t_offset));
+    // gerundet: setpts schneidet sonst ab (29,97 fps: 5,5055 s → ein Bild zu früh)
+    g.push(format!("setpts=PTS-STARTPTS+round({:.6}/TB)", o.t_offset));
     if fx.deflicker {
         g.push("deflicker=size=7:mode=pm");
     }

@@ -3816,6 +3816,20 @@ mod tests {
         assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "rückwärts");
     }
 
+    /// Bild-Sprung trifft Quell- und Projektbilder und ganze µs.
+    #[test]
+    fn video_skip_lands_on_source_and_project_frames() {
+        let s = Time::from_secs_f64;
+        let c = Clip::new(ClipContent::Text(TextStyle::default()), s(10.0), s(100.0));
+        let r = Rational::new;
+        let at = |src, prj, t| graph::video_skip(&c, src, prj, s(t));
+        assert_eq!(at(Some(r(30, 1)), r(30, 1), 40.7), 29.0);
+        assert_eq!(at(Some(r(60000, 2000)), r(30000, 1001), 40.7), 0.0, "Raster 50,05 s");
+        assert_eq!(at(Some(r(60, 1)), r(30000, 1001), 71.0), 50.05);
+        assert_eq!(at(Some(r(24000, 1001)), r(30000, 1001), 40.7), 28.5285, "57 × 0,5005 s");
+        assert_eq!(at(None, r(30, 1), 40.7), 0.0, "Quellrate unbekannt");
+    }
+
     /// Platzprüfung: Die fertige Datei braucht noch einmal so viel wie die Abschnitte – auf
     /// demselben Laufwerk doppelt (1 h ProRes 1080p30 ≈ 100 GB: 110 GB frei reichen nicht).
     #[test]
