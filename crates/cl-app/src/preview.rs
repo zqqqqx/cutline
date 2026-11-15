@@ -812,8 +812,21 @@ pub fn stream_hw(m: &cl_core::MediaRef, path: &std::path::Path) -> bool {
             || (m.width.min(m.height) >= 1080 && ["hevc", "av1", "vp9"].iter().any(|c| codec.contains(c))))
 }
 
+/// Bild für eine Textur. Videobilder sind fast immer deckend: dann ohne Umrechnung kopieren
+/// (deckend ist vormultipliert = unvormultipliert; gemessen 1280×720: 9 → ~1 ms je Bild im
+/// Oberflächen-Thread), sonst mit Vormultiplizieren.
 pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
-    egui::ColorImage::from_rgba_unmultiplied([f.width as usize, f.height as usize], &f.data)
+    let size = [f.width as usize, f.height as usize];
+    // Alpha wortweise prüfen (schnell); ungerade ausgerichteter Puffer: byteweise
+    let opaque = match bytemuck::try_cast_slice::<u8, u32>(&f.data) {
+        Ok(w) => w.iter().all(|x| x.to_le() >> 24 == 255),
+        Err(_) => f.data.chunks_exact(4).all(|p| p[3] == 255),
+    };
+    if opaque {
+        egui::ColorImage { size, pixels: bytemuck::cast_slice::<u8, egui::Color32>(&f.data).to_vec() }
+    } else {
+        egui::ColorImage::from_rgba_unmultiplied(size, &f.data)
+    }
 }
 
 /// Beispielbild für Effekt-/Übergangskacheln (CC0-Bilder von Wikimedia Commons:
@@ -832,6 +845,16 @@ const SAMPLES: [(&str, &[u8]); 2] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn color_image_fast_path_matches_unmultiplied() {
+        let opaque = RgbaFrame { width: 3, height: 2, data: [10u8, 20, 30, 255].repeat(6) };
+        let mut alpha = opaque.clone();
+        alpha.data[7] = 128;
+        for f in [opaque, alpha] {
+            assert_eq!(to_color_image(&f), egui::ColorImage::from_rgba_unmultiplied([3, 2], &f.data));
+        }
+    }
 
     /// Bewegte Bilder: einmal im Hintergrund decodieren, danach jedes Bild aus dem Speicher;
     /// Videos und Standbilder gehen den bisherigen Weg.

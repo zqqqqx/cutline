@@ -588,6 +588,9 @@ fn mix_pairs(project: &Project, layers: &[Layer], t: Time) -> Vec<(usize, usize,
 }
 
 #[cfg(test)]
+mod play_measure;
+
+#[cfg(test)]
 mod shader_tests {
     use super::*;
 

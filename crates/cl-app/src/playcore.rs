@@ -256,6 +256,8 @@ pub struct PlayCore<S: Source> {
     win_start: f64,
     win_catch_up: bool,
     pub quality: AutoQuality,
+    /// gezielt aufholen (nur für Vergleichsmessungen abschaltbar)
+    pub catch_up: bool,
     stats: Stats,
     cmds: Vec<Cmd>,
 }
@@ -285,6 +287,7 @@ impl<S: Source> Default for PlayCore<S> {
             win_start: 0.0,
             win_catch_up: false,
             quality: AutoQuality::default(),
+            catch_up: true,
             stats: Stats::default(),
             cmds: Vec::new(),
         }
@@ -338,6 +341,11 @@ impl<S: Source> PlayCore<S> {
     /// Offene Ströme: (Ebene, Schlüssel, ist Ersatz)
     pub fn streams(&self) -> Vec<(Lid, u64, bool)> {
         self.cur.iter().map(|(id, s)| (*id, s.key, false)).chain(self.next.iter().map(|(id, s)| (*id, s.key, true))).collect()
+    }
+
+    /// Offene Ströme (laufend und Ersatz)
+    pub fn stream_count(&self) -> usize {
+        self.cur.len() + self.next.len()
     }
 
     /// Wartet der Player auf ein Bild (Warte-Linie)? Beim Abspielen: nur während des Pufferns. Im
@@ -748,7 +756,7 @@ impl<S: Source> PlayCore<S> {
             self.stats.max_lag = self.stats.max_lag.max(lag);
             if lag > LAG_FRAMES / s.fps {
                 let since = *s.behind_since.get_or_insert(now);
-                if now - since >= CATCH_UP_AFTER && !self.next.contains_key(&id) && !self.opening.contains_key(&id) {
+                if self.catch_up && now - since >= CATCH_UP_AFTER && !self.next.contains_key(&id) && !self.opening.contains_key(&id) {
                     s.behind_since = None;
                     let at = pos + Time::from_secs_f64(s.lead());
                     self.reopen.insert(id, at);
