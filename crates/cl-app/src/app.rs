@@ -2949,15 +2949,17 @@ impl App {
 
 impl App {
     /// Bildtakt der Oberfläche beim Abspielen: etwa zwei UI-Bilder pro Videobild.
-    /// egui zieht von der Wartezeit 1/60 s ab, deshalb wird sie hier aufgeschlagen
-    /// (sonst zeichnet die Oberfläche ungebremst mehrere hundert Mal pro Sekunde).
-    /// Genau auf das nächste Videobild zu zielen verliert Bilder (Windows-Timer ~15 ms).
-    /// Wartezeit bis zum nächsten fälligen Bild (Projekt-Bildrate); beim Puffern kurz nachsehen.
+    /// Wartezeit für `request_repaint_after` bis zum nächsten fälligen Bild (Projekt-Bildrate);
+    /// beim Puffern kurz nachsehen. egui zieht von jeder Wartezeit die erwartete Bildzeit ab
+    /// (`predicted_dt`, fest 1/60 s), deshalb wird sie hier aufgeschlagen. Genau wird der Termin
+    /// erst mit dem feinen Zeitgeber ([`HiresTimer`]); sonst rastet Windows auf ~15,6 ms.
     pub fn play_repaint_delay(&self) -> Duration {
-        if self.play_warmup.is_some() {
-            return Duration::from_millis(10);
-        }
-        next_frame_delay(self.playhead, self.project.settings.fps, self.play_rate)
+        let wait = if self.play_warmup.is_some() {
+            Duration::from_millis(10)
+        } else {
+            next_frame_delay(self.playhead, self.project.settings.fps, self.play_rate)
+        };
+        wait + EGUI_PREDICTED_DT
     }
 
     /// Messpunkte der Wiedergabe (`CUTLINE_PERF`): Play → erster Ton, Ton-Aussetzer
@@ -3502,11 +3504,11 @@ extern "system" {
 
 impl HiresTimer {
     fn new() -> Self {
-        // SAFETY: einfacher Systemaufruf ohne Zeiger; 0 = Erfolg (sonst bleibt der grobe Takt)
-        #[cfg(windows)]
-        return Self { ok: unsafe { timeBeginPeriod(1) } == 0 };
-        #[cfg(not(windows))]
-        Self {}
+        Self {
+            // SAFETY: einfacher Systemaufruf ohne Zeiger; 0 = Erfolg (sonst bleibt der grobe Takt)
+            #[cfg(windows)]
+            ok: unsafe { timeBeginPeriod(1) } == 0,
+        }
     }
 }
 
@@ -3519,6 +3521,10 @@ impl Drop for HiresTimer {
         }
     }
 }
+
+/// Von egui je `request_repaint_after` abgezogene Bildzeit (`RawInput::predicted_dt`, eframe setzt
+/// sie nie anders)
+const EGUI_PREDICTED_DT: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
 /// Beginn von Bild `n` bei `fps` (µs, aufgerundet: ab dann ist das Bild fällig)
 fn frame_start(n: i128, fps: Rational) -> i128 {
