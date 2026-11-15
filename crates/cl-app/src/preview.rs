@@ -895,6 +895,9 @@ mod tests {
         assert!(stream_hw(&m(3840, 2160, 30, "h264"), p));
         assert!(!stream_hw(&m(1280, 720, 60, "h264"), p));
         assert!(!stream_hw(&m(1920, 1080, 60, "h264"), std::path::Path::new("proxy.mp4")), "Proxy: Software");
+        assert!(stream_hw(&m(1080, 1920, 30, "hevc"), p), "Hochkant");
+        assert!(!stream_hw(&m(1280, 720, 60, "hevc"), p));
+        assert!(!stream_hw(&m(3840, 2160, 60, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
     }
 
     #[test]
@@ -1016,31 +1019,6 @@ mod tests {
         assert!(bg_may_start(0, ms(0)));
         assert!(!bg_may_start(2, ms(100)));
         assert!(bg_may_start(2, ms(1500)), "kein Verhungern beim Dauer-Scrubben");
-    }
-
-    #[test]
-    fn hardware_streams_only_for_heavy_originals() {
-        let m = |w: u32, h: u32, codec: &str| cl_core::MediaRef {
-            id: cl_core::MediaId::new(),
-            path: PathBuf::from("o.mp4"),
-            kind: cl_core::MediaKind::Video,
-            duration: Time::from_secs_f64(1.0),
-            width: w,
-            height: h,
-            fps: Some(Rational::new(60, 1)),
-            has_audio: false,
-            audio_streams: 0,
-            video_codec: Some(codec.into()),
-            audio_codec: None,
-        };
-        let orig = std::path::Path::new("o.mp4");
-        assert!(stream_hw(&m(3840, 2160, "h264"), orig));
-        assert!(stream_hw(&m(1920, 1080, "hevc"), orig));
-        assert!(stream_hw(&m(1080, 1920, "hevc"), orig), "Hochkant");
-        // 1080p60-H.264 seit dem Lasttest auch in Hardware (1080p30 bleibt Software, eigener Test)
-        assert!(stream_hw(&m(1920, 1080, "h264"), orig));
-        assert!(!stream_hw(&m(1280, 720, "hevc"), orig));
-        assert!(!stream_hw(&m(3840, 2160, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
     }
 
     /// Wartet auf das Bild mit Schlüssel `key`; zählt andere gelieferte Player-Bilder.

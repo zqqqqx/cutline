@@ -6,7 +6,7 @@
 //!
 //! Zustände und Übergänge:
 //! - `Stand` --Play--> `Puffern` (Ströme öffnen, Ton vorbereiten, Uhr steht)
-//! - `Puffern` --alle Ströme am Playhead haben ein Bild, sonst nach 1 s--> `Spielen` (Uhr läuft,
+//! - `Puffern` --alle Ströme am Playhead haben ein Bild, sonst nach 0,5 s--> `Spielen` (Uhr läuft,
 //!   Ton setzt an der Uhr ein)
 //! - `Spielen` --Pause (Ton läuft, Tempo 1)--> `Pause` (Ströme und Ton bleiben offen)
 //! - `Pause` --Play an derselben Stelle ohne Änderung--> `Spielen` (ohne neue Ströme)

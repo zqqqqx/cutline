@@ -2,7 +2,7 @@
 //! Die abgespielten Samples sind die Uhr (Audio-Clock), nach der sich das Bild richtet.
 //!
 //! Gemischt wird nie das ganze Projekt, sondern ein Fenster von [`WINDOW_SECS`] (nur die Clips
-//! darin, also wenige FFmpeg-Eingänge; das erste ist kürzer, damit der Ton schnell einsetzt).//! darin, also wenige FFmpeg-Eingänge). Bevor ein Fenster zu Ende geht, rechnet ein zweiter
+//! darin, also wenige FFmpeg-Eingänge; das erste ist kürzer, damit der Ton schnell einsetzt). Bevor ein Fenster zu Ende geht, rechnet ein zweiter
 //! Prozess das nächste; beide werden am Sample aneinandergehängt (jedes Fenster liefert genau
 //! seine Zahl Sample-Frames, Einschwingen von Resampler/Begrenzer liegt vor dem Fensteranfang
 //! und wird verworfen).
