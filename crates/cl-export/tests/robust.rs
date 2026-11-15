@@ -477,7 +477,10 @@ fn huge_projects_build() {
     let t0 = std::time::Instant::now();
     let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("o.mp4")).unwrap();
     assert!(t0.elapsed().as_secs() < 20, "Graph-Bau dauert {:?}", t0.elapsed());
-    let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+    // 500 Eingänge: in Abschnitten, jede Befehlszeile unter der Windows-Grenze
+    assert!(job.sections() > 1);
+    assert!(job.section_args().iter().all(|a| a.iter().map(|x| x.len() + 3).sum::<usize>() < 32_000));
+    let g = std::fs::read_to_string(job.workdir.path().join("graph_0.txt")).unwrap();
     assert!(g.contains("7680x4320"));
     assert!((job.duration.as_secs_f64() - 50.0).abs() < 1e-6);
 }

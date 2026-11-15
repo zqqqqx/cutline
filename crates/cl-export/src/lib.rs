@@ -20,6 +20,7 @@ use std::sync::Arc;
 use cl_core::*;
 
 mod graph;
+mod sections;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
@@ -39,6 +40,14 @@ pub enum ExportError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Media(#[from] cl_media::MediaError),
+    /// Fehler in einem Abschnitt eines großen Exports (Zeiten der Zeitleiste)
+    #[error("Abschnitt {from}–{to}: {err}")]
+    Section { from: String, to: String, err: Box<ExportError> },
+    /// So viele Clips gleichzeitig, dass schon ein einzelnes Bild FFmpeg überfordert
+    #[error("Zu viele gleichzeitige Clips bei {0} – FFmpeg kann sie nicht auf einmal öffnen")]
+    TooManyClips(String),
+    #[error("Zu wenig Speicherplatz für die Zwischendateien: {need} nötig, {free} frei")]
+    NoSpace { need: String, free: String },
 }
 
 pub type Result<T> = std::result::Result<T, ExportError>;
@@ -272,7 +281,33 @@ pub struct Job {
     passes: Vec<graph::ShaderPass>,
     /// Bilder des Exports (Gewichtung des Fortschritts gegenüber den Vorläufen)
     frames: f64,
+    /// Großes Projekt: Abschnitte, die vor `args` laufen; `args` hängt sie dann nur noch
+    /// aneinander (Bild ohne Neukodierung, Ton einmal begrenzt/angeglichen/kodiert)
+    sections: Vec<Section>,
 }
+
+/// Ein Abschnitt eines großen Exports (siehe `sections.rs`).
+struct Section {
+    from: Time,
+    to: Time,
+    /// Ton-Samples (48 kHz) ab Exportbeginn: erstes Sample und Anzahl
+    samples: (u64, u64),
+    /// FFmpeg-Aufrufe: Bild (mit Vorschau), dann Ton
+    runs: Vec<Vec<String>>,
+    /// Graph des Bildes (Shader-Rückfälle werden dort eingesetzt)
+    graph: String,
+    passes: Vec<graph::ShaderPass>,
+    /// Bild (Codec des Ziels bzw. FFV1 für GIF) und Ton (f32le, ohne Begrenzer)
+    video: Option<String>,
+    audio: Option<String>,
+}
+
+/// Anteil der Abschnitte am Fortschritt (Rest: Zusammenfügen, ggf. Lautheit)
+const SECTIONS_SHARE: f32 = 0.96;
+/// Ton aller Abschnitte hintereinander (f32le, Stereo, 48 kHz)
+const MIX_FILE: &str = "mix.f32";
+/// Zeichen der Befehlszeile ohne Eingänge (Programmpfad, feste Argumente, Vorschau)
+const BASE_CHARS: usize = 900;
 
 /// Breite des Live-Vorschaubilds in Pixeln.
 pub const PREVIEW_W: u32 = 480;
@@ -285,9 +320,25 @@ struct Measure {
 }
 
 impl Job {
-    /// Läuft vor dem Export ein Messlauf für „Lautheit angleichen“?
+    fn frames_per_sec(&self) -> f64 {
+        self.frames / self.duration.as_secs_f64().max(1e-6)
+    }
+
+    /// Läuft vor dem Export ein Messlauf für „Lautheit angleichen“? (In Abschnitten läuft er
+    /// erst am Ende über den fertigen Ton, kurz und ohne eigene Anzeige.)
     pub fn measures_loudness(&self) -> bool {
-        self.measure.is_some()
+        self.measure.is_some() && self.sections.is_empty()
+    }
+
+    /// Befehlszeilen der Abschnitte (Messungen).
+    #[doc(hidden)]
+    pub fn section_args(&self) -> Vec<Vec<String>> {
+        self.sections.iter().flat_map(|s| s.runs.clone()).collect()
+    }
+
+    /// Zahl der Abschnitte (0 = ein Durchgang).
+    pub fn sections(&self) -> usize {
+        self.sections.len()
     }
 
     /// Vorschaubild des laufenden Exports (existiert erst nach den ersten Bildern).
@@ -341,8 +392,21 @@ pub(crate) fn f(x: f64) -> String {
     format!("{x:.6}")
 }
 
-/// Erzeugt den kompletten Export-Aufruf.
+/// Erzeugt den kompletten Export-Aufruf. Große Projekte (zu lange Befehlszeile, zu viele
+/// Eingänge) werden in Abschnitten gerechnet, siehe `sections.rs`.
 pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -> Result<Job> {
+    build_with(p, s, fonts, out, sections::SINGLE_INPUTS, sections::MAX_INPUTS)
+}
+
+/// Wie [`build`] mit eigener Höchstzahl an Eingängen je FFmpeg (Tests und Messungen rechnen
+/// damit auch kleine Projekte in Abschnitten).
+#[doc(hidden)]
+pub fn build_limited(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, max_inputs: usize) -> Result<Job> {
+    build_with(p, s, fonts, out, max_inputs, max_inputs)
+}
+
+/// `single`: höchstens so viele Eingänge im einen Durchgang; `section`: je FFmpeg eines Abschnitts.
+fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, single: usize, section: usize) -> Result<Job> {
     let p = &in_edit_ranges(p);
     let total = p.duration();
     if total <= Time::ZERO {
@@ -353,11 +417,32 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     if !missing.is_empty() {
         return Err(ExportError::MissingMedia(missing));
     }
-    let dur = end - start;
     // leerer oder verkehrter Bereich (In = Out): FFmpeg bekäme `-t 0` bzw. eine negative Länge
-    if dur <= Time::ZERO {
+    if end <= start {
         return Err(ExportError::Empty);
     }
+    let units = sections::units(p, start, end, !s.format.audio_only(), wants_audio(s));
+    let base = BASE_CHARS + out.as_os_str().len();
+    let one = sections::Limits { inputs: single.max(1), ..sections::Limits::DEFAULT };
+    let lim = sections::Limits { inputs: section.max(1), ..sections::Limits::DEFAULT };
+    if sections::single_pass(&units, start, end, base, one) {
+        let job = build_single(p, s, fonts, out, start, end)?;
+        let inputs = job.args.iter().filter(|a| *a == "-i").count();
+        if sections::cmd_len(&job.args) + 300 <= one.chars && inputs <= one.inputs + 1 {
+            return Ok(job);
+        }
+    }
+    build_sections(p, s, fonts, out, (start, end), &units, base, lim)
+}
+
+/// Mit Ton? (Nur-Ton-Formate immer, GIF nie)
+fn wants_audio(s: &ExportSettings) -> bool {
+    s.format.audio_only() || (s.include_audio && s.format != Format::Gif)
+}
+
+/// Ein Durchgang (kleine und mittlere Projekte).
+fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, start: Time, end: Time) -> Result<Job> {
+    let dur = end - start;
     let workdir = tempfile::Builder::new()
         .prefix("cutline-export-")
         .tempdir()?;
@@ -376,6 +461,8 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         uniq: 0,
         shader: true,
         passes: Vec::new(),
+        pass_base: 0,
+        lead: false,
     };
     let mut vlabel = None;
     if !s.format.audio_only() {
@@ -394,17 +481,11 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
             ctx.graph
                 .push("[g1][pal]paletteuse=dither=sierra2_4a[vout]".into());
         } else {
-            let pf = match (s.alpha(), s.codec) {
-                (true, Codec::ProRes) => "yuva444p10le",
-                (true, _) => "yuva420p",
-                _ => "yuv420p",
-            };
-            ctx.graph.push(format!("[{cur}]format={pf}[vout]"));
+            ctx.graph.push(format!("[{cur}]format={}[vout]", pix_fmt(s)));
         }
         vlabel = Some("vout");
     }
-    let wants_audio = s.format.audio_only() || (s.include_audio && s.format != Format::Gif);
-    let mut alabel = wants_audio.then(|| {
+    let mut alabel = wants_audio(s).then(|| {
         graph::audio_part(
             p,
             start,
@@ -412,7 +493,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
             &mut ctx.inputs,
             &mut ctx.n_input,
             &mut ctx.graph,
-            true,
+            EXPORT_AUDIO,
         )
     });
 
@@ -421,7 +502,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     let measure = match (s.loudness, &alabel) {
         (Some(target), Some(_)) => {
             let (mut inputs, mut graph, mut n) = (Vec::new(), Vec::new(), 0);
-            let l = graph::audio_part(p, start, end, &mut inputs, &mut n, &mut graph, true);
+            let l = graph::audio_part(p, start, end, &mut inputs, &mut n, &mut graph, EXPORT_AUDIO);
             graph.push(format!("[{l}]{}:print_format=json[m]", loudnorm(target)));
             std::fs::write(workdir.path().join("measure.txt"), graph.join(";\n"))?;
             let mut args: Vec<String> = ["-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats"]
@@ -488,6 +569,243 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         preview,
         passes,
         frames: dur.as_secs_f64() * s.fps.num as f64 / s.fps.den.max(1) as f64,
+        sections: Vec::new(),
+    })
+}
+
+/// Ton-Mix des Exports (ein Durchgang): mit Begrenzer, wartet auf die Kanalprüfung.
+const EXPORT_AUDIO: graph::AudioOpts = graph::AudioOpts { wait_probe: true, limiter: true, lead: false, shared: false, skip_bad: false };
+
+/// Pixelformat des Bildes vor dem Encoder.
+fn pix_fmt(s: &ExportSettings) -> &'static str {
+    match (s.alpha(), s.codec) {
+        (true, Codec::ProRes) => "yuva444p10le",
+        (true, _) => "yuva420p",
+        _ => "yuv420p",
+    }
+}
+
+/// Ein FFmpeg-Aufruf eines Abschnitts: Graph in die Datei `gfile`, Eingänge, Ausgänge.
+fn section_run(dir: &Path, gfile: &str, inputs: Vec<String>, graph: &[String], outs: Vec<String>) -> Result<Vec<String>> {
+    std::fs::write(dir.join(gfile), graph.join(";
+"))?;
+    let mut args: Vec<String> = ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into();
+    args.extend(inputs);
+    args.extend(["-/filter_complex".into(), gfile.into()]);
+    args.extend(outs);
+    Ok(args)
+}
+
+/// Erstes Sample (48 kHz) zur Zeit `t` ab `start` (auf dem Abschnittsraster ganzzahlig).
+fn sample_at(t: Time, start: Time) -> u64 {
+    ((t.0 - start.0).max(0) as u128 * 48_000 / 1_000_000) as u64
+}
+
+/// Geschätzter Platz der Zwischendateien (Bytes): Bild großzügig je Codec, Ton als f32.
+fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
+    let (w, h) = s.output_size();
+    let px = w as f64 * h as f64 * s.fps.as_f64();
+    let video_bits = if s.format.audio_only() {
+        0.0
+    } else if s.format == Format::Gif {
+        px * 8.0 // FFV1, verlustfrei
+    } else if let Quality::Bitrate(k) = s.quality {
+        k as f64 * 1100.0
+    } else if s.codec == Codec::ProRes && Codec::for_format(s.format).contains(&Codec::ProRes) {
+        px * if s.alpha() { 5.5 } else { 3.6 }
+    } else {
+        px * 0.15
+    };
+    let audio = if wants_audio(s) { 48_000.0 * 8.0 } else { 0.0 };
+    ((video_bits / 8.0 + audio) * dur) as u64 + (64 << 20)
+}
+
+/// Großes Projekt: Abschnitte planen und je Abschnitt den Bereichs-Export bauen, dazu den
+/// Endlauf, der alles zusammenfügt.
+#[allow(clippy::too_many_arguments)]
+fn build_sections(
+    p: &Project,
+    s: &ExportSettings,
+    fonts: FontResolver,
+    out: &Path,
+    (start, end): (Time, Time),
+    units: &[sections::Unit],
+    base: usize,
+    lim: sections::Limits,
+) -> Result<Job> {
+    let plan = sections::plan(units, start, end, sections::grid_step(s.fps), base, lim)
+        .map_err(|t| ExportError::TooManyClips(sections::clock(t)))?;
+    let workdir = tempfile::Builder::new().prefix("cutline-export-").tempdir()?;
+    let dur = end - start;
+    let need = scratch_bytes(s, dur.as_secs_f64());
+    if let Some(free) = sections::free_space(workdir.path()) {
+        if free < need {
+            return Err(ExportError::NoSpace { need: sections::size_text(need), free: sections::size_text(free) });
+        }
+    }
+    let (video, audio, gif) = (!s.format.audio_only(), wants_audio(s), s.format == Format::Gif);
+    let (w, h) = (s.width & !1, s.height & !1);
+    let fps = format!("{}/{}", s.fps.num, s.fps.den);
+    let ext = if gif { "nut" } else { s.format.extension() };
+    let head = || -> Vec<String> { ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into() };
+    let (mut uniq, mut pass_base) = (0, 0);
+    let mut secs = Vec::new();
+    for (k, &(a, b)) in plan.iter().enumerate() {
+        let mut ctx = graph::Ctx {
+            w,
+            h,
+            fps: fps.clone(),
+            start: a,
+            workdir: workdir.path(),
+            fonts,
+            inputs: Vec::new(),
+            n_input: 0,
+            alpha: s.alpha(),
+            graph: Vec::new(),
+            uniq,
+            shader: true,
+            passes: Vec::new(),
+            pass_base,
+            lead: true,
+        };
+        let len = f((b - a).as_secs_f64());
+        let (vname, aname) = (format!("sec_{k}.{ext}"), format!("sec_{k}.f32"));
+        let gfile = format!("graph_{k}.txt");
+        // Bild und Ton je in eigenem FFmpeg: in einem gemeinsamen Graphen mit vielen Eingängen
+        // warten die Zweige aufeinander (gemessen: ein Vielfaches der Summe beider Läufe)
+        let mut runs = Vec::new();
+        if video {
+            let full = graph::video_part(&mut ctx, p, b, b - a)?;
+            ctx.graph.push(format!("[{full}]split[vmain][pv0]"));
+            ctx.graph.push(format!("[pv0]fps=2:eof_action=pass,scale={PREVIEW_W}:-2[pv]"));
+            let mut outs: Vec<String> = Vec::new();
+            if gif {
+                // GIF: nur die Größe hier (je Bild); Bildrate und Palette einmal über das Ganze
+                let (gw, gh) = s.output_size();
+                ctx.graph.push(format!("[vmain]scale={gw}:{gh}:flags=lanczos[vout]"));
+                outs.extend(["-map", "[vout]", "-c:v", "ffv1", "-level", "3"].map(String::from));
+            } else {
+                ctx.graph.push(format!("[vmain]format={}[vout]", pix_fmt(s)));
+                outs.extend(["-map".into(), "[vout]".into()]);
+                outs.extend(video_args(s));
+            }
+            outs.extend(["-t".into(), len.clone(), vname.clone()]);
+            outs.extend(["-map", "[pv]", "-an", "-f", "image2", "-update", "1", "-q:v", "6", "-t", &len, PREVIEW_FILE].map(String::from));
+            runs.push(section_run(workdir.path(), &gfile, std::mem::take(&mut ctx.inputs), &ctx.graph, outs)?);
+        }
+        if audio {
+            let o = graph::AudioOpts { wait_probe: true, limiter: false, lead: true, shared: false, skip_bad: false };
+            let (mut inputs, mut graph, mut n) = (Vec::new(), Vec::new(), 0);
+            let l = graph::audio_part(p, a, b, &mut inputs, &mut n, &mut graph, o);
+            let mut outs = vec!["-map".into(), format!("[{l}]"), "-c:a".into(), "pcm_f32le".into(), "-t".into(), len.clone()];
+            outs.extend(["-f".into(), "f32le".into(), aname.clone()]);
+            runs.push(section_run(workdir.path(), &format!("graph_{k}_a.txt"), inputs, &graph, outs)?);
+        }
+        if runs.iter().any(|r| sections::cmd_len(r) > sections::HARD_CMD) {
+            return Err(ExportError::TooManyClips(sections::clock(a)));
+        }
+        uniq = ctx.uniq;
+        pass_base += ctx.passes.len();
+        let samples = (sample_at(a, start), sample_at(b, start) - sample_at(a, start));
+        secs.push(Section {
+            from: a,
+            to: b,
+            samples,
+            runs,
+            graph: gfile,
+            passes: std::mem::take(&mut ctx.passes),
+            video: video.then_some(vname),
+            audio: audio.then_some(aname),
+        });
+    }
+    // Endlauf: Bild aneinanderhängen (Liste der Abschnitte, ohne Neukodierung; GIF: Palette über
+    // das Ganze), Ton einmal begrenzen, ggf. angleichen und kodieren
+    let d = f(dur.as_secs_f64());
+    let mut args = head();
+    let (mut n, mut graph) = (0usize, Vec::<String>::new());
+    let mut vmap = None;
+    if video {
+        args.extend(["-f", "concat", "-safe", "0", "-i", "video.txt"].map(String::from));
+        n += 1;
+        if gif {
+            graph.push(format!("[0:v]fps=min({GIF_FPS}\\,{fps}),split[g0][g1]"));
+            graph.push("[g0]palettegen=stats_mode=diff[pal]".into());
+            graph.push("[g1][pal]paletteuse=dither=sierra2_4a[vout]".into());
+            vmap = Some("[vout]".to_string());
+        } else {
+            vmap = Some("0:v".to_string());
+        }
+    }
+    let raw_in = ["-f", "f32le", "-ar", "48000", "-ch_layout", "stereo", "-i", MIX_FILE].map(String::from);
+    let tail = format!("{},apad=whole_dur={d},atrim=0:{d},aformat=sample_fmts=fltp:channel_layouts=stereo[aout]", graph::limiter());
+    let mut alabel = None;
+    if audio {
+        args.extend(raw_in.clone());
+        graph.push(format!("[{n}:a]{tail}"));
+        n += 1;
+        alabel = Some("aout");
+    }
+    let measure = match (s.loudness, audio) {
+        (Some(target), true) => {
+            let mg = format!("[0:a]{tail};\n[aout]{}:print_format=json[m]", loudnorm(target));
+            std::fs::write(workdir.path().join("measure.txt"), mg)?;
+            let mut margs: Vec<String> = ["-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into();
+            margs.extend(raw_in);
+            margs.extend(["-/filter_complex", "measure.txt", "-map", "[m]", "-t", &d, "-f", "null", "-"].map(String::from));
+            alabel = Some("anorm");
+            Some(Measure { args: margs, target, graph: graph.join(";\n") })
+        }
+        _ => None,
+    };
+    let chapters = (s.chapters && matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a))
+        .then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name))
+        .flatten();
+    if let Some(meta) = &chapters {
+        std::fs::write(workdir.path().join("chapters.txt"), meta)?;
+        args.extend(["-f".into(), "ffmetadata".into(), "-i".into(), "chapters.txt".into()]);
+    }
+    if !graph.is_empty() {
+        std::fs::write(workdir.path().join("graph.txt"), graph.join(";\n"))?;
+        args.extend(["-/filter_complex".into(), "graph.txt".into()]);
+    }
+    if let Some(v) = &vmap {
+        args.extend(["-map".into(), v.clone()]);
+    }
+    if let Some(a) = alabel {
+        args.extend(["-map".into(), format!("[{a}]")]);
+    }
+    if chapters.is_some() {
+        args.extend(["-map_chapters".into(), n.to_string()]);
+    }
+    if gif {
+        args.extend(codec_args(s));
+    } else {
+        if video {
+            args.extend(["-c:v".into(), "copy".into()]);
+            if video_args(s).iter().any(|a| a == "hvc1") {
+                args.extend(["-tag:v".into(), "hvc1".into()]);
+            }
+        }
+        args.extend(if video { audio_args(s) } else { codec_args(s) });
+        if matches!(s.format, Format::Mp4 | Format::Mov) {
+            args.extend(["-movflags".into(), "+faststart".into()]);
+        }
+    }
+    args.extend(["-t".into(), d.clone()]);
+    let part = part_path(out);
+    args.push(part.to_string_lossy().into_owned());
+    let preview = video.then(|| workdir.path().join(PREVIEW_FILE));
+    Ok(Job {
+        args,
+        workdir,
+        duration: dur,
+        out: out.to_path_buf(),
+        part,
+        measure,
+        preview,
+        passes: Vec::new(),
+        frames: dur.as_secs_f64() * s.fps.as_f64(),
+        sections: secs,
     })
 }
 
@@ -627,7 +945,6 @@ fn has_svtav1() -> bool {
 
 fn codec_args(s: &ExportSettings) -> Vec<String> {
     let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    let mut a = Vec::new();
     match s.format {
         Format::Wav => return v(&["-c:a", "pcm_s16le"]),
         Format::Mp3 => return v(&["-c:a", "libmp3lame", "-b:a", "320k"]),
@@ -636,18 +953,47 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
         Format::Gif => return v(&["-loop", "0"]),
         _ => {}
     }
+    let mut a = video_args(s);
+    a.extend(audio_args(s));
+    if matches!(s.format, Format::Mp4 | Format::Mov) {
+        a.extend(v(&["-movflags", "+faststart"]));
+    }
+    a
+}
+
+/// Codec des Bildes (passend zum Container).
+fn video_codec(s: &ExportSettings) -> Codec {
+    if Codec::for_format(s.format).contains(&s.codec) {
+        s.codec
+    } else {
+        Codec::for_format(s.format).first().copied().unwrap_or(Codec::H264)
+    }
+}
+
+/// Ton-Encoder in Videoformaten (leer ohne Ton).
+fn audio_args(s: &ExportSettings) -> Vec<String> {
+    let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    if !s.include_audio {
+        return Vec::new();
+    }
+    match (s.format, video_codec(s)) {
+        (Format::WebM, _) => v(&["-c:a", "libopus", "-b:a", "192k"]),
+        (_, Codec::ProRes) => v(&["-c:a", "pcm_s16le"]),
+        _ => vec!["-c:a".into(), "aac".into(), "-b:a".into(), format!("{}k", s.audio_bitrate())],
+    }
+}
+
+/// Bild-Encoder samt Bildrate (Videoformate).
+fn video_args(s: &ExportSettings) -> Vec<String> {
+    let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let mut a = Vec::new();
     let crf = |lo: u32, rec: u32, hi: u32| match s.quality {
         Quality::Lower => lo,
         Quality::Recommended => rec,
         Quality::Higher => hi,
         Quality::Bitrate(_) => rec,
     };
-    let codec = if Codec::for_format(s.format).contains(&s.codec) {
-        s.codec
-    } else {
-        Codec::for_format(s.format)[0]
-    };
-    match (codec, s.encoder) {
+    match (video_codec(s), s.encoder) {
         (Codec::H264, Encoder::Nvenc) => a.extend(
             v(&["-c:v", "h264_nvenc", "-preset", "p5", "-cq"])
                 .into_iter()
@@ -736,16 +1082,6 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
         }
     }
     a.extend(["-r".into(), format!("{}/{}", s.fps.num, s.fps.den)]);
-    if s.include_audio {
-        match (s.format, codec) {
-            (Format::WebM, _) => a.extend(v(&["-c:a", "libopus", "-b:a", "192k"])),
-            (_, Codec::ProRes) => a.extend(v(&["-c:a", "pcm_s16le"])),
-            _ => a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), format!("{}k", s.audio_bitrate())]),
-        }
-    }
-    if matches!(s.format, Format::Mp4 | Format::Mov) {
-        a.extend(v(&["-movflags", "+faststart"]));
-    }
     a
 }
 
@@ -753,10 +1089,27 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
 /// Eine vorhandene Zieldatei bleibt bei Abbruch oder Fehler unverändert.
 /// Mit „Lautheit angleichen“ läuft vorher der Messlauf (erste [`MEASURE_SHARE`] des Fortschritts).
 pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
+    let r = run_job(job, &cancel, &mut progress);
+    if r.is_err() {
+        let _ = std::fs::remove_file(&job.part);
+    }
+    r.and_then(|_| finish(&job.part, &job.out))
+}
+
+fn run_job(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<()> {
+    // große Projekte: erst die Abschnitte, dann fügt `args` sie zusammen
+    let (lo, rest) = if job.sections.is_empty() {
+        (0.0, 1.0)
+    } else {
+        run_sections(job, cancel, &mut |x| progress(x * SECTIONS_SHARE))?;
+        (SECTIONS_SHARE, 1.0 - SECTIONS_SHARE)
+    };
+    let progress = &mut |x: f32| progress(lo + x * rest);
+    let secs = job.duration.as_secs_f64();
     // Vorläufe der Shader-Übergänge: ihr Anteil am Fortschritt nach Bildern
     let pre: usize = job.passes.iter().map(|p| p.progress.len()).sum();
     let share = if pre == 0 { 0.0 } else { (pre as f64 / (pre as f64 + job.frames.max(1.0))).min(0.5) as f32 };
-    let failed = run_passes(job, &cancel, &mut |x| progress(x * share))?;
+    let failed = run_passes(job, &job.passes, cancel, &mut |x| progress(x * share))?;
     let fallbacks = |g: &str| {
         failed
             .iter()
@@ -767,19 +1120,97 @@ pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) ->
         std::fs::write(&file, fallbacks(&std::fs::read_to_string(&file)?))?;
     }
     let mut progress = |x: f32| progress(share + x * (1.0 - share));
-    let r = match &job.measure {
-        Some(m) => run_ffmpeg(job, &m.args, &cancel, &mut |x| progress(x * MEASURE_SHARE)).and_then(|log| {
+    match &job.measure {
+        Some(m) => run_ffmpeg(job, &m.args, secs, cancel, &mut |x| progress(x * MEASURE_SHARE)).and_then(|log| {
             let pass = second_pass(&log, m.target).ok_or(ExportError::Loudness)?;
             let g = format!("{};\n[aout]{pass}[anorm]", fallbacks(&m.graph));
             std::fs::write(job.workdir.path().join("graph.txt"), g)?;
-            run_ffmpeg(job, &job.args, &cancel, &mut |x| progress(MEASURE_SHARE + x * (1.0 - MEASURE_SHARE)))
+            run_ffmpeg(job, &job.args, secs, cancel, &mut |x| progress(MEASURE_SHARE + x * (1.0 - MEASURE_SHARE)))
         }),
-        None => run_ffmpeg(job, &job.args, &cancel, &mut progress),
-    };
-    if r.is_err() {
-        let _ = std::fs::remove_file(&job.part);
+        None => run_ffmpeg(job, &job.args, secs, cancel, &mut progress),
     }
-    r.and_then(|_| finish(&job.part, &job.out))
+    .map(|_| ())
+}
+
+/// Alle Abschnitte nacheinander (Fortschritt 0..1 nach Länge); hängt den Ton sample-genau an
+/// `mix.f32` und schreibt die Bildliste `video.txt` für den Endlauf. Ein Fehler nennt den
+/// Zeitbereich des Abschnitts; Zwischendateien liegen im Arbeitsordner (fällt mit dem Job weg).
+fn run_sections(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<()> {
+    let dir = job.workdir.path();
+    let total: f64 = job.sections.iter().map(|s| (s.to - s.from).as_secs_f64()).sum::<f64>().max(1e-6);
+    let mut done = 0.0;
+    let mut mix = match job.sections.first().and_then(|s| s.audio.as_ref()) {
+        Some(_) => Some(std::io::BufWriter::new(std::fs::File::create(dir.join(MIX_FILE))?)),
+        None => None,
+    };
+    let mut list = String::new();
+    for sec in &job.sections {
+        let len = (sec.to - sec.from).as_secs_f64();
+        let w = len / total;
+        let r = run_section(job, sec, cancel, &mut |x| progress((done + x as f64 * w).min(1.0) as f32)).and_then(|_| {
+            if let (Some(a), Some(mix)) = (&sec.audio, mix.as_mut()) {
+                append_exact(&dir.join(a), mix, sec.samples.1 * 8)?;
+                let _ = std::fs::remove_file(dir.join(a));
+            }
+            Ok(())
+        });
+        match r {
+            Err(ExportError::Cancelled) => return Err(ExportError::Cancelled),
+            Err(e) => {
+                return Err(ExportError::Section { from: sections::clock(sec.from), to: sections::clock(sec.to), err: Box::new(e) });
+            }
+            Ok(()) => {}
+        }
+        if let Some(v) = &sec.video {
+            list += &format!("file '{v}'\nduration {}\n", f(len));
+        }
+        done += w;
+    }
+    if let Some(mut m) = mix {
+        std::io::Write::flush(&mut m)?;
+    }
+    if !list.is_empty() {
+        std::fs::write(dir.join("video.txt"), list)?;
+    }
+    progress(1.0);
+    Ok(())
+}
+
+/// Genau `bytes` Bytes aus `src` anhängen (fehlende als Stille, überzählige weg), damit jeder
+/// Abschnitt sample-genau an seiner Stelle liegt.
+fn append_exact(src: &Path, dst: &mut impl std::io::Write, bytes: u64) -> Result<()> {
+    let mut f = std::io::Read::take(std::fs::File::open(src)?, bytes);
+    let n = std::io::copy(&mut f, dst)?;
+    if n < bytes {
+        std::io::copy(&mut std::io::Read::take(std::io::repeat(0), bytes - n), dst)?;
+    }
+    Ok(())
+}
+
+/// Ein Abschnitt: seine Shader-Vorläufe, dann FFmpeg (Bild nach `sec_k.*`, Ton nach `sec_k.f32`).
+fn run_section(job: &Job, sec: &Section, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<()> {
+    let secs = (sec.to - sec.from).as_secs_f64();
+    let pre: usize = sec.passes.iter().map(|p| p.progress.len()).sum();
+    let frames = secs * job.frames_per_sec();
+    let share = if pre == 0 { 0.0 } else { (pre as f64 / (pre as f64 + frames.max(1.0))).min(0.5) as f32 };
+    let failed = run_passes(job, &sec.passes, cancel, &mut |x| progress(x * share))?;
+    if !failed.is_empty() {
+        let file = job.workdir.path().join(&sec.graph);
+        let g = failed.iter().fold(std::fs::read_to_string(&file)?, |g, p| g.replace(&p.block, &p.fallback));
+        std::fs::write(&file, g)?;
+    }
+    // Ton ist viel schneller als Bild: kleiner Anteil am Fortschritt
+    let weights: Vec<f32> = match sec.runs.len() {
+        2 => vec![0.9, 0.1],
+        _ => vec![1.0],
+    };
+    let mut at = share;
+    for (args, w) in sec.runs.iter().zip(weights) {
+        let w = w * (1.0 - share);
+        run_ffmpeg(job, args, secs, cancel, &mut |x| progress(at + x * w))?;
+        at += w;
+    }
+    Ok(())
 }
 
 /// `.part` ans Ziel. Scheitert das (Ziel z. B. im Player geöffnet), bleibt die fertige Datei liegen.
@@ -803,11 +1234,11 @@ impl Drop for Children {
 
 /// Alle Vorläufe nacheinander; gibt die gescheiterten zurück (dort bleibt der `xfade`-Rückfall).
 /// Fehler nur bei Abbruch.
-fn run_passes<'a>(job: &'a Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<Vec<&'a graph::ShaderPass>> {
-    let total = job.passes.iter().map(|p| p.progress.len()).sum::<usize>().max(1);
+fn run_passes<'a>(job: &Job, passes: &'a [graph::ShaderPass], cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<Vec<&'a graph::ShaderPass>> {
+    let total = passes.iter().map(|p| p.progress.len()).sum::<usize>().max(1);
     let mut done = 0;
     let mut failed = Vec::new();
-    for p in &job.passes {
+    for p in passes {
         match run_pass(job, p, cancel, &mut |k| progress((done + k) as f32 / total as f32)) {
             Ok(true) => {}
             Ok(false) => failed.push(p),
@@ -900,12 +1331,13 @@ fn run_pass(job: &Job, p: &graph::ShaderPass, cancel: &AtomicBool, progress: &mu
 /// Dateiname des Live-Vorschaubilds im Arbeitsordner
 const PREVIEW_FILE: &str = "preview.jpg";
 
-/// Argumente ohne die Vorschau-Ausgabe; nimmt auch den Vorschau-Zweig aus `graph.txt`.
+/// Argumente ohne die Vorschau-Ausgabe; nimmt auch den Vorschau-Zweig aus dem Graphen.
 /// `None`, wenn `args` keine Vorschau enthält (dann gibt es nichts zu wiederholen).
 fn without_preview(job: &Job, args: &[String]) -> Option<Vec<String>> {
     // die Vorschau ist die letzte Ausgabe: alles ab ihrem `-map [pv]` fällt weg
     let i = args.iter().position(|a| a == "[pv]")?.checked_sub(1)?;
-    let file = job.workdir.path().join("graph.txt");
+    let graph = args.iter().position(|a| a == "-/filter_complex").and_then(|k| args.get(k + 1))?;
+    let file = job.workdir.path().join(graph);
     let g = std::fs::read_to_string(&file).ok()?;
     let g = g
         .replace("split[vmain][pv0]", "null[vmain]")
@@ -916,7 +1348,8 @@ fn without_preview(job: &Job, args: &[String]) -> Option<Vec<String>> {
 }
 
 /// Startet FFmpeg im Arbeitsordner des Jobs; gibt bei Erfolg die Fehlerausgabe (Log) zurück.
-fn run_ffmpeg(job: &Job, args: &[String], cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<String> {
+/// `secs` = erwartete Länge (Fortschritt).
+fn run_ffmpeg(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<String> {
     let mut child: Child = cl_media::ffmpeg_command()?
         .args(args)
         .current_dir(job.workdir.path())
@@ -931,7 +1364,7 @@ fn run_ffmpeg(job: &Job, args: &[String], cancel: &AtomicBool, progress: &mut dy
         let _ = std::io::Read::read_to_end(&mut BufReader::new(stderr), &mut b);
         String::from_utf8_lossy(&b).into_owned()
     });
-    let total = job.duration.as_secs_f64().max(0.001);
+    let total = secs.max(0.001);
     for line in BufReader::new(child.stdout.take().expect("piped"))
         .lines()
         .map_while(|l| l.ok())
@@ -955,7 +1388,7 @@ fn run_ffmpeg(job: &Job, args: &[String], cancel: &AtomicBool, progress: &mut dy
         // Virenscanner gesperrt), läuft derselbe Export noch einmal ohne Vorschau.
         if err.contains(PREVIEW_FILE) {
             if let Some(plain) = without_preview(job, args) {
-                return run_ffmpeg(job, &plain, cancel, progress);
+                return run_ffmpeg(job, &plain, secs, cancel, progress);
             }
         }
         return Err(ExportError::Ffmpeg(
@@ -1036,10 +1469,7 @@ pub fn spawn_audio_window(
     let workdir = tempfile::Builder::new()
         .prefix("cutline-audio-")
         .tempdir()?;
-    let mut inputs = Vec::new();
-    let mut graph = Vec::new();
-    let mut n = 0;
-    let label = graph::audio_part(p, from, end, &mut inputs, &mut n, &mut graph, false);
+    let (inputs, graph, label) = audio_window_graph(p, from, end)?;
     std::fs::write(workdir.path().join("graph.txt"), graph.join(";\n"))?;
     let child = cl_media::ffmpeg_command()?
         .args(["-v", "error", "-nostdin"])
@@ -1067,6 +1497,74 @@ pub fn spawn_audio_window(
         .stderr(Stdio::null())
         .spawn()?;
     Ok((child, workdir))
+}
+
+/// Eingänge, Graph und Ausgang des Ton-Mixes für ein Vorschau-Fenster. Unlesbare Dateien fallen
+/// einzeln heraus ([`audio_readable`]). Bei sehr vielen Clips (dichter Schnitt) teilen sich Clips
+/// derselben Datei einen Eingang, damit Befehlszeile und Anlauf klein bleiben.
+fn audio_window_graph(p: &Project, from: Time, end: Time) -> Result<(Vec<String>, Vec<String>, String)> {
+    let mut o = graph::AudioOpts { wait_probe: false, limiter: true, lead: false, shared: false, skip_bad: true };
+    loop {
+        let (mut inputs, mut graph, mut n) = (Vec::new(), Vec::new(), 0);
+        let label = graph::audio_part(p, from, end, &mut inputs, &mut n, &mut graph, o);
+        let len = sections::cmd_len(&inputs) + BASE_CHARS;
+        if (n <= sections::MAX_INPUTS && len <= sections::MAX_CMD) || (o.shared && len <= sections::HARD_CMD) {
+            return Ok((inputs, graph, label));
+        }
+        if o.shared {
+            return Err(ExportError::TooManyClips(sections::clock(from)));
+        }
+        o.shared = true;
+    }
+}
+
+/// Lesbarkeit des Tons je Datei (Größe und Änderungszeit gehören zum Schlüssel: eine ersetzte
+/// Datei wird neu geprüft). `None` = Prüfung läuft.
+type Readable = std::collections::HashMap<(PathBuf, u64, Option<std::time::SystemTime>), Option<bool>>;
+static READABLE: std::sync::Mutex<Option<Readable>> = std::sync::Mutex::new(None);
+static AUDIO_WARNINGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Kann FFmpeg den Ton dieser Datei lesen? Geprüft wird einmal je Datei mit ffprobe; ohne `wait`
+/// im Hintergrund (bis dahin gilt die Datei als lesbar, die Wiedergabe wartet nie). Eine
+/// unlesbare Datei landet einmal in [`take_audio_warnings`].
+pub(crate) fn audio_readable(path: &Path, wait: bool) -> bool {
+    let meta = std::fs::metadata(path).ok();
+    let key = (path.to_path_buf(), meta.as_ref().map_or(0, |m| m.len()), meta.and_then(|m| m.modified().ok()));
+    {
+        let mut g = READABLE.lock().unwrap_or_else(|e| e.into_inner());
+        match g.get_or_insert_with(Default::default).get(&key) {
+            Some(Some(ok)) => return *ok,
+            Some(None) if !wait => return true,
+            Some(None) => {}
+            None => {
+                g.get_or_insert_with(Default::default).insert(key.clone(), None);
+            }
+        }
+    }
+    let check = move || {
+        let ok = cl_media::probe(&key.0).is_ok_and(|m| m.has_audio);
+        if !ok {
+            let name = key.0.file_name().map_or_else(|| key.0.display().to_string(), |n| n.to_string_lossy().into_owned());
+            AUDIO_WARNINGS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(format!("Ton von {name} kann nicht gelesen werden – Wiedergabe ohne diese Datei"));
+        }
+        READABLE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(key, Some(ok));
+        ok
+    };
+    if wait {
+        check()
+    } else {
+        std::thread::spawn(check);
+        true
+    }
+}
+
+/// Warnungen der Vorschau-Wiedergabe seit dem letzten Aufruf (je unlesbarer Datei einmal), für
+/// einen Hinweis im Player.
+pub fn take_audio_warnings() -> Vec<String> {
+    std::mem::take(&mut *AUDIO_WARNINGS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 /// Textclips als SRT (z. B. für Untertitel-Export).
@@ -3158,5 +3656,129 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Aufteilung von `codec_args` in Bild/Ton/Container: Argumente wie zuvor (Reihenfolge inklusive).
+    #[test]
+    fn codec_args_unchanged_by_split() {
+        let p = Project::new("C");
+        let s = |f: Format, c: Codec, q: Quality, audio: bool, transparent: bool| {
+            let mut s = ExportSettings::from_project(&p);
+            (s.format, s.codec, s.quality, s.include_audio, s.transparent) = (f, c, q, audio, transparent);
+            codec_args(&s).join(" ")
+        };
+        assert_eq!(s(Format::Mp4, Codec::H264, Quality::Recommended, true, false), "-c:v libx264 -preset medium -crf 20 -r 30/1 -c:a aac -b:a 256k -movflags +faststart");
+        assert_eq!(s(Format::Mov, Codec::Hevc, Quality::Higher, true, false), "-c:v libx265 -preset medium -tag:v hvc1 -crf 19 -r 30/1 -c:a aac -b:a 256k -movflags +faststart");
+        assert_eq!(s(Format::Mkv, Codec::H264, Quality::Bitrate(4000), false, false), "-c:v libx264 -preset medium -b:v 4000k -maxrate 4400k -bufsize 8000k -r 30/1");
+        assert_eq!(s(Format::WebM, Codec::Vp9, Quality::Lower, true, true), "-c:v libvpx-vp9 -b:v 0 -row-mt 1 -crf 38 -pix_fmt yuva420p -auto-alt-ref 0 -r 30/1 -c:a libopus -b:a 192k");
+        assert_eq!(s(Format::Mov, Codec::ProRes, Quality::Recommended, true, false), "-c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le -r 30/1 -c:a pcm_s16le -movflags +faststart");
+        assert_eq!(s(Format::Gif, Codec::H264, Quality::Recommended, true, false), "-loop 0");
+        assert_eq!(s(Format::M4a, Codec::H264, Quality::Recommended, true, false), "-c:a aac -b:a 256k");
+    }
+
+    /// Kleines Projekt: ein Durchgang mit genau dem Aufruf von `build_single` (keine Abschnitte).
+    #[test]
+    fn small_project_builds_one_pass_as_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.wav");
+        std::fs::write(&path, b"x").unwrap();
+        let m = MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(60.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+        let mut p = Project::new("K");
+        p.media.push(m.clone());
+        let mut t = Track::new(TrackKind::Audio);
+        for i in 0..20 {
+            t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::from_secs_f64(i as f64), Time::from_secs_f64(1.0)));
+        }
+        p.timeline.tracks.push(t);
+        let mut s = ExportSettings::from_project(&p);
+        s.format = Format::Wav;
+        let out = dir.path().join("o.wav");
+        let job = build(&p, &s, &|_| None, &out).unwrap();
+        assert_eq!(job.sections(), 0);
+        let single = build_single(&in_edit_ranges(&p), &s, &|_| None, &out, Time::ZERO, p.duration()).unwrap();
+        assert_eq!(job.args, single.args);
+        let g = |j: &Job| std::fs::read_to_string(j.workdir.path().join("graph.txt")).unwrap();
+        assert_eq!(g(&job), g(&single));
+        assert!(g(&job).contains("alimiter"), "Begrenzer im Durchgang");
+    }
+
+    /// Dichter Schnitt im Vorschau-Fenster (300 Clips à 0,1 s in 20 s, lange Pfade): Clips einer
+    /// Datei teilen sich Eingänge, die Befehlszeile bleibt klein; mit 300 verschiedenen Dateien
+    /// gibt es eine klare Meldung statt eines stillen Fehlstarts.
+    #[test]
+    fn dense_preview_window_stays_below_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let deep = dir.path().join("x".repeat(120)).join("y".repeat(60));
+        std::fs::create_dir_all(&deep).unwrap();
+        let media = |n: usize| {
+            let path = deep.join(format!("datei_{n}.wav"));
+            std::fs::write(&path, b"x").unwrap();
+            MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None }
+        };
+        let dense = |files: usize| {
+            let ms: Vec<MediaRef> = (0..files).map(media).collect();
+            let mut p = Project::new("Dicht");
+            p.media.extend(ms.iter().cloned());
+            let mut t = Track::new(TrackKind::Audio);
+            for i in 0..300 {
+                let m = &ms[i % files]; // 300 Clips à 0,1 s, davon 200 im 20-s-Fenster
+                let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::from_secs_f64(i as f64 * 0.1), Time::from_secs_f64(0.1));
+                c.source_in = Time::from_secs_f64(30.0 + i as f64 * 0.37);
+                c.audio_stream = Some((i % 2) as u32);
+                t.clips.push(c);
+            }
+            p.timeline.tracks.push(t);
+            p
+        };
+        let p = dense(1);
+        let (inputs, graph, _) = audio_window_graph(&p, Time::ZERO, Time::from_secs_f64(20.0)).unwrap();
+        let n = inputs.iter().filter(|a| *a == "-i").count();
+        assert!(n <= 4, "{n} Eingänge");
+        assert!(sections::cmd_len(&inputs) < sections::MAX_CMD);
+        let g = graph.join(";\n");
+        assert!(g.contains(":a:1]asplit") && g.contains(":a]asplit"), "Tonspur je Clip auch bei gemeinsamen Eingängen");
+        assert_eq!(g.matches("atrim=start=").count(), 200, "200 Clips im Fenster");
+        // viele verschiedene Dateien: verständlicher Fehler mit Zeit
+        let e = audio_window_graph(&dense(300), Time::ZERO, Time::from_secs_f64(20.0)).unwrap_err();
+        assert!(matches!(e, ExportError::TooManyClips(_)), "{e}");
+    }
+
+    #[test]
+    fn shared_inputs_group_nearby_ranges_of_one_file() {
+        // Datei 0: 10–11, 12–13 (nah), 100–101 (weit); Datei 1: 10–11
+        let r = [(0, 10.0, 11.0), (1, 10.0, 11.0), (0, 100.0, 101.0), (0, 12.0, 13.0)];
+        let (of, groups) = graph::share_inputs(&r, 10.0);
+        assert_eq!(groups.len(), 3);
+        assert_eq!(of[0], of[3]);
+        assert_ne!(of[0], of[2]);
+        assert_eq!(groups[of[0]], (0, 10.0, 13.0));
+    }
+
+    #[test]
+    fn lead_skip_only_for_plain_long_clips() {
+        let s = Time::from_secs_f64;
+        let mut c = Clip::new(ClipContent::Text(TextStyle::default()), s(10.0), s(100.0));
+        assert_eq!(graph::lead_skip(&c, s(11.5)), 0.0, "zu nah am Anfang");
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 29.0, "ganze Sekunden, ≥ 1 s Vorlauf");
+        c.speed = 2.0;
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "Tempo");
+        c.speed = 1.0;
+        c.fx.reverse = true;
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "rückwärts");
+    }
+
+    /// Kaputte Datei: die Vorschau lässt sie aus und meldet sie einmal.
+    #[test]
+    fn unreadable_audio_is_left_out_and_reported_once() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let bad = dir.path().join("kaputt_c2.wav");
+        std::fs::write(&bad, b"kein Ton").unwrap();
+        assert!(!audio_readable(&bad, true));
+        assert!(!audio_readable(&bad, false), "Ergebnis gemerkt");
+        let w: Vec<String> = take_audio_warnings().into_iter().filter(|w| w.contains("kaputt_c2.wav")).collect();
+        assert_eq!(w.len(), 1, "{w:?}");
     }
 }

@@ -28,6 +28,11 @@ pub(crate) struct Ctx<'a> {
     pub shader: bool,
     /// Vorläufe für Shader-Übergänge (laufen vor dem Export, siehe [`ShaderPass`])
     pub passes: Vec<ShaderPass>,
+    /// Nummer des ersten Vorlaufs (Abschnitte teilen sich einen Arbeitsordner)
+    pub pass_base: usize,
+    /// Abschnitt eines großen Exports: lange Clips springen per `-ss` nahe an den
+    /// Abschnittsanfang (siehe [`lead_skip`]), statt ab Clipbeginn zu dekodieren
+    pub lead: bool,
 }
 
 /// Vorlauf eines Shader-Übergangs. Ein FFmpeg liest die letzten Bilder von Clip A und die ersten
@@ -203,7 +208,36 @@ fn post_transform(
     out
 }
 
-fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sprite> {
+/// Filter, deren Ergebnis von früheren Bildern abhängt (Zufall je Bild, Mittelung über Bilder,
+/// Rauschfilter mit Gedächtnis): mit ihnen darf ein Abschnitt nicht mitten im Clip einsteigen.
+const STATEFUL: &[&str] = &["noise", "tmix", "deflicker", "hqdn3d", "random", "minterpolate", "deshake", "lagfun", "atadenoise", "tblend", "sendcmd"];
+
+/// Ganze Sekunden, die ein Abschnitt (Beginn `start`) vom Anfang eines früher beginnenden Clips
+/// überspringen darf (Eingang per `-ss` näher heran, statt ab Clipbeginn zu dekodieren), mit
+/// mindestens 1 s Vorlauf für Decoder und Bildraten-Umrechnung. 0 für Clips, deren Bild oder
+/// Ton von der Vorgeschichte abhängt (Tempo, Rückwärts, Tempo-Kurve, Zeitlupe, Freistellung).
+pub(crate) fn lead_skip(c: &Clip, start: Time) -> f64 {
+    let into = (start - c.start).as_secs_f64();
+    let plain = (c.speed - 1.0).abs() < 1e-6
+        && !c.fx.reverse
+        && c.fx.speed_curve.is_none()
+        && !c.fx.smooth_slowmo
+        && c.fx.cutout.is_none()
+        && c.fx.person.is_none();
+    if !plain || into < 2.0 {
+        return 0.0;
+    }
+    (into - 1.0).floor()
+}
+
+/// Hat die Effektkette des Clips Filter mit Gedächtnis ([`STATEFUL`])?
+fn fx_has_memory(fx: &ClipFx) -> bool {
+    let opts = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: None };
+    let g = fx_graph(fx, Src { w: 64, h: 64, has_alpha: false }, &opts, "i", "o", "u").join(";");
+    STATEFUL.iter().any(|s| g.contains(s))
+}
+
+fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -> Result<Sprite> {
     let (w, h) = (ctx.w, ctx.h);
     let dur = c.duration.as_secs_f64();
     let path = m.path.to_string_lossy().into_owned();
@@ -227,9 +261,9 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
         let (seg_in, _) = source_segment(c);
         ctx.input(vec![
             "-ss".into(),
-            f(seg_in.as_secs_f64()),
+            f(seg_in.as_secs_f64() + skip),
             "-t".into(),
-            f(seg_len.as_secs_f64().max(0.04)),
+            f((seg_len.as_secs_f64() - skip).max(0.04)),
             "-i".into(),
             path,
         ])
@@ -238,7 +272,8 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     let fit = (w as f64 / m.width.max(1) as f64).min(h as f64 / m.height.max(1) as f64);
     let bw = ((m.width as f64 * fit).round() as u32).max(2) & !1;
     let bh = ((m.height as f64 * fit).round() as u32).max(2) & !1;
-    let mut pre = vec!["setpts=PTS-STARTPTS".to_string()];
+    // übersprungener Anfang: Zeitstempel bleiben Clipzeit (Animationen, Keyframes, Effekte)
+    let mut pre = vec![if skip > 0.0 { format!("setpts=PTS-STARTPTS+{}/TB", f(skip)) } else { "setpts=PTS-STARTPTS".to_string() }];
     if !image {
         if c.fx.reverse {
             pre.push("reverse".into());
@@ -265,9 +300,14 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     } else if anim.is_some() {
         pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(dur + 0.1)));
     }
-    pre.push(format!("fps={}", ctx.fps));
+    if skip > 0.0 {
+        // erstes Bild genau auf `skip` (ohne Sprung: auf 0), Bilder danach wie ohne Sprung
+        pre.push(format!("fps={}:start_time={}", ctx.fps, f(skip)));
+    } else {
+        pre.push(format!("fps={}", ctx.fps));
+    }
     pre.push(format!("scale={bw}:{bh}:flags=bicubic"));
-    pre.push(format!("trim=duration={}", f(dur)));
+    pre.push(if skip > 0.0 { format!("trim=end={}", f(dur)) } else { format!("trim=duration={}", f(dur)) });
     let pl = ctx.label("pre");
     ctx.graph.push(format!("[{i}:v]{}[{pl}]", pre.join(",")));
     // LUT in den Arbeitsordner kopieren (keine Pfad-Escapes im Graphen)
@@ -311,7 +351,7 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     let fl = ctx.label("fx");
     let u = ctx.label("u");
     let opts = ChainOpts {
-        t_offset: 0.0,
+        t_offset: skip,
         apply_reverse: false,
         lut,
         matte,
@@ -512,7 +552,8 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
     ctx.graph.push(format!("[{b}]{window}[{bw}]"));
     let uniq = ctx.label("e");
     let opts = ChainOpts {
-        t_offset: 0.0,
+        // beginnt der Export mitten im Element, läuft die Effektzeit dort weiter (nicht ab 0)
+        t_offset: s0 - t0,
         apply_reverse: false,
         lut: None,
         matte: None,
@@ -525,14 +566,23 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
     ctx.graph.extend(fx_graph(&fx, src, &opts, &bw, &fo, &uniq));
     let fmt = if ctx.alpha { ":format=auto" } else { "" };
     let (pre, top, out) = (ctx.label("ep"), ctx.label("et"), ctx.label("base"));
+    // Effektzeit lief ab `s0 - t0`: für das Überlagern wieder ab 0
+    let rebase = if s0 - t0 > 0.0 { "setpts=PTS-STARTPTS," } else { "" };
     if kfs.is_empty() {
-        ctx.graph.push(format!("[{fo}]format=rgba,setsar=1[{pre}]"));
+        ctx.graph.push(format!("[{fo}]{rebase}format=rgba,setsar=1[{pre}]"));
     } else {
         // Maske einbacken (Effekt über Original), dann die Deckkraft je Bild per sendcmd
         // setzen (schnell, statt einer Formel je Pixel)
         let (ow, fm) = (ctx.label("eow"), ctx.label("em"));
         ctx.graph.push(format!("[{o}]{window}[{ow}]"));
-        ctx.graph.push(format!("[{ow}][{fo}]overlay=eof_action=pass{fmt}[{fm}]"));
+        let fr = if rebase.is_empty() {
+            fo.clone()
+        } else {
+            let fr = ctx.label("er");
+            ctx.graph.push(format!("[{fo}]{rebase}null[{fr}]"));
+            fr
+        };
+        ctx.graph.push(format!("[{ow}][{fr}]overlay=eof_action=pass{fmt}[{fm}]"));
         let mix = ctx.label("mix");
         let lo = s0 - t0; // Versatz, falls der Export mitten im Element beginnt
         let k = |tau: f64| {
@@ -598,7 +648,7 @@ pub(crate) fn transition_groups(tr: &Track) -> Vec<Vec<&Clip>> {
     groups
 }
 
-fn sprite_for(ctx: &mut Ctx, p: &Project, c: &Clip) -> Result<Option<Sprite>> {
+fn sprite_for(ctx: &mut Ctx, p: &Project, c: &Clip, skip: f64) -> Result<Option<Sprite>> {
     match &c.content {
         ClipContent::Media {
             media,
@@ -608,7 +658,7 @@ fn sprite_for(ctx: &mut Ctx, p: &Project, c: &Clip) -> Result<Option<Sprite>> {
                 .media(*media)
                 .ok_or_else(|| ExportError::MissingMedia(vec![media.to_string()]))?
                 .clone();
-            media_sprite(ctx, c, &m, *kind == MediaKind::Image).map(Some)
+            media_sprite(ctx, c, &m, *kind == MediaKind::Image, skip).map(Some)
         }
         ClipContent::Text(st) => text_sprite(ctx, c, st),
         _ => Ok(None),
@@ -620,7 +670,7 @@ fn sprite_for(ctx: &mut Ctx, p: &Project, c: &Clip) -> Result<Option<Sprite>> {
 fn group_layer(ctx: &mut Ctx, p: &Project, group: &[&Clip], k: usize) -> Result<Option<(String, f64, f64)>> {
     let (w, h) = (ctx.w, ctx.h);
     let c = group[k];
-    let Some(sp) = sprite_for(ctx, p, c)? else {
+    let Some(sp) = sprite_for(ctx, p, c, 0.0)? else {
         return Ok(None);
     };
     {
@@ -725,7 +775,7 @@ fn shader_pass(
         return Ok(None);
     };
     let ((i0, n), (off, d)) = (win, od);
-    let idx = ctx.passes.len();
+    let idx = ctx.pass_base + ctx.passes.len();
     // eigener Graph mit denselben Clip-Ketten; eigene Labels/Dateinamen (Zähler weit weg)
     let mut sub = Ctx {
         w: ctx.w,
@@ -741,6 +791,8 @@ fn shader_pass(
         alpha: ctx.alpha,
         shader: false,
         passes: Vec::new(),
+        pass_base: 0,
+        lead: false,
     };
     let (Some((la, ..)), Some((lb, ..))) = (group_layer(&mut sub, p, group, k - 1)?, group_layer(&mut sub, p, group, k)?) else {
         return Ok(None);
@@ -850,7 +902,10 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
             let sprite = if group.len() > 1 {
                 transition_chain(ctx, &proj, &group)?
             } else {
-                sprite_for(ctx, &proj, group[0])?
+                let c = group[0];
+                let video = matches!(c.content, ClipContent::Media { kind: MediaKind::Video, .. });
+                let skip = if ctx.lead && video && !fx_has_memory(&c.fx) { lead_skip(c, ctx.start) } else { 0.0 };
+                sprite_for(ctx, &proj, c, skip)?
             };
             let Some(sp) = sprite else { continue };
             let t0 = (g_start - ctx.start).as_secs_f64();
@@ -888,6 +943,51 @@ pub(crate) fn audible_clips(p: &Project, start: Time, end: Time) -> impl Iterato
         })
 }
 
+/// Wie der Ton-Mix gebaut wird.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct AudioOpts {
+    /// Export wartet auf die Kanalprüfung, die Wiedergabe nicht (sonst friert die Oberfläche ein)
+    pub wait_probe: bool,
+    /// Begrenzer am Ende; in Abschnitten aus, dort läuft er einmal über das Ganze
+    pub limiter: bool,
+    /// Abschnitt: lange Clips per `-ss` nahe an den Anfang (siehe [`lead_skip`])
+    pub lead: bool,
+    /// Ein Eingang je Datei und Stelle statt je Clip (Vorschau-Fenster mit sehr vielen Clips)
+    pub shared: bool,
+    /// Dateien, deren Ton FFmpeg nicht lesen kann, auslassen statt den ganzen Mix scheitern
+    /// zu lassen (Vorschau; siehe [`crate::audio_readable`])
+    pub skip_bad: bool,
+}
+
+/// Tonspur der Datei, die ein Clip hört (Stromangabe hinter der Eingangsnummer, z. B. `a`).
+/// Die einzige Stelle, an der die Spur gewählt wird – Export, Abschnitte und Vorschau.
+pub(crate) fn audio_stream(c: &Clip, m: &MediaRef) -> String {
+    // gewählte Tonspur der Datei; fehlt sie (andere Datei verknüpft), die erste
+    match c.audio_stream.filter(|&n| n > 0 && n < m.audio_streams) {
+        Some(n) => format!("a:{n}"),
+        None => "a".into(),
+    }
+}
+
+/// Eingänge zusammenlegen: Quellbereiche `(Schlüssel, Start, Ende)` mit gleichem Schlüssel, die
+/// höchstens `gap` Sekunden auseinanderliegen, teilen sich einen Eingang. Liefert je Bereich die
+/// Nummer seines Eingangs und je Eingang `(Schlüssel, Start, Ende)`.
+pub(crate) fn share_inputs(ranges: &[(usize, f64, f64)], gap: f64) -> (Vec<usize>, Vec<(usize, f64, f64)>) {
+    let mut order: Vec<usize> = (0..ranges.len()).collect();
+    order.sort_by(|&a, &b| (ranges[a].0, ranges[a].1).partial_cmp(&(ranges[b].0, ranges[b].1)).unwrap_or(std::cmp::Ordering::Equal));
+    let mut of = vec![0; ranges.len()];
+    let mut groups: Vec<(usize, f64, f64)> = Vec::new();
+    for i in order {
+        let (k, a, b) = ranges[i];
+        match groups.last_mut() {
+            Some(g) if g.0 == k && a <= g.2 + gap => g.2 = g.2.max(b),
+            _ => groups.push((k, a, b)),
+        }
+        of[i] = groups.len() - 1;
+    }
+    (of, groups)
+}
+
 /// Ton: alle hörbaren Clips (Geschwindigkeit, Rückwärts, Lautstärke-Keyframes,
 /// Ein-/Ausblenden, Verlängerung mit Stille) werden gemischt.
 pub(crate) fn audio_part(
@@ -897,32 +997,75 @@ pub(crate) fn audio_part(
     inputs: &mut Vec<String>,
     next_input: &mut usize,
     graph: &mut Vec<String>,
-    // Export wartet auf die Kanalprüfung, die Wiedergabe nicht (sonst friert die Oberfläche ein)
-    wait_probe: bool,
+    o: AudioOpts,
 ) -> String {
+    let clips: Vec<(&Clip, &MediaRef)> = audible_clips(p, start, end)
+        .filter(|(_, m)| !o.skip_bad || crate::audio_readable(&m.path, o.wait_probe))
+        .collect();
+    // gemeinsame Eingänge: je Clip (Eingang, Versatz im Eingang); Eingang wird mit asplit verteilt
+    let mut shared: Vec<(usize, f64)> = Vec::new();
+    if o.shared {
+        let mut keys: Vec<(String, String)> = Vec::new();
+        let ranges: Vec<(usize, f64, f64)> = clips
+            .iter()
+            .map(|(c, m)| {
+                let key = (m.path.to_string_lossy().into_owned(), audio_stream(c, m));
+                let k = keys.iter().position(|x| *x == key).unwrap_or_else(|| {
+                    keys.push(key);
+                    keys.len() - 1
+                });
+                let (a, len) = source_segment(c);
+                (k, a.as_secs_f64(), a.as_secs_f64() + len.as_secs_f64().max(0.02))
+            })
+            .collect();
+        let (of, groups) = share_inputs(&ranges, 10.0);
+        let first = *next_input;
+        for (g, (k, a, b)) in groups.iter().enumerate() {
+            inputs.extend(["-ss".into(), f(*a), "-t".into(), f(b - a), "-i".into(), keys[*k].0.clone()]);
+            let users = of.iter().filter(|&&x| x == g).count();
+            let outs: String = (0..users).map(|u| format!("[s{}u{u}]", first + g)).collect();
+            graph.push(format!("[{}:{}]asplit={users}{outs}", first + g, keys[*k].1));
+        }
+        *next_input += groups.len();
+        shared = of.iter().enumerate().map(|(j, &g)| (first + g, ranges[j].1 - groups[g].1)).collect();
+    }
+    let mut taken = std::collections::HashMap::<usize, usize>::new();
     let mut labels = Vec::new();
-    for (c, m) in audible_clips(p, start, end) {
+    for (j, (c, m)) in clips.into_iter().enumerate() {
         let dur = c.duration.as_secs_f64();
         let (seg_in, seg_len) = source_segment(c);
-        let i = *next_input;
-        *next_input += 1;
-        inputs.extend([
-            "-ss".into(),
-            f(seg_in.as_secs_f64()),
-            "-t".into(),
-            f(seg_len.as_secs_f64().max(0.02)),
-            "-i".into(),
-            m.path.to_string_lossy().into_owned(),
-        ]);
-        let mut chain = vec![
+        // Sprung an den Abschnittsanfang nur ohne Tempo und ohne Tonbearbeitung mit Gedächtnis
+        let skip = if o.lead && !o.shared && cl_fx::audio::audio_chain(&c.audio).is_empty() { lead_skip(c, start) } else { 0.0 };
+        let mut chain = Vec::new();
+        let (i, mut src) = if o.shared {
+            let (g, off) = shared[j];
+            let u = taken.entry(g).or_insert(0);
+            let src = format!("s{g}u{u}");
+            *u += 1;
+            chain.push(format!("atrim=start={}:end={}", f(off), f(off + seg_len.as_secs_f64().max(0.02))));
+            (*next_input + j, src)
+        } else {
+            let i = *next_input;
+            *next_input += 1;
+            inputs.extend([
+                "-ss".into(),
+                f(seg_in.as_secs_f64() + skip),
+                "-t".into(),
+                f((seg_len.as_secs_f64() - skip).max(0.02)),
+                "-i".into(),
+                m.path.to_string_lossy().into_owned(),
+            ]);
+            (i, format!("{i}:{}", audio_stream(c, m)))
+        };
+        chain.extend([
             "aresample=48000".to_string(),
             "aformat=sample_fmts=fltp:channel_layouts=stereo".into(),
-            "asetpts=PTS-STARTPTS".into(),
-        ];
+            if skip > 0.0 { format!("asetpts=PTS-STARTPTS+{}/TB", f(skip)) } else { "asetpts=PTS-STARTPTS".into() },
+        ]);
         // Kanäle: z. B. Mikrofon nur links → auf beide Ohren
         let mode = c.audio.channels.unwrap_or(p.settings.channels);
         let silent = (mode == Channels::Auto)
-            .then(|| cl_media::silent_channel_opt(&m.path, wait_probe))
+            .then(|| cl_media::silent_channel_opt(&m.path, o.wait_probe))
             .flatten();
         if let Some(pan) = mode.filter(silent) {
             chain.push(pan.into());
@@ -930,11 +1073,6 @@ pub(crate) fn audio_part(
         if c.fx.reverse {
             chain.push("areverse".into());
         }
-        // gewählte Tonspur der Datei; fehlt sie (andere Datei verknüpft), die erste
-        let mut src = match c.audio_stream.filter(|&n| n > 0 && n < m.audio_streams) {
-            Some(n) => format!("{i}:a:{n}"),
-            None => format!("{i}:a"),
-        };
         if let Some(id) = &c.fx.speed_curve {
             // Tempo-Kurve: Quelle in Abschnitte teilen, je Abschnitt konstantes atempo
             let pieces = curve_pieces(id, seg_len.as_secs_f64(), dur);
@@ -960,10 +1098,10 @@ pub(crate) fn audio_part(
             }
         }
         chain.extend(cl_fx::audio::audio_chain(&c.audio));
-        // Länger gezogener Ton: mit Stille auffüllen
-        chain.push(format!("apad=whole_dur={}", f(dur)));
+        // Länger gezogener Ton: mit Stille auffüllen (gezählt ab dem ersten gelesenen Sample)
+        chain.push(format!("apad=whole_dur={}", f(dur - skip)));
         chain.push(format!("atrim=0:{}", f(dur)));
-        chain.push("asetpts=PTS-STARTPTS".into());
+        chain.push(if skip > 0.0 { format!("asetpts=PTS-STARTPTS+{}/TB", f(skip)) } else { "asetpts=PTS-STARTPTS".into() });
         let vol = c.keyframes.get(Prop::Volume);
         if vol.is_empty() {
             if c.volume_db.abs() > 0.01 {
@@ -1014,15 +1152,23 @@ pub(crate) fn audio_part(
     if labels.is_empty() {
         graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{dur}[aout]"));
     } else {
-        let ins: String = labels.iter().map(|l| format!("[{l}]")).collect();
-        // Begrenzer gegen Übersteuern überlagerter Clips; darunter bitgleich (level/latency aus bzw. ausgeglichen)
+        // Stille über die ganze Länge als letzter Eingang: amix endet so genau am Ende. Allein mit
+        // apad endete der Ton unter Last gelegentlich schon mit dem letzten Clip (gemessen: 6 von
+        // 6 parallelen Exporten, davon 2 um 0,5 s zu kurz)
+        graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{dur},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[afull]"));
+        let ins: String = labels.iter().map(|l| format!("[{l}]")).chain(["[afull]".to_string()]).collect();
+        let limit = if o.limiter { format!("{},", limiter()) } else { String::new() };
         graph.push(format!(
-            "{ins}amix=inputs={}:normalize=0:duration=longest,alimiter=limit={}:level=false:latency=true,apad=whole_dur={dur},atrim=0:{dur},aformat=sample_fmts=fltp:channel_layouts=stereo[aout]",
-            labels.len(),
-            f(10f64.powf(LIMIT_DB / 20.0))
+            "{ins}amix=inputs={}:normalize=0:duration=longest,{limit}apad=whole_dur={dur},atrim=0:{dur},aformat=sample_fmts=fltp:channel_layouts=stereo[aout]",
+            labels.len() + 1,
         ));
     }
     "aout".into()
+}
+
+/// Begrenzer gegen Übersteuern überlagerter Clips; darunter bitgleich (level/latency aus bzw. ausgeglichen)
+pub(crate) fn limiter() -> String {
+    format!("alimiter=limit={}:level=false:latency=true", f(10f64.powf(LIMIT_DB / 20.0)))
 }
 
 /// Spitze nach dem Mischen; Abstand zu −1 dBFS, weil AAC/MP3 beim Kodieren leicht überschwingen.
