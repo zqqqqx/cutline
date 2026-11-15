@@ -100,6 +100,8 @@ pub struct Open {
     pub key: u64,
     pub at: Time,
     pub gen: u64,
+    /// laufende Nummer: nur der zuletzt beauftragte Strom einer Ebene wird angehängt
+    pub seq: u64,
 }
 
 /// Eingabe je Takt.
@@ -236,8 +238,9 @@ pub struct PlayCore<S: Source> {
     cur: HashMap<Lid, Slot<S>>,
     /// Ersatz mit neuem Schlüssel (Bearbeitung, Qualität, Aufholen): zeigt erst, wenn er liefert
     next: HashMap<Lid, Slot<S>>,
-    /// Öffnen beauftragt: (Schlüssel, als Ersatz)
-    opening: HashMap<Lid, (u64, bool)>,
+    /// Öffnen beauftragt: (Schlüssel, als Ersatz, laufende Nummer)
+    opening: HashMap<Lid, (u64, bool, u64)>,
+    seq: u64,
     /// gezielt neu öffnen ab dieser Stelle
     reopen: HashMap<Lid, Time>,
     failed: HashMap<Lid, (u64, f64)>,
@@ -270,6 +273,7 @@ impl<S: Source> Default for PlayCore<S> {
             cur: HashMap::new(),
             next: HashMap::new(),
             opening: HashMap::new(),
+            seq: 0,
             reopen: HashMap::new(),
             failed: HashMap::new(),
             requested: HashMap::new(),
@@ -302,9 +306,11 @@ impl<S: Source> PlayCore<S> {
     pub fn rate(&self) -> f64 {
         self.rate
     }
+    #[cfg(test)]
     pub fn gen(&self) -> u64 {
         self.gen
     }
+    #[cfg(test)]
     pub fn jumps(&self) -> u64 {
         self.jumps
     }
@@ -316,6 +322,7 @@ impl<S: Source> PlayCore<S> {
     pub fn streaming(&self) -> bool {
         self.playing() && (self.rate - 1.0).abs() < 1e-6
     }
+    #[cfg(test)]
     /// Ebene mit dem zuletzt gelieferten Bild (`None`: es kam noch nie eins)
     pub fn held(&self) -> Option<Lid> {
         self.held
@@ -327,6 +334,7 @@ impl<S: Source> PlayCore<S> {
     pub fn take_stats(&mut self) -> Stats {
         std::mem::take(&mut self.stats)
     }
+    #[cfg(test)]
     /// Offene Ströme: (Ebene, Schlüssel, ist Ersatz)
     pub fn streams(&self) -> Vec<(Lid, u64, bool)> {
         self.cur.iter().map(|(id, s)| (*id, s.key, false)).chain(self.next.iter().map(|(id, s)| (*id, s.key, true))).collect()
@@ -398,6 +406,16 @@ impl<S: Source> PlayCore<S> {
         self.jumps += 1;
     }
 
+    /// Ginge Play jetzt ohne neues Puffern weiter (Pause an derselben Stelle, nichts geändert)?
+    pub fn can_resume(&self, at: Time, revision: u64) -> bool {
+        self.mode == Mode::Pause && self.paused == Some((at, revision))
+    }
+
+    /// Gibt es Einzelbild-Aufträge (Ladeanzeige beim Öffnen eines Projekts)?
+    pub fn has_requests(&self) -> bool {
+        !self.requested.is_empty()
+    }
+
     /// Pause. Nur mit laufendem Ton bei Tempo 1 (`can_hold`, z. B. nicht bei Mehrkamera) bleiben
     /// Ströme und Ton offen, sonst wird gestoppt.
     pub fn pause(&mut self, revision: u64, audio_running: bool, can_hold: bool) {
@@ -423,13 +441,13 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// J/K/L: mit Tempo `rate` ab `at` (ohne Ton und Ströme, Einzelbilder)
+    /// J/K/L: mit Tempo `rate` ab `at`, ohne Puffern (Tempo ≠ 1: Einzelbilder, kein Ton)
     pub fn shuttle(&mut self, rate: f64, at: Time, now: f64) {
         self.reset(at);
         self.rate = rate;
         self.mode = Mode::Spielen;
         self.clock = Some((now, at));
-        self.cmds.push(Cmd::StopAudio);
+        self.start_audio(at, true);
     }
 
     /// Sprung an `at` (beim Abspielen: ab dort neu puffern)
@@ -650,25 +668,26 @@ impl<S: Source> PlayCore<S> {
         }
         let cur = self.cur.get(&id).is_some_and(|s| s.key == w.key);
         let next = self.next.get(&id).is_some_and(|s| s.key == w.key);
-        let opening = self.opening.get(&id).is_some_and(|(k, _)| *k == w.key);
+        let opening = self.opening.get(&id).is_some_and(|(k, _, _)| *k == w.key);
         if next || opening {
             return None;
         }
+        self.seq += 1;
         if cur {
             let at = self.reopen.remove(&id)?;
-            self.opening.insert(id, (w.key, true));
-            return Some(Open { id, key: w.key, at, gen: self.gen });
+            self.opening.insert(id, (w.key, true, self.seq));
+            return Some(Open { id, key: w.key, at, gen: self.gen, seq: self.seq });
         }
         self.reopen.remove(&id);
         let replace = self.cur.contains_key(&id) && !w.prefetch;
-        self.opening.insert(id, (w.key, replace));
+        self.opening.insert(id, (w.key, replace, self.seq));
         let at = match self.cur.get(&id) {
             _ if w.prefetch => w.start,
             // Ersatz beim Spielen: dort öffnen, wo die Uhr steht, wenn er anläuft
             Some(s) if self.mode == Mode::Spielen => self.pos + Time::from_secs_f64(s.lead()),
             _ => self.pos,
         };
-        Some(Open { id, key: w.key, at, gen: self.gen })
+        Some(Open { id, key: w.key, at, gen: self.gen, seq: self.seq })
     }
 
     /// Geöffneten Strom anhängen. Veraltete (anderes Projekt, Schlüssel nicht mehr gewollt,
@@ -677,7 +696,7 @@ impl<S: Source> PlayCore<S> {
         if o.gen != self.gen || !self.streaming() {
             return false;
         }
-        let Some((key, replace)) = self.opening.get(&o.id).copied().filter(|(k, _)| *k == o.key) else {
+        let Some((key, replace, _)) = self.opening.get(&o.id).copied().filter(|(k, _, q)| *k == o.key && *q == o.seq) else {
             return false;
         };
         self.opening.remove(&o.id);
@@ -693,7 +712,7 @@ impl<S: Source> PlayCore<S> {
 
     /// Öffnen schlug fehl: erst nach [`RETRY_OPEN`] erneut
     pub fn open_failed(&mut self, o: Open, now: f64) {
-        if self.opening.get(&o.id).is_some_and(|(k, _)| *k == o.key) {
+        if self.opening.get(&o.id).is_some_and(|(k, _, q)| *k == o.key && *q == o.seq) {
             self.opening.remove(&o.id);
             self.failed.insert(o.id, (o.key, now));
         }

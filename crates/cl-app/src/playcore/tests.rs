@@ -167,6 +167,7 @@ struct World {
     opens: u32,
     level: usize,
     level_changes: u32,
+    attached: Vec<(Open, bool)>,
 }
 
 impl World {
@@ -195,6 +196,7 @@ impl World {
             opens: 0,
             level: 0,
             level_changes: 0,
+            attached: Vec::new(),
         }
     }
     fn now(&self) -> f64 {
@@ -258,6 +260,7 @@ impl World {
             let sim = Sim { clock: self.clock.clone(), opened: now, d, per_frame, n: 0, t0: o.at.as_secs_f64(), fps: self.fps };
             let accepted = self.core.attach(o, self.fps, sim, now);
             assert!(!accepted || o.gen == self.core.gen(), "Strom eines alten Projekts angehängt");
+            self.attached.push((o, accepted));
         }
         let p = pos.as_secs_f64();
         let mut vis = Vec::new();
@@ -873,4 +876,18 @@ fn random_event_sequences_keep_invariants() {
             }
         }
     }
+}
+
+#[test]
+fn stream_opened_before_a_seek_is_not_attached() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    w.play();
+    w.clock.set(w.now() + 0.001);
+    w.step(0.001); // Öffnen ab 0 beauftragt, Starter noch nicht fertig
+    assert_eq!(w.opening.len(), 1);
+    w.playhead = Time::from_secs_f64(9.0); // Sprung, bevor der Strom da ist
+    w.run(0.3, DT);
+    let stale: Vec<_> = w.attached.iter().filter(|(o, _)| o.at < Time::from_secs_f64(9.0)).collect();
+    assert!(stale.iter().all(|(_, ok)| !ok), "Strom von vor dem Sprung angehängt: {stale:?}");
+    assert!(w.shown.iter().all(|s| s.3 >= 9.0));
 }

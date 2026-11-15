@@ -370,7 +370,7 @@ impl App {
         let (last, pending, n) = ctx.data(|d| d.get_temp::<(u64, bool, u32)>(key)).unwrap_or((!proj, true, 0));
         let (pending, n) = if last != proj || home { (true, 0) } else { (pending, n.saturating_add(1)) };
         // fertig mit dem ersten Bild – oder es wird keins gebraucht (nach zwei Bildern ohne Anforderung)
-        let pending = pending && self.frames.is_empty() && !(n > 2 && self.requested.is_empty());
+        let pending = pending && self.frames.is_empty() && !(n > 2 && !self.core.has_requests());
         ctx.data_mut(|d| d.insert_temp(key, (proj, pending, n)));
         if theme::loading(&ctx, key, pending && !home) {
             crate::widgets::busy_line(ui.painter(), Rect::from_min_max(pos2(bar.left(), bar.bottom() - 2.0), bar.max));

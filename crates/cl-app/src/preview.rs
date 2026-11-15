@@ -1,5 +1,5 @@
 //! Vorschau: Hintergrund-Decoder (Einzelbilder je Clip mit Effektkette, Thumbnails,
-//! Waveforms, Effekt-Vorschaubilder, Projekt-Titelbilder) und Wiedergabe-Ströme.
+//! Waveforms, Effekt-Vorschaubilder, Projekt-Titelbilder) und Start der Wiedergabe-Ströme.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -683,78 +683,46 @@ impl Decoder {
     }
 }
 
-/// Laufender Wiedergabe-Strom für einen Clip.
-pub struct Playback {
-    pub stream: FrameStream,
-    /// Zeitleisten-Position, an der der Strom begann.
-    pub t0: Time,
-    pub taken: u64,
-    pub key: u64,
-    /// Seit wann wird abgefragt, ohne dass ein fälliges Bild kommt
-    pub waiting_since: Option<std::time::Instant>,
-    /// FFmpeg hat den Strom beendet (Ende der Quelle oder Fehler)
-    pub ended: bool,
+/// Auftrag an den [`Starter`]: Strom ab `source_at` öffnen (Antwort trägt `open` zurück).
+pub struct OpenJob {
+    pub open: crate::playcore::Open,
+    pub path: PathBuf,
+    pub source_at: Time,
+    pub w: u32,
+    pub h: u32,
+    pub fps: Rational,
+    pub graph: Option<String>,
+    pub hw: bool,
 }
 
-impl Playback {
-    #[allow(clippy::too_many_arguments)]
-    pub fn open(
-        path: &std::path::Path,
-        source_at: Time,
-        t0: Time,
-        w: u32,
-        h: u32,
-        fps: Rational,
-        graph: Option<&str>,
-        key: u64,
-        hw: bool,
-    ) -> Option<Self> {
-        FrameStream::open_opts(path, source_at, w, h, fps, graph, hw)
-            .ok()
-            .map(|stream| Self {
-                stream,
-                t0,
-                taken: 0,
-                key,
-                waiting_since: None,
-                ended: false,
+/// Öffnet Wiedergabe-Ströme in einem eigenen, langlebigen Thread: der Prozessstart (5–20 ms unter
+/// Windows) hält die Oberfläche nicht auf. Langlebig auch wegen Linux: `PR_SET_PDEATHSIG` hängt am
+/// startenden Thread (siehe `cl_media::proc`) – ein Strom aus einem kurzlebigen Thread endete mit ihm.
+pub struct Starter {
+    tx: Sender<OpenJob>,
+    pub rx: Receiver<(crate::playcore::Open, f64, Option<FrameStream>)>,
+}
+
+impl Starter {
+    pub fn new(ctx: egui::Context) -> Self {
+        let (tx, jobs) = channel::<OpenJob>();
+        let (done, rx) = channel();
+        std::thread::Builder::new()
+            .name("cl-stream-start".into())
+            .spawn(move || {
+                while let Ok(j) = jobs.recv() {
+                    let s = FrameStream::open_opts(&j.path, j.source_at, j.w, j.h, j.fps, j.graph.as_deref(), j.hw).ok();
+                    if done.send((j.open, j.fps.as_f64(), s)).is_err() {
+                        return;
+                    }
+                    ctx.request_repaint();
+                }
             })
+            .expect("Strom-Thread");
+        Self { tx, rx }
     }
-
-    /// Holt alle Frames bis zur aktuellen Position und gibt den neuesten zurück.
-    pub fn catch_up(&mut self, playhead: Time) -> Option<RgbaFrame> {
-        let fps = self.stream.fps.as_f64();
-        let target = ((playhead - self.t0).as_secs_f64() * fps).floor().max(0.0) as u64;
-        let mut latest = None;
-        while self.taken <= target {
-            match self.stream.try_next() {
-                Ok(Some(f)) => {
-                    latest = Some(f);
-                    self.taken += 1;
-                }
-                Ok(None) => break,
-                Err(()) => {
-                    self.ended = true;
-                    break;
-                }
-            }
-        }
-        // Nur zählen, solange wirklich abgefragt wird: ein vorab geöffneter, noch nicht
-        // gebrauchter Strom (z. B. während eines Übergangs) hängt nicht.
-        if latest.is_some() || self.taken > target {
-            self.waiting_since = None;
-        } else {
-            self.waiting_since.get_or_insert_with(std::time::Instant::now);
-        }
-        latest
-    }
-
-    /// Hängt der Strom (beendet oder seit über einer Sekunde abgefragt, ohne fälliges Bild)?
-    /// Vor dem ersten Bild läuft noch die Suche in der Quelle: großzügiger warten, sonst
-    /// würde ein langsamer Start immer wieder neu geöffnet und das Video liefe nie los.
-    pub fn stalled(&self) -> bool {
-        let limit = if self.taken == 0 { 6.0 } else { 1.0 };
-        self.ended || self.waiting_since.is_some_and(|w| w.elapsed().as_secs_f64() > limit)
+    pub fn send(&self, j: OpenJob) {
+        let _ = self.tx.send(j);
     }
 }
 
