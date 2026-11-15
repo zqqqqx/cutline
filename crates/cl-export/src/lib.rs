@@ -2389,7 +2389,34 @@ mod tests {
         let loud = dir.path().join("loud.wav");
         run(&build(&p, &wav_settings(&p), &no_fonts, &loud).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let l = peaks_db(&loud, 0.0, 2.0);
-        assert!(!l.is_empty() && l.iter().all(|v| *v <= -0.5 && *v > -3.0), "begrenzt: {l:?}");
+        assert!(!l.is_empty() && l.iter().all(|v| *v <= graph::LIMIT_DB + 0.1 && *v > -3.0), "begrenzt: {l:?}");
+    }
+
+    #[test]
+    fn limited_aac_peak_stays_below_minus_one_db() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        // wie im Testbericht: laute Sounds gleichzeitig, je +6 dB
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = Project::new("Laut");
+        for id in ["whoosh", "impact", "boom", "airhorn"] {
+            let path = dir.path().join(format!("{id}.wav"));
+            cl_fx::sfx::render(cl_fx::sfx::sfx(id).unwrap(), &path).unwrap();
+            let m = cl_media::probe(&path).unwrap();
+            let mut t = Track::new(TrackKind::Audio);
+            let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::ZERO, m.duration);
+            c.volume_db = 6.0;
+            t.clips.push(c);
+            p.timeline.tracks.push(t);
+            p.media.push(m);
+        }
+        let mut s = ExportSettings::from_project(&p);
+        s.format = Format::M4a;
+        let out = dir.path().join("loud.m4a");
+        run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let l = peaks_db(&out, 0.0, 3.0);
+        assert!(!l.is_empty() && l.iter().all(|v| *v <= -1.0), "AAC-Spitze: {l:?}");
     }
 
     #[test]
