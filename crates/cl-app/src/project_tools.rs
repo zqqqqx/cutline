@@ -16,7 +16,8 @@ use crate::theme::{self, icon};
 #[cfg(test)]
 const BACKUP_KEEP: usize = 30;
 
-fn backup_dir(project: &Path) -> PathBuf {
+/// Alter Ordner `Backups/<Dateiname>`: teilten sich gleichnamige Projekte. Wird nur noch gelesen.
+fn legacy_backup_dir(project: &Path) -> PathBuf {
     let stem = project
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -24,9 +25,18 @@ fn backup_dir(project: &Path) -> PathBuf {
     paths::data_dir().join("Backups").join(stem)
 }
 
-/// Sicherungen eines Projekts, neueste zuerst.
-pub fn list_backups(project: &Path) -> Vec<(PathBuf, SystemTime)> {
-    let mut v: Vec<(PathBuf, SystemTime)> = std::fs::read_dir(backup_dir(project))
+/// `Backups/<Dateiname>-<Hash des vollen Pfads>`: gleichnamige Projekte bleiben getrennt.
+fn backup_dir(project: &Path) -> PathBuf {
+    // FNV-1a: über Programmversionen stabil (anders als `DefaultHasher`)
+    let key = project.to_string_lossy().replace('\\', "/").to_lowercase();
+    let h = key.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+    let mut d = legacy_backup_dir(project).into_os_string();
+    d.push(format!("-{:08x}", h as u32));
+    d.into()
+}
+
+fn backups_in(dir: &Path) -> Vec<(PathBuf, SystemTime)> {
+    let mut v: Vec<(PathBuf, SystemTime)> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
@@ -36,6 +46,22 @@ pub fn list_backups(project: &Path) -> Vec<(PathBuf, SystemTime)> {
         .collect();
     v.sort_by_key(|(_, t)| std::cmp::Reverse(*t));
     v
+}
+
+/// Sicherungen eines Projekts (auch aus dem alten Ordner), neueste zuerst.
+pub fn list_backups(project: &Path) -> Vec<(PathBuf, SystemTime)> {
+    let mut v = backups_in(&backup_dir(project));
+    v.extend(backups_in(&legacy_backup_dir(project)));
+    v.sort_by_key(|(_, t)| std::cmp::Reverse(*t));
+    v
+}
+
+/// Projektdatei umbenannt oder verschoben: Sicherungen mitnehmen.
+pub fn move_backups(old: &Path, new: &Path) {
+    let (a, b) = (backup_dir(old), backup_dir(new));
+    if a.is_dir() && !b.exists() {
+        let _ = std::fs::rename(a, b);
+    }
 }
 
 /// Sicherung schreiben und alte entfernen.
@@ -48,7 +74,8 @@ pub fn write_backup(project: &Path, json: &str, keep: usize) -> std::io::Result<
         .unwrap_or(0);
     let p = dir.join(format!("{stamp}.cutline"));
     paths::write_atomic(&p, json)?;
-    for (old, _) in list_backups(project).into_iter().skip(keep.max(1)) {
+    // nur im eigenen Ordner rotieren: der alte kann fremde Sicherungen enthalten
+    for (old, _) in backups_in(&dir).into_iter().skip(keep.max(1)) {
         let _ = std::fs::remove_file(old);
     }
     Ok(p)
@@ -417,6 +444,28 @@ fn local_offset_windows() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn same_named_projects_keep_separate_backups() {
+        let home = tempfile::tempdir().unwrap();
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("CUTLINE_HOME", home.path());
+        let a = home.path().join("x/Film.cutline");
+        let b = home.path().join("y/Film.cutline");
+        // Sicherung alter Art bleibt sichtbar
+        let legacy = legacy_backup_dir(&a);
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("1.cutline"), "{}").unwrap();
+        write_backup(&a, "{}", 1).unwrap();
+        write_backup(&b, "{}", 1).unwrap();
+        assert!(legacy.join("1.cutline").is_file(), "Rotation lässt fremde Sicherungen stehen");
+        assert_eq!(list_backups(&a).len(), 2);
+        assert_ne!(backup_dir(&a), backup_dir(&b));
+        // Umbenennen nimmt die Sicherungen mit
+        let c = home.path().join("x/Neu.cutline");
+        move_backups(&a, &c);
+        assert_eq!(backups_in(&backup_dir(&c)).len(), 1);
+    }
 
     #[test]
     fn backups_rotate_and_archive_copies() {

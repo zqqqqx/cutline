@@ -710,6 +710,7 @@ impl App {
                             let np = path.with_file_name(format!("{}.cutline", paths::safe_name(&proj.name)));
                             if !np.exists() && std::fs::rename(&path, &np).is_ok() {
                                 let _ = std::fs::rename(thumb_path(&path), thumb_path(&np));
+                                crate::project_tools::move_backups(&path, &np);
                                 self.settings.recent.retain(|r| r != &path);
                                 now = np;
                             }

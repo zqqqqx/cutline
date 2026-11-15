@@ -2071,6 +2071,7 @@ impl App {
         }
         for (a, b) in &moved {
             let _ = std::fs::rename(crate::home::thumb_path(a), crate::home::thumb_path(b));
+            crate::project_tools::move_backups(a, b);
             for r in &mut self.settings.recent {
                 if r == a {
                     *r = b.clone();
