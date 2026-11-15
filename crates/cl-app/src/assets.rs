@@ -371,7 +371,7 @@ impl App {
                 ui,
                 icon::FILE_ARROW_DOWN,
                 &self.t("media-empty"),
-                &self.t("drop-hint"),
+                "",
             );
             return;
         }
@@ -628,7 +628,7 @@ impl App {
                         ui,
                         icon::BOOKMARKS,
                         "Bibliothek ist leer",
-                        "Dateien hierher ziehen",
+                        "",
                     );
                 }
                 widgets::grid(ui, &items, 104.0, 16.0 / 9.0, 16.0, |ui, r, it| {
@@ -753,7 +753,7 @@ impl App {
                                 ui,
                                 icon::SPEAKER_HIGH,
                                 "Keine Sounds gefunden",
-                                "Eigene Sounds per Knopf oder Ablegen hinzufügen",
+                                "",
                             );
                         }
                         for it in &items {
@@ -816,7 +816,7 @@ impl App {
                         ui,
                         icon::MUSIC_NOTES,
                         "Keine Musik gefunden",
-                        "Lege Dateien in deinen Musik-Ordner oder importiere sie",
+                        "",
                     ),
                     Some(l) => {
                         ui.label(
@@ -1338,7 +1338,7 @@ impl App {
                 ui,
                 icon::TEXT_AA,
                 "Noch keine eigenen Schriften",
-                "Importiere Schriftdateien oder ziehe sie hierher",
+                "",
             );
         }
         let mut remove = None;
