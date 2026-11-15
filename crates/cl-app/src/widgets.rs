@@ -366,6 +366,13 @@ pub fn grid_cols(avail: f32, min_w: f32, gap: f32) -> (usize, f32) {
     }
 }
 
+/// Wirklich nutzbare Breite eines Rasters: höchstens bis zum sichtbaren rechten Rand (`clip_right`).
+/// Eine zu breite Zeile davor (Suchleiste, Ordner-Chips) dehnt `available_width` über den Rand,
+/// dann würde die letzte Spalte abgeschnitten.
+pub fn grid_avail(available: f32, left: f32, clip_right: f32) -> f32 {
+    available.min(clip_right - left).max(1.0)
+}
+
 /// Kachel-Raster: berechnet Spalten und ruft `tile` für jedes Element mit seinem Rechteck.
 pub fn grid<T>(
     ui: &mut egui::Ui,
@@ -376,7 +383,8 @@ pub fn grid<T>(
     mut tile: impl FnMut(&mut egui::Ui, Rect, &T),
 ) {
     let gap = 8.0;
-    let avail = ui.available_width();
+    // Kacheln zeichnen 2 px über ihren Rand (Hover/Auswahl): so viel vom sichtbaren Rand abziehen
+    let avail = grid_avail(ui.available_width(), ui.cursor().left(), ui.clip_rect().right() - 2.0);
     let (cols, w) = grid_cols(avail, min_w, gap);
     let h = (w / aspect).round();
     for chunk in items.chunks(cols) {
@@ -487,7 +495,21 @@ pub fn color_button(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::grid_cols;
+    use super::{grid_avail, grid_cols};
+
+    #[test]
+    fn grid_stays_inside_visible_width() {
+        // Raster beginnt bei x = 100, sichtbar bis 400: 300 px, auch wenn die Zeile 320 meldet
+        assert_eq!(grid_avail(320.0, 100.0, 400.0), 300.0);
+        assert_eq!(grid_avail(250.0, 100.0, 400.0), 250.0);
+        for min_w in [70.0, 84.0, 120.0] {
+            for vis in (180..=600).map(|v| v as f32) {
+                let a = grid_avail(vis + 12.0, 0.0, vis);
+                let (c, w) = grid_cols(a, min_w, 8.0);
+                assert!(c as f32 * w + (c as f32 - 1.0) * 8.0 <= vis + 0.01, "{min_w} {vis}");
+            }
+        }
+    }
 
     #[test]
     fn grid_never_makes_giant_tiles() {
