@@ -689,6 +689,11 @@ fn reveal_delta(row: Rect, lanes: Rect) -> f32 {
     }
 }
 
+/// Zeit (s) an der Fensterstelle `x`: Spurkante `x0`, Bildlauf `scroll` (s), Maßstab `pps` (px/s)
+fn time_at(x: f32, x0: f32, scroll: f64, pps: f32) -> f64 {
+    (((x - x0) / pps) as f64 + scroll).max(0.0)
+}
+
 /// Spurart, die ein Element aus dem Medien-Menü braucht (`None`: kein eigener Clip, z. B. Übergang).
 fn asset_kind(p: &Project, a: &DragAsset) -> Option<TrackKind> {
     match a {
@@ -740,6 +745,8 @@ pub struct TimelineState {
     motion: Motion,
     /// neue Spur, die sichtbar gerollt wird: (Spur, Start, senkrechter Bildlauf beim Start)
     reveal: Option<(TrackId, f64, f32)>,
+    /// Zeit (egui) des letzten Bilds
+    now: f64,
 }
 
 impl TimelineState {
@@ -766,6 +773,10 @@ impl TimelineState {
     /// Bildlauf weich zu `scroll` (Maßstab bleibt)
     fn scroll_to(&mut self, scroll: f64, now: f64) {
         self.glide_view(self.pps, Anchor::Scroll(self.scroll, scroll), now);
+    }
+    /// Neue Spur weich sichtbar rollen
+    pub(crate) fn reveal_track(&mut self, t: TrackId) {
+        self.reveal = Some((t, self.now, self.vscroll));
     }
     /// Laufende Bewegung fortschreiben; `true` = läuft noch
     fn step_view(&mut self, now: f64) -> bool {
@@ -801,6 +812,7 @@ impl Default for TimelineState {
             view_w: 1000.0,
             motion: Motion::default(),
             reveal: None,
+            now: 0.0,
         }
     }
 }
@@ -1156,6 +1168,7 @@ impl App {
         let changed = self.timeline.cache.sync(key, || self.project.timeline.tracks.clone());
         let tracks = self.timeline.cache.tracks.clone();
         let now_s = ui.input(|i| i.time);
+        self.timeline.now = now_s;
         if self.timeline.cache.missing_due(now_s) {
             self.timeline.cache.missing = self.project.media.iter().filter(|m| !m.is_local()).map(|m| m.id).collect();
             self.timeline.cache.missing_at = Some(now_s);
@@ -1291,7 +1304,7 @@ impl App {
         let pps = self.timeline.pps;
         let scroll = self.timeline.scroll;
         let tx = |t: f64| x0 + ((t - scroll) as f32) * pps;
-        let xt = |x: f32| (((x - x0) / pps) as f64 + scroll).max(0.0);
+        let xt = |x: f32| time_at(x, x0, scroll, pps);
 
         // ---------- Zeilen ----------
         let mut y = if overflow > 0.0 {
@@ -2146,6 +2159,57 @@ impl App {
             }
         }
 
+        // ---------- Dateien von außen (Explorer): Ziel und Platzhalter ----------
+        self.drops.timeline_rect = Some(rect);
+        let drows: Vec<(usize, Rect)> = rows.iter().filter(|r| r.track != REC_ROW).map(|r| (r.track, r.rect)).collect();
+        let image_len = Time::from_secs_f64(self.settings.image_duration as f64);
+        // (Balken, Name, Platzhalter nach dem Ablegen?)
+        let mut file_ghosts: Vec<(Rect, String, bool)> = Vec::new();
+        let mut place_ghosts = |items: &[crate::file_drop::Item], t: &crate::file_drop::Target, pending: bool| {
+            let lane_rect = |l: &crate::file_drop::Lane, audio: bool| match l {
+                crate::file_drop::Lane::Track(id) => drows.iter().find(|r| tracks[r.0].id == *id).map(|r| r.1),
+                crate::file_drop::Lane::Auto => drows
+                    .iter()
+                    .find(|r| if audio { tracks[r.0].kind == TrackKind::Audio } else { tracks[r.0].main })
+                    .map(|r| r.1),
+                crate::file_drop::Lane::New { gap, .. } => {
+                    Some(Rect::from_center_size(pos2(rect.center().x, gap_y(*gap)), vec2(rect.width(), ROW_H - 10.0)))
+                }
+            };
+            let lanes_r = [lane_rect(&t.video, false), lane_rect(&t.audio, true)];
+            for (it, s) in items.iter().zip(crate::file_drop::layout(items, t.at, image_len)) {
+                let Some(r) = lanes_r[usize::from(it.audio)] else { continue };
+                let e = s + it.dur.unwrap_or(image_len);
+                let x = (tx(s.as_secs_f64()), tx(e.as_secs_f64()));
+                file_ghosts.push((Rect::from_min_max(pos2(x.0, r.top() + 3.0), pos2(x.1.max(x.0 + 4.0), r.bottom() - 3.0)), it.name.clone(), pending));
+            }
+        };
+        if let (Some(items), Some(p)) = (self.drops.hover.clone(), self.drops.pos.filter(|p| rect.contains(*p))) {
+            let t = xt(p.x);
+            let at = Time::from_secs_f64(snap_to(t, &snap_cands(&[])).unwrap_or(t)).snap_to_frame(fps);
+            let target = crate::file_drop::Target {
+                at,
+                video: crate::file_drop::lane_at(&tracks, &drows, p, TrackKind::Video, ROW_GAP),
+                audio: crate::file_drop::lane_at(&tracks, &drows, p, TrackKind::Audio, ROW_GAP),
+            };
+            for (l, audio) in [(target.video, false), (target.audio, true)] {
+                if let (crate::file_drop::Lane::New { gap, .. }, true) = (l, items.iter().any(|i| i.audio == audio)) {
+                    insert_lines.push(gap_y(gap));
+                }
+            }
+            place_ghosts(&items, &target, false);
+            painter.line_segment([pos2(tx(at.as_secs_f64()), ruler.bottom()), pos2(tx(at.as_secs_f64()), rect.bottom())], Stroke::new(1.5_f32, theme::ACCENT()));
+            self.drops.target = Some(target);
+        }
+        for d in &self.drops.list {
+            if let Some(t) = &d.target {
+                place_ghosts(&d.items(image_len), t, true);
+            }
+        }
+        if file_ghosts.iter().any(|g| g.2) {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+        }
+
         // ---------- Ruler ----------
         let step = ruler_step(pps);
         let minor = step / 5.0;
@@ -2832,6 +2896,21 @@ impl App {
         for y in &insert_lines {
             lp.line_segment([pos2(rect.left() + 2.0, *y), pos2(rect.right() - 2.0, *y)], Stroke::new(2.0_f32, theme::ACCENT()));
             lp.circle_filled(pos2(rect.left() + 4.0, *y), 3.5, theme::ACCENT());
+        }
+        // Dateien von außen: Geisterbalken beim Ziehen, Platzhalter mit Lauflinie bis zur Prüfung
+        let gp = painter.with_clip_rect(Rect::from_min_max(pos2(x0, lanes.top()), rect.max));
+        for (r, name, pending) in &file_ghosts {
+            gp.rect_filled(*r, theme::R_CTRL, theme::ACCENT().gamma_multiply(if *pending { 0.35 } else { 0.22 }));
+            gp.rect_stroke(*r, theme::R_CTRL, Stroke::new(1.0_f32, theme::ACCENT()), egui::StrokeKind::Inside);
+            let tp = gp.with_clip_rect(r.shrink(2.0).intersect(gp.clip_rect()));
+            tp.text(pos2(r.left().max(x0) + 6.0, r.center().y), egui::Align2::LEFT_CENTER, name, egui::FontId::proportional(theme::FS_HINT), theme::TEXT());
+            if *pending {
+                let w = r.width();
+                let f = (now_s * 0.8).rem_euclid(1.3) as f32 - 0.3;
+                let a = r.left() + w * f.max(0.0);
+                let b = r.left() + w * (f + 0.3).min(1.0);
+                tp.line_segment([pos2(a, r.bottom() - 2.0), pos2(b, r.bottom() - 2.0)], Stroke::new(2.0_f32, theme::ACCENT()));
+            }
         }
         // „+“ über den Spurköpfen (Ecke neben dem Lineal): neue Spur ganz oben (Bild) bzw. ganz unten (Ton)
         let corner = Rect::from_min_max(pos2(rect.left() + 4.0, rect.top()), pos2(x0 - 4.0, ruler.bottom()));
@@ -3738,6 +3817,14 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_x_to_time_with_zoom_and_scroll() {
+        assert_eq!(time_at(300.0, 100.0, 0.0, 50.0), 4.0);
+        assert_eq!(time_at(300.0, 100.0, 10.0, 200.0), 11.0);
+        // links der Spurkante: nie vor 0:00
+        assert_eq!(time_at(50.0, 100.0, 0.5, 50.0), 0.0);
+    }
 
     #[test]
     fn narrow_toolbar_drops_zoom_before_toggles() {

@@ -314,14 +314,26 @@ pub struct App {
     pub font_names: Option<(Instant, Arc<Vec<String>>)>,
     /// Stereo-Prüfung (ein Kanal stumm?) schon angestoßen: Dateien, zuletzt geprüfte Revision
     silent_warmed: (HashSet<PathBuf>, u64),
-    /// Letzte Suche nach fehlenden Proxys (Zeit, Anzahl Medien)
-    pub proxy_scan: Option<(Instant, usize)>,
     /// Proxy-Ordner zuletzt gezählt: (Zeit, Anzahl, Bytes)
     pub proxy_stats: Option<(Instant, u64, u64)>,
     /// Quelle je laufendem Strom (Original oder Proxy-Stücke), siehe `proxy::App::stream_pick`
     pub proxy_picks: HashMap<u128, crate::proxy::Pick>,
     /// Eigenschaften-Fenster: Zeilen einmal berechnet (Ziel, Revision, Zeilen)
     pub props_cache: Option<(crate::props::Props, u64, crate::props::PropsRows)>,
+    /// Projekt, das gerade im Hintergrund geöffnet wird
+    pub load: Option<crate::loading::Load>,
+    /// Medien vorhanden? (im Hintergrund geprüft, nie je Bild)
+    pub presence: crate::loading::Presence,
+    /// Dateien von außen in die Zeitleiste ziehen
+    pub drops: crate::file_drop::Drops,
+    /// Speichern, Autosave und Sicherungen im Hintergrund
+    pub saver: crate::saving::Saver,
+    /// Vorschaubild schon angefordert (Medium, Pfad): nicht bei jeder Änderung erneut
+    thumb_requested: HashSet<(MediaId, PathBuf)>,
+    /// Proxy-Bau: Zwischenspeicher, Zähler, Pause
+    pub proxies: crate::proxy::ProxyState,
+    /// zum Wecken der Oberfläche aus Hintergrund-Aufträgen
+    pub ui_ctx: egui::Context,
 }
 
 impl App {
@@ -513,10 +525,16 @@ impl App {
             pending_fonts: None,
             font_names: None,
             silent_warmed: (HashSet::new(), u64::MAX),
-            proxy_scan: None,
             proxy_stats: None,
             proxy_picks: HashMap::new(),
             props_cache: None,
+            load: None,
+            presence: Default::default(),
+            drops: Default::default(),
+            saver: crate::saving::Saver::new(cc.egui_ctx.clone()),
+            thumb_requested: HashSet::new(),
+            proxies: Default::default(),
+            ui_ctx: cc.egui_ctx.clone(),
         };
         app.register_fonts(&cc.egui_ctx);
         app.prewarm_sounds();
@@ -532,6 +550,13 @@ impl App {
         crate::applog::startup(cc, &app.settings);
         if let Some(p) = open {
             app.open_project(&p);
+        }
+        // Klicktest (nur mit CUTLINE_SHOTS): Entwurf ohne Datei-Dialog importieren
+        if std::env::var_os("CUTLINE_SHOTS").is_some() {
+            if let Some(d) = std::env::var_os("CUTLINE_IMPORT_DRAFT") {
+                app.import.open = true;
+                app.start_import(PathBuf::from(d), &cc.egui_ctx);
+            }
         }
         perf_mark("App bereit");
         app
@@ -641,6 +666,7 @@ impl App {
     }
 
     pub fn sync_project(&mut self) {
+        let _s = section("Projekt abgleichen");
         let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
         if doc.revision() != self.revision {
             self.revision = doc.revision();
@@ -683,37 +709,45 @@ impl App {
                     }
                 }
             }
-            // Vorschaubilder zuerst: Sie sind schnell und sollen nicht hinter den Wellenformen langer
-            // Dateien warten (die Aufträge laufen der Reihe nach)
-            for m in self.project.media.iter().filter(|m| m.is_local()) {
-                if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) {
-                    let anim = if m.kind == MediaKind::Image { cl_media::animation(&m.path) } else { None };
-                    let at = thumb_time(m.kind, m.duration, anim.as_ref());
-                    self.decoder.send(Job::Thumb {
-                        media: m.id,
-                        path: m.path.clone(),
-                        at,
-                    });
-                }
+            self.request_media_previews();
+        }
+    }
+
+    /// Vorschaubilder und Wellenformen der vorhandenen Medien je einmal anfordern (nach Änderungen
+    /// und wenn die Prüfung der Dateien Neues meldet). Kein Dateisystem-Zugriff: Vorhandensein aus
+    /// dem Zwischenspeicher, Animationen der Bilder hat das Laden schon gelesen.
+    fn request_media_previews(&mut self) {
+        let _s = section("Vorschaubilder anfordern");
+        // Vorschaubilder zuerst: Sie sind schnell und sollen nicht hinter den Wellenformen langer
+        // Dateien warten (die Aufträge laufen der Reihe nach)
+        for m in self.project.media.iter().filter(|m| self.presence.get(&m.path)) {
+            if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) && self.thumb_requested.insert((m.id, m.path.clone())) {
+                let anim = if m.kind == MediaKind::Image { cl_media::animation(&m.path) } else { None };
+                let at = thumb_time(m.kind, m.duration, anim.as_ref());
+                self.decoder.send(Job::Thumb {
+                    media: m.id,
+                    path: m.path.clone(),
+                    at,
+                });
             }
-            for m in self.project.media.iter().filter(|m| m.is_local()) {
-                if m.has_audio && !self.waves.contains_key(&(m.id, 0)) {
-                    self.waves.insert((m.id, 0), Vec::new()); // Platzhalter: Auftrag nur einmal senden
-                    self.decoder.send(Job::Wave {
-                        media: m.id,
-                        path: m.path.clone(),
-                        stream: 0,
-                    });
-                }
+        }
+        for m in self.project.media.iter().filter(|m| self.presence.get(&m.path)) {
+            if m.has_audio && !self.waves.contains_key(&(m.id, 0)) {
+                self.waves.insert((m.id, 0), Vec::new()); // Platzhalter: Auftrag nur einmal senden
+                self.decoder.send(Job::Wave {
+                    media: m.id,
+                    path: m.path.clone(),
+                    stream: 0,
+                });
             }
-            // weitere Tonspuren nur, wenn ein Clip sie spielt
-            for c in self.project.timeline.tracks.iter().flat_map(|t| t.clips.iter()) {
-                let (ClipContent::Media { media, .. }, Some(n)) = (&c.content, c.audio_stream) else { continue };
-                let Some(m) = self.project.media(*media).filter(|m| n > 0 && n < m.audio_streams && m.is_local()) else { continue };
-                if !self.waves.contains_key(&(m.id, n)) {
-                    self.waves.insert((m.id, n), Vec::new());
-                    self.decoder.send(Job::Wave { media: m.id, path: m.path.clone(), stream: n });
-                }
+        }
+        // weitere Tonspuren nur, wenn ein Clip sie spielt
+        for c in self.project.timeline.tracks.iter().flat_map(|t| t.clips.iter()) {
+            let (ClipContent::Media { media, .. }, Some(n)) = (&c.content, c.audio_stream) else { continue };
+            let Some(m) = self.project.media(*media).filter(|m| n > 0 && n < m.audio_streams && self.presence.get(&m.path)) else { continue };
+            if !self.waves.contains_key(&(m.id, n)) {
+                self.waves.insert((m.id, n), Vec::new());
+                self.decoder.send(Job::Wave { media: m.id, path: m.path.clone(), stream: n });
             }
         }
     }
@@ -1917,11 +1951,15 @@ impl App {
         p
     }
 
+    /// Projekt speichern: Momentaufnahme an den Speicher-Thread (serialisiert und schreibt
+    /// atomisch im Hintergrund). Ein Fehler kommt später über [`App::poll_saves`].
     pub fn write_project(&mut self, p: &Path) -> Result<(), String> {
-        if let Some(d) = p.parent() {
-            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
-        }
-        paths::write_atomic(p, self.project.to_json()).map_err(|e| e.to_string())?;
+        self.saver.send(crate::saving::Job {
+            kind: crate::saving::Kind::Project,
+            path: p.to_path_buf(),
+            project: self.project.clone(),
+            revision: self.revision,
+        });
         self.saved_revision = self.revision;
         self.last_saved = Some(Instant::now());
         // neues Projekt oder „Speichern unter“: Sperre wandert zur neuen Datei
@@ -1930,7 +1968,12 @@ impl App {
             self.take_lock(p);
         }
         self.settings.add_recent(p);
-        // Titelbild für die Startseite
+        self.send_project_thumb(p);
+        Ok(())
+    }
+
+    /// Titelbild für die Startseite anfordern (erstes Bild der Bildspuren).
+    pub fn send_project_thumb(&mut self, p: &Path) {
         if let Some((path, at)) = self
             .project
             .timeline
@@ -1943,7 +1986,7 @@ impl App {
                 ClipContent::Media { media, .. } => self
                     .project
                     .media(*media)
-                    .filter(|m| m.is_local())
+                    .filter(|m| self.presence.get(&m.path))
                     .map(|m| (m.path.clone(), c.source_time(c.start))),
                 _ => None,
             })
@@ -1954,7 +1997,6 @@ impl App {
                 at,
             });
         }
-        Ok(())
     }
 
     pub fn save(&mut self, save_as: bool) {
@@ -1983,6 +2025,7 @@ impl App {
 
     /// Automatisch speichern (1,5 s nach der letzten Änderung).
     fn autosave(&mut self) {
+        let _s = section("Autosave");
         if !self.settings.autosave || self.screen != Screen::Editor {
             return;
         }
@@ -2033,7 +2076,7 @@ impl App {
         }
     }
 
-    fn reset_editor(&mut self) {
+    pub(crate) fn reset_editor(&mut self) {
         self.stop_playback();
         self.core.new_project();
         self.select_only(None);
@@ -2045,6 +2088,8 @@ impl App {
         // Effekt-/Filter-/Übergangskacheln gelten für alle Projekte und bleiben
         self.decoder.next_generation();
         self.thumbs.clear();
+        self.thumb_requested.clear();
+        self.proxies.reset();
         self.waves.clear();
         let project_key = |k: &String| k.starts_with("strip:") || k.starts_with("lib:");
         self.fx_thumbs.retain(|k, _| !project_key(k));
@@ -2079,7 +2124,7 @@ impl App {
             .project
             .media
             .iter()
-            .filter(|m| m.has_audio && m.kind != MediaKind::Image && m.is_local())
+            .filter(|m| m.has_audio && m.kind != MediaKind::Image && self.presence.get(&m.path))
             .filter(|m| self.silent_warmed.0.insert(m.path.clone()))
             .map(|m| m.path.clone())
             .collect();
@@ -2097,6 +2142,7 @@ impl App {
     pub fn set_doc(&mut self, proj: Project) {
         *self.doc.lock().unwrap() = Document::new(proj);
         self.tasks.next_generation();
+        self.drops.list.clear();
         self.revision = u64::MAX;
         self.sync_project();
         self.saved_revision = UNSAVED;
@@ -2168,70 +2214,16 @@ impl App {
         }
     }
 
+    /// Projekt öffnen: Lesen, Prüfen und Vorbereiten im Hintergrund (siehe `loading.rs`); das
+    /// offene Projekt bleibt, bis das neue fertig ist (Abbrechen ändert nichts).
     pub fn open_project(&mut self, p: &Path) {
-        let t0 = Instant::now();
-        if !self.flush_before_leaving() {
-            return;
-        }
-        match std::fs::read_to_string(p)
-            .map_err(|e| e.to_string())
-            .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
-        {
-            Ok(proj) => {
-                self.reset_editor();
-                let needed: HashSet<String> = proj
-                    .timeline
-                    .tracks
-                    .iter()
-                    .flat_map(|t| t.clips.iter())
-                    .filter_map(|c| match &c.content {
-                        ClipContent::Text(s) => s.font_family.clone(),
-                        _ => None,
-                    })
-                    .collect();
-                self.set_doc(proj);
-                crate::applog::project("geöffnet", Some(p), &self.project, Some(t0));
-                self.saved_revision = self.revision;
-                self.project_path = Some(p.to_path_buf());
-                self.take_lock(p);
-                self.settings.add_recent(p);
-                self.settings.save();
-                self.screen = Screen::Editor;
-                self.last_backup = Some(Instant::now());
-                self.missing_open = self
-                    .project
-                    .media
-                    .iter()
-                    .any(|m| !m.is_local());
-                let known = self.font_files();
-                let missing: Vec<String> = needed
-                    .into_iter()
-                    .filter(|f| !known.contains_key(f))
-                    .collect();
-                if !missing.is_empty() {
-                    self.toast_err(format!("Fehlende Schriften: {}", missing.join(", ")));
-                }
-                let mut gone: Vec<String> = cl_fx::catalog::missing(&self.project).into_iter().map(|m| cl_fx::fx_name(&m.0)).collect();
-                gone.sort();
-                gone.dedup();
-                if !gone.is_empty() {
-                    self.toast_err(
-                        crate::theme::count_text(
-                            gone.len(),
-                            "{} Inhalt fehlt: {} – Paket in Einstellungen → Inhalte einschalten",
-                            "{} Inhalte fehlen: {} – Paket in Einstellungen → Inhalte einschalten",
-                        )
-                        .replacen("{}", &gone.join(", "), 1),
-                    );
-                }
-            }
-            Err(e) => self.toast_err(e),
-        }
+        let ctx = self.ui_ctx.clone();
+        self.start_load(p, crate::loading::LoadMode::Open, &ctx);
     }
 
     /// Vor dem Verlassen eines Projekts: offene Änderungen speichern. `false`, wenn das nicht
     /// ging – dann bleibt das Projekt offen, sonst wären die Änderungen weg.
-    fn flush_before_leaving(&mut self) -> bool {
+    pub(crate) fn flush_before_leaving(&mut self) -> bool {
         self.commit_live();
         if self.voiceover.recorder.is_some() {
             self.stop_voiceover();
@@ -2254,7 +2246,7 @@ impl App {
 
     /// Sperrdatei `<Projekt>.lock` (Inhalt: PID): warnt, wenn ein zweites Fenster dasselbe
     /// Projekt öffnet – beide würden sich sonst still gegenseitig überschreiben.
-    fn take_lock(&mut self, p: &Path) {
+    pub(crate) fn take_lock(&mut self, p: &Path) {
         let lock = lock_path(p);
         let me = std::process::id();
         if paths::lock_held_by_other(&lock, me) {
@@ -2927,7 +2919,7 @@ impl App {
         }
         // Über der Sticker- bzw. Soundliste abgelegt: in die eigene Bibliothek
         if let (Some((kind, rect)), Some(pos)) =
-            (self.lib_drop, ctx.input(|i| i.pointer.hover_pos()))
+            (self.lib_drop, ctx.input(|i| i.pointer.hover_pos()).or(self.drops.pos))
         {
             if rect.contains(pos) {
                 self.lib_import(kind, dropped);
@@ -2952,8 +2944,14 @@ impl App {
         if !fonts.is_empty() {
             self.import_fonts(ctx, fonts);
         }
-        if !media.is_empty() {
-            let n = self.import_media(media).len();
+        // Mediendateien im Hintergrund, über der Zeitleiste abgelegt auch gleich dorthin
+        let (files, other): (Vec<_>, Vec<_>) = media.into_iter().partition(|p| crate::file_drop::is_media(p));
+        let target = if self.screen == Screen::Editor { self.drop_target() } else { None };
+        if !files.is_empty() {
+            self.start_file_drop(ctx, files, target);
+        }
+        if !other.is_empty() {
+            let n = self.import_media(other).len();
             if n > 0 {
                 self.toast(self.i18n.t_num("media-imported", "count", n as i64));
             }
@@ -3018,7 +3016,7 @@ impl eframe::App for App {
         crate::devinput::feed(ctx, raw);
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
         // Oberflächengröße an die Fenstergröße binden: Dialoge passen immer ins Fenster
         let zoom = ctx.zoom_factor();
@@ -3091,10 +3089,23 @@ impl eframe::App for App {
             self.preload_fx_thumbs();
         }
         self.sync_project();
+        if self.presence.tick(&self.project, ctx) {
+            self.request_media_previews();
+        }
+        self.poll_saves();
+        self.poll_load(ctx);
+        self.drops_frame(ctx, frame);
         self.handle_dropped_files(ctx);
         self.warm_silent_channels();
-        self.receive_decoded(ctx);
-        self.poll_tasks();
+        {
+            let _s = section("Vorschaubilder empfangen");
+            self.receive_decoded(ctx);
+        }
+        {
+            let _s = section("Aufgaben");
+            self.poll_tasks();
+            self.poll_file_drops();
+        }
         self.poll_epidemic(ctx);
         self.poll_stock();
         if self.screen == Screen::Editor {
@@ -3316,7 +3327,13 @@ impl eframe::App for App {
         // laufenden Export sauber abbrechen: kein verwaistes FFmpeg, keine .part-Datei
         self.export.cancel_and_wait(Duration::from_secs(5));
         self.cancel_background_work();
-        if !self.flush_before_leaving() {
+        let flushed = self.flush_before_leaving();
+        // alles Wartende schreiben lassen (Speicher-Thread), bevor das Programm endet
+        if !self.saver.wait_idle(Duration::from_secs(60)) {
+            eprintln!("Speichern beim Beenden dauert zu lange");
+        }
+        self.poll_saves();
+        if !flushed || self.saved_revision == UNSAVED {
             // letzter Ausweg: Stand in die Sicherungen schreiben
             let dir = match &self.project_path {
                 Some(p) => crate::project_tools::backup_dir(p),
@@ -3476,10 +3493,59 @@ static PERF_MAX_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 struct PerfFrame(Instant);
 impl Drop for PerfFrame {
     fn drop(&mut self) {
-        let us = self.0.elapsed().as_micros() as u64;
+        let took = self.0.elapsed();
+        let us = took.as_micros() as u64;
         PERF_SUM_US.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
         PERF_MAX_US.fetch_max(us, std::sync::atomic::Ordering::Relaxed);
+        let sections = PERF_SECTIONS.with(|s| std::mem::take(&mut *s.borrow_mut()));
+        if took > SLOW_FRAME {
+            let (what, d) = slowest_section(took, &sections);
+            eprintln!("perf: langes Bild {:.0} ms, davon {what} {:.0} ms", took.as_secs_f64() * 1000.0, d.as_secs_f64() * 1000.0);
+        }
+        PERF_LAST.with(|l| *l.borrow_mut() = (took, sections));
     }
+}
+
+/// Ab hier meldet `CUTLINE_PERF` ein Bild als zu lang.
+const SLOW_FRAME: Duration = Duration::from_millis(100);
+thread_local! {
+    /// Abschnitte des laufenden UI-Bildes (nur mit `CUTLINE_PERF`)
+    static PERF_SECTIONS: std::cell::RefCell<Vec<(&'static str, Duration)>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// Dauer und Abschnitte des letzten UI-Bildes (für Mess-Tests)
+    static PERF_LAST: std::cell::RefCell<(Duration, Vec<(&'static str, Duration)>)> = const { std::cell::RefCell::new((Duration::ZERO, Vec::new())) };
+}
+
+/// Abschnitt eines UI-Bildes messen (`CUTLINE_PERF`), bis der Wächter fällt:
+/// `let _s = section("Proxys");`. Ohne Messung kostet er nichts.
+pub fn section(what: &'static str) -> PerfSection {
+    PerfSection(what, perf().then(Instant::now))
+}
+pub struct PerfSection(&'static str, Option<Instant>);
+impl Drop for PerfSection {
+    fn drop(&mut self) {
+        if let Some(t) = self.1 {
+            PERF_SECTIONS.with(|s| s.borrow_mut().push((self.0, t.elapsed())));
+        }
+    }
+}
+
+/// Dauer und Abschnitte des letzten UI-Bildes (Mess-Tests)
+#[cfg(test)]
+pub fn last_frame() -> (Duration, Vec<(&'static str, Duration)>) {
+    PERF_LAST.with(|l| l.borrow().clone())
+}
+
+/// Teuerster Abschnitt eines Bildes; was keinem Abschnitt gehört, zählt als „übrige Oberfläche“.
+fn slowest_section(total: Duration, sections: &[(&'static str, Duration)]) -> (&'static str, Duration) {
+    let mut sum: std::collections::HashMap<&'static str, Duration> = std::collections::HashMap::new();
+    for (w, d) in sections {
+        *sum.entry(w).or_default() += *d;
+    }
+    let rest = total.saturating_sub(sum.values().sum());
+    sum.into_iter()
+        .chain([("übrige Oberfläche", rest)])
+        .max_by_key(|(_, d)| *d)
+        .unwrap_or(("übrige Oberfläche", rest))
 }
 
 /// Messung (`CUTLINE_PERF`): eine Wiedergabe bzw. ein Ton-Neustart
@@ -3805,3 +3871,7 @@ mod frame_rate_tests {
         assert!(1.0 / MIN_FRAME.as_secs_f64() <= 125.0);
     }
 }
+
+#[cfg(test)]
+#[path = "load_perf.rs"]
+mod load_perf;

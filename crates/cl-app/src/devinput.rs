@@ -6,6 +6,7 @@
 //! Zeilen (Koordinaten = Pixel im Fensterbild, wie in den Bildern aus `CUTLINE_SHOTS`):
 //! `move X Y` · `click X Y [mods]` · `rclick X Y` · `dclick X Y` · `drag X1 Y1 X2 Y2 [mods]` ·
 //! `wheel X Y DX DY [mods]` · `key NAME [mods]` · `text …` — `mods` z. B. `ctrl+shift`.
+//! `drop X Y PFAD[|PFAD…]`: Dateien wie aus dem Explorer über die Stelle ziehen und dort ablegen.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -14,7 +15,16 @@ use std::sync::Mutex;
 use eframe::egui::{self, pos2, Event, Key, Modifiers, PointerButton, Pos2};
 
 /// Ein Bild lang gültig: Ereignisse und gehaltene Zusatztasten
-type Step = (Vec<Event>, Modifiers);
+type Ev = (Vec<Event>, Modifiers);
+/// … dazu Dateien, die von außen über dem Fenster schweben bzw. abgelegt werden
+type Step = (Vec<Event>, Modifiers, Option<Files>);
+
+#[derive(Clone, Debug, PartialEq)]
+enum Files {
+    Hover(Vec<PathBuf>, Pos2),
+    Drop(Vec<PathBuf>, Pos2),
+    Done,
+}
 
 static QUEUE: Mutex<VecDeque<Step>> = Mutex::new(VecDeque::new());
 
@@ -69,6 +79,22 @@ fn key(name: &str) -> Option<Key> {
 
 /// Eine Zeile in Schritte (je Bild einer) übersetzen. `ppp` = Pixel je egui-Punkt. Unbekanntes: leer.
 fn parse(line: &str, ppp: f32) -> Vec<Step> {
+    if let Some(rest) = line.trim_start().strip_prefix("drop ") {
+        let mut it = rest.trim_start().splitn(3, ' ');
+        let (x, y) = (it.next().and_then(|v| v.parse::<f32>().ok()), it.next().and_then(|v| v.parse::<f32>().ok()));
+        let files: Vec<PathBuf> = it.next().unwrap_or("").split('|').map(str::trim).filter(|f| !f.is_empty()).map(PathBuf::from).collect();
+        let (Some(x), Some(y), false) = (x, y, files.is_empty()) else { return Vec::new() };
+        let p = pos2(x / ppp, y / ppp);
+        // einige Bilder schweben (Vorschau), dann ablegen, dann ist der Zeiger wieder frei
+        let mut v: Vec<Step> = (0..4).map(|_| (Vec::new(), Modifiers::NONE, Some(Files::Hover(files.clone(), p)))).collect();
+        v.push((Vec::new(), Modifiers::NONE, Some(Files::Drop(files, p))));
+        v.push((Vec::new(), Modifiers::NONE, Some(Files::Done)));
+        return v;
+    }
+    parse_events(line, ppp).into_iter().map(|(e, m)| (e, m, None)).collect()
+}
+
+fn parse_events(line: &str, ppp: f32) -> Vec<Ev> {
     let mut it = line.split_whitespace();
     let cmd = it.next().unwrap_or("");
     if cmd == "text" {
@@ -79,7 +105,7 @@ fn parse(line: &str, ppp: f32) -> Vec<Step> {
     let num = |i: usize| rest.get(i).and_then(|v| v.parse::<f32>().ok());
     let pt = |i: usize| Some(pos2(num(i)? / ppp, num(i + 1)? / ppp));
     let btn = |pos: Pos2, button, pressed, modifiers| Event::PointerButton { pos, button, pressed, modifiers };
-    let press = |p: Pos2, b: PointerButton, m: Modifiers| -> Vec<Step> {
+    let press = |p: Pos2, b: PointerButton, m: Modifiers| -> Vec<Ev> {
         vec![(vec![Event::PointerMoved(p)], m), (vec![btn(p, b, true, m)], m), (vec![btn(p, b, false, m)], m)]
     };
     let out = match cmd {
@@ -134,9 +160,23 @@ pub fn feed(ctx: &egui::Context, raw: &mut egui::RawInput) {
             }
         }
     }
-    if let Some((events, m)) = q.pop_front() {
+    if let Some((events, m, files)) = q.pop_front() {
         raw.events.extend(events);
         raw.modifiers = m;
+        let mut pos = crate::file_drop::DEV_POS.lock().unwrap_or_else(|e| e.into_inner());
+        match files {
+            Some(Files::Hover(f, p)) => {
+                *pos = Some(p);
+                raw.hovered_files = f.into_iter().map(|f| egui::HoveredFile { path: Some(f), ..Default::default() }).collect();
+            }
+            Some(Files::Drop(f, p)) => {
+                *pos = Some(p);
+                raw.hovered_files.clear();
+                raw.dropped_files = f.into_iter().map(|f| egui::DroppedFile { path: Some(f), ..Default::default() }).collect();
+            }
+            Some(Files::Done) => *pos = None,
+            None => {}
+        }
         if q.is_empty() {
             let _ = std::fs::write(dir.join("input.done"), "");
         }
@@ -170,8 +210,15 @@ mod tests {
         assert!(matches!(parse("key left", 1.0)[0].0[0], Event::Key { key: Key::ArrowLeft, .. }));
         assert!(matches!(&parse("text  Hallo Welt", 1.0)[0].0[0], Event::Text(t) if t == "Hallo Welt"));
         assert!(matches!(parse("wheel 10 10 0 -120", 1.0)[1].0[0], Event::MouseWheel { delta, .. } if delta.y == -120.0));
+        // Dateien ablegen: erst schweben, dann ablegen (Pfade mit Leerzeichen, durch | getrennt)
+        let f = parse("drop 200 100 C:/a b/x.mp4|y.wav", 2.0);
+        let want = vec![PathBuf::from("C:/a b/x.mp4"), PathBuf::from("y.wav")];
+        assert_eq!(f.len(), 6);
+        assert_eq!(f[0].2, Some(Files::Hover(want.clone(), pos2(100.0, 50.0))));
+        assert_eq!(f[4].2, Some(Files::Drop(want, pos2(100.0, 50.0))));
+        assert_eq!(f[5].2, Some(Files::Done));
         // Unbekanntes und Unvollständiges wird übersprungen statt abzustürzen
-        for bad in ["", "click", "click a b", "key nix", "tanzen 1 2", "drag 1 2 3"] {
+        for bad in ["", "click", "click a b", "key nix", "tanzen 1 2", "drag 1 2 3", "drop 1 2", "drop a b c.mp4"] {
             assert!(parse(bad, 1.0).is_empty(), "{bad}");
         }
     }

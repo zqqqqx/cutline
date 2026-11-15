@@ -384,6 +384,7 @@ impl App {
     // ------------------------------------------------------------------ Medien
 
     fn media_tab(&mut self, ui: &mut egui::Ui) {
+        let _s = crate::app::section("Medien-Tab");
         Self::tab_title(ui, "Medien", |_| {});
         ui.horizontal(|ui| {
             if ui
@@ -442,6 +443,7 @@ impl App {
             MediaKind::Audio => "Audio",
             MediaKind::Image => "Bilder",
         };
+        let (stickers, sfx) = (crate::paths::data_dir().join("Stickers"), crate::paths::data_dir().join("Sfx"));
         let mut media: Vec<MediaRef> = self
             .project
             .media
@@ -461,11 +463,7 @@ impl App {
                     kind_cat(m.kind),
                 )
             })
-            .filter(|m| {
-                !m.path
-                    .starts_with(crate::paths::data_dir().join("Stickers"))
-                    && !m.path.starts_with(crate::paths::data_dir().join("Sfx"))
-            })
+            .filter(|m| !m.path.starts_with(&stickers) && !m.path.starts_with(&sfx))
             .cloned()
             .collect();
         let ed = self.lib_arrange(ui, area, &cat, &q, &mut media, |m| format!("media:{}", m.id));
@@ -519,7 +517,7 @@ impl App {
                         && ui.is_rect_visible(r)
                         && (scrub.is_some() || (outstanding < 4 && self.thumbs.contains_key(&m.id)))
                         && self.fx_thumbs_requested.insert(strip_key.clone())
-                        && m.is_local()
+                        && self.presence.get(&m.path)
                     {
                         outstanding += 1;
                         // gleich als gewünscht eintragen, sonst überspringt der Worker den Auftrag
@@ -542,6 +540,7 @@ impl App {
                     let snd_key = format!("file:{}", m.path.display());
                     let snd = (m.kind == MediaKind::Audio).then(|| self.sound_look(ui, r, &snd_key, &m.path, None));
                     let dims = if m.kind == MediaKind::Audio { String::new() } else { format!("{}×{}", m.width, m.height) };
+                    let present = self.presence.get(&m.path);
                     let resp = widgets::tile_tip(
                         ui,
                         egui::Id::new(("media", m.id)),
@@ -558,7 +557,7 @@ impl App {
                             match (&snd, thumb) {
                                 (Some(st), None) => st.paint(p, a, false),
                                 // Platzhalter, bis das Vorschaubild da ist; dann einblenden
-                                (_, tex) if m.is_local() || tex.is_some() => widgets::tile_image(
+                                (_, tex) if present || tex.is_some() => widgets::tile_image(
                                     p,
                                     egui::Id::new(("media", m.id)),
                                     a,

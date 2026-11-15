@@ -105,8 +105,7 @@ impl App {
                 // fertig: nichts neu – Ströme wechseln über ihren Schlüssel (siehe `stream_pick`),
                 // ohne das laufende Bild zu verwerfen
                 TaskDone::Proxy { media, ok } => {
-                    // gleich weitersuchen (nächstes Medium)
-                    self.proxy_scan = None;
+                    self.proxy_finished(media, ok);
                     if !ok {
                         self.proxy_failed.insert(media);
                     }

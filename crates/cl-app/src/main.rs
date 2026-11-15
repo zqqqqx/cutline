@@ -11,6 +11,7 @@ mod curves;
 mod devinput;
 mod dialog;
 mod exports;
+mod file_drop;
 mod creator;
 mod edit_tools;
 mod epidemic;
@@ -48,6 +49,8 @@ mod templates;
 mod theme;
 mod timeline;
 mod update;
+mod saving;
+mod loading;
 mod voiceover;
 mod widgets;
 

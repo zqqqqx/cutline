@@ -252,6 +252,8 @@ fn part_args(src: &Path, st: f64, pt: &Parting, k: u32, height: u32, gop: u32, e
 static PLAYING: AtomicBool = AtomicBool::new(false);
 /// Die Wiedergabe kam in dieser Abspiel-Sitzung nicht mit (gilt bis zum Stopp)
 static BEHIND: AtomicBool = AtomicBool::new(false);
+/// Vom Nutzer pausiert (Aufgaben-Anzeige): laufender Bau hält an, kein neuer beginnt
+static USER_PAUSED: AtomicBool = AtomicBool::new(false);
 static LAST_ACTIVITY: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Der Player hat gerade ein Einzelbild angefordert oder bekommen (Klick, Scrubben).
@@ -296,7 +298,7 @@ pub fn want_pause(paused: bool, playing: bool, behind: bool, idle: Duration) -> 
 }
 
 fn pause_now(paused: bool) -> bool {
-    want_pause(paused, PLAYING.load(Ordering::Relaxed), BEHIND.load(Ordering::Relaxed), idle())
+    USER_PAUSED.load(Ordering::Relaxed) || want_pause(paused, PLAYING.load(Ordering::Relaxed), BEHIND.load(Ordering::Relaxed), idle())
 }
 
 // ------------------------------------------------------------------ Bau
@@ -568,6 +570,62 @@ pub fn next_proxy(candidates: &[MediaId], at_playhead: &HashSet<MediaId>, visibl
         .copied()
 }
 
+/// Ergebnis einer Suche nach Proxys (Hintergrund): je Video der vorhandene Proxy, dazu die
+/// Medien, für die einer gebaut werden soll (oder Stücke fehlen)
+type Scan = (Vec<(MediaId, Option<(PathBuf, u32)>)>, Vec<MediaId>);
+
+/// Proxy-Verwaltung ohne Dateisystem im UI-Thread: Suche nach vorhandenen/fehlenden Proxys im
+/// Hintergrund, Ergebnis im Zwischenspeicher; Zähler für die Gesamtanzeige.
+#[derive(Default)]
+pub struct ProxyState {
+    /// vorhandener Proxy je Medium (gilt für `key`)
+    known: HashMap<MediaId, Option<(PathBuf, u32)>>,
+    /// Einstellung, für die `known` gilt: (Höhe, Projekt-Bildrate)
+    key: Option<(u32, Rational)>,
+    scan: Option<std::sync::mpsc::Receiver<Scan>>,
+    /// letzte Suche: Zeit und Anzahl Medien
+    scanned: Option<(Instant, usize)>,
+    /// fertig gebaut / insgesamt in dieser Runde (Anzeige „Proxys 3 / 40“)
+    pub done: usize,
+    pub total: usize,
+    /// vom Nutzer abgebrochen: in diesem Projekt keine weiteren
+    pub stopped: bool,
+}
+
+impl ProxyState {
+    /// Anderes Projekt: Zähler und Suche neu; vorhandene Proxys gelten weiter (Kennung aus der Datei)
+    pub fn reset(&mut self) {
+        *self = Self { key: self.key, known: std::mem::take(&mut self.known), ..Default::default() };
+    }
+
+    /// Vorhandener Proxy aus dem Zwischenspeicher (`None` = unbekannt, `Some(None)` = keiner)
+    pub fn cached(&self, m: MediaId, key: (u32, Rational)) -> Option<Option<(PathBuf, u32)>> {
+        (self.key == Some(key)).then(|| self.known.get(&m).cloned()).flatten()
+    }
+
+    pub fn paused() -> bool {
+        USER_PAUSED.load(Ordering::Relaxed)
+    }
+
+    pub fn set_paused(on: bool) {
+        USER_PAUSED.store(on, Ordering::Relaxed);
+    }
+}
+
+/// Neue Suche fällig? Nach 2 s oder wenn sich die Zahl der Medien ändert.
+pub fn scan_due(scanned: Option<(Instant, usize)>, media: usize) -> bool {
+    scanned.is_none_or(|(t, n)| n != media || t.elapsed() >= Duration::from_secs(2))
+}
+
+/// Neue Gesamtzahl der Runde: fertige plus fehlende; nichts fehlt → Runde vorbei.
+pub fn round(done: usize, missing: usize) -> (usize, usize) {
+    if missing == 0 {
+        (0, 0)
+    } else {
+        (done, done + missing)
+    }
+}
+
 // ------------------------------------------------------------------ Stück-Bestand
 
 /// Stand des Proxys einer Quelle: vom Bau (Hintergrund) geschrieben, vom Player und der Zeitleiste
@@ -629,11 +687,13 @@ fn with_mine<R>(src: &Path, out: &Path, f: impl FnOnce(&mut Entry) -> R) -> Opti
 
 /// Eintrag für `m` auf Stand bringen (alle 2 s): fertigen Proxy erkennen, nach Neustart oder
 /// geänderter Quelle die Stücke vom Datenträger lesen. `true`: es fehlt noch etwas.
-fn refresh_entry(root: &Path, m: &MediaRef, h: u32, fps: Rational, playing: bool) -> bool {
-    let full = existing_proxy_in(root, m, h, fps).is_some();
+/// Läuft in der Hintergrund-Suche; Dateisystem nur außerhalb der Sperre (Player und Zeitleiste
+/// lesen den Bestand je Bild). Ergebnis: vorhandener Proxy, und ob noch etwas zu bauen ist.
+fn refresh_entry(root: &Path, m: &MediaRef, h: u32, fps: Rational, playing: bool) -> (Option<(PathBuf, u32)>, bool) {
+    let found = existing_proxy_in(root, m, h, fps);
+    let full = found.is_some();
     let out = proxy_path_in(root, m, h, fps);
-    let mut reg = registry();
-    if reg.get(&m.path).is_none_or(|e| e.want != (h, fps) || e.out != out) {
+    if registry().get(&m.path).is_none_or(|e| e.want != (h, fps) || e.out != out) {
         let spec = proxy_spec(m, h, fps);
         let dur = m.duration.as_secs_f64();
         let pt = Parting::new(dur, out_fps(m, &spec), PART_SECS);
@@ -643,21 +703,23 @@ fn refresh_entry(root: &Path, m: &MediaRef, h: u32, fps: Rational, playing: bool
         let fails = vec![0; ready.len()];
         let mut e = Entry { want: (h, fps), out, spec, pt, dur, ready, fails, complete: full, dead: false, ranges: Arc::default() };
         e.changed();
-        reg.insert(m.path.clone(), e);
+        registry().insert(m.path.clone(), e);
     }
-    let Some(e) = reg.get_mut(&m.path) else { return false };
-    if e.complete != full {
-        e.complete = full;
-        e.changed();
-    }
-    // zusammengefügt: Stücke weg (nicht beim Abspielen – ein laufender Strom liest sie noch)
-    if full && !playing {
-        let d = parts::parts_dir(&e.out);
-        if d.is_dir() {
-            let _ = std::fs::remove_dir_all(&d);
+    let (needs, pdir) = {
+        let mut reg = registry();
+        let Some(e) = reg.get_mut(&m.path) else { return (found, false) };
+        // nur aufwärts: der Bau kann gerade nach der Suche fertig geworden sein
+        if full && !e.complete {
+            e.complete = true;
+            e.changed();
         }
+        (!e.complete && !e.dead, parts::parts_dir(&e.out))
+    };
+    // zusammengefügt: Stücke weg (nicht beim Abspielen – ein laufender Strom liest sie noch)
+    if full && !playing && pdir.is_dir() {
+        let _ = std::fs::remove_dir_all(&pdir);
     }
-    !full && !e.dead
+    (found, needs)
 }
 
 /// Hat ein anderes Medium am Playhead Vorrang (dort fehlt das Stück, hier nicht)?
@@ -754,9 +816,15 @@ impl App {
 
     /// Datei für die Vorschau: beim Abspielen der Proxy (flüssig), im Stand das Original, wenn
     /// die Zeilen des Proxys für die benötigte Höhe `need_h` nicht reichen (scharf).
+    /// Vorhandene Proxys kommen aus dem Zwischenspeicher der Hintergrund-Suche.
     pub fn preview_path(&self, m: &MediaRef, need_h: u32) -> PathBuf {
         if self.settings.use_proxies && m.kind == MediaKind::Video {
-            if let Some((p, h)) = existing_proxy(m, self.settings.proxy_h, self.project.settings.fps) {
+            let key = self.proxy_want();
+            let found = match self.proxies.cached(m.id, key) {
+                Some(c) => c,
+                None => existing_proxy(m, key.0, key.1),
+            };
+            if let Some((p, h)) = found {
                 if self.playing || need_h <= h * 6 / 5 {
                     return p;
                 }
@@ -815,7 +883,9 @@ impl App {
                 at.and_then(|(d, s)| parts::concat_list(&d, first, end).ok().map(|l| (l, Time::from_secs_f64(s))))
                     .unwrap_or_else(|| (m.path.clone(), Time::ZERO))
             }
-            Pick::Whole | Pick::Full => (self.preview_path(m, need_h), Time::ZERO),
+            // gerade fertig geworden: der Zwischenspeicher kennt die Datei evtl. noch nicht
+            Pick::Full => (existing_proxy(m, self.settings.proxy_h, self.project.settings.fps).map_or_else(|| m.path.clone(), |p| p.0), Time::ZERO),
+            Pick::Whole => (self.preview_path(m, need_h), Time::ZERO),
         }
     }
 
@@ -885,39 +955,79 @@ impl App {
     }
 
     /// Fehlende Proxys im Hintergrund erzeugen (nacheinander, je Medium eine Aufgabe; in Stücken).
+    /// Welche fehlen (und welche Stücke schon da sind), sucht ein Hintergrund-Thread; hier nur
+    /// Ergebnis abholen und den nächsten Bau starten.
     pub fn ensure_proxies(&mut self, ctx: &egui::Context) {
+        let _s = crate::app::section("Proxys");
         set_play_state(self.playing, !self.settings.auto_quality || self.core.quality.level > 0);
         if !self.core.streaming() || self.proxy_picks.len() > 512 {
             self.proxy_picks.clear();
         }
-        if !self.settings.use_proxies {
-            self.proxy_scan = None;
+        let key = self.proxy_want();
+        if self.proxies.key != Some(key) {
+            self.proxies.known.clear();
+            self.proxies.key = Some(key);
+            self.proxies.scanned = None;
+        }
+        if !self.settings.use_proxies || self.proxies.stopped {
             return;
         }
-        // Reste vom letzten Lauf (auch nach hartem Beenden), einmal je Sitzung
-        static CLEANED: std::sync::Once = std::sync::Once::new();
-        CLEANED.call_once(|| parts::cleanup(&dir()));
         self.update_focus(ctx);
-        // Dateisystem höchstens alle 2 s prüfen (oder wenn sich die Medienliste ändert; nach dem
-        // Ende einer Aufgabe sofort). Auch während eines Baus: ein neues Medium am Playhead bekommt
-        // seinen Eintrag, und der laufende Bau gibt den Vorrang ab (siehe `other_media_first`).
-        let n = self.project.media.len();
-        if self
-            .proxy_scan
-            .is_some_and(|(t, len)| len == n && t.elapsed() < std::time::Duration::from_secs(2))
-        {
-            return;
-        }
-        self.proxy_scan = Some((std::time::Instant::now(), n));
-        let (h, fps) = self.proxy_want();
-        let (playing, root) = (self.playing, dir());
-        let missing: Vec<MediaId> = self
-            .project
-            .media
-            .iter()
-            .filter(|m| wants_proxy(m) && m.path.is_file() && refresh_entry(&root, m, h, fps, playing) && !self.proxy_failed.contains(&m.id))
-            .map(|m| m.id)
-            .collect();
+        // Suche auch während eines Baus: ein neues Medium am Playhead bekommt seinen Eintrag, und
+        // der laufende Bau gibt den Vorrang ab (siehe `other_media_first`)
+        let res = match &self.proxies.scan {
+            Some(rx) => match rx.try_recv() {
+                Ok(r) => r,
+                Err(std::sync::mpsc::TryRecvError::Empty) => return,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.proxies.scan = None;
+                    return;
+                }
+            },
+            None => {
+                let n = self.project.media.len();
+                if scan_due(self.proxies.scanned, n) {
+                    self.proxies.scanned = Some((Instant::now(), n));
+                    // alle Videos (auch der Player fragt nach Proxys), gebaut nur, wo es sich lohnt
+                    let media: Vec<(MediaRef, bool)> = self
+                        .project
+                        .media
+                        .iter()
+                        .filter(|m| m.kind == MediaKind::Video && self.presence.get(&m.path))
+                        .map(|m| (m.clone(), wants_proxy(m) && !self.proxy_failed.contains(&m.id)))
+                        .collect();
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let (c, playing) = (ctx.clone(), self.playing);
+                    std::thread::spawn(move || {
+                        // Reste vom letzten Lauf (auch nach hartem Beenden), einmal je Sitzung
+                        static CLEANED: std::sync::Once = std::sync::Once::new();
+                        let root = dir();
+                        CLEANED.call_once(|| parts::cleanup(&root));
+                        let mut found = Vec::new();
+                        let mut missing = Vec::new();
+                        for (m, want) in &media {
+                            if *want {
+                                let (p, needs) = refresh_entry(&root, m, key.0, key.1, playing);
+                                found.push((m.id, p));
+                                if needs {
+                                    missing.push(m.id);
+                                }
+                            } else {
+                                found.push((m.id, existing_proxy_in(&root, m, key.0, key.1)));
+                            }
+                        }
+                        let _ = tx.send((found, missing));
+                        c.request_repaint();
+                    });
+                    self.proxies.scan = Some(rx);
+                }
+                return;
+            }
+        };
+        self.proxies.scan = None;
+        let (found, missing) = res;
+        self.proxies.known.extend(found);
+        (self.proxies.done, self.proxies.total) = round(self.proxies.done, missing.len());
         if missing.is_empty() || self.tasks.running("proxy").is_some() {
             return;
         }
@@ -940,33 +1050,48 @@ impl App {
         else {
             return;
         };
-        let spec = proxy_spec(&m, h, fps);
-        let out = proxy_path(&m, h, fps);
-        let pt = registry().get(&m.path).filter(|e| e.out == out).and_then(|e| e.pt);
-        let name = m
-            .path
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let spec = proxy_spec(&m, key.0, key.1);
+        // Ziel und Einteilung stehen im Bestand (von der Suche im Hintergrund ermittelt)
+        let target = registry().get(&m.path).filter(|e| e.want == key).map(|e| (e.out.clone(), e.pt));
         let id = m.id;
-        self.tasks.spawn(
-            ctx,
-            "proxy",
-            crate::tr(format!("Proxy wird erstellt: {name}")),
-            move |p, cancel| {
-                let t0 = std::time::Instant::now();
-                let r = match pt {
-                    Some(pt) => build_parts(&m, &out, &spec, &pt, p, cancel),
-                    None => build(&m, &out, &spec, p, cancel).map(|_| true),
-                };
-                if r.is_err() {
-                    if let Some(e) = registry().get_mut(&m.path) {
-                        e.dead = true;
-                    }
+        let label = format!("Proxys {} / {}", self.proxies.done + 1, self.proxies.total);
+        self.tasks.spawn(ctx, "proxy", label, move |p, cancel| {
+            let t0 = std::time::Instant::now();
+            let name = m.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let r = match target {
+                Some((out, Some(pt))) => build_parts(&m, &out, &spec, &pt, p, cancel),
+                Some((out, None)) => build(&m, &out, &spec, p, cancel).map(|_| true),
+                None => build(&m, &proxy_path(&m, key.0, key.1), &spec, p, cancel).map(|_| true),
+            };
+            if r.is_err() {
+                if let Some(e) = registry().get_mut(&m.path) {
+                    e.dead = true;
                 }
-                TaskDone::Proxy { media: id, ok: crate::applog::outcome("proxy", &name, t0, r).is_ok() }
-            },
-        );
+            }
+            TaskDone::Proxy { media: id, ok: crate::applog::outcome("proxy", &name, t0, r).is_ok() }
+        });
+    }
+
+    /// Ein Proxy-Auftrag ist zu Ende: gleich weitersuchen. Gezählt wird nur, was fertig oder
+    /// gescheitert ist – ein Bau, der einem Medium am Playhead Vorrang gab, kommt wieder.
+    pub fn proxy_finished(&mut self, media: MediaId, ok: bool) {
+        let complete = self
+            .project
+            .media(media)
+            .is_none_or(|m| registry().get(&m.path).is_none_or(|e| e.complete));
+        if complete || !ok {
+            self.proxies.done += 1;
+        }
+        self.proxies.known.remove(&media);
+        self.proxies.scanned = None;
+    }
+
+    /// Proxy-Bau für dieses Projekt beenden (Abbrechen in der Aufgaben-Anzeige)
+    pub fn stop_proxies(&mut self) {
+        self.proxies.stopped = true;
+        if let Some(t) = self.tasks.running("proxy") {
+            t.cancel();
+        }
     }
 
     /// Einstellungen → Leistung: Proxys
@@ -985,6 +1110,7 @@ impl App {
             let mut i = PROXY_HEIGHTS.iter().position(|p| p.0 == self.settings.proxy_h).unwrap_or(0);
             if widgets::segmented(ui, &names, &mut i) {
                 self.settings.proxy_h = PROXY_HEIGHTS[i].0;
+                self.proxies.stopped = false;
                 self.settings.save();
                 self.proxy_failed.clear();
                 self.invalidate_preview();
@@ -1017,8 +1143,9 @@ impl App {
                 let _ = std::fs::remove_dir_all(dir());
                 registry().clear();
                 self.proxy_picks.clear();
-                self.proxy_scan = None;
                 self.proxy_stats = None;
+                self.proxies.known.clear();
+                self.proxies.scanned = None;
                 self.invalidate_preview();
             }
         });
@@ -1146,6 +1273,31 @@ mod tests {
     }
 
     #[test]
+    fn scan_runs_every_two_seconds_or_on_new_media_and_counts_the_round() {
+        assert!(scan_due(None, 0));
+        let now = Some((Instant::now(), 5));
+        assert!(!scan_due(now, 5));
+        assert!(scan_due(now, 6));
+        assert!(scan_due(Instant::now().checked_sub(Duration::from_secs(3)).map(|t| (t, 5)), 5));
+        // 3 fertig, 7 fehlen → „Proxys 4 / 10“; nichts fehlt → Runde vorbei
+        assert_eq!(round(3, 7), (3, 10));
+        assert_eq!(round(10, 0), (0, 0));
+    }
+
+    #[test]
+    fn cached_proxy_only_for_the_same_setting() {
+        let mut s = ProxyState::default();
+        let (id, r) = (MediaId::new(), Rational::new(30, 1));
+        s.key = Some((540, r));
+        s.known.insert(id, Some((PathBuf::from("p.mp4"), 540)));
+        assert_eq!(s.cached(id, (540, r)), Some(Some((PathBuf::from("p.mp4"), 540))));
+        assert_eq!(s.cached(id, (720, r)), None, "andere Höhe: unbekannt");
+        assert_eq!(s.cached(MediaId::new(), (540, r)), None);
+        s.reset();
+        assert_eq!(s.cached(id, (540, r)), Some(Some((PathBuf::from("p.mp4"), 540))), "bleibt über Projektwechsel");
+    }
+
+    #[test]
     fn folder_usage_counts_parts() {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("a-540.mp4"), [0u8; 10]).unwrap();
@@ -1171,7 +1323,9 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         // Name wie früher (ohne Bildrate)
         std::fs::write(root.join(format!("{:016x}-540.mp4", media_hash(&m))), b"p").unwrap();
-        assert!(!refresh_entry(&root, &m, 540, Rational::new(30, 1), false), "nichts zu bauen");
+        let (found, needs) = refresh_entry(&root, &m, 540, Rational::new(30, 1), false);
+        assert!(!needs, "nichts zu bauen");
+        assert_eq!(found.map(|f| f.1), Some(540));
         let reg = registry();
         let e = reg.get(&m.path).unwrap();
         assert!(e.complete && !e.needs(1.0));

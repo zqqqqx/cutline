@@ -1730,6 +1730,29 @@ Jetzt prüfen	Check now
 {} Aufgaben	{} tasks
 Vorschauqualität beim Abspielen automatisch anpassen	Adjust preview quality automatically during playback
 Vorschauqualität beim Abspielen automatisch verringert	Preview quality lowered automatically during playback
+„{}“ wird geöffnet	Opening “{}”
+Projekt lesen	Read project
+Medien prüfen	Check media
+Zeitleiste aufbauen	Build timeline
+Entwurf lesen	Read draft
+Medien finden	Find media
+Projekt anlegen	Create project
+„{}“ wird importiert	Importing “{}”
+Projekt {} von {}	Project {} of {}
+Import abgeschlossen	Import finished
+Projekt öffnen	Open project
+{} Texte	{} texts
+{} zusammengesetzte Clips aufgelöst	{} compound clips resolved
+Nicht übernommen: {}	Not imported: {}
+{} Mediendatei nicht gefunden	{} media file not found
+{} Mediendateien nicht gefunden	{} media files not found
+Stand gesichert in {}	Current state saved to {}
+Proxys {} / {}	Proxies {} / {}
+Pausieren	Pause
+Fortsetzen	Resume
+Zusammengesetzte Clips	Compound clips
+Zusammengesetzte Clips mit Tempo	Compound clips with speed change
+Projekt konnte nicht geladen werden (interner Fehler)	Project could not be loaded (internal error)
 Verfügbar	Available
 Liste neu laden	Reload list
 Laden	Download
@@ -1769,3 +1792,4 @@ Datei beschädigt (Prüfsumme)	File damaged (checksum)
 Nicht genug Speicherplatz	Not enough disk space
 Nicht gefunden	Not found
 Unerwarteter Fehler	Unexpected error
+{} Dateien werden importiert	Importing {} files
