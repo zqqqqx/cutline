@@ -58,13 +58,7 @@ pub fn decode_all(path: &Path, w: u32, h: u32, max_bytes: usize) -> Option<Vec<c
     if len == 0 || a.starts.len().saturating_mul(len) > max_bytes {
         return None;
     }
-    let out = crate::ffmpeg_command()
-        .ok()?
-        .args(["-v", "error", "-nostdin", "-i"])
-        .arg(path)
-        // wie das Einzelbild (`decode_frame`): gleiche Skalierung, jedes Bild genau einmal
-        .args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba"), "-fps_mode", "passthrough"])
-        .args(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+    let out = decode_all_cmd(path, w, h, a.starts.len())?
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()
@@ -76,6 +70,19 @@ pub fn decode_all(path: &Path, w: u32, h: u32, max_bytes: usize) -> Option<Vec<c
         .map(|c| crate::RgbaFrame { width: w, height: h, data: c.to_vec() })
         .collect();
     (frames.len() == a.starts.len()).then_some(frames)
+}
+
+/// FFmpeg für [`decode_all`]: höchstens `frames` Bilder – zählt FFmpeg mehr als der eigene Leser
+/// (ungewöhnliche Datei), wüchse die Ausgabe sonst über die geprüfte Speichergrenze.
+fn decode_all_cmd(path: &Path, w: u32, h: u32, frames: usize) -> Option<std::process::Command> {
+    let mut cmd = crate::ffmpeg_command().ok()?;
+    cmd.args(["-v", "error", "-nostdin", "-i"])
+        .arg(path)
+        // wie das Einzelbild (`decode_frame`): gleiche Skalierung, jedes Bild genau einmal
+        .args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba"), "-fps_mode", "passthrough"])
+        .args(["-frames:v", &frames.to_string()])
+        .args(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]);
+    Some(cmd)
 }
 
 /// Index des Bildes, das die Suchzeit `seek` (aus [`Animation::seek_time`]) trifft
@@ -176,6 +183,15 @@ fn gif(b: &[u8]) -> Option<(Vec<i64>, bool)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Befund aus dem Review: die Speichergrenze galt nur für die selbst gezählten Bilder, FFmpeg
+    /// lieferte aber alle. Jetzt höchstens so viele, wie geprüft wurden.
+    #[test]
+    fn decode_all_reads_at_most_the_counted_frames() {
+        let Some(cmd) = decode_all_cmd(Path::new("a.gif"), 8, 8, 7) else { return };
+        let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert!(args.windows(2).any(|w| w[0] == "-frames:v" && w[1] == "7"), "{args:?}");
+    }
 
     fn ffmpeg(args: &[&str]) {
         let st = crate::ffmpeg_command()
