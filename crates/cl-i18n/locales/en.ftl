@@ -87,7 +87,6 @@ mcp = MCP endpoint
 mcp-off = MCP off
 mcp-on = MCP active on 127.0.0.1:{ $port }
 mcp-token = Access token
-mcp-hint = Lets AI assistants read and edit this project. Every change is recorded in the history and can be undone.
 
 plugins-loaded = { $count ->
     [one] One plugin loaded

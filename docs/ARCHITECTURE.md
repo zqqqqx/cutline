@@ -79,7 +79,7 @@ downloaded only when needed.
 
 ## MCP
 
-The app can be controlled by MCP clients (AI assistants, scripts):
+The app can be controlled by MCP clients (scripts, tools):
 
 - **stdio:** `cutline --mcp project.cutline` runs headless.
 - **HTTP:** Settings → MCP interface. Binds to `127.0.0.1`, requires a bearer token, rejects

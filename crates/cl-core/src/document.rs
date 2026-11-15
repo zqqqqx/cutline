@@ -836,13 +836,13 @@ mod tests {
         let before = d.project().clone();
         d.apply(
             EditOp::RemoveClip { clip: id },
-            OpSource::Mcp("claude".into()),
+            OpSource::Mcp("test-client".into()),
         )
         .unwrap();
         assert!(d.project().find_clip(id).is_none());
         assert_eq!(
             d.history().last().unwrap().1,
-            &OpSource::Mcp("claude".into())
+            &OpSource::Mcp("test-client".into())
         );
         assert_eq!(d.undo().unwrap(), "Clip löschen");
         assert_eq!(d.project(), &before);
