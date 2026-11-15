@@ -2212,7 +2212,9 @@ impl App {
         if !self.flush_before_leaving() {
             return;
         }
-        self.stop_playback();
+        // jeder Weg zurück in den Editor setzt ihn ohnehin zurück: Bilder, Texturen und
+        // Decoder-Zwischenspeicher des Projekts schon jetzt freigeben
+        self.reset_editor();
         self.home.refresh();
         self.screen = Screen::Home;
     }
