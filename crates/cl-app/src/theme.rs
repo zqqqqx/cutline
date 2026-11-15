@@ -719,6 +719,33 @@ pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     )
 }
 
+/// Breite eines einzeiligen Textes in der Schrift `font`.
+pub fn text_width(ctx: &egui::Context, text: &str, font: egui::FontId) -> f32 {
+    ctx.fonts(|f| f.layout_no_wrap(text.to_string(), font, Color32::WHITE).size().x)
+}
+
+/// Kürzt `text` am Ende mit „…“, bis er in `max_w` passt (`width` misst eine Zeichenkette).
+pub fn elide(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
+    if width(text) <= max_w {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    (0..chars.len())
+        .rev()
+        .map(|n| format!("{}…", chars[..n].iter().collect::<String>().trim_end()))
+        .find(|s| width(s) <= max_w)
+        .unwrap_or_default()
+}
+
+/// Schriftgröße, mit der ein bei `size` `w` breiter Text in `max_w` passt (nie größer als `size`).
+pub fn fit_size(size: f32, w: f32, max_w: f32) -> f32 {
+    if w <= max_w || w <= 0.0 {
+        size
+    } else {
+        size * max_w.max(0.0) / w
+    }
+}
+
 /// Ränder einer blätterbaren Leiste. `chips` = (links, rechts) je Eintrag im Inhalt, `view` = sichtbare
 /// Breite, `off` = Versatz, `arrow` = Breite des Pfeil-Knopfs. Je Seite: (Kante der Abdeckung im Inhalt,
 /// Versatz nach dem Klick). Die Abdeckung reicht bis an den nächsten ganz sichtbaren Eintrag, damit nie
@@ -914,6 +941,20 @@ pub fn window_icon() -> Option<egui::IconData> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elide_and_fit_stay_inside() {
+        let w = |s: &str| s.chars().count() as f32 * 7.0;
+        assert_eq!(elide("Daumen", 100.0, w), "Daumen");
+        let e = elide("Subscribe, German (red)", 80.0, w);
+        assert!(e.ends_with('…') && w(&e) <= 80.0 && e.starts_with("Subscribe"), "{e}");
+        // Leerzeichen vor „…“ entfällt
+        assert_eq!(elide("ab cdef", 28.0, w), "ab…");
+        assert_eq!(elide("abc", 3.0, w), "");
+        assert_eq!(fit_size(20.0, 100.0, 150.0), 20.0);
+        let s = fit_size(20.0, 200.0, 150.0);
+        assert!((s - 15.0).abs() < 1e-4 && 200.0 * s / 20.0 <= 150.0 + 1e-3);
+    }
 
     /// Blättern zeigt nie einen halben Eintrag neben dem Pfeil und erreicht jeden Eintrag.
     #[test]

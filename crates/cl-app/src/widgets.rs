@@ -353,6 +353,19 @@ pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
     changed
 }
 
+/// Spalten und Kachelbreite eines Rasters: so viele Spalten, dass jede Kachel mindestens `min_w` breit ist;
+/// würde eine Kachel dabei breiter als 1,5 × `min_w` (schmale Leiste, eine Riesenkachel), eine Spalte mehr,
+/// solange die Kacheln noch 0,8 × `min_w` breit bleiben.
+pub fn grid_cols(avail: f32, min_w: f32, gap: f32) -> (usize, f32) {
+    let width = |cols: usize| ((avail - gap * (cols as f32 - 1.0)) / cols as f32).floor();
+    let cols = ((avail + gap) / (min_w + gap)).floor().max(1.0) as usize;
+    if width(cols) > 1.5 * min_w && width(cols + 1) >= 0.8 * min_w {
+        (cols + 1, width(cols + 1))
+    } else {
+        (cols, width(cols))
+    }
+}
+
 /// Kachel-Raster: berechnet Spalten und ruft `tile` für jedes Element mit seinem Rechteck.
 pub fn grid<T>(
     ui: &mut egui::Ui,
@@ -364,8 +377,7 @@ pub fn grid<T>(
 ) {
     let gap = 8.0;
     let avail = ui.available_width();
-    let cols = ((avail + gap) / (min_w + gap)).floor().max(1.0) as usize;
-    let w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).floor();
+    let (cols, w) = grid_cols(avail, min_w, gap);
     let h = (w / aspect).round();
     for chunk in items.chunks(cols) {
         let (row, _) = ui.allocate_exact_size(vec2(avail, h + label_h), Sense::hover());
@@ -423,16 +435,23 @@ pub fn tile(
             theme::ACCENT_INK(),
         );
     }
+    let mut resp = resp;
     if !label.is_empty() {
-        let g = p.layout(
-            crate::tr(label),
-            egui::FontId::proportional(theme::FS_HINT),
+        // eine Zeile, zu lange Namen mit „…“ gekürzt; voller Name im Tooltip
+        let full = crate::tr(label);
+        let font = egui::FontId::proportional(theme::FS_HINT);
+        let shown = theme::elide(&full, r.width(), |t| theme::text_width(ui.ctx(), t, font.clone()));
+        if shown != full {
+            resp = resp.on_hover_text(&full);
+        }
+        let g = p.layout_no_wrap(
+            shown,
+            font,
             if selected {
                 theme::TEXT()
             } else {
                 theme::TEXT_DIM()
             },
-            r.width(),
         );
         let pos = pos2(
             r.center().x - g.size().x.min(r.width()) / 2.0,
@@ -464,4 +483,26 @@ pub fn color_button(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
         return true;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::grid_cols;
+
+    #[test]
+    fn grid_never_makes_giant_tiles() {
+        // schmale Leiste (Text-Vorlagen, ~232 px): zwei Spalten statt einer 232er-Kachel
+        let (c, w) = grid_cols(232.0, 120.0, 8.0);
+        assert_eq!(c, 2);
+        assert!(w >= 0.8 * 120.0 && 2.0 * w + 8.0 <= 232.0);
+        // normale Breiten bleiben wie bisher
+        assert_eq!(grid_cols(400.0, 120.0, 8.0).0, 3);
+        assert_eq!(grid_cols(300.0, 70.0, 8.0).0, 3);
+        // nichts passt: eine Spalte in voller Breite
+        assert_eq!(grid_cols(80.0, 120.0, 8.0), (1, 80.0));
+        for avail in (60..900).step_by(7).map(|a| a as f32) {
+            let (c, w) = grid_cols(avail, 100.0, 8.0);
+            assert!(c as f32 * w + (c as f32 - 1.0) * 8.0 <= avail + 0.01, "{avail}");
+        }
+    }
 }

@@ -428,29 +428,31 @@ impl App {
                     let s = (p.style)();
                     let sample = if p.id == "word" { crate::tr("Wort") } else if s.uppercase { crate::tr("So sieht es aus").to_uppercase() } else { crate::tr("So sieht es aus") };
                     let fam = self.font_family(s.font_family.as_deref());
-                    let size = (s.size * 0.24).clamp(11.0, 22.0);
+                    let base = (s.size * 0.24).clamp(11.0, 22.0);
+                    // Platz in der Kachel: Rand je Seite, Hintergrundkasten (+8) bzw. Kontur (±1,2)
+                    let room = r.width() - 12.0 - if s.background.is_some() { 8.0 } else { 0.0 } - if s.outline.is_some() { 2.4 } else { 0.0 };
+                    let size = theme::fit_size(base, theme::text_width(ui.ctx(), &sample, egui::FontId::new(base, fam.clone())), room);
                     let col = Color32::from_rgba_unmultiplied(s.color[0], s.color[1], s.color[2], s.color[3]);
                     let c = pos2(r.center().x, r.top() + 18.0);
                     let font = egui::FontId::new(size, fam);
+                    // Glyphenbreiten wachsen nicht ganz linear: alles zusätzlich auf die Kachel begrenzen
+                    let tp = pt.with_clip_rect(r.shrink(1.0));
                     if let Some(bg) = s.background {
-                        let g = pt.layout_no_wrap(sample.clone(), font.clone(), col);
+                        let g = tp.layout_no_wrap(sample.clone(), font.clone(), col);
                         // Vorschau des Untertitel-Stils (Hintergrundkasten), kein UI-Radius
-                        pt.rect_filled(Rect::from_center_size(c, g.size() + vec2(8.0, 2.0)), 3.0, Color32::from_rgba_unmultiplied(bg[0], bg[1], bg[2], bg[3]));
+                        tp.rect_filled(Rect::from_center_size(c, g.size() + vec2(8.0, 2.0)), 3.0, Color32::from_rgba_unmultiplied(bg[0], bg[1], bg[2], bg[3]));
                     }
                     if let Some((_, oc)) = s.outline {
                         let ocol = Color32::from_rgba_unmultiplied(oc[0], oc[1], oc[2], oc[3]);
                         for d in [vec2(-1.2, 0.0), vec2(1.2, 0.0), vec2(0.0, -1.2), vec2(0.0, 1.2)] {
-                            pt.text(c + d, egui::Align2::CENTER_CENTER, &sample, font.clone(), ocol);
+                            tp.text(c + d, egui::Align2::CENTER_CENTER, &sample, font.clone(), ocol);
                         }
                     }
-                    pt.with_clip_rect(r.shrink(2.0)).text(c, egui::Align2::CENTER_CENTER, &sample, font, col);
-                    pt.text(
-                        pos2(r.left() + 8.0, r.bottom() - 9.0),
-                        egui::Align2::LEFT_CENTER,
-                        crate::tr(p.name),
-                        egui::FontId::proportional(theme::FS_HINT),
-                        Color32::from_gray(200),
-                    );
+                    tp.text(c, egui::Align2::CENTER_CENTER, &sample, font, col);
+                    let name = crate::tr(p.name);
+                    let hint = egui::FontId::proportional(theme::FS_HINT);
+                    let shown = theme::elide(&name, r.width() - 16.0, |t| theme::text_width(ui.ctx(), t, hint.clone()));
+                    pt.text(pos2(r.left() + 8.0, r.bottom() - 9.0), egui::Align2::LEFT_CENTER, &shown, hint.clone(), Color32::from_gray(200));
                     let stroke = if on {
                         egui::Stroke::new(2.0_f32, theme::ACCENT())
                     } else {
@@ -458,7 +460,8 @@ impl App {
                         egui::Stroke::new(1.0_f32, theme::TEXT_DIM().gamma_multiply(hover))
                     };
                     pt.rect_stroke(r, theme::R_CARD, stroke, egui::StrokeKind::Inside);
-                    if resp.on_hover_text(crate::tr(p.tip)).clicked() {
+                    let tip = if shown == name { crate::tr(p.tip) } else { format!("{name}\n{}", crate::tr(p.tip)) };
+                    if resp.on_hover_text(tip).clicked() {
                         self.settings.caption_preset = p.id.to_string();
                         self.settings.save();
                     }
@@ -475,8 +478,12 @@ impl App {
         ui.horizontal(|ui| {
             ui.label(RichText::new(crate::tr(format!("Untertitel ({})", items.len()))).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // zu schmal für die Beschriftung: nur das Symbol
+                let full = format!("{}  {}", icon::PLUS, crate::tr("Hinzufügen"));
+                let need = theme::text_width(ui.ctx(), &full, egui::FontId::proportional(theme::FS_UI)) + 2.0 * ui.spacing().button_padding.x;
+                let label = if need <= ui.available_width() { full } else { icon::PLUS.to_string() };
                 if ui
-                    .add(theme::secondary(format!("{}  Hinzufügen", icon::PLUS)))
+                    .add(theme::secondary(label))
                     .on_hover_text(crate::tr("Neuer Untertitel am Playhead"))
                     .clicked()
                 {
@@ -486,16 +493,20 @@ impl App {
         });
         ui.add_space(4.0);
         if items.is_empty() {
-            theme::empty_state(ui, icon::SUBTITLES, "Noch keine Untertitel", "Erzeugen, SRT importieren oder von Hand hinzufügen");
+            theme::empty_state(ui, icon::SUBTITLES, "Noch keine Untertitel", "");
             return;
         }
         // Suchen & Ersetzen
         let mut q = self.asset_cat.get("cap-q").cloned().unwrap_or_default();
         let mut rep = self.asset_cat.get("cap-r").cloned().unwrap_or_default();
         ui.horizontal(|ui| {
-            let w = ((ui.available_width() - 40.0) / 2.0).max(50.0);
-            ui.add(egui::TextEdit::singleline(&mut q).hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS))).desired_width(w));
-            ui.add(egui::TextEdit::singleline(&mut rep).hint_text(crate::tr("Ersetzen durch")).desired_width(w));
+            // Breite aus dem Platz: zwei Felder (Innenrand je 2 × 4) + Symbolknopf + zwei Abstände
+            let sp = ui.spacing().item_spacing.x;
+            let btn = (theme::text_width(ui.ctx(), icon::SWAP, egui::FontId::proportional(14.0)) + 2.0 * ui.spacing().button_padding.x).max(24.0);
+            let w = ((ui.available_width() - btn - 2.0 * sp) / 2.0 - 8.0).max(30.0);
+            let margin = egui::Margin::symmetric(4, 2);
+            ui.add(egui::TextEdit::singleline(&mut q).hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS))).margin(margin).desired_width(w));
+            ui.add(egui::TextEdit::singleline(&mut rep).hint_text(crate::tr("Ersetzen durch")).margin(margin).desired_width(w));
             let hits = if q.is_empty() { 0 } else { items.iter().filter(|c| text_of(c).contains(&q)).count() };
             if theme::icon_button(ui, icon::SWAP, format!("{}  ({hits})", crate::tr("Alle ersetzen")), hits > 0, false).clicked() {
                 let ops: Vec<EditOp> = items
@@ -516,7 +527,7 @@ impl App {
         self.asset_cat.insert("cap-q", q.clone());
         self.asset_cat.insert("cap-r", rep);
         // Stil bzw. Aufteilung der gewählten Vorlage auf alle
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let p = self.caption_preset();
             if ui
                 .add(theme::ghost(format!("{}  {}", icon::PAINT_BRUSH, crate::tr(format!("Stil „{}“ auf alle", crate::tr(p.name))))))
@@ -571,60 +582,65 @@ impl App {
                             {
                                 jump = Some(c.id);
                             }
-                            let id = egui::Id::new(("cap-text", c.id));
-                            let mut buf = ui.data_mut(|d| d.get_temp::<String>(id)).unwrap_or_else(|| text.clone());
-                            let r = ui.add(egui::TextEdit::singleline(&mut buf).desired_width((ui.available_width() - 120.0).max(40.0)).frame(false));
-                            if focus == Some(c.id) {
-                                focused = true;
-                                r.scroll_to_me(Some(egui::Align::Center));
-                                r.request_focus();
-                                // ganzen Platzhaltertext markieren: Tippen ersetzt ihn
-                                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
-                                    let all = egui::text::CCursorRange::two(
-                                        egui::text::CCursor::new(0),
-                                        egui::text::CCursor::new(buf.chars().count()),
-                                    );
-                                    state.cursor.set_char_range(Some(all));
-                                    state.store(ui.ctx(), r.id);
+                            // Knöpfe rechts zuerst, das Textfeld nimmt den Rest: nichts ragt über den Rand
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                // Textänderung vor Zusammenführen/Dauer anwenden (wie zuvor in Lesereihenfolge)
+                                let at = ops.len();
+                                if theme::icon_button(ui, icon::TRASH, "Löschen", true, false).clicked() {
+                                    ops.push(EditOp::RemoveClip { clip: c.id });
                                 }
-                            }
-                            if r.changed() {
-                                ui.data_mut(|d| d.insert_temp(id, buf.clone()));
-                            }
-                            if r.lost_focus() {
-                                ui.data_mut(|d| d.remove::<String>(id));
-                                if buf != text {
-                                    let mut n = c.clone();
-                                    if let ClipContent::Text(s) = &mut n.content {
-                                        s.text = buf;
+                                if let Some(n) = next {
+                                    if theme::icon_button(ui, icon::ARROWS_MERGE, "Mit dem nächsten zusammenführen", true, false).clicked() {
+                                        let mut m = c.clone();
+                                        if let ClipContent::Text(s) = &mut m.content {
+                                            s.text = format!("{} {}", text, text_of(n));
+                                        }
+                                        ops.push(EditOp::RemoveClip { clip: n.id });
+                                        ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: n.end() - c.start, source_in: c.source_in });
+                                        ops.push(EditOp::ReplaceClip { clip: m });
                                     }
-                                    ops.push(EditOp::ReplaceClip { clip: n });
                                 }
-                            }
-                            // Dauer (bis zum nächsten Untertitel)
-                            let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
-                            let mut d = c.duration.as_secs_f64();
-                            if ui
-                                .add(egui::DragValue::new(&mut d).range(0.2..=room.max(0.2)).speed(0.02).max_decimals(1).suffix(" s"))
-                                .on_hover_text(crate::tr("Dauer"))
-                                .changed()
-                            {
-                                ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: Time::from_secs_f64(d), source_in: c.source_in });
-                            }
-                            if let Some(n) = next {
-                                if theme::icon_button(ui, icon::ARROWS_MERGE, "Mit dem nächsten zusammenführen", true, false).clicked() {
-                                    let mut m = c.clone();
-                                    if let ClipContent::Text(s) = &mut m.content {
-                                        s.text = format!("{} {}", text, text_of(n));
+                                // Dauer (bis zum nächsten Untertitel)
+                                let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
+                                let mut d = c.duration.as_secs_f64();
+                                if ui
+                                    .add(egui::DragValue::new(&mut d).range(0.2..=room.max(0.2)).speed(0.02).max_decimals(1).suffix(" s"))
+                                    .on_hover_text(crate::tr("Dauer"))
+                                    .changed()
+                                {
+                                    ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: Time::from_secs_f64(d), source_in: c.source_in });
+                                }
+                                let id = egui::Id::new(("cap-text", c.id));
+                                let mut buf = ui.data_mut(|d| d.get_temp::<String>(id)).unwrap_or_else(|| text.clone());
+                                let r = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(f32::INFINITY).frame(false));
+                                if focus == Some(c.id) {
+                                    focused = true;
+                                    r.scroll_to_me(Some(egui::Align::Center));
+                                    r.request_focus();
+                                    // ganzen Platzhaltertext markieren: Tippen ersetzt ihn
+                                    if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
+                                        let all = egui::text::CCursorRange::two(
+                                            egui::text::CCursor::new(0),
+                                            egui::text::CCursor::new(buf.chars().count()),
+                                        );
+                                        state.cursor.set_char_range(Some(all));
+                                        state.store(ui.ctx(), r.id);
                                     }
-                                    ops.push(EditOp::RemoveClip { clip: n.id });
-                                    ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: n.end() - c.start, source_in: c.source_in });
-                                    ops.push(EditOp::ReplaceClip { clip: m });
                                 }
-                            }
-                            if theme::icon_button(ui, icon::TRASH, "Löschen", true, false).clicked() {
-                                ops.push(EditOp::RemoveClip { clip: c.id });
-                            }
+                                if r.changed() {
+                                    ui.data_mut(|d| d.insert_temp(id, buf.clone()));
+                                }
+                                if r.lost_focus() {
+                                    ui.data_mut(|d| d.remove::<String>(id));
+                                    if buf != text {
+                                        let mut n = c.clone();
+                                        if let ClipContent::Text(s) = &mut n.content {
+                                            s.text = buf;
+                                        }
+                                        ops.insert(at, EditOp::ReplaceClip { clip: n });
+                                    }
+                                }
+                            });
                         });
                     });
                 ui.add_space(3.0);

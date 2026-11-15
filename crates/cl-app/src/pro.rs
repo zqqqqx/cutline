@@ -901,7 +901,7 @@ impl App {
                 }
             });
         ui.add_space(8.0);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .add(theme::secondary(format!(
                     "{}  SRT importieren",
