@@ -2,8 +2,8 @@
 //! „Gefällt mir“), Anmeldung unter Einstellungen → Plugins und Konten, Nutzungsmeldung beim Export.
 //! Alles Netzwerk läuft in Hintergrund-Threads; Ergebnisse kommen über einen Kanal zurück.
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use cl_epidemic::{AuthMode, Client, Config, Named, Query, Track};
@@ -40,6 +40,8 @@ enum Msg {
         track: Track,
         res: Result<PathBuf, String>,
         beats: Vec<f64>,
+        /// wirklich geladen (nicht aus dem Vorrat)
+        fresh: bool,
     },
     LoggedIn(Result<cl_epidemic::Tokens, String>),
     Reported(Result<usize, String>),
@@ -60,6 +62,8 @@ pub struct EsState {
     pub user: Option<String>,
     pub busy: bool,
     pub loading_track: Option<String>,
+    /// Titel, die schon im Vorrat liegen (Dateinamen ohne Endung)
+    have: HashSet<String>,
     pub error: Option<String>,
     pub login_running: bool,
     loaded: bool,
@@ -106,6 +110,7 @@ impl Default for EsState {
             user: None,
             busy: false,
             loading_track: None,
+            have: stored_ids(&es_store_dir()),
             error: None,
             login_running: false,
             loaded: false,
@@ -258,13 +263,15 @@ impl App {
                         self.toast_err(e);
                     }
                 },
-                Msg::Downloaded { track, res, beats } => {
+                Msg::Downloaded { track, res, beats, fresh } => {
                     self.es.loading_track = None;
                     match res {
                         Ok(path) => {
                             self.es.downloads.insert(path.clone(), track.id.clone());
+                            self.es.have.insert(store_name(&track.id));
                             self.es.save();
-                            if self.settings.lib_downloads {
+                            // in die Bibliothek nur beim ersten Laden (sonst entstünden Doppel)
+                            if fresh && self.settings.lib_downloads {
                                 self.library.import(crate::library::Kind::Sound, "Epidemic Sound", std::slice::from_ref(&path));
                             }
                             if let Some(id) = self.add_file_at(path, self.playhead, None) {
@@ -562,9 +569,12 @@ impl App {
                 );
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if theme::icon_button(ui, icon::PLUS, "Am Playhead einfügen", !loading, false)
-                    .clicked()
-                {
+                let add = theme::icon_button(ui, icon::PLUS, "Am Playhead einfügen", !loading, false).clicked();
+                if self.es.have.contains(&store_name(&t.id)) {
+                    ui.label(RichText::new(icon::CHECK_CIRCLE).size(theme::FS_HINT).color(theme::TEXT_DIM()))
+                        .on_hover_text(crate::tr("Lokal vorrätig"));
+                }
+                if add {
                     if t.is_preview_only {
                         self.toast_err("Dieser Titel ist nur zum Vorhören freigegeben");
                     } else {
@@ -575,19 +585,24 @@ impl App {
                             .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
                             .collect();
                         let dest = self.es_media_dir().join(format!("{safe}.mp3"));
+                        let store = es_store(&es_store_dir(), &t.id);
+                        // früher geladene Datei desselben Titels (anderes Projekt) als Quelle für den Vorrat
+                        let known = self
+                            .es
+                            .downloads
+                            .iter()
+                            .find(|(p, id)| **id == t.id && p.is_file())
+                            .map(|(p, _)| p.clone());
                         self.es.spawn(ctx, move |c| {
-                            let res = if dest.is_file() {
-                                Ok(())
-                            } else {
-                                c.download(&track.id, &dest)
-                            };
+                            let res = fetch_track(&dest, &store, known.as_deref(), |p| c.download(&track.id, p));
                             let beats = if res.is_ok() {
-                                c.beats(&track.id)
+                                cached_beats(&store, || c.beats(&track.id))
                             } else {
                                 Vec::new()
                             };
                             Msg::Downloaded {
                                 track,
+                                fresh: res == Ok(true),
                                 res: res.map(|_| dest),
                                 beats,
                             }
@@ -750,5 +765,146 @@ impl App {
         self.settings.plugin_states.insert(id.to_string(), on);
         self.settings.save();
         self.refresh_catalog();
+    }
+}
+
+/// Zentraler Vorrat geladener Titel (eine Datei je Titel): Ein Titel wird nur einmal geladen und in
+/// jedes weitere Projekt kopiert. Liegt nicht im Cache, damit „Cache leeren" ihn nicht entfernt.
+fn es_store_dir() -> PathBuf {
+    paths::data_dir().join("Epidemic Sound").join("Vorrat")
+}
+
+fn store_name(id: &str) -> String {
+    id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect()
+}
+
+fn es_store(dir: &Path, id: &str) -> PathBuf {
+    dir.join(format!("{}.mp3", store_name(id)))
+}
+
+fn stored_ids(dir: &Path) -> HashSet<String> {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "mp3"))
+        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .collect()
+}
+
+/// Legt den Titel nach `dest`. Reihenfolge: liegt schon dort → nichts; Vorrat → kopieren; früher
+/// geladene Datei (`known`) → in den Vorrat übernehmen und kopieren; sonst laden. `true` = geladen.
+fn fetch_track(
+    dest: &Path,
+    store: &Path,
+    known: Option<&Path>,
+    download: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<bool, String> {
+    let io = |e: std::io::Error| e.to_string();
+    let seed = |from: &Path| -> Result<(), String> {
+        if let Some(d) = store.parent() {
+            std::fs::create_dir_all(d).map_err(io)?;
+        }
+        // erst daneben schreiben: ein abgebrochenes Kopieren hinterlässt keinen halben Vorrat
+        let tmp = store.with_extension("part");
+        std::fs::copy(from, &tmp).map_err(io)?;
+        std::fs::rename(&tmp, store).map_err(io)
+    };
+    if dest.is_file() {
+        if !store.is_file() {
+            let _ = seed(dest);
+        }
+        return Ok(false);
+    }
+    let mut fresh = false;
+    if !store.is_file() {
+        match known.filter(|k| k.is_file()) {
+            Some(k) => seed(k)?,
+            None => {
+                download(store)?;
+                fresh = true;
+            }
+        }
+    }
+    if let Some(d) = dest.parent() {
+        std::fs::create_dir_all(d).map_err(io)?;
+    }
+    std::fs::copy(store, dest).map_err(io)?;
+    Ok(fresh)
+}
+
+/// Schläge eines Titels: einmal geholt und neben der Vorratsdatei gemerkt (leere Antworten nicht).
+fn cached_beats(store: &Path, fetch: impl FnOnce() -> Vec<f64>) -> Vec<f64> {
+    let f = store.with_extension("beats.json");
+    if let Some(b) = std::fs::read(&f).ok().and_then(|d| serde_json::from_slice::<Vec<f64>>(&d).ok()) {
+        return b;
+    }
+    let b = fetch();
+    if !b.is_empty() {
+        if let Ok(d) = serde_json::to_vec(&b) {
+            let _ = std::fs::write(&f, d);
+        }
+    }
+    b
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn a_track_is_downloaded_once_and_copied_into_other_projects() {
+        let t = tempfile::tempdir().unwrap();
+        let store = es_store(&t.path().join("Vorrat"), "abc/123");
+        assert!(store.ends_with("abc_123.mp3"));
+        let n = Cell::new(0);
+        let dl = |p: &Path| {
+            n.set(n.get() + 1);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"mp3").map_err(|e| e.to_string())
+        };
+        // erstes Projekt: wird geladen
+        let a = t.path().join("A-media/x.mp3");
+        assert_eq!(fetch_track(&a, &store, None, dl), Ok(true));
+        // zweites Projekt: kommt aus dem Vorrat, kein zweiter Abruf
+        let b = t.path().join("B-media/x.mp3");
+        assert_eq!(fetch_track(&b, &store, None, dl), Ok(false));
+        assert_eq!((n.get(), std::fs::read(&b).unwrap()), (1, b"mp3".to_vec()));
+        // schon im Projekt: nichts zu tun
+        assert_eq!(fetch_track(&b, &store, None, dl), Ok(false));
+        assert_eq!(n.get(), 1);
+        assert_eq!(stored_ids(store.parent().unwrap()), HashSet::from(["abc_123".to_string()]));
+        // Titel aus einer älteren Version (nur im Projekt A): füllt den Vorrat ohne Abruf
+        let store2 = es_store(&t.path().join("Vorrat"), "alt");
+        let c = t.path().join("C-media/y.mp3");
+        assert_eq!(fetch_track(&c, &store2, Some(&a), dl), Ok(false));
+        assert!(store2.is_file() && n.get() == 1);
+        // gescheiterter Abruf hinterlässt nichts
+        let store3 = es_store(&t.path().join("Vorrat"), "kaputt");
+        let d = t.path().join("D-media/z.mp3");
+        assert!(fetch_track(&d, &store3, None, |_| Err("offline".into())).is_err());
+        assert!(!store3.exists() && !d.exists());
+    }
+
+    #[test]
+    fn beats_are_fetched_once_and_empty_answers_are_not_kept() {
+        let t = tempfile::tempdir().unwrap();
+        let store = t.path().join("a.mp3");
+        let n = Cell::new(0);
+        let empty = || {
+            n.set(n.get() + 1);
+            Vec::new()
+        };
+        assert!(cached_beats(&store, empty).is_empty() && cached_beats(&store, empty).is_empty());
+        assert_eq!(n.get(), 2);
+        let some = || {
+            n.set(n.get() + 1);
+            vec![0.5, 1.0]
+        };
+        assert_eq!(cached_beats(&store, some), [0.5, 1.0]);
+        assert_eq!(cached_beats(&store, some), [0.5, 1.0]);
+        assert_eq!(n.get(), 3);
     }
 }
