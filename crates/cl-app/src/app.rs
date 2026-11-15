@@ -2150,6 +2150,7 @@ impl App {
         if !self.flush_before_leaving() {
             return false;
         }
+        self.cancel_load();
         self.reset_editor();
         let n = crate::home::next_project_name();
         let mut p = Project::new(n);
@@ -2214,6 +2215,15 @@ impl App {
     /// Projekt öffnen: Lesen, Prüfen und Vorbereiten im Hintergrund (siehe `loading.rs`); das
     /// offene Projekt bleibt, bis das neue fertig ist (Abbrechen ändert nichts).
     pub fn open_project(&mut self, p: &Path) {
+        // dasselbe Projekt noch einmal: erst den offenen Stand schreiben – das Laden liest die
+        // Datei sofort und hielte den alten Stand sonst für gespeichert
+        if self.project_path.as_deref() == Some(p) && self.screen == Screen::Editor {
+            if !self.flush_before_leaving() {
+                return;
+            }
+            // bis das Laden fertig ist (oder abgebrochen wird), bleibt das Projekt offen
+            self.take_lock(p);
+        }
         let ctx = self.ui_ctx.clone();
         self.start_load(p, crate::loading::LoadMode::Open, &ctx);
     }
@@ -2274,6 +2284,7 @@ impl App {
         if !self.flush_before_leaving() {
             return;
         }
+        self.cancel_load();
         crate::applog::project("geschlossen", self.project_path.as_deref(), &self.project, None);
         // jeder Weg zurück in den Editor setzt ihn ohnehin zurück: Bilder, Texturen und
         // Decoder-Zwischenspeicher des Projekts schon jetzt freigeben

@@ -310,9 +310,14 @@ impl App {
             cancel |= crate::dialog::footer(ui, |ui| ui.add(theme::secondary("Abbrechen")).clicked());
         });
         if cancel || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            if let Some(l) = self.load.take() {
-                l.progress.cancel();
-            }
+            self.cancel_load();
+        }
+    }
+
+    /// Laufendes Laden abbrechen (sein Ergebnis würde sonst später übernommen).
+    pub fn cancel_load(&mut self) {
+        if let Some(l) = self.load.take() {
+            l.progress.cancel();
         }
     }
 
@@ -448,6 +453,27 @@ mod tests {
         })).unwrap());
         pr.tick(&p, &egui::Context::default());
         assert!(!pr.get(Path::new("neu")));
+    }
+
+    /// Dasselbe Projekt noch einmal öffnen: der offene Stand liegt schon auf der Platte, bevor
+    /// das Laden die Datei liest. Neues Projekt und Startseite brechen ein laufendes Laden ab.
+    #[test]
+    fn reopen_writes_first_and_leaving_cancels_load() {
+        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let f = home.path().join("a.cutline");
+        app.set_doc(Project::new("A"));
+        app.project_path = Some(f.clone());
+        app.screen = Screen::Editor;
+        assert!(app.flush_before_leaving());
+        app.apply(cl_core::EditOp::Rename { name: "A neu".into() });
+        app.open_project(&f);
+        assert_eq!(Project::from_json(&std::fs::read_to_string(&f).unwrap()).unwrap().name, "A neu");
+        assert!(app.load.is_some());
+        app.go_home();
+        assert!(app.load.is_none(), "Startseite bricht das Laden ab");
+        app.open_project(&f);
+        assert!(app.new_project());
+        assert!(app.load.is_none(), "neues Projekt bricht das Laden ab");
     }
 
     #[test]
