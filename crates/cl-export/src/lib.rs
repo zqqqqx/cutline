@@ -1039,6 +1039,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn text_clips_share_one_font_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let font = dir.path().join("schrift.ttf");
+        std::fs::write(&font, b"keine echte Schrift").unwrap();
+        let mut p = Project::new("T");
+        let mut t = Track::new(TrackKind::Text);
+        for i in 0..50 {
+            t.clips.push(Clip::new(
+                ClipContent::Text(TextStyle { text: format!("Zeile {i}"), ..Default::default() }),
+                Time::from_secs_f64(i as f64),
+                Time::from_secs_f64(1.0),
+            ));
+        }
+        p.timeline.tracks.push(t);
+        let f = font.clone();
+        let resolver = move |_: Option<&str>| Some((f.clone(), 0));
+        let job = build(&p, &ExportSettings::from_project(&p), &resolver, &dir.path().join("o.mp4")).unwrap();
+        let copies = std::fs::read_dir(job.workdir.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("font_"))
+            .count();
+        assert_eq!(copies, 1);
+    }
+
+    #[test]
     fn finished_part_survives_failed_rename() {
         let dir = tempfile::tempdir().unwrap();
         let part = dir.path().join("a.mp4.part");

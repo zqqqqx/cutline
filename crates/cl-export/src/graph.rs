@@ -339,14 +339,19 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         return Ok(None);
     };
     let n = ctx.label("t");
+    // eine Kopie je Schriftdatei, nicht je Textclip (1000 Untertitel × 15-MB-Schrift)
+    let key = font_path.to_string_lossy();
+    let h = key.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
     let font_file = format!(
-        "font_{n}.{}",
+        "font_{h:016x}.{}",
         font_path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("ttf")
     );
-    std::fs::copy(&font_path, ctx.workdir.join(&font_file))?;
+    if !ctx.workdir.join(&font_file).is_file() {
+        std::fs::copy(&font_path, ctx.workdir.join(&font_file))?;
+    }
     let data = std::fs::read(&font_path).unwrap_or_default();
     let size = st.size;
     let mut txt = if st.uppercase {
