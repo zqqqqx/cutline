@@ -28,6 +28,13 @@ pub const MEDIA_EXT: &[&str] = &[
     "flac", "m4a", "aac", "opus",
 ];
 
+/// Wohin sich eine Mediendatei speichern lässt: Bilder/GIFs als Element, Ton als Sound.
+/// Videos nicht (Elemente können keine Videos, Ton daraus bräuchte eine Umwandlung).
+pub fn save_kind(p: &Path) -> Option<Kind> {
+    let ext = p.extension()?.to_str()?.to_ascii_lowercase();
+    [Kind::Sticker, Kind::Sound].into_iter().find(|k| k.exts().contains(&ext.as_str()))
+}
+
 /// Vorsatz für verknüpfte Ordner (eigene Ordner auf der Platte, werden nicht kopiert)
 pub fn link_label(name: &str) -> String {
     format!("{} {name}", crate::theme::icon::LINK_SIMPLE)
@@ -103,6 +110,75 @@ pub struct AreaLayout {
     pub hidden: BTreeSet<String>,
     /// Sammelordner → Eintragsschlüssel
     pub virt: std::collections::BTreeMap<String, Vec<String>>,
+    /// Ordner → Eintragsschlüssel, die dort zuerst stehen: eigene Reihenfolge („Favoriten“ und
+    /// eigene Ordner) bzw. oben angepinnte Einträge (übrige Ordner und „Alle“), siehe [`order_kind`]
+    pub seq: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+/// Wie ein Ordner seine Reihenfolge bestimmt
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Order {
+    /// Eigene Reihenfolge, alle Einträge verschiebbar („Favoriten“, eigene Ordner)
+    Own,
+    /// Normale Reihenfolge, angepinnte Einträge zuerst (eingebaute/verknüpfte Ordner, „Alle“)
+    Pins,
+    /// Feste Reihenfolge („Zuletzt“)
+    Fixed,
+}
+
+pub fn order_kind(cat: &str) -> Order {
+    match cat {
+        "Favoriten" => Order::Own,
+        "Zuletzt" => Order::Fixed,
+        c if c.starts_with("v:") => Order::Own,
+        c if c.strip_prefix("p:").is_some_and(|n| !n.starts_with(crate::theme::icon::LINK_SIMPLE)) => Order::Own,
+        _ => Order::Pins,
+    }
+}
+
+/// Stellt die Einträge aus `order` in dieser Reihenfolge nach vorn; der Rest folgt unverändert. O(n).
+pub fn arrange_by<T>(order: &[String], items: &mut Vec<T>, key: impl Fn(&T) -> String) {
+    if order.is_empty() {
+        return;
+    }
+    let rank: std::collections::HashMap<&str, usize> =
+        order.iter().enumerate().map(|(i, k)| (k.as_str(), i)).collect();
+    let (mut front, mut rest) = (Vec::new(), Vec::with_capacity(items.len()));
+    for it in items.drain(..) {
+        match rank.get(key(&it).as_str()) {
+            Some(&r) => front.push((r, it)),
+            None => rest.push(it),
+        }
+    }
+    front.sort_by_key(|(r, _)| *r);
+    items.extend(front.into_iter().map(|(_, t)| t));
+    items.append(&mut rest);
+}
+
+/// `key` in `seq` vor `before` setzen (fehlt `before` in `seq`: ans Ende). `whole`: `seq` zuerst
+/// aus der angezeigten Reihenfolge `shown` bilden (eigene Reihenfolge; nicht Angezeigtes bleibt
+/// hinten erhalten), sonst nur Einträge verschieben, die schon in `seq` stehen (Pins).
+pub fn move_in(seq: &mut Vec<String>, shown: &[String], key: &str, before: Option<&str>, whole: bool) {
+    if before == Some(key) {
+        return;
+    }
+    if whole {
+        let set: std::collections::HashSet<&String> = shown.iter().collect();
+        let mut v = shown.to_vec();
+        v.extend(seq.iter().filter(|k| !set.contains(k)).cloned());
+        *seq = v;
+    }
+    let Some(i) = seq.iter().position(|k| k == key) else { return };
+    let k = seq.remove(i);
+    let j = before.and_then(|b| seq.iter().position(|k| k == b)).unwrap_or(seq.len());
+    seq.insert(j, k);
+}
+
+/// Liegt der Dateischlüssel `key` (`file:<pfad>`) im Ordner `dir`?
+fn file_under(key: &str, dir: &Path) -> bool {
+    key.strip_prefix("file:")
+        .and_then(|p| p.strip_prefix(&dir.display().to_string()))
+        .is_some_and(|r| r.starts_with(['/', '\\']))
 }
 
 /// Eine Kategorie zur Anzeige
@@ -204,10 +280,89 @@ impl Library {
         self.favorites.contains(key)
     }
     pub fn toggle_favorite(&mut self, key: &str) {
-        if !self.favorites.remove(key) {
+        if !self.unfavorite(key) {
             self.favorites.insert(key.to_string());
         }
         self.save();
+    }
+    /// Aus den Favoriten nehmen, samt Platz in deren Reihenfolge (neu hinzugefügt kommt ans Ende).
+    fn unfavorite(&mut self, key: &str) -> bool {
+        for l in self.areas.values_mut() {
+            if let Some(s) = l.seq.get_mut("Favoriten") {
+                s.retain(|k| k != key);
+            }
+        }
+        self.favorites.remove(key)
+    }
+
+    // ---------------------------------------------------------- Reihenfolge und Pins
+
+    /// Gespeicherte Reihenfolge bzw. Pins eines Ordners (leer, wenn keine).
+    pub fn order(&self, area: &str, cat: &str) -> &[String] {
+        self.areas.get(area).and_then(|l| l.seq.get(cat)).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Die fertig gefilterte Liste eines Tabs ordnen: eigene Reihenfolge bzw. Pins zuerst;
+    /// bei Suchtext unverändert.
+    pub fn arrange<T>(&self, area: &str, cat: &str, q: &str, items: &mut Vec<T>, key: impl Fn(&T) -> String) {
+        if q.trim().is_empty() && order_kind(cat) != Order::Fixed {
+            arrange_by(self.order(area, cat), items, key);
+        }
+    }
+
+    /// Eintrag vor `before` bzw. ans Ende (`None`) setzen; `shown` = angezeigte Schlüssel in Reihenfolge.
+    pub fn move_entry(&mut self, area: &str, cat: &str, shown: &[String], key: &str, before: Option<&str>) {
+        let whole = match order_kind(cat) {
+            Order::Own => true,
+            Order::Pins => false,
+            Order::Fixed => return,
+        };
+        let seq = self.areas.entry(area.to_string()).or_default().seq.entry(cat.to_string()).or_default();
+        move_in(seq, shown, key, before, whole);
+        self.save();
+    }
+
+    pub fn is_pinned(&self, area: &str, cat: &str, key: &str) -> bool {
+        order_kind(cat) == Order::Pins && self.order(area, cat).iter().any(|k| k == key)
+    }
+
+    /// Oben anpinnen (hinten an die Angepinnten) bzw. lösen; nur in Ordnern ohne eigene Reihenfolge.
+    pub fn toggle_pin(&mut self, area: &str, cat: &str, key: &str) {
+        if order_kind(cat) != Order::Pins {
+            return;
+        }
+        let l = self.areas.entry(area.to_string()).or_default();
+        let seq = l.seq.entry(cat.to_string()).or_default();
+        if seq.iter().any(|k| k == key) {
+            seq.retain(|k| k != key);
+            if seq.is_empty() {
+                l.seq.remove(cat);
+            }
+        } else {
+            seq.push(key.to_string());
+        }
+        self.save();
+    }
+
+    /// Eintragsschlüssel überall umschreiben (Favoriten, Zuletzt, Sammelordner, Reihenfolgen):
+    /// `f` gibt `None` (unberührt), `Some(None)` (entfernen) oder `Some(Some(neu))` zurück.
+    fn remap(&mut self, f: impl Fn(&str) -> Option<Option<String>>) {
+        let fix = |v: &mut Vec<String>| {
+            *v = std::mem::take(v)
+                .into_iter()
+                .filter_map(|k| match f(&k) {
+                    None => Some(k),
+                    Some(n) => n,
+                })
+                .collect();
+        };
+        let mut fav: Vec<String> = self.favorites.iter().cloned().collect();
+        fix(&mut fav);
+        self.favorites = fav.into_iter().collect();
+        fix(&mut self.recent);
+        for l in self.areas.values_mut() {
+            l.virt.values_mut().chain(l.seq.values_mut()).for_each(fix);
+        }
     }
     pub fn is_hidden(&self, key: &str) -> bool {
         self.hidden.contains(key)
@@ -218,7 +373,7 @@ impl Library {
     /// Eingebauten Eintrag ausblenden
     pub fn hide(&mut self, key: &str) {
         self.hidden.insert(key.to_string());
-        self.favorites.remove(key);
+        self.unfavorite(key);
         self.save();
     }
     pub fn unhide_all(&mut self, which: impl Fn(&str) -> bool) {
@@ -348,21 +503,12 @@ impl Library {
                     return Err("Ordner gibt es schon".into());
                 }
                 std::fs::rename(&a, &b).map_err(|e| e.to_string())?;
-                // Favoriten der Dateien mitnehmen
+                // Favoriten, Ordner und Reihenfolgen der Dateien mitnehmen
                 let (ap, bp) = (
                     format!("file:{}", a.display()),
                     format!("file:{}", b.display()),
                 );
-                let moved: Vec<String> = self
-                    .favorites
-                    .iter()
-                    .filter(|f| f.starts_with(&ap))
-                    .cloned()
-                    .collect();
-                for f in moved {
-                    self.favorites.remove(&f);
-                    self.favorites.insert(f.replacen(&ap, &bp, 1));
-                }
+                self.remap(|k| file_under(k, &a).then(|| Some(k.replacen(&ap, &bp, 1))));
                 self.invalidate();
                 format!("p:{new}")
             }
@@ -373,6 +519,10 @@ impl Library {
             if k == key {
                 *k = new_key.clone();
             }
+        }
+        // Reihenfolge bzw. Pins wandern mit
+        if let Some(s) = l.seq.remove(key) {
+            l.seq.insert(new_key, s);
         }
         self.save();
         Ok(())
@@ -400,11 +550,9 @@ impl Library {
             Some(("p", name)) => self.delete_folder(phys.ok_or("Kein Dateiordner")?, name, used)?,
             _ => return Err("Eingebaute Kategorien lassen sich nur verbergen".into()),
         }
-        self.areas
-            .entry(area.to_string())
-            .or_default()
-            .order
-            .retain(|k| k != key);
+        let l = self.areas.entry(area.to_string()).or_default();
+        l.order.retain(|k| k != key);
+        l.seq.remove(key);
         self.save();
         Ok(())
     }
@@ -454,6 +602,9 @@ impl Library {
             .get_mut(folder)
         {
             v.retain(|x| x != item);
+        }
+        if let Some(s) = self.areas.get_mut(area).and_then(|l| l.seq.get_mut(&format!("v:{folder}"))) {
+            s.retain(|x| x != item);
         }
         self.save();
     }
@@ -639,6 +790,9 @@ impl Library {
             return Err(format!("„{}“ enthält Dateien, die im offenen Projekt verwendet werden, und bleibt deshalb erhalten", name.trim()));
         }
         to_trash(&d)?;
+        // die Dateien sind weg: ihre Favoriten, Pins und Reihenfolgen auch
+        self.remap(|k| file_under(k, &d).then_some(None));
+        self.save();
         self.invalidate();
         Ok(())
     }
@@ -684,6 +838,12 @@ impl Library {
                 .unwrap_or_default(),
         );
         std::fs::rename(p, &dest).map_err(|e| e.to_string())?;
+        // die Reihenfolge des alten Ordners braucht den Eintrag nicht mehr
+        for l in self.areas.values_mut() {
+            if let Some(s) = l.seq.get_mut(&format!("p:{}", item.folder)) {
+                s.retain(|k| *k != item.key);
+            }
+        }
         self.rekey(&item.key, &format!("file:{}", dest.display()));
         self.invalidate();
         Ok(())
@@ -714,7 +874,7 @@ impl Library {
         match &item.path {
             Some(p) => {
                 to_trash(p)?;
-                self.favorites.remove(&item.key);
+                self.remap(|k| (k == item.key).then_some(None));
                 self.save();
                 self.invalidate();
                 Ok(())
@@ -727,10 +887,8 @@ impl Library {
     }
 
     fn rekey(&mut self, old: &str, new: &str) {
-        if self.favorites.remove(old) {
-            self.favorites.insert(new.to_string());
-            self.save();
-        }
+        self.remap(|k| (k == old).then(|| Some(new.to_string())));
+        self.save();
     }
 }
 
@@ -794,6 +952,177 @@ mod tests {
         assert!(!v(&lib, "hand"), "verborgen bleibt verborgen");
     }
 
+
+    #[test]
+    fn media_saves_as_element_or_sound_into_new_folder() {
+        assert_eq!(save_kind(Path::new("a.GIF")), Some(Kind::Sticker));
+        assert_eq!(save_kind(Path::new("a.png")), Some(Kind::Sticker));
+        assert_eq!(save_kind(Path::new("a.mp3")), Some(Kind::Sound));
+        assert_eq!(save_kind(Path::new("a.mp4")), None);
+        assert_eq!(save_kind(Path::new("a")), None);
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        let src = home.path().join("clip.gif");
+        std::fs::write(&src, b"x").unwrap();
+        let mut lib = Library::default();
+        // neuer Ordner und Kopie in einem Schritt, gleicher Name zweimal: zweite Kopie umbenannt
+        assert_eq!(lib.import(Kind::Sticker, "Memes", std::slice::from_ref(&src)), 1);
+        assert_eq!(lib.import(Kind::Sticker, "Memes", std::slice::from_ref(&src)), 1);
+        assert_eq!(lib.folders(Kind::Sticker), vec!["Memes".to_string()]);
+        assert_eq!(lib.own_items(Kind::Sticker).len(), 2);
+        assert!(src.is_file(), "Original bleibt");
+    }
+
+    fn keys(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn arrange_puts_ordered_first_and_keeps_the_rest() {
+        let mut items = keys(&["a", "b", "c", "d", "e"]);
+        // unbekannte Schlüssel stören nicht, neue (nicht gelistete) folgen in alter Reihenfolge
+        arrange_by(&keys(&["d", "gone", "b"]), &mut items, |s| s.clone());
+        assert_eq!(items, keys(&["d", "b", "a", "c", "e"]));
+        let mut same = keys(&["x", "y"]);
+        arrange_by(&[], &mut same, |s| s.clone());
+        assert_eq!(same, keys(&["x", "y"]));
+    }
+
+    #[test]
+    fn move_before_to_end_and_onto_itself() {
+        let shown = keys(&["a", "b", "c"]);
+        // eigene Reihenfolge: aus der Anzeige gebildet, Verborgenes bleibt hinten
+        let mut seq = keys(&["hidden"]);
+        move_in(&mut seq, &shown, "c", Some("a"), true);
+        assert_eq!(seq, keys(&["c", "a", "b", "hidden"]));
+        move_in(&mut seq, &keys(&["c", "a", "b"]), "c", None, true);
+        assert_eq!(seq, keys(&["a", "b", "hidden", "c"]));
+        move_in(&mut seq, &shown, "b", Some("b"), true);
+        assert_eq!(seq, keys(&["a", "b", "hidden", "c"]), "auf sich selbst: nichts");
+        // Pins: nur Angepinnte bewegen sich; Ziel ohne Pin = Ende der Angepinnten
+        let mut pins = keys(&["x", "y"]);
+        move_in(&mut pins, &shown, "x", Some("a"), false);
+        assert_eq!(pins, keys(&["y", "x"]));
+        move_in(&mut pins, &shown, "a", Some("y"), false);
+        assert_eq!(pins, keys(&["y", "x"]));
+    }
+
+    #[test]
+    fn order_kinds() {
+        assert_eq!(order_kind("Favoriten"), Order::Own);
+        assert_eq!(order_kind("v:Intro"), Order::Own);
+        assert_eq!(order_kind("p:Eigene"), Order::Own);
+        assert_eq!(order_kind(&format!("p:{}", link_label("Clips"))), Order::Pins);
+        assert_eq!(order_kind("Alle"), Order::Pins);
+        assert_eq!(order_kind("b:Bewegung"), Order::Pins);
+        assert_eq!(order_kind("Zuletzt"), Order::Fixed);
+    }
+
+    #[test]
+    fn favorites_order_pins_and_search() {
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        let mut lib = Library::default();
+        let all = keys(&["fx:a", "fx:b", "fx:c"]);
+        let id = |s: &String| s.clone();
+        for k in &all {
+            lib.toggle_favorite(k);
+        }
+        let mut v = all.clone();
+        lib.arrange("effect", "Favoriten", "", &mut v, id);
+        assert_eq!(v, all, "ohne eigene Reihenfolge wie bisher");
+        lib.move_entry("effect", "Favoriten", &all, "fx:c", Some("fx:a"));
+        let mut v = all.clone();
+        lib.arrange("effect", "Favoriten", "", &mut v, id);
+        assert_eq!(v, keys(&["fx:c", "fx:a", "fx:b"]));
+        let mut v = all.clone();
+        lib.arrange("effect", "Favoriten", "x", &mut v, id);
+        assert_eq!(v, all, "Suche: normale Reihenfolge");
+        // entfernter und neu gesetzter Favorit kommt ans Ende
+        lib.toggle_favorite("fx:c");
+        lib.toggle_favorite("fx:c");
+        let mut v = all.clone();
+        lib.arrange("effect", "Favoriten", "", &mut v, id);
+        assert_eq!(v, keys(&["fx:a", "fx:b", "fx:c"]));
+        // Pins je Ordner getrennt
+        lib.toggle_pin("effect", "Alle", "fx:c");
+        lib.toggle_pin("effect", "Alle", "fx:b");
+        lib.toggle_pin("effect", "Favoriten", "fx:a");
+        assert!(lib.is_pinned("effect", "Alle", "fx:c"));
+        assert!(!lib.is_pinned("effect", "b:Bewegung", "fx:c"));
+        assert!(!lib.is_pinned("effect", "Favoriten", "fx:a"), "kein Anpinnen in Favoriten");
+        let mut v = all.clone();
+        lib.arrange("effect", "Alle", "", &mut v, id);
+        assert_eq!(v, keys(&["fx:c", "fx:b", "fx:a"]));
+        lib.move_entry("effect", "Alle", &v, "fx:b", Some("fx:c"));
+        let mut v = all.clone();
+        lib.arrange("effect", "Alle", "", &mut v, id);
+        assert_eq!(v, keys(&["fx:b", "fx:c", "fx:a"]));
+        let mut v = all.clone();
+        lib.arrange("effect", "b:Bewegung", "", &mut v, id);
+        assert_eq!(v, all);
+        lib.toggle_pin("effect", "Alle", "fx:b");
+        assert!(!lib.is_pinned("effect", "Alle", "fx:b"));
+        // ausgeblendet: Pin bleibt (kommt mit „wieder anzeigen“ zurück), Favorit geht
+        lib.hide("fx:c");
+        assert!(lib.is_pinned("effect", "Alle", "fx:c"));
+        assert!(!lib.order("effect", "Favoriten").contains(&"fx:c".to_string()));
+    }
+
+    #[test]
+    fn old_library_json_loads_and_new_fields_round_trip() {
+        let old = r#"{"favorites":["fx:a"],"recent":[],"hidden":[],"areas":{"effect":{"order":["b:Licht"],"names":{},"hidden":[],"virt":{"Intro":["fx:a"]}}},"linked":[]}"#;
+        let s: Stored = serde_json::from_str(old).unwrap();
+        assert!(s.favorites.contains("fx:a"));
+        assert!(s.areas["effect"].seq.is_empty());
+        let mut s = s;
+        s.areas.get_mut("effect").unwrap().seq.insert("Alle".into(), keys(&["fx:b"]));
+        let back: Stored = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back.areas["effect"].seq["Alle"], keys(&["fx:b"]));
+    }
+
+    #[test]
+    fn own_folder_order_survives_rename_and_goes_with_delete() {
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        let mut lib = Library::default();
+        // Sammelordner
+        let v = lib.create_virtual("effect", "Intro").unwrap();
+        for k in ["fx:a", "fx:b"] {
+            lib.add_to_virtual("effect", "Intro", k);
+        }
+        lib.move_entry("effect", &v, &keys(&["fx:a", "fx:b"]), "fx:b", Some("fx:a"));
+        lib.rename_cat("effect", &v, "Intros", None).unwrap();
+        assert_eq!(lib.order("effect", "v:Intros"), keys(&["fx:b", "fx:a"]));
+        lib.remove_from_virtual("effect", "Intros", "fx:b");
+        assert_eq!(lib.order("effect", "v:Intros"), keys(&["fx:a"]));
+        lib.delete_cat("effect", "v:Intros", None, &[]).unwrap();
+        assert!(lib.order("effect", "v:Intros").is_empty());
+        // Dateiordner: Schlüssel der Dateien wandern mit, Nachbarordner mit gleichem Anfang nicht
+        let src = home.path().join("in");
+        std::fs::create_dir_all(&src).unwrap();
+        for f in ["a.wav", "b.wav"] {
+            std::fs::write(src.join(f), b"x").unwrap();
+        }
+        lib.import(Kind::Sound, "Gaming", &[src.join("a.wav"), src.join("b.wav")]);
+        lib.import(Kind::Sound, "Gaming2", &[src.join("a.wav")]);
+        let it = lib.own_items(Kind::Sound);
+        let k: Vec<String> = it.iter().map(|i| i.key.clone()).collect();
+        lib.move_entry("sfx", "p:Gaming", &k[..2], &k[1], Some(&k[0]));
+        lib.toggle_pin("sfx", "Alle", &k[2]);
+        lib.rename_cat("sfx", "p:Gaming", "Games", Some(Kind::Sound)).unwrap();
+        let renamed: Vec<String> = lib.order("sfx", "p:Games").to_vec();
+        assert_eq!(renamed.len(), 2);
+        assert!(renamed[0].ends_with("b.wav") && renamed[0].contains("Games"));
+        assert!(lib.is_pinned("sfx", "Alle", &k[2]), "Gaming2 bleibt unberührt");
+        lib.toggle_pin("sfx", "Alle", &renamed[0]);
+        lib.delete_cat("sfx", "p:Games", Some(Kind::Sound), &[]).unwrap();
+        assert!(lib.order("sfx", "p:Games").is_empty());
+        assert_eq!(lib.order("sfx", "Alle"), std::slice::from_ref(&k[2]), "Pin der gelöschten Datei weg");
+    }
 
     #[test]
     fn linked_folders_are_listed_but_not_owned() {

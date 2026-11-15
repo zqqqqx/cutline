@@ -95,6 +95,36 @@ pub enum LibDialog {
         key: String,
         label: String,
     },
+    /// Mediendatei in einen neuen Ordner der Elemente bzw. Sounds kopieren
+    SaveAs {
+        kind: Kind,
+        file: PathBuf,
+        name: String,
+    },
+}
+
+/// Untermenü „Als Element/Sound speichern ▸ eigene Ordner · Neuer Ordner …“ (nur für passende Dateien).
+/// Gewählt: `Some(Some(ordner))`, neuer Ordner: `Some(None)`.
+pub fn save_as_menu(ui: &mut egui::Ui, kind: Option<Kind>, folders: &[String], pick: &mut Option<Option<String>>) {
+    let Some(k) = kind else { return };
+    let (g, label) = match k {
+        Kind::Sound => (icon::SPEAKER_HIGH, "Als Sound speichern"),
+        _ => (icon::STICKER, "Als Element speichern"),
+    };
+    theme::submenu(ui, g, label, |ui| {
+        ui.set_min_width(160.0);
+        // verknüpfte Ordner gehören nicht Cutline: dort nichts ablegen
+        for f in folders.iter().filter(|f| !f.starts_with(icon::LINK_SIMPLE)) {
+            // Ordnernamen sind Nutzertext: nicht übersetzen
+            if ui.add(theme::menu_row(format!("{}   {f}", icon::FOLDER_SIMPLE)).min_width(160.0)).clicked() {
+                *pick = Some(Some(f.clone()));
+                ui.close_menu();
+            }
+        }
+        if menu_item(ui, icon::FOLDER_PLUS, "Neuer Ordner …", "") {
+            *pick = Some(None);
+        }
+    });
 }
 
 /// Lädt Vorschaubilder eigener Sticker im Hintergrund.
@@ -208,7 +238,174 @@ pub fn fav_badge(p: &egui::Painter, a: egui::Rect) {
     );
 }
 
+/// Nadel oben rechts auf einer Kachel (oben angepinnt)
+pub fn pin_badge(p: &egui::Painter, a: egui::Rect) {
+    p.text(
+        a.right_top() + egui::vec2(-5.0, 4.0),
+        egui::Align2::RIGHT_TOP,
+        icon::PUSH_PIN,
+        egui::FontId::proportional(11.0), // Icon-Glyphe wie der Favoriten-Stern
+        theme::ACCENT(),
+    );
+}
+
+/// Bearbeiten-Modus der Reihenfolge: (Bereich, Ordner, Durchgang der letzten Leiste). Einzige Stelle des Zustands.
+fn edit_id() -> egui::Id {
+    egui::Id::new("order-edit")
+}
+
+/// Ist der Bearbeiten-Modus für Bereich und Ordner an?
+fn editing(ctx: &egui::Context, area: &str, cat: &str) -> bool {
+    ctx.data(|d| d.get_temp::<(String, String, u64)>(edit_id()))
+        .is_some_and(|(a, c, _)| a == area && c == cat)
+}
+
+/// Nutzlast beim Umsortieren (Schlüssel des Eintrags); die Zeitleiste nimmt sie nicht an.
+struct Reordering(String);
+
+/// Umsortieren eines Tabs: Pins zeichnen und im Bearbeiten-Modus Ziehen/Ablegen der Kacheln.
+pub struct Reorder {
+    on: bool,
+    area: &'static str,
+    cat: String,
+    /// eigene Reihenfolge: alles verschiebbar, sonst nur `pins`
+    whole: bool,
+    pins: Vec<String>,
+    /// angezeigte Schlüssel in Reihenfolge (nur im Modus)
+    shown: Vec<String>,
+    drop: std::cell::RefCell<Option<(String, Option<String>)>>,
+    over: std::cell::Cell<bool>,
+    last: std::cell::Cell<Option<egui::Rect>>,
+}
+
+impl Reorder {
+    pub fn pinned(&self, key: &str) -> bool {
+        self.pins.iter().any(|k| k == key)
+    }
+
+    /// Nach `widgets::tile` (bzw. einer Zeile) aufrufen: zeichnet die Nadel angepinnter Einträge (`badge`)
+    /// und übernimmt im Bearbeiten-Modus das Ziehen. `true` = Modus an: dann keine Zeitleisten-Nutzlast
+    /// setzen und Klicks nicht auswerten.
+    pub fn tile(&self, ui: &egui::Ui, resp: &egui::Response, key: &str, badge: bool) -> bool {
+        let pinned = self.pinned(key);
+        if badge && pinned {
+            pin_badge(ui.painter(), resp.rect);
+        }
+        if !self.on {
+            return false;
+        }
+        let p = ui.painter();
+        if !(self.whole || pinned) {
+            p.rect_filled(resp.rect, theme::R_CARD, egui::Color32::from_black_alpha(110));
+            return true;
+        }
+        self.last.set(Some(resp.rect));
+        resp.dnd_set_drag_payload(Reordering(key.to_string()));
+        let held = egui::DragAndDrop::payload::<Reordering>(ui.ctx());
+        if held.as_ref().is_some_and(|h| h.0 == key) {
+            p.rect_filled(resp.rect, theme::R_CARD, egui::Color32::from_black_alpha(110));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        if let Some(h) = resp.dnd_hover_payload::<Reordering>() {
+            self.over.set(true);
+            if h.0 != key {
+                insert_mark(p, resp.rect, false);
+            }
+        }
+        if let Some(h) = resp.dnd_release_payload::<Reordering>() {
+            *self.drop.borrow_mut() = Some((h.0.clone(), Some(key.to_string())));
+        }
+        true
+    }
+}
+
+/// Einfügemarke vor (`after` = hinter) einer Kachel; bei breiten Zeilen waagrecht
+fn insert_mark(p: &egui::Painter, r: egui::Rect, after: bool) {
+    let s = egui::Stroke::new(2.0_f32, theme::ACCENT());
+    if r.width() > 2.0 * r.height() {
+        let y = if after { r.bottom() + 2.0 } else { r.top() - 2.0 };
+        p.hline(r.x_range(), y, s);
+    } else {
+        let x = if after { r.right() + 4.0 } else { r.left() - 4.0 };
+        p.vline(x, r.y_range(), s);
+    }
+}
+
 impl App {
+    /// Datei als Element bzw. Sound in den Ordner kopieren (`None`: Namen erfragen, Ordner anlegen).
+    pub fn save_as(&mut self, kind: Kind, folder: Option<String>, file: PathBuf) {
+        let Some(f) = folder else {
+            self.lib_dialog = Some(LibDialog::SaveAs { kind, file, name: String::new() });
+            return;
+        };
+        if self.library.import(kind, &f, std::slice::from_ref(&file)) == 0 {
+            self.toast_err("Datei nicht gefunden");
+        } else {
+            self.toast(if kind == Kind::Sound { "Als Sound gespeichert" } else { "Als Element gespeichert" });
+        }
+    }
+
+    /// Liste ordnen (eigene Reihenfolge bzw. Pins zuerst, nicht bei Suche) und das Umsortieren holen.
+    pub fn lib_arrange<T>(
+        &self,
+        ui: &egui::Ui,
+        area: &'static str,
+        cat: &str,
+        q: &str,
+        items: &mut Vec<T>,
+        key: impl Fn(&T) -> String,
+    ) -> Reorder {
+        self.library.arrange(area, cat, q, items, &key);
+        self.reorder(ui, area, cat, items, key)
+    }
+
+    /// Umsortieren für eine schon geordnete Liste (siehe [`Self::lib_arrange`]).
+    pub fn reorder<T>(&self, ui: &egui::Ui, area: &'static str, cat: &str, items: &[T], key: impl Fn(&T) -> String) -> Reorder {
+        let on = editing(ui.ctx(), area, cat);
+        if on {
+            ui.data_mut(|d| d.insert_temp(crate::widgets::no_plus_id(), true));
+        }
+        Reorder {
+            on,
+            area,
+            cat: cat.to_string(),
+            whole: crate::library::order_kind(cat) == crate::library::Order::Own,
+            pins: if crate::library::order_kind(cat) == crate::library::Order::Pins {
+                self.library.order(area, cat).to_vec()
+            } else {
+                Vec::new()
+            },
+            shown: if on { items.iter().map(key).collect() } else { Vec::new() },
+            drop: Default::default(),
+            over: Default::default(),
+            last: Default::default(),
+        }
+    }
+
+    /// Nach dem Raster: Ablegen übernehmen. Abgelegt in `list` außerhalb einer verschiebbaren Kachel = ans Ende.
+    pub fn reorder_done(&mut self, ui: &egui::Ui, ed: Reorder, list: egui::Rect) {
+        if !ed.on {
+            return;
+        }
+        ui.data_mut(|d| d.remove::<bool>(crate::widgets::no_plus_id()));
+        let inside = ui.input(|i| i.pointer.latest_pos()).is_some_and(|p| list.contains(p));
+        if inside && !ed.over.get() && egui::DragAndDrop::has_payload_of_type::<Reordering>(ui.ctx()) {
+            if let Some(r) = ed.last.get() {
+                insert_mark(&ui.painter().with_clip_rect(list), r, true);
+            }
+            if ui.input(|i| i.pointer.any_released()) {
+                if let Some(h) = egui::DragAndDrop::take_payload::<Reordering>(ui.ctx()) {
+                    *ed.drop.borrow_mut() = Some((h.0.clone(), None));
+                }
+            }
+        }
+        if let Some((key, before)) = ed.drop.into_inner() {
+            self.library.move_entry(ed.area, &ed.cat, &ed.shown, &key, before.as_deref());
+        }
+    }
+
     /// Kopfbereich eines Asset-Bereichs: Suche, (Import), neuer Ordner, Chips mit Menüs.
     /// Gibt (Kategorie-Schlüssel, Suchtext) zurück; Kategorie ist „Alle“, „Favoriten“ oder `b:/p:/v:…`.
     pub fn asset_bar(
@@ -221,8 +418,23 @@ impl App {
         let qkey: &'static str = intern(format!("{area}-q"));
         let ckey: &'static str = intern(format!("{area}-cat"));
         let mut q = self.asset_cat.get(qkey).cloned().unwrap_or_default();
+        // Reihenfolge bearbeiten: eigene Reihenfolge immer, sonst nur mit Angepinnten; nie bei Suche
+        let sel = self.asset_cat.get(ckey).cloned().unwrap_or_else(|| "Alle".into());
+        let can_edit = q.trim().is_empty()
+            && match crate::library::order_kind(&sel) {
+                crate::library::Order::Own => true,
+                crate::library::Order::Pins => !self.library.order(area, &sel).is_empty(),
+                crate::library::Order::Fixed => false,
+            };
+        let pass = ui.ctx().cumulative_pass_nr();
+        let state = ui.data(|d| d.get_temp::<(String, String, u64)>(edit_id()));
+        // Modus endet bei Ordner-/Tab-Wechsel (auch wenn die Leiste ein Bild lang nicht gezeichnet wurde)
+        let mut edit = can_edit
+            && state.as_ref().is_some_and(|(a, c, p)| a == area && *c == sel && p + 1 >= pass)
+            && !ui.input(|i| i.key_pressed(egui::Key::Escape));
+        ui.data_mut(|d| d.remove::<bool>(crate::widgets::no_plus_id()));
         ui.horizontal(|ui| {
-            let buttons = if phys.is_some() { 2.0 } else { 1.0 };
+            let buttons = if phys.is_some() { 2.0 } else { 1.0 } + if can_edit { 1.0 } else { 0.0 };
             let w = (ui.available_width() - buttons * 30.0 - buttons * ui.spacing().item_spacing.x)
                 .max(60.0);
             ui.add(
@@ -247,7 +459,18 @@ impl App {
                     add: None,
                 });
             }
+            if can_edit {
+                let (g, tip) = if edit { (icon::CHECK, "Fertig") } else { (icon::PENCIL_SIMPLE, "Reihenfolge bearbeiten") };
+                if theme::icon_button(ui, g, tip, true, edit).clicked() {
+                    edit = !edit;
+                }
+            }
         });
+        if edit {
+            ui.data_mut(|d| d.insert_temp(edit_id(), (area.to_string(), sel.clone(), pass)));
+        } else if state.is_some() {
+            ui.data_mut(|d| d.remove::<(String, String, u64)>(edit_id()));
+        }
         self.asset_cat.insert(qkey, q.clone());
         ui.add_space(4.0);
         let cats = self.library.cats(area, builtin, phys);
@@ -415,6 +638,8 @@ impl App {
         extra: &mut dyn FnMut(&mut egui::Ui),
     ) {
         let fav = self.library.is_favorite(key);
+        let pin = (crate::library::order_kind(cat) == crate::library::Order::Pins)
+            .then(|| self.library.is_pinned(area, cat, key));
         let virt = self.library.virtual_folders(area);
         let phys_folders = area_kind(area)
             .map(|k| self.library.folders(k))
@@ -436,6 +661,12 @@ impl App {
                 "",
             ) {
                 act = Some(0);
+            }
+            if let Some(p) = pin {
+                let (g, t) = if p { (icon::PUSH_PIN_SLASH, "Nicht mehr anpinnen") } else { (icon::PUSH_PIN, "Oben anpinnen") };
+                if menu_item(ui, g, t, "") {
+                    act = Some(5);
+                }
             }
             theme::submenu(
                 ui,
@@ -541,6 +772,7 @@ impl App {
                     self.library.remove_from_virtual(area, name, key);
                 }
             }
+            Some(5) => self.library.toggle_pin(area, cat, key),
             _ => {}
         }
         if let Some(f) = add_to {
@@ -608,7 +840,7 @@ impl App {
         let err = self.dialog_error.clone();
         let mut edited = false;
         let title = match d {
-            LibDialog::NewFolder { .. } => "Neuer Ordner",
+            LibDialog::NewFolder { .. } | LibDialog::SaveAs { .. } => "Neuer Ordner",
             LibDialog::Rename { .. } | LibDialog::RenameCat { .. } => "Umbenennen",
             LibDialog::DeleteCat { .. } => "Ordner entfernen?",
         };
@@ -616,7 +848,10 @@ impl App {
             ui.set_width(320.0);
             close |= crate::dialog::title(ui, title);
             match d {
-                LibDialog::NewFolder { name, .. } | LibDialog::Rename { name, .. } | LibDialog::RenameCat { name, .. } => {
+                LibDialog::NewFolder { name, .. }
+                | LibDialog::Rename { name, .. }
+                | LibDialog::RenameCat { name, .. }
+                | LibDialog::SaveAs { name, .. } => {
                     let r = ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY));
                     if fresh {
                         r.request_focus();
@@ -684,6 +919,10 @@ impl App {
                 Some(LibDialog::DeleteCat { area, key, .. }) => {
                     let used: Vec<PathBuf> = self.project.media.iter().map(|m| m.path.clone()).collect();
                     self.library.delete_cat(area, &key, area_kind(area), &used)
+                }
+                Some(LibDialog::SaveAs { kind, file, name }) => {
+                    // Ordner anlegen und gleich hineinkopieren
+                    self.library.create_folder(kind, &name).map(|_| self.save_as(kind, Some(name.trim().to_string()), file))
                 }
                 None => Ok(()),
             };
@@ -756,12 +995,15 @@ impl App {
     ) -> Vec<Item> {
         let mut all = builtin;
         all.extend(self.library.own_items(kind));
-        all.into_iter()
+        let mut items: Vec<Item> = all
+            .into_iter()
             .filter(|i| {
                 self.library
                     .visible_tagged(area, cat, q, &i.key, &i.name, &i.folder, &i.tags)
             })
-            .collect()
+            .collect();
+        self.library.arrange(area, cat, q, &mut items, |i| i.key.clone());
+        items
     }
 }
 

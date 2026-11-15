@@ -415,7 +415,7 @@ impl App {
             MediaKind::Audio => "Audio",
             MediaKind::Image => "Bilder",
         };
-        let media: Vec<MediaRef> = self
+        let mut media: Vec<MediaRef> = self
             .project
             .media
             .iter()
@@ -441,6 +441,7 @@ impl App {
             })
             .cloned()
             .collect();
+        let ed = self.lib_arrange(ui, area, &cat, &q, &mut media, |m| format!("media:{}", m.id));
         let used: std::collections::HashSet<MediaId> = self
             .project
             .timeline
@@ -461,7 +462,7 @@ impl App {
             .filter(|k| k.starts_with("strip:") && !self.fx_thumbs.contains_key(*k))
             .count();
         let mut wanted = std::collections::HashSet::new();
-        egui::ScrollArea::vertical()
+        let list = egui::ScrollArea::vertical()
             .id_salt("media")
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -576,8 +577,10 @@ impl App {
                                 );
                             }
                             if self.library.is_favorite(&format!("media:{}", m.id)) {
+                                // neben der Nadel, falls angepinnt
+                                let pin = if ed.pinned(&format!("media:{}", m.id)) { 15.0 } else { 0.0 };
                                 p.text(
-                                    a.right_top() + vec2(-6.0, 5.0),
+                                    a.right_top() + vec2(-6.0 - pin, 5.0),
                                     egui::Align2::RIGHT_TOP,
                                     icon::STAR,
                                     // Icon-Glyphe
@@ -587,26 +590,33 @@ impl App {
                             }
                         },
                     );
-                    resp.dnd_set_drag_payload(DragAsset::Media(m.id));
+                    let editing = ed.tile(ui, &resp, &format!("media:{}", m.id), true);
+                    if !editing {
+                        resp.dnd_set_drag_payload(DragAsset::Media(m.id));
+                    }
                     let resp = if m.kind == MediaKind::Audio {
                         resp.on_hover_text(name.clone())
                     } else {
                         resp.on_hover_text(format!("{name} · {}×{}", m.width, m.height))
                     };
-                    if resp.double_clicked()
-                        || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0))
+                    if !editing
+                        && (resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0)))
                     {
                         add = Some(m.id);
                     }
                     menus.push((resp, m.clone()));
                 });
             });
+        self.reorder_done(ui, ed, list.inner_rect);
         *self.decoder.strips_wanted.lock().unwrap_or_else(|e| e.into_inner()) = wanted;
         for (resp, m) in menus {
             let key = format!("media:{}", m.id);
             let mut ins = false;
             let mut props = false;
             let mut to_lib = false;
+            let save_kind = crate::library::save_kind(&m.path);
+            let folders = save_kind.map(|k| self.library.folders(k)).unwrap_or_default();
+            let mut save = None;
             self.asset_menu_with(&resp, area, &key, None, &cat, &mut |ui| {
                 if menu_item(ui, icon::INFO, "Eigenschaften", "") {
                     props = true;
@@ -619,6 +629,7 @@ impl App {
                     to_lib = true;
                     ui.close_menu();
                 }
+                crate::library_ui::save_as_menu(ui, save_kind, &folders, &mut save);
                 if menu_item(ui, icon::PLUS, "Am Playhead einfügen", "") {
                     ins = true;
                 }
@@ -629,6 +640,9 @@ impl App {
             });
             if ins {
                 add = Some(m.id);
+            }
+            if let (Some(k), Some(f)) = (save_kind, save) {
+                self.save_as(k, f, m.path.clone());
             }
             if props {
                 self.props = Some(crate::props::Props::Media(m.id));
@@ -652,6 +666,7 @@ impl App {
         use crate::library::Kind;
         let (cat, q) = self.asset_bar(ui, "libmedia", &[]);
         let items = self.lib_items("libmedia", Kind::Media, Vec::new(), &cat, &q);
+        let ed = self.reorder(ui, "libmedia", &cat, &items, |i| i.key.clone());
         let mut menus: Vec<(egui::Response, crate::library::Item)> = Vec::new();
         let mut add: Option<PathBuf> = None;
         let area = egui::ScrollArea::vertical()
@@ -705,16 +720,29 @@ impl App {
                             crate::library_ui::fav_badge(p, a);
                         }
                     });
-                    resp.dnd_set_drag_payload(DragAsset::File(path.clone()));
-                    if resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0)) {
+                    let editing = ed.tile(ui, &resp, &it.key, true);
+                    if !editing {
+                        resp.dnd_set_drag_payload(DragAsset::File(path.clone()));
+                    }
+                    if !editing && (resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0))) {
                         add = Some(path);
                     }
                     menus.push((resp.on_hover_text(it.folder.clone()), it.clone()));
                 });
             });
+        self.reorder_done(ui, ed, area.inner_rect);
         self.lib_drop = Some((Kind::Media, area.inner_rect));
         for (r, it) in menus {
-            self.asset_menu(&r, "libmedia", &it.key, it.is_own().then_some(&it), &cat);
+            let Some(path) = it.path.clone() else { continue };
+            let save_kind = crate::library::save_kind(&path);
+            let folders = save_kind.map(|k| self.library.folders(k)).unwrap_or_default();
+            let mut save = None;
+            self.asset_menu_with(&r, "libmedia", &it.key, it.is_own().then_some(&it), &cat, &mut |ui| {
+                crate::library_ui::save_as_menu(ui, save_kind, &folders, &mut save);
+            });
+            if let (Some(k), Some(f)) = (save_kind, save) {
+                self.save_as(k, f, path);
+            }
         }
         if let Some(p) = add {
             self.library.mark_used(&format!("file:{}", p.display()));
@@ -868,7 +896,7 @@ impl App {
                         dirs.dedup();
                         let dir_refs: Vec<&str> = dirs.iter().map(|s| s.as_str()).collect();
                         let (cat, q) = self.asset_bar(ui, "music", &dir_refs);
-                        let l: Vec<PathBuf> = l
+                        let mut l: Vec<PathBuf> = l
                             .iter()
                             .filter(|p| {
                                 let name = p
@@ -886,8 +914,9 @@ impl App {
                             })
                             .cloned()
                             .collect();
+                        let ed = self.lib_arrange(ui, "music", &cat, &q, &mut l, |p| format!("music:{}", p.display()));
                         let mut menus: Vec<(egui::Response, String)> = Vec::new();
-                        egui::ScrollArea::vertical()
+                        let list = egui::ScrollArea::vertical()
                             .id_salt("music")
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
@@ -905,18 +934,22 @@ impl App {
                                     };
                                     let (play, add, drag) =
                                         self.sound_row(ui, &key, &name, &info, &p, None);
+                                    let editing = drag.as_ref().is_some_and(|r| ed.tile(ui, r, &key, true));
                                     if let Some(r) = drag {
-                                        r.dnd_set_drag_payload(DragAsset::File(p.clone()));
+                                        if !editing {
+                                            r.dnd_set_drag_payload(DragAsset::File(p.clone()));
+                                        }
                                         menus.push((r, key.clone()));
                                     }
-                                    if play {
+                                    if play && !editing {
                                         self.preview_sound(key.clone(), &p, None);
                                     }
-                                    if add {
+                                    if add && !editing {
                                         self.add_file_at(p.clone(), self.playhead, None);
                                     }
                                 }
                             });
+                        self.reorder_done(ui, ed, list.inner_rect);
                         for (r, k) in menus {
                             self.asset_menu(&r, "music", &k, None, &cat);
                         }
@@ -1256,7 +1289,8 @@ impl App {
             0 => {
                 let (cat, q) = self.asset_bar(ui, "text", &cl_fx::text::TEMPLATE_CATEGORIES);
                 let mut menus: Vec<(egui::Response, String)> = Vec::new();
-                egui::ScrollArea::vertical()
+                let mut ed = None;
+                let list = egui::ScrollArea::vertical()
                     .id_salt("tpl")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
@@ -1283,6 +1317,8 @@ impl App {
                                 })
                                 .map(Some),
                         );
+                        let tkey = |t: &Option<&cl_fx::text::TextTemplate>| format!("tt:{}", t.map_or("default", |t| t.id));
+                        let e = ed.insert(self.lib_arrange(ui, "text", &cat, &q, &mut items, tkey));
                         let mut add: Option<Option<&'static str>> = None;
                         widgets::grid(ui, &items, 120.0, 16.0 / 10.0, 16.0, |ui, r, t| {
                             let (id, name) = match t {
@@ -1309,16 +1345,21 @@ impl App {
                                     }
                                 },
                             );
-                            menus.push((resp.clone(), akey));
-                            resp.dnd_set_drag_payload(DragAsset::Text(t.map(|t| t.id)));
-                            if resp.clicked() || resp.double_clicked() {
-                                add = Some(t.map(|t| t.id));
+                            if !e.tile(ui, &resp, &akey, true) {
+                                resp.dnd_set_drag_payload(DragAsset::Text(t.map(|t| t.id)));
+                                if resp.clicked() || resp.double_clicked() {
+                                    add = Some(t.map(|t| t.id));
+                                }
                             }
+                            menus.push((resp, akey));
                         });
                         if let Some(t) = add {
                             self.add_text_at(self.playhead, t, None);
                         }
                     });
+                if let Some(e) = ed {
+                    self.reorder_done(ui, e, list.inner_rect);
+                }
                 for (r, k) in menus {
                     self.asset_menu(&r, "text", &k, None, &cat);
                 }
@@ -1330,7 +1371,7 @@ impl App {
                     .is_some_and(|(_, c)| matches!(c.content, ClipContent::Text(_)));
                 ui.add_space(6.0);
                 let (cat, q) = self.asset_bar(ui, "texteffect", &[]);
-                let items: Vec<&'static cl_fx::text::TextEffect> = cl_fx::text::TEXT_EFFECTS
+                let mut items: Vec<&'static cl_fx::text::TextEffect> = cl_fx::text::TEXT_EFFECTS
                     .iter()
                     .filter(|e| {
                         self.library.visible(
@@ -1343,9 +1384,10 @@ impl App {
                         )
                     })
                     .collect();
+                let ed = self.lib_arrange(ui, "texteffect", &cat, &q, &mut items, |e| format!("te:{}", e.id));
                 let mut menus: Vec<(egui::Response, String)> = Vec::new();
                 let mut chosen = None;
-                egui::ScrollArea::vertical()
+                let list = egui::ScrollArea::vertical()
                     .id_salt("teff")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
@@ -1373,12 +1415,13 @@ impl App {
                                     }
                                 },
                             );
-                            menus.push((resp.clone(), akey));
-                            if resp.clicked() {
+                            if !ed.tile(ui, &resp, &akey, true) && resp.clicked() {
                                 chosen = Some(e.apply);
                             }
+                            menus.push((resp, akey));
                         });
                     });
+                self.reorder_done(ui, ed, list.inner_rect);
                 for (r, k) in menus {
                     self.asset_menu(&r, "texteffect", &k, None, &cat);
                 }
@@ -1456,13 +1499,14 @@ impl App {
             .map(|(k, v)| (k, v.into_iter().map(|f| f.info.clone()).collect()))
             .collect();
         let none_imported = all_fams.is_empty();
-        let families: Vec<(String, Vec<cl_fonts::FaceInfo>)> = all_fams
+        let mut families: Vec<(String, Vec<cl_fonts::FaceInfo>)> = all_fams
             .into_iter()
             .filter(|(f, _)| {
                 self.library
                     .visible("font", &cat, &q, &format!("font:{f}"), f, "")
             })
             .collect();
+        let ed = self.lib_arrange(ui, "font", &cat, &q, &mut families, |(f, _)| format!("font:{f}"));
         let mut menus: Vec<(egui::Response, String)> = Vec::new();
         if none_imported {
             theme::empty_state(
@@ -1474,7 +1518,7 @@ impl App {
         }
         let mut remove = None;
         let mut use_font = None;
-        egui::ScrollArea::vertical()
+        let list = egui::ScrollArea::vertical()
             .id_salt("fonts")
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -1565,10 +1609,13 @@ impl App {
                                 );
                             }
                         });
-                    menus.push((fr.response.interact(Sense::click()), akey));
+                    let r = fr.response.interact(Sense::click_and_drag());
+                    ed.tile(ui, &r, &akey, true);
+                    menus.push((r, akey));
                     ui.add_space(6.0);
                 }
             });
+        self.reorder_done(ui, ed, list.inner_rect);
         for (r, k) in menus {
             self.asset_menu(&r, "font", &k, None, &cat);
         }
@@ -1608,6 +1655,7 @@ impl App {
             .filter_map(|e| catalog_item(e, "builtin:st:", |id| cl_fx::stickers::sticker(id).map(|s| s.id)))
             .collect();
         let items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
+        let ed = self.reorder(ui, "sticker", &cat, &items, |i| i.key.clone());
         let ctx = ui.ctx().clone();
         let mut add: Option<Item> = None;
         let mut menu: Vec<(egui::Response, Item)> = Vec::new();
@@ -1681,19 +1729,22 @@ impl App {
                             }
                         },
                     );
+                    let editing = ed.tile(ui, &resp, &it.key, true);
                     match (it.builtin.and_then(cl_fx::stickers::sticker), &it.path) {
+                        _ if editing => {}
                         (Some(st), _) => resp.dnd_set_drag_payload(DragAsset::Sticker(st.id)),
                         (None, Some(p)) => {
                             resp.dnd_set_drag_payload(DragAsset::OwnSticker(p.clone()))
                         }
                         _ => {}
                     }
-                    if resp.clicked() {
+                    if resp.clicked() && !editing {
                         add = Some(it.clone());
                     }
                     menu.push((resp, it.clone()));
                 });
             });
+        self.reorder_done(ui, ed, area.inner_rect);
         self.lib_drop = Some((Kind::Sticker, area.inner_rect));
         for (r, it) in menu {
             self.asset_menu(&r, "sticker", &it.key, it.is_own().then_some(&it), &cat);
@@ -1823,6 +1874,7 @@ impl App {
             })
             .map(|e| (e.id, e.name))
             .collect();
+        let ed = self.lib_arrange(ui, area, &cat, &q, &mut items, |(id, _)| format!("{pre}:{id}"));
         let mut menus: Vec<(egui::Response, String)> = Vec::new();
         let current: Vec<String> = target
             .and_then(|t| self.project.find_clip(t))
@@ -1836,7 +1888,7 @@ impl App {
             .unwrap_or_default();
         let mut chosen = None;
         let orig = self.fx_thumb("orig", orig_graph);
-        egui::ScrollArea::vertical()
+        let list = egui::ScrollArea::vertical()
             .id_salt(if filters { "flt" } else { "eff" })
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -1915,21 +1967,23 @@ impl App {
                             }
                         },
                     );
-                    if !id.is_empty() {
-                        menus.push((resp.clone(), akey));
-                    }
-                    if !id.is_empty() {
+                    let editing = ed.tile(ui, &resp, &akey, true);
+                    if !id.is_empty() && !editing {
                         resp.dnd_set_drag_payload(if filters {
                             DragAsset::Filter(id.clone())
                         } else {
                             DragAsset::Effect(id.clone())
                         });
                     }
-                    if resp.clicked() {
+                    if resp.clicked() && !editing {
                         chosen = Some(id.clone());
+                    }
+                    if !id.is_empty() {
+                        menus.push((resp, akey));
                     }
                 });
             });
+        self.reorder_done(ui, ed, list.inner_rect);
         for (r, k) in menus {
             self.asset_menu(&r, area, &k, None, &cat);
         }
@@ -1969,7 +2023,7 @@ impl App {
         let cats = tab_cats(&cl_fx::TRANSITION_CATEGORIES, &entries);
         let cats: Vec<&str> = cats.iter().map(String::as_str).collect();
         let (cat, q) = self.asset_bar(ui, "transition", &cats);
-        let items: Vec<(String, String)> = entries
+        let mut items: Vec<(String, String)> = entries
             .into_iter()
             .filter(|e| {
                 self.library
@@ -1977,13 +2031,14 @@ impl App {
             })
             .map(|e| (e.id, e.name))
             .collect();
+        let ed = self.lib_arrange(ui, "transition", &cat, &q, &mut items, |(id, _)| format!("tr:{id}"));
         let mut menus: Vec<(egui::Response, String)> = Vec::new();
         let current = self
             .selected_transition
             .and_then(|c| self.project.find_clip(c))
             .and_then(|(_, c)| c.transition_out.as_ref().map(|t| t.id.clone()));
         let mut chosen = None;
-        egui::ScrollArea::vertical().id_salt("trans").auto_shrink([false, false]).show(ui, |ui| {
+        let list = egui::ScrollArea::vertical().id_salt("trans").auto_shrink([false, false]).show(ui, |ui| {
             if items.is_empty() {
                 theme::empty_state(ui, icon::INTERSECT, "Keine Übergänge gefunden", "");
             }
@@ -2018,13 +2073,16 @@ impl App {
                         crate::library_ui::fav_badge(p, a);
                     }
                 });
-                menus.push((resp.clone(), akey));
-                resp.dnd_set_drag_payload(DragAsset::Transition(id.clone()));
-                if resp.clicked() {
-                    chosen = Some(id.clone());
+                if !ed.tile(ui, &resp, &akey, true) {
+                    resp.dnd_set_drag_payload(DragAsset::Transition(id.clone()));
+                    if resp.clicked() {
+                        chosen = Some(id.clone());
+                    }
                 }
+                menus.push((resp, akey));
             });
         });
+        self.reorder_done(ui, ed, list.inner_rect);
         for (r, k) in menus {
             self.asset_menu(&r, "transition", &k, None, &cat);
         }

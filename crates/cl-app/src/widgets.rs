@@ -432,8 +432,8 @@ pub fn tile(
             egui::StrokeKind::Inside,
         );
     }
-    if resp.hovered() {
-        // „+“ zum direkten Hinzufügen
+    if resp.hovered() && !ui.data(|d| d.get_temp::<bool>(no_plus_id()).unwrap_or(false)) {
+        // „+“ zum direkten Hinzufügen (nicht beim Umsortieren)
         let plus = Rect::from_min_size(area.right_bottom() - vec2(22.0, 22.0), vec2(18.0, 18.0));
         p.circle_filled(plus.center(), 9.0, theme::ACCENT());
         p.text(
@@ -471,6 +471,11 @@ pub fn tile(
             .galley(pos, g, theme::TEXT_DIM());
     }
     resp
+}
+
+/// Merker „Kacheln ohne „+“ zeichnen“ (Umsortieren in `library_ui`)
+pub fn no_plus_id() -> egui::Id {
+    egui::Id::new("tile-no-plus")
 }
 
 /// Kachel-Klick traf das „+“ unten rechts?
