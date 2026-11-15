@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="15.48 98.48 41.04 41.04"><defs><linearGradient gradientUnits="userSpaceOnUse" x1="-819.2" x2="819.2" spreadMethod="pad" gradientTransform="matrix(0 -0.003662109375 0.003662109375 0 36 135)" id="gradient23">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E2E2E2"/>
+    </linearGradient></defs><path stroke="none" fill="#FFFFFF" d="M24 100 L48 100 Q52 100 52 104 L52 128 Q52 132 48 132 L24 132 Q20 132 20 128 L20 104 Q20 100 24 100"/><path stroke="none" fill="url(#gradient23)" d="M42 132 L36 138 30 132 42 132"/><path stroke="none" fill="#3498DB" d="M32.45 123.6 Q31 122.15 31 120.3 L31.05 120.05 35.05 109.6 35.4 109.2 36 109 36.6 109.2 36.95 109.6 40.95 120.05 41 120.3 Q41 122.15 39.6 123.6 38.1 125 36 125 33.95 125.05 32.45 123.6"/></svg>

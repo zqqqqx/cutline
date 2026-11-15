@@ -1,0 +1,341 @@
+# Erzeugt von tools/bau.py aus Kenney-Paketen (CC0) – nicht von Hand ändern.
+[plugin]
+id = "kenney.emotes"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Sprechblasen (Kenney)", en = "Emotes (Kenney)" }
+description = { de = "Sprechblasen mit Gefühlen und Zeichen (Vektor)", en = "Speech-bubble emotes (vector)" }
+authors = ["Kenney"]
+license = "CC0-1.0"
+source = "https://kenney.nl/assets"
+
+[[asset]]
+id = "emotes-sprechblase-leer"
+kind = "sticker"
+name = { de = "Sprechblase leer", en = "Speech bubble" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-sprechblase-leer.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["speech bubble", "sprechblase leer", "kenney"]
+
+[[asset]]
+id = "emotes-punkt"
+kind = "sticker"
+name = { de = "Punkt", en = "Dots1" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-punkt.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["dots1", "punkt", "kenney"]
+
+[[asset]]
+id = "emotes-zwei-punkte"
+kind = "sticker"
+name = { de = "Zwei Punkte", en = "Dots2" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-zwei-punkte.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["dots2", "zwei punkte", "kenney"]
+
+[[asset]]
+id = "emotes-drei-punkte"
+kind = "sticker"
+name = { de = "Drei Punkte", en = "Dots3" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-drei-punkte.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["dots3", "drei punkte", "kenney"]
+
+[[asset]]
+id = "emotes-gebrochenes-herz"
+kind = "sticker"
+name = { de = "Gebrochenes Herz", en = "Heart broken" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-gebrochenes-herz.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["heart broken", "gebrochenes herz", "kenney"]
+
+[[asset]]
+id = "emotes-herz"
+kind = "sticker"
+name = { de = "Herz", en = "Heart" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-herz.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["heart", "herz", "kenney"]
+
+[[asset]]
+id = "emotes-herzen"
+kind = "sticker"
+name = { de = "Herzen", en = "Hearts" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-herzen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["hearts", "herzen", "kenney"]
+
+[[asset]]
+id = "emotes-doppeltes-ausrufezeichen"
+kind = "sticker"
+name = { de = "Doppeltes Ausrufezeichen", en = "Exclamations" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-doppeltes-ausrufezeichen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["exclamations", "doppeltes ausrufezeichen", "kenney"]
+
+[[asset]]
+id = "emotes-ausrufezeichen"
+kind = "sticker"
+name = { de = "Ausrufezeichen", en = "Exclamation" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-ausrufezeichen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["exclamation", "ausrufezeichen", "kenney"]
+
+[[asset]]
+id = "emotes-fragezeichen"
+kind = "sticker"
+name = { de = "Fragezeichen", en = "Question" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-fragezeichen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["question", "fragezeichen", "kenney"]
+
+[[asset]]
+id = "emotes-schlafen"
+kind = "sticker"
+name = { de = "Schlafen", en = "Sleep" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-schlafen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["sleep", "schlafen", "kenney"]
+
+[[asset]]
+id = "emotes-tief-schlafen"
+kind = "sticker"
+name = { de = "Tief schlafen", en = "Sleeps" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-tief-schlafen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["sleeps", "tief schlafen", "kenney"]
+
+[[asset]]
+id = "emotes-schrecken"
+kind = "sticker"
+name = { de = "Schrecken", en = "Bars" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-schrecken.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["bars", "schrecken", "kenney"]
+
+[[asset]]
+id = "emotes-froehlich"
+kind = "sticker"
+name = { de = "Fröhlich", en = "Face happy" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-froehlich.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["face happy", "fröhlich", "kenney"]
+
+[[asset]]
+id = "emotes-traurig"
+kind = "sticker"
+name = { de = "Traurig", en = "Face sad" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-traurig.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["face sad", "traurig", "kenney"]
+
+[[asset]]
+id = "emotes-wuetend"
+kind = "sticker"
+name = { de = "Wütend", en = "Face angry" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-wuetend.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["face angry", "wütend", "kenney"]
+
+[[asset]]
+id = "emotes-aufregung"
+kind = "sticker"
+name = { de = "Aufregung", en = "Alert" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-aufregung.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["alert", "aufregung", "kenney"]
+
+[[asset]]
+id = "emotes-stern"
+kind = "sticker"
+name = { de = "Stern", en = "Star" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-stern.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "emotes-funkeln"
+kind = "sticker"
+name = { de = "Funkeln", en = "Stars" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-funkeln.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["stars", "funkeln", "kenney"]
+
+[[asset]]
+id = "emotes-musik"
+kind = "sticker"
+name = { de = "Musik", en = "Music" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-musik.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["music", "musik", "kenney"]
+
+[[asset]]
+id = "emotes-tropfen"
+kind = "sticker"
+name = { de = "Tropfen", en = "Drop" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-tropfen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["drop", "tropfen", "kenney"]
+
+[[asset]]
+id = "emotes-tropfen-doppelt"
+kind = "sticker"
+name = { de = "Tropfen doppelt", en = "Drops" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-tropfen-doppelt.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["drops", "tropfen doppelt", "kenney"]
+
+[[asset]]
+id = "emotes-aerger"
+kind = "sticker"
+name = { de = "Ärger", en = "Anger" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-aerger.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["anger", "ärger", "kenney"]
+
+[[asset]]
+id = "emotes-geld"
+kind = "sticker"
+name = { de = "Geld", en = "Cash" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-geld.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["cash", "geld", "kenney"]
+
+[[asset]]
+id = "emotes-verwirrt"
+kind = "sticker"
+name = { de = "Verwirrt", en = "Swirl" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-verwirrt.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["swirl", "verwirrt", "kenney"]
+
+[[asset]]
+id = "emotes-kreuz"
+kind = "sticker"
+name = { de = "Kreuz", en = "Cross" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-kreuz.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["cross", "kreuz", "kenney"]
+
+[[asset]]
+id = "emotes-kreis"
+kind = "sticker"
+name = { de = "Kreis", en = "Circle" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-kreis.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["circle", "kreis", "kenney"]
+
+[[asset]]
+id = "emotes-idee"
+kind = "sticker"
+name = { de = "Idee", en = "Idea" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-idee.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["idea", "idee", "kenney"]
+
+[[asset]]
+id = "emotes-lachen"
+kind = "sticker"
+name = { de = "Lachen", en = "Laugh" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-lachen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["laugh", "lachen", "kenney"]
+
+[[asset]]
+id = "emotes-wolke"
+kind = "sticker"
+name = { de = "Wolke", en = "Cloud" }
+category = ["Sprechblasen"]
+file = "bilder/emotes-wolke.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/emotes-pack"
+tags = ["cloud", "wolke", "kenney"]

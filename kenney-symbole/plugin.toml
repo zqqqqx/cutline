@@ -1,0 +1,1166 @@
+# Erzeugt von tools/bau.py aus Kenney-Paketen (CC0) – nicht von Hand ändern.
+[plugin]
+id = "kenney.symbole"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Symbole (Kenney)", en = "Game icons (Kenney)" }
+description = { de = "Weiße Symbole: Pfeile, Wiedergabe, Bedienung, Spiel (Vektor)", en = "White icons: arrows, playback, controls, games (vector)" }
+authors = ["Kenney"]
+license = "CC0-1.0"
+source = "https://kenney.nl/assets"
+
+[[asset]]
+id = "symbole-pfeil-rechts"
+kind = "sticker"
+name = { de = "Pfeil rechts", en = "Arrow right" }
+category = ["Pfeile"]
+file = "bilder/symbole-pfeil-rechts.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["arrow right", "pfeil rechts", "kenney"]
+
+[[asset]]
+id = "symbole-pfeil-links"
+kind = "sticker"
+name = { de = "Pfeil links", en = "Arrow left" }
+category = ["Pfeile"]
+file = "bilder/symbole-pfeil-links.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["arrow left", "pfeil links", "kenney"]
+
+[[asset]]
+id = "symbole-pfeil-hoch"
+kind = "sticker"
+name = { de = "Pfeil hoch", en = "Arrow up" }
+category = ["Pfeile"]
+file = "bilder/symbole-pfeil-hoch.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["arrow up", "pfeil hoch", "kenney"]
+
+[[asset]]
+id = "symbole-pfeil-runter"
+kind = "sticker"
+name = { de = "Pfeil runter", en = "Arrow down" }
+category = ["Pfeile"]
+file = "bilder/symbole-pfeil-runter.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["arrow down", "pfeil runter", "kenney"]
+
+[[asset]]
+id = "symbole-dreieck-rechts"
+kind = "sticker"
+name = { de = "Dreieck rechts", en = "Right" }
+category = ["Pfeile"]
+file = "bilder/symbole-dreieck-rechts.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["right", "dreieck rechts", "kenney"]
+
+[[asset]]
+id = "symbole-dreieck-links"
+kind = "sticker"
+name = { de = "Dreieck links", en = "Left" }
+category = ["Pfeile"]
+file = "bilder/symbole-dreieck-links.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["left", "dreieck links", "kenney"]
+
+[[asset]]
+id = "symbole-dreieck-hoch"
+kind = "sticker"
+name = { de = "Dreieck hoch", en = "Up" }
+category = ["Pfeile"]
+file = "bilder/symbole-dreieck-hoch.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["up", "dreieck hoch", "kenney"]
+
+[[asset]]
+id = "symbole-dreieck-runter"
+kind = "sticker"
+name = { de = "Dreieck runter", en = "Down" }
+category = ["Pfeile"]
+file = "bilder/symbole-dreieck-runter.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["down", "dreieck runter", "kenney"]
+
+[[asset]]
+id = "symbole-senkrecht-scrollen"
+kind = "sticker"
+name = { de = "Senkrecht scrollen", en = "Scroll vertical" }
+category = ["Pfeile"]
+file = "bilder/symbole-senkrecht-scrollen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["scroll vertical", "senkrecht scrollen", "kenney"]
+
+[[asset]]
+id = "symbole-waagerecht-scrollen"
+kind = "sticker"
+name = { de = "Waagerecht scrollen", en = "Scroll horizontal" }
+category = ["Pfeile"]
+file = "bilder/symbole-waagerecht-scrollen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["scroll horizontal", "waagerecht scrollen", "kenney"]
+
+[[asset]]
+id = "symbole-rastermenue"
+kind = "sticker"
+name = { de = "Rastermenü", en = "Menu grid" }
+category = ["Bedienung"]
+file = "bilder/symbole-rastermenue.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["menu grid", "rastermenü", "kenney"]
+
+[[asset]]
+id = "symbole-listenmenue"
+kind = "sticker"
+name = { de = "Listenmenü", en = "Menu list" }
+category = ["Bedienung"]
+file = "bilder/symbole-listenmenue.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["menu list", "listenmenü", "kenney"]
+
+[[asset]]
+id = "symbole-menue"
+kind = "sticker"
+name = { de = "Menü", en = "Bars horizontal" }
+category = ["Bedienung"]
+file = "bilder/symbole-menue.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["bars horizontal", "menü", "kenney"]
+
+[[asset]]
+id = "symbole-balken-senkrecht"
+kind = "sticker"
+name = { de = "Balken senkrecht", en = "Bars vertical" }
+category = ["Bedienung"]
+file = "bilder/symbole-balken-senkrecht.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["bars vertical", "balken senkrecht", "kenney"]
+
+[[asset]]
+id = "symbole-pause"
+kind = "sticker"
+name = { de = "Pause", en = "Pause" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-pause.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["pause", "kenney"]
+
+[[asset]]
+id = "symbole-pfeil-oben-links"
+kind = "sticker"
+name = { de = "Pfeil oben links", en = "Up left" }
+category = ["Pfeile"]
+file = "bilder/symbole-pfeil-oben-links.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["up left", "pfeil oben links", "kenney"]
+
+[[asset]]
+id = "symbole-pfeil-oben-rechts"
+kind = "sticker"
+name = { de = "Pfeil oben rechts", en = "Up right" }
+category = ["Pfeile"]
+file = "bilder/symbole-pfeil-oben-rechts.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["up right", "pfeil oben rechts", "kenney"]
+
+[[asset]]
+id = "symbole-pfeil-unten-rechts"
+kind = "sticker"
+name = { de = "Pfeil unten rechts", en = "Down right" }
+category = ["Pfeile"]
+file = "bilder/symbole-pfeil-unten-rechts.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["down right", "pfeil unten rechts", "kenney"]
+
+[[asset]]
+id = "symbole-pfeil-unten-links"
+kind = "sticker"
+name = { de = "Pfeil unten links", en = "Down left" }
+category = ["Pfeile"]
+file = "bilder/symbole-pfeil-unten-links.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["down left", "pfeil unten links", "kenney"]
+
+[[asset]]
+id = "symbole-verkleinern"
+kind = "sticker"
+name = { de = "Verkleinern", en = "Smaller" }
+category = ["Bedienung"]
+file = "bilder/symbole-verkleinern.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["smaller", "verkleinern", "kenney"]
+
+[[asset]]
+id = "symbole-vergroessern"
+kind = "sticker"
+name = { de = "Vergrößern", en = "Larger" }
+category = ["Bedienung"]
+file = "bilder/symbole-vergroessern.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["larger", "vergrößern", "kenney"]
+
+[[asset]]
+id = "symbole-minus"
+kind = "sticker"
+name = { de = "Minus", en = "Minus" }
+category = ["Bedienung"]
+file = "bilder/symbole-minus.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["minus", "kenney"]
+
+[[asset]]
+id = "symbole-plus"
+kind = "sticker"
+name = { de = "Plus", en = "Plus" }
+category = ["Bedienung"]
+file = "bilder/symbole-plus.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["plus", "kenney"]
+
+[[asset]]
+id = "symbole-herauszoomen"
+kind = "sticker"
+name = { de = "Herauszoomen", en = "Zoom out" }
+category = ["Bedienung"]
+file = "bilder/symbole-herauszoomen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["zoom out", "herauszoomen", "kenney"]
+
+[[asset]]
+id = "symbole-hineinzoomen"
+kind = "sticker"
+name = { de = "Hineinzoomen", en = "Zoom in" }
+category = ["Bedienung"]
+file = "bilder/symbole-hineinzoomen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["zoom in", "hineinzoomen", "kenney"]
+
+[[asset]]
+id = "symbole-zoom-zuruecksetzen"
+kind = "sticker"
+name = { de = "Zoom zurücksetzen", en = "Zoom default" }
+category = ["Bedienung"]
+file = "bilder/symbole-zoom-zuruecksetzen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["zoom default", "zoom zurücksetzen", "kenney"]
+
+[[asset]]
+id = "symbole-lupe"
+kind = "sticker"
+name = { de = "Lupe", en = "Zoom" }
+category = ["Bedienung"]
+file = "bilder/symbole-lupe.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["zoom", "lupe", "kenney"]
+
+[[asset]]
+id = "symbole-person"
+kind = "sticker"
+name = { de = "Person", en = "Singleplayer" }
+category = ["Allgemein"]
+file = "bilder/symbole-person.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["singleplayer", "person", "kenney"]
+
+[[asset]]
+id = "symbole-zwei-personen"
+kind = "sticker"
+name = { de = "Zwei Personen", en = "Multiplayer" }
+category = ["Allgemein"]
+file = "bilder/symbole-zwei-personen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["multiplayer", "zwei personen", "kenney"]
+
+[[asset]]
+id = "symbole-gruppe"
+kind = "sticker"
+name = { de = "Gruppe", en = "Massive multiplayer" }
+category = ["Allgemein"]
+file = "bilder/symbole-gruppe.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["massive multiplayer", "gruppe", "kenney"]
+
+[[asset]]
+id = "symbole-weiterleiten"
+kind = "sticker"
+name = { de = "Weiterleiten", en = "Open" }
+category = ["Allgemein"]
+file = "bilder/symbole-weiterleiten.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["open", "weiterleiten", "kenney"]
+
+[[asset]]
+id = "symbole-haken"
+kind = "sticker"
+name = { de = "Haken", en = "Checkmark" }
+category = ["Allgemein"]
+file = "bilder/symbole-haken.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["checkmark", "haken", "kenney"]
+
+[[asset]]
+id = "symbole-kreuz"
+kind = "sticker"
+name = { de = "Kreuz", en = "Cross" }
+category = ["Allgemein"]
+file = "bilder/symbole-kreuz.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["cross", "kreuz", "kenney"]
+
+[[asset]]
+id = "symbole-rueckgaengig"
+kind = "sticker"
+name = { de = "Rückgängig", en = "Return" }
+category = ["Bedienung"]
+file = "bilder/symbole-rueckgaengig.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["return", "rückgängig", "kenney"]
+
+[[asset]]
+id = "symbole-speichern"
+kind = "sticker"
+name = { de = "Speichern", en = "Save" }
+category = ["Bedienung"]
+file = "bilder/symbole-speichern.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["save", "speichern", "kenney"]
+
+[[asset]]
+id = "symbole-schloss-zu"
+kind = "sticker"
+name = { de = "Schloss zu", en = "Locked" }
+category = ["Allgemein"]
+file = "bilder/symbole-schloss-zu.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["locked", "schloss zu", "kenney"]
+
+[[asset]]
+id = "symbole-schloss-offen"
+kind = "sticker"
+name = { de = "Schloss offen", en = "Unlocked" }
+category = ["Allgemein"]
+file = "bilder/symbole-schloss-offen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["unlocked", "schloss offen", "kenney"]
+
+[[asset]]
+id = "symbole-siegertreppchen"
+kind = "sticker"
+name = { de = "Siegertreppchen", en = "Leaderboards simple" }
+category = ["Spiel"]
+file = "bilder/symbole-siegertreppchen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["leaderboards simple", "siegertreppchen", "kenney"]
+
+[[asset]]
+id = "symbole-siegertreppchen-mit-plaetzen"
+kind = "sticker"
+name = { de = "Siegertreppchen mit Plätzen", en = "Leaderboards complex" }
+category = ["Spiel"]
+file = "bilder/symbole-siegertreppchen-mit-plaetzen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["leaderboards complex", "siegertreppchen mit plätzen", "kenney"]
+
+[[asset]]
+id = "symbole-pokal"
+kind = "sticker"
+name = { de = "Pokal", en = "Trophy" }
+category = ["Spiel"]
+file = "bilder/symbole-pokal.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["trophy", "pokal", "kenney"]
+
+[[asset]]
+id = "symbole-joystick"
+kind = "sticker"
+name = { de = "Joystick", en = "Joystick" }
+category = ["Spiel"]
+file = "bilder/symbole-joystick.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["joystick", "kenney"]
+
+[[asset]]
+id = "symbole-stern"
+kind = "sticker"
+name = { de = "Stern", en = "Star" }
+category = ["Allgemein"]
+file = "bilder/symbole-stern.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "symbole-schraubenschluessel"
+kind = "sticker"
+name = { de = "Schraubenschlüssel", en = "Wrench" }
+category = ["Allgemein"]
+file = "bilder/symbole-schraubenschluessel.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["wrench", "schraubenschlüssel", "kenney"]
+
+[[asset]]
+id = "symbole-zahnrad"
+kind = "sticker"
+name = { de = "Zahnrad", en = "Gear" }
+category = ["Allgemein"]
+file = "bilder/symbole-zahnrad.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["gear", "zahnrad", "kenney"]
+
+[[asset]]
+id = "symbole-ziel"
+kind = "sticker"
+name = { de = "Ziel", en = "Target" }
+category = ["Allgemein"]
+file = "bilder/symbole-ziel.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["target", "ziel", "kenney"]
+
+[[asset]]
+id = "symbole-tablet"
+kind = "sticker"
+name = { de = "Tablet", en = "Tablet" }
+category = ["Allgemein"]
+file = "bilder/symbole-tablet.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["tablet", "kenney"]
+
+[[asset]]
+id = "symbole-handy"
+kind = "sticker"
+name = { de = "Handy", en = "Phone" }
+category = ["Allgemein"]
+file = "bilder/symbole-handy.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["phone", "handy", "kenney"]
+
+[[asset]]
+id = "symbole-kontrast"
+kind = "sticker"
+name = { de = "Kontrast", en = "Contrast" }
+category = ["Bedienung"]
+file = "bilder/symbole-kontrast.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["contrast", "kontrast", "kenney"]
+
+[[asset]]
+id = "symbole-haus"
+kind = "sticker"
+name = { de = "Haus", en = "Home" }
+category = ["Allgemein"]
+file = "bilder/symbole-haus.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["home", "haus", "kenney"]
+
+[[asset]]
+id = "symbole-musik-an"
+kind = "sticker"
+name = { de = "Musik an", en = "Music on" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-musik-an.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["music on", "musik an", "kenney"]
+
+[[asset]]
+id = "symbole-musik-aus"
+kind = "sticker"
+name = { de = "Musik aus", en = "Music off" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-musik-aus.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["music off", "musik aus", "kenney"]
+
+[[asset]]
+id = "symbole-muelleimer"
+kind = "sticker"
+name = { de = "Mülleimer", en = "Trashcan" }
+category = ["Bedienung"]
+file = "bilder/symbole-muelleimer.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["trashcan", "mülleimer", "kenney"]
+
+[[asset]]
+id = "symbole-muelleimer-offen"
+kind = "sticker"
+name = { de = "Mülleimer offen", en = "Trashcan open" }
+category = ["Bedienung"]
+file = "bilder/symbole-muelleimer-offen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["trashcan open", "mülleimer offen", "kenney"]
+
+[[asset]]
+id = "symbole-ausrufezeichen"
+kind = "sticker"
+name = { de = "Ausrufezeichen", en = "Exclamation" }
+category = ["Allgemein"]
+file = "bilder/symbole-ausrufezeichen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["exclamation", "ausrufezeichen", "kenney"]
+
+[[asset]]
+id = "symbole-fragezeichen"
+kind = "sticker"
+name = { de = "Fragezeichen", en = "Question" }
+category = ["Allgemein"]
+file = "bilder/symbole-fragezeichen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["question", "fragezeichen", "kenney"]
+
+[[asset]]
+id = "symbole-warnung"
+kind = "sticker"
+name = { de = "Warnung", en = "Warning" }
+category = ["Allgemein"]
+file = "bilder/symbole-warnung.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["warning", "warnung", "kenney"]
+
+[[asset]]
+id = "symbole-ausgang"
+kind = "sticker"
+name = { de = "Ausgang", en = "Exit" }
+category = ["Bedienung"]
+file = "bilder/symbole-ausgang.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["exit", "ausgang", "kenney"]
+
+[[asset]]
+id = "symbole-herunterladen"
+kind = "sticker"
+name = { de = "Herunterladen", en = "Import" }
+category = ["Bedienung"]
+file = "bilder/symbole-herunterladen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["import", "herunterladen", "kenney"]
+
+[[asset]]
+id = "symbole-hochladen"
+kind = "sticker"
+name = { de = "Hochladen", en = "Export" }
+category = ["Bedienung"]
+file = "bilder/symbole-hochladen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["export", "hochladen", "kenney"]
+
+[[asset]]
+id = "symbole-info"
+kind = "sticker"
+name = { de = "Info", en = "Information" }
+category = ["Allgemein"]
+file = "bilder/symbole-info.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["information", "info", "kenney"]
+
+[[asset]]
+id = "symbole-ton-aus"
+kind = "sticker"
+name = { de = "Ton aus", en = "Audio off" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-ton-aus.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["audio off", "ton aus", "kenney"]
+
+[[asset]]
+id = "symbole-ton-an"
+kind = "sticker"
+name = { de = "Ton an", en = "Audio on" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-ton-an.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["audio on", "ton an", "kenney"]
+
+[[asset]]
+id = "symbole-stopp"
+kind = "sticker"
+name = { de = "Stopp", en = "Stop" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-stopp.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["stop", "stopp", "kenney"]
+
+[[asset]]
+id = "symbole-vorspulen"
+kind = "sticker"
+name = { de = "Vorspulen", en = "Fast forward" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-vorspulen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["fast forward", "vorspulen", "kenney"]
+
+[[asset]]
+id = "symbole-zurueckspulen"
+kind = "sticker"
+name = { de = "Zurückspulen", en = "Rewind" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-zurueckspulen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["rewind", "zurückspulen", "kenney"]
+
+[[asset]]
+id = "symbole-weiter"
+kind = "sticker"
+name = { de = "Weiter", en = "Next" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-weiter.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["next", "weiter", "kenney"]
+
+[[asset]]
+id = "symbole-zurueck"
+kind = "sticker"
+name = { de = "Zurück", en = "Previous" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-zurueck.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["previous", "zurück", "kenney"]
+
+[[asset]]
+id = "symbole-ein-aus"
+kind = "sticker"
+name = { de = "Ein/Aus", en = "Power" }
+category = ["Bedienung"]
+file = "bilder/symbole-ein-aus.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["power", "ein/aus", "kenney"]
+
+[[asset]]
+id = "symbole-signal-schwach"
+kind = "sticker"
+name = { de = "Signal schwach", en = "Siganl1" }
+category = ["Allgemein"]
+file = "bilder/symbole-signal-schwach.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["siganl1", "signal schwach", "kenney"]
+
+[[asset]]
+id = "symbole-signal-mittel"
+kind = "sticker"
+name = { de = "Signal mittel", en = "Signal2" }
+category = ["Allgemein"]
+file = "bilder/symbole-signal-mittel.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["signal2", "signal mittel", "kenney"]
+
+[[asset]]
+id = "symbole-signal-stark"
+kind = "sticker"
+name = { de = "Signal stark", en = "Signal3" }
+category = ["Allgemein"]
+file = "bilder/symbole-signal-stark.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["signal3", "signal stark", "kenney"]
+
+[[asset]]
+id = "symbole-film"
+kind = "sticker"
+name = { de = "Film", en = "Movie" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-film.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["movie", "film", "kenney"]
+
+[[asset]]
+id = "symbole-filmklappe"
+kind = "sticker"
+name = { de = "Filmklappe", en = "Video" }
+category = ["Wiedergabe"]
+file = "bilder/symbole-filmklappe.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["video", "filmklappe", "kenney"]
+
+[[asset]]
+id = "symbole-abmelden"
+kind = "sticker"
+name = { de = "Abmelden", en = "Exit right" }
+category = ["Bedienung"]
+file = "bilder/symbole-abmelden.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["exit right", "abmelden", "kenney"]
+
+[[asset]]
+id = "symbole-anmelden"
+kind = "sticker"
+name = { de = "Anmelden", en = "Exit left" }
+category = ["Bedienung"]
+file = "bilder/symbole-anmelden.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["exit left", "anmelden", "kenney"]
+
+[[asset]]
+id = "symbole-gamepad"
+kind = "sticker"
+name = { de = "Gamepad", en = "Gamepad" }
+category = ["Spiel"]
+file = "bilder/symbole-gamepad.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["gamepad", "kenney"]
+
+[[asset]]
+id = "symbole-gamepad-1"
+kind = "sticker"
+name = { de = "Gamepad 1", en = "Gamepad1" }
+category = ["Spiel"]
+file = "bilder/symbole-gamepad-1.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["gamepad1", "gamepad 1", "kenney"]
+
+[[asset]]
+id = "symbole-gamepad-2"
+kind = "sticker"
+name = { de = "Gamepad 2", en = "Gamepad2" }
+category = ["Spiel"]
+file = "bilder/symbole-gamepad-2.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["gamepad2", "gamepad 2", "kenney"]
+
+[[asset]]
+id = "symbole-gamepad-3"
+kind = "sticker"
+name = { de = "Gamepad 3", en = "Gamepad3" }
+category = ["Spiel"]
+file = "bilder/symbole-gamepad-3.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["gamepad3", "gamepad 3", "kenney"]
+
+[[asset]]
+id = "symbole-gamepad-4"
+kind = "sticker"
+name = { de = "Gamepad 4", en = "Gamepad4" }
+category = ["Spiel"]
+file = "bilder/symbole-gamepad-4.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["gamepad4", "gamepad 4", "kenney"]
+
+[[asset]]
+id = "symbole-teilen-nach-aussen"
+kind = "sticker"
+name = { de = "Teilen nach außen", en = "Share1" }
+category = ["Allgemein"]
+file = "bilder/symbole-teilen-nach-aussen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["share1", "teilen nach außen", "kenney"]
+
+[[asset]]
+id = "symbole-teilen"
+kind = "sticker"
+name = { de = "Teilen", en = "Share2" }
+category = ["Allgemein"]
+file = "bilder/symbole-teilen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["share2", "teilen", "kenney"]
+
+[[asset]]
+id = "symbole-joystick-hoch"
+kind = "sticker"
+name = { de = "Joystick hoch", en = "Joystick up" }
+category = ["Spiel"]
+file = "bilder/symbole-joystick-hoch.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["joystick up", "joystick hoch", "kenney"]
+
+[[asset]]
+id = "symbole-joystick-links"
+kind = "sticker"
+name = { de = "Joystick links", en = "Joystick left" }
+category = ["Spiel"]
+file = "bilder/symbole-joystick-links.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["joystick left", "joystick links", "kenney"]
+
+[[asset]]
+id = "symbole-joystick-rechts"
+kind = "sticker"
+name = { de = "Joystick rechts", en = "Joystick right" }
+category = ["Spiel"]
+file = "bilder/symbole-joystick-rechts.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["joystick right", "joystick rechts", "kenney"]
+
+[[asset]]
+id = "symbole-maus"
+kind = "sticker"
+name = { de = "Maus", en = "Mouse" }
+category = ["Allgemein"]
+file = "bilder/symbole-maus.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["mouse", "maus", "kenney"]
+
+[[asset]]
+id = "symbole-einkaufswagen"
+kind = "sticker"
+name = { de = "Einkaufswagen", en = "Shopping cart" }
+category = ["Allgemein"]
+file = "bilder/symbole-einkaufswagen.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["shopping cart", "einkaufswagen", "kenney"]
+
+[[asset]]
+id = "symbole-einkaufskorb"
+kind = "sticker"
+name = { de = "Einkaufskorb", en = "Shopping basket" }
+category = ["Allgemein"]
+file = "bilder/symbole-einkaufskorb.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["shopping basket", "einkaufskorb", "kenney"]
+
+[[asset]]
+id = "symbole-medaille"
+kind = "sticker"
+name = { de = "Medaille", en = "Medal1" }
+category = ["Spiel"]
+file = "bilder/symbole-medaille.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["medal1", "medaille", "kenney"]
+
+[[asset]]
+id = "symbole-auszeichnung"
+kind = "sticker"
+name = { de = "Auszeichnung", en = "Medal2" }
+category = ["Spiel"]
+file = "bilder/symbole-auszeichnung.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["medal2", "auszeichnung", "kenney"]
+
+[[asset]]
+id = "symbole-taste-a"
+kind = "sticker"
+name = { de = "Taste A", en = "Button a" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-a.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button a", "taste a", "kenney"]
+
+[[asset]]
+id = "symbole-taste-b"
+kind = "sticker"
+name = { de = "Taste B", en = "Button b" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-b.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button b", "taste b", "kenney"]
+
+[[asset]]
+id = "symbole-taste-x"
+kind = "sticker"
+name = { de = "Taste X", en = "Button x" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-x.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button x", "taste x", "kenney"]
+
+[[asset]]
+id = "symbole-taste-y"
+kind = "sticker"
+name = { de = "Taste Y", en = "Button y" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-y.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button y", "taste y", "kenney"]
+
+[[asset]]
+id = "symbole-taste-1"
+kind = "sticker"
+name = { de = "Taste 1", en = "Button1" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-1.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button1", "taste 1", "kenney"]
+
+[[asset]]
+id = "symbole-taste-2"
+kind = "sticker"
+name = { de = "Taste 2", en = "Button2" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-2.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button2", "taste 2", "kenney"]
+
+[[asset]]
+id = "symbole-taste-3"
+kind = "sticker"
+name = { de = "Taste 3", en = "Button3" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-3.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button3", "taste 3", "kenney"]
+
+[[asset]]
+id = "symbole-taste-l"
+kind = "sticker"
+name = { de = "Taste L", en = "Button l" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-l.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button l", "taste l", "kenney"]
+
+[[asset]]
+id = "symbole-taste-r"
+kind = "sticker"
+name = { de = "Taste R", en = "Button r" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-r.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button r", "taste r", "kenney"]
+
+[[asset]]
+id = "symbole-taste-l1"
+kind = "sticker"
+name = { de = "Taste L1", en = "Button l1" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-l1.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button l1", "taste l1", "kenney"]
+
+[[asset]]
+id = "symbole-taste-r1"
+kind = "sticker"
+name = { de = "Taste R1", en = "Button r1" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-r1.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button r1", "taste r1", "kenney"]
+
+[[asset]]
+id = "symbole-taste-l2"
+kind = "sticker"
+name = { de = "Taste L2", en = "Button l2" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-l2.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button l2", "taste l2", "kenney"]
+
+[[asset]]
+id = "symbole-taste-r2"
+kind = "sticker"
+name = { de = "Taste R2", en = "Button r2" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-r2.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button r2", "taste r2", "kenney"]
+
+[[asset]]
+id = "symbole-taste-start"
+kind = "sticker"
+name = { de = "Taste Start", en = "Button start" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-start.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button start", "taste start", "kenney"]
+
+[[asset]]
+id = "symbole-taste-select"
+kind = "sticker"
+name = { de = "Taste Select", en = "Button select" }
+category = ["Spiel"]
+file = "bilder/symbole-taste-select.svg"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/game-icons"
+tags = ["button select", "taste select", "kenney"]

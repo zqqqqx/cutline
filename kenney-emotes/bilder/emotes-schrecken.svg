@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="95.48 58.48 41.04 41.04"><defs><linearGradient gradientUnits="userSpaceOnUse" x1="-819.2" x2="819.2" spreadMethod="pad" gradientTransform="matrix(0 -0.003662109375 0.003662109375 0 116 95)" id="gradient25">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E2E2E2"/>
+    </linearGradient><linearGradient gradientUnits="userSpaceOnUse" x1="-819.2" x2="819.2" spreadMethod="pad" gradientTransform="matrix(0 -0.009765625 0.009765625 0 108 77)" id="gradient26">
+      <stop offset="0" stop-color="#312D2D" stop-opacity="0"/>
+      <stop offset="1" stop-color="#312D2D"/>
+    </linearGradient><linearGradient gradientUnits="userSpaceOnUse" x1="-819.2" x2="819.2" spreadMethod="pad" gradientTransform="matrix(0 -0.009765625 0.009765625 0 112 75)" id="gradient27">
+      <stop offset="0" stop-color="#312D2D" stop-opacity="0"/>
+      <stop offset="1" stop-color="#312D2D"/>
+    </linearGradient><linearGradient gradientUnits="userSpaceOnUse" x1="-819.2" x2="819.2" spreadMethod="pad" gradientTransform="matrix(0 -0.009765625 0.009765625 0 124 77)" id="gradient28">
+      <stop offset="0" stop-color="#312D2D" stop-opacity="0"/>
+      <stop offset="1" stop-color="#312D2D"/>
+    </linearGradient><linearGradient gradientUnits="userSpaceOnUse" x1="-819.2" x2="819.2" spreadMethod="pad" gradientTransform="matrix(0 -0.009765625 0.009765625 0 116 77)" id="gradient29">
+      <stop offset="0" stop-color="#312D2D" stop-opacity="0"/>
+      <stop offset="1" stop-color="#312D2D"/>
+    </linearGradient><linearGradient gradientUnits="userSpaceOnUse" x1="-819.2" x2="819.2" spreadMethod="pad" gradientTransform="matrix(0 -0.009765625 0.009765625 0 120 79)" id="gradient30">
+      <stop offset="0" stop-color="#312D2D" stop-opacity="0"/>
+      <stop offset="1" stop-color="#312D2D"/>
+    </linearGradient></defs><path stroke="none" fill="#FFFFFF" d="M104 60 L128 60 Q132 60 132 64 L132 88 Q132 92 128 92 L104 92 Q100 92 100 88 L100 64 Q100 60 104 60"/><path stroke="none" fill="url(#gradient25)" d="M122 92 L116 98 110 92 122 92"/><path stroke="none" fill="url(#gradient26)" d="M107 69 L109 69 109 85 107 85 107 69"/><path stroke="none" fill="url(#gradient27)" d="M111 67 L113 67 113 83 111 83 111 67"/><path stroke="none" fill="url(#gradient28)" d="M123 69 L125 69 125 85 123 85 123 69"/><path stroke="none" fill="url(#gradient29)" d="M115 69 L117 69 117 85 115 85 115 69"/><path stroke="none" fill="url(#gradient30)" d="M119 71 L121 71 121 87 119 87 119 71"/></svg>

@@ -1,0 +1,1056 @@
+# Erzeugt von tools/bau.py aus Kenney-Paketen (CC0) – nicht von Hand ändern.
+[plugin]
+id = "kenney.partikel"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Partikel (Kenney)", en = "Particles (Kenney)" }
+description = { de = "Funken, Flammen, Lichter, Rauch und Spuren mit Transparenz", en = "Sparks, flames, lights, smoke and traces with transparency" }
+authors = ["Kenney"]
+license = "CC0-1.0"
+source = "https://kenney.nl/assets"
+
+[[asset]]
+id = "partikel-ring-1"
+kind = "sticker"
+name = { de = "Ring 1", en = "Circle 1" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-ring-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["circle", "ring", "kenney"]
+
+[[asset]]
+id = "partikel-ring-2"
+kind = "sticker"
+name = { de = "Ring 2", en = "Circle 2" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-ring-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["circle", "ring", "kenney"]
+
+[[asset]]
+id = "partikel-ring-3"
+kind = "sticker"
+name = { de = "Ring 3", en = "Circle 3" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-ring-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["circle", "ring", "kenney"]
+
+[[asset]]
+id = "partikel-ring-4"
+kind = "sticker"
+name = { de = "Ring 4", en = "Circle 4" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-ring-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["circle", "ring", "kenney"]
+
+[[asset]]
+id = "partikel-ring-5"
+kind = "sticker"
+name = { de = "Ring 5", en = "Circle 5" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-ring-5.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["circle", "ring", "kenney"]
+
+[[asset]]
+id = "partikel-dreck-1"
+kind = "sticker"
+name = { de = "Dreck 1", en = "Dirt 1" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-dreck-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["dirt", "dreck", "kenney"]
+
+[[asset]]
+id = "partikel-dreck-2"
+kind = "sticker"
+name = { de = "Dreck 2", en = "Dirt 2" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-dreck-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["dirt", "dreck", "kenney"]
+
+[[asset]]
+id = "partikel-dreck-3"
+kind = "sticker"
+name = { de = "Dreck 3", en = "Dirt 3" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-dreck-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["dirt", "dreck", "kenney"]
+
+[[asset]]
+id = "partikel-feuer-1"
+kind = "sticker"
+name = { de = "Feuer 1", en = "Fire 1" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-feuer-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["fire", "feuer", "kenney"]
+
+[[asset]]
+id = "partikel-feuer-2"
+kind = "sticker"
+name = { de = "Feuer 2", en = "Fire 2" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-feuer-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["fire", "feuer", "kenney"]
+
+[[asset]]
+id = "partikel-flamme-1"
+kind = "sticker"
+name = { de = "Flamme 1", en = "Flame 1" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-flamme-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["flame", "flamme", "kenney"]
+
+[[asset]]
+id = "partikel-flamme-2"
+kind = "sticker"
+name = { de = "Flamme 2", en = "Flame 2" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-flamme-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["flame", "flamme", "kenney"]
+
+[[asset]]
+id = "partikel-flamme-3"
+kind = "sticker"
+name = { de = "Flamme 3", en = "Flame 3" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-flamme-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["flame", "flamme", "kenney"]
+
+[[asset]]
+id = "partikel-flamme-4"
+kind = "sticker"
+name = { de = "Flamme 4", en = "Flame 4" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-flamme-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["flame", "flamme", "kenney"]
+
+[[asset]]
+id = "partikel-flamme-5"
+kind = "sticker"
+name = { de = "Flamme 5", en = "Flame 5" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-flamme-5.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["flame", "flamme", "kenney"]
+
+[[asset]]
+id = "partikel-flamme-6"
+kind = "sticker"
+name = { de = "Flamme 6", en = "Flame 6" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-flamme-6.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["flame", "flamme", "kenney"]
+
+[[asset]]
+id = "partikel-lichtreflex"
+kind = "sticker"
+name = { de = "Lichtreflex", en = "Flare" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-lichtreflex.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["flare", "lichtreflex", "kenney"]
+
+[[asset]]
+id = "partikel-lichtpunkt-1"
+kind = "sticker"
+name = { de = "Lichtpunkt 1", en = "Light 1" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-lichtpunkt-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["light", "lichtpunkt", "kenney"]
+
+[[asset]]
+id = "partikel-lichtpunkt-2"
+kind = "sticker"
+name = { de = "Lichtpunkt 2", en = "Light 2" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-lichtpunkt-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["light", "lichtpunkt", "kenney"]
+
+[[asset]]
+id = "partikel-lichtpunkt-3"
+kind = "sticker"
+name = { de = "Lichtpunkt 3", en = "Light 3" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-lichtpunkt-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["light", "lichtpunkt", "kenney"]
+
+[[asset]]
+id = "partikel-magie-1"
+kind = "sticker"
+name = { de = "Magie 1", en = "Magic 1" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-magie-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["magic", "magie", "kenney"]
+
+[[asset]]
+id = "partikel-magie-2"
+kind = "sticker"
+name = { de = "Magie 2", en = "Magic 2" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-magie-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["magic", "magie", "kenney"]
+
+[[asset]]
+id = "partikel-magie-3"
+kind = "sticker"
+name = { de = "Magie 3", en = "Magic 3" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-magie-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["magic", "magie", "kenney"]
+
+[[asset]]
+id = "partikel-magie-4"
+kind = "sticker"
+name = { de = "Magie 4", en = "Magic 4" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-magie-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["magic", "magie", "kenney"]
+
+[[asset]]
+id = "partikel-magie-5"
+kind = "sticker"
+name = { de = "Magie 5", en = "Magic 5" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-magie-5.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["magic", "magie", "kenney"]
+
+[[asset]]
+id = "partikel-muendungsfeuer-1"
+kind = "sticker"
+name = { de = "Mündungsfeuer 1", en = "Muzzle 1" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-muendungsfeuer-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["muzzle", "mündungsfeuer", "kenney"]
+
+[[asset]]
+id = "partikel-muendungsfeuer-2"
+kind = "sticker"
+name = { de = "Mündungsfeuer 2", en = "Muzzle 2" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-muendungsfeuer-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["muzzle", "mündungsfeuer", "kenney"]
+
+[[asset]]
+id = "partikel-muendungsfeuer-3"
+kind = "sticker"
+name = { de = "Mündungsfeuer 3", en = "Muzzle 3" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-muendungsfeuer-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["muzzle", "mündungsfeuer", "kenney"]
+
+[[asset]]
+id = "partikel-muendungsfeuer-4"
+kind = "sticker"
+name = { de = "Mündungsfeuer 4", en = "Muzzle 4" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-muendungsfeuer-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["muzzle", "mündungsfeuer", "kenney"]
+
+[[asset]]
+id = "partikel-muendungsfeuer-5"
+kind = "sticker"
+name = { de = "Mündungsfeuer 5", en = "Muzzle 5" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-muendungsfeuer-5.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["muzzle", "mündungsfeuer", "kenney"]
+
+[[asset]]
+id = "partikel-brandfleck-1"
+kind = "sticker"
+name = { de = "Brandfleck 1", en = "Scorch 1" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-brandfleck-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["scorch", "brandfleck", "kenney"]
+
+[[asset]]
+id = "partikel-brandfleck-2"
+kind = "sticker"
+name = { de = "Brandfleck 2", en = "Scorch 2" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-brandfleck-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["scorch", "brandfleck", "kenney"]
+
+[[asset]]
+id = "partikel-brandfleck-3"
+kind = "sticker"
+name = { de = "Brandfleck 3", en = "Scorch 3" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-brandfleck-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["scorch", "brandfleck", "kenney"]
+
+[[asset]]
+id = "partikel-kratzer"
+kind = "sticker"
+name = { de = "Kratzer", en = "Scratch" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-kratzer.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["scratch", "kratzer", "kenney"]
+
+[[asset]]
+id = "partikel-hieb-1"
+kind = "sticker"
+name = { de = "Hieb 1", en = "Slash 1" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-hieb-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["slash", "hieb", "kenney"]
+
+[[asset]]
+id = "partikel-hieb-2"
+kind = "sticker"
+name = { de = "Hieb 2", en = "Slash 2" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-hieb-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["slash", "hieb", "kenney"]
+
+[[asset]]
+id = "partikel-hieb-3"
+kind = "sticker"
+name = { de = "Hieb 3", en = "Slash 3" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-hieb-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["slash", "hieb", "kenney"]
+
+[[asset]]
+id = "partikel-hieb-4"
+kind = "sticker"
+name = { de = "Hieb 4", en = "Slash 4" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-hieb-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["slash", "hieb", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-1"
+kind = "sticker"
+name = { de = "Rauch 1", en = "Smoke 1" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-2"
+kind = "sticker"
+name = { de = "Rauch 2", en = "Smoke 2" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-3"
+kind = "sticker"
+name = { de = "Rauch 3", en = "Smoke 3" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-4"
+kind = "sticker"
+name = { de = "Rauch 4", en = "Smoke 4" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-5"
+kind = "sticker"
+name = { de = "Rauch 5", en = "Smoke 5" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-5.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-6"
+kind = "sticker"
+name = { de = "Rauch 6", en = "Smoke 6" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-6.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-7"
+kind = "sticker"
+name = { de = "Rauch 7", en = "Smoke 7" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-7.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-8"
+kind = "sticker"
+name = { de = "Rauch 8", en = "Smoke 8" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-8.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-9"
+kind = "sticker"
+name = { de = "Rauch 9", en = "Smoke 9" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-9.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-rauch-10"
+kind = "sticker"
+name = { de = "Rauch 10", en = "Smoke 10" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauch-10.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["smoke", "rauch", "kenney"]
+
+[[asset]]
+id = "partikel-funke-1"
+kind = "sticker"
+name = { de = "Funke 1", en = "Spark 1" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-funke-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["spark", "funke", "kenney"]
+
+[[asset]]
+id = "partikel-funke-2"
+kind = "sticker"
+name = { de = "Funke 2", en = "Spark 2" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-funke-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["spark", "funke", "kenney"]
+
+[[asset]]
+id = "partikel-funke-3"
+kind = "sticker"
+name = { de = "Funke 3", en = "Spark 3" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-funke-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["spark", "funke", "kenney"]
+
+[[asset]]
+id = "partikel-funke-4"
+kind = "sticker"
+name = { de = "Funke 4", en = "Spark 4" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-funke-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["spark", "funke", "kenney"]
+
+[[asset]]
+id = "partikel-funke-5"
+kind = "sticker"
+name = { de = "Funke 5", en = "Spark 5" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-funke-5.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["spark", "funke", "kenney"]
+
+[[asset]]
+id = "partikel-funke-6"
+kind = "sticker"
+name = { de = "Funke 6", en = "Spark 6" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-funke-6.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["spark", "funke", "kenney"]
+
+[[asset]]
+id = "partikel-funke-7"
+kind = "sticker"
+name = { de = "Funke 7", en = "Spark 7" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-funke-7.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["spark", "funke", "kenney"]
+
+[[asset]]
+id = "partikel-stern-1"
+kind = "sticker"
+name = { de = "Stern 1", en = "Star 1" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-stern-2"
+kind = "sticker"
+name = { de = "Stern 2", en = "Star 2" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-stern-3"
+kind = "sticker"
+name = { de = "Stern 3", en = "Star 3" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-stern-4"
+kind = "sticker"
+name = { de = "Stern 4", en = "Star 4" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-stern-5"
+kind = "sticker"
+name = { de = "Stern 5", en = "Star 5" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-5.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-stern-6"
+kind = "sticker"
+name = { de = "Stern 6", en = "Star 6" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-6.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-stern-7"
+kind = "sticker"
+name = { de = "Stern 7", en = "Star 7" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-7.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-stern-8"
+kind = "sticker"
+name = { de = "Stern 8", en = "Star 8" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-8.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-stern-9"
+kind = "sticker"
+name = { de = "Stern 9", en = "Star 9" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-stern-9.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["star", "stern", "kenney"]
+
+[[asset]]
+id = "partikel-symbol-1"
+kind = "sticker"
+name = { de = "Symbol 1", en = "Symbol 1" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-symbol-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["symbol", "kenney"]
+
+[[asset]]
+id = "partikel-symbol-2"
+kind = "sticker"
+name = { de = "Symbol 2", en = "Symbol 2" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-symbol-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["symbol", "kenney"]
+
+[[asset]]
+id = "partikel-leuchtspur-1"
+kind = "sticker"
+name = { de = "Leuchtspur 1", en = "Trace 1" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-leuchtspur-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["trace", "leuchtspur", "kenney"]
+
+[[asset]]
+id = "partikel-leuchtspur-2"
+kind = "sticker"
+name = { de = "Leuchtspur 2", en = "Trace 2" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-leuchtspur-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["trace", "leuchtspur", "kenney"]
+
+[[asset]]
+id = "partikel-leuchtspur-3"
+kind = "sticker"
+name = { de = "Leuchtspur 3", en = "Trace 3" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-leuchtspur-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["trace", "leuchtspur", "kenney"]
+
+[[asset]]
+id = "partikel-leuchtspur-4"
+kind = "sticker"
+name = { de = "Leuchtspur 4", en = "Trace 4" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-leuchtspur-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["trace", "leuchtspur", "kenney"]
+
+[[asset]]
+id = "partikel-leuchtspur-5"
+kind = "sticker"
+name = { de = "Leuchtspur 5", en = "Trace 5" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-leuchtspur-5.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["trace", "leuchtspur", "kenney"]
+
+[[asset]]
+id = "partikel-leuchtspur-6"
+kind = "sticker"
+name = { de = "Leuchtspur 6", en = "Trace 6" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-leuchtspur-6.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["trace", "leuchtspur", "kenney"]
+
+[[asset]]
+id = "partikel-leuchtspur-7"
+kind = "sticker"
+name = { de = "Leuchtspur 7", en = "Trace 7" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-leuchtspur-7.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["trace", "leuchtspur", "kenney"]
+
+[[asset]]
+id = "partikel-wirbel-1"
+kind = "sticker"
+name = { de = "Wirbel 1", en = "Twirl 1" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-wirbel-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["twirl", "wirbel", "kenney"]
+
+[[asset]]
+id = "partikel-wirbel-2"
+kind = "sticker"
+name = { de = "Wirbel 2", en = "Twirl 2" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-wirbel-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["twirl", "wirbel", "kenney"]
+
+[[asset]]
+id = "partikel-wirbel-3"
+kind = "sticker"
+name = { de = "Wirbel 3", en = "Twirl 3" }
+category = ["Licht und Magie"]
+file = "bilder/partikel-wirbel-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["twirl", "wirbel", "kenney"]
+
+[[asset]]
+id = "partikel-fenster-1"
+kind = "sticker"
+name = { de = "Fenster 1", en = "Window 1" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-fenster-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["window", "fenster", "kenney"]
+
+[[asset]]
+id = "partikel-fenster-2"
+kind = "sticker"
+name = { de = "Fenster 2", en = "Window 2" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-fenster-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["window", "fenster", "kenney"]
+
+[[asset]]
+id = "partikel-fenster-3"
+kind = "sticker"
+name = { de = "Fenster 3", en = "Window 3" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-fenster-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["window", "fenster", "kenney"]
+
+[[asset]]
+id = "partikel-fenster-4"
+kind = "sticker"
+name = { de = "Fenster 4", en = "Window 4" }
+category = ["Spuren und Formen"]
+file = "bilder/partikel-fenster-4.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/particle-pack"
+tags = ["window", "fenster", "kenney"]
+
+[[asset]]
+id = "partikel-rauchwolke-schwarz-1"
+kind = "sticker"
+name = { de = "Rauchwolke schwarz 1", en = "Black smoke 1" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauchwolke-schwarz-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["black smoke", "rauchwolke schwarz", "kenney"]
+
+[[asset]]
+id = "partikel-rauchwolke-schwarz-2"
+kind = "sticker"
+name = { de = "Rauchwolke schwarz 2", en = "Black smoke 2" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauchwolke-schwarz-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["black smoke", "rauchwolke schwarz", "kenney"]
+
+[[asset]]
+id = "partikel-rauchwolke-schwarz-3"
+kind = "sticker"
+name = { de = "Rauchwolke schwarz 3", en = "Black smoke 3" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauchwolke-schwarz-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["black smoke", "rauchwolke schwarz", "kenney"]
+
+[[asset]]
+id = "partikel-explosionswolke-1"
+kind = "sticker"
+name = { de = "Explosionswolke 1", en = "Explosion 1" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-explosionswolke-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["explosion", "explosionswolke", "kenney"]
+
+[[asset]]
+id = "partikel-explosionswolke-2"
+kind = "sticker"
+name = { de = "Explosionswolke 2", en = "Explosion 2" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-explosionswolke-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["explosion", "explosionswolke", "kenney"]
+
+[[asset]]
+id = "partikel-explosionswolke-3"
+kind = "sticker"
+name = { de = "Explosionswolke 3", en = "Explosion 3" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-explosionswolke-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["explosion", "explosionswolke", "kenney"]
+
+[[asset]]
+id = "partikel-giftwolke-gruen-1"
+kind = "sticker"
+name = { de = "Giftwolke grün 1", en = "Fart 1" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-giftwolke-gruen-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["fart", "giftwolke grün", "kenney"]
+
+[[asset]]
+id = "partikel-giftwolke-gruen-2"
+kind = "sticker"
+name = { de = "Giftwolke grün 2", en = "Fart 2" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-giftwolke-gruen-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["fart", "giftwolke grün", "kenney"]
+
+[[asset]]
+id = "partikel-giftwolke-gruen-3"
+kind = "sticker"
+name = { de = "Giftwolke grün 3", en = "Fart 3" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-giftwolke-gruen-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["fart", "giftwolke grün", "kenney"]
+
+[[asset]]
+id = "partikel-blitzwolke-1"
+kind = "sticker"
+name = { de = "Blitzwolke 1", en = "Flash 1" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-blitzwolke-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["flash", "blitzwolke", "kenney"]
+
+[[asset]]
+id = "partikel-blitzwolke-2"
+kind = "sticker"
+name = { de = "Blitzwolke 2", en = "Flash 2" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-blitzwolke-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["flash", "blitzwolke", "kenney"]
+
+[[asset]]
+id = "partikel-blitzwolke-3"
+kind = "sticker"
+name = { de = "Blitzwolke 3", en = "Flash 3" }
+category = ["Feuer und Funken"]
+file = "bilder/partikel-blitzwolke-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["flash", "blitzwolke", "kenney"]
+
+[[asset]]
+id = "partikel-rauchwolke-weiss-1"
+kind = "sticker"
+name = { de = "Rauchwolke weiß 1", en = "White puff 1" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauchwolke-weiss-1.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["white puff", "rauchwolke weiß", "kenney"]
+
+[[asset]]
+id = "partikel-rauchwolke-weiss-2"
+kind = "sticker"
+name = { de = "Rauchwolke weiß 2", en = "White puff 2" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauchwolke-weiss-2.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["white puff", "rauchwolke weiß", "kenney"]
+
+[[asset]]
+id = "partikel-rauchwolke-weiss-3"
+kind = "sticker"
+name = { de = "Rauchwolke weiß 3", en = "White puff 3" }
+category = ["Rauch und Staub"]
+file = "bilder/partikel-rauchwolke-weiss-3.png"
+license = "CC0-1.0"
+author = "Kenney"
+source = "https://kenney.nl/assets/smoke-particles"
+tags = ["white puff", "rauchwolke weiß", "kenney"]
