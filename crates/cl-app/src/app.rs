@@ -325,6 +325,7 @@ impl App {
         let lang = settings.lang();
         perf_mark("Plugins");
         cl_fx::catalog::load_packs(crate::contents::catalog_packs(&plugins, lang.code()));
+        cl_fx::catalog::set_hidden(settings.hidden_packs.clone());
         perf_mark("Katalog");
 
         let system_font_count = Arc::new(Mutex::new(None));

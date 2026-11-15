@@ -61,6 +61,8 @@ pub struct AppSettings {
     pub skipped_version: Option<String>,
     /// Plugin-ID → aktiv (überschreibt `default_enabled` des Manifests)
     pub plugin_states: std::collections::BTreeMap<String, bool>,
+    /// Pakete, deren Einträge in den Tabs nicht erscheinen (bleiben eingeschaltet)
+    pub hidden_packs: Vec<String>,
     /// Import aus anderen Schnittprogrammen
     pub import_capcut: bool,
     pub import_fcpxml: bool,
@@ -134,6 +136,7 @@ impl Default for AppSettings {
             auto_update: true,
             skipped_version: None,
             plugin_states: Default::default(),
+            hidden_packs: Vec::new(),
             import_capcut: true,
             import_fcpxml: true,
             shortcuts: Default::default(),
@@ -1083,6 +1086,16 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"new_rate\"") && !json.contains("\"new_fps\""));
         assert!(FPS_CHOICES.iter().all(|f| cl_core::Rational::parse(f).is_some()));
+    }
+
+    #[test]
+    fn hidden_packs_load_from_old_files_and_round_trip() {
+        let old: AppSettings = serde_json::from_str(r#"{"plugin_states":{"p":true}}"#).unwrap();
+        assert!(old.hidden_packs.is_empty());
+        let mut s = AppSettings::default();
+        s.hidden_packs = vec![cl_fx::catalog::STANDARD.into()];
+        let back: AppSettings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back.hidden_packs, s.hidden_packs);
     }
 
     /// Von Hand bearbeitete, fremde oder alte Dateien: fremde Felder stören nicht, fehlende kommen
