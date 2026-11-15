@@ -10,7 +10,7 @@ use crate::time::Time;
 
 /// Index der Spur `t`, falls sie Clips der Art `k` aufnimmt (passende Art, nicht gesperrt).
 fn fits(p: &Project, t: TrackId, k: TrackKind) -> Option<usize> {
-    p.timeline.tracks.iter().position(|x| x.id == t && x.kind == k && !x.locked)
+    p.timeline.tracks.iter().position(|x| x.id == t && x.kind.accepts(k) && !x.locked)
 }
 
 /// Zielspur (`None` = bisherige Automatik) und Clip an seiner neuen Stelle (neue Kennung) je

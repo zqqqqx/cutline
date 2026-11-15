@@ -2053,7 +2053,7 @@ impl App {
             let slot = pointer.and_then(|p| asset_slot(&payload, kind, p));
             let mut track = pointer
                 .and_then(row_at)
-                .filter(|t| Some(tracks[*t].kind) == kind && !tracks[*t].main)
+                .filter(|t| kind.is_some_and(|k| tracks[*t].kind.accepts(k)) && !tracks[*t].main)
                 .map(|t| tracks[t].id);
             // Ins Leere über den Spuren (bzw. unter Audio) = neue Spur
             let first_top = rows

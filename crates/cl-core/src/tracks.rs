@@ -20,7 +20,7 @@ pub fn display_order(tracks: &[Track]) -> Vec<usize> {
 
 /// Nimmt die Spur Clips der Art `kind` auf (passende Art, nicht gesperrt)?
 pub fn fits(t: &Track, kind: TrackKind) -> bool {
-    t.kind == kind && !t.locked
+    t.kind.accepts(kind) && !t.locked
 }
 
 /// Erlaubte Lücken (von, bis einschließlich) für eine Spur der Art `kind`.
@@ -139,6 +139,7 @@ mod tests {
                 Some('T') => Text,
                 Some('E') => Effect,
                 Some('F') => Filter,
+                Some('S') => Sticker,
                 _ => Video,
             });
             t.main = s.starts_with('M');
@@ -319,5 +320,28 @@ mod tests {
         d.apply(op, OpSource::Ui).unwrap();
         let n = names(d.project());
         assert_eq!((n[0].as_str(), n[47].as_str(), n[48].as_str()), ("T1", "T0", "M"));
+    }
+
+    #[test]
+    fn clip_moves_within_its_own_track_whatever_the_kind() {
+        // Bild-Clips (Art „Video“) auf einer Sticker-Spur, wie in erzeugten Projekten
+        let mut p = proj(&["S", "V", "M"]);
+        let png = clip(&mut p, 0, 0.0);
+        // Altlast: Text-Clip auf einer Bildspur – in seiner Spur trotzdem verschiebbar
+        let c = Clip::new(ClipContent::Text(TextStyle::default()), Time::from_secs_f64(3.0), Time::from_secs_f64(1.0));
+        let txt = c.id;
+        let mi = p.timeline.tracks.iter().position(|t| t.name.as_deref() == Some("V")).unwrap();
+        p.timeline.tracks[mi].clips.push(c);
+        let mut d = Document::new(p);
+        let s = |x: f64| Time::from_secs_f64(x);
+        d.apply(EditOp::MoveClip { clip: png, track: None, start: s(5.0) }, OpSource::Ui).unwrap();
+        d.apply(EditOp::MoveClip { clip: txt, track: None, start: s(8.0) }, OpSource::Ui).unwrap();
+        let start = |id| d.project().find_clip(id).map(|(t, c)| (t.name.clone().unwrap(), c.start.as_secs_f64()));
+        assert_eq!(start(png), Some(("S".into(), 5.0)));
+        assert_eq!(start(txt), Some(("V".into(), 8.0)));
+        // Spurwechsel prüft weiter die Art: Text gehört nicht auf die Sticker-Spur
+        let sticker = d.project().timeline.tracks.iter().find(|t| t.kind == Sticker).unwrap().id;
+        assert!(d.apply(EditOp::MoveClip { clip: txt, track: Some(sticker), start: s(1.0) }, OpSource::Ui).is_err());
+        assert!(fits(&d.project().timeline.tracks[display_order(&d.project().timeline.tracks)[0]], Video));
     }
 }
