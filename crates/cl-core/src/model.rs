@@ -283,6 +283,15 @@ pub enum TrackKind {
     Filter,
 }
 
+impl TrackKind {
+    /// Darf ein Clip der Art `clip` (siehe [`Clip::kind`]) auf eine Spur dieser Art? Bild-Clips
+    /// (Medien mit Bild, Sticker) gelten als `Video`; Sticker-Spuren (z. B. aus Plugins oder
+    /// erzeugten Projekten) nehmen sie ebenfalls auf.
+    pub fn accepts(self, clip: TrackKind) -> bool {
+        self == clip || (self == TrackKind::Sticker && clip == TrackKind::Video)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     pub id: TrackId,

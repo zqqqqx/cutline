@@ -10,6 +10,7 @@ mod model;
 mod ops;
 mod paste;
 mod time;
+mod tracks;
 
 pub use document::{Document, HistoryEntry, OpSource};
 pub use fx::*;
@@ -17,6 +18,10 @@ pub use model::*;
 pub use ops::{gaps, ripple_ops, Edge, EditOp, OpOutput};
 pub use paste::{paste_ops, paste_splits, paste_targets};
 pub use time::{Rational, Time};
+pub use tracks::{
+    display_order, fits, gap_index, gap_range, move_to_new_tracks, move_track_to, new_track_gap,
+    track_drop_gap,
+};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CoreError {

@@ -258,7 +258,7 @@ impl EditOp {
                 t.muted = muted;
                 Ok(OpOutput::None)
             }
-            EditOp::AddClip { track, clip } => add_clip(p, track, clip),
+            EditOp::AddClip { track, clip } => add_clip(p, track, clip, None),
             EditOp::SetClipTiming {
                 clip,
                 start,
@@ -473,7 +473,7 @@ impl EditOp {
                 c.start = Time(start.0.max(0));
                 after_change(p, ti);
                 let target = track.unwrap_or(src_track);
-                let out = add_clip(p, Some(target), c)?;
+                let out = add_clip(p, Some(target), c, Some(src_track))?;
                 if target != src_track {
                     if let Some(ti) = p.timeline.tracks.iter().position(|t| t.id == src_track) {
                         prune_if_empty(p, ti);
@@ -916,7 +916,8 @@ fn after_change(p: &mut Project, ti: usize) {
     }
 }
 
-fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip) -> Result<OpOutput> {
+/// `home`: Spur, in der der Clip schon lag (Verschieben) – dort gilt die Artprüfung nicht.
+fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Option<TrackId>) -> Result<OpOutput> {
     // Werte von außen (MCP, Plugins): nichts vor 0, nichts jenseits von Time::LIMIT
     clip.start = Time(clip.start.0.max(0));
     clip.source_in = Time(clip.source_in.0.max(0));
@@ -946,7 +947,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip) -> Result<O
                 .position(|t| t.id == tid)
                 .ok_or(CoreError::TrackNotFound(tid))?;
             let t = &p.timeline.tracks[ti];
-            if t.kind != kind {
+            if !t.kind.accepts(kind) && home != Some(tid) {
                 return Err(CoreError::KindMismatch {
                     clip: kind,
                     track: t.kind,
