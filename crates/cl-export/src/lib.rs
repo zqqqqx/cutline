@@ -2235,6 +2235,34 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_loud_clips_are_limited_quiet_stays() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = sine_project(dir.path(), 0.0);
+        let quiet = dir.path().join("quiet.wav");
+        run(&build(&p, &wav_settings(&p), &no_fonts, &quiet).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let src = peaks_db(&dir.path().join("sine.wav"), 0.0, 2.0);
+        let q = peaks_db(&quiet, 0.0, 2.0);
+        assert!(q.len() == src.len() && q.iter().zip(&src).all(|(a, b)| (a - b).abs() < 0.01), "leise unverändert: {q:?} / {src:?}");
+        // drei gleichphasige Sinus mit je +15 dB: ohne Begrenzer ca. +6,5 dBFS
+        let clip = p.timeline.tracks[0].clips[0].clone();
+        for _ in 0..3 {
+            let mut t = Track::new(TrackKind::Audio);
+            let mut c = clip.clone();
+            c.id = Default::default();
+            c.volume_db = 15.0;
+            t.clips.push(c);
+            p.timeline.tracks.push(t);
+        }
+        let loud = dir.path().join("loud.wav");
+        run(&build(&p, &wav_settings(&p), &no_fonts, &loud).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let l = peaks_db(&loud, 0.0, 2.0);
+        assert!(!l.is_empty() && l.iter().all(|v| *v <= -0.5 && *v > -3.0), "begrenzt: {l:?}");
+    }
+
+    #[test]
     fn audio_clip_offset_leaves_leading_silence() {
         if !cl_media::ffmpeg_available() {
             return;

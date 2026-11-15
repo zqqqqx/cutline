@@ -1002,8 +1002,9 @@ pub(crate) fn audio_part(
         graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{dur}[aout]"));
     } else {
         let ins: String = labels.iter().map(|l| format!("[{l}]")).collect();
+        // Begrenzer bei −1 dBFS gegen Übersteuern überlagerter Clips; darunter bitgleich (level/latency aus bzw. ausgeglichen)
         graph.push(format!(
-            "{ins}amix=inputs={}:normalize=0:duration=longest,apad=whole_dur={dur},atrim=0:{dur},aformat=sample_fmts=fltp:channel_layouts=stereo[aout]",
+            "{ins}amix=inputs={}:normalize=0:duration=longest,alimiter=limit=0.891251:level=false:latency=true,apad=whole_dur={dur},atrim=0:{dur},aformat=sample_fmts=fltp:channel_layouts=stereo[aout]",
             labels.len()
         ));
     }
