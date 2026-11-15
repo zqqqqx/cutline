@@ -632,6 +632,19 @@ fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
     ((video_bits / 8.0 + audio) * dur) as u64 + (64 << 20)
 }
 
+/// Nötiger Platz je Laufwerk (Ordner, Bytes): Die Abschnitte (`scratch`) bleiben liegen, bis die
+/// fertige Datei (etwa gleich groß) geschrieben ist; liegt sie auf demselben Laufwerk, zählt
+/// alles doppelt.
+fn space_needs(scratch: u64, work: &Path, out: &Path) -> Vec<(PathBuf, u64)> {
+    let dir = out.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let root = |p: &Path| std::path::absolute(p).ok().and_then(|a| a.components().next().map(|c| c.as_os_str().to_string_lossy().to_uppercase()));
+    if root(work) == root(dir) {
+        vec![(work.to_path_buf(), 2 * scratch)]
+    } else {
+        vec![(work.to_path_buf(), scratch), (dir.to_path_buf(), scratch)]
+    }
+}
+
 /// Großes Projekt: Abschnitte planen und je Abschnitt den Bereichs-Export bauen, dazu den
 /// Endlauf, der alles zusammenfügt.
 #[allow(clippy::too_many_arguments)]
@@ -649,10 +662,11 @@ fn build_sections(
         .map_err(|t| ExportError::TooManyClips(sections::clock(t)))?;
     let workdir = tempfile::Builder::new().prefix("cutline-export-").tempdir()?;
     let dur = end - start;
-    let need = scratch_bytes(s, dur.as_secs_f64());
-    if let Some(free) = sections::free_space(workdir.path()) {
-        if free < need {
-            return Err(ExportError::NoSpace { need: sections::size_text(need), free: sections::size_text(free) });
+    for (dir, need) in space_needs(scratch_bytes(s, dur.as_secs_f64()), workdir.path(), out) {
+        if let Some(free) = sections::free_space(&dir) {
+            if free < need {
+                return Err(ExportError::NoSpace { need: sections::size_text(need), free: sections::size_text(free) });
+            }
         }
     }
     let (video, audio, gif) = (!s.format.audio_only(), wants_audio(s), s.format == Format::Gif);
@@ -3777,6 +3791,24 @@ mod tests {
         c.speed = 1.0;
         c.fx.reverse = true;
         assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "rückwärts");
+    }
+
+    /// Platzprüfung: Die fertige Datei braucht noch einmal so viel wie die Abschnitte – auf
+    /// demselben Laufwerk doppelt (1 h ProRes 1080p30 ≈ 100 GB: 110 GB frei reichen nicht).
+    #[test]
+    fn space_check_counts_the_finished_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = ExportSettings::from_project(&Project::new("p"));
+        (s.width, s.height, s.fps, s.format, s.codec) = (1920, 1080, Rational::new(30, 1), Format::Mov, Codec::ProRes);
+        let need = scratch_bytes(&s, 3600.0);
+        assert!((95..115).contains(&(need >> 30)), "{} GB", need >> 30);
+        let work = dir.path().join("work");
+        assert_eq!(space_needs(need, &work, &dir.path().join("ziel.mov")), vec![(work.clone(), 2 * need)]);
+        #[cfg(windows)]
+        {
+            let other = if dir.path().to_string_lossy().starts_with(['Z', 'z']) { "Y:/x/ziel.mov" } else { "Z:/x/ziel.mov" };
+            assert_eq!(space_needs(need, &work, Path::new(other)), vec![(work, need), (PathBuf::from(&other[..4]), need)]);
+        }
     }
 
     /// Effekte, die eigene Zeitstempel vergeben oder Bilder zählen, rechnen ab Clipbeginn;
