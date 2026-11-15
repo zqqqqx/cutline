@@ -171,6 +171,10 @@ pub struct App {
     pub perf_since: Instant,
     pub perf_last_frame: Option<Instant>,
     pub perf_max_gap: f64,
+    /// Messung: Start der Wiedergabe bzw. des Ton-Neustarts (erstes Bild, erster Ton noch offen?)
+    pub perf_play: Option<PerfPlay>,
+    /// Feiner System-Takt, solange abgespielt wird (Windows: 1 ms statt 15,6 ms)
+    hires_timer: Option<HiresTimer>,
     /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
     /// Trefferliste von „Highlights finden“ (Fenster offen)
@@ -402,6 +406,8 @@ impl App {
             perf_since: Instant::now(),
             perf_last_frame: None,
             perf_max_gap: 0.0,
+            perf_play: None,
+            hires_timer: None,
             multicam: None,
             shorts: None,
             aspect_fit: None,
@@ -656,8 +662,12 @@ impl App {
             let sig = audio_signature(&self.project);
             if sig != self.audio_sig {
                 self.audio_sig = sig;
-                if self.playing && self.voiceover.recorder.is_none() && self.play_warmup.is_none() {
-                    self.restart_audio(); // hörbare Änderungen sofort hörbar
+                if self.playing && self.voiceover.recorder.is_none() {
+                    // hörbare Änderungen sofort hörbar; das Bild läuft weiter, der Ton setzt neu ein
+                    self.restart_audio();
+                    if perf() && self.play_warmup.is_none() {
+                        self.perf_play = Some(PerfPlay::new("Ton neu (Änderung)", self.playhead));
+                    }
                 }
             }
             for m in self.project.media.iter().filter(|m| m.is_local()) {
@@ -2273,10 +2283,14 @@ impl App {
             self.playing = true;
             self.playbacks.clear();
             self.playbacks_next.clear();
-            // Erst puffern: Playhead und Ton laufen los, wenn die Bildströme bereit sind
-            self.audio = None;
-            self.play_clock = None;
+            // Erst puffern: der Playhead läuft los, wenn die Bildströme bereit sind. Der Ton wird
+            // gleichzeitig vorbereitet und setzt ein, sobald er da ist – das Bild wartet nicht auf ihn.
             self.play_warmup = Some(Instant::now());
+            self.restart_audio();
+            self.play_clock = None;
+            if perf() {
+                self.perf_play = Some(PerfPlay::new("Play", self.playhead));
+            }
         }
     }
 
@@ -2335,9 +2349,12 @@ impl App {
         self.play_warmup = None;
     }
 
+    /// Ton ab dem Playhead neu starten. Die Uhr läuft sofort nach Systemzeit weiter; der Ton setzt
+    /// ohne Sprung an der dann aktuellen Stelle ein (während des Pufferns erst mit dessen Ende).
     pub fn restart_audio(&mut self) {
         self.audio = None;
-        self.play_clock = Some((Instant::now(), self.playhead));
+        let now = Instant::now();
+        self.play_clock = Some((now, self.playhead));
         let mute = (self.voiceover.recorder.is_some() && self.voiceover.mute_project)
             || (self.play_rate - 1.0).abs() > 1e-6;
         if !mute {
@@ -2353,8 +2370,13 @@ impl App {
                 }
                 std::borrow::Cow::Owned(p)
             };
-            match AudioPlayer::start(&proj, self.playhead) {
-                Ok(a) => self.audio = Some(a),
+            match AudioPlayer::start_synced(&proj, self.playhead) {
+                Ok(a) => {
+                    if self.play_warmup.is_none() {
+                        a.anchor(now);
+                    }
+                    self.audio = Some(a);
+                }
                 Err(e) => eprintln!("Ton: {e}"),
             }
         }
@@ -2417,19 +2439,27 @@ impl App {
                         p.t0 = now;
                     }
                 });
-                self.restart_audio();
+                // Uhr startet jetzt; der vorbereitete Ton setzt an derselben Stelle ein
+                let t = Instant::now();
+                self.play_clock = Some((t, self.playhead));
+                match &self.audio {
+                    Some(a) => a.anchor(t),
+                    None => self.restart_audio(),
+                }
             }
             return;
         }
-        // Ausgabe ließ sich nicht öffnen: ohne Ton nach Systemzeit weiter
-        if self.audio.as_ref().is_some_and(|a| a.failed()) {
+        // Ausgabe ließ sich nicht öffnen bzw. Ton zu Ende (Fehler): ohne Ton nach Systemzeit weiter
+        if self.audio.as_ref().is_some_and(|a| a.failed() || (a.started() && a.finished())) {
             self.audio = None;
             self.play_clock = Some((Instant::now(), self.playhead));
         }
+        self.perf_audio();
         match &self.audio {
-            Some(a) if a.started() => self.playhead = a.position(),
-            Some(_) => {} // Ton startet gleich, Bild wartet
-            None => {
+            // Ton-Uhr; nie zurück (Übergabe von der Systemzeit ist ohne Sprung, Rundung ±1 Rückruf)
+            Some(a) if a.started() => self.playhead = a.position().max(self.playhead),
+            // Ton kommt gleich: Bild läuft nach Systemzeit (der Ton holt auf)
+            Some(_) | None => {
                 if let Some((t0, p0)) = self.play_clock {
                     let t = p0.as_secs_f64() + t0.elapsed().as_secs_f64() * self.play_rate;
                     self.playhead = Time::from_secs_f64(t.max(0.0));
@@ -2922,9 +2952,55 @@ impl App {
     /// egui zieht von der Wartezeit 1/60 s ab, deshalb wird sie hier aufgeschlagen
     /// (sonst zeichnet die Oberfläche ungebremst mehrere hundert Mal pro Sekunde).
     /// Genau auf das nächste Videobild zu zielen verliert Bilder (Windows-Timer ~15 ms).
+    /// Wartezeit bis zum nächsten fälligen Bild (Projekt-Bildrate); beim Puffern kurz nachsehen.
     pub fn play_repaint_delay(&self) -> Duration {
-        let fps = self.project.settings.fps.as_f64().max(1.0);
-        Duration::from_secs_f64(1.0 / 60.0 + 0.5 / fps)
+        if self.play_warmup.is_some() {
+            return Duration::from_millis(10);
+        }
+        next_frame_delay(self.playhead, self.project.settings.fps, self.play_rate)
+    }
+
+    /// Messpunkte der Wiedergabe (`CUTLINE_PERF`): Play → erster Ton, Ton-Aussetzer
+    fn perf_audio(&mut self) {
+        if !perf() {
+            return;
+        }
+        let Some(a) = &self.audio else { return };
+        if let (Some(p), Some(t)) = (&mut self.perf_play, a.first_sound()) {
+            if !p.sound {
+                p.sound = true;
+                eprintln!(
+                    "perf: {} → erster Ton {:.0} ms",
+                    p.what,
+                    t.saturating_duration_since(p.pressed).as_secs_f64() * 1000.0
+                );
+            }
+        }
+        let (n, d) = a.take_underruns();
+        if n > 0 {
+            eprintln!("perf: Ton-Aussetzer {n}× zusammen {:.0} ms bei {:.2} s", d.as_secs_f64() * 1000.0, self.playhead.as_secs_f64());
+        }
+    }
+
+    /// Messpunkt: ein Strombild der Hauptebene wurde gezeigt (Play → erstes weitergeschaltetes Bild)
+    pub fn perf_frame_shown(&mut self) {
+        if let Some(p) = self.perf_play.as_mut().filter(|p| !p.frame && self.playhead > p.at) {
+            p.frame = true;
+            eprintln!("perf: {} → erstes Bild weitergeschaltet {:.0} ms", p.what, p.pressed.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+
+    /// Bild-Ton-Versatz (ms): wie weit das gezeigte Strombild hinter der Uhr liegt (größter Wert
+    /// über alle Ebenen; im Takt ist er kleiner als ein Bildintervall)
+    fn perf_av_offset(&self) -> Option<f64> {
+        self.playbacks
+            .values()
+            .filter(|p| p.taken > 0 && p.t0 <= self.playhead)
+            .map(|p| {
+                let shown = p.t0.as_secs_f64() + (p.taken - 1) as f64 / p.stream.fps.as_f64().max(1.0);
+                (self.playhead.as_secs_f64() - shown) * 1000.0
+            })
+            .reduce(f64::max)
     }
 }
 
@@ -2965,6 +3041,12 @@ impl eframe::App for App {
                     PERF_SUM_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0 / self.perf_ui.max(1) as f64,
                     PERF_MAX_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0
                 );
+                if self.playing && self.play_warmup.is_none() {
+                    if let Some(ms) = self.perf_av_offset() {
+                        let clock = if self.audio.as_ref().is_some_and(|a| a.started()) { "Ton-Uhr" } else { "Systemuhr" };
+                        eprintln!("perf: Bild-Ton-Versatz {ms:.0} ms ({clock})");
+                    }
+                }
                 self.perf_max_gap = 0.0;
                 self.perf_ui = 0;
                 self.perf_frames = 0;
@@ -3061,6 +3143,9 @@ impl eframe::App for App {
         self.advance_playhead();
         if pause_is_stale(self.paused, self.playhead, self.revision) {
             self.stop_playback();
+        }
+        if self.playing != self.hires_timer.is_some() {
+            self.hires_timer = self.playing.then(HiresTimer::new);
         }
         if self.playing {
             ctx.request_repaint_after(self.play_repaint_delay());
@@ -3385,6 +3470,82 @@ impl Drop for PerfFrame {
     }
 }
 
+/// Messung (`CUTLINE_PERF`): eine Wiedergabe bzw. ein Ton-Neustart
+pub struct PerfPlay {
+    pub what: &'static str,
+    pub pressed: Instant,
+    /// Playhead beim Start (erstes Bild „weitergeschaltet“ = Playhead danach)
+    pub at: Time,
+    pub frame: bool,
+    pub sound: bool,
+}
+
+impl PerfPlay {
+    fn new(what: &'static str, at: Time) -> Self {
+        Self { what, pressed: Instant::now(), at, frame: what != "Play", sound: false }
+    }
+}
+
+/// Feiner Zeitgeber, solange er lebt (Windows: `timeBeginPeriod(1)`; die Ereignisschleife wartet
+/// sonst im 15,6-ms-Raster und Bilder kommen zu spät). Andere Systeme sind ohnehin genau.
+struct HiresTimer {
+    #[cfg(windows)]
+    ok: bool,
+}
+
+#[cfg(windows)]
+#[link(name = "winmm")]
+extern "system" {
+    fn timeBeginPeriod(period: u32) -> u32;
+    fn timeEndPeriod(period: u32) -> u32;
+}
+
+impl HiresTimer {
+    fn new() -> Self {
+        // SAFETY: einfacher Systemaufruf ohne Zeiger; 0 = Erfolg (sonst bleibt der grobe Takt)
+        #[cfg(windows)]
+        return Self { ok: unsafe { timeBeginPeriod(1) } == 0 };
+        #[cfg(not(windows))]
+        Self {}
+    }
+}
+
+impl Drop for HiresTimer {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        if self.ok {
+            // SAFETY: Gegenstück zum erfolgreichen timeBeginPeriod(1)
+            unsafe { timeEndPeriod(1) };
+        }
+    }
+}
+
+/// Beginn von Bild `n` bei `fps` (µs, aufgerundet: ab dann ist das Bild fällig)
+fn frame_start(n: i128, fps: Rational) -> i128 {
+    let (num, den) = (fps.num.max(1) as i128, fps.den.max(1) as i128);
+    (n * den * 1_000_000).div_euclid(num) + i128::from((n * den * 1_000_000).rem_euclid(num) != 0)
+}
+
+/// Nächster Bildwechsel nach `pos` in Laufrichtung (aus der Bildnummer, also ohne Drift)
+fn next_frame_at(pos: Time, fps: Rational, forward: bool) -> Time {
+    let (num, den) = (fps.num.max(1) as i128, fps.den.max(1) as i128);
+    let n = (pos.0 as i128 * num).div_euclid(den * 1_000_000);
+    let mut at = if forward { frame_start(n + 1, fps) } else { frame_start(n, fps) };
+    if !forward && at >= pos.0 as i128 {
+        at = frame_start(n - 1, fps);
+    }
+    Time(at as i64)
+}
+
+/// Wartezeit bis zum nächsten Bildwechsel bei Abspieltempo `rate` (+1 ms, damit die Uhr dann
+/// sicher hinter der Grenze steht; ein zu frühes Bild zeigte nichts Neues)
+fn next_frame_delay(pos: Time, fps: Rational, rate: f64) -> Duration {
+    let rate = if rate.abs() < 1e-6 { 1.0 } else { rate };
+    let at = next_frame_at(pos, fps, rate > 0.0);
+    let secs = ((at - pos).as_secs_f64() / rate).abs();
+    Duration::from_secs_f64(secs.min(1.0)) + Duration::from_millis(1)
+}
+
 /// Pause mit offenen Strömen, aber Playhead verschoben oder Projekt geändert: Fortsetzen geht
 /// nicht mehr, die wartenden FFmpeg-Prozesse (Bild und Ton) können sofort enden.
 fn pause_is_stale(paused: Option<(Time, u64)>, playhead: Time, revision: u64) -> bool {
@@ -3573,6 +3734,40 @@ mod frame_rate_tests {
         assert!(!pause_is_stale(Some((t, 3)), t, 3));
         assert!(pause_is_stale(Some((t, 3)), Time::from_millis(900), 3));
         assert!(pause_is_stale(Some((t, 3)), t, 4));
+    }
+
+    #[test]
+    fn next_frame_is_due_on_the_frame_grid_without_drift() {
+        for fps in [Rational::new(24, 1), Rational::new(25, 1), Rational::new(30, 1), Rational::new(50, 1), Rational::new(60, 1), Rational::new(30000, 1001)] {
+            let f = fps.as_f64();
+            let mut pos = Time::ZERO;
+            for n in 1..=10_000i64 {
+                pos = next_frame_at(pos, fps, true);
+                // genau der (aufgerundete) Bildbeginn, unabhängig von der Vorgeschichte
+                let exact = n as f64 / f * 1e6;
+                assert!(pos.0 as f64 >= exact - 1e-6 && (pos.0 as f64) < exact + 1.0, "{fps:?} Bild {n}: {pos:?}");
+                // die Uhr liegt dort wirklich im Bild n
+                assert_eq!((pos.as_secs_f64() * f + 1e-9).floor() as i64, n, "{fps:?} {n}");
+            }
+            // mitten im Bild: Wartezeit bis zum Ende des Bildes (+1 ms), nie länger als ein Bild
+            let mid = Time::from_secs_f64(100.5 / f);
+            let d = next_frame_delay(mid, fps, 1.0).as_secs_f64();
+            assert!((d - (0.5 / f + 0.001)).abs() < 2e-6, "{fps:?} {d}");
+            assert!(next_frame_delay(Time::from_secs_f64(7.0 / f), fps, 1.0).as_secs_f64() <= 1.0 / f + 0.0011);
+        }
+        // 30 fps: größte Lücke 33,3 ms + 1 ms ≤ 40 ms
+        let worst = (0..1000)
+            .map(|i| next_frame_delay(Time(i * 997), Rational::new(30, 1), 1.0))
+            .max()
+            .unwrap();
+        assert!(worst <= Duration::from_millis(40), "{worst:?}");
+        // doppeltes Tempo: halbe Wartezeit; rückwärts: bis zum Beginn des laufenden Bildes
+        let fps = Rational::new(30, 1);
+        let t = Time::from_secs_f64(10.5 / 30.0);
+        assert!((next_frame_delay(t, fps, 2.0).as_secs_f64() - (0.25 / 30.0 + 0.001)).abs() < 2e-6);
+        assert_eq!(next_frame_at(t, fps, false), Time(frame_start(10, fps) as i64));
+        assert_eq!(next_frame_at(Time(frame_start(10, fps) as i64), fps, false), Time(frame_start(9, fps) as i64));
+        assert!((next_frame_delay(t, fps, -1.0).as_secs_f64() - (0.5 / 30.0 + 0.001)).abs() < 2e-6);
     }
 
     #[test]

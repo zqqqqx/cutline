@@ -1004,14 +1004,32 @@ pub fn available_encoders() -> Vec<Encoder> {
     v
 }
 
-/// Ton der Zeitleiste ab `from` als f32le-Stereo mit `rate` Hz auf stdout (für die Vorschau-Wiedergabe).
+/// Ton der Zeitleiste ab `from` bis zum Projektende als f32le-Stereo mit `rate` Hz auf stdout.
 pub fn spawn_audio_preview(
     p: &Project,
     from: Time,
     rate: u32,
 ) -> Result<(Child, tempfile::TempDir)> {
+    spawn_audio_window(p, from, p.duration(), rate)
+}
+
+/// Ids der hörbaren Clips, die den Bereich `start..end` berühren (= Eingänge des Ton-Mixes).
+pub fn audio_clips_in(p: &Project, start: Time, end: Time) -> Vec<ClipId> {
+    graph::audible_clips(p, start, end).map(|(c, _)| c.id).collect()
+}
+
+/// Ton der Zeitleiste im Bereich `from..to` (höchstens bis zum Projektende) als f32le-Stereo mit
+/// `rate` Hz auf stdout (Vorschau-Wiedergabe in Fenstern). Gemischt werden nur die Clips, die den
+/// Bereich berühren; jeder Clip wird ab seinem Anfang gerechnet, darum klingt ein Abschnitt
+/// sample-gleich wie derselbe Abschnitt eines längeren Mixes.
+pub fn spawn_audio_window(
+    p: &Project,
+    from: Time,
+    to: Time,
+    rate: u32,
+) -> Result<(Child, tempfile::TempDir)> {
     let p = &in_edit_ranges(p);
-    let end = p.duration();
+    let end = p.duration().min(to);
     if end <= from {
         return Err(ExportError::Empty);
     }
