@@ -910,7 +910,7 @@ impl App {
                 .clicked()
             {
                 if let Some(f) = crate::dialog()
-                    .add_filter("Untertitel", &["srt"])
+                    .add_filter("Untertitel", &["srt", "vtt"])
                     .pick_file()
                 {
                     self.import_srt(&f);

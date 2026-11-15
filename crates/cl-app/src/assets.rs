@@ -1914,19 +1914,9 @@ impl App {
     }
 
     pub(crate) fn import_srt(&mut self, path: &std::path::Path) {
-        let Ok(text) = std::fs::read_to_string(path) else {
+        let Ok(bytes) = std::fs::read(path) else {
             self.toast_err("Datei nicht lesbar");
             return;
-        };
-        let ts = |s: &str| -> Option<Time> {
-            let s = s.trim().replace(',', ".");
-            let mut it = s.split(':');
-            let (h, m, sec) = (
-                it.next()?.parse::<f64>().ok()?,
-                it.next()?.parse::<f64>().ok()?,
-                it.next()?.parse::<f64>().ok()?,
-            );
-            Some(Time::from_secs_f64(h * 3600.0 + m * 60.0 + sec))
         };
         let style = cl_fx::text::TEMPLATES
             .iter()
@@ -1939,21 +1929,7 @@ impl App {
             kind: TrackKind::Text,
         }];
         let mut clips = Vec::new();
-        for block in text.replace('\r', "").split("\n\n") {
-            let lines: Vec<&str> = block.lines().filter(|l| !l.trim().is_empty()).collect();
-            let Some(tl) = lines.iter().position(|l| l.contains("-->")) else {
-                continue;
-            };
-            let Some((a, b)) = lines[tl].split_once("-->") else {
-                continue;
-            };
-            let (Some(a), Some(b)) = (ts(a), ts(b)) else {
-                continue;
-            };
-            if b <= a {
-                continue;
-            }
-            let txt = lines[tl + 1..].join("\n");
+        for (a, b, txt) in parse_subtitles(&bytes) {
             let mut c = Clip::new(
                 ClipContent::Text(TextStyle {
                     text: txt,
@@ -1986,6 +1962,42 @@ impl App {
 
 }
 
+/// SRT/WebVTT lesen: (Beginn, Ende, Text) je Untertitel. UTF-8 (mit/ohne BOM) oder Windows-Latin-1,
+/// Stunden optional (VTT `MM:SS.mmm`), Cue-Einstellungen hinter der Zeit werden ignoriert.
+/// Kaputte Einträge (falsche Zeiten, Ende vor Beginn, negativ, unendlich) fallen weg.
+pub(crate) fn parse_subtitles(bytes: &[u8]) -> Vec<(Time, Time, String)> {
+    let text = match std::str::from_utf8(bytes) {
+        Ok(t) => t.to_string(),
+        // shortcut: Latin-1 statt Windows-1252 (nur €, „“ … weichen ab), reicht für alte SRT-Dateien
+        Err(_) => bytes.iter().map(|&b| b as char).collect(),
+    };
+    let ts = |s: &str| -> Option<Time> {
+        let s = s.split_whitespace().next()?.replace(',', ".");
+        let parts: Vec<f64> = s.split(':').map(|p| p.parse::<f64>().ok().filter(|v| v.is_finite() && *v >= 0.0)).collect::<Option<_>>()?;
+        let secs = match parts[..] {
+            [h, m, s] => h * 3600.0 + m * 60.0 + s,
+            [m, s] => m * 60.0 + s,
+            _ => return None,
+        };
+        (secs < Time::LIMIT.as_secs_f64()).then(|| Time::from_secs_f64(secs))
+    };
+    let mut out = Vec::new();
+    for block in text.trim_start_matches('\u{feff}').replace('\r', "").split("\n\n") {
+        let lines: Vec<&str> = block.lines().filter(|l| !l.trim().is_empty()).collect();
+        let Some(tl) = lines.iter().position(|l| l.contains("-->")) else {
+            continue;
+        };
+        let Some((a, b)) = lines[tl].split_once("-->") else {
+            continue;
+        };
+        match (ts(a), ts(b)) {
+            (Some(a), Some(b)) if b > a => out.push((a, b, lines[tl + 1..].join("\n"))),
+            _ => {}
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2011,5 +2023,40 @@ mod tests {
         };
         let cats = tab_cats(&["Basis", "Licht"], &[e("Licht"), e("Neu"), e("Alt"), e("Neu")]);
         assert_eq!(cats, ["Basis", "Licht", "Neu", "Alt"]);
+    }
+
+    /// SRT/VTT-Import: eigene Exporte kommen unverändert zurück, kaputte Einträge fallen weg,
+    /// alte Latin-1-Dateien und VTT ohne Stunden/mit Cue-Einstellungen gehen.
+    #[test]
+    fn subtitles_import_tolerates_odd_files() {
+        let s = |x: f64| Time::from_secs_f64(x);
+        let mut p = Project::new("U");
+        let mut t = Track::new(TrackKind::Text);
+        for (i, txt) in ["Erste Zeile\nzweite", "a --> b & <i>", "Ümläut 🎬"].iter().enumerate() {
+            t.clips.push(Clip::new(ClipContent::Text(TextStyle { text: txt.to_string(), ..Default::default() }), s(i as f64 * 2.0), s(1.5)));
+        }
+        p.timeline.tracks.push(t);
+        let srt = parse_subtitles(cl_export::to_srt(&p).as_bytes());
+        assert_eq!(srt.len(), 3);
+        assert_eq!(srt[0], (s(0.0), s(1.5), "Erste Zeile\nzweite".to_string()));
+        assert_eq!(srt[2], (s(4.0), s(5.5), "Ümläut 🎬".to_string()));
+        assert_eq!(parse_subtitles(cl_export::to_vtt(&p).as_bytes()).len(), 3, "eigenes VTT");
+        let vtt = "WEBVTT\n\n01:02.500 --> 01:04.000 align:start position:10%\nKurz\n";
+        assert_eq!(parse_subtitles(vtt.as_bytes()), vec![(s(62.5), s(64.0), "Kurz".to_string())]);
+        // BOM, CRLF, Latin-1
+        let mut latin = b"\xef\xbb\xbf1\r\n00:00:01,000 --> 00:00:02,000\r\nok\r\n\r\n".to_vec();
+        assert_eq!(parse_subtitles(&latin).len(), 1);
+        latin = b"1\n00:00:01,000 --> 00:00:02,000\nGr\xfc\xdfe\n".to_vec();
+        assert_eq!(parse_subtitles(&latin)[0].2, "Grüße");
+        // Kaputtes: nichts davon darf durchkommen oder abstürzen
+        for bad in [
+            "", "\n\n\n", "-->", "1\n-->\nx", "00:00:02,000 --> 00:00:01,000\nrückwärts", "-1:00:00,000 --> 00:00:01,000\nneg",
+            "NaN:00:00 --> 00:00:01\nnan", "inf:00:00 --> inf:00:01\ninf", "99999999999999:00:00 --> 99999999999999:00:01\nriesig",
+            "00:00:01 --> \nleer", "a:b:c --> d:e:f\nx", "1:2:3:4 --> 1:2:3:5\nzu viele",
+        ] {
+            assert!(parse_subtitles(bad.as_bytes()).is_empty(), "{bad:?}");
+        }
+        // Eintrag ohne Text bleibt (leerer Untertitel), Zeit ohne Nachkommastellen geht
+        assert_eq!(parse_subtitles(b"00:00:01 --> 00:00:03\n").len(), 1);
     }
 }
