@@ -391,7 +391,7 @@ const MAX_UNPACKED: u64 = 4 << 30;
 /// Eintrag kopieren, ohne mehr als `left` Bytes zu schreiben: die Größenangaben im ZIP sind
 /// nicht vertrauenswürdig (gepackte „Bomben“ füllen sonst die Platte).
 fn copy_capped(r: &mut impl Read, w: &mut impl Write, left: &mut u64) -> Result<(), String> {
-    let n = std::io::copy(&mut r.take(*left + 1), w).map_err(|e| e.to_string())?;
+    let n = std::io::copy(&mut (&mut *r).take(*left + 1), w).map_err(|e| e.to_string())?;
     if n > *left {
         return Err("Archiv ist entpackt zu groß".into());
     }
