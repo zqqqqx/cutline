@@ -1477,23 +1477,6 @@ impl App {
             .filter_map(|e| catalog_item(e, "builtin:st:", |id| cl_fx::stickers::sticker(id).map(|s| s.id)))
             .collect();
         let items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
-        for it in &items {
-            if let Some(id) = it.builtin {
-                if !self.sticker_tex.contains_key(id) {
-                    if let Some(st) = cl_fx::stickers::sticker(id) {
-                        if let Some(px) = cl_fx::stickers::render_rgba(st, 128) {
-                            let img = egui::ColorImage::from_rgba_premultiplied([128, 128], &px);
-                            let t = ui.ctx().load_texture(
-                                format!("st-{id}"),
-                                img,
-                                egui::TextureOptions::LINEAR,
-                            );
-                            self.sticker_tex.insert(st.id, t);
-                        }
-                    }
-                }
-            }
-        }
         let ctx = ui.ctx().clone();
         let mut add: Option<Item> = None;
         let mut menu: Vec<(egui::Response, Item)> = Vec::new();
@@ -1510,6 +1493,14 @@ impl App {
                     );
                 }
                 widgets::grid(ui, &items, 70.0, 1.0, 16.0, |ui, r, it| {
+                    // eingebaute Sticker erst rastern, wenn ihre Zeile sichtbar wird
+                    if let Some(st) = it.builtin.filter(|id| !self.sticker_tex.contains_key(id)).and_then(cl_fx::stickers::sticker) {
+                        if let Some(px) = cl_fx::stickers::render_rgba(st, 128) {
+                            let img = egui::ColorImage::from_rgba_premultiplied([128, 128], &px);
+                            let t = ui.ctx().load_texture(format!("st-{}", st.id), img, egui::TextureOptions::LINEAR);
+                            self.sticker_tex.insert(st.id, t);
+                        }
+                    }
                     let tex = match (it.builtin, &it.path) {
                         (Some(id), _) => self.sticker_tex.get(id).map(|t| t.id()),
                         (None, Some(p)) => self.lib_thumbs.get(&ctx, &it.key, p),
