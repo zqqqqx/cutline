@@ -788,12 +788,14 @@ impl Starter {
         std::thread::Builder::new()
             .name("cl-stream-start".into())
             .spawn(move || {
-                while let Ok(j) = jobs.recv() {
-                    let s = FrameStream::open_opts(&j.path, j.source_at, j.w, j.h, j.fps, j.graph.as_deref(), j.hw).ok();
-                    if done.send((j.open, j.fps.as_f64(), j.alias, s)).is_err() {
-                        return;
+                while let Ok(first) = jobs.recv() {
+                    for j in newest_per_layer(std::iter::once(first).chain(jobs.try_iter()).collect()) {
+                        let s = FrameStream::open_opts(&j.path, j.source_at, j.w, j.h, j.fps, j.graph.as_deref(), j.hw).ok();
+                        if done.send((j.open, j.fps.as_f64(), j.alias, s)).is_err() {
+                            return;
+                        }
+                        ctx.request_repaint();
                     }
-                    ctx.request_repaint();
                 }
             })
             .expect("Strom-Thread");
@@ -802,6 +804,18 @@ impl Starter {
     pub fn send(&self, j: OpenJob) {
         let _ = self.tx.send(j);
     }
+}
+
+/// Wartende Aufträge: je Ebene nur der neueste (der Kern hängt ohnehin nur die zuletzt beauftragte
+/// Nummer an). Sonst startete der Starter beim Ziehen eines Reglers während Play jeden veralteten
+/// Strom nacheinander, und der richtige käme erst nach diesem Rückstau.
+fn newest_per_layer(jobs: Vec<OpenJob>) -> Vec<OpenJob> {
+    let mut out: Vec<OpenJob> = Vec::with_capacity(jobs.len());
+    for j in jobs {
+        out.retain(|o| o.open.id != j.open.id);
+        out.push(j);
+    }
+    out
 }
 
 /// Hardware-Decodierung für einen Abspiel-Strom? Nur für Originale, deren Software-Decodierung
@@ -967,6 +981,27 @@ mod tests {
         // Bild aus dem Speicher: laufender Auftrag des Clips verfällt
         assert!(f.cancel(b).is_some() && f.cancel(b).is_none());
         assert_eq!(f.len(), 0);
+    }
+
+    /// Regler ziehen während Play: viele Aufträge derselben Ebene stauen sich – geöffnet wird nur
+    /// der neueste je Ebene, in der Reihenfolge ihres letzten Auftrags.
+    #[test]
+    fn starter_opens_only_the_newest_job_per_layer() {
+        let job = |id, seq| OpenJob {
+            open: crate::playcore::Open { id, key: seq, at: Time::ZERO, gen: 0, seq },
+            alias: 0,
+            path: PathBuf::from("a.mp4"),
+            source_at: Time::ZERO,
+            w: 16,
+            h: 16,
+            fps: Rational::new(30, 1),
+            graph: None,
+            hw: false,
+        };
+        let jobs = vec![job(1, 1), job(2, 2), job(1, 3), job(1, 4), job(3, 5), job(2, 6)];
+        let left: Vec<(u128, u64)> = newest_per_layer(jobs).iter().map(|j| (j.open.id, j.open.seq)).collect();
+        assert_eq!(left, vec![(1, 4), (3, 5), (2, 6)]);
+        assert!(newest_per_layer(Vec::new()).is_empty());
     }
 
     #[test]
