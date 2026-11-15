@@ -289,11 +289,16 @@ pub struct McpRunning {
     pub token: String,
     pub read_only: bool,
     stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for McpRunning {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        // warten, bis der Port frei ist – sonst scheitert ein sofortiger Neustart auf demselben Port
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
     }
 }
 
@@ -348,7 +353,7 @@ impl App {
         srv.read_only = self.settings.mcp_read_only;
         let stop = Arc::new(AtomicBool::new(false));
         match srv.serve_http_until(self.settings.mcp_port, token.clone(), stop.clone()) {
-            Ok((addr, _)) => {
+            Ok((addr, thread)) => {
                 let info = serde_json::json!({ "url": format!("http://127.0.0.1:{}/mcp", addr.port()), "token": token, "read_only": self.settings.mcp_read_only });
                 let _ = std::fs::create_dir_all(paths::data_dir());
                 let _ = std::fs::write(
@@ -360,6 +365,7 @@ impl App {
                     token,
                     read_only: self.settings.mcp_read_only,
                     stop,
+                    thread: Some(thread),
                 });
             }
             Err(e) => {
@@ -1090,6 +1096,21 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_restarts_at_once_on_the_same_port() {
+        let start = |port| {
+            let doc = Arc::new(std::sync::Mutex::new(cl_core::Document::new(cl_core::Project::new("t"))));
+            let stop = Arc::new(AtomicBool::new(false));
+            let (addr, t) = cl_mcp::McpServer::new(doc, None).serve_http_until(port, "x".into(), stop.clone())?;
+            Ok::<_, std::io::Error>(McpRunning { port: addr.port(), token: "x".into(), read_only: false, stop, thread: Some(t) })
+        };
+        let first = start(0).unwrap();
+        let port = first.port;
+        drop(first);
+        let again = start(port).expect("Port nach dem Beenden sofort frei");
+        assert_eq!(again.port, port);
+    }
 
     #[test]
     fn new_fps_reads_old_whole_numbers_and_exact_rates() {

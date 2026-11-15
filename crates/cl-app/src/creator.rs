@@ -14,6 +14,16 @@ use crate::app::App;
 use crate::tasks::TaskDone;
 use crate::theme::icon;
 
+/// Ergebnisse einer Hintergrund-Analyse beziehen sich auf die Clip-Lagen bei ihrem Start: hat sich
+/// das Projekt seitdem geändert, nicht übernehmen.
+fn still_current(app: &mut App, rev: u64) -> bool {
+    let ok = app.revision == rev;
+    if !ok {
+        app.toast_err("Projekt hat sich geändert – bitte erneut ausführen");
+    }
+    ok
+}
+
 /// Ton eines Clips: (Datei, Quellbeginn, Quelllänge, Tempo)
 pub fn clip_audio(app: &App, c: &Clip) -> Option<(PathBuf, f64, f64, f64)> {
     let ClipContent::Media { media, kind } = &c.content else {
@@ -281,9 +291,7 @@ impl App {
                 }
                 let merged = merge_speech(speech, ramp as f64);
                 TaskDone::Run(Box::new(move |app: &mut App| {
-                    // Clip-Lagen stammen vom Analysestart
-                    if app.revision != rev {
-                        app.toast_err("Projekt hat sich geändert – bitte erneut ausführen");
+                    if !still_current(app, rev) {
                         return;
                     }
                     let Some(mut c) = app.project.find_clip(id).map(|(_, c)| c.clone()) else {
@@ -321,7 +329,7 @@ impl App {
         let Some((path, src, span, sp)) = clip_audio(self, &c) else {
             return;
         };
-        let (start, rev, id) = (c.start.as_secs_f64(), c.fx.reverse, c.id);
+        let (start, rev, id, at_rev) = (c.start.as_secs_f64(), c.fx.reverse, c.id, self.revision);
         self.tasks
             .spawn(ctx, "tool", "Highlights werden gesucht …", move |p, _| {
                 p(0.3);
@@ -338,7 +346,7 @@ impl App {
                             })
                             .collect();
                         TaskDone::Run(Box::new(move |app: &mut App| {
-                            if app.project.find_clip(id).is_none() {
+                            if app.project.find_clip(id).is_none() || !still_current(app, at_rev) {
                                 return;
                             }
                             if hits.is_empty() {
@@ -373,6 +381,7 @@ impl App {
             .filter_map(|c| clip_audio(self, &c).map(|(p, s, l, _)| (c.id, p, s, l)))
             .collect();
         let r_start = ref_clip.start.as_secs_f64();
+        let rev = self.revision;
         self.tasks.spawn(
             ctx,
             "tool",
@@ -394,28 +403,7 @@ impl App {
                         }
                     }
                 }
-                TaskDone::Run(Box::new(move |app: &mut App| {
-                    if moves.is_empty() {
-                        app.toast_err("Kein gemeinsamer Ton gefunden");
-                        return;
-                    }
-                    let ops: Vec<EditOp> = moves
-                        .iter()
-                        .filter_map(|(id, s)| {
-                            app.project.find_clip(*id).map(|(t, _)| EditOp::MoveClip {
-                                clip: *id,
-                                track: Some(t.id),
-                                start: Time::from_secs_f64(*s),
-                            })
-                        })
-                        .collect();
-                    let n = ops.len();
-                    app.apply(EditOp::Batch {
-                        label: "Synchronisieren".into(),
-                        ops,
-                    });
-                    app.toast(format!("{n} Aufnahmen synchronisiert"));
-                }))
+                TaskDone::Run(Box::new(move |app: &mut App| apply_sync(app, rev, &moves)))
             },
         );
     }
@@ -801,9 +789,65 @@ fn walk_audio(dir: &std::path::Path) -> Vec<PathBuf> {
     out
 }
 
+/// Ergebnis von „Synchronisieren“: Startzeiten relativ zum Referenz-Clip beim Analysestart.
+fn apply_sync(app: &mut App, rev: u64, moves: &[(ClipId, f64)]) {
+    if !still_current(app, rev) {
+        return;
+    }
+    if moves.is_empty() {
+        app.toast_err("Kein gemeinsamer Ton gefunden");
+        return;
+    }
+    let ops: Vec<EditOp> = moves
+        .iter()
+        .filter_map(|(id, s)| {
+            app.project.find_clip(*id).map(|(t, _)| EditOp::MoveClip {
+                clip: *id,
+                track: Some(t.id),
+                start: Time::from_secs_f64(*s),
+            })
+        })
+        .collect();
+    let n = ops.len();
+    app.apply(EditOp::Batch {
+        label: "Synchronisieren".into(),
+        ops,
+    });
+    app.toast(format!("{n} Aufnahmen synchronisiert"));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sync_result_is_dropped_after_the_project_changed() {
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        std::env::set_var("CUTLINE_NO_UPDATE", "1");
+        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
+        let mut app = App::new(&eframe::CreationContext::_new_kittest(egui::Context::default()), None);
+        let s = Time::from_secs_f64;
+        let mut p = Project::new("Sync");
+        let mut t = Track::new(TrackKind::Video);
+        let c = Clip::new(ClipContent::Text(TextStyle::default()), s(0.0), s(2.0));
+        let id = c.id;
+        t.clips.push(c);
+        p.timeline.tracks.push(t);
+        app.set_doc(p);
+        let start = |app: &App| app.project.find_clip(id).unwrap().1.start;
+        // Analyse beginnt, danach schiebt der Nutzer den Clip
+        let rev = app.revision;
+        let track = app.project.timeline.tracks[0].id;
+        app.apply(EditOp::MoveClip { clip: id, track: Some(track), start: s(5.0) });
+        apply_sync(&mut app, rev, &[(id, 1.0)]);
+        assert_eq!(start(&app), s(5.0), "veraltetes Ergebnis übernommen");
+        // aktuelles Ergebnis wird angewendet
+        let rev = app.revision;
+        apply_sync(&mut app, rev, &[(id, 1.0)]);
+        assert_eq!(start(&app), s(1.0));
+    }
 
     #[test]
     fn source_times_map_into_reversed_clips() {

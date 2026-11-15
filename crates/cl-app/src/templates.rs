@@ -35,11 +35,10 @@ pub fn list() -> Vec<(String, PathBuf)> {
     v
 }
 
+/// Vorlagen heißen wie ihre Datei: Satzzeichen bleiben (vorhandene Namen bleiben gleich)
 fn safe(name: &str) -> String {
-    name.trim()
-        .chars()
-        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
-        .collect()
+    let s: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
+    paths::fit_name(&s)
 }
 
 #[derive(Clone)]
@@ -393,6 +392,13 @@ impl App {
 mod tests {
     use super::*;
     use cl_core::{MediaId, MediaKind, MediaRef, Track};
+
+    #[test]
+    fn template_names_stay_and_long_or_reserved_ones_fit() {
+        assert_eq!(safe("  Intro (v2) & Co. – Ä:1 "), "Intro (v2) & Co. – Ä_1");
+        assert_eq!(safe(&"x".repeat(300)).len(), 100);
+        assert_eq!(safe("con"), "con_");
+    }
 
     fn text_track(starts: &[f64]) -> Track {
         let mut t = Track::new(TrackKind::Text);

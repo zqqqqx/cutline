@@ -1,6 +1,6 @@
 //! MCP-Endpunkt (Model Context Protocol) für Cutline.
 //!
-//! - Transport `stdio`: `cutline --mcp <projekt.json>` (headless, z. B. für Claude Code)
+//! - Transport `stdio`: `cutline --mcp <projekt.json>` (headless)
 //! - Transport HTTP: `127.0.0.1:<port>/mcp`, nur lokal und nur mit Bearer-Token, für die laufende App
 //!
 //! Jeder schreibende Tool-Aufruf wird zu [`EditOp`]s und läuft über [`Document::apply`].
@@ -683,10 +683,10 @@ mod tests {
     fn handshake_and_listing() {
         let s = server();
         let r = s
-            .handle(json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"claude-code"}}}))
+            .handle(json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"test-client"}}}))
             .unwrap();
         assert_eq!(r["result"]["protocolVersion"], "2025-03-26");
-        assert_eq!(s.client_name(), "claude-code");
+        assert_eq!(s.client_name(), "test-client");
         assert!(s
             .handle(json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
             .is_none());
@@ -709,7 +709,7 @@ mod tests {
     #[test]
     fn edit_via_tools_is_undoable_and_attributed() {
         let s = server();
-        s.handle(json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"clientInfo":{"name":"claude"}}}));
+        s.handle(json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"clientInfo":{"name":"test-client"}}}));
         let r = call(
             &s,
             "add_text",
@@ -731,7 +731,7 @@ mod tests {
             2
         );
         let h = call(&s, "history", json!({}));
-        assert_eq!(h["structuredContent"][1]["source"]["name"], "claude");
+        assert_eq!(h["structuredContent"][1]["source"]["name"], "test-client");
         assert_eq!(
             call(&s, "undo", json!({}))["structuredContent"]["undone"],
             "Teilen"

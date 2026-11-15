@@ -227,6 +227,26 @@ fn undo_and_redo_on_empty_history() {
     assert_eq!(d.project().name, "1");
 }
 
+/// Jeder Schritt ist eine volle Projektkopie: große Projekte behalten weniger Schritte.
+#[test]
+fn history_shrinks_for_big_projects() {
+    let mut p = Project::new("Groß");
+    let mut t = Track::new(TrackKind::Video);
+    t.clips = (0..5000).map(|i| Clip::new(ClipContent::Text(TextStyle::default()), s(i as f64), s(1.0))).collect();
+    p.timeline.tracks.push(t);
+    let mut d = Document::new(p);
+    for i in 0..30 {
+        apply(&mut d, EditOp::Rename { name: format!("{i}") });
+    }
+    assert_eq!(d.undo_entries().len(), 20);
+    // kleine Projekte: 100 Schritte wie bisher
+    let mut d = Document::new(Project::new("Klein"));
+    for i in 0..120 {
+        apply(&mut d, EditOp::Rename { name: format!("{i}") });
+    }
+    assert_eq!(d.undo_entries().len(), 100);
+}
+
 #[test]
 fn locked_track_rejects_every_clip_edit() {
     let r = rich();

@@ -422,7 +422,6 @@ Textdauer	Text duration
 Geringere Vorschauauflösung macht die Wiedergabe mit Effekten flüssiger. Der Export nutzt immer die volle Auflösung.	A lower preview resolution makes playback with effects smoother. Export always uses full resolution.
 Effekt-Cache	Effect cache
 Vorschaubilder neu erzeugen	Rebuild thumbnails
-Über das Model Context Protocol können lokale KI-Assistenten und Skripte das offene Projekt lesen und bearbeiten. Jede Änderung landet im Verlauf und lässt sich rückgängig machen. Der Server ist nur auf diesem Rechner erreichbar (127.0.0.1) und verlangt ein Token.	Through the Model Context Protocol, local AI assistants and scripts can read and edit the open project. Every change lands in the history and can be undone. The server is only reachable from this computer (127.0.0.1) and requires a token.
 MCP-Server aktivieren	Enable MCP server
 Nur lesen (keine Änderungen erlauben)	Read only (allow no changes)
 Verbindung	Connection
