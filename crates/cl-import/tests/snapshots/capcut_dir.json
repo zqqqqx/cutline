@@ -3,6 +3,7 @@
     "media": [
       {
         "audio_codec": "pcm_s16le",
+        "audio_streams": 1,
         "duration": 3000000,
         "fps": null,
         "has_audio": true,
@@ -15,6 +16,7 @@
       },
       {
         "audio_codec": "aac",
+        "audio_streams": 1,
         "duration": 2000000,
         "fps": {
           "den": 1,
@@ -30,6 +32,7 @@
       },
       {
         "audio_codec": null,
+        "audio_streams": 0,
         "duration": 0,
         "fps": null,
         "has_audio": false,
@@ -94,6 +97,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -204,6 +208,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -314,6 +319,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -424,6 +430,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -534,6 +541,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -650,6 +658,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -760,6 +769,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -876,6 +886,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -986,6 +997,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -1107,6 +1119,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -1228,6 +1241,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Text": {
@@ -1373,6 +1387,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Text": {
@@ -1507,6 +1522,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Text": {
@@ -1644,6 +1660,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -1754,6 +1771,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
@@ -1875,6 +1893,7 @@
                 "voice": null,
                 "voice_isolate": false
               },
+              "audio_stream": null,
               "beats": [],
               "content": {
                 "Media": {
