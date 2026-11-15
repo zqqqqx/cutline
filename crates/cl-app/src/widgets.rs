@@ -402,12 +402,50 @@ pub fn grid<T>(
     }
 }
 
+/// Fügt dieses Klick-Ereignis einer Kachel ein? `clicks`: 0 = kein Klick, sonst 1/2/3 (Doppel-/
+/// Dreifachklick). `plus_only`: Klick auf die Fläche fügt nicht ein (z. B. Sounds: spielt ab), nur
+/// „+“ oder Doppelklick. Ein Doppelklick fügt nur EINMAL ein: sein erster Klick wirkt schon.
+pub fn adds(clicks: u8, on_plus: bool, plus_only: bool) -> bool {
+    match clicks {
+        1 => !plus_only || on_plus,
+        // zweiter Klick: nur einfügen, wenn der erste es noch nicht tat
+        2 => plus_only && !on_plus,
+        _ => false,
+    }
+}
+
+/// [`adds`] für eine Antwort.
+pub fn tile_adds(resp: &egui::Response, on_plus: bool, plus_only: bool) -> bool {
+    let clicks = if resp.triple_clicked() {
+        3
+    } else if resp.double_clicked() {
+        2
+    } else {
+        resp.clicked() as u8
+    };
+    adds(clicks, on_plus, plus_only)
+}
+
 /// Standard-Kachel: Fläche + Name darunter; zeichnet Hover/Auswahl. `draw` malt den Inhalt.
 pub fn tile(
     ui: &mut egui::Ui,
     id: egui::Id,
     r: Rect,
     label: &str,
+    selected: bool,
+    draw: impl FnOnce(&egui::Painter, Rect),
+) -> egui::Response {
+    tile_tip(ui, id, r, label, "", selected, draw)
+}
+
+/// Wie [`tile`], mit einer zweiten, gedimmten Tooltip-Zeile `sub` (z. B. Ordner) unter dem Namen –
+/// beides in EINEM Tooltip.
+pub fn tile_tip(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    r: Rect,
+    label: &str,
+    sub: &str,
     selected: bool,
     draw: impl FnOnce(&egui::Painter, Rect),
 ) -> egui::Response {
@@ -446,14 +484,28 @@ pub fn tile(
         );
     }
     let mut resp = resp;
-    if !label.is_empty() {
+    let tip = |resp: egui::Response, name: Option<&str>| {
+        if name.is_none() && sub.is_empty() {
+            return resp;
+        }
+        resp.on_hover_ui(|ui| {
+            if let Some(n) = name {
+                ui.label(n);
+            }
+            if !sub.is_empty() {
+                ui.label(egui::RichText::new(sub).color(theme::TEXT_DIM()));
+            }
+        })
+    };
+    if label.is_empty() {
+        resp = tip(resp, None);
+    } else {
         // eine Zeile, zu lange Namen mit „…“ gekürzt; voller Name im Tooltip
         let full = theme::icon_arrows(&crate::tr(label));
         let font = egui::FontId::proportional(theme::FS_HINT);
         let shown = theme::elide(&full, r.width(), |t| theme::text_width(ui.ctx(), t, font.clone()));
-        if shown != full {
-            resp = resp.on_hover_text(&full);
-        }
+        // Name oben (gekürzt oder mit Zusatzzeile), Zusatz gedimmt darunter: ein Tooltip
+        resp = tip(resp, (shown != full || !sub.is_empty()).then_some(full.as_str()));
         let g = p.layout_no_wrap(
             shown,
             font,
@@ -504,6 +556,21 @@ pub fn color_button(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
 mod tests {
     use super::{grid_avail, grid_cols};
     use eframe::egui::vec2;
+
+    #[test]
+    fn a_double_click_inserts_only_once() {
+        use super::adds;
+        // Ereignisse eines Doppelklicks: erst ein Klick, dann der zweite (Doppel-)Klick
+        let count = |on_plus, plus_only| [1u8, 2].iter().filter(|&&c| adds(c, on_plus, plus_only)).count();
+        // Klick fügt ein (Effekte, Filter, Übergänge, Texte, Elemente)
+        assert_eq!(count(false, false), 1);
+        assert_eq!(count(true, false), 1);
+        // nur „+“ oder Doppelklick (Sounds, Medien): auf „+“ und auf der Fläche je einmal
+        assert_eq!(count(true, true), 1);
+        assert_eq!(count(false, true), 1);
+        // Einzelklick auf die Fläche fügt dort nicht ein, Dreifachklick nicht noch einmal
+        assert!(!adds(1, false, true) && !adds(3, false, false) && !adds(0, true, false));
+    }
 
     #[test]
     fn grid_stays_inside_visible_width() {

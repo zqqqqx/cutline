@@ -227,31 +227,53 @@ pub fn intern(s: String) -> &'static str {
     v
 }
 
-/// Stern oben links auf einer Kachel
-pub fn fav_badge(p: &egui::Painter, a: egui::Rect) {
+/// Kleines Zeichen auf einer Kachel (Stern, Nadel) um `c`, auf runder dunkler Unterlage: auf hellen
+/// Bildern und Wellenformen sonst kaum zu sehen.
+pub fn badge(p: &egui::Painter, c: egui::Pos2, glyph: &str) {
+    p.circle_filled(c, 8.0, egui::Color32::from_black_alpha(120));
     p.text(
-        a.left_top() + egui::vec2(5.0, 4.0),
-        egui::Align2::LEFT_TOP,
-        icon::STAR,
-        egui::FontId::proportional(11.0), // Icon-Glyphe (Stern) auf der Kachel
+        c,
+        egui::Align2::CENTER_CENTER,
+        glyph,
+        egui::FontId::proportional(10.0), // Icon-Glyphe im 16-px-Kreis
         theme::ACCENT(),
     );
 }
 
+/// Stern oben links auf einer Kachel
+pub fn fav_badge(p: &egui::Painter, a: egui::Rect) {
+    badge(p, a.left_top() + egui::vec2(11.0, 10.0), icon::STAR);
+}
+
 /// Nadel oben rechts auf einer Kachel (oben angepinnt)
 pub fn pin_badge(p: &egui::Painter, a: egui::Rect) {
-    p.text(
-        a.right_top() + egui::vec2(-5.0, 4.0),
-        egui::Align2::RIGHT_TOP,
-        icon::PUSH_PIN,
-        egui::FontId::proportional(11.0), // Icon-Glyphe wie der Favoriten-Stern
-        theme::ACCENT(),
-    );
+    badge(p, a.right_top() + egui::vec2(-11.0, 10.0), icon::PUSH_PIN);
 }
 
 /// Bearbeiten-Modus der Reihenfolge: (Bereich, Ordner, Durchgang der letzten Leiste). Einzige Stelle des Zustands.
 fn edit_id() -> egui::Id {
     egui::Id::new("order-edit")
+}
+
+/// Beendet Esc den Bearbeiten-Modus? Nur wenn er an ist (Leiste im letzten Bild gezeichnet, Durchgang
+/// `drawn`) und kein Textfeld die Taste will; dann gehört Esc allein ihm.
+fn esc_ends_edit(drawn: Option<u64>, pass: u64, esc: bool, typing: bool) -> bool {
+    esc && !typing && drawn.is_some_and(|p| p + 1 >= pass)
+}
+
+/// Vor den Tastenkürzeln aufrufen: Esc beendet den Bearbeiten-Modus der Reihenfolge und wird dabei
+/// verbraucht (hebt also nicht zusätzlich die Auswahl auf). `true` = so geschehen.
+pub fn esc_order_edit(ctx: &egui::Context) -> bool {
+    let drawn = ctx.data(|d| d.get_temp::<(String, String, u64)>(edit_id())).map(|s| s.2);
+    let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    // offenes Kontextmenü: Esc schließt erst das Menü
+    let busy = ctx.wants_keyboard_input() || ctx.is_context_menu_open();
+    if !esc_ends_edit(drawn, ctx.cumulative_pass_nr(), esc, busy) {
+        return false;
+    }
+    ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    ctx.data_mut(|d| d.remove::<(String, String, u64)>(edit_id()));
+    true
 }
 
 /// Ist der Bearbeiten-Modus für Bereich und Ordner an?
@@ -295,15 +317,17 @@ impl Reorder {
             return false;
         }
         let p = ui.painter();
+        // zurückgenommen: Panel-Hintergrund halbdeckend darüber (samt Namen), wirkt in jedem Design
+        let fade = theme::BG_CARD().gamma_multiply(0.7);
         if !(self.whole || pinned) {
-            p.rect_filled(resp.rect, theme::R_CARD, egui::Color32::from_black_alpha(110));
+            p.rect_filled(resp.rect, theme::R_CARD, fade);
             return true;
         }
         self.last.set(Some(resp.rect));
         resp.dnd_set_drag_payload(Reordering(key.to_string()));
         let held = egui::DragAndDrop::payload::<Reordering>(ui.ctx());
         if held.as_ref().is_some_and(|h| h.0 == key) {
-            p.rect_filled(resp.rect, theme::R_CARD, egui::Color32::from_black_alpha(110));
+            p.rect_filled(resp.rect, theme::R_CARD, fade);
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         } else if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -1021,6 +1045,18 @@ fn restorable(area: &str, key: &str, packs: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn esc_ends_the_order_edit_mode_only_while_it_is_on() {
+        use super::esc_ends_edit;
+        // Leiste im letzten Bild (Durchgang 9) gezeichnet, jetzt Durchgang 10
+        assert!(esc_ends_edit(Some(9), 10, true, false));
+        // ohne Esc, beim Tippen, ohne Modus oder mit verwaistem Zustand (Tab gewechselt): nichts
+        assert!(!esc_ends_edit(Some(9), 10, false, false));
+        assert!(!esc_ends_edit(Some(9), 10, true, true));
+        assert!(!esc_ends_edit(None, 10, true, false));
+        assert!(!esc_ends_edit(Some(3), 10, true, false));
+    }
+
     #[test]
     fn hidden_pack_entries_restore_only_in_their_area() {
         use super::restorable;

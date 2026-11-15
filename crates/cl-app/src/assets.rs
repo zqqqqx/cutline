@@ -168,6 +168,9 @@ impl App {
     }
 }
 
+/// Mindestbreite der Sound-Kacheln: bei normaler Breite des Medien-Menüs (≈ 290 px) vier Spalten
+const SOUND_TILE_W: f32 = 64.0;
+
 /// Obergrenze des Sound-Zwischenspeichers (Länge und Wellenform je Eintrag)
 pub const SOUND_META_CAP: usize = 400;
 
@@ -193,13 +196,13 @@ pub fn play_fraction(pos: Time, len: Time) -> f32 {
     (pos.as_secs_f64() / len.as_secs_f64().max(0.01)).clamp(0.0, 1.0) as f32
 }
 
-/// Länge eines Sounds: „2.4 s“ bzw. „1:05“
+/// Länge eines Sounds: „2,4 s“ bzw. „1:05“
 fn sound_len(d: Time) -> String {
     let s = d.as_secs_f64();
     if s >= 60.0 {
         format!("{}:{:02}", (s / 60.0) as u32, s as u32 % 60)
     } else {
-        format!("{s:.1} s")
+        theme::secs(s, 1)
     }
 }
 
@@ -533,11 +536,13 @@ impl App {
                     // Ton: Wellenform und Vorhören wie im Sounds-Tab (Schlüssel = Datei, gilt in jedem Projekt)
                     let snd_key = format!("file:{}", m.path.display());
                     let snd = (m.kind == MediaKind::Audio).then(|| self.sound_look(ui, r, &snd_key, &m.path, None));
-                    let resp = widgets::tile(
+                    let dims = if m.kind == MediaKind::Audio { String::new() } else { format!("{}×{}", m.width, m.height) };
+                    let resp = widgets::tile_tip(
                         ui,
                         egui::Id::new(("media", m.id)),
                         r,
                         &name,
+                        &dims,
                         false,
                         |p, a| {
                             if let Some((tid, ts, (v0, v1))) = thumb {
@@ -605,15 +610,8 @@ impl App {
                             }
                             if self.library.is_favorite(&format!("media:{}", m.id)) {
                                 // neben der Nadel, falls angepinnt
-                                let pin = if ed.pinned(&format!("media:{}", m.id)) { 15.0 } else { 0.0 };
-                                p.text(
-                                    a.right_top() + vec2(-6.0 - pin, 5.0),
-                                    egui::Align2::RIGHT_TOP,
-                                    icon::STAR,
-                                    // Icon-Glyphe
-                                    egui::FontId::proportional(11.0),
-                                    theme::ACCENT(),
-                                );
+                                let pin = if ed.pinned(&format!("media:{}", m.id)) { 18.0 } else { 0.0 };
+                                crate::library_ui::badge(p, a.right_top() + vec2(-11.0 - pin, 10.0), icon::STAR);
                             }
                         },
                     );
@@ -621,16 +619,10 @@ impl App {
                     if !editing {
                         resp.dnd_set_drag_payload(DragAsset::Media(m.id));
                     }
-                    let resp = if m.kind == MediaKind::Audio {
-                        resp.on_hover_text(name.clone())
-                    } else {
-                        resp.on_hover_text(format!("{name} · {}×{}", m.width, m.height))
-                    };
-                    if !editing
-                        && (resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0)))
-                    {
+                    let on_plus = widgets::hit_plus(&resp, r, 16.0);
+                    if !editing && widgets::tile_adds(&resp, on_plus, true) {
                         add = Some(m.id);
-                    } else if !editing && snd.is_some() && resp.clicked() {
+                    } else if !editing && snd.is_some() && resp.clicked() && !on_plus && !resp.double_clicked() {
                         play = Some((snd_key, m.path.clone()));
                     }
                     menus.push((resp, m.clone()));
@@ -730,7 +722,7 @@ impl App {
                     let fav = self.library.is_favorite(&it.key);
                     let snd_key = format!("file:{}", path.display());
                     let snd = audio.then(|| self.sound_look(ui, r, &snd_key, &path, None));
-                    let resp = widgets::tile(ui, egui::Id::new(("libm", it.key.as_str())), r, &it.name, false, |p, a| {
+                    let resp = widgets::tile_tip(ui, egui::Id::new(("libm", it.key.as_str())), r, &it.name, &it.folder, false, |p, a| {
                         match tex {
                             Some((tid, ts)) => {
                                 let s = (a.width() / ts.x).max(a.height() / ts.y);
@@ -764,12 +756,13 @@ impl App {
                     if !editing {
                         resp.dnd_set_drag_payload(DragAsset::File(path.clone()));
                     }
-                    if !editing && (resp.double_clicked() || (resp.clicked() && widgets::hit_plus(&resp, r, 16.0))) {
+                    let on_plus = widgets::hit_plus(&resp, r, 16.0);
+                    if !editing && widgets::tile_adds(&resp, on_plus, true) {
                         add = Some(path);
-                    } else if !editing && snd.is_some() && resp.clicked() {
+                    } else if !editing && snd.is_some() && resp.clicked() && !on_plus && !resp.double_clicked() {
                         play = Some((snd_key, path));
                     }
-                    menus.push((resp.on_hover_text(it.folder.clone()), it.clone()));
+                    menus.push((resp, it.clone()));
                 });
             });
         self.reorder_done(ui, ed, area.inner_rect);
@@ -865,7 +858,7 @@ impl App {
                                 "",
                             );
                         }
-                        widgets::grid(ui, &items, 80.0, 16.0 / 10.0, 16.0, |ui, r, it| {
+                        widgets::grid(ui, &items, SOUND_TILE_W, 4.0 / 3.0, 16.0, |ui, r, it| {
                             let key = format!("sfx:{}", it.key);
                             let fav = self.library.is_favorite(&it.key);
                             let builtin = it.builtin.and_then(cl_fx::sfx::sfx);
@@ -874,7 +867,8 @@ impl App {
                                 (None, Some(p)) => (p.clone(), None),
                                 _ => return,
                             };
-                            let (play, add, resp) = self.sound_tile(ui, r, &key, &it.name, fav, &path, sfx);
+                            let folder = if it.folder.is_empty() { String::new() } else { crate::tr(&it.folder) };
+                            let (play, add, resp) = self.sound_tile(ui, r, &key, &it.name, &folder, fav, &path, sfx);
                             // Bearbeiten-Modus: Ziehen sortiert um, Klicks spielen nichts ab und fügen nichts ein
                             let editing = ed.tile(ui, &resp, &it.key, true);
                             let (play, add) = (play && !editing, add && !editing);
@@ -884,7 +878,6 @@ impl App {
                                     None => DragAsset::File(path.clone()),
                                 });
                             }
-                            let resp = if it.folder.is_empty() { resp } else { resp.on_hover_text(crate::tr(&it.folder)) };
                             menu.push((resp, it.clone()));
                             if add {
                                 if let Some(s) = builtin {
@@ -1194,8 +1187,8 @@ impl App {
         let pos = resp.interact_pointer_pos();
         let clicked = resp.clicked();
         let on_plus = pos.is_some_and(|q| plus_r.expand(4.0).contains(q));
-        let add = (clicked && on_plus) || resp.double_clicked();
-        let play = clicked && !on_plus;
+        let add = widgets::tile_adds(&resp, on_plus, true);
+        let play = clicked && !on_plus && !resp.double_clicked();
         (
             play,
             add,
@@ -1213,20 +1206,21 @@ impl App {
         r: Rect,
         key: &str,
         name: &str,
+        folder: &str,
         fav: bool,
         path: &std::path::Path,
         sfx: Option<&'static str>,
     ) -> (bool, bool, egui::Response) {
         let st = self.sound_look(ui, r, key, path, sfx);
-        let resp = widgets::tile(ui, egui::Id::new(("sfx-tile", key)), r, name, false, |p, a| {
+        let resp = widgets::tile_tip(ui, egui::Id::new(("sfx-tile", key)), r, name, folder, false, |p, a| {
             st.paint(p, a, true);
             if fav {
                 crate::library_ui::fav_badge(p, a);
             }
         });
         let on_plus = widgets::hit_plus(&resp, r, 16.0);
-        let add = (resp.clicked() && on_plus) || resp.double_clicked();
-        let play = resp.clicked() && !on_plus;
+        let add = widgets::tile_adds(&resp, on_plus, true);
+        let play = resp.clicked() && !on_plus && !resp.double_clicked();
         (play, add, resp)
     }
 
@@ -1247,9 +1241,10 @@ impl App {
                 .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len)),
             loading,
             bars: self.sound_bars.get(key),
+            // Bearbeiten-Modus (Reihenfolge): kein Play-Kreis, ein Klick spielt dort nichts ab
             hover: ui.ctx().animate_bool_with_time(
                 egui::Id::new(("sfx-tile", key, "h")),
-                ui.rect_contains_pointer(r),
+                ui.rect_contains_pointer(r) && !ui.data(|d| d.get_temp::<bool>(widgets::no_plus_id()).unwrap_or(false)),
                 theme::anim(0.12),
             ),
             moving,
@@ -1274,7 +1269,8 @@ impl SoundLook {
         let (playing, loading, hover, moving, t) = (self.playing, self.loading, self.hover, self.moving, self.t);
         let meta = &self.bars;
         {
-            let wave = Rect::from_min_max(a.min + vec2(8.0, 8.0), a.max - vec2(8.0, 16.0));
+            // oben frei für Stern und Nadel (Ecken-Plaketten), unten für die Dauer
+            let wave = Rect::from_min_max(a.min + vec2(8.0, 20.0), a.max - vec2(8.0, 16.0));
             match meta {
                 Some(b) if !b.bars.is_empty() => {
                     let n = b.bars.len();
@@ -1293,11 +1289,11 @@ impl SoundLook {
                                 }
                                 if at <= f { theme::ACCENT() } else { theme::TEXT_FAINT() }
                             }
-                            None => theme::TEXT_DIM().linear_multiply(1.0 - 0.5 * hover),
+                            None => theme::TEXT_FAINT().linear_multiply(1.0 - 0.4 * hover),
                         };
                         p.line_segment(
                             [pos2(x, wave.center().y - h / 2.0), pos2(x, wave.center().y + h / 2.0)],
-                            egui::Stroke::new((bw * 0.55).clamp(1.0, 2.5), col),
+                            egui::Stroke::new((bw * 0.4).clamp(1.0, 1.5), col),
                         );
                     }
                 }
@@ -1323,7 +1319,8 @@ impl SoundLook {
             let shown = if playing.is_some() || loading { 0.7 + 0.3 * hover } else { hover };
             if shown > 0.01 {
                 let c = wave.center();
-                p.circle_filled(c, 11.0, theme::ACCENT().linear_multiply(shown));
+                // kleiner und leicht durchscheinend: die Füllung beim Abspielen bleibt sichtbar
+                p.circle_filled(c, 9.0, theme::ACCENT().linear_multiply(0.8 * shown));
                 if loading {
                     let t = if moving { t } else { 0.0 };
                     for k in 0..3 {
@@ -1335,8 +1332,8 @@ impl SoundLook {
                         c,
                         egui::Align2::CENTER_CENTER,
                         if playing.is_some() { icon::STOP } else { icon::PLAY },
-                        // Icon-Glyphe im 22-px-Kreis
-                        egui::FontId::proportional(11.0),
+                        // Icon-Glyphe im 18-px-Kreis
+                        egui::FontId::proportional(9.0),
                         theme::ACCENT_INK().linear_multiply(shown),
                     );
                 }
@@ -1433,7 +1430,7 @@ impl App {
                             );
                             if !e.tile(ui, &resp, &akey, true) {
                                 resp.dnd_set_drag_payload(DragAsset::Text(t.map(|t| t.id)));
-                                if resp.clicked() || resp.double_clicked() {
+                                if widgets::tile_adds(&resp, false, false) {
                                     add = Some(t.map(|t| t.id));
                                 }
                             }
@@ -1501,7 +1498,7 @@ impl App {
                                     }
                                 },
                             );
-                            if !ed.tile(ui, &resp, &akey, true) && resp.clicked() {
+                            if !ed.tile(ui, &resp, &akey, true) && widgets::tile_adds(&resp, false, false) {
                                 chosen = Some(e.apply);
                             }
                             menus.push((resp, akey));
@@ -1824,7 +1821,7 @@ impl App {
                         }
                         _ => {}
                     }
-                    if resp.clicked() && !editing {
+                    if widgets::tile_adds(&resp, false, false) && !editing {
                         add = Some(it.clone());
                     }
                     menu.push((resp, it.clone()));
@@ -2061,7 +2058,7 @@ impl App {
                             DragAsset::Effect(id.clone())
                         });
                     }
-                    if resp.clicked() && !editing {
+                    if widgets::tile_adds(&resp, false, false) && !editing {
                         chosen = Some(id.clone());
                     }
                     if !id.is_empty() {
@@ -2161,7 +2158,7 @@ impl App {
                 });
                 if !ed.tile(ui, &resp, &akey, true) {
                     resp.dnd_set_drag_payload(DragAsset::Transition(id.clone()));
-                    if resp.clicked() {
+                    if widgets::tile_adds(&resp, false, false) {
                         chosen = Some(id.clone());
                     }
                 }
@@ -2294,6 +2291,18 @@ mod tests {
         // gleicher Schlüssel ersetzt nur
         put_capped(&mut map, &mut req, "k9".into(), 99, 4);
         assert_eq!((map.len(), map["k9"]), (4, 99));
+    }
+
+    #[test]
+    fn sound_tiles_stand_four_in_a_row_in_the_normal_panel() {
+        assert_eq!(widgets::grid_cols(290.0, SOUND_TILE_W, 8.0).0, 4);
+    }
+
+    #[test]
+    fn sound_length_uses_the_decimal_comma_in_german() {
+        cl_i18n::set_ui_lang(cl_i18n::Lang::De);
+        assert_eq!(sound_len(Time::from_secs_f64(0.8)), "0,8 s");
+        assert_eq!(sound_len(Time::from_secs_f64(65.0)), "1:05");
     }
 
     #[test]

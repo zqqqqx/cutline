@@ -1473,7 +1473,24 @@ impl App {
         let mut changed = false;
         let mut name = self.project.name.clone();
         let r = theme::row(ui, &self.t("project-name"), |ui| {
-            ui.add(egui::TextEdit::singleline(&mut name).desired_width(f32::INFINITY))
+            // ohne Fokus lange Namen mit „…“ im Feld kürzen statt mitten im Zeichen abzuschneiden
+            let id = ui.make_persistent_id("project-name");
+            let focused = ui.memory(|m| m.has_focus(id));
+            let mut layouter = |ui: &egui::Ui, s: &str, w: f32| {
+                let font = egui::FontSelection::default().resolve(ui.style());
+                let col = ui.visuals().override_text_color.unwrap_or_else(|| ui.visuals().widgets.inactive.text_color());
+                let mut job = egui::text::LayoutJob::simple_singleline(s.to_owned(), font, col);
+                if !focused {
+                    job.wrap = egui::text::TextWrapping::truncate_at_width(w);
+                }
+                ui.fonts(|f| f.layout_job(job))
+            };
+            ui.add(
+                egui::TextEdit::singleline(&mut name)
+                    .id(id)
+                    .desired_width(ui.available_width())
+                    .layouter(&mut layouter),
+            )
         });
         if r.lost_focus() && name != self.project.name && !name.trim().is_empty() {
             self.apply(EditOp::Rename { name });
