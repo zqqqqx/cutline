@@ -634,11 +634,12 @@ impl App {
                     {
                         self.es.loading_track = Some(t.id.clone());
                         let track = t.clone();
-                        let safe: String = format!("{} - {}", t.artists(), t.title)
-                            .chars()
-                            .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
-                            .collect();
-                        let dest = self.es_media_dir().join(format!("{safe}.mp3"));
+                        let (dest, ours) = track_dest(
+                            &self.es_media_dir(),
+                            &format!("{} - {}", t.artists(), t.title),
+                            &t.id,
+                            &self.es.downloads,
+                        );
                         let store = es_store(&es_store_dir(), &t.id);
                         // früher geladene Datei desselben Titels (anderes Projekt) als Quelle für den Vorrat
                         let known = self
@@ -648,7 +649,7 @@ impl App {
                             .find(|(p, id)| **id == t.id && p.is_file())
                             .map(|(p, _)| p.clone());
                         self.es.spawn(ctx, move |c| {
-                            let res = fetch_track(&dest, &store, known.as_deref(), |p| c.download(&track.id, p));
+                            let res = fetch_track(&dest, ours, &store, known.as_deref(), |p| c.download(&track.id, p));
                             let beats = if res.is_ok() {
                                 cached_beats(&store, || c.beats(&track.id))
                             } else {
@@ -847,44 +848,63 @@ fn stored_ids(dir: &Path) -> HashSet<String> {
         .collect()
 }
 
-/// Legt den Titel nach `dest`. Reihenfolge: liegt schon dort → nichts; Vorrat → kopieren; früher
-/// geladene Datei (`known`) → in den Vorrat übernehmen und kopieren; sonst laden. `true` = geladen.
+/// Zieldatei im Projektordner und ob sie nachweislich (fertig geladen) zu `id` gehört. Der alte Name
+/// „Künstler - Titel.mp3“ bleibt nur für Dateien, die schon zu dieser ID gehören (ältere Projekte); sonst
+/// kommt die Titel-ID in den Namen, damit zwei Titel mit gleichem Namen nicht dieselbe Datei teilen.
+fn track_dest(dir: &Path, name: &str, id: &str, downloads: &BTreeMap<PathBuf, String>) -> (PathBuf, bool) {
+    let safe: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
+    let old = dir.join(format!("{safe}.mp3"));
+    if downloads.get(&old).is_some_and(|i| i == id) {
+        return (old, true);
+    }
+    let new = dir.join(format!("{safe} [{}].mp3", store_name(id)));
+    let ours = downloads.get(&new).is_some_and(|i| i == id);
+    (new, ours)
+}
+
+/// Kopiert über `<ziel>.part` + Umbenennen: ein abgebrochenes Kopieren hinterlässt keine halbe Datei.
+fn copy_whole(from: &Path, to: &Path) -> Result<(), Error> {
+    let io = |e: std::io::Error| Error::from(e.to_string());
+    if let Some(d) = to.parent() {
+        std::fs::create_dir_all(d).map_err(io)?;
+    }
+    let tmp = to.with_extension("part");
+    if let Err(e) = std::fs::copy(from, &tmp).and_then(|_| std::fs::rename(&tmp, to)) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(io(e));
+    }
+    Ok(())
+}
+
+/// Legt den Titel nach `dest`. Reihenfolge: liegt schon dort und gehört zu diesem Titel (`ours`) →
+/// nichts; Vorrat → kopieren; früher geladene Datei (`known`) → in den Vorrat übernehmen und kopieren;
+/// sonst laden. `true` = geladen.
 fn fetch_track(
     dest: &Path,
+    ours: bool,
     store: &Path,
     known: Option<&Path>,
     download: impl FnOnce(&Path) -> Result<(), Error>,
 ) -> Result<bool, Error> {
-    let io = |e: std::io::Error| Error::from(e.to_string());
-    let seed = |from: &Path| -> Result<(), Error> {
-        if let Some(d) = store.parent() {
-            std::fs::create_dir_all(d).map_err(io)?;
-        }
-        // erst daneben schreiben: ein abgebrochenes Kopieren hinterlässt keinen halben Vorrat
-        let tmp = store.with_extension("part");
-        std::fs::copy(from, &tmp).map_err(io)?;
-        std::fs::rename(&tmp, store).map_err(io)
-    };
-    if dest.is_file() {
-        if !store.is_file() {
-            let _ = seed(dest);
+    let len = |p: &Path| std::fs::metadata(p).ok().filter(|m| m.is_file()).map(|m| m.len());
+    // eine Projektdatei zählt nur, wenn sie zu dieser ID gehört und (falls vorrätig) gleich groß ist
+    if ours && len(dest).is_some() && (len(store).is_none() || len(store) == len(dest)) {
+        if len(store).is_none() {
+            let _ = copy_whole(dest, store);
         }
         return Ok(false);
     }
     let mut fresh = false;
     if !store.is_file() {
         match known.filter(|k| k.is_file()) {
-            Some(k) => seed(k)?,
+            Some(k) => copy_whole(k, store)?,
             None => {
                 download(store)?;
                 fresh = true;
             }
         }
     }
-    if let Some(d) = dest.parent() {
-        std::fs::create_dir_all(d).map_err(io)?;
-    }
-    std::fs::copy(store, dest).map_err(io)?;
+    copy_whole(store, dest)?;
     Ok(fresh)
 }
 
@@ -930,25 +950,61 @@ mod store_tests {
         };
         // erstes Projekt: wird geladen
         let a = t.path().join("A-media/x.mp3");
-        assert_eq!(fetch_track(&a, &store, None, dl), Ok(true));
+        assert_eq!(fetch_track(&a, false, &store, None, dl), Ok(true));
         // zweites Projekt: kommt aus dem Vorrat, kein zweiter Abruf
         let b = t.path().join("B-media/x.mp3");
-        assert_eq!(fetch_track(&b, &store, None, dl), Ok(false));
+        assert_eq!(fetch_track(&b, true, &store, None, dl), Ok(false));
         assert_eq!((n.get(), std::fs::read(&b).unwrap()), (1, b"mp3".to_vec()));
         // schon im Projekt: nichts zu tun
-        assert_eq!(fetch_track(&b, &store, None, dl), Ok(false));
+        assert_eq!(fetch_track(&b, true, &store, None, dl), Ok(false));
         assert_eq!(n.get(), 1);
         assert_eq!(stored_ids(store.parent().unwrap()), HashSet::from(["abc_123".to_string()]));
         // Titel aus einer älteren Version (nur im Projekt A): füllt den Vorrat ohne Abruf
         let store2 = es_store(&t.path().join("Vorrat"), "alt");
         let c = t.path().join("C-media/y.mp3");
-        assert_eq!(fetch_track(&c, &store2, Some(&a), dl), Ok(false));
+        assert_eq!(fetch_track(&c, false, &store2, Some(&a), dl), Ok(false));
         assert!(store2.is_file() && n.get() == 1);
         // gescheiterter Abruf hinterlässt nichts
         let store3 = es_store(&t.path().join("Vorrat"), "kaputt");
         let d = t.path().join("D-media/z.mp3");
-        assert!(fetch_track(&d, &store3, None, |_| Err("offline".into())).is_err());
+        assert!(fetch_track(&d, false, &store3, None, |_| Err("offline".into())).is_err());
         assert!(!store3.exists() && !d.exists());
+    }
+
+    #[test]
+    fn a_half_or_foreign_project_file_is_never_taken_as_the_track() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path().join("media");
+        let vorrat = t.path().join("Vorrat");
+        let dl = |b: &'static [u8]| move |p: &Path| std::fs::write(p, b).map_err(|e| Error::from(e.to_string()));
+        let _ = std::fs::create_dir_all(&vorrat);
+        // zwei Fassungen mit gleichem „Künstler - Titel“ bekommen verschiedene Dateien
+        let mut downloads = BTreeMap::new();
+        let (d1, ours1) = track_dest(&dir, "A - Song", "id-1", &downloads);
+        assert!(!ours1);
+        assert_eq!(fetch_track(&d1, ours1, &es_store(&vorrat, "id-1"), None, dl(b"eins")), Ok(true));
+        downloads.insert(d1.clone(), "id-1".to_string());
+        let (d2, ours2) = track_dest(&dir, "A - Song", "id-2", &downloads);
+        assert!(d1 != d2 && !ours2);
+        assert_eq!(fetch_track(&d2, ours2, &es_store(&vorrat, "id-2"), None, dl(b"zwei")), Ok(true));
+        assert_eq!(std::fs::read(&d2).unwrap(), b"zwei");
+        assert_eq!(std::fs::read(es_store(&vorrat, "id-2")).unwrap(), b"zwei");
+        assert_eq!(track_dest(&dir, "A - Song", "id-1", &downloads), (d1.clone(), true));
+        // alte Projekte: der frühere Name gilt weiter, wenn er zu dieser ID gehört
+        let old = dir.join("A - Song.mp3");
+        downloads.insert(old.clone(), "id-1".to_string());
+        assert_eq!(track_dest(&dir, "A - Song", "id-1", &downloads), (old.clone(), true));
+        assert_eq!(track_dest(&dir, "A - Song", "id-2", &downloads).0, d2);
+        // eine halbe Datei (anderes Projekt, abgebrochene Kopie) wird ersetzt, nicht übernommen
+        std::fs::write(&old, b"ei").unwrap();
+        assert_eq!(fetch_track(&old, true, &es_store(&vorrat, "id-1"), None, dl(b"x")), Ok(false));
+        assert_eq!(std::fs::read(&old).unwrap(), b"eins");
+        // eine fremde Datei unter dem Zielnamen füllt nie den Vorrat
+        let d3 = dir.join("B - Song [id-3].mp3");
+        std::fs::write(&d3, b"fremd").unwrap();
+        assert_eq!(fetch_track(&d3, false, &es_store(&vorrat, "id-3"), None, dl(b"drei")), Ok(true));
+        assert_eq!(std::fs::read(&d3).unwrap(), b"drei");
+        assert!(!d3.with_extension("part").exists());
     }
 
     #[test]
