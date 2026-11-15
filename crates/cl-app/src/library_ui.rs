@@ -362,15 +362,14 @@ impl App {
         }
         // Verborgenes wieder anzeigen
         let hidden_cats = self.library.hidden_cats(area);
-        let prefix = format!("{area}:");
-        let hidden_items = self.library.hidden_count(&prefix)
-            + if area == "sticker" {
-                self.library.hidden_count("builtin:st:")
-            } else if area == "sfx" {
-                self.library.hidden_count("builtin:sfx:")
-            } else {
-                0
-            };
+        let packs: Vec<String> = match area {
+            "sfx" => Some(cl_fx::catalog::Kind::Sound),
+            "sticker" => Some(cl_fx::catalog::Kind::Sticker),
+            _ => None,
+        }
+        .map(|k| cl_fx::catalog::list(k).into_iter().map(|e| e.id).collect())
+        .unwrap_or_default();
+        let hidden_items = self.library.hidden_count(|k| restorable(area, k, &packs));
         if hidden_cats + hidden_items > 0
             && ui
                 .add(theme::ghost(format!(
@@ -381,12 +380,7 @@ impl App {
                 .clicked()
         {
             self.library.unhide_cats(area);
-            self.library.unhide_all(&prefix);
-            if area == "sticker" {
-                self.library.unhide_all("builtin:st:");
-            } else if area == "sfx" {
-                self.library.unhide_all("builtin:sfx:");
-            }
+            self.library.unhide_all(|k| restorable(area, k, &packs));
         }
         ui.add_space(4.0);
         let cat = self
@@ -771,8 +765,33 @@ impl App {
     }
 }
 
+/// Holt „wieder anzeigen“ im Bereich `area` diesen verborgenen Eintrag zurück?
+/// `packs`: IDs der Paket-Einträge dieses Bereichs (Schlüssel `pack:<id>`).
+fn restorable(area: &str, key: &str, packs: &[String]) -> bool {
+    key.strip_prefix(area).is_some_and(|r| r.starts_with(':'))
+        || match area {
+            "sticker" => key.starts_with("builtin:st:"),
+            "sfx" => key.starts_with("builtin:sfx:"),
+            _ => false,
+        }
+        || key.strip_prefix("pack:").is_some_and(|id| packs.iter().any(|p| p == id))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hidden_pack_entries_restore_only_in_their_area() {
+        use super::restorable;
+        let sounds = vec!["cutline.basis/treffer".to_string()];
+        let elems = vec!["cutline.elemente/abo".to_string()];
+        assert!(restorable("sfx", "pack:cutline.basis/treffer", &sounds));
+        assert!(restorable("sticker", "pack:cutline.elemente/abo", &elems));
+        assert!(!restorable("sticker", "pack:cutline.basis/treffer", &elems));
+        assert!(!restorable("sfx", "pack:cutline.basis/treffer2", &sounds));
+        assert!(restorable("sfx", "builtin:sfx:pop", &sounds) && restorable("sfx", "sfx:x", &[]));
+        assert!(!restorable("sfx", "sfxx:x", &[]) && !restorable("sticker", "builtin:sfx:pop", &[]));
+    }
+
     #[test]
     fn animated_tile_shows_the_fullest_frame() {
         if !cl_media::ffmpeg_available() {

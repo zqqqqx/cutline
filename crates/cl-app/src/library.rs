@@ -212,8 +212,8 @@ impl Library {
     pub fn is_hidden(&self, key: &str) -> bool {
         self.hidden.contains(key)
     }
-    pub fn hidden_count(&self, prefix: &str) -> usize {
-        self.hidden.iter().filter(|k| k.starts_with(prefix)).count()
+    pub fn hidden_count(&self, which: impl Fn(&str) -> bool) -> usize {
+        self.hidden.iter().filter(|k| which(k)).count()
     }
     /// Eingebauten Eintrag ausblenden
     pub fn hide(&mut self, key: &str) {
@@ -221,8 +221,8 @@ impl Library {
         self.favorites.remove(key);
         self.save();
     }
-    pub fn unhide_all(&mut self, prefix: &str) {
-        self.hidden.retain(|k| !k.starts_with(prefix));
+    pub fn unhide_all(&mut self, which: impl Fn(&str) -> bool) {
+        self.hidden.retain(|k| !which(k));
         self.save();
     }
 
@@ -864,7 +864,7 @@ mod tests {
         };
         lib.remove(&b).unwrap();
         assert!(!lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
-        lib.unhide_all("builtin:sfx:");
+        lib.unhide_all(|k| k.starts_with("builtin:sfx:"));
         // Suche über Schlagworte
         assert!(lib.visible_tagged("sfx", "Alle", "knall", &b.key, &b.name, &b.folder, &b.tags));
         assert!(!lib.visible("sfx", "Alle", "knall", &b.key, &b.name, &b.folder));
