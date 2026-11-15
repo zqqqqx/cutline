@@ -190,6 +190,7 @@ impl Updater {
                 Ok(None) => UpdateState::UpToDate,
                 Err(e) => UpdateState::Error(e, None),
             };
+            log::info!(target: "update", "Suche: {}", match &r { UpdateState::Available(rel) => format!("Version {} verfügbar", rel.version), UpdateState::Error(e, _) => format!("Fehler {e}"), _ => "aktuell".into() });
             *state.lock().unwrap() = r;
             *checked.lock().unwrap() = Some(SystemTime::now());
             ctx.request_repaint();
@@ -220,6 +221,7 @@ impl Updater {
                 let _ = std::fs::remove_file(&zip);
                 n
             });
+            log::info!(target: "update", "Installation {}: {}", rel.version, res.as_ref().map_or_else(|e| format!("Fehler {e}"), |_| "fertig".into()));
             *state.lock().unwrap() = match res {
                 Ok(_) => UpdateState::Installed(rel.version),
                 // Abbrechen führt zurück zum Angebot

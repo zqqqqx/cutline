@@ -28,6 +28,7 @@ serde.workspace = true
 tempfile.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
+log = "0.4"
 eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "x11", "wayland"] }
 rfd = "0.15"
 raw-window-handle = "0.6"

@@ -306,7 +306,7 @@ impl App {
                 }
                 Msg::Reported(r) => {
                     if let Err(e) = r {
-                        eprintln!("Epidemic-Nutzungsmeldung: {e}");
+                        log::warn!("Epidemic-Nutzungsmeldung: {e}");
                     }
                 }
                 Msg::Tokens(t) => {

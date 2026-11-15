@@ -397,7 +397,7 @@ fn chrono_like(t: SystemTime) -> String {
 }
 
 /// Abstand der Ortszeit zu UTC in Sekunden (aus der Umgebung; Standard Mitteleuropa).
-fn local_offset_secs() -> i64 {
+pub(crate) fn local_offset_secs() -> i64 {
     static OFF: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| {
         // PowerShell/`date` wären teuer; wir lesen die Abweichung einmal über die Windows-API-freie

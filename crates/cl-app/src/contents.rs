@@ -550,7 +550,7 @@ impl App {
                 self.reload_plugins();
                 self.toast(format!("{}  Paket „{id}“ hinzugefügt", icon::CHECK));
             }
-            Err(e) => self.settings_error = Some(e),
+            Err(e) => self.settings_error = Some(crate::applog::warned("paket", e)),
         }
     }
 
@@ -734,7 +734,7 @@ impl App {
                         self.reload_plugins();
                         self.toast(format!("{}  Paket entfernt", icon::CHECK));
                     }
-                    Err(e) => self.settings_error = Some(e),
+                    Err(e) => self.settings_error = Some(crate::applog::warned("paket", e)),
                 },
                 ContentsDialog::Credits(_) => self.toast(format!("{}  In die Zwischenablage kopiert", icon::CHECK)),
             }
