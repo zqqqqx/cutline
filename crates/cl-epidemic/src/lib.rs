@@ -98,11 +98,38 @@ pub struct Tokens {
 
 // ------------------------------------------------------------------ Datentypen
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Named {
     pub id: String,
     pub name: String,
+}
+
+/// Die API liefert Namen mal als Objekt `{id, name}`, mal als bloßen Text (z. B. `mainArtists`).
+impl<'de> Deserialize<'de> for Named {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Text(String),
+            Obj {
+                #[serde(default)]
+                id: String,
+                #[serde(default)]
+                name: String,
+            },
+        }
+        Ok(match Raw::deserialize(d)? {
+            Raw::Text(name) => Named { id: name.clone(), name },
+            Raw::Obj { id, name } => Named { id, name },
+        })
+    }
+}
+
+/// Liste lesen, in der einzelne Einträge kaputt sein dürfen (die übrigen bleiben).
+fn lenient<'de, D: serde::Deserializer<'de>, T: serde::de::DeserializeOwned>(d: D) -> std::result::Result<Vec<T>, D::Error> {
+    let raw: Vec<serde_json::Value> = Vec::deserialize(d)?;
+    Ok(raw.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect())
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -147,6 +174,7 @@ impl Track {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Page {
+    #[serde(deserialize_with = "lenient")]
     pub tracks: Vec<Track>,
     pub pagination: Pagination,
 }
@@ -750,5 +778,24 @@ mod tests {
         assert!(start_login("   ").is_err());
         // Zufallswerte unterscheiden sich
         assert_ne!(pkce().0, pkce().0);
+    }
+
+    #[test]
+    fn names_come_as_text_or_object_and_one_bad_track_does_not_spoil_the_page() {
+        let p: Page = serde_json::from_str(
+            r#"{"tracks":[
+                {"id":"a","title":"Eins","mainArtists":["Jon Björk","Ava"],"moods":[{"id":"m","name":"Epic"}],"genres":["Pop"]},
+                {"id":"b","title":"Zwei","mainArtists":[{"id":"x","name":"Mia"}]},
+                {"id":"c","title":{"kaputt":true}},
+                {"id":"d","title":"Vier"}
+            ]}"#,
+        )
+        .unwrap();
+        let ids: Vec<&str> = p.tracks.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "d"]);
+        assert_eq!(p.tracks[0].artists(), "Jon Björk, Ava");
+        assert_eq!(p.tracks[0].genres[0].name, "Pop");
+        assert_eq!(p.tracks[1].artists(), "Mia");
+        assert_eq!(p.tracks[0].moods[0], Named { id: "m".into(), name: "Epic".into() });
     }
 }
