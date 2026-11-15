@@ -217,11 +217,16 @@ fn unknown_fields_and_old_files_still_load() {
         old["settings"].as_object_mut().unwrap().remove(k);
     }
     old["timeline"].as_object_mut().unwrap().remove("markers");
+    let media = old["media"].as_array_mut().unwrap();
+    assert!(!media.is_empty());
+    for m in media {
+        m.as_object_mut().unwrap().remove("audio_streams");
+    }
     for t in old["timeline"]["tracks"].as_array_mut().unwrap() {
         t.as_object_mut().unwrap().remove("name");
         for c in t["clips"].as_array_mut().unwrap() {
             let c = c.as_object_mut().unwrap();
-            for k in ["speed", "disabled", "fx", "keyframes", "anim", "transition_out", "fade_in", "fade_out", "audio", "beats", "label", "group"] {
+            for k in ["speed", "disabled", "fx", "keyframes", "anim", "transition_out", "fade_in", "fade_out", "audio", "audio_stream", "beats", "label", "group"] {
                 c.remove(k);
             }
             if let Some(st) = c.get_mut("content").and_then(|x| x.get_mut("Text")).and_then(|x| x.as_object_mut()) {

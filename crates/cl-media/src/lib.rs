@@ -829,9 +829,30 @@ impl Drop for FrameStream {
     }
 }
 
+/// Pfad als Wert einer Filteroption im Filtergraphen escapen (`C:/x.cube` → `C\\:/x.cube`).
+/// Zwei Ebenen: erst für die Option (`:` und `'`), dann für den Graphen (`\ ' [ ] , ;`) –
+/// so übersteht auch ein Apostroph im Pfad beide.
+pub fn escape_path(p: &str) -> String {
+    let opt = p.replace('\\', "/").replace(':', "\\:").replace('\'', "\\'");
+    let mut out = String::with_capacity(opt.len() + 8);
+    for c in opt.chars() {
+        if matches!(c, '\\' | '\'' | '[' | ']' | ',' | ';') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escape_path_keeps_every_character() {
+        // je Ebene (Graph, Option) fällt ein Backslash weg; nichts wird gelöscht
+        assert_eq!(escape_path(r"C:\a'b[1],c;d"), r"C\\:/a\\\'b\[1\]\,c\;d");
+    }
 
     #[test]
     fn detects_one_sided_stereo() {

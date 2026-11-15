@@ -89,7 +89,6 @@ mcp = MCP-Endpunkt
 mcp-off = MCP aus
 mcp-on = MCP aktiv auf 127.0.0.1:{ $port }
 mcp-token = Zugriffstoken
-mcp-hint = Erlaubt KI-Assistenten, dieses Projekt zu lesen und zu bearbeiten. Jede Änderung landet im Verlauf und lässt sich rückgängig machen.
 
 plugins-loaded = { $count ->
     [one] Ein Plugin geladen

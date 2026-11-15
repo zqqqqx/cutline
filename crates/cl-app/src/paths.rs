@@ -63,14 +63,24 @@ fn broken_json_is_kept_aside() {
 /// Höchstens 100 Zeichen (Windows: 255 je Name, dazu kommen Endung und „ (Kopie 2)“), nie leer,
 /// keine reservierten Gerätenamen (`CON`, `NUL` …).
 pub fn safe_name(name: &str) -> String {
-    let s: String = name.chars().take(100).map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
+    let s: String = name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
+    match fit_name(&s) {
+        s if s.is_empty() => "Projekt".into(),
+        s => s,
+    }
+}
+
+/// Grenzen jedes Dateinamens: höchstens 100 Zeichen, ohne Rand-Leerzeichen, keine reservierten
+/// Gerätenamen (`CON`, `NUL` …). Erlaubte Zeichen regelt der Aufrufer.
+pub fn fit_name(s: &str) -> String {
+    let s: String = s.chars().take(100).collect();
     let s = s.trim();
     let reserved = ["CON", "PRN", "AUX", "NUL"].contains(&s.to_uppercase().as_str())
         || (s.len() == 4 && ["COM", "LPT"].iter().any(|d| s.to_uppercase().starts_with(d)) && s.ends_with(|c: char| c.is_ascii_digit()));
-    match s {
-        "" => "Projekt".into(),
-        s if reserved => format!("{s}_"),
-        s => s.into(),
+    if reserved {
+        format!("{s}_")
+    } else {
+        s.into()
     }
 }
 
