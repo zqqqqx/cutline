@@ -162,6 +162,8 @@ const WARM_MAX: f64 = 0.5;
 pub const AUDIO_DEBOUNCE: f64 = 0.15;
 /// Öffnen schlug fehl: so lange nicht erneut versuchen
 const RETRY_OPEN: f64 = 1.0;
+/// Ein Ersatzstrom mit Bild übernimmt spätestens so lange nach dem Anhängen (auch mit Rückstand)
+const REPLACE_AFTER: f64 = 1.0;
 /// Einzelbild beim Abspielen (Rückwärts, Tempo-Kurve, bewegte Bilder): ein laufender Auftrag wird
 /// nicht ersetzt, nur weil die Uhr weiter ist – sein Bild wird gezeigt, auch wenn es einige Bilder
 /// alt ist (sonst verhungert jeder Auftrag). Nur als Sicherung nach so langer Zeit neu.
@@ -784,10 +786,12 @@ impl<S: Source> PlayCore<S> {
         if let Some(n) = self.next.get_mut(&id) {
             if let Some(f) = n.drain(pos, now, &mut self.stats, false) {
                 // erst übernehmen, wenn der Ersatz nicht hinter dem bisherigen Strom liegt (nie ein
-                // älteres Bild zeigen); bis dahin holt er auf und seine Bilder verfallen
+                // älteres Bild zeigen); bis dahin holt er auf und seine Bilder verfallen. Ist er
+                // langsamer als Echtzeit (schwerer Effekt), holt er nie auf: nach REPLACE_AFTER
+                // übernimmt er trotzdem, danach greifen Aufholen und automatische Qualität.
                 let behind = |s: &Slot<S>| s.lag(pos).unwrap_or(f64::MAX);
                 let old = self.cur.get(&id).filter(|c| !c.stalled(now) && !c.ended);
-                if old.is_none_or(|c| behind(n) <= behind(c) + 1e-9) {
+                if now - n.opened > REPLACE_AFTER || old.is_none_or(|c| behind(n) <= behind(c) + 1e-9) {
                     if let Some(n) = self.next.remove(&id) {
                         self.cur.insert(id, n);
                     }
@@ -795,6 +799,11 @@ impl<S: Source> PlayCore<S> {
                 } else {
                     self.stats.dropped += 1;
                 }
+            } else if n.stalled(now) {
+                // Ersatz endet bzw. hängt ohne Bild: verwerfen, nach RETRY_OPEN neu versuchen
+                let key = n.key;
+                self.next.remove(&id);
+                self.failed.insert(id, (key, now));
             }
         }
         let s = self.cur.get_mut(&id)?;
