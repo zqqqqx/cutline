@@ -558,12 +558,18 @@ pub static TRANSITIONS: &[(&str, &str, &str)] = &[
     ("slidedown", "Schieben runter", "Bewegung"),
     ("coverleft", "Überdecken links", "Bewegung"),
     ("coverright", "Überdecken rechts", "Bewegung"),
+    ("coverup", "Überdecken hoch", "Bewegung"),
+    ("coverdown", "Überdecken runter", "Bewegung"),
     ("revealleft", "Aufdecken links", "Bewegung"),
     ("revealright", "Aufdecken rechts", "Bewegung"),
+    ("revealup", "Aufdecken hoch", "Bewegung"),
+    ("revealdown", "Aufdecken runter", "Bewegung"),
     ("zoomin", "Hineinzoomen", "Bewegung"),
     ("squeezeh", "Stauchen horizontal", "Bewegung"),
     ("hlwind", "Wind links", "Bewegung"),
     ("hrwind", "Wind rechts", "Bewegung"),
+    ("vuwind", "Wind hoch", "Bewegung"),
+    ("vdwind", "Wind runter", "Bewegung"),
     ("circleopen", "Kreis öffnen", "Form"),
     ("circleclose", "Kreis schließen", "Form"),
     ("circlecrop", "Kreisblende", "Form"),
@@ -575,6 +581,8 @@ pub static TRANSITIONS: &[(&str, &str, &str)] = &[
     ("horzclose", "Horizontal schließen", "Form"),
     ("diagtl", "Diagonal ↖", "Form"),
     ("diagbr", "Diagonal ↘", "Form"),
+    ("diagtr", "Diagonal ↗", "Form"),
+    ("diagbl", "Diagonal ↙", "Form"),
     ("hlslice", "Streifen links", "Effekt"),
     ("hrslice", "Streifen rechts", "Effekt"),
     ("vuslice", "Streifen hoch", "Effekt"),
@@ -1577,7 +1585,10 @@ mod tests {
             run_graph(&g, &["color=red:s=160x90:r=15:d=0.6"])
                 .unwrap_or_else(|e| panic!("{id}: {e}"));
         }
-        assert!(TRANSITIONS.len() >= 40);
+        // alle xfade-Varianten des mitgelieferten FFmpeg außer „custom“ und „squeezev“
+        // (stürzt in FFmpeg 9.0.2 bei jeder Größe ab)
+        assert_eq!(TRANSITIONS.len(), 57);
+        assert!(!TRANSITIONS.iter().any(|t| t.0 == "squeezev"));
     }
 
     #[test]
