@@ -3165,13 +3165,10 @@ impl eframe::App for App {
         self.cancel_background_work();
         if !self.flush_before_leaving() {
             // letzter Ausweg: Stand in die Sicherungen schreiben
-            let stem = self
-                .project_path
-                .as_ref()
-                .and_then(|p| p.file_stem())
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| paths::safe_name(&self.project.name));
-            let dir = paths::data_dir().join("Backups").join(stem);
+            let dir = match &self.project_path {
+                Some(p) => crate::project_tools::backup_dir(p),
+                None => paths::data_dir().join("Backups").join(paths::safe_name(&self.project.name)),
+            };
             let _ = std::fs::create_dir_all(&dir);
             let p = dir.join(format!("exit-{}.cutline", paths::unix_secs()));
             if let Err(e) = paths::write_atomic(&p, self.project.to_json()) {

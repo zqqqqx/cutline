@@ -26,7 +26,7 @@ fn legacy_backup_dir(project: &Path) -> PathBuf {
 }
 
 /// `Backups/<Dateiname>-<Hash des vollen Pfads>`: gleichnamige Projekte bleiben getrennt.
-fn backup_dir(project: &Path) -> PathBuf {
+pub fn backup_dir(project: &Path) -> PathBuf {
     // FNV-1a: über Programmversionen stabil (anders als `DefaultHasher`)
     let key = project.to_string_lossy().replace('\\', "/").to_lowercase();
     let h = key.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
