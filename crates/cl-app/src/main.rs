@@ -171,10 +171,22 @@ fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> anyhow::Result<()> {
         .ok()
         .map(|f| Arc::new(Mutex::new(f)));
     let server = cl_mcp::McpServer::new(doc.clone(), fonts);
-    server.serve_stdio()?;
+    // nach jeder Änderung speichern: Abbruch durch den Client oder eine kaputte Zeile verliert nichts
+    let mut saved = doc.lock().unwrap().revision();
+    let r = server.serve_stdio(|| {
+        let Some(p) = &project else { return };
+        let d = doc.lock().unwrap();
+        if d.revision() != saved {
+            match paths::write_atomic(p, d.project().to_json()) {
+                Ok(()) => saved = d.revision(),
+                Err(e) => eprintln!("Speichern fehlgeschlagen: {e}"),
+            }
+        }
+    });
     if let Some(p) = project {
         paths::write_atomic(&p, doc.lock().unwrap().project().to_json())?;
         eprintln!("Projekt gespeichert: {}", p.display());
     }
+    r?;
     Ok(())
 }

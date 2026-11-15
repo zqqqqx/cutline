@@ -452,10 +452,13 @@ impl McpServer {
     }
 
     /// Zeilenbasiertes JSON-RPC über stdin/stdout (MCP-Transport „stdio“).
-    pub fn serve_stdio(&self) -> std::io::Result<()> {
-        let stdin = std::io::stdin();
-        let mut stdout = std::io::stdout().lock();
-        for line in stdin.lock().lines() {
+    /// `after` läuft nach jeder Nachricht (Headless-Modus speichert dort).
+    pub fn serve_stdio(&self, mut after: impl FnMut()) -> std::io::Result<()> {
+        self.serve(std::io::stdin().lock(), std::io::stdout().lock(), &mut after)
+    }
+
+    fn serve(&self, input: impl BufRead, mut stdout: impl Write, after: &mut dyn FnMut()) -> std::io::Result<()> {
+        for line in input.lines() {
             let line = line?;
             if line.trim().is_empty() {
                 continue;
@@ -466,6 +469,7 @@ impl McpServer {
                     json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": e.to_string() } }),
                 ),
             };
+            after(); // vor dem Antworten: auch bei geschlossener Ausgabe gespeichert
             if let Some(r) = resp {
                 writeln!(stdout, "{r}")?;
                 stdout.flush()?;
@@ -657,6 +661,22 @@ mod tests {
     fn call(s: &McpServer, name: &str, args: Value) -> Value {
         let r = s.handle(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":args}})).unwrap();
         r["result"].clone()
+    }
+
+    #[test]
+    fn stdio_reports_each_message_before_a_broken_line() {
+        let s = server();
+        let mut input = format!(
+            "{}\n",
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_text","arguments":{"text":"Hallo","start":0.0,"duration":2.0}}})
+        )
+        .into_bytes();
+        input.extend(b"\xff\xfe\n"); // ungültiges UTF-8 beendet die Schleife mit Fehler
+        let mut seen = Vec::new();
+        let r = s.serve(&input[..], Vec::new(), &mut || seen.push(s.doc.lock().unwrap().revision()));
+        assert!(r.is_err());
+        assert_eq!(seen.len(), 1);
+        assert_ne!(seen[0], 0, "Änderung war beim Rückruf schon da");
     }
 
     #[test]
