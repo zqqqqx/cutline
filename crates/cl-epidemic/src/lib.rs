@@ -217,7 +217,8 @@ fn agent() -> ureq::Agent {
 fn err(e: ureq::Error) -> String {
     match e {
         ureq::Error::Status(401, _) => "Anmeldung abgelaufen oder ungültig".into(),
-        ureq::Error::Status(403, _) => "Kein Zugriff (Abo oder Partnervertrag prüfen)".into(),
+        ureq::Error::Status(403, _) => "Kein Zugriff: Der Titel ist in deinem Plan oder Abo nicht enthalten".into(),
+        ureq::Error::Status(406, _) => "Zu schnell hintereinander geladen, bitte kurz warten".into(),
         ureq::Error::Status(429, _) => "Zu viele Anfragen, bitte kurz warten".into(),
         ureq::Error::Status(c, r) => format!(
             "Epidemic Sound antwortet mit {c}: {}",

@@ -569,17 +569,15 @@ impl App {
                 );
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Titel, die nur vorgehört werden dürfen: Knopf aus, der Grund steht im Tooltip
-                let tip = if t.is_preview_only { "Dieser Titel ist nur zum Vorhören freigegeben" } else { "Am Playhead einfügen" };
-                let add = theme::icon_button(ui, icon::PLUS, tip, !loading && !t.is_preview_only, false).clicked();
+                let add = theme::icon_button(ui, icon::PLUS, "Am Playhead einfügen", !loading, false).clicked();
                 if self.es.have.contains(&store_name(&t.id)) {
                     ui.label(RichText::new(icon::CHECK_CIRCLE).size(theme::FS_HINT).color(theme::TEXT_DIM()))
                         .on_hover_text(crate::tr("Lokal vorrätig"));
                 }
                 if add {
-                    if t.is_preview_only {
-                        self.toast_err("Dieser Titel ist nur zum Vorhören freigegeben");
-                    } else {
+                    // `isPreviewOnly` ist laut Epidemic kein verlässliches Zeichen: immer versuchen – ist der
+                    // Titel im Plan nicht enthalten, lehnt der Dienst ab (403) und das steht dann in der Meldung
+                    {
                         self.es.loading_track = Some(t.id.clone());
                         let track = t.clone();
                         let safe: String = format!("{} - {}", t.artists(), t.title)
