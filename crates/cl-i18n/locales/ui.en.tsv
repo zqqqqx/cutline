@@ -1796,3 +1796,4 @@ Abschnitt {}–{}: {}	Section {}–{}: {}
 Zu viele gleichzeitige Clips bei {} – FFmpeg kann sie nicht auf einmal öffnen	Too many simultaneous clips at {} – FFmpeg cannot open them all at once
 Zu wenig Speicherplatz für die Zwischendateien: {} nötig, {} frei	Not enough disk space for the intermediate files: {} needed, {} free
 Ton von {} kann nicht gelesen werden – Wiedergabe ohne diese Datei	Cannot read the audio of {} – playing without this file
+Version ohne Prüfsumme	Version without checksum
