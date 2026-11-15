@@ -178,6 +178,15 @@ fn secret_at(b: &[u8], i: usize) -> Option<(usize, usize)> {
     if !boundary {
         return None;
     }
+    // Adressen: der ganze Abfrageteil (signierte Links: `jwt=`, `X-Amz-…`, Anbieter-Parameter)
+    if starts_ci(b, i, "http://") || starts_ci(b, i, "https://") {
+        let mut e = skip(b, i, |c| !c.is_ascii_whitespace() && !b"\"'<>".contains(&c));
+        if b[e - 1] == b':' {
+            e -= 1;
+        }
+        let q = b[i..e].iter().position(|&c| c == b'?')? + i + 1;
+        return (e > q).then_some((q, e));
+    }
     if starts_ci(b, i, "bearer ") {
         let v = skip(b, i + 7, |c| c == b' ');
         let e = skip(b, v, token_char);
@@ -1013,9 +1022,12 @@ mod tests {
             (r#"{"access_token":"AAA.bbb","refresh_token": "RRR","expires_in":3600}"#, r#"{"access_token":"***","refresh_token": "***","expires_in":3600}"#),
             (r#"{"token": "abc\"def", "read_only": true}"#, r#"{"token": "***", "read_only": true}"#),
             (r#""headers": { "Authorization": "Bearer t0k3n-s3cret" }"#, r#""headers": { "Authorization": "***" }"#),
-            ("GET https://x.example/a?token=abc123&page=2 HTTP", "GET https://x.example/a?token=***&page=2 HTTP"),
-            ("https://cdn.example/f.mp3?key=K1&signature=S%2F2#frag", "https://cdn.example/f.mp3?key=***&signature=***#frag"),
-            ("https://login.example/cb?code=xyz&state=1", "https://login.example/cb?code=***&state=1"),
+            ("GET https://x.example/a?token=abc123&page=2 HTTP", "GET https://x.example/a?*** HTTP"),
+            ("https://cdn.example/f.mp3?key=K1&signature=S%2F2#frag", "https://cdn.example/f.mp3?***"),
+            ("https://login.example/cb?code=xyz&state=1", "https://login.example/cb?***"),
+            // ureq-Fehler nach der GitHub-Umleitung: signierte Asset-Adresse mit `jwt=`
+            ("https://objects.example/a.zip?sp=r&jwt=eyJ0eXAi.x.y: Connection Failed", "https://objects.example/a.zip?***: Connection Failed"),
+            ("(\"http://127.0.0.1:9/x?a=1\")", "(\"http://127.0.0.1:9/x?***\")"),
             ("X-Amz-Signature=deadbeef", "X-Amz-Signature=***"),
         ];
         for (inp, want) in cases {
@@ -1029,7 +1041,7 @@ mod tests {
             "ffmpeg -i C:\\Users\\Ünïcödé\\Videos\\a b.mp4 -c:v libx264 -crf 23 -g 60 -keyint_min 30 -vf colorkey=0x00ff00:0.3 out.mp4",
             "chromakey=green:0.1 keyframes=3 monkey=1",
             "FFmpeg beendet: exit code=1 · Tokens: 5 · token count 3",
-            "https://example.com/a?x=1&page=2",
+            "https://example.com/a/b.zip: Dns Failed",
             "Bearer of bad news",
             "\"key\": \"Strg+S\"",
             "Projekt „Urlaub 🎬“ · 3 Spuren",
