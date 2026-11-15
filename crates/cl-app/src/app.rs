@@ -1950,7 +1950,7 @@ impl App {
 
     /// Projekt speichern: Momentaufnahme an den Speicher-Thread (serialisiert und schreibt
     /// atomisch im Hintergrund). Ein Fehler kommt später über [`App::poll_saves`].
-    pub fn write_project(&mut self, p: &Path) -> Result<(), String> {
+    pub fn write_project(&mut self, p: &Path) {
         self.saver.send(crate::saving::Job {
             kind: crate::saving::Kind::Project,
             path: p.to_path_buf(),
@@ -1966,7 +1966,6 @@ impl App {
         }
         self.settings.add_recent(p);
         self.send_project_thumb(p);
-        Ok(())
     }
 
     /// Titelbild für die Startseite anfordern (erstes Bild der Bildspuren).
@@ -2008,15 +2007,11 @@ impl App {
                 .save_file(),
         };
         if let Some(p) = path {
-            match self.write_project(&p) {
-                Ok(()) => {
-                    crate::applog::project("gespeichert", Some(&p), &self.project, Some(t0));
-                    self.toast(format!("{} Gespeichert", icon::CHECK));
-                    self.project_path = Some(p);
-                    self.settings.save();
-                }
-                Err(e) => self.toast_err(e),
-            }
+            self.write_project(&p);
+            crate::applog::project("gespeichert", Some(&p), &self.project, Some(t0));
+            self.toast(format!("{} Gespeichert", icon::CHECK));
+            self.project_path = Some(p);
+            self.settings.save();
         }
     }
 
@@ -2042,22 +2037,9 @@ impl App {
                         .project_path
                         .clone()
                         .unwrap_or_else(|| self.default_project_path());
-                    match self.write_project(&p) {
-                        Ok(()) => {
-                            self.project_path = Some(p);
-                            self.settings.save();
-                        }
-                        // höchstens einmal pro Minute melden, sonst jeder Frame
-                        Err(e) => {
-                            static LAST_ERR: Mutex<Option<Instant>> = Mutex::new(None);
-                            let mut le = LAST_ERR.lock().unwrap();
-                            if le.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
-                                *le = Some(Instant::now());
-                                drop(le);
-                                self.toast_err(format!("Automatisch speichern fehlgeschlagen: {e}"));
-                            }
-                        }
-                    }
+                    self.write_project(&p);
+                    self.project_path = Some(p);
+                    self.settings.save();
                 }
             }
             _ => *lc = Some((self.revision, Instant::now())),
@@ -2240,7 +2222,7 @@ impl App {
                 .project_path
                 .clone()
                 .unwrap_or_else(|| self.default_project_path());
-            let _ = self.write_project(&p);
+            self.write_project(&p);
             self.project_path = Some(p);
         }
         // Speicher-Thread abwarten: erst wenn der Stand auf der Platte ist, darf das Projekt zu

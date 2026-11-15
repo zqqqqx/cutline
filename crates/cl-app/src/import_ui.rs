@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use cl_core::{MediaKind, Project};
 use cl_import::{Progress, Report, Step};
-use eframe::egui::{self, vec2, RichText};
+use eframe::egui::{self, RichText};
 
 use crate::app::App;
 use crate::theme::{self, icon};
@@ -438,7 +438,6 @@ impl App {
             ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_DIM()));
         }
         // Importieren selbst: Hauptmenü → „Projekt aus anderem Programm importieren …“
-        let _ = vec2(0.0, 0.0);
     }
 }
 
