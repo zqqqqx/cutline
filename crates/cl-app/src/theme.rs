@@ -746,8 +746,9 @@ pub fn fit_size(size: f32, w: f32, max_w: f32) -> f32 {
     }
 }
 
-/// Ränder einer blätterbaren Leiste. `chips` = (links, rechts) je Eintrag im Inhalt, `view` = sichtbare
-/// Breite, `off` = Versatz, `arrow` = Breite des Pfeil-Knopfs. Je Seite: (Kante der Abdeckung im Inhalt,
+/// Ränder einer blätterbaren Leiste. `chips` = (links, rechts) je Eintrag im Inhalt, `total` = Breite des
+/// Inhalts (mit Rand hinter dem letzten Eintrag), `view` = sichtbare Breite, `off` = Versatz, `arrow` = Breite
+/// des Pfeil-Knopfs. Je Seite: (Kante der Abdeckung im Inhalt,
 /// Versatz nach dem Klick). Die Abdeckung reicht bis an den nächsten ganz sichtbaren Eintrag, damit nie
 /// ein halber Eintrag neben dem Pfeil steht.
 pub struct StripEdges {
@@ -755,16 +756,19 @@ pub struct StripEdges {
     pub right: Option<(f32, f32)>,
 }
 
-pub fn strip_edges(chips: &[(f32, f32)], view: f32, off: f32, arrow: f32) -> StripEdges {
-    let total = chips.last().map_or(0.0, |c| c.1);
+pub fn strip_edges(chips: &[(f32, f32)], total: f32, view: f32, off: f32, arrow: f32) -> StripEdges {
+    // nie kürzer als bis zum letzten Eintrag
+    let total = chips.last().map_or(total, |c| c.1.max(total));
     let max = (total - view).max(0.0);
-    let right = (max - off > 1.0).then(|| {
+    let right = (max - off > 0.5).then(|| {
         let limit = off + view - arrow;
         // erster Eintrag, der nicht mehr ganz vor den Pfeil passt
         let c = chips.iter().find(|c| c.1 > limit).copied().unwrap_or((limit, limit));
         let next = (c.0 - arrow - 2.0).min(max);
         // Eintrag breiter als die Leiste: trotzdem weiterkommen
         let next = if next > off + 1.0 { next } else { (off + view * 0.7).min(max) };
+        // fast am Ende: ganz ans Ende, sonst bleibt der letzte Eintrag ohne Pfeil angeschnitten
+        let next = if max - next <= 0.5 { max } else { next };
         ((c.0 - 2.0).clamp(off, limit), next)
     });
     let left = (off > 1.0).then(|| {
@@ -795,7 +799,7 @@ pub fn edge_arrows<R>(ui: &mut egui::Ui, out: &mut egui::scroll_area::ScrollArea
         return;
     }
     let w = 20.0;
-    let e = strip_edges(&rel, r.width(), x, w);
+    let e = strip_edges(&rel, out.content_size.x, r.width(), x, w);
     let sides = [
         // 4 px über die Leiste hinaus: dort schaut sonst der Rand eines Eintrags hervor
         e.left.map(|(cover, to)| (Rect::from_min_max(r.min - vec2(4.0, 0.0), pos2(x0 + cover, r.bottom())), r.left() + w / 2.0, icon::CARET_LEFT, to)),
@@ -967,9 +971,10 @@ mod tests {
                 chips.push((x, x + w));
                 x += w + 4.0;
             }
-            let total = chips.last().unwrap().1;
+            // Inhalt: 2 px Rand + Abstand hinter dem letzten Eintrag (wie in der Leiste)
+            let total = chips.last().unwrap().1 + 6.0;
             let whole = |off: f32| {
-                let e = strip_edges(&chips, view, off, arrow);
+                let e = strip_edges(&chips, total, view, off, arrow);
                 let lo = e.left.map_or(off, |l| l.0);
                 let hi = e.right.map_or(off + view, |r| r.0);
                 // jeder Eintrag liegt ganz im freien Bereich oder ganz unter einer Abdeckung
@@ -1004,8 +1009,43 @@ mod tests {
             }
         }
         // alles passt: keine Pfeile
-        let e = strip_edges(&[(0.0, 50.0), (54.0, 104.0)], 200.0, 0.0, 20.0);
+        let e = strip_edges(&[(0.0, 50.0), (54.0, 104.0)], 110.0, 200.0, 0.0, 20.0);
         assert!(e.left.is_none() && e.right.is_none());
+        // am Ende (per Pfeil oder Mausrad bis knapp davor) liegt der letzte Eintrag ganz im freien Bereich
+        let mut x: u32 = 0x9e37_79b9;
+        let mut rnd = |lo: f32, hi: f32| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            lo + (x % 10_000) as f32 / 10_000.0 * (hi - lo)
+        };
+        for _ in 0..3000 {
+            let view = rnd(150.0, 350.0);
+            let mut chips = Vec::new();
+            let mut at = 0.0;
+            for _ in 0..(rnd(2.0, 12.0) as usize) {
+                let w = rnd(22.0, 120.0);
+                chips.push((at, at + w));
+                at += w + 4.0;
+            }
+            let last = *chips.last().unwrap();
+            let total = last.1 + 6.0;
+            if total <= view {
+                continue;
+            }
+            let mut off = 0.0;
+            for _ in 0..100 {
+                match strip_edges(&chips, total, view, off, 20.0).right {
+                    Some((_, next)) => off = next,
+                    None => break,
+                }
+            }
+            for o in [off, total - view - 0.4, total - view] {
+                let e = strip_edges(&chips, total, view, o, 20.0);
+                let hi = e.right.map_or(o + view, |r| r.0);
+                assert!(last.1 <= hi + 0.01 || last.0 >= hi - 0.1, "letzter Eintrag {last:?} bei {o} angeschnitten (bis {hi})");
+            }
+        }
     }
 
     // Ein Test, weil der Akzent global ist (parallele Tests würden sich überschreiben)
