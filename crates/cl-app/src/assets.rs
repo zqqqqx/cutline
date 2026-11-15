@@ -1990,6 +1990,24 @@ impl App {
 mod tests {
     use super::*;
 
+    /// Eingebaute Elemente heißen englisch eindeutig: keine Schnitt-Aktion („Teilen“ → „Split“) und
+    /// kein Name, den schon ein mitgeliefertes Paket-Element trägt.
+    #[test]
+    fn builtin_sticker_names_translate_distinctly() {
+        let dict: std::collections::HashMap<_, _> = cl_i18n::ui_entries().into_iter().collect();
+        let en: Vec<&str> = cl_fx::stickers::STICKERS.iter().map(|s| dict.get(s.name).copied().unwrap_or(s.name)).collect();
+        let packs = [
+            include_str!("../../../plugins/cutline-emoji/plugin.toml"),
+            include_str!("../../../plugins/cutline-elemente/plugin.toml"),
+        ];
+        for (i, n) in en.iter().enumerate() {
+            assert!(!en[..i].contains(n), "doppelt: {n}");
+            assert!(!["Split", "Cut"].contains(n), "Schnitt-Wort: {n}");
+            let tag = format!("en = \"{n}\" }}");
+            assert!(packs.iter().all(|p| !p.contains(&tag)), "wie ein Paket-Element: {n}");
+        }
+    }
+
     #[test]
     fn rail_keeps_all_entries_when_short() {
         // genug Höhe: voller Abstand mit Beschriftung

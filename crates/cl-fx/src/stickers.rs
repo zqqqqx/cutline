@@ -47,7 +47,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "star",
-        name: "Stern",
+        name: "Stern (Symbol)",
         category: "Formen",
         svg: svg!(
             r##"<path d="M50 6 L62 38 L96 38 L68 58 L79 92 L50 71 L21 92 L32 58 L4 38 L38 38Z" fill="#FFD400" stroke="#E0A800" stroke-width="2" stroke-linejoin="round"/>"##
@@ -71,7 +71,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "check",
-        name: "Haken",
+        name: "Haken (Symbol)",
         category: "Symbole",
         svg: svg!(
             r##"<circle cx="50" cy="50" r="44" fill="#34C759"/><path d="M28 52 L44 67 L73 35" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>"##
@@ -79,7 +79,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "cross",
-        name: "Kreuz",
+        name: "Kreuz (Symbol)",
         category: "Symbole",
         svg: svg!(
             r##"<circle cx="50" cy="50" r="44" fill="#FF3B30"/><path d="M33 33 L67 67 M67 33 L33 67" stroke="#fff" stroke-width="10" stroke-linecap="round"/>"##
@@ -87,7 +87,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "bolt",
-        name: "Blitz",
+        name: "Blitz (Symbol)",
         category: "Formen",
         svg: svg!(
             r##"<path d="M58 4 L18 56 L46 56 L38 96 L82 40 L54 40Z" fill="#FFD400" stroke="#1C1C1E" stroke-width="3" stroke-linejoin="round"/>"##
@@ -117,7 +117,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "arrow-right",
-        name: "Pfeil rechts",
+        name: "Pfeil rechts (Symbol)",
         category: "Zeigen",
         svg: svg!(
             r##"<path d="M6 42 H62 V22 L96 50 L62 78 V58 H6Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3" stroke-linejoin="round"/>"##
@@ -155,7 +155,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "bubble",
-        name: "Sprechblase",
+        name: "Sprechblase (Symbol)",
         category: "Sprechblasen",
         svg: svg!(
             r##"<path d="M14 10 H86 Q94 10 94 18 V62 Q94 70 86 70 H40 L20 90 L24 70 H14 Q6 70 6 62 V18 Q6 10 14 10Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3"/>"##
@@ -187,7 +187,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "sparkle",
-        name: "Funkeln",
+        name: "Funkeln (Symbol)",
         category: "Partikel",
         svg: svg!(
             r##"<path d="M50 4 C53 36 64 47 96 50 C64 53 53 64 50 96 C47 64 36 53 4 50 C36 47 47 36 50 4Z" fill="#FFFFFF"/><path d="M82 10 C83 18 86 21 94 22 C86 23 83 26 82 34 C81 26 78 23 70 22 C78 21 81 18 82 10Z" fill="#FFE27A"/>"##
@@ -195,7 +195,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "crown",
-        name: "Krone",
+        name: "Krone (Symbol)",
         category: "Symbole",
         svg: svg!(
             r##"<path d="M8 30 L30 54 L50 18 L70 54 L92 30 L84 80 H16Z" fill="#FFD400" stroke="#C89400" stroke-width="3" stroke-linejoin="round"/><rect x="16" y="80" width="68" height="10" fill="#E0A800"/>"##
@@ -211,7 +211,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "smile",
-        name: "Lächeln",
+        name: "Lächeln (Symbol)",
         category: "Reaktionen",
         svg: svg!(
             r##"<circle cx="50" cy="50" r="44" fill="#FFD400" stroke="#E0A800" stroke-width="3"/><circle cx="35" cy="40" r="6" fill="#1C1C1E"/><circle cx="65" cy="40" r="6" fill="#1C1C1E"/><path d="M28 60 Q50 82 72 60" fill="none" stroke="#1C1C1E" stroke-width="6" stroke-linecap="round"/>"##
@@ -249,7 +249,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "bell",
-        name: "Glocke",
+        name: "Glocke (Symbol)",
         category: "Aufrufe",
         svg: svg!(
             r##"<path d="M50 10 C30 10 24 28 24 44 V62 L14 74 H86 L76 62 V44 C76 28 70 10 50 10Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3" stroke-linejoin="round"/><circle cx="50" cy="84" r="8" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3"/><circle cx="74" cy="22" r="10" fill="#FF2D2D"/>"##
@@ -257,7 +257,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "thumbs-up",
-        name: "Daumen hoch",
+        name: "Daumen hoch (Symbol)",
         category: "Aufrufe",
         svg: svg!(
             r##"<path d="M10 46 H26 V90 H10Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3"/><path d="M30 46 L48 12 C56 10 60 16 58 26 L54 40 H82 C90 40 94 48 90 56 L82 84 C80 88 76 90 72 90 H30Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3" stroke-linejoin="round"/>"##
@@ -273,7 +273,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "share",
-        name: "Teilen",
+        name: "Teilen-Pfeil",
         category: "Aufrufe",
         svg: svg!(
             r##"<path d="M58 14 L94 46 L58 78 V60 C34 60 18 68 6 88 C10 58 26 34 58 32Z" fill="#FFFFFF" stroke="#1C1C1E" stroke-width="3" stroke-linejoin="round"/>"##
@@ -345,7 +345,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "trophy",
-        name: "Pokal",
+        name: "Pokal (Symbol)",
         category: "Symbole",
         svg: svg!(
             r##"<path d="M28 12 H72 V38 C72 52 62 62 50 62 C38 62 28 52 28 38Z" fill="#FFC81E"/><path d="M28 18 H14 C14 34 20 42 30 44 M72 18 H86 C86 34 80 42 70 44" fill="none" stroke="#FFC81E" stroke-width="6"/><rect x="44" y="62" width="12" height="14" fill="#E0A800"/><rect x="30" y="76" width="40" height="12" rx="3" fill="#8B5A2B"/><path d="M50 22 L54 32 L64 32 L56 38 L59 48 L50 42 L41 48 L44 38 L36 32 L46 32Z" fill="#FFF4C2"/>"##
@@ -353,7 +353,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "controller",
-        name: "Controller",
+        name: "Controller (Symbol)",
         category: "Symbole",
         svg: svg!(
             r##"<path d="M24 30 H76 C88 30 96 50 96 66 C96 78 84 82 76 72 L68 62 H32 L24 72 C16 82 4 78 4 66 C4 50 12 30 24 30Z" fill="#2B2D42"/><path d="M26 42 V58 M18 50 H34" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/><circle cx="70" cy="44" r="4.5" fill="#3DDC6B"/><circle cx="80" cy="52" r="4.5" fill="#FF3B3B"/><circle cx="60" cy="52" r="4.5" fill="#2D9CFF"/><circle cx="70" cy="60" r="4.5" fill="#FFD400"/>"##
@@ -369,7 +369,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "skull",
-        name: "Totenkopf",
+        name: "Totenkopf (Symbol)",
         category: "Reaktionen",
         svg: svg!(
             r##"<path d="M50 8 C28 8 14 24 14 44 C14 58 22 66 28 70 V84 H72 V70 C78 66 86 58 86 44 C86 24 72 8 50 8Z" fill="#F2F2F2" stroke="#1A1A1A" stroke-width="3"/><circle cx="36" cy="46" r="10" fill="#1A1A1A"/><circle cx="64" cy="46" r="10" fill="#1A1A1A"/><path d="M50 58 L44 68 H56Z" fill="#1A1A1A"/><path d="M40 84 V74 M50 84 V74 M60 84 V74" stroke="#1A1A1A" stroke-width="3"/>"##
@@ -417,7 +417,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "question",
-        name: "Fragezeichen",
+        name: "Fragezeichen (Symbol)",
         category: "Zeigen",
         svg: svg!(
             r##"<path d="M30 32 C30 16 42 8 52 8 C66 8 74 18 74 30 C74 46 54 48 54 64 V68" fill="none" stroke="#FF2D2D" stroke-width="12" stroke-linecap="round"/><circle cx="54" cy="86" r="7" fill="#FF2D2D"/>"##
@@ -425,7 +425,7 @@ pub static STICKERS: &[Sticker] = &[
     },
     Sticker {
         id: "exclamation",
-        name: "Ausrufezeichen",
+        name: "Ausrufezeichen (Symbol)",
         category: "Zeigen",
         svg: svg!(
             r##"<path d="M50 10 V66" stroke="#FF2D2D" stroke-width="14" stroke-linecap="round"/><circle cx="50" cy="86" r="8" fill="#FF2D2D"/>"##
