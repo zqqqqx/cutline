@@ -61,16 +61,26 @@ fn url_to_path(src: &str, dir: &Path) -> PathBuf {
 }
 
 pub fn import(path: &Path) -> Result<(Project, Report)> {
+    import_with(path, &crate::Progress::default())
+}
+
+/// Wie [`import`], mit Fortschritt und Abbruch.
+pub fn import_with(path: &Path, progress: &crate::Progress) -> Result<(Project, Report)> {
+    progress.set(crate::Step::Read, 0, 1, &path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let name = path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "FCPXML".into());
-    convert(&text, &name, path.parent().unwrap_or(Path::new("")))
+    convert_with(&text, &name, path.parent().unwrap_or(Path::new("")), progress)
 }
 
 /// `dir`: Ordner der FCPXML-Datei (für relative Medienpfade).
 pub fn convert(text: &str, name: &str, dir: &Path) -> Result<(Project, Report)> {
+    convert_with(text, name, dir, &crate::Progress::default())
+}
+
+fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) -> Result<(Project, Report)> {
     let doc = roxmltree::Document::parse(text).map_err(|e| format!("FCPXML nicht lesbar: {e}"))?;
     let root = doc.root_element();
     if root.tag_name().name() != "fcpxml" {
@@ -98,7 +108,10 @@ pub fn convert(text: &str, name: &str, dir: &Path) -> Result<(Project, Report)> 
     }
     // Assets
     let mut assets: HashMap<String, Option<MediaRef>> = HashMap::new();
+    let n = root.descendants().filter(|n| n.has_tag_name("asset")).count();
+    progress.set(crate::Step::Probe, 0, n, "");
     for a in root.descendants().filter(|n| n.has_tag_name("asset")) {
+        progress.check()?;
         let id = a.attribute("id").unwrap_or("").to_string();
         let src = a.attribute("src").map(String::from).or_else(|| {
             a.children()
@@ -115,6 +128,7 @@ pub fn convert(text: &str, name: &str, dir: &Path) -> Result<(Project, Report)> 
             p.media.push(m.clone());
             Some(m)
         });
+        progress.tick(&id);
         assets.insert(id, m);
     }
     let seq = root
