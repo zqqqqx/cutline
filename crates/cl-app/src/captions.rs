@@ -541,7 +541,10 @@ impl App {
         let mut ops: Vec<EditOp> = Vec::new();
         let focus = self.caption_focus;
         let mut focused = false;
-        ui.vertical(|ui| {
+        // eigene Blätterfläche bis zum unteren Rand: ein neuer Eintrag blättert nur die Liste,
+        // Kopfzeile mit „Hinzufügen“ bleibt stehen
+        let h = (ui.clip_rect().bottom() - ui.cursor().top() - 4.0).max(160.0);
+        egui::ScrollArea::vertical().id_salt("cap-list").max_height(h).auto_shrink([false, true]).show(ui, |ui| {
             for (i, c) in items.iter().enumerate() {
                 let text = text_of(c);
                 if !q.is_empty() && !text.contains(&q) {

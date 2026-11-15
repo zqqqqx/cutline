@@ -1618,14 +1618,18 @@ impl App {
             .map(|t| t.clips.len())
             .sum();
         theme::row(ui, "Inhalt", |ui| {
-            ui.label(
-                RichText::new(format!(
-                    "{} · {} · {}",
-                    crate::tr(theme::count_text(self.project.timeline.tracks.len(), "{} Spur", "{} Spuren")),
-                    crate::tr(theme::count_text(clips, "{} Clip", "{} Clips")),
-                    crate::tr(theme::count_text(self.project.media.len(), "{} Medium", "{} Medien"))
-                ))
-                .color(theme::TEXT_DIM()),
+            // bei großer Oberfläche umbrechen statt aus dem Panel zu laufen
+            ui.add(
+                egui::Label::new(
+                    RichText::new(format!(
+                        "{} · {} · {}",
+                        crate::tr(theme::count_text(self.project.timeline.tracks.len(), "{} Spur", "{} Spuren")),
+                        crate::tr(theme::count_text(clips, "{} Clip", "{} Clips")),
+                        crate::tr(theme::count_text(self.project.media.len(), "{} Medium", "{} Medien"))
+                    ))
+                    .color(theme::TEXT_DIM()),
+                )
+                .wrap(),
             )
         });
         theme::row(ui, "Länge", |ui| {

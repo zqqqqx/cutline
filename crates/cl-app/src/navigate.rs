@@ -30,7 +30,7 @@ pub fn chapter_time(t: Time) -> String {
 
 /// Kapitel (Start, Titel) wie im Export eingebettet.
 fn chapter_list(markers: &[Marker]) -> Vec<(Time, String)> {
-    cl_export::chapter_list(markers, Time::ZERO, Time(i64::MAX))
+    cl_export::chapter_list(markers, Time::ZERO, Time(i64::MAX), &crate::tr("Kapitel"))
 }
 
 /// Kapitelliste für die Videobeschreibung.
@@ -44,7 +44,7 @@ pub fn chapters(markers: &[Marker]) -> String {
 
 /// Verstößt die Liste gegen YouTubes Regeln (mind. 3 Kapitel, je mind. 10 s)?
 pub fn chapter_issue(markers: &[Marker], start: Time, end: Time) -> Option<String> {
-    let v = cl_export::chapter_list(markers, start, end);
+    let v = cl_export::chapter_list(markers, start, end, &crate::tr("Kapitel"));
     v.iter().enumerate().find_map(|(i, (t, name))| {
         let stop = v.get(i + 1).map_or(end - start, |n| n.0);
         let secs = (stop - *t).as_secs_f64();
@@ -56,7 +56,19 @@ pub fn chapter_issue(markers: &[Marker], start: Time, end: Time) -> Option<Strin
 pub fn chapter_warning(ui: &mut egui::Ui, w: &str) -> bool {
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w))).small().color(theme::WARN_TEXT()));
-        ui.add(theme::ghost("Nicht mehr anzeigen")).clicked()
+        // kleiner, gedimmter Link: Hover hebt hervor und unterstreicht
+        let g = ui.painter().layout_no_wrap(
+            crate::tr("Nicht mehr anzeigen"),
+            egui::TextStyle::Small.resolve(ui.style()),
+            Color32::PLACEHOLDER,
+        );
+        let (rect, r) = ui.allocate_exact_size(g.size(), egui::Sense::click());
+        let col = if r.hovered() { theme::TEXT() } else { theme::TEXT_DIM() };
+        if r.hovered() {
+            ui.painter().hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(1.0_f32, col));
+        }
+        ui.painter().galley(rect.min, g, col);
+        r.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
     })
     .inner
 }

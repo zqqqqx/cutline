@@ -173,6 +173,13 @@ pub struct ExportSettings {
     /// Marker als Kapitel in die Datei schreiben
     #[serde(default)]
     pub chapters: bool,
+    /// Kapitelname für Marker ohne Namen (Sprache der Oberfläche)
+    #[serde(default = "default_chapter_name")]
+    pub chapter_name: String,
+}
+
+fn default_chapter_name() -> String {
+    "Kapitel".into()
 }
 
 impl ExportSettings {
@@ -191,6 +198,7 @@ impl ExportSettings {
             loudness: None,
             audio_kbps: None,
             chapters: true,
+            chapter_name: default_chapter_name(),
         }
     }
 
@@ -441,7 +449,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     args.extend(std::mem::take(&mut ctx.inputs));
     // Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel)
     let chapters = (s.chapters && matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a))
-        .then(|| ffmetadata(&p.timeline.markers, start, end))
+        .then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name))
         .flatten();
     if let Some(meta) = chapters {
         std::fs::write(workdir.path().join("chapters.txt"), meta)?;
@@ -539,9 +547,9 @@ fn in_edit_ranges(p: &Project) -> Project {
 /// Kapitel (Start relativ zu `start`, Titel) aus den Markern im Bereich `start..end`.
 /// YouTube verlangt ein Kapitel bei 0:00: Ein Marker in der ersten Sekunde wird dorthin
 /// gezogen, sonst kommt davor das Kapitel, das am Bereichsanfang läuft (letzter Marker davor),
-/// ohne solchen Marker „Intro“.
-pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time) -> Vec<(Time, String)> {
-    let name = |m: &cl_core::Marker| if m.name.is_empty() { "Kapitel".to_string() } else { m.name.clone() };
+/// ohne solchen Marker „Intro“. Marker ohne Namen heißen `unnamed`.
+pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time, unnamed: &str) -> Vec<(Time, String)> {
+    let name = |m: &cl_core::Marker| if m.name.is_empty() { unnamed.to_string() } else { m.name.clone() };
     let mut v: Vec<(Time, String)> = markers
         .iter()
         .filter(|m| m.at >= start && m.at < end)
@@ -561,7 +569,7 @@ pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time) -> Vec<
 }
 
 /// Kapitel im FFmetadata-Format (siehe [`chapter_list`]); `None` ohne Marker.
-fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time) -> Option<String> {
+fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time, unnamed: &str) -> Option<String> {
     let esc = |t: &str| {
         t.chars()
             .flat_map(|c| match c {
@@ -574,7 +582,7 @@ fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time) -> Option<Str
     if !markers.iter().any(|m| m.at >= start && m.at < end) {
         return None;
     }
-    let v = chapter_list(markers, start, end);
+    let v = chapter_list(markers, start, end, unnamed);
     let ms = |t: Time| (t.as_secs_f64() * 1000.0).round() as i64;
     let len = end - start;
     let mut out = String::from(";FFMETADATA1\n");
@@ -1120,12 +1128,15 @@ mod tests {
         let mk = |at: f64, name: &str| Marker { id: 0, at: Time::from_secs_f64(at), duration: Time::ZERO, name: name.into(), note: String::new(), color: 0 };
         let ms = [mk(0.0, "Intro"), mk(10.0, "Thema"), mk(24.93, "Highlights"), mk(35.13, "Interview"), mk(40.0, "Ende")];
         let s = |x: f64| Time::from_secs_f64(x);
-        let v = chapter_list(&ms, s(34.13), s(36.13));
+        let v = chapter_list(&ms, s(34.13), s(36.13), "Kapitel");
         assert_eq!(v, vec![(Time::ZERO, "Highlights".to_string()), (s(35.13) - s(34.13), "Interview".to_string())]);
         // ganze Datei: wie bisher
-        assert_eq!(chapter_list(&ms[1..], Time::ZERO, s(50.0))[0].1, "Intro");
+        assert_eq!(chapter_list(&ms[1..], Time::ZERO, s(50.0), "Kapitel")[0].1, "Intro");
+        // Marker ohne Namen in der Sprache der Oberfläche
+        assert_eq!(chapter_list(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter")[0].1, "Chapter");
         // Kapiteldatei mit denselben Namen und Zeiten ab Bereichsanfang
-        let meta = ffmetadata(&ms, s(34.13), s(36.13)).unwrap();
+        let meta = ffmetadata(&ms, s(34.13), s(36.13), "Kapitel").unwrap();
+        assert!(ffmetadata(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter").unwrap().contains("title=Chapter\n"));
         assert!(meta.contains("START=0\nEND=1000\ntitle=Highlights\n") && meta.contains("START=1000\nEND=2000\ntitle=Interview\n"), "{meta}");
     }
 
@@ -2389,7 +2400,34 @@ mod tests {
         let loud = dir.path().join("loud.wav");
         run(&build(&p, &wav_settings(&p), &no_fonts, &loud).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let l = peaks_db(&loud, 0.0, 2.0);
-        assert!(!l.is_empty() && l.iter().all(|v| *v <= -0.5 && *v > -3.0), "begrenzt: {l:?}");
+        assert!(!l.is_empty() && l.iter().all(|v| *v <= graph::LIMIT_DB + 0.1 && *v > -3.0), "begrenzt: {l:?}");
+    }
+
+    #[test]
+    fn limited_aac_peak_stays_below_minus_one_db() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        // wie im Testbericht: laute Sounds gleichzeitig, je +6 dB
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = Project::new("Laut");
+        for id in ["whoosh", "impact", "boom", "airhorn"] {
+            let path = dir.path().join(format!("{id}.wav"));
+            cl_fx::sfx::render(cl_fx::sfx::sfx(id).unwrap(), &path).unwrap();
+            let m = cl_media::probe(&path).unwrap();
+            let mut t = Track::new(TrackKind::Audio);
+            let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::ZERO, m.duration);
+            c.volume_db = 6.0;
+            t.clips.push(c);
+            p.timeline.tracks.push(t);
+            p.media.push(m);
+        }
+        let mut s = ExportSettings::from_project(&p);
+        s.format = Format::M4a;
+        let out = dir.path().join("loud.m4a");
+        run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let l = peaks_db(&out, 0.0, 3.0);
+        assert!(!l.is_empty() && l.iter().all(|v| *v <= -1.0), "AAC-Spitze: {l:?}");
     }
 
     #[test]

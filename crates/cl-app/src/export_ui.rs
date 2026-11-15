@@ -509,6 +509,7 @@ impl ExportDialog {
             return toast;
         };
         s.chapters = self.chapters;
+        s.chapter_name = crate::tr("Kapitel");
         let mut open = true;
         let mut start = false;
         // ohne Nachfrage überschreiben (bestätigt oder „Erneut exportieren“)
@@ -746,10 +747,14 @@ impl ExportDialog {
                 if !self.missing.is_empty() && self.running.is_none() {
                     ui.label(
                         RichText::new(crate::tr(format!(
-                            "{}  {} Inhalte fehlen und werden ohne sie exportiert: {}",
+                            "{}  {}",
                             icon::WARNING,
-                            self.missing.len(),
-                            self.missing.join(", ")
+                            theme::count_text(
+                                self.missing.len(),
+                                "{} Inhalt fehlt und wird ohne ihn exportiert: {}",
+                                "{} Inhalte fehlen und werden ohne sie exportiert: {}",
+                            )
+                            .replacen("{}", &self.missing.join(", "), 1)
                         )))
                         .small()
                         .color(theme::WARN_TEXT()),
@@ -924,7 +929,7 @@ fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(Pat
     }
     let ms = &p.timeline.markers;
     if s.chapters && ms.iter().any(|m| m.at >= a && m.at < b) {
-        let txt = cl_export::chapter_list(ms, a, b)
+        let txt = cl_export::chapter_list(ms, a, b, &s.chapter_name)
             .iter()
             .map(|(t, n)| format!("{} {n}", crate::navigate::chapter_time(*t)))
             .collect::<Vec<_>>()

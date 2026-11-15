@@ -769,9 +769,10 @@ fn secs_text(v: f64, decimals: usize, comma: bool) -> String {
 }
 
 /// Zählertext mit richtiger Einzahl: `one`/`many` sind deutsche Vorlagen mit `{}` für die Zahl
-/// (beide stehen im Wörterbuch, `tr` übersetzt das Ergebnis).
+/// (beide stehen im Wörterbuch, `tr` übersetzt das Ergebnis). Nur das erste `{}` wird gefüllt,
+/// weitere bleiben für den Aufrufer.
 pub fn count_text(n: usize, one: &str, many: &str) -> String {
-    (if n == 1 { one } else { many }).replace("{}", &n.to_string())
+    (if n == 1 { one } else { many }).replacen("{}", &n.to_string(), 1)
 }
 
 /// Kürzt `text` am Ende mit „…“, bis er in `max_w` passt (`width` misst eine Zeichenkette).
@@ -1029,6 +1030,7 @@ mod tests {
         assert_eq!(count_text(1, "{} Spur", "{} Spuren"), "1 Spur");
         assert_eq!(count_text(0, "{} Spur", "{} Spuren"), "0 Spuren");
         assert_eq!(count_text(2, "{} Highlight als Marker gesetzt", "{} Highlights als Marker gesetzt"), "2 Highlights als Marker gesetzt");
+        assert_eq!(count_text(1, "{} Inhalt fehlt: {}", "{} Inhalte fehlen: {}"), "1 Inhalt fehlt: {}");
     }
 
     #[test]

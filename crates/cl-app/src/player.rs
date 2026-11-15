@@ -49,14 +49,37 @@ pub(crate) fn transition_progress(ts: f64, cut: f64, d: f64) -> Option<f32> {
     Some(((ts - (cut - d / 2.0)) / d).clamp(0.0, 1.0) as f32)
 }
 
-/// Shader-Vorschau möglich? Nur wenn beide Bilder ohne eigene Lage, Größe, Drehung und
-/// Deckkraft das ganze Bild füllen (Seitenverhältnis wie das Projekt).
-// shortcut: sonst Überblendung wie bisher; ausbauen, wenn verschobene/skalierte Clips in
-// Shader-Übergängen häufig sind (dann Ebenen erst auf Projektgröße zusammensetzen)
-pub(crate) fn shader_preview_fits(evs: [&Evaluated; 2], aspects: [f32; 2], project_aspect: f32) -> bool {
-    evs.iter().all(|e| {
-        e.x.abs() < 0.5 && e.y.abs() < 0.5 && (e.scale - 1.0).abs() < 1e-3 && e.rotation_deg.abs() < 1e-3 && e.opacity >= 0.999
-    }) && aspects.iter().all(|a| (a / project_aspect - 1.0).abs() < 0.01)
+/// Fertige Ebene für die Übergangs-Vorschau: das Clipbild (Effekte, Filter und Maske schon
+/// eingerechnet) mit Lage, Größe, Drehung und Deckkraft aus `ev` auf eine leere Fläche
+/// `cw`×`ch` (Projekt `pw`×`ph`) gesetzt – wie im Export, der Übergänge auch zwischen fertigen
+/// Vollbild-Ebenen mischt. Gleiche Geometrie wie `draw_layers`.
+// shortcut: nächstes Pixel statt Filterung; reicht, weil das Clipbild schon in Anzeigegröße kommt
+pub(crate) fn place_on_canvas(src: &cl_media::RgbaFrame, ev: &Evaluated, cw: u32, ch: u32, pw: f32, ph: f32) -> Vec<u8> {
+    let mut out = vec![0u8; (cw * ch * 4) as usize];
+    let (sw, sh) = (src.width as f32, src.height as f32);
+    let fit = (cw as f32 / sw).min(ch as f32 / sh) * ev.scale;
+    if src.width == 0 || src.height == 0 || fit <= 0.0 || src.data.len() < (src.width * src.height * 4) as usize {
+        return out;
+    }
+    let (kx, ky) = (cw as f32 / pw, ch as f32 / ph);
+    let (cx, cy) = (cw as f32 / 2.0 + ev.x * kx, ch as f32 / 2.0 + ev.y * ky);
+    let (s, c) = (-ev.rotation_deg.to_radians()).sin_cos();
+    let alpha = ev.opacity.clamp(0.0, 1.0);
+    for y in 0..ch {
+        for x in 0..cw {
+            let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
+            let u = (dx * c - dy * s) / fit + sw / 2.0;
+            let v = (dx * s + dy * c) / fit + sh / 2.0;
+            if u < 0.0 || v < 0.0 || u >= sw || v >= sh {
+                continue;
+            }
+            let i = ((v as u32 * src.width + u as u32) * 4) as usize;
+            let o = ((y * cw + x) * 4) as usize;
+            out[o..o + 3].copy_from_slice(&src.data[i..i + 3]);
+            out[o + 3] = (src.data[i + 3] as f32 * alpha).round() as u8;
+        }
+    }
+    out
 }
 
 /// Längen der Übergänge am Anfang und Ende von `c` (Clip `i` der Spur, ggf. in Bearbeitung
@@ -124,18 +147,30 @@ mod shader_tests {
     }
 
     #[test]
-    fn shader_preview_only_for_untransformed_full_frames() {
+    fn transition_layers_are_placed_like_on_screen() {
         let id = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0 };
-        let r = 16.0 / 9.0;
-        assert!(shader_preview_fits([&id, &id], [r, r], r));
-        let moved = Evaluated { x: 20.0, ..id };
-        assert!(!shader_preview_fits([&id, &moved], [r, r], r));
-        let small = Evaluated { scale: 0.8, ..id };
-        assert!(!shader_preview_fits([&small, &id], [r, r], r));
-        let faded = Evaluated { opacity: 0.5, ..id };
-        assert!(!shader_preview_fits([&id, &faded], [r, r], r));
-        // Hochkant-Video im Querformat-Projekt füllt nicht
-        assert!(!shader_preview_fits([&id, &id], [r, 9.0 / 16.0], r));
+        let frame = |w: u32, h: u32, a: u8| cl_media::RgbaFrame { width: w, height: h, data: [255, 0, 0, a].repeat((w * h) as usize) };
+        let alpha = |img: &[u8], cw: u32, x: u32, y: u32| img[((y * cw + x) * 4 + 3) as usize];
+        // unverändert: füllt die Fläche
+        let full = place_on_canvas(&frame(16, 9, 255), &id, 32, 18, 1920.0, 1080.0);
+        assert!(full.chunks_exact(4).all(|p| p == [255, 0, 0, 255]));
+        // Querformat im Hochformat-Projekt, auf Bildhöhe vergrößert (K2_short): füllt ebenfalls
+        let cover = place_on_canvas(&frame(16, 9, 255), &Evaluated { scale: 3.1605, ..id }, 18, 32, 1080.0, 1920.0);
+        assert!(cover.chunks_exact(4).all(|p| p[3] == 255));
+        // ohne Vergrößerung: nur ein Streifen in der Mitte, oben und unten leer
+        let strip = place_on_canvas(&frame(16, 9, 255), &id, 18, 32, 1080.0, 1920.0);
+        assert_eq!((alpha(&strip, 18, 9, 16), alpha(&strip, 18, 9, 1)), (255, 0));
+        // verkleinert und nach rechts verschoben: links leer, rechts Bild
+        let moved = place_on_canvas(&frame(16, 9, 255), &Evaluated { scale: 0.5, x: 480.0, ..id }, 32, 18, 1920.0, 1080.0);
+        assert_eq!((alpha(&moved, 32, 4, 9), alpha(&moved, 32, 24, 9)), (0, 255));
+        // Deckkraft und Maske (Alpha im Clipbild) bleiben erhalten
+        let faded = place_on_canvas(&frame(16, 9, 255), &Evaluated { opacity: 0.5, ..id }, 32, 18, 1920.0, 1080.0);
+        assert_eq!(alpha(&faded, 32, 16, 9), 128);
+        let masked = place_on_canvas(&frame(16, 9, 0), &id, 32, 18, 1920.0, 1080.0);
+        assert!(masked.chunks_exact(4).all(|p| p[3] == 0));
+        // 90° gedreht: das Querformat steht hochkant, links und rechts leer
+        let turned = place_on_canvas(&frame(16, 9, 255), &Evaluated { rotation_deg: 90.0, ..id }, 32, 18, 1920.0, 1080.0);
+        assert_eq!((alpha(&turned, 32, 16, 1), alpha(&turned, 32, 2, 9)), (255, 0));
     }
 }
 
@@ -235,7 +270,7 @@ impl App {
     /// wie der Export); eingebaute Übergänge (auch der Rückfall eines ausgeschalteten Pakets)
     /// mischt `cl_fx::xfade` mit den Formeln von FFmpegs `xfade`. Sonst, ohne GPU, zu langsam
     /// oder ohne passende Bilder: Überblendung.
-    fn shader_mix(&mut self, ctx: &egui::Context, layers: &[Layer]) {
+    fn shader_mix(&mut self, ctx: &egui::Context, layers: &[Layer], canvas_px: egui::Vec2) {
         self.shader_preview.current = None;
         if !self.playing {
             self.shader_preview.slow = false;
@@ -256,29 +291,34 @@ impl App {
             if plan.shader.is_none() && (plan.xfade == "fade" || !cl_fx::xfade::supported(plan.xfade)) {
                 continue;
             }
-            let aspect = |c: &Clip| match &c.content {
-                ClipContent::Media { media, kind: MediaKind::Video | MediaKind::Image } => {
-                    self.project.media(*media).map(|m| m.width.max(1) as f32 / m.height.max(1) as f32)
-                }
-                _ => None,
-            };
-            let (Some(ra), Some(rb)) = (aspect(&a.clip), aspect(&b.clip)) else { continue };
-            let (ea, eb) = (a.clip.eval_at(a.t_rel, pw, ph), b.clip.eval_at(b.t_rel, pw, ph));
-            if !shader_preview_fits([&ea, &eb], [ra, rb], pw / ph) {
+            // Effekt-Elemente darüber zeichnet die Vorschau je Clip: dann bei der Überblendung bleiben
+            if self.fx_overlays.iter().any(|o| o.0 == a_id || o.0 == b.clip.id) {
                 continue;
             }
+            let (ea, eb) = (a.clip.eval_at(a.t_rel, pw, ph), b.clip.eval_at(b.t_rel, pw, ph));
             let (Some((ka, fa)), Some((kb, fb))) = (self.shader_preview.cpu.get(&a_id), self.shader_preview.cpu.get(&b.clip.id)) else {
                 continue;
             };
-            // anderer Übergang mit denselben Bildern: neu mischen
+            // Mischfläche im Seitenverhältnis des Projekts, so groß wie die Anzeige (höchstens 1920)
+            let div = self.settings.preview_div.max(1) as f32;
+            let k = (canvas_px.x / div / pw).min(canvas_px.y / div / ph).min(1920.0 / pw.max(ph));
+            let (cw, ch) = (((pw * k).round() as u32).max(16), ((ph * k).round() as u32).max(16));
+            // anderer Übergang, andere Lage oder Fläche mit denselben Bildern: neu mischen
             let kind = {
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 (plan.xfade, &plan.shader.as_ref().map(|s| &s.0)).hash(&mut h);
+                for e in [&ea, &eb] {
+                    [e.x, e.y, e.scale, e.rotation_deg, e.opacity].map(f32::to_bits).hash(&mut h);
+                }
+                (cw, ch).hash(&mut h);
                 h.finish()
             };
             let id = (*ka ^ kind, *kb, p.to_bits());
             if self.shader_preview.last != Some(id) || self.shader_preview.tex.is_none() {
                 let t0 = std::time::Instant::now();
+                // fertige Ebenen statt Rohbilder: Zoom, Lage, Drehung und Maske mischen mit
+                let fa = &cl_media::RgbaFrame { width: cw, height: ch, data: place_on_canvas(fa, &ea, cw, ch, pw, ph) };
+                let fb = &cl_media::RgbaFrame { width: cw, height: ch, data: place_on_canvas(fb, &eb, cw, ch, pw, ph) };
                 let img = match &plan.shader {
                     Some((file, params)) => {
                         let Ok(src) = std::fs::read_to_string(file) else { continue };
@@ -699,7 +739,7 @@ impl App {
         let ppp = ui.ctx().pixels_per_point();
         let layers = self.layers_at(self.playhead);
         self.update_layers(ui.ctx(), &layers, canvas_size * ppp);
-        self.shader_mix(ui.ctx(), &layers);
+        self.shader_mix(ui.ctx(), &layers, canvas_size * ppp);
 
         let painter = ui.painter_at(area);
         painter.rect_filled(canvas, 0.0, Color32::BLACK);
@@ -804,21 +844,23 @@ impl App {
                 scale: ev.scale,
                 rotation_deg: ev.rotation_deg,
             };
-            let mut alpha = (ev.opacity * l.alpha).clamp(0.0, 1.0);
+            let alpha = (ev.opacity * l.alpha).clamp(0.0, 1.0);
             let center = canvas.center() + vec2(ev.x, ev.y) * scale;
             let angle = ev.rotation_deg.to_radians();
             match &c.content {
                 ClipContent::Media { .. } => {
-                    // Shader-Übergang: das gemischte Bild statt A, B entfällt
+                    // Shader-Übergang: das gemischte Bild (fertige Ebenen auf ganzer Fläche) statt A,
+                    // B entfällt
                     let mixed = match (self.shader_preview.current, &self.shader_preview.tex) {
                         (Some((_, b)), _) if b == c.id => continue,
                         (Some((a, _)), Some(t)) if a == c.id => Some(t),
                         _ => None,
                     };
-                    if mixed.is_some() {
-                        alpha = 1.0;
+                    if let Some(t) = mixed {
+                        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                        content.image(t.id(), canvas, uv, Color32::WHITE);
                     }
-                    let Some(tex) = mixed.or_else(|| self.frames.get(&c.id).map(|f| &f.1)) else {
+                    let Some(tex) = self.frames.get(&c.id).map(|f| &f.1) else {
                         continue;
                     };
                     let ts = tex.size_vec2();
@@ -830,6 +872,10 @@ impl App {
                         angle,
                         tr,
                     };
+                    if mixed.is_some() {
+                        regions.push(region);
+                        continue;
+                    }
                     let mut mesh = egui::Mesh::with_texture(tex.id());
                     let col = Color32::from_white_alpha((alpha * 255.0) as u8);
                     for (sx, sy, u, v) in [

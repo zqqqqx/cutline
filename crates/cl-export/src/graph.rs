@@ -1014,11 +1014,15 @@ pub(crate) fn audio_part(
         graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{dur}[aout]"));
     } else {
         let ins: String = labels.iter().map(|l| format!("[{l}]")).collect();
-        // Begrenzer bei −1 dBFS gegen Übersteuern überlagerter Clips; darunter bitgleich (level/latency aus bzw. ausgeglichen)
+        // Begrenzer gegen Übersteuern überlagerter Clips; darunter bitgleich (level/latency aus bzw. ausgeglichen)
         graph.push(format!(
-            "{ins}amix=inputs={}:normalize=0:duration=longest,alimiter=limit=0.891251:level=false:latency=true,apad=whole_dur={dur},atrim=0:{dur},aformat=sample_fmts=fltp:channel_layouts=stereo[aout]",
-            labels.len()
+            "{ins}amix=inputs={}:normalize=0:duration=longest,alimiter=limit={}:level=false:latency=true,apad=whole_dur={dur},atrim=0:{dur},aformat=sample_fmts=fltp:channel_layouts=stereo[aout]",
+            labels.len(),
+            f(10f64.powf(LIMIT_DB / 20.0))
         ));
     }
     "aout".into()
 }
+
+/// Spitze nach dem Mischen; Abstand zu −1 dBFS, weil AAC/MP3 beim Kodieren leicht überschwingen.
+pub(crate) const LIMIT_DB: f64 = -1.5;

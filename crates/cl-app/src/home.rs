@@ -556,11 +556,12 @@ impl App {
                                         pos2(r.left(), thumb_r.bottom()),
                                         pos2(r.right() - 26.0, r.bottom()),
                                     ));
+                                    let font = egui::FontId::proportional(theme::FS_TEXT);
                                     np.text(
                                         pos2(r.left() + 2.0, thumb_r.bottom() + 14.0),
                                         egui::Align2::LEFT_CENTER,
-                                        crate::tr(&name),
-                                        egui::FontId::proportional(theme::FS_TEXT),
+                                        theme::elide(&crate::tr(&name), r.width() - 30.0, |s| theme::text_width(ui.ctx(), s, font.clone())),
+                                        font,
                                         theme::TEXT(),
                                     );
                                     np.text(

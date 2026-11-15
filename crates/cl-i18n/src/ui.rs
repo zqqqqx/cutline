@@ -305,6 +305,13 @@ mod tests {
         assert_eq!(translate("1 Highlight als Marker gesetzt"), "1 highlight added as a marker");
         assert_eq!(translate("1 Pause entfernt (2.5 s)"), "1 pause removed (2.5 s)");
         assert_eq!(translate("vor 3 Min."), "3 min ago");
+        // Statuszeile: „Gespeichert “ + bereits übersetzte Zeitangabe
+        assert_eq!(translate(&format!("\u{e0f0} Gespeichert {}", translate("vor 1 Min."))), "\u{e0f0} Saved 1 min ago");
+        assert_eq!(translate(&format!("Gespeichert {}", translate("gerade eben"))), "Saved just now");
+        assert_eq!(
+            translate("1 Inhalt fehlt: Würfel – Paket in Einstellungen → Inhalte einschalten"),
+            "1 item is missing: Würfel – turn on its pack in Settings → Content"
+        );
     }
 
     #[test]
