@@ -282,8 +282,7 @@ fn editing(ctx: &egui::Context, area: &str, cat: &str) -> bool {
         .is_some_and(|(a, c, _)| a == area && c == cat)
 }
 
-/// Nutzlast beim Umsortieren (Schlüssel des Eintrags); die Zeitleiste nimmt sie nicht an.
-struct Reordering(String);
+use crate::widgets::ReorderPayload as Reordering;
 
 /// Umsortieren eines Tabs: Pins zeichnen und im Bearbeiten-Modus Ziehen/Ablegen der Kacheln.
 pub struct Reorder {
@@ -332,13 +331,15 @@ impl Reorder {
         } else if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         }
+        // Raster mit Lücke: Ziel kommt vom Raster (`reorder_done`), keine Einfügelinie
+        let gap = ui.data(|d| d.get_temp::<crate::widgets::GridDrop>(crate::widgets::grid_drop_id())).is_some();
         if let Some(h) = resp.dnd_hover_payload::<Reordering>() {
             self.over.set(true);
-            if h.0 != key {
+            if h.0 != key && !gap {
                 insert_mark(p, resp.rect, false);
             }
         }
-        if let Some(h) = resp.dnd_release_payload::<Reordering>() {
+        if let Some(h) = resp.dnd_release_payload::<Reordering>().filter(|_| !gap) {
             *self.drop.borrow_mut() = Some((h.0.clone(), Some(key.to_string())));
         }
         true
@@ -391,17 +392,24 @@ impl App {
         if on {
             ui.data_mut(|d| d.insert_temp(crate::widgets::no_plus_id(), true));
         }
+        let kind = crate::library::order_kind(cat);
+        let pins = if kind == crate::library::Order::Pins { self.library.order(area, cat).to_vec() } else { Vec::new() };
+        // Schlüssel fürs Raster: Kacheln gleiten an ihren neuen Platz (Ablegen, Anpinnen)
+        let shown: Vec<String> = if kind == crate::library::Order::Fixed { Vec::new() } else { items.iter().map(key).collect() };
+        ui.data_mut(|d| d.remove::<crate::widgets::GridDrop>(crate::widgets::grid_drop_id()));
+        if !shown.is_empty() {
+            let whole = kind == crate::library::Order::Own;
+            let movable = if whole { shown.len() } else { shown.iter().take_while(|k| pins.contains(k)).count() };
+            let order = crate::widgets::GridOrder { keys: std::sync::Arc::new(shown.clone()), movable, editing: on };
+            ui.data_mut(|d| d.insert_temp(crate::widgets::grid_order_id(), order));
+        }
         Reorder {
             on,
             area,
             cat: cat.to_string(),
-            whole: crate::library::order_kind(cat) == crate::library::Order::Own,
-            pins: if crate::library::order_kind(cat) == crate::library::Order::Pins {
-                self.library.order(area, cat).to_vec()
-            } else {
-                Vec::new()
-            },
-            shown: if on { items.iter().map(key).collect() } else { Vec::new() },
+            whole: kind == crate::library::Order::Own,
+            pins,
+            shown,
             drop: Default::default(),
             over: Default::default(),
             last: Default::default(),
@@ -410,12 +418,19 @@ impl App {
 
     /// Nach dem Raster: Ablegen übernehmen. Abgelegt in `list` außerhalb einer verschiebbaren Kachel = ans Ende.
     pub fn reorder_done(&mut self, ui: &egui::Ui, ed: Reorder, list: egui::Rect) {
+        ui.data_mut(|d| d.remove::<crate::widgets::GridOrder>(crate::widgets::grid_order_id()));
+        let gap = ui.data_mut(|d| d.remove_temp::<crate::widgets::GridDrop>(crate::widgets::grid_drop_id()));
         if !ed.on {
             return;
         }
         ui.data_mut(|d| d.remove::<bool>(crate::widgets::no_plus_id()));
         let inside = ui.input(|i| i.pointer.latest_pos()).is_some_and(|p| list.contains(p));
-        if inside && !ed.over.get() && egui::DragAndDrop::has_payload_of_type::<Reordering>(ui.ctx()) {
+        if let Some(g) = gap {
+            // Raster mit Lücke: Ablegen irgendwo im Raster landet an der gezeigten Lücke
+            if ui.input(|i| i.pointer.any_released()) && egui::DragAndDrop::take_payload::<Reordering>(ui.ctx()).is_some() {
+                *ed.drop.borrow_mut() = Some((g.0, g.1));
+            }
+        } else if inside && !ed.over.get() && egui::DragAndDrop::has_payload_of_type::<Reordering>(ui.ctx()) {
             if let Some(r) = ed.last.get() {
                 insert_mark(&ui.painter().with_clip_rect(list), r, true);
             }
