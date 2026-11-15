@@ -11,6 +11,12 @@
 - Lizenz: CC0-1.0
 - Autor: Cutline-Projekt
 
+## Effekte und Filter (cutline.effekte)
+
+- Lizenz: CC0-1.0
+- Autor: Cutline-Projekt
+- Quelle: https://github.com/zqqqqx/cutline
+
 ## Bewegte Elemente (cutline.elemente)
 
 - Lizenz: CC0-1.0
