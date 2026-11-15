@@ -59,7 +59,6 @@ project-name = Name
 resolution = Auflösung
 frame-rate = Bildrate
 aspect = Seitenverhältnis
-color-space = Farbraum
 magnet = Hauptspur-Magnet
 snapping = Einrasten
 clip-start = Start

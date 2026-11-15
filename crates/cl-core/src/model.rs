@@ -137,6 +137,8 @@ pub struct ProjectSettings {
     pub height: u32,
     pub fps: Rational,
     pub aspect: AspectPreset,
+    /// Nicht ausgewertet (Auswahl aus der Oberfläche entfernt); bleiben mit `float_pipeline`,
+    /// damit Projektdateien unverändert laden und speichern.
     pub color_space: ColorSpace,
     pub float_pipeline: bool,
     /// Hauptspur-Magnet: Clips der Hauptspur schließen lückenlos an.

@@ -1582,33 +1582,6 @@ impl App {
                     }
                 });
         });
-        theme::row(ui, &self.t("color-space"), |ui| {
-            let name = |c: ColorSpace| match c {
-                ColorSpace::Rec709Sdr => "Rec. 709 SDR",
-                ColorSpace::Rec2020Sdr => "Rec. 2020 SDR",
-                ColorSpace::Rec2100Hlg => "Rec. 2100 HLG",
-                ColorSpace::Rec2100Pq => "Rec. 2100 PQ",
-            };
-            egui::ComboBox::from_id_salt("cs")
-                .selected_text(crate::tr(name(settings.color_space)))
-                .width((ui.available_width() - 12.0).max(60.0))
-                .show_ui(ui, |ui| {
-                    for c in [
-                        ColorSpace::Rec709Sdr,
-                        ColorSpace::Rec2020Sdr,
-                        ColorSpace::Rec2100Hlg,
-                        ColorSpace::Rec2100Pq,
-                    ] {
-                        if ui
-                            .selectable_label(settings.color_space == c, crate::tr(name(c)))
-                            .clicked()
-                        {
-                            settings.color_space = c;
-                            changed = true;
-                        }
-                    }
-                });
-        });
         // Kanäle des Projekts (der Standard für neue Projekte steht in Einstellungen → Audio)
         theme::row(ui, "Kanäle", |ui| {
             egui::ComboBox::from_id_salt("proj-channels")

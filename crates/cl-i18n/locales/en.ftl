@@ -57,7 +57,6 @@ project-name = Name
 resolution = Resolution
 frame-rate = Frame rate
 aspect = Aspect ratio
-color-space = Color space
 magnet = Main track magnet
 snapping = Snapping
 clip-start = Start
