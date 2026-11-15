@@ -381,29 +381,68 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
     shared.out.lock().unwrap().finished = true;
 }
 
+/// Ein Ausgabe-Block von `n` Frames zur Zeit `now`: Uhr fortschreiben, Ton (oder Stille) an `put`
+/// geben, Pegel und ersten Ton merken. Gemeinsam für das Gerät und die Ausgabe ohne Gerät.
+fn render_block(sh: &Shared, pk: &[AtomicU32; 2], rate: u32, n: usize, now: Instant, mut put: impl FnMut(f32, f32)) {
+    let mut o = sh.out.lock().unwrap();
+    let target = match o.phase {
+        Phase::Anchored(at) => (now.saturating_duration_since(at).as_secs_f64() * rate as f64) as u64,
+        _ => 0,
+    };
+    let (mut pl, mut pr) = (0.0f32, 0.0f32);
+    let real = o.render(n, target, |l, r| {
+        pl = pl.max(l.abs());
+        pr = pr.max(r.abs());
+        put(l, r);
+    });
+    let running = o.phase == Phase::Running;
+    sh.played.store(o.played, Ordering::Relaxed);
+    drop(o);
+    if running && real > 0 {
+        sh.first_sound.get_or_init(|| now);
+    }
+    sh.cb_ns.store(now.duration_since(sh.base).as_nanos() as u64, Ordering::Relaxed);
+    sh.cb_frames.store(real, Ordering::Relaxed);
+    sh.running.store(running, Ordering::Release);
+    pk[0].fetch_max(pl.to_bits(), Ordering::Relaxed);
+    pk[1].fetch_max(pr.to_bits(), Ordering::Relaxed);
+}
+
 impl AudioPlayer {
     /// Spielt ab `from`, sobald Ton da ist (Scrubben, Vorhören).
     pub fn start(project: &Project, from: Time) -> Result<Self, String> {
-        Self::open(project, from, false)
+        Self::open(project, from, false, false)
     }
 
     /// Für die Wiedergabe mit Bild: Ton wird vorbereitet, setzt aber erst nach [`Self::anchor`] ein –
     /// dann an der Stelle, an der die Uhr seit dem Anker steht.
     pub fn start_synced(project: &Project, from: Time) -> Result<Self, String> {
-        Self::open(project, from, true)
+        Self::open(project, from, true, false)
     }
 
-    fn open(project: &Project, from: Time, synced: bool) -> Result<Self, String> {
-        let host = cpal::default_host();
-        // gewähltes Gerät; ist es nicht (mehr) da, der Systemstandard
-        let wanted = DEVICE.lock().unwrap().clone();
-        let device = wanted
-            .and_then(|w| host.output_devices().ok()?.find(|d| d.name().ok().as_deref() == Some(w.as_str())))
-            .or_else(|| host.default_output_device())
-            .ok_or("Kein Audio-Ausgabegerät")?;
-        let config = device.default_output_config().map_err(|e| e.to_string())?;
-        let rate = config.sample_rate().0;
-        let channels = config.channels() as usize;
+    /// Wie [`Self::start_synced`], aber ohne Gerät: ein Thread verbraucht die Samples im Takt der
+    /// Systemzeit (Mess-Test ohne Fenster und ohne hörbaren Ton; Uhr, Aussetzer und Fenster wie echt).
+    #[cfg(test)]
+    pub fn start_null(project: &Project, from: Time) -> Result<Self, String> {
+        Self::open(project, from, true, true)
+    }
+
+    fn open(project: &Project, from: Time, synced: bool, null: bool) -> Result<Self, String> {
+        let (device, config) = if null {
+            (None, None)
+        } else {
+            let host = cpal::default_host();
+            // gewähltes Gerät; ist es nicht (mehr) da, der Systemstandard
+            let wanted = DEVICE.lock().unwrap().clone();
+            let device = wanted
+                .and_then(|w| host.output_devices().ok()?.find(|d| d.name().ok().as_deref() == Some(w.as_str())))
+                .or_else(|| host.default_output_device())
+                .ok_or("Kein Audio-Ausgabegerät")?;
+            let config = device.default_output_config().map_err(|e| e.to_string())?;
+            (Some(device), Some(config))
+        };
+        let rate = config.as_ref().map_or(48_000, |c| c.sample_rate().0);
+        let channels = config.as_ref().map_or(2, |c| c.channels() as usize);
 
         let end = project.duration();
         let plan = window_plan(from, end, rate, 0).ok_or_else(|| cl_export::ExportError::Empty.to_string())?;
@@ -435,6 +474,30 @@ impl AudioPlayer {
         let (ctl, ctl_rx) = std::sync::mpsc::channel::<bool>();
         let failed = Arc::new(AtomicBool::new(false));
         let (sh, pk, fail) = (shared.clone(), peaks.clone(), failed.clone());
+        let (Some(device), Some(config)) = (device, config) else {
+            // ohne Gerät: alle 10 ms die seither fälligen Frames verbrauchen
+            std::thread::Builder::new()
+                .name("cl-audio-null".into())
+                .spawn(move || {
+                    let (mut last, mut playing) = (Instant::now(), true);
+                    loop {
+                        match ctl_rx.try_recv() {
+                            Ok(p) => playing = p,
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                        let now = Instant::now();
+                        let n = (now.duration_since(last).as_secs_f64() * rate as f64) as usize;
+                        last += Duration::from_secs_f64(n as f64 / rate as f64);
+                        if playing && n > 0 {
+                            render_block(&sh, &pk, rate, n, now, |_, _| {});
+                        }
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+            return Ok(Self { ctl, failed, shared, peaks, rate, start: from });
+        };
         let out = move || -> Result<(), String> {
             let err = |e| eprintln!("Audio: {e}");
             let cfg: cpal::StreamConfig = config.clone().into();
@@ -444,18 +507,9 @@ impl AudioPlayer {
                     device.build_output_stream(
                         &cfg,
                         move |data: &mut [$t], _| {
-                            let now = Instant::now();
-                            let mut o = sh.out.lock().unwrap();
-                            let target = match o.phase {
-                                Phase::Anchored(at) => (now.saturating_duration_since(at).as_secs_f64() * rate as f64) as u64,
-                                _ => 0,
-                            };
-                            let (mut pl, mut pr) = (0.0f32, 0.0f32);
                             let n = data.len() / channels.max(1);
                             let mut frames = data.chunks_mut(channels.max(1));
-                            let real = o.render(n, target, |l, r| {
-                                pl = pl.max(l.abs());
-                                pr = pr.max(r.abs());
+                            render_block(&sh, &pk, rate, n, Instant::now(), |l, r| {
                                 if let Some(frame) = frames.next() {
                                     for (i, s) in frame.iter_mut().enumerate() {
                                         *s = $conv(match i {
@@ -466,17 +520,6 @@ impl AudioPlayer {
                                     }
                                 }
                             });
-                            let running = o.phase == Phase::Running;
-                            sh.played.store(o.played, Ordering::Relaxed);
-                            drop(o);
-                            if running && real > 0 {
-                                sh.first_sound.get_or_init(|| now);
-                            }
-                            sh.cb_ns.store(now.duration_since(sh.base).as_nanos() as u64, Ordering::Relaxed);
-                            sh.cb_frames.store(real, Ordering::Relaxed);
-                            sh.running.store(running, Ordering::Release);
-                            pk[0].fetch_max(pl.to_bits(), Ordering::Relaxed);
-                            pk[1].fetch_max(pr.to_bits(), Ordering::Relaxed);
                         },
                         err,
                         None,

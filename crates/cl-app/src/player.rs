@@ -24,7 +24,8 @@ fn lid(id: ClipId) -> crate::playcore::Lid {
 }
 
 /// Eine sichtbare Ebene zum Zeitpunkt t.
-struct Layer {
+#[derive(Clone)]
+pub(crate) struct Layer {
     clip: Clip,
     /// Zeit innerhalb des Clips (kann bei Übergängen außerhalb liegen)
     t_rel: Time,
@@ -426,6 +427,107 @@ fn layers_in(project: &Project, live: Option<&Clip>, t: Time) -> Vec<Layer> {
         }
     }
     out
+}
+
+/// Eine Ebene, für die die Vorschau ein Bild braucht: Clip (bzw. seine Fassung mit einem
+/// Effekt-Element), Medium, Lage in der Zeit, ggf. Startstelle (vorab öffnen) und – bei Fassungen
+/// mit Element – (Basis-Clip, Maske, Stärke).
+pub(crate) struct Need {
+    pub id: ClipId,
+    pub clip: Clip,
+    pub media: MediaRef,
+    pub layer: Layer,
+    pub prefetch: Option<Time>,
+    pub overlay: Option<(ClipId, Option<Mask>, f32)>,
+}
+
+/// Was die Vorschau zu `now` braucht (gemeinsam für App und Mess-Test): alle sichtbaren Medien-
+/// Ebenen, aktive bzw. gleich beginnende Effekt-Elemente als eigene Fassungen und beim Abspielen
+/// Clips, die in höchstens 1,5 s beginnen (Ströme vorab öffnen, damit an Schnitten nichts hakt).
+/// `adjust` ändert den Clip vor der Anfrage (Pipette: ohne Chroma-Key).
+pub(crate) fn needs(project: &Project, layers: &[Layer], now: Time, playing: bool, adjust: impl Fn(&mut Clip)) -> Vec<Need> {
+    const AHEAD: f64 = 1.5;
+    let mut out = Vec::new();
+    for l in layers {
+        let mut c = l.clip.clone();
+        adjust(&mut c);
+        let ClipContent::Media { media, .. } = &c.content else {
+            continue;
+        };
+        let Some(m) = project.media(*media) else {
+            continue;
+        };
+        out.push(Need { id: c.id, clip: c.clone(), media: m.clone(), layer: l.clone(), prefetch: None, overlay: None });
+        for e in fx_elements_over(project, c.id) {
+            let active = e.contains(now);
+            let soon = playing && e.start > now && (e.start - now).as_secs_f64() <= AHEAD && e.start < c.end();
+            if !active && !soon {
+                continue;
+            }
+            let Some((x, k)) = fx_version(&c, e, now) else { continue };
+            let id = c.id.derived(e.id.0.as_u128());
+            let (layer, prefetch, overlay) = if active {
+                (l.clone(), None, Some((c.id, e.fx.mask, k)))
+            } else {
+                (Layer { clip: x.clone(), t_rel: e.start - c.start, alpha: l.alpha, from: None }, Some(e.start), None)
+            };
+            out.push(Need { id, clip: x, media: m.clone(), layer, prefetch, overlay });
+        }
+    }
+    if playing {
+        let upcoming = project
+            .timeline
+            .tracks
+            .iter()
+            .filter(|tr| !tr.hidden && matches!(tr.kind, TrackKind::Video | TrackKind::Sticker))
+            .flat_map(|tr| tr.clips.iter())
+            .filter(|c| !c.disabled && c.start > now && (c.start - now).as_secs_f64() <= AHEAD);
+        for c in upcoming {
+            let ClipContent::Media { media, .. } = &c.content else {
+                continue;
+            };
+            let Some(m) = project.media(*media) else {
+                continue;
+            };
+            let layer = Layer { clip: c.clone(), t_rel: Time::ZERO, alpha: 1.0, from: None };
+            out.push(Need { id: c.id, clip: c.clone(), media: m.clone(), layer, prefetch: Some(c.start), overlay: None });
+        }
+    }
+    out
+}
+
+/// Kann der Clip als Strom laufen? (Rückwärts und Tempo-Kurven: nur Einzelbilder)
+pub(crate) fn streamable(c: &Clip) -> bool {
+    matches!(&c.content, ClipContent::Media { kind: MediaKind::Video, .. }) && !c.fx.reverse && c.fx.speed_curve.is_none()
+}
+
+/// Fingerabdruck der Effekte eines Clips (Teil der Bild- und Stromschlüssel)
+pub(crate) fn fx_hash_of(c: &Clip) -> u64 {
+    let mut hs = std::collections::hash_map::DefaultHasher::new();
+    serde_json::to_string(&c.fx).unwrap_or_default().hash(&mut hs);
+    hs.finish()
+}
+
+/// Strom einer Ebene: Schlüssel und Decodiergröße
+pub(crate) fn stream_spec(id: ClipId, c: &Clip, m: &MediaRef, canvas_px: egui::Vec2, div: f32, fps: Rational, fxh: u64) -> (u64, u32, u32) {
+    let (w, h) = decode_size(c, m, canvas_px, div);
+    (App::frame_key(id, c, Time::ZERO, w, h, Time::ZERO, false, fxh, fps), w, h)
+}
+
+/// Auftrag, den Strom ab der Zeitleistenstelle `o.at` zu öffnen (Quellzeit und Effekt-Graph dazu)
+pub(crate) fn open_job(o: crate::playcore::Open, c: &Clip, m: &MediaRef, path: std::path::PathBuf, (w, h): (u32, u32), fps: Rational) -> OpenJob {
+    let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_fx::escape_path);
+    let t_rel = Time((o.at - c.start).0.clamp(0, (c.duration.0 - 1000).max(0)));
+    OpenJob {
+        open: o,
+        source_at: c.source_time(c.start + t_rel),
+        graph: cl_fx::preview_graph(c, w, h, t_rel.as_secs_f64(), Some(fps), lut),
+        hw: crate::preview::stream_hw(m, &path),
+        path,
+        w,
+        h,
+        fps,
+    }
 }
 
 /// Effekt-/Filter-Elemente auf Spuren über dem Clip `clip` (eingeschaltet, sichtbar). Ohne Klone:
@@ -1170,11 +1272,7 @@ impl App {
     /// serialisierte jedes UI-Bild die Effekte jeder Ebene zu JSON). `cacheable` = unverändert
     /// aus dem Projekt (nicht gerade gezogen, keine Pipette).
     fn fx_hash(&mut self, id: ClipId, c: &Clip, cacheable: bool) -> u64 {
-        let calc = || {
-            let mut hs = std::collections::hash_map::DefaultHasher::new();
-            serde_json::to_string(&c.fx).unwrap_or_default().hash(&mut hs);
-            hs.finish()
-        };
+        let calc = || fx_hash_of(c);
         if !cacheable {
             return calc();
         }
@@ -1189,7 +1287,7 @@ impl App {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn frame_key(
+    pub(crate) fn frame_key(
         id: ClipId,
         c: &Clip,
         src: Time,
@@ -1217,7 +1315,6 @@ impl App {
     /// Stärke und ggf. nur innerhalb der Maske darübergelegt wird. Ströme für Clips und
     /// Elemente, die gleich beginnen, werden vorab geöffnet, damit an Schnitten nichts hakt.
     fn update_layers(&mut self, ctx: &egui::Context, layers: &[Layer], canvas_px: egui::Vec2) {
-        const AHEAD: f64 = 1.5;
         // Beim Abspielen bleibt die Dekodiergröße fest (Umschalten auf den großen Player oder
         // Fenstergröße ändern startet die Ströme nicht neu); im Stand folgt sie der Ansicht.
         let canvas_px = if self.playing {
@@ -1236,78 +1333,24 @@ impl App {
                 None => self.core.open_failed(o, now),
             }
         }
-        let mut visible = Vec::new();
-        let mut overlays = Vec::new();
-        let now = self.playhead;
-        for l in layers {
-            // Pipette: Bild ohne Chroma-Key zeigen, damit die Farbe sichtbar bleibt
-            let mut c = l.clip.clone();
-            if matches!(self.pick, Some(crate::pro::Pick::Chroma(id)) if id == c.id) {
+        // Pipette: Bild ohne Chroma-Key zeigen, damit die Farbe sichtbar bleibt
+        let pick = match self.pick {
+            Some(crate::pro::Pick::Chroma(id)) => Some(id),
+            _ => None,
+        };
+        let needs = needs(&self.project, layers, self.playhead, self.playing, |c| {
+            if pick == Some(c.id) {
                 c.fx.chroma = None;
             }
-            let ClipContent::Media { media, .. } = &c.content else {
-                continue;
-            };
-            let Some(m) = self.project.media(*media).cloned() else {
-                continue;
-            };
-            visible.push(c.id);
-            self.request_frame(ctx, c.id, &c, &m, l, canvas_px, None);
-            let playing = self.playing;
-            let elements: Vec<(Clip, bool)> = fx_elements_over(&self.project, c.id)
-                .into_iter()
-                .filter_map(|e| {
-                    let active = e.contains(now);
-                    let soon = playing && e.start > now && (e.start - now).as_secs_f64() <= AHEAD && e.start < c.end();
-                    (active || soon).then(|| (e.clone(), active))
-                })
-                .collect();
-            for (e, active) in elements {
-                let Some((x, k)) = fx_version(&c, &e, now) else { continue };
-                let did = c.id.derived(e.id.0.as_u128());
-                visible.push(did);
-                if active {
-                    self.request_frame(ctx, did, &x, &m, l, canvas_px, None);
-                    overlays.push((c.id, did, e.fx.mask, k));
-                } else {
-                    let at = Layer {
-                        clip: x.clone(),
-                        t_rel: e.start - c.start,
-                        alpha: l.alpha,
-                        from: None,
-                    };
-                    self.request_frame(ctx, did, &x, &m, &at, canvas_px, Some(e.start));
-                }
+        });
+        let mut visible = Vec::with_capacity(needs.len());
+        let mut overlays = Vec::new();
+        for n in &needs {
+            visible.push(n.id);
+            if let Some((base, mk, k)) = n.overlay {
+                overlays.push((base, n.id, mk, k));
             }
-        }
-        // Gleich beginnende Clips vorladen
-        if self.playing {
-            let upcoming: Vec<Clip> = self
-                .project
-                .timeline
-                .tracks
-                .iter()
-                .filter(|tr| !tr.hidden && matches!(tr.kind, TrackKind::Video | TrackKind::Sticker))
-                .flat_map(|tr| tr.clips.iter())
-                .filter(|c| !c.disabled && c.start > now && (c.start - now).as_secs_f64() <= AHEAD)
-                .cloned()
-                .collect();
-            for c in upcoming {
-                let ClipContent::Media { media, .. } = &c.content else {
-                    continue;
-                };
-                let Some(m) = self.project.media(*media).cloned() else {
-                    continue;
-                };
-                visible.push(c.id);
-                let at = Layer {
-                    clip: c.clone(),
-                    t_rel: Time::ZERO,
-                    alpha: 1.0,
-                    from: None,
-                };
-                self.request_frame(ctx, c.id, &c, &m, &at, canvas_px, Some(c.start));
-            }
+            self.request_frame(ctx, n.id, &n.clip, &n.media, &n.layer, canvas_px, n.prefetch);
         }
         self.fx_overlays = overlays;
         // Bilder von Clips, die nicht mehr unter dem Playhead liegen, verwirft `receive_decoded`
@@ -1335,24 +1378,16 @@ impl App {
         let fps = self.project.settings.fps;
         // automatische Qualität, letzte Stufe: Vorschau mit halber Bildrate
         let stream_fps = if half { Rational::new(fps.num, fps.den * 2) } else { fps };
-        let ClipContent::Media { kind, .. } = &c.content else {
+        if !matches!(&c.content, ClipContent::Media { .. }) {
             return;
-        };
-        let (w, h) = decode_size(c, m, canvas_px, div);
-        let lut =
-            c.fx.lut
-                .as_deref()
-                .filter(|p| std::path::Path::new(p).is_file())
-                .map(cl_fx::escape_path);
-        let is_video = *kind == MediaKind::Video;
-        // Auch während Übergängen: der vorab geöffnete Strom beginnt genau am Clipanfang
-        let streamable = is_video && !c.fx.reverse && c.fx.speed_curve.is_none();
+        }
         let cacheable = self.live.as_ref().is_none_or(|lv| lv.id != l.clip.id)
             && !matches!(self.pick, Some(crate::pro::Pick::Chroma(p)) if p == l.clip.id);
         let fxh = self.fx_hash(id, c, cacheable);
         let now = self.core_now();
-        if self.core.streaming() && streamable {
-            let key = Self::frame_key(id, c, Time::ZERO, w, h, Time::ZERO, false, fxh, stream_fps);
+        // Auch während Übergängen: der vorab geöffnete Strom beginnt genau am Clipanfang
+        if self.core.streaming() && streamable(c) {
+            let (key, w, h) = stream_spec(id, c, m, canvas_px, div, stream_fps, fxh);
             let want = Want {
                 id: lid(id),
                 key,
@@ -1364,18 +1399,8 @@ impl App {
                 // Der Kern sagt, ob und ab wo: erster Strom, Ersatz nach einer Änderung (der alte
                 // zeigt weiter, bis der neue liefert), Aufholen, hängender Strom
                 if let Some(o) = self.core.want(&want, now) {
-                    let t_rel = Time((o.at - c.start).0.clamp(0, (c.duration.0 - 1000).max(0)));
                     let path = self.preview_path(m, h);
-                    self.starter.send(OpenJob {
-                        open: o,
-                        source_at: c.source_time(c.start + t_rel),
-                        graph: cl_fx::preview_graph(c, w, h, t_rel.as_secs_f64(), Some(stream_fps), lut),
-                        hw: crate::preview::stream_hw(m, &path),
-                        path,
-                        w,
-                        h,
-                        fps: stream_fps,
-                    });
+                    self.starter.send(open_job(o, c, m, path, (w, h), stream_fps));
                 }
             }
             if prefetch_at.is_some() {
@@ -1393,6 +1418,8 @@ impl App {
         if prefetch_at.is_some() {
             return;
         }
+        let (w, h) = decode_size(c, m, canvas_px, div);
+        let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_fx::escape_path);
         let src = still_src(c, m, l.t_rel, fps);
         let animated_fx = c.fx.effects.iter().any(|e| {
             matches!(
