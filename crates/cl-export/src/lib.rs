@@ -631,7 +631,7 @@ fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
     let px = w as f64 * h as f64 * s.fps.as_f64();
     let video_bits = if s.format.audio_only() {
         0.0
-    } else if s.format == Format::Gif {
+    } else if s.format == Format::Gif || copy_unproven(s) {
         px * 8.0 // FFV1, verlustfrei
     } else if let Quality::Bitrate(k) = s.quality {
         k as f64 * 1100.0
@@ -642,6 +642,16 @@ fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
     };
     let audio = if wants_audio(s) { 48_000.0 * 8.0 } else { 0.0 };
     ((video_bits / 8.0 + audio) * dur) as u64 + (64 << 20)
+}
+
+/// Hardware-Encoder, deren Abschnitte beim Zusammenfügen mit `-c:v copy` nicht geprüft sind
+/// (QSV, AMF, AV1 über NVENC: auf dem Prüfrechner nicht startbar): Abschnitte dann verlustfrei
+/// (FFV1) und einmal über das Ganze mit dem gewählten Encoder kodieren, wie bei GIF.
+fn copy_unproven(s: &ExportSettings) -> bool {
+    matches!(
+        (video_codec(s), s.encoder),
+        (Codec::H264 | Codec::Hevc, Encoder::Qsv | Encoder::Amf) | (Codec::Av1, Encoder::Nvenc)
+    )
 }
 
 /// Nötiger Platz je Laufwerk (Ordner, Bytes): Die Abschnitte (`scratch`) bleiben liegen, bis die
@@ -684,7 +694,8 @@ fn build_sections(
     let (video, audio, gif) = (!s.format.audio_only(), wants_audio(s), s.format == Format::Gif);
     let (w, h) = (s.width & !1, s.height & !1);
     let fps = format!("{}/{}", s.fps.num, s.fps.den);
-    let ext = if gif { "nut" } else { s.format.extension() };
+    let lossless = video && copy_unproven(s);
+    let ext = if gif || lossless { "nut" } else { s.format.extension() };
     let (mut uniq, mut pass_base) = (0, 0);
     let mut secs = Vec::new();
     for (k, &(a, b)) in plan.iter().enumerate() {
@@ -724,7 +735,7 @@ fn build_sections(
             } else {
                 ctx.graph.push(format!("[vmain]format={}[vout]", pix_fmt(s)));
                 outs.extend(["-map".into(), "[vout]".into()]);
-                outs.extend(video_args(s));
+                outs.extend(if lossless { ["-c:v", "ffv1", "-level", "3"].map(String::from).into() } else { video_args(s) });
             }
             outs.extend(["-t".into(), len.clone(), vname.clone()]);
             outs.extend(["-map", "[pv]", "-an", "-f", "image2", "-update", "1", "-q:v", "6", "-t", &len, PREVIEW_FILE].map(String::from));
@@ -809,7 +820,7 @@ fn build_sections(
     if !chapters.is_empty() {
         args.extend(["-map_chapters".into(), n.to_string()]);
     }
-    if gif {
+    if gif || lossless {
         args.extend(codec_args(s));
     } else {
         if video {

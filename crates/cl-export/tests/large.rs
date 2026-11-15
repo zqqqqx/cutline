@@ -619,3 +619,60 @@ fn zoom_pulse_on_long_clip_across_sections() {
     let bad: Vec<usize> = a.chunks(fs).zip(b.chunks(fs)).enumerate().filter(|(_, (x, y))| mean_diff(x, y) > 0.01).map(|x| x.0).collect();
     assert!(bad.is_empty(), "abweichende Bilder {bad:?}");
 }
+
+/// Hardware-Encoder, die hier starten (NVENC H.264/HEVC): Abschnitte per `-c:v copy` zusammengefügt
+/// ergeben alle Bilder, monotone Zeitstempel und decodieren ohne Fehler.
+#[test]
+fn sections_hardware_encoders_concat() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let hw: Vec<_> = cl_export::available_encoders().into_iter().filter(|e| *e != cl_export::Encoder::Software).collect();
+    if hw.is_empty() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let p = rich_project(dir.path());
+    for e in hw {
+        for codec in [cl_export::Codec::H264, cl_export::Codec::Hevc] {
+            let mut s = ExportSettings::from_project(&p);
+            (s.encoder, s.codec) = (e, codec);
+            let out = dir.path().join(format!("hw_{e:?}_{codec:?}.mp4"));
+            let job = cl_export::build_limited(&p, &s, &no_fonts, &out, 3).unwrap();
+            assert!(job.sections() >= 3);
+            run_job(&job);
+            let t = frame_times(&out);
+            assert_eq!(t.len(), 360, "{e:?} {codec:?}: Bilder");
+            assert!(t.windows(2).all(|w| w[1] > w[0]), "{e:?} {codec:?}: Zeitstempel");
+            let o = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-nostdin", "-i"]).arg(&out).args(["-f", "null", "-"]).output().unwrap();
+            assert!(o.status.success() && o.stderr.is_empty(), "{e:?} {codec:?}: {}", String::from_utf8_lossy(&o.stderr));
+        }
+    }
+}
+
+/// QSV, AMF und AV1 über NVENC (Zusammenfügen ungeprüft): Abschnitte verlustfrei, der Endlauf
+/// kodiert einmal mit dem gewählten Encoder statt `-c:v copy`.
+#[test]
+fn unproven_hardware_encoders_encode_once() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let p = rich_project(dir.path());
+    use cl_export::{Codec, Encoder};
+    for (e, codec, name, safe) in [
+        (Encoder::Qsv, Codec::H264, "h264_qsv", false),
+        (Encoder::Amf, Codec::Hevc, "hevc_amf", false),
+        (Encoder::Nvenc, Codec::Av1, "av1_nvenc", false),
+        (Encoder::Nvenc, Codec::Hevc, "hevc_nvenc", true),
+    ] {
+        let mut s = ExportSettings::from_project(&p);
+        (s.encoder, s.codec) = (e, codec);
+        let job = cl_export::build_limited(&p, &s, &no_fonts, &dir.path().join("x.mp4"), 3).unwrap();
+        let sec = &job.section_args()[0];
+        assert_eq!(sec.iter().any(|a| a == "ffv1"), !safe, "{name}: Abschnitte");
+        assert_eq!(job.args.iter().any(|a| a == name), !safe, "{name}: Endlauf kodiert");
+        assert_eq!(job.args.iter().any(|a| a == "copy"), safe, "{name}: copy");
+    }
+}
+
