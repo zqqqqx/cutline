@@ -398,8 +398,24 @@ pub fn whisper(
     language: &str,
     progress: &dyn Fn(f32),
 ) -> Result<Vec<Segment>, String> {
-    let dir = std::env::temp_dir().join(format!("cutline-whisper-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&dir);
+    // eigener Ordner je Aufruf: zwei gleichzeitige Läufe löschen sich nichts weg
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("cutline-whisper-{}-{n}", std::process::id()));
+    whisper_in(&dir, model, path, start, dur, language, progress)
+}
+
+fn whisper_in(
+    dir: &Path,
+    model: &Path,
+    path: &Path,
+    start: f64,
+    dur: f64,
+    language: &str,
+    progress: &dyn Fn(f32),
+) -> Result<Vec<Segment>, String> {
+    let mut ffmpeg = cl_media::ffmpeg_command().map_err(|e| e.to_string())?;
+    let _ = std::fs::create_dir_all(dir);
     let srt = dir.join("out.srt");
     let _ = std::fs::remove_file(&srt);
     progress(0.05);
@@ -409,8 +425,7 @@ pub fn whisper(
         language,
         esc(&srt)
     );
-    let out = cl_media::ffmpeg_command()
-        .map_err(|e| e.to_string())?
+    let out = ffmpeg
         .args([
             "-v",
             "error",
@@ -424,8 +439,11 @@ pub fn whisper(
         .arg(path)
         .args(["-vn", "-af", &af, "-f", "null", "-"])
         .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|e| e.to_string())?;
+        .output();
+    // Arbeitsordner auch bei Fehlern entfernen (sonst bleibt je Programmlauf einer in %TEMP%)
+    let text = std::fs::read_to_string(&srt).unwrap_or_default();
+    let _ = std::fs::remove_dir_all(dir);
+    let out = out.map_err(|e| e.to_string())?;
     if !out.status.success() {
         return Err(format!(
             "Whisper: {}",
@@ -436,8 +454,6 @@ pub fn whisper(
         ));
     }
     progress(1.0);
-    let text = std::fs::read_to_string(&srt).unwrap_or_default();
-    let _ = std::fs::remove_dir_all(&dir);
     Ok(parse_srt(&text))
 }
 
@@ -478,6 +494,15 @@ pub fn _unused(_: PathBuf) {}
 mod tests {
     use super::*;
     use crate::testutil;
+
+    #[test]
+    fn whisper_error_leaves_no_temp_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("w");
+        let r = whisper_in(&dir, Path::new("fehlt.bin"), Path::new("fehlt.wav"), 0.0, 1.0, "de", &|_| {});
+        assert!(r.is_err());
+        assert!(!dir.exists(), "Arbeitsordner blieb liegen");
+    }
 
     #[test]
     fn grouping_respects_limits_and_sentences() {
