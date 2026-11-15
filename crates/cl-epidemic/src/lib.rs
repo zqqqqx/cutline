@@ -546,49 +546,55 @@ pub fn start_login(client_id: &str) -> Result<Login> {
 impl Login {
     /// Wartet bis zu `timeout` auf den Rückruf des Browsers und tauscht den Code gegen Tokens.
     pub fn finish(self, timeout: Duration) -> Result<Tokens> {
-        self.listener
-            .set_nonblocking(true)
-            .map_err(|e| e.to_string())?;
         let until = std::time::Instant::now() + timeout;
-        let (stream, _) = loop {
-            match self.listener.accept() {
-                Ok(s) => break s,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if std::time::Instant::now() > until {
-                        return Err("Anmeldung abgebrochen (Zeit abgelaufen)".into());
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
+        let code = wait_for_callback(&self.listener, &self.state, until)?;
+        exchange(&self.client_id, &code, &self.verifier)
+    }
+}
+
+/// Nimmt Verbindungen an, bis der echte Rückruf (`/callback` mit passendem `state`) kommt, und liefert den
+/// Code. Alles andere (vorab geöffnete Browser-Sockets, `/favicon.ico`, Scanner) bekommt 404 und wird
+/// übergangen; eine stumme Verbindung blockiert höchstens 5 s.
+fn wait_for_callback(listener: &TcpListener, state: &str, until: std::time::Instant) -> Result<String> {
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    loop {
+        let stream = match listener.accept() {
+            Ok((s, _)) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() > until {
+                    return Err("Anmeldung abgebrochen (Zeit abgelaufen)".into());
                 }
-                Err(e) => return Err(e.to_string().into()),
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
             }
+            Err(e) => return Err(e.to_string().into()),
         };
         stream.set_nonblocking(false).ok();
+        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
         let mut line = String::new();
-        BufReader::new(&stream)
-            .read_line(&mut line)
-            .map_err(|e| e.to_string())?;
+        let _ = BufReader::new(&stream).read_line(&mut line);
         let target = line.split_whitespace().nth(1).unwrap_or("");
-        let params = parse_query(target.split_once('?').map(|x| x.1).unwrap_or(""));
+        let (path, query) = target.split_once('?').unwrap_or((target, ""));
+        let params = parse_query(query);
         let get = |k: &str| params.iter().find(|(a, _)| a == k).map(|(_, b)| b.clone());
-        let ok = get("state").as_deref() == Some(self.state.as_str()) && get("code").is_some();
-        let html = if ok {
+        if path != "/callback" || get("state").as_deref() != Some(state) {
+            let _ = write!(&stream, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            continue;
+        }
+        let code = get("code");
+        let html = if code.is_some() {
             "Cutline ist mit Epidemic Sound verbunden. Du kannst dieses Fenster schließen."
         } else {
             "Anmeldung fehlgeschlagen. Bitte in Cutline erneut versuchen."
         };
         let body = format!("<!doctype html><meta charset=utf-8><title>Cutline</title><body style=\"font-family:sans-serif;background:#111;color:#eee;display:grid;place-items:center;height:90vh\"><p>{html}</p>");
         let _ = write!(&stream, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
-        if !ok {
-            return Err(get("error_description")
+        return code.ok_or_else(|| {
+            get("error_description")
                 .or_else(|| get("error"))
                 .unwrap_or_else(|| "Ungültiger Rückruf".into())
-                .into());
-        }
-        exchange(
-            &self.client_id,
-            &get("code").unwrap_or_default(),
-            &self.verifier,
-        )
+                .into()
+        });
     }
 }
 
@@ -676,6 +682,31 @@ pub fn logout(client_id: &str, refresh_token: &str) {
 mod tests {
     use super::*;
     use std::io::Read;
+
+    /// Fremde Verbindungen vor dem Rückruf (leerer Socket, `/favicon.ico`, falscher `state`) werden
+    /// übergangen; der echte Rückruf danach liefert den Code.
+    #[test]
+    fn the_callback_waits_past_foreign_connections() {
+        let l = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = l.local_addr().unwrap();
+        let send = |req: &str| {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            s.write_all(req.as_bytes()).unwrap();
+            s
+        };
+        let _empty = std::net::TcpStream::connect(addr).map(drop);
+        let mut fav = send("GET /favicon.ico HTTP/1.1\r\n\r\n");
+        let _wrong = send("GET /callback?state=falsch&code=x HTTP/1.1\r\n\r\n");
+        let mut ok = send("GET /callback?state=s1&code=abc HTTP/1.1\r\n\r\n");
+        let until = std::time::Instant::now() + Duration::from_secs(30);
+        assert_eq!(wait_for_callback(&l, "s1", until).unwrap(), "abc");
+        let mut r = String::new();
+        fav.read_to_string(&mut r).unwrap();
+        assert!(r.starts_with("HTTP/1.1 404"), "{r}");
+        r.clear();
+        ok.read_to_string(&mut r).unwrap();
+        assert!(r.starts_with("HTTP/1.1 200"), "{r}");
+    }
 
     fn status(c: u16) -> ureq::Error {
         ureq::Error::Status(c, ureq::Response::new(c, "x", "").unwrap())
