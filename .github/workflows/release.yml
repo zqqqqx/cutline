@@ -94,7 +94,7 @@ jobs:
           mkdir -p pkg
           cp "target/release/${{ matrix.exe }}" pkg/
           cp -r plugins pkg/plugins
-          cp LICENSE README.md pkg/
+          cp LICENSE README.md THIRD_PARTY.md pkg/
           if [ "${{ runner.os }}" = "Windows" ]; then
             mkdir -p pkg/ffmpeg
             cp "$FFBIN/ffmpeg.exe" "$FFBIN/ffprobe.exe" pkg/ffmpeg/
