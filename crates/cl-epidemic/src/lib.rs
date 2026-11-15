@@ -418,14 +418,7 @@ impl Client {
             },
             || std::thread::sleep(Duration::from_secs(2)),
         )?;
-        if let Some(d) = dest.parent() {
-            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
-        }
-        let tmp = dest.with_extension("part");
-        let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-        std::io::copy(&mut resp.into_reader(), &mut f).map_err(|e| e.to_string())?;
-        drop(f);
-        std::fs::rename(&tmp, dest).map_err(|e| e.to_string().into())
+        save_whole(resp.into_reader(), dest)
     }
 
     /// Schläge eines Titels in Sekunden (Beta-Endpunkt; leer, wenn nicht verfügbar).
@@ -598,6 +591,22 @@ fn wait_for_callback(listener: &TcpListener, state: &str, until: std::time::Inst
     }
 }
 
+/// Schreibt über `<dest>.part` und benennt erst am Ende um; bei einem Fehler bleibt nichts liegen.
+fn save_whole(mut r: impl std::io::Read, dest: &std::path::Path) -> Result<()> {
+    if let Some(d) = dest.parent() {
+        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    }
+    let tmp = dest.with_extension("part");
+    let res = std::fs::File::create(&tmp)
+        .and_then(|mut f| std::io::copy(&mut r, &mut f))
+        .and_then(|_| std::fs::rename(&tmp, dest));
+    if let Err(e) = res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.to_string().into());
+    }
+    Ok(())
+}
+
 fn parse_query(q: &str) -> Vec<(String, String)> {
     let dec = |s: &str| {
         let b = s.as_bytes();
@@ -682,6 +691,26 @@ pub fn logout(client_id: &str, refresh_token: &str) {
 mod tests {
     use super::*;
     use std::io::Read;
+
+    /// Ein abgebrochener Download hinterlässt weder `<id>.part` noch eine halbe Datei.
+    #[test]
+    fn a_broken_download_leaves_no_part_file() {
+        let t = std::env::temp_dir().join(format!("cl-epidemic-test-{}-{}", std::process::id(), random_token(6)));
+        let dest = t.join("Vorrat/t1.mp3");
+        let broken = std::io::Read::chain(&b"ID3abc"[..], BrokenReader);
+        assert!(save_whole(broken, &dest).is_err());
+        assert!(!dest.exists() && !dest.with_extension("part").exists());
+        save_whole(&b"ID3"[..], &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"ID3");
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    struct BrokenReader;
+    impl std::io::Read for BrokenReader {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::ConnectionReset, "Verbindung getrennt"))
+        }
+    }
 
     /// Fremde Verbindungen vor dem Rückruf (leerer Socket, `/favicon.ico`, falscher `state`) werden
     /// übergangen; der echte Rückruf danach liefert den Code.
