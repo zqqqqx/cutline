@@ -674,14 +674,9 @@ impl App {
                     }
                 }
             }
+            // Vorschaubilder zuerst: Sie sind schnell und sollen nicht hinter den Wellenformen langer
+            // Dateien warten (die Aufträge laufen der Reihe nach)
             for m in self.project.media.iter().filter(|m| m.is_local()) {
-                if m.has_audio && !self.waves.contains_key(&m.id) {
-                    self.waves.insert(m.id, Vec::new()); // Platzhalter: Auftrag nur einmal senden
-                    self.decoder.send(Job::Wave {
-                        media: m.id,
-                        path: m.path.clone(),
-                    });
-                }
                 if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) {
                     let anim = if m.kind == MediaKind::Image { cl_media::animation(&m.path) } else { None };
                     let at = thumb_time(m.kind, m.duration, anim.as_ref());
@@ -689,6 +684,15 @@ impl App {
                         media: m.id,
                         path: m.path.clone(),
                         at,
+                    });
+                }
+            }
+            for m in self.project.media.iter().filter(|m| m.is_local()) {
+                if m.has_audio && !self.waves.contains_key(&m.id) {
+                    self.waves.insert(m.id, Vec::new()); // Platzhalter: Auftrag nur einmal senden
+                    self.decoder.send(Job::Wave {
+                        media: m.id,
+                        path: m.path.clone(),
                     });
                 }
             }
