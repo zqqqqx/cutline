@@ -322,16 +322,27 @@ pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
     let extra = (rect.width() - total) / items.len().max(1) as f32;
     let scale = (rect.width() / total).min(1.0);
     let mut x = rect.left();
+    let rects: Vec<Rect> = need
+        .iter()
+        .map(|n| {
+            let cw = if extra >= 0.0 { n + extra } else { n * scale };
+            x += cw;
+            Rect::from_min_size(pos2(x - cw, rect.top()), vec2(cw, rect.height())).shrink(2.0)
+        })
+        .collect();
+    // Markierung gleitet zum gewählten Feld (Stand als Feldnummer: Größenänderungen gleiten nicht)
+    let at = theme::glide(ui.ctx(), ui.id().with(("seg-mark", items.len())), *sel as f32, theme::MOTION);
+    if let (Some(a), Some(b)) = (rects.get(at.floor() as usize), rects.get((at.ceil() as usize).min(rects.len().saturating_sub(1)))) {
+        let f = at.fract();
+        let mark = Rect::from_min_max(a.min.lerp(b.min, f), a.max.lerp(b.max, f));
+        ui.painter().rect_filled(mark, theme::R_CTRL, theme::BG_HOVER());
+    }
     let mut changed = false;
     for (i, t) in texts.iter().enumerate() {
-        let cw = if extra >= 0.0 { need[i] + extra } else { need[i] * scale };
-        let r = Rect::from_min_size(pos2(x, rect.top()), vec2(cw, rect.height())).shrink(2.0);
-        x += cw;
+        let r = rects[i];
         let resp = ui.interact(r, ui.id().with(("seg", i, items[i])), Sense::click());
         let active = *sel == i;
-        if active {
-            ui.painter().rect_filled(r, theme::R_CTRL, theme::BG_HOVER());
-        } else if resp.hovered() {
+        if !active && resp.hovered() {
             ui.painter().rect_filled(r, theme::R_CTRL, theme::BG_RAISED());
         }
         ui.painter_at(r).text(
@@ -550,6 +561,133 @@ pub fn color_button(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
         return true;
     }
     false
+}
+
+// ------------------------------------------------------------ Ladezustände
+
+/// Lauflinie: Lage des wandernden Stücks (Anfang, Ende als Anteil 0…1) zur Zeit `t`.
+/// Ohne Animationen steht die ganze Linie still.
+pub fn busy_segment(t: f64, moving: bool) -> (f32, f32) {
+    if !moving {
+        return (0.0, 1.0);
+    }
+    const LEN: f32 = 0.3;
+    // 1,4 s je Durchlauf, ruhig und gleichmäßig
+    let x = (t / 1.4).fract() as f32 * (1.0 + LEN) - LEN;
+    (x.max(0.0), (x + LEN).min(1.0))
+}
+
+/// Schimmer auf einem Platzhalter: Mitte des hellen Bandes (Anteil, darf über die Ränder laufen)
+/// `age` Sekunden nach dem Erscheinen; `None` = ruhige Fläche (noch zu früh, zu lange oder ohne
+/// Animationen – ein Bild, das nie kommt, lässt die Oberfläche nicht ewig neu zeichnen).
+pub fn shimmer_at(age: f64, moving: bool) -> Option<f32> {
+    (moving && (theme::LOAD_DELAY..6.0).contains(&age))
+        .then(|| (((age - theme::LOAD_DELAY) / 1.6).fract() as f32) * 1.6 - 0.3)
+}
+
+/// Fortschrittslinie (bekannte Dauer): dünn, Akzentfarbe, folgt dem Wert weich.
+pub fn progress_line(p: &egui::Painter, id: egui::Id, rect: Rect, frac: f32) {
+    let shown = theme::glide(p.ctx(), id.with("progress"), frac.clamp(0.0, 1.0), theme::MOTION_SLOW);
+    let r = rect.height() / 2.0;
+    p.rect_filled(rect, r, theme::overlay(26));
+    let fill = Rect::from_min_size(rect.min, vec2(rect.width() * shown, rect.height()));
+    p.rect_filled(fill, r, theme::ACCENT());
+}
+
+/// Lauflinie (unbekannte Dauer): ein ruhig wanderndes Stück in Akzentfarbe; ohne Animationen
+/// eine stehende, gedämpfte Linie.
+pub fn busy_line(p: &egui::Painter, rect: Rect) {
+    let moving = theme::animations_on();
+    let r = rect.height() / 2.0;
+    p.rect_filled(rect, r, theme::overlay(26));
+    let (a, b) = busy_segment(p.ctx().input(|i| i.time), moving);
+    let seg = Rect::from_x_y_ranges(egui::lerp(rect.x_range(), a)..=egui::lerp(rect.x_range(), b), rect.y_range());
+    p.rect_filled(seg, r, if moving { theme::ACCENT() } else { theme::ACCENT().gamma_multiply(0.5) });
+    if moving {
+        p.ctx().request_repaint();
+    }
+}
+
+/// Platzhalter in Zielgröße, solange Inhalt (Bild, Wellenform …) fehlt: ruhige Fläche mit sehr
+/// dezentem Schimmer. `false` = wartet schon lange (Inhalt kommt wohl nicht; Aufrufer zeigt dann
+/// sein Ersatz-Symbol).
+pub fn skeleton(p: &egui::Painter, id: egui::Id, rect: Rect, radius: f32) -> bool {
+    let ctx = p.ctx();
+    let id = id.with("skeleton");
+    let (now, pass) = (ctx.input(|i| i.time), ctx.cumulative_pass_nr());
+    let (since, last) = ctx.data(|d| d.get_temp::<(f64, u64)>(id)).unwrap_or((now, pass));
+    // länger nicht gezeichnet: neu beginnen
+    let since = if last + 1 < pass { now } else { since };
+    ctx.data_mut(|d| d.insert_temp(id, (since, pass)));
+    let age = now - since;
+    p.rect_filled(rect, radius, theme::BG_RAISED());
+    if let Some(x) = shimmer_at(age, theme::animations_on()) {
+        let cx = rect.left() + x * rect.width();
+        let band = Rect::from_center_size(egui::pos2(cx, rect.center().y), vec2(rect.width() * 0.35, rect.height()));
+        // weiche Kanten: drei gestaffelte Streifen
+        for (k, a) in [(1.0, 5u8), (0.6, 5), (0.3, 6)] {
+            p.with_clip_rect(rect.intersect(p.clip_rect())).rect_filled(
+                Rect::from_center_size(band.center(), vec2(band.width() * k, band.height())),
+                radius,
+                theme::overlay(a),
+            );
+        }
+        ctx.request_repaint();
+    } else if age < theme::LOAD_DELAY {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(theme::LOAD_DELAY - age + 0.005));
+    }
+    age < 6.0
+}
+
+/// Inhalt einer Kachel, der gerade eintrifft: Deckkraft 0…1. Was schon beim Öffnen da ist, steht
+/// sofort; was nachkommt, blendet einmal ein (Zustand je `id`).
+pub fn reveal(ctx: &egui::Context, id: egui::Id, ready: bool) -> f32 {
+    theme::fade(ctx, id.with("reveal"), ready, theme::MOTION_FAST)
+}
+
+/// Bild einer Kachel: fehlt es noch, ein Platzhalter (nach langer Wartezeit `glyph`); trifft es
+/// ein, blendet es über dem Platzhalter ein. `tex`: (Textur, Bildgröße, uv-Ausschnitt) – das Bild
+/// füllt die Fläche (Ränder abgeschnitten).
+pub fn tile_image(p: &egui::Painter, id: egui::Id, a: Rect, tex: Option<(egui::TextureId, egui::Vec2, Rect)>, glyph: &str) {
+    let k = reveal(p.ctx(), id, tex.is_some());
+    let Some((tid, ts, src)) = tex else {
+        if !skeleton(p, id, a, theme::R_CARD) && !glyph.is_empty() {
+            // Icon-Glyphe als Platzhalter
+            p.text(a.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(22.0), theme::TEXT_DIM());
+        }
+        return;
+    };
+    if k < 1.0 {
+        skeleton(p, id, a, theme::R_CARD);
+    }
+    let s = (a.width() / ts.x).max(a.height() / ts.y);
+    let uv = Rect::from_center_size(
+        egui::pos2(0.5, 0.5),
+        vec2((a.width() / (ts.x * s)).min(1.0), (a.height() / (ts.y * s)).min(1.0)),
+    );
+    let uv = Rect::from_x_y_ranges(
+        egui::lerp(src.x_range(), uv.left())..=egui::lerp(src.x_range(), uv.right()),
+        egui::lerp(src.y_range(), uv.top())..=egui::lerp(src.y_range(), uv.bottom()),
+    );
+    p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE.gamma_multiply(k)).with_texture(tid, uv));
+}
+
+/// Linie einer laufenden Aufgabe in `rect`: Fortschritt, sobald einer gemeldet wird, sonst Lauflinie.
+pub fn task_line(p: &egui::Painter, id: egui::Id, rect: Rect, progress: f32) {
+    if progress > 0.0 {
+        progress_line(p, id, rect, progress);
+    } else {
+        busy_line(p, rect);
+    }
+}
+
+/// Zeile mit Lauflinie unter einem Element (Suchfeld, Liste): belegt ihre Höhe immer (kein
+/// Springen), zeigt die Linie erst nach 150 ms Wartezeit und mindestens 300 ms lang.
+pub fn busy_row(ui: &mut egui::Ui, id: egui::Id, busy: bool) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 2.0), Sense::hover());
+    if theme::loading(ui.ctx(), id, busy) {
+        busy_line(ui.painter(), r);
+    }
 }
 
 #[cfg(test)]
