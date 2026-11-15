@@ -173,6 +173,13 @@ pub struct ExportSettings {
     /// Marker als Kapitel in die Datei schreiben
     #[serde(default)]
     pub chapters: bool,
+    /// Kapitelname für Marker ohne Namen (Sprache der Oberfläche)
+    #[serde(default = "default_chapter_name")]
+    pub chapter_name: String,
+}
+
+fn default_chapter_name() -> String {
+    "Kapitel".into()
 }
 
 impl ExportSettings {
@@ -191,6 +198,7 @@ impl ExportSettings {
             loudness: None,
             audio_kbps: None,
             chapters: true,
+            chapter_name: default_chapter_name(),
         }
     }
 
@@ -441,7 +449,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     args.extend(std::mem::take(&mut ctx.inputs));
     // Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel)
     let chapters = (s.chapters && matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a))
-        .then(|| ffmetadata(&p.timeline.markers, start, end))
+        .then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name))
         .flatten();
     if let Some(meta) = chapters {
         std::fs::write(workdir.path().join("chapters.txt"), meta)?;
@@ -539,9 +547,9 @@ fn in_edit_ranges(p: &Project) -> Project {
 /// Kapitel (Start relativ zu `start`, Titel) aus den Markern im Bereich `start..end`.
 /// YouTube verlangt ein Kapitel bei 0:00: Ein Marker in der ersten Sekunde wird dorthin
 /// gezogen, sonst kommt davor das Kapitel, das am Bereichsanfang läuft (letzter Marker davor),
-/// ohne solchen Marker „Intro“.
-pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time) -> Vec<(Time, String)> {
-    let name = |m: &cl_core::Marker| if m.name.is_empty() { "Kapitel".to_string() } else { m.name.clone() };
+/// ohne solchen Marker „Intro“. Marker ohne Namen heißen `unnamed`.
+pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time, unnamed: &str) -> Vec<(Time, String)> {
+    let name = |m: &cl_core::Marker| if m.name.is_empty() { unnamed.to_string() } else { m.name.clone() };
     let mut v: Vec<(Time, String)> = markers
         .iter()
         .filter(|m| m.at >= start && m.at < end)
@@ -561,7 +569,7 @@ pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time) -> Vec<
 }
 
 /// Kapitel im FFmetadata-Format (siehe [`chapter_list`]); `None` ohne Marker.
-fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time) -> Option<String> {
+fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time, unnamed: &str) -> Option<String> {
     let esc = |t: &str| {
         t.chars()
             .flat_map(|c| match c {
@@ -574,7 +582,7 @@ fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time) -> Option<Str
     if !markers.iter().any(|m| m.at >= start && m.at < end) {
         return None;
     }
-    let v = chapter_list(markers, start, end);
+    let v = chapter_list(markers, start, end, unnamed);
     let ms = |t: Time| (t.as_secs_f64() * 1000.0).round() as i64;
     let len = end - start;
     let mut out = String::from(";FFMETADATA1\n");
@@ -1120,12 +1128,15 @@ mod tests {
         let mk = |at: f64, name: &str| Marker { id: 0, at: Time::from_secs_f64(at), duration: Time::ZERO, name: name.into(), note: String::new(), color: 0 };
         let ms = [mk(0.0, "Intro"), mk(10.0, "Thema"), mk(24.93, "Highlights"), mk(35.13, "Interview"), mk(40.0, "Ende")];
         let s = |x: f64| Time::from_secs_f64(x);
-        let v = chapter_list(&ms, s(34.13), s(36.13));
+        let v = chapter_list(&ms, s(34.13), s(36.13), "Kapitel");
         assert_eq!(v, vec![(Time::ZERO, "Highlights".to_string()), (s(35.13) - s(34.13), "Interview".to_string())]);
         // ganze Datei: wie bisher
-        assert_eq!(chapter_list(&ms[1..], Time::ZERO, s(50.0))[0].1, "Intro");
+        assert_eq!(chapter_list(&ms[1..], Time::ZERO, s(50.0), "Kapitel")[0].1, "Intro");
+        // Marker ohne Namen in der Sprache der Oberfläche
+        assert_eq!(chapter_list(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter")[0].1, "Chapter");
         // Kapiteldatei mit denselben Namen und Zeiten ab Bereichsanfang
-        let meta = ffmetadata(&ms, s(34.13), s(36.13)).unwrap();
+        let meta = ffmetadata(&ms, s(34.13), s(36.13), "Kapitel").unwrap();
+        assert!(ffmetadata(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter").unwrap().contains("title=Chapter\n"));
         assert!(meta.contains("START=0\nEND=1000\ntitle=Highlights\n") && meta.contains("START=1000\nEND=2000\ntitle=Interview\n"), "{meta}");
     }
 

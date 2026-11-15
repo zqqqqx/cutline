@@ -1716,3 +1716,5 @@ Als Element speichern	Save as element
 Als Sound speichern	Save as sound
 Als Element gespeichert	Saved as element
 Als Sound gespeichert	Saved as sound
+{} Inhalt fehlt: {} – Paket in Einstellungen → Inhalte einschalten	{} item is missing: {} – turn on its pack in Settings → Content
+{} Inhalt fehlt und wird ohne ihn exportiert: {}	{} item is missing; the export continues without it: {}

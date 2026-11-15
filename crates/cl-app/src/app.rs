@@ -2157,11 +2157,14 @@ impl App {
                 gone.sort();
                 gone.dedup();
                 if !gone.is_empty() {
-                    self.toast_err(format!(
-                        "{} Inhalte fehlen: {} – Paket in Einstellungen → Inhalte einschalten",
-                        gone.len(),
-                        gone.join(", ")
-                    ));
+                    self.toast_err(
+                        crate::theme::count_text(
+                            gone.len(),
+                            "{} Inhalt fehlt: {} – Paket in Einstellungen → Inhalte einschalten",
+                            "{} Inhalte fehlen: {} – Paket in Einstellungen → Inhalte einschalten",
+                        )
+                        .replacen("{}", &gone.join(", "), 1),
+                    );
                 }
             }
             Err(e) => self.toast_err(e),
