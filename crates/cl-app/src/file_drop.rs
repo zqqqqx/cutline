@@ -301,7 +301,7 @@ impl App {
         let id = self.drops.next;
         self.drops.next += 1;
         if !todo.is_empty() {
-            let label = crate::tr(format!("{} Dateien werden importiert", todo.len()));
+            let label = self.i18n.t_num("files-importing", "count", todo.len() as i64);
             self.tasks.spawn(ctx, format!("drop:{id}"), label, move |report, cancel| {
                 probe_all(&todo, |i, r| drop(tx.send((i, r))), report, cancel);
                 TaskDone::Run(Box::new(|_| {}))

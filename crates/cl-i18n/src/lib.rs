@@ -203,6 +203,8 @@ mod tests {
         );
         let en = I18n::new(Lang::En);
         assert_eq!(en.t_num("media-imported", "count", 2), "Imported 2 items");
+        assert_eq!(de.t_num("files-importing", "count", 1), "Eine Datei wird importiert");
+        assert_eq!(en.t_num("files-importing", "count", 3), "Importing 3 files");
         assert_eq!(en.t("does-not-exist"), "⟦does-not-exist⟧");
     }
 

@@ -25,6 +25,10 @@ media-imported = { $count ->
     [one] Imported one item
    *[other] Imported { $count } items
 }
+files-importing = { $count ->
+    [one] Importing one file
+   *[other] Importing { $count } files
+}
 
 text-add = Add text
 text-default = Default text
