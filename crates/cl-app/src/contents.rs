@@ -71,6 +71,19 @@ pub fn catalog_packs(reg: &cl_plugin::Registry, lang: &str) -> Vec<Pack> {
                         A::Filter => (Kind::Filter, chain()?),
                         A::Sound => (Kind::Sound, file()?),
                         A::Sticker => (Kind::Sticker, file()?),
+                        A::Transition => (
+                            Kind::Transition,
+                            Payload::Shader {
+                                file: p.dir.join(a.shader.as_ref()?),
+                                // unbekannter Rückfall: Überblenden (der Katalog prüft noch einmal)
+                                fallback: a
+                                    .fallback
+                                    .clone()
+                                    .filter(|f| cl_fx::TRANSITIONS.iter().any(|t| t.0 == f))
+                                    .unwrap_or_else(|| "fade".into()),
+                                params: a.shader_params().ok()?,
+                            },
+                        ),
                         // shortcut: Shader-Assets und weitere Arten erscheinen erst mit ihrer Render-Stufe
                         _ => return None,
                     };
@@ -426,5 +439,25 @@ license = "CC-BY-4.0"
         for e in cl_plugin::STICKER_EXT {
             assert!(crate::library::STICKER_EXT.contains(e), "{e}");
         }
+    }
+
+    /// Shader-Übergänge der mitgelieferten Pakete erscheinen im Katalog, mit Rückfall.
+    #[test]
+    fn pack_transitions_are_listed_with_fallback() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+        let mut reg = cl_plugin::Registry::scan([root.as_path()]);
+        let packs = catalog_packs(&reg, "de");
+        let tr = catalog::list_in(&packs, Kind::Transition);
+        let own: Vec<_> = tr.iter().filter(|e| e.pack == "cutline.uebergaenge").collect();
+        assert!(own.len() >= 25, "{}", own.len());
+        assert!(own.iter().all(|e| matches!(e.payload, Payload::Shader { .. })));
+        let plan = catalog::transition_plan_in(&packs, "cutline.uebergaenge/wuerfel");
+        assert_eq!(plan.xfade, "slideright");
+        assert!(plan.shader.is_some_and(|(f, _)| f.is_file()));
+        // Paket aus: nur noch der Rückfall
+        reg.apply_states(&[("cutline.uebergaenge".to_string(), false)].into_iter().collect());
+        let packs = catalog_packs(&reg, "de");
+        let plan = catalog::transition_plan_in(&packs, "cutline.uebergaenge/wuerfel");
+        assert_eq!((plan.xfade, plan.shader), ("slideright", None));
     }
 }

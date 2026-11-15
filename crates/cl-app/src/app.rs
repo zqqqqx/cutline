@@ -77,7 +77,8 @@ pub enum DragAsset {
     OwnSticker(PathBuf),
     Effect(String),
     Filter(String),
-    Transition(&'static str),
+    /// Eingebauter (`xfade`-Name) oder Paket-Übergang (`<paket-id>/<asset-id>`)
+    Transition(String),
     Sfx(&'static str),
     File(PathBuf),
 }
@@ -1270,7 +1271,7 @@ impl App {
                 }
             },
             DragAsset::Transition(id) => match on_clip {
-                Some(c) => self.set_transition(c, Some(id)),
+                Some(c) => self.set_transition(c, Some(id.as_str())),
                 None => self.apply_transition_near_playhead(id),
             },
         }

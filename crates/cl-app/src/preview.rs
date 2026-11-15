@@ -59,6 +59,8 @@ pub enum Job {
     FxThumb {
         key: String,
         graph: String,
+        /// Shader-Übergang: Bilder mit cl-gpu mischen; ohne GPU oder bei Fehlern gilt `graph`
+        shader: Option<ShaderTile>,
         w: u32,
         h: u32,
         frames: u32,
@@ -70,6 +72,45 @@ pub enum Job {
         path: PathBuf,
         at: Time,
     },
+}
+
+/// Kachel eines Shader-Übergangs: `pair_graph` liefert A und B nebeneinander (Breite 2·w).
+pub struct ShaderTile {
+    pub file: PathBuf,
+    pub params: Vec<f32>,
+    pub pair_graph: String,
+}
+
+/// Filmstreifen eines Shader-Übergangs: `frames` Bilder bei Fortschritt k/frames (wie der
+/// `xfade`-Streifen), A und B aus dem Bildpaar `pair` (2·w × h).
+pub fn shader_strip(s: &ShaderTile, pair: &[u8], w: u32, h: u32, frames: u32) -> Result<Vec<u8>, String> {
+    let src = std::fs::read_to_string(&s.file).map_err(|e| e.to_string())?;
+    let row = (w * 4) as usize;
+    if pair.len() < row * 2 * h as usize {
+        return Err("Bildpaar unvollständig".into());
+    }
+    let (mut a, mut b) = (Vec::with_capacity(row * h as usize), Vec::with_capacity(row * h as usize));
+    for line in pair.chunks_exact(row * 2).take(h as usize) {
+        a.extend_from_slice(&line[..row]);
+        b.extend_from_slice(&line[row..]);
+    }
+    let prm = shader_params(&s.params);
+    let fa = cl_gpu::Frame { rgba: &a, width: w, height: h };
+    let fb = cl_gpu::Frame { rgba: &b, width: w, height: h };
+    let mut out = Vec::with_capacity(row * (h * frames) as usize);
+    for k in 0..frames {
+        out.extend(cl_gpu::render(&src, &prm, fa, fb, (w, h), k as f32 / frames as f32)?);
+    }
+    Ok(out)
+}
+
+/// Parameter aus dem Katalog in das feste Feld von cl-gpu (Rest 0).
+pub fn shader_params(v: &[f32]) -> [f32; cl_gpu::PARAMS] {
+    let mut prm = [0.0; cl_gpu::PARAMS];
+    for (p, x) in prm.iter_mut().zip(v) {
+        *p = *x;
+    }
+    prm
 }
 
 pub enum Done {
@@ -249,6 +290,7 @@ fn run(job: Job) -> Option<Done> {
         Job::FxThumb {
             key,
             graph,
+            shader,
             w,
             h,
             frames,
@@ -276,28 +318,35 @@ fn run(job: Job) -> Option<Done> {
                     let _ = std::fs::write(dir.join(n), b);
                 }
             }
-            let out = cl_media::ffmpeg_command()
-                .ok()?
-                .current_dir(&dir)
-                .args([
-                    "-v",
-                    "error",
-                    "-nostdin",
-                    "-filter_complex",
-                    &graph,
-                    "-map",
-                    "[out]",
-                    "-frames:v",
-                    &frames.to_string(),
-                    "-f",
-                    "rawvideo",
-                    "-pix_fmt",
-                    "rgba",
-                    "-",
-                ])
-                .stdin(Stdio::null())
-                .output()
-                .ok()?;
+            let ffmpeg = |graph: &str, frames: u32| {
+                cl_media::ffmpeg_command()
+                    .ok()?
+                    .current_dir(&dir)
+                    .args(["-v", "error", "-nostdin", "-filter_complex", graph, "-map", "[out]", "-frames:v"])
+                    .arg(frames.to_string())
+                    .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()
+            };
+            // Shader-Übergang mit cl-gpu; ohne GPU oder bei Fehlern die Kachel des Rückfalls
+            if let Some(s) = &shader {
+                let strip = ffmpeg(&s.pair_graph, 1)
+                    .ok_or_else(|| "FFmpeg".to_string())
+                    .and_then(|o| shader_strip(s, &o.stdout, w, h, frames));
+                match strip {
+                    Ok(data) if data.len() == need => {
+                        let _ = std::fs::write(&cache, &data);
+                        return Some(Done::FxThumb {
+                            key,
+                            frame: RgbaFrame { width: w, height: h * frames, data },
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("Shader-Kachel {key}: {e}"),
+                }
+            }
+            let out = ffmpeg(&graph, frames)?;
             if out.stdout.len() < need {
                 return Some(Done::Error(format!(
                     "{key}: {}",

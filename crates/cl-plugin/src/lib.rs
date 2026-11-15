@@ -129,6 +129,9 @@ pub struct AssetEntry {
     pub shader: Option<String>,
     /// Optional: LUT (.cube) für Filter.
     pub lut: Option<String>,
+    /// Übergang mit Shader: eingebauter `xfade`-Übergang, wenn keine GPU da ist oder das Paket fehlt
+    /// (Pflicht bei Shader-Übergängen).
+    pub fallback: Option<String>,
     /// FFmpeg-Filterkette (Effekt/Filter) bzw. `xfade`-Name oder `custom:<Ausdruck>` (Übergang).
     /// Platzhalter: `{intensity}` (0…1) und `{<param-id>}`.
     pub ffmpeg: Option<String>,
@@ -149,6 +152,23 @@ pub struct AssetEntry {
 }
 
 impl AssetEntry {
+    /// Standardwerte der Shader-Parameter in Reihenfolge (`params.p0` …): nur Zahl, Ganzzahl
+    /// und Schalter, höchstens [`MAX_SHADER_PARAMS`].
+    pub fn shader_params(&self) -> Result<Vec<f32>, String> {
+        if self.params.len() > MAX_SHADER_PARAMS {
+            return Err(format!("höchstens {MAX_SHADER_PARAMS} Parameter"));
+        }
+        self.params
+            .iter()
+            .map(|p| match p {
+                ParamSpec::Float { default, .. } => Ok(*default),
+                ParamSpec::Int { default, .. } => Ok(*default as f32),
+                ParamSpec::Bool { default, .. } => Ok(*default as u8 as f32),
+                _ => Err(format!("Parameter '{}': im Shader nur Zahlen und Schalter", p.id())),
+            })
+            .collect()
+    }
+
     /// FFmpeg-Kette mit eingesetzten Standardwerten; {intensity} bleibt für den Host.
     pub fn ffmpeg_filled(&self) -> Option<String> {
         let mut c = self.ffmpeg.clone()?;
@@ -166,6 +186,9 @@ impl AssetEntry {
         Some(c)
     }
 }
+
+/// Parameter eines Shader-Übergangs (`params.p0` … `params.p7`).
+pub const MAX_SHADER_PARAMS: usize = 8;
 
 /// Erlaubte Endungen für Paket-Sounds (wie die eigene Bibliothek).
 pub const SOUND_EXT: &[&str] = &["wav", "mp3", "ogg", "flac", "m4a", "aac", "opus"];
@@ -324,6 +347,21 @@ impl Manifest {
                     "Asset '{}' braucht einen Shader oder eine FFmpeg-Kette",
                     a.id
                 ));
+            }
+            if a.kind == AssetKind::Transition && a.shader.is_some() {
+                // welcher Name eingebaut ist, prüft der Katalog (unbekannt → Überblenden)
+                let ok = a.fallback.as_deref().is_some_and(|f| {
+                    !f.is_empty() && f.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                });
+                if !ok {
+                    return bad(format!(
+                        "Übergang '{}' braucht 'fallback' (eingebauter Übergang, z. B. \"fade\")",
+                        a.id
+                    ));
+                }
+                if let Err(e) = a.shader_params() {
+                    return bad(format!("Übergang '{}': {e}", a.id));
+                }
             }
             if a.kind == AssetKind::Filter
                 && a.shader.is_none()
@@ -723,6 +761,24 @@ params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=
             assert!(!ffmpeg_chain_allowed(bad), "{bad}");
         }
         assert!(ffmpeg_chain_allowed("gblur=sigma=2,eq=brightness=0.04*{intensity}"));
+        // Shader-Übergänge brauchen einen Rückfall und Zahlen-Parameter
+        let tr = |extra: &str| format!("{base}
+[[asset]]
+id='t'
+kind='transition'
+name={{de='T'}}
+shader='t.wgsl'
+{extra}");
+        assert!(Manifest::parse(&tr(""), p).unwrap().validate(None).unwrap_err().to_string().contains("fallback"));
+        assert!(Manifest::parse(&tr("fallback='fade;x'"), p).unwrap().validate(None).is_err());
+        Manifest::parse(&tr("fallback='wipeleft'"), p).unwrap().validate(None).unwrap();
+        let m = Manifest::parse(&tr("fallback='fade'
+params=[{type='float',id='a',min=0.0,max=2.0,default=1.5},{type='bool',id='b',default=true}]"), p).unwrap();
+        m.validate(None).unwrap();
+        assert_eq!(m.assets[0].shader_params().unwrap(), vec![1.5, 1.0]);
+        let m = tr("fallback='fade'
+params=[{type='color',id='c',default='#fff'}]");
+        assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
     }
 
     #[test]

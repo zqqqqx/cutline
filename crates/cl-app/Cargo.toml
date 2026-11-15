@@ -21,6 +21,7 @@ cl-plugin.workspace = true
 cl-mcp.workspace = true
 cl-export.workspace = true
 cl-fx.workspace = true
+cl-gpu.workspace = true
 cl-update.workspace = true
 cl-analyze.workspace = true
 serde.workspace = true

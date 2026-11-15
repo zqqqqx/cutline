@@ -585,12 +585,14 @@ pub static TRANSITIONS: &[(&str, &str, &str)] = &[
 
 pub const TRANSITION_CATEGORIES: [&str; 5] = ["Basis", "Wischen", "Bewegung", "Form", "Effekt"];
 
-pub fn transition_name(id: &str) -> &'static str {
+/// Name eines eingebauten oder Paket-Übergangs (eingebaut: deutsch, die Oberfläche übersetzt).
+pub fn transition_name(id: &str) -> String {
     TRANSITIONS
         .iter()
         .find(|t| t.0 == id)
-        .map(|t| t.1)
-        .unwrap_or("Übergang")
+        .map(|t| t.1.to_string())
+        .or_else(|| catalog::get(catalog::Kind::Transition, id).map(|e| e.name))
+        .unwrap_or_else(|| "Übergang".into())
 }
 
 /// Pfad für FFmpeg-Filteroptionen escapen (`C:/x.cube` → `'C\:/x.cube'`).

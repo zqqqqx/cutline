@@ -1,0 +1,16 @@
+[package]
+name = "cl-gpu"
+description = "Cutline: Übergänge als WGSL-Shader (headless über wgpu), gleiche Funktion für Vorschau und Export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# genau die Versionen, die eframe schon mitbringt (Cargo.lock); Backends wie dort
+wgpu = { version = "24.0.5", default-features = false, features = ["wgsl"] }
+naga = { version = "24.0.0", features = ["wgsl-in"] }
+pollster = "0.4"
+
+[dev-dependencies]
+cl-plugin.workspace = true
+cl-fx.workspace = true
