@@ -209,8 +209,9 @@ fn post_transform(
 }
 
 /// Filter, deren Ergebnis von früheren Bildern abhängt (Zufall je Bild, Mittelung über Bilder,
-/// Rauschfilter mit Gedächtnis): mit ihnen darf ein Abschnitt nicht mitten im Clip einsteigen.
-const STATEFUL: &[&str] = &["noise", "tmix", "deflicker", "hqdn3d", "random", "minterpolate", "deshake", "lagfun", "atadenoise", "tblend", "sendcmd"];
+/// Rauschfilter mit Gedächtnis) oder die eigene Zeitstempel ab 0 vergeben (`zoompan`): mit ihnen
+/// darf ein Abschnitt nicht mitten im Clip einsteigen.
+const STATEFUL: &[&str] = &["noise", "tmix", "deflicker", "hqdn3d", "random", "minterpolate", "deshake", "lagfun", "atadenoise", "tblend", "sendcmd", "zoompan"];
 
 /// Ganze Sekunden, die ein Abschnitt (Beginn `start`) vom Anfang eines früher beginnenden Clips
 /// überspringen darf (Eingang per `-ss` näher heran, statt ab Clipbeginn zu dekodieren), mit
@@ -231,10 +232,16 @@ pub(crate) fn lead_skip(c: &Clip, start: Time) -> f64 {
 }
 
 /// Hat die Effektkette des Clips Filter mit Gedächtnis ([`STATEFUL`])?
-fn fx_has_memory(fx: &ClipFx) -> bool {
+pub(crate) fn fx_has_memory(fx: &ClipFx) -> bool {
     let opts = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: None };
     let g = fx_graph(fx, Src { w: 64, h: 64, has_alpha: false }, &opts, "i", "o", "u").join(";");
-    STATEFUL.iter().any(|s| g.contains(s))
+    STATEFUL.iter().any(|s| g.contains(s)) || counts_frames(&g)
+}
+
+/// Nutzt ein Ausdruck den Bildzähler ab Filterbeginn (`n`/`N` in eq, hue, geq, crop, overlay …,
+/// z. B. aus Paket-Ketten)? Der zählt nach einem Sprung ab dem Abschnitt statt ab dem Clip.
+pub(crate) fn counts_frames(g: &str) -> bool {
+    g.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|w| w == "n" || w == "N")
 }
 
 fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -> Result<Sprite> {

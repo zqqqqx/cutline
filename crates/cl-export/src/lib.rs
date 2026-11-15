@@ -3779,6 +3779,21 @@ mod tests {
         assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "rückwärts");
     }
 
+    /// Effekte, die eigene Zeitstempel vergeben oder Bilder zählen, rechnen ab Clipbeginn;
+    /// Ausdrücke mit `t` (Zeitstempel bleiben Clipzeit) dürfen springen.
+    #[test]
+    fn effects_with_own_time_start_at_the_clip() {
+        let has = |id: &str| graph::fx_has_memory(&ClipFx { effects: vec![FxRef::new(id)], ..Default::default() });
+        for id in ["zoom-pulse", "motion-blur", "echo", "grain", "vhs", "glitch"] {
+            assert!(has(id), "{id}");
+        }
+        for id in ["shake", "rainbow", "strobe", "flash", "old-film", "sepia"] {
+            assert_eq!(has(id), id == "old-film", "{id}");
+        }
+        assert!(graph::counts_frames("[a]hue=h='n*3'[b]") && graph::counts_frames("geq=lum='N+p(X,Y)'"));
+        assert!(!graph::counts_frames("[u1n]eq=brightness='sin(t*3)':eval=frame,noise_x[o]"));
+    }
+
     /// Kaputte Datei: die Vorschau lässt sie aus und meldet sie einmal.
     #[test]
     fn unreadable_audio_is_left_out_and_reported_once() {

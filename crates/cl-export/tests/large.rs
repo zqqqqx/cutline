@@ -593,3 +593,25 @@ fn long_transition_chain_exports() {
     run_job(&job);
     assert_eq!(frame_times(&out).len(), 36);
 }
+
+/// Langer Hintergrund mit „Zoom-Puls“ (`zoompan` vergibt eigene Zeitstempel ab 0): in Abschnitten
+/// bildgleich mit dem Durchgang. Vorher sprang der Clip per `-ss` nahe an den Abschnitt und lief
+/// danach um den Sprung zu früh.
+#[test]
+fn zoom_pulse_on_long_clip_across_sections() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut q = rich_project(dir.path());
+    q.timeline.tracks[0].clips[0].fx.effects.push(FxRef::new("zoom-pulse"));
+    let mut s = ExportSettings::from_project(&q);
+    s.format = cl_export::Format::Mov;
+    s.codec = cl_export::Codec::ProRes;
+    let (one, cut, _) = both(&q, &s, dir.path(), "zoompuls", 3);
+    let fs = 128 * 72 * 3;
+    let (a, b) = (rgb(&one), rgb(&cut));
+    assert_eq!(a.len(), b.len());
+    let bad: Vec<usize> = a.chunks(fs).zip(b.chunks(fs)).enumerate().filter(|(_, (x, y))| mean_diff(x, y) > 0.01).map(|x| x.0).collect();
+    assert!(bad.is_empty(), "abweichende Bilder {bad:?}");
+}
