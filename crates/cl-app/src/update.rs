@@ -125,13 +125,13 @@ pub fn embedded_notes() -> Vec<Notes> {
 }
 
 /// „42,3 MB“ (deutsch) bzw. „42.3 MB“
-fn mb_text(bytes: u64, comma: bool) -> String {
+pub(crate) fn mb_text(bytes: u64, comma: bool) -> String {
     let s = format!("{:.1} MB", bytes as f64 / 1_048_576.0);
     if comma { s.replace('.', ",") } else { s }
 }
 
 /// „42 % · 17,8 / 42,3 MB“; ohne bekannte Größe nur die geladene Menge
-fn progress_text(done: u64, total: u64, comma: bool) -> String {
+pub(crate) fn progress_text(done: u64, total: u64, comma: bool) -> String {
     if total <= 1 {
         return mb_text(done, comma);
     }
@@ -261,7 +261,10 @@ pub fn startup_cleanup() {
     if let Some(d) = exe_dir() {
         cl_update::cleanup_old(&d);
     }
-    std::thread::spawn(|| cleanup_temp(&std::env::temp_dir(), std::time::Duration::from_secs(2 * 86_400)));
+    std::thread::spawn(|| {
+        cleanup_temp(&std::env::temp_dir(), std::time::Duration::from_secs(2 * 86_400));
+        cl_update::packs::cleanup_parts(&crate::contents::download_dir(), crate::paths::pid_alive);
+    });
 }
 
 /// Arbeitsordner von Ton-Vorschau, Export und Whisper bleiben nur nach einem Absturz oder einem
