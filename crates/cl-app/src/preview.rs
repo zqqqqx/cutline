@@ -1,15 +1,15 @@
 //! Vorschau: Hintergrund-Decoder (Einzelbilder je Clip mit Effektkette, Thumbnails,
 //! Waveforms, Effekt-Vorschaubilder, Projekt-Titelbilder) und Wiedergabe-Ströme.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use cl_core::{ClipId, MediaId, Rational, Time};
-use cl_media::{FrameStream, RgbaFrame};
+use cl_media::{FrameStream, KillSwitch, RgbaFrame};
 use eframe::egui;
 
 /// Auflösung der Waveforms (Werte pro Sekunde)
@@ -227,10 +227,11 @@ impl FrameCache {
     }
 }
 
-/// Zwei Worker-Threads: einer für Bilder des Players (neuester Auftrag je Clip gewinnt),
-/// einer für alles im Hintergrund (Thumbnails, Waveforms, Kacheln).
+/// Drei Worker-Threads: einer verteilt die Bilder des Players (jeder Auftrag eigener Prozess,
+/// veraltete werden abgebrochen), einer für alles im Hintergrund (Thumbnails, Waveforms), einer
+/// für Kacheln. Hintergrund und Kacheln warten, solange Player-Bilder laufen.
 pub struct Decoder {
-    tx: Sender<Job>,
+    tx: Sender<Msg>,
     tx_bg: Sender<(u64, Job)>,
     /// Kacheln (Effekte, Filter, Übergänge): eigener Thread, bis zu vier FFmpeg parallel,
     /// damit das Vorladen Thumbnails und Waveforms der Medien nicht aufhält
@@ -240,6 +241,149 @@ pub struct Decoder {
     pub strips_wanted: Arc<Mutex<HashSet<String>>>,
     /// Projektgeneration: Aufträge eines verlassenen Projekts verwirft der Worker
     pub generation: Arc<AtomicU64>,
+}
+
+/// Nachricht an den Verteiler der Player-Bilder: neuer Auftrag oder fertiges Ergebnis.
+enum Msg {
+    Job(Job),
+    Done {
+        clip: ClipId,
+        key: u64,
+        res: cl_media::Result<(RgbaFrame, cl_media::DecodeInfo)>,
+        ms: f64,
+        proxy: bool,
+    },
+}
+
+/// Laufende Player-Bilder: höchstens ein Auftrag je Clip. Ein neuer Auftrag für denselben Clip
+/// macht den alten zum veralteten (sein FFmpeg wird beendet, sein Ergebnis nicht gezeigt).
+#[derive(Default)]
+struct InFlight(HashMap<ClipId, (u64, Arc<KillSwitch>)>);
+
+impl InFlight {
+    /// `None` = derselbe Auftrag läuft schon; sonst der Schalter des neuen und ggf. des veralteten.
+    fn start(&mut self, clip: ClipId, key: u64) -> Option<(Arc<KillSwitch>, Option<Arc<KillSwitch>>)> {
+        if self.0.get(&clip).is_some_and(|(k, _)| *k == key) {
+            return None;
+        }
+        let ks = Arc::new(KillSwitch::default());
+        let old = self.0.insert(clip, (key, ks.clone())).map(|(_, k)| k);
+        Some((ks, old))
+    }
+    /// Bild kam aus dem Speicher: laufender Auftrag des Clips ist veraltet.
+    fn cancel(&mut self, clip: ClipId) -> Option<Arc<KillSwitch>> {
+        self.0.remove(&clip).map(|(_, k)| k)
+    }
+    /// Ergebnis da: noch der aktuelle Auftrag des Clips?
+    fn finish(&mut self, clip: ClipId, key: u64) -> bool {
+        let cur = self.0.get(&clip).is_some_and(|(k, _)| *k == key);
+        if cur {
+            self.0.remove(&clip);
+        }
+        cur
+    }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+/// Darf ein Hintergrund-Auftrag starten? Erst wenn kein Player-Bild läuft – höchstens 1,5 s
+/// gewartet, damit Thumbnails beim Dauer-Scrubben nicht verhungern.
+fn bg_may_start(player_busy: usize, waited: std::time::Duration) -> bool {
+    player_busy == 0 || waited >= std::time::Duration::from_millis(1500)
+}
+
+fn yield_to_player(busy: &AtomicUsize) {
+    let t = std::time::Instant::now();
+    while !bg_may_start(busy.load(Ordering::Relaxed), t.elapsed()) {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// Verteiler der Player-Bilder (läuft im Thread `cl-decoder`).
+fn frame_dispatcher(
+    rx: Receiver<Msg>,
+    tx: Sender<Msg>,
+    done_tx: Sender<Done>,
+    ctx: egui::Context,
+    gen: Arc<AtomicU64>,
+    busy: Arc<AtomicUsize>,
+) {
+    let mut cache = FrameCache::new(384 << 20);
+    let mut inflight = InFlight::default();
+    let proxies = crate::proxy::dir();
+    loop {
+        // auch ohne neue Aufträge nachsehen, ob das Projekt gewechselt wurde
+        cache.set_generation(gen.load(Ordering::Relaxed));
+        let msg = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+            Ok(m) => m,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+        };
+        let out = match msg {
+            Msg::Job(Job::Frame { clip, key, path, at, w, h, graph }) => {
+                crate::proxy::note_activity();
+                if let Some(frame) = cache.get(key).cloned() {
+                    if let Some(k) = inflight.cancel(clip) {
+                        k.kill();
+                        perf_discarded();
+                    }
+                    Some(Done::Frame { clip, key, frame })
+                } else {
+                    if let Some((ks, old)) = inflight.start(clip, key) {
+                        if let Some(o) = old {
+                            o.kill();
+                            perf_discarded();
+                        }
+                        let tx = tx.clone();
+                        let proxy = path.starts_with(&proxies);
+                        std::thread::spawn(move || {
+                            let t = std::time::Instant::now();
+                            let res = cl_media::decode_frame_opts(&path, at, w, h, graph.as_deref(), false, Some(&ks));
+                            let ms = t.elapsed().as_secs_f64() * 1e3;
+                            let _ = tx.send(Msg::Done { clip, key, res, ms, proxy });
+                        });
+                    }
+                    None
+                }
+            }
+            Msg::Job(j) => run(j),
+            Msg::Done { clip, key, res, ms, proxy } => {
+                crate::proxy::note_activity();
+                let current = inflight.finish(clip, key);
+                match res {
+                    Ok((frame, info)) => {
+                        if crate::app::perf() {
+                            eprintln!(
+                                "perf: einzelbild {ms:.0} ms {} {}{}{}",
+                                if proxy { "Proxy" } else { "Original" },
+                                if info.hw { "HW" } else { "SW" },
+                                info.cpu.map(|c| format!(" cpu {} ms", c.as_millis())).unwrap_or_default(),
+                                if current { "" } else { " (veraltet)" }
+                            );
+                        }
+                        cache.put(key, frame.clone());
+                        current.then_some(Done::Frame { clip, key, frame })
+                    }
+                    Err(cl_media::MediaError::Cancelled) => None,
+                    Err(e) => current.then(|| Done::Error(e.to_string())),
+                }
+            }
+        };
+        busy.store(inflight.len(), Ordering::Relaxed);
+        if let Some(d) = out {
+            if done_tx.send(d).is_err() {
+                return;
+            }
+            ctx.request_repaint();
+        }
+    }
+}
+
+fn perf_discarded() {
+    if crate::app::perf() {
+        eprintln!("perf: einzelbild verworfen (veraltet)");
+    }
 }
 
 /// Auftrag noch nötig? `None` = verwerfen, `Some(Some(d))` = statt Ausführung melden.
@@ -437,80 +581,26 @@ impl Decoder {
     pub fn new(ctx: egui::Context) -> Self {
         let (done_tx, rx) = channel::<Done>();
         // Player-Bilder
-        let (tx, jobs) = channel::<Job>();
+        let (tx, jobs) = channel::<Msg>();
         let generation = Arc::new(AtomicU64::new(0));
+        let busy = Arc::new(AtomicUsize::new(0));
         {
-            let (done_tx, ctx, gen) = (done_tx.clone(), ctx.clone(), generation.clone());
+            let (done_tx, ctx, gen, busy, tx) = (done_tx.clone(), ctx.clone(), generation.clone(), busy.clone(), tx.clone());
             std::thread::Builder::new()
                 .name("cl-decoder".into())
-                .spawn(move || {
-                    let mut cache = FrameCache::new(384 << 20);
-                    loop {
-                        // auch ohne neue Aufträge nachsehen, ob das Projekt gewechselt wurde
-                        cache.set_generation(gen.load(Ordering::Relaxed));
-                        let first = match jobs.recv_timeout(std::time::Duration::from_secs(1)) {
-                            Ok(j) => j,
-                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
-                        };
-                        let mut pending = vec![first];
-                        pending.extend(jobs.try_iter());
-                        // je Clip nur den neuesten Auftrag
-                        let mut keep: Vec<Job> = Vec::new();
-                        for j in pending.into_iter().rev() {
-                            let dup = match &j {
-                                Job::Frame { clip, .. } => keep
-                                    .iter()
-                                    .any(|k| matches!(k, Job::Frame { clip: c, .. } if c == clip)),
-                                _ => false,
-                            };
-                            if !dup {
-                                keep.push(j);
-                            }
-                        }
-                        // Bereits berechnete Bilder sofort aus dem Speicher, der Rest parallel
-                        let mut todo = Vec::new();
-                        for job in keep.into_iter().rev() {
-                            match job {
-                                Job::Frame { clip, key, .. } if cache.get(key).is_some() => {
-                                    let frame = cache.get(key).unwrap().clone();
-                                    if done_tx.send(Done::Frame { clip, key, frame }).is_err() {
-                                        return;
-                                    }
-                                    ctx.request_repaint();
-                                }
-                                j => todo.push(j),
-                            }
-                        }
-                        let results: Vec<Option<Done>> = std::thread::scope(|sc| {
-                            let hs: Vec<_> = todo
-                                .into_iter()
-                                .map(|job| sc.spawn(move || run(job)))
-                                .collect();
-                            hs.into_iter().map(|h| h.join().ok().flatten()).collect()
-                        });
-                        for d in results.into_iter().flatten() {
-                            if let Done::Frame { key, frame, .. } = &d {
-                                cache.put(*key, frame.clone());
-                            }
-                            if done_tx.send(d).is_err() {
-                                return;
-                            }
-                            ctx.request_repaint();
-                        }
-                    }
-                })
+                .spawn(move || frame_dispatcher(jobs, tx, done_tx, ctx, gen, busy))
                 .expect("Decoder-Thread");
         }
         let strips_wanted: Arc<Mutex<HashSet<String>>> = Default::default();
         let (tx_fx, jobs_fx) = channel::<(u64, Job)>();
         {
             let (done_tx, ctx) = (done_tx.clone(), ctx.clone());
-            let (gen, wanted) = (generation.clone(), strips_wanted.clone());
+            let (gen, wanted, busy) = (generation.clone(), strips_wanted.clone(), busy.clone());
             std::thread::Builder::new()
                 .name("cl-decoder-fx".into())
                 .spawn(move || {
                     while let Ok(first) = jobs_fx.recv() {
+                        yield_to_player(&busy);
                         let mut batch = vec![first];
                         batch.extend(jobs_fx.try_iter().take(3));
                         let mut skipped = Vec::new();
@@ -547,6 +637,7 @@ impl Decoder {
             .name("cl-decoder-bg".into())
             .spawn(move || {
                 while let Ok((g, job)) = jobs_bg.recv() {
+                    yield_to_player(&busy);
                     let d = match check(&job, g, &gen, &wanted) {
                         None => continue,
                         Some(Some(d)) => Some(d),
@@ -575,7 +666,7 @@ impl Decoder {
         let g = self.generation.load(Ordering::Relaxed);
         match job {
             Job::Frame { .. } => {
-                let _ = self.tx.send(job);
+                let _ = self.tx.send(Msg::Job(job));
             }
             Job::FxThumb { .. } | Job::MediaStrip { .. } | Job::FileThumb { .. } => {
                 let _ = self.tx_fx.send((g, job));
@@ -616,8 +707,9 @@ impl Playback {
         fps: Rational,
         graph: Option<&str>,
         key: u64,
+        hw: bool,
     ) -> Option<Self> {
-        FrameStream::open_fx(path, source_at, w, h, fps, graph)
+        FrameStream::open_opts(path, source_at, w, h, fps, graph, hw)
             .ok()
             .map(|stream| Self {
                 stream,
@@ -664,6 +756,19 @@ impl Playback {
         let limit = if self.taken == 0 { 6.0 } else { 1.0 };
         self.ended || self.waiting_since.is_some_and(|w| w.elapsed().as_secs_f64() > limit)
     }
+}
+
+/// Hardware-Decodierung für einen Abspiel-Strom? Nur für Originale, deren Software-Decodierung
+/// bremst: über 1080p oder HEVC/AV1/VP9 ab 1080p (gemessen: 4K-HEVC-10-Bit 3,6 → 0,9 Kerne,
+/// 4K-H.264 2,3 → 0,6). 1080p-H.264 und Proxys sind in Software schnell genug, und das Öffnen
+/// eines Hardware-Decoders kostet 200–300 ms. Einzelbilder bleiben deshalb ganz in Software
+/// (Klick → Bild mit D3D11VA 0,2–0,4 s langsamer).
+pub fn stream_hw(m: &cl_core::MediaRef, path: &std::path::Path) -> bool {
+    let codec = m.video_codec.as_deref().unwrap_or("").to_ascii_lowercase();
+    path == m.path
+        && (m.width > 1920
+            || m.height > 1080
+            || (m.width.min(m.height) >= 1080 && ["hevc", "av1", "vp9"].iter().any(|c| codec.contains(c))))
 }
 
 pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
@@ -716,6 +821,158 @@ mod tests {
         let mid = &r[(w * h * 4 * 2) as usize..][..4];
         assert!(mid[0].abs_diff(128) <= 1 && mid[2].abs_diff(128) <= 1, "{mid:?}");
         assert!(shader_strip(&s, &pair[..8], w, h, 4).is_err());
+    }
+
+    #[test]
+    fn newer_job_makes_older_one_stale() {
+        let (a, b) = (ClipId::new(), ClipId::new());
+        let mut f = InFlight::default();
+        let (k1, old) = f.start(a, 1).unwrap();
+        assert!(old.is_none());
+        assert!(f.start(a, 1).is_none(), "gleicher Auftrag läuft schon");
+        // Folgeklick: alter Auftrag wird abgebrochen, neuer startet sofort
+        let (_, old) = f.start(a, 2).unwrap();
+        assert!(Arc::ptr_eq(&old.unwrap(), &k1));
+        f.start(b, 7).unwrap();
+        assert_eq!(f.len(), 2);
+        assert!(!f.finish(a, 1), "veraltetes Ergebnis wird nicht gezeigt");
+        assert!(f.finish(a, 2));
+        assert!(!f.finish(a, 2));
+        // Bild aus dem Speicher: laufender Auftrag des Clips verfällt
+        assert!(f.cancel(b).is_some() && f.cancel(b).is_none());
+        assert_eq!(f.len(), 0);
+    }
+
+    #[test]
+    fn background_waits_for_player_frames_but_not_forever() {
+        let ms = std::time::Duration::from_millis;
+        assert!(bg_may_start(0, ms(0)));
+        assert!(!bg_may_start(2, ms(100)));
+        assert!(bg_may_start(2, ms(1500)), "kein Verhungern beim Dauer-Scrubben");
+    }
+
+    #[test]
+    fn hardware_streams_only_for_heavy_originals() {
+        let m = |w: u32, h: u32, codec: &str| cl_core::MediaRef {
+            id: cl_core::MediaId::new(),
+            path: PathBuf::from("o.mp4"),
+            kind: cl_core::MediaKind::Video,
+            duration: Time::from_secs_f64(1.0),
+            width: w,
+            height: h,
+            fps: Some(Rational::new(60, 1)),
+            has_audio: false,
+            video_codec: Some(codec.into()),
+            audio_codec: None,
+        };
+        let orig = std::path::Path::new("o.mp4");
+        assert!(stream_hw(&m(3840, 2160, "h264"), orig));
+        assert!(stream_hw(&m(1920, 1080, "hevc"), orig));
+        assert!(stream_hw(&m(1080, 1920, "hevc"), orig), "Hochkant");
+        assert!(!stream_hw(&m(1920, 1080, "h264"), orig));
+        assert!(!stream_hw(&m(1280, 720, "hevc"), orig));
+        assert!(!stream_hw(&m(3840, 2160, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
+    }
+
+    /// Wartet auf das Bild mit Schlüssel `key`; zählt andere gelieferte Player-Bilder.
+    fn wait_frame(d: &Decoder, key: u64, other: &mut usize) -> std::time::Instant {
+        loop {
+            match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("kein Bild") {
+                Done::Frame { key: k, .. } if k == key => return std::time::Instant::now(),
+                Done::Frame { .. } => *other += 1,
+                Done::Error(e) => panic!("{e}"),
+                _ => {}
+            }
+        }
+    }
+
+    fn test_media() -> Vec<PathBuf> {
+        let home = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default());
+        [
+            home.join("Downloads/videoplayback.mp4"),
+            PathBuf::from("F:/cutline-testmedien/1080p60_gop10s.mp4"),
+            PathBuf::from("F:/cutline-testmedien/4k60_h264_80mbit.mp4"),
+            PathBuf::from("F:/cutline-testmedien/4k60_hevc10_50mbit.mp4"),
+        ]
+        .into_iter()
+        .filter(|p| p.is_file())
+        .collect()
+    }
+
+    fn frame_job(clip: ClipId, key: u64, path: &std::path::Path, at: f64) -> Job {
+        Job::Frame { clip, key, path: path.to_path_buf(), at: Time::from_secs_f64(at), w: 696, h: 392, graph: None }
+    }
+
+    /// Mess-Test (von Hand): Scrubben – 20 Aufträge im Abstand von 15 ms an verschiedenen
+    /// Stellen; gemessen wird die Zeit vom letzten Auftrag bis zu seinem Bild.
+    /// `cargo test --release -p cl-app -- --ignored --nocapture measure_scrub`
+    #[test]
+    #[ignore]
+    fn measure_scrub() {
+        for path in test_media() {
+            let d = Decoder::new(egui::Context::default());
+            let clip = ClipId::new();
+            let mut times = Vec::new();
+            let mut shown_stale = 0;
+            for round in 0..3u64 {
+                for i in 0..20u64 {
+                    let at = 30.0 + round as f64 * 40.0 + i as f64 * 0.7;
+                    d.send(frame_job(clip, round * 100 + i, &path, at));
+                    if i < 19 {
+                        std::thread::sleep(std::time::Duration::from_millis(15));
+                    }
+                }
+                let t = std::time::Instant::now();
+                let done = wait_frame(&d, round * 100 + 19, &mut shown_stale);
+                times.push(done.duration_since(t).as_millis());
+            }
+            println!(
+                "{}: letztes Bild nach {:?} ms, veraltete gezeigt: {shown_stale}",
+                path.file_name().unwrap().to_string_lossy(),
+                times
+            );
+        }
+    }
+
+    /// Mess-Test (von Hand): Einzelbild ohne und während eines Proxy-Baus (der Bau hält an,
+    /// sobald der Player Bilder anfordert).
+    /// `cargo test --release -p cl-app -- --ignored --nocapture measure_still_during_proxy`
+    #[test]
+    #[ignore]
+    fn measure_still_during_proxy() {
+        let Some(path) = test_media().into_iter().next() else { return };
+        let m = cl_media::probe(&path).unwrap();
+        let d = Decoder::new(egui::Context::default());
+        let clip = ClipId::new();
+        let mut key = 0u64;
+        let mut run = |label: &str| {
+            let mut ms = Vec::new();
+            for i in 0..10 {
+                key += 1;
+                let t = std::time::Instant::now();
+                d.send(frame_job(clip, key, &path, 60.0 + i as f64 * 97.3 + key as f64 * 0.01));
+                ms.push(wait_frame(&d, key, &mut 0).duration_since(t).as_millis());
+                // Abstand wie beim Klicken
+                std::thread::sleep(std::time::Duration::from_millis(1200));
+            }
+            ms.sort();
+            println!("{label}: Median {} ms, max {} ms ({ms:?})", ms[5], ms[9]);
+            ms[5]
+        };
+        let base = run("ohne Proxy-Bau");
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("p.mp4");
+        let spec = crate::proxy::proxy_spec(&m, 540, Rational::new(30, 1));
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let builder = {
+            let (m, cancel) = (m.clone(), cancel.clone());
+            std::thread::spawn(move || crate::proxy::build(&m, &out, &spec, &|_| {}, &cancel))
+        };
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let during = run("während Proxy-Bau");
+        cancel.store(true, Ordering::Relaxed);
+        let _ = builder.join();
+        println!("Verhältnis {:.2}", during as f64 / base.max(1) as f64);
     }
 
     #[test]

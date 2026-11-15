@@ -1194,8 +1194,9 @@ impl App {
                 // Vorab: ab dem Startpunkt des Clips/Elements; sonst ab dem Playhead
                 let t0 = prefetch_at.unwrap_or(self.playhead);
                 let at = c.source_time(c.start + l.t_rel);
+                let path = self.preview_path(m, h);
                 if let Some(pb) = Playback::open(
-                    &self.preview_path(m, h),
+                    &path,
                     at,
                     t0,
                     w,
@@ -1203,6 +1204,7 @@ impl App {
                     fps,
                     graph.as_deref(),
                     key,
+                    crate::preview::stream_hw(m, &path),
                 ) {
                     self.perf_opens += 1;
                     // Läuft schon ein Strom (z. B. Effekt während der Wiedergabe geändert),
