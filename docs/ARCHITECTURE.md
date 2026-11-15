@@ -32,11 +32,13 @@ crates/
   cl-fonts    Font import and library (TTF/OTF/TTC/WOFF, variable and color fonts), per project or global
   cl-i18n     Fluent messages plus the runtime UI dictionary (`tr()`), pseudo-localization
   cl-plugin   Plugin manifests, validation and registry (asset packs)
+  cl-gpu      Shader transitions (WGSL) on a headless wgpu device, shared by preview and export
   cl-mcp      MCP server (stdio and token-protected local HTTP); tools map to EditOps
   cl-update   Updates from GitHub Releases: check, download, SHA-256 verify, swap binary
   cl-app      Desktop app (egui/wgpu), binary `cutline`
 plugins/
-  cutline-basis  Reference asset pack (plugin.toml + WGSL)
+  cutline-basis  Reference asset pack (plugin.toml, FFmpeg chains)
+  cutline-uebergaenge  Shader transitions (own CC0 work and ports of GL Transitions, MIT)
 installer/
   cutline.iss    Windows installer (Inno Setup, per-user, file association)
 ```
@@ -90,8 +92,33 @@ Tools: `project_info`, `list_timeline`, `list_media`, `list_fonts`, `history`, `
 ## Plugins
 
 Asset packs are folders with a `plugin.toml` manifest (id, version, localized names, license)
-and assets: effects, transitions and filters as FFmpeg chains or WGSL shaders. See
-`plugins/cutline-basis` for the reference pack.
+and assets: effects and filters as FFmpeg chains, sounds and stickers as files, transitions as
+WGSL shaders. See `plugins/cutline-basis` for the reference pack.
+
+## Shader transitions
+
+A transition asset (`kind = "transition"`) names a WGSL file and a mandatory `fallback`, a
+built-in `xfade` transition. The shader only defines
+`fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f` and reads both pictures with
+`from_color(uv)` / `to_color(uv)` (`uv` from the bottom left as in GL Transitions, `ratio` =
+width/height); parameters are `params.p0` … `params.p7` with the manifest defaults (numbers and
+switches only). `cl-gpu` wraps it (uniforms, sampler, full-screen triangle), validates it with
+naga (no GPU needed) and renders on a headless device (hardware adapter, else a software
+adapter, else none). Mixing happens in gamma-encoded RGB like `xfade`, so progress 0 and 1 are
+exactly the pictures before and after (tested for every shipped shader).
+
+- Export: the graph stays as it is (`xfade` with the fallback, same timing). For each shader
+  transition a pre-pass reads the last frames of clip A and the first of clip B with the same
+  clip chains as the main graph (one FFmpeg, both side by side as RGBA), mixes them with
+  `cl-gpu` and writes a lossless FFV1 file into the job folder. The main graph replaces the
+  `xfade` output by that file exactly in the transition window (`blend`, frame-accurate on the
+  track, below layers like text). Without GPU, on errors or when a window overlaps the previous
+  one, that replacement is dropped and the fallback remains; cancelling stops both processes.
+- Preview: in a shader transition the player mixes the two decoded frames with the same
+  function, as long as both clips fill the frame without their own transform; otherwise, or when
+  a frame takes longer than the frame interval while playing, it crossfades as before.
+- Pack switched off or missing: the fallback is used and the project lists the transition as
+  missing content.
 
 ## Translations
 
