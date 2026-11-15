@@ -303,25 +303,12 @@ mod temp_tests {
     }
 }
 
-/// motion: eigene Fortschrittslinie (4 px); `None` = wandernder Abschnitt beim Warten.
-/// Beim Zusammenführen durch `theme::progress_line` bzw. `theme::busy_line` ersetzen.
+/// Fortschritts- bzw. Lauflinie des Update-Fensters (4 px); `None` = Dauer unbekannt.
 fn progress_line(ui: &mut egui::Ui, frac: Option<f32>) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), egui::Sense::hover());
-    let p = ui.painter();
-    p.rect_filled(r, 2.0, theme::BG_INPUT());
-    let fill = match frac {
-        Some(f) => egui::Rect::from_min_size(r.min, vec2(r.width() * f.clamp(0.0, 1.0), r.height())),
-        None => {
-            // motion: Abschnitt wandert in 1,2 s einmal durch
-            let t = (ui.input(|i| i.time) / 1.2).fract() as f32;
-            let w = r.width() * 0.3;
-            let x = r.left() - w + t * (r.width() + w);
-            ui.ctx().request_repaint();
-            egui::Rect::from_x_y_ranges(x.max(r.left())..=(x + w).min(r.right()), r.y_range())
-        }
-    };
-    if fill.width() > 0.0 {
-        p.rect_filled(fill, 2.0, theme::ACCENT());
+    match frac {
+        Some(f) => crate::widgets::progress_line(ui.painter(), ui.id().with("update"), r, f),
+        None => crate::widgets::busy_line(ui.painter(), r),
     }
 }
 
