@@ -300,6 +300,14 @@ mod tests {
     }
 
     #[test]
+    fn singular_counts_translate() {
+        assert_eq!(translate("1 Spur"), "1 track");
+        assert_eq!(translate("1 Highlight als Marker gesetzt"), "1 highlight added as a marker");
+        assert_eq!(translate("1 Pause entfernt (2.5 s)"), "1 pause removed (2.5 s)");
+        assert_eq!(translate("vor 3 Min."), "3 min ago");
+    }
+
+    #[test]
     fn odd_strings_never_panic() {
         for s in ["", " ", "\u{e0f0}", "\u{e0f0}  ", "✓", "()", " ()", "a ()", "(", ")", " · ", "·", "\n", "Abbrechen\n", "\nAbbrechen",
             "Abbrechen · Abbrechen", "Strg+Entf", "Pos1", "🎬", "مرحبا", "Ä (", "x (y)", "{}", "{", "}", "{1}", "%s"] {

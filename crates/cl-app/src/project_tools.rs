@@ -299,7 +299,7 @@ impl App {
                 ui.label(RichText::new(crate::tr(format!("{}  Alle Medien sind vorhanden", icon::CHECK_CIRCLE))).color(theme::TEXT_DIM()));
                 return;
             }
-            ui.label(crate::tr(format!("{} Mediendateien wurden nicht gefunden (verschoben oder umbenannt).", missing.len())));
+            ui.label(crate::tr(theme::count_text(missing.len(), "{} Mediendatei wurde nicht gefunden (verschoben oder umbenannt).", "{} Mediendateien wurden nicht gefunden (verschoben oder umbenannt).")));
             ui.add_space(4.0);
             egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                 for (id, p) in &missing {

@@ -747,6 +747,12 @@ pub fn text_width(ctx: &egui::Context, text: &str, font: egui::FontId) -> f32 {
     ctx.fonts(|f| f.layout_no_wrap(text.to_string(), font, Color32::WHITE).size().x)
 }
 
+/// Zählertext mit richtiger Einzahl: `one`/`many` sind deutsche Vorlagen mit `{}` für die Zahl
+/// (beide stehen im Wörterbuch, `tr` übersetzt das Ergebnis).
+pub fn count_text(n: usize, one: &str, many: &str) -> String {
+    (if n == 1 { one } else { many }).replace("{}", &n.to_string())
+}
+
 /// Kürzt `text` am Ende mit „…“, bis er in `max_w` passt (`width` misst eine Zeichenkette).
 pub fn elide(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
     if width(text) <= max_w {
@@ -984,6 +990,13 @@ pub fn window_icon() -> Option<egui::IconData> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn count_text_uses_singular_for_one() {
+        assert_eq!(count_text(1, "{} Spur", "{} Spuren"), "1 Spur");
+        assert_eq!(count_text(0, "{} Spur", "{} Spuren"), "0 Spuren");
+        assert_eq!(count_text(2, "{} Highlight als Marker gesetzt", "{} Highlights als Marker gesetzt"), "2 Highlights als Marker gesetzt");
+    }
 
     #[test]
     fn focus_ring_only_while_using_keyboard() {

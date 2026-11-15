@@ -243,7 +243,7 @@ impl App {
         }
         .is_some();
         if ok && extra > 0 {
-            self.toast(format!("{extra} Clips auf anderen Spuren mit entfernt (Alles mitziehen)"));
+            self.toast(theme::count_text(extra, "{} Clip auf anderen Spuren mit entfernt (Alles mitziehen)", "{} Clips auf anderen Spuren mit entfernt (Alles mitziehen)"));
         }
         ok
     }

@@ -121,9 +121,10 @@ impl App {
                 }
                 if !rep.missing.is_empty() {
                     ui.add_space(6.0);
-                    ui.label(crate::tr(format!(
+                    ui.label(crate::tr(crate::theme::count_text(
+                        rep.missing.len(),
+                        "{} Mediendatei wurde nicht gefunden:",
                         "{} Mediendateien wurden nicht gefunden:",
-                        rep.missing.len()
                     )));
                     for p in rep.missing.iter().take(6) {
                         ui.label(

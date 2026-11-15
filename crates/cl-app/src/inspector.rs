@@ -1612,11 +1612,12 @@ impl App {
             .sum();
         theme::row(ui, "Inhalt", |ui| {
             ui.label(
-                RichText::new(crate::tr(format!(
-                    "{} Spuren · {clips} Clips · {} Medien",
-                    self.project.timeline.tracks.len(),
-                    self.project.media.len()
-                )))
+                RichText::new(format!(
+                    "{} · {} · {}",
+                    crate::tr(theme::count_text(self.project.timeline.tracks.len(), "{} Spur", "{} Spuren")),
+                    crate::tr(theme::count_text(clips, "{} Clip", "{} Clips")),
+                    crate::tr(theme::count_text(self.project.media.len(), "{} Medium", "{} Medien"))
+                ))
                 .color(theme::TEXT_DIM()),
             )
         });

@@ -1689,3 +1689,14 @@ Import fehlgeschlagen (interner Fehler)	Import failed (internal error)
 Keine Effekte gefunden	No effects found
 Keine Filter gefunden	No filters found
 Keine Übergänge gefunden	No transitions found
+{} Spur	{} track
+{} Clip	{} clip
+{} Medium	{} media item
+{} Highlight als Marker gesetzt	{} highlight added as a marker
+{} Pause entfernt ({} s)	{} pause removed ({} s)
+{} Füllwort entfernt	{} filler word removed
+{} Pause, {} s kürzer	{} pause, {} s shorter
+{} Füllwort, {} s kürzer	{} filler word, {} s shorter
+{} Mediendatei wurde nicht gefunden:	{} media file was not found:
+{} Mediendatei wurde nicht gefunden (verschoben oder umbenannt).	{} media file was not found (moved or renamed).
+{} Clip auf anderen Spuren mit entfernt (Alles mitziehen)	{} clip on other tracks removed as well (move everything)
