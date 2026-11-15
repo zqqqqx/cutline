@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -52,7 +52,7 @@ pub fn default_input() -> Option<String> {
 
 pub struct Recorder {
     stream: Option<cpal::Stream>,
-    tx: Option<SyncSender<Vec<f32>>>,
+    tx: Option<Sender<Vec<f32>>>,
     writer: Option<JoinHandle<Result<(), String>>>,
     level: Arc<AtomicU32>,
     /// Spitzenpegel, 50 Werte pro Sekunde (für die Live-Waveform in der Zeitleiste)
@@ -84,17 +84,7 @@ impl Recorder {
         if let Some(d) = path.parent() {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
-        let mut sink = WavSink::create(&path, rate, channels)?;
-        let (tx, rx) = sync_channel::<Vec<f32>>(64);
-        let writer = std::thread::Builder::new()
-            .name("cl-voiceover-writer".into())
-            .spawn(move || {
-                while let Ok(buf) = rx.recv() {
-                    sink.push(&buf)?;
-                }
-                sink.finish()
-            })
-            .map_err(|e| e.to_string())?;
+        let (tx, writer) = spawn_writer(WavSink::create(&path, rate, channels)?)?;
         let level = Arc::new(AtomicU32::new(0));
         let peaks = Arc::new(Mutex::new(Vec::<f32>::new()));
         let bucket =
@@ -130,7 +120,7 @@ impl Recorder {
                                 p.extend(new);
                             }
                         }
-                        let _ = tx.try_send(buf);
+                        let _ = tx.send(buf);
                     },
                     err,
                     None,
@@ -183,9 +173,39 @@ impl Recorder {
     }
 }
 
+/// Schreib-Thread für die Aufnahme. Der Kanal ist unbegrenzt: hakt die Platte, wächst kurz der
+/// Speicher, statt dass Puffer verworfen werden (die Datei liefe sonst aus dem Takt).
+fn spawn_writer(mut sink: WavSink) -> Result<(Sender<Vec<f32>>, JoinHandle<Result<(), String>>), String> {
+    let (tx, rx) = channel::<Vec<f32>>();
+    let writer = std::thread::Builder::new()
+        .name("cl-voiceover-writer".into())
+        .spawn(move || {
+            while let Ok(buf) = rx.recv() {
+                sink.push(&buf)?;
+            }
+            sink.finish()
+        })
+        .map_err(|e| e.to_string())?;
+    Ok((tx, writer))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writer_keeps_every_buffer_when_the_disk_lags() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("vo.wav");
+        let (tx, w) = spawn_writer(WavSink::create(&p, 48000, 1).unwrap()).unwrap();
+        // viel schneller geliefert, als geschrieben wird (früher: 64 Plätze, der Rest verworfen)
+        for i in 0..1000 {
+            tx.send(vec![i as f32 / 1000.0; 480]).unwrap();
+        }
+        drop(tx);
+        w.join().unwrap().unwrap();
+        assert_eq!(hound::WavReader::open(&p).unwrap().len(), 480_000);
+    }
 
     #[test]
     fn wav_sink_writes_readable_float_wav() {
