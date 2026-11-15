@@ -315,13 +315,17 @@ impl App {
         let onboard = (!settings.onboarding_done
             && std::env::var_os("CUTLINE_NO_ONBOARDING").is_none())
         .then(|| crate::onboarding::Onboard::new(&settings.use_cases));
+        perf_mark("Einstellungen");
         paths::install_bundled_fonts();
         let fonts = cl_fonts::FontLibrary::open(paths::font_dir()).unwrap_or_default();
+        perf_mark("Schriften");
         let plugin_dirs = paths::plugin_dirs();
         let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
         plugins.apply_states(&settings.plugin_states);
         let lang = settings.lang();
+        perf_mark("Plugins");
         cl_fx::catalog::load_packs(crate::contents::catalog_packs(&plugins, lang.code()));
+        perf_mark("Katalog");
 
         let system_font_count = Arc::new(Mutex::new(None));
         {
@@ -505,6 +509,7 @@ impl App {
         if let Some(p) = open {
             app.open_project(&p);
         }
+        perf_mark("App bereit");
         app
     }
 
@@ -2909,17 +2914,22 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
+        let _frame_time = perf().then(|| PerfFrame(Instant::now()));
         if perf() {
+            static FIRST: std::sync::Once = std::sync::Once::new();
+            FIRST.call_once(|| perf_mark("erstes Bild"));
             self.perf_ui += 1;
             let el = self.perf_since.elapsed().as_secs_f64();
             if el >= 1.0 {
                 eprintln!(
-                    "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}",
+                    "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}, Bildzeit Ø {:.2} / max {:.1} ms",
                     self.perf_ui as f64 / el,
                     self.perf_frames as f64 / el,
                     self.perf_opens,
                     self.perf_max_gap * 1000.0,
-                    self.playing
+                    self.playing,
+                    PERF_SUM_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0 / self.perf_ui.max(1) as f64,
+                    PERF_MAX_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0
                 );
                 self.perf_max_gap = 0.0;
                 self.perf_ui = 0;
@@ -3305,6 +3315,27 @@ impl App {
 pub fn perf() -> bool {
     static P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *P.get_or_init(|| std::env::var_os("CUTLINE_PERF").is_some())
+}
+
+/// Messung: Rechenzeit je UI-Bild (Summe und Maximum seit der letzten `perf`-Zeile, µs)
+static PERF_SUM_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PERF_MAX_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+struct PerfFrame(Instant);
+impl Drop for PerfFrame {
+    fn drop(&mut self) {
+        let us = self.0.elapsed().as_micros() as u64;
+        PERF_SUM_US.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
+        PERF_MAX_US.fetch_max(us, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Messpunkt beim Start (`CUTLINE_PERF`): Zeit seit dem ersten Aufruf (in `main`)
+pub fn perf_mark(what: &str) {
+    static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    let t0 = *T0.get_or_init(Instant::now);
+    if perf() {
+        eprintln!("perf: Start {what} nach {} ms", t0.elapsed().as_millis());
+    }
 }
 
 /// Für Dokumentation: Mit `CUTLINE_SHOTS=<Ordner>` speichert Cutline das Fensterbild als PNG,
