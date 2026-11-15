@@ -161,6 +161,16 @@ fn draw_fx(content: &egui::Painter, base: egui::TextureId, fx: egui::TextureId, 
 
 /// Fortschritt eines Übergangs der Länge `d` um den Schnitt `cut` (wie im Export:
 /// Fenster `cut − d/2 … cut + d/2`), `None` außerhalb.
+/// Wartet der Player auf ein Bild? Beim Abspielen: der Strom läuft noch an. Im Stand: zu einem
+/// angeforderten Bild (`requested`, Schlüssel) ist noch kein passendes geliefert (`delivered`).
+pub(crate) fn awaiting_frame(playing: bool, warming_up: bool, mut pending: impl Iterator<Item = (u64, Option<u64>)>) -> bool {
+    if playing {
+        warming_up
+    } else {
+        pending.any(|(requested, delivered)| delivered != Some(requested))
+    }
+}
+
 pub(crate) fn transition_progress(ts: f64, cut: f64, d: f64) -> Option<f32> {
     if d <= 0.0 || ts < cut - d / 2.0 || ts >= cut + d / 2.0 {
         return None;
@@ -391,6 +401,24 @@ fn mix_pairs(project: &Project, layers: &[Layer], t: Time) -> Vec<(usize, usize,
             (mixes(&plan) || fx_over()).then_some((ai, bi, plan, p))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod wait_tests {
+    use super::awaiting_frame;
+
+    #[test]
+    fn waits_only_for_requested_but_missing_frames() {
+        // Stand: alles geliefert / nichts angefordert → wartet nicht
+        assert!(!awaiting_frame(false, false, [(7, Some(7))].into_iter()));
+        assert!(!awaiting_frame(false, false, std::iter::empty()));
+        // angefordert, noch nichts oder ein älteres Bild da → wartet (das alte bleibt stehen)
+        assert!(awaiting_frame(false, false, [(7, None)].into_iter()));
+        assert!(awaiting_frame(false, false, [(3, Some(3)), (8, Some(7))].into_iter()));
+        // Abspielen: nur der Anlauf zählt, alte Einzelbild-Anforderungen nicht
+        assert!(awaiting_frame(true, true, std::iter::empty()));
+        assert!(!awaiting_frame(true, false, [(8, Some(7))].into_iter()));
+    }
 }
 
 #[cfg(test)]
@@ -1018,6 +1046,15 @@ impl App {
     }
 
     /// Alle sichtbaren Ebenen von unten nach oben (inkl. Übergängen).
+    /// Signal „wartet auf Bild“ für die Warte-Linie (siehe [`awaiting_frame`]).
+    pub(crate) fn waiting_for_frame(&self) -> bool {
+        awaiting_frame(
+            self.playing,
+            self.play_warmup.is_some(),
+            self.requested.iter().map(|(id, k)| (*k, self.frames.get(id).map(|f| f.0))),
+        )
+    }
+
     fn layers_at(&self, t: Time) -> Vec<Layer> {
         layers_in(&self.project, self.live.as_ref(), t)
     }
@@ -1309,6 +1346,20 @@ impl App {
         painter.rect_filled(canvas, 0.0, Color32::BLACK);
         let content = painter.with_clip_rect(canvas.intersect(area));
         let regions = self.draw_layers(&content, canvas, scale, &layers);
+        // Warten auf ein Bild: das letzte bleibt stehen, darunter eine dünne Lauflinie. Kommt nach
+        // 8 s nichts (Datei nicht lesbar, entferntes Medium), endet die Linie.
+        let wait_id = egui::Id::new("player-wait");
+        let waiting = self.waiting_for_frame();
+        let now = ui.input(|i| i.time);
+        let since = waiting.then(|| ui.data(|d| d.get_temp::<f64>(wait_id)).unwrap_or(now));
+        ui.data_mut(|d| match since {
+            Some(s) => d.insert_temp(wait_id, s),
+            None => d.remove::<f64>(wait_id),
+        });
+        if theme::loading(ui.ctx(), wait_id, since.is_some_and(|s| now - s < 8.0)) {
+            let vis = canvas.intersect(area);
+            crate::widgets::busy_line(&painter, Rect::from_min_max(pos2(vis.left(), vis.bottom() - 2.0), vis.max));
+        }
         // Ablegen aus dem Asset-Bereich direkt im Player
         if let Some(payload) = area_resp.dnd_release_payload::<DragAsset>() {
             let on = area_resp
@@ -1391,6 +1442,11 @@ impl App {
         let s = &self.project.settings;
         let (pw, ph) = (s.width.max(2) as f32, s.height.max(2) as f32);
         let mut regions: Vec<Region> = Vec::new();
+        // Unterstes gezeigtes Bild: steht weiter, solange der nächste Clip noch kein Bild hat
+        // (nur im selben Projekt: ein anderes zeigt nie das Bild des vorigen)
+        let held_id = egui::Id::new("player-held-frame");
+        let held_for = egui::Id::new(&self.project_path).value();
+        let mut bottom = true;
         for l in layers {
             let c = &l.clip;
             let mut ev = c.eval_at(l.t_rel, pw, ph);
@@ -1431,8 +1487,20 @@ impl App {
                         }
                     }
                     let Some(tex) = self.frames.get(&c.id).map(|f| &f.1) else {
+                        if std::mem::take(&mut bottom) && mixed.is_none() {
+                            let held = content.ctx().data(|d| d.get_temp::<(u64, egui::TextureHandle)>(held_id));
+                            if let Some((_, h)) = held.filter(|h| h.0 == held_for) {
+                                let hs = h.size_vec2();
+                                let fit = (canvas.width() / hs.x).min(canvas.height() / hs.y);
+                                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                                content.image(h.id(), Rect::from_center_size(canvas.center(), hs * fit), uv, Color32::WHITE);
+                            }
+                        }
                         continue;
                     };
+                    if std::mem::take(&mut bottom) {
+                        content.ctx().data_mut(|d| d.insert_temp(held_id, (held_for, tex.clone())));
+                    }
                     let ts = tex.size_vec2();
                     let fit = (canvas.width() / ts.x).min(canvas.height() / ts.y) * ev.scale;
                     let region = Region {
@@ -1802,16 +1870,18 @@ impl App {
                 }
             },
         );
-        let glyph = if self.playing {
-            icon::PAUSE
-        } else {
-            icon::PLAY
-        };
         let pr = ui.put(
             Rect::from_center_size(bar.center(), vec2(36.0, 28.0)),
-            // Icon-Glyphe: großer Abspielknopf, per ui.put mittig platziert (icon_button kann weder Größe noch put)
-            egui::Button::new(RichText::new(crate::tr(glyph)).size(19.0)).frame(false),
+            egui::Button::new("").frame(false),
         );
+        // Symbol wechselt weich: Play blendet aus, Pause ein (und umgekehrt)
+        let k = theme::fade(ui.ctx(), pr.id.with("glyph"), self.playing, theme::MOTION_FAST);
+        for (glyph, a) in [(icon::PLAY, 1.0 - k), (icon::PAUSE, k)] {
+            if a > 0.0 {
+                // Icon-Glyphe: großer Abspielknopf
+                ui.painter().text(pr.rect.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(19.0), theme::TEXT().gamma_multiply(a));
+            }
+        }
         if pr
             .on_hover_text(crate::tr(format!(
                 "{}  (Leertaste)",

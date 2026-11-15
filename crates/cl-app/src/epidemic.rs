@@ -446,6 +446,7 @@ impl App {
                     .color(theme::WARN_TEXT()),
             );
         }
+        widgets::busy_row(ui, egui::Id::new("es-busy"), self.es.busy);
         let list: Vec<Track> = match self.es.view {
             View::Discover => self.es.results.clone(),
             View::Favorites => self.es.cfg.favorites.clone(),
@@ -453,7 +454,11 @@ impl App {
         };
         if list.is_empty() {
             if self.es.busy {
-                ui.vertical_centered(|ui| ui.add(egui::Spinner::new().color(theme::ACCENT())));
+                // Platzhalter in Zeilengröße, bis die ersten Titel da sind
+                for i in 0..6 {
+                    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), egui::Sense::hover());
+                    widgets::skeleton(ui.painter(), egui::Id::new(("es-skel", i)), r.shrink2(vec2(0.0, 2.0)), theme::R_CARD);
+                }
             } else if self.es.view == View::Favorites {
                 theme::empty_state(
                     ui,
@@ -672,13 +677,11 @@ impl App {
                         self.es.reset();
                     }
                 } else if self.es.login_running {
-                    ui.horizontal(|ui| {
-                        ui.add(egui::Spinner::new().color(theme::ACCENT()));
-                        ui.label(
-                            RichText::new(crate::tr("Anmeldung im Browser abschließen …"))
-                                .color(theme::TEXT_DIM()),
-                        );
-                    });
+                    ui.label(
+                        RichText::new(crate::tr("Anmeldung im Browser abschließen …"))
+                            .color(theme::TEXT_DIM()),
+                    );
+                    widgets::busy_row(ui, egui::Id::new("es-login"), true);
                 } else if ui
                     .add_enabled(
                         !self.es.cfg.client_id.trim().is_empty(),

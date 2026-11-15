@@ -320,10 +320,11 @@ impl App {
 
         // Rahmen + Griffe des ausgewählten Elements: nur solange der Zeiger im Player ist
         // (oder gezogen wird), sonst weich ausblenden – die Auswahl selbst bleibt bestehen
-        let show = ui.ctx().animate_bool_with_time(
+        let show = theme::fade(
+            ui.ctx(),
             egui::Id::new("gizmo-visible"),
             resp.contains_pointer() || self.gizmo.drag.is_some(),
-            theme::anim(0.18),
+            theme::MOTION,
         );
         let mut painter = painter;
         painter.multiply_opacity(show);

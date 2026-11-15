@@ -38,7 +38,93 @@ pub fn load_ui_scale() -> f32 {
         .unwrap_or(1.0)
 }
 
+/// Anzeige laufender Hintergrundaufgaben in der Statuszeile: Name (bei mehreren ein Zähler) und
+/// Fortschritt (`None` = unbekannt → Lauflinie; bei mehreren nur, wenn alle einen melden: Mittel).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TaskSummary {
+    pub label: String,
+    pub progress: Option<f32>,
+    pub count: usize,
+}
+
+/// Fasst laufende Aufgaben (Name, gemeldeter Fortschritt 0…1; 0 = noch keiner) zusammen.
+pub fn task_summary(tasks: &[(&str, f32)]) -> Option<TaskSummary> {
+    let (first, _) = tasks.first()?;
+    let known = tasks.iter().all(|t| t.1 > 0.0);
+    Some(TaskSummary {
+        label: if tasks.len() == 1 {
+            first.trim_end_matches(" …").trim_end_matches('…').trim_end().to_string()
+        } else {
+            format!("{} Aufgaben", tasks.len())
+        },
+        progress: known.then(|| tasks.iter().map(|t| t.1.clamp(0.0, 1.0)).sum::<f32>() / tasks.len() as f32),
+        count: tasks.len(),
+    })
+}
+
 impl App {
+    /// Laufende Hintergrundaufgaben (Proxy, Analyse, Untertitel, Import …) in der Statuszeile:
+    /// Name, Fortschritts- bzw. Lauflinie, Abbrechen; mehrere = Zähler mit aufklappbarer Liste.
+    /// Erscheint erst nach 150 ms (kurze Aufgaben blitzen nicht auf).
+    pub fn tasks_badge(&mut self, ui: &mut egui::Ui) {
+        let id = egui::Id::new("tasks-badge");
+        let names: Vec<String> = self.tasks.list.iter().map(|t| crate::tr(&t.label)).collect();
+        let list: Vec<(&str, f32)> = names.iter().zip(&self.tasks.list).map(|(n, t)| (n.as_str(), t.progress())).collect();
+        let now = task_summary(&list);
+        if !theme::loading(ui.ctx(), id, now.is_some()) {
+            return;
+        }
+        // gerade fertig: die letzte Anzeige steht noch kurz, mit voller Linie
+        let s = match now {
+            Some(s) => {
+                ui.data_mut(|d| d.insert_temp(id, s.clone()));
+                s
+            }
+            None => match ui.data(|d| d.get_temp::<TaskSummary>(id)) {
+                Some(s) => TaskSummary { progress: Some(1.0), ..s },
+                None => return,
+            },
+        };
+        let single = s.count == 1;
+        if single && theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
+            if let Some(t) = self.tasks.list.first() {
+                t.cancel();
+            }
+        }
+        let (lr, _) = ui.allocate_exact_size(vec2(56.0, 3.0), Sense::hover());
+        crate::widgets::task_line(ui.painter(), id, lr, s.progress.unwrap_or(0.0));
+        let text = if single { s.label.clone() } else { format!("{}  {}", s.label, icon::CARET_DOWN) };
+        let font = egui::FontId::proportional(theme::FS_UI);
+        let shown = theme::elide(&crate::tr(&text), 220.0, |t| theme::text_width(ui.ctx(), t, font.clone()));
+        let r = ui.add(egui::Label::new(RichText::new(&shown).size(theme::FS_UI).color(theme::TEXT_DIM())).sense(Sense::click()));
+        if single {
+            if shown != s.label {
+                r.on_hover_text(&s.label);
+            }
+            return;
+        }
+        let pop = id.with("list");
+        if r.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(pop));
+        }
+        egui::popup::popup_below_widget(ui, pop, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+            ui.set_min_width(260.0);
+            for (t, name) in self.tasks.list.iter().zip(&names) {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(name.trim_end_matches(" …")).size(theme::FS_UI));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
+                            t.cancel();
+                        }
+                    });
+                });
+                let (lr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 3.0), Sense::hover());
+                crate::widgets::task_line(ui.painter(), egui::Id::new(("task", t.id)), lr, t.progress());
+                ui.add_space(6.0);
+            }
+        });
+    }
+
     pub fn set_ui_scale(&mut self, ctx: &egui::Context, v: f32) {
         self.ui_scale = ((v * 10.0).round() / 10.0).clamp(0.6, 2.0);
         ctx.set_zoom_factor(self.ui_scale);
@@ -278,6 +364,17 @@ impl App {
                 });
             },
         );
+        // Projekt lädt (Oberfläche steht schon, das erste Bild kommt noch): Lauflinie unter dem Titel
+        let key = egui::Id::new("project-loading");
+        let proj = egui::Id::new(&self.project_path).value();
+        let (last, pending, n) = ctx.data(|d| d.get_temp::<(u64, bool, u32)>(key)).unwrap_or((!proj, true, 0));
+        let (pending, n) = if last != proj || home { (true, 0) } else { (pending, n.saturating_add(1)) };
+        // fertig mit dem ersten Bild – oder es wird keins gebraucht (nach zwei Bildern ohne Anforderung)
+        let pending = pending && self.frames.is_empty() && !(n > 2 && self.requested.is_empty());
+        ctx.data_mut(|d| d.insert_temp(key, (proj, pending, n)));
+        if theme::loading(&ctx, key, pending && !home) {
+            crate::widgets::busy_line(ui.painter(), Rect::from_min_max(pos2(bar.left(), bar.bottom() - 2.0), bar.max));
+        }
         // Projektname mittig
         if !home {
             let name = self.project.name.clone();
@@ -454,6 +551,21 @@ impl App {
 #[cfg(test)]
 mod scale_tests {
     use super::*;
+
+    #[test]
+    fn tasks_are_summarized_for_the_status_bar() {
+        assert_eq!(task_summary(&[]), None);
+        // eine Aufgabe: ihr Name ohne „…“, Fortschritt erst, sobald einer gemeldet wird
+        let one = task_summary(&[("Proxy wird erstellt: a.mp4 …", 0.0)]).unwrap();
+        assert_eq!((one.label.as_str(), one.progress, one.count), ("Proxy wird erstellt: a.mp4", None, 1));
+        assert_eq!(task_summary(&[("Analyse", 0.4)]).unwrap().progress, Some(0.4));
+        // mehrere: Zähler; Mittel nur, wenn alle einen Fortschritt melden, sonst Lauflinie
+        let two = task_summary(&[("A", 0.2), ("B", 0.6)]).unwrap();
+        assert_eq!(two.label, "2 Aufgaben");
+        assert!((two.progress.unwrap() - 0.4).abs() < 1e-6);
+        assert_eq!(task_summary(&[("A", 0.2), ("B", 0.0), ("C", 1.0)]).unwrap().progress, None);
+        assert_eq!(task_summary(&[("A", 0.2), ("B", 0.0), ("C", 1.0)]).unwrap().count, 3);
+    }
 
     #[test]
     fn ui_scale_keeps_minimum_area() {

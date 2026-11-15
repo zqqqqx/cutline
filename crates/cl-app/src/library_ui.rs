@@ -517,6 +517,8 @@ impl App {
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
             .show(ui, |ui| ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            let marks = ui.painter().add(egui::Shape::Noop);
+            let mut active = None;
             if ui.rect_contains_pointer(ui.clip_rect()) {
                 let d = ui.input(|i| i.smooth_scroll_delta);
                 if d.x == 0.0 && d.y != 0.0 {
@@ -528,7 +530,10 @@ impl App {
                 ("Favoriten", icon::STAR, "Favoriten"),
                 ("Zuletzt", icon::CLOCK_COUNTER_CLOCKWISE, "Zuletzt verwendet"),
             ] {
-                let mut r = theme::cat_chip(ui, label, cur == key);
+                if cur == key {
+                    active = Some(chips.len());
+                }
+                let mut r = theme::strip_chip(ui, label, cur == key);
                 if !tip.is_empty() {
                     r = r.on_hover_text(crate::tr(tip));
                 }
@@ -546,7 +551,10 @@ impl App {
                 } else {
                     format!("{}  {}", icon::FOLDER_SIMPLE, c.label)
                 };
-                let r = theme::cat_chip(ui, &label, cur == c.key);
+                if cur == c.key {
+                    active = Some(chips.len());
+                }
+                let r = theme::strip_chip(ui, &label, cur == c.key);
                 chips.push(r.rect);
                 if r.clicked() {
                     self.asset_cat.insert(ckey, c.key.clone());
@@ -583,6 +591,7 @@ impl App {
                     }
                 });
             }
+            theme::chip_marks(ui, marks, egui::Id::new(("chips", ckey)), &chips, active);
             // kleiner Rand, damit der letzte Eintrag nicht an der Kante klebt
             ui.add_space(2.0);
         }));

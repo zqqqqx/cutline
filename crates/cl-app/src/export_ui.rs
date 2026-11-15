@@ -221,17 +221,17 @@ fn paint_live(ui: &egui::Ui, rect: Rect, live: &Live, prog: f32) -> bool {
     let img = Rect::from_center_size(rect.center(), ts * fit);
     let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     let p = ui.painter();
-    let k = blend(at.elapsed().as_secs_f32(), theme::anim(0.25));
+    let k = theme::ease(blend(at.elapsed().as_secs_f32(), theme::anim(theme::MOTION_SLOW)));
     if let Some(prev) = live.prev.as_ref().filter(|_| k < 1.0) {
         p.image(prev.id(), img, uv, Color32::WHITE);
     }
     p.image(cur.id(), img, uv, Color32::WHITE.gamma_multiply(k));
-    if theme::anim(1.0) > 0.0 {
-        // gleicher weich nachlaufender Wert wie der Fortschrittsbalken darunter
-        let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, theme::anim(0.35));
-        let line = Rect::from_min_size(egui::pos2(img.left(), img.bottom() - 2.0), vec2(img.width() * shown.clamp(0.0, 1.0), 2.0));
-        p.rect_filled(line, 0.0, theme::ACCENT().gamma_multiply(0.45));
+    if k < 1.0 {
+        ui.ctx().request_repaint();
     }
+    // gleicher weich nachlaufender Wert wie die Fortschrittslinie darunter
+    let line = Rect::from_min_size(egui::pos2(img.left(), img.bottom() - 2.0), vec2(img.width(), 2.0));
+    crate::widgets::progress_line(p, egui::Id::new("export-live"), line, prog);
     true
 }
 
@@ -939,13 +939,9 @@ fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(Pat
     v
 }
 
-/// Fortschritt beim Export: weich nachlaufender Balken mit wanderndem Glanz, Prozent und Restzeit.
+/// Fortschritt beim Export: Text mit Prozent und Restzeit, darunter die Fortschrittslinie.
 fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool) {
-    let shown = ui.ctx().animate_value_with_time(egui::Id::new("export-prog"), prog, theme::anim(0.35));
-    let t = ui.input(|i| i.time) as f32;
     ui.horizontal(|ui| {
-        // 14 px wie ein Icon in der Zeile (Standard wäre Zeilenhöhe)
-        ui.add(egui::Spinner::new().size(14.0).color(theme::ACCENT()));
         ui.label(RichText::new(crate::tr(if measuring { "Lautheit messen …" } else { "Exportiere …" })).color(theme::TEXT()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if prog > 0.03 && elapsed > 2.0 {
@@ -958,31 +954,21 @@ fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool) 
             ui.label(RichText::new(format!("{:.0} %", prog * 100.0)).strong());
         });
     });
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 8.0), egui::Sense::hover());
-    let p = ui.painter();
-    // Pille: Radius = halbe Balkenhöhe (8 px), bewusst ganz rund
-    p.rect_filled(rect, 4.0, theme::BG_HOVER());
-    let fill = Rect::from_min_size(rect.min, vec2(rect.width() * shown.clamp(0.0, 1.0), rect.height()));
-    p.rect_filled(fill, 4.0, theme::ACCENT());
-    // Glanz wandert über den gefüllten Teil (nicht bei ausgeschalteten Animationen)
-    if fill.width() > 12.0 && theme::anim(1.0) > 0.0 {
-        let x = fill.left() + (t * 0.8).fract() * (fill.width() + 60.0) - 30.0;
-        let glow = Rect::from_center_size(egui::pos2(x, fill.center().y), vec2(36.0, fill.height()));
-        p.with_clip_rect(fill).rect_filled(glow, 4.0, egui::Color32::from_white_alpha(70));
-    }
-    ui.ctx().request_repaint();
+    ui.add_space(4.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), egui::Sense::hover());
+    crate::widgets::progress_line(ui.painter(), egui::Id::new("export-prog"), rect, prog);
+    // Restzeit läuft auch ohne neue Fortschrittsmeldung weiter
+    ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
 }
 
-/// Erfolg: Häkchen springt kurz auf (ca. 0,4 s), bleibt 6 s sichtbar. `false` = ausgeblendet.
+/// Erfolg: Häkchen wächst weich auf (`MOTION_SLOW`), bleibt 6 s sichtbar. `false` = ausgeblendet.
 fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
     let age = at.elapsed().as_secs_f32();
     if age > 6.0 {
         return false;
     }
-    // „ease out back“: leicht über 1 hinaus, dann zurück
-    let k = if theme::anim(0.4) > 0.0 { (age / 0.4).min(1.0) } else { 1.0 };
-    let c = 1.70158;
-    let pop = 1.0 + (c + 1.0) * (k - 1.0).powi(3) + c * (k - 1.0).powi(2);
+    let dur = theme::anim(theme::MOTION_SLOW);
+    let pop = if dur > 0.0 { 0.6 + 0.4 * theme::ease(age / dur) } else { 1.0 };
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(26.0, 26.0), egui::Sense::hover());
         let p = ui.painter();
@@ -996,7 +982,7 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
         );
         ui.label(RichText::new(crate::tr(format!("Fertig in {secs:.1} s"))).strong());
     });
-    if age < theme::anim(0.5) {
+    if age < dur {
         ui.ctx().request_repaint();
     } else {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));

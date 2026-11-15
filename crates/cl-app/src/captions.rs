@@ -401,7 +401,7 @@ impl App {
                 for p in row {
                     let (r, resp) = ui.allocate_exact_size(vec2(w, h), egui::Sense::click());
                     let on = self.settings.caption_preset == p.id;
-                    let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), theme::anim(0.12));
+                    let hover = theme::fade(ui.ctx(), resp.id.with("h"), resp.hovered(), theme::MOTION_FAST);
                     let pt = ui.painter();
                     pt.rect_filled(r, theme::R_CARD, theme::STAGE);
                     let s = (p.style)();

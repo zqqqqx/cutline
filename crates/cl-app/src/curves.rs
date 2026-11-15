@@ -87,7 +87,7 @@ impl App {
             for (name, tip, e) in PRESETS {
                 let (r, resp) = ui.allocate_exact_size(vec2(58.0, 50.0), Sense::click());
                 let on = same_curve(a.ease, e);
-                let hov = ui.ctx().animate_bool_with_time(resp.id.with("hover"), resp.hovered(), theme::anim(0.12));
+                let hov = theme::fade(ui.ctx(), resp.id.with("hover"), resp.hovered(), theme::MOTION_FAST);
                 let p = ui.painter();
                 // Hover nur als leicht hellere Fläche unter dem Inhalt; Auswahl = Akzent-Rahmen
                 p.rect_filled(r, theme::R_CARD, theme::BG_RAISED().lerp_to_gamma(theme::BG_HOVER(), hov));
@@ -110,7 +110,8 @@ impl App {
                 }
             }
         });
-        // Fortgeschrittene: Griffe ziehen
+        // Fortgeschrittene: Griffe ziehen (Aufklappen in `MOTION`; egui liest die Dauer aus dem Stil)
+        ui.ctx().style_mut(|s| s.animation_time = theme::anim(theme::MOTION));
         egui::CollapsingHeader::new(RichText::new(crate::tr("Eigene Kurve")).size(theme::FS_UI).color(theme::TEXT_DIM()))
             .id_salt("curve-adv")
             .show(ui, |ui| {
@@ -158,6 +159,7 @@ impl App {
                 )
                 .on_hover_text(crate::tr("Griffe ziehen: links der Start, rechts die Ankunft. Über die Linien hinaus = Ausholen bzw. Überschwingen."));
             });
+        ui.ctx().style_mut(|s| s.animation_time = theme::anim(theme::MOTION_FAST));
         if let Some(e) = pick {
             for l in c.keyframes.0.values_mut() {
                 if let Some(i) = segment(l, t) {

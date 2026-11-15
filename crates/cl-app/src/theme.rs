@@ -51,13 +51,142 @@ pub fn set_animations(on: bool) {
     ANIMATIONS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Dauer einer kleinen Animation (0, wenn Animationen ausgeschaltet sind)
+/// Die drei Dauern aller Bewegungen: schnell (Hover, Drücken, Symbolwechsel, Menüs), normal (Wechsel,
+/// Ein/Aus, Verschieben, Aufklappen), ruhig (Fenster, große Flächen). Nichts dauert länger.
+pub const MOTION_FAST: f32 = 0.09;
+pub const MOTION: f32 = 0.16;
+pub const MOTION_SLOW: f32 = 0.24;
+
+/// Eine Ladeanzeige erscheint erst nach `LOAD_DELAY` und bleibt dann mindestens `LOAD_MIN` stehen.
+pub const LOAD_DELAY: f64 = 0.15;
+pub const LOAD_MIN: f64 = 0.30;
+
+/// Dauer einer Bewegung (0, wenn Animationen ausgeschaltet sind). Nur mit den `MOTION`-Konstanten aufrufen.
 pub fn anim(secs: f32) -> f32 {
-    if ANIMATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+    if animations_on() {
         secs
     } else {
         0.0
     }
+}
+
+pub fn animations_on() -> bool {
+    ANIMATIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Die eine Kurve aller Bewegungen: sanft auslaufend (kubisch), ohne Überschwingen.
+pub fn ease(t: f32) -> f32 {
+    let u = 1.0 - t.clamp(0.0, 1.0);
+    1.0 - u * u * u
+}
+
+/// Weich ein-/ausblenden (0…1). Beim ersten Aufruf steht der Wert sofort am Ziel.
+pub fn fade(ctx: &egui::Context, id: egui::Id, on: bool, secs: f32) -> f32 {
+    ctx.animate_bool_with_time_and_easing(id, on, anim(secs), ease)
+}
+
+/// Zustand von [`glide`]: Start, Ziel, Startzeit
+#[derive(Clone, Copy)]
+struct Glide(f32, f32, f64);
+
+/// Stand einer Gleitbewegung von `from` nach `to`, `age` Sekunden nach dem Start.
+pub fn glide_at(from: f32, to: f32, age: f32, secs: f32) -> f32 {
+    if secs <= 0.0 {
+        return to;
+    }
+    from + (to - from) * ease(age / secs)
+}
+
+/// Wert/Position weich zum Ziel gleiten lassen (eine Kurve, Dauer `secs`). Beim ersten Aufruf
+/// steht der Wert sofort am Ziel; ein neues Ziel mitten in der Bewegung startet vom aktuellen Stand.
+pub fn glide(ctx: &egui::Context, id: egui::Id, to: f32, secs: f32) -> f32 {
+    let now = ctx.input(|i| i.time);
+    let secs = anim(secs);
+    let g = match ctx.data(|d| d.get_temp::<Glide>(id)) {
+        Some(g) if g.1 == to => g,
+        old => {
+            let from = old.map_or(to, |g| glide_at(g.0, g.1, (now - g.2) as f32, secs));
+            let n = Glide(from, to, now);
+            ctx.data_mut(|d| d.insert_temp(id, n));
+            n
+        }
+    };
+    let age = (now - g.2) as f32;
+    if age < secs && g.0 != g.1 {
+        ctx.request_repaint();
+    }
+    glide_at(g.0, g.1, age, secs)
+}
+
+/// Inhalt nach einem Wechsel (Tab, Reiter) kurz einblenden: Deckkraft 0…1 seit dem letzten Wechsel
+/// von `key`. Der erste Aufruf blendet nicht.
+pub fn fade_on_change(ctx: &egui::Context, id: egui::Id, key: u64) -> f32 {
+    let now = ctx.input(|i| i.time);
+    let old = ctx.data(|d| d.get_temp::<(u64, f64)>(id));
+    let at = match old {
+        Some((k, at)) if k == key => at,
+        Some(_) => now,
+        None => f64::MIN,
+    };
+    if old.map(|o| o.0) != Some(key) {
+        ctx.data_mut(|d| d.insert_temp(id, (key, at)));
+    }
+    let secs = anim(MOTION_FAST);
+    let age = (now - at) as f32;
+    if secs > 0.0 && age < secs {
+        ctx.request_repaint();
+        ease(age / secs)
+    } else {
+        1.0
+    }
+}
+
+/// Ladeanzeige zeigen? `busy_for`: Sekunden seit Beginn, solange noch beschäftigt (`None` = fertig);
+/// `shown_for`: Sekunden, seit die Anzeige sichtbar ist. Kurze Wartezeiten bleiben unsichtbar, eine
+/// einmal gezeigte Anzeige blitzt nicht nur kurz auf.
+pub fn loader_visible(busy_for: Option<f64>, shown_for: Option<f64>) -> bool {
+    match (busy_for, shown_for) {
+        (_, Some(s)) if s < LOAD_MIN => true,
+        (Some(b), _) => b >= LOAD_DELAY,
+        (None, _) => false,
+    }
+}
+
+/// Zustand von [`loading`]: beschäftigt seit, sichtbar seit, zuletzt gefragt (Bildnummer)
+#[derive(Clone, Copy, Default)]
+struct Loader(Option<f64>, Option<f64>, u64);
+
+/// [`loader_visible`] mit gemerktem Zustand je `id`. Fordert ein Neuzeichnen nur für den Moment an,
+/// in dem sich die Antwort ohne neues Ereignis ändert.
+pub fn loading(ctx: &egui::Context, id: egui::Id, busy: bool) -> bool {
+    let id = id.with("loading");
+    let pass = ctx.cumulative_pass_nr();
+    let Some(mut s) = ctx.data(|d| d.get_temp::<Loader>(id)).or(busy.then(Loader::default)) else {
+        return false;
+    };
+    // länger nicht gezeichnet (anderer Tab, Fenster zu): neu beginnen
+    if s.2 + 1 < pass {
+        s = Loader::default();
+    }
+    let now = ctx.input(|i| i.time);
+    s.0 = if busy { Some(s.0.unwrap_or(now)) } else { None };
+    let vis = loader_visible(s.0.map(|b| now - b), s.1.map(|v| now - v));
+    s.1 = if vis { Some(s.1.unwrap_or(now)) } else { None };
+    s.2 = pass;
+    if !vis && !busy {
+        ctx.data_mut(|d| d.remove::<Loader>(id));
+        return false;
+    }
+    ctx.data_mut(|d| d.insert_temp(id, s));
+    let wait = match (vis, s.0, s.1) {
+        (false, Some(b), _) => Some(LOAD_DELAY - (now - b)),
+        (true, None, Some(v)) => Some(LOAD_MIN - (now - v)),
+        _ => None,
+    };
+    if let Some(w) = wait {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(w.max(0.0) + 0.005));
+    }
+    vis
 }
 
 pub fn pal() -> &'static Palette {
@@ -328,7 +457,9 @@ pub fn apply(ctx: &egui::Context) {
     };
     ctx.set_visuals(v);
     ctx.style_mut(|s| {
-        s.animation_time = anim(1.0 / 12.0);
+        // egui-eigene Bewegungen (Menüs, Tooltips, Popups blenden damit ein)
+        s.animation_time = anim(MOTION_FAST);
+        s.interaction.tooltip_delay = 0.4;
         s.spacing.item_spacing = vec2(6.0, 4.0);
         s.spacing.button_padding = vec2(8.0, 3.0);
         s.spacing.interact_size = vec2(22.0, 20.0);
@@ -418,9 +549,7 @@ impl Btn {
 
 /// Hover-Schleier über einem schon gezeichneten Knopf; beim Drücken etwas kräftiger.
 pub fn hover_glow(ui: &egui::Ui, r: &egui::Response, radius: f32) {
-    let t = ui
-        .ctx()
-        .animate_bool_with_time(r.id.with("hover"), r.enabled() && r.hovered(), anim(0.14));
+    let t = fade(ui.ctx(), r.id.with("hover"), r.enabled() && r.hovered(), MOTION_FAST);
     if t > 0.0 {
         let a = if r.is_pointer_button_down_on() { 44.0 } else { 24.0 };
         ui.painter().rect_filled(r.rect, radius, overlay((a * t) as u8));
@@ -438,7 +567,7 @@ impl egui::Widget for Btn {
         let id = ui.next_auto_id();
         let last = ui.ctx().read_response(id);
         let hov = last.as_ref().is_some_and(|r| r.enabled() && r.hovered());
-        let t = ui.ctx().animate_bool_with_time(id.with("hover"), hov, anim(0.14));
+        let t = fade(ui.ctx(), id.with("hover"), hov, MOTION_FAST);
         let down = last.is_some_and(|r| r.is_pointer_button_down_on());
         ui.add(self.0.fill(hover_fill(fill, t, down)))
     }
@@ -619,9 +748,7 @@ impl egui::Widget for MenuRow {
             w = w.max(ui.available_width());
         }
         let (rect, resp) = ui.allocate_exact_size(vec2(w, 24.0), egui::Sense::click());
-        let t = ui
-            .ctx()
-            .animate_bool_with_time(resp.id.with("hover"), enabled && resp.hovered(), anim(0.12));
+        let t = fade(ui.ctx(), resp.id.with("hover"), enabled && resp.hovered(), MOTION_FAST);
         let p = ui.painter();
         if t > 0.001 {
             p.rect_filled(rect, R_CTRL, BG_HOVER().linear_multiply(t));
@@ -743,6 +870,30 @@ pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
             .corner_radius(R_CTRL)
             .min_size(vec2(0.0, 22.0)),
     )
+}
+
+/// Chip einer Auswahlleiste mit gleitender Markierung ([`chip_marks`]): ohne eigene Fläche, die
+/// Schrift wechselt weich zur Farbe auf dem Akzent.
+pub fn strip_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
+    let t = fade(ui.ctx(), ui.id().with(("strip-chip", text)), active, MOTION);
+    ui.add(
+        egui::Button::new(RichText::new(crate::tr(text)).size(FS_HINT).color(TEXT_DIM().lerp_to_gamma(ACCENT_INK(), t)))
+            .fill(Color32::TRANSPARENT)
+            .corner_radius(R_CTRL)
+            .min_size(vec2(0.0, 22.0)),
+    )
+}
+
+/// Flächen der Chips einer Leiste und die Akzent-Markierung, die zum aktiven Chip gleitet; landet in
+/// `slot` (vor den Chips mit `painter().add(Shape::Noop)` reserviert, damit sie darunter liegt).
+pub fn chip_marks(ui: &egui::Ui, slot: egui::layers::ShapeIdx, id: egui::Id, chips: &[Rect], active: Option<usize>) {
+    let mut shapes: Vec<egui::Shape> = chips.iter().map(|r| egui::Shape::rect_filled(*r, R_CTRL, BG_RAISED())).collect();
+    if let Some(i) = active.filter(|i| *i < chips.len()) {
+        let at = glide(ui.ctx(), id.with("chip-mark"), i as f32, MOTION).clamp(0.0, (chips.len() - 1) as f32);
+        let (a, b, f) = (chips[at.floor() as usize], chips[at.ceil() as usize], at.fract());
+        shapes.push(egui::Shape::rect_filled(Rect::from_min_max(a.min.lerp(b.min, f), a.max.lerp(b.max, f)), R_CTRL, ACCENT()));
+    }
+    ui.painter().set(slot, egui::Shape::Vec(shapes));
 }
 
 /// Breite eines einzeiligen Textes in der Schrift `font`.
@@ -1211,5 +1362,95 @@ mod tests {
             let c = contrast(Color32::WHITE, hover_fill(DANGER_FILL, t, down));
             assert!(c >= 4.5, "t {t} down {down}: {c:.2}");
         }
+    }
+
+    #[test]
+    fn the_one_curve_eases_out_without_overshoot() {
+        assert_eq!(ease(0.0), 0.0);
+        assert_eq!(ease(1.0), 1.0);
+        assert_eq!(ease(-1.0), 0.0);
+        assert_eq!(ease(2.0), 1.0);
+        let mut last = 0.0;
+        for i in 1..=100 {
+            let v = ease(i as f32 / 100.0);
+            assert!(v >= last && v <= 1.0, "{i}: {v}");
+            last = v;
+        }
+        // sanft auslaufend: die erste Hälfte legt mehr als die Hälfte des Wegs zurück
+        assert!(ease(0.5) > 0.8);
+        // Gleiten: Anfang, Ende, nichts über das Ziel hinaus (auch rückwärts)
+        assert_eq!(glide_at(10.0, 20.0, 0.0, MOTION), 10.0);
+        assert_eq!(glide_at(10.0, 20.0, MOTION, MOTION), 20.0);
+        assert_eq!(glide_at(10.0, 20.0, 5.0, MOTION), 20.0);
+        for i in 0..=20 {
+            let v = glide_at(20.0, 10.0, i as f32 / 100.0, MOTION);
+            assert!((10.0..=20.0).contains(&v));
+        }
+    }
+
+    #[test]
+    fn three_durations_and_off_means_instant() {
+        assert!(MOTION_FAST < MOTION && MOTION < MOTION_SLOW && MOTION_SLOW <= 0.24);
+        set_animations(false);
+        let off = [MOTION_FAST, MOTION, MOTION_SLOW].map(anim);
+        let (g, busy) = (glide_at(0.0, 5.0, 0.0, anim(MOTION)), crate::widgets::busy_segment(0.7, animations_on()));
+        set_animations(true);
+        assert_eq!(off, [0.0; 3]);
+        assert_eq!(g, 5.0);
+        // ohne Animationen: Lauflinie steht, Platzhalter ohne Schimmer
+        assert_eq!(busy, (0.0, 1.0));
+        assert_eq!(crate::widgets::busy_segment(3.1, false), crate::widgets::busy_segment(0.2, false));
+        assert_eq!(crate::widgets::shimmer_at(1.0, false), None);
+        assert_eq!(anim(MOTION), MOTION);
+    }
+
+    #[test]
+    fn loader_waits_150_ms_then_stays_300_ms() {
+        // kurze Arbeit bleibt unsichtbar
+        assert!(!loader_visible(Some(0.0), None));
+        assert!(!loader_visible(Some(0.149), None));
+        assert!(!loader_visible(None, None));
+        // ab 150 ms sichtbar
+        assert!(loader_visible(Some(0.15), None));
+        assert!(loader_visible(Some(2.0), Some(1.85)));
+        // fertig kurz nach dem Erscheinen: steht noch bis 300 ms
+        assert!(loader_visible(None, Some(0.05)));
+        assert!(loader_visible(None, Some(0.299)));
+        assert!(!loader_visible(None, Some(0.3)));
+    }
+
+    #[test]
+    fn loader_state_over_frames() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("t");
+        let at = |t: f64, busy: bool| {
+            let mut vis = false;
+            let input = egui::RawInput { time: Some(t), ..Default::default() };
+            let _ = ctx.run(input, |ctx| vis = loading(ctx, id, busy));
+            vis
+        };
+        // 100 ms Arbeit: nie sichtbar
+        assert!(!at(0.0, true) && !at(0.05, true) && !at(0.1, false) && !at(0.2, false));
+        // lange Arbeit: ab 150 ms sichtbar, nach dem Ende noch bis 300 ms nach dem Erscheinen
+        assert!(!at(1.0, true));
+        assert!(at(1.16, true));
+        assert!(at(1.2, false));
+        assert!(at(1.4, false));
+        assert!(!at(1.47, false));
+    }
+
+    #[test]
+    fn busy_line_and_shimmer_move_calmly() {
+        use crate::widgets::{busy_segment, shimmer_at};
+        for i in 0..200 {
+            let (a, b) = busy_segment(i as f64 * 0.013, true);
+            assert!((0.0..=1.0).contains(&a) && (0.0..=1.0).contains(&b) && a <= b, "{i}: {a} {b}");
+        }
+        // Stück wandert nach rechts
+        assert!(busy_segment(0.5, true).0 > busy_segment(0.2, true).0);
+        // Schimmer erst nach 150 ms, nach einigen Sekunden ruhige Fläche
+        assert_eq!(shimmer_at(0.1, true), None);
+        assert!(shimmer_at(0.5, true).is_some());
+        assert_eq!(shimmer_at(10.0, true), None);
     }
 }

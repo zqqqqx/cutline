@@ -247,9 +247,24 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
     {
         let painter = ui.painter_at(bar);
         let mut x = bar.left() - off;
+        let rects: Vec<Rect> = widths
+            .iter()
+            .map(|w| {
+                x += w;
+                Rect::from_min_size(pos2(x - w, bar.top()), vec2(*w, bar.height()))
+            })
+            .collect();
+        // Unterstrich gleitet zum gewählten Reiter
+        if let Some(k) = keep {
+            let at = theme::glide(ui.ctx(), ui.id().with(("itab-mark", tabs.len())), k as f32, theme::MOTION)
+                .clamp(0.0, (rects.len() - 1) as f32);
+            let (a, b, f) = (rects[at.floor() as usize], rects[at.ceil() as usize], at.fract());
+            let inset = pad.min(12.0) / 2.0;
+            let (l, r) = (egui::lerp(a.left()..=b.left(), f) + inset, egui::lerp(a.right()..=b.right(), f) - inset);
+            painter.line_segment([pos2(l, bar.bottom() - 1.0), pos2(r, bar.bottom() - 1.0)], Stroke::new(2.0_f32, theme::ACCENT()));
+        }
         for (i, (t, l)) in tabs.iter().enumerate() {
-            let r = Rect::from_min_size(pos2(x, bar.top()), vec2(widths[i], bar.height()));
-            x += r.width();
+            let r = rects[i];
             let hit = r.intersect(bar);
             if hit.width() <= 0.0 {
                 continue;
@@ -259,12 +274,6 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
             // aktiver Reiter: Text neutral, nur der Unterstrich im Akzent
             let col = if active || resp.hovered() { theme::TEXT() } else { theme::TEXT_DIM() };
             painter.text(r.center(), egui::Align2::CENTER_CENTER, &labels[i], font.clone(), col);
-            if active {
-                painter.line_segment(
-                    [pos2(r.left() + pad.min(12.0) / 2.0, r.bottom() - 1.0), pos2(r.right() - pad.min(12.0) / 2.0, r.bottom() - 1.0)],
-                    Stroke::new(2.0_f32, theme::ACCENT()),
-                );
-            }
             if resp.clicked() {
                 *cur = *t;
             }
@@ -278,6 +287,9 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
         Stroke::new(1.0_f32, theme::BORDER()),
     );
     ui.add_space(8.0);
+    // Inhalt des neuen Reiters blendet kurz ein
+    let k = tabs.iter().position(|(t, _)| *t == *cur).unwrap_or(0);
+    ui.multiply_opacity(theme::fade_on_change(ui.ctx(), ui.id().with(("itab-fade", tabs.len())), k as u64));
 }
 
 impl App {
@@ -1144,7 +1156,7 @@ impl App {
         let mut chosen: Option<String> = None;
         widgets::grid(ui, &items, 66.0, 1.0, 16.0, |ui, r, (id, name)| {
             // ohne Animationen bleibt die Ruhe-Darstellung stehen
-            let hovered = theme::anim(1.0) > 0.0 && ui.rect_contains_pointer(r);
+            let hovered = theme::animations_on() && ui.rect_contains_pointer(r);
             let resp = widgets::tile(
                 ui,
                 egui::Id::new(("anim", slot, *id)),
