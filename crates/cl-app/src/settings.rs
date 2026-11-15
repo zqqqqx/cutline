@@ -72,6 +72,8 @@ pub struct AppSettings {
     pub shortcuts: std::collections::BTreeMap<String, String>,
     /// Proxys für große Videos in der Vorschau
     pub use_proxies: bool,
+    /// Vorschauqualität beim Abspielen automatisch senken, wenn die Bildrate nicht reicht
+    pub auto_quality: bool,
     /// Einführung abgeschlossen oder übersprungen
     pub onboarding_done: bool,
     /// Antworten auf „Wofür nutzt du Cutline?“
@@ -144,6 +146,7 @@ impl Default for AppSettings {
             import_fcpxml: true,
             shortcuts: Default::default(),
             use_proxies: true,
+            auto_quality: true,
             onboarding_done: false,
             use_cases: Vec::new(),
             theme: "dark".into(),
@@ -897,7 +900,12 @@ impl App {
                 // Magnet und Einrasten: Zeitleisten-Leiste (P / N)
             }
             Section::Performance => {
-                // Vorschauqualität nur noch am Player-Chip (eine Stelle)
+                // Vorschauqualität selbst nur am Player-Chip (eine Stelle)
+                theme::section(ui, "Vorschau");
+                if widgets::toggle_row(ui, "Vorschauqualität beim Abspielen automatisch anpassen", &mut self.settings.auto_quality) {
+                    self.settings.save();
+                }
+                ui.add_space(8.0);
                 self.proxy_settings(ui);
                 ui.add_space(8.0);
                 theme::section(ui, "Cache");

@@ -13,13 +13,21 @@ use eframe::egui::{self, vec2, Color32, Key, Modifiers, RichText};
 
 use crate::audio::AudioPlayer;
 use crate::export_ui::ExportDialog;
-use crate::preview::{Decoder, Job, Playback};
+use crate::playcore::{AudioIn, Cmd, Mode, PlayCore, Tick};
+use crate::preview::{Decoder, Job, Starter};
 use crate::record::Recorder;
 use crate::settings::{AppSettings, McpRunning, Section};
 use crate::theme::{self, icon};
 use crate::{paths, timeline::TimelineState};
 
 /// Fokus aus Textfeldern nehmen (Tastenkürzel gehen dann wieder an die App).
+/// Wird gerade Text eingegeben? Nur ein fokussiertes Textfeld (auch ein Zahlenfeld im
+/// Eingabemodus) – nicht irgendein Widget mit Fokus: ein fokussierter Knopf oder eine Kachel
+/// (z. B. nach dem Ziehen eines Übergangs) schluckte sonst alle Tastenkürzel, auch die Leertaste.
+pub fn typing(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| m.focused()).is_some_and(|id| egui::text_edit::TextEditState::load(ctx, id).is_some())
+}
+
 pub fn release_text_focus(ctx: &egui::Context) {
     ctx.memory_mut(|m| {
         if let Some(id) = m.focused() {
@@ -128,8 +136,6 @@ pub struct App {
     pub preset_list_open: bool,
     /// Projekt-Import aus anderen Programmen
     pub import: crate::import_ui::ImportState,
-    /// Wiedergabegeschwindigkeit (J/K/L): 1 = normal, negativ = rückwärts
-    pub play_rate: f64,
     /// In/Out-Bereich und Schleife
     pub range_in: Option<Time>,
     pub range_out: Option<Time>,
@@ -166,13 +172,9 @@ pub struct App {
     pub tour_rects: HashMap<&'static str, egui::Rect>,
     /// Vorschau: maskierte Effekt-Elemente (Clip, zweite Fassung, Maske)
     pub fx_overlays: Vec<(ClipId, ClipId, Option<Mask>, f32)>,
-    /// Messung (CUTLINE_PERF): geöffnete Ströme, gezeigte Strom-Bilder, UI-Bilder
-    pub perf_opens: u32,
-    pub perf_frames: u32,
+    /// Messung (CUTLINE_PERF): UI-Bilder; Ströme und Bilder zählt der Player-Kern
     pub perf_ui: u32,
     pub perf_since: Instant,
-    pub perf_last_frame: Option<Instant>,
-    pub perf_max_gap: f64,
     /// Messung: Start der Wiedergabe bzw. des Ton-Neustarts (erstes Bild, erster Ton noch offen?)
     pub perf_play: Option<PerfPlay>,
     /// Feiner System-Takt, solange abgespielt wird (Windows: 1 ms statt 15,6 ms)
@@ -245,16 +247,18 @@ pub struct App {
     pub decoder: Decoder,
     /// Vorschau-Texturen je Clip (+ Schlüssel des angezeigten Bildes)
     pub frames: HashMap<ClipId, (u64, egui::TextureHandle)>,
-    pub requested: HashMap<ClipId, u64>,
-    pub playbacks: HashMap<ClipId, Playback>,
-    /// Neu geöffnete Ströme, die den laufenden ersetzen, sobald sie ein Bild haben
-    pub playbacks_next: HashMap<ClipId, Playback>,
+    /// Player-Kern: Zustand der Wiedergabe, Ströme, Uhr, automatische Qualität (`playcore`);
+    /// `playing` ist nur sein Spiegel für die Oberfläche
+    pub core: PlayCore<cl_media::FrameStream>,
+    /// öffnet Wiedergabe-Ströme im Hintergrund
+    pub starter: Starter,
+    /// Bezugspunkt der Zeit des Kerns
+    pub core_t0: Instant,
+    /// Fingerabdruck der Effekte je Clip für den Bearbeitungsstand (`player::fx_hash`)
+    pub fx_hashes: (u64, HashMap<ClipId, u64>),
     /// Fingerabdruck alles Hörbaren (Ton nur bei Änderungen neu starten)
     pub audio_sig: u64,
     pub audio: Option<AudioPlayer>,
-    pub play_clock: Option<(Instant, Time)>,
-    /// Abspielen gedrückt, Bild und Ton starten, sobald die Ströme das erste Bild haben
-    pub play_warmup: Option<Instant>,
     pub sfx_preview: Option<(String, AudioPlayer)>,
     /// Länge des gerade vorgehörten Sounds (Ende erkennen, Fortschritt zeigen)
     pub sfx_preview_len: Time,
@@ -278,8 +282,6 @@ pub struct App {
     lock_file: Option<PathBuf>,
     /// Ton beim Ziehen: (letzte Stelle, Zeitpunkt, Stopp-Signal des laufenden Stücks)
     pub scrub: Option<(Time, Instant, Option<Arc<std::sync::atomic::AtomicBool>>)>,
-    /// Pause mit offenen Strömen: (Playhead, Revision) beim Anhalten
-    pub paused: Option<(Time, u64)>,
     /// Untertitel, dessen Textfeld im nächsten Bild den Fokus bekommt
     pub caption_focus: Option<ClipId>,
     /// Eingabefehler im gerade offenen Dialog (wird dort angezeigt, der Dialog bleibt offen)
@@ -383,7 +385,6 @@ impl App {
             preset_dialog_since: 0,
             preset_list_open: false,
             import: Default::default(),
-            play_rate: 1.0,
             range_in: None,
             range_out: None,
             loop_range: false,
@@ -406,12 +407,8 @@ impl App {
             tour: None,
             tour_rects: HashMap::new(),
             fx_overlays: Vec::new(),
-            perf_opens: 0,
-            perf_frames: 0,
             perf_ui: 0,
             perf_since: Instant::now(),
-            perf_last_frame: None,
-            perf_max_gap: 0.0,
             perf_play: None,
             hires_timer: None,
             multicam: None,
@@ -473,13 +470,12 @@ impl App {
             toasts: Vec::new(),
             decoder: Decoder::new(cc.egui_ctx.clone()),
             frames: HashMap::new(),
-            requested: HashMap::new(),
-            playbacks: HashMap::new(),
-            playbacks_next: HashMap::new(),
+            core: PlayCore::default(),
+            starter: Starter::new(cc.egui_ctx.clone()),
+            core_t0: Instant::now(),
+            fx_hashes: (u64::MAX, HashMap::new()),
             audio_sig: 0,
             audio: None,
-            play_clock: None,
-            play_warmup: None,
             sfx_preview: None,
             sfx_preview_len: Time::ZERO,
             sound_meta: HashMap::new(),
@@ -494,7 +490,6 @@ impl App {
             exports_for: None,
             lock_file: None,
             scrub: None,
-            paused: None,
             caption_focus: None,
             dialog_error: None,
             layout_edit: false,
@@ -672,14 +667,15 @@ impl App {
             }
             // Einzelbilder neu anfordern; laufende Ströme bleiben – ihr Schlüssel enthält Effekte
             // und Timing, geänderte Clips wechseln ohne Stocken auf einen neuen Strom.
-            self.requested.clear();
+            self.core.forget_stills();
             let sig = audio_signature(&self.project);
             if sig != self.audio_sig {
                 self.audio_sig = sig;
                 if self.playing && self.voiceover.recorder.is_none() {
-                    // hörbare Änderungen sofort hörbar; das Bild läuft weiter, der Ton setzt neu ein
-                    self.restart_audio();
-                    if perf() && self.play_warmup.is_none() {
+                    // hörbare Änderungen kurz danach hörbar (Regler ziehen startet den Ton nicht bei
+                    // jedem Schritt neu); das Bild läuft weiter
+                    self.core.edit(true, self.core_now());
+                    if perf() && self.core.mode() == Mode::Spielen {
                         self.perf_play = Some(PerfPlay::new("Ton neu (Änderung)", self.playhead));
                     }
                 }
@@ -721,9 +717,7 @@ impl App {
 
     /// Vorschau neu anfordern (Texturen bleiben bis zum neuen Bild stehen).
     pub fn invalidate_preview(&mut self) {
-        self.requested.clear();
-        self.playbacks.clear();
-        self.playbacks_next.clear();
+        self.core.invalidate();
     }
 
     // ---------- Auswahl ----------
@@ -2038,6 +2032,7 @@ impl App {
 
     fn reset_editor(&mut self) {
         self.stop_playback();
+        self.core.new_project();
         self.select_only(None);
         self.live = None;
         self.playhead = Time::ZERO;
@@ -2298,12 +2293,63 @@ impl App {
         )
     }
 
+    /// Zeit für den Player-Kern (Sekunden seit dem Start)
+    pub fn core_now(&self) -> f64 {
+        self.core_t0.elapsed().as_secs_f64()
+    }
+
+    /// Ton-Aufträge des Kerns ausführen und seinen Zustand für die Oberfläche spiegeln.
+    pub fn run_core(&mut self) {
+        loop {
+            let cmds = self.core.cmds();
+            if cmds.is_empty() {
+                break;
+            }
+            for c in cmds {
+                match c {
+                    Cmd::StartAudio { at, anchor } => self.start_audio(at, anchor),
+                    Cmd::AnchorAudio => {
+                        if let Some(a) = &self.audio {
+                            a.anchor(Instant::now());
+                        }
+                    }
+                    Cmd::StopAudio => self.audio = None,
+                    Cmd::PauseAudio => {
+                        if !self.audio.as_ref().is_some_and(|a| a.pause()) {
+                            self.core.stop();
+                        }
+                    }
+                    Cmd::ResumeAudio => {
+                        if !self.audio.as_ref().is_some_and(|a| a.resume()) {
+                            // Ton ließ sich nicht fortsetzen: an derselben Stelle neu puffern
+                            let at = self.core.pos();
+                            self.core.stop();
+                            self.core.play(at, self.revision, self.core_now());
+                        }
+                    }
+                }
+            }
+        }
+        let playing = self.core.playing();
+        // Mehrkamera: Schnitte übernehmen, sobald die Wiedergabe endet (Stopp, Ende, Pause)
+        if self.playing && !playing && self.multicam.as_ref().is_some_and(|m| !m.1.is_empty()) {
+            self.playing = false;
+            self.multicam_finish();
+        }
+        self.playing = playing;
+    }
+
     pub fn toggle_play(&mut self) {
-        if self.playing {
-            self.pause_playback();
-        } else if self.try_resume() {
+        let now = self.core_now();
+        if self.core.playing() {
+            // Pause mit offenen Strömen und Ton (an derselben Stelle ohne neues Puffern weiter);
+            // ohne laufenden Ton, bei J/K/L oder Mehrkamera: Stopp
+            let running = self.audio.as_ref().is_some_and(|a| a.started());
+            let hold = !self.multicam.as_ref().is_some_and(|m| !m.1.is_empty());
+            self.core.pause(self.revision, running, hold);
+        } else if self.core.can_resume(self.playhead, self.revision) {
+            self.core.play(self.playhead, self.revision, now);
         } else {
-            self.play_rate = 1.0;
             self.commit_live();
             // Mit In/Out-Bereich: im Bereich starten
             if let (Some(a), Some(b)) = (self.range_in, self.range_out) {
@@ -2314,105 +2360,60 @@ impl App {
             if self.playhead >= self.last_frame() {
                 self.playhead = Time::ZERO;
             }
-            self.playing = true;
-            self.playbacks.clear();
-            self.playbacks_next.clear();
             // Erst puffern: der Playhead läuft los, wenn die Bildströme bereit sind. Der Ton wird
             // gleichzeitig vorbereitet und setzt ein, sobald er da ist – das Bild wartet nicht auf ihn.
-            self.play_warmup = Some(Instant::now());
-            self.restart_audio();
-            self.play_clock = None;
+            self.core.play(self.playhead, self.revision, now);
             if perf() {
                 self.perf_play = Some(PerfPlay::new("Play", self.playhead));
             }
         }
+        self.run_core();
     }
 
-    /// Pause: Bild- und Tonströme bleiben offen, damit es an derselben Stelle ohne neues
-    /// Puffern weitergeht (sonst hängt das Bild beim Fortsetzen bis zu einer Sekunde).
-    fn pause_playback(&mut self) {
-        let simple = (self.play_rate - 1.0).abs() < 1e-6
-            && self.play_warmup.is_none()
-            && !self.multicam.as_ref().is_some_and(|m| !m.1.is_empty())
-            && self.audio.as_ref().is_some_and(|a| a.started() && a.pause());
-        if !simple {
-            self.stop_playback();
-            return;
-        }
-        self.playing = false;
-        self.playbacks_next.clear();
-        self.play_clock = None;
-        self.paused = Some((self.playhead, self.revision));
-        self.perf_last_frame = None;
-    }
-
-    /// Nach einer Pause an derselben Stelle und ohne Änderung direkt weiterlaufen.
-    /// (Sonst gibt `update` die offenen Ströme gleich frei, siehe [`pause_is_stale`].)
-    fn try_resume(&mut self) -> bool {
-        let Some((at, rev)) = self.paused.take() else { return false };
-        if at != self.playhead || rev != self.revision || self.audio.is_none() {
-            self.stop_playback();
-            return false;
-        }
-        for pb in self.playbacks.values_mut() {
-            // nächstes Bild des Stroms = jetzige Position
-            let fps = pb.stream.fps.as_f64().max(1.0);
-            pb.t0 = self.playhead - Time::from_secs_f64(pb.taken as f64 / fps);
-            pb.waiting_since = None;
-        }
-        if !self.audio.as_ref().is_some_and(|a| a.resume()) {
-            self.stop_playback();
-            return false;
-        }
-        self.playing = true;
-        true
+    /// J/K/L: mit Tempo `rate` abspielen (Einzelbilder, ohne Ton)
+    pub fn start_shuttle(&mut self, rate: f64) {
+        self.core.shuttle(rate, self.playhead, self.core_now());
+        self.run_core();
     }
 
     pub fn stop_playback(&mut self) {
-        self.paused = None;
-        if self.playing && self.multicam.as_ref().is_some_and(|m| !m.1.is_empty()) {
-            self.playing = false;
-            self.multicam_finish();
-        }
-        self.playing = false;
-        self.play_rate = 1.0;
-        self.audio = None;
-        self.playbacks.clear();
-        self.playbacks_next.clear();
-        self.play_clock = None;
-        self.play_warmup = None;
+        self.core.stop();
+        self.run_core();
     }
 
-    /// Ton ab dem Playhead neu starten. Die Uhr läuft sofort nach Systemzeit weiter; der Ton setzt
+    /// Ton ab dem Playhead neu starten (Solo, Ausgabegerät). Die Uhr läuft weiter; der Ton setzt
     /// ohne Sprung an der dann aktuellen Stelle ein (während des Pufferns erst mit dessen Ende).
     pub fn restart_audio(&mut self) {
+        self.core.restart_audio(self.core_now());
+        self.run_core();
+    }
+
+    /// Ton ab `at` vorbereiten; `anchor`: sofort an der laufenden Uhr einsetzen
+    fn start_audio(&mut self, at: Time, anchor: bool) {
         self.audio = None;
-        let now = Instant::now();
-        self.play_clock = Some((now, self.playhead));
-        let mute = (self.voiceover.recorder.is_some() && self.voiceover.mute_project)
-            || (self.play_rate - 1.0).abs() > 1e-6;
-        if !mute {
-            // Solo: alle anderen Tonspuren stumm (nur in der Vorschau)
-            let proj = if self.solo.is_empty() {
-                std::borrow::Cow::Borrowed(&self.project)
-            } else {
-                let mut p = self.project.clone();
-                for t in &mut p.timeline.tracks {
-                    if !self.solo.contains(&t.id) {
-                        t.muted = true;
-                    }
+        if self.voiceover.recorder.is_some() && self.voiceover.mute_project {
+            return;
+        }
+        // Solo: alle anderen Tonspuren stumm (nur in der Vorschau)
+        let proj = if self.solo.is_empty() {
+            std::borrow::Cow::Borrowed(&self.project)
+        } else {
+            let mut p = self.project.clone();
+            for t in &mut p.timeline.tracks {
+                if !self.solo.contains(&t.id) {
+                    t.muted = true;
                 }
-                std::borrow::Cow::Owned(p)
-            };
-            match AudioPlayer::start_synced(&proj, self.playhead) {
-                Ok(a) => {
-                    if self.play_warmup.is_none() {
-                        a.anchor(now);
-                    }
-                    self.audio = Some(a);
-                }
-                Err(e) => log::warn!("Ton: {e}"),
             }
+            std::borrow::Cow::Owned(p)
+        };
+        match AudioPlayer::start_synced(&proj, at) {
+            Ok(a) => {
+                if anchor {
+                    a.anchor(Instant::now());
+                }
+                self.audio = Some(a);
+            }
+            Err(e) => log::warn!("Ton: {e}"),
         }
     }
 
@@ -2451,77 +2452,40 @@ impl App {
         }
     }
 
-    /// Playhead fortschreiben: Audio-Clock wenn vorhanden, sonst Systemzeit.
-    fn advance_playhead(&mut self) {
-        if !self.playing {
-            return;
-        }
-        if let Some(w) = self.play_warmup {
-            let now = self.playhead;
-            let active = self.playbacks.values().filter(|p| p.t0 <= now);
-            let mut any = false;
-            let mut ready = true;
-            for p in active {
-                any = true;
-                ready &= p.taken > 0;
-            }
-            let waited = w.elapsed().as_secs_f64();
-            if (ready && (any || waited > 0.05)) || waited > 1.0 {
-                self.play_warmup = None;
-                self.playbacks.values_mut().for_each(|p| {
-                    if p.t0 <= now {
-                        p.t0 = now;
-                    }
-                });
-                // Uhr startet jetzt; der vorbereitete Ton setzt an derselben Stelle ein
-                let t = Instant::now();
-                self.play_clock = Some((t, self.playhead));
-                match &self.audio {
-                    Some(a) => a.anchor(t),
-                    None => self.restart_audio(),
-                }
-            }
-            return;
-        }
-        // Ausgabe ließ sich nicht öffnen bzw. Ton zu Ende (Fehler): ohne Ton nach Systemzeit weiter
-        if self.audio.as_ref().is_some_and(|a| a.failed() || (a.started() && a.finished())) {
-            self.audio = None;
-            self.play_clock = Some((Instant::now(), self.playhead));
-        }
-        self.perf_audio();
+    /// Ton aus Sicht des Player-Kerns
+    fn audio_in(&self) -> AudioIn {
         match &self.audio {
-            // Ton-Uhr; nie zurück (Übergabe von der Systemzeit ist ohne Sprung, Rundung ±1 Rückruf)
-            Some(a) if a.started() => self.playhead = a.position().max(self.playhead),
-            // Ton kommt gleich: Bild läuft nach Systemzeit (der Ton holt auf)
-            Some(_) | None => {
-                if let Some((t0, p0)) = self.play_clock {
-                    let t = p0.as_secs_f64() + t0.elapsed().as_secs_f64() * self.play_rate;
-                    self.playhead = Time::from_secs_f64(t.max(0.0));
-                    if t <= 0.0 && self.play_rate < 0.0 {
-                        self.stop_playback();
-                        self.playhead = Time::ZERO;
-                        return;
-                    }
-                }
-            }
+            None => AudioIn::None,
+            Some(a) if a.failed() => AudioIn::Failed,
+            Some(a) if a.started() && a.finished() => AudioIn::Finished,
+            Some(a) if a.started() => AudioIn::Running(a.position()),
+            Some(_) => AudioIn::Pending,
         }
-        // Schleife über In/Out
-        if self.loop_range && self.play_rate > 0.0 {
-            if let (Some(a), Some(b)) = (self.range_in, self.range_out) {
-                if self.playhead >= b {
-                    self.playhead = a;
-                    self.playbacks.clear();
-                    self.playbacks_next.clear();
-                    self.restart_audio();
-                    return;
-                }
-            }
-        }
-        let recording = self.voiceover.recorder.is_some();
-        if self.playhead >= self.project.duration() && !recording {
-            self.stop_playback();
-            self.playhead = self.last_frame();
-        }
+    }
+
+    /// Stufen der automatischen Qualität (Teiler, halbe Bildrate); die erste ist die gewählte
+    pub fn quality_steps(&self) -> Vec<(u32, bool)> {
+        crate::playcore::quality_steps(self.settings.preview_div.max(1), self.project.settings.fps.as_f64())
+    }
+
+    /// Takt des Player-Kerns: Playhead fortschreiben (Ton-Uhr, sonst Systemzeit), Puffern
+    /// beenden, Ende/Schleife, Pause verwerfen, wenn Playhead oder Projekt sich änderten.
+    fn advance_playhead(&mut self) {
+        self.perf_audio();
+        let max_q = if self.settings.auto_quality { self.quality_steps().len() - 1 } else { 0 };
+        let t = Tick {
+            now: self.core_now(),
+            playhead: self.playhead,
+            revision: self.revision,
+            audio: self.audio_in(),
+            end: self.project.duration(),
+            fps: self.project.settings.fps.as_f64(),
+            loop_range: if self.loop_range { self.range_in.zip(self.range_out) } else { None },
+            recording: self.voiceover.recorder.is_some(),
+            max_quality_level: max_q,
+        };
+        self.playhead = self.core.tick(&t);
+        self.run_core();
     }
 
     /// Daten eines Bibliotheks-Sounds anfordern (einmal je Schlüssel, im Hintergrund).
@@ -2693,8 +2657,13 @@ impl App {
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
         // offenes Kontextmenü: Esc gehört dem Menü (sonst verbraucht das Kürzel die Taste)
-        if ctx.wants_keyboard_input() || self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
+        if typing(ctx) || self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
             return;
+        }
+        // Fokus auf einem Knopf, einer Kachel o. Ä. (kein Textfeld): abgeben, sonst löst die
+        // Leertaste dort einen Klick aus statt Abspielen
+        if ctx.wants_keyboard_input() {
+            release_text_focus(ctx);
         }
         let mut actions: Vec<&str> = Vec::new();
         let binds = crate::keymap::bindings(&self.settings.shortcuts);
@@ -2996,10 +2965,10 @@ impl App {
     /// (`predicted_dt`, fest 1/60 s), deshalb wird sie hier aufgeschlagen. Genau wird der Termin
     /// erst mit dem feinen Zeitgeber ([`HiresTimer`]); sonst rastet Windows auf ~15,6 ms.
     pub fn play_repaint_delay(&self) -> Duration {
-        let wait = if self.play_warmup.is_some() {
+        let wait = if self.core.mode() == Mode::Puffern {
             Duration::from_millis(10)
         } else {
-            next_frame_delay(self.playhead, self.project.settings.fps, self.play_rate)
+            next_frame_delay(self.playhead, self.project.settings.fps, self.core.rate())
         };
         wait + EGUI_PREDICTED_DT
     }
@@ -3033,19 +3002,6 @@ impl App {
             crate::applog::perf_line!("perf: {} → erstes Bild weitergeschaltet {:.0} ms", p.what, p.pressed.elapsed().as_secs_f64() * 1000.0);
         }
     }
-
-    /// Bild-Ton-Versatz (ms): wie weit das gezeigte Strombild hinter der Uhr liegt (größter Wert
-    /// über alle Ebenen; im Takt ist er kleiner als ein Bildintervall)
-    fn perf_av_offset(&self) -> Option<f64> {
-        self.playbacks
-            .values()
-            .filter(|p| p.taken > 0 && p.t0 <= self.playhead)
-            .map(|p| {
-                let shown = p.t0.as_secs_f64() + (p.taken - 1) as f64 / p.stream.fps.as_f64().max(1.0);
-                (self.playhead.as_secs_f64() - shown) * 1000.0
-            })
-            .reduce(f64::max)
-    }
 }
 
 impl eframe::App for App {
@@ -3075,26 +3031,35 @@ impl eframe::App for App {
             self.perf_ui += 1;
             let el = self.perf_since.elapsed().as_secs_f64();
             if el >= 1.0 {
+                let st = self.core.take_stats();
+                let ord = std::sync::atomic::Ordering::Relaxed;
                 crate::applog::perf_line!(
-                    "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}, Bildzeit Ø {:.2} / max {:.1} ms",
+                    "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}, Bildzeit Ø {:.2} / max {:.1} ms, Player Ø {:.2} / max {:.1} ms",
                     self.perf_ui as f64 / el,
-                    self.perf_frames as f64 / el,
-                    self.perf_opens,
-                    self.perf_max_gap * 1000.0,
+                    st.frames as f64 / el,
+                    st.opens,
+                    st.max_gap * 1000.0,
                     self.playing,
-                    PERF_SUM_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0 / self.perf_ui.max(1) as f64,
-                    PERF_MAX_US.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0
+                    PERF_SUM_US.swap(0, ord) as f64 / 1000.0 / self.perf_ui.max(1) as f64,
+                    PERF_MAX_US.swap(0, ord) as f64 / 1000.0,
+                    crate::player::PERF_PLAYER_SUM_US.swap(0, ord) as f64 / 1000.0 / self.perf_ui.max(1) as f64,
+                    crate::player::PERF_PLAYER_MAX_US.swap(0, ord) as f64 / 1000.0
                 );
-                if self.playing && self.play_warmup.is_none() {
-                    if let Some(ms) = self.perf_av_offset() {
+                if self.core.mode() == Mode::Spielen {
+                    if let Some(ms) = self.core.av_offset_ms() {
                         let clock = if self.audio.as_ref().is_some_and(|a| a.started()) { "Ton-Uhr" } else { "Systemuhr" };
                         crate::applog::perf_line!("perf: Bild-Ton-Versatz {ms:.0} ms ({clock})");
                     }
+                    crate::applog::perf_line!(
+                        "perf: verworfen {:.0}/s, Rückstand max {:.0} ms, aufgeholt {}×, hängend {}×, Qualitätsstufe {}",
+                        st.dropped as f64 / el,
+                        st.max_lag * 1000.0,
+                        st.catch_ups,
+                        st.stalls,
+                        self.core.quality.level
+                    );
                 }
-                self.perf_max_gap = 0.0;
                 self.perf_ui = 0;
-                self.perf_frames = 0;
-                self.perf_opens = 0;
                 self.perf_since = Instant::now();
             }
         }
@@ -3186,9 +3151,6 @@ impl eframe::App for App {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
         self.advance_playhead();
-        if pause_is_stale(self.paused, self.playhead, self.revision) {
-            self.stop_playback();
-        }
         if self.playing != self.hires_timer.is_some() {
             self.hires_timer = self.playing.then(HiresTimer::new);
         }
@@ -3597,12 +3559,6 @@ fn next_frame_delay(pos: Time, fps: Rational, rate: f64) -> Duration {
     Duration::from_secs_f64(secs.min(1.0)) + Duration::from_millis(1)
 }
 
-/// Pause mit offenen Strömen, aber Playhead verschoben oder Projekt geändert: Fortsetzen geht
-/// nicht mehr, die wartenden FFmpeg-Prozesse (Bild und Ton) können sofort enden.
-fn pause_is_stale(paused: Option<(Time, u64)>, playhead: Time, revision: u64) -> bool {
-    paused.is_some_and(|(at, rev)| at != playhead || rev != revision)
-}
-
 /// Kürzester Abstand zweier UI-Bilder (höchstens 125 je Sekunde). Ohne VSync (siehe `main.rs`)
 /// zeichnet egui bei jeder Animation (Hover-Kacheln, Einblenden) sonst ungebremst mehrere hundert
 /// Bilder je Sekunde und belegt einen ganzen Kern. Abspielen fordert seltener an (`play_repaint_delay`).
@@ -3778,13 +3734,29 @@ mod toast_tests {
 mod frame_rate_tests {
     use super::*;
 
+    /// Mangel aus dem Klicktest: Leertaste startete nicht, solange ein Knopf/eine Kachel den
+    /// Fokus hatte; ein Textfeld mit Fokus behält dagegen die Tasten.
     #[test]
-    fn moved_or_edited_pause_releases_streams() {
-        let t = Time::from_millis(500);
-        assert!(!pause_is_stale(None, t, 3));
-        assert!(!pause_is_stale(Some((t, 3)), t, 3));
-        assert!(pause_is_stale(Some((t, 3)), Time::from_millis(900), 3));
-        assert!(pause_is_stale(Some((t, 3)), t, 4));
+    fn only_text_fields_block_shortcuts() {
+        let ctx = egui::Context::default();
+        let mut text = String::new();
+        let mut pass = |ctx: &egui::Context| {
+            let mut ids = (egui::Id::NULL, egui::Id::NULL);
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ids.0 = ui.button("Kachel").id;
+                    ids.1 = ui.text_edit_singleline(&mut text).id;
+                });
+            });
+            ids
+        };
+        let ids = pass(&ctx);
+        ctx.memory_mut(|m| m.request_focus(ids.0));
+        pass(&ctx);
+        assert!(ctx.wants_keyboard_input() && !typing(&ctx), "Knopf mit Fokus ist keine Texteingabe");
+        ctx.memory_mut(|m| m.request_focus(ids.1));
+        pass(&ctx);
+        assert!(typing(&ctx), "Textfeld mit Fokus");
     }
 
     #[test]

@@ -77,9 +77,9 @@ impl App {
     /// J/L: abspielen in Richtung `dir`; nochmal drücken verdoppelt das Tempo (bis 8×).
     pub fn shuttle(&mut self, dir: f64) {
         self.commit_live();
-        let same = self.playing && self.play_rate.signum() == dir.signum();
+        let same = self.playing && self.core.rate().signum() == dir.signum();
         let rate = if same {
-            (self.play_rate * 2.0).clamp(-8.0, 8.0)
+            (self.core.rate() * 2.0).clamp(-8.0, 8.0)
         } else {
             dir
         };
@@ -89,11 +89,7 @@ impl App {
         if dir > 0.0 && self.playhead >= self.last_frame() {
             self.playhead = Time::ZERO;
         }
-        self.play_rate = rate;
-        self.playing = true;
-        self.playbacks.clear();
-        self.playbacks_next.clear();
-        self.restart_audio();
+        self.start_shuttle(rate);
     }
 
     pub fn set_range_point(&mut self, is_in: bool) {

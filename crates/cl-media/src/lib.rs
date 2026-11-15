@@ -19,8 +19,8 @@ use serde::Deserialize;
 
 mod anim;
 mod proc;
-pub use anim::{animation, Animation};
-pub use proc::{cpu_time, lower_priority, suspend};
+pub use anim::{animation, decode_all as decode_animation, frame_index as animation_frame, Animation};
+pub use proc::{cpu_time, lower_priority, raise_priority, suspend};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
@@ -406,6 +406,10 @@ fn decode_once(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
+    // Einzelbild des Players (mit Abbruch-Schalter): vor anderer Last wie die Ströme
+    if kill.is_some() {
+        raise_priority(&child);
+    }
     let mut out = child.stdout.take().expect("piped");
     let mut err = child.stderr.take().expect("piped");
     // stderr nebenher lesen: ein voller Puffer würde FFmpeg anhalten
@@ -704,7 +708,12 @@ impl FrameStream {
         let mut slot = if hw { HwSlot::acquire(path) } else { None };
         let spawn = {
             let (path, graph) = (path.to_path_buf(), graph.map(str::to_string));
-            move |accel: Option<&str>| spawn_stream(&path, start, (w, h), fps, graph.as_deref(), accel)
+            // Wiedergabe: vor anderer Last (siehe `raise_priority`)
+            move |accel: Option<&str>| -> Result<Child> {
+                let c = spawn_stream(&path, start, (w, h), fps, graph.as_deref(), accel)?;
+                raise_priority(&c);
+                Ok(c)
+            }
         };
         let mut child = spawn(slot.as_ref().map(|s| s.accel))?;
         let mut stdout = child.stdout.take().expect("piped");

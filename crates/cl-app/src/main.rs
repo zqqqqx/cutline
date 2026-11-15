@@ -27,6 +27,7 @@ mod multi_edit;
 mod navigate;
 mod onboarding;
 mod paths;
+mod playcore;
 mod player;
 mod player_edit;
 mod presets;

@@ -1,5 +1,5 @@
 //! Vorschau: Hintergrund-Decoder (Einzelbilder je Clip mit Effektkette, Thumbnails,
-//! Waveforms, Effekt-Vorschaubilder, Projekt-Titelbilder) und Wiedergabe-Ströme.
+//! Waveforms, Effekt-Vorschaubilder, Projekt-Titelbilder) und Start der Wiedergabe-Ströme.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -256,6 +256,54 @@ enum Msg {
         ms: f64,
         proxy: bool,
     },
+    /// Bewegtes Bild ganz decodiert (`None`: zu groß oder nicht lesbar → Einzelbilder wie bisher)
+    Anim {
+        key: (PathBuf, u32, u32),
+        frames: Option<Arc<Vec<RgbaFrame>>>,
+    },
+}
+
+/// Bewegte Bilder (GIF/APNG) der Vorschau im Speicher: je Datei und Größe alle Einzelbilder, damit
+/// ein animiertes Element beim Abspielen nicht je Bild ein FFmpeg braucht. Begrenzt: höchstens
+/// [`ANIM_ONE`] je Animation und [`ANIM_ALL`] zusammen (dann wird von vorn begonnen).
+#[derive(Default)]
+struct Anims {
+    map: HashMap<(PathBuf, u32, u32), Option<Arc<Vec<RgbaFrame>>>>,
+    bytes: usize,
+}
+
+const ANIM_ONE: usize = 64 << 20;
+const ANIM_ALL: usize = 192 << 20;
+
+impl Anims {
+    /// Bild für `at` (Suchzeit aus `Animation::seek_time`), falls die Animation im Speicher liegt.
+    /// `Err(true)`: noch nie angefragt (jetzt decodieren), `Err(false)`: läuft schon oder geht nicht.
+    fn get(&mut self, path: &std::path::Path, w: u32, h: u32, at: Time) -> Result<RgbaFrame, bool> {
+        // nur Bilddateien ansehen (`animation` liest die ganze Datei)
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        if !["gif", "png", "apng"].contains(&ext.as_str()) {
+            return Err(false);
+        }
+        let Some(a) = cl_media::animation(path) else { return Err(false) };
+        let key = (path.to_path_buf(), w, h);
+        match self.map.get(&key) {
+            Some(Some(frames)) => frames.get(cl_media::animation_frame(&a, at).min(frames.len().saturating_sub(1))).cloned().ok_or(false),
+            Some(None) => Err(false),
+            None => {
+                self.map.insert(key, None);
+                Err(true)
+            }
+        }
+    }
+    fn put(&mut self, key: (PathBuf, u32, u32), frames: Option<Arc<Vec<RgbaFrame>>>) {
+        let n: usize = frames.as_ref().map_or(0, |f| f.iter().map(|x| x.data.len()).sum());
+        if self.bytes + n > ANIM_ALL {
+            self.map.retain(|_, v| v.is_none());
+            self.bytes = 0;
+        }
+        self.bytes += n;
+        self.map.insert(key, frames);
+    }
 }
 
 /// Laufende Player-Bilder: höchstens ein Auftrag je Clip. Ein neuer Auftrag für denselben Clip
@@ -313,10 +361,14 @@ fn frame_dispatcher(
     busy: Arc<AtomicUsize>,
 ) {
     let mut cache = FrameCache::new(384 << 20);
+    let mut anims = Anims::default();
     let mut inflight = InFlight::default();
     let proxies = crate::proxy::dir();
     loop {
         // auch ohne neue Aufträge nachsehen, ob das Projekt gewechselt wurde
+        if cache.gen != gen.load(Ordering::Relaxed) {
+            anims = Anims::default();
+        }
         cache.set_generation(gen.load(Ordering::Relaxed));
         let msg = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
             Ok(m) => m,
@@ -326,7 +378,24 @@ fn frame_dispatcher(
         let out = match msg {
             Msg::Job(Job::Frame { clip, key, path, at, w, h, graph }) => {
                 crate::proxy::note_activity();
-                if let Some(frame) = cache.get(key).cloned() {
+                // bewegtes Bild ohne Effekte: aus dem Speicher (beim ersten Mal im Hintergrund ganz decodieren)
+                let anim = if graph.is_none() {
+                    match anims.get(&path, w, h, at) {
+                        Ok(f) => Some(f),
+                        Err(true) => {
+                            let (tx, path) = (tx.clone(), path.clone());
+                            std::thread::spawn(move || {
+                                let frames = cl_media::decode_animation(&path, w, h, ANIM_ONE).map(Arc::new);
+                                let _ = tx.send(Msg::Anim { key: (path, w, h), frames });
+                            });
+                            None
+                        }
+                        Err(false) => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some(frame) = anim.or_else(|| cache.get(key).cloned()) {
                     if let Some(k) = inflight.cancel(clip) {
                         k.kill();
                         perf_discarded();
@@ -351,6 +420,10 @@ fn frame_dispatcher(
                 }
             }
             Msg::Job(j) => run(j),
+            Msg::Anim { key, frames } => {
+                anims.put(key, frames);
+                None
+            }
             Msg::Done { clip, key, res, ms, proxy } => {
                 crate::proxy::note_activity();
                 let current = inflight.finish(clip, key);
@@ -686,96 +759,81 @@ impl Decoder {
     }
 }
 
-/// Laufender Wiedergabe-Strom für einen Clip.
-pub struct Playback {
-    pub stream: FrameStream,
-    /// Zeitleisten-Position, an der der Strom begann.
-    pub t0: Time,
-    pub taken: u64,
-    pub key: u64,
-    /// Seit wann wird abgefragt, ohne dass ein fälliges Bild kommt
-    pub waiting_since: Option<std::time::Instant>,
-    /// FFmpeg hat den Strom beendet (Ende der Quelle oder Fehler)
-    pub ended: bool,
+/// Auftrag an den [`Starter`]: Strom ab `source_at` öffnen (Antwort trägt `open` zurück).
+pub struct OpenJob {
+    pub open: crate::playcore::Open,
+    /// Quell-Fingerabdruck (siehe `playcore::Want::alias`), kommt mit dem Strom zurück
+    pub alias: u64,
+    pub path: PathBuf,
+    pub source_at: Time,
+    pub w: u32,
+    pub h: u32,
+    pub fps: Rational,
+    pub graph: Option<String>,
+    pub hw: bool,
 }
 
-impl Playback {
-    #[allow(clippy::too_many_arguments)]
-    pub fn open(
-        path: &std::path::Path,
-        source_at: Time,
-        t0: Time,
-        w: u32,
-        h: u32,
-        fps: Rational,
-        graph: Option<&str>,
-        key: u64,
-        hw: bool,
-    ) -> Option<Self> {
-        FrameStream::open_opts(path, source_at, w, h, fps, graph, hw)
-            .ok()
-            .map(|stream| Self {
-                stream,
-                t0,
-                taken: 0,
-                key,
-                waiting_since: None,
-                ended: false,
+/// Öffnet Wiedergabe-Ströme in einem eigenen, langlebigen Thread: der Prozessstart (5–20 ms unter
+/// Windows) hält die Oberfläche nicht auf. Langlebig auch wegen Linux: `PR_SET_PDEATHSIG` hängt am
+/// startenden Thread (siehe `cl_media::proc`) – ein Strom aus einem kurzlebigen Thread endete mit ihm.
+pub struct Starter {
+    tx: Sender<OpenJob>,
+    pub rx: Receiver<(crate::playcore::Open, f64, u64, Option<FrameStream>)>,
+}
+
+impl Starter {
+    pub fn new(ctx: egui::Context) -> Self {
+        let (tx, jobs) = channel::<OpenJob>();
+        let (done, rx) = channel();
+        std::thread::Builder::new()
+            .name("cl-stream-start".into())
+            .spawn(move || {
+                while let Ok(j) = jobs.recv() {
+                    let s = FrameStream::open_opts(&j.path, j.source_at, j.w, j.h, j.fps, j.graph.as_deref(), j.hw).ok();
+                    if done.send((j.open, j.fps.as_f64(), j.alias, s)).is_err() {
+                        return;
+                    }
+                    ctx.request_repaint();
+                }
             })
+            .expect("Strom-Thread");
+        Self { tx, rx }
     }
-
-    /// Holt alle Frames bis zur aktuellen Position und gibt den neuesten zurück.
-    pub fn catch_up(&mut self, playhead: Time) -> Option<RgbaFrame> {
-        let fps = self.stream.fps.as_f64();
-        let target = ((playhead - self.t0).as_secs_f64() * fps).floor().max(0.0) as u64;
-        let mut latest = None;
-        while self.taken <= target {
-            match self.stream.try_next() {
-                Ok(Some(f)) => {
-                    latest = Some(f);
-                    self.taken += 1;
-                }
-                Ok(None) => break,
-                Err(()) => {
-                    self.ended = true;
-                    break;
-                }
-            }
-        }
-        // Nur zählen, solange wirklich abgefragt wird: ein vorab geöffneter, noch nicht
-        // gebrauchter Strom (z. B. während eines Übergangs) hängt nicht.
-        if latest.is_some() || self.taken > target {
-            self.waiting_since = None;
-        } else {
-            self.waiting_since.get_or_insert_with(std::time::Instant::now);
-        }
-        latest
-    }
-
-    /// Hängt der Strom (beendet oder seit über einer Sekunde abgefragt, ohne fälliges Bild)?
-    /// Vor dem ersten Bild läuft noch die Suche in der Quelle: großzügiger warten, sonst
-    /// würde ein langsamer Start immer wieder neu geöffnet und das Video liefe nie los.
-    pub fn stalled(&self) -> bool {
-        let limit = if self.taken == 0 { 6.0 } else { 1.0 };
-        self.ended || self.waiting_since.is_some_and(|w| w.elapsed().as_secs_f64() > limit)
+    pub fn send(&self, j: OpenJob) {
+        let _ = self.tx.send(j);
     }
 }
 
 /// Hardware-Decodierung für einen Abspiel-Strom? Nur für Originale, deren Software-Decodierung
-/// bremst: über 1080p oder HEVC/AV1/VP9 ab 1080p (gemessen: 4K-HEVC-10-Bit 3,6 → 0,9 Kerne,
-/// 4K-H.264 2,3 → 0,6). 1080p-H.264 und Proxys sind in Software schnell genug, und das Öffnen
-/// eines Hardware-Decoders kostet 200–300 ms. Einzelbilder bleiben deshalb ganz in Software
-/// (Klick → Bild mit D3D11VA 0,2–0,4 s langsamer).
+/// bremst: über 1080p, HEVC/AV1/VP9 ab 1080p und 1080p ab 50 Bildern/s (gemessen: 4K-HEVC-10-Bit
+/// 3,6 → 0,9 Kerne, 4K-H.264 2,3 → 0,6; 1080p60-H.264 unter Volllast 6,1 → 3,6 s CPU je 10 s Video –
+/// in Software kam ein einzelner 1080p60-Strom unter Fremdlast nicht mehr in Echtzeit mit). Proxys
+/// und 1080p30 sind in Software schnell genug, und das Öffnen eines Hardware-Decoders kostet
+/// 200–300 ms. Einzelbilder bleiben ganz in Software (Klick → Bild mit D3D11VA 0,2–0,4 s langsamer).
 pub fn stream_hw(m: &cl_core::MediaRef, path: &std::path::Path) -> bool {
     let codec = m.video_codec.as_deref().unwrap_or("").to_ascii_lowercase();
+    let high_rate = m.fps.is_some_and(|f| f.as_f64() >= 50.0);
     path == m.path
         && (m.width > 1920
             || m.height > 1080
-            || (m.width.min(m.height) >= 1080 && ["hevc", "av1", "vp9"].iter().any(|c| codec.contains(c))))
+            || (m.width.min(m.height) >= 1080 && (high_rate || ["hevc", "av1", "vp9"].iter().any(|c| codec.contains(c)))))
 }
 
+/// Bild für eine Textur. Videobilder sind fast immer deckend: dann ohne Umrechnung kopieren
+/// (deckend ist vormultipliert = unvormultipliert; gemessen 1280×720: 9 → ~1 ms je Bild im
+/// Oberflächen-Thread), sonst mit Vormultiplizieren.
 pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
-    egui::ColorImage::from_rgba_unmultiplied([f.width as usize, f.height as usize], &f.data)
+    let size = [f.width as usize, f.height as usize];
+    // Alpha wortweise prüfen (schnell); ungerade ausgerichteter Puffer: byteweise
+    let opaque = match bytemuck::try_cast_slice::<u8, u32>(&f.data) {
+        Ok(w) => w.iter().all(|x| x.to_le() >> 24 == 255),
+        Err(_) => f.data.chunks_exact(4).all(|p| p[3] == 255),
+    };
+    if opaque {
+        egui::ColorImage { size, pixels: bytemuck::cast_slice::<u8, egui::Color32>(&f.data).to_vec() }
+    } else {
+        egui::ColorImage::from_rgba_unmultiplied(size, &f.data)
+    }
 }
 
 /// Beispielbild für Effekt-/Übergangskacheln (CC0-Bilder von Wikimedia Commons:
@@ -794,6 +852,71 @@ const SAMPLES: [(&str, &[u8]); 2] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hardware_streams_for_large_or_fast_originals() {
+        let m = |w, h, fps: u32, codec: &str| cl_core::MediaRef {
+            path: "a.mp4".into(),
+            width: w,
+            height: h,
+            fps: Some(Rational::new(fps, 1)),
+            video_codec: Some(codec.into()),
+            id: MediaId::new(),
+            kind: cl_core::MediaKind::Video,
+            duration: Time::ZERO,
+            has_audio: false,
+            audio_codec: None,
+            audio_streams: 0,
+        };
+        let p = std::path::Path::new("a.mp4");
+        assert!(stream_hw(&m(1920, 1080, 60, "h264"), p), "1080p60: Hardware");
+        assert!(!stream_hw(&m(1920, 1080, 30, "h264"), p), "1080p30-H.264: Software reicht");
+        assert!(stream_hw(&m(1920, 1080, 30, "hevc"), p));
+        assert!(stream_hw(&m(3840, 2160, 30, "h264"), p));
+        assert!(!stream_hw(&m(1280, 720, 60, "h264"), p));
+        assert!(!stream_hw(&m(1920, 1080, 60, "h264"), std::path::Path::new("proxy.mp4")), "Proxy: Software");
+    }
+
+    #[test]
+    fn color_image_fast_path_matches_unmultiplied() {
+        let opaque = RgbaFrame { width: 3, height: 2, data: [10u8, 20, 30, 255].repeat(6) };
+        let mut alpha = opaque.clone();
+        alpha.data[7] = 128;
+        for f in [opaque, alpha] {
+            assert_eq!(to_color_image(&f), egui::ColorImage::from_rgba_unmultiplied([3, 2], &f.data));
+        }
+    }
+
+    /// Bewegte Bilder: einmal im Hintergrund decodieren, danach jedes Bild aus dem Speicher;
+    /// Videos und Standbilder gehen den bisherigen Weg.
+    #[test]
+    fn animations_are_served_from_memory_after_one_decode() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("a.gif");
+        let ok = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=32x32:rate=10:duration=0.5", "-loop", "0"])
+            .arg(&f)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let a = cl_media::animation(&f).unwrap();
+        let mut an = Anims::default();
+        let at = a.seek_time(a.starts[3]);
+        assert_eq!(an.get(&f, 16, 16, at).err(), Some(true), "erstes Mal: decodieren");
+        assert_eq!(an.get(&f, 16, 16, at).err(), Some(false), "läuft schon: nicht doppelt");
+        let frames = cl_media::decode_animation(&f, 16, 16, ANIM_ONE).map(Arc::new);
+        assert!(frames.is_some());
+        an.put((f.clone(), 16, 16), frames.clone());
+        assert_eq!(an.get(&f, 16, 16, at).unwrap().data, frames.unwrap()[3].data);
+        // andere Größe: eigener Eintrag; Video: nie
+        assert_eq!(an.get(&f, 8, 8, at).err(), Some(true));
+        assert_eq!(an.get(std::path::Path::new("x.mp4"), 16, 16, at).err(), Some(false));
+    }
 
     /// Kachel eines Shader-Übergangs: Bildpaar wird richtig geteilt, Bild 0 = A, Streifen hat
     /// `frames` Bilder; ohne GPU ein Fehler (dann gilt die Kachel des Rückfalls).
@@ -873,7 +996,8 @@ mod tests {
         assert!(stream_hw(&m(3840, 2160, "h264"), orig));
         assert!(stream_hw(&m(1920, 1080, "hevc"), orig));
         assert!(stream_hw(&m(1080, 1920, "hevc"), orig), "Hochkant");
-        assert!(!stream_hw(&m(1920, 1080, "h264"), orig));
+        // 1080p60-H.264 seit dem Lasttest auch in Hardware (1080p30 bleibt Software, eigener Test)
+        assert!(stream_hw(&m(1920, 1080, "h264"), orig));
         assert!(!stream_hw(&m(1280, 720, "hevc"), orig));
         assert!(!stream_hw(&m(3840, 2160, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
     }

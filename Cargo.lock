@@ -735,6 +735,7 @@ name = "cl-app"
 version = "0.11.1"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "cl-analyze",
  "cl-core",
  "cl-epidemic",
