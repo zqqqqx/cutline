@@ -384,6 +384,7 @@ impl App {
     // ------------------------------------------------------------------ Medien
 
     fn media_tab(&mut self, ui: &mut egui::Ui) {
+        let _s = crate::app::section("Medien-Tab");
         Self::tab_title(ui, "Medien", |_| {});
         ui.horizontal(|ui| {
             if ui

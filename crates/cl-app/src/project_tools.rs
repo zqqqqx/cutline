@@ -161,6 +161,7 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
 impl App {
     /// Jeden Frame: Sicherung fällig? Dialoge zeichnen.
     pub fn project_tools(&mut self, ctx: &egui::Context) {
+        let _s = crate::app::section("Projekt-Werkzeuge");
         // Automatische Sicherung (nur bei gespeicherten Projekten mit Änderungen seit der letzten)
         if let Some(path) = self.project_path.clone() {
             let every = Duration::from_secs(self.settings.backup_minutes.max(1) as u64 * 60);

@@ -631,6 +631,7 @@ impl App {
     }
 
     pub fn sync_project(&mut self) {
+        let _s = section("Projekt abgleichen");
         let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
         if doc.revision() != self.revision {
             self.revision = doc.revision();
@@ -1956,6 +1957,7 @@ impl App {
 
     /// Automatisch speichern (1,5 s nach der letzten Änderung).
     fn autosave(&mut self) {
+        let _s = section("Autosave");
         if !self.settings.autosave || self.screen != Screen::Editor {
             return;
         }
@@ -2141,6 +2143,7 @@ impl App {
     }
 
     pub fn open_project(&mut self, p: &Path) {
+        let _s = section("Projekt öffnen");
         if !self.flush_before_leaving() {
             return;
         }
@@ -3091,8 +3094,14 @@ impl eframe::App for App {
         self.sync_project();
         self.handle_dropped_files(ctx);
         self.warm_silent_channels();
-        self.receive_decoded(ctx);
-        self.poll_tasks();
+        {
+            let _s = section("Vorschaubilder empfangen");
+            self.receive_decoded(ctx);
+        }
+        {
+            let _s = section("Aufgaben");
+            self.poll_tasks();
+        }
         self.poll_epidemic(ctx);
         self.poll_stock();
         if self.screen == Screen::Editor {
@@ -3476,10 +3485,59 @@ static PERF_MAX_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 struct PerfFrame(Instant);
 impl Drop for PerfFrame {
     fn drop(&mut self) {
-        let us = self.0.elapsed().as_micros() as u64;
+        let took = self.0.elapsed();
+        let us = took.as_micros() as u64;
         PERF_SUM_US.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
         PERF_MAX_US.fetch_max(us, std::sync::atomic::Ordering::Relaxed);
+        let sections = PERF_SECTIONS.with(|s| std::mem::take(&mut *s.borrow_mut()));
+        if took > SLOW_FRAME {
+            let (what, d) = slowest_section(took, &sections);
+            eprintln!("perf: langes Bild {:.0} ms, davon {what} {:.0} ms", took.as_secs_f64() * 1000.0, d.as_secs_f64() * 1000.0);
+        }
+        PERF_LAST.with(|l| *l.borrow_mut() = (took, sections));
     }
+}
+
+/// Ab hier meldet `CUTLINE_PERF` ein Bild als zu lang.
+const SLOW_FRAME: Duration = Duration::from_millis(100);
+thread_local! {
+    /// Abschnitte des laufenden UI-Bildes (nur mit `CUTLINE_PERF`)
+    static PERF_SECTIONS: std::cell::RefCell<Vec<(&'static str, Duration)>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// Dauer und Abschnitte des letzten UI-Bildes (für Mess-Tests)
+    static PERF_LAST: std::cell::RefCell<(Duration, Vec<(&'static str, Duration)>)> = const { std::cell::RefCell::new((Duration::ZERO, Vec::new())) };
+}
+
+/// Abschnitt eines UI-Bildes messen (`CUTLINE_PERF`), bis der Wächter fällt:
+/// `let _s = section("Proxys");`. Ohne Messung kostet er nichts.
+pub fn section(what: &'static str) -> PerfSection {
+    PerfSection(what, perf().then(Instant::now))
+}
+pub struct PerfSection(&'static str, Option<Instant>);
+impl Drop for PerfSection {
+    fn drop(&mut self) {
+        if let Some(t) = self.1 {
+            PERF_SECTIONS.with(|s| s.borrow_mut().push((self.0, t.elapsed())));
+        }
+    }
+}
+
+/// Dauer und Abschnitte des letzten UI-Bildes (Mess-Tests)
+#[cfg(test)]
+pub fn last_frame() -> (Duration, Vec<(&'static str, Duration)>) {
+    PERF_LAST.with(|l| l.borrow().clone())
+}
+
+/// Teuerster Abschnitt eines Bildes; was keinem Abschnitt gehört, zählt als „übrige Oberfläche“.
+fn slowest_section(total: Duration, sections: &[(&'static str, Duration)]) -> (&'static str, Duration) {
+    let mut sum: std::collections::HashMap<&'static str, Duration> = std::collections::HashMap::new();
+    for (w, d) in sections {
+        *sum.entry(w).or_default() += *d;
+    }
+    let rest = total.saturating_sub(sum.values().sum());
+    sum.into_iter()
+        .chain([("übrige Oberfläche", rest)])
+        .max_by_key(|(_, d)| *d)
+        .unwrap_or(("übrige Oberfläche", rest))
 }
 
 /// Messung (`CUTLINE_PERF`): eine Wiedergabe bzw. ein Ton-Neustart
@@ -3795,3 +3853,7 @@ mod frame_rate_tests {
         assert!(1.0 / MIN_FRAME.as_secs_f64() <= 125.0);
     }
 }
+
+#[cfg(test)]
+#[path = "load_perf.rs"]
+mod load_perf;

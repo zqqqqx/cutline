@@ -1,0 +1,2022 @@
+{
+  "project": {
+    "media": [
+      {
+        "audio_codec": "pcm_s16le",
+        "duration": 3000000,
+        "fps": null,
+        "has_audio": true,
+        "height": 0,
+        "id": "#0",
+        "kind": "Audio",
+        "path": "<dir>/audio_record/vo.wav",
+        "video_codec": null,
+        "width": 0
+      },
+      {
+        "audio_codec": "aac",
+        "duration": 2000000,
+        "fps": {
+          "den": 1,
+          "num": 25
+        },
+        "has_audio": true,
+        "height": 90,
+        "id": "#1",
+        "kind": "Video",
+        "path": "<dir>/clip.mp4",
+        "video_codec": "h264",
+        "width": 160
+      },
+      {
+        "audio_codec": null,
+        "duration": 0,
+        "fps": null,
+        "has_audio": false,
+        "height": 36,
+        "id": "#2",
+        "kind": "Image",
+        "path": "<dir>/bild.png",
+        "video_codec": "png",
+        "width": 64
+      }
+    ],
+    "name": "Aus Datei",
+    "project_fonts": [],
+    "schema_version": 1,
+    "settings": {
+      "aspect": {
+        "Ratio": [
+          16,
+          9
+        ]
+      },
+      "channels": "Auto",
+      "color_space": "Rec709Sdr",
+      "float_pipeline": false,
+      "fps": {
+        "den": 1,
+        "num": 25
+      },
+      "height": 720,
+      "main_track_magnet": false,
+      "ripple_all_tracks": true,
+      "snapping": true,
+      "width": 1280
+    },
+    "timeline": {
+      "markers": [],
+      "tracks": [
+        {
+          "clips": [
+            {
+              "anim": {
+                "combo": null,
+                "intro": {
+                  "duration": 200000,
+                  "id": "fade"
+                },
+                "outro": {
+                  "duration": 1000000,
+                  "id": "fade"
+                }
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Video",
+                  "media": "#1"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#3",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 0,
+              "speed": 1.5,
+              "start": 0,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": -12.0412
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Image",
+                  "media": "#2"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": true,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#4",
+              "keyframes": {},
+              "label": null,
+              "opacity": 0.7,
+              "source_in": 333333,
+              "speed": 1.0,
+              "start": 1000000,
+              "transform": {
+                "rotation_deg": 15.0,
+                "scale": 1.3,
+                "x": -160.0,
+                "y": -144.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Video",
+                  "media": "#1"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": true,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#5",
+              "keyframes": {},
+              "label": null,
+              "opacity": 0.7,
+              "source_in": 666666,
+              "speed": 1.0,
+              "start": 2000000,
+              "transform": {
+                "rotation_deg": 15.0,
+                "scale": 1.3,
+                "x": -160.0,
+                "y": -144.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Video",
+                  "media": "#1"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": true,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#6",
+              "keyframes": {},
+              "label": null,
+              "opacity": 0.7,
+              "source_in": 1333333,
+              "speed": 1.0,
+              "start": 4000000,
+              "transform": {
+                "rotation_deg": 15.0,
+                "scale": 1.3,
+                "x": -160.0,
+                "y": -144.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Image",
+                  "media": "#2"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": true,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#7",
+              "keyframes": {},
+              "label": null,
+              "opacity": 0.7,
+              "source_in": 1666666,
+              "speed": 1.0,
+              "start": 5000000,
+              "transform": {
+                "rotation_deg": 15.0,
+                "scale": 1.3,
+                "x": -160.0,
+                "y": -144.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": {
+                  "duration": 200000,
+                  "id": "fade"
+                },
+                "outro": {
+                  "duration": 1000000,
+                  "id": "fade"
+                }
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Video",
+                  "media": "#1"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#8",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 2166666,
+              "speed": 1.5,
+              "start": 6500000,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": -12.0412
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Video",
+                  "media": "#1"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": true,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#9",
+              "keyframes": {},
+              "label": null,
+              "opacity": 0.7,
+              "source_in": 2833333,
+              "speed": 1.0,
+              "start": 8500000,
+              "transform": {
+                "rotation_deg": 15.0,
+                "scale": 1.3,
+                "x": -160.0,
+                "y": -144.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": {
+                  "duration": 200000,
+                  "id": "fade"
+                },
+                "outro": {
+                  "duration": 1000000,
+                  "id": "fade"
+                }
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Image",
+                  "media": "#2"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#10",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 3166666,
+              "speed": 1.5,
+              "start": 9500000,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": -12.0412
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Video",
+                  "media": "#1"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": true,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#11",
+              "keyframes": {},
+              "label": null,
+              "opacity": 0.7,
+              "source_in": 3500000,
+              "speed": 1.0,
+              "start": 10500000,
+              "transform": {
+                "rotation_deg": 15.0,
+                "scale": 1.3,
+                "x": -160.0,
+                "y": -144.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            }
+          ],
+          "hidden": false,
+          "id": "#12",
+          "kind": "Video",
+          "locked": false,
+          "main": true,
+          "muted": false,
+          "name": null
+        },
+        {
+          "clips": [
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Video",
+                  "media": "#1"
+                }
+              },
+              "disabled": true,
+              "duration": 2000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": true,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#13",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 333333,
+              "speed": 1.0,
+              "start": 1000000,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            }
+          ],
+          "hidden": false,
+          "id": "#14",
+          "kind": "Video",
+          "locked": false,
+          "main": false,
+          "muted": false,
+          "name": null
+        },
+        {
+          "clips": [
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Text": {
+                  "align": 1,
+                  "auto_wrap": true,
+                  "background": null,
+                  "bold": true,
+                  "color": [
+                    255,
+                    128,
+                    0,
+                    255
+                  ],
+                  "font_family": null,
+                  "italic": false,
+                  "line_spacing": 1.0,
+                  "outline": [
+                    4.8,
+                    [
+                      0,
+                      0,
+                      255,
+                      255
+                    ]
+                  ],
+                  "shadow": false,
+                  "size": 46.0,
+                  "text": "Zwei",
+                  "uppercase": false
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#15",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 0,
+              "speed": 1.0,
+              "start": 0,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            }
+          ],
+          "hidden": false,
+          "id": "#16",
+          "kind": "Text",
+          "locked": false,
+          "main": false,
+          "muted": false,
+          "name": null
+        },
+        {
+          "clips": [
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Text": {
+                  "align": -1,
+                  "auto_wrap": true,
+                  "background": null,
+                  "bold": true,
+                  "color": [
+                    255,
+                    128,
+                    0,
+                    255
+                  ],
+                  "font_family": "Poppins",
+                  "italic": false,
+                  "line_spacing": 1.0,
+                  "outline": [
+                    4.8,
+                    [
+                      0,
+                      0,
+                      255,
+                      255
+                    ]
+                  ],
+                  "shadow": true,
+                  "size": 92.0,
+                  "text": "Eins",
+                  "uppercase": false
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#17",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 0,
+              "speed": 1.0,
+              "start": 0,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Text": {
+                  "align": 0,
+                  "auto_wrap": true,
+                  "background": null,
+                  "bold": false,
+                  "color": [
+                    255,
+                    255,
+                    255,
+                    255
+                  ],
+                  "font_family": null,
+                  "italic": false,
+                  "line_spacing": 1.0,
+                  "outline": null,
+                  "shadow": false,
+                  "size": 89.7,
+                  "text": "Drei",
+                  "uppercase": false
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": true,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#18",
+              "keyframes": {},
+              "label": null,
+              "opacity": 0.7,
+              "source_in": 0,
+              "speed": 1.0,
+              "start": 2000000,
+              "transform": {
+                "rotation_deg": 15.0,
+                "scale": 1.0,
+                "x": -160.0,
+                "y": -144.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            }
+          ],
+          "hidden": false,
+          "id": "#19",
+          "kind": "Text",
+          "locked": false,
+          "main": false,
+          "muted": false,
+          "name": null
+        },
+        {
+          "clips": [
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Audio",
+                  "media": "#0"
+                }
+              },
+              "disabled": false,
+              "duration": 2000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#20",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 0,
+              "speed": 1.0,
+              "start": 0,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": -60.0
+            },
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Audio",
+                  "media": "#0"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#21",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 1666666,
+              "speed": 1.0,
+              "start": 5000000,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            }
+          ],
+          "hidden": false,
+          "id": "#22",
+          "kind": "Audio",
+          "locked": false,
+          "main": false,
+          "muted": false,
+          "name": null
+        },
+        {
+          "clips": [
+            {
+              "anim": {
+                "combo": null,
+                "intro": null,
+                "outro": null
+              },
+              "audio": {
+                "bass": 0.0,
+                "compress": 0.0,
+                "declick": false,
+                "denoise": 0.0,
+                "filter": null,
+                "hum": false,
+                "normalize": false,
+                "rumble": false,
+                "treble": 0.0,
+                "voice": null,
+                "voice_isolate": false
+              },
+              "beats": [],
+              "content": {
+                "Media": {
+                  "kind": "Audio",
+                  "media": "#0"
+                }
+              },
+              "disabled": false,
+              "duration": 1000000,
+              "fade_in": 0,
+              "fade_out": 0,
+              "fx": {
+                "adjust": {
+                  "brightness": 0.0,
+                  "contrast": 0.0,
+                  "fade": 0.0,
+                  "grain": 0.0,
+                  "highlights": 0.0,
+                  "hsl": [
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  ],
+                  "hue": 0.0,
+                  "saturation": 0.0,
+                  "shadows": 0.0,
+                  "sharpen": 0.0,
+                  "temperature": 0.0,
+                  "tint": 0.0,
+                  "vignette": 0.0
+                },
+                "chroma": null,
+                "cutout": null,
+                "deflicker": false,
+                "denoise": 0.0,
+                "effects": [],
+                "filter": null,
+                "flip_h": false,
+                "flip_v": false,
+                "lut": null,
+                "mask": null,
+                "person": null,
+                "reverse": false,
+                "smooth_slowmo": false,
+                "speed_curve": null,
+                "stabilize": 0.0
+              },
+              "group": null,
+              "id": "#23",
+              "keyframes": {},
+              "label": null,
+              "opacity": 1.0,
+              "source_in": 333333,
+              "speed": 1.0,
+              "start": 1000000,
+              "transform": {
+                "rotation_deg": 0.0,
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "transition_out": null,
+              "volume_db": 0.0
+            }
+          ],
+          "hidden": false,
+          "id": "#24",
+          "kind": "Audio",
+          "locked": false,
+          "main": false,
+          "muted": false,
+          "name": null
+        }
+      ]
+    }
+  },
+  "report": {
+    "clips": 13,
+    "fonts": [
+      "<dir>/Poppins-ExtraBold.ttf"
+    ],
+    "missing": [
+      "<dir>/fehlt.wav",
+      "<dir>/fehlt.mp4"
+    ],
+    "skipped": [
+      [
+        "Animation (als Blende übernommen)",
+        6
+      ],
+      [
+        "Online-Material",
+        1
+      ],
+      [
+        "Online-Musik / Sprachausgabe",
+        1
+      ],
+      [
+        "Sticker",
+        1
+      ],
+      [
+        "Effekte",
+        2
+      ],
+      [
+        "Filter",
+        2
+      ],
+      [
+        "Sonstiges",
+        1
+      ]
+    ],
+    "texts": 3
+  }
+}

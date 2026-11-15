@@ -27,6 +27,11 @@ pub struct ImportState {
 }
 
 impl App {
+    /// Läuft gerade ein Import?
+    pub fn import_busy(&self) -> bool {
+        self.import.running.is_some()
+    }
+
     pub fn import_enabled(&self) -> bool {
         self.settings.import_capcut || self.settings.import_fcpxml
     }
@@ -94,6 +99,7 @@ impl App {
 
     /// Dialog „Projekt importieren“ und Import-Bericht.
     pub fn import_dialogs(&mut self, ctx: &egui::Context) {
+        let _s = crate::app::section("Import");
         self.poll_import();
         // Schriften der importierten Texte übernehmen (still, schon vorhandene werden übersprungen)
         let fonts = std::mem::take(&mut self.import.fonts);

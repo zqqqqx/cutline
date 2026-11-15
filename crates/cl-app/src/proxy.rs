@@ -387,6 +387,7 @@ impl App {
 
     /// Fehlende Proxys im Hintergrund erzeugen (nacheinander, je Medium eine Aufgabe).
     pub fn ensure_proxies(&mut self, ctx: &egui::Context) {
+        let _s = crate::app::section("Proxys");
         set_playing(self.playing);
         if !self.settings.use_proxies || self.tasks.running("proxy").is_some() {
             // nach Ende einer Aufgabe sofort weitersuchen
