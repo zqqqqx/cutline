@@ -80,6 +80,12 @@ struct Stored {
     downloads: BTreeMap<PathBuf, String>,
 }
 
+/// API-Adresse: nur in Entwickler-Builds (Debug oder `CUTLINE_SHOTS`) aus `CUTLINE_EPIDEMIC_BASE`, nie aus
+/// der gespeicherten Datei – sonst gingen Token und Schlüssel an eine fremde Adresse.
+fn dev_base(dev: bool, var: Option<String>) -> Option<String> {
+    var.filter(|b| dev && !b.is_empty())
+}
+
 fn store_path() -> PathBuf {
     paths::data_dir()
         .join("Integrations")
@@ -97,9 +103,8 @@ impl Default for EsState {
         // feste, anonyme Kennung für x-partner-user-id (einmal erzeugt, dann gespeichert)
         let fresh = cfg.user_id.is_empty();
         cfg.ensure_user_id();
-        if let Ok(b) = std::env::var("CUTLINE_EPIDEMIC_BASE") {
-            cfg.base_url = Some(b);
-        }
+        let dev = cfg!(debug_assertions) || std::env::var_os("CUTLINE_SHOTS").is_some();
+        cfg.base_url = dev_base(dev, std::env::var("CUTLINE_EPIDEMIC_BASE").ok());
         let st = Self {
             cfg,
             downloads: s.downloads,
@@ -1005,6 +1010,15 @@ mod store_tests {
         assert_eq!(fetch_track(&d3, false, &es_store(&vorrat, "id-3"), None, dl(b"drei")), Ok(true));
         assert_eq!(std::fs::read(&d3).unwrap(), b"drei");
         assert!(!d3.with_extension("part").exists());
+    }
+
+    #[test]
+    fn the_api_address_is_only_redirected_in_dev_builds() {
+        let b = || Some("http://127.0.0.1:9".to_string());
+        assert_eq!(dev_base(false, b()), None);
+        assert_eq!(dev_base(true, b()), b());
+        assert_eq!(dev_base(true, Some(String::new())), None);
+        assert_eq!(dev_base(true, None), None);
     }
 
     #[test]
