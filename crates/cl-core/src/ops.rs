@@ -265,7 +265,12 @@ impl EditOp {
                 duration,
                 source_in,
             } => {
-                if duration.0 <= 0 || start.0 < 0 || source_in.0 < 0 {
+                if duration.0 <= 0
+                    || start.0 < 0
+                    || source_in.0 < 0
+                    || start > Time::LIMIT
+                    || duration > Time::LIMIT
+                {
                     return Err(CoreError::InvalidDuration);
                 }
                 let c = clip_mut(p, clip)?;
@@ -364,18 +369,20 @@ impl EditOp {
             }
             EditOp::TrimClip { clip, edge, to } => {
                 let ti = clip_track_index(p, clip)?;
-                let (src_len, is_audio, has_source) = {
-                    let c = p.timeline.tracks[ti]
-                        .clips
-                        .iter()
-                        .find(|c| c.id == clip)
-                        .expect("geprüft");
+                let (src_len, is_audio, has_source, prev_end, next_start) = {
+                    let t = &p.timeline.tracks[ti];
+                    let c = t.clips.iter().find(|c| c.id == clip).expect("geprüft");
+                    // Ohne Magnet nicht in den Nachbarclip hinein verlängern (sonst Überlappung)
+                    let free = !(t.main && p.settings.main_track_magnet);
+                    let others = t.clips.iter().filter(|o| free && o.id != clip);
+                    let prev_end = others.clone().filter(|o| o.start < c.start).map(|o| o.end()).max();
+                    let next_start = others.filter(|o| o.start >= c.start).map(|o| o.start).min();
                     // Nach Inhalt statt nach bekannter Länge (Dauer 0 = unbekannt)
                     let has_source = matches!(
                         c.content,
                         ClipContent::Media { kind: MediaKind::Video | MediaKind::Audio, .. }
                     );
-                    (source_length(p, c), c.kind() == TrackKind::Audio, has_source)
+                    (source_length(p, c), c.kind() == TrackKind::Audio, has_source, prev_end, next_start)
                 };
                 let track = &mut p.timeline.tracks[ti];
                 ensure_unlocked(track)?;
@@ -392,7 +399,7 @@ impl EditOp {
                 let rev = c.fx.reverse;
                 match edge {
                     Edge::Start => {
-                        let mut to = Time(to.0.max(0));
+                        let mut to = Time(to.0.clamp(0, Time::LIMIT.0));
                         if let Some(len) = src_len {
                             // Nicht über die Quelle hinaus: still begrenzen
                             let room = if rev {
@@ -404,6 +411,9 @@ impl EditOp {
                             if to < earliest {
                                 to = earliest;
                             }
+                        }
+                        if let Some(e) = prev_end.filter(|e| to < *e) {
+                            to = e;
                         }
                         let delta = to - c.start;
                         let new_dur = c.duration - delta;
@@ -418,7 +428,7 @@ impl EditOp {
                         c.duration = new_dur;
                     }
                     Edge::End => {
-                        let mut new_dur = to - c.start;
+                        let mut new_dur = Time(to.0.min(Time::LIMIT.0)) - c.start;
                         // Video: still auf das Quellende begrenzen. Audio darf länger
                         // werden; der Rest wird mit Stille aufgefüllt.
                         if rev && src_len.is_some() {
@@ -431,6 +441,9 @@ impl EditOp {
                             if new_dur > max {
                                 new_dur = max;
                             }
+                        }
+                        if let Some(n) = next_start {
+                            new_dur = new_dur.min(n - c.start);
                         }
                         if new_dur <= Time::ZERO {
                             return Err(CoreError::InvalidDuration);
@@ -478,7 +491,7 @@ impl EditOp {
                 let span = c.source_span();
                 let old = c.duration;
                 c.speed = speed;
-                c.duration = Time(((span.0 as f64 / speed as f64).round() as i64).max(1000));
+                c.duration = Time(((span.0 as f64 / speed as f64).round() as i64).clamp(1000, Time::LIMIT.0));
                 // Keyframes proportional mitziehen
                 let f = c.duration.0 as f64 / old.0.max(1) as f64;
                 for list in c.keyframes.0.values_mut() {
@@ -726,7 +739,7 @@ impl EditOp {
                 let magnet_on = settings.main_track_magnet && !p.settings.main_track_magnet;
                 p.settings = settings;
                 if magnet_on {
-                    if let Some(ti) = p.timeline.tracks.iter().position(|t| t.main) {
+                    if let Some(ti) = p.timeline.tracks.iter().position(|t| t.main && !t.locked) {
                         p.timeline.tracks[ti].sort();
                         compact(&mut p.timeline.tracks[ti]);
                     }
@@ -862,8 +875,10 @@ fn prune_if_empty(p: &mut Project, ti: usize) {
 /// Nach einer Längenänderung auf Nebenspuren: nachfolgende Clips, die jetzt
 /// überlappen, nach hinten schieben.
 fn resolve_overlaps(p: &mut Project, ti: usize, _changed: ClipId) {
+    let magnet = p.settings.main_track_magnet;
     let t = &mut p.timeline.tracks[ti];
-    if t.main {
+    // Hauptspur mit Magnet ist schon lückenlos zusammengeschoben; ohne Magnet wie Nebenspuren
+    if t.main && magnet {
         return;
     }
     t.sort();
@@ -886,9 +901,16 @@ fn after_change(p: &mut Project, ti: usize) {
     }
 }
 
-fn add_clip(p: &mut Project, track: Option<TrackId>, clip: Clip) -> Result<OpOutput> {
-    if clip.duration <= Time::ZERO {
+fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip) -> Result<OpOutput> {
+    // Werte von außen (MCP, Plugins): nichts vor 0, nichts jenseits von Time::LIMIT
+    clip.start = Time(clip.start.0.max(0));
+    clip.source_in = Time(clip.source_in.0.max(0));
+    if clip.duration <= Time::ZERO || clip.duration > Time::LIMIT || clip.start > Time::LIMIT {
         return Err(CoreError::InvalidDuration);
+    }
+    // Doppelte Kennung (z. B. dieselbe Op zweimal) bekäme sonst zwei Clips mit einer ID
+    if p.find_clip(clip.id).is_some() {
+        clip.id = ClipId::new();
     }
     if let ClipContent::Media { media, .. } = &clip.content {
         if p.media(*media).is_none() {
@@ -960,7 +982,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, clip: Clip) -> Result<OpOut
         let idx = t
             .clips
             .iter()
-            .take_while(|c| (c.start.0 + c.end().0) / 2 < at)
+            .take_while(|c| (c.start.0 as i128 + c.end().0 as i128) / 2 < at as i128)
             .count();
         t.clips.insert(idx, clip);
         compact(t);
