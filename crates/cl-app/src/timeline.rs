@@ -661,7 +661,30 @@ struct TrackDrag {
 /// Spurkopf gedrückt gehalten: ab dieser Bewegung (px) oder Haltezeit (s) hebt sich die Spur
 /// zum Verschieben; darunter bleibt es ein Klick.
 fn track_lifted(moved: f32, held: f64) -> bool {
-    moved >= 6.0 || held >= 0.25
+    moved >= 4.0 || held >= 0.15
+}
+
+/// Ziehen an einem schon ausgewählten Clip: er wird Hauptauswahl, die bisherige Hauptauswahl
+/// bleibt ausgewählt (sonst fiele sie aus der Auswahl und bliebe beim Verschieben liegen).
+fn make_primary(selected: &mut Option<ClipId>, extra: &mut HashSet<ClipId>, c: ClipId) {
+    if *selected == Some(c) {
+        return;
+    }
+    if let Some(old) = selected.replace(c) {
+        extra.insert(old);
+    }
+    extra.remove(&c);
+}
+
+/// Wie weit (px) muss senkrecht gerollt werden, damit `row` ganz in `lanes` liegt (4 px Rand)?
+fn reveal_delta(row: Rect, lanes: Rect) -> f32 {
+    if row.top() < lanes.top() + 4.0 {
+        row.top() - lanes.top() - 4.0
+    } else if row.bottom() > lanes.bottom() - 4.0 {
+        (row.bottom() - lanes.bottom() + 4.0).min(row.top() - lanes.top() - 4.0)
+    } else {
+        0.0
+    }
 }
 
 /// Spurart, die ein Element aus dem Medien-Menü braucht (`None`: kein eigener Clip, z. B. Übergang).
@@ -713,6 +736,8 @@ pub struct TimelineState {
     /// sichtbare Breite der Spuren im letzten Bild (für die Zoom-Grenzen der Werkzeugleiste)
     view_w: f32,
     motion: Motion,
+    /// neue Spur, die sichtbar gerollt wird: (Spur, Start, senkrechter Bildlauf beim Start)
+    reveal: Option<(TrackId, f64, f32)>,
 }
 
 impl TimelineState {
@@ -730,6 +755,11 @@ impl TimelineState {
     fn zoom_to(&mut self, pps: f32, x: f32, now: f64) {
         let t = self.scroll + (x / self.pps) as f64;
         self.glide_view(pps, Anchor::At { t, x, floor: self.scroll.min(0.0) }, now);
+    }
+    /// „Ganze Zeitleiste zeigen“: Projekt der Länge `dur` mit Rand einpassen (weich)
+    fn show_all(&mut self, dur: f64, now: f64) {
+        let (pps, scroll) = fit_all(dur, self.view_w, min_pps(dur, self.view_w));
+        self.glide_view(pps, Anchor::Scroll(self.scroll, scroll), now);
     }
     /// Bildlauf weich zu `scroll` (Maßstab bleibt)
     fn scroll_to(&mut self, scroll: f64, now: f64) {
@@ -768,6 +798,7 @@ impl Default for TimelineState {
             view_glide: None,
             view_w: 1000.0,
             motion: Motion::default(),
+            reveal: None,
         }
     }
 }
@@ -1047,9 +1078,7 @@ impl App {
                 let lo = min_pps(dur, self.timeline.view_w);
                 let target = self.timeline.target_pps();
                 if zoom && theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Ganze Zeitleiste zeigen", true, false).clicked() {
-                    let (pps, scroll) = fit_all(dur, self.timeline.view_w, lo);
-                    let from = self.timeline.scroll;
-                    self.timeline.glide_view(pps, Anchor::Scroll(from, scroll), now);
+                    self.timeline.show_all(dur, now);
                 }
                 if zoom && theme::icon_button(ui, icon::PLUS, "Vergrößern (Strg+Mausrad)", true, false).clicked() {
                     self.timeline.zoom_to((target * 1.25).min(PPS_MAX), 0.0, now);
@@ -1286,6 +1315,19 @@ impl App {
                 rows.iter().filter(|r| r.track != REC_ROW).map(|r| (tracks[r.track].id, r.rect.top())).collect();
             self.timeline.motion.update(&old_tracks, &tracks, &row_top, now_s);
         }
+        // neue Spur sichtbar machen: weich rollen, solange sie (aus 0 wachsend) noch nicht ganz zu sehen ist
+        if let Some((id, t0, from)) = self.timeline.reveal {
+            let age = (now_s - t0) as f32;
+            match rows.iter().find(|r| r.track != REC_ROW && tracks[r.track].id == id) {
+                Some(r) if age < 2.0 * secs + 0.05 => {
+                    let target = (self.timeline.vscroll + reveal_delta(r.rect, lanes)).clamp(0.0, overflow);
+                    self.timeline.vscroll = theme::glide_at(from, target, age, secs).clamp(0.0, overflow);
+                    ui.ctx().request_repaint();
+                }
+                Some(_) if age < 1.0 => {}
+                _ => self.timeline.reveal = None,
+            }
+        }
         // Zeile (Anzeige-Index in `rows`) unter dem Zeiger; der Spalt zwischen zwei Zeilen zählt halb dazu
         let row_idx_at = |p: Pos2| {
             rows.iter().position(|r| {
@@ -1318,6 +1360,8 @@ impl App {
             }
         }
         let mut lifted_row: Option<usize> = None;
+        // gedrückt, noch nicht angehoben: sofort sichtbar (Druck-Zustand im selben Bild)
+        let mut pressed_row: Option<usize> = None;
         if let Some(mut d) = self.timeline.track_drag.take() {
             let from = rows.iter().position(|r| r.track != REC_ROW && tracks[r.track].id == d.track);
             if let (Some(from), Some(p), false) = (from, latest, esc) {
@@ -1329,6 +1373,9 @@ impl App {
                         self.apply(op);
                     }
                 } else {
+                    if !d.lifted {
+                        pressed_row = Some(from);
+                    }
                     if d.lifted {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                         lifted_row = Some(from);
@@ -1724,7 +1771,7 @@ impl App {
                                     self.select_only(Some(c));
                                 }
                             } else {
-                                self.selected = Some(c);
+                                make_primary(&mut self.selected, &mut self.sel_extra, c);
                             }
                             self.expand_groups();
                             let start = self
@@ -1859,7 +1906,12 @@ impl App {
                                     ids.iter().map(|(id, st)| (*id, fr((st + delta).max(0.0)))).collect();
                                 let r = move_to_new_tracks(&mut self.doc.lock().unwrap_or_else(|e| e.into_inner()), k, upper, &moves);
                                 match r {
-                                    Ok(()) => self.sync_project(),
+                                    Ok(()) => {
+                                        self.sync_project();
+                                        // neue Spur mit dem Clip weich in den sichtbaren Bereich rollen
+                                        let t = self.project.find_clip(clip).map(|(t, _)| t.id);
+                                        self.timeline.reveal = t.map(|t| (t, now_s, self.timeline.vscroll));
+                                    }
                                     Err(e) => self.toast_err(e.to_string()),
                                 }
                                 Vec::new()
@@ -2764,9 +2816,15 @@ impl App {
         }
         // Angehobene Spur und Einfüge-Linien (über die ganze Breite, auch über die Spurköpfe)
         let lp = painter.with_clip_rect(lanes);
-        if let Some(r) = lifted_row.map(|k| rows[k].rect) {
-            lp.rect_filled(r, theme::R_CTRL, theme::ACCENT().gamma_multiply(0.12));
-            lp.rect_stroke(r, theme::R_CTRL, Stroke::new(1.0_f32, theme::ACCENT()), egui::StrokeKind::Inside);
+        if let Some(r) = pressed_row.map(|k| rows[k].rect) {
+            lp.rect_filled(r, theme::R_CTRL, theme::overlay(18));
+        }
+        // angehobene Spur: Fläche und Rahmen blenden schnell ein, die Zeile hebt sich um 2 px
+        let lift = theme::fade(ui.ctx(), ui.id().with("track-lift"), lifted_row.is_some(), theme::MOTION_FAST);
+        if let Some(r) = lifted_row.map(|k| rows[k].rect.translate(vec2(0.0, -2.0 * lift))) {
+            lp.rect_filled(r.translate(vec2(0.0, 3.0)), theme::R_CTRL, Color32::from_black_alpha((60.0 * lift) as u8));
+            lp.rect_filled(r, theme::R_CTRL, theme::ACCENT().gamma_multiply(0.18 * lift));
+            lp.rect_stroke(r, theme::R_CTRL, Stroke::new(1.5_f32, theme::ACCENT().gamma_multiply(lift)), egui::StrokeKind::Inside);
         }
         for y in &insert_lines {
             lp.line_segment([pos2(rect.left() + 2.0, *y), pos2(rect.right() - 2.0, *y)], Stroke::new(2.0_f32, theme::ACCENT()));
@@ -2839,6 +2897,7 @@ impl App {
                 track = None;
                 if let Some(OpOutput::Track(t)) = self.apply(EditOp::InsertTrack { index, kind: k }) {
                     track = Some(t);
+                    self.timeline.reveal = Some((t, now_s, self.timeline.vscroll));
                 }
             } else if let (Some(p), Some(k)) = (pointer, kind) {
                 let above = p.y < first_top - ROW_GAP && k != TrackKind::Audio;
@@ -2849,6 +2908,7 @@ impl App {
                         kind: k,
                     }) {
                         track = Some(t);
+                        self.timeline.reveal = Some((t, now_s, self.timeline.vscroll));
                     }
                 }
             }
@@ -3702,7 +3762,7 @@ mod tests {
     #[test]
     fn track_head_click_versus_drag() {
         assert!(!track_lifted(0.0, 0.0), "Klick");
-        assert!(!track_lifted(5.0, 0.2), "kleines Zittern beim Klicken");
+        assert!(!track_lifted(3.0, 0.1), "kleines Zittern beim Klicken");
         assert!(track_lifted(6.0, 0.0), "Bewegung");
         assert!(track_lifted(0.0, 0.25), "gedrückt gehalten");
     }
@@ -3855,6 +3915,52 @@ mod tests {
         // ein-/ausblenden
         assert_eq!((fade_alpha(0.0, 0.09, true), fade_alpha(0.09, 0.09, true)), (0.0, 1.0));
         assert_eq!((fade_alpha(0.0, 0.09, false), fade_alpha(0.0, 0.0, false)), (1.0, 0.0));
+    }
+
+    #[test]
+    fn dragging_any_selected_clip_keeps_the_whole_selection() {
+        // Strg-Auswahl: erst Video, dann Ton (Ton ist Hauptauswahl), gezogen wird am Video
+        let (v, a) = (ClipId::new(), ClipId::new());
+        let (mut sel, mut extra) = (Some(a), HashSet::from([v]));
+        make_primary(&mut sel, &mut extra, v);
+        assert_eq!(sel, Some(v));
+        assert_eq!(extra, HashSet::from([a]), "Ton bleibt ausgewählt und wird mitgezogen");
+        // am Ton gezogen: unverändert
+        make_primary(&mut sel, &mut extra, v);
+        assert_eq!((sel, extra.len()), (Some(v), 1));
+    }
+
+    #[test]
+    fn new_track_is_rolled_into_view() {
+        let lanes = Rect::from_min_max(pos2(0.0, 100.0), pos2(500.0, 300.0));
+        let row = |top: f32, h: f32| Rect::from_min_size(pos2(0.0, top), vec2(500.0, h));
+        assert_eq!(reveal_delta(row(150.0, 40.0), lanes), 0.0, "schon sichtbar");
+        assert_eq!(reveal_delta(row(280.0, 42.0), lanes), 26.0, "unten halb abgeschnitten: so weit hoch");
+        assert_eq!(reveal_delta(row(60.0, 34.0), lanes), -44.0, "oben abgeschnitten: zurück");
+        // höher als die Ansicht: Oberkante bleibt sichtbar
+        assert_eq!(reveal_delta(row(150.0, 400.0), lanes), 46.0);
+    }
+
+    /// Befund aus dem Klicktest: `PL_einfach` (ein Clip, 23:16 min) zeigte nach „Ganze Zeitleiste
+    /// zeigen“ nur 0:00–10:20. Nach der Bewegung muss das ganze Projekt mit Rand zu sehen sein.
+    #[test]
+    fn show_all_fits_a_23_minute_project() {
+        let dur = 23.0 * 60.0 + 16.0;
+        for w in [600.0f32, 1100.0, 1428.0, 2400.0] {
+            let mut st = TimelineState { view_w: w, pps: 60.0, scroll: 0.0, ..Default::default() };
+            st.show_all(dur, 0.0);
+            st.step_view(1.0);
+            let (from, to) = (st.scroll, st.scroll + (w / st.pps) as f64);
+            assert!(from < 0.0 && to > dur, "{w}: sichtbar {from:.1}…{to:.1} s");
+            assert!(to - from < dur * 1.2, "{w}: nicht viel weiter als nötig");
+        }
+    }
+
+    #[test]
+    fn track_head_lifts_early() {
+        assert!(track_lifted(0.0, 0.15), "nach 150 ms gehalten: hebt sich (Klicktest sah nach 100 ms noch nichts)");
+        assert!(track_lifted(4.0, 0.0));
+        assert!(!track_lifted(3.0, 0.1), "kurzer Klick bleibt ein Klick");
     }
 
     #[test]
