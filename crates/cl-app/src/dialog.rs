@@ -13,24 +13,68 @@ pub fn frame(ctx: &egui::Context) -> egui::Frame {
         .corner_radius(theme::R_WIN)
 }
 
+/// Stand des Öffnens (0…1, eine Kurve, `MOTION`) für das Fenster `id`: beginnt mit dem ersten Bild,
+/// in dem es (wieder) gezeichnet wird.
+fn opening(ctx: &egui::Context, id: egui::Id) -> f32 {
+    let key = id.with("dialog-open");
+    let (now, pass) = (ctx.input(|i| i.time), ctx.cumulative_pass_nr());
+    let (since, last) = ctx.data(|d| d.get_temp::<(f64, u64)>(key)).unwrap_or((now, pass));
+    let since = if last + 1 < pass { now } else { since };
+    ctx.data_mut(|d| d.insert_temp(key, (since, pass)));
+    opened(ctx, since)
+}
+
+fn opened(ctx: &egui::Context, since: f64) -> f32 {
+    let secs = theme::anim(theme::MOTION);
+    let age = (ctx.input(|i| i.time) - since) as f32;
+    if secs > 0.0 && age < secs {
+        ctx.request_repaint();
+        theme::ease(age / secs)
+    } else {
+        1.0
+    }
+}
+
 /// Werkzeugfenster ohne eguis Titelleiste (Titel und Kreuz kommen aus [`title`]).
 /// `id` bleibt die Fenster-ID (app.rs sucht darüber das oberste Fenster für Esc).
+/// Öffnet weich: blendet ein und hebt sich um 4 px.
 pub fn window(ctx: &egui::Context, title: impl Into<egui::WidgetText>, id: &str) -> egui::Window<'static> {
+    let wid = egui::Id::new(id);
+    let t = opening(ctx, wid);
+    ctx.set_transform_layer(
+        egui::LayerId::new(egui::Order::Middle, wid),
+        egui::emath::TSTransform::from_translation(egui::vec2(0.0, 4.0 * (1.0 - t))),
+    );
     egui::Window::new(title)
-        .id(egui::Id::new(id))
+        .id(wid)
         .title_bar(false)
         .collapsible(false)
         .resizable(false)
-        .frame(frame(ctx))
+        .fade_in(false)
+        .frame(frame(ctx).multiply_with_opacity(t))
 }
 
-/// Frage (modal, mit Abdunkelung)
+/// Frage (modal, mit Abdunkelung); öffnet wie [`window`], die Abdunkelung blendet mit.
 pub fn modal(ctx: &egui::Context, id: &str) -> egui::Modal {
-    egui::Modal::new(egui::Id::new(id)).frame(frame(ctx))
+    let mid = egui::Id::new(id);
+    let t = opening(ctx, mid);
+    egui::Modal::new(mid)
+        .area(
+            egui::Modal::default_area(mid)
+                .fade_in(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 4.0 * (1.0 - t))),
+        )
+        .backdrop_color(egui::Color32::from_black_alpha((100.0 * t) as u8))
+        .frame(frame(ctx).multiply_with_opacity(t))
 }
 
 /// Titelzeile: Titel links in `FS_TITLE`, Kreuz rechts. `true` = Kreuz geklickt.
 pub fn title(ui: &mut egui::Ui, text: &str) -> bool {
+    // Inhalt blendet mit dem Rahmen ein (siehe `window`/`modal`)
+    let key = ui.layer_id().id.with("dialog-open");
+    if let Some((since, _)) = ui.data(|d| d.get_temp::<(f64, u64)>(key)) {
+        ui.multiply_opacity(opened(ui.ctx(), since));
+    }
     let mut close = false;
     ui.horizontal(|ui| {
         ui.label(RichText::new(crate::tr(text)).strong().size(theme::FS_TITLE));

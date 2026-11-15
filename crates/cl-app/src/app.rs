@@ -2812,8 +2812,14 @@ impl App {
         if self.toasts.is_empty() {
             return;
         }
-        // weich ein- (0,15 s) und ausblenden (letzte 0,4 s), ohne Animationen sofort
-        let (fade_in, fade_out) = (theme::anim(0.15), theme::anim(0.4));
+        // gleiten von unten herein und blenden ein, am Ende aus; ohne Animationen sofort
+        let (fade_in, fade_out) = (theme::anim(theme::MOTION), theme::anim(theme::MOTION_SLOW));
+        let newest = self.toasts.last().map_or(1.0, |t| t.1.elapsed().as_secs_f32());
+        let rise = if fade_in > 0.0 { 1.0 - theme::ease(newest / fade_in) } else { 0.0 };
+        ctx.set_transform_layer(
+            egui::LayerId::new(egui::Order::Foreground, egui::Id::new("toasts")),
+            egui::emath::TSTransform::from_translation(vec2(0.0, 12.0 * rise)),
+        );
         let mut close = None;
         egui::Area::new(egui::Id::new("toasts"))
             .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -24.0))
@@ -2825,7 +2831,7 @@ impl App {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 for (i, (msg, at, err)) in self.toasts.iter().enumerate().rev().take(3) {
                     let age = at.elapsed().as_secs_f32();
-                    ui.set_opacity(toast_alpha(age, toast_secs(*err), fade_in, fade_out));
+                    ui.set_opacity(theme::ease(toast_alpha(age, toast_secs(*err), fade_in, fade_out)));
                     let r = egui::Frame::default()
                         .fill(if *err {
                             theme::DANGER_BG()
