@@ -2,7 +2,7 @@
 //! Die abgespielten Samples sind die Uhr (Audio-Clock), nach der sich das Bild richtet.
 //!
 //! Gemischt wird nie das ganze Projekt, sondern ein Fenster von [`WINDOW_SECS`] (nur die Clips
-//! darin, also wenige FFmpeg-Eingänge). Bevor ein Fenster zu Ende geht, rechnet ein zweiter
+//! darin, also wenige FFmpeg-Eingänge; das erste ist kürzer, damit der Ton schnell einsetzt).//! darin, also wenige FFmpeg-Eingänge). Bevor ein Fenster zu Ende geht, rechnet ein zweiter
 //! Prozess das nächste; beide werden am Sample aneinandergehängt (jedes Fenster liefert genau
 //! seine Zahl Sample-Frames, Einschwingen von Resampler/Begrenzer liegt vor dem Fensteranfang
 //! und wird verworfen).
@@ -23,6 +23,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 /// Länge eines Ton-Fensters (Sekunden)
 pub const WINDOW_SECS: u64 = 20;
+/// Länge des ersten Fensters: weniger Eingänge → erster Ton schneller (je Eingang ~25–80 ms)
+pub const FIRST_SECS: u64 = 6;
 /// So viele Sekunden vor dem Fensterende wird das nächste Fenster gestartet
 pub const LEAD_SECS: u64 = 5;
 /// Einschwingzeit vor dem Fensteranfang (wird gerechnet und verworfen)
@@ -99,10 +101,15 @@ pub fn total_frames(from: Time, end: Time, rate: u32) -> u64 {
 /// so rechnet jedes Fenster auf demselben Sample-Raster wie ein durchgehender Mix.
 pub fn window_plan(from: Time, end: Time, rate: u32, k: u64) -> Option<WindowPlan> {
     let total = total_frames(from, end, rate);
-    let w = WINDOW_SECS * rate as u64;
-    let first = k.checked_mul(w).filter(|f| *f < total)?;
-    let frames = w.min(total - first);
-    let start_us = from.0 + (k * WINDOW_SECS * 1_000_000) as i64;
+    // Anfang (Sekunden ab `from`) und Länge: erst FIRST_SECS, dann je WINDOW_SECS
+    let (start_s, len_s) = match k {
+        0 => (0, FIRST_SECS),
+        _ => ((k - 1).checked_mul(WINDOW_SECS)?.checked_add(FIRST_SECS)?, WINDOW_SECS),
+    };
+    let first = start_s.checked_mul(rate as u64).filter(|f| *f < total)?;
+    let frames = (len_s * rate as u64).min(total - first);
+    // `first < total`: der Anfang liegt im Projekt, kein Überlauf
+    let start_us = from.0 + start_s as i64 * 1_000_000;
     let pre = rate as u64 * PRE_MS / 1000;
     let pre_us = (pre as u128 * 1_000_000 / rate.max(1) as u128) as i64;
     let (mix_from, skip) = if start_us >= pre_us {
@@ -229,10 +236,11 @@ impl Out {
     }
 }
 
-/// Uhr in Frames: verbrauchte Frames plus die seit dem letzten Rückruf vergangene Zeit, höchstens
-/// so viele Frames, wie der Rückruf ausgegeben hat (sonst liefe die Uhr in einem Aussetzer weiter).
+/// Uhr in Frames: Stand vor dem letzten Rückruf plus die seither vergangene Zeit, höchstens so viele
+/// Frames, wie der Rückruf ausgegeben hat (sonst liefe die Uhr in einem Aussetzer weiter).
+/// `played` zählt den letzten Rückruf schon mit; ohne Abzug liefe die Uhr ihm um einen Puffer voraus.
 pub fn clock_frames(played: u64, since_cb: Duration, cb_frames: u64, rate: u32) -> u64 {
-    played + ((since_cb.as_secs_f64() * rate as f64) as u64).min(cb_frames)
+    played.saturating_sub(cb_frames) + ((since_cb.as_secs_f64() * rate as f64) as u64).min(cb_frames)
 }
 
 // ---------- Zuführung: Fenster für Fenster ----------
@@ -612,6 +620,7 @@ mod tests {
                 while let Some(w) = window_plan(from, end, rate, k) {
                     assert_eq!(w.first, next, "lückenlos: {rate} {k}");
                     assert!(w.frames > 0 && w.frames <= WINDOW_SECS * rate as u64);
+                    assert!(k > 0 || w.frames <= FIRST_SECS * rate as u64, "erstes Fenster kurz");
                     // Fensteranfang liegt auf dem Raster der Wiedergabe: Frame `first` ab `from`
                     let start = w.mix_from.0 as i128 * rate as i128 + w.skip as i128 * 1_000_000;
                     let want = from.0 as i128 * rate as i128 + w.first as i128 * 1_000_000;
@@ -632,17 +641,21 @@ mod tests {
 
     #[test]
     fn window_bounds_for_typical_start() {
+        let w0 = window_plan(Time(90 * S), Time(200 * S), 48_000, 0).unwrap();
+        assert_eq!((w0.first, w0.frames), (0, 6 * 48_000));
+        assert_eq!((w0.mix_from, w0.mix_to), (Time(90 * S - 200_000), Time(96 * S)));
         let w = window_plan(Time(90 * S), Time(200 * S), 48_000, 1).unwrap();
-        assert_eq!(w.first, 20 * 48_000);
-        assert_eq!(w.mix_from, Time(110 * S - 200_000));
+        assert_eq!(w.first, 6 * 48_000);
+        assert_eq!(w.mix_from, Time(96 * S - 200_000));
         assert_eq!(w.skip, 9600);
         assert_eq!(w.frames, 20 * 48_000);
-        assert_eq!(w.mix_to, Time(130 * S));
-        // letztes Fenster endet am Projektende
-        let last = window_plan(Time(90 * S), Time(200 * S), 48_000, 5).unwrap();
-        assert_eq!(last.frames, 10 * 48_000);
+        assert_eq!(w.mix_to, Time(116 * S));
+        // letztes Fenster endet am Projektende: 90+6+5×20 = 196 … 200
+        let last = window_plan(Time(90 * S), Time(200 * S), 48_000, 6).unwrap();
+        assert_eq!(last.frames, 4 * 48_000);
         assert_eq!(last.mix_to, Time(200 * S));
-        assert_eq!(window_plan(Time(90 * S), Time(200 * S), 48_000, 6), None);
+        assert_eq!(window_plan(Time(90 * S), Time(200 * S), 48_000, 7), None);
+        assert_eq!(window_plan(Time(0), Time(200 * S), 48_000, u64::MAX), None);
     }
 
     #[test]
@@ -731,11 +744,14 @@ mod tests {
     #[test]
     fn clock_is_smooth_between_callbacks_and_stops_in_a_gap() {
         let r = 48_000;
-        assert_eq!(clock_frames(1000, Duration::ZERO, 480, r), 1000);
-        assert_eq!(clock_frames(1000, Duration::from_millis(5), 480, r), 1240);
-        // höchstens bis zum Ende dessen, was ausgegeben wurde
-        assert_eq!(clock_frames(1000, Duration::from_millis(50), 480, r), 1480);
+        // `played` = 1480 nach einem Rückruf über 480 Frames
+        assert_eq!(clock_frames(1480, Duration::ZERO, 480, r), 1000);
+        assert_eq!(clock_frames(1480, Duration::from_millis(5), 480, r), 1240);
+        // höchstens bis zum Ende dessen, was ausgegeben wurde (auch in der Pause)
+        assert_eq!(clock_frames(1480, Duration::from_millis(50), 480, r), 1480);
         assert_eq!(clock_frames(1000, Duration::from_millis(50), 0, r), 1000);
+        // nächster Rückruf schließt nahtlos an
+        assert_eq!(clock_frames(1960, Duration::ZERO, 480, r), 1480);
     }
 
     fn test_shared(rate: u32) -> Arc<Shared> {
@@ -828,8 +844,8 @@ mod tests {
         let mut c = clip(&a, 6.0, 9.0, 20.0);
         c.speed = 1.5;
         t1.clips.push(c);
-        // über die Fenstergrenze, mit Lautstärke-Keyframes und Ausblenden
-        let mut c = clip(&a, 15.0, 12.0, 3.0);
+        // über beide Fenstergrenzen, mit Lautstärke-Keyframes und Ausblenden
+        let mut c = clip(&a, 15.0, 15.0, 3.0);
         c.keyframes.set(Prop::Volume, Time::ZERO, -12.0);
         c.keyframes.set(Prop::Volume, Time::from_secs_f64(8.0), 3.0);
         c.fade_out = Time::from_secs_f64(2.0);
@@ -855,7 +871,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let p = rich_project(dir.path());
-        assert!(p.duration() > Time((WINDOW_SECS as i64 + 5) * S), "zwei Fenster");
+        assert!(p.duration() > Time((FIRST_SECS + WINDOW_SECS + 2) as i64 * S), "drei Fenster");
         for (rate, from, tol) in [(48_000, Time(1_500_000), 1e-6f32), (44_100, Time(1_500_000), 2e-3), (48_000, Time(100_000), 1e-6)] {
             let w = windowed(&p, from, rate);
             let full = whole(&p, from, rate);
@@ -867,11 +883,96 @@ mod tests {
             let shifted = (0..cmp - 2).map(|i| (w[i] - full[i + 2]).abs()).fold(0.0f32, f32::max);
             assert!(shifted > 0.1, "Test erkennt einen Versatz um ein Sample: {shifted}");
             assert!(d <= tol, "{rate} ab {from:?}: größte Abweichung {d} bei {:.4} s", i as f64 / 2.0 / rate as f64);
-            // an der Naht kein Sprung: der Schritt dort ist nicht größer als sonst
-            let seam = WINDOW_SECS as usize * rate as usize * 2;
-            let step = |i: usize| (w[i] - w[i - 2]).abs();
-            let usual = (seam - 200..seam - 2).map(step).fold(0.0f32, f32::max);
-            assert!(step(seam) <= usual * 1.5 + 1e-4, "{rate}: Naht {} / sonst {usual}", step(seam));
+            // an den Nähten kein Sprung: der Schritt dort ist nicht größer als sonst
+            for s in [FIRST_SECS, FIRST_SECS + WINDOW_SECS] {
+                let seam = s as usize * rate as usize * 2;
+                let step = |i: usize| (w[i] - w[i - 2]).abs();
+                let usual = (seam - 200..seam - 2).map(step).fold(0.0f32, f32::max);
+                assert!(step(seam) <= usual * 1.5 + 1e-4, "{rate}: Naht {} / sonst {usual}", step(seam));
+            }
+        }
+    }
+
+    /// Zeit bis zum ersten Ton-Sample an der Startstelle (Aufruf + FFmpeg + Einschwingen)
+    fn first_sample_ms(spawn: impl FnOnce() -> (Child, tempfile::TempDir), skip_frames: u64) -> f64 {
+        let t0 = Instant::now();
+        let (mut child, _wd) = spawn();
+        let mut out = child.stdout.take().unwrap();
+        let mut need = skip_frames as usize * 8 + 8;
+        let mut buf = vec![0u8; 64 * 1024];
+        while need > 0 {
+            match out.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => need = need.saturating_sub(n),
+            }
+        }
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        let _ = child.kill();
+        let _ = child.wait();
+        ms
+    }
+
+    /// Messung von Hand: `CUTLINE_QA_DIR=<Ordner mit PL_schnitt.cutline> cargo test --release -p cl-app
+    /// -- --ignored first_audio_sample --nocapture`. Bisher (ganzer Mix bis Projektende) gegen Fenster.
+    #[test]
+    #[ignore]
+    fn first_audio_sample_pl_schnitt() {
+        let Some(dir) = std::env::var_os("CUTLINE_QA_DIR") else { return };
+        let mut ok = false;
+        for name in ["PL_schnitt.cutline", "PL_gross.cutline"] {
+            let Ok(json) = std::fs::read_to_string(std::path::Path::new(&dir).join(name)) else { continue };
+            let p = Project::from_json(&json).unwrap();
+            if p.media.iter().any(|m| m.is_local() && !m.path.exists()) {
+                eprintln!("{name}: Medien fehlen, übersprungen");
+                continue;
+            }
+            ok = true;
+            let rate = 48_000;
+            for secs in [3.0, 37.0, 128.0, 335.0, 571.0] {
+                let from = Time::from_secs_f64(secs);
+                let plan = window_plan(from, p.duration(), rate, 0).unwrap();
+                let n_old = cl_export::audio_clips_in(&p, from, p.duration()).len();
+                let n_new = cl_export::audio_clips_in(&p, plan.mix_from, plan.mix_to).len();
+                // je zweimal, der zweite Wert zählt (Dateien im Cache wie in der App)
+                let mut old = 0.0;
+                let mut new = 0.0;
+                for _ in 0..2 {
+                    old = first_sample_ms(|| cl_export::spawn_audio_preview(&p, from, rate).unwrap(), 0);
+                    new = first_sample_ms(|| cl_export::spawn_audio_window(&p, plan.mix_from, plan.mix_to, rate).unwrap(), plan.skip);
+                }
+                eprintln!("{name} ab {secs:>5.0} s: bisher {old:>6.0} ms ({n_old} Eingänge) · Fenster {new:>5.0} ms ({n_new} Eingänge)");
+            }
+        }
+        if !ok {
+            eprintln!("keine Testprojekte in CUTLINE_QA_DIR");
+        }
+    }
+
+    /// Messung von Hand mit dem echten Ausgabegerät (spielt nur Stille): Start → erstes Sample am
+    /// Gerät (Öffnen der Ausgabe + FFmpeg + Zuführung), synchron gestartet wie beim Abspielen.
+    /// `cargo test --release -p cl-app -- --ignored output_start_latency --nocapture`
+    #[test]
+    #[ignore]
+    fn output_start_latency() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = test_project(dir.path(), 30.0);
+        p.timeline.tracks[0].muted = true; // Stille aus eigener Quelle
+        for i in 0..5 {
+            let t0 = Instant::now();
+            let a = AudioPlayer::start_synced(&p, Time(S)).unwrap();
+            let opened = t0.elapsed();
+            a.anchor(t0);
+            while a.first_sound().is_none() && t0.elapsed() < Duration::from_secs(5) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let first = a.first_sound().map(|t| t.duration_since(t0));
+            // Uhr nach der Übergabe = Zeit seit dem Anker (kein Sprung)
+            let diff = a.position().as_secs_f64() - 1.0 - t0.elapsed().as_secs_f64();
+            eprintln!("Lauf {i}: Aufruf {:.0} ms, erstes Sample {:?} ms, Uhr − Systemzeit {:+.1} ms", opened.as_secs_f64() * 1e3, first.map(|d| (d.as_secs_f64() * 1e3).round()), diff * 1e3);
+            assert!(diff.abs() < 0.005, "Übergabe ohne Sprung: {diff}");
         }
     }
 
