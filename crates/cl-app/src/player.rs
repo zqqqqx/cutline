@@ -451,6 +451,10 @@ impl App {
             }
         }
         self.fx_overlays = overlays;
+        // Bilder von Clips, die nicht mehr unter dem Playhead liegen, verwirft `receive_decoded`
+        // (beim Scrubben über viele Spuren kamen sonst Dutzende auf einmal); kehrt der Playhead
+        // zurück, kommt das Bild erneut aus dem Zwischenspeicher des Decoders.
+        self.requested.retain(|id, _| visible.contains(id));
         self.playbacks.retain(|id, _| visible.contains(id));
         self.playbacks_next.retain(|id, _| visible.contains(id));
     }
