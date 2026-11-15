@@ -87,6 +87,8 @@ pub struct Saver {
     rx: Receiver<Done>,
     /// noch nicht geschriebene Aufträge
     pending: Arc<AtomicUsize>,
+    /// letzte Fehlermeldung (höchstens eine je Minute)
+    pub(crate) last_err: Option<Instant>,
 }
 
 impl Saver {
@@ -110,7 +112,7 @@ impl Saver {
                 }
             })
             .expect("Speicher-Thread");
-        Self { tx, rx, pending }
+        Self { tx, rx, pending, last_err: None }
     }
 
     pub fn send(&self, job: Job) {
@@ -148,16 +150,13 @@ impl crate::app::App {
     /// Fertige Speicherungen abholen (jedes Bild): Fehler melden (höchstens einmal je Minute),
     /// das Projekt gilt dann wieder als ungespeichert.
     pub fn poll_saves(&mut self) {
-        static LAST_ERR: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
         for d in self.saver.poll() {
             let Done::Failed { kind, revision, err, rescued, .. } = d else { continue };
             if kind == Kind::Project && self.saved_revision == revision {
                 self.saved_revision = crate::app::UNSAVED;
             }
-            let mut le = LAST_ERR.lock().unwrap_or_else(|e| e.into_inner());
-            if le.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
-                *le = Some(Instant::now());
-                drop(le);
+            if self.saver.last_err.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
+                self.saver.last_err = Some(Instant::now());
                 self.toast_err(format!("Projekt konnte nicht gespeichert werden: {err}"));
                 if let Some(r) = rescued {
                     self.toast_err(format!("Stand gesichert in {}", r.display()));
@@ -227,5 +226,31 @@ mod tests {
             }
             d => panic!("{d:?}"),
         }
+    }
+
+    fn test_app() -> (crate::app::App, tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        std::env::set_var("CUTLINE_NO_UPDATE", "1");
+        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
+        let app = crate::app::App::new(&eframe::CreationContext::_new_kittest(egui::Context::default()), None);
+        (app, home, g)
+    }
+
+    /// Verlassen erst, wenn der Stand wirklich auf der Platte ist; scheitert das Schreiben,
+    /// bleibt das Projekt offen (sonst wären die Änderungen nach dem Zurücksetzen weg).
+    #[test]
+    fn leaving_waits_for_the_write_and_stays_open_on_failure() {
+        let (mut app, home, _g) = test_app();
+        app.set_doc(Project::new("Verlassen"));
+        let bad = home.path().join("ordner.cutline");
+        std::fs::create_dir_all(&bad).unwrap();
+        app.project_path = Some(bad);
+        assert!(!app.flush_before_leaving());
+        let good = home.path().join("gut.cutline");
+        app.project_path = Some(good.clone());
+        assert!(app.flush_before_leaving());
+        assert_eq!(Project::from_json(&std::fs::read_to_string(&good).unwrap()).unwrap().name, "Verlassen");
     }
 }

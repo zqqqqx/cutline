@@ -2230,11 +2230,19 @@ impl App {
                 .project_path
                 .clone()
                 .unwrap_or_else(|| self.default_project_path());
-            if let Err(e) = self.write_project(&p) {
-                self.toast_err(format!("Projekt konnte nicht gespeichert werden: {e}"));
-                return false;
-            }
+            let _ = self.write_project(&p);
             self.project_path = Some(p);
+        }
+        // Speicher-Thread abwarten: erst wenn der Stand auf der Platte ist, darf das Projekt zu
+        // (Sperre frei, Editor leer, Datei verschoben/umbenannt)
+        let idle = self.saver.wait_idle(Duration::from_secs(30));
+        self.saver.last_err = None;
+        self.poll_saves();
+        if !idle {
+            self.toast_err(format!("Projekt konnte nicht gespeichert werden: {}", crate::tr("Speichern dauert zu lange")));
+        }
+        if !idle || needs_save(self.revision, self.saved_revision, self.project_path.is_some(), &self.project) {
+            return false;
         }
         self.settings.save();
         self.release_lock();
