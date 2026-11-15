@@ -124,11 +124,13 @@ fn fcpxml_garbage_gives_errors() {
         ("<fcpxml/>", "Keine Sequenz"),
         ("<fcpxml><sequence/></fcpxml>", "spine"),
         ("<fcpxml><sequence><spine><asset-clip ref='r9' duration='NaN'/></spine></sequence></fcpxml>", "keine übertragbaren"),
-        ("<fcpxml><resources><asset id='r1' src='file:///C:/fehlt/Ä%20b.mov'/></resources><sequence><spine><asset-clip ref='r1'/></spine></sequence></fcpxml>", "keine übertragbaren"),
     ] {
         let e = fcpxml::convert(xml, "x", d).unwrap_err();
         assert!(e.contains(msg), "{xml}: {e}");
     }
+    // fehlende Datei: der Clip bleibt (Platzhalter zum Neu verknüpfen)
+    let (p, rep) = fcpxml::convert("<fcpxml><resources><asset id='r1' src='file:///C:/fehlt/Ä%20b.mov'/></resources><sequence><spine><asset-clip ref='r1'/></spine></sequence></fcpxml>", "x", d).unwrap();
+    assert_eq!((rep.missing.len(), p.timeline.tracks[0].clips.len()), (1, 1));
 }
 
 #[test]

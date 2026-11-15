@@ -281,13 +281,22 @@ struct Build<'a> {
 }
 
 impl Build<'_> {
-    fn media(&mut self, path: PathBuf) -> Option<MediaRef> {
+    /// `mkind`, `mat`: Materialart und Material (Angaben für den Platzhalter einer fehlenden Datei)
+    fn media(&mut self, path: PathBuf, mkind: &str, mat: &Value) -> Option<MediaRef> {
         if let Some(m) = self.used.get(&path) {
             return m.clone();
         }
         let m = if !self.exists.get(&path).copied().unwrap_or(false) {
             self.rep.missing.push(path.clone());
-            None
+            let kind = match (mkind, mat.get("type").and_then(|v| v.as_str())) {
+                ("audios", _) => MediaKind::Audio,
+                (_, Some("photo")) => MediaKind::Image,
+                _ => MediaKind::Video,
+            };
+            let dim = |k: &str| mat.get(k).and_then(|v| v.as_u64()).unwrap_or(0).min(u32::MAX as u64) as u32;
+            let ph = crate::placeholder(path.clone(), kind, Time(us(Some(mat), "duration").max(0)), dim("width"), dim("height"));
+            self.media.push(ph.clone());
+            Some(ph)
         } else {
             match self.probed.remove(&path) {
                 Some(Ok(m)) => {
@@ -372,7 +381,7 @@ impl Build<'_> {
                             });
                             continue;
                         }
-                        let Some(media) = self.media(resolve(raw, dir)) else {
+                        let Some(media) = self.media(resolve(raw, dir), mkind, m) else {
                             continue;
                         };
                         let kind = match media.kind {
@@ -846,6 +855,33 @@ mod tests {
         assert!(!st.shadow);
         assert_eq!(st.outline.unwrap().1, [0, 0, 0, 255]);
         assert_eq!(c.anim.intro.as_ref().unwrap().id, "fade");
+    }
+
+    /// Fehlende Datei (Platte nicht angesteckt): Clip und Medium bleiben, das Medium ist ein
+    /// Platzhalter mit den Angaben des Materials, `missing` nennt die Datei.
+    #[test]
+    fn missing_file_keeps_clip_with_placeholder_media() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("fehlt.jpg");
+        let seg = |mid: &str, at: i64| serde_json::json!({"material_id": mid, "target_timerange": {"start": at, "duration": 1_000_000}});
+        let draft = serde_json::json!({
+            "materials": {
+                "videos": [{"id": "B", "type": "photo", "path": gone.to_string_lossy(), "width": 640, "height": 480, "duration": 5_000_000}],
+                "audios": [{"id": "A", "type": "music", "path": dir.path().join("fehlt.wav").to_string_lossy(), "duration": 9_000_000}]
+            },
+            "tracks": [
+                {"type": "video", "segments": [seg("B", 0), seg("B", 1_000_000)]},
+                {"type": "audio", "segments": [seg("A", 0)]}
+            ]
+        });
+        let (p, rep) = convert(&draft, dir.path(), "Fehlt").unwrap();
+        assert_eq!(rep.missing.len(), 2);
+        assert_eq!(rep.clips, 3);
+        assert_eq!(p.media.len(), 2, "jede Datei einmal");
+        let b = p.media.iter().find(|m| m.path == gone).unwrap();
+        assert_eq!((b.kind, b.width, b.height, b.duration), (MediaKind::Image, 640, 480, Time(5_000_000)));
+        assert_eq!(p.media.iter().find(|m| m.path != gone).unwrap().kind, MediaKind::Audio);
+        assert_eq!(p.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>(), 3);
     }
 
     /// Echten Entwurf ansehen: CAPCUT_DRAFT=<Ordner> cargo test -- --ignored real_draft --nocapture

@@ -197,6 +197,25 @@ pub fn probe_all(
         .collect())
 }
 
+/// Medium für eine beim Import fehlende Datei: der Clip bleibt erhalten, „Medien neu verknüpfen“
+/// setzt die Datei später ein (Angaben aus dem Fremdprojekt, nicht aus der Datei).
+pub(crate) fn placeholder(path: PathBuf, kind: cl_core::MediaKind, duration: cl_core::Time, width: u32, height: u32) -> cl_core::MediaRef {
+    let sound = kind != cl_core::MediaKind::Image;
+    cl_core::MediaRef {
+        id: cl_core::MediaId::new(),
+        path,
+        kind,
+        duration,
+        width,
+        height,
+        fps: None,
+        has_audio: sound,
+        audio_streams: u32::from(sound),
+        video_codec: None,
+        audio_codec: None,
+    }
+}
+
 /// Gleichzeitige ffprobe-Prozesse beim Import
 pub fn probe_workers() -> usize {
     std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(2, 8)

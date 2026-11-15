@@ -204,7 +204,7 @@ fn job(kind: Kind, path: &Path, rev: u64) -> Job {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -275,7 +275,7 @@ mod tests {
         assert!(matches!(s.poll().pop(), Some(Done::Failed { rescued: Some(_), .. })));
     }
 
-    fn test_app() -> (crate::app::App, tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+    pub(crate) fn test_app() -> (crate::app::App, tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
         let g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         std::env::set_var("CUTLINE_HOME", home.path());

@@ -209,7 +209,8 @@ impl App {
             return;
         }
         let imp = self.import.results.remove(i);
-        let present: HashMap<PathBuf, bool> = imp.project.media.iter().map(|m| (m.path.clone(), true)).collect();
+        // fehlende Dateien (Platzhalter): „Medien neu verknüpfen“ geht gleich auf
+        let present: HashMap<PathBuf, bool> = imp.project.media.iter().map(|m| (m.path.clone(), !imp.report.missing.contains(&m.path))).collect();
         let fonts = imp
             .project
             .timeline
@@ -451,6 +452,27 @@ mod tests {
         std::fs::write(d.join("draft_content.json"), j.to_string()).unwrap();
         std::fs::write(d.join("draft_meta_info.json"), serde_json::json!({"draft_name": "Mein Film"}).to_string()).unwrap();
         d
+    }
+
+    /// Fehlende Datei beim Import: Clip bleibt, beim Öffnen gilt sie als fehlend und
+    /// „Medien neu verknüpfen“ geht auf.
+    #[test]
+    fn opened_import_marks_missing_media_for_relinking() {
+        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let src = draft_dir(home.path());
+        let gone = home.path().join("fehlt.mp4");
+        let j = serde_json::json!({
+            "materials": {"videos": [{"id": "V", "type": "video", "path": gone.to_string_lossy()}]},
+            "tracks": [{"type": "video", "segments": [{"material_id": "V", "target_timerange": {"start": 0, "duration": 1000000}}]}]
+        });
+        std::fs::write(src.join("draft_content.json"), j.to_string()).unwrap();
+        let fonts = Mutex::new(cl_fonts::FontLibrary::default());
+        let imp = run_import(&src, &home.path().join("Projekte"), &fonts, &Progress::default()).unwrap();
+        assert_eq!(imp.report.missing, [gone.clone()]);
+        app.import.results.push(imp);
+        app.open_imported(0);
+        assert_eq!(app.project.timeline.tracks[0].clips.len(), 1);
+        assert!(app.missing_open && !app.presence.get(&gone));
     }
 
     #[test]
