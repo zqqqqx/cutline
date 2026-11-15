@@ -1,9 +1,9 @@
 //! Plugin-System, Teil 1: Manifest-Format, Validierung und Registry.
 //!
-//! Drei Ebenen:
-//! 1. `asset-pack`: nur Daten (Effekte/Übergänge/Filter als WGSL + Manifest), kein Code
-//! 2. `wasm`: WebAssembly-Komponente mit deklarierten Rechten (Host folgt in Phase 1)
-//! 3. `clap`: native Audio-Plugins, außerhalb des App-Prozesses (Phase 3)
+//! Zwei Arten:
+//! 1. `asset-pack`: nur Daten (Effekte/Filter als FFmpeg-Ketten, Übergänge als WGSL, Sounds,
+//!    Sticker), kein Code
+//! 2. `integration`: eingebaute Anbindung an einen Dienst mit deklarierten Rechten
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -40,8 +40,6 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
 #[serde(rename_all = "kebab-case")]
 pub enum PluginKind {
     AssetPack,
-    Wasm,
-    Clap,
     /// In Cutline eingebaute Anbindung an einen Dienst (`entry = "builtin:<name>"`),
     /// standardmäßig aus und nur mit Zugangsdaten des Nutzers nutzbar.
     Integration,
@@ -231,7 +229,7 @@ pub struct PluginMeta {
     pub source: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
-    /// WASM-Komponente bzw. CLAP-Bundle relativ zum Plugin-Ordner, bei Integrationen `builtin:<name>`.
+    /// Bei Integrationen `builtin:<name>`.
     pub entry: Option<String>,
     /// Nach der Installation aktiv? (Integrationen: nein)
     #[serde(default = "yes")]
@@ -318,11 +316,6 @@ impl Manifest {
                 }
                 if !p.permissions.iter().any(|x| x.starts_with("net")) {
                     return bad("Integrationen müssen das Recht 'net' deklarieren".into());
-                }
-            }
-            PluginKind::Wasm | PluginKind::Clap => {
-                if p.entry.is_none() {
-                    return bad("'entry' fehlt".into());
                 }
             }
         }
@@ -537,32 +530,6 @@ impl Registry {
             })
     }
 
-    /// Alle sofort lauffähigen FFmpeg-Assets: (volle ID `plugin/asset`, Art, Name, Kette).
-    pub fn ffmpeg_assets(&self, lang: &str) -> Vec<(String, AssetKind, String, String)> {
-        self.plugins
-            .iter()
-            .filter(|p| p.enabled)
-            .flat_map(|p| {
-                p.manifest.assets.iter().filter_map(move |a| {
-                    let c = a.ffmpeg_filled().filter(|c| ffmpeg_chain_allowed(c))?;
-                    Some((
-                        format!("{}/{}", p.manifest.plugin.id, a.id),
-                        a.kind,
-                        localized(&a.name, lang).to_string(),
-                        c,
-                    ))
-                })
-            })
-            .collect()
-    }
-
-    pub fn asset_count(&self) -> usize {
-        self.plugins
-            .iter()
-            .filter(|p| p.enabled)
-            .map(|p| p.manifest.assets.len())
-            .sum()
-    }
 }
 
 /// Ergebnis von [`install_zip`].
@@ -669,12 +636,6 @@ mod tests {
         assert!(reg.assets(AssetKind::Transition).count() >= 1);
         assert!(reg.assets(AssetKind::VideoEffect).count() >= 1);
         assert!(reg.assets(AssetKind::Filter).count() >= 1);
-        let ff = reg.ffmpeg_assets("de");
-        assert!(
-            ff.iter()
-                .any(|a| a.1 == AssetKind::VideoEffect && a.3.contains("{intensity}")),
-            "{ff:?}"
-        );
     }
 
     #[test]
@@ -716,14 +677,8 @@ mod tests {
             assert!(Manifest::parse(&asset(kind, extra), p).unwrap().validate(None).is_err(), "{kind}");
         }
         Manifest::parse(&asset("filter", "ffmpeg='eq'\ntags=['warm']"), p).unwrap().validate(None).unwrap();
-        // WASM ohne entry
-        let m = base.replace("asset-pack", "wasm");
-        assert!(Manifest::parse(&m, p)
-            .unwrap()
-            .validate(None)
-            .unwrap_err()
-            .to_string()
-            .contains("entry"));
+        // Code-Plugins (WASM, CLAP) gibt es nicht
+        assert!(Manifest::parse(&base.replace("asset-pack", "wasm"), p).is_err());
         // FFmpeg-Ketten dürfen keine Dateien lesen
         let m = format!(
             "{base}
