@@ -165,7 +165,13 @@ impl App {
                         self.sound_pending = None;
                         self.preview_media(key.clone(), media.clone());
                     }
-                    self.sound_meta.insert(key, (media, bars));
+                    crate::assets::put_capped(
+                        &mut self.sound_meta,
+                        &mut self.sound_meta_req,
+                        key,
+                        (media, bars),
+                        crate::assets::SOUND_META_CAP,
+                    );
                 }
                 Done::FxThumb { key, frame } => {
                     let tex = ctx.load_texture(
