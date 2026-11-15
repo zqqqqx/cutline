@@ -7,6 +7,7 @@ mod audio;
 mod chrome;
 mod contents;
 mod curves;
+mod devinput;
 mod dialog;
 mod exports;
 mod creator;

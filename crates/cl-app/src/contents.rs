@@ -107,10 +107,14 @@ pub fn counts_text(counts: &BTreeMap<Kind, usize>) -> String {
         .iter()
         .filter(|(_, n)| **n > 0)
         .map(|(k, n)| {
+            let one = *n == 1;
             crate::tr(match k {
+                Kind::Effect if one => format!("{n} Effekt"),
                 Kind::Effect => format!("{n} Effekte"),
                 Kind::Filter => format!("{n} Filter"),
+                Kind::Transition if one => format!("{n} Übergang"),
                 Kind::Transition => format!("{n} Übergänge"),
+                Kind::Sound if one => format!("{n} Sound"),
                 Kind::Sound => format!("{n} Sounds"),
                 Kind::Sticker => format!("{n} Sticker"),
             })
@@ -403,7 +407,7 @@ license = "CC-BY-4.0"
         let st = catalog::get_in(&packs, Kind::Sticker, "test.pack/star").unwrap();
         assert_eq!((st.license.as_str(), st.author.as_str()), ("CC-BY-4.0", "Jemand"));
         assert_eq!(st.category(), "Test pack", "ohne Kategorie: Ordner mit dem Paketnamen");
-        assert_eq!(counts_text(&catalog::packs_in(&packs)[1].counts), "1 Sounds · 1 Sticker");
+        assert_eq!(counts_text(&catalog::packs_in(&packs)[1].counts), "1 Sound · 1 Sticker");
         // ausgeschaltet: verschwunden
         reg.apply_states(&[("test.pack".to_string(), false)].into_iter().collect());
         let packs = catalog_packs(&reg, "en");

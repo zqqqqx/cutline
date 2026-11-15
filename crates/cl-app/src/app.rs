@@ -2895,6 +2895,11 @@ impl eframe::App for App {
         visuals.panel_fill.to_normalized_gamma_f32()
     }
 
+    /// Klicktests ohne echten Mauszeiger (nur mit `CUTLINE_SHOTS`), siehe `devinput.rs`
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        crate::devinput::feed(ctx, raw);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
         if perf() {
