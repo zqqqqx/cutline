@@ -272,11 +272,63 @@ pub struct ExportDialog {
     confirm_fresh: bool,
     /// „Projekt auf 9:16 umstellen“ geklickt (App stellt das Format um)
     switch_aspect: bool,
+    /// Fenster soll schließen, während ein Export läuft: Rückfrage offen
+    quit_ask: bool,
+    /// Beenden trotz laufendem Export bestätigt
+    quit_ok: bool,
+    /// größte bisher gezeigte Höhe der Einstellungen (Dialog springt beim Formatwechsel nicht)
+    right_h: f32,
+}
+
+/// Darf das Fenster schließen? Während eines Exports nur nach Bestätigung.
+fn close_allowed(running: bool, confirmed: bool) -> bool {
+    !running || confirmed
 }
 
 impl ExportDialog {
     pub fn is_open(&self) -> bool {
         self.open
+    }
+
+    /// Fenster-Kreuz während eines Exports: Schließen aufhalten und nachfragen; „Beenden“ bricht
+    /// den Export ab und schließt (FFmpeg räumt in [`Self::cancel_and_wait`] auf).
+    pub fn guard_close(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().close_requested()) && !close_allowed(self.running.is_some(), self.quit_ok) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.quit_ask = true;
+        }
+        if !self.quit_ask {
+            return;
+        }
+        let (mut quit, mut stay) = (false, false);
+        let m = crate::dialog::modal(ctx, "export-quit").show(ctx, |ui| {
+            ui.set_width(340.0);
+            stay |= crate::dialog::title(ui, "Export läuft – wirklich beenden?");
+            let (q, c) = crate::dialog::buttons(ui, theme::danger("Cutline beenden"), true);
+            quit = q;
+            stay |= c;
+        });
+        if quit {
+            self.quit_ok = true;
+            self.quit_ask = false;
+            if let Some(r) = &self.running {
+                r.cancel.store(true, Ordering::Relaxed);
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if stay || m.should_close() {
+            self.quit_ask = false;
+        }
+    }
+
+    /// Laufenden Export abbrechen und höchstens `max` warten, bis FFmpeg beendet und die
+    /// `.part`-Datei gelöscht ist (beim Beenden des Programms).
+    pub fn cancel_and_wait(&mut self, max: std::time::Duration) {
+        let Some(r) = &self.running else { return };
+        r.cancel.store(true, Ordering::Relaxed);
+        let t0 = Instant::now();
+        while r.result.lock().unwrap().is_none() && t0.elapsed() < max {
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
     }
 
     /// Dialog öffnen; `range` = In/Out-Bereich der Zeitleiste (angeboten und vorausgewählt), gleich über
@@ -469,8 +521,11 @@ impl ExportDialog {
                     ui.vertical(|ui| {
                         ui.set_width(250.0);
                         let size = vec2(250.0, 250.0 * s.height as f32 / s.width.max(1) as f32).min(vec2(250.0, 300.0));
-                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                        ui.painter().rect_filled(rect, theme::R_CARD, Color32::BLACK);
+                        let audio_only = s.format.audio_only();
+                        let (rect, _) = ui.allocate_exact_size(if audio_only { vec2(250.0, 0.0) } else { size }, egui::Sense::hover());
+                        if !audio_only {
+                            ui.painter().rect_filled(rect, theme::R_CARD, Color32::BLACK);
+                        }
                         let live = match self.running.as_mut() {
                             Some(r) => {
                                 if let Some(pv) = &r.preview {
@@ -481,13 +536,20 @@ impl ExportDialog {
                             }
                             None => false,
                         };
-                        if let Some((id, ts)) = cover.filter(|_| !live) {
-                            let fit = (rect.width() / ts.x).min(rect.height() / ts.y);
-                            ui.painter().image(id, egui::Rect::from_center_size(rect.center(), ts * fit), egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+                        if let Some((id, ts)) = cover.filter(|_| !live && !audio_only) {
+                            // Bild füllt das Projektformat (Hochkant zeigt Hochkant, keine Balken)
+                            ui.painter().image(id, rect, fill_uv(ts, rect.size()), Color32::WHITE);
                         }
                         ui.add_space(8.0);
-                        ui.label(RichText::new(crate::tr(format!("{} {:.1} s  ·  {}×{}", icon::CLOCK, p.duration().as_secs_f64(), s.width, s.height))).small().color(theme::TEXT_DIM()));
-                        if !s.format.audio_only() {
+                        let secs = s.range.map_or(p.duration(), |(a, b)| b - a).as_secs_f64();
+                        let info = if audio_only {
+                            format!("{} {secs:.1} s", icon::CLOCK)
+                        } else {
+                            let (w, h) = s.output_size();
+                            format!("{} {secs:.1} s  ·  {w}×{h}", icon::CLOCK)
+                        };
+                        ui.label(RichText::new(crate::tr(info)).small().color(theme::TEXT_DIM()));
+                        if !audio_only {
                             let (est, exact) = estimate_mb(&s, p.duration());
                             let txt = if exact { format!("{} {est:.0} MB", icon::HARD_DRIVES) } else { format!("{} ca. {est:.0} MB", icon::HARD_DRIVES) };
                             ui.label(RichText::new(crate::tr(txt)).small().color(theme::TEXT_DIM()));
@@ -498,7 +560,9 @@ impl ExportDialog {
                     });
                     ui.add_space(12.0);
                     // Rechts: Einstellungen
-                    ui.vertical(|ui| {
+                    let right = ui.vertical(|ui| {
+                        // Formatwechsel blendet Zeilen aus: Höhe halten, damit Knöpfe nicht springen
+                        ui.set_min_height(self.right_h);
                         ui.add_enabled_ui(!busy, |ui| {
                             theme::row(ui, "Name", |ui| ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(300.0)));
                             theme::row(ui, "Speichern in", |ui| {
@@ -520,6 +584,15 @@ impl ExportDialog {
                                     }
                                 });
                             });
+                            if let Some((a, b)) = self.range_avail {
+                                let mut only = s.range.is_some();
+                                let fmt = |t: Time| format!("{:02}:{:02}.{:02}", (t.as_secs_f64() / 60.0) as u32, t.as_secs_f64() as u32 % 60, ((t.as_secs_f64().fract()) * 100.0) as u32);
+                                theme::row(ui, "", |ui| {
+                                    if crate::widgets::check(ui, &mut only, crate::tr(format!("Nur In/Out-Bereich ({} – {})", fmt(a), fmt(b)))).changed() {
+                                        s.range = only.then_some((a, b));
+                                    }
+                                });
+                            }
                             if !s.format.audio_only() {
                                 theme::section(ui, "Video");
                                 // Plattform-Vorlagen: setzen Format, Codec, Größe, Bildrate und Qualität
@@ -633,13 +706,6 @@ impl ExportDialog {
                                     theme::section(ui, "Ton");
                                     crate::widgets::check(ui, &mut s.include_audio, crate::tr(format!("Ton exportieren (AAC {} kbit/s, bei WebM Opus)", s.audio_kbps.unwrap_or(256))));
                                     ui.add_enabled_ui(s.include_audio, |ui| loudness_row(ui, &mut s.loudness));
-                                    if let Some((a, b)) = self.range_avail {
-                                        let mut only = s.range.is_some();
-                                        let fmt = |t: Time| format!("{:02}:{:02}.{:02}", (t.as_secs_f64() / 60.0) as u32, t.as_secs_f64() as u32 % 60, ((t.as_secs_f64().fract()) * 100.0) as u32);
-                                        if crate::widgets::check(ui, &mut only, crate::tr(format!("Nur In/Out-Bereich ({} – {})", fmt(a), fmt(b)))).changed() {
-                                            s.range = only.then_some((a, b));
-                                        }
-                                    }
                                 }
                             } else {
                                 loudness_row(ui, &mut s.loudness);
@@ -663,6 +729,7 @@ impl ExportDialog {
                             }
                         });
                     });
+                    self.right_h = self.right_h.max(right.response.rect.height());
                 });
 
                 ui.add_space(12.0);
@@ -719,7 +786,8 @@ impl ExportDialog {
                         } else if ui.add(theme::primary(format!("{}  Exportieren", icon::EXPORT))).clicked() || std::mem::take(&mut main) {
                             start = true;
                         }
-                        if self.running.is_none() && ui.add(theme::secondary("Abbrechen")).clicked() {
+                        let close_label = if self.done.is_some() || self.unchanged_since_export(&s) { "Schließen" } else { "Abbrechen" };
+                        if self.running.is_none() && ui.add(theme::secondary(close_label)).clicked() {
                             open = false;
                         }
                     });
@@ -942,23 +1010,43 @@ fn loudness_row(ui: &mut egui::Ui, l: &mut Option<f32>) {
 /// Dateigröße schätzen; `true` = aus fester Zielbitrate (Video + Ton) × Dauer.
 /// Bei konstanter Qualität (CRF) grob aus Pixel × Bildrate, geeicht auf
 /// 1080p30 „Empfohlen“ ≈ 23 Mbit/s (was libx264 mit CRF 20 tatsächlich liefert);
-/// je +6 CRF etwa halbe Größe (Kleiner = CRF 26, Höher = CRF 16).
+/// je +6 CRF etwa halbe Größe (Kleiner = CRF 26, Höher = CRF 16). Andere Codecs im Verhältnis
+/// dazu (VP9/AV1 mit ihren CRF-Werten etwa 0,3, HEVC 0,5), ProRes fest ≈ 220 Mbit/s (HQ),
+/// GIF aus Fläche × Bildern (Palette mit Rastern, bei Filmmaterial ≈ 0,6 Byte je Pixel).
 fn estimate_mb(s: &ExportSettings, d: Time) -> (f64, bool) {
-    let px = (s.width * s.height) as f64;
-    let kbps = match s.quality {
-        Quality::Bitrate(k) => k as f64,
-        q => {
-            let base = px / (1920.0 * 1080.0) * 23_000.0 * s.fps.as_f64() / 30.0;
-            base * match q {
+    let secs = s.range.map_or(d.as_secs_f64(), |(a, b)| (b.as_secs_f64() - a.as_secs_f64()).max(0.0));
+    let (w, h) = s.output_size();
+    let px = (w * h) as f64 / (1920.0 * 1080.0);
+    if s.format == Format::Gif {
+        let frames = s.fps.as_f64().min(cl_export::GIF_FPS as f64) * secs;
+        return (px * 1920.0 * 1080.0 * frames * 0.6 / 1e6, false);
+    }
+    let fps = s.fps.as_f64() / 30.0;
+    let kbps = match (s.codec, s.quality) {
+        (Codec::ProRes, _) => px * fps * if s.alpha() { 330_000.0 } else { 220_000.0 },
+        (_, Quality::Bitrate(k)) => k as f64,
+        (c, q) => {
+            let codec = match c {
+                Codec::Vp9 | Codec::Av1 => 0.3,
+                Codec::Hevc => 0.5,
+                _ => 1.0,
+            };
+            px * 23_000.0 * fps * codec * match q {
                 Quality::Lower => 0.5,
                 Quality::Higher => 2f64.powf(4.0 / 6.0),
                 _ => 1.0,
             }
         }
     };
-    let exact = matches!(s.quality, Quality::Bitrate(_)) && s.codec != Codec::ProRes && s.format != Format::Gif;
-    let secs = s.range.map_or(d.as_secs_f64(), |(a, b)| (b.as_secs_f64() - a.as_secs_f64()).max(0.0));
+    let exact = matches!(s.quality, Quality::Bitrate(_)) && s.codec != Codec::ProRes;
     ((kbps + s.audio_bitrate() as f64) * secs / 8.0 / 1000.0, exact)
+}
+
+/// UV-Ausschnitt eines Bilds der Größe `ts`, der `area` ohne Balken füllt (mittig beschnitten).
+fn fill_uv(ts: egui::Vec2, area: egui::Vec2) -> Rect {
+    let (img, want) = (ts.x / ts.y.max(1.0), area.x / area.y.max(1.0));
+    let size = if img > want { vec2(want / img, 1.0) } else { vec2(1.0, img / want) };
+    Rect::from_center_size(egui::pos2(0.5, 0.5), size)
 }
 
 #[test]
@@ -986,6 +1074,70 @@ fn youtube_presets_hit_official_bitrates() {
     s.audio_kbps = Some(384);
     let (mb, exact) = estimate_mb(&s, Time::from_secs_f64(60.0));
     assert!(exact && (mb - 62.88).abs() < 0.01, "{mb}");
+}
+
+#[test]
+fn estimate_per_format_within_factor_two_of_real_exports() {
+    // echte Exporte aus dem Klicktest (Strandvideo 1080p30, In/Out-Bereich)
+    let within = |mb: f64, real: f64| (real / 2.0..=real * 2.0).contains(&mb);
+    let mut s = ExportSettings::from_project(&Project::new("t"));
+    (s.width, s.height, s.fps) = (1920, 1080, cl_core::Rational::parse("30").unwrap());
+    s.range = Some((Time::from_secs_f64(5.03), Time::from_secs_f64(9.038)));
+    // WebM/VP9 „Empfohlen“ + Opus, 4,008 s: 3,73 MB (vorher geschätzt 12 MB)
+    (s.format, s.codec) = (Format::WebM, Codec::Vp9);
+    let (mb, _) = estimate_mb(&s, Time::ZERO);
+    assert!(within(mb, 3.73), "WebM {mb}");
+    // GIF 480p gewählt (852×480 → 720×406, 15 Bilder/s), 4,0 s: 11,1 MB (vorher 2 MB)
+    (s.format, s.width, s.height) = (Format::Gif, 852, 480);
+    s.range = Some((Time::from_secs_f64(5.0), Time::from_secs_f64(9.0)));
+    let (mb, exact) = estimate_mb(&s, Time::ZERO);
+    assert!(within(mb, 11.08) && !exact, "GIF {mb}");
+    // Dialog zeigt dieselbe Größe, die der Export schreibt
+    assert_eq!(s.output_size(), (720, 406));
+    // Hochkant-Shorts H.264 „Höher“, 18 s: 17,6 MB – Standbilder, CRF schätzt hier zu hoch;
+    // nur grob plausibel (keine Größenordnung daneben)
+    (s.format, s.codec, s.quality, s.width, s.height) = (Format::Mp4, Codec::H264, Quality::Higher, 1080, 1920);
+    s.range = None;
+    let (mb, _) = estimate_mb(&s, Time::from_secs_f64(18.0));
+    assert!(mb > 17.6 && mb < 17.6 * 10.0, "Shorts {mb}");
+}
+
+#[test]
+fn every_text_style_reaches_the_export_like_the_preview() {
+    use cl_core::{Clip, ClipContent, TextStyle, Track, TrackKind};
+    let styles: Vec<(String, TextStyle)> = crate::captions::PRESETS
+        .iter()
+        .map(|c| (c.name.to_string(), (c.style)()))
+        .chain(cl_fx::text::TEMPLATES.iter().map(|t| (t.name.to_string(), t.make())))
+        .collect();
+    assert!(styles.iter().any(|(_, s)| s.italic) && styles.iter().any(|(_, s)| s.bold));
+    let dir = tempfile::tempdir().unwrap();
+    let none = |_: Option<&str>| None;
+    for (name, st) in styles {
+        let mut p = Project::new("t");
+        let mut t = Track::new(TrackKind::Text);
+        t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, Time::from_secs_f64(1.0)));
+        p.timeline.tracks.push(t);
+        let job = cl_export::build(&p, &ExportSettings::from_project(&p), &none, &dir.path().join("o.mp4")).unwrap();
+        let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+        let [r, gr, b, a] = st.color;
+        assert!(g.contains(&format!("fontcolor=0x{r:02x}{gr:02x}{b:02x}@{:.3}", a as f32 / 255.0)), "{name}: Farbe");
+        // Schnitt aus denselben Schaltern wie die Vorschau: fett = zweiter Abdruck, kursiv = Scherung
+        assert_eq!(g.matches("drawtext=").count(), if st.bold { 2 } else { 1 }, "{name}: fett");
+        assert_eq!(g.contains("shear=shx=0.25"), st.italic, "{name}: kursiv");
+        assert_eq!(g.contains(":borderw="), st.outline.is_some(), "{name}: Umriss");
+        assert_eq!(g.contains("box=1"), st.background.is_some(), "{name}: Hintergrund");
+        assert_eq!(g.contains("shadowx="), st.shadow, "{name}: Schatten");
+    }
+}
+
+#[test]
+fn cover_fills_portrait_frame_without_bars() {
+    // 16:9-Bild in 9:16-Fläche: mittiger senkrechter Streifen, volle Höhe
+    let uv = fill_uv(vec2(1920.0, 1080.0), vec2(250.0, 444.0));
+    assert!((uv.height() - 1.0).abs() < 1e-4 && (uv.width() - 0.3166).abs() < 1e-3 && (uv.center().x - 0.5).abs() < 1e-6, "{uv:?}");
+    // gleiches Format: ganzes Bild
+    assert_eq!(fill_uv(vec2(1920.0, 1080.0), vec2(250.0, 140.625)), Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)));
 }
 
 #[test]
@@ -1085,6 +1237,62 @@ fn live_preview_reload_blend_and_partial_jpeg() {
     live.checked = None;
     live.poll(&ctx, &pv);
     assert!(live.cur.is_some() && live.prev.is_none());
+}
+
+#[cfg(test)]
+fn running(result: Option<Result<(), String>>) -> Running {
+    Running {
+        progress: Default::default(),
+        measures: false,
+        result: Arc::new(Mutex::new(result)),
+        cancel: Default::default(),
+        started: Instant::now(),
+        rev: 0,
+        sidecars: Vec::new(),
+        settings: ExportSettings::from_project(&Project::new("t")),
+        preview: None,
+        live: Live::default(),
+    }
+}
+
+#[test]
+fn window_close_during_export_asks_and_cancels() {
+    assert!(close_allowed(false, false) && close_allowed(true, true) && !close_allowed(true, false));
+    let ctx = egui::Context::default();
+    let close = || {
+        let mut raw = egui::RawInput::default();
+        raw.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo { events: vec![egui::ViewportEvent::Close], ..Default::default() },
+        );
+        raw
+    };
+    // ohne Export: kein Aufhalten
+    let mut d = ExportDialog::default();
+    let out = ctx.run(close(), |ctx| d.guard_close(ctx));
+    assert!(!d.quit_ask && !out.viewport_output[&egui::ViewportId::ROOT].commands.contains(&egui::ViewportCommand::CancelClose));
+    // mit laufendem Export: Schließen aufgehalten, Rückfrage offen
+    d.running = Some(running(None));
+    let out = ctx.run(close(), |ctx| d.guard_close(ctx));
+    assert!(d.quit_ask && out.viewport_output[&egui::ViewportId::ROOT].commands.contains(&egui::ViewportCommand::CancelClose));
+    // Beenden bestätigt: der zweite Schließ-Wunsch geht durch
+    d.quit_ok = true;
+    d.quit_ask = false;
+    let out = ctx.run(close(), |ctx| d.guard_close(ctx));
+    assert!(!d.quit_ask && !out.viewport_output[&egui::ViewportId::ROOT].commands.contains(&egui::ViewportCommand::CancelClose));
+    // Beenden wartet, bis der Export-Faden den Abbruch gemeldet hat
+    let r = running(None);
+    let (cancel, result) = (r.cancel.clone(), r.result.clone());
+    d.running = Some(r);
+    std::thread::spawn(move || {
+        while !cancel.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        *result.lock().unwrap() = Some(Err("Abgebrochen".into()));
+    });
+    d.cancel_and_wait(std::time::Duration::from_secs(5));
+    assert!(d.running.as_ref().unwrap().result.lock().unwrap().is_some());
 }
 
 #[test]

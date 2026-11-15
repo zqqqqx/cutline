@@ -1686,3 +1686,9 @@ Ausrufezeichen (Symbol)	Exclamation mark (icon)
 1 Filter	1 filter
 1 Sticker	1 sticker
 Import fehlgeschlagen (interner Fehler)	Import failed (internal error)
+Export läuft – wirklich beenden?	Export in progress – quit anyway?
+Cutline beenden	Quit Cutline
+Datei fehlt: {}	File missing: {}
+{} Dateien fehlen: {}	{} files missing: {}
+Paket ausgeschaltet – wird als „{}“ gerechnet	Pack turned off – rendered as “{}”
+Paket fehlt – wird als „{}“ gerechnet	Pack missing – rendered as “{}”

@@ -2808,12 +2808,7 @@ impl App {
                             color: Color32::from_black_alpha(120),
                         })
                         .show(ui, |ui| {
-                            let g = if *err {
-                                icon::WARNING_CIRCLE
-                            } else {
-                                icon::CHECK_CIRCLE
-                            };
-                            ui.label(RichText::new(crate::tr(format!("{g}  {msg}"))).color(
+                            ui.label(RichText::new(toast_line(msg, *err)).color(
                                 if *err {
                                     theme::DANGER_TEXT()
                                 } else {
@@ -2964,6 +2959,8 @@ impl eframe::App for App {
         }
 
         self.window_frame(ctx);
+        // Fenster-Kreuz während eines Exports: erst nachfragen
+        self.export.guard_close(ctx);
         egui::TopBottomPanel::top("top")
             .exact_height(theme::TITLE_H)
             .frame(
@@ -3102,8 +3099,9 @@ impl eframe::App for App {
             .find(|t| t.main)
             .and_then(|t| t.clips.iter().find(|c| c.contains(self.playhead)))
             .and_then(|c| self.frames.get(&c.id));
+        // nur Bilder von Clips, die es noch gibt (sonst zeigt ein leeres Projekt ein altes Bild)
         let tex = main
-            .or_else(|| self.frames.values().next())
+            .or_else(|| self.project.timeline.tracks.iter().flat_map(|t| &t.clips).find_map(|c| self.frames.get(&c.id)))
             .map(|(_, t)| (t.id(), t.size_vec2()));
         if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex, self.revision) {
             // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen)
@@ -3153,6 +3151,8 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        // laufenden Export sauber abbrechen: kein verwaistes FFmpeg, keine .part-Datei
+        self.export.cancel_and_wait(Duration::from_secs(5));
         self.cancel_background_work();
         if !self.flush_before_leaving() {
             // letzter Ausweg: Stand in die Sicherungen schreiben
@@ -3355,6 +3355,16 @@ pub fn fixed_width(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 }
 
 /// Standzeit eines Toasts: Fehler bleiben länger stehen (und schließen per Klick)
+/// Text eines Toasts mit Symbol davor; bringt die Meldung schon ein eigenes Symbol mit, bleibt
+/// es bei diesem (sonst stünden zwei Häkchen vor „Gespeichert“).
+fn toast_line(msg: &str, err: bool) -> String {
+    if msg.starts_with(|c: char| ('\u{E000}'..='\u{F8FF}').contains(&c)) {
+        return msg.to_string();
+    }
+    let g = if err { icon::WARNING_CIRCLE } else { icon::CHECK_CIRCLE };
+    format!("{g}  {msg}")
+}
+
 fn toast_secs(err: bool) -> f32 {
     if err { 10.0 } else { 4.0 }
 }
@@ -3393,6 +3403,16 @@ mod toast_tests {
         assert!(needs_save(5, 3, true, &empty), "gespeichert und leer geräumt");
         assert!(!needs_save(5, 3, false, &empty), "neues leeres Projekt: keine Datei");
         assert!(!needs_save(3, 3, true, &empty));
+    }
+
+    #[test]
+    fn toast_shows_one_symbol() {
+        let saved = toast_line(&format!("{} Gespeichert", icon::CHECK), false);
+        assert_eq!(saved.matches(icon::CHECK).count() + saved.matches(icon::CHECK_CIRCLE).count(), 1, "{saved}");
+        assert_eq!(toast_line(&format!("{} Export fertig (1.0 s)", icon::CHECK_CIRCLE), false).matches(icon::CHECK_CIRCLE).count(), 1);
+        // ohne eigenes Symbol: Häkchen bzw. Warnung davor
+        assert_eq!(toast_line("Kopiert", false), format!("{}  Kopiert", icon::CHECK_CIRCLE));
+        assert!(toast_line("Fehler", true).starts_with(icon::WARNING_CIRCLE));
     }
 
     #[test]
