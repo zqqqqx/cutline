@@ -105,6 +105,8 @@ pub struct App {
     /// Kopie des Projekts für die Darstellung, erneuert bei jeder Revision.
     pub project: Project,
     pub revision: u64,
+    /// Zählt jeden Wechsel von `project` (auch neues Dokument mit gleicher Revision)
+    pub project_epoch: u64,
     pub screen: Screen,
     pub settings: AppSettings,
     pub settings_open: bool,
@@ -361,6 +363,7 @@ impl App {
             doc: Arc::new(Mutex::new(Document::new(project.clone()))),
             project,
             revision: 0,
+            project_epoch: 0,
             screen,
             ui_scale: settings.ui_scale,
             settings,
@@ -643,6 +646,7 @@ impl App {
         if doc.revision() != self.revision {
             self.revision = doc.revision();
             self.project = doc.project().clone();
+            self.project_epoch += 1;
             drop(doc);
             if let Some(s) = self.selected {
                 if self.project.find_clip(s).is_none() {
