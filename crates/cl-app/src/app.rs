@@ -585,13 +585,13 @@ impl App {
 
     pub fn toast(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
-        log::info!(target: "meldung", "{msg}");
+        log::info!(target: "meldung", "{}", crate::applog::anon(&msg));
         self.toasts
             .push((crate::tr(msg), Instant::now(), false));
     }
     pub fn toast_err(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
-        log::error!(target: "meldung", "{msg}");
+        log::error!(target: "meldung", "{}", crate::applog::anon(&msg));
         self.toasts
             .push((crate::tr(msg), Instant::now(), true));
     }
@@ -2030,7 +2030,7 @@ impl App {
         if let Some(p) = path {
             match self.write_project(&p) {
                 Ok(()) => {
-                    crate::applog::project("gespeichert", Some(&p), &self.project, Some(t0));
+                    crate::applog::project("gespeichert", &self.project, Some(t0));
                     self.toast(format!("{} Gespeichert", icon::CHECK));
                     self.project_path = Some(p);
                     self.settings.save();
@@ -2286,7 +2286,7 @@ impl App {
         if !self.flush_before_leaving() {
             return;
         }
-        crate::applog::project("geschlossen", self.project_path.as_deref(), &self.project, None);
+        crate::applog::project("geschlossen", &self.project, None);
         // jeder Weg zurück in den Editor setzt ihn ohnehin zurück: Bilder, Texturen und
         // Decoder-Zwischenspeicher des Projekts schon jetzt freigeben
         self.reset_editor();

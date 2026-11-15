@@ -30,10 +30,13 @@ pub fn friendly(raw: &str) -> String {
         raw
     } else if has(&["no space", "speicherplatz", "os error 112", "os error 28", "disk full"]) {
         "Nicht genug Speicherplatz"
+    } else if has(&["ohne prüfsumme"]) {
+        "Version ohne Prüfsumme"
+    } else if has(&["prüfsumme", "beschädigt", "unvollständig", "zu groß", "ist leer", "unsicher"]) {
+        // vor „404“: die Hex-Zeichen im Prüfsummen-Fehler können „404“ enthalten
+        "Datei beschädigt (Prüfsumme)"
     } else if has(&["404", "not found", "gefunden"]) {
         "Nicht gefunden"
-    } else if has(&["prüfsumme", "beschädigt", "unvollständig", "zu groß", "ist leer", "unsicher"]) {
-        "Datei beschädigt (Prüfsumme)"
     } else if has(&["dns", "connection", "keine verbindung", "timed out", "timeout", "network", "tls", "os error 100", "os error 110"]) {
         "Keine Verbindung"
     } else if has(&["antwortet mit", "status", "nicht lesbar", "unlesbar"]) {
@@ -147,11 +150,10 @@ pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, St
             "Version {version} hat kein Paket für dieses System ({want})"
         ));
     };
-    let sha = r
-        .assets
-        .iter()
-        .find(|a| a.name == format!("{want}.sha256"))
-        .map(|a| a.browser_download_url.clone());
+    // ohne Prüfsumme wird nie installiert: dann gar nicht erst anbieten
+    let Some(sha) = r.assets.iter().find(|a| a.name == format!("{want}.sha256")) else {
+        return Err(format!("Version {version} ohne Prüfsumme"));
+    };
     Ok(Some(Release {
         version,
         name: r
@@ -163,7 +165,7 @@ pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, St
         page: r.html_url,
         asset_url: asset.browser_download_url.clone(),
         asset_size: asset.size,
-        sha_url: sha,
+        sha_url: Some(sha.browser_download_url.clone()),
     }))
 }
 
@@ -485,6 +487,9 @@ mod tests {
         assert_eq!(f("Es ist nicht genug Speicherplatz vorhanden. (os error 112)"), "Nicht genug Speicherplatz");
         assert_eq!(f("GitHub antwortet mit 404"), "Nicht gefunden");
         assert_eq!(f("Abgebrochen"), "Abgebrochen");
+        // Hex-Zeichen mit „404“ im Prüfsummen-Fehler: bleibt ein Prüfsummen-Fehler
+        assert_eq!(f("Prüfsumme stimmt nicht (erwartet 4041ab…, erhalten cd…)"), "Datei beschädigt (Prüfsumme)");
+        assert_eq!(f("Release ohne Prüfsumme – Installation aus Sicherheitsgründen abgebrochen"), "Version ohne Prüfsumme");
         assert_eq!(f("irgendwas"), "Unerwarteter Fehler");
     }
 
@@ -734,9 +739,10 @@ mod tests {
         assert!(parse_release(&j.to_string(), cur).unwrap().is_none());
         j["draft"] = false.into();
         j["name"] = "".into();
-        let r = parse_release(&j.to_string(), cur).unwrap().unwrap();
+        let e = parse_release(&j.to_string(), cur).unwrap_err();
+        assert_eq!(friendly(&e), "Version ohne Prüfsumme", "{e}");
+        let r = parse_release(&release_json("v2.0.0", true).replace("\"Cutline\"", "\"\""), cur).unwrap().unwrap();
         assert_eq!(r.name, "v2.0.0", "leerer Name → Tag");
-        assert!(r.sha_url.is_none());
     }
 
     #[test]

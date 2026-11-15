@@ -327,7 +327,7 @@ impl App {
         self.missing_open = done.present.values().any(|ok| !ok);
         self.presence.set_all(done.present, n);
         self.set_doc(done.project);
-        crate::applog::project("geöffnet", Some(p), &self.project, t0);
+        crate::applog::project("geöffnet", &self.project, t0);
         self.saved_revision = self.revision;
         self.project_path = Some(p.to_path_buf());
         drop(s);

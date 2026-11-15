@@ -178,6 +178,15 @@ fn secret_at(b: &[u8], i: usize) -> Option<(usize, usize)> {
     if !boundary {
         return None;
     }
+    // Adressen: der ganze Abfrageteil (signierte Links: `jwt=`, `X-Amz-…`, Anbieter-Parameter)
+    if starts_ci(b, i, "http://") || starts_ci(b, i, "https://") {
+        let mut e = skip(b, i, |c| !c.is_ascii_whitespace() && !b"\"'<>".contains(&c));
+        if b[e - 1] == b':' {
+            e -= 1;
+        }
+        let q = b[i..e].iter().position(|&c| c == b'?')? + i + 1;
+        return (e > q).then_some((q, e));
+    }
     if starts_ci(b, i, "bearer ") {
         let v = skip(b, i + 7, |c| c == b' ');
         let e = skip(b, v, token_char);
@@ -267,6 +276,60 @@ pub fn tilde(text: &str, home: &str) -> String {
         }
     }
     out.push_str(&text[last..]);
+    out
+}
+
+/// Inhalte unkenntlich machen (für Meldungen und Export-Fehler; Protokolle landen in öffentlichen Issues):
+/// Namen in „…“ werden `***`, Pfade (`C:\`, `C:/`, `\\`, `~/`, `~\` oder `/` am Wortanfang, bis Zeilenende
+/// oder `: `, `"`, `'`, `)`, `“`) werden `<pfad>` mit Endung.
+pub fn anon(s: &str) -> String {
+    let mut q = String::with_capacity(s.len());
+    let mut parts = s.split('„');
+    q.push_str(parts.next().unwrap_or_default());
+    for p in parts {
+        q.push('„');
+        match p.split_once('“') {
+            Some((_, rest)) => {
+                q.push_str("***“");
+                q.push_str(rest);
+            }
+            None => q.push_str(p),
+        }
+    }
+    let (s, b) = (q.as_str(), q.as_bytes());
+    let mut out = String::with_capacity(s.len());
+    let (mut i, mut copied) = (0, 0);
+    while i < b.len() {
+        let after = |k: usize| b.get(i + k).copied();
+        let lead = i == 0 || matches!(b[i - 1], b' ' | b'\t' | b'\n' | b'"' | b'\'' | b'(' | b'=' | b'[');
+        let start = lead
+            && ((b[i].is_ascii_alphabetic() && after(1) == Some(b':') && matches!(after(2), Some(b'\\' | b'/')))
+                || (b[i] == b'\\' && after(1) == Some(b'\\'))
+                || (b[i] == b'~' && matches!(after(1), Some(b'\\' | b'/')))
+                || (b[i] == b'/' && after(1).is_some_and(|c| is_word(c) || c == b'.')));
+        if !start {
+            i += 1;
+            continue;
+        }
+        let mut e = i + 1;
+        while e < b.len()
+            && !matches!(b[e], b'\n' | b'\r' | b'"' | b'\'' | b')')
+            && !(b[e] == b':' && matches!(b.get(e + 1), None | Some(b' ')))
+            && !b[e..].starts_with("“".as_bytes())
+        {
+            e += 1;
+        }
+        let name = s[i..e].trim_end().rsplit(['/', '\\']).next().unwrap_or_default();
+        let ext = name.rsplit_once('.').map(|x| x.1).filter(|x| (1..=8).contains(&x.len()) && x.bytes().all(|c| c.is_ascii_alphanumeric()));
+        out.push_str(&s[copied..i]);
+        out.push_str("<pfad>");
+        if let Some(x) = ext {
+            out.push('.');
+            out.push_str(x);
+        }
+        (i, copied) = (e, e);
+    }
+    out.push_str(&s[copied..]);
     out
 }
 
@@ -601,11 +664,16 @@ pub fn counts(p: &cl_core::Project) -> String {
     )
 }
 
-/// Projekt geöffnet/gespeichert/geschlossen
-pub fn project(what: &str, path: Option<&Path>, p: &cl_core::Project, t0: Option<std::time::Instant>) {
+/// Projekt geöffnet/gespeichert/geschlossen – nur Kennzahlen, kein Name und kein Pfad
+pub fn project(what: &str, p: &cl_core::Project, t0: Option<std::time::Instant>) {
     let ms = t0.map(|t| format!(" in {} ms", t.elapsed().as_millis())).unwrap_or_default();
-    let path = path.map(|p| format!(" ({})", p.display())).unwrap_or_default();
-    log::info!(target: "projekt", "{what}{ms}: „{}“{path} · {}", p.name, counts(p));
+    log::info!(target: "projekt", "{what}{ms}: {}", counts(p));
+}
+
+/// FFmpeg-Befehlszeile fürs Protokoll: Aufbau bleibt, Pfade werden unkenntlich (Texte stehen in Dateien)
+pub fn ffmpeg_cmd(args: &[String]) -> String {
+    let a: Vec<String> = args.iter().map(|x| anon(x)).collect();
+    format!("ffmpeg {}", a.join(" "))
 }
 
 // ---------- System ----------
@@ -899,6 +967,29 @@ mod tests {
         Rec { ms, level, area: "test".into(), msg: msg.into() }
     }
 
+    #[test]
+    fn names_paths_and_texts_stay_out_of_the_log() {
+        assert_eq!(anon("„Bewerbung Firma X“ importiert: 3 Clips"), "„***“ importiert: 3 Clips");
+        assert_eq!(anon(r"Archiv erstellt: D:\Kunden\Firma X\a.zip"), "Archiv erstellt: <pfad>.zip");
+        assert_eq!(anon("Stand gesichert in /home/u/Firma X/p.cutline"), "Stand gesichert in <pfad>.cutline");
+        assert_eq!(
+            anon("Error opening input C:/Firma X/b.mp4: No such file\n~/x/y.wav: denied"),
+            "Error opening input <pfad>.mp4: No such file\n<pfad>.wav: denied"
+        );
+        // keine Pfade: bleibt
+        for s in ["10 MB/s", "-/filter_complex", "https://a.b/c", "und/oder", "1/2", "Paket entfernt"] {
+            assert_eq!(anon(s), s);
+        }
+        let args: Vec<String> =
+            ["-y", "-i", r"D:\Kunden\Firma X\clip.mov", "-/filter_complex", "graph.txt", "-c:v", "libx264", "/home/u/out.mp4"]
+                .map(String::from)
+                .into();
+        assert_eq!(
+            ffmpeg_cmd(&args),
+            "ffmpeg -y -i <pfad>.mov -/filter_complex graph.txt -c:v libx264 <pfad>.mp4"
+        );
+    }
+
     fn read_all(dir: &Path) -> String {
         log_files(dir).into_iter().map(|(_, p)| std::fs::read_to_string(p).unwrap()).collect()
     }
@@ -931,9 +1022,12 @@ mod tests {
             (r#"{"access_token":"AAA.bbb","refresh_token": "RRR","expires_in":3600}"#, r#"{"access_token":"***","refresh_token": "***","expires_in":3600}"#),
             (r#"{"token": "abc\"def", "read_only": true}"#, r#"{"token": "***", "read_only": true}"#),
             (r#""headers": { "Authorization": "Bearer t0k3n-s3cret" }"#, r#""headers": { "Authorization": "***" }"#),
-            ("GET https://x.example/a?token=abc123&page=2 HTTP", "GET https://x.example/a?token=***&page=2 HTTP"),
-            ("https://cdn.example/f.mp3?key=K1&signature=S%2F2#frag", "https://cdn.example/f.mp3?key=***&signature=***#frag"),
-            ("https://login.example/cb?code=xyz&state=1", "https://login.example/cb?code=***&state=1"),
+            ("GET https://x.example/a?token=abc123&page=2 HTTP", "GET https://x.example/a?*** HTTP"),
+            ("https://cdn.example/f.mp3?key=K1&signature=S%2F2#frag", "https://cdn.example/f.mp3?***"),
+            ("https://login.example/cb?code=xyz&state=1", "https://login.example/cb?***"),
+            // ureq-Fehler nach der GitHub-Umleitung: signierte Asset-Adresse mit `jwt=`
+            ("https://objects.example/a.zip?sp=r&jwt=eyJ0eXAi.x.y: Connection Failed", "https://objects.example/a.zip?***: Connection Failed"),
+            ("(\"http://127.0.0.1:9/x?a=1\")", "(\"http://127.0.0.1:9/x?***\")"),
             ("X-Amz-Signature=deadbeef", "X-Amz-Signature=***"),
         ];
         for (inp, want) in cases {
@@ -947,7 +1041,7 @@ mod tests {
             "ffmpeg -i C:\\Users\\Ünïcödé\\Videos\\a b.mp4 -c:v libx264 -crf 23 -g 60 -keyint_min 30 -vf colorkey=0x00ff00:0.3 out.mp4",
             "chromakey=green:0.1 keyframes=3 monkey=1",
             "FFmpeg beendet: exit code=1 · Tokens: 5 · token count 3",
-            "https://example.com/a?x=1&page=2",
+            "https://example.com/a/b.zip: Dns Failed",
             "Bearer of bad news",
             "\"key\": \"Strg+S\"",
             "Projekt „Urlaub 🎬“ · 3 Spuren",
