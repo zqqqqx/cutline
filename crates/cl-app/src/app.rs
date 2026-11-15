@@ -2275,6 +2275,7 @@ impl App {
     }
 
     /// Nach einer Pause an derselben Stelle und ohne Änderung direkt weiterlaufen.
+    /// (Sonst gibt `update` die offenen Ströme gleich frei, siehe [`pause_is_stale`].)
     fn try_resume(&mut self) -> bool {
         let Some((at, rev)) = self.paused.take() else { return false };
         if at != self.playhead || rev != self.revision || self.audio.is_none() {
@@ -3025,6 +3026,9 @@ impl eframe::App for App {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
         self.advance_playhead();
+        if pause_is_stale(self.paused, self.playhead, self.revision) {
+            self.stop_playback();
+        }
         if self.playing {
             ctx.request_repaint_after(self.play_repaint_delay());
         }
@@ -3337,6 +3341,12 @@ impl Drop for PerfFrame {
     }
 }
 
+/// Pause mit offenen Strömen, aber Playhead verschoben oder Projekt geändert: Fortsetzen geht
+/// nicht mehr, die wartenden FFmpeg-Prozesse (Bild und Ton) können sofort enden.
+fn pause_is_stale(paused: Option<(Time, u64)>, playhead: Time, revision: u64) -> bool {
+    paused.is_some_and(|(at, rev)| at != playhead || rev != revision)
+}
+
 /// Kürzester Abstand zweier UI-Bilder (höchstens 125 je Sekunde). Ohne VSync (siehe `main.rs`)
 /// zeichnet egui bei jeder Animation (Hover-Kacheln, Einblenden) sonst ungebremst mehrere hundert
 /// Bilder je Sekunde und belegt einen ganzen Kern. Abspielen fordert seltener an (`play_repaint_delay`).
@@ -3469,6 +3479,15 @@ mod toast_tests {
 #[cfg(test)]
 mod frame_rate_tests {
     use super::*;
+
+    #[test]
+    fn moved_or_edited_pause_releases_streams() {
+        let t = Time::from_millis(500);
+        assert!(!pause_is_stale(None, t, 3));
+        assert!(!pause_is_stale(Some((t, 3)), t, 3));
+        assert!(pause_is_stale(Some((t, 3)), Time::from_millis(900), 3));
+        assert!(pause_is_stale(Some((t, 3)), t, 4));
+    }
 
     #[test]
     fn frame_wait_caps_ui_rate() {
