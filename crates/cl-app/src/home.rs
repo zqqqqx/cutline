@@ -13,6 +13,7 @@ use crate::app::App;
 use crate::paths;
 use crate::theme::{self, icon};
 
+#[derive(Clone)]
 pub struct Entry {
     pub path: PathBuf,
     pub name: String,
@@ -26,6 +27,9 @@ pub struct Entry {
 pub struct HomeState {
     pub entries: Vec<Entry>,
     scanned: bool,
+    /// laufendes Neulesen der Projektliste (Hintergrund)
+    scan_rx: Option<std::sync::mpsc::Receiver<Vec<Entry>>>,
+    cache: ScanCache,
     pub search: String,
     pub list_view: bool,
     rename: Option<(PathBuf, String)>,
@@ -150,41 +154,27 @@ impl HomeState {
         }
     }
 
-    fn scan(&mut self, recent: &[PathBuf]) {
-        let mut paths_: Vec<PathBuf> = std::fs::read_dir(paths::projects_dir())
-            .map(|rd| {
-                rd.flatten()
-                    .map(|e| e.path())
-                    .filter(|p| p.extension().is_some_and(|e| e == "cutline"))
-                    .collect()
-            })
-            .unwrap_or_default();
-        for r in recent {
-            if r.is_file() && !paths_.contains(r) {
-                paths_.push(r.clone());
-            }
-        }
-        self.entries = paths_
-            .into_iter()
-            .filter_map(|p| {
-                let modified = std::fs::metadata(&p)
-                    .and_then(|m| m.modified())
-                    .unwrap_or(SystemTime::UNIX_EPOCH);
-                let proj = std::fs::read_to_string(&p)
-                    .ok()
-                    .and_then(|s| Project::from_json(&s).ok())?;
-                Some(Entry {
-                    name: proj.name.clone(),
-                    duration: proj.duration(),
-                    clips: proj.timeline.tracks.iter().map(|t| t.clips.len()).sum(),
-                    size: (proj.settings.width, proj.settings.height),
-                    modified,
-                    path: p,
-                })
-            })
-            .collect();
-        self.entries.sort_by(|a, b| b.modified.cmp(&a.modified));
+    /// Projektliste im Hintergrund neu lesen (Startseite bleibt bedienbar; die alte Liste steht,
+    /// bis die neue da ist). Unveränderte Dateien kommen aus dem Zwischenspeicher.
+    fn start_scan(&mut self, recent: Vec<PathBuf>, ctx: &egui::Context) {
         self.scanned = true;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (cache, c) = (self.cache.clone(), ctx.clone());
+        std::thread::Builder::new()
+            .name("cl-home-scan".into())
+            .spawn(move || {
+                let _ = tx.send(scan_projects(&paths::projects_dir(), &recent, &cache));
+                c.request_repaint();
+            })
+            .expect("Projektliste");
+        self.scan_rx = Some(rx);
+    }
+
+    fn poll_scan(&mut self) {
+        if let Some(Ok(e)) = self.scan_rx.as_ref().map(|r| r.try_recv()) {
+            self.entries = e;
+            self.scan_rx = None;
+        }
     }
 
     fn thumb(&mut self, ctx: &egui::Context, p: &Path) -> Option<egui::TextureId> {
@@ -210,12 +200,62 @@ impl HomeState {
     }
 }
 
+/// Zwischenspeicher der Projektliste: Datei → (Änderungszeit, Größe, Eintrag)
+type ScanCache = std::sync::Arc<std::sync::Mutex<HashMap<PathBuf, (SystemTime, u64, Entry)>>>;
+
+/// Projekte im Projektordner und zuletzt geöffnete: Name, Länge, Clips, Format. Gelesen wird
+/// nur, was sich seit dem letzten Mal geändert hat (große Projekte kosten sonst Sekunden).
+pub fn scan_projects(dir: &Path, recent: &[PathBuf], cache: &ScanCache) -> Vec<Entry> {
+    let mut paths_: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|e| e == "cutline"))
+                .collect()
+        })
+        .unwrap_or_default();
+    for r in recent {
+        if r.is_file() && !paths_.contains(r) {
+            paths_.push(r.clone());
+        }
+    }
+    let mut entries: Vec<Entry> = paths_
+        .into_iter()
+        .filter_map(|p| {
+            let meta = std::fs::metadata(&p).ok();
+            let modified = meta.as_ref().and_then(|m| m.modified().ok()).unwrap_or(SystemTime::UNIX_EPOCH);
+            let len = meta.map_or(0, |m| m.len());
+            if let Some((t, l, e)) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(&p) {
+                if *t == modified && *l == len {
+                    return Some(e.clone());
+                }
+            }
+            let proj = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|s| Project::from_json(&s).ok())?;
+            let e = Entry {
+                name: proj.name.clone(),
+                duration: proj.duration(),
+                clips: proj.timeline.tracks.iter().map(|t| t.clips.len()).sum(),
+                size: (proj.settings.width, proj.settings.height),
+                modified,
+                path: p.clone(),
+            };
+            cache.lock().unwrap_or_else(|e| e.into_inner()).insert(p, (modified, len, e.clone()));
+            Some(e)
+        })
+        .collect();
+    entries.sort_by(|a, b| b.modified.cmp(&a.modified));
+    entries
+}
+
 impl App {
     pub fn home_page(&mut self, ui: &mut egui::Ui) {
         if !self.home.scanned {
             let recent = self.settings.recent.clone();
-            self.home.scan(&recent);
+            self.home.start_scan(recent, ui.ctx());
         }
+        self.home.poll_scan();
         let full = ui.max_rect();
         let side = Rect::from_min_max(
             full.min + vec2(4.0, 4.0),
@@ -807,4 +847,27 @@ fn project_menu(ui: &mut egui::Ui, path: &Path, action: &mut Option<(&'static st
 pub fn fmt_dur(t: Time) -> String {
     let s = t.as_secs_f64().round() as i64;
     format!("{}:{:02}", s / 60, s % 60)
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    #[test]
+    fn unchanged_projects_are_not_read_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("a.cutline");
+        std::fs::write(&f, Project::new("Erst").to_json()).unwrap();
+        let cache = ScanCache::default();
+        assert_eq!(scan_projects(dir.path(), &[], &cache)[0].name, "Erst");
+        // Eintrag im Zwischenspeicher verfälschen: unveränderte Datei → kommt von dort
+        cache.lock().unwrap().get_mut(&f).unwrap().2.name = "Zwischenspeicher".into();
+        assert_eq!(scan_projects(dir.path(), &[], &cache)[0].name, "Zwischenspeicher");
+        // geänderte Datei (andere Größe) wird neu gelesen; kaputte fehlt einfach
+        std::fs::write(&f, Project::new("Zweiter Stand").to_json()).unwrap();
+        std::fs::write(dir.path().join("b.cutline"), "{").unwrap();
+        let e = scan_projects(dir.path(), &[], &cache);
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].name, "Zweiter Stand");
+    }
 }

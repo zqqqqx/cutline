@@ -92,6 +92,25 @@ impl Default for Tasks {
     }
 }
 
+/// Art einer Aufgabe: Schlüssel bis zum ersten `:` („matte:<clip>“ → „matte“)
+pub fn kind(key: &str) -> &str {
+    key.split(':').next().unwrap_or(key)
+}
+
+/// Gleichartige Aufgaben zusammenfassen: je Art eine Zeile mit allen Mitgliedern (Indizes in
+/// der Reihenfolge der Liste), in der Reihenfolge des ersten Auftretens.
+pub fn groups(keys: &[&str]) -> Vec<Vec<usize>> {
+    let mut out: Vec<(&str, Vec<usize>)> = Vec::new();
+    for (i, k) in keys.iter().enumerate() {
+        let k = kind(k);
+        match out.iter_mut().find(|g| g.0 == k) {
+            Some(g) => g.1.push(i),
+            None => out.push((k, vec![i])),
+        }
+    }
+    out.into_iter().map(|g| g.1).collect()
+}
+
 impl Tasks {
     pub fn running(&self, key: &str) -> Option<&Task> {
         self.list.iter().find(|t| t.key == key)
@@ -170,6 +189,14 @@ impl Tasks {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn same_kind_tasks_are_grouped() {
+        let keys = ["matte:1", "proxy", "matte:2", "asr", "matte:3"];
+        assert_eq!(groups(&keys), vec![vec![0, 2, 4], vec![1], vec![3]]);
+        assert!(groups(&[]).is_empty());
+        assert_eq!(kind("scenes:abc:def"), "scenes");
+    }
 
     #[test]
     fn results_from_a_left_project_are_dropped() {

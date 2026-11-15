@@ -68,8 +68,26 @@ impl App {
     /// Erscheint erst nach 150 ms (kurze Aufgaben blitzen nicht auf).
     pub fn tasks_badge(&mut self, ui: &mut egui::Ui) {
         let id = egui::Id::new("tasks-badge");
-        let names: Vec<String> = self.tasks.list.iter().map(|t| crate::tr(&t.label)).collect();
-        let list: Vec<(&str, f32)> = names.iter().zip(&self.tasks.list).map(|(n, t)| (n.as_str(), t.progress())).collect();
+        // gleichartige Aufgaben als eine Zeile („Freistellen ×3“), Proxys mit Gesamtfortschritt
+        let keys: Vec<&str> = self.tasks.list.iter().map(|t| t.key.as_str()).collect();
+        let groups = crate::tasks::groups(&keys);
+        let (pd, pt) = (self.proxies.done, self.proxies.total);
+        let rows: Vec<(String, f32, Vec<usize>)> = groups
+            .into_iter()
+            .map(|g| {
+                let t = &self.tasks.list[g[0]];
+                let mut name = crate::tr(&t.label);
+                let mut p = g.iter().map(|i| self.tasks.list[*i].progress()).sum::<f32>() / g.len() as f32;
+                if g.len() > 1 {
+                    name = format!("{}  ×{}", name.trim_end_matches(" …"), g.len());
+                }
+                if t.key == "proxy" && pt > 0 {
+                    p = ((pd as f32 + p) / pt as f32).max(1e-3);
+                }
+                (name, p, g)
+            })
+            .collect();
+        let list: Vec<(&str, f32)> = rows.iter().map(|(n, p, _)| (n.as_str(), *p)).collect();
         let now = task_summary(&list);
         if !theme::loading(ui.ctx(), id, now.is_some()) {
             return;
@@ -86,9 +104,10 @@ impl App {
             },
         };
         let single = s.count == 1;
-        if single && theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
-            if let Some(t) = self.tasks.list.first() {
-                t.cancel();
+        if single {
+            if let Some((_, _, g)) = rows.first() {
+                let g = g.clone();
+                self.task_buttons(ui, &g);
             }
         }
         let (lr, _) = ui.allocate_exact_size(vec2(56.0, 3.0), Sense::hover());
@@ -109,20 +128,41 @@ impl App {
         }
         egui::popup::popup_below_widget(ui, pop, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
             ui.set_min_width(260.0);
-            for (t, name) in self.tasks.list.iter().zip(&names) {
+            for (name, p, g) in &rows {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(name.trim_end_matches(" …")).size(theme::FS_UI));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
-                            t.cancel();
-                        }
+                        self.task_buttons(ui, g);
                     });
                 });
                 let (lr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 3.0), Sense::hover());
-                crate::widgets::task_line(ui.painter(), egui::Id::new(("task", t.id)), lr, t.progress());
+                crate::widgets::task_line(ui.painter(), egui::Id::new(("task", self.tasks.list[g[0]].id)), lr, *p);
                 ui.add_space(6.0);
             }
         });
+    }
+
+    /// Abbrechen (alle der Gruppe) und bei Proxys Pausieren/Fortsetzen; Abbrechen der Proxys
+    /// beendet den Proxy-Bau für dieses Projekt.
+    fn task_buttons(&mut self, ui: &mut egui::Ui, group: &[usize]) {
+        let proxy = group.iter().any(|i| self.tasks.list.get(*i).is_some_and(|t| t.key == "proxy"));
+        if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
+            if proxy {
+                self.stop_proxies();
+            }
+            for i in group {
+                if let Some(t) = self.tasks.list.get(*i) {
+                    t.cancel();
+                }
+            }
+        }
+        if proxy {
+            let paused = crate::proxy::ProxyState::paused();
+            let (g, tip) = if paused { (icon::PLAY, "Fortsetzen") } else { (icon::PAUSE, "Pausieren") };
+            if theme::icon_button(ui, g, tip, true, false).clicked() {
+                crate::proxy::ProxyState::set_paused(!paused);
+            }
+        }
     }
 
     pub fn set_ui_scale(&mut self, ctx: &egui::Context, v: f32) {

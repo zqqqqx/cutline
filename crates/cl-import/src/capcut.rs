@@ -10,7 +10,7 @@ use cl_core::{
 };
 use serde_json::Value;
 
-use crate::{Report, Result};
+use crate::{Progress, Report, Result, Step};
 
 /// Ein lokaler Entwurf für die Auswahlliste.
 #[derive(Debug, Clone)]
@@ -123,6 +123,11 @@ fn resolve(path: &str, draft_dir: &Path) -> PathBuf {
 
 /// Entwurf importieren: Ordner oder `draft_content.json`.
 pub fn import(path: &Path) -> Result<(Project, Report)> {
+    import_with(path, &Progress::default())
+}
+
+/// Wie [`import`], mit Fortschritt und Abbruch (Hintergrund-Thread).
+pub fn import_with(path: &Path, progress: &Progress) -> Result<(Project, Report)> {
     let (dir, json) = if path.is_dir() {
         (path.to_path_buf(), path.join("draft_content.json"))
     } else {
@@ -131,10 +136,13 @@ pub fn import(path: &Path) -> Result<(Project, Report)> {
             path.to_path_buf(),
         )
     };
+    progress.set(Step::Read, 0, 1, &file_label(&json));
     let text = std::fs::read_to_string(&json).map_err(|e| format!("{}: {e}", json.display()))?;
+    progress.check()?;
     let d: Value = serde_json::from_str(&text).map_err(|_| {
         "Der Entwurf ist verschlüsselt oder beschädigt und kann nicht gelesen werden".to_string()
     })?;
+    drop(text);
     let name = std::fs::read_to_string(dir.join("draft_meta_info.json"))
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
@@ -154,12 +162,491 @@ pub fn import(path: &Path) -> Result<(Project, Report)> {
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "CapCut-Projekt".into())
         });
-    convert(&d, &dir, &name)
+    progress.set(Step::Read, 1, 1, "");
+    convert_with(&d, &dir, &name, progress)
+}
+
+fn file_label(p: &Path) -> String {
+    p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// Verschachtelte Entwürfe (zusammengesetzte Clips) höchstens so tief auflösen
+const MAX_DEPTH: usize = 8;
+
+/// Materialien eines Entwurfs nach ID: (Art, Material)
+fn materials(d: &Value) -> HashMap<&str, (&str, &Value)> {
+    let mut by_id = HashMap::new();
+    if let Some(obj) = d.get("materials").and_then(|m| m.as_object()) {
+        for (kind, list) in obj {
+            for m in list.as_array().into_iter().flatten() {
+                if let Some(id) = m.get("id").and_then(|v| v.as_str()) {
+                    by_id.insert(id, (kind.as_str(), m));
+                }
+            }
+        }
+    }
+    by_id
+}
+
+fn segments(t: &Value) -> impl Iterator<Item = &Value> {
+    t.get("segments").and_then(|s| s.as_array()).into_iter().flatten()
+}
+
+/// Verschachtelter Entwurf eines Materials (CapCut „zusammengesetzter Clip“)
+fn sub_draft(m: &Value) -> Option<&Value> {
+    m.get("draft").filter(|v| v.is_object())
+}
+
+/// Medien- und Schriftdateien, die der Import braucht (in der Reihenfolge der Spuren, auch in
+/// verschachtelten Entwürfen) – zum Prüfen vorab.
+fn collect_files(d: &Value, dir: &Path, depth: usize, media: &mut Vec<PathBuf>, fonts: &mut Vec<PathBuf>) {
+    let by_id = materials(d);
+    for t in d.get("tracks").and_then(|t| t.as_array()).into_iter().flatten() {
+        if !matches!(t.get("type").and_then(|v| v.as_str()), Some("video" | "sticker" | "audio" | "text")) {
+            continue;
+        }
+        for s in segments(t) {
+            let mid = s.get("material_id").and_then(|v| v.as_str()).unwrap_or("");
+            let Some((kind, m)) = by_id.get(mid) else { continue };
+            match *kind {
+                "videos" | "audios" => {
+                    let raw = m.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    if !raw.is_empty() {
+                        media.push(resolve(raw, dir));
+                    }
+                }
+                "texts" => fonts.extend(text_font(m, dir)),
+                "drafts" if depth < MAX_DEPTH => {
+                    if let Some(sub) = sub_draft(m) {
+                        collect_files(sub, dir, depth + 1, media, fonts);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Doppelte entfernen, Reihenfolge behalten
+fn unique(v: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    v.into_iter().filter(|p| seen.insert(p.clone())).collect()
+}
+
+fn text_content(m: &Value) -> Value {
+    m.get("content")
+        .and_then(|v| v.as_str())
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default()
+}
+
+fn first_style(content: &Value) -> Value {
+    content
+        .get("styles")
+        .and_then(|s| s.as_array())
+        .and_then(|a| a.first())
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// Schriftdatei eines Textes: eigene Schrift des Textes, sonst die des Stils (CapCut-Standard)
+fn text_font(m: &Value, dir: &Path) -> Option<PathBuf> {
+    let style0 = first_style(&text_content(m));
+    let style_font = style0.pointer("/font/path").and_then(|v| v.as_str());
+    let mat_font = m.get("font_path").and_then(|v| v.as_str());
+    let is_default = |p: &str| p.contains("SystemFont");
+    let font = match (mat_font, style_font) {
+        (Some(a), _) if !a.is_empty() && !is_default(a) => Some(a),
+        (_, Some(b)) if !b.is_empty() => Some(b),
+        (Some(a), _) if !a.is_empty() => Some(a),
+        _ => None,
+    };
+    font.map(|f| resolve(f, dir))
+}
+
+/// Zustand beim Aufbau der Zeitleiste: vorab geprüfte Dateien, übernommene Medien, Bericht.
+struct Build<'a> {
+    w: u32,
+    h: u32,
+    exists: HashMap<PathBuf, bool>,
+    probed: HashMap<PathBuf, Result<MediaRef>>,
+    fonts: HashMap<PathBuf, Option<String>>,
+    /// Medien nur einmal übernehmen
+    used: HashMap<PathBuf, Option<MediaRef>>,
+    media: Vec<MediaRef>,
+    rep: Report,
+    progress: &'a Progress,
+    /// Segmente seit der letzten Abbruch-Prüfung
+    since_check: usize,
+}
+
+impl Build<'_> {
+    fn media(&mut self, path: PathBuf) -> Option<MediaRef> {
+        if let Some(m) = self.used.get(&path) {
+            return m.clone();
+        }
+        let m = if !self.exists.get(&path).copied().unwrap_or(false) {
+            self.rep.missing.push(path.clone());
+            None
+        } else {
+            match self.probed.remove(&path) {
+                Some(Ok(m)) => {
+                    self.media.push(m.clone());
+                    Some(m)
+                }
+                _ => {
+                    self.rep.failed.push(path.clone());
+                    None
+                }
+            }
+        };
+        self.used.insert(path, m.clone());
+        m
+    }
+
+    /// Spuren eines Entwurfs (Ebene nach CapCut-`render_index`); `depth` > 0: verschachtelt.
+    fn tracks(&mut self, d: &Value, dir: &Path, depth: usize) -> Result<Vec<(Track, i64)>> {
+        let by_id = materials(d);
+        let tracks: Vec<&Value> = d.get("tracks").and_then(|t| t.as_array()).into_iter().flatten().collect();
+        let mut out = Vec::new();
+        let mut nested: Vec<(&Value, &Value, i64)> = Vec::new();
+        let mut first_video = depth == 0;
+        let (w, h) = (self.w, self.h);
+        for (ti, t) in tracks.iter().enumerate() {
+            if depth == 0 {
+                self.progress.check()?;
+                self.progress.set(Step::Timeline, ti, tracks.len(), &format!("{} / {}", ti + 1, tracks.len()));
+            }
+            let ty = t.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let kind = match ty {
+                "video" | "sticker" => TrackKind::Video,
+                "audio" => TrackKind::Audio,
+                "text" => TrackKind::Text,
+                "effect" => {
+                    for _ in segments(t) {
+                        self.rep.skip("Effekte");
+                    }
+                    continue;
+                }
+                "filter" | "adjust" => {
+                    for _ in segments(t) {
+                        self.rep.skip("Filter");
+                    }
+                    continue;
+                }
+                _ => continue,
+            };
+            let mut track = Track::new(kind);
+            if kind == TrackKind::Video && ty == "video" && first_video {
+                track.main = true;
+                first_video = false;
+                // „Originalton der Hauptspur aus“
+                track.muted = d.pointer("/config/video_mute").and_then(|v| v.as_bool()).unwrap_or(false);
+            }
+            // Stummschalter am Spurkopf (Bit 0); CapCut setzt dabei die Clips auf 0 und merkt sich
+            // die Lautstärke in `last_nonzero_volume` – in Cutline bleibt die Spur stumm (ein Klick hebt es auf)
+            track.muted |= t.get("attribute").and_then(|v| v.as_i64()).unwrap_or(0) & 1 == 1;
+            for s in segments(t) {
+                self.since_check += 1;
+                if self.since_check >= 256 {
+                    self.since_check = 0;
+                    self.progress.check()?;
+                }
+                let mid = s.get("material_id").and_then(|v| v.as_str()).unwrap_or("");
+                let Some(&(mkind, m)) = by_id.get(mid) else {
+                    continue;
+                };
+                let target = s.get("target_timerange");
+                let source = s.get("source_timerange");
+                // kaputte Entwürfe: nichts vor 0
+                let start = Time(us(target, "start").max(0));
+                let duration = Time(us(target, "duration").max(1));
+                let mut clip = match mkind {
+                    "videos" | "audios" => {
+                        let raw = m.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                        if raw.is_empty() {
+                            self.rep.skip(if mkind == "videos" {
+                                "Online-Material"
+                            } else {
+                                "Online-Musik / Sprachausgabe"
+                            });
+                            continue;
+                        }
+                        let Some(media) = self.media(resolve(raw, dir)) else {
+                            continue;
+                        };
+                        let kind = match media.kind {
+                            MediaKind::Image => MediaKind::Image,
+                            _ if mkind == "audios" => MediaKind::Audio,
+                            k => k,
+                        };
+                        let mut c = Clip::new(
+                            ClipContent::Media {
+                                media: media.id,
+                                kind,
+                            },
+                            start,
+                            duration,
+                        );
+                        c.source_in = Time(us(source, "start").max(0));
+                        self.rep.clips += 1;
+                        c
+                    }
+                    "texts" => {
+                        let st = self.text_style(m, dir, w, h);
+                        self.rep.texts += 1;
+                        Clip::new(ClipContent::Text(st), start, duration)
+                    }
+                    "stickers" => {
+                        self.rep.skip("Sticker");
+                        continue;
+                    }
+                    "drafts" => {
+                        match sub_draft(m).filter(|_| depth < MAX_DEPTH) {
+                            Some(sub) => nested.push((sub, s, layer_of(t, kind))),
+                            None => self.rep.skip("Zusammengesetzte Clips"),
+                        }
+                        continue;
+                    }
+                    other => {
+                        self.rep.skip(match other {
+                            "speeds" | "canvases" | "sound_channel_mappings" => continue,
+                            _ => "Sonstiges",
+                        });
+                        continue;
+                    }
+                };
+                // gemeinsame Eigenschaften
+                let speed = s.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                clip.speed = speed.clamp(0.1, 10.0) as f32;
+                let mut vol = s.get("volume").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                if vol <= 0.0001 && track.muted {
+                    vol = s.get("last_nonzero_volume").and_then(|v| v.as_f64()).unwrap_or(vol);
+                }
+                // Ton vom Video getrennt: er liegt als eigener Ton-Clip vor (wie „Ton extrahieren“)
+                if mkind == "videos" && m.get("has_sound_separated").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    vol = 0.0;
+                }
+                clip.volume_db = if vol <= 0.0001 {
+                    -60.0
+                } else {
+                    (20.0 * vol.log10()) as f32
+                };
+                clip.disabled = !s.get("visible").and_then(|v| v.as_bool()).unwrap_or(true);
+                clip.fx.reverse = s.get("reverse").and_then(|v| v.as_bool()).unwrap_or(false);
+                if let Some(c) = s.get("clip").filter(|c| !c.is_null()) {
+                    clip.opacity = f(c, &["alpha"]).unwrap_or(1.0) as f32;
+                    clip.transform.scale = f(c, &["scale", "x"]).unwrap_or(1.0) as f32;
+                    clip.transform.rotation_deg = f(c, &["rotation"]).unwrap_or(0.0) as f32;
+                    // CapCut: Anteil der halben Bildbreite/-höhe, y nach oben
+                    clip.transform.x =
+                        (f(c, &["transform", "x"]).unwrap_or(0.0) * w as f64 / 2.0) as f32;
+                    clip.transform.y =
+                        (-f(c, &["transform", "y"]).unwrap_or(0.0) * h as f64 / 2.0) as f32;
+                    clip.fx.flip_h = c
+                        .pointer("/flip/horizontal")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    clip.fx.flip_v = c
+                        .pointer("/flip/vertical")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                }
+                // Ein-/Ausblend-Animationen: CapCuts eigene Animationen gibt es hier nicht, deshalb
+                // wird jede als weiche Blende mit gleicher Dauer übernommen
+                for r in s.get("extra_material_refs").and_then(|v| v.as_array()).into_iter().flatten() {
+                    let Some(&(k, am)) = r.as_str().and_then(|id| by_id.get(id)) else { continue };
+                    let us_of = |key: &str| Time(am.get(key).and_then(|v| v.as_i64()).unwrap_or(0).clamp(0, duration.0));
+                    match k {
+                        // Tonspur der Datei, 1-basiert (1 = Standard); ohne Verweis die erste
+                        "audio_track_indexes" => {
+                            let n = am.get("audio_track_index").and_then(|v| v.as_i64()).unwrap_or(1);
+                            clip.audio_stream = (n > 1).then(|| (n - 1) as u32);
+                            continue;
+                        }
+                        "audio_fades" => {
+                            clip.fade_in = us_of("fade_in_duration");
+                            clip.fade_out = us_of("fade_out_duration");
+                            continue;
+                        }
+                        "material_animations" => {}
+                        _ => continue,
+                    }
+                    for a in am.get("animations").and_then(|v| v.as_array()).into_iter().flatten() {
+                        let anim = cl_core::AnimRef {
+                            id: "fade".into(),
+                            duration: Time(a.get("duration").and_then(|v| v.as_i64()).unwrap_or(500_000).clamp(100_000, duration.0.max(100_000))),
+                        };
+                        match a.get("type").and_then(|v| v.as_str()) {
+                            Some("in") => clip.anim.intro = Some(anim),
+                            Some("out") => clip.anim.outro = Some(anim),
+                            _ => continue,
+                        }
+                        self.rep.skip("Animation (als Blende übernommen)");
+                    }
+                }
+                // Bei Text ist die Größe schon in der Schrift enthalten
+                if matches!(clip.content, ClipContent::Text(_)) {
+                    if let ClipContent::Text(st) = &mut clip.content {
+                        st.size = (st.size * clip.transform.scale).clamp(8.0, 600.0);
+                    }
+                    clip.transform.scale = 1.0;
+                }
+                track.clips.push(clip);
+            }
+            track.clips.sort_by_key(|c| c.start);
+            out.push((track, layer_of(t, kind)));
+        }
+        // Zusammengesetzte Clips: Spuren des inneren Entwurfs an die Stelle des Clips setzen,
+        // auf dessen Ausschnitt gekürzt (Stufe für Stufe, höchstens `MAX_DEPTH` tief)
+        for (sub, s, layer) in nested {
+            let speed = s.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            if (speed - 1.0).abs() > 1e-6 {
+                self.rep.skip("Zusammengesetzte Clips mit Tempo");
+                continue;
+            }
+            let start = Time(us(s.get("target_timerange"), "start").max(0));
+            let dur = Time(us(s.get("target_timerange"), "duration").max(1));
+            let from = Time(us(s.get("source_timerange"), "start").max(0));
+            for (t, ri) in self.tracks(sub, dir, depth + 1)? {
+                let mut t = place(t, start, dur, from);
+                t.main = false;
+                if !t.clips.is_empty() {
+                    let ri = if t.kind == TrackKind::Text { ri } else { layer };
+                    out.push((t, ri));
+                }
+            }
+            self.rep.nested += 1;
+        }
+        Ok(out)
+    }
+
+    fn text_style(&mut self, m: &Value, dir: &Path, w: u32, h: u32) -> TextStyle {
+        let content = text_content(m);
+        let text = content
+            .get("text")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .or_else(|| {
+                m.get("base_content")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+            })
+            .unwrap_or_default();
+        let style0 = first_style(&content);
+        let rgb = style0
+            .pointer("/fill/content/solid/color")
+            .and_then(|c| c.as_array())
+            .map(|a| {
+                a.iter()
+                    .map(|x| (x.as_f64().unwrap_or(1.0) * 255.0).round() as u8)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| vec![255, 255, 255]);
+        let size = style0
+            .get("size")
+            .and_then(|v| v.as_f64())
+            .or_else(|| m.get("font_size").and_then(|v| v.as_f64()))
+            .unwrap_or(15.0);
+        let mut st = TextStyle {
+            text,
+            ..Default::default()
+        };
+        st.color = [
+            rgb.first().copied().unwrap_or(255),
+            rgb.get(1).copied().unwrap_or(255),
+            rgb.get(2).copied().unwrap_or(255),
+            255,
+        ];
+        // CapCut-Größe 15 entspricht etwa 72 px bei 1080p
+        // 11,5: an CapCut 9.2 nachgemessen (Projekt mit Größe 15 und 8,1 bei 1080p)
+        st.size = (size as f32 * 11.5 * h.min(w) as f32 / 1080.0).clamp(8.0, 600.0);
+        st.bold = style0
+            .get("bold")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        st.italic = style0
+            .get("italic")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        st.align = match m.get("alignment").and_then(|v| v.as_i64()) {
+            Some(0) => -1,
+            Some(2) => 1,
+            _ => 0,
+        };
+        if let Some(fp) = text_font(m, dir) {
+            if let Some(fam) = self.fonts.get(&fp).cloned().flatten() {
+                st.font_family = Some(fam);
+                if !self.rep.fonts.contains(&fp) {
+                    self.rep.fonts.push(fp);
+                }
+            }
+        }
+        if let Some(sw) = style0.pointer("/strokes/0/width").and_then(|v| v.as_f64()) {
+            let c = style0
+                .pointer("/strokes/0/content/solid/color")
+                .and_then(|c| c.as_array())
+                .map(|a| {
+                    a.iter()
+                        .map(|x| (x.as_f64().unwrap_or(0.0) * 255.0).round() as u8)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|| vec![0, 0, 0]);
+            st.outline = Some((
+                (sw * 60.0) as f32,
+                [
+                    c.first().copied().unwrap_or(0),
+                    c.get(1).copied().unwrap_or(0),
+                    c.get(2).copied().unwrap_or(0),
+                    255,
+                ],
+            ));
+        }
+        // Schatten nur, wenn er in CapCut an ist (Cutline-Standard wäre „an“)
+        st.shadow = m.get("has_shadow").and_then(|v| v.as_bool()).unwrap_or(false);
+        st
+    }
+}
+
+/// Ebene einer Spur: höchster `render_index` ihrer Segmente
+fn layer_of(t: &Value, kind: TrackKind) -> i64 {
+    segments(t)
+        .filter_map(|s| s.get("render_index").and_then(|v| v.as_i64()))
+        .max()
+        .unwrap_or(if kind == TrackKind::Text { 14000 } else { 0 })
+}
+
+/// Clips einer inneren Spur auf die Zeitleiste außen setzen: innere Zeit `from` liegt bei
+/// `start`, sichtbar ist nur `[start, start + dur)`; angeschnittene Clips werden gekürzt.
+pub fn place(mut t: Track, start: Time, dur: Time, from: Time) -> Track {
+    let end = start + dur;
+    t.clips = std::mem::take(&mut t.clips)
+        .into_iter()
+        .filter_map(|mut c| {
+            let s = c.start + start - from;
+            let e = c.end() + start - from;
+            if e <= start || s >= end {
+                return None;
+            }
+            let cut = if s < start { start - s } else { Time::ZERO };
+            c.source_in = c.source_in + Time((cut.0 as f64 * c.speed as f64).round() as i64);
+            c.start = s + cut;
+            c.duration = e.min(end) - c.start;
+            c.id = cl_core::ClipId::new();
+            Some(c)
+        })
+        .collect();
+    t
 }
 
 /// Umwandlung der JSON-Struktur (getrennt für Tests).
 pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
-    let mut rep = Report::default();
+    convert_with(d, dir, name, &Progress::default())
+}
+
+/// Wie [`convert`], in Schritten mit Fortschritt und Abbruch: Medien finden, parallel prüfen,
+/// Schriften lesen, Zeitleiste aufbauen.
+pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> Result<(Project, Report)> {
     let mut p = Project::new(name);
     let w = f(d, &["canvas_config", "width"]).unwrap_or(1920.0).max(2.0) as u32 & !1;
     let h = f(d, &["canvas_config", "height"])
@@ -181,356 +668,64 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
         p.settings.fps = fps;
     }
 
-    // Materialien nach ID
-    let mats = d.get("materials").cloned().unwrap_or_default();
-    let mut by_id: HashMap<String, (String, Value)> = HashMap::new();
-    if let Some(obj) = mats.as_object() {
-        for (kind, list) in obj {
-            if let Some(arr) = list.as_array() {
-                for m in arr {
-                    if let Some(id) = m.get("id").and_then(|v| v.as_str()) {
-                        by_id.insert(id.to_string(), (kind.clone(), m.clone()));
-                    }
-                }
-            }
-        }
+    // Medien finden
+    let (mut media, mut fonts) = (Vec::new(), Vec::new());
+    collect_files(d, dir, 0, &mut media, &mut fonts);
+    let (media, fonts) = (unique(media), unique(fonts));
+    progress.set(Step::Find, 0, media.len(), "");
+    let mut exists = HashMap::new();
+    for m in &media {
+        progress.check()?;
+        exists.insert(m.clone(), m.is_file());
+        progress.tick(&file_label(m));
     }
-    // Medien nur einmal prüfen
-    let mut media_cache: HashMap<PathBuf, Option<MediaRef>> = HashMap::new();
-    let mut probe = |path: PathBuf, rep: &mut Report, p: &mut Project| -> Option<MediaRef> {
-        media_cache
-            .entry(path.clone())
-            .or_insert_with(|| {
-                if !path.is_file() {
-                    rep.missing.push(path.clone());
-                    return None;
-                }
-                let m = cl_media::probe(&path).ok()?;
-                p.media.push(m.clone());
-                Some(m)
-            })
-            .clone()
+    // Medien prüfen (ffprobe parallel)
+    let found: Vec<PathBuf> = media.iter().filter(|m| exists[*m]).cloned().collect();
+    let probed = crate::probe_all(&found, crate::probe_workers(), progress, |p| {
+        cl_media::probe(p).map_err(|e| e.to_string())
+    })?;
+    // Schriften
+    progress.set(Step::Fonts, 0, fonts.len(), "");
+    let mut families = HashMap::new();
+    for fp in fonts {
+        progress.check()?;
+        let fam = fp
+            .is_file()
+            .then(|| std::fs::read(&fp).ok())
+            .flatten()
+            .and_then(|data| cl_fonts::inspect(&data).ok())
+            .and_then(|faces| faces.first().map(|f| f.family.clone()));
+        progress.tick(&file_label(&fp));
+        families.insert(fp, fam);
+    }
+    // Zeitleiste
+    let mut b = Build {
+        w,
+        h,
+        exists,
+        probed: found.into_iter().zip(probed).collect(),
+        fonts: families,
+        used: HashMap::new(),
+        media: Vec::new(),
+        rep: Report::default(),
+        progress,
+        since_check: 0,
     };
-
-    let tracks = d
-        .get("tracks")
-        .and_then(|t| t.as_array())
-        .cloned()
-        .unwrap_or_default();
-    // Schriftdatei → Familienname (nur einmal lesen)
-    let mut font_family: HashMap<PathBuf, Option<String>> = HashMap::new();
+    let tracks = b.tracks(d, dir, 0)?;
+    progress.check()?;
+    progress.set(Step::Timeline, 1, 1, "");
+    let mut rep = b.rep;
+    p.media = b.media;
     // CapCut stapelt nach `render_index` (Text ab 14000, Overlays 1, 2, …), nicht nach der
     // Reihenfolge der Spuren in der Datei
     let mut layer: HashMap<TrackId, i64> = HashMap::new();
-    let mut first_video = true;
-    for t in &tracks {
-        let ty = t.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        let kind = match ty {
-            "video" | "sticker" => TrackKind::Video,
-            "audio" => TrackKind::Audio,
-            "text" => TrackKind::Text,
-            "effect" => {
-                for _ in t
-                    .get("segments")
-                    .and_then(|s| s.as_array())
-                    .into_iter()
-                    .flatten()
-                {
-                    rep.skip("Effekte");
-                }
-                continue;
-            }
-            "filter" | "adjust" => {
-                for _ in t
-                    .get("segments")
-                    .and_then(|s| s.as_array())
-                    .into_iter()
-                    .flatten()
-                {
-                    rep.skip("Filter");
-                }
-                continue;
-            }
-            _ => continue,
-        };
-        let mut track = Track::new(kind);
-        if kind == TrackKind::Video && ty == "video" && first_video {
-            track.main = true;
-            first_video = false;
-            // „Originalton der Hauptspur aus“
-            track.muted = d.pointer("/config/video_mute").and_then(|v| v.as_bool()).unwrap_or(false);
-        }
-        // Stummschalter am Spurkopf (Bit 0); CapCut setzt dabei die Clips auf 0 und merkt sich
-        // die Lautstärke in `last_nonzero_volume` – in Cutline bleibt die Spur stumm (ein Klick hebt es auf)
-        track.muted |= t.get("attribute").and_then(|v| v.as_i64()).unwrap_or(0) & 1 == 1;
-        for s in t
-            .get("segments")
-            .and_then(|s| s.as_array())
-            .into_iter()
-            .flatten()
-        {
-            let mid = s.get("material_id").and_then(|v| v.as_str()).unwrap_or("");
-            let Some((mkind, m)) = by_id.get(mid) else {
-                continue;
-            };
-            let target = s.get("target_timerange");
-            let source = s.get("source_timerange");
-            // kaputte Entwürfe: nichts vor 0
-            let start = Time(us(target, "start").max(0));
-            let duration = Time(us(target, "duration").max(1));
-            let mut clip = match mkind.as_str() {
-                "videos" | "audios" => {
-                    let raw = m.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                    if raw.is_empty() {
-                        rep.skip(if mkind == "videos" {
-                            "Online-Material"
-                        } else {
-                            "Online-Musik / Sprachausgabe"
-                        });
-                        continue;
-                    }
-                    let Some(media) = probe(resolve(raw, dir), &mut rep, &mut p) else {
-                        continue;
-                    };
-                    let kind = match media.kind {
-                        MediaKind::Image => MediaKind::Image,
-                        k if mkind == "audios" => {
-                            let _ = k;
-                            MediaKind::Audio
-                        }
-                        k => k,
-                    };
-                    let mut c = Clip::new(
-                        ClipContent::Media {
-                            media: media.id,
-                            kind,
-                        },
-                        start,
-                        duration,
-                    );
-                    c.source_in = Time(us(source, "start").max(0));
-                    rep.clips += 1;
-                    c
-                }
-                "texts" => {
-                    let content: Value = m
-                        .get("content")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| serde_json::from_str(s).ok())
-                        .unwrap_or_default();
-                    let text = content
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .map(String::from)
-                        .or_else(|| {
-                            m.get("base_content")
-                                .and_then(|v| v.as_str())
-                                .map(String::from)
-                        })
-                        .unwrap_or_default();
-                    let style0 = content
-                        .get("styles")
-                        .and_then(|s| s.as_array())
-                        .and_then(|a| a.first())
-                        .cloned()
-                        .unwrap_or_default();
-                    let rgb = style0
-                        .pointer("/fill/content/solid/color")
-                        .and_then(|c| c.as_array())
-                        .map(|a| {
-                            a.iter()
-                                .map(|x| (x.as_f64().unwrap_or(1.0) * 255.0).round() as u8)
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_else(|| vec![255, 255, 255]);
-                    let size = style0
-                        .get("size")
-                        .and_then(|v| v.as_f64())
-                        .or_else(|| m.get("font_size").and_then(|v| v.as_f64()))
-                        .unwrap_or(15.0);
-                    let mut st = TextStyle {
-                        text,
-                        ..Default::default()
-                    };
-                    st.color = [
-                        rgb.first().copied().unwrap_or(255),
-                        rgb.get(1).copied().unwrap_or(255),
-                        rgb.get(2).copied().unwrap_or(255),
-                        255,
-                    ];
-                    // CapCut-Größe 15 entspricht etwa 72 px bei 1080p
-                    // 11,5: an CapCut 9.2 nachgemessen (Projekt mit Größe 15 und 8,1 bei 1080p)
-                    st.size = (size as f32 * 11.5 * h.min(w) as f32 / 1080.0).clamp(8.0, 600.0);
-                    st.bold = style0
-                        .get("bold")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    st.italic = style0
-                        .get("italic")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    st.align = match m.get("alignment").and_then(|v| v.as_i64()) {
-                        Some(0) => -1,
-                        Some(2) => 1,
-                        _ => 0,
-                    };
-                    // Schrift: eigene Schrift des Textes, sonst die des Stils (CapCut-Standard)
-                    let style_font = style0.pointer("/font/path").and_then(|v| v.as_str());
-                    let mat_font = m.get("font_path").and_then(|v| v.as_str());
-                    let is_default = |p: &str| p.contains("SystemFont");
-                    let font = match (mat_font, style_font) {
-                        (Some(a), _) if !a.is_empty() && !is_default(a) => Some(a),
-                        (_, Some(b)) if !b.is_empty() => Some(b),
-                        (Some(a), _) if !a.is_empty() => Some(a),
-                        _ => None,
-                    };
-                    if let Some(fp) = font.map(|f| resolve(f, dir)).filter(|p| p.is_file()) {
-                        let fam = font_family
-                            .entry(fp.clone())
-                            .or_insert_with(|| {
-                                std::fs::read(&fp)
-                                    .ok()
-                                    .and_then(|data| cl_fonts::inspect(&data).ok())
-                                    .and_then(|faces| faces.first().map(|f| f.family.clone()))
-                            })
-                            .clone();
-                        if let Some(fam) = fam {
-                            st.font_family = Some(fam);
-                            if !rep.fonts.contains(&fp) {
-                                rep.fonts.push(fp);
-                            }
-                        }
-                    }
-                    if let Some(sw) = style0.pointer("/strokes/0/width").and_then(|v| v.as_f64()) {
-                        let c = style0
-                            .pointer("/strokes/0/content/solid/color")
-                            .and_then(|c| c.as_array())
-                            .map(|a| {
-                                a.iter()
-                                    .map(|x| (x.as_f64().unwrap_or(0.0) * 255.0).round() as u8)
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_else(|| vec![0, 0, 0]);
-                        st.outline = Some((
-                            (sw * 60.0) as f32,
-                            [
-                                c.first().copied().unwrap_or(0),
-                                c.get(1).copied().unwrap_or(0),
-                                c.get(2).copied().unwrap_or(0),
-                                255,
-                            ],
-                        ));
-                    }
-                    // Schatten nur, wenn er in CapCut an ist (Cutline-Standard wäre „an“)
-                    st.shadow = m.get("has_shadow").and_then(|v| v.as_bool()).unwrap_or(false);
-                    rep.texts += 1;
-                    Clip::new(ClipContent::Text(st), start, duration)
-                }
-                "stickers" => {
-                    rep.skip("Sticker");
-                    continue;
-                }
-                other => {
-                    rep.skip(match other {
-                        "speeds" | "canvases" | "sound_channel_mappings" => continue,
-                        _ => "Sonstiges",
-                    });
-                    continue;
-                }
-            };
-            // gemeinsame Eigenschaften
-            let speed = s.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
-            clip.speed = speed.clamp(0.1, 10.0) as f32;
-            let mut vol = s.get("volume").and_then(|v| v.as_f64()).unwrap_or(1.0);
-            if vol <= 0.0001 && track.muted {
-                vol = s.get("last_nonzero_volume").and_then(|v| v.as_f64()).unwrap_or(vol);
-            }
-            // Ton vom Video getrennt: er liegt als eigener Ton-Clip vor (wie „Ton extrahieren“)
-            if mkind == "videos" && m.get("has_sound_separated").and_then(|v| v.as_bool()).unwrap_or(false) {
-                vol = 0.0;
-            }
-            clip.volume_db = if vol <= 0.0001 {
-                -60.0
-            } else {
-                (20.0 * vol.log10()) as f32
-            };
-            clip.disabled = !s.get("visible").and_then(|v| v.as_bool()).unwrap_or(true);
-            clip.fx.reverse = s.get("reverse").and_then(|v| v.as_bool()).unwrap_or(false);
-            if let Some(c) = s.get("clip").filter(|c| !c.is_null()) {
-                clip.opacity = f(c, &["alpha"]).unwrap_or(1.0) as f32;
-                clip.transform.scale = f(c, &["scale", "x"]).unwrap_or(1.0) as f32;
-                clip.transform.rotation_deg = f(c, &["rotation"]).unwrap_or(0.0) as f32;
-                // CapCut: Anteil der halben Bildbreite/-höhe, y nach oben
-                clip.transform.x =
-                    (f(c, &["transform", "x"]).unwrap_or(0.0) * w as f64 / 2.0) as f32;
-                clip.transform.y =
-                    (-f(c, &["transform", "y"]).unwrap_or(0.0) * h as f64 / 2.0) as f32;
-                clip.fx.flip_h = c
-                    .pointer("/flip/horizontal")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                clip.fx.flip_v = c
-                    .pointer("/flip/vertical")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-            }
-            // Ein-/Ausblend-Animationen: CapCuts eigene Animationen gibt es hier nicht, deshalb
-            // wird jede als weiche Blende mit gleicher Dauer übernommen
-            for r in s.get("extra_material_refs").and_then(|v| v.as_array()).into_iter().flatten() {
-                let Some((k, am)) = r.as_str().and_then(|id| by_id.get(id)) else { continue };
-                let us_of = |key: &str| Time(am.get(key).and_then(|v| v.as_i64()).unwrap_or(0).clamp(0, duration.0));
-                match k.as_str() {
-                    // Tonspur der Datei, 1-basiert (1 = Standard); ohne Verweis die erste
-                    "audio_track_indexes" => {
-                        let n = am.get("audio_track_index").and_then(|v| v.as_i64()).unwrap_or(1);
-                        clip.audio_stream = (n > 1).then(|| (n - 1) as u32);
-                        continue;
-                    }
-                    "audio_fades" => {
-                        clip.fade_in = us_of("fade_in_duration");
-                        clip.fade_out = us_of("fade_out_duration");
-                        continue;
-                    }
-                    "material_animations" => {}
-                    _ => continue,
-                }
-                for a in am.get("animations").and_then(|v| v.as_array()).into_iter().flatten() {
-                    let anim = cl_core::AnimRef {
-                        id: "fade".into(),
-                        duration: Time(a.get("duration").and_then(|v| v.as_i64()).unwrap_or(500_000).clamp(100_000, duration.0.max(100_000))),
-                    };
-                    match a.get("type").and_then(|v| v.as_str()) {
-                        Some("in") => clip.anim.intro = Some(anim),
-                        Some("out") => clip.anim.outro = Some(anim),
-                        _ => continue,
-                    }
-                    rep.skip("Animation (als Blende übernommen)");
-                }
-            }
-            // Bei Text ist die Größe schon in der Schrift enthalten
-            if matches!(clip.content, ClipContent::Text(_)) {
-                if let ClipContent::Text(st) = &mut clip.content {
-                    st.size = (st.size * clip.transform.scale).clamp(8.0, 600.0);
-                }
-                clip.transform.scale = 1.0;
-            }
-            track.clips.push(clip);
-        }
-        track.clips.sort_by_key(|c| c.start);
-        let ri = t
-            .get("segments")
-            .and_then(|s| s.as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|s| s.get("render_index").and_then(|v| v.as_i64()))
-            .max()
-            .unwrap_or(if kind == TrackKind::Text { 14000 } else { 0 });
-        layer.insert(track.id, ri);
-        if !track.clips.is_empty() {
-            if track.muted && matches!(kind, TrackKind::Video | TrackKind::Audio) {
+    for (t, ri) in tracks {
+        layer.insert(t.id, ri);
+        if !t.clips.is_empty() {
+            if t.muted && matches!(t.kind, TrackKind::Video | TrackKind::Audio) {
                 rep.skip("Spur stumm übernommen");
             }
-            p.timeline.tracks.push(track);
+            p.timeline.tracks.push(t);
         }
     }
     // Spuren gleicher Art ohne Überschneidung zusammenlegen (CapCut legt z. B. jede

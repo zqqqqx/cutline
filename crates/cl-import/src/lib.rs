@@ -9,6 +9,9 @@
 //! der Bericht nennt, was übersprungen wurde.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use cl_core::Project;
 
@@ -26,6 +29,10 @@ pub struct Report {
     pub missing: Vec<PathBuf>,
     /// Schriftdateien der Texte (werden in Cutline übernommen, damit die Texte gleich aussehen)
     pub fonts: Vec<PathBuf>,
+    /// Vorhandene Dateien, die sich nicht lesen ließen
+    pub failed: Vec<PathBuf>,
+    /// Aufgelöste zusammengesetzte Clips (verschachtelte Entwürfe)
+    pub nested: usize,
 }
 
 impl Report {
@@ -39,6 +46,162 @@ impl Report {
 
 pub type Result<T> = std::result::Result<T, String>;
 
+/// Fehlertext eines abgebrochenen Imports
+pub const CANCELLED: &str = "Abgebrochen";
+
+/// Schritte eines Imports in ihrer Reihenfolge. `Save` übernimmt die App (Projekt anlegen).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Step {
+    #[default]
+    Read,
+    Find,
+    Probe,
+    Fonts,
+    Timeline,
+    Save,
+}
+
+impl Step {
+    pub const ALL: [Step; 6] = [Step::Read, Step::Find, Step::Probe, Step::Fonts, Step::Timeline, Step::Save];
+}
+
+/// Stand eines laufenden Imports.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Status {
+    pub step: Step,
+    /// erledigte Einheiten des Schritts (Dateien, Spuren) von `total`
+    pub done: usize,
+    pub total: usize,
+    /// gerade bearbeitete Datei/Spur
+    pub current: String,
+}
+
+impl Status {
+    /// Fortschritt des ganzen Imports (0…1): jeder Schritt zählt gleich.
+    pub fn fraction(&self) -> f32 {
+        let i = Step::ALL.iter().position(|s| *s == self.step).unwrap_or(0) as f32;
+        let part = if self.total == 0 { 0.0 } else { self.done.min(self.total) as f32 / self.total as f32 };
+        (i + part) / Step::ALL.len() as f32
+    }
+}
+
+/// Fortschritt und Abbruch eines Imports, zwischen Import-Thread und Oberfläche geteilt.
+#[derive(Default)]
+pub struct Progress {
+    status: Mutex<Status>,
+    cancel: AtomicBool,
+    /// Oberfläche wecken (Neuzeichnen), höchstens etwa alle 30 ms
+    wake: Option<Box<dyn Fn() + Send + Sync>>,
+    last_wake: Mutex<Option<Instant>>,
+}
+
+impl Progress {
+    pub fn new(wake: impl Fn() + Send + Sync + 'static) -> Self {
+        Self { wake: Some(Box::new(wake)), ..Default::default() }
+    }
+
+    pub fn status(&self) -> Status {
+        self.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Neuer Stand; `current` leer lässt den bisherigen Namen stehen.
+    pub fn set(&self, step: Step, done: usize, total: usize, current: &str) {
+        let new_step = {
+            let mut s = self.status.lock().unwrap_or_else(|e| e.into_inner());
+            let new_step = s.step != step;
+            if new_step {
+                s.current.clear();
+            }
+            s.step = step;
+            s.done = done;
+            s.total = total;
+            if !current.is_empty() {
+                s.current = current.to_string();
+            }
+            new_step
+        };
+        // Schrittwechsel und Schrittende immer melden
+        self.wake(new_step || done >= total);
+    }
+
+    /// Eine Einheit des aktuellen Schritts erledigt.
+    pub fn tick(&self, current: &str) {
+        let last = {
+            let mut s = self.status.lock().unwrap_or_else(|e| e.into_inner());
+            s.done += 1;
+            if !current.is_empty() {
+                s.current = current.to_string();
+            }
+            s.done >= s.total
+        };
+        self.wake(last);
+    }
+
+    fn wake(&self, force: bool) {
+        let Some(w) = &self.wake else { return };
+        let mut l = self.last_wake.lock().unwrap_or_else(|e| e.into_inner());
+        if force || l.is_none_or(|t| t.elapsed() >= Duration::from_millis(30)) {
+            *l = Some(Instant::now());
+            drop(l);
+            w();
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
+
+    pub fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
+
+    /// `Err(CANCELLED)`, sobald abgebrochen wurde (zwischen zwei Einheiten aufrufen).
+    pub fn check(&self) -> Result<()> {
+        if self.cancelled() {
+            Err(CANCELLED.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Dateien parallel prüfen (ffprobe), höchstens `workers` Prozesse gleichzeitig. Ergebnis in
+/// der Reihenfolge von `paths`; abgebrochen → `Err(CANCELLED)`.
+pub fn probe_all(
+    paths: &[PathBuf],
+    workers: usize,
+    progress: &Progress,
+    probe: impl Fn(&Path) -> Result<cl_core::MediaRef> + Sync,
+) -> Result<Vec<Result<cl_core::MediaRef>>> {
+    let next = AtomicUsize::new(0);
+    let out: Vec<Mutex<Option<Result<cl_core::MediaRef>>>> = paths.iter().map(|_| Mutex::new(None)).collect();
+    progress.set(Step::Probe, 0, paths.len(), "");
+    std::thread::scope(|s| {
+        for _ in 0..workers.clamp(1, paths.len().max(1)) {
+            s.spawn(|| loop {
+                if progress.cancelled() {
+                    return;
+                }
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                let Some(p) = paths.get(i) else { return };
+                let r = probe(p);
+                *out[i].lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+                progress.tick(&p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+            });
+        }
+    });
+    progress.check()?;
+    Ok(out
+        .into_iter()
+        .map(|m| m.into_inner().unwrap_or_else(|e| e.into_inner()).unwrap_or_else(|| Err("nicht geprüft".into())))
+        .collect())
+}
+
+/// Gleichzeitige ffprobe-Prozesse beim Import
+pub fn probe_workers() -> usize {
+    std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(2, 8)
+}
+
 /// Bildrate aus einer Fremddatei; 0, negative, unendliche oder absurde Werte → `None`.
 pub(crate) fn fps_from(fps: f64) -> Option<cl_core::Rational> {
     cl_core::Rational::parse(&fps.to_string()).filter(|r| r.as_f64() <= 1000.0)
@@ -46,7 +209,12 @@ pub(crate) fn fps_from(fps: f64) -> Option<cl_core::Rational> {
 
 /// Format anhand der Datei erkennen und importieren.
 pub fn import(path: &Path) -> Result<(Project, Report)> {
-    let (mut p, rep) = import_any(path)?;
+    import_with(path, &Progress::default())
+}
+
+/// Wie [`import`], mit Fortschritt und Abbruch (für den Hintergrund-Thread).
+pub fn import_with(path: &Path, progress: &Progress) -> Result<(Project, Report)> {
+    let (mut p, rep) = import_any(path, progress)?;
     keep_gaps(&mut p);
     Ok((p, rep))
 }
@@ -62,7 +230,7 @@ fn keep_gaps(p: &mut Project) {
     }
 }
 
-fn import_any(path: &Path) -> Result<(Project, Report)> {
+fn import_any(path: &Path, progress: &Progress) -> Result<(Project, Report)> {
     let name = path
         .extension()
         .and_then(|e| e.to_str())
@@ -73,11 +241,11 @@ fn import_any(path: &Path) -> Result<(Project, Report)> {
             .file_name()
             .is_some_and(|n| n == "draft_content.json" || n == "draft_info.json")
     {
-        return capcut::import(path);
+        return capcut::import_with(path, progress);
     }
     match name.as_str() {
-        "fcpxml" | "xml" => fcpxml::import(path),
-        "json" => capcut::import(path),
+        "fcpxml" | "xml" => fcpxml::import_with(path, progress),
+        "json" => capcut::import_with(path, progress),
         _ => Err("Unbekanntes Projektformat".into()),
     }
 }

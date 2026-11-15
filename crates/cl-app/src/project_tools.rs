@@ -2,7 +2,7 @@
 //! verknüpfen (Ordner durchsuchen) und Projekt archivieren (Projekt + Medien + Schriften).
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use cl_core::{EditOp, Project};
 use eframe::egui::{self, RichText};
@@ -161,14 +161,13 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
 impl App {
     /// Jeden Frame: Sicherung fällig? Dialoge zeichnen.
     pub fn project_tools(&mut self, ctx: &egui::Context) {
+        let _s = crate::app::section("Projekt-Werkzeuge");
         // Automatische Sicherung (nur bei gespeicherten Projekten mit Änderungen seit der letzten)
         if let Some(path) = self.project_path.clone() {
             let every = Duration::from_secs(self.settings.backup_minutes.max(1) as u64 * 60);
             let due = self.last_backup.is_none_or(|t| t.elapsed() >= every);
             if due && self.revision != self.backup_revision {
-                let _ = write_backup(&path, &self.project.to_json(), self.settings.backup_keep);
-                self.backup_revision = self.revision;
-                self.last_backup = Some(Instant::now());
+                self.backup_now(&path);
             }
         }
         if let Some(rx) = &self.archive {
@@ -227,13 +226,7 @@ impl App {
                 return;
             };
             if ui.add(theme::secondary(format!("{}  Jetzt sichern", icon::FLOPPY_DISK))).clicked() {
-                match write_backup(&path, &self.project.to_json(), self.settings.backup_keep) {
-                    Ok(_) => {
-                        self.backup_revision = self.revision;
-                        self.last_backup = Some(Instant::now());
-                    }
-                    Err(e) => self.toast_err(e.to_string()),
-                }
+                self.backup_now(&path);
             }
             ui.add_space(4.0);
             let list = list_backups(&path);
@@ -258,22 +251,9 @@ impl App {
         if !open {
             self.backups_open = false;
         }
+        // Lesen im Hintergrund; übernommen (mit Sicherung des aktuellen Stands) in `poll_load`
         if let Some(p) = restore {
-            match std::fs::read_to_string(&p)
-                .map_err(|e| e.to_string())
-                .and_then(|s| Project::from_json(&s).map_err(|e| e.to_string()))
-            {
-                Ok(proj) => {
-                    // aktuellen Stand vorher sichern, dann ersetzen (Pfad bleibt)
-                    if let Some(path) = &self.project_path {
-                        let _ = write_backup(path, &self.project.to_json(), self.settings.backup_keep);
-                    }
-                    self.set_doc(proj);
-                    self.backups_open = false;
-                    self.toast("Sicherung wiederhergestellt");
-                }
-                Err(e) => self.toast_err(e),
-            }
+            self.start_load(&p, crate::loading::LoadMode::Restore, ctx);
         }
     }
 
@@ -285,7 +265,7 @@ impl App {
             .project
             .media
             .iter()
-            .filter(|m| !m.is_local())
+            .filter(|m| !self.presence.get(&m.path))
             .map(|m| (m.id, m.path.clone()))
             .collect();
         let mut open = true;
