@@ -2418,7 +2418,7 @@ impl App {
             }
             std::borrow::Cow::Owned(p)
         };
-        match AudioPlayer::start_synced(&proj, at) {
+        match AudioPlayer::start_synced(proj, at) {
             Ok(a) => {
                 if anchor {
                     a.anchor(Instant::now());
