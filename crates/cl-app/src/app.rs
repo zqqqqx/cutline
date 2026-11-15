@@ -523,6 +523,7 @@ impl App {
         if app.settings.auto_update && std::env::var_os("CUTLINE_NO_UPDATE").is_none() {
             app.updater.check(&cc.egui_ctx);
         }
+        app.note_started_version();
         if let Some(p) = open {
             app.open_project(&p);
         }
@@ -2627,6 +2628,7 @@ impl App {
             || self.track_rename.is_some()
             || self.lib_dialog.is_some()
             || self.preset_dialog.is_some()
+            || self.updater.view.is_some()
     }
 
     fn esc_closes(&mut self, ctx: &egui::Context) -> bool {
@@ -3113,6 +3115,7 @@ impl eframe::App for App {
                 .frame(egui::Frame::default().fill(theme::BG_APP()))
                 .show(ctx, |ui| self.home_page(ui));
             self.settings_window(ctx);
+            self.update_dialog(ctx);
             if !self.settings_open {
                 self.esc_closes(ctx);
             }
@@ -3234,6 +3237,7 @@ impl eframe::App for App {
         self.layout_editor(ctx);
         self.voiceover_window(ctx);
         self.settings_window(ctx);
+        self.update_dialog(ctx);
         // nur der offene Dialog startet Exporte und braucht die Schriften
         let fonts_owned = if self.export.is_open() { self.font_files() } else { HashMap::new() };
         // Titelbild: der Clip der Hauptspur am Playhead (sonst irgendein sichtbares Bild)

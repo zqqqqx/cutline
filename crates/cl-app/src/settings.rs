@@ -59,6 +59,8 @@ pub struct AppSettings {
     pub auto_update: bool,
     /// Vom Benutzer übersprungene Version
     pub skipped_version: Option<String>,
+    /// Zuletzt gestartete Version (für „Was ist neu“ nach einem Update)
+    pub last_version: Option<String>,
     /// Plugin-ID → aktiv (überschreibt `default_enabled` des Manifests)
     pub plugin_states: std::collections::BTreeMap<String, bool>,
     /// Pakete, deren Einträge in den Tabs nicht erscheinen (bleiben eingeschaltet)
@@ -135,6 +137,7 @@ impl Default for AppSettings {
             recent: Vec::new(),
             auto_update: true,
             skipped_version: None,
+            last_version: None,
             plugin_states: Default::default(),
             hidden_packs: Vec::new(),
             import_capcut: true,
@@ -1036,10 +1039,15 @@ impl App {
             Section::About => {
                 ui.horizontal(|ui| theme::wordmark(ui, 34.0));
                 ui.add_space(8.0);
-                ui.label(crate::tr(format!(
-                    "Version {} · MPL-2.0",
-                    env!("CARGO_PKG_VERSION")
-                )));
+                ui.horizontal(|ui| {
+                    ui.label(crate::tr(format!(
+                        "Version {} · MPL-2.0",
+                        env!("CARGO_PKG_VERSION")
+                    )));
+                    if ui.add(theme::ghost(format!("{}  Was ist neu", icon::SPARKLE))).clicked() {
+                        self.updater.view = Some(crate::update::View::News(crate::update::embedded_notes()));
+                    }
+                });
                 ui.label(RichText::new(crate::tr("Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner.")).color(theme::TEXT_DIM()));
                 ui.add_space(8.0);
                 let (e, f, t) = (

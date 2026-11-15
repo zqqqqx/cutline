@@ -18,6 +18,7 @@
   <a href="https://github.com/zqqqqx/cutline/releases/latest"><b>Download for Windows</b></a> ·
   <a href="https://github.com/zqqqqx/cutline/releases/latest"><b>Linux</b></a> ·
   <a href="#build-from-source">Build from source</a> ·
+  <a href="CHANGELOG.md">What's new</a> ·
   <a href="docs/ROADMAP.md">Roadmap</a>
 </p>
 
@@ -184,6 +185,8 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the crates, the preview a
 ## Contributing
 
 Issues and pull requests are welcome. Run `cargo test --workspace` and `cargo clippy --workspace` before you send a change. To add translations, edit `crates/cl-i18n/locales/ui.en.tsv`.
+
+Every change that users notice gets a line under `## Unreleased` in [`CHANGELOG.md`](CHANGELOG.md), in English and German, written for users rather than developers. The release notes on GitHub and the "What's new" view in Cutline are taken from that file.
 
 ## License
 
