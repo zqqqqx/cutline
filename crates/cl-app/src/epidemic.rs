@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
-use cl_epidemic::{AuthMode, Client, Config, Named, Query, Track};
+use cl_epidemic::{AuthMode, Client, Config, Error, Named, Query, Track};
 use eframe::egui::{self, vec2, RichText};
 
 use crate::app::{App, DragAsset};
@@ -28,23 +28,23 @@ enum Msg {
     Tracks {
         liked: bool,
         append: bool,
-        res: Result<Vec<Track>, String>,
+        res: Result<Vec<Track>, Error>,
     },
     Filters(Vec<Named>, Vec<Named>),
-    User(Result<String, String>),
+    User(Result<String, Error>),
     Preview {
         key: String,
-        res: Result<cl_core::MediaRef, String>,
+        res: Result<cl_core::MediaRef, Error>,
     },
     Downloaded {
         track: Track,
-        res: Result<PathBuf, String>,
+        res: Result<PathBuf, Error>,
         beats: Vec<f64>,
         /// wirklich geladen (nicht aus dem Vorrat)
         fresh: bool,
     },
-    LoggedIn(Result<cl_epidemic::Tokens, String>),
-    Reported(Result<usize, String>),
+    LoggedIn(Result<cl_epidemic::Tokens, Error>),
+    Reported(Result<usize, Error>),
     /// Aktualisierte Tokens nach einem Refresh im Hintergrund
     Tokens(Option<cl_epidemic::Tokens>),
 }
@@ -65,6 +65,8 @@ pub struct EsState {
     /// Titel, die schon im Vorrat liegen (Dateinamen ohne Endung)
     have: HashSet<String>,
     pub error: Option<String>,
+    /// Nach 429: bis dahin keine Suche/Nachladen (Vorhören und Vorrat laufen weiter)
+    limited_until: Option<std::time::Instant>,
     pub login_running: bool,
     loaded: bool,
     tx: Sender<Msg>,
@@ -112,6 +114,7 @@ impl Default for EsState {
             loading_track: None,
             have: stored_ids(&es_store_dir()),
             error: None,
+            limited_until: None,
             login_running: false,
             loaded: false,
             tx,
@@ -163,7 +166,23 @@ impl EsState {
         });
     }
 
+    /// Sekunden bis wieder Anfragen für Suche/Liste erlaubt sind (nach 429).
+    fn limit_left(&self) -> Option<u64> {
+        limit_remaining(self.limited_until, std::time::Instant::now())
+    }
+
+    /// Steht ein Limit an, meldet es das (statt anzufragen) und `true`.
+    fn blocked_by_limit(&mut self) -> bool {
+        let Some(n) = self.limit_left() else { return false };
+        self.busy = false;
+        self.error = Some(Error::RateLimited(Some(n)).to_string());
+        true
+    }
+
     pub fn search(&mut self, ctx: &egui::Context, append: bool) {
+        if self.blocked_by_limit() {
+            return;
+        }
         if !append {
             self.query.offset = 0;
         }
@@ -178,6 +197,9 @@ impl EsState {
     }
 
     fn load_liked(&mut self, ctx: &egui::Context) {
+        if self.blocked_by_limit() {
+            return;
+        }
         self.busy = true;
         self.spawn(ctx, |c| Msg::Tracks {
             liked: true,
@@ -245,7 +267,11 @@ impl App {
                         Ok(t) if liked => self.es.liked = t,
                         Ok(t) if append => self.es.results.extend(t),
                         Ok(t) => self.es.results = t,
-                        Err(e) => self.es.error = Some(e),
+                        Err(e) => {
+                            if !self.es_note(&e) {
+                                self.es.error = Some(e.to_string());
+                            }
+                        }
                     }
                 }
                 Msg::Filters(m, g) => {
@@ -260,7 +286,9 @@ impl App {
                     }
                     Err(e) => {
                         self.es.loading_track = None;
-                        self.toast_err(e);
+                        if !self.es_note(&e) {
+                            self.toast_err(e.to_string());
+                        }
                     }
                 },
                 Msg::Downloaded { track, res, beats, fresh } => {
@@ -289,7 +317,11 @@ impl App {
                                 self.toast(format!("„{}“ eingefügt", track.title));
                             }
                         }
-                        Err(e) => self.toast_err(e),
+                        Err(e) => {
+                            if !self.es_note(&e) {
+                                self.toast_err(e.to_string());
+                            }
+                        }
                     }
                 }
                 Msg::LoggedIn(r) => {
@@ -301,7 +333,7 @@ impl App {
                             self.toast("Mit Epidemic Sound verbunden");
                             self.es.first_load(ctx);
                         }
-                        Err(e) => self.toast_err(e),
+                        Err(e) => self.toast_err(e.to_string()),
                     }
                 }
                 Msg::Reported(r) => {
@@ -314,6 +346,28 @@ impl App {
                     self.es.save();
                 }
             }
+        }
+    }
+
+    /// Fehler einer Hintergrundaufgabe auswerten. `true` = schon gemeldet (Anmeldung abgelaufen).
+    /// Abgelaufene Anmeldung: Tokens verwerfen, Zustand „nicht verbunden“, genau eine Meldung.
+    /// Limit (429): merken, bis wann keine Suche/Nachladen abgeschickt wird.
+    fn es_note(&mut self, e: &Error) -> bool {
+        match e {
+            Error::LoginExpired if self.es.cfg.mode == AuthMode::Connect => {
+                // mehrere gleichzeitige Anfragen scheitern zusammen: nur die erste meldet
+                if self.es.cfg.tokens.take().is_some() {
+                    self.es.busy = false;
+                    self.es.reset();
+                    self.toast_err(e.to_string());
+                }
+                true
+            }
+            Error::RateLimited(s) => {
+                self.es.limited_until = Some(std::time::Instant::now() + cl_epidemic::limit_wait(*s));
+                false
+            }
+            _ => false,
         }
     }
 
@@ -552,7 +606,7 @@ impl App {
                     self.es.spawn(ctx, move |c| Msg::Preview {
                         key: k,
                         res: c.stream_url(&id).and_then(|u| {
-                            cl_media::probe(std::path::Path::new(&u)).map_err(|e| e.to_string())
+                            cl_media::probe(std::path::Path::new(&u)).map_err(|e| e.to_string().into())
                         }),
                     });
                 }
@@ -717,7 +771,7 @@ impl App {
                                 ctx.request_repaint();
                             });
                         }
-                        Err(e) => self.toast_err(e),
+                        Err(e) => self.toast_err(e.to_string()),
                     }
                 }
             }
@@ -799,10 +853,10 @@ fn fetch_track(
     dest: &Path,
     store: &Path,
     known: Option<&Path>,
-    download: impl FnOnce(&Path) -> Result<(), String>,
-) -> Result<bool, String> {
-    let io = |e: std::io::Error| e.to_string();
-    let seed = |from: &Path| -> Result<(), String> {
+    download: impl FnOnce(&Path) -> Result<(), Error>,
+) -> Result<bool, Error> {
+    let io = |e: std::io::Error| Error::from(e.to_string());
+    let seed = |from: &Path| -> Result<(), Error> {
         if let Some(d) = store.parent() {
             std::fs::create_dir_all(d).map_err(io)?;
         }
@@ -834,6 +888,15 @@ fn fetch_track(
     Ok(fresh)
 }
 
+/// Verbleibende Sekunden (aufgerundet) bis `until`; `None` = kein Limit (mehr).
+fn limit_remaining(until: Option<std::time::Instant>, now: std::time::Instant) -> Option<u64> {
+    let left = until?.checked_duration_since(now)?;
+    if left.is_zero() {
+        return None;
+    }
+    Some(left.as_secs() + u64::from(left.subsec_nanos() > 0))
+}
+
 /// Schläge eines Titels: einmal geholt und neben der Vorratsdatei gemerkt (leere Antworten nicht).
 fn cached_beats(store: &Path, fetch: impl FnOnce() -> Vec<f64>) -> Vec<f64> {
     let f = store.with_extension("beats.json");
@@ -863,7 +926,7 @@ mod store_tests {
         let dl = |p: &Path| {
             n.set(n.get() + 1);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(p, b"mp3").map_err(|e| e.to_string())
+            std::fs::write(p, b"mp3").map_err(|e| Error::from(e.to_string()))
         };
         // erstes Projekt: wird geladen
         let a = t.path().join("A-media/x.mp3");
@@ -886,6 +949,17 @@ mod store_tests {
         let d = t.path().join("D-media/z.mp3");
         assert!(fetch_track(&d, &store3, None, |_| Err("offline".into())).is_err());
         assert!(!store3.exists() && !d.exists());
+    }
+
+    #[test]
+    fn a_rate_limit_blocks_until_it_has_passed() {
+        let t0 = std::time::Instant::now();
+        let s = std::time::Duration::from_secs;
+        assert_eq!(limit_remaining(None, t0), None);
+        assert_eq!(limit_remaining(Some(t0 + s(10)), t0), Some(10));
+        assert_eq!(limit_remaining(Some(t0 + s(10)), t0 + s(4) + std::time::Duration::from_millis(1)), Some(6));
+        assert_eq!(limit_remaining(Some(t0 + s(10)), t0 + s(10)), None);
+        assert_eq!(limit_remaining(Some(t0 + s(10)), t0 + s(11)), None);
     }
 
     #[test]

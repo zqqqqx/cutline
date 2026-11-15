@@ -188,7 +188,7 @@ impl Updater {
             let r = match r {
                 Ok(Some(rel)) => UpdateState::Available(Box::new(rel)),
                 Ok(None) => UpdateState::UpToDate,
-                Err(e) => UpdateState::Error(e, None),
+                Err(e) => UpdateState::Error(crate::applog::warned("update", cl_update::friendly(&e)), None),
             };
             log::info!(target: "update", "Suche: {}", match &r { UpdateState::Available(rel) => format!("Version {} verfügbar", rel.version), UpdateState::Error(e, _) => format!("Fehler {e}"), _ => "aktuell".into() });
             *state.lock().unwrap() = r;
@@ -212,7 +212,7 @@ impl Updater {
                 &tmp,
                 |done, total| {
                     *st.lock().unwrap() = UpdateState::Downloading(boxed.clone(), done, total);
-                    c2.request_repaint();
+                    c2.request_repaint_after(std::time::Duration::from_millis(100));
                 },
                 &cancel,
             )
@@ -226,7 +226,7 @@ impl Updater {
                 Ok(_) => UpdateState::Installed(rel.version),
                 // Abbrechen führt zurück zum Angebot
                 Err(_) if cancel.load(Ordering::Relaxed) => UpdateState::Available(Box::new(rel)),
-                Err(e) => UpdateState::Error(e, Some(Box::new(rel))),
+                Err(e) => UpdateState::Error(cl_update::friendly(&e), Some(Box::new(rel))),
             };
             ctx.request_repaint();
         });

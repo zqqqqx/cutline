@@ -1757,3 +1757,13 @@ Cutline wurde beim letzten Mal unerwartet beendet	Cutline quit unexpectedly last
 Textdatei	Text file
 Tonspur der Datei	Audio track of the file
 Spur stumm übernommen	Track imported muted
+Anmeldung abgelaufen – bitte neu verbinden	Sign-in expired – please reconnect
+Limit erreicht, in {} s wieder möglich	Limit reached, available again in {} s
+Limit erreicht, bitte später erneut versuchen	Limit reached, please try again later
+Schlüssel ungültig	Key invalid
+Keine Verbindung	No connection
+Server nicht erreichbar	Server unreachable
+Datei beschädigt (Prüfsumme)	File damaged (checksum)
+Nicht genug Speicherplatz	Not enough disk space
+Nicht gefunden	Not found
+Unerwarteter Fehler	Unexpected error

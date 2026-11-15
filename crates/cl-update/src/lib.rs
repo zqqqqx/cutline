@@ -21,6 +21,29 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+/// Kurze, verständliche Meldung zu einem rohen Fehlertext (Netzbibliothek, Dateisystem, Prüfung).
+/// Der Rohtext gehört ins Protokoll, nicht in die Oberfläche; „Abgebrochen“ bleibt unverändert.
+pub fn friendly(raw: &str) -> String {
+    let l = raw.to_lowercase();
+    let has = |k: &[&str]| k.iter().any(|k| l.contains(k));
+    let m = if l == "abgebrochen" {
+        raw
+    } else if has(&["no space", "speicherplatz", "os error 112", "os error 28", "disk full"]) {
+        "Nicht genug Speicherplatz"
+    } else if has(&["404", "not found", "gefunden"]) {
+        "Nicht gefunden"
+    } else if has(&["prüfsumme", "beschädigt", "unvollständig", "zu groß", "ist leer", "unsicher"]) {
+        "Datei beschädigt (Prüfsumme)"
+    } else if has(&["dns", "connection", "keine verbindung", "timed out", "timeout", "network", "tls", "os error 100", "os error 110"]) {
+        "Keine Verbindung"
+    } else if has(&["antwortet mit", "status", "nicht lesbar", "unlesbar"]) {
+        "Server nicht erreichbar"
+    } else {
+        "Unerwarteter Fehler"
+    };
+    m.to_string()
+}
+
 /// GitHub-Repository mit den Releases.
 pub const REPO: &str = "zqqqqx/cutline";
 
@@ -451,6 +474,20 @@ pub fn cleanup_old(dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn raw_errors_become_short_messages() {
+        let f = super::friendly;
+        assert_eq!(f("Keine Verbindung zu GitHub (https://x/a.zip: Dns Failed: failed to lookup)"), "Keine Verbindung");
+        assert_eq!(f("https://x/p.zip: Connection Failed: refused"), "Keine Verbindung");
+        assert_eq!(f("GitHub antwortet mit 503"), "Server nicht erreichbar");
+        assert_eq!(f("https://x/p.zip: Prüfsumme stimmt nicht"), "Datei beschädigt (Prüfsumme)");
+        assert_eq!(f("Prüfsumme stimmt nicht (erwartet ab…, erhalten cd…)"), "Datei beschädigt (Prüfsumme)");
+        assert_eq!(f("Es ist nicht genug Speicherplatz vorhanden. (os error 112)"), "Nicht genug Speicherplatz");
+        assert_eq!(f("GitHub antwortet mit 404"), "Nicht gefunden");
+        assert_eq!(f("Abgebrochen"), "Abgebrochen");
+        assert_eq!(f("irgendwas"), "Unerwarteter Fehler");
+    }
+
     use super::*;
 
     #[test]

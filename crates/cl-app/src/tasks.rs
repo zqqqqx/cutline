@@ -130,7 +130,10 @@ impl Tasks {
                 let c2 = ctx.clone();
                 let report = move |v: f32| {
                     p.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
-                    c2.request_repaint();
+                    // Fortschritt ändert sich langsam: höchstens ~10 Bilder/s
+                    if let Some(gap) = crate::widgets::line_repaint_gap(false, true) {
+                        c2.request_repaint_after(gap);
+                    }
                 };
                 let done = f(&report, &cancel);
                 let _ = tx.send((id, done));
