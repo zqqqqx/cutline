@@ -736,6 +736,9 @@ impl EditOp {
                 Ok(OpOutput::None)
             }
             EditOp::SetSettings { settings } => {
+                if !settings.valid() {
+                    return Err(CoreError::InvalidValue);
+                }
                 let magnet_on = settings.main_track_magnet && !p.settings.main_track_magnet;
                 p.settings = settings;
                 if magnet_on {

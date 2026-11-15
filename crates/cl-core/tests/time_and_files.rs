@@ -258,3 +258,21 @@ fn only_local_files_count_as_media() {
     m.path = std::env::current_exe().unwrap();
     assert!(m.is_local());
 }
+
+/// Fehler: SetSettings nahm Breite 0 oder Bildrate 0 an (apply_ops, Projektdatei) – der Export scheiterte.
+#[test]
+fn invalid_settings_are_rejected_and_repaired_on_load() {
+    let mut d = Document::new(Project::new("T"));
+    let mut s = d.project().settings.clone();
+    s.width = 0;
+    assert!(d.apply(EditOp::SetSettings { settings: s.clone() }, OpSource::Ui).is_err());
+    s.width = 1280;
+    s.fps = Rational::new(0, 1);
+    assert!(d.apply(EditOp::SetSettings { settings: s.clone() }, OpSource::Ui).is_err());
+    let mut p = Project::new("T");
+    p.settings.width = 0;
+    p.settings.fps = Rational::new(0, 1);
+    let back = Project::from_json(&p.to_json()).unwrap();
+    assert!(back.settings.valid());
+    assert_eq!(back.settings.height, 1080, "gültige Werte bleiben");
+}

@@ -96,7 +96,17 @@ impl Project {
     }
 
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(s)
+        let mut p: Self = serde_json::from_str(s)?;
+        // kaputte Werte (Hand-Bearbeitung, fremde Werkzeuge) auf gültige bringen; gültige bleiben
+        if !p.settings.valid() {
+            let s = &mut p.settings;
+            s.width = s.width.clamp(16, 16384);
+            s.height = s.height.clamp(16, 16384);
+            if !(s.fps.as_f64() > 0.0 && s.fps.as_f64() <= 240.0) {
+                s.fps = Rational::new(30, 1);
+            }
+        }
+        Ok(p)
     }
 }
 
@@ -174,6 +184,12 @@ impl Default for ProjectSettings {
 }
 
 impl ProjectSettings {
+    /// Werte, mit denen Vorschau und Export arbeiten können: Größe 16…16384, Bildrate über 0 bis 240.
+    pub fn valid(&self) -> bool {
+        let f = self.fps.as_f64();
+        (16..=16384).contains(&self.width) && (16..=16384).contains(&self.height) && f > 0.0 && f <= 240.0
+    }
+
     /// Setzt ein Seitenverhältnis und hält die kürzere Kante (1080 bleibt 1080).
     pub fn apply_aspect(&mut self, aspect: AspectPreset) {
         self.aspect = aspect;
