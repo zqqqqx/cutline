@@ -37,6 +37,7 @@ mod props;
 mod proxy;
 mod record;
 mod settings;
+mod soundbars;
 mod shorts;
 mod stock;
 mod story;

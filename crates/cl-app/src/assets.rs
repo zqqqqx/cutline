@@ -147,6 +147,27 @@ fn catalog_item(
     })
 }
 
+impl App {
+    /// Wellenformen aller Sounds aus Katalog und Bibliothek im Hintergrund bereitstellen (beim Start
+    /// und nach Paketänderungen), damit der Sounds-Tab sie beim Öffnen schon hat.
+    pub fn prewarm_sounds(&mut self) {
+        use crate::library::Kind;
+        let mut all: Vec<crate::library::Item> = cl_fx::catalog::list_all(cl_fx::catalog::Kind::Sound)
+            .into_iter()
+            .filter_map(|e| catalog_item(e, "builtin:sfx:", |id| cl_fx::sfx::sfx(id).map(|s| s.id)))
+            .collect();
+        all.extend(self.library.own_items(Kind::Sound));
+        for it in all {
+            let key = format!("sfx:{}", it.key);
+            match (it.builtin.and_then(cl_fx::sfx::sfx), &it.path) {
+                (Some(s), _) => self.sound_bars.ensure(&key, &App::sfx_path(s.id), Some(s.id)),
+                (None, Some(p)) => self.sound_bars.ensure(&key, p, None),
+                _ => {}
+            }
+        }
+    }
+}
+
 /// Obergrenze des Sound-Zwischenspeichers (Länge und Wellenform je Eintrag)
 pub const SOUND_META_CAP: usize = 400;
 
@@ -1172,17 +1193,15 @@ impl App {
         path: &std::path::Path,
         sfx: Option<&'static str>,
     ) -> (bool, bool, egui::Response) {
-        // nur sichtbare Kacheln (das Raster ruft nur sichtbare Zeilen auf)
-        if ui.is_rect_visible(r) {
-            self.request_sound_meta(key, path, sfx);
-        }
+        // Wellenform kommt aus dem gemerkten Bestand; Fehlendes rechnet der Hintergrund nach
+        self.sound_bars.ensure(key, path, sfx);
         let playing = self
             .sfx_preview
             .as_ref()
             .filter(|(k, _)| k == key)
             .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len));
         let loading = self.sound_pending.as_deref() == Some(key);
-        let meta = self.sound_meta.get(key);
+        let meta = self.sound_bars.get(key);
         let id = egui::Id::new(("sfx-tile", key));
         let hover = ui.ctx().animate_bool_with_time(id.with("h"), ui.rect_contains_pointer(r), theme::anim(0.12));
         let moving = theme::anim(1.0) > 0.0;
@@ -1192,11 +1211,12 @@ impl App {
         }
         let resp = widgets::tile(ui, id, r, name, false, |p, a| {
             let wave = Rect::from_min_max(a.min + vec2(8.0, 8.0), a.max - vec2(8.0, 16.0));
-            match meta {
-                Some((_, bars)) if !bars.is_empty() => {
-                    let n = bars.len();
+            match &meta {
+                Some(b) if !b.bars.is_empty() => {
+                    let n = b.bars.len();
                     let bw = wave.width() / n as f32;
-                    for (i, v) in bars.iter().enumerate() {
+                    for (i, v) in b.bars.iter().enumerate() {
+                        let v = *v as f32 / 255.0;
                         let x = wave.left() + (i as f32 + 0.5) * bw;
                         let at = (i as f32 + 0.5) / n as f32;
                         let mut h = (v.sqrt() * wave.height()).max(2.0);
@@ -1225,12 +1245,12 @@ impl App {
                     );
                 }
             }
-            if let Some((m, _)) = meta.filter(|_| hover < 0.99) {
+            if let Some(b) = meta.as_ref().filter(|_| hover < 0.99) {
                 // Dauer unten rechts; beim Hovern liegt dort das „+“
                 p.text(
                     a.right_bottom() - vec2(6.0, 4.0),
                     egui::Align2::RIGHT_BOTTOM,
-                    sound_len(m.duration),
+                    sound_len(Time::from_secs_f64(b.secs as f64)),
                     egui::FontId::proportional(theme::FS_HINT),
                     theme::TEXT_DIM().linear_multiply(1.0 - hover),
                 );

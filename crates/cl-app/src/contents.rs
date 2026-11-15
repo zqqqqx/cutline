@@ -193,6 +193,7 @@ impl App {
         catalog::set_hidden(self.settings.hidden_packs.clone());
         *PACK_NAMES.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.invalidate_preview();
+        self.prewarm_sounds();
     }
 
     /// Plugin-Ordner neu einlesen (nach Hinzufügen oder Entfernen).

@@ -251,6 +251,8 @@ pub struct App {
     /// Bibliotheks-Sounds: geprüftes Medium und Wellenform (40 Balken), im Hintergrund geladen
     pub sound_meta: HashMap<String, (MediaRef, Vec<f32>)>,
     pub sound_meta_req: HashSet<String>,
+    /// Wellenformen der Sound-Kacheln (auf Platte gemerkt, sofort da)
+    pub sound_bars: crate::soundbars::SoundBars,
     /// Abspielen, sobald die Daten dieses Sounds da sind
     pub sound_pending: Option<String>,
     pub thumbs: HashMap<MediaId, egui::TextureHandle>,
@@ -464,6 +466,7 @@ impl App {
             sfx_preview_len: Time::ZERO,
             sound_meta: HashMap::new(),
             sound_meta_req: HashSet::new(),
+            sound_bars: crate::soundbars::SoundBars::load(paths::data_dir().join("sound-bars.json")),
             sound_pending: None,
             thumbs: HashMap::new(),
             waves: HashMap::new(),
@@ -499,6 +502,7 @@ impl App {
             props_cache: None,
         };
         app.register_fonts(&cc.egui_ctx);
+        app.prewarm_sounds();
         cc.egui_ctx.set_zoom_factor(app.ui_scale);
         if app.settings.mcp_enabled {
             app.start_mcp();
