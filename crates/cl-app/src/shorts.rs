@@ -248,7 +248,7 @@ impl App {
                 });
             }
             self.apply(EditOp::SetMarkers { markers: ms });
-            self.toast(format!("{} Highlights als Marker gesetzt", chosen.len()));
+            self.toast(crate::theme::count_text(chosen.len(), "{} Highlight als Marker gesetzt", "{} Highlights als Marker gesetzt"));
             open = false;
         }
         if make {

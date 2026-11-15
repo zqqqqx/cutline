@@ -263,9 +263,9 @@ impl App {
                 if self.ripple_ranges(ranges, label) {
 
                     self.toast(if kind == QuickKind::Pauses {
-                        format!("{n} Pausen entfernt ({total:.1} s)")
+                        format!("{} ({total:.1} s)", crate::theme::count_text(n, "{} Pause entfernt", "{} Pausen entfernt"))
                     } else {
-                        format!("{n} Füllwörter entfernt")
+                        crate::theme::count_text(n, "{} Füllwort entfernt", "{} Füllwörter entfernt")
                     });
                 }
                 true
@@ -367,9 +367,9 @@ impl App {
                         let on: Vec<&Hit> = hits.iter().filter(|h| h.on).collect();
                         let secs: f64 = on.iter().map(|h| (h.to - h.from).as_secs_f64()).sum::<f64>().abs();
                         let sum = if kind == QuickKind::Pauses {
-                            format!("{} Pausen, {secs:.0} s kürzer", on.len())
+                            format!("{}, {secs:.0} s kürzer", crate::theme::count_text(on.len(), "{} Pause", "{} Pausen"))
                         } else {
-                            format!("{} Füllwörter, {secs:.0} s kürzer", on.len())
+                            format!("{}, {secs:.0} s kürzer", crate::theme::count_text(on.len(), "{} Füllwort", "{} Füllwörter"))
                         };
                         ui.add_space(6.0);
                         ui.label(RichText::new(crate::tr(sum)).size(theme::FS_TEXT).strong());

@@ -12,6 +12,18 @@ use crate::theme::{self, icon};
 
 const RESIZE_PX: f32 = 5.0;
 
+/// Kleinste Fläche in Punkten, auf die Hauptfenster und Dialoge (Export ~760×690,
+/// Einstellungen ~720×520) passen.
+const MIN_UI: egui::Vec2 = vec2(900.0, 720.0);
+
+/// Wirksame Oberflächengröße: die Einstellung, aber nur so groß, dass das Fenster (`base` =
+/// Größe in Punkten bei 100 %) noch `MIN_UI` Punkte bietet. Nie kleiner als 100 % bzw. die
+/// Einstellung selbst, wenn die darunter liegt.
+pub fn effective_ui_scale(setting: f32, base: egui::Vec2) -> f32 {
+    let fit = (base.x / MIN_UI.x).min(base.y / MIN_UI.y);
+    setting.min(fit.max(setting.min(1.0)))
+}
+
 pub fn load_ui_scale() -> f32 {
     if let Some(v) = std::env::var("CUTLINE_UI_SCALE")
         .ok()
@@ -191,9 +203,9 @@ impl App {
                     if self.revision == self.saved_revision && self.project_path.is_some() {
                         let when = self.last_saved.map(|t| t.elapsed().as_secs()).map(|s| {
                             if s < 60 {
-                                "gerade eben".to_string()
+                                crate::tr("gerade eben")
                             } else {
-                                format!("vor {} min", s / 60)
+                                crate::tr(format!("vor {} Min.", s / 60))
                             }
                         });
                         (
@@ -436,5 +448,23 @@ impl App {
             },
         );
         self.tour_rects.insert("menu", menu.response.rect);
+    }
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use super::*;
+
+    #[test]
+    fn ui_scale_keeps_minimum_area() {
+        // 1440×900 bei 200 %: nur so groß, dass 900×720 Punkte bleiben
+        let s = effective_ui_scale(2.0, vec2(1440.0, 900.0));
+        assert!((s - 1.25).abs() < 1e-4, "{s}");
+        assert!(1440.0 / s >= MIN_UI.x - 0.01 && 900.0 / s >= MIN_UI.y - 0.01);
+        // großes Fenster: Einstellung wirkt voll
+        assert_eq!(effective_ui_scale(2.0, vec2(3840.0, 2160.0)), 2.0);
+        // kleines Fenster: nie unter 100 % bzw. die kleinere Einstellung
+        assert_eq!(effective_ui_scale(1.5, vec2(800.0, 500.0)), 1.0);
+        assert_eq!(effective_ui_scale(0.6, vec2(800.0, 500.0)), 0.6);
     }
 }

@@ -645,11 +645,8 @@ impl App {
                     });
                 }
                 if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) {
-                    let at = if m.kind == MediaKind::Video {
-                        Time::from_secs_f64((m.duration.as_secs_f64() * 0.1).min(1.0))
-                    } else {
-                        Time::ZERO
-                    };
+                    let anim = if m.kind == MediaKind::Image { cl_media::animation(&m.path) } else { None };
+                    let at = thumb_time(m.kind, m.duration, anim.as_ref());
                     self.decoder.send(Job::Thumb {
                         media: m.id,
                         path: m.path.clone(),
@@ -1517,6 +1514,12 @@ impl App {
         }
         let sel = self.selection();
         if sel.is_empty() {
+            return;
+        }
+        let on_main: Vec<bool> = sel.iter().filter_map(|c| self.project.find_clip(*c).map(|(t, _)| t.main)).collect();
+        let s = &self.project.settings;
+        if crate::navigate::delete_ripples_all(s.main_track_magnet, s.ripple_all_tracks, &on_main) {
+            self.ripple_delete();
             return;
         }
         let first = sel
@@ -2904,6 +2907,12 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
+        // Oberflächengröße an die Fenstergröße binden: Dialoge passen immer ins Fenster
+        let zoom = ctx.zoom_factor();
+        let want = crate::chrome::effective_ui_scale(self.ui_scale, ctx.screen_rect().size() * zoom);
+        if (want - zoom).abs() > 0.005 {
+            ctx.set_zoom_factor(want);
+        }
         if perf() {
             self.perf_ui += 1;
             let el = self.perf_since.elapsed().as_secs_f64();
@@ -3071,8 +3080,9 @@ impl eframe::App for App {
             if !lay.timeline_full {
                 th = self.timeline_area(ctx, id_t, lay.timeline_top, sr, ft);
             }
-            // Vom Nutzer gezogene Breiten als Anteil merken (nur wenn das Fenster gleich blieb)
-            if !resized && sr.width() > 0.0 && sr.height() > 0.0 {
+            // Vom Nutzer gezogene Breiten als Anteil merken (nur beim Ziehen und wenn das Fenster
+            // gleich blieb: sonst überschreiben Mindestbreiten nach Zoom/Größenwechsel die Anteile)
+            if !resized && sr.width() > 0.0 && sr.height() > 0.0 && ctx.input(|i| i.pointer.primary_down()) {
                 self.layout_frac = (aw / sr.width(), r.width() / sr.width(), th / sr.height());
             }
             self.layout_screen = Some(sr);
@@ -3146,6 +3156,7 @@ impl eframe::App for App {
         self.tour_overlay(ctx);
         self.drag_ghost(ctx);
         self.draw_toasts(ctx);
+        theme::focus_ring(ctx);
         self.sync_project();
         self.autosave();
     }
@@ -3385,9 +3396,31 @@ fn needs_save(rev: u64, saved: u64, has_file: bool, p: &Project) -> bool {
     rev != saved && (has_file || !(p.media.is_empty() && p.duration() == Time::ZERO))
 }
 
+/// Zeitpunkt des Vorschaubilds eines Mediums: Video kurz nach Beginn, bewegtes Bild (APNG/GIF) in
+/// der Mitte – viele Elemente beginnen mit einem leeren Bild und blenden erst dann ein.
+fn thumb_time(kind: MediaKind, dur: Time, anim: Option<&cl_media::Animation>) -> Time {
+    match (kind, anim) {
+        (MediaKind::Video, _) => Time::from_secs_f64((dur.as_secs_f64() * 0.1).min(1.0)),
+        (_, Some(a)) => a.seek_time(Time(a.duration.0 / 2)),
+        _ => Time::ZERO,
+    }
+}
+
 #[cfg(test)]
 mod toast_tests {
     use super::*;
+
+    #[test]
+    fn animated_image_thumb_is_not_first_frame() {
+        let a = cl_media::Animation {
+            starts: (0..10).map(|i| Time::from_secs_f64(i as f64 * 0.1)).collect(),
+            duration: Time::from_secs_f64(1.0),
+            looping: false,
+        };
+        assert!(thumb_time(MediaKind::Image, Time::ZERO, Some(&a)) >= Time::from_secs_f64(0.4));
+        assert_eq!(thumb_time(MediaKind::Image, Time::ZERO, None), Time::ZERO);
+        assert_eq!(thumb_time(MediaKind::Video, Time::from_secs_f64(60.0), None), Time::from_secs_f64(1.0));
+    }
 
     #[test]
     fn replaced_document_counts_as_unsaved() {

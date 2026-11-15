@@ -554,12 +554,12 @@ impl App {
                 let fps = self.project.settings.fps;
                 ui.label(
                     RichText::new(format!(
-                        "{} · {:.2} s · {}",
-                        crate::tr(match &c.content {
-                            ClipContent::Effect(r) | ClipContent::Filter(r) => cl_fx::fx_name(&r.id),
-                            _ => c.label(&self.project),
-                        }),
-                        c.duration.as_secs_f64(),
+                        "{} · {} · {}",
+                        match &c.content {
+                            ClipContent::Effect(r) | ClipContent::Filter(r) => crate::tr(cl_fx::fx_name(&r.id)),
+                            _ => crate::contents::clip_title(&c, &self.project),
+                        },
+                        theme::secs(c.duration.as_secs_f64(), 2),
                         crate::tr(format!("ab {}", c.start.timecode(fps)))
                     ))
                     .small()
@@ -1248,7 +1248,12 @@ impl App {
     }
 
     fn speed_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
-        let mut mode = if c.fx.speed_curve.is_some() { 1 } else { 0 };
+        // Gewählte Seite „Kurve“ gilt schon vor der Wahl einer Kurve (sonst bleibt „Normal“ hell)
+        let mut mode = if c.fx.speed_curve.is_some() {
+            1
+        } else {
+            self.asset_cat.get("speed-mode").and_then(|s| s.parse().ok()).unwrap_or(0)
+        };
         if widgets::segmented(ui, &["Normal", "Kurve"], &mut mode) {
             if mode == 0 {
                 c.fx.speed_curve = None;
@@ -1292,7 +1297,7 @@ impl App {
             let new_dur = c.source_span().as_secs_f64() / s.max(0.01) as f64;
             theme::row(ui, "Neue Dauer", |ui| {
                 ui.label(
-                    RichText::new(crate::tr(format!("{:.2} s", new_dur))).color(theme::TEXT_DIM()),
+                    RichText::new(theme::secs(new_dur, 2)).color(theme::TEXT_DIM()),
                 )
             });
             if r.commit && (s - c.speed).abs() > 1e-4 {
@@ -1614,11 +1619,12 @@ impl App {
             .sum();
         theme::row(ui, "Inhalt", |ui| {
             ui.label(
-                RichText::new(crate::tr(format!(
-                    "{} Spuren · {clips} Clips · {} Medien",
-                    self.project.timeline.tracks.len(),
-                    self.project.media.len()
-                )))
+                RichText::new(format!(
+                    "{} · {} · {}",
+                    crate::tr(theme::count_text(self.project.timeline.tracks.len(), "{} Spur", "{} Spuren")),
+                    crate::tr(theme::count_text(clips, "{} Clip", "{} Clips")),
+                    crate::tr(theme::count_text(self.project.media.len(), "{} Medium", "{} Medien"))
+                ))
                 .color(theme::TEXT_DIM()),
             )
         });

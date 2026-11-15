@@ -352,6 +352,29 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
+/// Tastaturbedienung an? Tab schaltet ein, ein Mausklick wieder aus (dann kein Rahmen um den
+/// zuletzt geklickten Knopf).
+fn keyboard_nav(was: bool, tab: bool, click: bool) -> bool {
+    (was || tab) && !click
+}
+
+/// Sichtbarer Fokusrahmen (Akzent) um das Element mit Tastaturfokus, solange mit Tab bedient wird.
+pub fn focus_ring(ctx: &egui::Context) {
+    let key = egui::Id::new("keyboard-nav");
+    let (tab, click) = ctx.input(|i| (i.key_pressed(egui::Key::Tab), i.pointer.any_pressed()));
+    let on = keyboard_nav(ctx.data(|d| d.get_temp::<bool>(key)).unwrap_or(false), tab, click);
+    ctx.data_mut(|d| d.insert_temp(key, on));
+    if let Some(r) = on.then(|| ctx.memory(|m| m.focused())).flatten().and_then(|id| ctx.read_response(id)) {
+        let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("focus-ring"));
+        ctx.layer_painter(layer).rect_stroke(
+            r.rect.expand(2.0),
+            R_CTRL,
+            Stroke::new(1.5_f32, ACCENT()),
+            egui::StrokeKind::Outside,
+        );
+    }
+}
+
 /// Karte (abgerundet, schwebend). `margin` = Innenabstand.
 pub fn card(margin: i8) -> egui::Frame {
     egui::Frame::default()
@@ -724,6 +747,30 @@ pub fn text_width(ctx: &egui::Context, text: &str, font: egui::FontId) -> f32 {
     ctx.fonts(|f| f.layout_no_wrap(text.to_string(), font, Color32::WHITE).size().x)
 }
 
+/// Schräge Pfeile in Namen (↖ ↗ ↙ ↘) als Symbole der Icon-Schrift: die Grundschrift hat nicht
+/// alle, der Rückfall auf eine andere Schrift sieht dann ungleich aus.
+pub fn icon_arrows(s: &str) -> String {
+    s.replace('↖', icon::ARROW_UP_LEFT)
+        .replace('↗', icon::ARROW_UP_RIGHT)
+        .replace('↙', icon::ARROW_DOWN_LEFT)
+        .replace('↘', icon::ARROW_DOWN_RIGHT)
+}
+
+/// Dauer in Sekunden für die Oberfläche („6,40 s“ deutsch, „6.40 s“ englisch).
+pub fn secs(v: f64, decimals: usize) -> String {
+    secs_text(v, decimals, cl_i18n::ui_lang() == cl_i18n::Lang::De)
+}
+fn secs_text(v: f64, decimals: usize, comma: bool) -> String {
+    let s = format!("{v:.decimals$} s");
+    if comma { s.replace('.', ",") } else { s }
+}
+
+/// Zählertext mit richtiger Einzahl: `one`/`many` sind deutsche Vorlagen mit `{}` für die Zahl
+/// (beide stehen im Wörterbuch, `tr` übersetzt das Ergebnis).
+pub fn count_text(n: usize, one: &str, many: &str) -> String {
+    (if n == 1 { one } else { many }).replace("{}", &n.to_string())
+}
+
 /// Kürzt `text` am Ende mit „…“, bis er in `max_w` passt (`width` misst eine Zeichenkette).
 pub fn elide(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
     if width(text) <= max_w {
@@ -733,6 +780,22 @@ pub fn elide(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
     (0..chars.len())
         .rev()
         .map(|n| format!("{}…", chars[..n].iter().collect::<String>().trim_end()))
+        .find(|s| width(s) <= max_w)
+        .unwrap_or_default()
+}
+
+/// Kürzt `text` in der Mitte („C:/Users/…/Videos“), bis er in `max_w` passt.
+pub fn elide_middle(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
+    if width(text) <= max_w {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    (1..chars.len())
+        .rev()
+        .map(|n| {
+            let (a, b) = (n.div_ceil(2), n / 2);
+            format!("{}…{}", chars[..a].iter().collect::<String>(), chars[chars.len() - b..].iter().collect::<String>())
+        })
         .find(|s| width(s) <= max_w)
         .unwrap_or_default()
 }
@@ -947,6 +1010,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn diagonal_arrows_use_icon_font() {
+        let s = icon_arrows("Wischen ↖ ↗ ↙ ↘");
+        assert!(!s.contains(['↖', '↗', '↙', '↘']) && s.starts_with("Wischen "), "{s}");
+    }
+
+    #[test]
+    fn seconds_use_language_decimal_mark() {
+        assert_eq!(secs_text(6.4, 2, true), "6,40 s");
+        assert_eq!(secs_text(6.4, 1, false), "6.4 s");
+    }
+
+    #[test]
+    fn count_text_uses_singular_for_one() {
+        assert_eq!(count_text(1, "{} Spur", "{} Spuren"), "1 Spur");
+        assert_eq!(count_text(0, "{} Spur", "{} Spuren"), "0 Spuren");
+        assert_eq!(count_text(2, "{} Highlight als Marker gesetzt", "{} Highlights als Marker gesetzt"), "2 Highlights als Marker gesetzt");
+    }
+
+    #[test]
+    fn focus_ring_only_while_using_keyboard() {
+        assert!(!keyboard_nav(false, false, false));
+        assert!(keyboard_nav(false, true, false));
+        assert!(keyboard_nav(true, false, false), "bleibt an bis zum Klick");
+        assert!(!keyboard_nav(true, false, true));
+    }
+
+    #[test]
     fn elide_and_fit_stay_inside() {
         let w = |s: &str| s.chars().count() as f32 * 7.0;
         assert_eq!(elide("Daumen", 100.0, w), "Daumen");
@@ -955,6 +1045,9 @@ mod tests {
         // Leerzeichen vor „…“ entfällt
         assert_eq!(elide("ab cdef", 28.0, w), "ab…");
         assert_eq!(elide("abc", 3.0, w), "");
+        let m = elide_middle("C:/Users/zero/Videos/Urlaub", 70.0, w);
+        assert!(m.starts_with("C:/U") && m.ends_with("laub") && m.contains('…') && w(&m) <= 70.0, "{m}");
+        assert_eq!(elide_middle("kurz", 70.0, w), "kurz");
         assert_eq!(fit_size(20.0, 100.0, 150.0), 20.0);
         let s = fit_size(20.0, 200.0, 150.0);
         assert!((s - 15.0).abs() < 1e-4 && 200.0 * s / 20.0 <= 150.0 + 1e-3);

@@ -12,6 +12,12 @@ pub fn marker_color(i: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
+/// Entf auf der Magnet-Hauptspur mit „Alles mitziehen“: die Lücke schließt sich auf allen
+/// Spuren (wie Umschalt+Entf), sonst blieben Overlays und Marker versetzt stehen.
+pub fn delete_ripples_all(magnet: bool, all_tracks: bool, sel_on_main: &[bool]) -> bool {
+    magnet && all_tracks && !sel_on_main.is_empty() && sel_on_main.iter().all(|m| *m)
+}
+
 /// „1:23“ bzw. „1:02:03“ wie in YouTube-Kapiteln
 pub fn chapter_time(t: Time) -> String {
     let s = t.as_secs_f64().max(0.0) as u64;
@@ -124,7 +130,7 @@ impl App {
             color: 0,
         });
         self.apply(EditOp::SetMarkers { markers: ms });
-        // gleich benennen; bleibt der Name leer, steht „Unbenannt“ in der Liste
+        // gleich benennen; bleibt der Name leer, heißt er „Kapitel“ (Liste und Export)
         self.marker_draft = None;
         self.marker_edit = Some(id);
     }
@@ -237,7 +243,7 @@ impl App {
         }
         .is_some();
         if ok && extra > 0 {
-            self.toast(format!("{extra} Clips auf anderen Spuren mit entfernt (Alles mitziehen)"));
+            self.toast(theme::count_text(extra, "{} Clip auf anderen Spuren mit entfernt (Alles mitziehen)", "{} Clips auf anderen Spuren mit entfernt (Alles mitziehen)"));
         }
         ok
     }
@@ -465,7 +471,7 @@ impl App {
                     self.playhead = m.at;
                 }
                 let name = if m.name.is_empty() {
-                    crate::tr("Ohne Namen")
+                    crate::tr("Kapitel") // wie im Export (cl_export::chapter_list)
                 } else {
                     m.name.clone()
                 };
@@ -508,6 +514,16 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delete_on_magnet_main_moves_all_tracks_when_linked() {
+        assert!(delete_ripples_all(true, true, &[true, true]));
+        assert!(!delete_ripples_all(true, false, &[true]));
+        assert!(!delete_ripples_all(false, true, &[true]));
+        // Overlay in der Auswahl: normales Löschen
+        assert!(!delete_ripples_all(true, true, &[true, false]));
+        assert!(!delete_ripples_all(true, true, &[]));
+    }
 
     #[test]
     fn chapters_start_at_zero() {

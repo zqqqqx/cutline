@@ -509,6 +509,8 @@ impl Library {
         tags: &[String],
     ) -> bool {
         let q = q.trim().to_lowercase();
+        // Suchtext sucht in allen Ordnern (verborgene Ordner bleiben verborgen)
+        let cat = if q.is_empty() { cat } else { "Alle" };
         !self.is_hidden(key)
             && self.in_cat(area, cat, key, folder)
             && (q.is_empty()
@@ -778,6 +780,19 @@ fn to_trash(p: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_spans_all_folders_but_not_hidden_ones() {
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        let mut lib = Library::default();
+        let v = |lib: &Library, q: &str| lib.visible("effect", "b:Intro", q, "fx:shake", "Handkamera", "Bewegung");
+        assert!(!v(&lib, ""), "ohne Suche nur der aktive Ordner");
+        assert!(v(&lib, "hand"), "Suche über alle Ordner");
+        lib.hide_cat("effect", "b:Bewegung");
+        assert!(!v(&lib, "hand"), "verborgen bleibt verborgen");
+    }
 
 
     #[test]

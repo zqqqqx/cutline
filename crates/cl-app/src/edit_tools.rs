@@ -93,6 +93,14 @@ pub fn source_limit(app: &App, c: &Clip) -> Option<f64> {
     }
 }
 
+/// Eingabe im Abschnitt „Zeit“ → neue Werte, auf Bilder gerundet. `None`, wenn sich nichts
+/// ändert oder die Dauer unter ein Bild fällt (0, negativ: Eingabe wird verworfen).
+fn timing_edit(c: &Clip, start: f64, dur: f64, src: f64, fps: f64) -> Option<(Time, Time, Time)> {
+    let snap = |v: f64| Time::from_secs_f64((v.max(0.0) * fps).round() / fps);
+    let new = (snap(start), snap(dur), snap(src));
+    (new.1 > Time::ZERO && new != (c.start, c.duration, c.source_in)).then_some(new)
+}
+
 impl App {
     /// Abschnitt „Zeit“ im Inspektor: Start, Dauer und (bei Medien) Quellbeginn als Zahlen.
     pub fn timing_section(&mut self, ui: &mut egui::Ui, c: &Clip) {
@@ -119,6 +127,8 @@ impl App {
                     egui::DragValue::new(&mut start)
                         .range(0.0..=36000.0)
                         .speed(step)
+                        .update_while_editing(false)
+                        .clamp_existing_to_range(false)
                         .custom_formatter(fmt),
                 )
                 .on_hover_text(crate::tr("Ziehen oder tippen; Bilder als m:ss.ff"))
@@ -128,8 +138,10 @@ impl App {
             changed |= ui
                 .add(
                     egui::DragValue::new(&mut dur)
-                        .range(step..=36000.0)
+                        .range(0.0..=36000.0)
                         .speed(step)
+                        .update_while_editing(false)
+                        .clamp_existing_to_range(false)
                         .custom_formatter(fmt),
                 )
                 .changed();
@@ -137,17 +149,13 @@ impl App {
         if let Some(max) = limit {
             let max = max + c.source_in.as_secs_f64() - c.source_in.as_secs_f64();
             theme::row(ui, "Quelle ab", |ui| {
-                changed |= ui.add(egui::DragValue::new(&mut src).range(0.0..=max.max(0.0)).speed(step).custom_formatter(fmt)).on_hover_text(crate::tr("Slippen: anderer Ausschnitt der Quelle, Lage und Länge bleiben (Alt+Ziehen im Clip)")).changed();
+                changed |= ui.add(egui::DragValue::new(&mut src).range(0.0..=max.max(0.0)).speed(step).update_while_editing(false).clamp_existing_to_range(false).custom_formatter(fmt)).on_hover_text(crate::tr("Slippen: anderer Ausschnitt der Quelle, Lage und Länge bleiben (Alt+Ziehen im Clip)")).changed();
             });
         }
         if changed {
-            let snap = |v: f64| Time::from_secs_f64((v * fps).round() / fps);
-            self.apply(EditOp::SetClipTiming {
-                clip: c.id,
-                start: snap(start),
-                duration: snap(dur.max(step)),
-                source_in: snap(src.max(0.0)),
-            });
+            if let Some((start, duration, source_in)) = timing_edit(c, start, dur, src, fps) {
+                self.apply(EditOp::SetClipTiming { clip: c.id, start, duration, source_in });
+            }
         }
     }
 
@@ -368,5 +376,27 @@ impl App {
                 self.sel_extra.insert(m);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timing_edit_writes_only_real_changes() {
+        let m = ClipContent::Media { media: cl_core::MediaId::new(), kind: MediaKind::Video };
+        let mut c = Clip::new(m, Time::ZERO, Time::from_secs_f64(1.0 / 30.0));
+        c.source_in = Time::from_secs_f64(2.0);
+        let (s, d, src) = (0.0, c.duration.as_secs_f64(), 2.0);
+        // derselbe Wert (auch nach Rundung auf Bilder) schreibt nichts
+        assert_eq!(timing_edit(&c, s, d, src, 30.0), None);
+        assert_eq!(timing_edit(&c, s, d - 1e-9, src, 30.0), None);
+        // 0 und negativ: verworfen
+        assert_eq!(timing_edit(&c, s, 0.0, src, 30.0), None);
+        assert_eq!(timing_edit(&c, s, -3.0, src, 30.0), None);
+        // echte Änderung: ein Wert
+        let t = Time::from_secs_f64;
+        assert_eq!(timing_edit(&c, s, 2.0, src, 30.0), Some((Time::ZERO, t(2.0), t(2.0))));
     }
 }

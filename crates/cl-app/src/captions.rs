@@ -10,6 +10,12 @@ use crate::theme::{self, icon};
 /// Name der Spur, auf der Untertitel landen
 pub const TRACK_NAME: &str = "Untertitel";
 
+/// Spurname zum Anzeigen: der Standardname der Untertitelspur in der Oberflächensprache
+/// (gespeichert bleibt er deutsch, daran wird die Spur erkannt), eigene Namen wie getippt.
+pub fn shown_track_name(name: &str) -> String {
+    if name == TRACK_NAME { crate::tr(name) } else { name.to_string() }
+}
+
 pub struct CapPreset {
     pub id: &'static str,
     pub name: &'static str,
@@ -316,40 +322,13 @@ impl App {
         preset(&self.settings.caption_preset)
     }
 
-    /// Spuren mit Untertiteln: die Untertitel-Spuren, sonst (ältere Projekte) alle Textspuren
+    /// Spuren mit Untertiteln: nur die Untertitel-Spuren (normale Textclips sind keine Untertitel)
     pub fn caption_tracks(&self) -> Vec<TrackId> {
-        let named: Vec<TrackId> = self
-            .project
-            .timeline
-            .tracks
-            .iter()
-            .filter(|t| t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME))
-            .map(|t| t.id)
-            .collect();
-        if !named.is_empty() {
-            return named;
-        }
-        self.project
-            .timeline
-            .tracks
-            .iter()
-            .filter(|t| t.kind == TrackKind::Text)
-            .map(|t| t.id)
-            .collect()
+        self.project.timeline.tracks.iter().filter(|t| is_caption_track(t)).map(|t| t.id).collect()
     }
 
     pub fn caption_clips(&self) -> Vec<Clip> {
-        let tracks = self.caption_tracks();
-        let mut v: Vec<Clip> = self
-            .project
-            .timeline
-            .tracks
-            .iter()
-            .filter(|t| tracks.contains(&t.id))
-            .flat_map(|t| t.clips.iter().cloned())
-            .collect();
-        v.sort_by_key(|c| c.start);
-        v
+        bulk_targets(&self.project)
     }
 
     /// Neue Untertitel-Spur anlegen
@@ -526,11 +505,9 @@ impl App {
         });
         self.asset_cat.insert("cap-q", q.clone());
         self.asset_cat.insert("cap-r", rep);
-        // Stil bzw. Aufteilung der gewählten Vorlage auf alle: nur echte Untertitel-Spuren, nie normale
-        // Textclips (die Liste zeigt in älteren Projekten ersatzweise alle Textspuren)
-        let bulk = bulk_targets(&self.project);
-        if !bulk.is_empty() {
-            let items = &bulk;
+        // Stil bzw. Aufteilung der gewählten Vorlage auf alle: nur echte Untertitel-Spuren
+        {
+            let items = &items;
             ui.horizontal_wrapped(|ui| {
                 let p = self.caption_preset();
                 if ui
@@ -609,7 +586,7 @@ impl App {
                                 let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
                                 let mut d = c.duration.as_secs_f64();
                                 if ui
-                                    .add(egui::DragValue::new(&mut d).range(0.2..=room.max(0.2)).speed(0.02).max_decimals(1).suffix(" s"))
+                                    .add(egui::DragValue::new(&mut d).range(0.2..=room.max(0.2)).speed(0.02).max_decimals(1).suffix(" s").update_while_editing(false))
                                     .on_hover_text(crate::tr("Dauer"))
                                     .changed()
                                 {
@@ -620,7 +597,8 @@ impl App {
                                 let r = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(f32::INFINITY).frame(false));
                                 if focus == Some(c.id) {
                                     focused = true;
-                                    r.scroll_to_me(Some(egui::Align::Center));
+                                    // nur wenn nötig blättern: sonst wandert der Knopf „Hinzufügen“ bei jedem Klick
+                                    r.scroll_to_me(None);
                                     r.request_focus();
                                     // ganzen Platzhaltertext markieren: Tippen ersetzt ihn
                                     if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
@@ -716,12 +694,16 @@ impl App {
 }
 
 /// Clips, die „Stil auf alle“ und „Neu aufteilen“ ändern: nur auf Spuren namens „Untertitel“.
+fn is_caption_track(t: &cl_core::Track) -> bool {
+    t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME)
+}
+
 fn bulk_targets(p: &Project) -> Vec<Clip> {
     let mut v: Vec<Clip> = p
         .timeline
         .tracks
         .iter()
-        .filter(|t| t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME))
+        .filter(|t| is_caption_track(t))
         .flat_map(|t| t.clips.iter().cloned())
         .collect();
     v.sort_by_key(|c| c.start);
@@ -752,6 +734,8 @@ mod tests {
         caps.clips.push(text("Hallo"));
         p.timeline.tracks.push(caps);
         assert_eq!(bulk_targets(&p).iter().map(text_of).collect::<Vec<_>>(), ["Hallo"]);
+        // die Liste im Untertitel-Tab nutzt dieselbe Auswahl: nur die Untertitelspur
+        assert_eq!(p.timeline.tracks.iter().filter(|t| is_caption_track(t)).count(), 1);
     }
 
     #[test]

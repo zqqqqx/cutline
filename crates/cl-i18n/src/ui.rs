@@ -291,7 +291,20 @@ mod tests {
                 en.matches('{').count(),
                 "Platzhalter: {de}"
             );
+            // eine Schreibweise: amerikanisch (color, gray, canceled …)
+            let low = en.to_lowercase();
+            for brit in ["colour", "grey", "centre", "cancelled", "favourite", "behaviour", "licence"] {
+                assert!(!low.contains(brit), "britisch „{brit}“: {en}");
+            }
         }
+    }
+
+    #[test]
+    fn singular_counts_translate() {
+        assert_eq!(translate("1 Spur"), "1 track");
+        assert_eq!(translate("1 Highlight als Marker gesetzt"), "1 highlight added as a marker");
+        assert_eq!(translate("1 Pause entfernt (2.5 s)"), "1 pause removed (2.5 s)");
+        assert_eq!(translate("vor 3 Min."), "3 min ago");
     }
 
     #[test]

@@ -71,7 +71,7 @@ Gespeichert {}	Saved {}
 {} Gespeichert	{} saved
 Noch nicht gespeichert	Not saved yet
 Wird gespeichert …	Saving …
-Abgebrochen	Cancelled
+Abgebrochen	Canceled
 Datei nicht lesbar	File can't be read
 Klicken bricht ab	Click to cancel
 # Startseite
@@ -829,7 +829,7 @@ Anmeldung abgelaufen oder ungültig	Sign-in expired or invalid
 Kein Zugriff (Abo oder Partnervertrag prüfen)	No access (check your subscription or partner agreement)
 Zu viele Anfragen, bitte kurz warten	Too many requests, please wait a moment
 Keine Verbindung zu Epidemic Sound ({})	Can't reach Epidemic Sound ({})
-Anmeldung abgebrochen (Zeit abgelaufen)	Sign-in cancelled (timed out)
+Anmeldung abgebrochen (Zeit abgelaufen)	Sign-in canceled (timed out)
 Client-ID fehlt	Client ID missing
 Eigene	Mine
 Bilder	Images
@@ -1461,8 +1461,8 @@ Standbild speichern …	Save still frame …
 Vorschau in eigenem Fenster	Preview in its own window
 Look anwenden	Apply look
 Projekt aus anderem Programm importieren …	Import project from another app …
-Akzentfarbe	Accent colour
-Eigene Farbe	Custom colour
+Akzentfarbe	Accent color
+Eigene Farbe	Custom color
 Weiß	White
 Türkis	Teal
 Violett	Violet
@@ -1692,3 +1692,17 @@ Datei fehlt: {}	File missing: {}
 {} Dateien fehlen: {}	{} files missing: {}
 Paket ausgeschaltet – wird als „{}“ gerechnet	Pack turned off – rendered as “{}”
 Paket fehlt – wird als „{}“ gerechnet	Pack missing – rendered as “{}”
+Keine Effekte gefunden	No effects found
+Keine Filter gefunden	No filters found
+Keine Übergänge gefunden	No transitions found
+{} Spur	{} track
+{} Clip	{} clip
+{} Medium	{} media item
+{} Highlight als Marker gesetzt	{} highlight added as a marker
+{} Pause entfernt ({} s)	{} pause removed ({} s)
+{} Füllwort entfernt	{} filler word removed
+{} Pause, {} s kürzer	{} pause, {} s shorter
+{} Füllwort, {} s kürzer	{} filler word, {} s shorter
+{} Mediendatei wurde nicht gefunden:	{} media file was not found:
+{} Mediendatei wurde nicht gefunden (verschoben oder umbenannt).	{} media file was not found (moved or renamed).
+{} Clip auf anderen Spuren mit entfernt (Alles mitziehen)	{} clip on other tracks removed as well (move everything)

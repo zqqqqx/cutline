@@ -63,6 +63,8 @@ impl Document {
         let label = op.label();
         let before = self.project.clone();
         match op.apply(&mut self.project) {
+            // Nichts geändert (z. B. ein Feld schreibt denselben Wert erneut): kein Verlaufsschritt
+            Ok(out) if self.project == before => Ok(out),
             Ok(out) => {
                 self.undo.push(HistoryEntry {
                     label,
@@ -196,6 +198,43 @@ mod tests {
             .unwrap();
         let OpOutput::Clip(id) = out else { panic!() };
         (d, id)
+    }
+
+    #[test]
+    fn timing_duration_stops_at_source_end() {
+        let (mut d, id) = doc_with_clip(); // Quelle 10 s
+        let s = Time::from_secs_f64;
+        let set = |d: &mut Document, dur: f64, speed_src: f64| {
+            d.apply(
+                EditOp::SetClipTiming { clip: id, start: Time::ZERO, duration: s(dur), source_in: s(speed_src) },
+                OpSource::Ui,
+            )
+            .unwrap();
+            d.project().find_clip(id).unwrap().1.clone()
+        };
+        let c = set(&mut d, 99999.0, 4.0);
+        assert_eq!((c.duration, c.source_in), (s(6.0), s(4.0)));
+        // Tempo 2×: nur halb so lang auf der Zeitleiste
+        d.apply(EditOp::SetSpeed { clip: c.id, speed: 2.0 }, OpSource::Ui).unwrap();
+        assert_eq!(set(&mut d, 99999.0, 4.0).duration, s(3.0));
+        // Einfügen (MCP, Plugins) ebenso
+        let m = d.project().media[0].clone();
+        let OpOutput::Clip(n) = d.apply(EditOp::AddClip { track: None, clip: video_clip(&m, 50.0, 99999.0) }, OpSource::Ui).unwrap() else {
+            panic!()
+        };
+        assert_eq!(d.project().find_clip(n).unwrap().1.duration, s(10.0));
+    }
+
+    #[test]
+    fn unchanged_value_adds_no_history_step() {
+        let (mut d, id) = doc_with_clip();
+        let n = d.undo_entries().len();
+        let c = d.project().find_clip(id).unwrap().1.clone();
+        for _ in 0..5 {
+            let op = EditOp::SetClipTiming { clip: id, start: c.start, duration: c.duration, source_in: c.source_in };
+            d.apply(op, OpSource::Ui).unwrap();
+        }
+        assert_eq!(d.undo_entries().len(), n);
     }
 
     #[test]

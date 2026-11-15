@@ -407,12 +407,13 @@ impl App {
                                 ui.painter().text(
                                     pos2(tr.right() + 12.0, r.center().y + 9.0),
                                     egui::Align2::LEFT_CENTER,
-                                    crate::tr(format!(
-                                        "{} · {clips} Clips · {}×{}",
+                                    format!(
+                                        "{} · {} · {}×{}",
                                         fmt_dur(dur),
+                                        crate::tr(crate::theme::count_text(clips, "{} Clip", "{} Clips")),
                                         size.0,
                                         size.1
-                                    )),
+                                    ),
                                     egui::FontId::proportional(theme::FS_HINT),
                                     theme::TEXT_DIM(),
                                 );

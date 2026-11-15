@@ -39,7 +39,7 @@ fn secs(t: Time) -> String {
     if s >= 60.0 {
         format!("{}:{:05.2}", (s / 60.0) as u64, s % 60.0)
     } else {
-        format!("{s:.2} s")
+        crate::theme::secs(s, 2)
     }
 }
 
@@ -90,7 +90,7 @@ impl App {
             Props::Clip(id) => {
                 let Some((t, c)) = self.project.find_clip(*id) else { return (String::new(), vec![], None) };
                 let mut rows = vec![
-                    ("Spur", t.name.clone().unwrap_or_else(|| crate::tr(format!("{:?}", t.kind)))),
+                    ("Spur", t.name.as_deref().map(crate::captions::shown_track_name).unwrap_or_else(|| crate::tr(format!("{:?}", t.kind)))),
                     ("Start", secs(c.start)),
                     ("Ende", secs(c.end())),
                     ("Dauer", secs(c.duration)),
@@ -144,7 +144,7 @@ impl App {
                     ("Ende", secs(end)),
                     ("Status", if flags.is_empty() { "–".into() } else { flags.join(", ") }),
                 ];
-                (t.name.clone().unwrap_or_else(|| crate::tr("Spur")), rows, None)
+                (t.name.as_deref().map(crate::captions::shown_track_name).unwrap_or_else(|| crate::tr("Spur")), rows, None)
             }
             Props::Project(path) => {
                 let mut rows = vec![("Dateigröße", file_size(path))];

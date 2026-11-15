@@ -1726,6 +1726,14 @@ impl App {
                     items = list;
                     let _ = none_sel;
                 }
+                if items.is_empty() {
+                    let (glyph, t) = if filters {
+                        (icon::CIRCLE_HALF, "Keine Filter gefunden")
+                    } else {
+                        (icon::SPARKLE, "Keine Effekte gefunden")
+                    };
+                    theme::empty_state(ui, glyph, t, "");
+                }
                 widgets::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, (id, name)| {
                     let key = format!("{}:{id}", if filters { "flt" } else { "fx" });
                     let tex = if id.is_empty() {
@@ -1854,6 +1862,9 @@ impl App {
             .and_then(|(_, c)| c.transition_out.as_ref().map(|t| t.id.clone()));
         let mut chosen = None;
         egui::ScrollArea::vertical().id_salt("trans").auto_shrink([false, false]).show(ui, |ui| {
+            if items.is_empty() {
+                theme::empty_state(ui, icon::INTERSECT, "Keine Übergänge gefunden", "");
+            }
             widgets::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, (id, name)| {
                 let tex = self.fx_strip_tile(&format!("trs:{id}"), STRIP, || transition_tile(id));
                 // Ruhend: Bild mitten im Übergang (beide Bilder sichtbar). Hover: der ganze Übergang,
