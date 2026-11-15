@@ -63,7 +63,11 @@ pub const LOAD_MIN: f64 = 0.30;
 
 /// Dauer einer Bewegung (0, wenn Animationen ausgeschaltet sind). Nur mit den `MOTION`-Konstanten aufrufen.
 pub fn anim(secs: f32) -> f32 {
-    if animations_on() {
+    anim_if(animations_on(), secs)
+}
+
+fn anim_if(on: bool, secs: f32) -> f32 {
+    if on {
         secs
     } else {
         0.0
@@ -1391,17 +1395,14 @@ mod tests {
     #[test]
     fn three_durations_and_off_means_instant() {
         assert!(MOTION_FAST < MOTION && MOTION < MOTION_SLOW && MOTION_SLOW <= 0.24);
-        set_animations(false);
-        let off = [MOTION_FAST, MOTION, MOTION_SLOW].map(anim);
-        let (g, busy) = (glide_at(0.0, 5.0, 0.0, anim(MOTION)), crate::widgets::busy_segment(0.7, animations_on()));
-        set_animations(true);
-        assert_eq!(off, [0.0; 3]);
-        assert_eq!(g, 5.0);
+        // ohne den globalen Schalter umzulegen (parallele Tests lesen ihn)
+        assert_eq!([MOTION_FAST, MOTION, MOTION_SLOW].map(|s| anim_if(false, s)), [0.0; 3]);
+        assert_eq!(glide_at(0.0, 5.0, 0.0, anim_if(false, MOTION)), 5.0);
         // ohne Animationen: Lauflinie steht, Platzhalter ohne Schimmer
-        assert_eq!(busy, (0.0, 1.0));
+        assert_eq!(crate::widgets::busy_segment(0.7, false), (0.0, 1.0));
         assert_eq!(crate::widgets::busy_segment(3.1, false), crate::widgets::busy_segment(0.2, false));
         assert_eq!(crate::widgets::shimmer_at(1.0, false), None);
-        assert_eq!(anim(MOTION), MOTION);
+        assert_eq!(anim_if(true, MOTION), MOTION);
     }
 
     #[test]
