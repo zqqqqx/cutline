@@ -54,7 +54,7 @@ fn ntsc_rates_timecode_and_snapping() {
         }
     }
     assert_eq!(Time::from_secs_f64(-5.0).timecode(Rational::new(30, 1)), "00:00:00:00");
-    assert_eq!(Time(i64::MAX).timecode(Rational::new(30, 1)).len() > 11, true);
+    assert!(Time(i64::MAX).timecode(Rational::new(30, 1)).len() > 11);
     // Fehler: Bildrate 0 (kaputte Datei) zog jede Zeit auf 0
     assert_eq!(s(3.3).snap_to_frame(Rational::new(0, 1)), s(3.3));
     assert_eq!(Rational::new(30, 0).as_f64(), 30.0);

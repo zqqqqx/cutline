@@ -310,13 +310,13 @@ mod tests {
                 x ^= x << 13;
                 x ^= x >> 7;
                 x ^= x << 17;
-                if x % 3 == 0 {
+                if x.is_multiple_of(3) {
                     s.push_str(extra[(x / 3 % extra.len() as u64) as usize]);
                 } else {
                     let p = parts[(x / 3 % parts.len() as u64) as usize];
                     // auch mitten im Wort abschneiden (an Zeichengrenzen)
                     let cut = p.char_indices().nth((x % 7) as usize).map(|(i, _)| i).unwrap_or(p.len());
-                    s.push_str(if x % 2 == 0 { p } else { &p[..cut] });
+                    s.push_str(if x.is_multiple_of(2) { p } else { &p[..cut] });
                 }
             }
             let _ = translate(&s);

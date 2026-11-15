@@ -38,7 +38,7 @@ fn random_op(p: &Project, media: &[MediaRef], r: &mut Lcg, depth: u32) -> EditOp
     let track = pick_track(p, r);
     let opt_track = if r.chance(50) { None } else { Some(track) };
     match r.below(26) {
-        0 | 1 | 2 => {
+        0..=2 => {
             let start = time(r);
             let dur = if r.chance(5) { Time(r.below(3) as i64 - 1) } else { s(r.range(0.04, 8.0)) };
             let mut c = match r.below(5) {
@@ -147,7 +147,7 @@ fn run(seed: u64, steps: usize) {
                 assert_eq!(d.undo_entries().len(), hist + 1, "{ctx}");
                 // gesperrte Spuren: Clips unverändert, Spur bleibt bestehen
                 // (eine Op, die selbst Sperren ändert, z. B. Batch „entsperren + löschen“, ausgenommen)
-                let flags = format!("{op_dbg}").contains("SetTrackFlags");
+                let flags = op_dbg.contains("SetTrackFlags");
                 for t in before.timeline.tracks.iter().filter(|t| t.locked && !flags) {
                     let now = after.timeline.tracks.iter().find(|x| x.id == t.id);
                     let now = now.unwrap_or_else(|| panic!("{ctx}: gesperrte Spur verschwunden: {desc}"));
