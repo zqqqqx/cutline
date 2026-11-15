@@ -103,6 +103,7 @@ impl App {
                 TaskDone::Failed(e) => self.toast_err(e),
                 TaskDone::Run(f) => f(self),
                 TaskDone::Proxy { media, ok } => {
+                    self.proxy_finished(media);
                     if ok {
                         self.invalidate_preview();
                     } else {
