@@ -86,6 +86,17 @@ fn dev_base(dev: bool, var: Option<String>) -> Option<String> {
     var.filter(|b| dev && !b.is_empty())
 }
 
+/// Datei mit Tokens und Schlüssel: unter Unix nur für den Besitzer lesbar (Windows: Profil-ACL)
+fn write_private(p: &Path, data: String) -> std::io::Result<()> {
+    paths::write_atomic(p, data)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
 fn store_path() -> PathBuf {
     paths::data_dir()
         .join("Integrations")
@@ -145,7 +156,7 @@ impl EsState {
             },
             downloads: self.downloads.clone(),
         };
-        let _ = paths::write_atomic(&p, serde_json::to_string_pretty(&s).unwrap_or_default());
+        let _ = write_private(&p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
 
     /// Hintergrund-Aufgabe mit eigenem Client (Token-Refresh wird zurückgemeldet).
@@ -1010,6 +1021,16 @@ mod store_tests {
         assert_eq!(fetch_track(&d3, false, &es_store(&vorrat, "id-3"), None, dl(b"drei")), Ok(true));
         assert_eq!(std::fs::read(&d3).unwrap(), b"drei");
         assert!(!d3.with_extension("part").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_token_file_is_only_readable_by_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = tempfile::tempdir().unwrap();
+        let p = t.path().join("epidemic-sound.json");
+        write_private(&p, "{\"api_key\":\"epidemic_live_TEST\"}".into()).unwrap();
+        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
     }
 
     #[test]
