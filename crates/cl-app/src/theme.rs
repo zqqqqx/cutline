@@ -737,6 +737,22 @@ pub fn elide(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
         .unwrap_or_default()
 }
 
+/// Kürzt `text` in der Mitte („C:/Users/…/Videos“), bis er in `max_w` passt.
+pub fn elide_middle(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
+    if width(text) <= max_w {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    (1..chars.len())
+        .rev()
+        .map(|n| {
+            let (a, b) = (n.div_ceil(2), n / 2);
+            format!("{}…{}", chars[..a].iter().collect::<String>(), chars[chars.len() - b..].iter().collect::<String>())
+        })
+        .find(|s| width(s) <= max_w)
+        .unwrap_or_default()
+}
+
 /// Schriftgröße, mit der ein bei `size` `w` breiter Text in `max_w` passt (nie größer als `size`).
 pub fn fit_size(size: f32, w: f32, max_w: f32) -> f32 {
     if w <= max_w || w <= 0.0 {
@@ -955,6 +971,9 @@ mod tests {
         // Leerzeichen vor „…“ entfällt
         assert_eq!(elide("ab cdef", 28.0, w), "ab…");
         assert_eq!(elide("abc", 3.0, w), "");
+        let m = elide_middle("C:/Users/zero/Videos/Urlaub", 70.0, w);
+        assert!(m.starts_with("C:/U") && m.ends_with("laub") && m.contains('…') && w(&m) <= 70.0, "{m}");
+        assert_eq!(elide_middle("kurz", 70.0, w), "kurz");
         assert_eq!(fit_size(20.0, 100.0, 150.0), 20.0);
         let s = fit_size(20.0, 200.0, 150.0);
         assert!((s - 15.0).abs() < 1e-4 && 200.0 * s / 20.0 <= 150.0 + 1e-3);

@@ -102,6 +102,26 @@ fn norm_vol(n: f32) -> f32 {
 fn vol_y(body: Rect, db: f32) -> f32 {
     body.bottom() - 3.0 - vol_norm(db) * (body.height() - 6.0)
 }
+/// Zeiger greift die Lautstärkelinie nur dicht daran; auf flachen Clips (Tonspur) liegt die
+/// Linie sonst mitten im Clip und Ziehen in der Mitte verschiebt den Clip nicht mehr.
+fn vol_line_hit(body: Rect, db: f32, y: f32) -> bool {
+    (y - vol_y(body, db)).abs() <= (body.height() / 10.0).clamp(1.5, 4.0)
+}
+/// Text im Clipkopf: Name, Kennzeichen, Dauer. Wird es eng, fallen zuerst die Kennzeichen weg,
+/// dann wird der Name mit „…“ gekürzt; die Dauer bleibt so lange wie möglich sichtbar.
+fn clip_head(name: &str, tags: &str, dur: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
+    let sep = if dur.is_empty() { "" } else { "  " };
+    let full = format!("{name}{tags}{sep}{dur}");
+    if width(&full) <= max_w {
+        return full;
+    }
+    let tail = format!("{sep}{dur}");
+    let short = theme::elide(name, max_w - width(&tail), &width);
+    if !short.is_empty() {
+        return format!("{short}{tail}");
+    }
+    theme::elide(name, max_w, &width)
+}
 fn y_vol(body: Rect, y: f32) -> f32 {
     let db = norm_vol((body.bottom() - 3.0 - y) / (body.height() - 6.0).max(1.0));
     // bei 0 dB leicht einrasten
@@ -703,7 +723,7 @@ impl App {
             if p.distance(fo) < 7.0 {
                 return Some((id, AudioHandle::FadeOut, c.fade_out.as_secs_f64() as f32));
             }
-            if edge.is_none() && (p.y - vol_y(body, c.volume_db)).abs() < 4.0 {
+            if edge.is_none() && vol_line_hit(body, c.volume_db, p.y) {
                 return Some((id, AudioHandle::Volume, c.volume_db));
             }
             None
@@ -1545,7 +1565,12 @@ impl App {
                 if cr.right() < x0 || cr.left() > rect.right() || cr.width() < 1.0 {
                     continue;
                 }
-                self.draw_clip(&p, &c, tr, cr, lanes_clip, rect.right(), x0, is_ghost);
+                let missing = self.draw_clip(&p, &c, tr, cr, lanes_clip, rect.right(), x0, is_ghost);
+                if missing && hovered_clip == Some(c.id) {
+                    egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new(("missing", c.id)), |ui| {
+                        ui.label(crate::tr("Datei fehlt"));
+                    });
+                }
                 if has_audio(&c)
                     && !is_ghost
                     && cr.width() >= 24.0
@@ -2057,7 +2082,7 @@ impl App {
         right: f32,
         x0: f32,
         ghost: bool,
-    ) {
+    ) -> bool {
         let pps = self.timeline.pps;
         let kind = c.kind();
         let mut col = theme::clip_color(kind);
@@ -2250,30 +2275,35 @@ impl App {
         if c.disabled {
             tags.push_str(&format!(" {}", icon::EYE_SLASH));
         }
-        let label = match &c.content {
-            ClipContent::Text(_) => format!("{}{tags}", icon::TEXT_T),
-            ClipContent::Effect(r) => format!(
-                "{}  {}{tags}",
-                icon::SPARKLE,
-                crate::tr(cl_fx::fx_name(&r.id))
-            ),
-            ClipContent::Filter(r) => format!(
-                "{}  {}{tags}",
-                icon::CIRCLE_HALF,
-                crate::tr(cl_fx::fx_name(&r.id))
-            ),
-            _ => format!(
-                "{}{tags}  {:.1}s",
-                c.label(&self.project),
-                c.duration.as_secs_f64()
-            ),
+        // shortcut: prüft die Datei je sichtbarem Clip und Bild; bei langsamen Laufwerken zwischenspeichern
+        let missing = matches!(&c.content, ClipContent::Media { media, .. } if self.project.media(*media).is_some_and(|m| !m.is_local()));
+        let (name, dur) = match &c.content {
+            ClipContent::Text(_) => (icon::TEXT_T.to_string(), String::new()),
+            ClipContent::Effect(r) => (format!("{}  {}", icon::SPARKLE, crate::tr(cl_fx::fx_name(&r.id))), String::new()),
+            ClipContent::Filter(r) => (format!("{}  {}", icon::CIRCLE_HALF, crate::tr(cl_fx::fx_name(&r.id))), String::new()),
+            _ => (c.label(&self.project), crate::tr(format!("{:.1}s", c.duration.as_secs_f64()))),
         };
+        let font = egui::FontId::proportional(theme::FS_HINT);
+        let mut tx = band.left().max(x0) + 6.0;
+        if missing {
+            p.with_clip_rect(band.intersect(lanes_clip)).text(
+                pos2(tx, band.center().y),
+                egui::Align2::LEFT_CENTER,
+                icon::WARNING,
+                font.clone(),
+                theme::WARN_TEXT(),
+            );
+            tx += 14.0;
+        }
+        let ctx = p.ctx().clone();
+        let room = band.right().min(lanes_clip.right()) - 4.0 - tx;
+        let label = clip_head(&name, &tags, &dur, room, |s| theme::text_width(&ctx, s, font.clone()));
         p.with_clip_rect(band.shrink2(vec2(4.0, 0.0)).intersect(lanes_clip))
             .text(
-                pos2(band.left().max(x0) + 6.0, band.center().y),
+                pos2(tx, band.center().y),
                 egui::Align2::LEFT_CENTER,
                 label,
-                egui::FontId::proportional(theme::FS_HINT),
+                font,
                 Color32::from_white_alpha(230),
             );
         // Ton-Fades als Rampen
@@ -2300,6 +2330,11 @@ impl App {
                 );
             }
         }
+        // gesperrte und verborgene Spuren abgedunkelt
+        if tr.locked || tr.hidden {
+            p.rect_filled(cr, theme::R_CTRL, Color32::from_black_alpha(110));
+        }
+        missing
     }
 
     fn timeline_menu(&mut self, ui: &mut egui::Ui) {
@@ -2818,6 +2853,30 @@ mod tests {
         assert!((vol_norm(VOL_MAX) - 1.0).abs() < 1e-6);
         // alte Werte über +12 dB bleiben gespeichert, die Linie steht nur oben an
         assert!((vol_norm(20.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn volume_line_grabs_only_close_to_line() {
+        // flacher Ton-Clip (Tonspur): Mitte gehört dem Verschieben, nicht der Linie bei 0 dB
+        let body = Rect::from_min_size(pos2(0.0, 100.0), vec2(200.0, 26.0));
+        assert!(!vol_line_hit(body, 0.0, body.center().y));
+        assert!(vol_line_hit(body, 0.0, vol_y(body, 0.0) + 1.0));
+        // hoher Clip: bis 4 px, nicht weiter
+        let tall = Rect::from_min_size(pos2(0.0, 100.0), vec2(200.0, 60.0));
+        assert!(vol_line_hit(tall, 0.0, vol_y(tall, 0.0) + 4.0));
+        assert!(!vol_line_hit(tall, 0.0, vol_y(tall, 0.0) + 5.0));
+    }
+
+    #[test]
+    fn clip_head_keeps_duration_and_elides_name() {
+        let w = |s: &str| s.chars().count() as f32 * 6.0;
+        assert_eq!(clip_head("Sunset.webm", " ✧ 2", "2.0s", 500.0, w), "Sunset.webm ✧ 2  2.0s");
+        // eng: Kennzeichen weg, Name gekürzt, Dauer bleibt
+        let h = clip_head("Sunset Libreville.webm", " ✧ 2", "2.0s", 90.0, w);
+        assert!(h.ends_with("…  2.0s") && w(&h) <= 90.0, "{h}");
+        // Effekt-Clip ohne Dauer: nur gekürzt mit „…“
+        let h = clip_head("✧  Filmkorn", "", "", 40.0, w);
+        assert!(h.ends_with('…') && w(&h) <= 40.0, "{h}");
     }
 
     #[test]

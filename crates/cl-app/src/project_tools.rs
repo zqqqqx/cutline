@@ -303,14 +303,21 @@ impl App {
             ui.add_space(4.0);
             egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                 for (id, p) in &missing {
-                    // Knopf zuerst (rechts), der Pfad bekommt den Rest und wird gekürzt
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Knopf zuerst (rechts), feste Zeilenhöhe; Dateiname voll, Ordner in der Mitte gekürzt
+                    let row = egui::vec2(ui.available_width(), 24.0);
+                    ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.add(theme::ghost("Datei wählen …")).clicked() {
                             pick = Some(*id);
                         }
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.label(RichText::new(icon::WARNING).color(theme::DANGER_TEXT()));
-                            ui.add(egui::Label::new(RichText::new(p.display().to_string()).small()).truncate()).on_hover_text(p.display().to_string());
+                            let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                            ui.add(egui::Label::new(RichText::new(&name).strong()).truncate()).on_hover_text(p.display().to_string());
+                            let dir = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
+                            let font = egui::TextStyle::Small.resolve(ui.style());
+                            let ctx = ui.ctx().clone();
+                            let dir = theme::elide_middle(&dir, ui.available_width() - 4.0, |s| theme::text_width(&ctx, s, font.clone()));
+                            ui.label(RichText::new(dir).small().color(theme::TEXT_DIM())).on_hover_text(p.display().to_string());
                         });
                     });
                 }
