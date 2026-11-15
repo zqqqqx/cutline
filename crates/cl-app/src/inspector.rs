@@ -1471,10 +1471,15 @@ impl App {
     fn project_inspector(&mut self, ui: &mut egui::Ui) {
         let mut settings = self.project.settings.clone();
         let mut changed = false;
-        let mut name = self.project.name.clone();
+        // Solange das Feld den Fokus hat, lebt die Eingabe in einem Zwischenstand (sonst setzte jedes Bild
+        // den Projektnamen zurück und Getipptes ging verloren); übernommen wird beim Verlassen.
+        let name_id = ui.make_persistent_id("project-name");
+        let mut name = ui
+            .data(|d| d.get_temp::<String>(name_id))
+            .unwrap_or_else(|| self.project.name.clone());
         let r = theme::row(ui, &self.t("project-name"), |ui| {
             // ohne Fokus lange Namen mit „…“ im Feld kürzen statt mitten im Zeichen abzuschneiden
-            let id = ui.make_persistent_id("project-name");
+            let id = name_id;
             let focused = ui.memory(|m| m.has_focus(id));
             let mut layouter = |ui: &egui::Ui, s: &str, w: f32| {
                 let font = egui::FontSelection::default().resolve(ui.style());
@@ -1492,8 +1497,15 @@ impl App {
                     .layouter(&mut layouter),
             )
         });
-        if r.lost_focus() && name != self.project.name && !name.trim().is_empty() {
-            self.apply(EditOp::Rename { name });
+        if r.has_focus() {
+            ui.data_mut(|d| d.insert_temp(name_id, name.clone()));
+        } else {
+            ui.data_mut(|d| d.remove::<String>(name_id));
+        }
+        if r.lost_focus() {
+            if let Some(name) = renamed(&name, &self.project.name) {
+                self.apply(EditOp::Rename { name });
+            }
         }
         if let Some(p) = &self.project_path {
             theme::row(ui, "Speicherort", |ui| {
@@ -1849,5 +1861,22 @@ mod tests {
         let c = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.0));
         let t = tabs_for(&c);
         assert!(t[0].0 == ClipTab::Basic && t[1].0 == ClipTab::Audio);
+    }
+}
+
+/// Neuer Projektname aus dem Eingabefeld: nur wenn er sich geändert hat und nicht leer ist.
+fn renamed(typed: &str, current: &str) -> Option<String> {
+    let t = typed.trim();
+    (!t.is_empty() && t != current).then(|| t.to_string())
+}
+
+#[cfg(test)]
+mod rename_tests {
+    #[test]
+    fn typed_project_name_is_taken_only_when_changed_and_not_empty() {
+        assert_eq!(super::renamed("Neu", "Alt").as_deref(), Some("Neu"));
+        assert_eq!(super::renamed("  Neu  ", "Alt").as_deref(), Some("Neu"));
+        assert_eq!(super::renamed("Alt", "Alt"), None);
+        assert_eq!(super::renamed("   ", "Alt"), None);
     }
 }

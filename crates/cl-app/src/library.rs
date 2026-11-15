@@ -23,10 +23,11 @@ pub enum Kind {
     Media,
 }
 
-pub const MEDIA_EXT: &[&str] = &[
-    "mp4", "mov", "mkv", "webm", "m4v", "avi", "png", "jpg", "jpeg", "webp", "gif", "wav", "mp3", "ogg",
-    "flac", "m4a", "aac", "opus",
-];
+/// Alles, was der Import kennt (eine Liste für Projekt und Bibliothek: `cl_media`).
+fn media_exts() -> &'static [&'static str] {
+    static ALL: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    ALL.get_or_init(cl_media::all_media_extensions)
+}
 
 /// Wohin sich eine Mediendatei speichern lässt: Bilder/GIFs als Element, Ton als Sound.
 /// Videos nicht (Elemente können keine Videos, Ton daraus bräuchte eine Umwandlung).
@@ -54,7 +55,7 @@ impl Kind {
         match self {
             Kind::Sticker => STICKER_EXT,
             Kind::Sound => SOUND_EXT,
-            Kind::Media => MEDIA_EXT,
+            Kind::Media => media_exts(),
         }
     }
     /// Standardordner für Importe ohne Ordnerwahl
@@ -1252,5 +1253,16 @@ mod tests {
         assert!(used.is_file());
         lib.delete_cat("sfx", "p:Games", Some(Kind::Sound), &[]).unwrap();
         assert!(!used.exists());
+    }
+}
+
+#[cfg(test)]
+mod ext_tests {
+    #[test]
+    fn library_takes_every_media_type_the_import_knows() {
+        let e = super::Kind::Media.exts();
+        for x in ["ogv", "mts", "wmv", "mpg", "mp4", "png", "wav", "heic"] {
+            assert!(e.contains(&x), "{x}");
+        }
     }
 }
