@@ -3,6 +3,7 @@
 //! nie auf die Platte. Mehrere wartende Speicherungen derselben Datei: nur die neueste zählt.
 //! Schlägt das Schreiben fehl, landet der Stand in den Sicherungen (kein Datenverlust).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -67,16 +68,23 @@ fn rescue(job: &Job) -> Option<PathBuf> {
     crate::paths::write_atomic(&p, job.project.to_json()).ok().map(|_| p)
 }
 
-fn run(job: Job) -> Done {
+/// `rescued`: schon gerettete Stände (Pfad, Revision) – je Stand nur eine Rettungsdatei, auch
+/// wenn das Schreiben immer wieder scheitert
+fn run(job: Job, rescued: &mut HashSet<(PathBuf, u64)>) -> Done {
     let t = Instant::now();
     let r = write(&job);
     if crate::app::perf() {
         eprintln!("perf: speichern {:?} {:.0} ms im Hintergrund", job.kind, t.elapsed().as_secs_f64() * 1000.0);
     }
     match r {
-        Ok(()) => Done::Saved,
+        Ok(()) => {
+            // Revisionen beginnen je geöffnetem Projekt neu
+            rescued.retain(|(p, _)| *p != job.path);
+            Done::Saved
+        }
         Err(err) => {
-            let rescued = (job.kind == Kind::Project).then(|| rescue(&job)).flatten();
+            let first = job.kind == Kind::Project && rescued.insert((job.path.clone(), job.revision));
+            let rescued = first.then(|| rescue(&job)).flatten();
             Done::Failed { kind: job.kind, revision: job.revision, err, rescued }
         }
     }
@@ -89,6 +97,8 @@ pub struct Saver {
     pending: Arc<AtomicUsize>,
     /// letzte Fehlermeldung (höchstens eine je Minute)
     pub(crate) last_err: Option<Instant>,
+    /// letztes Scheitern einer Projektdatei (Autosave setzt dann aus)
+    failed: Option<Instant>,
 }
 
 impl Saver {
@@ -100,19 +110,20 @@ impl Saver {
         std::thread::Builder::new()
             .name("cl-save".into())
             .spawn(move || {
+                let mut rescued = HashSet::new();
                 while let Ok(first) = jobs.recv() {
                     let mut batch = vec![first];
                     batch.extend(jobs.try_iter());
                     let n = batch.len();
                     for job in coalesce(batch) {
-                        let _ = done.send(run(job));
+                        let _ = done.send(run(job, &mut rescued));
                     }
                     p.fetch_sub(n, Ordering::SeqCst);
                     ctx.request_repaint();
                 }
             })
             .expect("Speicher-Thread");
-        Self { tx, rx, pending, last_err: None }
+        Self { tx, rx, pending, last_err: None, failed: None }
     }
 
     pub fn send(&self, job: Job) {
@@ -120,8 +131,14 @@ impl Saver {
         if let Err(e) = self.tx.send(job) {
             // Thread weg (sollte nie passieren): dann eben hier schreiben
             self.pending.fetch_sub(1, Ordering::SeqCst);
-            let _ = run(e.0);
+            let _ = run(e.0, &mut HashSet::new());
         }
+    }
+
+    /// Nach einem Schreibfehler setzt der Autosave eine Minute aus (sonst schriebe er jedes Bild
+    /// neu, z. B. bei abgezogenem Stick); Speichern von Hand und Verlassen versuchen es sofort.
+    pub fn autosave_paused(&self) -> bool {
+        self.failed.is_some_and(|t| t.elapsed() < Duration::from_secs(60))
     }
 
     pub fn busy(&self) -> bool {
@@ -152,8 +169,11 @@ impl crate::app::App {
     pub fn poll_saves(&mut self) {
         for d in self.saver.poll() {
             let Done::Failed { kind, revision, err, rescued, .. } = d else { continue };
-            if kind == Kind::Project && self.saved_revision == revision {
-                self.saved_revision = crate::app::UNSAVED;
+            if kind == Kind::Project {
+                self.saver.failed = Some(Instant::now());
+                if self.saved_revision == revision {
+                    self.saved_revision = crate::app::UNSAVED;
+                }
             }
             if self.saver.last_err.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
                 self.saver.last_err = Some(Instant::now());
@@ -228,6 +248,33 @@ mod tests {
         }
     }
 
+    /// Scheitert derselbe Stand immer wieder (Autosave, abgezogener Stick), entsteht nur eine
+    /// Rettungsdatei – nicht eine je Versuch.
+    #[test]
+    fn repeated_failure_of_one_state_rescues_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("CUTLINE_HOME", dir.path());
+        let s = Saver::new(egui::Context::default());
+        let bad = dir.path().join("ordner.cutline");
+        std::fs::create_dir_all(&bad).unwrap();
+        let mut rescued = Vec::new();
+        for _ in 0..3 {
+            s.send(job(Kind::Project, &bad, 4));
+            assert!(s.wait_idle(Duration::from_secs(10)));
+            for d in s.poll() {
+                if let Done::Failed { rescued: r, .. } = d {
+                    rescued.push(r.is_some());
+                }
+            }
+        }
+        assert_eq!(rescued, [true, false, false]);
+        // neuer Stand: wieder gerettet
+        s.send(job(Kind::Project, &bad, 5));
+        assert!(s.wait_idle(Duration::from_secs(10)));
+        assert!(matches!(s.poll().pop(), Some(Done::Failed { rescued: Some(_), .. })));
+    }
+
     fn test_app() -> (crate::app::App, tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
         let g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
@@ -248,6 +295,7 @@ mod tests {
         std::fs::create_dir_all(&bad).unwrap();
         app.project_path = Some(bad);
         assert!(!app.flush_before_leaving());
+        assert!(app.saver.autosave_paused(), "nach dem Fehler setzt der Autosave aus");
         let good = home.path().join("gut.cutline");
         app.project_path = Some(good.clone());
         assert!(app.flush_before_leaving());

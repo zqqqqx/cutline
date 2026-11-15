@@ -2029,7 +2029,7 @@ impl App {
         if !needs_save(self.revision, self.saved_revision, self.project_path.is_some(), &self.project) {
             return;
         }
-        if self.doc.lock().unwrap().revision() != self.revision {
+        if self.doc.lock().unwrap().revision() != self.revision || self.saver.autosave_paused() {
             return;
         }
         static LAST_CHANGE: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
