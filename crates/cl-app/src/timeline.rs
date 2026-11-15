@@ -496,6 +496,13 @@ fn toggle_count(t: &Track, collapsed: bool) -> usize {
     1 + usize::from(t.kind != TrackKind::Audio) + 2 * usize::from(matches!(t.kind, TrackKind::Video | TrackKind::Audio))
 }
 
+/// Abstand des Spurnamens vom linken Rand des Spurkopfs: für alle Spurarten (auch eingeklappt)
+/// gleich – Platz für die größte Schalterzahl bleibt frei, fehlende Schalter bleiben leer.
+fn name_column() -> f32 {
+    let most = TRACK_KINDS.iter().map(|(k, _)| toggle_count(&Track::new(*k), false)).max().unwrap_or(0);
+    32.0 + most as f32 * 19.0 + 4.0
+}
+
 pub struct TimelineState {
     pub pps: f32,
     pub scroll: f64,
@@ -2409,7 +2416,7 @@ impl App {
                 };
                 format!("{} {n}", crate::tr(k))
             });
-            let name_x = head.left() + 32.0 + toggles.len() as f32 * 19.0 + 4.0;
+            let name_x = head.left() + name_column();
             if name_x < head.right() - 16.0 {
                 let font = egui::FontId::proportional(theme::FS_HINT);
                 let name = theme::elide(&name, head.right() - 6.0 - name_x, |s| theme::text_width(hp.ctx(), s, font.clone()));
@@ -3420,6 +3427,18 @@ mod tests {
         let n = |k| toggle_count(&Track::new(k), false);
         assert_eq!((n(TrackKind::Video), n(TrackKind::Audio), n(TrackKind::Text)), (4, 3, 2));
         assert_eq!(toggle_count(&Track::new(TrackKind::Video), true), 0, "eingeklappt");
+    }
+
+    #[test]
+    fn track_names_start_in_one_column() {
+        // eine Spalte für alle Spurarten, eingeklappt oder nicht: immer hinter den eigenen Schaltern
+        let col = name_column();
+        for (k, _) in TRACK_KINDS {
+            for folded in [false, true] {
+                assert!(col >= 32.0 + toggle_count(&Track::new(k), folded) as f32 * 19.0 + 4.0, "{k:?} {folded}");
+            }
+        }
+        assert_eq!(col, 32.0 + 4.0 * 19.0 + 4.0);
     }
 
     #[test]
