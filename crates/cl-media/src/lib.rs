@@ -708,4 +708,76 @@ mod tests {
         std::fs::write(&bad, b"kein video").unwrap();
         assert!(matches!(probe(&bad), Err(MediaError::Unreadable(_))));
     }
+
+    #[test]
+    fn fit_size_edge_cases() {
+        assert_eq!(fit_size(0, 0, 100, 50), (100, 50));
+        assert_eq!(fit_size(1920, 1080, 0, 0), (2, 2));
+        assert_eq!(fit_size(10000, 1, 640, 360), (640, 2));
+        assert_eq!(fit_size(1, 10000, 640, 360), (2, 360));
+        assert_eq!(fit_size(u32::MAX, u32::MAX, 101, 101), (100, 100));
+        let (w, h) = fit_size(1080, 1920, 1920, 1080);
+        assert!(w % 2 == 0 && h == 1080 && w <= 1920);
+    }
+
+    fn gen(dir: &Path, name: &str, args: &[&str]) -> PathBuf {
+        let out = dir.join(name);
+        let st = command("ffmpeg")
+            .unwrap()
+            .args(["-v", "error", "-y"])
+            .args(args)
+            .args(["-threads", "2"])
+            .arg(&out)
+            .status()
+            .unwrap();
+        assert!(st.success(), "{name}");
+        out
+    }
+
+    #[test]
+    fn probe_unusual_files() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("leer.mp4");
+        std::fs::write(&empty, b"").unwrap();
+        assert!(probe(&empty).is_err());
+        assert!(probe(&dir.path().join("fehlt.mp4")).is_err());
+        assert!(probe(dir.path()).is_err(), "Ordner");
+        // nur Ton
+        let a = gen(dir.path(), "ton ä.m4a", &["-f", "lavfi", "-i", "sine=d=1", "-c:a", "aac"]);
+        let m = probe(&a).unwrap();
+        assert_eq!((m.kind, m.fps, m.width, m.has_audio), (MediaKind::Audio, None, 0, true));
+        // nur Bild, 23,976 fps, Umlaut/Emoji im Namen
+        let v = gen(dir.path(), "Bild ö 🎬.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=24000/1001:d=1", "-pix_fmt", "yuv420p"]);
+        let m = probe(&v).unwrap();
+        assert_eq!((m.kind, m.has_audio), (MediaKind::Video, false));
+        assert_eq!(m.fps, Some(cl_core::Rational::new(24000, 1001)));
+        // ein einziges Bild als Video, Drehung 270°
+        let one = gen(dir.path(), "eins.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=25:d=0.04", "-pix_fmt", "yuv420p"]);
+        let m = probe(&one).unwrap();
+        assert_eq!(m.kind, MediaKind::Video);
+        let rot = dir.path().join("rot.mp4");
+        assert!(command("ffmpeg").unwrap().args(["-v", "error", "-y", "-display_rotation", "270", "-i"]).arg(&one)
+            .args(["-c", "copy"]).arg(&rot).status().unwrap().success());
+        assert_eq!((probe(&rot).unwrap().width, probe(&rot).unwrap().height), (36, 64));
+        // abgeschnittene Datei: Fehler oder Video mit Dauer, aber kein Absturz
+        let data = std::fs::read(&v).unwrap();
+        let cut = dir.path().join("halb.mp4");
+        std::fs::write(&cut, &data[..data.len() / 2]).unwrap();
+        let _ = probe(&cut);
+        // Bild nach dem Ende, Bild aus Müll, Strom aus Müll: Fehler statt Absturz/Hänger
+        assert!(decode_frame(&v, Time::from_secs_f64(50.0), 32, 18).is_err());
+        assert!(decode_frame(&empty, Time::ZERO, 32, 18).is_err());
+        assert!(decode_frame(&a, Time::ZERO, 32, 18).is_err(), "kein Bild im Ton");
+        let s = FrameStream::open(&empty, Time::ZERO, 32, 18, cl_core::Rational::new(25, 1)).unwrap();
+        assert!(s.next_blocking().is_none());
+        assert!(waveform(&empty, 50).is_err());
+        assert!(waveform(&v, 50).map(|w| w.is_empty()).unwrap_or(true), "Video ohne Ton");
+        let w = waveform(&a, 0).unwrap();
+        assert!(!w.is_empty());
+        assert_eq!(silent_channel(&a), None, "Mono");
+        assert_eq!(silent_channel(&v), None, "ohne Ton");
+    }
 }
