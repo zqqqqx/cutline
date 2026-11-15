@@ -55,6 +55,11 @@ impl Document {
     }
 
     pub fn apply(&mut self, op: EditOp, source: OpSource) -> Result<OpOutput> {
+        // NaN/Unendlich würde als `null` gespeichert, die Projektdatei ließe sich nicht mehr laden
+        let json = serde_json::to_value(&op).map_err(|_| CoreError::InvalidValue)?;
+        if serde_json::from_value::<EditOp>(json).is_err() {
+            return Err(CoreError::InvalidValue);
+        }
         let label = op.label();
         let before = self.project.clone();
         match op.apply(&mut self.project) {

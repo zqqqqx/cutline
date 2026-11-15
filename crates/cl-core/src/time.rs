@@ -11,6 +11,8 @@ pub struct Time(pub i64);
 
 impl Time {
     pub const ZERO: Time = Time(0);
+    /// Größte Lage/Länge für Clips (~35 Jahre): Summen vieler Clips laufen nicht über.
+    pub const LIMIT: Time = Time(1 << 50);
 
     pub fn from_secs_f64(s: f64) -> Self {
         Time((s * 1_000_000.0).round() as i64)
@@ -26,6 +28,10 @@ impl Time {
     }
     /// Rastet auf das nächste Frame-Raster der Bildrate ein.
     pub fn snap_to_frame(self, fps: Rational) -> Self {
+        // Bildrate 0 (kaputte Projektdatei) würde jede Zeit auf 0 ziehen
+        if fps.num == 0 {
+            return self;
+        }
         let frame = (self.as_secs_f64() * fps.as_f64()).round();
         Time::from_secs_f64(frame / fps.as_f64())
     }
@@ -48,13 +54,14 @@ impl Time {
 impl Add for Time {
     type Output = Time;
     fn add(self, o: Time) -> Time {
-        Time(self.0 + o.0)
+        // sättigend: riesige Zeiten aus Dateien/MCP dürfen nicht überlaufen (Debug: Absturz)
+        Time(self.0.saturating_add(o.0))
     }
 }
 impl Sub for Time {
     type Output = Time;
     fn sub(self, o: Time) -> Time {
-        Time(self.0 - o.0)
+        Time(self.0.saturating_sub(o.0))
     }
 }
 impl fmt::Display for Time {
@@ -77,18 +84,26 @@ impl Rational {
     pub fn as_f64(self) -> f64 {
         self.num as f64 / self.den.max(1) as f64
     }
-    /// Parst `30`, `29.97`, `30000/1001`.
+    /// Parst `30`, `29.97`, `30000/1001`, `12.5`. Null, negative und unendliche Raten → `None`.
     pub fn parse(s: &str) -> Option<Self> {
         if let Some((n, d)) = s.split_once('/') {
             let (n, d) = (n.trim().parse().ok()?, d.trim().parse().ok()?);
-            return (d != 0).then_some(Self::new(n, d));
+            return (d != 0 && n != 0).then_some(Self::new(n, d));
         }
         let f: f64 = s.trim().parse().ok()?;
-        if (f - f.round()).abs() < 1e-6 {
-            Some(Self::new(f.round() as u32, 1))
-        } else {
-            Some(Self::new((f * 1001.0).round() as u32, 1001))
+        if !(f > 0.0 && f < 1e6) {
+            return None;
         }
+        let ntsc = f * 1001.0 / 1000.0;
+        let r = if (f - f.round()).abs() < 1e-6 {
+            Self::new(f.round() as u32, 1)
+        } else if (ntsc - ntsc.round()).abs() < 0.01 {
+            // 23.976, 29.97, 59.94 …
+            Self::new((ntsc.round() * 1000.0) as u32, 1001)
+        } else {
+            Self::new((f * 1000.0).round() as u32, 1000)
+        };
+        (r.num != 0).then_some(r)
     }
 }
 

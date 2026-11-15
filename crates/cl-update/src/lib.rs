@@ -203,7 +203,8 @@ pub fn download(
         .unwrap_or(rel.asset_size)
         .max(1);
     let mut reader = resp.into_reader();
-    let mut data = Vec::with_capacity(total as usize);
+    // Content-Length kommt vom Server: nicht blind vorab reservieren (Absturz bei Riesenwerten)
+    let mut data = Vec::with_capacity(total.min(256 << 20) as usize);
     let mut buf = [0u8; 64 * 1024];
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -323,23 +324,28 @@ pub fn download_to(
     let mut buf = vec![0u8; 256 * 1024];
     let mut done = 0u64;
     let mut hasher = Sha256::new();
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            drop(f);
-            let _ = std::fs::remove_file(&part);
-            return Err("Abgebrochen".into());
+    let copied = (|| -> Result<(), String> {
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Abgebrochen".into());
+            }
+            let n = r.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+            hasher.update(&buf[..n]);
+            done += n as u64;
+            progress(done, total);
         }
-        let n = r.read(&mut buf).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-        hasher.update(&buf[..n]);
-        done += n as u64;
-        progress(done, total);
-    }
-    f.flush().map_err(|e| e.to_string())?;
+        f.flush().map_err(|e| e.to_string())
+    })();
     drop(f);
+    // Abbruch, Lese- oder Schreibfehler: keine halbe `.part`-Datei liegen lassen
+    if let Err(e) = copied {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
+    }
     if total > 0 && done != total {
         let _ = std::fs::remove_file(&part);
         return Err("Download unvollständig".into());
@@ -552,5 +558,198 @@ mod tests {
         std::fs::create_dir_all(&app).unwrap();
         assert!(install(&zp, &app).is_err());
         assert!(!dir.path().join("boese.exe").exists());
+    }
+
+    /// Kleiner HTTP-Server: beantwortet der Reihe nach je eine Verbindung mit der Rohantwort.
+    fn serve(answers: Vec<Vec<u8>>) -> String {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for a in answers {
+                let Ok((mut c, _)) = l.accept() else { return };
+                let mut b = [0u8; 2048];
+                let _ = c.read(&mut b);
+                let _ = c.write_all(&a);
+            }
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    fn ok(body: &[u8], len: Option<u64>) -> Vec<u8> {
+        let mut v = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            len.unwrap_or(body.len() as u64)
+        )
+        .into_bytes();
+        v.extend_from_slice(body);
+        v
+    }
+
+    #[test]
+    fn version_parsing_edge_cases() {
+        for (s, v) in [
+            ("01.002.0003", Version(1, 2, 3)),
+            (" V2 ", Version(2, 0, 0)),
+            ("1.2.3.4", Version(1, 2, 3)),
+            ("1.2.3+build.7", Version(1, 2, 3)),
+            ("0.10.0-rc.1", Version(0, 10, 0)),
+        ] {
+            assert_eq!(Version::parse(s), Some(v), "{s}");
+        }
+        for bad in ["", "v", "1..2", "-1.0.0", "1.2.x", "99999999999999999999.0.0", "١.٢.٣", "🎬"] {
+            assert_eq!(Version::parse(bad), None, "{bad}");
+        }
+        // Vorabversion zählt wie die Basisversion: kein „Update“ von 1.0.0-beta auf 1.0.0
+        assert_eq!(Version::parse("1.0.0-beta"), Version::parse("1.0.0"));
+        assert!(Version(0, 9, 10) < Version(0, 10, 0));
+        assert_eq!(Version(1, 2, 3).to_string(), "1.2.3");
+    }
+
+    #[test]
+    fn release_json_garbage_and_old_versions() {
+        let cur = Version(1, 0, 0);
+        assert!(parse_release("", cur).is_err());
+        assert!(parse_release("{\"tag_name\": 5}", cur).is_err());
+        assert!(parse_release(&release_json("neueste", true), cur).is_err());
+        assert!(parse_release(&release_json("v0.9.9", true), cur).unwrap().is_none());
+        let mut j: serde_json::Value = serde_json::from_str(&release_json("v2.0.0", false)).unwrap();
+        j["draft"] = true.into();
+        assert!(parse_release(&j.to_string(), cur).unwrap().is_none());
+        j["draft"] = false.into();
+        j["name"] = "".into();
+        let r = parse_release(&j.to_string(), cur).unwrap().unwrap();
+        assert_eq!(r.name, "v2.0.0", "leerer Name → Tag");
+        assert!(r.sha_url.is_none());
+    }
+
+    #[test]
+    fn sha_file_edge_cases() {
+        let h = sha256_hex(b"x");
+        assert_eq!(parse_sha_file(&format!("\r\n  {h}\r\n")), Some(h.clone()));
+        assert_eq!(parse_sha_file(&h[..63]), None);
+        assert_eq!(parse_sha_file(&format!("{h}0")), None);
+        assert_eq!(parse_sha_file(&format!("{}g", &h[..63])), None);
+        assert_eq!(parse_sha_file(""), None);
+        assert_eq!(sha256_hex(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
+
+    fn release(base: &str) -> Release {
+        Release {
+            version: Version(9, 0, 0),
+            tag: "v9".into(),
+            name: "v9".into(),
+            notes: String::new(),
+            page: String::new(),
+            asset_url: format!("{base}/pkg.zip"),
+            asset_size: 5,
+            sha_url: Some(format!("{base}/pkg.sha256")),
+        }
+    }
+
+    #[test]
+    fn download_checks_sha_and_writes_nothing_on_failure() {
+        let no = AtomicBool::new(false);
+        let dir = tempfile::tempdir().unwrap();
+        // falsche Prüfsumme
+        let base = serve(vec![ok(sha256_hex(b"anders").as_bytes(), None), ok(b"hallo", None)]);
+        assert!(download(&release(&base), dir.path(), |_| {}, &no).unwrap_err().contains("Prüfsumme"));
+        // ohne Prüfsumme gar nicht erst laden
+        let mut r = release(&base);
+        r.sha_url = None;
+        assert!(download(&r, dir.path(), |_| {}, &no).is_err());
+        // abgebrochen
+        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
+        assert_eq!(download(&release(&base), dir.path(), |_| {}, &AtomicBool::new(true)).unwrap_err(), "Abgebrochen");
+        // kaputte Prüfsummendatei
+        let base = serve(vec![ok(b"<html>404</html>", None)]);
+        assert!(download(&release(&base), dir.path(), |_| {}, &no).is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "nichts geschrieben");
+        // richtig
+        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
+        let p = download(&release(&base), dir.path(), |_| {}, &no).unwrap();
+        assert_eq!(std::fs::read(p).unwrap(), b"hallo");
+    }
+
+    /// Fehler: eine riesige Content-Length reservierte vorab so viel Speicher (Absturz).
+    #[test]
+    fn download_survives_absurd_content_length() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", Some(1 << 62))]);
+        let r = download(&release(&base), dir.path(), |_| {}, &AtomicBool::new(false));
+        assert!(r.is_err(), "{r:?}");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    /// Fehler: ein abgebrochener Modell-Download ließ eine halbe `.part`-Datei liegen.
+    #[test]
+    fn truncated_model_download_leaves_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("modell.onnx");
+        let base = serve(vec![ok(b"hallo", Some(100))]);
+        let r = download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(false));
+        assert!(r.is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "keine Reste");
+        // Lesefehler mitten im Strom (kaputte Chunk-Kodierung)
+        let base = serve(vec![b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nhallo\r\nZZ\r\n".to_vec()]);
+        assert!(download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(false)).is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "keine Reste nach Lesefehler");
+        // abgebrochen
+        let base = serve(vec![ok(b"hallo", None)]);
+        assert!(download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(true)).is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        // Server antwortet 404
+        let base = serve(vec![b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()]);
+        assert!(download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(false)).is_err());
+        assert!(!dest.exists());
+    }
+
+    fn zip_with(dir: &Path, entries: &[(&str, &[u8])]) -> PathBuf {
+        let zp = dir.join("p.zip");
+        let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
+        for (name, data) in entries {
+            w.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+            w.write_all(data).unwrap();
+        }
+        w.finish().unwrap();
+        zp
+    }
+
+    #[test]
+    fn install_rejects_broken_empty_and_escaping_packages() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(app.join("cutline.exe"), b"alt").unwrap();
+        let garbage = dir.path().join("kaputt.zip");
+        std::fs::write(&garbage, b"PK\x03\x04 kein zip").unwrap();
+        assert!(install(&garbage, &app).is_err());
+        assert!(install(&dir.path().join("fehlt.zip"), &app).is_err());
+        assert!(install(&zip_with(dir.path(), &[]), &app).unwrap_err().contains("leer"));
+        for evil in ["a/../../x.exe", "../x.exe"] {
+            let zp = zip_with(dir.path(), &[("ok.txt", b"1"), (evil, b"x")]);
+            assert!(install(&zp, &app).is_err(), "{evil}");
+            assert!(extract_zip(&zp, &dir.path().join("x")).is_err(), "{evil}");
+        }
+        assert!(!dir.path().join("x.exe").exists() && !dir.path().join("abs.exe").exists());
+        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"alt", "alte Installation unberührt");
+        assert!(!app.join("ok.txt").exists());
+        // absolute Pfade landen höchstens im Zielordner, nie daneben
+        for abs in ["/abs.exe", "C:/abs.exe", r"\\server\share\abs.exe"] {
+            let zp = zip_with(dir.path(), &[(abs, b"x")]);
+            let _ = install(&zp, &app);
+            let _ = extract_zip(&zp, &dir.path().join("z"));
+            assert!(!dir.path().join("abs.exe").exists() && !std::path::Path::new("C:/abs.exe").exists(), "{abs}");
+        }
+        // Umlaute und Unterordner werden korrekt entpackt
+        let zp = zip_with(dir.path(), &[("Schrift/Ä ö 🎬.ttf", b"f")]);
+        assert_eq!(extract_zip(&zp, &dir.path().join("y")).unwrap(), 1);
+        assert!(dir.path().join("y/Schrift/Ä ö 🎬.ttf").exists());
+        // Aufräumen ohne Liste und mit absolutem Pfad in der Liste
+        cleanup_old(&dir.path().join("gibtsnicht"));
+        let victim = dir.path().join("opfer.txt");
+        std::fs::write(&victim, b"x").unwrap();
+        std::fs::write(app.join(OLD_LIST), format!("{}\n\n", victim.display())).unwrap();
+        cleanup_old(&app);
+        assert!(victim.exists());
     }
 }

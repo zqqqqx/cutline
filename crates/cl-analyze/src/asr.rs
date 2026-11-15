@@ -588,4 +588,29 @@ mod tests {
             assert!(all.to_lowercase().contains("video"), "{all}");
         }
     }
+
+    #[test]
+    fn grouping_and_srt_edge_cases() {
+        assert!(group_words(&[], 30, 5.0).is_empty());
+        let w = |s: f64, e: f64, t: &str| Word { start: s, end: e, text: t.into() };
+        // einzelnes kurzes Wort bekommt Mindestdauer, folgende Zeile wird nicht überdeckt
+        let g = group_words(&[w(0.0, 0.1, "Ja."), w(0.5, 0.6, "Nein.")], 30, 5.0);
+        assert_eq!(g.len(), 2);
+        assert!(g[0].end <= g[1].start && g[1].end >= g[1].start + 0.8 - 1e-9, "{g:?}");
+        // ein Wort länger als die Zeile bleibt ganz, max_chars 0 erzeugt keine leeren Zeilen
+        let g = group_words(&[w(0.0, 1.0, "Donaudampfschifffahrt"), w(1.0, 2.0, "🎬"), w(2.0, 3.0, "مرحبا")], 0, 5.0);
+        assert_eq!(g.len(), 3);
+        assert!(g.iter().all(|s| !s.text.is_empty()));
+        assert!(resegment(&[Segment { start: 0.0, end: 1.0, text: "   ".into() }], 10, 2.0).is_empty());
+        let r = resegment(&[Segment { start: 2.0, end: 2.0, text: "a b".into() }], 1, 1.0);
+        assert!(r.iter().all(|s| s.end >= s.start));
+        for junk in ["", "\n\n\n", "-->", "1\n-->\nText", "1\nx --> y\nText", "1\n00:00:01,000 --> 00:00:02,000\n", "\u{feff}1\r\n00:00:01,000 --> 00:00:02,000\r\nÄ\r\n"] {
+            let s = parse_srt(junk);
+            assert!(s.len() <= 1, "{junk:?}");
+        }
+        let s = parse_srt("1\r\n00:00:01,000 --> 00:00:02,000\r\nÄ 🎬\r\n\r\n2\r\n00:01:00.5 --> 01:00:00,000\r\nB\r\n");
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0].text, "Ä 🎬");
+        assert!((s[1].end - 3600.0).abs() < 1e-9);
+    }
 }

@@ -68,7 +68,14 @@ pub fn detect_samples(x: &[f32]) -> Beats {
             best = (lag, ac * w);
         }
     }
-    let lag = best.0.max(1);
+    // Stille/Dauerton: kein Tempo gefunden. Fehler: lag = 1 ergab ~2600 BPM und einen Schlag je Fenster
+    if best.0 == 0 {
+        return Beats {
+            bpm: 0.0,
+            times: Vec::new(),
+        };
+    }
+    let lag = best.0;
     // Vom stärksten Onset aus in beide Richtungen dem Raster folgen; jeder Schlag rastet
     // auf das lokale Maximum ein (so driftet das Raster nicht weg)
     let r = (lag / 6).max(1);
@@ -134,5 +141,29 @@ mod tests {
             let off = ((t - 0.25) / 0.5 - ((t - 0.25) / 0.5).round()).abs() * 0.5;
             assert!(off < 0.05, "{t} liegt nicht auf dem Raster");
         }
+    }
+
+    #[test]
+    fn silence_tone_and_short_input_have_no_beats() {
+        let n = SR as usize * 6;
+        let tone: Vec<f32> = (0..n).map(|i| 0.5 * (i as f32 * 440.0 * std::f32::consts::TAU / SR as f32).sin()).collect();
+        for (name, x) in [
+            ("Stille", vec![0.0f32; n]),
+            ("Gleichspannung", vec![0.3f32; n]),
+            ("Dauerton", tone),
+            ("leer", Vec::new()),
+            ("kurz", vec![0.9f32; 300]),
+        ] {
+            let b = detect_samples(&x);
+            assert!(b.times.len() < 20 && b.bpm < 300.0, "{name}: {} BPM, {} Schläge", b.bpm, b.times.len());
+            assert!(b.bpm.is_finite() && b.times.iter().all(|t| t.is_finite()));
+        }
+        // ein einzelner Klick in Stille: kein absurdes Raster
+        let mut x = vec![0.0f32; n];
+        for j in 0..400 {
+            x[SR as usize + j] = 0.8 * (j as f32 * 0.9).sin();
+        }
+        let b = detect_samples(&x);
+        assert!(b.bpm < 300.0, "{}", b.bpm);
     }
 }

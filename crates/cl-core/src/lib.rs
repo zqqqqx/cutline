@@ -30,6 +30,8 @@ pub enum CoreError {
     InvalidSplit,
     #[error("Ungültige Dauer")]
     InvalidDuration,
+    #[error("Ungültiger Wert")]
+    InvalidValue,
     #[error("Clip-Typ passt nicht zur Spur ({clip:?} auf {track:?})")]
     KindMismatch { clip: TrackKind, track: TrackKind },
     #[error("Nichts zum Rückgängigmachen")]

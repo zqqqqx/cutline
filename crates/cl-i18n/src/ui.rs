@@ -293,4 +293,48 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn odd_strings_never_panic() {
+        for s in ["", " ", "\u{e0f0}", "\u{e0f0}  ", "✓", "()", " ()", "a ()", "(", ")", " · ", "·", "\n", "Abbrechen\n", "\nAbbrechen",
+            "Abbrechen · Abbrechen", "Strg+Entf", "Pos1", "🎬", "مرحبا", "Ä (", "x (y)", "{}", "{", "}", "{1}", "%s"] {
+            let _ = translate(s);
+        }
+        // Zufallszeichenketten aus Wörterbuchteilen, Mehrbyte-Zeichen und Sonderzeichen
+        let parts: Vec<&str> = entries().iter().take(400).map(|(de, _)| *de).collect();
+        let extra = ["🎬", "ä", " ", "  ", "\n", " · ", " (", ")", "{}", "\u{e0f0}", "3", "‰", "\u{202e}"];
+        let mut x: u64 = 0x2545_f491_4f6c_dd1d;
+        for _ in 0..3000 {
+            let mut s = String::new();
+            for _ in 0..(x % 5 + 1) {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                if x.is_multiple_of(3) {
+                    s.push_str(extra[(x / 3 % extra.len() as u64) as usize]);
+                } else {
+                    let p = parts[(x / 3 % parts.len() as u64) as usize];
+                    // auch mitten im Wort abschneiden (an Zeichengrenzen)
+                    let cut = p.char_indices().nth((x % 7) as usize).map(|(i, _)| i).unwrap_or(p.len());
+                    s.push_str(if x.is_multiple_of(2) { p } else { &p[..cut] });
+                }
+            }
+            let _ = translate(&s);
+        }
+    }
+
+    #[test]
+    fn templates_with_multibyte_values() {
+        assert_eq!(match_template("🎬 Clips gelöscht", &["", " Clips gelöscht"]), Some(vec!["🎬"]));
+        assert_eq!(match_template(" Clips gelöscht", &["", " Clips gelöscht"]), None, "leerer Wert");
+        assert_eq!(match_template("x", &["xy", "z"]), None);
+        assert_eq!(match_template("aXbYc", &["a", "b", "c"]), Some(vec!["X", "Y"]));
+        assert_eq!(match_template("abc", &["a", "", "c"]), None);
+        assert_eq!(fill("{3} {} {x} {", &["a"]), "{3} a {x} {");
+        assert_eq!(fill("{0}", &["a"]), "a", "0 zählt wie 1");
+        assert_eq!(fill("", &["a"]), "");
+        assert_eq!(translate("\u{e0f0}"), "\u{e0f0}");
+        assert_eq!(translate("  Abbrechen  "), "  Cancel  ");
+        assert_eq!(translate("12:30"), "12:30");
+    }
 }

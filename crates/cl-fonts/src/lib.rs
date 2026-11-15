@@ -730,4 +730,86 @@ mod tests {
         ));
         assert!(matches!(inspect(b"OTTO\0\0"), Err(FontError::Corrupt(_))));
     }
+
+    #[test]
+    fn corrupt_and_truncated_fonts_give_errors() {
+        for d in [&b""[..], b"tr", b"true", b"OTTO\0\0", b"ttcf", b"wOFF", b"\0\x01\0\0garbage-garbage"] {
+            assert!(inspect(d).is_err(), "{d:?}");
+        }
+        // WOFF: Tabelle außerhalb, kaputtes zlib, falsche Länge, 0 Tabellen
+        let woff = |num: u16, off: u32, comp: u32, orig: u32, tail: &[u8]| {
+            let mut d = vec![0u8; 64];
+            d[0..4].copy_from_slice(b"wOFF");
+            d[4..8].copy_from_slice(&[0, 1, 0, 0]);
+            d[12..14].copy_from_slice(&num.to_be_bytes());
+            d[48..52].copy_from_slice(&off.to_be_bytes());
+            d[52..56].copy_from_slice(&comp.to_be_bytes());
+            d[56..60].copy_from_slice(&orig.to_be_bytes());
+            d.extend_from_slice(tail);
+            d
+        };
+        for d in [
+            woff(1, 9999, 4, 4, b""),
+            woff(1, 64, 4, 100, b"\x78\x9c\xff\xff"),
+            woff(1, 64, 4, 4, b"abcd"),
+            woff(0, 0, 0, 0, b""),
+            woff(u16::MAX, 64, 4, 4, b"abcd"),
+            woff(1, u32::MAX, u32::MAX, 4, b""),
+        ] {
+            let _ = woff_to_sfnt(&d);
+            assert!(inspect(&d).is_err());
+        }
+        // abgeschnittene echte Schrift
+        let Some(src) = sample_font() else { return };
+        let data = std::fs::read(src).unwrap();
+        for cut in [12, 100, 1000, data.len() / 2] {
+            let _ = inspect(&data[..cut]);
+            let _ = text_width(&data[..cut], 0, 20.0, "Hallo");
+        }
+        assert!(inspect(&data).is_ok());
+        assert_eq!(text_width(&data, 99, 20.0, "x"), None, "Index außerhalb");
+        assert_eq!(text_width(b"kaputt", 0, 20.0, "x"), None);
+    }
+
+    #[test]
+    fn wrap_edge_cases() {
+        let Some(src) = sample_font() else { return };
+        let d = std::fs::read(src).unwrap();
+        assert_eq!(wrap_text(&d, 0, 40.0, "", 100.0), "");
+        assert_eq!(wrap_text(&d, 0, 40.0, "a\n\nb", 1000.0), "a\n\nb");
+        assert_eq!(wrap_text(&d, 0, 40.0, "D E R  F I L M", 10_000.0), "D E R  F I L M");
+        // Breite 0: jedes Wort eine Zeile, kein Wort verschwindet
+        let w = wrap_text(&d, 0, 40.0, "eins zwei drei", 0.0);
+        assert_eq!(w, "eins\nzwei\ndrei");
+        let long = "Donaudampfschifffahrtsgesellschaft";
+        assert_eq!(wrap_text(&d, 0, 40.0, long, 10.0), long);
+        let emoji = wrap_text(&d, 0, 40.0, "🎬🎬 مرحبا שלום", 50.0);
+        assert_eq!(emoji.replace('\n', " "), "🎬🎬 مرحبا שלום");
+        assert!(text_width(&d, 0, 0.0, "abc").unwrap() == 0.0);
+        assert!(text_width(&d, 0, 20.0, "").unwrap() == 0.0);
+    }
+
+    #[test]
+    fn names_and_library_edge_cases() {
+        assert_eq!(sanitize(""), "font");
+        assert_eq!(sanitize("🎬🎬"), "font");
+        assert_eq!(sanitize("../../Windows/x"), "Windows_x");
+        assert_eq!(sanitize("Ä b-c"), "Ä_b-c");
+        assert!(!sanitize(&"a/".repeat(100)).contains('/'));
+        let dir = tempfile::tempdir().unwrap();
+        // fremde Dateien werden ignoriert, kaputte Schriften gemeldet, Unterordner übersprungen
+        std::fs::write(dir.path().join("liesmich.txt"), b"hallo").unwrap();
+        std::fs::write(dir.path().join("kaputt.ttf"), b"\0\x01\0\0 kaputt").unwrap();
+        std::fs::create_dir(dir.path().join("ordner.ttf")).unwrap();
+        let mut lib = FontLibrary::open(dir.path()).unwrap();
+        assert!(lib.faces().is_empty());
+        assert_eq!(lib.errors.len(), 1);
+        assert!(lib.import_bytes(b"", "x").is_err());
+        assert!(matches!(lib.import_bytes(b"wOF2xxxx", "x"), Err(FontError::Woff2Unsupported)));
+        assert!(lib.import_file(&dir.path().join("fehlt.ttf")).is_err());
+        assert_eq!(lib.remove_family("Gibt es nicht").unwrap(), 0);
+        assert!(lib.regular_face("").is_none());
+        let sys: HashSet<String> = ["Arial".to_string()].into();
+        assert_eq!(lib.missing(["Arial", "Zz", "Zz", "Aa", ""], &sys), vec!["", "Aa", "Zz"]);
+    }
 }

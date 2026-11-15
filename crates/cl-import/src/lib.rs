@@ -39,6 +39,11 @@ impl Report {
 
 pub type Result<T> = std::result::Result<T, String>;
 
+/// Bildrate aus einer Fremddatei; 0, negative, unendliche oder absurde Werte → `None`.
+pub(crate) fn fps_from(fps: f64) -> Option<cl_core::Rational> {
+    cl_core::Rational::parse(&fps.to_string()).filter(|r| r.as_f64() <= 1000.0)
+}
+
 /// Format anhand der Datei erkennen und importieren.
 pub fn import(path: &Path) -> Result<(Project, Report)> {
     let name = path

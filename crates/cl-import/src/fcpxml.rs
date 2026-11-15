@@ -4,24 +4,26 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Project, Rational, Time, Track, TrackKind};
+use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Project, Time, Track, TrackKind};
 
 use crate::{Report, Result};
 
 /// `1001/30000s`, `5s`, `0s` → Sekunden
 pub fn parse_time(s: &str) -> f64 {
     let s = s.trim().trim_end_matches('s');
-    match s.split_once('/') {
+    let v = match s.split_once('/') {
         Some((n, d)) => n.parse::<f64>().unwrap_or(0.0) / d.parse::<f64>().unwrap_or(1.0).max(1e-9),
         None => s.parse().unwrap_or(0.0),
-    }
+    };
+    // „NaN“, „inf“, „1e999“ aus kaputten Dateien
+    if v.is_finite() { v } else { 0.0 }
 }
 
 fn hex_byte(h: &[u8]) -> Option<u8> {
     u8::from_str_radix(std::str::from_utf8(h).ok()?, 16).ok()
 }
 
-fn url_to_path(src: &str) -> PathBuf {
+fn url_to_path(src: &str, dir: &Path) -> PathBuf {
     let s = src
         .strip_prefix("file://localhost")
         .or_else(|| src.strip_prefix("file://"))
@@ -49,7 +51,13 @@ fn url_to_path(src: &str) -> PathBuf {
     } else {
         p
     };
-    PathBuf::from(p)
+    // relative Verweise (z. B. in .fcpxmld-Paketen) gelten ab dem Ordner der Datei
+    let p = PathBuf::from(p);
+    if p.is_relative() && !p.has_root() {
+        dir.join(p)
+    } else {
+        p
+    }
 }
 
 pub fn import(path: &Path) -> Result<(Project, Report)> {
@@ -58,10 +66,11 @@ pub fn import(path: &Path) -> Result<(Project, Report)> {
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "FCPXML".into());
-    convert(&text, &name)
+    convert(&text, &name, path.parent().unwrap_or(Path::new("")))
 }
 
-pub fn convert(text: &str, name: &str) -> Result<(Project, Report)> {
+/// `dir`: Ordner der FCPXML-Datei (für relative Medienpfade).
+pub fn convert(text: &str, name: &str, dir: &Path) -> Result<(Project, Report)> {
     let doc = roxmltree::Document::parse(text).map_err(|e| format!("FCPXML nicht lesbar: {e}"))?;
     let root = doc.root_element();
     if root.tag_name().name() != "fcpxml" {
@@ -97,7 +106,7 @@ pub fn convert(text: &str, name: &str) -> Result<(Project, Report)> {
                 .and_then(|m| m.attribute("src"))
                 .map(String::from)
         });
-        let m = src.map(|s| url_to_path(&s)).and_then(|path| {
+        let m = src.map(|s| url_to_path(&s, dir)).and_then(|path| {
             if !path.is_file() {
                 rep.missing.push(path);
                 return None;
@@ -115,12 +124,10 @@ pub fn convert(text: &str, name: &str) -> Result<(Project, Report)> {
     if let Some((w, h, fd)) = seq.attribute("format").and_then(|f| formats.get(f)) {
         p.settings.width = *w & !1;
         p.settings.height = *h & !1;
-        let fps = 1.0 / fd;
-        p.settings.fps = if (fps - 29.97).abs() < 0.01 {
-            Rational::new(30000, 1001)
-        } else {
-            Rational::new(fps.round().max(1.0) as u32, 1)
-        };
+        // Fehler: frameDuration 0 ergab 4 Milliarden fps; unbrauchbare Werte → Standard
+        if let Some(fps) = crate::fps_from(1.0 / fd) {
+            p.settings.fps = fps;
+        }
         p.settings.aspect = cl_core::AspectPreset::Custom;
     }
     let spine = seq
@@ -227,8 +234,9 @@ mod tests {
 
     #[test]
     fn percent_decoding_survives_multibyte() {
-        assert_eq!(url_to_path("file:///a%1€b"), PathBuf::from("/a%1€b"));
-        assert_eq!(url_to_path("file:///a%20b"), PathBuf::from("/a b"));
+        let d = Path::new("");
+        assert_eq!(url_to_path("file:///a%1€b", d), PathBuf::from("/a%1€b"));
+        assert_eq!(url_to_path("file:///a%20b", d), PathBuf::from("/a b"));
     }
 
     #[test]
@@ -270,7 +278,7 @@ mod tests {
               <transition offset="2.5s" duration="1s"/>
             </spine></sequence></project></event></library></fcpxml>"#
         );
-        let (p, rep) = convert(&xml, "P").unwrap();
+        let (p, rep) = convert(&xml, "P", Path::new("")).unwrap();
         assert_eq!((p.settings.width, p.settings.height), (1280, 720));
         assert_eq!(rep.clips, 3);
         assert_eq!(p.timeline.tracks[0].clips.len(), 2);

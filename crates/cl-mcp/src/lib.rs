@@ -358,7 +358,8 @@ impl McpServer {
                     .and_then(Value::as_str)
                     .map(str::to_string);
                 if let Some(s) = a.get("size").and_then(Value::as_f64) {
-                    style.size = s as f32;
+                    // wie Inspektor/Import: 0, negative oder riesige Größen bringen das Rendern durcheinander
+                    style.size = (s as f32).clamp(8.0, 600.0);
                 }
                 style.uppercase = a.get("uppercase").and_then(Value::as_bool).unwrap_or(false);
                 let clip = Clip::new(
@@ -792,5 +793,179 @@ mod tests {
         for bad in ["localhost.evil.com", "127.0.0.1.evil", "localhost:", "localhost:80x", "x"] {
             assert!(!local_authority(bad), "{bad}");
         }
+    }
+
+    fn rpc(s: &McpServer, method: &str, params: Value) -> Value {
+        s.handle(json!({"jsonrpc":"2.0","id":7,"method":method,"params":params})).unwrap()
+    }
+
+    fn http(addr: SocketAddr, raw: &[u8]) -> String {
+        let mut c = TcpStream::connect(addr).unwrap();
+        let _ = c.write_all(raw);
+        let _ = c.shutdown(std::net::Shutdown::Write);
+        let mut s = String::new();
+        let _ = c.read_to_string(&mut s);
+        s
+    }
+
+    #[test]
+    fn token_must_match_exactly() {
+        let (addr, _h) = server().serve_http(0, "geheim".into()).unwrap();
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+        let req = |auth: Option<&str>| {
+            let a = auth.map(|a| format!("Authorization: {a}\r\n")).unwrap_or_default();
+            format!("POST /mcp HTTP/1.1\r\nHost: localhost\r\n{a}Content-Length: {}\r\n\r\n{body}", body.len())
+        };
+        for bad in [None, Some(""), Some("Bearer"), Some("Bearer "), Some("Basic geheim"), Some("bearer geheim"), Some("Bearer geheim2"), Some("Bearer geheimx"), Some("Bearer gehei")] {
+            assert!(http(addr, req(bad).as_bytes()).starts_with("HTTP/1.1 401"), "{bad:?}");
+        }
+        assert!(http(addr, req(Some("Bearer geheim")).as_bytes()).starts_with("HTTP/1.1 200"));
+        // falsche Methode/Pfad
+        let get = "GET /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\n\r\n";
+        assert!(http(addr, get.as_bytes()).starts_with("HTTP/1.1 405"));
+        let other = format!("POST /mcp/x HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        assert!(http(addr, other.as_bytes()).starts_with("HTTP/1.1 404"));
+        // übergroße Anfrage wird abgelehnt, ohne den Körper zu lesen
+        let huge = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: 999999999999\r\n\r\n";
+        assert!(http(addr, huge.as_bytes()).starts_with("HTTP/1.1 413"));
+        // kaputtes JSON → 400 mit Parse-Fehler
+        let junk = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: 5\r\n\r\n{\"a\":";
+        let r = http(addr, junk.as_bytes());
+        assert!(r.starts_with("HTTP/1.1 400") && r.contains("-32700"), "{r}");
+        // Müll statt HTTP
+        assert!(!http(addr, b"\x00\xff\xfe garbage\r\n\r\n").starts_with("HTTP/1.1 200"));
+        assert!(http(addr, b"").is_empty() || !http(addr, b"").starts_with("HTTP/1.1 200"));
+        // Server lebt noch
+        assert!(http(addr, req(Some("Bearer geheim")).as_bytes()).starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn read_only_rejects_every_write_tool() {
+        let mut s = server();
+        s.read_only = true;
+        let before = s.doc.lock().unwrap().project().clone();
+        for t in TOOLS.iter() {
+            let r = call(&s, t.name, json!({"text":"x","start":0,"duration":1,"path":"x","ops":[{"op":"rename","name":"x"}]}));
+            if t.write {
+                assert_eq!(r["isError"], true, "{}", t.name);
+                assert!(r["content"][0]["text"].as_str().unwrap().contains("nur lesen"), "{}", t.name);
+            } else {
+                assert_eq!(r["isError"], false, "{}: {r}", t.name);
+            }
+        }
+        assert_eq!(s.doc.lock().unwrap().project(), &before);
+        assert_eq!(s.doc.lock().unwrap().undo_entries().len(), 0);
+    }
+
+    #[test]
+    fn broken_json_rpc_messages() {
+        let s = server();
+        // ohne Methode, mit ID
+        assert_eq!(s.handle(json!({"jsonrpc":"2.0","id":1})).unwrap()["error"]["code"], -32600);
+        // keine Antwort auf Notifications, auch nicht im Batch
+        assert!(s.handle(json!([{"jsonrpc":"2.0","method":"ping"}])).is_none());
+        let b = s.handle(json!([{"jsonrpc":"2.0","id":1,"method":"ping"}, {"jsonrpc":"2.0","method":"x"}, {"jsonrpc":"2.0","id":2,"method":"nope"}])).unwrap();
+        assert_eq!(b.as_array().unwrap().len(), 2);
+        // falsche Typen: keine Panik
+        for m in [json!(5), json!("x"), json!(null), json!([]), json!({"id":{"a":1},"method":5}), json!({"id":1,"method":"tools/call","params":5}), json!({"id":1,"method":"tools/call","params":{"name":7,"arguments":"x"}})] {
+            let _ = s.handle(m);
+        }
+        let r = rpc(&s, "tools/call", json!({"name":"gibt_es_nicht"}));
+        assert_eq!(r["result"]["isError"], true);
+        assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("Unbekanntes Tool"));
+        assert_eq!(rpc(&s, "resources/read", json!({"uri":"project://geheim"}))["error"]["code"], -32002);
+        assert!(rpc(&s, "resources/read", json!({"uri":"project://current"}))["result"]["contents"][0]["text"].as_str().is_some());
+        // tiefe Verschachtelung im Batch
+        let mut deep = json!({"jsonrpc":"2.0","id":1,"method":"ping"});
+        for _ in 0..50 {
+            deep = json!([deep]);
+        }
+        assert!(s.handle(deep).is_some());
+        // unbekannte Protokollversion → neueste unterstützte
+        assert_eq!(rpc(&s, "initialize", json!({"protocolVersion":"1999-01-01"}))["result"]["protocolVersion"], SUPPORTED_PROTOCOLS[0]);
+    }
+
+    #[test]
+    fn out_of_range_values_are_rejected_or_clamped() {
+        let s = server();
+        for args in [
+            json!({"text":"x","start":0,"duration":0}),
+            json!({"text":"x","start":0,"duration":-1}),
+            json!({"text":"x","start":1e300,"duration":1}),
+            json!({"text":"x","start":0,"duration":1e300}),
+            json!({"text":"x","start":"0","duration":1}),
+            json!({"text":"x","duration":1}),
+        ] {
+            assert_eq!(call(&s, "add_text", args.clone())["isError"], true, "{args}");
+        }
+        assert_eq!(s.doc.lock().unwrap().undo_entries().len(), 0);
+        // negativer Start → 0; Fehler: Schriftgröße 0/negativ/riesig wurde übernommen
+        for (size, want) in [(-5.0, 8.0), (0.0, 8.0), (1e9, 600.0), (72.0, 72.0)] {
+            let r = call(&s, "add_text", json!({"text":"🎬 שלום","start":-3,"duration":1,"size":size}));
+            assert_eq!(r["isError"], false, "{r}");
+            let id: ClipId = r["structuredContent"]["clip_id"].as_str().unwrap().parse().unwrap();
+            let doc = s.doc.lock().unwrap();
+            let (_, c) = doc.project().find_clip(id).unwrap();
+            assert_eq!(c.start, Time::ZERO);
+            let ClipContent::Text(st) = &c.content else { panic!() };
+            assert_eq!(st.size, want, "{size}");
+        }
+        for args in [json!({"width":8,"height":100}), json!({"width":20000,"height":100}), json!({"aspect":"7:3"}), json!({"fps":"0"}), json!({"fps":"500"}), json!({"fps":"abc"}), json!({"fps":"NaN"})] {
+            assert_eq!(call(&s, "set_format", args.clone())["isError"], true, "{args}");
+        }
+        let r = call(&s, "set_format", json!({"width":1001,"height":721,"fps":"23.976"}));
+        assert_eq!((r["structuredContent"]["width"].as_u64(), r["structuredContent"]["height"].as_u64()), (Some(1000), Some(720)));
+        assert_eq!(s.doc.lock().unwrap().project().settings.fps, Rational::new(24000, 1001));
+        // Rohe Ops mit unendlichen Zahlen (f32-Überlauf) ändern nichts
+        let clip = s.doc.lock().unwrap().project().timeline.tracks[0].clips[0].id;
+        let r = call(&s, "apply_ops", json!({"ops":[{"op":"set_transform","clip":clip.to_string(),"transform":{"x":1e300,"y":0,"scale":1,"rotation_deg":0}}]}));
+        assert_eq!(r["isError"], true, "{r}");
+        let json = s.doc.lock().unwrap().project().to_json();
+        assert!(Project::from_json(&json).is_ok());
+        // kaputte Op mitten in der Liste: davor Angewandtes bleibt, Fehler nennt die Nummer
+        let r = call(&s, "apply_ops", json!({"ops":[{"op":"rename","name":"A"},{"op":"zaubern"}]}));
+        assert!(r["content"][0]["text"].as_str().unwrap().starts_with("Op 1"));
+        assert_eq!(call(&s, "apply_ops", json!({"ops":"x"}))["isError"], true);
+    }
+
+    #[test]
+    fn every_tool_once() {
+        let s = server();
+        assert_eq!(call(&s, "project_info", json!({}))["structuredContent"]["clips"], 0);
+        assert_eq!(call(&s, "list_media", json!({}))["structuredContent"], json!([]));
+        assert_eq!(call(&s, "list_fonts", json!({}))["structuredContent"], json!([]));
+        assert_eq!(call(&s, "list_timeline", json!({}))["structuredContent"], json!([]));
+        assert_eq!(call(&s, "history", json!({}))["structuredContent"], json!([]));
+        assert_eq!(call(&s, "undo", json!({}))["isError"], true);
+        assert_eq!(call(&s, "redo", json!({}))["isError"], true);
+        assert_eq!(call(&s, "import_media", json!({"path":"C:/gibt/es/nicht.mp4"}))["isError"], true);
+        assert_eq!(call(&s, "import_media", json!({}))["isError"], true);
+        assert_eq!(call(&s, "add_media_clip", json!({"media_id":"keine-id"}))["isError"], true);
+        assert_eq!(call(&s, "add_media_clip", json!({"media_id":MediaId::new().to_string()}))["isError"], true);
+        let id = call(&s, "add_text", json!({"text":"a","start":0,"duration":2}))["structuredContent"]["clip_id"].clone();
+        assert_eq!(call(&s, "trim_clip", json!({"clip_id":id,"edge":"mitte","to":1}))["isError"], true);
+        assert_eq!(call(&s, "trim_clip", json!({"clip_id":id,"edge":"end","to":1}))["isError"], false);
+        assert_eq!(call(&s, "delete_clip", json!({"clip_id":id}))["isError"], false);
+        assert_eq!(call(&s, "delete_clip", json!({"clip_id":id}))["isError"], true);
+        assert_eq!(call(&s, "undo", json!({}))["structuredContent"]["undone"], "Clip löschen");
+        assert_eq!(call(&s, "redo", json!({}))["structuredContent"]["redone"], "Clip löschen");
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("cl-mcp-test-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let v = dir.join("Ä b 🎬.mp4");
+        assert!(cl_media::ffmpeg_command().unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=1", "-threads", "2", "-pix_fmt", "yuv420p"])
+            .arg(&v).status().unwrap().success());
+        let r = call(&s, "import_media", json!({"path": v}));
+        assert_eq!(r["isError"], false, "{r}");
+        let mid = r["structuredContent"]["media_id"].clone();
+        let r = call(&s, "add_media_clip", json!({"media_id": mid}));
+        assert_eq!(r["isError"], false, "{r}");
+        let info = call(&s, "project_info", json!({}));
+        assert!((info["structuredContent"]["duration"].as_f64().unwrap() - 1.0).abs() < 0.1, "{info}");
+        assert_eq!(call(&s, "list_media", json!({}))["structuredContent"][0]["kind"], "Video");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
