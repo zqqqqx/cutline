@@ -273,19 +273,35 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
         .append(true)
         .open(target.join(OLD_LIST))
         .map_err(|e| e.to_string())?;
-    for rel in &files {
+    // getauschte Dateien (Ziel, gab es eine alte Fassung?): bei einem Fehler zurückdrehen
+    let mut done: Vec<(PathBuf, bool)> = Vec::new();
+    let mut swap = |rel: &PathBuf, done: &mut Vec<(PathBuf, bool)>| -> Result<(), String> {
         let dst = target.join(rel);
         if let Some(d) = dst.parent() {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
-        if dst.exists() {
+        let had = dst.exists();
+        if had {
             let old = old_name(&dst);
             let _ = std::fs::remove_file(&old);
             std::fs::rename(&dst, &old).map_err(|e| format!("{}: {e}", dst.display()))?;
             writeln!(list, "{}", old_name(rel).to_string_lossy().replace('\\', "/"))
                 .map_err(|e| e.to_string())?;
         }
-        std::fs::rename(staging.join(rel), &dst).map_err(|e| format!("{}: {e}", dst.display()))?;
+        done.push((dst.clone(), had));
+        std::fs::rename(staging.join(rel), &dst).map_err(|e| format!("{}: {e}", dst.display()))
+    };
+    for rel in &files {
+        if let Err(e) = swap(rel, &mut done) {
+            for (dst, had) in done.iter().rev() {
+                let _ = std::fs::remove_file(dst);
+                if *had {
+                    let _ = std::fs::rename(old_name(dst), dst);
+                }
+            }
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
+        }
     }
     let _ = std::fs::remove_dir_all(&staging);
     Ok(files.len())
@@ -541,6 +557,30 @@ mod tests {
         assert!(!app.join("cutline.exe.old").exists());
         assert!(!app.join("plugins/basis/plugin.toml.old").exists());
         assert!(app.join("cutline.exe").exists());
+    }
+
+    #[test]
+    fn failed_swap_restores_already_replaced_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(app.join("cutline.exe"), b"alt").unwrap();
+        // „b“ ist eine Datei: der Ordner für b/c.txt lässt sich nicht anlegen
+        std::fs::write(app.join("b"), b"x").unwrap();
+        let zp = dir.path().join("pkg.zip");
+        {
+            let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
+            let o = zip::write::SimpleFileOptions::default();
+            for (name, data) in [("cutline.exe", b"neu"), ("neu.dll", b"neu"), ("b/c.txt", b"neu")] {
+                w.start_file(name, o).unwrap();
+                w.write_all(data).unwrap();
+            }
+            w.finish().unwrap();
+        }
+        assert!(install(&zp, &app).is_err());
+        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"alt");
+        assert!(!app.join("cutline.exe.old").exists());
+        assert!(!app.join("neu.dll").exists());
     }
 
     #[test]
