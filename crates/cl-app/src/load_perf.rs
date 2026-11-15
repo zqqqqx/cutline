@@ -186,7 +186,7 @@ fn big_project(dir: &Path) -> Project {
 #[ignore]
 fn load_perf_open_big_project() {
     // eigenes Projekt (Kopie, das Original bleibt unberührt): CUTLINE_OPEN_FILE=<.cutline>
-    let own = std::env::var_os("CUTLINE_OPEN_FILE").map(PathBuf::from);
+    let own = std::env::var_os("CUTLINE_OPEN_FILE").filter(|s| !s.is_empty()).map(PathBuf::from);
     let Some(dir) = material().or_else(|| own.clone()) else { return };
     let mut h = headless();
     h.frame();

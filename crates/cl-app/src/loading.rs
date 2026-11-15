@@ -316,21 +316,28 @@ impl App {
 
     /// Geladenes Projekt in den Editor setzen.
     pub fn apply_loaded(&mut self, p: &Path, done: Loaded) {
+        let s = crate::app::section("Laden: altes Projekt verlassen");
         if !self.flush_before_leaving() {
             return;
         }
         self.reset_editor();
+        drop(s);
+        let s = crate::app::section("Laden: Projekt setzen");
         let n = done.project.media.len();
         self.missing_open = done.present.values().any(|ok| !ok);
         self.presence.set_all(done.present, n);
         self.set_doc(done.project);
         self.saved_revision = self.revision;
         self.project_path = Some(p.to_path_buf());
+        drop(s);
+        let s = crate::app::section("Laden: Sperre und Einstellungen");
         self.take_lock(p);
         self.settings.add_recent(p);
         self.settings.save();
         self.screen = Screen::Editor;
         self.last_backup = Some(Instant::now());
+        drop(s);
+        let _s = crate::app::section("Laden: Schriften");
         let known = self.font_files();
         let mut missing: Vec<String> = done.fonts.into_iter().filter(|f| !known.contains_key(f)).collect();
         missing.sort();
