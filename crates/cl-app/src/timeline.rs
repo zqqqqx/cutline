@@ -523,8 +523,6 @@ struct CacheKey {
 
 /// Höchstens so viele Clip-Texte im Zwischenspeicher (darüber: neu beginnen)
 const HEAD_CAP: usize = 20_000;
-/// Fehlende Dateien so oft neu prüfen (s); eine Projektänderung prüft sofort
-const MISSING_RECHECK: f64 = 2.0;
 
 /// Texte eines Clips: Kopfzeile und (Textclips) Text im Clip, gemessen; dazu der zuletzt
 /// gezeigte, fertig gesetzte Stand je Breite.
@@ -544,10 +542,14 @@ struct ViewCache {
     key: Option<CacheKey>,
     tracks: std::sync::Arc<Vec<Track>>,
     missing: HashSet<MediaId>,
-    missing_at: Option<f64>,
     heads: HashMap<ClipId, Head>,
     kern: Kerning,
     waves: HashMap<ClipId, (WaveKey, std::sync::Arc<egui::Mesh>)>,
+}
+
+/// Fehlende Medien laut Hintergrundprüfung ([`crate::loading::Presence`]): keine Dateizugriffe je Bild
+fn missing_media(media: &[MediaRef], presence: &crate::loading::Presence) -> HashSet<MediaId> {
+    media.iter().filter(|m| !presence.get(&m.path)).map(|m| m.id).collect()
 }
 
 impl ViewCache {
@@ -561,12 +563,7 @@ impl ViewCache {
         self.heads.clear();
         self.kern.0.clear();
         self.waves.clear();
-        self.missing_at = None;
         true
-    }
-    /// Fehlende Dateien neu prüfen? (neuer Stand oder `MISSING_RECHECK` vergangen)
-    fn missing_due(&self, now: f64) -> bool {
-        self.missing_at.is_none_or(|t| now - t >= MISSING_RECHECK || now < t)
     }
     /// Eintrag für `id` (neu mit `make`); bei voller Obergrenze wird zuerst geleert.
     fn head(&mut self, id: ClipId, make: impl FnOnce(&mut Kerning) -> Head) -> &mut Head {
@@ -1169,10 +1166,7 @@ impl App {
         let tracks = self.timeline.cache.tracks.clone();
         let now_s = ui.input(|i| i.time);
         self.timeline.now = now_s;
-        if self.timeline.cache.missing_due(now_s) {
-            self.timeline.cache.missing = self.project.media.iter().filter(|m| !m.is_local()).map(|m| m.id).collect();
-            self.timeline.cache.missing_at = Some(now_s);
-        }
+        self.timeline.cache.missing = missing_media(&self.project.media, &self.presence);
         let total_t = self.project.duration().as_secs_f64();
         let recording = self.voiceover.recorder.as_ref().map(|r| {
             (
@@ -4210,6 +4204,29 @@ mod tests {
         }
     }
 
+    /// „Fehlt“ kommt aus der Hintergrundprüfung, nicht aus einem Dateizugriff im Oberflächen-Thread
+    /// (Netzlaufwerke würden die Oberfläche anhalten).
+    #[test]
+    fn missing_media_comes_from_the_background_check() {
+        let m = MediaRef {
+            id: MediaId::new(),
+            path: std::path::PathBuf::from("gibt/es/nicht.mp4"),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(1.0),
+            width: 64,
+            height: 36,
+            fps: None,
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: None,
+            audio_codec: None,
+        };
+        let mut p = crate::loading::Presence::default();
+        assert!(missing_media(std::slice::from_ref(&m), &p).is_empty(), "noch nicht geprüft: gilt als vorhanden");
+        p.set_all(HashMap::from([(m.path.clone(), false)]), 1);
+        assert_eq!(missing_media(std::slice::from_ref(&m), &p), HashSet::from([m.id]));
+    }
+
     #[test]
     fn view_cache_follows_project_state_and_stays_bounded() {
         let key = |epoch| CacheKey { epoch, lang: cl_i18n::Lang::De, ppp: 1.0 };
@@ -4223,11 +4240,8 @@ mod tests {
             body_shown: None,
         };
         let one = Track::new(TrackKind::Video);
-        // erster Stand: Spuren übernommen, fehlende Dateien gleich prüfen
+        // erster Stand: Spuren übernommen
         assert!(c.sync(key(1), || vec![one.clone()]));
-        assert!(c.missing_due(0.0));
-        c.missing_at = Some(10.0);
-        assert!(!c.missing_due(11.0) && c.missing_due(10.0 + MISSING_RECHECK));
         c.head(ClipId::new(), head);
         // gleicher Stand: nichts neu (der Spuren-Klon wird gar nicht erst gebaut)
         assert!(!c.sync(key(1), || unreachable!()));
@@ -4236,7 +4250,7 @@ mod tests {
         for k in [key(2), CacheKey { lang: cl_i18n::Lang::En, ..key(2) }, CacheKey { ppp: 2.0, ..key(2) }] {
             c.head(ClipId::new(), head);
             assert!(c.sync(k, Vec::new));
-            assert!(c.heads.is_empty() && c.tracks.is_empty() && c.missing_due(10.0));
+            assert!(c.heads.is_empty() && c.tracks.is_empty());
         }
         // Obergrenze: beim Überlauf neu beginnen
         for _ in 0..HEAD_CAP + 5 {
