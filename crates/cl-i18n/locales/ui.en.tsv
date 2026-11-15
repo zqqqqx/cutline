@@ -1666,3 +1666,4 @@ Aufdecken hoch	Reveal up
 Aufdecken runter	Reveal down
 Ergebnis verworfen, weil inzwischen ein anderes Projekt geöffnet wurde	Result discarded because another project has been opened since
 Duplizieren fehlgeschlagen: {}	Duplicating failed: {}
+Import fehlgeschlagen (interner Fehler)	Import failed (internal error)
