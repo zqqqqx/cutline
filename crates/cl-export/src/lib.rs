@@ -40,14 +40,25 @@ pub enum ExportError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Media(#[from] cl_media::MediaError),
-    /// Fehler in einem Abschnitt eines großen Exports (Zeiten der Zeitleiste)
+    /// Fehler in einem Abschnitt eines großen Exports (Zeiten der Zeitleiste; `args`: der
+    /// gescheiterte FFmpeg-Aufruf, leer bei anderen Fehlern)
     #[error("Abschnitt {from}–{to}: {err}")]
-    Section { from: String, to: String, err: Box<ExportError> },
+    Section { from: String, to: String, err: Box<ExportError>, args: Vec<String> },
     /// So viele Clips gleichzeitig, dass schon ein einzelnes Bild FFmpeg überfordert
     #[error("Zu viele gleichzeitige Clips bei {0} – FFmpeg kann sie nicht auf einmal öffnen")]
     TooManyClips(String),
     #[error("Zu wenig Speicherplatz für die Zwischendateien: {need} nötig, {free} frei")]
     NoSpace { need: String, free: String },
+}
+
+impl ExportError {
+    /// Argumente des gescheiterten FFmpeg-Laufs, wenn er nicht der Endlauf (`Job::args`) war.
+    pub fn failed_args(&self) -> Option<&[String]> {
+        match self {
+            ExportError::Section { args, .. } => Some(args),
+            _ => None,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, ExportError>;
@@ -1181,10 +1192,8 @@ fn run_sections(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -
             Ok(())
         });
         match r {
-            Err(ExportError::Cancelled) => return Err(ExportError::Cancelled),
-            Err(e) => {
-                return Err(ExportError::Section { from: sections::clock(sec.from), to: sections::clock(sec.to), err: Box::new(e) });
-            }
+            Err(e @ (ExportError::Cancelled | ExportError::Section { .. })) => return Err(e),
+            Err(e) => return Err(section_error(sec, e, Vec::new())),
             Ok(()) => {}
         }
         if let Some(v) = &sec.video {
@@ -1233,10 +1242,18 @@ fn run_section(job: &Job, sec: &Section, cancel: &AtomicBool, progress: &mut dyn
     let mut at = share;
     for (args, w) in sec.runs.iter().zip(weights) {
         let w = w * (1.0 - share);
-        run_ffmpeg(job, args, secs, cancel, &mut |x| progress(at + x * w))?;
+        run_ffmpeg(job, args, secs, cancel, &mut |x| progress(at + x * w)).map_err(|e| match e {
+            ExportError::Cancelled => e,
+            e => section_error(sec, e, args.clone()),
+        })?;
         at += w;
     }
     Ok(())
+}
+
+/// Fehler eines Abschnitts mit Zeitbereich und dem gescheiterten Aufruf (für das Protokoll).
+fn section_error(sec: &Section, e: ExportError, args: Vec<String>) -> ExportError {
+    ExportError::Section { from: sections::clock(sec.from), to: sections::clock(sec.to), err: Box::new(e), args }
 }
 
 /// `.part` ans Ziel. Scheitert das (Ziel z. B. im Player geöffnet), bleibt die fertige Datei liegen.

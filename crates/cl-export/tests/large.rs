@@ -441,6 +441,10 @@ fn progress_is_monotonic_and_errors_name_the_section() {
     let t = e.to_string();
     assert!(t.starts_with("Abschnitt ") && t.contains('–'), "{t}");
     assert!(!out.exists() && !job.part.exists());
+    // fürs Protokoll: der gescheiterte Aufruf des Abschnitts, nicht der nie gestartete Endlauf
+    let failed = e.failed_args().expect("Abschnitt");
+    assert!(job.section_args().iter().any(|a| a == failed) && failed != job.args.as_slice(), "{failed:?}");
+    assert!(failed.iter().any(|a| a.contains("kaputt.mp4")));
 }
 
 /// Ein Abschnitt des großen Projekts zum Nachmessen (Bereich 0–50 s).
