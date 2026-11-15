@@ -1862,7 +1862,8 @@ impl App {
                 toggles.clear();
             }
             // Spurname (eigener Name oder Art + Nummer)
-            let name = tr.name.clone().unwrap_or_else(|| {
+            let own = tr.name.as_deref().map(crate::captions::shown_track_name);
+            let name = own.unwrap_or_else(|| {
                 let n = tracks
                     .iter()
                     .filter(|t| t.kind == tr.kind)

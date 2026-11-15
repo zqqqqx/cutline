@@ -291,6 +291,11 @@ mod tests {
                 en.matches('{').count(),
                 "Platzhalter: {de}"
             );
+            // eine Schreibweise: amerikanisch (color, gray, canceled …)
+            let low = en.to_lowercase();
+            for brit in ["colour", "grey", "centre", "cancelled", "favourite", "behaviour", "licence"] {
+                assert!(!low.contains(brit), "britisch „{brit}“: {en}");
+            }
         }
     }
 

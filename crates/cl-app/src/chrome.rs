@@ -203,9 +203,9 @@ impl App {
                     if self.revision == self.saved_revision && self.project_path.is_some() {
                         let when = self.last_saved.map(|t| t.elapsed().as_secs()).map(|s| {
                             if s < 60 {
-                                "gerade eben".to_string()
+                                crate::tr("gerade eben")
                             } else {
-                                format!("vor {} min", s / 60)
+                                crate::tr(format!("vor {} Min.", s / 60))
                             }
                         });
                         (

@@ -10,6 +10,12 @@ use crate::theme::{self, icon};
 /// Name der Spur, auf der Untertitel landen
 pub const TRACK_NAME: &str = "Untertitel";
 
+/// Spurname zum Anzeigen: der Standardname der Untertitelspur in der Oberflächensprache
+/// (gespeichert bleibt er deutsch, daran wird die Spur erkannt), eigene Namen wie getippt.
+pub fn shown_track_name(name: &str) -> String {
+    if name == TRACK_NAME { crate::tr(name) } else { name.to_string() }
+}
+
 pub struct CapPreset {
     pub id: &'static str,
     pub name: &'static str,

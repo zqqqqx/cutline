@@ -595,7 +595,9 @@ impl App {
                     egui::ComboBox::from_id_salt("set-lang")
                         .selected_text(crate::tr(self.i18n.lang().native_name()))
                         .show_ui(ui, |ui| {
-                            for l in cl_i18n::Lang::ALL {
+                            // Pseudo-Sprache nur in Entwickler-Builds (Debug oder CUTLINE_SHOTS)
+                            let dev = cfg!(debug_assertions) || std::env::var_os("CUTLINE_SHOTS").is_some();
+                            for l in cl_i18n::Lang::ALL.into_iter().filter(|l| dev || *l != cl_i18n::Lang::Pseudo) {
                                 if ui
                                     .selectable_label(
                                         self.i18n.lang() == l,
