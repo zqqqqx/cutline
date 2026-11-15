@@ -691,12 +691,18 @@ pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) ->
             run_ffmpeg(job, &job.args, &cancel, &mut |x| progress(MEASURE_SHARE + x * (1.0 - MEASURE_SHARE)))
         }),
         None => run_ffmpeg(job, &job.args, &cancel, &mut progress),
-    }
-    .and_then(|_| std::fs::rename(&job.part, &job.out).map_err(Into::into));
+    };
     if r.is_err() {
         let _ = std::fs::remove_file(&job.part);
     }
-    r
+    r.and_then(|_| finish(&job.part, &job.out))
+}
+
+/// `.part` ans Ziel. Scheitert das (Ziel z. B. im Player geöffnet), bleibt die fertige Datei liegen.
+fn finish(part: &Path, out: &Path) -> Result<()> {
+    std::fs::rename(part, out).map_err(|e| {
+        std::io::Error::new(e.kind(), format!("{e} – die fertige Datei liegt unter {}", part.display())).into()
+    })
 }
 
 /// Beendet Kindprozesse, wenn der Vorlauf abbricht oder scheitert.
@@ -1031,6 +1037,19 @@ fn subtitles(p: &Project, ms_sep: char, start: Time, end: Time) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finished_part_survives_failed_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let part = dir.path().join("a.mp4.part");
+        std::fs::write(&part, b"fertig").unwrap();
+        // Ziel ist ein Ordner: Umbenennen scheitert wie bei einer gesperrten Datei
+        let out = dir.path().join("a.mp4");
+        std::fs::create_dir(&out).unwrap();
+        let e = finish(&part, &out).unwrap_err().to_string();
+        assert!(part.is_file());
+        assert!(e.contains("a.mp4.part"), "{e}");
+    }
 
     fn make_media(dir: &Path) -> (MediaRef, MediaRef) {
         let v = dir.join("v.mp4");
