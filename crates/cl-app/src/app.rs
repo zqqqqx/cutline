@@ -2466,6 +2466,10 @@ impl App {
     /// Takt des Player-Kerns: Playhead fortschreiben (Ton-Uhr, sonst Systemzeit), Puffern
     /// beenden, Ende/Schleife, Pause verwerfen, wenn Playhead oder Projekt sich änderten.
     fn advance_playhead(&mut self) {
+        // Vorschau-Ton: unlesbare Dateien fallen einzeln heraus, Hinweis einmal je Datei
+        for w in cl_export::take_audio_warnings() {
+            self.toast_err(w);
+        }
         self.perf_audio();
         let max_q = if self.settings.auto_quality { self.quality_steps().len() - 1 } else { 0 };
         let t = Tick {
