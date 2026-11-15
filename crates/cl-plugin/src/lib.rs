@@ -606,18 +606,28 @@ fn copy_capped(r: impl std::io::Read, w: &mut impl std::io::Write, left: &mut u6
 /// Archivs oder in genau einem Unterordner. Unsichere Pfade, ein ungültiges Manifest oder eine
 /// andere Art als `asset-pack` brechen ab; dann bleibt `root` unverändert.
 pub fn install_zip(zip_path: &Path, root: &Path, replace: bool) -> Result<Installed, String> {
+    install_zip_inner(zip_path, root, replace, None)
+}
+
+/// Wie [`install_zip`] für ein nachgeladenes Paket: die ID im Manifest muss `id` sein; eine
+/// vorhandene Fassung wird ersetzt.
+pub fn install_zip_id(zip_path: &Path, root: &Path, id: &str) -> Result<(), String> {
+    install_zip_inner(zip_path, root, true, Some(id)).map(drop)
+}
+
+fn install_zip_inner(zip_path: &Path, root: &Path, replace: bool, expect: Option<&str>) -> Result<Installed, String> {
     std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let staging = root.join(format!(".install-{}-{nanos}", std::process::id()));
-    let r = install_staged(zip_path, root, &staging, replace);
+    let r = install_staged(zip_path, root, &staging, replace, expect);
     let _ = std::fs::remove_dir_all(&staging);
     r
 }
 
-fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool) -> Result<Installed, String> {
+fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool, expect: Option<&str>) -> Result<Installed, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Keine gültige ZIP-Datei: {e}"))?;
     // die mitgelieferten Pakete haben unter 200 Dateien; Millionen leerer Einträge legten sonst
@@ -664,6 +674,9 @@ fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool) -
         return Err("Nur Inhaltspakete (asset-pack) lassen sich hinzufügen".into());
     }
     let id = m.plugin.id.clone();
+    if expect.is_some_and(|e| e != id) {
+        return Err(format!("Paket-ID „{id}“ passt nicht zur Liste"));
+    }
     let target = root.join(&id);
     if target.exists() {
         if !replace {
@@ -918,6 +931,11 @@ license = "CC-BY-4.0"
         assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF");
         assert_eq!(install_zip(&zp, &root, true).unwrap(), Installed::Done("test.sounds".into()));
         assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF2");
+        // nachgeladen: ID muss passen, sonst bleibt alles wie es war
+        assert!(install_zip_id(&zp, &root, "test.andere").unwrap_err().contains("passt nicht"));
+        assert!(!root.join("test.andere").exists());
+        assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF2");
+        install_zip_id(&zp, &root, "test.sounds").unwrap();
         // bösartiger Pfad: nichts wird übernommen
         let evil = dir.path().join("evil.zip");
         zip_with(&evil, &[("plugin.toml", PACK.replace("test.sounds", "test.evil").as_bytes()), ("ding.wav", b"x"), ("../boese.txt", b"x")]);

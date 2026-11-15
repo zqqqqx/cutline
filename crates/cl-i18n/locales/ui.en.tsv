@@ -1751,3 +1751,32 @@ Fortsetzen	Resume
 Zusammengesetzte Clips	Compound clips
 Zusammengesetzte Clips mit Tempo	Compound clips with speed change
 Projekt konnte nicht geladen werden (interner Fehler)	Project could not be loaded (internal error)
+Verfügbar	Available
+Liste neu laden	Reload list
+Laden	Download
+Aktualisieren	Update
+Wartet …	Waiting …
+Nachladen ist ausgeschaltet	Downloads are turned off
+Neuere Version nötig	Newer version required
+Liste nicht erreichbar	List not reachable
+Alle Pakete sind installiert	All packs are installed
+Braucht eine neuere Version von Cutline	Needs a newer version of Cutline
+Paket „{}“ installiert	Pack “{}” installed
+Prüfsumme stimmt nicht	Checksum does not match
+Paket ist größer als angegeben	Pack is larger than stated
+Paket-ID „{}“ passt nicht zur Liste	Pack ID “{}” does not match the list
+GitHub antwortet mit {}	GitHub responds with {}
+Keine Verbindung zu GitHub ({})	Can't reach GitHub ({})
+Liste zu groß	List too large
+Lokal vorrätig	Available locally
+Kein Zugriff: Der Titel ist in deinem Plan oder Abo nicht enthalten	No access: this track is not included in your plan or subscription
+Zu schnell hintereinander geladen, bitte kurz warten	Downloads too fast in a row, please wait a moment
+Protokoll exportieren	Export log
+Letzte 24 Stunden als Textdatei speichern	Save the last 24 hours as a text file
+Protokollordner öffnen	Open log folder
+Protokoll gespeichert	Log saved
+Protokoll wird exportiert	Exporting log
+Cutline wurde beim letzten Mal unerwartet beendet	Cutline quit unexpectedly last time
+Textdatei	Text file
+Tonspur der Datei	Audio track of the file
+Spur stumm übernommen	Track imported muted

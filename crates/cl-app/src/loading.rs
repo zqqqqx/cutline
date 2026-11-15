@@ -275,7 +275,7 @@ impl App {
         let Some(l) = self.load.take() else { return };
         match res {
             Ok(done) => match l.mode {
-                LoadMode::Open => self.apply_loaded(&l.path, done),
+                LoadMode::Open => self.apply_loaded(&l.path, done, Some(l.since)),
                 LoadMode::Restore => {
                     // aktuellen Stand vorher sichern, dann ersetzen (Pfad bleibt)
                     if let Some(path) = self.project_path.clone() {
@@ -315,7 +315,7 @@ impl App {
     }
 
     /// Geladenes Projekt in den Editor setzen.
-    pub fn apply_loaded(&mut self, p: &Path, done: Loaded) {
+    pub fn apply_loaded(&mut self, p: &Path, done: Loaded, t0: Option<Instant>) {
         let s = crate::app::section("Laden: altes Projekt verlassen");
         if !self.flush_before_leaving() {
             return;
@@ -327,6 +327,7 @@ impl App {
         self.missing_open = done.present.values().any(|ok| !ok);
         self.presence.set_all(done.present, n);
         self.set_doc(done.project);
+        crate::applog::project("geöffnet", Some(p), &self.project, t0);
         self.saved_revision = self.revision;
         self.project_path = Some(p.to_path_buf());
         drop(s);

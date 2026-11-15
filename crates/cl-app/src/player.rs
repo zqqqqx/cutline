@@ -859,8 +859,8 @@ impl App {
                     );
                     self.thumbs.insert(media, tex);
                 }
-                Done::Wave { media, peaks } => {
-                    self.waves.insert(media, peaks);
+                Done::Wave { media, stream, peaks } => {
+                    self.waves.insert((media, stream), peaks);
                 }
                 Done::SoundMeta { key, media, bars } => {
                     if self.sound_pending.as_deref() == Some(key.as_str()) {
@@ -887,7 +887,7 @@ impl App {
                 Done::Skipped(key) => {
                     self.fx_thumbs_requested.remove(&key);
                 }
-                Done::Error(e) => eprintln!("Decoder: {e}"),
+                Done::Error(e) => log::warn!("Decoder: {e}"),
             }
         }
     }
@@ -1014,7 +1014,7 @@ impl App {
                     sp.note_time(pair, t0.elapsed().as_secs_f64(), interval);
                 }
                 if crate::app::perf() {
-                    eprintln!("perf: Übergang gemischt ({}×{}, {} Bild(er)) in {:.1} ms", cw, ch, sets.len(), t0.elapsed().as_secs_f64() * 1e3);
+                    crate::applog::perf_line!("perf: Übergang gemischt ({}×{}, {} Bild(er)) in {:.1} ms", cw, ch, sets.len(), t0.elapsed().as_secs_f64() * 1e3);
                 }
                 // vorhandene Texturen weiterverwenden: Mischbild, dann je Effekt-Element
                 let mut old = sp.tex.take().into_iter().chain(sp.fx.drain(..).map(|f| f.0));
@@ -1221,7 +1221,7 @@ impl App {
                     .is_some_and(|p| p.key == key && p.t0 <= self.playhead && p.stalled())
             {
                 if crate::app::perf() {
-                    eprintln!("perf: Strom hing bei {:.2} s, neu geöffnet", self.playhead.as_secs_f64());
+                    crate::applog::perf_line!("perf: Strom hing bei {:.2} s, neu geöffnet", self.playhead.as_secs_f64());
                 }
                 self.playbacks.remove(&id);
             }

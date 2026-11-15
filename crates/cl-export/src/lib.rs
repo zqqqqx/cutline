@@ -1164,7 +1164,7 @@ mod tests {
         let media = |name: &str, audio: bool, kind: MediaKind| {
             let path = dir.path().join(name);
             std::fs::write(&path, b"x").unwrap();
-            MediaRef { id: MediaId::new(), path, kind, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: audio, video_codec: None, audio_codec: None }
+            MediaRef { id: MediaId::new(), path, kind, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: audio, audio_streams: audio as u32, video_codec: None, audio_codec: None }
         };
         let s = Time::from_secs_f64;
         let (snd, mute_vid, img) = (media("a.wav", true, MediaKind::Audio), media("v.mp4", false, MediaKind::Video), media("i.png", false, MediaKind::Image));
@@ -1215,6 +1215,7 @@ mod tests {
             height: 180,
             fps: None,
             has_audio: false,
+            audio_streams: 0,
             video_codec: None,
             audio_codec: None,
         };

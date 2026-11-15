@@ -511,9 +511,11 @@ impl App {
                     if m.kind == MediaKind::Video && ui.is_rect_visible(r) {
                         wanted.insert(strip_key.clone());
                     }
+                    // Filmstreifen zum Durchblättern erst, wenn das Vorschaubild der Kachel steht
+                    // (außer man fährt schon darüber): das Bild soll nie auf den Streifen warten
                     if m.kind == MediaKind::Video
                         && ui.is_rect_visible(r)
-                        && (scrub.is_some() || outstanding < 4)
+                        && (scrub.is_some() || (outstanding < 4 && self.thumbs.contains_key(&m.id)))
                         && self.fx_thumbs_requested.insert(strip_key.clone())
                         && self.presence.get(&m.path)
                     {

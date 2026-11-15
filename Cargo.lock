@@ -753,6 +753,7 @@ dependencies = [
  "egui-phosphor",
  "hound",
  "image",
+ "log",
  "raw-window-handle",
  "rfd",
  "serde",
@@ -760,6 +761,7 @@ dependencies = [
  "tempfile",
  "ureq",
  "winresource",
+ "zip",
 ]
 
 [[package]]
@@ -843,6 +845,7 @@ name = "cl-import"
 version = "0.11.1"
 dependencies = [
  "cl-core",
+ "cl-export",
  "cl-fonts",
  "cl-media",
  "roxmltree",

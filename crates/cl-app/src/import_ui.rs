@@ -221,7 +221,7 @@ impl App {
                 _ => None,
             })
             .collect();
-        self.apply_loaded(&imp.path, crate::loading::Loaded { project: imp.project, present, fonts, gone: Vec::new() });
+        self.apply_loaded(&imp.path, crate::loading::Loaded { project: imp.project, present, fonts, gone: Vec::new() }, None);
         // Titelbild für die Startseite (das Projekt selbst liegt schon auf der Platte)
         self.send_project_thumb(&imp.path);
         self.import.open = false;

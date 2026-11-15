@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod applog;
 mod assets;
 mod captions;
 mod audio;
@@ -107,6 +108,7 @@ fn main() -> anyhow::Result<()> {
         return run_mcp_stdio(args.get(i + 1).map(std::path::PathBuf::from));
     }
 
+    applog::init();
     let open = args
         .iter()
         .skip(1)
@@ -156,7 +158,11 @@ fn main() -> anyhow::Result<()> {
         options,
         Box::new(move |cc| Ok(Box::new(app::App::new(cc, open)))),
     )
-    .map_err(|e| anyhow::anyhow!("{e}"))
+    .map_err(|e| {
+        log::error!("Fenster: {e}");
+        applog::flush();
+        anyhow::anyhow!("{e}")
+    })
 }
 
 fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> anyhow::Result<()> {

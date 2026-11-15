@@ -222,11 +222,14 @@ fn very_large_draft_is_converted_quickly() {
 #[test]
 #[ignore]
 fn measure_big_draft_steps() {
-    let dir = std::env::var_os("CUTLINE_IMPORT_MEDIA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("F:/cutline-testmedien/import"))
-        .join("grosser_entwurf");
-    if !dir.is_dir() {
+    // anderer Entwurf: CUTLINE_IMPORT_DRAFT=<Ordner oder draft_content.json>
+    let dir = std::env::var_os("CUTLINE_IMPORT_DRAFT").map(PathBuf::from).unwrap_or_else(|| {
+        std::env::var_os("CUTLINE_IMPORT_MEDIA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("F:/cutline-testmedien/import"))
+            .join("grosser_entwurf")
+    });
+    if !dir.exists() {
         return;
     }
     let last: Arc<Mutex<(Step, std::time::Instant, f64)>> = Arc::new(Mutex::new((Step::Read, std::time::Instant::now(), 0.0)));
