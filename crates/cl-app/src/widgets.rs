@@ -212,7 +212,7 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> bool {
     if resp.clicked() {
         *on = !*on;
     }
-    let t = ui.ctx().animate_bool(resp.id, *on);
+    let t = theme::fade(ui.ctx(), resp.id, *on, theme::MOTION);
     let p = ui.painter();
     let bg = if *on { theme::ACCENT() } else { theme::BG_HOVER() };
     // Pille: Radius = halbe Höhe (16 px), bewusst ganz rund
@@ -739,6 +739,42 @@ mod tests {
             let (c, w) = grid_cols(avail, 100.0, 8.0);
             assert!(c as f32 * w + (c as f32 - 1.0) * 8.0 <= avail + 0.01, "{avail}");
         }
+    }
+
+    /// Messung (von Hand): Bildzeit der Oberfläche mit 300 Platzhalter-Kacheln (Schimmer läuft)
+    /// und Lauflinie, inkl. Tessellieren. `cargo test --release -p cl-app -- --ignored placeholder_frame_time --nocapture`
+    #[test]
+    #[ignore]
+    fn placeholder_frame_time() {
+        let ctx = eframe::egui::Context::default();
+        let items: Vec<usize> = (0..300).collect();
+        let mut times = Vec::new();
+        for f in 0..120 {
+            let input = eframe::egui::RawInput {
+                screen_rect: Some(eframe::egui::Rect::from_min_size(Default::default(), vec2(1600.0, 1000.0))),
+                time: Some(f as f64 / 60.0),
+                ..Default::default()
+            };
+            let t0 = std::time::Instant::now();
+            let out = ctx.run(input, |ctx| {
+                eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                    super::busy_row(ui, eframe::egui::Id::new("b"), true);
+                    super::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, i| {
+                        super::tile(ui, eframe::egui::Id::new(("t", *i)), r, "Kachel", false, |p, a| {
+                            super::tile_image(p, eframe::egui::Id::new(("t", *i)), a, None, "")
+                        });
+                    });
+                });
+            });
+            let _ = ctx.tessellate(out.shapes, out.pixels_per_point);
+            if f >= 20 {
+                times.push(t0.elapsed().as_secs_f64() * 1000.0);
+            }
+        }
+        times.sort_by(f64::total_cmp);
+        let (med, max) = (times[times.len() / 2], times[times.len() - 1]);
+        println!("Platzhalter-Raster 300 Kacheln: Median {med:.2} ms, Max {max:.2} ms je Bild");
+        assert!(med < 8.0, "{med}");
     }
 
     #[test]
