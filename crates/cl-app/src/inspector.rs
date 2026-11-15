@@ -1241,7 +1241,12 @@ impl App {
     }
 
     fn speed_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
-        let mut mode = if c.fx.speed_curve.is_some() { 1 } else { 0 };
+        // Gewählte Seite „Kurve“ gilt schon vor der Wahl einer Kurve (sonst bleibt „Normal“ hell)
+        let mut mode = if c.fx.speed_curve.is_some() {
+            1
+        } else {
+            self.asset_cat.get("speed-mode").and_then(|s| s.parse().ok()).unwrap_or(0)
+        };
         if widgets::segmented(ui, &["Normal", "Kurve"], &mut mode) {
             if mode == 0 {
                 c.fx.speed_curve = None;
