@@ -2,7 +2,7 @@
 
 Cutline is the open video editor for creators: easy to use, fast, and entirely on your machine. It is made for
 content creators (YouTube, Shorts/TikTok/Reels, streaming, podcasts) who publish often, in several formats, and need
-to get from a raw recording to a finished clip fast. The current release is v0.11.0; phases 0–4 are done.
+to get from a raw recording to a finished clip fast. The current release is v0.11.1; phases 0–4 are done.
 
 ## Next releases
 
@@ -10,6 +10,7 @@ to get from a raw recording to a finished clip fast. The current release is v0.1
 - **0.9.0 (released)** Workflows that connect: "move everything" on ripple edits (all tracks and markers), Quick Actions with settings and a result list, highlights to Shorts, loudness on export (−14 LUFS), YouTube bitrates, insert templates into an open project, multicam audio.
 - **0.10.0 (released)** Polish and layout: readable hint texts and status colours in all four themes, one dialog pattern, arrangement tiles in the settings (panels swapped, timeline on top), media icon bar at the side or on top, lock layout, live render preview while exporting, real key bindings in tooltips, named undo steps.
 - **0.11.0 (released)** Content: one catalog for all effects, filters, transitions, sounds and elements; content packs you switch on and off in the settings (with sources and licenses); the "Elements" tab with animated elements and emoji; shader transitions (WGSL) in preview and export; more text animations, caption styles, templates and fonts; more effects, filters and sound effects.
+- **0.11.1 (released)** Content polish: hide packs without switching them off, sound effects as compact tiles with waveforms, audio preview in the media tab, your own order for favourites and folders plus "pin to top", save media as element or sound, paste into the track you expect, chapters optional, transitions in the preview match the export in more cases.
 - **0.12.0** New tools: command search (Ctrl+K), brand kit, export queue, karaoke captions, thumbnail tool, picture-in-picture and split-screen layouts, tracked censor mask, downloadable content packs.
 
 ## Phase 4 – Creator edition (done)
