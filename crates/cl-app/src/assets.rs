@@ -91,6 +91,26 @@ fn transition_strip_graph(id: &str) -> String {
     )
 }
 
+/// Bild A (Strand) und B (See) nebeneinander, für Shader-Übergänge (cl-gpu mischt selbst)
+fn transition_pair_graph() -> String {
+    format!(
+        "{}[a];{}[b];[a][b]hstack=inputs=2,format=rgba[out]",
+        sample_source(THUMB.0, THUMB.1, true),
+        sample_source(THUMB.0, THUMB.1, false)
+    )
+}
+
+/// Kachel eines Übergangs: Shader (falls Paket-Übergang) und `xfade`-Rückfall
+fn transition_tile(id: &str) -> (String, Option<crate::preview::ShaderTile>) {
+    let plan = cl_fx::catalog::transition_plan(id);
+    let shader = plan.shader.map(|(file, params)| crate::preview::ShaderTile {
+        file,
+        params,
+        pair_graph: transition_pair_graph(),
+    });
+    (transition_strip_graph(plan.xfade), shader)
+}
+
 /// Ordner eines Tabs: eingebaute Kategorien, dahinter neue Kategorien aus Paketen
 /// (in Reihenfolge des ersten Auftretens).
 fn tab_cats(builtin: &[&str], entries: &[cl_fx::catalog::Entry]) -> Vec<String> {
@@ -113,7 +133,7 @@ fn catalog_item(
     let (key, builtin, path) = match &e.payload {
         cl_fx::catalog::Payload::Builtin => (format!("{builtin_key}{}", e.id), Some(find(&e.id)?), None),
         cl_fx::catalog::Payload::File(p) => (format!("pack:{}", e.id), None, Some(p.clone())),
-        cl_fx::catalog::Payload::Ffmpeg(_) => return None,
+        cl_fx::catalog::Payload::Ffmpeg(_) | cl_fx::catalog::Payload::Shader { .. } => return None,
     };
     Some(crate::library::Item {
         key,
@@ -1578,6 +1598,16 @@ impl App {
 
     /// Kachel bzw. Filmstreifen mit `frames` Bildern untereinander (eine Textur, ein FFmpeg-Lauf)
     fn fx_strip(&mut self, key: &str, frames: u32, graph: impl FnOnce() -> String) -> Option<egui::TextureId> {
+        self.fx_strip_tile(key, frames, || (graph(), None))
+    }
+
+    /// Wie [`Self::fx_strip`], optional mit Shader-Übergang (Rückfall: der Graph).
+    fn fx_strip_tile(
+        &mut self,
+        key: &str,
+        frames: u32,
+        job: impl FnOnce() -> (String, Option<crate::preview::ShaderTile>),
+    ) -> Option<egui::TextureId> {
         if let Some(t) = self.fx_thumbs.get(key) {
             return Some(t.id());
         }
@@ -1586,9 +1616,11 @@ impl App {
                 .join("cache")
                 .join("fx")
                 .join(format!("v3_{}.rgba", key.replace([':', '/', '\\'], "_")));
+            let (graph, shader) = job();
             self.decoder.send(Job::FxThumb {
                 key: key.to_string(),
-                graph: graph(),
+                graph,
+                shader,
                 w: THUMB.0,
                 h: THUMB.1,
                 frames,
@@ -1609,8 +1641,8 @@ impl App {
                 self.fx_thumb(&format!("{pre}:{}", d.id), || fx_tile_graph(&d.id, filters));
             }
         }
-        for t in cl_fx::TRANSITIONS.iter() {
-            self.fx_strip(&format!("trs:{}", t.0), STRIP, || transition_strip_graph(t.0));
+        for t in cl_fx::catalog::list(cl_fx::catalog::Kind::Transition) {
+            self.fx_strip_tile(&format!("trs:{}", t.id), STRIP, || transition_tile(&t.id));
         }
     }
 
@@ -1801,14 +1833,18 @@ impl App {
     fn transitions_tab(&mut self, ui: &mut egui::Ui) {
         Self::tab_title(ui, "Übergänge", |_| {});
         ui.add_space(6.0);
-        let (cat, q) = self.asset_bar(ui, "transition", &cl_fx::TRANSITION_CATEGORIES);
-        let items: Vec<(&'static str, &'static str)> = cl_fx::TRANSITIONS
-            .iter()
-            .filter(|t| {
+        // eingebaute und Übergänge aus Paketen (neue Ordner dahinter)
+        let entries = cl_fx::catalog::list(cl_fx::catalog::Kind::Transition);
+        let cats = tab_cats(&cl_fx::TRANSITION_CATEGORIES, &entries);
+        let cats: Vec<&str> = cats.iter().map(String::as_str).collect();
+        let (cat, q) = self.asset_bar(ui, "transition", &cats);
+        let items: Vec<(String, String)> = entries
+            .into_iter()
+            .filter(|e| {
                 self.library
-                    .visible("transition", &cat, &q, &format!("tr:{}", t.0), t.1, t.2)
+                    .visible("transition", &cat, &q, &format!("tr:{}", e.id), &e.name, e.category())
             })
-            .map(|t| (t.0, t.1))
+            .map(|e| (e.id, e.name))
             .collect();
         let mut menus: Vec<(egui::Response, String)> = Vec::new();
         let current = self
@@ -1818,7 +1854,7 @@ impl App {
         let mut chosen = None;
         egui::ScrollArea::vertical().id_salt("trans").auto_shrink([false, false]).show(ui, |ui| {
             widgets::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, (id, name)| {
-                let tex = self.fx_strip(&format!("trs:{id}"), STRIP, || transition_strip_graph(id));
+                let tex = self.fx_strip_tile(&format!("trs:{id}"), STRIP, || transition_tile(id));
                 // Ruhend: Bild mitten im Übergang (beide Bilder sichtbar). Hover: der ganze Übergang,
                 // am Anfang und Ende kurz stehen bleiben.
                 let mut k = STRIP as f32 * 0.55;
@@ -1834,7 +1870,7 @@ impl App {
                 );
                 let akey = format!("tr:{id}");
                 let fav = self.library.is_favorite(&akey);
-                let resp = widgets::tile(ui, egui::Id::new(("tr", *id)), r, name, current.as_deref() == Some(*id), |p, a| {
+                let resp = widgets::tile(ui, egui::Id::new(("tr", id.as_str())), r, name, current.as_deref() == Some(id.as_str()), |p, a| {
                     match tex {
                         Some(t) => {
                             p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(t, uv));
@@ -1849,9 +1885,9 @@ impl App {
                     }
                 });
                 menus.push((resp.clone(), akey));
-                resp.dnd_set_drag_payload(DragAsset::Transition(id));
+                resp.dnd_set_drag_payload(DragAsset::Transition(id.clone()));
                 if resp.clicked() {
-                    chosen = Some(*id);
+                    chosen = Some(id.clone());
                 }
             });
         });
@@ -1860,8 +1896,8 @@ impl App {
         }
         if let Some(id) = chosen {
             match self.selected_transition {
-                Some(c) => self.set_transition(c, Some(id)),
-                None => self.apply_transition_near_playhead(id),
+                Some(c) => self.set_transition(c, Some(&id)),
+                None => self.apply_transition_near_playhead(&id),
             }
         }
     }

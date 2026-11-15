@@ -241,6 +241,10 @@ pub struct Job {
     measure: Option<Measure>,
     /// Live-Vorschau (JPEG, wird während des Exports laufend überschrieben); nur mit Bild
     preview: Option<PathBuf>,
+    /// Vorläufe der Shader-Übergänge (vor dem eigentlichen Export, siehe [`run`])
+    passes: Vec<graph::ShaderPass>,
+    /// Bilder des Exports (Gewichtung des Fortschritts gegenüber den Vorläufen)
+    frames: f64,
 }
 
 /// Breite des Live-Vorschaubilds in Pixeln.
@@ -344,6 +348,8 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         alpha: s.alpha(),
         graph: Vec::new(),
         uniq: 0,
+        shader: true,
+        passes: Vec::new(),
     };
     let mut vlabel = None;
     if !s.format.audio_only() {
@@ -445,6 +451,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         );
         workdir.path().join(PREVIEW_FILE)
     });
+    let passes = std::mem::take(&mut ctx.passes);
     Ok(Job {
         args,
         workdir,
@@ -453,6 +460,8 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
         part,
         measure,
         preview,
+        passes,
+        frames: dur.as_secs_f64() * s.fps.num as f64 / s.fps.den.max(1) as f64,
     })
 }
 
@@ -660,10 +669,24 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
 /// Eine vorhandene Zieldatei bleibt bei Abbruch oder Fehler unverändert.
 /// Mit „Lautheit angleichen“ läuft vorher der Messlauf (erste [`MEASURE_SHARE`] des Fortschritts).
 pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
+    // Vorläufe der Shader-Übergänge: ihr Anteil am Fortschritt nach Bildern
+    let pre: usize = job.passes.iter().map(|p| p.progress.len()).sum();
+    let share = if pre == 0 { 0.0 } else { (pre as f64 / (pre as f64 + job.frames.max(1.0))).min(0.5) as f32 };
+    let failed = run_passes(job, &cancel, &mut |x| progress(x * share))?;
+    let fallbacks = |g: &str| {
+        failed
+            .iter()
+            .fold(g.to_string(), |g, p| g.replace(&p.block, &p.fallback))
+    };
+    if !failed.is_empty() {
+        let file = job.workdir.path().join("graph.txt");
+        std::fs::write(&file, fallbacks(&std::fs::read_to_string(&file)?))?;
+    }
+    let mut progress = |x: f32| progress(share + x * (1.0 - share));
     let r = match &job.measure {
         Some(m) => run_ffmpeg(job, &m.args, &cancel, &mut |x| progress(x * MEASURE_SHARE)).and_then(|log| {
             let pass = second_pass(&log, m.target).ok_or(ExportError::Loudness)?;
-            let g = format!("{};\n[aout]{pass}[anorm]", m.graph);
+            let g = format!("{};\n[aout]{pass}[anorm]", fallbacks(&m.graph));
             std::fs::write(job.workdir.path().join("graph.txt"), g)?;
             run_ffmpeg(job, &job.args, &cancel, &mut |x| progress(MEASURE_SHARE + x * (1.0 - MEASURE_SHARE)))
         }),
@@ -674,6 +697,114 @@ pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) ->
         let _ = std::fs::remove_file(&job.part);
     }
     r
+}
+
+/// Beendet Kindprozesse, wenn der Vorlauf abbricht oder scheitert.
+struct Children(Vec<Child>);
+
+impl Drop for Children {
+    fn drop(&mut self) {
+        for c in &mut self.0 {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+}
+
+/// Alle Vorläufe nacheinander; gibt die gescheiterten zurück (dort bleibt der `xfade`-Rückfall).
+/// Fehler nur bei Abbruch.
+fn run_passes<'a>(job: &'a Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<Vec<&'a graph::ShaderPass>> {
+    let total = job.passes.iter().map(|p| p.progress.len()).sum::<usize>().max(1);
+    let mut done = 0;
+    let mut failed = Vec::new();
+    for p in &job.passes {
+        match run_pass(job, p, cancel, &mut |k| progress((done + k) as f32 / total as f32)) {
+            Ok(true) => {}
+            Ok(false) => failed.push(p),
+            Err(ExportError::Cancelled) => return Err(ExportError::Cancelled),
+            // kein Shader-Fehler darf den Export kosten
+            Err(e) => {
+                eprintln!("Shader-Übergang: {e}");
+                failed.push(p);
+            }
+        }
+        done += p.progress.len();
+    }
+    Ok(failed)
+}
+
+/// Ein Vorlauf: Bildpaare aus FFmpeg lesen, mit cl-gpu mischen, verlustfrei schreiben.
+/// `Ok(false)`: nicht möglich (keine GPU, FFmpeg- oder Shader-Fehler).
+fn run_pass(job: &Job, p: &graph::ShaderPass, cancel: &AtomicBool, progress: &mut dyn FnMut(usize)) -> Result<bool> {
+    let Some(gpu) = cl_gpu::gpu() else {
+        return Ok(false);
+    };
+    let dir = job.workdir.path();
+    let log = |n: &str| std::fs::File::create(dir.join(n)).map(Stdio::from).unwrap_or_else(|_| Stdio::null());
+    let n = p.progress.len();
+    let mut kids = Children(Vec::new());
+    let mut reader = cl_media::ffmpeg_command()?;
+    reader
+        .current_dir(dir)
+        .args(["-v", "error", "-nostdin"])
+        .args(&p.inputs)
+        .args(["-/filter_complex", &p.graph_file, "-map", "[pout]", "-frames:v", &n.to_string()])
+        .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(log(&format!("{}.read.log", p.graph_file)));
+    kids.0.push(reader.spawn()?);
+    let mut writer = cl_media::ffmpeg_command()?;
+    writer
+        .current_dir(dir)
+        .args(["-v", "error", "-nostdin", "-y", "-f", "rawvideo", "-pix_fmt", "rgba"])
+        .args(["-s", &format!("{}x{}", p.w, p.h), "-framerate", &p.fps, "-i", "-"])
+        .args(["-c:v", "ffv1", "-level", "3", "-slices", "4", "-pix_fmt", "bgra", &p.out_file])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(log(&format!("{}.write.log", p.graph_file)));
+    kids.0.push(writer.spawn()?);
+    let mut src = kids.0[0].stdout.take().expect("piped");
+    let mut dst = kids.0[1].stdin.take().expect("piped");
+    let prm = {
+        let mut a = [0.0; cl_gpu::PARAMS];
+        for (x, v) in a.iter_mut().zip(&p.params) {
+            *x = *v;
+        }
+        a
+    };
+    let row = p.w as usize * 4;
+    let mut pair = vec![0u8; row * 2 * p.h as usize];
+    let (mut a, mut b) = (Vec::with_capacity(row * p.h as usize), Vec::with_capacity(row * p.h as usize));
+    for (k, t) in p.progress.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(ExportError::Cancelled);
+        }
+        if std::io::Read::read_exact(&mut src, &mut pair).is_err() {
+            return Ok(false);
+        }
+        a.clear();
+        b.clear();
+        for line in pair.chunks_exact(row * 2) {
+            a.extend_from_slice(&line[..row]);
+            b.extend_from_slice(&line[row..]);
+        }
+        let fa = cl_gpu::Frame { rgba: &a, width: p.w, height: p.h };
+        let fb = cl_gpu::Frame { rgba: &b, width: p.w, height: p.h };
+        let img = match gpu.render(&p.shader, &prm, fa, fb, (p.w, p.h), *t) {
+            Ok(i) => i,
+            Err(e) => {
+                eprintln!("Shader-Übergang: {e}");
+                return Ok(false);
+            }
+        };
+        if std::io::Write::write_all(&mut dst, &img).is_err() {
+            return Ok(false);
+        }
+        progress(k + 1);
+    }
+    drop(dst);
+    Ok(kids.0[1].wait()?.success())
 }
 
 /// Dateiname des Live-Vorschaubilds im Arbeitsordner
@@ -2190,6 +2321,274 @@ mod tests {
         let _ = child.wait();
         let g = std::fs::read_to_string(wd.path().join("graph.txt")).unwrap();
         assert!(!g.contains(":a]"), "{g}");
+    }
+
+    /// Harter Wisch von links: zur Mitte deutlich anders als der Rückfall „fade“.
+    const WIPE: &str = "fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f { return select(from_color(uv), to_color(uv), uv.x < progress); }";
+
+    /// Testpaket mit Shader-Übergängen (der Katalog ist global: in allen Tests gleich, einmal
+    /// angelegt): `t.shader/wipe` und `t.shader/broken` (ungültiger Shader), Rückfall `fade`.
+    fn shader_pack() {
+        static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        ONCE.get_or_init(|| {
+            use cl_fx::catalog::{Entry, Kind, Pack, PackInfo, Payload};
+            let dir = std::env::temp_dir().join(format!("cutline-shader-test-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("wipe.wgsl"), WIPE).unwrap();
+            std::fs::write(dir.join("broken.wgsl"), "fn transition( kaputt").unwrap();
+            let e = |id: &str| Entry {
+                id: format!("t.shader/{id}"),
+                kind: Kind::Transition,
+                name: id.into(),
+                categories: vec!["Effekt".into()],
+                pack: "t.shader".into(),
+                license: "CC0-1.0".into(),
+                author: "Test".into(),
+                source: None,
+                payload: Payload::Shader {
+                    file: dir.join(format!("{id}.wgsl")),
+                    fallback: "fade".into(),
+                    params: Vec::new(),
+                },
+            };
+            cl_fx::catalog::load_packs(vec![Pack {
+                info: PackInfo {
+                    id: "t.shader".into(),
+                    name: "Test".into(),
+                    version: "1.0.0".into(),
+                    description: String::new(),
+                    license: "CC0-1.0".into(),
+                    author: "Test".into(),
+                    source: None,
+                },
+                enabled: true,
+                entries: vec![e("wipe"), e("broken")],
+            }]);
+        });
+    }
+
+    /// Einfarbiges Video (30 Bilder/s)
+    fn color_video(dir: &Path, name: &str, color: &str, secs: f64, size: &str) -> MediaRef {
+        let path = dir.join(name);
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+            .arg(format!("color={color}:size={size}:rate=30:duration={secs}"))
+            .args(["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        cl_media::probe(&path).unwrap()
+    }
+
+    /// 3 s, 320×180: rot (0–1,5 s) → blau (1,5–3 s), Übergang `id` über 0,6 s (Fenster 1,2–1,8 s),
+    /// optional ein Text mit grüner Fläche darüber.
+    fn shader_project(dir: &Path, id: &str, text: bool) -> Project {
+        let a = color_video(dir, "a.mp4", "red", 2.0, "320x180");
+        let b = color_video(dir, "b.mp4", "blue", 2.0, "320x180");
+        let mut p = Project::new("Shader");
+        p.settings.width = 320;
+        p.settings.height = 180;
+        p.settings.fps = Rational { num: 30, den: 1 };
+        let mut t = Track::new(TrackKind::Video);
+        for (i, m) in [&a, &b].into_iter().enumerate() {
+            let mut c = Clip::new(
+                ClipContent::Media { media: m.id, kind: MediaKind::Video },
+                Time::from_secs_f64(1.5 * i as f64),
+                Time::from_secs_f64(1.5),
+            );
+            if i == 0 {
+                c.transition_out = Some(TransitionRef { id: id.into(), duration: Time::from_secs_f64(0.6) });
+            }
+            t.clips.push(c);
+        }
+        p.media = vec![a, b];
+        p.timeline.tracks.push(t);
+        if text {
+            let mut tt = Track::new(TrackKind::Text);
+            tt.clips.push(Clip::new(
+                ClipContent::Text(TextStyle {
+                    text: "MM".into(),
+                    size: 60.0,
+                    color: [0, 255, 0, 255],
+                    background: Some([0, 255, 0, 255]),
+                    ..Default::default()
+                }),
+                Time::ZERO,
+                Time::from_secs_f64(3.0),
+            ));
+            p.timeline.tracks.push(tt);
+        }
+        p
+    }
+
+    fn export(p: &Project, dir: &Path, name: &str) -> (PathBuf, Job) {
+        let out = dir.join(name);
+        let job = build(p, &ExportSettings::from_project(p), &no_fonts, &out).unwrap();
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        (out, job)
+    }
+
+    fn mean_diff(a: &[u8], b: &[u8]) -> f64 {
+        let n = a.len().min(b.len()) / 4;
+        let s: u64 = a
+            .chunks_exact(4)
+            .zip(b.chunks_exact(4))
+            .map(|(x, y)| (0..3).map(|i| x[i].abs_diff(y[i]) as u64).sum::<u64>())
+            .sum();
+        s as f64 / (n * 3) as f64
+    }
+
+    /// Bild Nummer `n` (bildgenau, `decode_frame` sucht nur ungefähr)
+    fn frame_n(f: &Path, n: usize) -> cl_media::RgbaFrame {
+        let o = cl_media::ffmpeg_command()
+            .unwrap()
+            .arg("-i")
+            .arg(f)
+            .args(["-v", "error", "-vf", &format!("select=eq(n\\,{n})"), "-frames:v", "1"])
+            .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+            .output()
+            .unwrap();
+        let p = cl_media::probe(f).unwrap();
+        assert_eq!(o.stdout.len(), (p.width * p.height * 4) as usize, "Bild {n}");
+        cl_media::RgbaFrame { width: p.width, height: p.height, data: o.stdout }
+    }
+
+    fn rgb_at(f: &cl_media::RgbaFrame, x: u32, y: u32) -> [u8; 3] {
+        let i = ((y * f.width + x) * 4) as usize;
+        [f.data[i], f.data[i + 1], f.data[i + 2]]
+    }
+
+    #[test]
+    fn window_frames_match_xfade() {
+        // 30 Bilder/s, Versatz 1,2 s, 0,6 s: Bilder 36 bis 54
+        assert_eq!(graph::window_frames(1.2, 0.6, 30.0), (36, 19));
+        // Versatz zwischen zwei Bildern: erstes Bild danach
+        assert_eq!(graph::window_frames(1.21, 0.6, 30.0).0, 37);
+        assert_eq!(graph::window_frames(0.0, 0.04, 25.0), (0, 2));
+    }
+
+    /// Shader-Übergang im Export: gleiche Länge und Ströme wie mit xfade, Mitte = cl-gpu-Bild,
+    /// davor/danach reine Clips, Ebenen darüber bleiben, kaputter Shader → Rückfall.
+    #[test]
+    fn shader_transition_exports_like_gpu_render() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        shader_pack();
+        let dir = tempfile::tempdir().unwrap();
+        let p = shader_project(dir.path(), "t.shader/wipe", false);
+        // erzwungener Fehler im Vorlauf (ungültiger Shader): Export gelingt mit dem Rückfall
+        let mut pb = p.clone();
+        pb.timeline.tracks[0].clips[0].transition_out.as_mut().unwrap().id = "t.shader/broken".into();
+        let (fall, job) = export(&pb, dir.path(), "fallback.mp4");
+        assert_eq!(job.passes.len(), 1);
+        let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+        assert!(!g.contains("movie="), "{g}");
+        let Some(gpu) = cl_gpu::gpu() else {
+            eprintln!("keine GPU: nur der Rückfall geprüft");
+            return;
+        };
+        let (out, job) = export(&p, dir.path(), "shader.mp4");
+        let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+        assert!(g.contains("movie=shader_0.nut") && g.contains("blend=all_expr=B"), "{g}");
+        let (a, b) = (cl_media::probe(&out).unwrap(), cl_media::probe(&fall).unwrap());
+        assert!((a.duration.as_secs_f64() - b.duration.as_secs_f64()).abs() < 0.05, "{a:?} {b:?}");
+        assert_eq!((a.width, a.height, a.has_audio), (b.width, b.height, b.has_audio));
+        // Mitte: Bild 45 (1,5 s) = Fortschritt 0,5
+        let mid = frame_n(&out, 45);
+        let red = vec![255u8, 0, 0, 255].repeat(320 * 180);
+        let blue = vec![0u8, 0, 255, 255].repeat(320 * 180);
+        let fa = cl_gpu::Frame { rgba: &red, width: 320, height: 180 };
+        let fb = cl_gpu::Frame { rgba: &blue, width: 320, height: 180 };
+        let want = gpu.render(WIPE, &[0.0; cl_gpu::PARAMS], fa, fb, (320, 180), 0.5).unwrap();
+        let d = mean_diff(&mid.data, &want);
+        assert!(d < 8.0, "Mitte weicht vom cl-gpu-Bild ab: {d}");
+        let d_fall = mean_diff(&frame_n(&fall, 45).data, &want);
+        assert!(d_fall > 40.0, "Rückfall sollte anders aussehen: {d_fall}");
+        // links schon blau, rechts noch rot
+        assert!(rgb_at(&mid, 40, 90)[2] > 200 && rgb_at(&mid, 280, 90)[0] > 200, "{:?} {:?}", rgb_at(&mid, 40, 90), rgb_at(&mid, 280, 90));
+        // kurz vor und nach dem Fenster (Bilder 36–54): reine Clips
+        let before = frame_n(&out, 35);
+        let after = frame_n(&out, 55);
+        assert!(mean_diff(&before.data, &red) < 8.0, "vorher nicht rot");
+        assert!(mean_diff(&after.data, &blue) < 8.0, "nachher nicht blau");
+    }
+
+    #[test]
+    fn layer_above_shader_transition_stays_visible() {
+        if !cl_media::ffmpeg_available() || default_font().is_none() || cl_gpu::gpu().is_none() {
+            return;
+        }
+        shader_pack();
+        let dir = tempfile::tempdir().unwrap();
+        let p = shader_project(dir.path(), "t.shader/wipe", true);
+        let (out, job) = export(&p, dir.path(), "text.mp4");
+        assert_eq!(job.passes.len(), 1);
+        let mid = frame_n(&out, 45);
+        // grüne Textfläche in der Mitte über dem Übergang
+        let c = rgb_at(&mid, 160, 90);
+        assert!(c[1] > 180 && c[0] < 80 && c[2] < 80, "{c:?}");
+    }
+
+    #[test]
+    fn cancel_during_shader_pass_stops() {
+        if !cl_media::ffmpeg_available() || cl_gpu::gpu().is_none() {
+            return;
+        }
+        shader_pack();
+        let dir = tempfile::tempdir().unwrap();
+        let p = shader_project(dir.path(), "t.shader/wipe", false);
+        let out = dir.path().join("c.mp4");
+        let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &out).unwrap();
+        let cancel = Arc::new(AtomicBool::new(true));
+        assert!(matches!(run(&job, cancel, |_| {}), Err(ExportError::Cancelled)));
+        assert!(!out.exists());
+    }
+
+    /// Messung: 10-s-Projekt (1080p, 30 Bilder/s) mit 3 Übergängen, mit/ohne Shader.
+    /// `cargo test --release -p cl-export shader_export_timing -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn shader_export_timing() {
+        shader_pack();
+        let dir = tempfile::tempdir().unwrap();
+        let cols = ["red", "blue", "green", "yellow"];
+        let mut p = Project::new("Zeit");
+        p.settings.width = 1920;
+        p.settings.height = 1080;
+        p.settings.fps = Rational { num: 30, den: 1 };
+        let mut t = Track::new(TrackKind::Video);
+        for (i, c) in cols.iter().enumerate() {
+            let m = color_video(dir.path(), &format!("{c}.mp4"), &format!("{c}"), 3.0, "1920x1080");
+            let mut cl = Clip::new(
+                ClipContent::Media { media: m.id, kind: MediaKind::Video },
+                Time::from_secs_f64(2.5 * i as f64),
+                Time::from_secs_f64(2.5),
+            );
+            if i < 3 {
+                cl.transition_out = Some(TransitionRef { id: "t.shader/wipe".into(), duration: Time::from_secs_f64(0.6) });
+            }
+            p.media.push(m);
+            t.clips.push(cl);
+        }
+        p.timeline.tracks.push(t);
+        let time = |p: &Project, n: &str| {
+            let s = std::time::Instant::now();
+            let (_, job) = export(p, dir.path(), n);
+            let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+            println!("{n}: {} Shader-Übergänge im Graph", g.matches("blend=all_expr=B").count());
+            s.elapsed().as_secs_f64()
+        };
+        let with = time(&p, "mit.mp4");
+        for c in &mut p.timeline.tracks[0].clips {
+            if let Some(t) = &mut c.transition_out {
+                t.id = "fade".into();
+            }
+        }
+        let without = time(&p, "ohne.mp4");
+        println!("Export 10 s 1080p, 3 Übergänge: mit Shader {with:.2} s, ohne {without:.2} s");
     }
 
     #[test]

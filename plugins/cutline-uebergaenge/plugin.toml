@@ -1,0 +1,436 @@
+# Shader-Übergänge (WGSL, gerendert mit cl-gpu). Ohne GPU läuft der Rückfall-Übergang (`fallback`).
+# Eigene Übergänge: CC0-1.0 (Cutline-Projekt). Portierte GL Transitions: MIT, Autor und Quelle je Übergang,
+# Lizenztext in LICENSE-gl-transitions.txt.
+[plugin]
+id = "cutline.uebergaenge"
+version = "1.0.0"
+api = 1
+kind = "asset-pack"
+name = { de = "Übergänge", en = "Transitions" }
+description = { de = "Shader-Übergänge: Reißschwenk, Zoom-Stoß, Würfel, Glitch, Licht und mehr", en = "Shader transitions: whip pans, zoom punches, cube, glitch, light and more" }
+authors = ["Cutline-Projekt"]
+license = "CC0-1.0"
+
+[[asset]]
+id = "reissschwenk-links"
+kind = "transition"
+name = { de = "Reißschwenk links", en = "Whip pan left" }
+category = ["Unschärfe"]
+shader = "shaders/whip_pan.wgsl"
+fallback = "slideleft"
+params = [
+  { type = "float", id = "dx", min = -1.0, max = 1.0, default = -1.0 },
+  { type = "float", id = "dy", min = -1.0, max = 1.0, default = 0.0 },
+]
+
+[[asset]]
+id = "reissschwenk-rechts"
+kind = "transition"
+name = { de = "Reißschwenk rechts", en = "Whip pan right" }
+category = ["Unschärfe"]
+shader = "shaders/whip_pan.wgsl"
+fallback = "slideright"
+params = [
+  { type = "float", id = "dx", min = -1.0, max = 1.0, default = 1.0 },
+  { type = "float", id = "dy", min = -1.0, max = 1.0, default = 0.0 },
+]
+
+[[asset]]
+id = "reissschwenk-hoch"
+kind = "transition"
+name = { de = "Reißschwenk hoch", en = "Whip pan up" }
+category = ["Unschärfe"]
+shader = "shaders/whip_pan.wgsl"
+fallback = "slideup"
+params = [
+  { type = "float", id = "dx", min = -1.0, max = 1.0, default = 0.0 },
+  { type = "float", id = "dy", min = -1.0, max = 1.0, default = 1.0 },
+]
+
+[[asset]]
+id = "reissschwenk-runter"
+kind = "transition"
+name = { de = "Reißschwenk runter", en = "Whip pan down" }
+category = ["Unschärfe"]
+shader = "shaders/whip_pan.wgsl"
+fallback = "slidedown"
+params = [
+  { type = "float", id = "dx", min = -1.0, max = 1.0, default = 0.0 },
+  { type = "float", id = "dy", min = -1.0, max = 1.0, default = -1.0 },
+]
+
+[[asset]]
+id = "zoom-stoss-hinein"
+kind = "transition"
+name = { de = "Zoom-Stoß hinein", en = "Zoom punch in" }
+category = ["Unschärfe"]
+shader = "shaders/zoom_punch.wgsl"
+fallback = "zoomin"
+params = [
+  { type = "float", id = "direction", min = -1.0, max = 1.0, default = 1.0 },
+  { type = "float", id = "blur", min = 0.0, max = 1.0, default = 0.35 },
+  { type = "float", id = "zoom", min = 1.5, max = 6.0, default = 3.0 },
+]
+
+[[asset]]
+id = "zoom-stoss-heraus"
+kind = "transition"
+name = { de = "Zoom-Stoß heraus", en = "Zoom punch out" }
+category = ["Unschärfe"]
+shader = "shaders/zoom_punch.wgsl"
+fallback = "fade"
+params = [
+  { type = "float", id = "direction", min = -1.0, max = 1.0, default = -1.0 },
+  { type = "float", id = "blur", min = 0.0, max = 1.0, default = 0.35 },
+  { type = "float", id = "zoom", min = 1.5, max = 6.0, default = 3.0 },
+]
+
+[[asset]]
+id = "dreh-unschaerfe"
+kind = "transition"
+name = { de = "Dreh-Unschärfe", en = "Spin blur" }
+category = ["Unschärfe"]
+shader = "shaders/spin_blur.wgsl"
+fallback = "radial"
+params = [
+  { type = "float", id = "blur", min = 0.0, max = 2.0, default = 0.9 },
+]
+
+[[asset]]
+id = "zoom-unschaerfe"
+kind = "transition"
+name = { de = "Zoom-Unschärfe", en = "Zoom blur" }
+category = ["Unschärfe"]
+shader = "shaders/cross_zoom.wgsl"
+fallback = "zoomin"
+params = [
+  { type = "float", id = "strength", min = 0.0, max = 1.0, default = 0.4 },
+]
+license = "MIT"
+author = "rectalogic"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/CrossZoom.glsl"
+
+[[asset]]
+id = "wuerfel"
+kind = "transition"
+name = { de = "Würfel", en = "Cube" }
+category = ["3D"]
+shader = "shaders/cube.wgsl"
+fallback = "slideright"
+params = [
+  { type = "float", id = "perspective", min = 0.0, max = 1.0, default = 0.7 },
+  { type = "float", id = "unzoom", min = 0.0, max = 1.0, default = 0.3 },
+  { type = "float", id = "reflection", min = 0.0, max = 1.0, default = 0.4 },
+  { type = "float", id = "floating", min = 0.0, max = 20.0, default = 3.0 },
+  { type = "float", id = "shading", min = 0.0, max = 1.0, default = 0.5 },
+]
+license = "MIT"
+author = "gre"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Cube.glsl"
+
+[[asset]]
+id = "tuer"
+kind = "transition"
+name = { de = "Flügeltür", en = "Doorway" }
+category = ["3D"]
+shader = "shaders/doorway.wgsl"
+fallback = "horzopen"
+params = [
+  { type = "float", id = "reflection", min = 0.0, max = 1.0, default = 0.4 },
+  { type = "float", id = "perspective", min = 0.0, max = 1.0, default = 0.4 },
+  { type = "float", id = "depth", min = 1.0, max = 10.0, default = 3.0 },
+]
+license = "MIT"
+author = "gre"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Doorway.glsl"
+
+[[asset]]
+id = "wirbel"
+kind = "transition"
+name = { de = "Wirbel", en = "Swirl" }
+category = ["Verzerren"]
+shader = "shaders/swirl.wgsl"
+fallback = "radial"
+params = [
+  { type = "float", id = "strength", min = -3.0, max = 3.0, default = 1.0 },
+  { type = "float", id = "radius", min = 0.1, max = 2.0, default = 0.9 },
+]
+license = "MIT"
+author = "Sergey Kosarevsky"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Swirl.glsl"
+
+[[asset]]
+id = "welle"
+kind = "transition"
+name = { de = "Welle", en = "Ripple" }
+category = ["Verzerren"]
+shader = "shaders/ripple.wgsl"
+fallback = "fade"
+params = [
+  { type = "float", id = "amplitude", min = 0.0, max = 200.0, default = 100.0 },
+  { type = "float", id = "speed", min = 0.0, max = 100.0, default = 50.0 },
+]
+license = "MIT"
+author = "gre"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Ripple.glsl"
+
+[[asset]]
+id = "wassertropfen"
+kind = "transition"
+name = { de = "Wassertropfen", en = "Water drop" }
+category = ["Verzerren"]
+shader = "shaders/water_drop.wgsl"
+fallback = "circleopen"
+params = [
+  { type = "float", id = "amplitude", min = 10.0, max = 80.0, default = 30.0 },
+  { type = "float", id = "speed", min = 0.0, max = 80.0, default = 30.0 },
+  { type = "float", id = "refraction", min = 0.0, max = 0.08, default = 0.015 },
+  { type = "float", id = "highlight", min = 0.0, max = 1.0, default = 0.5 },
+]
+license = "MIT"
+author = "Paweł Płóciennik"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/WaterDrop.glsl"
+
+[[asset]]
+id = "verziehen"
+kind = "transition"
+name = { de = "Verziehen", en = "Cross warp" }
+category = ["Verzerren"]
+shader = "shaders/cross_warp.wgsl"
+fallback = "smoothleft"
+license = "MIT"
+author = "Eke Péter"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/CrossWarp.glsl"
+
+[[asset]]
+id = "schraeg-verziehen"
+kind = "transition"
+name = { de = "Schräg verziehen", en = "Directional warp" }
+category = ["Verzerren"]
+shader = "shaders/directional_warp.wgsl"
+fallback = "diagbr"
+params = [
+  { type = "float", id = "smoothness", min = 0.0, max = 1.0, default = 0.1 },
+]
+license = "MIT"
+author = "pschroen"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/DirectionalWarp.glsl"
+
+[[asset]]
+id = "morphen"
+kind = "transition"
+name = { de = "Morphen", en = "Morph" }
+category = ["Verzerren"]
+shader = "shaders/morph.wgsl"
+fallback = "dissolve"
+params = [
+  { type = "float", id = "strength", min = 0.0, max = 1.0, default = 0.1 },
+]
+license = "MIT"
+author = "paniq"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Morph.glsl"
+
+[[asset]]
+id = "kaleidoskop"
+kind = "transition"
+name = { de = "Kaleidoskop", en = "Kaleidoscope" }
+category = ["Verzerren"]
+shader = "shaders/kaleidoscope.wgsl"
+fallback = "fade"
+params = [
+  { type = "float", id = "speed", min = 0.0, max = 5.0, default = 1.0 },
+  { type = "float", id = "angle", min = 0.0, max = 5.0, default = 1.0 },
+  { type = "float", id = "power", min = 0.5, max = 5.0, default = 1.5 },
+]
+license = "MIT"
+author = "nwoeanhinnogaehr"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Kaleidoscope.glsl"
+
+[[asset]]
+id = "rgb-glitch"
+kind = "transition"
+name = { de = "RGB-Glitch", en = "RGB glitch" }
+category = ["Glitch"]
+shader = "shaders/rgb_glitch.wgsl"
+fallback = "fadefast"
+params = [
+  { type = "float", id = "strength", min = 0.0, max = 1.0, default = 1.0 },
+]
+
+[[asset]]
+id = "glitch-versatz"
+kind = "transition"
+name = { de = "Glitch-Versatz", en = "Glitch displace" }
+category = ["Glitch"]
+shader = "shaders/glitch_displace.wgsl"
+fallback = "fadefast"
+license = "MIT"
+author = "Matt DesLauriers"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/GlitchDisplace.glsl"
+
+[[asset]]
+id = "blitz"
+kind = "transition"
+name = { de = "Blitz", en = "Flash" }
+category = ["Licht"]
+shader = "shaders/flash.wgsl"
+fallback = "fadewhite"
+params = [
+  { type = "float", id = "strength", min = 0.0, max = 1.0, default = 1.0 },
+]
+
+[[asset]]
+id = "lichtleck"
+kind = "transition"
+name = { de = "Lichtleck", en = "Light leak" }
+category = ["Licht"]
+shader = "shaders/light_leak.wgsl"
+fallback = "smoothright"
+params = [
+  { type = "float", id = "brightness", min = 0.0, max = 2.0, default = 1.0 },
+]
+
+[[asset]]
+id = "filmbrand"
+kind = "transition"
+name = { de = "Filmbrand", en = "Film burn" }
+category = ["Licht"]
+shader = "shaders/film_burn.wgsl"
+fallback = "fadewhite"
+params = [
+  { type = "float", id = "seed", min = 0.0, max = 10.0, default = 2.31 },
+]
+license = "MIT"
+author = "Anastasia Dunbar"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/FilmBurn.glsl"
+
+[[asset]]
+id = "traum-zoom"
+kind = "transition"
+name = { de = "Traum-Zoom", en = "Dreamy zoom" }
+category = ["Licht"]
+shader = "shaders/dreamy_zoom.wgsl"
+fallback = "fadewhite"
+params = [
+  { type = "float", id = "rotation", min = 0.0, max = 30.0, default = 6.0 },
+  { type = "float", id = "scale", min = 1.0, max = 3.0, default = 1.2 },
+]
+license = "MIT"
+author = "Zeh Fernando"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/DreamyZoom.glsl"
+
+[[asset]]
+id = "herz"
+kind = "transition"
+name = { de = "Herz", en = "Heart" }
+category = ["Form"]
+shader = "shaders/heart_wipe.wgsl"
+fallback = "circleopen"
+params = [
+  { type = "float", id = "smoothness", min = 0.0, max = 0.1, default = 0.006 },
+  { type = "float", id = "pulse", min = 0.0, max = 1.0, default = 0.5 },
+  { type = "float", id = "glow", min = 0.0, max = 1.0, default = 0.3 },
+]
+license = "MIT"
+author = "gre"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/HeartWipe.glsl"
+
+[[asset]]
+id = "punkte"
+kind = "transition"
+name = { de = "Punkte", en = "Polka dots" }
+category = ["Form"]
+shader = "shaders/polka_dots.wgsl"
+fallback = "dissolve"
+params = [
+  { type = "float", id = "dots", min = 2.0, max = 60.0, default = 20.0 },
+]
+license = "MIT"
+author = "bobylito"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/PolkaDotsCurtain.glsl"
+
+[[asset]]
+id = "jalousie"
+kind = "transition"
+name = { de = "Jalousie", en = "Window slices" }
+category = ["Wischen"]
+shader = "shaders/window_slices.wgsl"
+fallback = "hrslice"
+params = [
+  { type = "float", id = "count", min = 2.0, max = 40.0, default = 10.0 },
+  { type = "float", id = "smoothness", min = 0.0, max = 1.0, default = 0.5 },
+]
+license = "MIT"
+author = "gre"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/WindowSlices.glsl"
+
+[[asset]]
+id = "mosaik"
+kind = "transition"
+name = { de = "Mosaik", en = "Mosaic" }
+category = ["Effekt"]
+shader = "shaders/mosaic.wgsl"
+fallback = "pixelize"
+license = "MIT"
+author = "Xaychru"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Mosaic.glsl"
+
+[[asset]]
+id = "waben"
+kind = "transition"
+name = { de = "Waben", en = "Hexagons" }
+category = ["Effekt"]
+shader = "shaders/hexagonalize.wgsl"
+fallback = "pixelize"
+params = [
+  { type = "float", id = "steps", min = 0.0, max = 100.0, default = 50.0 },
+  { type = "float", id = "hexagons", min = 2.0, max = 60.0, default = 20.0 },
+]
+license = "MIT"
+author = "Fernando Kuteken"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Hexagonalize.glsl"
+
+[[asset]]
+id = "schmelzen"
+kind = "transition"
+name = { de = "Schmelzen", en = "Melt" }
+category = ["Effekt"]
+shader = "shaders/luminance_melt.wgsl"
+fallback = "dissolve"
+params = [
+  { type = "bool", id = "down", default = true },
+  { type = "float", id = "threshold", min = 0.0, max = 1.0, default = 0.8 },
+  { type = "bool", id = "above", default = false },
+]
+license = "MIT"
+author = "0gust1; Ian McEwan, Ashima Arts"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/LuminanceMelt.glsl"
+
+[[asset]]
+id = "sanft-zoomen"
+kind = "transition"
+name = { de = "Sanft hineinzoomen", en = "Simple zoom" }
+category = ["Bewegung"]
+shader = "shaders/simple_zoom.wgsl"
+fallback = "zoomin"
+params = [
+  { type = "float", id = "quickness", min = 0.2, max = 1.0, default = 0.8 },
+]
+license = "MIT"
+author = "0gust1"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/SimpleZoom.glsl"
+
+[[asset]]
+id = "drehen-zoomen"
+kind = "transition"
+name = { de = "Drehen und zoomen", en = "Rotate and zoom" }
+category = ["Bewegung"]
+shader = "shaders/rotate_scale_fade.wgsl"
+fallback = "fade"
+params = [
+  { type = "float", id = "rotations", min = 0.0, max = 4.0, default = 1.0 },
+  { type = "float", id = "scale", min = 1.0, max = 16.0, default = 8.0 },
+]
+license = "MIT"
+author = "Fernando Kuteken"
+source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/RotateScaleFade.glsl"

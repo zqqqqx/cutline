@@ -741,6 +741,7 @@ dependencies = [
  "cl-export",
  "cl-fonts",
  "cl-fx",
+ "cl-gpu",
  "cl-i18n",
  "cl-import",
  "cl-mcp",
@@ -790,6 +791,7 @@ dependencies = [
  "cl-core",
  "cl-fonts",
  "cl-fx",
+ "cl-gpu",
  "cl-media",
  "serde",
  "tempfile",
@@ -815,6 +817,17 @@ dependencies = [
  "cl-media",
  "resvg",
  "tempfile",
+]
+
+[[package]]
+name = "cl-gpu"
+version = "0.10.0"
+dependencies = [
+ "cl-fx",
+ "cl-plugin",
+ "naga",
+ "pollster",
+ "wgpu",
 ]
 
 [[package]]

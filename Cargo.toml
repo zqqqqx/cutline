@@ -9,6 +9,7 @@ members = [
     "crates/cl-mcp",
     "crates/cl-export",
     "crates/cl-fx",
+    "crates/cl-gpu",
     "crates/cl-update",
     "crates/cl-analyze",
     "crates/cl-epidemic",
@@ -31,6 +32,7 @@ cl-plugin = { path = "crates/cl-plugin" }
 cl-mcp = { path = "crates/cl-mcp" }
 cl-export = { path = "crates/cl-export" }
 cl-fx = { path = "crates/cl-fx" }
+cl-gpu = { path = "crates/cl-gpu" }
 cl-update = { path = "crates/cl-update" }
 cl-analyze = { path = "crates/cl-analyze" }
 cl-epidemic = { path = "crates/cl-epidemic" }

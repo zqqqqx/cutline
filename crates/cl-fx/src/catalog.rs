@@ -34,6 +34,46 @@ pub enum Payload {
     Ffmpeg(String),
     /// Datei im Paketordner (Sound/Sticker)
     File(PathBuf),
+    /// Übergang als WGSL-Shader (cl-gpu) mit eingebautem `xfade`-Rückfall und den
+    /// Standardwerten der Parameter (`params.p0` …)
+    Shader {
+        file: PathBuf,
+        fallback: String,
+        params: Vec<f32>,
+    },
+}
+
+/// Wie ein Übergang gerendert wird.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransitionPlan {
+    /// Eingebauter `xfade`-Name (immer gültig: Rückfall oder `fade`)
+    pub xfade: &'static str,
+    /// Shader-Datei und Parameter, wenn das Paket eingeschaltet ist
+    pub shader: Option<(PathBuf, Vec<f32>)>,
+}
+
+/// Übergang `id` auflösen: eingebaut → `xfade`; Paket-Übergang → Shader samt Rückfall;
+/// Paket aus → nur der Rückfall; unbekannt (Paket fehlt) → Überblenden.
+pub fn transition_plan_in(packs: &[Pack], id: &str) -> TransitionPlan {
+    let builtin = |x: &str| crate::TRANSITIONS.iter().find(|t| t.0 == x).map(|t| t.0);
+    if let Some(x) = builtin(id) {
+        return TransitionPlan { xfade: x, shader: None };
+    }
+    let found = packs
+        .iter()
+        .flat_map(|p| p.entries.iter().map(move |e| (p.enabled, e)))
+        .find(|(_, e)| e.kind == Kind::Transition && e.id == id);
+    match found {
+        Some((on, Entry { payload: Payload::Shader { file, fallback, params }, .. })) => TransitionPlan {
+            xfade: builtin(fallback).unwrap_or("fade"),
+            shader: on.then(|| (file.clone(), params.clone())),
+        },
+        _ => TransitionPlan { xfade: "fade", shader: None },
+    }
+}
+
+pub fn transition_plan(id: &str) -> TransitionPlan {
+    read(|p| transition_plan_in(p, id))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -268,7 +308,7 @@ pub fn credits(packs: &[Pack], tr: &dyn Fn(&str) -> String) -> String {
     out
 }
 
-/// Effekt-/Filter-IDs der Clips, die der Katalog nicht kennt: (id, Clipname).
+/// Effekt-/Filter-/Übergangs-IDs der Clips, die der Katalog nicht kennt: (id, Clipname).
 pub fn missing_in(packs: &[Pack], p: &Project) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for c in p.timeline.tracks.iter().flat_map(|t| t.clips.iter()) {
@@ -280,6 +320,7 @@ pub fn missing_in(packs: &[Pack], p: &Project) -> Vec<(String, String)> {
         }
         refs.extend(c.fx.filter.iter().map(|f| (Kind::Filter, f.id.as_str())));
         refs.extend(c.fx.effects.iter().map(|e| (Kind::Effect, e.id.as_str())));
+        refs.extend(c.transition_out.iter().map(|t| (Kind::Transition, t.id.as_str())));
         for (k, id) in refs {
             if get_in(packs, k, id).is_none() {
                 out.push((id.to_string(), c.label(p)));
@@ -391,5 +432,56 @@ mod tests {
             ]
         );
         assert_eq!(missing_in(&[pack(true)], &p).len(), 1);
+    }
+
+    fn shader_pack(enabled: bool) -> Pack {
+        let mut p = pack(enabled);
+        p.entries = vec![Entry {
+            id: "t.pack/swirl".into(),
+            kind: Kind::Transition,
+            name: "Wirbel".into(),
+            categories: vec!["Effekt".into()],
+            pack: "t.pack".into(),
+            license: "MIT".into(),
+            author: "A".into(),
+            source: None,
+            payload: Payload::Shader {
+                file: PathBuf::from("swirl.wgsl"),
+                fallback: "radial".into(),
+                params: vec![1.0],
+            },
+        }];
+        p
+    }
+
+    #[test]
+    fn shader_transitions_resolve_with_fallback() {
+        let on = [shader_pack(true)];
+        let plan = transition_plan_in(&on, "t.pack/swirl");
+        assert_eq!(plan.xfade, "radial");
+        assert_eq!(plan.shader, Some((PathBuf::from("swirl.wgsl"), vec![1.0])));
+        assert_eq!(list_in(&on, Kind::Transition).len(), crate::TRANSITIONS.len() + 1);
+        // Paket aus: Rückfall ohne Shader; Paket fehlt: Überblenden
+        let off = [shader_pack(false)];
+        assert_eq!(transition_plan_in(&off, "t.pack/swirl"), TransitionPlan { xfade: "radial", shader: None });
+        assert_eq!(transition_plan_in(&[], "t.pack/swirl").xfade, "fade");
+        assert_eq!(transition_plan_in(&[], "wipeleft"), TransitionPlan { xfade: "wipeleft", shader: None });
+        // eingeschleuster Text wird nie zum Filternamen
+        assert_eq!(transition_plan_in(&[], "fade:x;movie").xfade, "fade");
+        // unbekannter Rückfall im Paket → Überblenden
+        let mut bad = shader_pack(true);
+        if let Payload::Shader { fallback, .. } = &mut bad.entries[0].payload {
+            *fallback = "gibtsnicht".into();
+        }
+        assert_eq!(transition_plan_in(&[bad], "t.pack/swirl").xfade, "fade");
+        // fehlende Übergänge werden gemeldet
+        let mut p = Project::new("x");
+        let mut c = Clip::new(ClipContent::Effect(FxRef::new("blur")), Time::ZERO, Time::from_secs_f64(1.0));
+        c.transition_out = Some(TransitionRef { id: "t.pack/swirl".into(), duration: Time::from_secs_f64(0.5) });
+        let mut t = Track::new(TrackKind::Effect);
+        t.clips = vec![c];
+        p.timeline.tracks.push(t);
+        assert_eq!(missing_in(&on, &p).len(), 0);
+        assert_eq!(missing_in(&off, &p).len(), 1);
     }
 }

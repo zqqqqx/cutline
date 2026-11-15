@@ -10,6 +10,7 @@ cl-core.workspace = true
 cl-media.workspace = true
 cl-fonts.workspace = true
 cl-fx.workspace = true
+cl-gpu.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
