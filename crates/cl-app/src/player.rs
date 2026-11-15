@@ -24,20 +24,139 @@ struct Layer {
     from: Option<(ClipId, f32)>,
 }
 
-/// Vorschau von Shader-Übergängen: letzte Bilder der beteiligten Clips (CPU), das gemischte Bild
-/// und ob es fürs Abspielen zu langsam war.
+/// Vorschau gemischter Übergänge: letzte Bilder der beteiligten Clips (CPU), das gemischte Bild
+/// und welche Übergänge fürs Abspielen zu langsam waren.
 #[derive(Default)]
 pub struct ShaderPreview {
     cpu: std::collections::HashMap<ClipId, (u64, cl_media::RgbaFrame)>,
+    /// außer den Clips mit Übergang: diese Bilder (Fassungen mit Effekt-Elementen) auch behalten
+    wanted: Vec<ClipId>,
     tex: Option<egui::TextureHandle>,
-    /// zuletzt gemischt: (Bild A, Bild B, Fortschritt)
-    last: Option<(u64, u64, u32)>,
+    /// gemischte Fassungen mit den Effekt-Elementen darüber: (Textur, Maske, Stärke)
+    fx: Vec<(egui::TextureHandle, Option<Mask>, f32)>,
+    /// zuletzt gemischt: alle Eingaben (Bilder, Lage, Fläche, Fortschritt)
+    last: Option<u64>,
     /// gerade gezeigt statt A und B: (A, B)
     current: Option<(ClipId, ClipId)>,
-    /// beim Abspielen länger als ein Bild-Intervall: bis zum Anhalten wieder Überblendung
-    slow: bool,
-    /// Anzahl zu langsamer Bilder (das erste je Shader enthält das Übersetzen der Pipeline)
+    /// beim Abspielen zu langsam: diese Übergänge bis zum Anhalten überblenden
+    slow: Vec<(ClipId, ClipId)>,
+    /// Anzahl zu langsamer Bilder im Übergang `slow_pair`
     slow_hits: u8,
+    slow_pair: Option<(ClipId, ClipId)>,
+    /// Übergang, zu dem `tex` gehört (wird gehalten, solange ein Bild fehlt)
+    shown: Option<(ClipId, ClipId)>,
+    /// Wiedergabe lief im letzten Bild (Start erkennen: Shader vorbereiten)
+    was_playing: bool,
+    /// Shader schon einmal (beim ersten Bild nach dem Start) vorbereitet
+    warmed: bool,
+}
+
+/// Was die Vorschau in einem Übergang zeigt, den sie mischt.
+#[derive(Debug, PartialEq)]
+enum Step {
+    /// alle Bilder da: mischen
+    Mix,
+    /// ein Bild fehlt noch: letztes Mischbild dieses Übergangs stehen lassen
+    Hold,
+    /// überblenden (noch kein Mischbild oder beim Abspielen zu langsam)
+    Skip,
+}
+
+impl ShaderPreview {
+    fn step(&self, pair: (ClipId, ClipId), have_frames: bool) -> Step {
+        if self.slow.contains(&pair) {
+            Step::Skip
+        } else if have_frames {
+            Step::Mix
+        } else if self.shown == Some(pair) && self.tex.is_some() {
+            Step::Hold
+        } else {
+            Step::Skip
+        }
+    }
+
+    /// Dauer eines Mischbilds beim Abspielen: zwei Bilder länger als ein Bild-Intervall → dieser
+    /// Übergang wird bis zum Anhalten überblendet (kein Hin und Her).
+    fn note_time(&mut self, pair: (ClipId, ClipId), secs: f64, interval: f64) {
+        if self.slow_pair != Some(pair) {
+            (self.slow_pair, self.slow_hits) = (Some(pair), 0);
+        }
+        if secs > interval {
+            self.slow_hits += 1;
+            if self.slow_hits >= 2 && !self.slow.contains(&pair) {
+                self.slow.push(pair);
+            }
+        }
+    }
+}
+
+/// Längste Seite der Mischfläche beim Abspielen: so bleibt ein Mischbild auch auf der CPU deutlich
+/// unter einem Bild-Intervall, auch mit einem Effekt-Element darüber (Messung: Test `mix_time`).
+const MIX_PLAY: f32 = 960.0;
+
+/// Mischfläche im Seitenverhältnis des Projekts `pw`×`ph`, so groß wie die Anzeige `px` (höchstens
+/// 1920, beim Abspielen höchstens [`MIX_PLAY`] an der langen Seite).
+fn mix_size(pw: f32, ph: f32, px: egui::Vec2, playing: bool) -> (u32, u32) {
+    let max = if playing { MIX_PLAY } else { 1920.0 };
+    let k = (px.x / pw).min(px.y / ph).min(max / pw.max(ph));
+    (((pw * k).round() as u32).max(16), ((ph * k).round() as u32).max(16))
+}
+
+/// Shader-Übergänge des Projekts im Hintergrund vorbereiten (GPU öffnen, Pipelines übersetzen),
+/// damit das erste Mischbild beim Abspielen nicht hängt.
+fn warm_shaders(project: &Project) {
+    let mut files: Vec<std::path::PathBuf> = project
+        .timeline
+        .tracks
+        .iter()
+        .flat_map(|t| &t.clips)
+        .filter_map(|c| cl_fx::catalog::transition_plan(&c.transition_out.as_ref()?.id).shader.map(|s| s.0))
+        .collect();
+    files.sort();
+    files.dedup();
+    if files.is_empty() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let Some(g) = cl_gpu::gpu() else { return };
+        for f in files {
+            if let Ok(src) = std::fs::read_to_string(&f) {
+                let _ = g.prepare(&src);
+            }
+        }
+    });
+}
+
+/// Unmaskierte Fassung `fx` eines Effekt-/Filter-Elements mit Stärke `k` in das Mischbild `base`
+/// einrechnen: wie der Export, der das Element auf den fertigen Übergang anwendet (darübergelegt
+/// schienen halbdurchsichtige Stellen des Übergangs, z. B. Spiegelungen, ungefiltert durch).
+fn fold_fx(base: &mut [u8], fx: &[u8], k: f32) {
+    for (b, f) in base.chunks_exact_mut(4).zip(fx.chunks_exact(4)) {
+        for c in 0..4 {
+            b[c] = (b[c] as f32 + (f[c] as f32 - b[c] as f32) * k).round() as u8;
+        }
+    }
+}
+
+/// Fassung `fx` (Effekt-/Filter-Element) über dem Bild `base` an den Ecken `corners` zeichnen,
+/// mit Maske nur in der Form (umgekehrt: überall außer der Form).
+fn draw_fx(content: &egui::Painter, base: egui::TextureId, fx: egui::TextureId, corners: [egui::Pos2; 4], mask: &Option<Mask>, alpha: f32, canvas: Rect) {
+    let Some(mk) = mask else {
+        crate::fx_mask::draw_textured(content, fx, corners, &corners, alpha);
+        return;
+    };
+    let (polys, inverted) = crate::fx_mask::polygons(mk, canvas);
+    if inverted {
+        // alles außer der Form: Effekt ganz, Original in der Form darüber
+        crate::fx_mask::draw_textured(content, fx, corners, &corners, alpha);
+        for poly in &polys {
+            crate::fx_mask::draw_textured(content, base, corners, poly, alpha);
+        }
+    } else {
+        for poly in &polys {
+            crate::fx_mask::draw_textured(content, fx, corners, poly, alpha);
+        }
+    }
 }
 
 /// Fortschritt eines Übergangs der Länge `d` um den Schnitt `cut` (wie im Export:
@@ -65,21 +184,60 @@ pub(crate) fn place_on_canvas(src: &cl_media::RgbaFrame, ev: &Evaluated, cw: u32
     let (cx, cy) = (cw as f32 / 2.0 + ev.x * kx, ch as f32 / 2.0 + ev.y * ky);
     let (s, c) = (-ev.rotation_deg.to_radians()).sin_cos();
     let alpha = ev.opacity.clamp(0.0, 1.0);
-    for y in 0..ch {
-        for x in 0..cw {
-            let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
-            let u = (dx * c - dy * s) / fit + sw / 2.0;
-            let v = (dx * s + dy * c) / fit + sh / 2.0;
-            if u < 0.0 || v < 0.0 || u >= sw || v >= sh {
-                continue;
+    // Zeilen auf mehrere Kerne verteilt: beim Abspielen zählt jede Millisekunde
+    cl_fx::xfade::rows(&mut out, cw as i32, &|y, line| {
+        let (dx, dy) = (0.5 - cx, y as f32 + 0.5 - cy);
+        let (mut u, mut v) = ((dx * c - dy * s) / fit + sw / 2.0, (dx * s + dy * c) / fit + sh / 2.0);
+        for o in line.chunks_exact_mut(4) {
+            if u >= 0.0 && v >= 0.0 && u < sw && v < sh {
+                let i = ((v as u32 * src.width + u as u32) * 4) as usize;
+                // wie das Overlay auf die durchsichtige Fläche im Export: Farbe außerhalb der Maske
+                // (und bei Deckkraft < 1) geht in Schwarz über, statt beim Mischen durchzuscheinen
+                let a = (src.data[i + 3] as f32 * alpha).round() as u32;
+                for k in 0..3 {
+                    o[k] = ((src.data[i + k] as u32 * a + 127) / 255) as u8;
+                }
+                o[3] = a as u8;
             }
-            let i = ((v as u32 * src.width + u as u32) * 4) as usize;
-            let o = ((y * cw + x) * 4) as usize;
-            out[o..o + 3].copy_from_slice(&src.data[i..i + 3]);
-            out[o + 3] = (src.data[i + 3] as f32 * alpha).round() as u8;
+            u += c / fit;
+            v += s / fit;
         }
-    }
+    });
     out
+}
+
+/// Mischt die Vorschau den Übergang selbst? Sonst überblendet sie (`fade` ist genau das; andere
+/// `xfade`-Sorten ohne Nachbildung in `cl_fx::xfade` auch).
+pub(crate) fn mixes(plan: &cl_fx::catalog::TransitionPlan) -> bool {
+    plan.shader.is_some() || (plan.xfade != "fade" && cl_fx::xfade::supported(plan.xfade))
+}
+
+/// Übergang wie im Export zwischen fertigen Ebenen mischen: Clipbilder `fa`/`fb` (Effekte und
+/// Maske eingerechnet) mit Lage `ea`/`eb` auf eine Fläche `cw`×`ch` (Projekt `pw`×`ph`) setzen,
+/// dann Shader (cl-gpu) bzw. `cl_fx::xfade` beim Fortschritt `p`. RGBA, Alpha bleibt Alpha.
+/// Ohne GPU (oder bei einem Shader-Fehler) wie der Export mit dem `xfade`-Rückfall des Pakets.
+pub(crate) fn mix_layers(
+    plan: &cl_fx::catalog::TransitionPlan,
+    (fa, ea): (&cl_media::RgbaFrame, &Evaluated),
+    (fb, eb): (&cl_media::RgbaFrame, &Evaluated),
+    (cw, ch): (u32, u32),
+    (pw, ph): (f32, f32),
+    p: f32,
+) -> Option<Vec<u8>> {
+    let a = place_on_canvas(fa, ea, cw, ch, pw, ph);
+    let b = place_on_canvas(fb, eb, cw, ch, pw, ph);
+    let shader = plan.shader.as_ref().and_then(|(file, params)| {
+        cl_gpu::render(
+            &std::fs::read_to_string(file).ok()?,
+            &crate::preview::shader_params(params),
+            cl_gpu::Frame { rgba: &a, width: cw, height: ch },
+            cl_gpu::Frame { rgba: &b, width: cw, height: ch },
+            (cw, ch),
+            p,
+        )
+        .ok()
+    });
+    shader.or_else(|| cl_fx::xfade::mix(plan.xfade, &a, &b, cw, ch, p))
 }
 
 /// Längen der Übergänge am Anfang und Ende von `c` (Clip `i` der Spur, ggf. in Bearbeitung
@@ -94,12 +252,145 @@ pub(crate) fn transition_spans(clips: &[Clip], i: usize, c: &Clip) -> (Option<f6
     (tr_in, tr_out)
 }
 
+/// Dekodiergröße eines Clips für die Vorschau (`canvas_px` = Anzeigefläche in Pixeln).
+fn decode_size(c: &Clip, m: &MediaRef, canvas_px: egui::Vec2, div: f32) -> (u32, u32) {
+    // Vergrößerte Clips (z. B. Querformat-Gameplay im Hochformat auf 200 %) brauchen
+    // entsprechend mehr Pixel, sonst wird ein kleines Bild hochgezogen und unscharf.
+    let zoom = c
+        .keyframes
+        .get(Prop::Scale)
+        .iter()
+        .map(|k| k.v)
+        .fold(c.transform.scale, f32::max)
+        .clamp(0.25, 6.0);
+    let cap = |v: f32, src: u32| (v as u32).clamp(64, 3840).min(src.max(64));
+    let max_w = cap(canvas_px.x / div * zoom, m.width);
+    let max_h = cap(canvas_px.y / div * zoom, m.height);
+    cl_media::fit_size(m.width, m.height, max_w, max_h)
+}
+
+/// Quellzeit des Einzelbilds eines Clips bei Clipzeit `t_rel`.
+fn still_src(c: &Clip, m: &MediaRef, t_rel: Time, fps: Rational) -> Time {
+    let ClipContent::Media { kind: MediaKind::Video, .. } = &c.content else {
+        // Bewegtes Bild: dasselbe Einzelbild wie im Export (Schleife bzw. letztes Bild halten)
+        // shortcut: beim Abspielen ein Einzelbild-Auftrag je Bild statt Strom, ausbauen falls es ruckelt
+        return cl_media::animation(&m.path).map_or(Time::ZERO, |a| a.seek_time(t_rel));
+    };
+    let mut end = c.source_in + c.source_span();
+    if m.duration > Time::ZERO {
+        end = Time(end.0.min(m.duration.0));
+    }
+    still_seek(c.source_time(c.start + t_rel), c.source_in, end, m.fps.unwrap_or(fps))
+}
+
 /// Quellzeit für ein Einzelbild der Vorschau: aufs Bildraster gerundet, höchstens anderthalb
 /// Bilder vor dem Ende von Clip bzw. Datei. FFmpeg liefert das erste Bild ab `-ss`; eine Zeit im
 /// letzten Bild (oder aufs Ende gerundet) ergab gar keins – „Datei kann nicht gelesen werden: “.
 fn still_seek(t: Time, source_in: Time, end: Time, fps: Rational) -> Time {
     let last = end - Time::from_secs_f64(1.5 / fps.as_f64().max(1.0));
     Time(t.snap_to_frame(fps).0.min(last.0).max(source_in.0))
+}
+
+/// Alle sichtbaren Ebenen von unten nach oben (inkl. Übergängen); `live` ersetzt den Clip
+/// gleicher ID (laufende Bearbeitung).
+fn layers_in(project: &Project, live: Option<&Clip>, t: Time) -> Vec<Layer> {
+    let mut out = Vec::new();
+    for tr in project
+        .timeline
+        .tracks
+        .iter()
+        .filter(|tr| !tr.hidden && tr.kind != TrackKind::Audio)
+    {
+        for (i, c0) in tr.clips.iter().enumerate() {
+            // erst das Zeitfenster prüfen, dann klonen
+            let c = live.filter(|l| l.id == c0.id).unwrap_or(c0);
+            if c.disabled {
+                continue;
+            }
+            let (tr_in, tr_out) = transition_spans(&tr.clips, i, &c);
+            let prev = if i > 0 { tr.clips.get(i - 1) } else { None };
+            let ts = t.as_secs_f64();
+            let (s, e) = (c.start.as_secs_f64(), c.end().as_secs_f64());
+            let lo = s - tr_in.map(|d| d / 2.0).unwrap_or(0.0);
+            let hi = e + tr_out.map(|d| d / 2.0).unwrap_or(0.0);
+            if ts < lo || ts >= hi {
+                continue;
+            }
+            let mut alpha = 1.0;
+            let mut from = None;
+            if let Some(d) = tr_in {
+                // Einblenden über dem Vorgänger
+                let p = transition_progress(ts, s, d).unwrap_or(1.0);
+                alpha = p;
+                from = prev.map(|pc| (pc.id, p));
+            }
+            let t_rel = Time::from_secs_f64((ts - s).clamp(0.0, (e - s - 1e-3).max(0.0)));
+            out.push(Layer {
+                clip: c.clone(),
+                t_rel,
+                alpha,
+                from,
+            });
+        }
+    }
+    out
+}
+
+/// Effekt-/Filter-Elemente auf Spuren über dem Clip `clip` (eingeschaltet, sichtbar).
+fn fx_elements_over(project: &Project, clip: ClipId) -> Vec<Clip> {
+    let tracks = &project.timeline.tracks;
+    let Some(idx) = tracks
+        .iter()
+        .position(|tr| tr.clips.iter().any(|c| c.id == clip))
+    else {
+        return Vec::new();
+    };
+    tracks[idx + 1..]
+        .iter()
+        .filter(|tr| !tr.hidden && matches!(tr.kind, TrackKind::Effect | TrackKind::Filter))
+        .flat_map(|tr| tr.clips.iter())
+        .filter(|c| !c.disabled)
+        .cloned()
+        .collect()
+}
+
+/// Fassung von `c` mit dem Effekt-/Filter-Element `e` (zum Zeitpunkt `now`) und dessen Stärke.
+/// Die Vorschau legt sie über das Clipbild (der Export wendet das Element auf alles darunter an).
+fn fx_version(c: &Clip, e: &Clip, now: Time) -> Option<(Clip, f32)> {
+    let (mut r, filter) = match &e.content {
+        ClipContent::Effect(r) => (r.clone(), false),
+        ClipContent::Filter(r) => (r.clone(), true),
+        _ => return None,
+    };
+    let animated = !e.keyframes.get(Prop::Strength).is_empty();
+    if animated {
+        r.intensity = 1.0;
+    }
+    let mut x = c.clone();
+    if filter {
+        x.fx.filter = Some(r);
+    } else if !x.fx.effects.iter().any(|f| f.id == r.id) {
+        x.fx.effects.push(r);
+    }
+    Some((x, if animated { e.strength_at(now - e.start) } else { 1.0 }))
+}
+
+/// Übergänge, die die Vorschau zur Zeit `t` mischt: (Ebene A, Ebene B, Plan, Fortschritt), unten
+/// zuerst. Alle anderen überblendet sie (B mit wachsender Deckkraft über A). Liegt ein Effekt-
+/// oder Filter-Element darüber, wird auch Überblenden gemischt: der Export wendet das Element auf
+/// den fertigen Übergang an, die Vorschau legt seine Fassung von A und B gemischt darüber.
+fn mix_pairs(project: &Project, layers: &[Layer], t: Time) -> Vec<(usize, usize, cl_fx::catalog::TransitionPlan, f32)> {
+    layers
+        .iter()
+        .enumerate()
+        .filter_map(|(bi, b)| {
+            let (a_id, p) = b.from?;
+            let ai = layers.iter().position(|l| l.clip.id == a_id && l.alpha >= 0.999)?;
+            let plan = cl_fx::catalog::transition_plan(&layers[ai].clip.transition_out.as_ref()?.id);
+            let fx_over = || fx_elements_over(project, a_id).iter().any(|e| e.contains(t));
+            (mixes(&plan) || fx_over()).then_some((ai, bi, plan, p))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -166,11 +457,359 @@ mod shader_tests {
         // Deckkraft und Maske (Alpha im Clipbild) bleiben erhalten
         let faded = place_on_canvas(&frame(16, 9, 255), &Evaluated { opacity: 0.5, ..id }, 32, 18, 1920.0, 1080.0);
         assert_eq!(alpha(&faded, 32, 16, 9), 128);
+        // außerhalb der Maske auch die Farbe schwarz (wie im Export): sonst schien beim Mischen
+        // (Verpixeln in N_tr) das Bild ohne Maske durch
         let masked = place_on_canvas(&frame(16, 9, 0), &id, 32, 18, 1920.0, 1080.0);
-        assert!(masked.chunks_exact(4).all(|p| p[3] == 0));
+        assert!(masked.iter().all(|&v| v == 0));
+        let half = place_on_canvas(&frame(16, 9, 128), &id, 32, 18, 1920.0, 1080.0);
+        assert_eq!(&half[..4], &[128, 0, 0, 128]);
         // 90° gedreht: das Querformat steht hochkant, links und rechts leer
         let turned = place_on_canvas(&frame(16, 9, 255), &Evaluated { rotation_deg: 90.0, ..id }, 32, 18, 1920.0, 1080.0);
         assert_eq!((alpha(&turned, 32, 16, 1), alpha(&turned, 32, 2, 9)), (255, 0));
+    }
+}
+
+/// Vorschau-Standbild ohne Fenster: dieselben Schritte wie der Player im Stand (Ebenen,
+/// Dekodiergröße, Einzelbild mit Effektkette, Effekt-Elemente, Mischen der Übergänge), nur
+/// das Zusammensetzen der Ebenen auf der CPU statt in egui. Text bleibt weg.
+#[cfg(test)]
+pub(crate) mod still {
+    use super::*;
+
+    fn over(dst: &mut [u8], src: &[u8], k: f32) {
+        for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+            let a = s[3] as f32 / 255.0 * k;
+            for c in 0..3 {
+                d[c] = (s[c] as f32 * a + d[c] as f32 * (1.0 - a)).round() as u8;
+            }
+        }
+    }
+
+    fn decode(project: &Project, c: &Clip, t_rel: Time, cw: u32, ch: u32) -> Option<cl_media::RgbaFrame> {
+        let ClipContent::Media { media, .. } = &c.content else { return None };
+        let m = project.media(*media)?;
+        let (w, h) = decode_size(c, m, egui::vec2(cw as f32, ch as f32), 1.0);
+        let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_fx::escape_path);
+        let graph = cl_fx::preview_graph(c, w, h, t_rel.as_secs_f64(), None, lut);
+        let src = still_src(c, m, t_rel, project.settings.fps);
+        cl_media::decode_frame_fx(&m.path, src, w, h, graph.as_deref()).ok()
+    }
+
+    /// RGBA `cw`×`ch` des Projekts zur Zeit `t` auf Schwarz.
+    pub(crate) fn render(project: &Project, t: Time, cw: u32, ch: u32) -> Vec<u8> {
+        let (pw, ph) = (project.settings.width.max(2) as f32, project.settings.height.max(2) as f32);
+        let layers = layers_in(project, None, t);
+        let pairs = mix_pairs(project, &layers, t);
+        let mut out = [0u8, 0, 0, 255].repeat((cw * ch) as usize);
+        for (i, l) in layers.iter().enumerate() {
+            if pairs.iter().any(|p| p.1 == i) || !matches!(l.clip.content, ClipContent::Media { .. }) {
+                continue;
+            }
+            let pair = pairs.iter().find(|p| p.0 == i);
+            // Clip selbst, dann die Fassungen mit den Effekt-Elementen darüber (mit ihrer Stärke)
+            let mut versions = vec![(None, 1.0)];
+            for e in fx_elements_over(project, l.clip.id).iter().filter(|e| e.contains(t)) {
+                versions.push((Some(e.clone()), 0.0));
+            }
+            // Mischbild mit den unmaskierten Elementen eingerechnet (wie im Player); sonst darüber
+            let mut base: Option<Vec<u8>> = None;
+            for (e, _) in versions {
+                let with = |c: &Clip| match &e {
+                    Some(e) => fx_version(c, e, t),
+                    None => Some((c.clone(), 1.0)),
+                };
+                let Some((ca, k)) = with(&l.clip) else { continue };
+                let Some(fa) = decode(project, &ca, l.t_rel, cw, ch) else { continue };
+                let ea = l.clip.eval_at(l.t_rel, pw, ph);
+                let img = match pair {
+                    Some(&(_, bi, ref plan, p)) => {
+                        let b = &layers[bi];
+                        let Some((cb, _)) = with(&b.clip) else { continue };
+                        let Some(fb) = decode(project, &cb, b.t_rel, cw, ch) else { continue };
+                        let eb = b.clip.eval_at(b.t_rel, pw, ph);
+                        let Some(m) = mix_layers(plan, (&fa, &ea), (&fb, &eb), (cw, ch), (pw, ph), p) else { continue };
+                        m
+                    }
+                    None => place_on_canvas(&fa, &Evaluated { opacity: ea.opacity * l.alpha, ..ea }, cw, ch, pw, ph),
+                };
+                match (&mut base, pair, e.as_ref().map(|e| e.fx.mask.is_none())) {
+                    (None, Some(_), None) => base = Some(img),
+                    (Some(b), Some(_), Some(true)) => fold_fx(b, &img, k),
+                    // shortcut: maskierte Elemente ohne Maske darübergelegt (der Player zeichnet die Form)
+                    _ => over(&mut out, &img, k),
+                }
+            }
+            if let Some(b) = base {
+                over(&mut out, &b, 1.0);
+            }
+        }
+        out
+    }
+
+    /// Nachstellen von Hand: `CUTLINE_STILL="<projekt>;<sek>[,<sek>…];<ausgabeordner>"`.
+    #[test]
+    fn still_from_env() {
+        let Ok(v) = std::env::var("CUTLINE_STILL") else { return };
+        let parts: Vec<&str> = v.split(';').collect();
+        let project = Project::from_json(&std::fs::read_to_string(parts[0]).unwrap()).unwrap();
+        let reg = cl_plugin::Registry::scan([std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins"))]);
+        cl_fx::catalog::load_packs(crate::contents::catalog_packs(&reg, "de"));
+        let (cw, ch) = (640, 360);
+        for t in parts[1].split(',') {
+            let img = render(&project, Time::from_secs_f64(t.parse().unwrap()), cw, ch);
+            let out = std::path::Path::new(parts[2]).join(format!("still_{t}.png"));
+            image::save_buffer(&out, &img, cw, ch, image::ExtendedColorType::Rgba8).unwrap();
+        }
+    }
+}
+
+/// Übergänge der Vorschau gegen den Export (N_tr: Würfel, Verpixeln mit Maske, Kreis öffnen).
+#[cfg(test)]
+mod transition_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn load_shipped_packs() {
+        let reg = cl_plugin::Registry::scan([Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins"))]);
+        cl_fx::catalog::load_packs(crate::contents::catalog_packs(&reg, "de"));
+    }
+
+    fn media(dir: &Path, name: &str, src: &str) -> MediaRef {
+        let path = dir.join(name);
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i"])
+            .arg(format!("{src}=size=320x180:rate=30:duration=2"))
+            .args(["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        cl_media::probe(&path).unwrap()
+    }
+
+    /// 320×180, 30 Bilder/s: A (0–1,5 s) → B (1,5–3 s), Übergang `tr` über 0,6 s (Fenster 1,2–1,8 s);
+    /// `mask_b`: B mit Kreismaske; `filter`: Filter-Element über beiden.
+    fn project(dir: &Path, tr: &str, mask_b: bool, filter: Option<&str>) -> Project {
+        let a = media(dir, "a.mp4", "testsrc2");
+        let b = media(dir, "b.mp4", "smptebars");
+        let mut p = Project::new("Übergang");
+        (p.settings.width, p.settings.height) = (320, 180);
+        p.settings.fps = Rational { num: 30, den: 1 };
+        let mut t = Track::new(TrackKind::Video);
+        for (i, m) in [&a, &b].into_iter().enumerate() {
+            let mut c = Clip::new(
+                ClipContent::Media { media: m.id, kind: MediaKind::Video },
+                Time::from_secs_f64(1.5 * i as f64),
+                Time::from_secs_f64(1.5),
+            );
+            if i == 0 {
+                c.transition_out = Some(TransitionRef { id: tr.into(), duration: Time::from_secs_f64(0.6) });
+            } else if mask_b {
+                c.fx.mask = Some(Mask::new(MaskShape::Circle));
+            }
+            t.clips.push(c);
+        }
+        p.media = vec![a, b];
+        p.timeline.tracks.push(t);
+        if let Some(f) = filter {
+            let mut ft = Track::new(TrackKind::Filter);
+            ft.clips.push(Clip::new(ClipContent::Filter(FxRef::new(f)), Time::from_secs_f64(1.0), Time::from_secs_f64(1.0)));
+            p.timeline.tracks.push(ft);
+        }
+        p
+    }
+
+    /// Bild `n` des Exports (bildgenau)
+    fn export_frame(p: &Project, dir: &Path, n: usize) -> Vec<u8> {
+        let out = dir.join("out.mp4");
+        let job = cl_export::build(p, &cl_export::ExportSettings::from_project(p), &|_| None, &out).unwrap();
+        cl_export::run(&job, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}).unwrap();
+        let o = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-threads", "2", "-i"])
+            .arg(&out)
+            .args(["-vf", &format!("select=eq(n\\,{n})"), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+            .output()
+            .unwrap();
+        assert_eq!(o.stdout.len(), 320 * 180 * 4);
+        o.stdout
+    }
+
+    /// Mittlere Abweichung der Farben in 16×16-Blöcken (Kodierung und verschobene Pixelblöcke
+    /// mitteln sich heraus, Form und Helligkeit nicht)
+    fn block_diff(a: &[u8], b: &[u8]) -> f64 {
+        let (w, h, s) = (320usize, 180usize, 16usize);
+        let mean = |img: &[u8], bx: usize, by: usize, c: usize| {
+            let mut sum = 0u32;
+            for y in by * s..((by + 1) * s).min(h) {
+                for x in bx * s..(bx + 1) * s {
+                    sum += img[(y * w + x) * 4 + c] as u32;
+                }
+            }
+            sum as f64 / (s * s.min(h - by * s)) as f64
+        };
+        let (mut d, mut n) = (0.0, 0.0);
+        for by in 0..h.div_ceil(s) {
+            for bx in 0..w / s {
+                for c in 0..3 {
+                    d += (mean(a, bx, by, c) - mean(b, bx, by, c)).abs();
+                    n += 1.0;
+                }
+            }
+        }
+        d / n
+    }
+
+    fn still_vs_export(tr: &str, mask_b: bool, filter: Option<&str>, t: f64) -> f64 {
+        let dir = tempfile::tempdir().unwrap();
+        let p = project(dir.path(), tr, mask_b, filter);
+        let ex = export_frame(&p, dir.path(), (t * 30.0).round() as usize);
+        let pv = still::render(&p, Time::from_secs_f64(t), 320, 180);
+        if let Ok(d) = std::env::var("CUTLINE_STILL_DEBUG") {
+            let (d, tr) = (Path::new(&d), tr.replace('/', "_"));
+            image::save_buffer(d.join(format!("t_{tr}_pv.png")), &pv, 320, 180, image::ExtendedColorType::Rgba8).unwrap();
+            image::save_buffer(d.join(format!("t_{tr}_ex.png")), &ex, 320, 180, image::ExtendedColorType::Rgba8).unwrap();
+        }
+        let d = block_diff(&pv, &ex);
+        eprintln!("{tr} bei {t} s: Abweichung Vorschau/Export {d:.2}");
+        d
+    }
+
+    /// Verpixeln mit maskiertem Clip B (N_tr 32:13): außerhalb der Maske geht A wie im Export in
+    /// Schwarz über, statt dass B ohne Maske durchscheint.
+    #[test]
+    fn masked_clip_pixelize_matches_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let d = still_vs_export("pixelize", true, None, 1.6);
+        assert!(d < 8.0, "Vorschau weicht vom Export ab: {d:.1}");
+    }
+
+    /// Kreis öffnen unter einem Filter-Element (N_tr 26:50): gemischt wie der Export (Element auf
+    /// dem fertigen Übergang), nicht übergeblendet.
+    #[test]
+    fn circleopen_under_filter_matches_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let d = still_vs_export("circleopen", false, Some("noir"), 1.5);
+        assert!(d < 8.0, "Vorschau weicht vom Export ab: {d:.1}");
+    }
+
+    /// Würfel (Paket-Shader) nach maskiertem Clip unter einem Filter-Element (N_tr 37:90).
+    #[test]
+    fn shader_transition_under_filter_matches_export() {
+        if !cl_media::ffmpeg_available() || cl_gpu::gpu().is_none() {
+            eprintln!("kein FFmpeg oder keine GPU, übersprungen");
+            return;
+        }
+        load_shipped_packs();
+        let d = still_vs_export("cutline.uebergaenge/wuerfel", false, Some("noir"), 1.5);
+        assert!(d < 8.0, "Vorschau weicht vom Export ab: {d:.1}");
+    }
+
+    /// Entscheidung „mischen oder überblenden“: ein Effekt-/Filter-Element über dem Übergang ist
+    /// kein Grund mehr zum Überblenden (vorher: Würfel und Kreis öffnen fehlten in N_tr).
+    #[test]
+    fn elements_above_do_not_force_a_crossfade() {
+        let clip = |s: f64, tr: Option<&str>| {
+            let mut c = Clip::new(
+                ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video },
+                Time::from_secs_f64(s),
+                Time::from_secs_f64(1.5),
+            );
+            c.transition_out = tr.map(|id| TransitionRef { id: id.into(), duration: Time::from_secs_f64(0.6) });
+            c
+        };
+        let make = |tr: &str, filter: bool| {
+            let mut p = Project::new("x");
+            let mut t = Track::new(TrackKind::Video);
+            t.clips = vec![clip(0.0, Some(tr)), clip(1.5, None)];
+            p.timeline.tracks.push(t);
+            if filter {
+                let mut ft = Track::new(TrackKind::Filter);
+                ft.clips.push(Clip::new(ClipContent::Filter(FxRef::new("noir")), Time::from_secs_f64(1.0), Time::from_secs_f64(1.0)));
+                p.timeline.tracks.push(ft);
+            }
+            p
+        };
+        let at = Time::from_secs_f64(1.5);
+        let pairs = |p: &Project| mix_pairs(p, &layers_in(p, None, at), at).into_iter().map(|x| (x.0, x.1, x.3)).collect::<Vec<_>>();
+        for tr in ["circleopen", "pixelize", "fade"] {
+            assert_eq!(pairs(&make(tr, true)), vec![(0, 1, 0.5)], "{tr} mit Filter darüber");
+        }
+        assert_eq!(pairs(&make("circleopen", false)), vec![(0, 1, 0.5)]);
+        // reines Überblenden ohne Element: bleibt die (genaue) Überblendung der Anzeige
+        assert!(pairs(&make("fade", false)).is_empty());
+        // außerhalb des Fensters nichts
+        let p = make("circleopen", true);
+        assert!(mix_pairs(&p, &layers_in(&p, None, Time::from_secs_f64(1.1)), Time::from_secs_f64(1.1)).is_empty());
+    }
+
+    /// Fehlt beim Weiterschalten ein Bild, bleibt das letzte Mischbild desselben Übergangs stehen;
+    /// zu langsam beim Abspielen gilt je Übergang bis zum Anhalten, ein schnelles Bild schaltet
+    /// nicht zurück.
+    #[test]
+    fn missing_frames_hold_and_slow_sticks_per_transition() {
+        let ctx = egui::Context::default();
+        let (a, b, c) = (ClipId::new(), ClipId::new(), ClipId::new());
+        let mut sp = ShaderPreview::default();
+        assert_eq!(sp.step((a, b), false), Step::Skip);
+        assert_eq!(sp.step((a, b), true), Step::Mix);
+        sp.tex = Some(ctx.load_texture("t", egui::ColorImage::new([1, 1], Color32::BLACK), Default::default()));
+        sp.shown = Some((a, b));
+        assert_eq!(sp.step((a, b), false), Step::Hold);
+        assert_eq!(sp.step((b, c), false), Step::Skip, "anderer Übergang: nicht das alte Bild");
+        let iv = 1.0 / 30.0;
+        // erstes langsames Bild (z. B. Pipeline) allein schaltet nicht um
+        sp.note_time((a, b), 0.2, iv);
+        assert_eq!(sp.step((a, b), true), Step::Mix);
+        sp.note_time((a, b), 0.01, iv);
+        sp.note_time((a, b), 0.2, iv);
+        assert_eq!(sp.step((a, b), true), Step::Skip);
+        sp.note_time((a, b), 0.01, iv);
+        assert_eq!(sp.step((a, b), true), Step::Skip, "bleibt bis zum Anhalten");
+        // der nächste Übergang beginnt neu
+        sp.note_time((b, c), 0.2, iv);
+        assert_eq!(sp.step((b, c), true), Step::Mix);
+    }
+
+    #[test]
+    fn mix_area_is_limited_while_playing() {
+        let px = egui::vec2(2560.0, 1440.0);
+        assert_eq!(mix_size(1920.0, 1080.0, px, false), (1920, 1080));
+        assert_eq!(mix_size(1920.0, 1080.0, px, true), (960, 540));
+        assert_eq!(mix_size(1080.0, 1920.0, egui::vec2(400.0, 700.0), true), (394, 700));
+    }
+
+    /// Zeit je Mischbild (1080p-Projekt): `cargo test --release -p cl-app mix_time -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn mix_time() {
+        load_shipped_packs();
+        let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0 };
+        for (cw, ch) in [(1920, 1080), (1600, 900), (1280, 720), (960, 540)] {
+            let f = |v: u8| cl_media::RgbaFrame { width: cw, height: ch, data: [v, 255 - v, 90, 255].repeat((cw * ch) as usize) };
+            let (fa, fb) = (f(30), f(200));
+            let t0 = std::time::Instant::now();
+            for _ in 0..5 {
+                place_on_canvas(&fa, &ev, cw, ch, 1920.0, 1080.0);
+            }
+            eprintln!("{cw}x{ch} Ebene setzen: {:.1} ms", t0.elapsed().as_secs_f64() * 1e3 / 5.0);
+            for id in ["circleopen", "pixelize", "cutline.uebergaenge/wuerfel"] {
+                let plan = cl_fx::catalog::transition_plan(id);
+                let t0 = std::time::Instant::now();
+                mix_layers(&plan, (&fa, &ev), (&fb, &ev), (cw, ch), (1920.0, 1080.0), 0.4);
+                let first = t0.elapsed();
+                let t0 = std::time::Instant::now();
+                for i in 0..5 {
+                    mix_layers(&plan, (&fa, &ev), (&fb, &ev), (cw, ch), (1920.0, 1080.0), 0.5 + i as f32 * 0.01);
+                }
+                eprintln!("{cw}×{ch} {id}: erstes {:.1} ms, danach {:.1} ms", first.as_secs_f64() * 1e3, t0.elapsed().as_secs_f64() * 1e3 / 5.0);
+            }
+        }
     }
 }
 
@@ -229,9 +868,9 @@ impl App {
         if matches!(self.pick, Some(crate::pro::Pick::Chroma(c)) if c == clip) {
             self.frame_cpu = Some((clip, f.clone()));
         }
-        if self.in_shader_transition(clip) {
+        if self.in_shader_transition(clip) || self.shader_preview.wanted.contains(&clip) {
             let cpu = &mut self.shader_preview.cpu;
-            if cpu.len() >= 8 && !cpu.contains_key(&clip) {
+            if cpu.len() >= 16 && !cpu.contains_key(&clip) {
                 cpu.clear();
             }
             cpu.insert(clip, (key, f.clone()));
@@ -255,8 +894,7 @@ impl App {
     fn in_shader_transition(&self, clip: ClipId) -> bool {
         let shader = |c: &Clip| {
             c.transition_out.as_ref().is_some_and(|t| {
-                let plan = cl_fx::catalog::transition_plan(&t.id);
-                plan.shader.is_some() || (plan.xfade != "fade" && cl_fx::xfade::supported(plan.xfade))
+                mixes(&cl_fx::catalog::transition_plan(&t.id))
             })
         };
         self.project.timeline.tracks.iter().any(|tr| {
@@ -266,140 +904,122 @@ impl App {
         })
     }
 
-    /// Steht der Playhead in einem Shader-Übergang, A und B mit cl-gpu mischen (gleiche Funktion
-    /// wie der Export); eingebaute Übergänge (auch der Rückfall eines ausgeschalteten Pakets)
-    /// mischt `cl_fx::xfade` mit den Formeln von FFmpegs `xfade`. Sonst, ohne GPU, zu langsam
-    /// oder ohne passende Bilder: Überblendung.
+    /// Steht der Playhead in einem Übergang, den die Vorschau mischt (`mix_pairs`), A und B wie
+    /// der Export mischen (`mix_layers`), dazu je Effekt-Element darüber dessen Fassungen von A
+    /// und B. Fehlt ein Bild, bleibt das letzte Mischbild dieses Übergangs stehen (das fehlende
+    /// fordert beim Eintreffen ein Neuzeichnen an); gab es noch keins oder ist der Übergang beim
+    /// Abspielen zu langsam: Überblendung.
     fn shader_mix(&mut self, ctx: &egui::Context, layers: &[Layer], canvas_px: egui::Vec2) {
-        self.shader_preview.current = None;
-        if !self.playing {
-            self.shader_preview.slow = false;
-            self.shader_preview.slow_hits = 0;
+        let sp = &mut self.shader_preview;
+        sp.current = None;
+        if !sp.warmed || (self.playing && !sp.was_playing) {
+            warm_shaders(&self.project);
+            sp.warmed = true;
         }
-        if self.shader_preview.slow {
-            return;
+        sp.was_playing = self.playing;
+        if !self.playing {
+            (sp.slow, sp.slow_pair) = (Vec::new(), None);
         }
         let s = &self.project.settings;
         let (pw, ph) = (s.width.max(2) as f32, s.height.max(2) as f32);
-        for b in layers {
-            let Some((a_id, p)) = b.from else { continue };
-            let Some(a) = layers.iter().find(|l| l.clip.id == a_id && l.alpha >= 0.999) else {
-                continue;
-            };
-            let Some(tr) = &a.clip.transition_out else { continue };
-            let plan = cl_fx::catalog::transition_plan(&tr.id);
-            if plan.shader.is_none() && (plan.xfade == "fade" || !cl_fx::xfade::supported(plan.xfade)) {
-                continue;
+        let t = self.playhead;
+        let mut wanted = Vec::new();
+        for (ai, bi, plan, p) in mix_pairs(&self.project, layers, t) {
+            let (a, b) = (&layers[ai], &layers[bi]);
+            let pair = (a.clip.id, b.clip.id);
+            // Bildpaare: die Clips selbst, dann ihre Fassungen mit den Effekt-Elementen darüber
+            let mut sets = vec![(pair.0, pair.1, None, 1.0)];
+            for e in fx_elements_over(&self.project, pair.0).iter().filter(|e| e.contains(t)) {
+                let Some((_, k)) = fx_version(&a.clip, e, t) else { continue };
+                let d = e.id.0.as_u128();
+                sets.push((pair.0.derived(d), pair.1.derived(d), e.fx.mask, k));
             }
-            // Effekt-Elemente darüber zeichnet die Vorschau je Clip: dann bei der Überblendung bleiben
-            if self.fx_overlays.iter().any(|o| o.0 == a_id || o.0 == b.clip.id) {
-                continue;
+            wanted.extend(sets.iter().flat_map(|x| [x.0, x.1]));
+            let sp = &mut self.shader_preview;
+            let frames: Option<Vec<_>> = sets.iter().map(|x| Some((sp.cpu.get(&x.0)?, sp.cpu.get(&x.1)?))).collect();
+            match sp.step(pair, frames.is_some()) {
+                Step::Skip => continue,
+                Step::Hold => {
+                    sp.current = Some(pair);
+                    break;
+                }
+                Step::Mix => {}
             }
+            let frames = frames.unwrap_or_default();
             let (ea, eb) = (a.clip.eval_at(a.t_rel, pw, ph), b.clip.eval_at(b.t_rel, pw, ph));
-            let (Some((ka, fa)), Some((kb, fb))) = (self.shader_preview.cpu.get(&a_id), self.shader_preview.cpu.get(&b.clip.id)) else {
-                continue;
-            };
-            // Mischfläche im Seitenverhältnis des Projekts, so groß wie die Anzeige (höchstens 1920)
             let div = self.settings.preview_div.max(1) as f32;
-            let k = (canvas_px.x / div / pw).min(canvas_px.y / div / ph).min(1920.0 / pw.max(ph));
-            let (cw, ch) = (((pw * k).round() as u32).max(16), ((ph * k).round() as u32).max(16));
-            // anderer Übergang, andere Lage oder Fläche mit denselben Bildern: neu mischen
-            let kind = {
+            let (cw, ch) = mix_size(pw, ph, canvas_px / div, self.playing);
+            // andere Bilder, anderer Übergang, andere Lage oder Fläche: neu mischen
+            let id = {
                 let mut h = std::collections::hash_map::DefaultHasher::new();
-                (plan.xfade, &plan.shader.as_ref().map(|s| &s.0)).hash(&mut h);
+                (plan.xfade, &plan.shader.as_ref().map(|s| &s.0), p.to_bits(), cw, ch).hash(&mut h);
                 for e in [&ea, &eb] {
                     [e.x, e.y, e.scale, e.rotation_deg, e.opacity].map(f32::to_bits).hash(&mut h);
                 }
-                (cw, ch).hash(&mut h);
+                for ((ka, _), (kb, _)) in &frames {
+                    (ka, kb).hash(&mut h);
+                }
                 h.finish()
             };
-            let id = (*ka ^ kind, *kb, p.to_bits());
-            if self.shader_preview.last != Some(id) || self.shader_preview.tex.is_none() {
+            if sp.last != Some(id) || sp.tex.is_none() {
                 let t0 = std::time::Instant::now();
-                // fertige Ebenen statt Rohbilder: Zoom, Lage, Drehung und Maske mischen mit
-                let fa = &cl_media::RgbaFrame { width: cw, height: ch, data: place_on_canvas(fa, &ea, cw, ch, pw, ph) };
-                let fb = &cl_media::RgbaFrame { width: cw, height: ch, data: place_on_canvas(fb, &eb, cw, ch, pw, ph) };
-                let img = match &plan.shader {
-                    Some((file, params)) => {
-                        let Ok(src) = std::fs::read_to_string(file) else { continue };
-                        cl_gpu::render(
-                            &src,
-                            &crate::preview::shader_params(params),
-                            cl_gpu::Frame { rgba: &fa.data, width: fa.width, height: fa.height },
-                            cl_gpu::Frame { rgba: &fb.data, width: fb.width, height: fb.height },
-                            (fa.width, fa.height),
-                            p,
-                        )
-                        .ok()
+                let mixed: Option<Vec<Vec<u8>>> = frames
+                    .iter()
+                    .map(|((_, fa), (_, fb))| mix_layers(&plan, (fa, &ea), (fb, &eb), (cw, ch), (pw, ph), p))
+                    .collect();
+                let Some(mixed) = mixed else { continue };
+                // unmaskierte Elemente ins Mischbild einrechnen, maskierte zeichnet `draw_layers` in der Form
+                let mut it = mixed.into_iter();
+                let mut mixed = vec![it.next().unwrap_or_default()];
+                let mut masked = Vec::new();
+                for (img, x) in it.zip(&sets[1..]) {
+                    if x.2.is_none() {
+                        fold_fx(&mut mixed[0], &img, x.3);
+                    } else {
+                        mixed.push(img);
+                        masked.push((x.2, x.3));
                     }
-                    None if (fa.width, fa.height) == (fb.width, fb.height) => {
-                        cl_fx::xfade::mix(plan.xfade, &fa.data, &fb.data, fa.width, fa.height, p)
-                    }
-                    None => None,
-                };
-                let Some(img) = img else { continue };
+                }
                 let fps = self.project.settings.fps;
                 let interval = fps.den.max(1) as f64 / fps.num.max(1) as f64;
-                // Abspielen darf nicht ruckeln: zu langsam → bis zum Anhalten Überblendung
-                if self.playing && t0.elapsed().as_secs_f64() > interval {
-                    self.shader_preview.slow_hits += 1;
-                    self.shader_preview.slow = self.shader_preview.slow_hits >= 2;
+                if self.playing && self.play_warmup.is_none() {
+                    sp.note_time(pair, t0.elapsed().as_secs_f64(), interval);
                 }
-                let ci = egui::ColorImage::from_rgba_unmultiplied([fa.width as usize, fa.height as usize], &img);
-                match &mut self.shader_preview.tex {
-                    Some(t) => t.set(ci, egui::TextureOptions::LINEAR),
-                    None => self.shader_preview.tex = Some(ctx.load_texture("shader-mix", ci, egui::TextureOptions::LINEAR)),
+                if crate::app::perf() {
+                    eprintln!("perf: Übergang gemischt ({}×{}, {} Bild(er)) in {:.1} ms", cw, ch, sets.len(), t0.elapsed().as_secs_f64() * 1e3);
                 }
-                self.shader_preview.last = Some(id);
+                // vorhandene Texturen weiterverwenden: Mischbild, dann je Effekt-Element
+                let mut old = sp.tex.take().into_iter().chain(sp.fx.drain(..).map(|f| f.0));
+                let mut texs: Vec<egui::TextureHandle> = mixed
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, img)| {
+                        let ci = egui::ColorImage::from_rgba_unmultiplied([cw as usize, ch as usize], &img);
+                        match old.next() {
+                            Some(mut t) => {
+                                t.set(ci, egui::TextureOptions::LINEAR);
+                                t
+                            }
+                            None => ctx.load_texture(format!("shader-mix-{i}"), ci, egui::TextureOptions::LINEAR),
+                        }
+                    })
+                    .collect();
+                drop(old);
+                let rest = texs.split_off(1);
+                sp.tex = texs.pop();
+                sp.fx = rest.into_iter().zip(masked).map(|(t, (m, k))| (t, m, k)).collect();
+                sp.last = Some(id);
             }
-            self.shader_preview.current = Some((a_id, b.clip.id));
-            return;
+            sp.shown = Some(pair);
+            sp.current = Some(pair);
+            break;
         }
+        self.shader_preview.wanted = wanted;
     }
 
     /// Alle sichtbaren Ebenen von unten nach oben (inkl. Übergängen).
     fn layers_at(&self, t: Time) -> Vec<Layer> {
-        let mut out = Vec::new();
-        for tr in self
-            .project
-            .timeline
-            .tracks
-            .iter()
-            .filter(|tr| !tr.hidden && tr.kind != TrackKind::Audio)
-        {
-            for (i, c0) in tr.clips.iter().enumerate() {
-                // erst das Zeitfenster prüfen, dann klonen
-                let c = self.clip_ref(c0);
-                if c.disabled {
-                    continue;
-                }
-                let (tr_in, tr_out) = transition_spans(&tr.clips, i, &c);
-                let prev = if i > 0 { tr.clips.get(i - 1) } else { None };
-                let ts = t.as_secs_f64();
-                let (s, e) = (c.start.as_secs_f64(), c.end().as_secs_f64());
-                let lo = s - tr_in.map(|d| d / 2.0).unwrap_or(0.0);
-                let hi = e + tr_out.map(|d| d / 2.0).unwrap_or(0.0);
-                if ts < lo || ts >= hi {
-                    continue;
-                }
-                let mut alpha = 1.0;
-                let mut from = None;
-                if let Some(d) = tr_in {
-                    // Einblenden über dem Vorgänger
-                    let p = transition_progress(ts, s, d).unwrap_or(1.0);
-                    alpha = p;
-                    from = prev.map(|pc| (pc.id, p));
-                }
-                let t_rel = Time::from_secs_f64((ts - s).clamp(0.0, (e - s - 1e-3).max(0.0)));
-                out.push(Layer {
-                    clip: c.clone(),
-                    t_rel,
-                    alpha,
-                    from,
-                });
-            }
-        }
-        out
+        layers_in(&self.project, self.live.as_ref(), t)
     }
 
     fn frame_key(
@@ -422,24 +1042,6 @@ impl App {
             t_rel.hash(&mut hs);
         }
         hs.finish() | 1
-    }
-
-    /// Effekt-/Filter-Elemente auf Spuren über dem Clip `clip` (eingeschaltet, sichtbar).
-    fn fx_elements_over(&self, clip: ClipId) -> Vec<Clip> {
-        let tracks = &self.project.timeline.tracks;
-        let Some(idx) = tracks
-            .iter()
-            .position(|tr| tr.clips.iter().any(|c| c.id == clip))
-        else {
-            return Vec::new();
-        };
-        tracks[idx + 1..]
-            .iter()
-            .filter(|tr| !tr.hidden && matches!(tr.kind, TrackKind::Effect | TrackKind::Filter))
-            .flat_map(|tr| tr.clips.iter())
-            .filter(|c| !c.disabled)
-            .cloned()
-            .collect()
     }
 
     /// Bilder für alle sichtbaren Medien-Ebenen anfordern bzw. aus Strömen holen.
@@ -475,7 +1077,7 @@ impl App {
             };
             visible.push(c.id);
             self.request_frame(ctx, c.id, &c, &m, l, canvas_px, None);
-            for e in self.fx_elements_over(c.id) {
+            for e in fx_elements_over(&self.project, c.id) {
                 let active = e.contains(now);
                 let soon = self.playing
                     && e.start > now
@@ -484,30 +1086,11 @@ impl App {
                 if !active && !soon {
                     continue;
                 }
-                let (mut r, filter) = match &e.content {
-                    ClipContent::Effect(r) => (r.clone(), false),
-                    ClipContent::Filter(r) => (r.clone(), true),
-                    _ => continue,
-                };
-                let animated = !e.keyframes.get(Prop::Strength).is_empty();
-                if animated {
-                    r.intensity = 1.0;
-                }
-                let mut x = c.clone();
-                if filter {
-                    x.fx.filter = Some(r);
-                } else if !x.fx.effects.iter().any(|f| f.id == r.id) {
-                    x.fx.effects.push(r);
-                }
+                let Some((x, k)) = fx_version(&c, &e, now) else { continue };
                 let did = c.id.derived(e.id.0.as_u128());
                 visible.push(did);
                 if active {
                     self.request_frame(ctx, did, &x, &m, l, canvas_px, None);
-                    let k = if animated {
-                        e.strength_at(now - e.start)
-                    } else {
-                        1.0
-                    };
                     overlays.push((c.id, did, e.fx.mask, k));
                 } else {
                     let at = Layer {
@@ -577,19 +1160,7 @@ impl App {
         let ClipContent::Media { kind, .. } = &c.content else {
             return;
         };
-        // Vergrößerte Clips (z. B. Querformat-Gameplay im Hochformat auf 200 %) brauchen
-        // entsprechend mehr Pixel, sonst wird ein kleines Bild hochgezogen und unscharf.
-        let zoom = c
-            .keyframes
-            .get(Prop::Scale)
-            .iter()
-            .map(|k| k.v)
-            .fold(c.transform.scale, f32::max)
-            .clamp(0.25, 6.0);
-        let cap = |v: f32, src: u32| (v as u32).clamp(64, 3840).min(src.max(64));
-        let max_w = cap(canvas_px.x / div * zoom, m.width);
-        let max_h = cap(canvas_px.y / div * zoom, m.height);
-        let (w, h) = cl_media::fit_size(m.width, m.height, max_w, max_h);
+        let (w, h) = decode_size(c, m, canvas_px, div);
         let lut =
             c.fx.lut
                 .as_deref()
@@ -682,17 +1253,7 @@ impl App {
         if prefetch_at.is_some() {
             return;
         }
-        let src = if is_video {
-            let mut end = c.source_in + c.source_span();
-            if m.duration > Time::ZERO {
-                end = Time(end.0.min(m.duration.0));
-            }
-            still_seek(c.source_time(c.start + l.t_rel), c.source_in, end, m.fps.unwrap_or(fps))
-        } else {
-            // Bewegtes Bild: dasselbe Einzelbild wie im Export (Schleife bzw. letztes Bild halten)
-            // shortcut: beim Abspielen ein Einzelbild-Auftrag je Bild statt Strom, ausbauen falls es ruckelt
-            cl_media::animation(&m.path).map_or(Time::ZERO, |a| a.seek_time(l.t_rel))
-        };
+        let src = still_src(c, m, l.t_rel, fps);
         let animated_fx = c.fx.effects.iter().any(|e| {
             matches!(
                 e.id.as_str(),
@@ -859,6 +1420,12 @@ impl App {
                     if let Some(t) = mixed {
                         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
                         content.image(t.id(), canvas, uv, Color32::WHITE);
+                        // Effekt-Elemente darüber: ihre gemischte Fassung (wie der Export auf dem
+                        // fertigen Übergang)
+                        let corners = [canvas.left_top(), canvas.right_top(), canvas.right_bottom(), canvas.left_bottom()];
+                        for (fx_tex, mk, k) in &self.shader_preview.fx {
+                            draw_fx(content, t.id(), fx_tex.id(), corners, mk, *k, canvas);
+                        }
                     }
                     let Some(tex) = self.frames.get(&c.id).map(|f| &f.1) else {
                         continue;
@@ -906,47 +1473,7 @@ impl App {
                         let Some((_, fx_tex)) = self.frames.get(did) else {
                             continue;
                         };
-                        let alpha = alpha * k;
-                        let Some(mk) = mk else {
-                            crate::fx_mask::draw_textured(
-                                content,
-                                fx_tex.id(),
-                                corners,
-                                &corners,
-                                alpha,
-                            );
-                            continue;
-                        };
-                        let (polys, inverted) = crate::fx_mask::polygons(mk, canvas);
-                        if inverted {
-                            // alles außer der Form: Effekt ganz, Original in der Form darüber
-                            crate::fx_mask::draw_textured(
-                                content,
-                                fx_tex.id(),
-                                corners,
-                                &corners,
-                                alpha,
-                            );
-                            for poly in &polys {
-                                crate::fx_mask::draw_textured(
-                                    content,
-                                    tex.id(),
-                                    corners,
-                                    poly,
-                                    alpha,
-                                );
-                            }
-                        } else {
-                            for poly in &polys {
-                                crate::fx_mask::draw_textured(
-                                    content,
-                                    fx_tex.id(),
-                                    corners,
-                                    poly,
-                                    alpha,
-                                );
-                            }
-                        }
+                        draw_fx(content, tex.id(), fx_tex.id(), corners, mk, alpha * k, canvas);
                     }
                     regions.push(region);
                 }

@@ -255,6 +255,14 @@ impl Gpu {
         .unwrap_or_else(|_| Err("GPU-Fehler".into()))
     }
 
+    /// Pipeline für `shader` vorab bauen (das Übersetzen dauert beim ersten Mal spürbar);
+    /// ein späteres [`render`] nutzt sie wieder.
+    pub fn prepare(&self, shader: &str) -> Result<(), String> {
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.pipeline(&mut st, shader).map(|_| ())))
+            .unwrap_or_else(|_| Err("GPU-Fehler".into()))
+    }
+
     fn pipeline(&self, st: &mut State, shader: &str) -> Result<wgpu::RenderPipeline, String> {
         if let Some(p) = st.pipelines.get(shader) {
             return p.clone();
@@ -579,6 +587,19 @@ mod tests {
         assert!(g.render(CROSSFADE, &p, Frame { rgba: &a[4..], width: w, height: h }, fb, (w, h), 0.5).is_err());
         assert!(g.render("kaputt", &p, fa, fb, (w, h), 0.5).is_err());
         assert!(g.render(CROSSFADE, &p, fa, fb, (0, h), 0.5).is_err());
+    }
+
+    #[test]
+    fn prepare_builds_the_pipeline_ahead() {
+        let Some(g) = gpu() else {
+            eprintln!("keine GPU, übersprungen");
+            return;
+        };
+        let shader = CROSSFADE.replace("progress)", "progress * 1.0)");
+        g.prepare(&shader).unwrap();
+        assert!(g.prepare("kaputt").is_err());
+        // vor dem ersten Bild liegt die Pipeline bereit
+        assert!(g.state.lock().unwrap().pipelines.get(&shader).is_some_and(|p| p.is_ok()));
     }
 
     #[test]
