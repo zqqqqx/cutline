@@ -2,7 +2,9 @@
 //! - kurzer Klick ins Leere setzt den Playhead (begrenzt aufs Projektende), gedrückt halten
 //!   und ziehen zieht einen Auswahlrahmen auf; Lineal und Playhead-Griff scrubben
 //! - Playhead und Clips rasten an Clipkanten (alle Spuren) und am Playhead ein
-//! - Clips ziehen: auf andere Spuren derselben Art, ins Leere darüber/darunter = neue Spur
+//! - Clips ziehen: auf andere Spuren derselben Art, ins Leere darüber/darunter = neue Spur; über
+//!   einer unpassenden oder gesperrten Spur entsteht daneben eine neue (Einfüge-Linie)
+//! - Spurkopf gedrückt halten und ziehen ordnet die Spuren um; „+“ über den Spurköpfen legt eine an
 //! - Strg/Umschalt + Klick = Mehrfachauswahl, Rechtsklick-Menüs für Clip, Spur und Leerraum
 //! - Übergänge als Block auf dem Schnitt, Keyframe-Rauten, Live-Waveform beim Einsprechen
 //! - Mausrad scrollt die Spuren senkrecht, Umschalt+Rad waagerecht, Strg+Rad zoomt
@@ -192,8 +194,44 @@ enum CtxTarget {
 enum Target {
     Same,
     Track(usize),
-    NewTop,
-    NewBottom,
+    /// Neue Spur(en) neben Anzeige-Zeile (Zeile, obere Hälfte)
+    New(usize, bool),
+}
+
+/// Spurkopf gedrückt: Spur, Druckpunkt, Zeitpunkt, schon angehoben?
+#[derive(Clone, Copy)]
+struct TrackDrag {
+    track: TrackId,
+    origin: Pos2,
+    t0: f64,
+    lifted: bool,
+}
+
+/// Spurkopf gedrückt gehalten: ab dieser Bewegung (px) oder Haltezeit (s) hebt sich die Spur
+/// zum Verschieben; darunter bleibt es ein Klick.
+fn track_lifted(moved: f32, held: f64) -> bool {
+    moved >= 6.0 || held >= 0.25
+}
+
+/// Spurart, die ein Element aus dem Medien-Menü braucht (`None`: kein eigener Clip, z. B. Übergang).
+fn asset_kind(p: &Project, a: &DragAsset) -> Option<TrackKind> {
+    match a {
+        DragAsset::Media(m) => p.media(*m).map(|m| if m.kind == MediaKind::Audio { TrackKind::Audio } else { TrackKind::Video }),
+        DragAsset::Text(_) => Some(TrackKind::Text),
+        DragAsset::Sticker(_) | DragAsset::OwnSticker(_) => Some(TrackKind::Video),
+        DragAsset::Sfx(_) | DragAsset::File(_) => Some(TrackKind::Audio),
+        DragAsset::Effect(_) => Some(TrackKind::Effect),
+        DragAsset::Filter(_) => Some(TrackKind::Filter),
+        DragAsset::Transition(_) => None,
+    }
+}
+
+/// Anzahl der Schalter im Spurkopf (Sperren, Auge, Ton, Solo); eingeklappt keine.
+fn toggle_count(t: &Track, collapsed: bool) -> usize {
+    if collapsed {
+        return 0;
+    }
+    1 + usize::from(t.kind != TrackKind::Audio) + 2 * usize::from(matches!(t.kind, TrackKind::Video | TrackKind::Audio))
 }
 
 pub struct TimelineState {
@@ -210,6 +248,7 @@ pub struct TimelineState {
     /// Playhead im letzten Bild (Sprünge per Taste → Ansicht folgt)
     last_playhead: Option<Time>,
     pub tool: Tool,
+    track_drag: Option<TrackDrag>,
 }
 
 impl Default for TimelineState {
@@ -225,6 +264,7 @@ impl Default for TimelineState {
             last_click: None,
             last_playhead: None,
             tool: Tool::Select,
+            track_drag: None,
         }
     }
 }
@@ -347,20 +387,6 @@ impl App {
             let tools = ui.menu_button(egui::RichText::new(icon::LIGHTNING).size(14.0), |ui| self.tools_menu(ui)).response;
             self.tour_rects.insert("tools", tools.rect);
             tools.on_hover_text(format!("{}: {}", crate::tr("Schnellaktionen"), crate::tr("Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …")));
-            ui.menu_button(
-                RichText::new(crate::tr(format!("{}  Spur", icon::PLUS))).size(theme::FS_TEXT),
-                |ui| {
-                    for (k, name) in TRACK_KINDS {
-                        if menu_item(ui, theme::track_icon(k), name, "") {
-                            // ganz oben (Bildspuren) bzw. ganz unten (Ton)
-                            let index = self.project.timeline.tracks.len();
-                            self.apply(EditOp::InsertTrack { index, kind: k });
-                        }
-                    }
-                },
-            )
-            .response
-            .on_hover_text(crate::tr("Neue Spur hinzufügen"));
             ui.add(egui::Separator::default().vertical().spacing(10.0));
             let has = !self.project.timeline.tracks.is_empty();
             let sel = self.selected.is_some() || !self.sel_extra.is_empty() || self.selected_transition.is_some();
@@ -493,11 +519,7 @@ impl App {
             pos2(rect.right(), rect.top() + RULER_H),
         );
         let lanes = Rect::from_min_max(pos2(rect.left(), ruler.bottom()), rect.max);
-        let mut order: Vec<usize> = (0..tracks.len())
-            .filter(|i| tracks[*i].kind != TrackKind::Audio)
-            .rev()
-            .collect();
-        order.extend((0..tracks.len()).filter(|i| tracks[*i].kind == TrackKind::Audio));
+        let mut order = display_order(&tracks);
         if recording.is_some() {
             order.push(REC_ROW);
         }
@@ -597,15 +619,70 @@ impl App {
             });
             y += heights[k] + ROW_GAP;
         }
-        let row_at = |p: Pos2| {
-            rows.iter()
-                .find(|r| {
-                    p.y >= r.rect.top() - ROW_GAP / 2.0
-                        && p.y < r.rect.bottom() + ROW_GAP / 2.0
-                        && r.track != REC_ROW
-                })
-                .map(|r| r.track)
+        // Zeile (Anzeige-Index in `rows`) unter dem Zeiger; der Spalt zwischen zwei Zeilen zählt halb dazu
+        let row_idx_at = |p: Pos2| {
+            rows.iter().position(|r| {
+                p.y >= r.rect.top() - ROW_GAP / 2.0 && p.y < r.rect.bottom() + ROW_GAP / 2.0 && r.track != REC_ROW
+            })
         };
+        let row_at = |p: Pos2| row_idx_at(p).map(|k| rows[k].track);
+        let n_rows = rows.iter().filter(|r| r.track != REC_ROW).count();
+        // senkrechte Lage der Lücke `g` (über Zeile g) – dort entsteht eine neue Spur
+        let gap_y = |g: usize| match g {
+            0 => rows.first().map_or(lanes.top() + 4.0, |r| r.rect.top() - ROW_GAP / 2.0),
+            g => rows[g.min(n_rows) - 1].rect.bottom() + ROW_GAP / 2.0,
+        };
+        let mut insert_lines: Vec<f32> = Vec::new();
+
+        // ---------- Spur am Kopf ziehen ----------
+        let (primary_down, now, latest, esc) = ui.input(|i| {
+            (i.pointer.primary_down(), i.time, i.pointer.latest_pos(), i.key_pressed(egui::Key::Escape))
+        });
+        if resp.hovered() && ui.input(|i| i.pointer.primary_pressed()) && matches!(self.timeline.drag, Drag::None) {
+            let head = latest.filter(|p| p.x < x0 - 4.0 && p.y >= lanes.top());
+            if let Some((p, k)) = head.and_then(|p| Some((p, row_idx_at(p)?))) {
+                let tr = &tracks[rows[k].track];
+                // nicht auf den Schaltern (Sperren, Auge …): die bleiben Knöpfe
+                let n = toggle_count(tr, self.timeline.collapsed.contains(&tr.id));
+                let on_toggle = n > 0 && p.x >= rect.left() + 23.0 && p.x < rect.left() + 32.0 + n as f32 * 19.0;
+                if !on_toggle && !tr.main {
+                    self.timeline.track_drag = Some(TrackDrag { track: tr.id, origin: p, t0: now, lifted: false });
+                }
+            }
+        }
+        let mut lifted_row: Option<usize> = None;
+        if let Some(mut d) = self.timeline.track_drag.take() {
+            let from = rows.iter().position(|r| r.track != REC_ROW && tracks[r.track].id == d.track);
+            if let (Some(from), Some(p), false) = (from, latest, esc) {
+                d.lifted |= track_lifted(p.distance(d.origin), now - d.t0);
+                let gap = rows.iter().filter(|r| r.track != REC_ROW && r.rect.center().y < p.y).count();
+                let target = if d.lifted { track_drop_gap(&tracks, from, gap) } else { None };
+                if !primary_down {
+                    if let Some(op) = target.and_then(|g| move_track_to(&tracks, from, g)) {
+                        self.apply(op);
+                    }
+                } else {
+                    if d.lifted {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                        lifted_row = Some(from);
+                        insert_lines.extend(target.map(gap_y));
+                        // am oberen/unteren Rand rollen die Spuren mit
+                        let edge = 28.0;
+                        let v = if p.y < lanes.top() + edge {
+                            -((lanes.top() + edge - p.y) / edge).min(3.0)
+                        } else if p.y > lanes.bottom() - edge {
+                            ((p.y - (lanes.bottom() - edge)) / edge).min(3.0)
+                        } else {
+                            0.0
+                        };
+                        let dt = ui.input(|i| i.stable_dt).clamp(0.001, 0.05);
+                        self.timeline.vscroll = (self.timeline.vscroll + v * 500.0 * dt).clamp(0.0, overflow);
+                    }
+                    self.timeline.track_drag = Some(d);
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
 
         let lane_paint = painter.with_clip_rect(lanes);
         for row in &rows {
@@ -1014,10 +1091,14 @@ impl App {
         }
 
         // ---------- Ziehen ----------
-        let mut ghost: Vec<(ClipId, f64, f64, Option<usize>)> = Vec::new();
-        let mut new_track_hint: Option<Target> = None;
+        // Geist eines gezogenen Clips: (Clip, Beginn, Ende, Zeilenfläche, falls nicht die eigene)
+        let mut ghost: Vec<(ClipId, f64, f64, Option<Rect>)> = Vec::new();
         let mut snap_line: Option<f64> = None;
         let dragging = resp.dragged() || resp.drag_stopped();
+        // Esc bricht das Verschieben von Clips ab (nichts wird geändert)
+        if esc && matches!(self.timeline.drag, Drag::Move { .. }) {
+            self.timeline.drag = Drag::None;
+        }
         if let (Some(p), true) = (pointer, dragging) {
             match self.timeline.drag.clone() {
                 Drag::Scrub => {
@@ -1065,31 +1146,22 @@ impl App {
                     .max(0.0);
                     let orig = ids.iter().find(|x| x.0 == clip).map(|x| x.1).unwrap_or(0.0);
                     let delta = s - orig;
-                    // Ziel: andere Spur gleicher Art oder neue Spur im Leeren
+                    // Ziel: andere Spur gleicher Art; ins Leere darüber/darunter oder über einer
+                    // unpassenden/gesperrten Spur = neue Spur(en) daneben (je Clip-Art eine)
                     let mut target = Target::Same;
-                    if ids.len() <= 1 {
-                        let first_top = rows
-                            .iter()
-                            .filter(|r| r.track != REC_ROW)
-                            .map(|r| r.rect.top())
-                            .fold(f32::INFINITY, f32::min);
-                        let last_bottom = rows
-                            .iter()
-                            .filter(|r| r.track != REC_ROW)
-                            .map(|r| r.rect.bottom())
-                            .fold(f32::NEG_INFINITY, f32::max);
-                        if p.y < first_top - ROW_GAP && kind != TrackKind::Audio {
-                            target = Target::NewTop;
-                        } else if p.y > last_bottom + ROW_GAP && kind == TrackKind::Audio {
-                            target = Target::NewBottom;
-                        } else if let Some(t) = row_at(p) {
-                            if tracks[t].kind == kind {
+                    if lanes.contains(p) && n_rows > 0 {
+                        if p.y < rows[0].rect.top() - ROW_GAP && kind != TrackKind::Audio {
+                            target = Target::New(0, true);
+                        } else if p.y > rows[n_rows - 1].rect.bottom() + ROW_GAP && kind == TrackKind::Audio {
+                            target = Target::New(n_rows - 1, false);
+                        } else if let Some(k) = row_idx_at(p) {
+                            let t = rows[k].track;
+                            if !fits(&tracks[t], kind) {
+                                target = Target::New(k, p.y < rows[k].rect.center().y);
+                            } else if ids.len() <= 1 {
                                 target = Target::Track(t);
                             }
                         }
-                    }
-                    if matches!(target, Target::NewTop | Target::NewBottom) {
-                        new_track_hint = Some(target);
                     }
                     for (id, st) in &ids {
                         let Some((_, x)) = self.project.find_clip(*id) else {
@@ -1097,9 +1169,13 @@ impl App {
                         };
                         let ns = (st + delta).max(0.0);
                         let tr = match target {
-                            Target::Track(t) if *id == clip => Some(t),
-                            Target::NewTop | Target::NewBottom if *id == clip => {
-                                Some(usize::MAX - 1)
+                            Target::Track(t) if *id == clip => rows.iter().find(|r| r.track == t).map(|r| r.rect),
+                            Target::New(k, upper) => {
+                                let y = gap_y(new_track_gap(&tracks, k, upper, x.kind()));
+                                if !insert_lines.contains(&y) {
+                                    insert_lines.push(y);
+                                }
+                                Some(Rect::from_center_size(pos2(rect.center().x, y), vec2(rect.width(), ROW_H * 0.7)))
                             }
                             _ => None,
                         };
@@ -1109,12 +1185,16 @@ impl App {
                         self.timeline.drag = Drag::None;
                         let fr = |t: f64| Time::from_secs_f64(t).snap_to_frame(fps);
                         let ops: Vec<EditOp> = match target {
-                            Target::NewTop | Target::NewBottom => {
-                                vec![EditOp::MoveClipToNewTrack {
-                                    clip,
-                                    index: tracks.len(),
-                                    start: fr(s),
-                                }]
+                            Target::New(k, upper) => {
+                                // neue Spur(en) + Verschieben = ein Verlaufsschritt
+                                let moves: Vec<(ClipId, Time)> =
+                                    ids.iter().map(|(id, st)| (*id, fr((st + delta).max(0.0)))).collect();
+                                let r = move_to_new_tracks(&mut self.doc.lock().unwrap_or_else(|e| e.into_inner()), k, upper, &moves);
+                                match r {
+                                    Ok(()) => self.sync_project(),
+                                    Err(e) => self.toast_err(e.to_string()),
+                                }
+                                Vec::new()
                             }
                             Target::Track(t) => vec![EditOp::MoveClip {
                                 clip,
@@ -1292,6 +1372,27 @@ impl App {
         let drop_hover = resp.dnd_hover_payload::<DragAsset>();
         let mut drop_clip: Option<ClipId> = None;
         let mut drop_cut: Option<ClipId> = None;
+        // Element über einer unpassenden oder gesperrten Spur: neue Spur daneben (Zeile, obere
+        // Hälfte, Art). Effekt/Filter auf einem Clip mit Bild wirkt dagegen auf diesen Clip.
+        let asset_slot = |a: &DragAsset, k: Option<TrackKind>, p: Pos2| -> Option<(usize, bool, TrackKind)> {
+            let k = k?;
+            let r = row_idx_at(p).filter(|_| p.x >= rect.left() && lanes.contains(p))?;
+            if fits(&tracks[rows[r].track], k) {
+                return None;
+            }
+            let on_visual = hit(p).and_then(|h| tracks[h.2].clips.iter().find(|c| c.id == h.0)).is_some_and(|c| {
+                matches!(c.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Image, .. })
+            });
+            if on_visual && matches!(a, DragAsset::Effect(_) | DragAsset::Filter(_)) {
+                return None;
+            }
+            Some((r, p.y < rows[r].rect.center().y, k))
+        };
+        if let (Some(payload), Some(p)) = (&drop_hover, pointer) {
+            if let Some((r, upper, k)) = asset_slot(payload, asset_kind(&self.project, payload), p) {
+                insert_lines.push(gap_y(new_track_gap(&tracks, r, upper, k)));
+            }
+        }
         if let (Some(payload), Some(p)) = (&drop_hover, pointer) {
             match &**payload {
                 DragAsset::Effect(_) | DragAsset::Filter(_) => drop_clip = hit(p).map(|h| h.0),
@@ -1500,57 +1601,6 @@ impl App {
         // ---------- Clips ----------
         let lanes_clip = Rect::from_min_max(pos2(x0, lanes.top()), rect.max);
         let p = painter.with_clip_rect(lanes_clip);
-        let ghost_row_rect = |t: Option<usize>, default: Rect| -> Rect {
-            match t {
-                Some(x) if x == usize::MAX - 1 => match new_track_hint {
-                    Some(Target::NewTop) => {
-                        let top = rows
-                            .iter()
-                            .map(|r| r.rect.top())
-                            .fold(f32::INFINITY, f32::min);
-                        Rect::from_min_size(
-                            pos2(default.left(), top - default.height() - ROW_GAP),
-                            default.size(),
-                        )
-                    }
-                    _ => {
-                        let bottom = rows
-                            .iter()
-                            .map(|r| r.rect.bottom())
-                            .fold(f32::NEG_INFINITY, f32::max);
-                        Rect::from_min_size(pos2(default.left(), bottom + ROW_GAP), default.size())
-                    }
-                },
-                Some(x) => rows
-                    .iter()
-                    .find(|r| r.track == x)
-                    .map(|r| r.rect)
-                    .unwrap_or(default),
-                None => default,
-            }
-        };
-        if let Some(hint) = new_track_hint {
-            let any = rows.first().map(|r| r.rect).unwrap_or(lanes);
-            let gr = ghost_row_rect(
-                Some(usize::MAX - 1),
-                Rect::from_min_size(any.min, vec2(any.width(), ROW_H)),
-            );
-            let lane = Rect::from_min_max(pos2(x0, gr.top()), gr.max);
-            p.rect_stroke(
-                lane,
-                theme::R_CTRL,
-                Stroke::new(1.0_f32, theme::overlay(80)),
-                egui::StrokeKind::Inside,
-            );
-            let _ = hint;
-            painter.text(
-                pos2(rect.left() + 8.0, gr.center().y),
-                egui::Align2::LEFT_CENTER,
-                crate::tr(format!("{}  Neue Spur", icon::PLUS)),
-                egui::FontId::proportional(theme::FS_HINT),
-                theme::TEXT_DIM(),
-            );
-        }
         for row in rows.iter().filter(|r| r.track != REC_ROW) {
             let tr = &tracks[row.track];
             for c0 in &tr.clips {
@@ -1571,7 +1621,7 @@ impl App {
                 if let Some((_, gs, ge, gt)) = ghost.iter().find(|g| g.0 == c.id) {
                     s = *gs;
                     e = *ge;
-                    r = ghost_row_rect(*gt, row.rect);
+                    r = gt.unwrap_or(row.rect);
                     is_ghost = true;
                 }
                 let cr = Rect::from_min_max(pos2(tx(s), r.top()), pos2(tx(e), r.bottom()));
@@ -1946,6 +1996,36 @@ impl App {
                 }
             }
         }
+        // Angehobene Spur und Einfüge-Linien (über die ganze Breite, auch über die Spurköpfe)
+        let lp = painter.with_clip_rect(lanes);
+        if let Some(r) = lifted_row.map(|k| rows[k].rect) {
+            lp.rect_filled(r, theme::R_CTRL, theme::ACCENT().gamma_multiply(0.12));
+            lp.rect_stroke(r, theme::R_CTRL, Stroke::new(1.0_f32, theme::ACCENT()), egui::StrokeKind::Inside);
+        }
+        for y in &insert_lines {
+            lp.line_segment([pos2(rect.left() + 2.0, *y), pos2(rect.right() - 2.0, *y)], Stroke::new(2.0_f32, theme::ACCENT()));
+            lp.circle_filled(pos2(rect.left() + 4.0, *y), 3.5, theme::ACCENT());
+        }
+        // „+“ über den Spurköpfen (Ecke neben dem Lineal): neue Spur ganz oben (Bild) bzw. ganz unten (Ton)
+        let corner = Rect::from_min_max(pos2(rect.left() + 4.0, rect.top()), pos2(x0 - 4.0, ruler.bottom()));
+        let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(corner).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let add = theme::icon_button(&mut cui, icon::PLUS, "Spur hinzufügen", true, false);
+        let pop = ui.make_persistent_id("add-track-menu");
+        if add.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(pop));
+        }
+        let mut add_kind = None;
+        egui::popup_below_widget(ui, pop, &add, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+            for (k, name) in TRACK_KINDS {
+                if menu_item(ui, theme::track_icon(k), name, "") {
+                    add_kind = Some(k);
+                }
+            }
+        });
+        if let Some(kind) = add_kind {
+            let index = self.project.timeline.tracks.len();
+            self.apply(EditOp::InsertTrack { index, kind });
+        }
         // Senkrechte Bildlaufleiste
         if overflow > 0.0 {
             let bar = Rect::from_min_max(
@@ -1969,21 +2049,8 @@ impl App {
                 Time::from_secs_f64(snap_to(t, &snap_cands(&[])).unwrap_or(t)).snap_to_frame(fps)
             });
             let at = at.unwrap_or(self.playhead);
-            let kind = match &*payload {
-                DragAsset::Media(m) => self.project.media(*m).map(|m| {
-                    if m.kind == MediaKind::Audio {
-                        TrackKind::Audio
-                    } else {
-                        TrackKind::Video
-                    }
-                }),
-                DragAsset::Text(_) => Some(TrackKind::Text),
-                DragAsset::Sticker(_) | DragAsset::OwnSticker(_) => Some(TrackKind::Video),
-                DragAsset::Sfx(_) | DragAsset::File(_) => Some(TrackKind::Audio),
-                DragAsset::Effect(_) => Some(TrackKind::Effect),
-                DragAsset::Filter(_) => Some(TrackKind::Filter),
-                _ => None,
-            };
+            let kind = asset_kind(&self.project, &payload);
+            let slot = pointer.and_then(|p| asset_slot(&payload, kind, p));
             let mut track = pointer
                 .and_then(row_at)
                 .filter(|t| Some(tracks[*t].kind) == kind && !tracks[*t].main)
@@ -2001,7 +2068,13 @@ impl App {
                 .fold(f32::NEG_INFINITY, f32::max);
             // neue Spur und Ablegen sind ein Verlaufsschritt (sonst bliebe nach Rückgängig eine leere Spur)
             let rev = self.doc.lock().unwrap_or_else(|e| e.into_inner()).revision();
-            if let (Some(p), Some(k)) = (pointer, kind) {
+            if let Some((r, upper, k)) = slot {
+                let index = gap_index(&tracks, new_track_gap(&tracks, r, upper, k), k);
+                track = None;
+                if let Some(OpOutput::Track(t)) = self.apply(EditOp::InsertTrack { index, kind: k }) {
+                    track = Some(t);
+                }
+            } else if let (Some(p), Some(k)) = (pointer, kind) {
                 let above = p.y < first_top - ROW_GAP && k != TrackKind::Audio;
                 let below = p.y > last_bottom + ROW_GAP && k == TrackKind::Audio;
                 if (above || below) && !tracks.is_empty() && track.is_none() {
@@ -2871,6 +2944,21 @@ mod tests {
         assert!((vol_norm(VOL_MAX) - 1.0).abs() < 1e-6);
         // alte Werte über +12 dB bleiben gespeichert, die Linie steht nur oben an
         assert!((vol_norm(20.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn track_head_click_versus_drag() {
+        assert!(!track_lifted(0.0, 0.0), "Klick");
+        assert!(!track_lifted(5.0, 0.2), "kleines Zittern beim Klicken");
+        assert!(track_lifted(6.0, 0.0), "Bewegung");
+        assert!(track_lifted(0.0, 0.25), "gedrückt gehalten");
+    }
+
+    #[test]
+    fn head_toggles_per_track_kind() {
+        let n = |k| toggle_count(&Track::new(k), false);
+        assert_eq!((n(TrackKind::Video), n(TrackKind::Audio), n(TrackKind::Text)), (4, 3, 2));
+        assert_eq!(toggle_count(&Track::new(TrackKind::Video), true), 0, "eingeklappt");
     }
 
     #[test]
