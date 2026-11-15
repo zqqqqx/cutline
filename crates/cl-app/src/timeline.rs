@@ -2429,6 +2429,7 @@ impl App {
                     None => &p,
                 };
                 self.draw_clip(pc, &c, tr, cr, lanes_clip, rect.right(), x0, is_ghost, missing, rooms.0, labels, w);
+                self.proxy_line(ctx, pc, &c, cr);
                 if missing && hovered_clip == Some(c.id) {
                     egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new(("missing", c.id)), |ui| {
                         ui.label(crate::tr("Datei fehlt"));

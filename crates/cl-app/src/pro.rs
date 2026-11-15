@@ -102,10 +102,10 @@ impl App {
             match done {
                 TaskDone::Failed(e) => self.toast_err(e),
                 TaskDone::Run(f) => f(self),
+                // fertig: nichts neu – Ströme wechseln über ihren Schlüssel (siehe `stream_pick`),
+                // ohne das laufende Bild zu verwerfen
                 TaskDone::Proxy { media, ok } => {
-                    if ok {
-                        self.invalidate_preview();
-                    } else {
+                    if !ok {
                         self.proxy_failed.insert(media);
                     }
                 }

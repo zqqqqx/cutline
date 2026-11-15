@@ -1402,6 +1402,9 @@ impl App {
         // Auch während Übergängen: der vorab geöffnete Strom beginnt genau am Clipanfang
         if self.core.streaming() && streamable(c) {
             let (key, w, h) = stream_spec(id, c, m, canvas_px, div, stream_fps, fxh);
+            // Quelle (Original/Proxy-Stücke) im Schlüssel: ein Wechsel öffnet einen Ersatzstrom
+            let pick = self.stream_pick(lid(id), c, m, prefetch_at.unwrap_or(self.playhead));
+            let key = key ^ pick.tag();
             let alias = stream_alias(c, m, (w, h), stream_fps, fxh);
             let want = Want {
                 id: lid(id),
@@ -1415,8 +1418,10 @@ impl App {
                 // Der Kern sagt, ob und ab wo: erster Strom, Ersatz nach einer Änderung (der alte
                 // zeigt weiter, bis der neue liefert), Aufholen, hängender Strom
                 if let Some(o) = self.core.want(&want, now) {
-                    let path = self.preview_path(m, h);
-                    self.starter.send(open_job(o, c, m, path, (w, h), stream_fps, alias));
+                    let (path, offset) = self.stream_source(m, h, pick);
+                    let mut job = open_job(o, c, m, path, (w, h), stream_fps, alias);
+                    job.source_at = Time((job.source_at - offset).0.max(0));
+                    self.starter.send(job);
                 }
             }
             if prefetch_at.is_some() {
@@ -1456,11 +1461,12 @@ impl App {
                 return;
             }
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
+            let (path, at) = self.still_source(m, h, src);
             self.decoder.send(Job::Frame {
                 clip: id,
                 key,
-                path: self.preview_path(m, h),
-                at: src,
+                path,
+                at,
                 w,
                 h,
                 graph,

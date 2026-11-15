@@ -3,20 +3,29 @@
 //! Ablage: `<Daten>/cache/proxies/<Kennung>-<Höhe>[-<Bildrate>fps].mp4` (Kennung aus Pfad, Größe
 //! und Änderungszeit; ohne Bildrate = Bildrate der Quelle bis 60, so hießen auch ältere Proxys).
 //!
-//! Der Bau stört den Player nicht: Priorität unter normal, angehalten beim Abspielen und kurz
-//! nach jedem Einzelbild-Auftrag (Klick, Scrubben), Hardware-Encoder zuerst.
+//! Gebaut wird in Stücken (siehe [`parts`]): jedes fertige Stück ist sofort nutzbar, fertige
+//! Stücke überleben Neustarts, am Ende wird daraus die gewohnte Ein-Datei-Proxy.
+//!
+//! Der Bau stört den Player nicht: Priorität unter normal, angehalten kurz nach jedem Einzelbild-
+//! Auftrag (Klick, Scrubben) und beim Abspielen, sobald die Wiedergabe nicht mehr mitkommt;
+//! Hardware-Encoder zuerst.
 
-use std::collections::HashSet;
+mod parts;
+
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
-use cl_core::{ClipContent, MediaId, MediaKind, MediaRef, Rational, Time};
+use cl_core::{Clip, ClipContent, MediaId, MediaKind, MediaRef, Rational, Time};
 use cl_export::Encoder;
 use eframe::egui::{self, RichText};
+
+pub use parts::Pick;
+use parts::{Focus, Parting, MAX_FAILS, PART_SECS};
 
 use crate::app::App;
 use crate::paths;
@@ -98,13 +107,20 @@ fn candidates(m: &MediaRef, height: u32, project_fps: Rational, hash: u64) -> Ve
 
 /// Pfad, unter dem ein neuer Proxy entsteht.
 pub fn proxy_path(m: &MediaRef, height: u32, project_fps: Rational) -> PathBuf {
+    proxy_path_in(&dir(), m, height, project_fps)
+}
+
+fn proxy_path_in(d: &Path, m: &MediaRef, height: u32, project_fps: Rational) -> PathBuf {
     let s = proxy_spec(m, height, project_fps);
-    dir().join(file_name(media_hash(m), s.height, s.fps))
+    d.join(file_name(media_hash(m), s.height, s.fps))
 }
 
 /// Vorhandener, brauchbarer Proxy mit seiner Höhe.
 pub fn existing_proxy(m: &MediaRef, height: u32, project_fps: Rational) -> Option<(PathBuf, u32)> {
-    let d = dir();
+    existing_proxy_in(&dir(), m, height, project_fps)
+}
+
+fn existing_proxy_in(d: &Path, m: &MediaRef, height: u32, project_fps: Rational) -> Option<(PathBuf, u32)> {
     candidates(m, height, project_fps, media_hash(m))
         .into_iter()
         .map(|(n, h)| (d.join(n), h))
@@ -181,20 +197,61 @@ pub fn encode_args(enc: Encoder, spec: &ProxySpec) -> Vec<String> {
     if spec.fps.is_none() {
         a.extend(["-fpsmax", "60"].map(String::from));
     }
-    let codec: &[&str] = match enc {
+    a.extend(codec_args(enc).iter().map(|s| s.to_string()));
+    a.extend(["-g".to_string(), spec.gop.to_string()]);
+    a
+}
+
+/// Encoder-Argumente (Qualität: 540p ≈ 17 MB je Minute, Ziel ≤ 25)
+fn codec_args(enc: Encoder) -> &'static [&'static str] {
+    match enc {
         Encoder::Nvenc => &["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "constqp", "-qp", "26"],
         Encoder::Qsv => &["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "26"],
         Encoder::Amf => &["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p", "26"],
         Encoder::Software => &["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"],
-    };
-    a.extend(codec.iter().map(|s| s.to_string()));
-    a.extend(["-g".to_string(), spec.gop.to_string()]);
+    }
+}
+
+/// Bildrate des Proxys: Projekt-Bildrate, sonst die der Quelle (höchstens 60, unbekannt 30)
+fn out_fps(m: &MediaRef, spec: &ProxySpec) -> Rational {
+    spec.fps.unwrap_or_else(|| match m.fps.filter(|f| f.num > 0 && f.den > 0) {
+        Some(f) if f.as_f64() <= 60.01 => f,
+        Some(_) => Rational::new(60, 1),
+        None => Rational::new(30, 1),
+    })
+}
+
+/// FFmpeg-Argumente für Stück `k` (Eingang und Ausgang ohne Zieldatei). `st` = Startzeit des
+/// Videostroms der Quelle: Mit `-copyts` sieht jedes Stück dieselben Zeitstempel wie ein Bau in
+/// einem Zug und rechnet auf demselben Bildraster (kein doppeltes/fehlendes Bild an der Naht).
+fn part_args(src: &Path, st: f64, pt: &Parting, k: u32, height: u32, gop: u32, enc: Encoder, hw: Option<&str>) -> Vec<String> {
+    let s = pt.start(k);
+    let mut a: Vec<String> = Vec::new();
+    if let Some(h) = hw {
+        a.extend(["-hwaccel".into(), h.into()]);
+    }
+    // ab dem Schlüsselbild ein Stück vor dem Anfang lesen: das Bild am Anfang kann davor liegen
+    a.extend(["-noaccurate_seek".into(), "-ss".into(), format!("{:.6}", (s - 0.5).max(0.0)), "-copyts".into(), "-i".into()]);
+    a.push(src.to_string_lossy().into_owned());
+    let vf = format!(
+        "fps={}/{}:start_time={:.6},setpts=PTS-STARTPTS,scale=-2:{height}:flags=bicubic,format=yuv420p",
+        pt.fps.num,
+        pt.fps.den,
+        st + s
+    );
+    a.extend(["-map", "0:v:0", "-an", "-sn", "-dn", "-vf", &vf].map(String::from));
+    a.extend(codec_args(enc).iter().map(|s| s.to_string()));
+    // ohne B-Bilder: Stücke verschiedener Encoder (Rückfall) haben sonst verschiedene Vorlaufzeiten,
+    // zusammengefügt entstand an der Naht ein doppeltes Bild; beim Springen ohnehin schneller
+    a.extend(["-bf".into(), "0".into(), "-g".into(), gop.to_string(), "-frames:v".into(), pt.per.to_string()]);
     a
 }
 
 // ------------------------------------------------------------------ Rücksicht auf den Player
 
 static PLAYING: AtomicBool = AtomicBool::new(false);
+/// Die Wiedergabe kam in dieser Abspiel-Sitzung nicht mit (gilt bis zum Stopp)
+static BEHIND: AtomicBool = AtomicBool::new(false);
 static LAST_ACTIVITY: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Der Player hat gerade ein Einzelbild angefordert oder bekommen (Klick, Scrubben).
@@ -202,9 +259,18 @@ pub fn note_activity() {
     *LAST_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
 }
 
-/// Wiedergabe läuft (vom UI-Thread je Bild gesetzt).
-pub fn set_playing(on: bool) {
-    PLAYING.store(on, Ordering::Relaxed);
+/// Zustand der Wiedergabe (vom UI-Thread je Bild): läuft sie, und meldet der Kern gerade einen
+/// Rückstand (automatische Qualität abgesenkt bzw. ausgeschaltet = unbekannt)?
+pub fn set_play_state(playing: bool, behind_now: bool) {
+    PLAYING.store(playing, Ordering::Relaxed);
+    let prev = BEHIND.load(Ordering::Relaxed);
+    BEHIND.store(latch_behind(prev, playing, behind_now), Ordering::Relaxed);
+}
+
+/// Rückstand merken, bis die Wiedergabe endet: sonst liefe der Bau nach dem Erholen der Qualität
+/// wieder an, bremste erneut – ein Hin und Her im Takt der automatischen Qualität.
+pub fn latch_behind(prev: bool, playing: bool, behind_now: bool) -> bool {
+    playing && (prev || behind_now)
 }
 
 fn idle() -> Duration {
@@ -219,9 +285,18 @@ const PAUSE_WITHIN: Duration = Duration::from_millis(300);
 /// … und Fortsetzen erst nach einer Ruhepause, damit schnelles Klicken nicht ständig schaltet.
 const RESUME_AFTER: Duration = Duration::from_millis(800);
 
-/// Soll der Proxy-Bau (jetzt) angehalten sein?
-pub fn want_pause(paused: bool, playing: bool, idle: Duration) -> bool {
-    playing || idle < if paused { RESUME_AFTER } else { PAUSE_WITHIN }
+/// Soll der Proxy-Bau (jetzt) angehalten sein? Beim Abspielen läuft er weiter (ein Stück-Encoder,
+/// Priorität unter normal), außer die Wiedergabe kommt nicht mit (`behind`); im Stand hält jeder
+/// Klick ihn kurz an.
+pub fn want_pause(paused: bool, playing: bool, behind: bool, idle: Duration) -> bool {
+    if playing {
+        return behind;
+    }
+    idle < if paused { RESUME_AFTER } else { PAUSE_WITHIN }
+}
+
+fn pause_now(paused: bool) -> bool {
+    want_pause(paused, PLAYING.load(Ordering::Relaxed), BEHIND.load(Ordering::Relaxed), idle())
 }
 
 // ------------------------------------------------------------------ Bau
@@ -273,80 +348,16 @@ fn build_with(
 ) -> Result<BuildReport, String> {
     std::fs::create_dir_all(out.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
     let tmp = out.with_extension("part.mp4");
-    let mut cmd = cl_media::ffmpeg_command().map_err(|e| e.to_string())?;
-    cl_media::lower_priority(&mut cmd);
-    cmd.args(["-v", "error", "-y", "-nostdin", "-progress", "pipe:1", "-nostats"]);
+    let mut cmd = encode_command()?;
     if let Some(h) = hw {
         cmd.args(["-hwaccel", h]);
     }
-    let mut child = cmd
-        .arg("-i")
-        .arg(&m.path)
-        .args(encode_args(enc, spec))
-        .arg(&tmp)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null()) // ungelesen würde der volle Puffer FFmpeg anhalten
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    // Fortschritt in eigenem Thread lesen: angehalten schreibt FFmpeg nichts, die Steuerung
-    // unten muss trotzdem weiterlaufen (Fortsetzen, Abbrechen).
-    let done_us = Arc::new(AtomicU64::new(0));
-    let reader = child.stdout.take().map(|out| {
-        let done_us = done_us.clone();
-        std::thread::spawn(move || {
-            use std::io::BufRead;
-            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
-                if let Some(us) = line.strip_prefix("out_time_us=").and_then(|v| v.trim().parse::<u64>().ok()) {
-                    done_us.store(us, Ordering::Relaxed);
-                }
-            }
-        })
-    });
+    cmd.arg("-i").arg(&m.path).args(encode_args(enc, spec));
     let dur = m.duration.as_secs_f64().max(0.1);
-    let start = Instant::now();
-    let (mut paused, mut paused_total, mut paused_since) = (false, Duration::ZERO, None::<Instant>);
-    let status = loop {
-        if cancel.load(Ordering::Relaxed) {
-            let _ = child.kill();
-            // warten, bis FFmpeg die Datei losgelassen hat (Windows), sonst bleibt `.part.mp4`
-            let _ = child.wait();
-            let _ = std::fs::remove_file(&tmp);
-            return Err("Abgebrochen".into());
-        }
-        let want = want_pause(paused, PLAYING.load(Ordering::Relaxed), idle());
-        if want != paused && cl_media::suspend(&child, want) {
-            paused = want;
-            if want {
-                paused_since = Some(Instant::now());
-            } else if let Some(t) = paused_since.take() {
-                paused_total += t.elapsed();
-            }
-        }
-        progress((done_us.load(Ordering::Relaxed) as f64 / 1e6 / dur).clamp(0.0, 1.0) as f32);
-        match child.try_wait() {
-            Ok(Some(st)) => break st,
-            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
-            Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = std::fs::remove_file(&tmp);
-                return Err(e.to_string());
-            }
-        }
-    };
-    if let Some(r) = reader {
-        let _ = r.join();
-    }
-    if !status.success() {
-        let _ = std::fs::remove_file(&tmp);
+    let (report, n) = run_encode(cmd, &tmp, out, dur, progress, cancel)?;
+    if n == 0 {
         return Err("Proxy konnte nicht erstellt werden".into());
     }
-    std::fs::rename(&tmp, out).map_err(|e| e.to_string())?;
-    let paused = (paused_total + paused_since.map_or(Duration::ZERO, |t| t.elapsed())).as_secs_f64();
-    let report = BuildReport {
-        secs: (start.elapsed().as_secs_f64() - paused).max(1e-3),
-        paused,
-    };
     if crate::app::perf() {
         let mb = std::fs::metadata(out).map_or(0.0, |x| x.len() as f64 / 1e6);
         crate::applog::perf_line!(
@@ -362,6 +373,192 @@ fn build_with(
     Ok(report)
 }
 
+/// FFmpeg für den Proxy-Bau: Priorität unter normal, Fortschritt auf stdout
+fn encode_command() -> Result<Command, String> {
+    let mut cmd = cl_media::ffmpeg_command().map_err(|e| e.to_string())?;
+    cl_media::lower_priority(&mut cmd);
+    cmd.args(["-v", "error", "-y", "-nostdin", "-progress", "pipe:1", "-nostats"]);
+    Ok(cmd)
+}
+
+/// FFmpeg nach `tmp` schreiben lassen und bei Erfolg zu `out` umbenennen (eine fertige Datei
+/// ist nie halb). Hält den Prozess an, solange der Player Vorrang hat ([`pause_now`]).
+/// Ergebnis: Laufzeit und Zahl der geschriebenen Bilder.
+fn run_encode(
+    mut cmd: Command,
+    tmp: &Path,
+    out: &Path,
+    dur: f64,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
+) -> Result<(BuildReport, u64), String> {
+    let mut child = cmd
+        .arg(tmp)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null()) // ungelesen würde der volle Puffer FFmpeg anhalten
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    // Fortschritt in eigenem Thread lesen: angehalten schreibt FFmpeg nichts, die Steuerung
+    // unten muss trotzdem weiterlaufen (Fortsetzen, Abbrechen).
+    let done_us = Arc::new(AtomicU64::new(0));
+    let frames = Arc::new(AtomicU64::new(0));
+    let reader = child.stdout.take().map(|out| {
+        let (done_us, frames) = (done_us.clone(), frames.clone());
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                if let Some(us) = line.strip_prefix("out_time_us=").and_then(|v| v.trim().parse::<u64>().ok()) {
+                    done_us.store(us, Ordering::Relaxed);
+                } else if let Some(n) = line.strip_prefix("frame=").and_then(|v| v.trim().parse::<u64>().ok()) {
+                    frames.store(n, Ordering::Relaxed);
+                }
+            }
+        })
+    });
+    let dur = dur.max(0.1);
+    let start = Instant::now();
+    let (mut paused, mut paused_total, mut paused_since) = (false, Duration::ZERO, None::<Instant>);
+    let status = loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            // warten, bis FFmpeg die Datei losgelassen hat (Windows), sonst bleibt `.part.mp4`
+            let _ = child.wait();
+            let _ = std::fs::remove_file(tmp);
+            return Err("Abgebrochen".into());
+        }
+        let want = pause_now(paused);
+        if want != paused && cl_media::suspend(&child, want) {
+            paused = want;
+            if want {
+                paused_since = Some(Instant::now());
+            } else if let Some(t) = paused_since.take() {
+                paused_total += t.elapsed();
+            }
+        }
+        progress((done_us.load(Ordering::Relaxed) as f64 / 1e6 / dur).clamp(0.0, 1.0) as f32);
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = std::fs::remove_file(tmp);
+                return Err(e.to_string());
+            }
+        }
+    };
+    if let Some(r) = reader {
+        let _ = r.join();
+    }
+    if !status.success() {
+        let _ = std::fs::remove_file(tmp);
+        return Err("Proxy konnte nicht erstellt werden".into());
+    }
+    let paused = (paused_total + paused_since.map_or(Duration::ZERO, |t| t.elapsed())).as_secs_f64();
+    let report = BuildReport {
+        secs: (start.elapsed().as_secs_f64() - paused).max(1e-3),
+        paused,
+    };
+    let n = frames.load(Ordering::Relaxed);
+    if n == 0 {
+        // kein Bild geschrieben: nichts umbenennen, der Aufrufer entscheidet
+        let _ = std::fs::remove_file(tmp);
+        return Ok((report, 0));
+    }
+    std::fs::rename(tmp, out).map_err(|e| e.to_string())?;
+    Ok((report, n))
+}
+
+/// Startzeit des Videostroms (Quellen mit Versatz, z. B. aus Kameras oder geschnittenen Dateien)
+fn probe_start(src: &Path) -> f64 {
+    cl_media::ffprobe_command()
+        .ok()
+        .and_then(|mut c| {
+            c.args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=start_time", "-of", "csv=p=0"])
+                .arg(src)
+                .stdin(Stdio::null())
+                .output()
+                .ok()
+        })
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite())
+        .unwrap_or(0.0)
+}
+
+/// Stück `k` bauen (Encoder-Kette wie [`build`]). Ein Encoder gilt erst als kaputt, wenn ein
+/// anderer dasselbe Stück schafft – sonst liegt es an der Quelle. Ergebnis: Zahl der Bilder
+/// (0: das Video endet vor diesem Stück, die Datei bleibt leer).
+#[allow(clippy::too_many_arguments)]
+fn build_part(
+    m: &MediaRef,
+    dir: &Path,
+    pt: &Parting,
+    st: f64,
+    k: u32,
+    spec: &ProxySpec,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
+) -> Result<u64, String> {
+    let mut failed = Vec::new();
+    let mut last = String::new();
+    // erst lösen: in der Schleife wird die Liste wieder gesperrt
+    let chain = encoder_chain(available_encoders(), &broken_encoders());
+    for enc in chain {
+        for hw in decode_attempts(enc, m) {
+            match build_part_with(m, dir, pt, st, k, spec, enc, hw, progress, cancel) {
+                Ok(n) => {
+                    broken_encoders().extend(failed.iter().filter(|e| **e != Encoder::Software));
+                    return Ok(n);
+                }
+                Err(e) if e == "Abgebrochen" => return Err(e),
+                Err(e) => last = e,
+            }
+        }
+        failed.push(enc);
+    }
+    Err(last)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_part_with(
+    m: &MediaRef,
+    dir: &Path,
+    pt: &Parting,
+    st: f64,
+    k: u32,
+    spec: &ProxySpec,
+    enc: Encoder,
+    hw: Option<&str>,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
+) -> Result<u64, String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let out = dir.join(parts::part_name(k));
+    let tmp = dir.join(format!("{k:04}.part.mp4"));
+    let mut cmd = encode_command()?;
+    cmd.args(part_args(&m.path, st, pt, k, spec.height, spec.gop, enc, hw));
+    let secs = pt.start(k + 1) - pt.start(k);
+    let (_, n) = run_encode(cmd, &tmp, &out, secs, progress, cancel)?;
+    if n == 0 {
+        // hinter dem Ende des Videos (Ton länger als Bild): leeres Stück
+        std::fs::write(&out, b"").map_err(|e| e.to_string())?;
+    }
+    Ok(n)
+}
+
+/// Alle Stücke verlustfrei zur Ein-Datei-Proxy `out` zusammenfügen (erst fertig, dann umbenennen).
+fn merge(dir: &Path, pt: &Parting, out: &Path, cancel: &AtomicBool) -> Result<(), String> {
+    let list = parts::concat_list(dir, 0, pt.count).map_err(|e| e.to_string())?;
+    let tmp = out.with_extension("part.mp4");
+    let mut cmd = encode_command()?;
+    cmd.args(["-f", "concat", "-i"]).arg(&list).args(["-map", "0:v:0", "-c", "copy", "-movflags", "+faststart"]);
+    let dur = pt.start(pt.count);
+    match run_encode(cmd, &tmp, out, dur, &|_| {}, cancel)? {
+        (_, 0) => Err("Proxy-Stücke ohne Bild".into()),
+        _ => Ok(()),
+    }
+}
+
 /// Reihenfolge der Proxy-Aufträge: Medien am Playhead zuerst, dann im sichtbaren Bereich der
 /// Zeitleiste, dann der Rest (in Medienreihenfolge).
 pub fn next_proxy(candidates: &[MediaId], at_playhead: &HashSet<MediaId>, visible: &HashSet<MediaId>) -> Option<MediaId> {
@@ -371,7 +568,190 @@ pub fn next_proxy(candidates: &[MediaId], at_playhead: &HashSet<MediaId>, visibl
         .copied()
 }
 
+// ------------------------------------------------------------------ Stück-Bestand
+
+/// Stand des Proxys einer Quelle: vom Bau (Hintergrund) geschrieben, vom Player und der Zeitleiste
+/// gelesen (ohne Dateisystem je Bild).
+struct Entry {
+    /// gewählte Proxy-Höhe und Projekt-Bildrate, für die der Eintrag gilt
+    want: (u32, Rational),
+    /// Ziel: die fertige Ein-Datei-Proxy (daneben der Stück-Ordner)
+    out: PathBuf,
+    spec: ProxySpec,
+    /// `None`: Dauer unbekannt, Bau in einem Zug
+    pt: Option<Parting>,
+    dur: f64,
+    ready: Vec<bool>,
+    fails: Vec<u8>,
+    /// fertiger Proxy vorhanden (auch ein älterer Ein-Datei-Proxy)
+    complete: bool,
+    /// Bau gescheitert oder abgebrochen: in dieser Sitzung nicht neu
+    dead: bool,
+    /// fertige Quellbereiche (Zeitleiste), nur bei Änderungen neu berechnet
+    ranges: Arc<Vec<(f64, f64)>>,
+}
+
+impl Entry {
+    fn changed(&mut self) {
+        self.ranges = Arc::new(match self.pt {
+            _ if self.complete => vec![(0.0, self.dur.max(0.0))],
+            Some(pt) => parts::ready_ranges(&pt, &self.ready, self.dur),
+            None => Vec::new(),
+        });
+    }
+
+    /// Fehlt das Stück an Quellzeit `t` und ist es baubar?
+    fn needs(&self, t: f64) -> bool {
+        !self.complete
+            && !self.dead
+            && self.pt.is_some_and(|pt| {
+                let k = pt.part_of(t) as usize;
+                !self.ready.get(k).copied().unwrap_or(true) && self.fails.get(k).is_some_and(|f| *f < MAX_FAILS)
+            })
+    }
+}
+
+fn registry() -> MutexGuard<'static, HashMap<PathBuf, Entry>> {
+    static R: OnceLock<Mutex<HashMap<PathBuf, Entry>>> = OnceLock::new();
+    R.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Wo die Arbeit hin soll, je Quelle (vom UI-Thread gesetzt, siehe [`App::update_focus`])
+fn focus() -> MutexGuard<'static, HashMap<PathBuf, Focus>> {
+    static F: OnceLock<Mutex<HashMap<PathBuf, Focus>>> = OnceLock::new();
+    F.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Eintrag des laufenden Baus ändern (nur, wenn er noch zu diesem Ziel gehört)
+fn with_mine<R>(src: &Path, out: &Path, f: impl FnOnce(&mut Entry) -> R) -> Option<R> {
+    registry().get_mut(src).filter(|e| e.out == out).map(f)
+}
+
+/// Eintrag für `m` auf Stand bringen (alle 2 s): fertigen Proxy erkennen, nach Neustart oder
+/// geänderter Quelle die Stücke vom Datenträger lesen. `true`: es fehlt noch etwas.
+fn refresh_entry(root: &Path, m: &MediaRef, h: u32, fps: Rational, playing: bool) -> bool {
+    let full = existing_proxy_in(root, m, h, fps).is_some();
+    let out = proxy_path_in(root, m, h, fps);
+    let mut reg = registry();
+    if reg.get(&m.path).is_none_or(|e| e.want != (h, fps) || e.out != out) {
+        let spec = proxy_spec(m, h, fps);
+        let dur = m.duration.as_secs_f64();
+        let pt = Parting::new(dur, out_fps(m, &spec), PART_SECS);
+        let pdir = parts::parts_dir(&out);
+        let ready = pt.map_or_else(Vec::new, |pt| parts::scan_ready(&pdir, pt.count));
+        parts::remove_stale(root, &m.path, &pdir);
+        let fails = vec![0; ready.len()];
+        let mut e = Entry { want: (h, fps), out, spec, pt, dur, ready, fails, complete: full, dead: false, ranges: Arc::default() };
+        e.changed();
+        reg.insert(m.path.clone(), e);
+    }
+    let Some(e) = reg.get_mut(&m.path) else { return false };
+    if e.complete != full {
+        e.complete = full;
+        e.changed();
+    }
+    // zusammengefügt: Stücke weg (nicht beim Abspielen – ein laufender Strom liest sie noch)
+    if full && !playing {
+        let d = parts::parts_dir(&e.out);
+        if d.is_dir() {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+    !full && !e.dead
+}
+
+/// Hat ein anderes Medium am Playhead Vorrang (dort fehlt das Stück, hier nicht)?
+fn other_media_first(src: &Path) -> bool {
+    let at: Vec<(PathBuf, f64)> = focus().iter().filter_map(|(p, f)| f.at.map(|a| (p.clone(), a.0))).collect();
+    let reg = registry();
+    let needs = |p: &Path, t: f64| reg.get(p).is_some_and(|e| e.needs(t));
+    let mine = at.iter().any(|(p, t)| p == src && needs(p, *t));
+    !mine && at.iter().any(|(p, t)| p != src && needs(p, *t))
+}
+
+/// Stücke einer Quelle bauen, bis alle da sind (dann zusammenfügen) oder ein anderes Medium am
+/// Playhead Vorrang hat. Nach jedem Stück wird neu geplant (Playhead gesprungen: dort weiter; das
+/// laufende Stück wird fertig). Ein Stück, das wiederholt scheitert, wird übersprungen – dort
+/// bleibt das Original. `Ok(true)`: Proxy fertig; `Ok(false)`: unterbrochen (Vorrang, veraltet).
+fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Result<bool, String> {
+    let pdir = parts::parts_dir(out);
+    std::fs::create_dir_all(&pdir).map_err(|e| e.to_string())?;
+    let _ = std::fs::write(pdir.join("quelle.txt"), m.path.to_string_lossy().as_bytes());
+    let st = probe_start(&m.path);
+    let name = m.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    let mut paused = false;
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Abgebrochen".into());
+        }
+        if other_media_first(&m.path) {
+            return Ok(false);
+        }
+        // Rücksicht auf den Player schon vor dem Start eines Stücks
+        paused = pause_now(paused);
+        if paused {
+            std::thread::sleep(Duration::from_millis(40));
+            continue;
+        }
+        let f = focus().get(&m.path).cloned().unwrap_or_default();
+        let Some((next, done)) = with_mine(&m.path, out, |e| {
+            let k = parts::next_part(pt, |i| e.ready[i as usize] || e.fails[i as usize] >= MAX_FAILS, &f);
+            (k, e.ready.iter().filter(|r| **r).count())
+        }) else {
+            return Ok(false);
+        };
+        let Some(k) = next else { break };
+        let n = pt.count.max(1) as f32;
+        let base = done as f32 / n;
+        match build_part(m, &pdir, pt, st, k, spec, &|v| progress(base + v / n), cancel) {
+            Ok(_) => {
+                with_mine(&m.path, out, |e| {
+                    e.ready[k as usize] = true;
+                    e.changed();
+                });
+            }
+            Err(e) if e == "Abgebrochen" => return Err(e),
+            Err(e) => {
+                log::warn!(target: "proxy", "Stück {k} von {name} gescheitert: {e}");
+                with_mine(&m.path, out, |en| en.fails[k as usize] += 1);
+            }
+        }
+    }
+    if with_mine(&m.path, out, |e| e.ready.iter().all(|r| *r)) != Some(true) {
+        return Err("Proxy-Stücke fehlgeschlagen".into());
+    }
+    merge(&pdir, pt, out, cancel)?;
+    with_mine(&m.path, out, |e| {
+        e.complete = true;
+        e.changed();
+    });
+    if !PLAYING.load(Ordering::Relaxed) {
+        let _ = std::fs::remove_dir_all(&pdir);
+    }
+    Ok(true)
+}
+
+/// Proxys im Ordner (fertige Dateien und Stück-Ordner) und ihr Platz in Bytes
+fn folder_usage(dir: &Path) -> (u64, u64) {
+    let (mut n, mut bytes) = (0, 0);
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let Ok(md) = e.metadata() else { continue };
+        if md.is_dir() {
+            n += 1;
+            bytes += std::fs::read_dir(e.path()).into_iter().flatten().flatten().filter_map(|f| f.metadata().ok()).map(|m| m.len()).sum::<u64>();
+        } else {
+            n += u64::from(!e.file_name().to_string_lossy().ends_with(".part.mp4"));
+            bytes += md.len();
+        }
+    }
+    (n, bytes)
+}
+
 impl App {
+    fn proxy_want(&self) -> (u32, Rational) {
+        (self.settings.proxy_h, self.project.settings.fps)
+    }
+
     /// Datei für die Vorschau: beim Abspielen der Proxy (flüssig), im Stand das Original, wenn
     /// die Zeilen des Proxys für die benötigte Höhe `need_h` nicht reichen (scharf).
     pub fn preview_path(&self, m: &MediaRef, need_h: u32) -> PathBuf {
@@ -385,10 +765,140 @@ impl App {
         m.path.clone()
     }
 
-    /// Fehlende Proxys im Hintergrund erzeugen (nacheinander, je Medium eine Aufgabe).
+    /// Einzelbild an Quellzeit `at`: (Datei, Zeit darin) – aus einem fertigen Stück, sonst wie
+    /// [`Self::preview_path`].
+    pub fn still_source(&self, m: &MediaRef, need_h: u32, at: Time) -> (PathBuf, Time) {
+        if self.settings.use_proxies && m.kind == MediaKind::Video {
+            let want = self.proxy_want();
+            let part = registry().get(&m.path).filter(|e| e.want == want && !e.complete).and_then(|e| {
+                let (k, rel) = parts::still_part(&e.pt?, at.as_secs_f64())?;
+                let sharp = self.playing || need_h <= e.spec.height * 6 / 5;
+                (sharp && e.ready.get(k as usize) == Some(&true)).then(|| (parts::parts_dir(&e.out).join(parts::part_name(k)), rel))
+            });
+            // leeres Stück (hinter dem Videoende): Original
+            if let Some((p, rel)) = part.filter(|(p, _)| std::fs::metadata(p).is_ok_and(|x| x.len() > 0)) {
+                return (p, Time::from_secs_f64(rel));
+            }
+        }
+        (self.preview_path(m, need_h), at)
+    }
+
+    /// Quelle des Stroms der Ebene `id` ab Zeitleistenstelle `from` (Regeln: [`parts::choose_stream`]).
+    /// Geht in den Stromschlüssel ein: ein Wechsel läuft über den Ersatzstrom des Player-Kerns.
+    pub fn stream_pick(&mut self, id: u128, c: &Clip, m: &MediaRef, from: Time) -> Pick {
+        if !self.settings.use_proxies || m.kind != MediaKind::Video {
+            return Pick::Whole;
+        }
+        let want = self.proxy_want();
+        let p = c.source_time(Time(from.0.clamp(c.start.0, c.end().0))).as_secs_f64();
+        let mut end = (c.source_in + c.source_span()).as_secs_f64();
+        if m.duration > Time::ZERO {
+            end = end.min(m.duration.as_secs_f64());
+        }
+        let margin = parts::SWITCH_MARGIN * c.speed.max(0.01) as f64;
+        let prev = self.proxy_picks.get(&id).copied();
+        let pick = registry().get(&m.path).filter(|e| e.want == want).map_or(Pick::Whole, |e| match e.pt {
+            _ if e.complete => Pick::Full,
+            Some(pt) => parts::choose_stream(prev, &e.ready, &pt, p, end, margin),
+            None => Pick::Whole,
+        });
+        self.proxy_picks.insert(id, pick);
+        pick
+    }
+
+    /// Datei eines Stroms und Quellzeit ihres Anfangs (Stücke beginnen mitten in der Quelle).
+    pub fn stream_source(&self, m: &MediaRef, need_h: u32, pick: Pick) -> (PathBuf, Time) {
+        match pick {
+            Pick::Original { .. } => (m.path.clone(), Time::ZERO),
+            Pick::Parts { first, end } => {
+                let at = registry().get(&m.path).and_then(|e| Some((parts::parts_dir(&e.out), e.pt?.start(first))));
+                at.and_then(|(d, s)| parts::concat_list(&d, first, end).ok().map(|l| (l, Time::from_secs_f64(s))))
+                    .unwrap_or_else(|| (m.path.clone(), Time::ZERO))
+            }
+            Pick::Whole | Pick::Full => (self.preview_path(m, need_h), Time::ZERO),
+        }
+    }
+
+    /// Zeitleiste: dünne Linie am unteren Rand des Clips – welche Teile seiner Quelle schon als
+    /// Proxy-Stück vorliegen; blendet aus, sobald alles da ist.
+    pub fn proxy_line(&self, ctx: &egui::Context, p: &egui::Painter, c: &Clip, r: egui::Rect) {
+        let ClipContent::Media { media, .. } = c.content else { return };
+        if !self.settings.use_proxies {
+            return;
+        }
+        let Some(m) = self.project.media(media) else { return };
+        let want = self.proxy_want();
+        let Some((ranges, complete)) = registry().get(&m.path).filter(|e| e.want == want).map(|e| (e.ranges.clone(), e.complete)) else {
+            return;
+        };
+        let a = theme::fade(ctx, egui::Id::new(("proxy-line", c.id)), !complete, theme::MOTION);
+        if a <= 0.0 {
+            return;
+        }
+        let line = egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - 2.0), r.max);
+        p.rect_filled(line, 0.0, theme::ACCENT().gamma_multiply(0.25 * a));
+        for (x0, x1) in parts::clip_coverage(&ranges, c.source_in.as_secs_f64(), c.source_span().as_secs_f64(), c.fx.reverse) {
+            let seg = egui::Rect::from_x_y_ranges(line.left() + line.width() * x0..=line.left() + line.width() * x1, line.y_range());
+            p.rect_filled(seg, 0.0, theme::ACCENT().gamma_multiply(a));
+        }
+    }
+
+    /// Wo der Bau zuerst hin soll (Playhead, sichtbare und benutzte Bereiche je Quelle). Nur neu,
+    /// wenn sich Playhead, Ansicht oder Projekt ändern; beim Abspielen höchstens alle 250 ms.
+    fn update_focus(&self, ctx: &egui::Context) {
+        static LAST: Mutex<(u64, Option<Instant>)> = Mutex::new((0, None));
+        let w = ctx.screen_rect().width();
+        let mut hs = std::collections::hash_map::DefaultHasher::new();
+        (self.playhead.0, self.timeline.scroll.to_bits(), self.timeline.pps.to_bits(), w.to_bits(), self.project_epoch, self.project.media.len()).hash(&mut hs);
+        let sig = hs.finish();
+        {
+            let mut l = LAST.lock().unwrap_or_else(|e| e.into_inner());
+            if l.0 == sig || (self.playing && l.1.is_some_and(|t| t.elapsed() < Duration::from_millis(250))) {
+                return;
+            }
+            *l = (sig, Some(Instant::now()));
+        }
+        let paths: HashMap<MediaId, &Path> =
+            self.project.media.iter().filter(|m| m.kind == MediaKind::Video).map(|m| (m.id, m.path.as_path())).collect();
+        let v0 = self.timeline.scroll;
+        let v1 = v0 + (w / self.timeline.pps.max(1e-3)) as f64;
+        let mut map: HashMap<PathBuf, Focus> = HashMap::new();
+        for c in self.project.timeline.tracks.iter().flat_map(|t| &t.clips) {
+            let ClipContent::Media { media, .. } = c.content else { continue };
+            let Some(p) = paths.get(&media) else { continue };
+            let f = map.entry(p.to_path_buf()).or_default();
+            let a = c.source_in.as_secs_f64();
+            let b = a + c.source_span().as_secs_f64();
+            f.used.push((a, b));
+            let (s, e) = (c.start.as_secs_f64(), c.end().as_secs_f64());
+            if s < v1 && v0 < e {
+                let x = c.source_time(Time::from_secs_f64(s.max(v0))).as_secs_f64();
+                let y = c.source_time(Time::from_secs_f64(e.min(v1))).as_secs_f64();
+                f.visible.push((x.min(y), x.max(y)));
+            }
+            if c.contains(self.playhead) {
+                let t = c.source_time(self.playhead).as_secs_f64();
+                f.at = Some((t, if c.fx.reverse { t } else { b }));
+            }
+        }
+        *focus() = map;
+    }
+
+    /// Fehlende Proxys im Hintergrund erzeugen (nacheinander, je Medium eine Aufgabe; in Stücken).
     pub fn ensure_proxies(&mut self, ctx: &egui::Context) {
-        set_playing(self.playing);
-        if !self.settings.use_proxies || self.tasks.running("proxy").is_some() {
+        set_play_state(self.playing, !self.settings.auto_quality || self.core.quality.level > 0);
+        if !self.core.streaming() || self.proxy_picks.len() > 512 {
+            self.proxy_picks.clear();
+        }
+        if !self.settings.use_proxies {
+            self.proxy_scan = None;
+            return;
+        }
+        // Reste vom letzten Lauf (auch nach hartem Beenden), einmal je Sitzung
+        static CLEANED: std::sync::Once = std::sync::Once::new();
+        CLEANED.call_once(|| parts::cleanup(&dir()));
+        self.update_focus(ctx);
+        if self.tasks.running("proxy").is_some() {
             // nach Ende einer Aufgabe sofort weitersuchen
             self.proxy_scan = None;
             return;
@@ -402,17 +912,13 @@ impl App {
             return;
         }
         self.proxy_scan = Some((std::time::Instant::now(), n));
-        let fps = self.project.settings.fps;
+        let (h, fps) = self.proxy_want();
+        let (playing, root) = (self.playing, dir());
         let missing: Vec<MediaId> = self
             .project
             .media
             .iter()
-            .filter(|m| {
-                wants_proxy(m)
-                    && !self.proxy_failed.contains(&m.id)
-                    && m.path.is_file()
-                    && existing_proxy(m, self.settings.proxy_h, fps).is_none()
-            })
+            .filter(|m| wants_proxy(m) && m.path.is_file() && refresh_entry(&root, m, h, fps, playing) && !self.proxy_failed.contains(&m.id))
             .map(|m| m.id)
             .collect();
         if missing.is_empty() {
@@ -437,8 +943,9 @@ impl App {
         else {
             return;
         };
-        let spec = proxy_spec(&m, self.settings.proxy_h, fps);
-        let out = proxy_path(&m, self.settings.proxy_h, fps);
+        let spec = proxy_spec(&m, h, fps);
+        let out = proxy_path(&m, h, fps);
+        let pt = registry().get(&m.path).filter(|e| e.out == out).and_then(|e| e.pt);
         let name = m
             .path
             .file_name()
@@ -449,9 +956,18 @@ impl App {
             ctx,
             "proxy",
             crate::tr(format!("Proxy wird erstellt: {name}")),
-            move |p, cancel| TaskDone::Proxy {
-                media: id,
-                ok: crate::applog::outcome("proxy", &name, std::time::Instant::now(), build(&m, &out, &spec, p, cancel)).is_ok(),
+            move |p, cancel| {
+                let t0 = std::time::Instant::now();
+                let r = match pt {
+                    Some(pt) => build_parts(&m, &out, &spec, &pt, p, cancel),
+                    None => build(&m, &out, &spec, p, cancel).map(|_| true),
+                };
+                if r.is_err() {
+                    if let Some(e) = registry().get_mut(&m.path) {
+                        e.dead = true;
+                    }
+                }
+                TaskDone::Proxy { media: id, ok: crate::applog::outcome("proxy", &name, t0, r).is_ok() }
             },
         );
     }
@@ -477,16 +993,11 @@ impl App {
                 self.invalidate_preview();
             }
         });
-        // Ordner höchstens alle 2 s zählen
+        // Ordner höchstens alle 2 s zählen (fertige Proxys und Stück-Ordner)
         let (n, bytes) = match self.proxy_stats {
             Some((t, n, b)) if t.elapsed() < std::time::Duration::from_secs(2) => (n, b),
             _ => {
-                let (n, b) = std::fs::read_dir(dir())
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                    .filter_map(|e| e.metadata().ok())
-                    .fold((0u64, 0u64), |(n, b), m| (n + 1, b + m.len()));
+                let (n, b) = folder_usage(&dir());
                 self.proxy_stats = Some((std::time::Instant::now(), n, b));
                 (n, b)
             }
@@ -505,7 +1016,11 @@ impl App {
                     .add(theme::ghost(format!("{}  Proxys löschen", icon::TRASH)))
                     .clicked()
             {
+                // ein laufender Bau merkt das nach seinem Stück (Eintrag fehlt) und endet
                 let _ = std::fs::remove_dir_all(dir());
+                registry().clear();
+                self.proxy_picks.clear();
+                self.proxy_scan = None;
                 self.proxy_stats = None;
                 self.invalidate_preview();
             }
@@ -601,19 +1116,248 @@ mod tests {
         }
         let a = encode_args(Encoder::Software, &ProxySpec { height: 720, fps: None, gop: 30 }).join(" ");
         assert!(a.contains("-vf scale=-2:720:") && a.contains("-fpsmax 60") && a.contains("libx264"), "{a}");
+        // Stücke: gleiches Raster wie ein Bau in einem Zug, genau `per` Bilder, ohne B-Bilder
+        // (Stücke verschiedener Encoder ergaben zusammengefügt ein doppeltes Bild an der Naht)
+        let pt = Parting::new(25.0, Rational::new(30, 1), 10.0).unwrap();
+        for enc in [Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Software] {
+            let a = part_args(Path::new("q.mp4"), 1.5, &pt, 2, 540, 15, enc, None).join(" ");
+            assert!(a.contains("-ss 19.500000 -copyts -i q.mp4"), "{a}");
+            assert!(a.contains("fps=30/1:start_time=21.500000,setpts=PTS-STARTPTS,scale=-2:540"), "{a}");
+            assert!(a.ends_with("-bf 0 -g 15 -frames:v 300"), "{a}");
+        }
     }
 
     #[test]
-    fn pause_while_playing_or_clicking_with_hysteresis() {
+    fn pause_on_clicks_and_while_playback_falls_behind() {
         let ms = Duration::from_millis;
-        // läuft: Wiedergabe oder frischer Klick → anhalten
-        assert!(want_pause(false, true, Duration::MAX));
-        assert!(want_pause(false, false, ms(100)));
-        assert!(!want_pause(false, false, ms(400)));
-        // angehalten: erst nach 0,8 s Ruhe fortsetzen
-        assert!(want_pause(true, false, ms(400)));
-        assert!(!want_pause(true, false, ms(900)));
-        assert!(want_pause(true, true, ms(5000)));
+        // Stand: frischer Klick → anhalten; erst nach 0,8 s Ruhe fortsetzen
+        assert!(want_pause(false, false, false, ms(100)));
+        assert!(!want_pause(false, false, false, ms(400)));
+        assert!(want_pause(true, false, false, ms(400)));
+        assert!(!want_pause(true, false, false, ms(900)));
+        // Wiedergabe ohne Rückstand: der Bau läuft weiter (auch bei Einzelbild-Aufträgen) …
+        assert!(!want_pause(false, true, false, ms(0)));
+        assert!(!want_pause(true, true, false, Duration::MAX));
+        // … mit Rückstand angehalten
+        assert!(want_pause(false, true, true, Duration::MAX));
+        assert!(want_pause(true, true, true, ms(0)));
+        // Rückstand gilt bis zum Stopp (kein Hin und Her mit der automatischen Qualität)
+        assert!(latch_behind(false, true, true));
+        assert!(latch_behind(true, true, false));
+        assert!(!latch_behind(true, false, false));
+        assert!(!latch_behind(false, true, false));
+    }
+
+    #[test]
+    fn folder_usage_counts_parts() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("a-540.mp4"), [0u8; 10]).unwrap();
+        std::fs::write(d.path().join("b-540.part.mp4"), [0u8; 5]).unwrap();
+        let t = d.path().join("c-540.teile");
+        std::fs::create_dir(&t).unwrap();
+        std::fs::write(t.join("0000.mp4"), [0u8; 7]).unwrap();
+        std::fs::write(t.join("0001.mp4"), [0u8; 3]).unwrap();
+        // zwei Proxys (fertig, in Stücken), alle Bytes
+        assert_eq!(folder_usage(d.path()), (2, 25));
+        assert_eq!(folder_usage(&d.path().join("fehlt")), (0, 0));
+    }
+
+    /// Ältere Ein-Datei-Proxys gelten weiter: kein Stück-Bau, Strom aus der fertigen Datei.
+    #[test]
+    fn old_single_file_proxy_is_used_not_rebuilt() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("quelle.mp4");
+        std::fs::write(&src, b"x").unwrap();
+        let mut m = media(1920, 1080, Rational::new(30, 1), "h264");
+        m.path = src;
+        let root = d.path().join("proxies");
+        std::fs::create_dir_all(&root).unwrap();
+        // Name wie früher (ohne Bildrate)
+        std::fs::write(root.join(format!("{:016x}-540.mp4", media_hash(&m))), b"p").unwrap();
+        assert!(!refresh_entry(&root, &m, 540, Rational::new(30, 1), false), "nichts zu bauen");
+        let reg = registry();
+        let e = reg.get(&m.path).unwrap();
+        assert!(e.complete && !e.needs(1.0));
+        assert!(!parts::parts_dir(&e.out).exists());
+    }
+
+    /// Quelle mit Bildnummer im Grauwert (Bild n: Luma 19 + (n mod 32)·6, im Videobereich 16–235), 60 fps.
+    fn coded_source(dir: &Path, name: &str, secs: f64, extra_vf: &str, extra: &[&str]) -> MediaRef {
+        let src = dir.join(name);
+        let vf = format!("geq=lum='19+mod(N\\,32)*6':cb=128:cr=128{extra_vf}");
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", &format!("color=c=black:s=320x180:r=60:d={secs}"), "-vf", &vf])
+            .args(extra)
+            .args(["-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", "-g", "600", "-threads", "2"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        cl_media::probe(&src).unwrap()
+    }
+
+    fn code_of_luma(y: f32) -> u8 {
+        (((y - 19.0) / 6.0).round().max(0.0) as u8) % 32
+    }
+
+    /// Bildnummern (mod 32) einer Datei, Bild für Bild (Luma direkt, ohne Umrechnung)
+    fn codes(path: &Path) -> Vec<u8> {
+        let o = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-nostdin", "-i"])
+            .arg(path)
+            .args(["-vf", "scale=2:2:flags=area", "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"])
+            .output()
+            .unwrap();
+        o.stdout.chunks_exact(6).map(|f| code_of_luma(f[0] as f32)).collect()
+    }
+
+    /// Stücke über mehrere Nähte = ein Bau in einem Zug: kein doppeltes, kein fehlendes Bild – auch
+    /// bei Startversatz und schwankender Bildrate. Zusammengefügt dieselben Bilder; ein Strom über
+    /// die Stück-Liste ab einer Stelle mitten im zweiten Stück liefert die passenden Bilder.
+    #[test]
+    fn parts_join_frame_exact_and_merge_keeps_every_frame() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let vfr = ",setpts='(N/60+0.006*sin(N*1.7))/TB'";
+        let cases: [(&str, &str, &[&str]); 3] = [
+            ("cfr.mp4", "", &[]),
+            ("versatz.mp4", "", &["-output_ts_offset", "1.37"]),
+            ("vfr.mp4", vfr, &["-fps_mode", "passthrough", "-video_track_timescale", "90000"]),
+        ];
+        for (name, vf, extra) in cases {
+            let m = coded_source(d.path(), name, 4.5, vf, extra);
+            let spec = proxy_spec(&m, 90, Rational::new(30, 1));
+            let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
+            assert!(pt.count >= 4, "{name}: {pt:?}");
+            let st = probe_start(&m.path);
+            let pdir = d.path().join(format!("{name}.teile"));
+            let no = AtomicBool::new(false);
+            let mut joined = Vec::new();
+            for k in 0..pt.count {
+                let n = build_part_with(&m, &pdir, &pt, st, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
+                let c = codes(&pdir.join(parts::part_name(k)));
+                assert_eq!(c.len() as u64, n);
+                if k + 1 < pt.count {
+                    assert_eq!(n, pt.per as u64, "{name}: Stück {k} hat nicht genau {} Bilder", pt.per);
+                }
+                joined.extend(c);
+            }
+            // Vergleich: derselbe Weg in einem Zug (ein „Stück“ über alles)
+            let whole = Parting { per: 1_000_000, count: 1, ..pt };
+            let wdir = d.path().join(format!("{name}.ganz"));
+            build_part_with(&m, &wdir, &whole, st, 0, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
+            let reference = codes(&wdir.join(parts::part_name(0)));
+            assert_eq!(joined, reference, "{name}: Nähte nicht bildgenau");
+            if name == "cfr.mp4" {
+                // 60 → 30 fps: jedes zweite Quellbild
+                assert!(reference.windows(2).all(|w| (w[1] + 32 - w[0]) % 32 == 2), "{reference:?}");
+            }
+            // zusammenfügen: dieselben Bilder
+            let out = d.path().join(format!("{name}-ganz.mp4"));
+            merge(&pdir, &pt, &out, &no).unwrap();
+            assert_eq!(codes(&out), reference, "{name}: zusammengefügt anders");
+            assert!(!out.with_extension("part.mp4").exists());
+            // Strom über die Stücke 1.. ab 1,5 s (0,5 s ins Stück 1): Bild 45 und folgende
+            if name == "cfr.mp4" {
+                let list = parts::concat_list(&pdir, 1, pt.count).unwrap();
+                let s = cl_media::FrameStream::open(&list, Time::from_secs_f64(1.5 - pt.start(1)), 2, 2, Rational::new(30, 1)).unwrap();
+                // RGBA (Vollbereich) zurück in Luma
+                let got: Vec<u8> = std::iter::from_fn(|| s.next_blocking()).map(|f| code_of_luma(16.0 + f.data[0] as f32 * 219.0 / 255.0)).collect();
+                assert!(got.len() >= 80, "{}", got.len());
+                assert_eq!(&got[..80], &reference[45..125], "Strom über die Naht");
+            }
+        }
+    }
+
+    /// Video kürzer als die Datei (Ton länger): das letzte Stück hat kein Bild, der Bau wird trotzdem fertig.
+    #[test]
+    fn part_behind_video_end_is_empty_and_merge_still_works() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("kurz.mp4");
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=2", "-f", "lavfi", "-i", "sine=d=3.5"])
+            .args(["-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-threads", "2"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        let m = cl_media::probe(&src).unwrap();
+        let spec = proxy_spec(&m, 90, Rational::new(30, 1));
+        let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
+        assert!(pt.count >= 3, "{pt:?}");
+        let pdir = d.path().join("k.teile");
+        let no = AtomicBool::new(false);
+        let n: Vec<u64> = (0..pt.count).map(|k| build_part_with(&m, &pdir, &pt, 0.0, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap()).collect();
+        assert_eq!(*n.last().unwrap(), 0, "{n:?}");
+        assert_eq!(std::fs::metadata(pdir.join(parts::part_name(pt.count - 1))).unwrap().len(), 0);
+        let out = d.path().join("k.mp4");
+        merge(&pdir, &pt, &out, &no).unwrap();
+        assert_eq!(codes(&out).len() as u64, n.iter().sum::<u64>());
+        assert_eq!(n.iter().sum::<u64>(), 60);
+    }
+
+    /// Neustart mitten im Bau: abgebrochenes Stück und hart liegen gebliebene `.part` werden
+    /// aufgeräumt, nur Fehlendes wird gebaut (ein fertiges Stück nie neu), am Ende eine Datei.
+    #[test]
+    fn resume_after_abort_builds_only_missing_parts() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let m = coded_source(d.path(), "q.mp4", 4.0, "", &[]);
+        let spec = proxy_spec(&m, 90, Rational::new(30, 1));
+        let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
+        assert_eq!(pt.count, 4);
+        let root = d.path().join("proxies");
+        let out = root.join("q-90.mp4");
+        let pdir = parts::parts_dir(&out);
+        let no = AtomicBool::new(false);
+        // erster Lauf: Stücke 0 und 2 fertig, Stück 1 abgebrochen, Stück 3 „hart beendet“
+        for k in [0, 2] {
+            build_part_with(&m, &pdir, &pt, 0.0, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
+        }
+        let cancel = AtomicBool::new(false);
+        let r = build_part_with(&m, &pdir, &pt, 0.0, 1, &spec, Encoder::Software, None, &|_| cancel.store(true, Ordering::Relaxed), &cancel);
+        assert_eq!(r.unwrap_err(), "Abgebrochen");
+        std::fs::write(pdir.join("0003.part.mp4"), b"halb").unwrap();
+        // Merkmal: Stück 2 durch eine Kopie von Stück 0 ersetzen – würde es neu gebaut, wäre es wieder richtig
+        std::fs::copy(pdir.join(parts::part_name(0)), pdir.join(parts::part_name(2))).unwrap();
+        // „Neustart“: aufräumen, Bestand lesen, weiterbauen
+        parts::cleanup(&root);
+        assert!(!pdir.join("0003.part.mp4").exists() && !pdir.join("0001.part.mp4").exists());
+        let ready = parts::scan_ready(&pdir, pt.count);
+        assert_eq!(ready, [true, false, true, false]);
+        let mut e = Entry {
+            want: (90, Rational::new(30, 1)),
+            out: out.clone(),
+            spec,
+            pt: Some(pt),
+            dur: m.duration.as_secs_f64(),
+            fails: vec![0; 4],
+            ready,
+            complete: false,
+            dead: false,
+            ranges: Arc::default(),
+        };
+        e.changed();
+        registry().insert(m.path.clone(), e);
+        assert_eq!(build_parts(&m, &out, &spec, &pt, &|_| {}, &no), Ok(true));
+        let c = codes(&out);
+        assert_eq!(c.len(), 120);
+        // Stück 2 blieb die Kopie von Stück 0 (nicht neu gebaut), 1 und 3 sind richtig
+        assert_eq!(&c[60..90], &c[0..30], "fertiges Stück neu gebaut");
+        assert!(c[30..60].iter().enumerate().all(|(i, v)| *v == ((30 + i) * 2 % 32) as u8), "{c:?}");
+        assert!(c[90..].iter().enumerate().all(|(i, v)| *v == ((90 + i) * 2 % 32) as u8), "{c:?}");
+        assert!(registry().get(&m.path).unwrap().complete);
+        assert!(!pdir.exists(), "Stücke nach dem Zusammenfügen gelöscht");
     }
 
     #[test]
@@ -697,6 +1441,189 @@ mod tests {
         }, &cancel);
         assert_eq!(r.unwrap_err(), "Abgebrochen");
         assert!(!out.exists() && !out.with_extension("part.mp4").exists());
+    }
+
+    fn median(v: &mut [f64]) -> f64 {
+        v.sort_by(|a, b| a.total_cmp(b));
+        v.get(v.len() / 2).copied().unwrap_or(f64::NAN)
+    }
+
+    /// Mess-Test (von Hand): Proxy in Stücken an einer echten Quelle (Vorgabe: 23-min-1080p60-Original).
+    /// `cargo test --release -p cl-app --bin cutline -- --ignored --nocapture measure_parts`
+    /// (`CUTLINE_PROXY_SRC=<Datei>`; `CUTLINE_PROXY_FULL=1`: Gesamtbau ohne und mit simulierter Wiedergabe)
+    #[test]
+    #[ignore]
+    fn measure_parts() {
+        let src = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()).join("Downloads/videoplayback.mp4");
+        let src = std::env::var_os("CUTLINE_PROXY_SRC").map(PathBuf::from).unwrap_or(src);
+        if !src.is_file() {
+            return;
+        }
+        let m = cl_media::probe(&src).unwrap();
+        let spec = proxy_spec(&m, 540, Rational::new(30, 1));
+        let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), PART_SECS).unwrap();
+        let d = tempfile::tempdir().unwrap();
+        let no = AtomicBool::new(false);
+        let secs = |t: Instant| t.elapsed().as_secs_f64();
+        println!("Quelle {} ({:.0} s, {} Stücke à {} Bilder)", src.display(), m.duration.as_secs_f64(), pt.count, pt.per);
+        let picks = [0, pt.count / 3, pt.count / 2, pt.count * 3 / 4, pt.count - 2];
+        let mut built: Option<PathBuf> = None;
+        for enc in encoder_chain(available_encoders(), &[]) {
+            for hw in decode_attempts(enc, &m) {
+                let dir = d.path().join(format!("{enc:?}-{hw:?}"));
+                let t = Instant::now();
+                // wie im Bau: Startzeit der Quelle zuerst
+                let st = probe_start(&src);
+                let first = build_part_with(&m, &dir, &pt, st, 0, &spec, enc, hw, &|_| {}, &no).map(|_| secs(t));
+                let Ok(first) = first else {
+                    println!("{enc:?} hw={hw:?}: Fehler {first:?}");
+                    continue;
+                };
+                let mut more: Vec<f64> = picks[1..]
+                    .iter()
+                    .filter_map(|k| {
+                        let t = Instant::now();
+                        build_part_with(&m, &dir, &pt, st, *k, &spec, enc, hw, &|_| {}, &no).ok().map(|_| secs(t))
+                    })
+                    .collect();
+                let best = more.iter().copied().fold(f64::MAX, f64::min);
+                let bytes: u64 = picks.iter().filter_map(|k| std::fs::metadata(dir.join(parts::part_name(*k))).ok()).map(|x| x.len()).sum();
+                println!(
+                    "{enc:?} hw={hw:?}: erstes Stück {first:.2} s (mit ffprobe), weitere Median {:.2} s bestes {best:.2} s = {:.1} s je Minute Quelle, {:.1} MB/min",
+                    median(&mut more),
+                    median(&mut more.clone()) / PART_SECS * 60.0,
+                    bytes as f64 / 1e6 / (picks.len() as f64 * PART_SECS / 60.0)
+                );
+                built.get_or_insert(dir);
+            }
+        }
+        let Some(dir) = built else { return };
+        // Einzelbild und Stromstart: Stück gegen Original an denselben Stellen
+        let still = |path: &Path, at: f64| {
+            let t = Instant::now();
+            cl_media::decode_frame_opts(path, Time::from_secs_f64(at), 960, 540, None, false, None).unwrap();
+            secs(t) * 1e3
+        };
+        let (mut sp, mut so, mut ap, mut ao) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for (i, k) in picks.iter().enumerate() {
+            for off in [1.3, 6.7] {
+                let at = pt.start(*k) + off + i as f64 * 0.37;
+                let (kk, rel) = parts::still_part(&pt, at).unwrap();
+                sp.push(still(&dir.join(parts::part_name(kk)), rel));
+                so.push(still(&src, at));
+                let first = |p: &Path, at: f64, hw: bool| {
+                    let t = Instant::now();
+                    let s = cl_media::FrameStream::open_opts(p, Time::from_secs_f64(at), 960, 540, Rational::new(30, 1), None, hw).unwrap();
+                    s.next_blocking().unwrap();
+                    secs(t) * 1e3
+                };
+                let list = parts::concat_list(&dir, *k, k + 1).unwrap();
+                ap.push(first(&list, at - pt.start(*k), false));
+                ao.push(first(&src, at, crate::preview::stream_hw(&m, &src)));
+            }
+        }
+        let best = |v: &[f64]| v.iter().copied().fold(f64::MAX, f64::min);
+        println!(
+            "Einzelbild: Stück Median {:.0} ms bestes {:.0} ms, Original Median {:.0} ms bestes {:.0} ms",
+            median(&mut sp.clone()),
+            best(&sp),
+            median(&mut so.clone()),
+            best(&so)
+        );
+        println!(
+            "Stromstart: Stücke Median {:.0} ms bestes {:.0} ms, Original Median {:.0} ms bestes {:.0} ms",
+            median(&mut ap.clone()),
+            best(&ap),
+            median(&mut ao.clone()),
+            best(&ao)
+        );
+        // Neustart mitten im Bau: Stück abbrechen (FFmpeg beendet), „.part“ eines harten Endes liegt herum
+        let rdir = d.path().join("neustart.teile");
+        for k in 0..3 {
+            build_part_with(&m, &rdir, &pt, 0.0, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
+        }
+        let cancel = AtomicBool::new(false);
+        let t = Instant::now();
+        let r = build_part_with(&m, &rdir, &pt, 0.0, 3, &spec, Encoder::Software, None, &|_| {
+            if t.elapsed() > Duration::from_millis(300) {
+                cancel.store(true, Ordering::Relaxed)
+            }
+        }, &cancel);
+        std::fs::write(rdir.join("0004.part.mp4"), b"halb").unwrap();
+        let before: Vec<_> = (0..3).map(|k| std::fs::metadata(rdir.join(parts::part_name(k))).unwrap().modified().unwrap()).collect();
+        parts::cleanup(d.path());
+        let ready = parts::scan_ready(&rdir, pt.count);
+        let next = parts::next_part(&pt, |i| ready[i as usize], &Focus::default());
+        let after: Vec<_> = (0..3).map(|k| std::fs::metadata(rdir.join(parts::part_name(k))).unwrap().modified().unwrap()).collect();
+        println!(
+            "Neustart: Abbruch {:?}, fertig {:?}, .part übrig {}, weiter mit Stück {next:?}, fertige unverändert {}",
+            r.err(),
+            (0..pt.count).filter(|k| ready[*k as usize]).collect::<Vec<_>>(),
+            std::fs::read_dir(&rdir).unwrap().flatten().any(|e| e.file_name().to_string_lossy().ends_with(".part.mp4")),
+            before == after
+        );
+        if std::env::var_os("CUTLINE_PROXY_FULL").is_none() {
+            return;
+        }
+        // Gesamtbau: ohne Wiedergabe und mit durchgehend laufender (Strom aus dem Original in Echtzeit)
+        for playing in [false, true] {
+            let root = d.path().join(format!("voll-{playing}"));
+            let out = root.join("p.mp4");
+            let mut e = Entry {
+                want: (540, Rational::new(30, 1)),
+                out: out.clone(),
+                spec,
+                pt: Some(pt),
+                dur: m.duration.as_secs_f64(),
+                ready: vec![false; pt.count as usize],
+                fails: vec![0; pt.count as usize],
+                complete: false,
+                dead: false,
+                ranges: Arc::default(),
+            };
+            e.changed();
+            registry().insert(m.path.clone(), e);
+            let stop = Arc::new(AtomicBool::new(false));
+            let player = playing.then(|| {
+                let (src, stop, m) = (src.clone(), stop.clone(), m.clone());
+                set_play_state(true, false);
+                std::thread::spawn(move || {
+                    let mut at = 0.0;
+                    let (mut frames, mut late) = (0u64, 0u64);
+                    while !stop.load(Ordering::Relaxed) {
+                        let s = cl_media::FrameStream::open_opts(&src, Time::from_secs_f64(at), 960, 540, Rational::new(30, 1), None, crate::preview::stream_hw(&m, &src)).unwrap();
+                        let t0 = Instant::now();
+                        while let Some(_f) = s.next_blocking() {
+                            frames += 1;
+                            let due = frames as f64 / 30.0;
+                            let now = t0.elapsed().as_secs_f64();
+                            if now < due {
+                                std::thread::sleep(Duration::from_secs_f64(due - now));
+                            } else if now - due > 0.1 {
+                                late += 1;
+                            }
+                            if stop.load(Ordering::Relaxed) {
+                                break;
+                            }
+                        }
+                        at = 0.0;
+                    }
+                    (frames, late)
+                })
+            });
+            let t = Instant::now();
+            let r = build_parts(&m, &out, &spec, &pt, &|_| {}, &no);
+            let total = secs(t);
+            stop.store(true, Ordering::Relaxed);
+            set_play_state(false, false);
+            let pl = player.map(|h| h.join().unwrap());
+            println!(
+                "Gesamtbau {}: {total:.0} s ({:.1} s je Minute Quelle) {r:?}{}",
+                if playing { "bei laufender Wiedergabe" } else { "ohne Wiedergabe" },
+                total / (m.duration.as_secs_f64() / 60.0),
+                pl.map(|(f, l)| format!(", Wiedergabe {f} Bilder, davon {l} über 100 ms zu spät")).unwrap_or_default()
+            );
+        }
     }
 
     /// Mess-Test (von Hand): Proxy für das 23-min-1080p60-Original mit jedem Encoder.
