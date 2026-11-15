@@ -152,13 +152,21 @@ fn post_transform(
             "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*clip({op},0,1)'"
         ));
     }
-    let sc = value_expr(s, |e| e.scale, "t");
+    // FFmpeg lehnt Bilder über ~268 Mio. Pixel ab (der Export brach bei Zoom 20× auf 1080p ab):
+    // Diagonale höchstens 14 000 px.
+    // shortcut: größerer Zoom wird gekappt statt vorher auf den sichtbaren Teil zugeschnitten; zuschneiden, wenn das jemand braucht
+    let cap = 14_000.0 / (base_w as f64).hypot(base_h as f64).max(1.0);
+    let sc = match value_expr(s, |e| e.scale, "t") {
+        v if is_const(&v) => format!("{:.5}", v.parse::<f64>().unwrap_or(1.0).min(cap)),
+        v => format!("min({cap:.4},{v})"),
+    };
     let rot = value_expr(s, |e| e.rotation_deg, "t");
-    let max_s = s
+    let max_s = (s
         .iter()
         .map(|(_, e)| e.scale)
         .fold(0.0f32, f32::max)
-        .max(0.01) as f64;
+        .max(0.01) as f64)
+        .min(cap);
     // Feste Fläche für animierte Größe/Drehung: neuere FFmpeg-Versionen lehnen
     // wechselnde Bildgrößen in nachfolgenden Filtern (rotate, overlay) ab.
     let d = (((base_w as f64 * max_s).hypot(base_h as f64 * max_s)).ceil() as u32 + 2) & !1;
@@ -352,7 +360,8 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         std::fs::copy(&font_path, ctx.workdir.join(&font_file))?;
     }
     let data = std::fs::read(&font_path).unwrap_or_default();
-    let size = st.size;
+    // Projektdatei/MCP können 1e6 enthalten (MCP setzt höchstens 600)
+    let size = st.size.clamp(1.0, 1000.0);
     let mut txt = if st.uppercase {
         st.text.to_uppercase()
     } else {
@@ -379,8 +388,9 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     let th = size * 1.3 * ls * lines.len() as f32;
     let outline = st.outline.map(|o| o.0).unwrap_or(0.0);
     let pad = (size * 0.4 + outline * 2.0 + 8.0).ceil();
-    let lw = ((tw + pad * 2.0).ceil() as u32 + 1) & !1;
-    let lh = ((th + pad * 2.0).ceil() as u32 + 1) & !1;
+    // sehr lange Zeilen ohne Umbruch: Fläche begrenzen (Rest liegt ohnehin außerhalb des Bilds)
+    let lw = (((tw + pad * 2.0).ceil() as u32 + 1) & !1).min(8192);
+    let lh = (((th + pad * 2.0).ceil() as u32 + 1) & !1).min(8192);
     let text_file = format!("text_{n}.txt");
     std::fs::write(ctx.workdir.join(&text_file), txt.as_bytes())?;
     let rgba = |c: [u8; 4]| {

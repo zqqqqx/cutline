@@ -395,4 +395,39 @@ mod tests {
             }
         }
     }
+
+    /// Standard und jede Vorlage: keine Taste für zwei Aktionen, nur bekannte Aktionen,
+    /// jede Belegung lesbar und verlustfrei speicherbar.
+    #[test]
+    fn presets_have_no_conflicts() {
+        let ids: Vec<&str> = ACTIONS.iter().map(|a| a.0).collect();
+        let mut seen = std::collections::HashSet::new();
+        assert!(ids.iter().all(|i| seen.insert(*i)), "doppelte Aktions-Id");
+        for (name, diff) in PRESETS {
+            let custom: BTreeMap<String, String> = diff.iter().map(|(a, k)| (a.to_string(), k.to_string())).collect();
+            for (a, k) in *diff {
+                assert!(ids.contains(a), "{name}: unbekannte Aktion {a}");
+                let c = Chord::parse(k).unwrap_or_else(|| panic!("{name}: {k}"));
+                assert_eq!(Chord::parse(&c.store()), Some(c), "{name}: {k}");
+            }
+            let b = bindings(&custom);
+            for (i, (c, a)) in b.iter().enumerate() {
+                for (c2, a2) in &b[i + 1..] {
+                    assert!(!(c == c2 && a != a2), "{name}: {} für {a} und {a2}", c.store());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn odd_chords_never_panic() {
+        for s in ["", "+", "++", "Ctrl+", "Ctrl++", "Strg+Umschalt+", "Ctrl+Shift+Alt+F12", "🎬", "Ctrl+🎬", "A+B", &"Ctrl+".repeat(1000)] {
+            if let Some(c) = Chord::parse(s) {
+                let _ = c.label();
+                assert_eq!(Chord::parse(&c.store()), Some(c), "{s:?}");
+            }
+        }
+        assert_eq!(Chord::parse("Ctrl++").map(|c| c.key), Some(Key::Plus));
+        assert_eq!(Chord::parse(""), None);
+    }
 }

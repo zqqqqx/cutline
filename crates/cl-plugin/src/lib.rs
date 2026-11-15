@@ -521,6 +521,8 @@ impl Registry {
             let mut dirs: Vec<_> = rd
                 .flatten()
                 .map(|e| e.path())
+                // `.install-…`: Zwischenordner einer abgebrochenen Installation (Absturz)
+                .filter(|p| !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')))
                 .filter(|p| p.join(MANIFEST_FILE).is_file())
                 .collect();
             dirs.sort();
@@ -583,6 +585,8 @@ pub enum Installed {
 
 /// Höchstens so viel wird aus einem Paket entpackt (die mitgelieferten haben unter 10 MB).
 const MAX_UNPACKED: u64 = 2 << 30;
+/// Höchstens so viele Einträge je Paket.
+const MAX_ENTRIES: usize = 10_000;
 
 /// Eintrag kopieren, ohne mehr als `left` Bytes zu schreiben: die Größenangaben im ZIP sind
 /// nicht vertrauenswürdig (gepackte „Bomben“ füllen sonst die Platte).
@@ -613,6 +617,11 @@ pub fn install_zip(zip_path: &Path, root: &Path, replace: bool) -> Result<Instal
 fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool) -> Result<Installed, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Keine gültige ZIP-Datei: {e}"))?;
+    // die mitgelieferten Pakete haben unter 200 Dateien; Millionen leerer Einträge legten sonst
+    // ebenso viele Dateien an
+    if zip.len() > MAX_ENTRIES {
+        return Err(format!("Paket hat zu viele Dateien ({}, höchstens {MAX_ENTRIES})", zip.len()));
+    }
     let mut left = MAX_UNPACKED;
     for i in 0..zip.len() {
         let mut e = zip.by_index(i).map_err(|e| e.to_string())?;
@@ -935,6 +944,94 @@ permissions=['net']
         assert!(remove_pack(&root, &root).is_err());
         remove_pack(&root, &root.join("test.sounds")).unwrap();
         assert!(!root.join("test.sounds").exists());
+    }
+
+    /// Zwei Ordner mit derselben Paket-ID: der erste gewinnt, der zweite wird als Fehler gemeldet.
+    /// Reste einer abgebrochenen Installation (`.install-…`) werden nicht geladen.
+    #[test]
+    fn duplicate_ids_and_install_leftovers() {
+        let dir = tempfile::tempdir().unwrap();
+        for d in ["a", "b", ".install-1-2"] {
+            let p = dir.path().join(d);
+            std::fs::create_dir_all(&p).unwrap();
+            std::fs::write(p.join(MANIFEST_FILE), PACK).unwrap();
+            std::fs::write(p.join("ding.wav"), b"RIFF").unwrap();
+        }
+        let reg = Registry::scan([dir.path()]);
+        assert_eq!(reg.plugins.len(), 1);
+        assert!(reg.plugins[0].dir.ends_with("a"));
+        assert_eq!(reg.errors.len(), 1, "{:?}", reg.errors);
+        assert!(reg.errors[0].contains("bereits geladen"), "{:?}", reg.errors);
+        // dieselbe Wurzel zweimal (z. B. Datenordner = Programmordner): kein Absturz, nur Meldungen
+        let reg = Registry::scan([dir.path(), dir.path()]);
+        assert_eq!(reg.plugins.len(), 1);
+    }
+
+    /// Kaputte Manifeste aus fremder Hand: nie ein Absturz, immer ein Fehler.
+    #[test]
+    fn garbage_manifests_are_errors() {
+        let p = Path::new("x");
+        let long = "a".repeat(1 << 20);
+        for src in [
+            "", "\u{feff}", "[plugin]", "[[asset]]\nid='x'", "\0\0\0\u{1}", &long,
+            "[plugin]\nid='a.b'\nversion='1.0.0'\napi=1\nkind='asset-pack'\nname={de='N'}", // ohne Lizenz
+        ] {
+            assert!(Manifest::parse(src, p).is_err(), "{:?}", &src[..src.len().min(40)]);
+        }
+        let with = |k: &str, v: &str| PACK.replace(&format!("{k} = "), &format!("{k} = {v} #"));
+        for (k, v) in [
+            ("id", "'Test.Sounds'"), ("id", "'nopunkt'"), ("id", "'a..b'"), ("id", "'.a.b'"), ("id", "'a.b/../c'"),
+            ("id", "'ä.b'"), ("id", "''"), ("version", "'1.0'"), ("version", "'1.0.0-beta'"), ("version", "'-1.0.0'"),
+            ("api", "2"), ("api", "0"),
+        ] {
+            let m = Manifest::parse(&with(k, v), p);
+            assert!(m.is_err() || m.unwrap().validate(None).is_err(), "{k} = {v}");
+        }
+        assert!(Manifest::parse(&with("api", "99999999999999999999"), p).is_err());
+        // Pfad mit Unicode/Leerzeichen innerhalb ist erlaubt
+        let t = PACK.replace("ding.wav", "Glöckchen 🔔.wav");
+        Manifest::parse(&t, p).unwrap().validate(None).unwrap();
+    }
+
+    #[test]
+    fn zip_with_too_many_entries_or_links_is_handled() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Plugins");
+        let zp = dir.path().join("viele.zip");
+        let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
+        w.start_file("plugin.toml", zip::write::SimpleFileOptions::default()).unwrap();
+        w.write_all(PACK.as_bytes()).unwrap();
+        for i in 0..MAX_ENTRIES {
+            w.start_file(format!("x/{i}"), zip::write::SimpleFileOptions::default()).unwrap();
+        }
+        w.finish().unwrap();
+        let e = install_zip(&zp, &root, true).unwrap_err();
+        assert!(e.contains("zu viele"), "{e}");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "nichts entpackt");
+        // Verknüpfung im Archiv wird eine gewöhnliche Datei (zeigt nicht nach außen)
+        let secret = dir.path().join("geheim.txt");
+        std::fs::write(&secret, "geheim").unwrap();
+        let lz = dir.path().join("link.zip");
+        let mut w = zip::ZipWriter::new(std::fs::File::create(&lz).unwrap());
+        w.start_file("plugin.toml", zip::write::SimpleFileOptions::default()).unwrap();
+        w.write_all(PACK.as_bytes()).unwrap();
+        w.add_symlink("ding.wav", secret.to_string_lossy(), zip::write::SimpleFileOptions::default()).unwrap();
+        w.finish().unwrap();
+        if install_zip(&lz, &root, true).is_ok() {
+            let f = root.join("test.sounds/ding.wav");
+            assert!(!std::fs::symlink_metadata(&f).unwrap().file_type().is_symlink());
+            assert_ne!(std::fs::read_to_string(&f).unwrap(), "geheim");
+        }
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "geheim");
+        // kein ZIP / leere Datei / abgeschnittenes ZIP: Fehler, root bleibt sauber
+        let bad = dir.path().join("kaputt.zip");
+        for data in [&b""[..], b"PK\x03\x04kaputt", &std::fs::read(&zp).unwrap()[..1000]] {
+            std::fs::write(&bad, data).unwrap();
+            assert!(install_zip(&bad, &root, true).is_err());
+        }
+        let left: Vec<_> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert!(left.iter().all(|n| !n.to_string_lossy().starts_with(".install")), "{left:?}");
     }
 
     /// Jeder mitgelieferte Sound hat ein Rezept (selbst erzeugt) und eine CC0-Lizenz.

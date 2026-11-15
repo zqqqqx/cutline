@@ -2186,16 +2186,11 @@ impl App {
     /// Projekt öffnet – beide würden sich sonst still gegenseitig überschreiben.
     fn take_lock(&mut self, p: &Path) {
         let lock = lock_path(p);
-        let me = std::process::id().to_string();
-        let fresh = std::fs::metadata(&lock)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.elapsed().ok())
-            .is_some_and(|d| d < Duration::from_secs(12 * 3600));
-        if fresh && std::fs::read_to_string(&lock).is_ok_and(|s| s.trim() != me) {
+        let me = std::process::id();
+        if paths::lock_held_by_other(&lock, me) {
             self.toast_err("Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet");
         }
-        let _ = std::fs::write(&lock, me);
+        let _ = std::fs::write(&lock, me.to_string());
         self.lock_file = Some(lock);
     }
 
