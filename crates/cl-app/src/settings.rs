@@ -202,8 +202,8 @@ impl AppSettings {
             .find(|l| l.code() == self.lang)
             .unwrap_or(cl_i18n::Lang::De)
     }
-    /// Setzt die Einstellungen eines Bereichs auf den Standard. Sprache, Projektordner, verknüpfte
-    /// Ordner und Konten bleiben, weil ein Klick sie nicht zurückbringt. `false`: nichts zum Zurücksetzen.
+    /// Setzt die Einstellungen eines Bereichs auf den Standard. Sprache und Projektordner bleiben, weil
+    /// ein Klick sie nicht zurückbringt. `false`: Bereich hat kein Zurücksetzen (`Section::resettable`).
     pub fn reset(&mut self, s: Section) -> bool {
         let d = Self::default();
         match s {
@@ -222,7 +222,6 @@ impl AppSettings {
                 self.backup_keep = d.backup_keep;
                 self.new_fps = d.new_fps;
             }
-            Section::Library => self.lib_downloads = d.lib_downloads,
             Section::Audio => {
                 self.audio_device = d.audio_device;
                 self.scrub_audio = d.scrub_audio;
@@ -235,27 +234,8 @@ impl AppSettings {
                 self.transition_duration = d.transition_duration;
                 self.anim_duration = d.anim_duration;
             }
-            Section::Performance => {
-                self.use_proxies = d.use_proxies;
-                self.proxy_h = d.proxy_h;
-                self.cache_days = d.cache_days;
-            }
-            Section::Mcp => {
-                self.mcp_enabled = d.mcp_enabled;
-                self.mcp_port = d.mcp_port;
-                self.mcp_read_only = d.mcp_read_only;
-            }
             Section::Shortcuts => self.shortcuts.clear(),
-            Section::Updates => {
-                self.auto_update = d.auto_update;
-                self.skipped_version = d.skipped_version;
-            }
-            Section::Integrations => self.plugin_states.clear(),
-            Section::Import => {
-                self.import_capcut = d.import_capcut;
-                self.import_fcpxml = d.import_fcpxml;
-            }
-            Section::Models | Section::About => return false,
+            _ => return false,
         }
         true
     }
@@ -306,6 +286,13 @@ pub enum Section {
     Integrations,
     Import,
     About,
+}
+
+impl Section {
+    /// Zurücksetzen gibt es nur, wo mehrere Werte verstellt sein können (nicht bei zwei, drei Schaltern)
+    pub fn resettable(self) -> bool {
+        matches!(self, Section::General | Section::Projects | Section::Audio | Section::Editing | Section::Shortcuts)
+    }
 }
 
 const SECTIONS: [(Section, &str, &str); 13] = [
@@ -454,7 +441,7 @@ impl App {
                                     {
                                         self.settings_open = false;
                                     }
-                                    if !matches!(self.settings_section, Section::Models | Section::About)
+                                    if self.settings_section.resettable()
                                         && theme::icon_button(
                                             ui,
                                             icon::ARROW_COUNTER_CLOCKWISE,
@@ -575,23 +562,11 @@ impl App {
                     self.restart_audio();
                 }
             }
-            Section::Performance => {
-                self.proxy_failed.clear();
-                self.invalidate_preview();
-            }
-            Section::Mcp => self.stop_mcp(),
             Section::Shortcuts => self.capture_key = None,
-            Section::Integrations => {
-                for p in &mut self.plugins.plugins {
-                    p.enabled = p.manifest.plugin.default_enabled;
-                }
-                self.refresh_plugin_fx();
-            }
-            Section::Import => self.import.drafts = None,
             _ => {}
         }
         self.settings.save();
-        self.toast(format!("{}  {}", icon::CHECK, crate::tr("Bereich zurückgesetzt")));
+        self.toast("Bereich zurückgesetzt");
     }
 
     fn settings_body(&mut self, ui: &mut egui::Ui) {
@@ -1088,7 +1063,8 @@ mod tests {
         assert!(FPS_CHOICES.iter().all(|f| cl_core::Rational::parse(f).is_some()));
     }
 
-    /// Jeder Bereich setzt genau seine Werte zurück; Verlauf, Sprache, Projektordner bleiben.
+    /// Jeder Bereich setzt genau seine Werte zurück; Verlauf, Sprache, Projektordner und Bereiche mit
+    /// nur zwei, drei Schaltern bleiben unberührt.
     #[test]
     fn reset_restores_only_its_section() {
         let changed = || {
@@ -1122,7 +1098,7 @@ mod tests {
         for (sec, ..) in SECTIONS {
             let mut s = changed();
             let did = s.reset(sec);
-            assert_eq!(did, !matches!(sec, Section::Models | Section::About), "{sec:?}");
+            assert_eq!(did, sec.resettable(), "{sec:?}");
             let now = json(&s);
             for (k, v) in now.as_object().unwrap() {
                 if *v != base[k] {
@@ -1132,7 +1108,10 @@ mod tests {
             }
         }
         // alles Geänderte ist über irgendeinen Bereich zurücksetzbar – außer dem, was bewusst bleibt
-        let keep = ["lang", "recent", "projects_dir", "onboarding_done"];
+        let keep = [
+            "lang", "recent", "projects_dir", "onboarding_done", "lib_downloads", "proxy_h", "mcp_enabled",
+            "mcp_port", "auto_update", "plugin_states", "import_capcut",
+        ];
         for (k, v) in base.as_object().unwrap() {
             if *v != def[k] {
                 assert_eq!(seen.contains(k), !keep.contains(&k.as_str()), "{k}");

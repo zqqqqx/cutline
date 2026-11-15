@@ -18,7 +18,7 @@ type ImportResult = cl_import::Result<(Project, cl_import::Report)>;
 pub struct ImportState {
     pub open: bool,
     since: u64,
-    pub drafts: Option<Vec<cl_import::capcut::Draft>>,
+    drafts: Option<Vec<cl_import::capcut::Draft>>,
     running: Option<(String, Receiver<ImportResult>)>,
     /// Bericht des letzten Imports (übersprungene Teile, fehlende Dateien)
     pub report: Option<(String, cl_import::Report)>,

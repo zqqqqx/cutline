@@ -234,6 +234,7 @@ impl App {
         let mut act: Option<(u8, String)> = None;
         let n = cats.len();
         // Eine Zeile, waagrecht scrollbar (Mausrad oder Ziehen) statt mehrzeiligem Umbruch
+        let mut chips: Vec<egui::Rect> = Vec::new();
         let mut row = egui::ScrollArea::horizontal()
             .id_salt(ckey)
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
@@ -245,20 +246,19 @@ impl App {
                     ui.scroll_with_delta(egui::vec2(d.y, 0.0));
                 }
             }
-            if theme::cat_chip(ui, "Alle", cur == "Alle").clicked() {
-                self.asset_cat.insert(ckey, "Alle".into());
-            }
-            if theme::cat_chip(ui, icon::STAR, cur == "Favoriten")
-                .on_hover_text(crate::tr("Favoriten"))
-                .clicked()
-            {
-                self.asset_cat.insert(ckey, "Favoriten".into());
-            }
-            if theme::cat_chip(ui, icon::CLOCK_COUNTER_CLOCKWISE, cur == "Zuletzt")
-                .on_hover_text(crate::tr("Zuletzt verwendet"))
-            .clicked()
-            {
-                self.asset_cat.insert(ckey, "Zuletzt".into());
+            for (key, label, tip) in [
+                ("Alle", "Alle", ""),
+                ("Favoriten", icon::STAR, "Favoriten"),
+                ("Zuletzt", icon::CLOCK_COUNTER_CLOCKWISE, "Zuletzt verwendet"),
+            ] {
+                let mut r = theme::cat_chip(ui, label, cur == key);
+                if !tip.is_empty() {
+                    r = r.on_hover_text(crate::tr(tip));
+                }
+                chips.push(r.rect);
+                if r.clicked() {
+                    self.asset_cat.insert(ckey, key.into());
+                }
             }
             for (i, c) in cats.iter().enumerate() {
                 let label = if c.builtin {
@@ -270,6 +270,7 @@ impl App {
                     format!("{}  {}", icon::FOLDER_SIMPLE, c.label)
                 };
                 let r = theme::cat_chip(ui, &label, cur == c.key);
+                chips.push(r.rect);
                 if r.clicked() {
                     self.asset_cat.insert(ckey, c.key.clone());
                 }
@@ -305,8 +306,10 @@ impl App {
                     }
                 });
             }
+            // kleiner Rand, damit der letzte Eintrag nicht an der Kante klebt
+            ui.add_space(2.0);
         }));
-        theme::edge_arrows(ui, &mut row);
+        theme::edge_arrows(ui, &mut row, &chips);
         if let Some((a, key)) = act {
             let label = cats
                 .iter()

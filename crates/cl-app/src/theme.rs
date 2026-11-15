@@ -719,27 +719,69 @@ pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     )
 }
 
+/// Ränder einer blätterbaren Leiste. `chips` = (links, rechts) je Eintrag im Inhalt, `view` = sichtbare
+/// Breite, `off` = Versatz, `arrow` = Breite des Pfeil-Knopfs. Je Seite: (Kante der Abdeckung im Inhalt,
+/// Versatz nach dem Klick). Die Abdeckung reicht bis an den nächsten ganz sichtbaren Eintrag, damit nie
+/// ein halber Eintrag neben dem Pfeil steht.
+pub struct StripEdges {
+    pub left: Option<(f32, f32)>,
+    pub right: Option<(f32, f32)>,
+}
+
+pub fn strip_edges(chips: &[(f32, f32)], view: f32, off: f32, arrow: f32) -> StripEdges {
+    let total = chips.last().map_or(0.0, |c| c.1);
+    let max = (total - view).max(0.0);
+    let right = (max - off > 1.0).then(|| {
+        let limit = off + view - arrow;
+        // erster Eintrag, der nicht mehr ganz vor den Pfeil passt
+        let c = chips.iter().find(|c| c.1 > limit).copied().unwrap_or((limit, limit));
+        let next = (c.0 - arrow - 2.0).min(max);
+        // Eintrag breiter als die Leiste: trotzdem weiterkommen
+        let next = if next > off + 1.0 { next } else { (off + view * 0.7).min(max) };
+        ((c.0 - 2.0).clamp(off, limit), next)
+    });
+    let left = (off > 1.0).then(|| {
+        let limit = off + arrow;
+        let cover = chips.iter().find(|c| c.0 < limit && c.1 > limit).map_or(limit, |c| c.1 + 2.0);
+        // eine Seite zurück, ausgerichtet am Anfang eines Eintrags
+        let start = off - (view - 2.0 * arrow);
+        let prev = chips.iter().find(|c| c.0 >= start + arrow).map_or(0.0, |c| c.0 - arrow - 2.0);
+        let prev = if prev < arrow + 6.0 || prev >= off - 1.0 { 0.0 } else { prev };
+        (cover.min(off + view), prev)
+    });
+    StripEdges { left, right }
+}
+
 /// Pfeil-Knöpfe an waagrecht scrollbaren Zeilen auf Kartengrund: zeigen, dass links bzw. rechts
-/// noch mehr kommt, und blättern per Klick weiter. Deckend, damit daneben kein halber Eintrag steht.
-pub fn edge_arrows<R>(ui: &mut egui::Ui, out: &mut egui::scroll_area::ScrollAreaOutput<R>) {
+/// noch mehr kommt, und blättern per Klick weiter. `chips` = Flächen der Einträge (Bildschirm).
+pub fn edge_arrows<R>(ui: &mut egui::Ui, out: &mut egui::scroll_area::ScrollAreaOutput<R>, chips: &[Rect]) {
     // `inner_rect` reicht bei `auto_shrink(false)` über die Zeile hinaus: Höhe aus dem Inhalt nehmen
     let (mut r, x) = (out.inner_rect, out.state.offset.x);
     r.set_height(out.content_size.y);
-    let max = out.content_size.x - r.width();
-    for (show, dir, glyph) in [(x > 1.0, -1.0, icon::CARET_LEFT), (max - x > 1.0, 1.0, icon::CARET_RIGHT)] {
-        if !show {
-            continue;
-        }
-        let w = 20.0;
-        let left = if dir < 0.0 { r.left() } else { r.right() - w };
-        let b = Rect::from_min_size(pos2(left, r.top()), vec2(w, r.height()));
+    let x0 = r.left() - x;
+    let rel: Vec<(f32, f32)> = chips.iter().map(|c| (c.left() - x0, c.right() - x0)).collect();
+    if out.content_size.x - r.width() <= 0.5 && x != 0.0 {
+        // alles passt wieder (Bereich breiter gezogen): Versatz verwerfen
+        out.state.offset.x = 0.0;
+        out.state.store(ui.ctx(), out.id);
+        ui.ctx().request_repaint();
+        return;
+    }
+    let w = 20.0;
+    let e = strip_edges(&rel, r.width(), x, w);
+    let sides = [
+        // 4 px über die Leiste hinaus: dort schaut sonst der Rand eines Eintrags hervor
+        e.left.map(|(cover, to)| (Rect::from_min_max(r.min - vec2(4.0, 0.0), pos2(x0 + cover, r.bottom())), r.left() + w / 2.0, icon::CARET_LEFT, to)),
+        e.right.map(|(cover, to)| (Rect::from_min_max(pos2(x0 + cover, r.top()), r.max + vec2(4.0, 0.0)), r.right() - w / 2.0, icon::CARET_RIGHT, to)),
+    ];
+    for (b, cx, glyph, to) in sides.into_iter().flatten() {
         ui.painter().rect_filled(b, 0.0, BG_CARD());
         let resp = ui.interact(b, out.id.with(glyph), egui::Sense::click());
         let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
         // Icon-Glyphe: 14 px wie in `icon_button`
-        ui.painter().text(b.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(14.0), col);
+        ui.painter().text(pos2(cx, b.center().y), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(14.0), col);
         if resp.clicked() {
-            out.state.offset.x = (x + dir * r.width() * 0.7).clamp(0.0, max);
+            out.state.offset.x = to;
             out.state.store(ui.ctx(), out.id);
         }
     }
@@ -872,6 +914,58 @@ pub fn window_icon() -> Option<egui::IconData> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Blättern zeigt nie einen halben Eintrag neben dem Pfeil und erreicht jeden Eintrag.
+    #[test]
+    fn strip_never_shows_half_entries() {
+        let (view, arrow) = (200.0, 20.0);
+        for widths in [vec![50.0; 10], vec![30.0, 26.0, 26.0, 70.0, 64.0, 90.0, 58.0, 44.0], vec![260.0, 40.0, 40.0]] {
+            let mut chips = Vec::new();
+            let mut x = 0.0;
+            for w in &widths {
+                chips.push((x, x + w));
+                x += w + 4.0;
+            }
+            let total = chips.last().unwrap().1;
+            let whole = |off: f32| {
+                let e = strip_edges(&chips, view, off, arrow);
+                let lo = e.left.map_or(off, |l| l.0);
+                let hi = e.right.map_or(off + view, |r| r.0);
+                // jeder Eintrag liegt ganz im freien Bereich oder ganz unter einer Abdeckung
+                for c in chips.iter().filter(|c| c.1 - c.0 <= view - 2.0 * arrow) {
+                    assert!((c.0 >= lo - 0.1 && c.1 <= hi + 0.1) || c.1 <= lo + 2.1 || c.0 >= hi - 0.1, "{c:?} bei {off} ({lo}..{hi})");
+                }
+                e
+            };
+            let (mut off, mut seen, mut steps) = (0.0, Vec::new(), 0);
+            loop {
+                let e = whole(off);
+                let lo = e.left.map_or(off, |l| l.0);
+                let hi = e.right.map_or(off + view, |r| r.0);
+                seen.extend(chips.iter().filter(|c| c.0 >= lo - 0.1 && c.1 <= hi + 0.1).map(|c| c.0 as i32));
+                let Some((_, next)) = e.right else { break };
+                assert!(next > off && next <= total - view + 0.1);
+                off = next;
+                steps += 1;
+                assert!(steps < 50);
+            }
+            for c in chips.iter().filter(|c| c.1 - c.0 <= view - 2.0 * arrow) {
+                assert!(seen.contains(&(c.0 as i32)), "{c:?} nie ganz sichtbar");
+            }
+            // zurück bis an den Anfang, auch von krummen Versätzen (Mausrad) aus
+            for start in [off, 37.0, 111.5] {
+                let mut off = start.min(total - view).max(0.0);
+                while let Some((_, prev)) = whole(off).left {
+                    assert!(prev < off);
+                    off = prev;
+                }
+                assert_eq!(off, 0.0);
+            }
+        }
+        // alles passt: keine Pfeile
+        let e = strip_edges(&[(0.0, 50.0), (54.0, 104.0)], 200.0, 0.0, 20.0);
+        assert!(e.left.is_none() && e.right.is_none());
+    }
 
     // Ein Test, weil der Akzent global ist (parallele Tests würden sich überschreiben)
     /// Vertrag des Design-Systems: 6 Schriftstufen, 3 Radien, 3 Abstände, jeweils aufsteigend
