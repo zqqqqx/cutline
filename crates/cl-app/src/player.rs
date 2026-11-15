@@ -175,11 +175,6 @@ impl App {
                 let t =
                     ctx.load_texture(format!("frame-{clip}"), img, egui::TextureOptions::LINEAR);
                 self.frames.insert(clip, (key, t));
-                // Texturen gelöschter Clips nicht ewig halten
-                if self.frames.len() > 64 {
-                    let tl = &self.project.timeline;
-                    self.frames.retain(|id, _| tl.tracks.iter().any(|t| t.clips.iter().any(|c| c.id == *id)));
-                }
             }
         }
     }
@@ -474,8 +469,10 @@ impl App {
         self.fx_overlays = overlays;
         // Bilder von Clips, die nicht mehr unter dem Playhead liegen, verwirft `receive_decoded`
         // (beim Scrubben über viele Spuren kamen sonst Dutzende auf einmal); kehrt der Playhead
-        // zurück, kommt das Bild erneut aus dem Zwischenspeicher des Decoders.
+        // zurück, kommt das Bild erneut aus dem Zwischenspeicher des Decoders. Ebenso die
+        // Texturen: sonst hielt ein großes Projekt nach dem Scrubben eine je Clip (in Vorschaugröße je 1–8 MB).
         self.requested.retain(|id, _| visible.contains(id));
+        self.frames.retain(|id, _| visible.contains(id));
         self.playbacks.retain(|id, _| visible.contains(id));
         self.playbacks_next.retain(|id, _| visible.contains(id));
     }
