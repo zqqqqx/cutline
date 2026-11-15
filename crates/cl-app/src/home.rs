@@ -396,7 +396,7 @@ impl App {
                                 let tr =
                                     Rect::from_min_size(r.min + vec2(6.0, 6.0), vec2(71.0, 40.0));
                                 let tex = self.home.thumb(ui.ctx(), &path);
-                                self.paint_thumb(ui.painter(), tr, tex);
+                                self.paint_thumb(ui.painter(), tr, tex, &path);
                                 ui.painter().text(
                                     pos2(tr.right() + 12.0, r.center().y - 8.0),
                                     egui::Align2::LEFT_CENTER,
@@ -524,7 +524,7 @@ impl App {
                                         Sense::click(),
                                     );
                                     let tex = self.home.thumb(ui.ctx(), &path);
-                                    self.paint_thumb(ui.painter(), thumb_r, tex);
+                                    self.paint_thumb(ui.painter(), thumb_r, tex, &path);
                                     if resp.hovered() {
                                         ui.painter().rect_stroke(
                                             thumb_r,
@@ -647,12 +647,14 @@ impl App {
         self.home_dialogs(ui.ctx());
     }
 
-    fn paint_thumb(&self, p: &egui::Painter, r: Rect, tex: Option<egui::TextureId>) {
+    /// Vorschaubild eines Projekts; ein nachträglich erzeugtes blendet ein.
+    fn paint_thumb(&self, p: &egui::Painter, r: Rect, tex: Option<egui::TextureId>, path: &Path) {
         p.rect_filled(r, theme::R_CARD, theme::BG_RAISED());
+        let k = crate::widgets::reveal(p.ctx(), egui::Id::new(("home-thumb", path)), tex.is_some());
         match tex {
             Some(t) => {
                 p.add(
-                    egui::epaint::RectShape::filled(r, theme::R_CARD, Color32::WHITE)
+                    egui::epaint::RectShape::filled(r, theme::R_CARD, Color32::WHITE.gamma_multiply(k))
                         .with_texture(t, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))),
                 );
             }

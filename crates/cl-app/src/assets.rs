@@ -355,6 +355,9 @@ impl App {
                 .layout(egui::Layout::top_down(egui::Align::Min)),
             |ui| {
                 ui.set_clip_rect(content.expand2(vec2(2.0, 4.0)));
+                // Tab-Wechsel: neuer Inhalt blendet kurz ein
+                let k = TABS.iter().position(|t| t.0 == self.tab).unwrap_or(0);
+                ui.multiply_opacity(theme::fade_on_change(ui.ctx(), egui::Id::new("asset-tab-fade"), k as u64));
                 match self.tab {
                     LeftTab::Media => self.media_tab(ui),
                     LeftTab::Audio => self.audio_tab(ui),
@@ -545,40 +548,31 @@ impl App {
                         &dims,
                         false,
                         |p, a| {
-                            if let Some((tid, ts, (v0, v1))) = thumb {
-                                let s = (a.width() / ts.x).max(a.height() / ts.y);
-                                let uv = Rect::from_center_size(
-                                    pos2(0.5, 0.5),
-                                    vec2(
-                                        (a.width() / (ts.x * s)).min(1.0),
-                                        (a.height() / (ts.y * s)).min(1.0),
-                                    ),
-                                );
-                                // auf das Bild im Streifen abbilden
-                                let uv = Rect::from_x_y_ranges(
-                                    uv.x_range(),
-                                    (v0 + uv.top() * (v1 - v0))..=(v0 + uv.bottom() * (v1 - v0)),
-                                );
-                                p.add(
-                                    egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE)
-                                        .with_texture(tid, uv),
-                                );
-                            } else if let Some(st) = &snd {
-                                st.paint(p, a, false);
-                            } else {
-                                let g = match m.kind {
-                                    MediaKind::Audio => icon::WAVEFORM,
-                                    MediaKind::Image => icon::IMAGE,
-                                    MediaKind::Video => icon::FILM_STRIP,
-                                };
-                                p.text(
-                                    a.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    crate::tr(g),
-                                    // Icon-Glyphe als Platzhalter
-                                    egui::FontId::proportional(22.0),
-                                    theme::TEXT_DIM(),
-                                );
+                            let g = match m.kind {
+                                MediaKind::Audio => icon::WAVEFORM,
+                                MediaKind::Image => icon::IMAGE,
+                                MediaKind::Video => icon::FILM_STRIP,
+                            };
+                            match (&snd, thumb) {
+                                (Some(st), None) => st.paint(p, a, false),
+                                // Platzhalter, bis das Vorschaubild da ist; dann einblenden
+                                (_, tex) if m.is_local() || tex.is_some() => widgets::tile_image(
+                                    p,
+                                    egui::Id::new(("media", m.id)),
+                                    a,
+                                    tex.map(|(tid, ts, (v0, v1))| (tid, ts, Rect::from_x_y_ranges(0.0..=1.0, v0..=v1))),
+                                    g,
+                                ),
+                                _ => {
+                                    p.text(
+                                        a.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        g,
+                                        // Icon-Glyphe als Platzhalter
+                                        egui::FontId::proportional(22.0),
+                                        theme::TEXT_DIM(),
+                                    );
+                                }
                             }
                             if let Some(f) = scrub {
                                 let x = a.left() + a.width() * f;
@@ -723,30 +717,15 @@ impl App {
                     let snd_key = format!("file:{}", path.display());
                     let snd = audio.then(|| self.sound_look(ui, r, &snd_key, &path, None));
                     let resp = widgets::tile_tip(ui, egui::Id::new(("libm", it.key.as_str())), r, &it.name, &it.folder, false, |p, a| {
-                        match tex {
-                            Some((tid, ts)) => {
-                                let s = (a.width() / ts.x).max(a.height() / ts.y);
-                                let uv = Rect::from_center_size(
-                                    pos2(0.5, 0.5),
-                                    vec2((a.width() / (ts.x * s)).min(1.0), (a.height() / (ts.y * s)).min(1.0)),
-                                );
-                                p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(tid, uv));
-                            }
-                            None if snd.is_some() => {
-                                if let Some(st) = &snd {
-                                    st.paint(p, a, true);
-                                }
-                            }
-                            None => {
-                                p.text(
-                                    a.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    if audio { icon::WAVEFORM } else { icon::IMAGE },
-                                    // Icon-Glyphe als Platzhalter
-                                    egui::FontId::proportional(22.0),
-                                    theme::TEXT_DIM(),
-                                );
-                            }
+                        match (&snd, tex) {
+                            (Some(st), None) => st.paint(p, a, true),
+                            (_, tex) => widgets::tile_image(
+                                p,
+                                egui::Id::new(("libm", it.key.as_str())),
+                                a,
+                                tex.map(|(tid, ts)| (tid, ts, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)))),
+                                if audio { icon::WAVEFORM } else { icon::IMAGE },
+                            ),
                         }
                         if fav {
                             crate::library_ui::fav_badge(p, a);
@@ -906,12 +885,7 @@ impl App {
             1 => {
                 let list = music_files();
                 match list {
-                    None => {
-                        ui.label(
-                            RichText::new(crate::tr("Musikordner wird durchsucht …"))
-                                .color(theme::TEXT_DIM()),
-                        );
-                    }
+                    None => widgets::busy_row(ui, egui::Id::new("music-scan"), true),
                     Some(l) if l.is_empty() => theme::empty_state(
                         ui,
                         icon::MUSIC_NOTES,
@@ -1094,7 +1068,7 @@ impl App {
             .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len));
         let loading = self.sound_pending.as_deref() == Some(key);
         let meta = self.sound_meta.get(key);
-        let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), theme::anim(0.12));
+        let hover = theme::fade(ui.ctx(), resp.id.with("h"), resp.hovered(), theme::MOTION_FAST);
         let p = ui.painter();
         if hover > 0.0 || playing.is_some() {
             p.rect_filled(r, theme::R_CARD, theme::BG_RAISED().linear_multiply(if playing.is_some() { 1.0 } else { hover }));
@@ -1105,7 +1079,7 @@ impl App {
         p.rect_filled(play_r, theme::R_CARD, if on { theme::ACCENT() } else { theme::BG_HOVER() });
         if loading {
             // ohne Animationen stehende Punkte
-            let t = if theme::anim(1.0) > 0.0 { ui.input(|i| i.time) as f32 } else { 0.0 };
+            let t = if theme::animations_on() { ui.input(|i| i.time) as f32 } else { 0.0 };
             let c = play_r.center();
             for k in 0..3 {
                 let a = t * 6.0 + k as f32 * 2.1;
@@ -1229,23 +1203,27 @@ impl App {
     fn sound_look(&mut self, ui: &egui::Ui, r: Rect, key: &str, path: &std::path::Path, sfx: Option<&'static str>) -> SoundLook {
         self.sound_bars.ensure(key, path, sfx);
         let loading = self.sound_pending.as_deref() == Some(key);
-        let moving = theme::anim(1.0) > 0.0;
+        let moving = theme::animations_on();
         if loading && moving {
             ui.ctx().request_repaint();
         }
+        let bars = self.sound_bars.get(key);
         SoundLook {
+            // Wellenform blendet ein, wenn sie nachträglich berechnet wurde
+            shown: widgets::reveal(ui.ctx(), egui::Id::new(("sfx-wave", key)), bars.as_ref().is_some_and(|b| !b.bars.is_empty())),
             playing: self
                 .sfx_preview
                 .as_ref()
                 .filter(|(k, _)| k == key)
                 .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len)),
             loading,
-            bars: self.sound_bars.get(key),
+            bars,
             // Bearbeiten-Modus (Reihenfolge): kein Play-Kreis, ein Klick spielt dort nichts ab
-            hover: ui.ctx().animate_bool_with_time(
+            hover: theme::fade(
+                ui.ctx(),
                 egui::Id::new(("sfx-tile", key, "h")),
                 ui.rect_contains_pointer(r) && !ui.data(|d| d.get_temp::<bool>(widgets::no_plus_id()).unwrap_or(false)),
-                theme::anim(0.12),
+                theme::MOTION_FAST,
             ),
             moving,
             t: ui.input(|i| i.time) as f32,
@@ -1255,6 +1233,7 @@ impl App {
 
 /// Aussehen einer Ton-Kachel: Wellenform, Abspielstand, Play/Stopp.
 struct SoundLook {
+    shown: f32,
     playing: Option<f32>,
     loading: bool,
     bars: Option<crate::soundbars::Bars>,
@@ -1293,7 +1272,7 @@ impl SoundLook {
                         };
                         p.line_segment(
                             [pos2(x, wave.center().y - h / 2.0), pos2(x, wave.center().y + h / 2.0)],
-                            egui::Stroke::new((bw * 0.4).clamp(1.0, 1.5), col),
+                            egui::Stroke::new((bw * 0.4).clamp(1.0, 1.5), col.gamma_multiply(self.shown)),
                         );
                     }
                 }
@@ -1782,6 +1761,10 @@ impl App {
                         &it.name,
                         false,
                         |p, a| {
+                            let shown = widgets::reveal(p.ctx(), egui::Id::new(("st", &it.key)), tex.is_some());
+                            if shown < 1.0 {
+                                widgets::skeleton(p, egui::Id::new(("st", &it.key)), a, theme::R_CARD);
+                            }
                             if let Some(t) = tex {
                                 let side = a.height() * 0.72;
                                 let k = side / size.x.max(size.y).max(1.0);
@@ -1797,7 +1780,7 @@ impl App {
                                     t,
                                     inner,
                                     Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                                    Color32::WHITE,
+                                    Color32::WHITE.gamma_multiply(shown),
                                 );
                             }
                             if fav {
@@ -2006,7 +1989,7 @@ impl App {
                     let akey = format!("{pre}:{id}");
                     let fav = self.library.is_favorite(&akey);
                     // Hover: Vorher/Nachher-Wischblende über dem Beispielbild
-                    let wipe = (!id.is_empty() && theme::anim(1.0) > 0.0 && ui.rect_contains_pointer(r)).then(|| {
+                    let wipe = (!id.is_empty() && theme::animations_on() && ui.rect_contains_pointer(r)).then(|| {
                         ui.ctx().request_repaint();
                         0.5 + 0.45 * (ui.input(|i| i.time) as f32 * 2.4).sin()
                     });
@@ -2017,33 +2000,16 @@ impl App {
                         name,
                         selected,
                         |p, a| {
-                            match tex {
-                                Some(t) => {
-                                    let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-                                    p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(t, uv));
-                                    if let (Some(w), Some(o)) = (wipe, orig) {
-                                        let x = a.left() + a.width() * w;
-                                        let left = Rect::from_min_max(a.min, pos2(x, a.bottom()));
-                                        p.with_clip_rect(left).add(
-                                            egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(o, uv),
-                                        );
-                                        p.line_segment([pos2(x, a.top()), pos2(x, a.bottom())], egui::Stroke::new(1.5_f32, Color32::WHITE));
-                                    }
-                                }
-                                None => {
-                                    p.text(
-                                        a.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        crate::tr(if filters {
-                                            icon::CIRCLE_HALF
-                                        } else {
-                                            icon::SPARKLE
-                                        }),
-                                        // Icon-Glyphe
-                                        egui::FontId::proportional(18.0),
-                                        theme::TEXT_FAINT(),
-                                    );
-                                }
+                            let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                            let glyph = if filters { icon::CIRCLE_HALF } else { icon::SPARKLE };
+                            widgets::tile_image(p, egui::Id::new(("fx", key.as_str())), a, tex.map(|t| (t, a.size(), uv)), glyph);
+                            if let (Some(w), Some(o), Some(_)) = (wipe, orig, tex) {
+                                let x = a.left() + a.width() * w;
+                                let left = Rect::from_min_max(a.min, pos2(x, a.bottom()));
+                                p.with_clip_rect(left).add(
+                                    egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(o, uv),
+                                );
+                                p.line_segment([pos2(x, a.top()), pos2(x, a.bottom())], egui::Stroke::new(1.5_f32, Color32::WHITE));
                             }
                             if fav {
                                 crate::library_ui::fav_badge(p, a);
@@ -2130,7 +2096,7 @@ impl App {
                 // Ruhend: Bild mitten im Übergang (beide Bilder sichtbar). Hover: der ganze Übergang,
                 // am Anfang und Ende kurz stehen bleiben.
                 let mut k = STRIP as f32 * 0.55;
-                if theme::anim(1.0) > 0.0 && ui.rect_contains_pointer(r) {
+                if theme::animations_on() && ui.rect_contains_pointer(r) {
                     let t = (ui.input(|i| i.time) * 0.75) % 1.5;
                     k = (((t - 0.2) / 1.0).clamp(0.0, 1.0) * (STRIP - 1) as f64) as f32;
                     ui.ctx().request_repaint();
@@ -2143,15 +2109,7 @@ impl App {
                 let akey = format!("tr:{id}");
                 let fav = self.library.is_favorite(&akey);
                 let resp = widgets::tile(ui, egui::Id::new(("tr", id.as_str())), r, name, current.as_deref() == Some(id.as_str()), |p, a| {
-                    match tex {
-                        Some(t) => {
-                            p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE).with_texture(t, uv));
-                        }
-                        None => {
-                            // Icon-Glyphe
-                            p.text(a.center(), egui::Align2::CENTER_CENTER, icon::INTERSECT, egui::FontId::proportional(18.0), theme::TEXT_FAINT());
-                        }
-                    }
+                    widgets::tile_image(p, egui::Id::new(("tr", id.as_str())), a, tex.map(|t| (t, a.size(), uv)), icon::INTERSECT);
                     if fav {
                         crate::library_ui::fav_badge(p, a);
                     }
