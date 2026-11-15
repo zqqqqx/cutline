@@ -390,25 +390,29 @@ impl App {
         // je Art: Spur (sobald bekannt) und nächste Startzeit
         let mut track: [Option<Option<TrackId>>; 2] = [None, None];
         let mut next = [t.at, t.at];
+        // neue Spuren vorab, höchster Index zuerst: sonst verschiebt die erste den Index der zweiten
+        let used = |k: usize| ids.iter().any(|&id| self.project.media(id).is_some_and(|m| usize::from(m.kind == MediaKind::Audio) == k));
+        let mut new: Vec<(usize, usize)> = (0..2)
+            .filter_map(|k| match lanes[k] {
+                Lane::New { index, .. } if used(k) => Some((index, k)),
+                _ => None,
+            })
+            .collect();
+        new.sort_by_key(|n| std::cmp::Reverse(n.0));
+        for (index, k) in new {
+            let kind = if k == 1 { TrackKind::Audio } else { TrackKind::Video };
+            if let Some(OpOutput::Track(tid)) = self.apply(EditOp::InsertTrack { index, kind }) {
+                self.timeline.reveal_track(tid);
+                track[k] = Some(Some(tid));
+            }
+        }
         for &id in ids {
             let Some(m) = self.project.media(id) else { continue };
             let k = usize::from(m.kind == MediaKind::Audio);
-            let tr = match track[k] {
-                Some(tr) => tr,
-                None => match lanes[k] {
-                    Lane::Track(tid) if self.project.timeline.tracks.iter().any(|x| x.id == tid) => Some(tid),
-                    Lane::New { index, .. } => {
-                        let kind = if k == 1 { TrackKind::Audio } else { TrackKind::Video };
-                        match self.apply(EditOp::InsertTrack { index, kind }) {
-                            Some(OpOutput::Track(tid)) => {
-                                self.timeline.reveal_track(tid);
-                                Some(tid)
-                            }
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                },
+            let tr = match (track[k], lanes[k]) {
+                (Some(tr), _) => tr,
+                (None, Lane::Track(tid)) if self.project.timeline.tracks.iter().any(|x| x.id == tid) => Some(tid),
+                _ => None,
             };
             if let Some(c) = self.add_media_at(id, next[k], tr) {
                 if let Some((x, c)) = self.project.find_clip(c) {
@@ -642,6 +646,40 @@ mod tests {
         app.undo();
         app.sync_project();
         assert_eq!(app.project, before);
+    }
+
+    /// Spuren T, M, A1 (gesperrt), A2; Video und Ton auf die untere Hälfte von A1: neue Videospur
+    /// über M, neue Tonspur direkt unter A1 – wie die Vorschau sie zeigt.
+    #[test]
+    fn two_new_tracks_land_where_shown() {
+        let (mut app, _home, _g) = test_app();
+        let mut p = Project::new("Zwei neue");
+        let mut main = Track::new(TrackKind::Video);
+        main.main = true;
+        let mut a1 = Track::new(TrackKind::Audio);
+        a1.locked = true;
+        p.timeline.tracks = vec![main, Track::new(TrackKind::Text), a1, Track::new(TrackKind::Audio)];
+        app.set_doc(p);
+        let tracks = app.project.timeline.tracks.clone();
+        let rows: Vec<(usize, Rect)> = cl_core::display_order(&tracks)
+            .iter()
+            .enumerate()
+            .map(|(n, &i)| (i, Rect::from_min_size(pos2(0.0, 100.0 + n as f32 * 40.0), vec2(800.0, 34.0))))
+            .collect();
+        let p = pos2(300.0, rows[2].1.bottom() - 4.0);
+        let target = Target {
+            at: Time::ZERO,
+            video: lane_at(&tracks, &rows, p, TrackKind::Video, 6.0),
+            audio: lane_at(&tracks, &rows, p, TrackKind::Audio, 6.0),
+        };
+        assert!(matches!((target.video, target.audio), (Lane::New { .. }, Lane::New { .. })));
+        let d = pending(Some(target), vec![State::Ready(media(MediaKind::Video, 2.0, "a.mp4")), State::Ready(media(MediaKind::Audio, 2.0, "b.wav"))]);
+        app.commit_file_drop(d);
+        let t = &app.project.timeline.tracks;
+        let shown: Vec<(TrackKind, bool, usize)> =
+            cl_core::display_order(t).iter().map(|&i| (t[i].kind, t[i].locked, t[i].clips.len())).collect();
+        use TrackKind::{Audio, Text, Video};
+        assert_eq!(shown, [(Text, false, 0), (Video, false, 1), (Video, false, 0), (Audio, true, 0), (Audio, false, 1), (Audio, false, 0)]);
     }
 
     /// Ablage und Aufgabe laufen noch, als „Zur Startseite“ gedrückt wird: ihr Ergebnis darf das
