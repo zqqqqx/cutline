@@ -59,9 +59,30 @@ pub(crate) fn shader_preview_fits(evs: [&Evaluated; 2], aspects: [f32; 2], proje
     }) && aspects.iter().all(|a| (a / project_aspect - 1.0).abs() < 0.01)
 }
 
+/// Quellzeit für ein Einzelbild der Vorschau: aufs Bildraster gerundet, höchstens anderthalb
+/// Bilder vor dem Ende von Clip bzw. Datei. FFmpeg liefert das erste Bild ab `-ss`; eine Zeit im
+/// letzten Bild (oder aufs Ende gerundet) ergab gar keins – „Datei kann nicht gelesen werden: “.
+fn still_seek(t: Time, source_in: Time, end: Time, fps: Rational) -> Time {
+    let last = end - Time::from_secs_f64(1.5 / fps.as_f64().max(1.0));
+    Time(t.snap_to_frame(fps).0.min(last.0).max(source_in.0))
+}
+
 #[cfg(test)]
 mod shader_tests {
     use super::*;
+
+    #[test]
+    fn still_seek_never_lands_behind_the_last_frame() {
+        let fps = Rational { num: 25, den: 1 };
+        let end = Time::from_millis(6400);
+        // vorher: 6,38 s (Ende − 20 ms) aufs Raster gerundet = 6,40 s → kein Bild
+        let t = still_seek(Time::from_millis(6390), Time::ZERO, end, fps);
+        assert!(t > Time::from_millis(6320) && t <= Time::from_millis(6360), "{t:?}");
+        // mitten im Clip unverändert aufs Raster
+        assert_eq!(still_seek(Time::from_millis(1013), Time::ZERO, end, fps), Time::from_millis(1000));
+        // nie vor den Quell-Anfang
+        assert_eq!(still_seek(Time::ZERO, Time::from_millis(6390), end, fps), Time::from_millis(6390));
+    }
 
     #[test]
     fn progress_is_centered_on_the_cut() {
@@ -582,13 +603,11 @@ impl App {
             return;
         }
         let src = if is_video {
-            let span_end = c.source_in + c.source_span() - Time::from_millis(20);
-            Time(
-                c.source_time(c.start + l.t_rel)
-                    .0
-                    .clamp(c.source_in.0, span_end.0.max(c.source_in.0)),
-            )
-            .snap_to_frame(m.fps.unwrap_or(fps))
+            let mut end = c.source_in + c.source_span();
+            if m.duration > Time::ZERO {
+                end = Time(end.0.min(m.duration.0));
+            }
+            still_seek(c.source_time(c.start + l.t_rel), c.source_in, end, m.fps.unwrap_or(fps))
         } else {
             // Bewegtes Bild: dasselbe Einzelbild wie im Export (Schleife bzw. letztes Bild halten)
             // shortcut: beim Abspielen ein Einzelbild-Auftrag je Bild statt Strom, ausbauen falls es ruckelt

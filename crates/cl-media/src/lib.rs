@@ -328,9 +328,13 @@ pub fn decode_frame_fx(
         .output()?;
     let need = (w * h * 4) as usize;
     if out.stdout.len() < need {
-        return Err(MediaError::Unreadable(
-            String::from_utf8_lossy(&out.stderr).trim().to_string(),
-        ));
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        // ohne Fehlertext: an dieser Stelle gibt es kein Bild (z. B. hinter dem letzten)
+        return Err(MediaError::Unreadable(if err.is_empty() {
+            format!("kein Bild bei {:.3} s in {}", at.as_secs_f64(), path.display())
+        } else {
+            err
+        }));
     }
     let mut data = out.stdout;
     data.truncate(need);
@@ -618,6 +622,19 @@ mod tests {
         let m = probe(&rot).unwrap();
         assert_eq!((m.width, m.height), (180, 320));
         assert_eq!((probe(&src).unwrap().width, probe(&src).unwrap().height), (320, 180));
+    }
+
+    #[test]
+    fn missing_frame_error_names_time_and_file() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let clip = make_clip(dir.path());
+        // hinter dem letzten Bild: FFmpeg liefert nichts und meldet auch nichts
+        let e = decode_frame(&clip, Time::from_millis(2500), 32, 18).unwrap_err().to_string();
+        assert!(e.contains("kein Bild bei 2.500 s") && e.contains("t.mp4"), "{e}");
+        assert!(decode_frame(&clip, Time::from_millis(1900), 32, 18).is_ok());
     }
 
     #[test]
