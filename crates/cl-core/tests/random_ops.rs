@@ -144,7 +144,8 @@ fn run(seed: u64, steps: usize) {
                 ok += 1;
                 let after = d.project();
                 check(after, &format!("{ctx}: {desc}"));
-                assert_eq!(d.undo_entries().len(), hist + 1, "{ctx}");
+                // ohne Änderung kein Verlaufsschritt
+                assert_eq!(d.undo_entries().len(), hist + usize::from(after != &before), "{ctx}");
                 // gesperrte Spuren: Clips unverändert, Spur bleibt bestehen
                 // (eine Op, die selbst Sperren ändert, z. B. Batch „entsperren + löschen“, ausgenommen)
                 let flags = op_dbg.contains("SetTrackFlags");

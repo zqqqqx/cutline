@@ -273,10 +273,12 @@ impl EditOp {
                 {
                     return Err(CoreError::InvalidDuration);
                 }
+                let len = p.find_clip(clip).and_then(|(_, c)| source_length(p, c));
                 let c = clip_mut(p, clip)?;
                 c.start = start;
                 c.duration = duration;
                 c.source_in = source_in;
+                clamp_to_source(c, len);
                 let magnet = p.settings.main_track_magnet;
                 for t in &mut p.timeline.tracks {
                     t.sort();
@@ -821,6 +823,16 @@ fn source_length(p: &Project, c: &Clip) -> Option<Time> {
     }
 }
 
+/// Video/Ton: Dauer höchstens bis zum Quellende ab `source_in` (Tempo beachtet).
+fn clamp_to_source(c: &mut Clip, len: Option<Time>) {
+    if let Some(len) = len {
+        let max = Time(((len - c.source_in).0 as f64 / c.speed.max(0.01) as f64).floor() as i64);
+        if max > Time::ZERO && c.duration > max {
+            c.duration = max;
+        }
+    }
+}
+
 fn ensure_unlocked(t: &Track) -> Result<()> {
     if t.locked {
         Err(CoreError::TrackLocked)
@@ -911,6 +923,8 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip) -> Result<O
     if clip.duration <= Time::ZERO || clip.duration > Time::LIMIT || clip.start > Time::LIMIT {
         return Err(CoreError::InvalidDuration);
     }
+    let len = source_length(p, &clip);
+    clamp_to_source(&mut clip, len);
     // Doppelte Kennung (z. B. dieselbe Op zweimal) bekäme sonst zwei Clips mit einer ID
     if p.find_clip(clip.id).is_some() {
         clip.id = ClipId::new();

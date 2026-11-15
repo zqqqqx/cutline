@@ -214,9 +214,9 @@ fn undo_and_redo_on_empty_history() {
     assert_eq!(d.step(-5), 0);
     assert_eq!(d.step(5), 0);
     assert_eq!(d.revision(), 0);
-    // Batch ohne Ops ist ein gültiger, leerer Schritt
+    // Batch ohne Ops ist gültig, ändert aber nichts: kein Verlaufsschritt
     apply(&mut d, EditOp::Batch { label: String::new(), ops: vec![] });
-    assert_eq!(d.undo().unwrap(), "Mehrere Änderungen");
+    assert_eq!(d.undo(), Err(CoreError::NothingToUndo));
     // Verlauf ist begrenzt: der älteste Schritt fällt heraus
     d.max_history = 3;
     for i in 0..5 {
