@@ -102,6 +102,20 @@ fn norm_vol(n: f32) -> f32 {
 fn vol_y(body: Rect, db: f32) -> f32 {
     body.bottom() - 3.0 - vol_norm(db) * (body.height() - 6.0)
 }
+/// Beschriftung eines Hauptstrichs im Lineal: mm:ss, bei Schritten unter 1 s mit so vielen
+/// Nachkommastellen, wie der Schritt braucht (0,25 s → zwei). Sekunden abgeschnitten, nicht gerundet.
+fn ruler_label(t: f64, step: f64) -> String {
+    let digits = if step >= 1.0 { 0 } else if (step * 10.0).fract().abs() < 1e-9 { 1 } else { 2 };
+    let unit = 10i64.pow(digits);
+    let n = (t.max(0.0) * unit as f64).round() as i64;
+    let secs = n / unit;
+    let mm_ss = format!("{:02}:{:02}", secs / 60, secs % 60);
+    match digits {
+        0 => mm_ss,
+        d => format!("{mm_ss}.{:0w$}", n % unit, w = d as usize),
+    }
+}
+
 /// Zeiger greift die Lautstärkelinie nur dicht daran; auf flachen Clips (Tonspur) liegt die
 /// Linie sonst mitten im Clip und Ziehen in der Mitte verschiebt den Clip nicht mehr.
 fn vol_line_hit(body: Rect, db: f32, y: f32) -> bool {
@@ -1309,7 +1323,9 @@ impl App {
         .find(|s| *s as f32 * pps >= 70.0)
         .unwrap_or(1200.0);
         let minor = step / 5.0;
-        let mut t = (scroll / minor).floor() * minor;
+        // Zeit aus dem Strichindex statt aufsummiert: keine Rundungsfehler bei vielen Strichen
+        let mut k = (scroll / minor).floor() as i64;
+        let mut t = k as f64 * minor;
         let rp = painter.with_clip_rect(Rect::from_min_max(
             pos2(x0, rect.top()),
             pos2(rect.right(), ruler.bottom()),
@@ -1317,7 +1333,7 @@ impl App {
         while tx(t) < rect.right() {
             let x = tx(t);
             if x >= x0 - 1.0 {
-                let major = ((t / step).round() * step - t).abs() < 1e-6;
+                let major = k.rem_euclid(5) == 0;
                 let hh = if major { 7.0 } else { 3.0 };
                 rp.line_segment(
                     [pos2(x, ruler.bottom() - hh), pos2(x, ruler.bottom())],
@@ -1331,17 +1347,7 @@ impl App {
                     ),
                 );
                 if major {
-                    let secs = t.round() as i64;
-                    let label = if step < 1.0 {
-                        format!(
-                            "{:02}:{:02}.{:01}",
-                            secs / 60,
-                            secs % 60,
-                            ((t.fract()) * 10.0).round() as i64 % 10
-                        )
-                    } else {
-                        format!("{:02}:{:02}", secs / 60, secs % 60)
-                    };
+                    let label = ruler_label(t, step);
                     rp.text(
                         pos2(x + 3.0, ruler.top() + 3.0),
                         egui::Align2::LEFT_TOP,
@@ -1351,7 +1357,8 @@ impl App {
                     );
                 }
             }
-            t += minor;
+            k += 1;
+            t = k as f64 * minor;
         }
         painter.line_segment(
             [
@@ -2853,6 +2860,21 @@ mod tests {
         assert!((vol_norm(VOL_MAX) - 1.0).abs() < 1e-6);
         // alte Werte über +12 dB bleiben gespeichert, die Linie steht nur oben an
         assert!((vol_norm(20.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ruler_labels_rise_strictly() {
+        assert_eq!(ruler_label(0.75, 0.25), "00:00.75");
+        assert_eq!(ruler_label(1.5, 0.5), "00:01.5");
+        assert_eq!(ruler_label(61.0, 1.0), "01:01");
+        // jede Schrittweite: aufeinanderfolgende Hauptstriche streng aufsteigend, keine doppelten Texte
+        for step in [0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0] {
+            let minor = step / 5.0;
+            let labels: Vec<String> = (0..2000i64).filter(|k| k % 5 == 0).map(|k| k as f64 * minor).take_while(|t| *t < 5990.0).map(|t| ruler_label(t, step)).collect();
+            for w in labels.windows(2) {
+                assert!(w[0] < w[1], "{step}: {} vor {}", w[0], w[1]);
+            }
+        }
     }
 
     #[test]
