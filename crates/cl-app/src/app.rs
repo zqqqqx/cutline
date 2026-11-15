@@ -2394,6 +2394,11 @@ impl App {
             }
             return;
         }
+        // Ausgabe ließ sich nicht öffnen: ohne Ton nach Systemzeit weiter
+        if self.audio.as_ref().is_some_and(|a| a.failed()) {
+            self.audio = None;
+            self.play_clock = Some((Instant::now(), self.playhead));
+        }
         match &self.audio {
             Some(a) if a.started() => self.playhead = a.position(),
             Some(_) => {} // Ton startet gleich, Bild wartet
