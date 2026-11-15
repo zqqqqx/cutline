@@ -1483,8 +1483,8 @@ impl App {
                     theme::empty_state(
                         ui,
                         icon::STICKER,
-                        "Keine Sticker gefunden",
-                        "Eigene Bilder per Knopf oder Ablegen hinzufügen",
+                        "Keine Elemente gefunden",
+                        "",
                     );
                 }
                 widgets::grid(ui, &items, 70.0, 1.0, 16.0, |ui, r, it| {

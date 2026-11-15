@@ -10,3 +10,9 @@
 
 - Lizenz: CC0-1.0
 - Autor: Cutline-Projekt
+
+## Bewegte Elemente (cutline.elemente)
+
+- Lizenz: CC0-1.0
+- Autor: Cutline-Projekt
+- Quelle: https://github.com/zqqqqx/cutline

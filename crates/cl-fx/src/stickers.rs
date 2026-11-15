@@ -450,9 +450,14 @@ fn options() -> &'static resvg::usvg::Options<'static> {
 
 /// Beliebiges SVG quadratisch rendern (vormultipliziertes RGBA).
 pub fn render_svg(svg: &str, size: u32) -> Option<Vec<u8>> {
+    render_svg_wh(svg, size, size)
+}
+
+/// SVG in `w`×`h` Pixel rendern, eingepasst an der oberen linken Ecke (vormultipliziertes RGBA).
+pub fn render_svg_wh(svg: &str, w: u32, h: u32) -> Option<Vec<u8>> {
     let tree = resvg::usvg::Tree::from_str(svg, options()).ok()?;
-    let mut pm = resvg::tiny_skia::Pixmap::new(size, size)?;
-    let s = size as f32 / tree.size().width().max(tree.size().height());
+    let mut pm = resvg::tiny_skia::Pixmap::new(w, h)?;
+    let s = (w as f32 / tree.size().width()).min(h as f32 / tree.size().height());
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::from_scale(s, s),
@@ -516,5 +521,29 @@ mod tests {
         render_png(&STICKERS[0], 256, &p).unwrap();
         assert!(std::fs::metadata(&p).unwrap().len() > 500);
         assert!(STICKERS.len() >= 24);
+    }
+
+    /// Paket „Bewegte Elemente“: jede Datei ist ein bewegtes Bild, Schleife genau dort, wo das
+    /// Manifest „schleife“ sagt, Größenbudget 6 MB (neu erzeugen: Beispiel `gen_elemente`).
+    #[test]
+    fn animated_elements_pack_is_consistent() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/cutline-elemente");
+        let toml = std::fs::read_to_string(root.join("plugin.toml")).unwrap();
+        let (mut n, mut bytes) = (0, 0);
+        for block in toml.split("[[asset]]").skip(1) {
+            let file = block
+                .lines()
+                .find_map(|l| l.strip_prefix("file = \""))
+                .map(|f| f.trim_end_matches('"'))
+                .unwrap();
+            let path = root.join(file);
+            let a = cl_media::animation(&path).unwrap_or_else(|| panic!("{file}: kein bewegtes Bild"));
+            assert_eq!(a.looping, block.contains("\"schleife\""), "{file}");
+            assert!(a.duration.as_secs_f64() >= 0.5, "{file}");
+            bytes += std::fs::metadata(&path).unwrap().len();
+            n += 1;
+        }
+        assert!(n >= 30, "{n} Elemente");
+        assert!(bytes <= 6 << 20, "{bytes} Bytes");
     }
 }
