@@ -273,7 +273,7 @@ pub(crate) mod win {
     /// Abstand der Suchläufe: kurz nach einem Start dicht, danach seltener.
     pub(crate) fn scan_pause(since_hint: Duration) -> Duration {
         Duration::from_millis(match since_hint.as_millis() {
-            0..=50 => 4,
+            0..=50 => 10,
             51..=300 => 25,
             _ => 200,
         })
