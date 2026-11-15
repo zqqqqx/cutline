@@ -141,6 +141,18 @@ pub(crate) fn progress_text(done: u64, total: u64, comma: bool) -> String {
     format!("{pct:.0} % · {} / {total_mb}", done_mb.trim_end_matches(" MB"))
 }
 
+/// Ergebnis der Suche → Zustand (kurze Meldung) und Protokollzeile (mit Rohtext, etwa TLS-/Proxy-/DNS-Fehler)
+fn check_outcome(r: Result<Option<Release>, String>) -> (UpdateState, String) {
+    match r {
+        Ok(Some(rel)) => {
+            let line = format!("Version {} verfügbar", rel.version);
+            (UpdateState::Available(Box::new(rel)), line)
+        }
+        Ok(None) => (UpdateState::UpToDate, "aktuell".into()),
+        Err(e) => (UpdateState::Error(cl_update::friendly(&e), None), format!("Fehler {e}")),
+    }
+}
+
 fn fraction(done: u64, total: u64) -> Option<f32> {
     (total > 1).then(|| (done.min(total) as f64 / total as f64) as f32)
 }
@@ -185,12 +197,9 @@ impl Updater {
                 Some(_) => Ok(Some(fake_release())),
                 None => cl_update::check(current_version()),
             };
-            let r = match r {
-                Ok(Some(rel)) => UpdateState::Available(Box::new(rel)),
-                Ok(None) => UpdateState::UpToDate,
-                Err(e) => UpdateState::Error(crate::applog::warned("update", cl_update::friendly(&e)), None),
-            };
-            log::info!(target: "update", "Suche: {}", match &r { UpdateState::Available(rel) => format!("Version {} verfügbar", rel.version), UpdateState::Error(e, _) => format!("Fehler {e}"), _ => "aktuell".into() });
+            let (r, line) = check_outcome(r);
+            let level = if matches!(r, UpdateState::Error(..)) { log::Level::Warn } else { log::Level::Info };
+            log::log!(target: "update", level, "Suche: {line}");
             *state.lock().unwrap() = r;
             *checked.lock().unwrap() = Some(SystemTime::now());
             ctx.request_repaint();
@@ -659,6 +668,15 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_search_keeps_the_raw_error_for_the_log() {
+        let raw = "https://api.github.com/x: Connection Failed: tls handshake eof";
+        let (st, line) = check_outcome(Err(raw.into()));
+        assert!(matches!(&st, UpdateState::Error(m, None) if m == "Keine Verbindung"));
+        assert!(line.contains("tls handshake eof"), "{line}");
+        assert!(matches!(check_outcome(Ok(None)), (UpdateState::UpToDate, l) if l == "aktuell"));
+    }
 
     #[test]
     fn sizes_and_progress_read_well() {
