@@ -3161,6 +3161,7 @@ impl eframe::App for App {
         self.tour_overlay(ctx);
         self.drag_ghost(ctx);
         self.draw_toasts(ctx);
+        theme::focus_ring(ctx);
         self.sync_project();
         self.autosave();
     }

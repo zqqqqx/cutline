@@ -352,6 +352,29 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
+/// Tastaturbedienung an? Tab schaltet ein, ein Mausklick wieder aus (dann kein Rahmen um den
+/// zuletzt geklickten Knopf).
+fn keyboard_nav(was: bool, tab: bool, click: bool) -> bool {
+    (was || tab) && !click
+}
+
+/// Sichtbarer Fokusrahmen (Akzent) um das Element mit Tastaturfokus, solange mit Tab bedient wird.
+pub fn focus_ring(ctx: &egui::Context) {
+    let key = egui::Id::new("keyboard-nav");
+    let (tab, click) = ctx.input(|i| (i.key_pressed(egui::Key::Tab), i.pointer.any_pressed()));
+    let on = keyboard_nav(ctx.data(|d| d.get_temp::<bool>(key)).unwrap_or(false), tab, click);
+    ctx.data_mut(|d| d.insert_temp(key, on));
+    if let Some(r) = on.then(|| ctx.memory(|m| m.focused())).flatten().and_then(|id| ctx.read_response(id)) {
+        let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("focus-ring"));
+        ctx.layer_painter(layer).rect_stroke(
+            r.rect.expand(2.0),
+            R_CTRL,
+            Stroke::new(1.5_f32, ACCENT()),
+            egui::StrokeKind::Outside,
+        );
+    }
+}
+
 /// Karte (abgerundet, schwebend). `margin` = Innenabstand.
 pub fn card(margin: i8) -> egui::Frame {
     egui::Frame::default()
@@ -961,6 +984,14 @@ pub fn window_icon() -> Option<egui::IconData> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focus_ring_only_while_using_keyboard() {
+        assert!(!keyboard_nav(false, false, false));
+        assert!(keyboard_nav(false, true, false));
+        assert!(keyboard_nav(true, false, false), "bleibt an bis zum Klick");
+        assert!(!keyboard_nav(true, false, true));
+    }
 
     #[test]
     fn elide_and_fit_stay_inside() {
