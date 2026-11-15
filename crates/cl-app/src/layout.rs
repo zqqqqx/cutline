@@ -160,11 +160,6 @@ impl App {
         if crate::widgets::toggle_row(ui, "Layout sperren", &mut self.settings.layout_locked) {
             self.settings.save();
         }
-        ui.label(
-            RichText::new(crate::tr("Gesperrt lassen sich die Bereiche nicht mehr versehentlich in der Größe verziehen."))
-                .size(theme::FS_HINT)
-                .color(theme::TEXT_DIM()),
-        );
     }
 
     /// Profil übernehmen (Größen werden im nächsten Bild gesetzt)
@@ -225,9 +220,7 @@ impl App {
                                         l.timeline_full = !l.timeline_full;
                                     }
                                 }
-                                _ => {
-                                    ui.label(RichText::new(crate::tr("Ränder ziehen zum Ändern der Größe")).small().color(theme::TEXT_DIM()));
-                                }
+                                _ => {}
                             });
                         });
                     });

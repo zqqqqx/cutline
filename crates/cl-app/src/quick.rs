@@ -341,7 +341,7 @@ impl App {
                         }
                     }
                     QuickKind::Ducking => {
-                        ui.label(RichText::new(crate::tr("Musik-Clip auswählen. Abgesenkt wird, wo auf anderen Tonspuren gesprochen wird.")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
+                        ui.label(RichText::new(crate::tr("Wirkt auf den ausgewählten Musik-Clip")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
                         theme::row(ui, "Absenkung", |ui| {
                             Slider::new(&mut q.duck_db, 1.0..=40.0).default(12.0).suffix(" dB").show(ui);
                         });
@@ -390,7 +390,6 @@ impl App {
                             }
                         });
                         if multi {
-                            ui.label(RichText::new(crate::tr("Bei mehreren Spuren wird nur geschnitten, wo alle still sind")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
                         }
                     }
                 }

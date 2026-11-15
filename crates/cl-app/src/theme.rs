@@ -719,30 +719,29 @@ pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     )
 }
 
-/// Weicher Rand (18 px) an waagrecht scrollbaren Zeilen auf Kartengrund: zeigt, dass links
-/// bzw. rechts noch mehr kommt. Ändert nichts an der Bedienung.
-pub fn edge_fade<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput<R>) {
-    let (r, x) = (out.inner_rect, out.state.offset.x);
-    let more_right = out.content_size.x - r.width() - x > 1.0;
-    for (show, left) in [(x > 1.0, true), (more_right, false)] {
+/// Pfeil-Knöpfe an waagrecht scrollbaren Zeilen auf Kartengrund: zeigen, dass links bzw. rechts
+/// noch mehr kommt, und blättern per Klick weiter. Deckend, damit daneben kein halber Eintrag steht.
+pub fn edge_arrows<R>(ui: &mut egui::Ui, out: &mut egui::scroll_area::ScrollAreaOutput<R>) {
+    // `inner_rect` reicht bei `auto_shrink(false)` über die Zeile hinaus: Höhe aus dem Inhalt nehmen
+    let (mut r, x) = (out.inner_rect, out.state.offset.x);
+    r.set_height(out.content_size.y);
+    let max = out.content_size.x - r.width();
+    for (show, dir, glyph) in [(x > 1.0, -1.0, icon::CARET_LEFT), (max - x > 1.0, 1.0, icon::CARET_RIGHT)] {
         if !show {
             continue;
         }
-        let w = 18.0;
-        let f = if left {
-            Rect::from_min_size(r.min, vec2(w, r.height()))
-        } else {
-            Rect::from_min_size(pos2(r.right() - w, r.top()), vec2(w, r.height()))
-        };
-        let (a, b) = if left { (BG_CARD(), Color32::TRANSPARENT) } else { (Color32::TRANSPARENT, BG_CARD()) };
-        let mut m = egui::Mesh::default();
-        m.colored_vertex(f.left_top(), a);
-        m.colored_vertex(f.right_top(), b);
-        m.colored_vertex(f.right_bottom(), b);
-        m.colored_vertex(f.left_bottom(), a);
-        m.add_triangle(0, 1, 2);
-        m.add_triangle(0, 2, 3);
-        ui.painter().add(m);
+        let w = 20.0;
+        let left = if dir < 0.0 { r.left() } else { r.right() - w };
+        let b = Rect::from_min_size(pos2(left, r.top()), vec2(w, r.height()));
+        ui.painter().rect_filled(b, 0.0, BG_CARD());
+        let resp = ui.interact(b, out.id.with(glyph), egui::Sense::click());
+        let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
+        // Icon-Glyphe: 14 px wie in `icon_button`
+        ui.painter().text(b.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(14.0), col);
+        if resp.clicked() {
+            out.state.offset.x = (x + dir * r.width() * 0.7).clamp(0.0, max);
+            out.state.store(ui.ctx(), out.id);
+        }
     }
 }
 

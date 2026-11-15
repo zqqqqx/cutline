@@ -406,20 +406,12 @@ impl App {
 
     /// Abschnitte in Einstellungen → Plugins und Konten
     pub fn stock_settings(&mut self, ui: &mut egui::Ui) {
-        for (which, title, about, url) in [
-            (FREESOUND, "Freesound", "Hunderttausende Soundeffekte unter Creative-Commons-Lizenzen. Lizenz und Urheber stehen bei jedem Treffer.", "https://freesound.org/apiv2/apply/"),
-            (PEXELS, "Pexels", "Kostenlose Stock-Videos und -Fotos (Pexels-Lizenz, Nennung freiwillig).", "https://www.pexels.com/api/"),
+        for (which, title, url) in [
+            (FREESOUND, "Freesound", "https://freesound.org/apiv2/apply/"),
+            (PEXELS, "Pexels", "https://www.pexels.com/api/"),
         ] {
-            theme::section(ui, title);
-            let mut on = self.stock_enabled(which);
-            if widgets::toggle_row(ui, "Plugin aktiv", &mut on) {
-                let id = self.plugins.plugins.iter().find(|p| p.manifest.plugin.entry.as_deref() == Some(&format!("builtin:{which}"))).map(|p| p.manifest.plugin.id.clone());
-                if let Some(id) = id {
-                    self.set_plugin_enabled(&id, on);
-                }
-            }
-            ui.label(RichText::new(crate::tr(about)).small().color(theme::TEXT_DIM()));
-            if on {
+            if self.stock_enabled(which) {
+                theme::section(ui, title);
                 let k = if which == FREESOUND { &mut self.stock.keys.freesound } else { &mut self.stock.keys.pexels };
                 let mut changed = false;
                 theme::row(ui, "API-Schlüssel", |ui| {

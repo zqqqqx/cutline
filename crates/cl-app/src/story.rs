@@ -218,22 +218,10 @@ impl App {
 
     /// Abschnitt in Einstellungen → Plugins und Konten
     pub fn story_settings(&mut self, ui: &mut egui::Ui) {
-        theme::section(ui, "Story-Werkzeuge");
-        let mut on = enabled(self);
-        if widgets::toggle_row(ui, "Plugin aktiv", &mut on) {
-            let id = self
-                .plugins
-                .plugins
-                .iter()
-                .find(|p| p.manifest.plugin.entry.as_deref() == Some("builtin:story"))
-                .map(|p| p.manifest.plugin.id.clone());
-            if let Some(id) = id {
-                self.set_plugin_enabled(&id, on);
-            }
-        }
-        if !on {
+        if !enabled(self) {
             return;
         }
+        theme::section(ui, "Story-Werkzeuge");
         let mut changed = false;
         let mut remove = None;
         for (i, c) in self.characters.iter_mut().enumerate() {

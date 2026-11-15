@@ -63,7 +63,7 @@ impl App {
         let cur = c.keyframes.0.values().find_map(|l| segment(l, t).map(|i| (l[i], l[i + 1])));
         let Some((a, b)) = cur else {
             ui.label(
-                RichText::new(crate::tr("Setze einen zweiten Keyframe an einer anderen Stelle – dann kannst du hier wählen, wie die Bewegung dazwischen abläuft."))
+                RichText::new(crate::tr("Braucht zwei Keyframes"))
                     .small()
                     .color(theme::TEXT_DIM()),
             );
@@ -115,7 +115,7 @@ impl App {
             .id_salt("curve-adv")
             .show(ui, |ui| {
                 let Some((mut x1, mut y1, mut x2, mut y2)) = a.ease.bezier() else {
-                    ui.label(RichText::new(crate::tr("„Halten“ hat keine Kurve. Wähle oben eine andere Form.")).small().color(theme::TEXT_DIM()));
+                    ui.label(RichText::new(crate::tr("„Halten“ hat keine Kurve")).small().color(theme::TEXT_DIM()));
                     return;
                 };
                 let w = ui.available_width().min(230.0);

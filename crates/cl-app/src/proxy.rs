@@ -231,7 +231,6 @@ impl App {
                 self.invalidate_preview();
             }
         });
-        ui.label(RichText::new(crate::tr("Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes. Der Export nutzt immer die Originale.")).small().color(theme::TEXT_DIM()));
         // Ordner höchstens alle 2 s zählen
         let (n, bytes) = match self.proxy_stats {
             Some((t, n, b)) if t.elapsed() < std::time::Duration::from_secs(2) => (n, b),

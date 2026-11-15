@@ -115,7 +115,6 @@ Musikordner wird durchsucht …	Scanning music folder …
 Keine Musik gefunden	No music found
 Lege Dateien in deinen Musik-Ordner oder importiere sie	Put files in your Music folder or import them
 {} Titel aus deinem Musik-Ordner	{} tracks from your Music folder
-Am Playhead einsprechen, die Waveform wächst live mit (R)	Record at the playhead, the waveform grows live (R)
 Noch keine Aufnahmen in diesem Projekt	No recordings in this project yet
 Ziehen oder + fügt am Playhead ein	Drag or press + to insert at the playhead
 Schrift importieren	Import font
@@ -437,7 +436,6 @@ Server startet …	Server starting …
 Ohne laufende App (stdio)	Without the running app (stdio)
 Werkzeuge: Projekt lesen, Medien importieren, Clips einfügen, teilen, trimmen, löschen, Format setzen, beliebige EditOps, Rückgängig/Wiederholen.	Tools: read project, import media, insert, split, trim and delete clips, set format, arbitrary EditOps, undo/redo.
 Version {} · MPL-2.0	Version {} · MPL-2.0
-Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner. Lokale KI für Untertitel, Freistellen und Entrauschen – nichts wird hochgeladen; keine erzeugende KI.	The open video editor for creators. Easy to use, fast, and entirely on your machine. Local AI for captions, cut-outs and noise removal – nothing is uploaded; no generative AI.
 {} Effekte · {} Filter · {} Übergänge · {} Sticker · {} Soundeffekte · {} Textvorlagen	{} effects · {} filters · {} transitions · {} stickers · {} sound effects · {} text templates
 {} Effekte	{} effects
 {} Filter	{} filters
@@ -499,7 +497,6 @@ Neue Version verfügbar	New version available
 Neu starten ({})	Restart ({})
 Update ist installiert. Cutline neu starten	Update installed. Restart Cutline
 Beim Start automatisch nach Updates suchen	Check for updates on startup
-Dabei wird nur die Release-Liste auf GitHub abgefragt. Installiert wird erst nach deiner Bestätigung, jedes Paket wird per SHA-256 geprüft.	This only queries the release list on GitHub. Nothing is installed until you confirm, and every package is verified with SHA-256.
 Noch nicht gesucht	Not checked yet
 Suche nach Updates …	Checking for updates …
 Cutline ist aktuell	Cutline is up to date
@@ -797,8 +794,6 @@ nur Ton	audio only
 # Integrationen und Bibliothek
 Plugins und Konten	Plugins and accounts
 Integration	Integration
-Einrichten	Set up
-Plugin aktiv	Plugin enabled
 Anmeldung	Sign-in
 Epidemic-Konto	Epidemic account
 API-Schlüssel	API key
@@ -810,9 +805,6 @@ Mit Epidemic Sound verbinden	Connect to Epidemic Sound
 Mit Epidemic Sound verbunden	Connected to Epidemic Sound
 Anmeldung im Browser abschließen …	Finish signing in in your browser …
 Integrationen verbinden Cutline mit Diensten, für die du ein eigenes Konto brauchst. Sie sind ausgeschaltet, bis du sie unter Plugins aktivierst.	Integrations connect Cutline to services that need your own account. They stay off until you turn them on under Plugins.
-Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechner.	For partners and your own developer apps. The key stays on this computer.
-Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.	Exports with Epidemic music are reported to Epidemic Sound (track IDs only), as their terms require.
-Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.	Client ID of your app in the Epidemic Developer Portal; register {} there as the redirect URI.
 Epidemic Sound ist noch nicht verbunden	Epidemic Sound isn't connected yet
 Melde dich unter Einstellungen → Plugins und Konten an	Sign in under Settings → Plugins and accounts
 Entdecken	Discover
@@ -919,7 +911,6 @@ Auswahl aufheben	Clear selection
 Vorlage	Preset
 Premiere-ähnlich	Premiere-like
 Resolve-ähnlich	Resolve-like
-Klicke auf eine Belegung und drücke die neue Taste. Entf entfernt die Belegung, Esc bricht ab.	Click a binding and press the new key. Delete removes the binding, Esc cancels.
 Taste drücken …	Press a key …
 Standard wiederherstellen	Restore default
 Außerdem: Strg+C / X / V kopieren, ausschneiden, einfügen · Strg+Mausrad zoomt die Zeitleiste · Umschalt+Mausrad scrollt waagerecht · Alt+Umschalt+Z passt den Player ein	Also: Ctrl+C / X / V copy, cut, paste · Ctrl+wheel zooms the timeline · Shift+wheel scrolls horizontally · Alt+Shift+Z fits the player
@@ -972,7 +963,6 @@ Zu Ordner hinzufügen	Add to folder
 Aus „{}“ entfernen	Remove from “{}”
 Zu „{}“ hinzugefügt	Added to “{}”
 Ordner gibt es schon	Folder already exists
-Eingebaute Kategorien bekommen nur einen eigenen Anzeigenamen.	Built-in categories only get a custom display name.
 Der Ordner „{}“ wird entfernt. Die Einträge darin bleiben erhalten.	The folder “{}” will be removed. The items in it are kept.
 Eingebaute Kategorien lassen sich nur verbergen	Built-in categories can only be hidden
 Unbekannte Kategorie	Unknown category
@@ -1097,8 +1087,6 @@ Unter Einstellungen → Plugins und Konten eintragen	Enter it under Settings →
 Einrichten …	Set up …
 Suchbegriff eingeben und Enter drücken	Type a search term and press Enter
 Laden und am Playhead einfügen	Download and insert at the playhead
-Hunderttausende Soundeffekte unter Creative-Commons-Lizenzen. Lizenz und Urheber stehen bei jedem Treffer.	Hundreds of thousands of sound effects under Creative Commons licenses. License and author are shown with every result.
-Kostenlose Stock-Videos und -Fotos (Pexels-Lizenz, Nennung freiwillig).	Free stock videos and photos (Pexels license, attribution optional).
 Schlüssel beantragen	Request a key
 Shorts / TikTok / Reels (1080×1920)	Shorts / TikTok / Reels (1080×1920)
 Instagram-Beitrag (1080×1350)	Instagram post (1080×1350)
@@ -1107,7 +1095,6 @@ Kleine Datei zum Teilen (720p)	Small file for sharing (720p)
 Plattform wählen …	Choose platform …
 Das Projekt hat ein anderes Seitenverhältnis – für Hochkant: Werkzeuge → Hochkant-Layout	The project has a different aspect ratio – for vertical: Tools → Vertical layout
 Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Synchronisieren, Multicam, Hochkant, Thumbnail …	Remove pauses, filler words, auto-ducking, highlights, sync, multicam, vertical, thumbnail …
-Integration · {}	Integration · {}
 Daumen hoch	Thumbs up
 Abo-Knopf	Subscribe button
 Glocke	Bell
@@ -1182,7 +1169,6 @@ Rundgang starten	Start tour
 Übernimmt die Auswahl und zeigt dir die Bereiche des Editors	Applies your choices and shows you around the editor
 Ohne Rundgang fertig	Finish without tour
 Passend für dich	Picked for you
-Alles ist optional und jederzeit unter Einstellungen und Plugins änderbar. Plugins sind ohne dein Okay immer aus.	Everything is optional and can be changed any time under Settings and Plugins. Plugins stay off without your okay.
 Einschalten und laden	Turn on and download
 bereits aktiv	already active
 Schon eingebaut	Already built in
@@ -1220,7 +1206,6 @@ Zuletzt	Recent
 Zuletzt verwendet	Recently used
 Sounds	Sounds
 Epidemic	Epidemic
-aus Markern, werden eingebettet	from markers, embedded in the file
 YouTube braucht mindestens 3 Kapitel	YouTube needs at least 3 chapters
 YouTube: jedes Kapitel muss mindestens 10 s lang sein	YouTube: every chapter must be at least 10 s long
 Für die Videobeschreibung	For the video description
@@ -1250,13 +1235,6 @@ Sprache betonen, Hintergrund absenken	Bring out speech, lower the background
 Tiefe Störgeräusche unter 90 Hz entfernen	Remove low noise below 90 Hz
 Gilt für alle ausgewählten Clips	Applies to all selected clips
 Vorschau angenähert, Export exakt	Preview approximated, export exact
-Story-Werkzeuge, Pexels und Epidemic Sound sind Plugins: hier oder im Reiter Plugins einschalten. Pexels und Epidemic Sound brauchen ein eigenes Konto.	Story tools, Pexels and Epidemic Sound are plugins: turn them on here or in the Plugins tab. Pexels and Epidemic Sound need their own account.
-Export immer in voller Auflösung	Export always uses full resolution
-Nur auf diesem Rechner erreichbar (127.0.0.1), mit Token. Jede Änderung lässt sich rückgängig machen.	Only reachable on this computer (127.0.0.1), with a token. Every change can be undone.
-Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes. Der Export nutzt immer die Originale.	For videos above 1080p, above 30 fps or in HEVC/AV1/ProRes. Export always uses the originals.
-Alle 5 Minuten bei Änderungen, die letzten 30 Stände	Every 5 minutes when changed, the last 30 versions
-Läuft lokal auf deinem Rechner, es werden keine Daten hochgeladen.	Runs locally on your computer, no data is uploaded.
-Programmeigene Effekte und Vorlagen werden nicht übernommen.	The other program's own effects and templates are not imported.
 ab {}	from {}
 Auswählen	Select
 Alle Clips links auswählen	Select all clips to the left
@@ -1302,7 +1280,6 @@ Dunkelgrau	Dark gray
 Standard	Default
 Zurück in den Datenordner	Back to the data folder
 Neuer Projektordner	New projects folder
-Vorhandene Projekte werden mit verschoben.	Existing projects are moved along.
 Sicherung alle	Backup every
 Neue Projekte	New projects
 Kanäle	Channels
@@ -1311,7 +1288,6 @@ Projekt-Standard	Project default
 Stereo	Stereo
 Nur links	Left only
 Nur rechts	Right only
-Standard für neue Projekte. „Automatisch“ legt Ton, der nur auf einer Seite aufgenommen wurde, auf beide Ohren. Pro Clip änderbar.	Default for new projects. “Automatic” puts sound that was recorded on one side only on both ears. Can be changed per clip.
 „Automatisch“ legt Ton, der nur links oder rechts aufgenommen wurde, auf beide Ohren	“Automatic” puts sound recorded only on the left or right on both ears
 Cache	Cache
 Belegt	Used
@@ -1322,18 +1298,15 @@ Schnell · 540p	Fast · 540p
 Ausgewogen · 720p	Balanced · 720p
 Hoch · 1080p	High · 1080p
 Proxy konnte nicht erstellt werden	Proxy could not be created
-Verknüpfte Ordner erscheinen in allen Projekten (Medien → Bibliothek, Sticker, Audio → Sounds). Die Dateien bleiben, wo sie sind.	Linked folders appear in every project (Media → Library, Stickers, Audio → Sounds). The files stay where they are.
 Verknüpfung lösen	Unlink
 Ordner verknüpfen …	Link folder …
 Downloads in die Bibliothek übernehmen	Add downloads to the library
-Musik von Epidemic Sound und Videos von Pexels stehen dann auch in anderen Projekten bereit. Freesound-Sounds landen immer in der Bibliothek.	Music from Epidemic Sound and videos from Pexels are then available in other projects too. Freesound sounds always go to the library.
 Dateien zur Bibliothek hinzufügen (auch per Ablegen)	Add files to the library (or drop them here)
 Zur Bibliothek hinzufügen	Add to library
 In allen Projekten unter Medien → Bibliothek	In every project under Media → Library
 Zur Bibliothek hinzugefügt	Added to library
 Datei nicht gefunden	File not found
 Bibliothek ist leer	Library is empty
-Dateien hier ablegen, Rechtsklick auf ein Medium → Zur Bibliothek, oder in den Einstellungen einen Ordner verknüpfen	Drop files here, right-click a media item → Add to library, or link a folder in the settings
 Medien rechts	Media on the right
 Lange Zeitleiste	Long timeline
 Klick spielt ab · Doppelklick, + oder Ziehen fügt ein	Click to play · double-click, + or drag to add
@@ -1378,7 +1351,6 @@ Auf die andere Seite	To the other side
 Nach unten	Down
 Nach oben	Up
 Volle Breite	Full width
-Ränder ziehen zum Ändern der Größe	Drag the edges to resize
 Layout bearbeiten …	Edit layout …
 Bearbeitungsverlauf	Edit history
 Jetzt	Now
@@ -1390,7 +1362,6 @@ Schritte	steps
 Bis hier wiederholen	Redo up to here
 Zu diesem Stand zurück	Go back to this state
 Alle Schritte rückgängig	Undo all steps
-Jede Änderung erscheint hier und lässt sich mit einem Klick zurückholen	Every change shows up here and can be brought back with one click
 {} {} Projekte verschoben	{} {} projects moved
 Der neue Ordner darf nicht im alten liegen (oder umgekehrt)	The new folder must not be inside the old one (or the other way round)
 Gaming	Gaming
@@ -1444,7 +1415,6 @@ Spur einklappen	Collapse track
 Spur ausklappen	Expand track
 Bewegung zwischen Keyframes	Motion between keyframes
 Abschnitt	Section
-Setze einen zweiten Keyframe an einer anderen Stelle – dann kannst du hier wählen, wie die Bewegung dazwischen abläuft.	Set a second keyframe somewhere else – then you can choose here how the motion in between plays out.
 Sanft	Smooth
 Anfahren	Ease in
 Abbremsen	Ease out
@@ -1461,7 +1431,6 @@ Schießt etwas übers Ziel und federt zurück	Shoots a little past the target an
 Holt kurz in die Gegenrichtung aus	Briefly swings in the opposite direction first
 Bleibt stehen und springt am nächsten Keyframe	Stays put and jumps at the next keyframe
 Eigene Kurve	Custom curve
-„Halten“ hat keine Kurve. Wähle oben eine andere Form.	“Hold” has no curve. Pick another shape above.
 Griffe ziehen: links der Start, rechts die Ankunft. Über die Linien hinaus = Ausholen bzw. Überschwingen.	Drag the handles: left is the start, right the arrival. Beyond the lines = anticipation or overshoot.
 Systemstandard	System default
 Ausgabegerät	Output device
@@ -1470,7 +1439,6 @@ Hinweiston, wenn ein Export fertig ist	Play a sound when an export is finished
 Automatisch leeren	Clear automatically
 Nie	Never
 Älter als {} Tage	Older than {} days
-Wird beim Programmstart geprüft.	Checked when the app starts.
 Animation (als Blende übernommen)	Animation (imported as a fade)
 Aufräumen	Clean up
 Diesen Namen gibt es schon	This name already exists
@@ -1493,7 +1461,6 @@ Standbild speichern …	Save still frame …
 Vorschau in eigenem Fenster	Preview in its own window
 Look anwenden	Apply look
 Projekt aus anderem Programm importieren …	Import project from another app …
-Die Vorschauqualität stellst du direkt am Player ein.	Set the preview quality right on the player.
 Akzentfarbe	Accent colour
 Eigene Farbe	Custom colour
 Weiß	White
@@ -1527,7 +1494,6 @@ Am Anfang	At start
 Am Playhead	At playhead
 Am Ende	At end
 Vorlage eingefügt	Template inserted
-Ton von (läuft durchgehend)	Audio from (plays throughout)
 Bereich entfernen	Remove range
 Alles mitziehen: Ripple-Schnitte verschieben alle Spuren und Marker	Move everything: ripple edits shift all tracks and markers
 Keine Lücken	No gaps
@@ -1562,14 +1528,12 @@ Datei existiert bereits	File already exists
 Überschreiben	Overwrite
 Anderen Namen	Different name
 {} Clips auf anderen Spuren mit entfernt (Alles mitziehen)	{} clips on other tracks removed as well (move everything)
-Musik-Clip auswählen. Abgesenkt wird, wo auf anderen Tonspuren gesprochen wird.	Select the music clip. It is lowered wherever other audio tracks have speech.
 Intro-Titel	Intro title
 Endkarte	End card
 Kapitel-Titel	Chapter title
 Lautheit	Loudness
 Clips mit Tempo-Kurve werden übersprungen	Clips with a speed curve are skipped
 Projekt hat sich geändert – bitte erneut ausführen	The project has changed – please run again
-Bei mehreren Spuren wird nur geschnitten, wo alle still sind	With several tracks, cuts are made only where all are silent
 Begleitdatei nicht gespeichert	Could not save companion file
 Lautheit konnte nicht gemessen werden	Could not measure loudness
 Keine Looks	No looks
@@ -1599,6 +1563,18 @@ Zeitleiste über die ganze Breite	Timeline across the full width
 Symbolleiste	Toolbar
 Seitlich	Side
 Layout sperren	Lock layout
-Gesperrt lassen sich die Bereiche nicht mehr versehentlich in der Größe verziehen.	When locked, the panels can no longer be resized by accident.
 Layout ist gesperrt (Einstellungen → Allgemein → Anordnung)	Layout is locked (Settings → General → Arrangement)
 Live-Vorschau	Live preview
+Diesen Bereich zurücksetzen	Reset this section
+Bereich zurückgesetzt	Section reset
+Weiterleitung	Redirect URI
+Vorhandene Projekte werden mit verschoben	Existing projects are moved along
+Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner.	The open video editor for creators. Easy to use, fast, entirely on your computer.
+Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs).	Exports with Epidemic music are reported to Epidemic Sound (track IDs only).
+Wirkt auf den ausgewählten Musik-Clip	Applies to the selected music clip
+Braucht zwei Keyframes	Needs two keyframes
+„Halten“ hat keine Kurve	“Hold” has no curve
+aus Markern	from markers
+Ton von	Audio from
+Alles ist optional und jederzeit in den Einstellungen änderbar.	Everything is optional and can be changed in Settings at any time.
+Dateien hierher ziehen	Drop files here

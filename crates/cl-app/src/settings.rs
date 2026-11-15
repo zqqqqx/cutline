@@ -202,11 +202,78 @@ impl AppSettings {
             .find(|l| l.code() == self.lang)
             .unwrap_or(cl_i18n::Lang::De)
     }
+    /// Setzt die Einstellungen eines Bereichs auf den Standard. Sprache, Projektordner, verknüpfte
+    /// Ordner und Konten bleiben, weil ein Klick sie nicht zurückbringt. `false`: nichts zum Zurücksetzen.
+    pub fn reset(&mut self, s: Section) -> bool {
+        let d = Self::default();
+        match s {
+            Section::General => {
+                self.theme = d.theme;
+                self.accent = d.accent;
+                self.animations = d.animations;
+                self.ui_scale = d.ui_scale;
+                self.start_on_home = d.start_on_home;
+                self.layout = d.layout;
+                self.layout_locked = d.layout_locked;
+            }
+            Section::Projects => {
+                self.autosave = d.autosave;
+                self.backup_minutes = d.backup_minutes;
+                self.backup_keep = d.backup_keep;
+                self.new_fps = d.new_fps;
+            }
+            Section::Library => self.lib_downloads = d.lib_downloads,
+            Section::Audio => {
+                self.audio_device = d.audio_device;
+                self.scrub_audio = d.scrub_audio;
+                self.export_sound = d.export_sound;
+                self.new_channels = d.new_channels;
+            }
+            Section::Editing => {
+                self.image_duration = d.image_duration;
+                self.text_duration = d.text_duration;
+                self.transition_duration = d.transition_duration;
+                self.anim_duration = d.anim_duration;
+            }
+            Section::Performance => {
+                self.use_proxies = d.use_proxies;
+                self.proxy_h = d.proxy_h;
+                self.cache_days = d.cache_days;
+            }
+            Section::Mcp => {
+                self.mcp_enabled = d.mcp_enabled;
+                self.mcp_port = d.mcp_port;
+                self.mcp_read_only = d.mcp_read_only;
+            }
+            Section::Shortcuts => self.shortcuts.clear(),
+            Section::Updates => {
+                self.auto_update = d.auto_update;
+                self.skipped_version = d.skipped_version;
+            }
+            Section::Integrations => self.plugin_states.clear(),
+            Section::Import => {
+                self.import_capcut = d.import_capcut;
+                self.import_fcpxml = d.import_fcpxml;
+            }
+            Section::Models | Section::About => return false,
+        }
+        true
+    }
     pub fn add_recent(&mut self, p: &std::path::Path) {
         self.recent.retain(|r| r != p);
         self.recent.insert(0, p.to_path_buf());
         self.recent.truncate(30);
     }
+}
+
+/// Effekte und Filter (FFmpeg-Ketten) aus den aktiven Plugins
+pub fn plugin_fx(reg: &cl_plugin::Registry, lang: &str) -> Vec<cl_fx::PluginFx> {
+    use cl_plugin::AssetKind::{Filter, VideoEffect};
+    reg.ffmpeg_assets(lang)
+        .into_iter()
+        .filter(|a| matches!(a.1, VideoEffect | Filter))
+        .map(|(id, kind, name, chain)| cl_fx::PluginFx { id, name, is_filter: kind == Filter, chain })
+        .collect()
 }
 
 /// Laufender MCP-Server.
@@ -223,7 +290,7 @@ impl Drop for McpRunning {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Section {
     #[default]
     General,
@@ -387,6 +454,18 @@ impl App {
                                     {
                                         self.settings_open = false;
                                     }
+                                    if !matches!(self.settings_section, Section::Models | Section::About)
+                                        && theme::icon_button(
+                                            ui,
+                                            icon::ARROW_COUNTER_CLOCKWISE,
+                                            "Diesen Bereich zurücksetzen",
+                                            true,
+                                            false,
+                                        )
+                                        .clicked()
+                                    {
+                                        self.reset_settings_section(ui.ctx());
+                                    }
                                 },
                             );
                         });
@@ -424,6 +503,95 @@ impl App {
         if !self.settings_open {
             self.settings.save();
         }
+    }
+
+    /// Effekte und Filter aus Plugins neu anmelden (nach Ein- oder Ausschalten)
+    pub fn refresh_plugin_fx(&mut self) {
+        cl_fx::register_plugin_fx(plugin_fx(&self.plugins, self.i18n.lang().code()));
+        self.invalidate_preview();
+    }
+
+    /// Alle Plugins mit Schalter; ausgeschaltete sind ausgegraut.
+    pub fn plugins_settings(&mut self, ui: &mut egui::Ui) {
+        let lang = self.i18n.lang().code().to_string();
+        let mut toggled = None;
+        for p in &self.plugins.plugins {
+            let m = &p.manifest.plugin;
+            let mut on = p.enabled;
+            egui::Frame::default()
+                .fill(theme::BG_RAISED())
+                .corner_radius(theme::R_CARD)
+                .inner_margin(theme::PAD_CARD_L)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    if !on {
+                        ui.set_opacity(0.45);
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(cl_plugin::localized(&m.name, &lang)).strong());
+                        ui.label(RichText::new(format!("v{} · {}", m.version, m.license)).small().color(theme::TEXT_DIM()));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.set_opacity(1.0);
+                            if widgets::toggle(ui, &mut on) {
+                                toggled = Some((m.id.clone(), on));
+                            }
+                        });
+                    });
+                    ui.label(RichText::new(cl_plugin::localized(&m.description, &lang)).small().color(theme::TEXT_DIM()));
+                });
+            ui.add_space(6.0);
+        }
+        if let Some((id, on)) = toggled {
+            self.set_plugin_enabled(&id, on);
+        }
+        for e in &self.plugins.errors {
+            ui.label(RichText::new(format!("{} {e}", icon::WARNING)).small().color(theme::WARN_TEXT()));
+        }
+        if ui.add(theme::ghost(format!("{}  Plugin-Ordner öffnen", icon::FOLDER_OPEN))).clicked() {
+            let d = paths::data_dir().join("Plugins");
+            let _ = std::fs::create_dir_all(&d);
+            crate::home::reveal(&d);
+        }
+    }
+
+    /// Aktuellen Bereich auf Standard setzen und alles neu anwenden, was sonst erst beim Start greift.
+    fn reset_settings_section(&mut self, ctx: &egui::Context) {
+        let s = self.settings_section;
+        if !self.settings.reset(s) {
+            return;
+        }
+        match s {
+            Section::General => {
+                theme::set_animations(self.settings.animations);
+                theme::set_accent(&self.settings.accent);
+                theme::select(ctx, &self.settings.theme);
+                theme::apply(ctx);
+                self.ui_scale = self.settings.ui_scale;
+                ctx.set_zoom_factor(self.ui_scale);
+            }
+            Section::Audio => {
+                crate::audio::set_output_device(None);
+                if self.playing {
+                    self.restart_audio();
+                }
+            }
+            Section::Performance => {
+                self.proxy_failed.clear();
+                self.invalidate_preview();
+            }
+            Section::Mcp => self.stop_mcp(),
+            Section::Shortcuts => self.capture_key = None,
+            Section::Integrations => {
+                for p in &mut self.plugins.plugins {
+                    p.enabled = p.manifest.plugin.default_enabled;
+                }
+                self.refresh_plugin_fx();
+            }
+            Section::Import => self.import.drafts = None,
+            _ => {}
+        }
+        self.settings.save();
+        self.toast(format!("{}  {}", icon::CHECK, crate::tr("Bereich zurückgesetzt")));
     }
 
     fn settings_body(&mut self, ui: &mut egui::Ui) {
@@ -597,7 +765,7 @@ impl App {
                 });
                 ui.horizontal(|ui| {
                     ui.add_space(theme::LABEL_W + 6.0);
-                    if ui.add(theme::secondary(format!("{}  Ändern …", icon::FOLDER_SIMPLE_PLUS))).clicked() {
+                    if ui.add(theme::secondary(format!("{}  Ändern …", icon::FOLDER_SIMPLE_PLUS))).on_hover_text(crate::tr("Vorhandene Projekte werden mit verschoben")).clicked() {
                         if let Some(new) = crate::dialog().set_title(crate::tr("Neuer Projektordner")).pick_folder() {
                             self.change_projects_dir(new);
                         }
@@ -608,7 +776,6 @@ impl App {
                         self.change_projects_dir(paths::data_dir().join("Projects"));
                     }
                 });
-                ui.label(RichText::new(crate::tr("Vorhandene Projekte werden mit verschoben.")).small().color(theme::TEXT_DIM()));
                 theme::section(ui, "Speichern");
                 widgets::toggle_row(ui, "Automatisch speichern", &mut self.settings.autosave);
                 theme::row(ui, "Sicherung alle", |ui| {
@@ -636,7 +803,6 @@ impl App {
                 });
             }
             Section::Library => {
-                ui.label(RichText::new(crate::tr("Verknüpfte Ordner erscheinen in allen Projekten (Medien → Bibliothek, Sticker, Audio → Sounds). Die Dateien bleiben, wo sie sind.")).small().color(theme::TEXT_DIM()));
                 for (k, name) in crate::library::Kind::ALL {
                     theme::section(ui, name);
                     for d in self.library.linked(k) {
@@ -655,7 +821,6 @@ impl App {
                 }
                 theme::section(ui, "Plugins");
                 widgets::toggle_row(ui, "Downloads in die Bibliothek übernehmen", &mut self.settings.lib_downloads);
-                ui.label(RichText::new(crate::tr("Musik von Epidemic Sound und Videos von Pexels stehen dann auch in anderen Projekten bereit. Freesound-Sounds landen immer in der Bibliothek.")).small().color(theme::TEXT_DIM()));
             }
             Section::Audio => {
                 // Geräteliste einmal je Öffnen abfragen (die Abfrage ist nicht billig)
@@ -685,7 +850,7 @@ impl App {
                 }
                 widgets::toggle_row(ui, "Ton beim Ziehen des Playheads", &mut self.settings.scrub_audio);
                 widgets::toggle_row(ui, "Hinweiston, wenn ein Export fertig ist", &mut self.settings.export_sound);
-                ui.add_space(6.0);
+                theme::section(ui, "Neue Projekte");
                 theme::row(ui, "Kanäle", |ui| {
                     egui::ComboBox::from_id_salt("set-channels")
                         .selected_text(crate::tr(self.settings.new_channels.name()))
@@ -695,7 +860,6 @@ impl App {
                             }
                         });
                 });
-                ui.label(RichText::new(crate::tr("Standard für neue Projekte. „Automatisch“ legt Ton, der nur auf einer Seite aufgenommen wurde, auf beide Ohren. Pro Clip änderbar.")).small().color(theme::TEXT_DIM()));
                 // Kanäle des offenen Projekts: Projekt-Reiter → Format
             }
             Section::Editing => {
@@ -731,8 +895,6 @@ impl App {
             }
             Section::Performance => {
                 // Vorschauqualität nur noch am Player-Chip (eine Stelle)
-                ui.label(RichText::new(crate::tr("Die Vorschauqualität stellst du direkt am Player ein.")).small().color(theme::TEXT_DIM()));
-                ui.label(RichText::new(crate::tr("Export immer in voller Auflösung")).small().color(theme::TEXT_DIM()));
                 self.proxy_settings(ui);
                 ui.add_space(8.0);
                 theme::section(ui, "Cache");
@@ -773,11 +935,8 @@ impl App {
                             }
                         });
                 });
-                ui.label(RichText::new(crate::tr("Wird beim Programmstart geprüft.")).small().color(theme::TEXT_DIM()));
             }
             Section::Mcp => {
-                ui.label(RichText::new(crate::tr("Nur auf diesem Rechner erreichbar (127.0.0.1), mit Token. Jede Änderung lässt sich rückgängig machen.")).small().color(theme::TEXT_DIM()));
-                ui.add_space(10.0);
                 let mut on = self.settings.mcp_enabled;
                 if widgets::toggle_row(ui, "MCP-Server aktivieren", &mut on) {
                     self.settings.mcp_enabled = on;
@@ -881,7 +1040,7 @@ impl App {
                     "Version {} · MPL-2.0",
                     env!("CARGO_PKG_VERSION")
                 )));
-                ui.label(RichText::new(crate::tr("Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner. Lokale KI für Untertitel, Freistellen und Entrauschen – nichts wird hochgeladen; keine erzeugende KI.")).color(theme::TEXT_DIM()));
+                ui.label(RichText::new(crate::tr("Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner.")).color(theme::TEXT_DIM()));
                 ui.add_space(8.0);
                 let (e, f, t) = (
                     cl_fx::EFFECTS.len(),
@@ -927,5 +1086,57 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"new_rate\"") && !json.contains("\"new_fps\""));
         assert!(FPS_CHOICES.iter().all(|f| cl_core::Rational::parse(f).is_some()));
+    }
+
+    /// Jeder Bereich setzt genau seine Werte zurück; Verlauf, Sprache, Projektordner bleiben.
+    #[test]
+    fn reset_restores_only_its_section() {
+        let changed = || {
+            let mut s = AppSettings::default();
+            s.lang = "en".into();
+            s.recent = vec!["a.cutline".into()];
+            s.projects_dir = Some("D:/p".into());
+            s.onboarding_done = true;
+            s.theme = "light".into();
+            s.accent = "#FF0000".into();
+            s.ui_scale = 1.4;
+            s.layout.assets_right = true;
+            s.layout_locked = true;
+            s.backup_keep = 7;
+            s.lib_downloads = false;
+            s.scrub_audio = true;
+            s.audio_device = Some("x".into());
+            s.image_duration = 9.0;
+            s.proxy_h = 1080;
+            s.mcp_enabled = true;
+            s.mcp_port = 9000;
+            s.shortcuts.insert("undo".into(), "Q".into());
+            s.auto_update = false;
+            s.plugin_states.insert("p".into(), true);
+            s.import_capcut = false;
+            s
+        };
+        let json = |s: &AppSettings| serde_json::to_value(s).unwrap();
+        let (base, def) = (json(&changed()), json(&AppSettings::default()));
+        let mut seen = std::collections::BTreeSet::new();
+        for (sec, ..) in SECTIONS {
+            let mut s = changed();
+            let did = s.reset(sec);
+            assert_eq!(did, !matches!(sec, Section::Models | Section::About), "{sec:?}");
+            let now = json(&s);
+            for (k, v) in now.as_object().unwrap() {
+                if *v != base[k] {
+                    assert_eq!(*v, def[k], "{sec:?} setzt {k} nicht auf Standard");
+                    assert!(seen.insert(k.clone()), "{k} gehört zu zwei Bereichen");
+                }
+            }
+        }
+        // alles Geänderte ist über irgendeinen Bereich zurücksetzbar – außer dem, was bewusst bleibt
+        let keep = ["lang", "recent", "projects_dir", "onboarding_done"];
+        for (k, v) in base.as_object().unwrap() {
+            if *v != def[k] {
+                assert_eq!(seen.contains(k), !keep.contains(&k.as_str()), "{k}");
+            }
+        }
     }
 }

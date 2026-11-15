@@ -20,7 +20,7 @@ const RAIL_W: f32 = 58.0;
 const RAIL_TOP_H: f32 = 56.0;
 const RAIL_ITEM_W: f32 = 52.0;
 
-const TABS: [(LeftTab, &str, &str); 9] = [
+const TABS: [(LeftTab, &str, &str); 8] = [
     (LeftTab::Media, icon::FILM_STRIP, "Medien"),
     (LeftTab::Audio, icon::MUSIC_NOTES, "Audio"),
     (LeftTab::Text, icon::TEXT_T, "Text"),
@@ -29,7 +29,6 @@ const TABS: [(LeftTab, &str, &str); 9] = [
     (LeftTab::Transitions, icon::INTERSECT, "Übergänge"),
     (LeftTab::Filters, icon::CIRCLE_HALF, "Filter"),
     (LeftTab::Captions, icon::SUBTITLES, "Untertitel"),
-    (LeftTab::Plugins, icon::PUZZLE_PIECE, "Plugins"),
 ];
 
 const THUMB: (u32, u32) = (192, 108);
@@ -250,7 +249,6 @@ impl App {
                     LeftTab::Filters => self.effects_tab(ui, true),
                     LeftTab::Transitions => self.transitions_tab(ui),
                     LeftTab::Captions => self.captions_tab(ui),
-                    LeftTab::Plugins => self.plugins_tab(ui),
                 }
             },
         );
@@ -573,7 +571,7 @@ impl App {
                         ui,
                         icon::BOOKMARKS,
                         "Bibliothek ist leer",
-                        "Dateien hier ablegen, Rechtsklick auf ein Medium → Zur Bibliothek, oder in den Einstellungen einen Ordner verknüpfen",
+                        "Dateien hierher ziehen",
                     );
                 }
                 widgets::grid(ui, &items, 104.0, 16.0 / 9.0, 16.0, |ui, r, it| {
@@ -858,13 +856,6 @@ impl App {
                             );
                             ui.vertical(|ui| {
                                 ui.label(RichText::new(crate::tr(self.t("voiceover"))).strong());
-                                ui.label(
-                                    RichText::new(crate::tr(
-                                        "Am Playhead einsprechen, die Waveform wächst live mit (R)",
-                                    ))
-                                    .small()
-                                    .color(theme::TEXT_DIM()),
-                                );
                             });
                         });
                     });
@@ -892,7 +883,7 @@ impl App {
                         ui,
                         icon::MICROPHONE,
                         "Noch keine Aufnahmen in diesem Projekt",
-                        "Am Playhead einsprechen, die Waveform wächst live mit (R)",
+                        "",
                     );
                 }
                 for m in recs {
@@ -1931,141 +1922,6 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ Plugins
-
-    fn plugins_tab(&mut self, ui: &mut egui::Ui) {
-        Self::tab_title(ui, "Plugins", |ui| {
-            if ui
-                .add(theme::secondary(format!("{}  Ordner", icon::FOLDER_OPEN)))
-                .on_hover_text(crate::tr("Plugin-Ordner öffnen"))
-                .clicked()
-            {
-                let d = crate::paths::data_dir().join("Plugins");
-                let _ = std::fs::create_dir_all(&d);
-                crate::home::reveal(&d);
-            }
-        });
-        ui.label(
-            RichText::new(crate::tr(format!(
-                "{} · {}",
-                self.i18n
-                    .t_num("plugins-loaded", "count", self.plugins.plugins.len() as i64),
-                self.i18n
-                    .t_num("plugin-effects", "count", self.plugins.asset_count() as i64)
-            )))
-            .small()
-            .color(theme::TEXT_DIM()),
-        );
-        ui.add_space(6.0);
-        let lang = self.i18n.lang().code().to_string();
-        let mut changed = false;
-        let mut toggled: Vec<(String, bool)> = Vec::new();
-        let mut setup = false;
-        for p in &mut self.plugins.plugins {
-            let integration = p.manifest.plugin.kind == cl_plugin::PluginKind::Integration;
-            let before = p.enabled;
-            egui::Frame::default()
-                .fill(theme::BG_RAISED())
-                .corner_radius(theme::R_CARD)
-                .inner_margin(theme::PAD_CARD_L)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(crate::tr(cl_plugin::localized(
-                                &p.manifest.plugin.name,
-                                &lang,
-                            )))
-                            .strong(),
-                        );
-                        ui.label(
-                            RichText::new(crate::tr(format!("v{}", p.manifest.plugin.version)))
-                                .small()
-                                .color(theme::TEXT_DIM()),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            changed |= widgets::toggle(ui, &mut p.enabled);
-                        });
-                    });
-                    ui.label(
-                        RichText::new(crate::tr(cl_plugin::localized(
-                            &p.manifest.plugin.description,
-                            &lang,
-                        )))
-                        .small()
-                        .color(theme::TEXT_DIM()),
-                    );
-                    if integration {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new(crate::tr(format!(
-                                    "Integration · {}",
-                                    p.manifest.plugin.license
-                                )))
-                                .small()
-                                .color(theme::TEXT_DIM()),
-                            );
-                            if p.enabled
-                                && ui
-                                    .add(theme::ghost(format!("{}  Einrichten", icon::GEAR_SIX)))
-                                    .clicked()
-                            {
-                                setup = true;
-                            }
-                        });
-                    } else {
-                        ui.label(
-                            RichText::new(crate::tr(format!(
-                                "{} Assets · {}",
-                                p.manifest.assets.len(),
-                                p.manifest.plugin.license
-                            )))
-                            .small()
-                            .color(theme::TEXT_DIM()),
-                        );
-                    }
-                });
-            if p.enabled != before {
-                toggled.push((p.manifest.plugin.id.clone(), p.enabled));
-            }
-            ui.add_space(6.0);
-        }
-        for (id, on) in toggled {
-            self.set_plugin_enabled(&id, on);
-        }
-        if setup {
-            self.settings_section = crate::settings::Section::Integrations;
-            self.settings_open = true;
-        }
-        for e in &self.plugins.errors {
-            ui.label(
-                RichText::new(crate::tr(format!("{} {e}", icon::WARNING)))
-                    .small()
-                    .color(theme::WARN_TEXT()),
-            );
-        }
-        if changed {
-            cl_fx::register_plugin_fx(
-                self.plugins
-                    .ffmpeg_assets(&lang)
-                    .into_iter()
-                    .filter(|a| {
-                        matches!(
-                            a.1,
-                            cl_plugin::AssetKind::VideoEffect | cl_plugin::AssetKind::Filter
-                        )
-                    })
-                    .map(|(id, kind, name, chain)| cl_fx::PluginFx {
-                        id,
-                        name,
-                        is_filter: kind == cl_plugin::AssetKind::Filter,
-                        chain,
-                    })
-                    .collect(),
-            );
-            self.invalidate_preview();
-        }
-    }
 }
 
 #[cfg(test)]

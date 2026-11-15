@@ -44,7 +44,6 @@ pub enum LeftTab {
     Transitions,
     Filters,
     Captions,
-    Plugins,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -317,24 +316,7 @@ impl App {
         let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
         plugins.apply_states(&settings.plugin_states);
         let lang = settings.lang();
-        cl_fx::register_plugin_fx(
-            plugins
-                .ffmpeg_assets(lang.code())
-                .into_iter()
-                .filter(|a| {
-                    matches!(
-                        a.1,
-                        cl_plugin::AssetKind::VideoEffect | cl_plugin::AssetKind::Filter
-                    )
-                })
-                .map(|(id, kind, name, chain)| cl_fx::PluginFx {
-                    id,
-                    name,
-                    is_filter: kind == cl_plugin::AssetKind::Filter,
-                    chain,
-                })
-                .collect(),
-        );
+        cl_fx::register_plugin_fx(crate::settings::plugin_fx(&plugins, lang.code()));
 
         let system_font_count = Arc::new(Mutex::new(None));
         {

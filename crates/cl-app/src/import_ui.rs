@@ -18,7 +18,7 @@ type ImportResult = cl_import::Result<(Project, cl_import::Report)>;
 pub struct ImportState {
     pub open: bool,
     since: u64,
-    drafts: Option<Vec<cl_import::capcut::Draft>>,
+    pub drafts: Option<Vec<cl_import::capcut::Draft>>,
     running: Option<(String, Receiver<ImportResult>)>,
     /// Bericht des letzten Imports (übersprungene Teile, fehlende Dateien)
     pub report: Option<(String, cl_import::Report)>,
@@ -159,7 +159,6 @@ impl App {
         let m = crate::dialog::modal(ctx, "import").show(ctx, |ui| {
             ui.set_width(520.0);
             close |= crate::dialog::title(ui, "Projekt importieren");
-            ui.label(RichText::new(crate::tr("Programmeigene Effekte und Vorlagen werden nicht übernommen.")).small().color(theme::TEXT_DIM()));
             ui.add_space(8.0);
             if let Some((label, _)) = &self.import.running {
                 ui.horizontal(|ui| {

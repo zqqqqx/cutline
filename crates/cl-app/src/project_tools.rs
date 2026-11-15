@@ -194,7 +194,6 @@ impl App {
             if crate::dialog::title(ui, "Sicherungen") {
                 open = false;
             }
-            ui.label(RichText::new(crate::tr("Alle 5 Minuten bei Änderungen, die letzten 30 Stände")).small().color(theme::TEXT_DIM()));
             ui.add_space(6.0);
             let Some(path) = self.project_path.clone() else {
                 ui.label(crate::tr("Das Projekt ist noch nicht gespeichert."));

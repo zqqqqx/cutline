@@ -234,7 +234,7 @@ impl App {
         let mut act: Option<(u8, String)> = None;
         let n = cats.len();
         // Eine Zeile, waagrecht scrollbar (Mausrad oder Ziehen) statt mehrzeiligem Umbruch
-        let row = egui::ScrollArea::horizontal()
+        let mut row = egui::ScrollArea::horizontal()
             .id_salt(ckey)
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
             .show(ui, |ui| ui.horizontal(|ui| {
@@ -248,21 +248,14 @@ impl App {
             if theme::cat_chip(ui, "Alle", cur == "Alle").clicked() {
                 self.asset_cat.insert(ckey, "Alle".into());
             }
-            if theme::cat_chip(
-                ui,
-                &format!("{} {}", icon::STAR, crate::tr("Favoriten")),
-                cur == "Favoriten",
-            )
-            .clicked()
+            if theme::cat_chip(ui, icon::STAR, cur == "Favoriten")
+                .on_hover_text(crate::tr("Favoriten"))
+                .clicked()
             {
                 self.asset_cat.insert(ckey, "Favoriten".into());
             }
-            if theme::cat_chip(
-                ui,
-                &format!("{} {}", icon::CLOCK_COUNTER_CLOCKWISE, crate::tr("Zuletzt")),
-                cur == "Zuletzt",
-            )
-            .on_hover_text(crate::tr("Zuletzt verwendet"))
+            if theme::cat_chip(ui, icon::CLOCK_COUNTER_CLOCKWISE, cur == "Zuletzt")
+                .on_hover_text(crate::tr("Zuletzt verwendet"))
             .clicked()
             {
                 self.asset_cat.insert(ckey, "Zuletzt".into());
@@ -313,7 +306,7 @@ impl App {
                 });
             }
         }));
-        theme::edge_fade(ui, &row);
+        theme::edge_arrows(ui, &mut row);
         if let Some((a, key)) = act {
             let label = cats
                 .iter()
@@ -605,11 +598,6 @@ impl App {
                     theme::field_error(ui, err.as_deref());
                     if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         ok = true;
-                    }
-                    if let LibDialog::RenameCat { key, .. } = d {
-                        if key.starts_with("b:") {
-                            ui.label(RichText::new(crate::tr("Eingebaute Kategorien bekommen nur einen eigenen Anzeigenamen.")).small().color(theme::TEXT_DIM()));
-                        }
                     }
                 }
                 LibDialog::DeleteCat { area, key, label } => {

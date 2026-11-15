@@ -543,7 +543,7 @@ impl App {
                 .size(theme::FS_HERO)
                 .strong(),
         );
-        ui.label(RichText::new(crate::tr("Alles ist optional und jederzeit unter Einstellungen und Plugins änderbar. Plugins sind ohne dein Okay immer aus.")).color(theme::TEXT_DIM()));
+        ui.label(RichText::new(crate::tr("Alles ist optional und jederzeit in den Einstellungen änderbar.")).color(theme::TEXT_DIM()));
         ui.add_space(12.0);
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])

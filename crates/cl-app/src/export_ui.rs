@@ -649,7 +649,7 @@ impl ExportDialog {
                                 if !ms.is_empty() {
                                     theme::section(ui, "Kapitel");
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new(format!("{} {}", ms.len(), crate::tr("aus Markern, werden eingebettet"))).small().color(theme::TEXT_DIM()));
+                                        ui.label(RichText::new(format!("{} {}", ms.len(), crate::tr("aus Markern"))).small().color(theme::TEXT_DIM()));
                                         if ui.add(theme::secondary(format!("{}  YouTube-Kapitel kopieren", icon::COPY))).clicked() {
                                             ui.ctx().copy_text(crate::navigate::chapters(ms));
                                             toast = Some(crate::tr("Kapitel in die Zwischenablage kopiert"));

@@ -1133,7 +1133,6 @@ impl App {
     pub fn models_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let m = self.models();
-        ui.label(RichText::new(crate::tr("Läuft lokal auf deinem Rechner, es werden keine Daten hochgeladen.")).small().color(theme::TEXT_DIM()));
         ui.add_space(6.0);
         ui.add_space(8.0);
         for info in cl_analyze::CATALOG {

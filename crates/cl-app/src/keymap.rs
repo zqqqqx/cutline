@@ -235,7 +235,6 @@ impl App {
                 }
             }
         });
-        ui.label(RichText::new(crate::tr("Klicke auf eine Belegung und drücke die neue Taste. Entf entfernt die Belegung, Esc bricht ab.")).small().color(theme::TEXT_DIM()));
         ui.add_space(6.0);
         // Aufnahme einer neuen Belegung
         if let Some(id) = self.capture_key {

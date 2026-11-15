@@ -613,18 +613,13 @@ impl App {
     /// Abschnitt „Plugins und Konten“ in den Einstellungen.
     pub fn integrations_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        ui.label(RichText::new(crate::tr("Story-Werkzeuge, Pexels und Epidemic Sound sind Plugins: hier oder im Reiter Plugins einschalten. Pexels und Epidemic Sound brauchen ein eigenes Konto.")).small().color(theme::TEXT_DIM()));
+        self.plugins_settings(ui);
         self.story_settings(ui);
         self.stock_settings(ui);
-        theme::section(ui, "Epidemic Sound");
-        let enabled = self.epidemic_enabled();
-        let mut on = enabled;
-        if widgets::toggle_row(ui, "Plugin aktiv", &mut on) {
-            self.set_plugin_enabled("cutline.epidemic-sound", on);
-        }
-        if !on {
+        if !self.epidemic_enabled() {
             return;
         }
+        theme::section(ui, "Epidemic Sound");
         let mut mode = if self.es.cfg.mode == AuthMode::Connect {
             0
         } else {
@@ -653,7 +648,7 @@ impl App {
                         self.es.save();
                     }
                 });
-                ui.label(RichText::new(crate::tr(format!("Client-ID deiner App im Epidemic Developer Portal; dort als Weiterleitungsadresse {} eintragen.", cl_epidemic::redirect_uri()))).small().color(theme::TEXT_DIM()));
+                theme::row(ui, "Weiterleitung", |ui| ui.monospace(cl_epidemic::redirect_uri()));
                 ui.add_space(4.0);
                 if let Some(t) = self.es.cfg.tokens.clone() {
                     theme::row(ui, "Status", |ui| {
@@ -722,7 +717,6 @@ impl App {
                         self.es.reset();
                     }
                 });
-                ui.label(RichText::new(crate::tr("Für Partner und eigene Entwickler-Apps. Der Schlüssel bleibt auf diesem Rechner.")).small().color(theme::TEXT_DIM()));
             }
         }
         ui.add_space(4.0);
@@ -737,7 +731,7 @@ impl App {
                 open_url("https://developers.epidemicsound.com/");
             }
         });
-        ui.label(RichText::new(crate::tr("Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs), wie es die Nutzungsbedingungen verlangen.")).small().color(theme::TEXT_DIM()));
+        ui.label(RichText::new(crate::tr("Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs).")).small().color(theme::TEXT_DIM()));
     }
 
     /// Plugin ein-/ausschalten und dauerhaft merken.
@@ -752,5 +746,6 @@ impl App {
         }
         self.settings.plugin_states.insert(id.to_string(), on);
         self.settings.save();
+        self.refresh_plugin_fx();
     }
 }

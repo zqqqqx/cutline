@@ -1682,7 +1682,7 @@ impl App {
                 ui,
                 icon::CLOCK_COUNTER_CLOCKWISE,
                 &self.t("history-empty"),
-                "Jede Änderung erscheint hier und lässt sich mit einem Klick zurückholen",
+                "",
             );
             return;
         }

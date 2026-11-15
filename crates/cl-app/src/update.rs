@@ -200,7 +200,6 @@ impl App {
         ) {
             self.settings.save();
         }
-        ui.label(RichText::new(crate::tr("Dabei wird nur die Release-Liste auf GitHub abgefragt. Installiert wird erst nach deiner Bestätigung, jedes Paket wird per SHA-256 geprüft.")).small().color(theme::TEXT_DIM()));
         theme::section(ui, "Status");
         let state = self.updater.get();
         match &state {
