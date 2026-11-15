@@ -110,7 +110,7 @@ fn build_with(
         ])
         .arg(&tmp)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::null()) // ungelesen würde der volle Puffer FFmpeg anhalten
         .spawn()
         .map_err(|e| e.to_string())?;
     use std::io::BufRead;
