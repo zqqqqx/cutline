@@ -682,10 +682,24 @@ fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool, e
         if !replace {
             return Ok(Installed::Exists(id));
         }
-        std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
     }
-    std::fs::rename(&dir, &target).map_err(|e| e.to_string())?;
+    swap_dir(&dir, &target, &staging.with_extension("old")).map_err(|e| e.to_string())?;
     Ok(Installed::Done(id))
+}
+
+/// Setzt `new` an die Stelle von `target`, ohne dass ein Fehler ein halbes Paket hinterlässt: altes
+/// wegbenennen (`old`), neues hinbenennen, bei Fehler zurück; das alte zuletzt und ohne Prüfung löschen.
+fn swap_dir(new: &Path, target: &Path, old: &Path) -> std::io::Result<()> {
+    if !target.exists() {
+        return std::fs::rename(new, target);
+    }
+    std::fs::rename(target, old)?;
+    if let Err(e) = std::fs::rename(new, target) {
+        let _ = std::fs::rename(old, target);
+        return Err(e);
+    }
+    let _ = std::fs::remove_dir_all(old);
+    Ok(())
 }
 
 /// Paketordner löschen – nur, wenn er unterhalb von `root` liegt (eigene Pakete).
@@ -1053,6 +1067,25 @@ permissions=['net']
         }
         let left: Vec<_> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.file_name()).collect();
         assert!(left.iter().all(|n| !n.to_string_lossy().starts_with(".install")), "{left:?}");
+    }
+
+    /// Scheitert das Einsetzen des neuen Pakets, bleibt das alte vollständig erhalten.
+    #[test]
+    fn a_failed_update_keeps_the_old_pack() {
+        let t = tempfile::tempdir().unwrap();
+        let (new, target, old) = (t.path().join("neu"), t.path().join("pack"), t.path().join(".alt"));
+        std::fs::create_dir_all(target.join("sfx")).unwrap();
+        std::fs::write(target.join("sfx/a.wav"), b"alt").unwrap();
+        // `new` fehlt: das Hinbenennen scheitert (gleich unter Windows und Linux)
+        assert!(swap_dir(&new, &target, &old).is_err());
+        assert_eq!(std::fs::read(target.join("sfx/a.wav")).unwrap(), b"alt");
+        assert!(!old.exists());
+        // Erfolg: neues Paket an der Stelle, altes weg
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(new.join("b.wav"), b"neu").unwrap();
+        swap_dir(&new, &target, &old).unwrap();
+        assert!(target.join("b.wav").is_file() && !target.join("sfx").exists());
+        assert!(!old.exists() && !new.exists());
     }
 
     /// Jeder mitgelieferte Sound hat ein Rezept (selbst erzeugt) und eine CC0-Lizenz.
