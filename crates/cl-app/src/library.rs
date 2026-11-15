@@ -66,6 +66,8 @@ pub struct Item {
     pub path: Option<PathBuf>,
     /// Liegt in einem verknüpften Ordner: nicht umbenennen, verschieben oder löschen
     pub linked: bool,
+    /// Schlagworte aus dem Paket (Suche)
+    pub tags: Vec<String>,
 }
 
 impl Item {
@@ -491,13 +493,29 @@ impl Library {
         name: &str,
         folder: &str,
     ) -> bool {
+        self.visible_tagged(area, cat, q, key, name, folder, &[])
+    }
+
+    /// Wie [`visible`](Self::visible); die Suche findet auch die Schlagworte eines Paket-Inhalts.
+    #[allow(clippy::too_many_arguments)]
+    pub fn visible_tagged(
+        &self,
+        area: &str,
+        cat: &str,
+        q: &str,
+        key: &str,
+        name: &str,
+        folder: &str,
+        tags: &[String],
+    ) -> bool {
         let q = q.trim().to_lowercase();
         !self.is_hidden(key)
             && self.in_cat(area, cat, key, folder)
             && (q.is_empty()
                 || name.to_lowercase().contains(&q)
                 || crate::tr(name).to_lowercase().contains(&q)
-                || crate::tr(folder).to_lowercase().contains(&q))
+                || crate::tr(folder).to_lowercase().contains(&q)
+                || tags.iter().any(|t| t.to_lowercase().contains(&q)))
     }
 
     pub fn invalidate(&mut self) {
@@ -557,6 +575,7 @@ impl Library {
                             builtin: None,
                             path: Some(f),
                             linked: false,
+                            tags: Vec::new(),
                         });
                     }
                 }
@@ -575,6 +594,7 @@ impl Library {
                     builtin: None,
                     path: Some(f),
                     linked: true,
+                    tags: Vec::new(),
                 }));
             }
             (folders, items)
@@ -840,10 +860,14 @@ mod tests {
             builtin: Some("pop"),
             path: None,
             linked: false,
+            tags: vec!["Knall".into()],
         };
         lib.remove(&b).unwrap();
         assert!(!lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
         lib.unhide_all("builtin:sfx:");
+        // Suche über Schlagworte
+        assert!(lib.visible_tagged("sfx", "Alle", "knall", &b.key, &b.name, &b.folder, &b.tags));
+        assert!(!lib.visible("sfx", "Alle", "knall", &b.key, &b.name, &b.folder));
         assert!(lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
         // Kategorien: umbenennen (Anzeigename), verschieben, verbergen, Sammelordner
         let cats = lib.cats("sfx", &["Natur", "Oberfläche"], Some(Kind::Sound));

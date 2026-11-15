@@ -101,6 +101,7 @@ pub fn catalog_packs(reg: &cl_plugin::Registry, lang: &str) -> Vec<Pack> {
                         license: a.license.clone().unwrap_or_else(|| info.license.clone()),
                         author: a.author.clone().unwrap_or_else(|| info.author.clone()),
                         source: a.source.clone().or_else(|| info.source.clone()),
+                        tags: a.tags.clone(),
                         payload,
                     })
                 })
@@ -400,6 +401,7 @@ kind = "sound"
 name = { de = "Ding" }
 category = ["Oberfläche"]
 file = "ding.wav"
+tags = ["Klingel"]
 
 [[asset]]
 id = "star"
@@ -417,6 +419,7 @@ license = "CC-BY-4.0"
         assert_eq!(e.id, "test.pack/ding");
         assert_eq!(e.category(), "Oberfläche");
         assert_eq!(e.payload, Payload::File(pack.join("ding.wav")));
+        assert_eq!(e.tags, ["Klingel"], "Schlagworte kommen in der Suche an");
         let st = catalog::get_in(&packs, Kind::Sticker, "test.pack/star").unwrap();
         assert_eq!((st.license.as_str(), st.author.as_str()), ("CC-BY-4.0", "Jemand"));
         assert_eq!(st.category(), "Test pack", "ohne Kategorie: Ordner mit dem Paketnamen");

@@ -1551,6 +1551,7 @@ mod tests {
                 license: "CC0-1.0".into(),
                 author: String::new(),
                 source: None,
+                tags: Vec::new(),
                 payload: Payload::Ffmpeg("gblur=sigma=2,eq=brightness=0.04*{intensity}".into()),
             }],
         }]);

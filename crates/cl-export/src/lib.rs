@@ -2390,6 +2390,7 @@ mod tests {
                 license: "CC0-1.0".into(),
                 author: "Test".into(),
                 source: None,
+                tags: Vec::new(),
                 payload: Payload::Shader {
                     file: dir.join(format!("{id}.wgsl")),
                     fallback: "fade".into(),

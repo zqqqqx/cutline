@@ -88,6 +88,8 @@ pub struct Entry {
     pub license: String,
     pub author: String,
     pub source: Option<String>,
+    /// Schlagworte (Paket-Manifest `tags`): die Suche in den Tabs findet den Eintrag auch darüber
+    pub tags: Vec<String>,
     pub payload: Payload,
 }
 
@@ -164,6 +166,7 @@ fn builtin(kind: Kind) -> Vec<Entry> {
         license: info.license.clone(),
         author: info.author.clone(),
         source: info.source.clone(),
+        tags: Vec::new(),
         payload: Payload::Builtin,
     };
     match kind {
@@ -358,6 +361,7 @@ mod tests {
             license: license.into(),
             author: "A".into(),
             source: None,
+            tags: Vec::new(),
             payload: Payload::Ffmpeg("eq=brightness=0.1*{intensity}".into()),
         };
         Pack {
@@ -445,6 +449,7 @@ mod tests {
             license: "MIT".into(),
             author: "A".into(),
             source: None,
+            tags: Vec::new(),
             payload: Payload::Shader {
                 file: PathBuf::from("swirl.wgsl"),
                 fallback: "radial".into(),

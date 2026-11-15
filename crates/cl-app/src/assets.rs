@@ -143,6 +143,7 @@ fn catalog_item(
         path,
         // Paketdateien: nicht umbenennen, verschieben oder löschen
         linked: true,
+        tags: e.tags,
     })
 }
 
@@ -1694,12 +1695,11 @@ impl App {
         let (cat, q) = self.asset_bar(ui, area, &cats);
         let mut items: Vec<(String, String)> = entries
             .into_iter()
-            .map(|e| (e.category().to_string(), e.id, e.name))
-            .filter(|(c, id, name)| {
+            .filter(|e| {
                 self.library
-                    .visible(area, &cat, &q, &format!("{pre}:{id}"), name, c)
+                    .visible_tagged(area, &cat, &q, &format!("{pre}:{}", e.id), &e.name, e.category(), &e.tags)
             })
-            .map(|(_, id, name)| (id, name))
+            .map(|e| (e.id, e.name))
             .collect();
         let mut menus: Vec<(egui::Response, String)> = Vec::new();
         let current: Vec<String> = target
@@ -1843,7 +1843,7 @@ impl App {
             .into_iter()
             .filter(|e| {
                 self.library
-                    .visible("transition", &cat, &q, &format!("tr:{}", e.id), &e.name, e.category())
+                    .visible_tagged("transition", &cat, &q, &format!("tr:{}", e.id), &e.name, e.category(), &e.tags)
             })
             .map(|e| (e.id, e.name))
             .collect();

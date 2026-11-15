@@ -93,7 +93,8 @@ Tools: `project_info`, `list_timeline`, `list_media`, `list_fonts`, `history`, `
 
 Asset packs are folders with a `plugin.toml` manifest (id, version, localized names, license)
 and assets: effects and filters as FFmpeg chains, sounds and stickers as files, transitions as
-WGSL shaders. See `plugins/cutline-basis` for the reference pack.
+WGSL shaders; optional `tags` are extra search words in the tabs. See `plugins/cutline-basis` for
+the reference pack.
 
 ## Shader transitions
 

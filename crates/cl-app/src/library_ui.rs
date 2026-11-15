@@ -765,7 +765,7 @@ impl App {
         all.into_iter()
             .filter(|i| {
                 self.library
-                    .visible(area, cat, q, &i.key, &i.name, &i.folder)
+                    .visible_tagged(area, cat, q, &i.key, &i.name, &i.folder, &i.tags)
             })
             .collect()
     }

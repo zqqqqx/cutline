@@ -70,8 +70,6 @@ pub enum ParamSpec {
         min: f32,
         max: f32,
         default: f32,
-        #[serde(default)]
-        keyframable: bool,
     },
     Int {
         id: String,
@@ -125,10 +123,8 @@ pub struct AssetEntry {
     pub name: LocalizedText,
     #[serde(default)]
     pub category: Vec<String>,
-    /// WGSL-Shader relativ zum Plugin-Ordner (bei Effekten/Übergängen/Filtern Pflicht).
+    /// WGSL-Shader relativ zum Plugin-Ordner (nur Übergänge, dort Pflicht).
     pub shader: Option<String>,
-    /// Optional: LUT (.cube) für Filter.
-    pub lut: Option<String>,
     /// Übergang mit Shader: eingebauter `xfade`-Übergang, wenn keine GPU da ist oder das Paket fehlt
     /// (Pflicht bei Shader-Übergängen).
     pub fallback: Option<String>,
@@ -137,16 +133,13 @@ pub struct AssetEntry {
     pub ffmpeg: Option<String>,
     /// Datei relativ zum Plugin-Ordner (Sound/Sticker: Pflicht, Endung siehe [`SOUND_EXT`]/[`STICKER_EXT`]).
     pub file: Option<String>,
-    pub preview: Option<String>,
     /// Abweichende Angaben für dieses Asset (Standard: die des Pakets)
     pub license: Option<String>,
     pub author: Option<String>,
     pub source: Option<String>,
+    /// Schlagworte: die Suche in den Tabs findet das Asset auch darüber.
     #[serde(default)]
     pub tags: Vec<String>,
-    /// Benötigte Analysen, z. B. "segmentation" für Körpereffekte.
-    #[serde(default)]
-    pub requires: Vec<String>,
     #[serde(default)]
     pub params: Vec<ParamSpec>,
 }
@@ -338,17 +331,18 @@ impl Manifest {
             if !seen.insert(&a.id) {
                 return bad(format!("Asset-ID '{}' doppelt", a.id));
             }
-            let needs_shader = matches!(
-                a.kind,
-                AssetKind::VideoEffect | AssetKind::BodyEffect | AssetKind::Transition
-            );
-            if needs_shader && a.shader.is_none() && a.ffmpeg.is_none() {
-                return bad(format!(
-                    "Asset '{}' braucht einen Shader oder eine FFmpeg-Kette",
-                    a.id
-                ));
+            // nur, was der Katalog darstellen kann (cl-app `contents::catalog_packs`)
+            let (fx, sh) = (a.ffmpeg.is_some(), a.shader.is_some());
+            let unsupported = match a.kind {
+                AssetKind::VideoEffect | AssetKind::Filter => (!fx || sh).then_some("braucht eine FFmpeg-Kette (Shader nur bei Übergängen)"),
+                AssetKind::Transition => (!sh || fx).then_some("braucht einen Shader (keine FFmpeg-Kette)"),
+                AssetKind::Sound | AssetKind::Sticker => (fx || sh).then_some("darf weder Shader noch FFmpeg-Kette haben"),
+                _ => Some("hat eine Art, die Cutline noch nicht anzeigen kann"),
+            };
+            if let Some(why) = unsupported {
+                return bad(format!("Asset '{}' {why}", a.id));
             }
-            if a.kind == AssetKind::Transition && a.shader.is_some() {
+            if a.kind == AssetKind::Transition {
                 // welcher Name eingebaut ist, prüft der Katalog (unbekannt → Überblenden)
                 let ok = a.fallback.as_deref().is_some_and(|f| {
                     !f.is_empty() && f.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
@@ -362,16 +356,6 @@ impl Manifest {
                 if let Err(e) = a.shader_params() {
                     return bad(format!("Übergang '{}': {e}", a.id));
                 }
-            }
-            if a.kind == AssetKind::Filter
-                && a.shader.is_none()
-                && a.lut.is_none()
-                && a.ffmpeg.is_none()
-            {
-                return bad(format!(
-                    "Filter '{}' braucht Shader, LUT oder FFmpeg-Kette",
-                    a.id
-                ));
             }
             if let Some(f) = &a.ffmpeg {
                 // roh und nach dem Einsetzen der Standardwerte prüfen (Werte könnten Trenner schmuggeln)
@@ -429,15 +413,13 @@ impl Manifest {
                     return bad(format!("Dateityp von '{f}' nicht erlaubt (erlaubt: {})", exts.join(", ")));
                 }
             }
-            for f in [&a.shader, &a.lut, &a.file, &a.preview].into_iter().flatten() {
+            for f in [&a.shader, &a.file].into_iter().flatten() {
                 if f.contains("..") || Path::new(f).is_absolute() || !relative_inside(f) {
                     return bad(format!("Pfad '{f}' muss innerhalb des Plugins liegen"));
                 }
             }
             if let Some(dir) = dir {
-                for f in [&a.shader, &a.lut, &a.file, &a.preview]
-                    .into_iter()
-                    .flatten()
+                for f in [&a.shader, &a.file].into_iter().flatten()
                 {
                     if !dir.join(f).is_file() {
                         return bad(format!("Datei '{f}' fehlt"));
@@ -711,7 +693,7 @@ mod tests {
         assert!(Manifest::parse(base, p).unwrap().validate(None).is_err());
         // Standardwert außerhalb des Bereichs
         let m = format!(
-            "{base}\n[[asset]]\nid='a'\nkind='video-effect'\nname={{de='A'}}\nshader='a.wgsl'\nparams=[{{type='float',id='x',min=0.0,max=1.0,default=2.0}}]"
+            "{base}\n[[asset]]\nid='a'\nkind='video-effect'\nname={{de='A'}}\nffmpeg='eq'\nparams=[{{type='float',id='x',min=0.0,max=1.0,default=2.0}}]"
         );
         let err = Manifest::parse(&m, p)
             .unwrap()
@@ -723,10 +705,17 @@ mod tests {
         let m = base.replace(
             "license = \"MIT\"",
             "license = \"MIT\"\npermissions = [\"net\"]",
-        ) + "\n[[asset]]\nid='f'\nkind='filter'\nname={de='F'}\nlut='f.cube'";
+        ) + "\n[[asset]]\nid='f'\nkind='filter'\nname={de='F'}\nffmpeg='eq'";
         assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
         // Unbekannte Felder werden abgelehnt (Tippfehler fallen auf)
         assert!(Manifest::parse(&format!("{base}\nfoo = 1"), p).is_err());
+        // Was der Katalog nicht zeigen kann, besteht die Prüfung nicht (früher: Filter nur mit LUT)
+        let asset = |kind: &str, extra: &str| format!("{base}\n[[asset]]\nid='a'\nkind='{kind}'\nname={{de='A'}}\n{extra}");
+        assert!(Manifest::parse(&asset("filter", "lut='f.cube'"), p).is_err());
+        for (kind, extra) in [("filter", "shader='f.wgsl'"), ("video-effect", "shader='f.wgsl'"), ("body-effect", "ffmpeg='eq'"), ("transition", "ffmpeg='fade'"), ("sound", "file='a.wav'\nffmpeg='eq'")] {
+            assert!(Manifest::parse(&asset(kind, extra), p).unwrap().validate(None).is_err(), "{kind}");
+        }
+        Manifest::parse(&asset("filter", "ffmpeg='eq'\ntags=['warm']"), p).unwrap().validate(None).unwrap();
         // WASM ohne entry
         let m = base.replace("asset-pack", "wasm");
         assert!(Manifest::parse(&m, p)
