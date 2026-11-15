@@ -36,6 +36,23 @@ fn frand(x: f32, y: f32) -> f32 {
     fract((x * 12.9898 + y * 78.233).sin() * 43758.545)
 }
 
+/// Zeilen von `out` (Breite `w` Pixel) auf mehrere Kerne verteilt füllen: `f(y, zeile)`.
+pub fn rows(out: &mut [u8], w: i32, f: &(dyn Fn(i32, &mut [u8]) + Sync)) {
+    let line = w.max(1) as usize * 4;
+    let h = out.len() / line;
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get().min(8));
+    let per = h.div_ceil(threads).max(1);
+    std::thread::scope(|sc| {
+        for (k, part) in out.chunks_mut(per * line).enumerate() {
+            sc.spawn(move || {
+                for (j, l) in part.chunks_exact_mut(line).enumerate() {
+                    f((k * per + j) as i32, l);
+                }
+            });
+        }
+    });
+}
+
 /// Mischt A und B wie `xfade=transition=kind` beim Fortschritt `t`. `None`: Sorte unbekannt
 /// oder Bilder passen nicht zusammen.
 pub fn mix(kind: &str, a: &[u8], b: &[u8], w: u32, h: u32, t: f32) -> Option<Vec<u8>> {
@@ -52,25 +69,24 @@ pub fn mix(kind: &str, a: &[u8], b: &[u8], w: u32, h: u32, t: f32) -> Option<Vec
     };
     let mut out = vec![0u8; n];
     // Gewicht von A je Pixel (A·g + B·(1 − g))
-    let weighted = |out: &mut [u8], g: &dyn Fn(f32, f32) -> f32| {
-        for y in 0..hi {
+    let weighted = |out: &mut [u8], g: &(dyn Fn(f32, f32) -> f32 + Sync)| {
+        rows(out, wi, &|y, line| {
             for x in 0..wi {
                 let k = g(x as f32, y as f32);
                 let i = ((y * wi + x) * 4) as usize;
                 for c in 0..4 {
-                    out[i + c] = mixf(a[i + c] as f32, b[i + c] as f32, k).round().clamp(0.0, 255.0) as u8;
+                    line[x as usize * 4 + c] = mixf(a[i + c] as f32, b[i + c] as f32, k).round().clamp(0.0, 255.0) as u8;
                 }
             }
-        }
+        })
     };
     // Pixel aus A oder B an verschobener Stelle
-    let pick = |out: &mut [u8], f: &dyn Fn(i32, i32) -> [u8; 4]| {
-        for y in 0..hi {
+    let pick = |out: &mut [u8], f: &(dyn Fn(i32, i32) -> [u8; 4] + Sync)| {
+        rows(out, wi, &|y, line| {
             for x in 0..wi {
-                let i = ((y * wi + x) * 4) as usize;
-                out[i..i + 4].copy_from_slice(&f(x, y));
+                line[x as usize * 4..x as usize * 4 + 4].copy_from_slice(&f(x, y));
             }
-        }
+        })
     };
     let wrap = |v: i32, len: i32| v % len + len * (v < 0) as i32;
     let ss = |s: f32| smoothstep(0.0, 1.0, s);
@@ -234,20 +250,15 @@ pub fn mix(kind: &str, a: &[u8], b: &[u8], w: u32, h: u32, t: f32) -> Option<Vec
             let d = p.min(1.0 - p);
             let dist = (d * 50.0).ceil() / 50.0;
             let sq = 2.0 * dist * w.min(h) as f32 / 20.0;
-            for y in 0..hi {
-                for x in 0..wi {
-                    let (sx, sy) = if dist > 0.0 {
-                        ((((x as f32 / sq).floor() + 0.5) * sq).min(wf - 1.0) as i32, (((y as f32 / sq).floor() + 0.5) * sq).min(hf - 1.0) as i32)
-                    } else {
-                        (x, y)
-                    };
-                    let (pa, pb) = (px(a, sx, sy), px(b, sx, sy));
-                    let i = ((y * wi + x) * 4) as usize;
-                    for c in 0..4 {
-                        out[i + c] = mixf(pa[c] as f32, pb[c] as f32, p).round().clamp(0.0, 255.0) as u8;
-                    }
-                }
-            }
+            pick(&mut out, &|x, y| {
+                let (sx, sy) = if dist > 0.0 {
+                    ((((x as f32 / sq).floor() + 0.5) * sq).min(wf - 1.0) as i32, (((y as f32 / sq).floor() + 0.5) * sq).min(hf - 1.0) as i32)
+                } else {
+                    (x, y)
+                };
+                let (pa, pb) = (px(a, sx, sy), px(b, sx, sy));
+                [0, 1, 2, 3].map(|c| mixf(pa[c] as f32, pb[c] as f32, p).round().clamp(0.0, 255.0) as u8)
+            })
         }
         "hblur" => {
             let prog = if p <= 0.5 { p * 2.0 } else { (1.0 - p) * 2.0 };
