@@ -866,6 +866,7 @@ mod tests {
             duration: Time::ZERO,
             has_audio: false,
             audio_codec: None,
+            audio_streams: 0,
         };
         let p = std::path::Path::new("a.mp4");
         assert!(stream_hw(&m(1920, 1080, 60, "h264"), p), "1080p60: Hardware");
