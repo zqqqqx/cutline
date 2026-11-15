@@ -1471,7 +1471,7 @@ pub fn spawn_audio_window(
         .tempdir()?;
     let (inputs, graph, label) = audio_window_graph(p, from, end)?;
     std::fs::write(workdir.path().join("graph.txt"), graph.join(";\n"))?;
-    let child = cl_media::ffmpeg_command()?
+    let child = cl_media::playback_command()?
         .args(["-v", "error", "-nostdin"])
         .args(&inputs)
         .args([

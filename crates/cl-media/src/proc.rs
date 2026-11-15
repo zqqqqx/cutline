@@ -79,6 +79,23 @@ pub fn raise_priority(child: &Child) -> bool {
     }
 }
 
+/// Threads eines angehobenen Wiedergabe-Prozesses: die Hälfte der Kerne (mindestens 1). Mit allen
+/// Kernen über normaler Priorität verdrängten zwei Software-Ströme sonst alles andere – auch den
+/// UI-Thread und die Ton-Zuführung, die die Bilder abholen.
+pub fn playback_threads(cores: usize) -> usize {
+    (cores / 2).max(1)
+}
+
+/// Thread-Grenze für einen Wiedergabe-Prozess (vor dem ersten `-i` aufrufen). `hw`: Decodierung auf
+/// der GPU – dann bleibt der Decoder unbegrenzt, begrenzt werden nur die Filter.
+pub fn limit_threads(cmd: &mut Command, hw: bool) {
+    let n = playback_threads(std::thread::available_parallelism().map_or(2, |n| n.get())).to_string();
+    cmd.args(["-filter_threads", &n, "-filter_complex_threads", &n]);
+    if !hw {
+        cmd.args(["-threads", &n]);
+    }
+}
+
 /// Hält einen Prozess an (`true`) oder setzt ihn fort. `false`, wenn das System es nicht kann.
 pub fn suspend(child: &Child, on: bool) -> bool {
     #[cfg(windows)]
@@ -317,6 +334,25 @@ mod tests {
         assert_eq!(super::raise_priority(&c), cfg!(windows));
         let _ = c.kill();
         let _ = c.wait();
+    }
+
+    /// Befund aus dem Review: angehobene Wiedergabe-Prozesse liefen mit allen Kernen.
+    #[test]
+    fn raised_processes_use_half_the_cores() {
+        use super::playback_threads as t;
+        assert_eq!((t(1), t(2), t(3), t(4), t(8), t(16)), (1, 1, 1, 2, 4, 8));
+        let args = |hw| {
+            let mut c = std::process::Command::new("ffmpeg");
+            super::limit_threads(&mut c, hw);
+            c.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>()
+        };
+        let n = t(std::thread::available_parallelism().map_or(2, |n| n.get())).to_string();
+        let sw = args(false);
+        assert!(sw.windows(2).any(|w| w[0] == "-threads" && w[1] == n), "{sw:?}");
+        assert!(sw.windows(2).any(|w| w[0] == "-filter_complex_threads" && w[1] == n));
+        // Hardware: Decoder nicht begrenzen, nur die Filter
+        let hw = args(true);
+        assert!(!hw.contains(&"-threads".to_string()) && hw.contains(&"-filter_threads".to_string()), "{hw:?}");
     }
 
     #[cfg(windows)]

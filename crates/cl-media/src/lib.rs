@@ -20,7 +20,7 @@ use serde::Deserialize;
 mod anim;
 mod proc;
 pub use anim::{animation, decode_all as decode_animation, frame_index as animation_frame, Animation};
-pub use proc::{cpu_time, lower_priority, raise_priority, suspend};
+pub use proc::{cpu_time, limit_threads, lower_priority, raise_priority, suspend};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
@@ -98,6 +98,14 @@ fn tool(name: &str) -> Result<PathBuf> {
 /// mit dem startenden Thread, siehe `proc::prepare`).
 pub fn ffmpeg_command() -> Result<Command> {
     command("ffmpeg")
+}
+
+/// FFmpeg-Befehl eines Wiedergabe-Prozesses ohne Hardware-Decodierung (Ton-Fenster): Threads
+/// begrenzt, nach dem Start mit [`raise_priority`] anheben.
+pub fn playback_command() -> Result<Command> {
+    let mut cmd = command("ffmpeg")?;
+    limit_threads(&mut cmd, false);
+    Ok(cmd)
 }
 
 /// FFprobe-Befehl (ohne Konsolenfenster).
@@ -390,6 +398,9 @@ fn decode_once(
 ) -> Result<(RgbaFrame, Option<Duration>)> {
     let mut cmd = command("ffmpeg")?;
     cmd.args(["-v", "error", "-nostdin"]);
+    if kill.is_some() {
+        limit_threads(&mut cmd, accel.is_some());
+    }
     if let Some(a) = accel {
         cmd.args(["-hwaccel", a]);
     }
@@ -654,6 +665,7 @@ fn spawn_stream(
 ) -> Result<Child> {
     let mut cmd = command("ffmpeg")?;
     cmd.args(["-v", "error", "-nostdin"]);
+    limit_threads(&mut cmd, accel.is_some());
     if let Some(a) = accel {
         cmd.args(["-hwaccel", a]);
     }
