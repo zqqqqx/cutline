@@ -43,16 +43,22 @@ pub fn chapters(markers: &[Marker]) -> String {
 }
 
 /// Verstößt die Liste gegen YouTubes Regeln (mind. 3 Kapitel, je mind. 10 s)?
-pub fn chapter_issue(markers: &[Marker], total: Time) -> Option<&'static str> {
-    let v = chapter_list(markers);
-    if v.len() < 3 {
-        return Some("YouTube braucht mindestens 3 Kapitel");
-    }
-    let short = v.iter().enumerate().any(|(i, (t, _))| {
-        let end = v.get(i + 1).map(|n| n.0).unwrap_or(total);
-        (end - *t).as_secs_f64() < 10.0
-    });
-    short.then_some("YouTube: jedes Kapitel muss mindestens 10 s lang sein")
+pub fn chapter_issue(markers: &[Marker], start: Time, end: Time) -> Option<String> {
+    let v = cl_export::chapter_list(markers, start, end);
+    v.iter().enumerate().find_map(|(i, (t, name))| {
+        let stop = v.get(i + 1).map_or(end - start, |n| n.0);
+        let secs = (stop - *t).as_secs_f64();
+        (secs < 10.0).then(|| format!("Kapitel „{name}“ ist nur {} s lang – YouTube zeigt Kapitel erst ab 10 s an", secs.max(0.0).floor()))
+    })
+}
+
+/// Warnzeile aus [`chapter_issue`] mit „Nicht mehr anzeigen“; `true`, wenn darauf geklickt wurde.
+pub fn chapter_warning(ui: &mut egui::Ui, w: &str) -> bool {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w))).small().color(theme::WARN_TEXT()));
+        ui.add(theme::ghost("Nicht mehr anzeigen")).clicked()
+    })
+    .inner
 }
 
 impl App {
@@ -491,16 +497,17 @@ impl App {
             });
         }
         ui.add_space(4.0);
-        if let Some(w) = chapter_issue(&ms, self.project.duration()) {
-            ui.label(
-                RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w)))
-                    .small()
-                    .color(theme::WARN_TEXT()),
-            );
+        if self.settings.export_chapters && self.settings.chapter_hint {
+            if let Some(w) = chapter_issue(&ms, Time::ZERO, self.project.duration()) {
+                if chapter_warning(ui, &w) {
+                    self.settings.chapter_hint = false;
+                    self.settings.save();
+                }
+            }
         }
         if ui
             .add(theme::secondary(format!(
-                "{}  YouTube-Kapitel kopieren",
+                "{}  Kapitel kopieren",
                 icon::COPY
             )))
             .on_hover_text(crate::tr("Für die Videobeschreibung"))
@@ -555,9 +562,15 @@ mod tests {
             color: 0,
         };
         let total = Time::from_secs_f64(60.0);
-        assert!(chapter_issue(&[m(20.0)], total).is_some()); // nur 2 Kapitel
-        assert!(chapter_issue(&[m(20.0), m(25.0)], total).is_some()); // 5 s zu kurz
-        assert!(chapter_issue(&[m(20.0), m(55.0)], total).is_some()); // letztes 5 s
-        assert_eq!(chapter_issue(&[m(20.0), m(40.0)], total), None);
+        let issue = |ms: &[Marker]| chapter_issue(ms, Time::ZERO, total);
+        // nur Kapitel unter 10 s melden, mit Name und Länge; die Zahl der Kapitel spielt keine Rolle
+        assert_eq!(issue(&[m(20.0)]), None);
+        assert_eq!(issue(&[m(20.0), m(40.0)]), None);
+        assert!(issue(&[m(20.0), m(25.0)]).unwrap().contains("„Kapitel“ ist nur 5 s"));
+        assert!(issue(&[m(20.0), m(55.0)]).unwrap().contains("nur 5 s")); // letztes bis zum Ende
+        assert!(issue(&[m(4.0), m(30.0)]).unwrap().contains("„Intro“ ist nur 4 s"));
+        // im Exportbereich zählt die Länge bis zum Bereichsende
+        let s = Time::from_secs_f64;
+        assert!(chapter_issue(&[m(20.0)], s(0.0), s(26.0)).unwrap().contains("nur 6 s"));
     }
 }

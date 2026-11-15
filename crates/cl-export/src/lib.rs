@@ -170,6 +170,9 @@ pub struct ExportSettings {
     /// AAC-Tonbitrate in kbit/s (`None` = 256)
     #[serde(default)]
     pub audio_kbps: Option<u32>,
+    /// Marker als Kapitel in die Datei schreiben
+    #[serde(default)]
+    pub chapters: bool,
 }
 
 impl ExportSettings {
@@ -187,6 +190,7 @@ impl ExportSettings {
             transparent: false,
             loudness: None,
             audio_kbps: None,
+            chapters: true,
         }
     }
 
@@ -436,7 +440,7 @@ pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -
     ];
     args.extend(std::mem::take(&mut ctx.inputs));
     // Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel)
-    let chapters = matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a)
+    let chapters = (s.chapters && matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a))
         .then(|| ffmetadata(&p.timeline.markers, start, end))
         .flatten();
     if let Some(meta) = chapters {
@@ -1598,6 +1602,9 @@ mod tests {
         let ch = String::from_utf8_lossy(&ch.stdout);
         let titles: Vec<&str> = ch.lines().filter_map(|l| l.rsplit(',').next()).collect();
         assert_eq!(titles, ["Intro", "Teil = 1", "Ende"], "{ch}");
+        // ausgeschaltet: keine Kapitel in der Datei
+        let off = build(&p, &ExportSettings { chapters: false, ..s.clone() }, &no_fonts, &out).unwrap();
+        assert!(!off.args.iter().any(|a| a == "chapters.txt"));
 
         s.format = Format::Gif;
         let gif = dir.path().join("out.gif");

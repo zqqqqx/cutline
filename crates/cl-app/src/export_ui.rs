@@ -253,6 +253,11 @@ pub struct ExportDialog {
     platform: Option<&'static str>,
     picked_platform: Option<&'static str>,
     also_srt: bool,
+    /// Marker als Kapitel schreiben (Einstellungen → Projekte → Export); setzt die App je Bild
+    pub chapters: bool,
+    /// Hinweis auf Kapitel unter 10 s zeigen; „Nicht mehr anzeigen“ meldet `chapter_hint_off`
+    pub chapter_hint: bool,
+    pub chapter_hint_off: bool,
     encoders: Arc<Mutex<Option<Vec<Encoder>>>>,
     running: Option<Running>,
     last_output: Option<PathBuf>,
@@ -503,6 +508,7 @@ impl ExportDialog {
         let Some(mut s) = self.settings.clone() else {
             return toast;
         };
+        s.chapters = self.chapters;
         let mut open = true;
         let mut start = false;
         // ohne Nachfrage überschreiben (bestätigt oder „Erneut exportieren“)
@@ -713,17 +719,21 @@ impl ExportDialog {
                             if !s.format.audio_only() {
                                 crate::widgets::check(ui, &mut self.also_srt, crate::tr("Texte zusätzlich als Untertiteldateien (SRT und VTT) speichern"));
                                 let ms = &p.timeline.markers;
-                                if !ms.is_empty() {
+                                if self.chapters && !ms.is_empty() {
                                     theme::section(ui, "Kapitel");
                                     ui.horizontal(|ui| {
                                         ui.label(RichText::new(format!("{} {}", ms.len(), crate::tr("aus Markern"))).small().color(theme::TEXT_DIM()));
-                                        if ui.add(theme::secondary(format!("{}  YouTube-Kapitel kopieren", icon::COPY))).clicked() {
+                                        if ui.add(theme::secondary(format!("{}  Kapitel kopieren", icon::COPY))).clicked() {
                                             ui.ctx().copy_text(crate::navigate::chapters(ms));
                                             toast = Some(crate::tr("Kapitel in die Zwischenablage kopiert"));
                                         }
                                     });
-                                    if let Some(w) = crate::navigate::chapter_issue(ms, p.duration()) {
-                                        ui.label(RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w))).small().color(theme::WARN_TEXT()));
+                                    let (a, b) = s.range.unwrap_or((Time::ZERO, p.duration()));
+                                    if let Some(w) = crate::navigate::chapter_issue(ms, a, b).filter(|_| self.chapter_hint) {
+                                        if crate::navigate::chapter_warning(ui, &w) {
+                                            self.chapter_hint = false;
+                                            self.chapter_hint_off = true;
+                                        }
                                     }
                                 }
                             }
@@ -901,7 +911,7 @@ impl ExportDialog {
 }
 
 /// Begleitdateien neben `out` (Pfad, Inhalt) für den Exportbereich: Untertitel (SRT, VTT)
-/// und Kapitel wie „YouTube-Kapitel kopieren“, Zeiten ab Bereichsanfang.
+/// und Kapitel wie „Kapitel kopieren“ (nur wenn eingeschaltet), Zeiten ab Bereichsanfang.
 fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(PathBuf, String)> {
     let mut v = Vec::new();
     if s.format.audio_only() {
@@ -913,7 +923,7 @@ fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(Pat
         v.push((out.with_extension("vtt"), cl_export::to_vtt_in(p, a, b)));
     }
     let ms = &p.timeline.markers;
-    if ms.iter().any(|m| m.at >= a && m.at < b) {
+    if s.chapters && ms.iter().any(|m| m.at >= a && m.at < b) {
         let txt = cl_export::chapter_list(ms, a, b)
             .iter()
             .map(|(t, n)| format!("{} {n}", crate::navigate::chapter_time(*t)))
@@ -1312,6 +1322,10 @@ fn sidecars_follow_range_and_wait_for_success() {
     let v = sidecars(&p, &s, true, &dir.path().join("a.mp4"));
     let get = |ext: &str| v.iter().find(|(f, _)| f.to_string_lossy().ends_with(ext)).unwrap().1.clone();
     assert_eq!(get(".chapters.txt"), "0:00 Intro\n0:15 Mitte");
+    // Kapitel ausgeschaltet: keine Kapiteldatei, Untertitel bleiben
+    let off = sidecars(&p, &ExportSettings { chapters: false, ..s.clone() }, true, &dir.path().join("a.mp4"));
+    assert_eq!(off.len(), 2);
+    assert!(off.iter().all(|(f, _)| !f.to_string_lossy().ends_with(".chapters.txt")));
     assert_eq!(get(".srt"), "1\n00:00:00,000 --> 00:00:10,000\ndrin\n");
     // Begleitdateien erst nach erfolgreichem Export schreiben
     let (ctx, mut d) = (egui::Context::default(), ExportDialog::default());

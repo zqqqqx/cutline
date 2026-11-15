@@ -3135,6 +3135,12 @@ impl eframe::App for App {
         let tex = main
             .or_else(|| self.project.timeline.tracks.iter().flat_map(|t| &t.clips).find_map(|c| self.frames.get(&c.id)))
             .map(|(_, t)| (t.id(), t.size_vec2()));
+        if std::mem::take(&mut self.export.chapter_hint_off) {
+            self.settings.chapter_hint = false;
+            self.settings.save();
+        }
+        self.export.chapters = self.settings.export_chapters;
+        self.export.chapter_hint = self.settings.chapter_hint;
         if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex, self.revision) {
             // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen)
             if msg.contains("Export fertig") {

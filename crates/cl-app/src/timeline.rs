@@ -2619,7 +2619,7 @@ impl App {
                 ui.separator();
                 let has = !self.project.timeline.markers.is_empty();
                 if ui
-                    .add_enabled_ui(has, |ui| menu_item(ui, icon::COPY, "YouTube-Kapitel kopieren", ""))
+                    .add_enabled_ui(has, |ui| menu_item(ui, icon::COPY, "Kapitel kopieren", ""))
                     .inner
                 {
                     self.copy_chapters(&ctx);

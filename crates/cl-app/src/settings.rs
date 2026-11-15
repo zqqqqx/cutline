@@ -46,6 +46,10 @@ pub struct AppSettings {
     /// Vorschauauflösung: 1 = voll, 2 = halb, 4 = viertel
     pub preview_div: u32,
     pub autosave: bool,
+    /// Marker beim Export als Kapitel schreiben (Datei und Kapitelliste)
+    pub export_chapters: bool,
+    /// Hinweis auf Kapitel unter 10 s (lässt sich wegklicken)
+    pub chapter_hint: bool,
     pub mcp_enabled: bool,
     pub mcp_port: u16,
     pub mcp_read_only: bool,
@@ -121,6 +125,8 @@ impl Default for AppSettings {
             anim_duration: 0.5,
             preview_div: 1,
             autosave: true,
+            export_chapters: false,
+            chapter_hint: true,
             mcp_enabled: false,
             mcp_port: 7316,
             mcp_read_only: false,
@@ -241,6 +247,8 @@ impl AppSettings {
                 self.backup_minutes = d.backup_minutes;
                 self.backup_keep = d.backup_keep;
                 self.new_fps = d.new_fps;
+                self.export_chapters = d.export_chapters;
+                self.chapter_hint = d.chapter_hint;
             }
             Section::Audio => {
                 self.audio_device = d.audio_device;
@@ -783,6 +791,11 @@ impl App {
                                 ui.selectable_value(&mut self.settings.new_fps, r, crate::tr(format!("{f} fps")));
                             }
                         });
+                });
+                theme::section(ui, "Exportieren");
+                widgets::toggle_row(ui, "Kapitel aus Markern", &mut self.settings.export_chapters);
+                ui.add_enabled_ui(self.settings.export_chapters, |ui| {
+                    widgets::toggle_row(ui, "Hinweis bei Kapiteln unter 10 s", &mut self.settings.chapter_hint);
                 });
             }
             Section::Library => {

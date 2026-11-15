@@ -922,7 +922,7 @@ Notiz	Note
 Fertig	Done
 Setze Marker mit M (am Playhead)	Add markers with M (at the playhead)
 Ohne Namen	Untitled
-YouTube-Kapitel kopieren	Copy YouTube chapters
+Kapitel kopieren	Copy chapters
 Kapitelliste aus den Markern für die Videobeschreibung	Chapter list from the markers for the video description
 Kapitel in die Zwischenablage kopiert	Chapters copied to the clipboard
 Solo (nur diese Spur hören)	Solo (hear only this track)
@@ -1206,8 +1206,6 @@ Zuletzt	Recent
 Zuletzt verwendet	Recently used
 Sounds	Sounds
 Epidemic	Epidemic
-YouTube braucht mindestens 3 Kapitel	YouTube needs at least 3 chapters
-YouTube: jedes Kapitel muss mindestens 10 s lang sein	YouTube: every chapter must be at least 10 s long
 Für die Videobeschreibung	For the video description
 Störgeräusche	Noise
 Rumpeln & Wind	Rumble & wind
@@ -1706,3 +1704,6 @@ Keine Übergänge gefunden	No transitions found
 {} Mediendatei wurde nicht gefunden:	{} media file was not found:
 {} Mediendatei wurde nicht gefunden (verschoben oder umbenannt).	{} media file was not found (moved or renamed).
 {} Clip auf anderen Spuren mit entfernt (Alles mitziehen)	{} clip on other tracks removed as well (move everything)
+Kapitel „{}“ ist nur {} s lang – YouTube zeigt Kapitel erst ab 10 s an	Chapter “{}” is only {} s long – YouTube only shows chapters of 10 s or more
+Nicht mehr anzeigen	Don't show again
+Hinweis bei Kapiteln unter 10 s	Hint for chapters under 10 s
