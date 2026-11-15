@@ -5,6 +5,7 @@ mod assets;
 mod captions;
 mod audio;
 mod chrome;
+mod contents;
 mod curves;
 mod dialog;
 mod exports;

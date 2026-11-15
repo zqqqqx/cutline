@@ -275,6 +275,8 @@ pub struct App {
     pub layout_name: String,
     /// Fehlermeldung im Einstellungsfenster (bleibt offen, statt nur eine Meldung unten)
     pub settings_error: Option<String>,
+    /// Rückfrage/Fenster der Einstellungsseite „Inhalte“
+    pub contents_dialog: Option<crate::contents::ContentsDialog>,
     /// Belegter Cache (zuletzt gezählt, Bytes)
     pub cache_size: Option<(Instant, u64)>,
     pub sticker_tex: HashMap<&'static str, egui::TextureHandle>,
@@ -316,7 +318,7 @@ impl App {
         let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
         plugins.apply_states(&settings.plugin_states);
         let lang = settings.lang();
-        cl_fx::register_plugin_fx(crate::settings::plugin_fx(&plugins, lang.code()));
+        cl_fx::catalog::load_packs(crate::contents::catalog_packs(&plugins, lang.code()));
 
         let system_font_count = Arc::new(Mutex::new(None));
         {
@@ -469,6 +471,7 @@ impl App {
             layout_edit: false,
             layout_name: String::new(),
             settings_error: None,
+            contents_dialog: None,
             cache_size: None,
             sticker_tex: HashMap::new(),
             updater: Default::default(),
@@ -2125,6 +2128,16 @@ impl App {
                     .collect();
                 if !missing.is_empty() {
                     self.toast_err(format!("Fehlende Schriften: {}", missing.join(", ")));
+                }
+                let mut gone: Vec<String> = cl_fx::catalog::missing(&self.project).into_iter().map(|m| m.0).collect();
+                gone.sort();
+                gone.dedup();
+                if !gone.is_empty() {
+                    self.toast_err(format!(
+                        "{} Inhalte fehlen: {} – Paket in Einstellungen → Inhalte einschalten",
+                        gone.len(),
+                        gone.join(", ")
+                    ));
                 }
             }
             Err(e) => self.toast_err(e),

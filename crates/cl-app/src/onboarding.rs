@@ -258,7 +258,7 @@ fn suggestions(uses: &BTreeSet<&'static str>) -> Vec<&'static Sug> {
 
 /// Rundgang: (Bereich, Titel, Text)
 pub const TOUR: &[(&str, &str, &str)] = &[
-    ("assets", "Medien", "Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Sticker, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an."),
+    ("assets", "Medien", "Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Elemente, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an."),
     ("player", "Vorschau", "Zeigt das Bild am Playhead. Clips verschiebst, skalierst und drehst du direkt hier. Leertaste spielt ab, J/K/L spult."),
     ("inspector", "Inspektor", "Alles zum ausgewählten Clip: Bild, Ton, Tempo, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker."),
     // die Tastenkürzel hängt `tour_overlay` mit der wirklichen Belegung an

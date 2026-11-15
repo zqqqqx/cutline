@@ -12,6 +12,7 @@
 //! - [`text`]: Textvorlagen und Texteffekte, [`stickers`]: SVG-Sticker, [`sfx`]: Soundeffekte
 
 pub mod audio;
+pub mod catalog;
 pub mod sfx;
 pub mod stickers;
 pub mod text;
@@ -509,46 +510,15 @@ pub static FILTERS: &[FxDef] = &[
 pub const FILTER_CATEGORIES: [&str; 5] =
     ["Porträt", "Landschaft", "Film", "Schwarzweiß", "Stimmung"];
 
-/// Effekte/Filter aus Plugins (FFmpeg-Kette mit `{intensity}`), global für Vorschau und Export.
-static PLUGIN_CHAINS: std::sync::RwLock<Vec<PluginFx>> = std::sync::RwLock::new(Vec::new());
-
-#[derive(Debug, Clone)]
-pub struct PluginFx {
-    pub id: String,
-    pub name: String,
-    pub is_filter: bool,
-    pub chain: String,
-}
-
-pub fn register_plugin_fx(list: Vec<PluginFx>) {
-    if let Ok(mut g) = PLUGIN_CHAINS.write() {
-        *g = list;
-    }
-}
-
-pub fn plugin_fx() -> Vec<PluginFx> {
-    PLUGIN_CHAINS.read().map(|g| g.clone()).unwrap_or_default()
-}
-
-fn plugin_chain(id: &str, i: f32) -> Option<String> {
-    let g = PLUGIN_CHAINS.read().ok()?;
-    g.iter()
-        .find(|p| p.id == id)
-        .map(|p| p.chain.replace("{intensity}", &format!("{i:.3}")))
-}
-
-/// Anzeigename eines Effekts/Filters (eingebaut oder Plugin).
+/// Anzeigename eines Effekts/Filters (eingebaut oder aus einem Paket).
 pub fn fx_name(id: &str) -> String {
     effect(id)
         .or_else(|| filter(id))
         .map(|d| d.name.to_string())
         .or_else(|| {
-            PLUGIN_CHAINS
-                .read()
-                .ok()?
-                .iter()
-                .find(|p| p.id == id)
-                .map(|p| p.name.clone())
+            catalog::get(catalog::Kind::Effect, id)
+                .or_else(|| catalog::get(catalog::Kind::Filter, id))
+                .map(|e| e.name)
         })
         .unwrap_or_else(|| id.to_string())
 }
@@ -1011,7 +981,7 @@ pub fn fx_graph(
     if let Some(f) = &fx.filter {
         if let Some(def) = filter(&f.id) {
             g.blended(&(def.build)(1.0, src), f.intensity.clamp(0.0, 1.0));
-        } else if let Some(c) = plugin_chain(&f.id, 1.0) {
+        } else if let Some(c) = catalog::pack_chain(catalog::Kind::Filter, &f.id, 1.0) {
             g.blended(&c, f.intensity.clamp(0.0, 1.0));
         }
     }
@@ -1023,7 +993,7 @@ pub fn fx_graph(
             } else {
                 g.blended(&(def.build)(1.0, src), i);
             }
-        } else if let Some(c) = plugin_chain(&e.id, e.intensity.clamp(0.0, 1.0)) {
+        } else if let Some(c) = catalog::pack_chain(catalog::Kind::Effect, &e.id, e.intensity.clamp(0.0, 1.0)) {
             g.push(c);
         }
     }
@@ -1549,11 +1519,30 @@ mod tests {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        register_plugin_fx(vec![PluginFx {
-            id: "t.p/glow".into(),
-            name: "Glow".into(),
-            is_filter: false,
-            chain: "gblur=sigma=2,eq=brightness=0.04*{intensity}".into(),
+        use catalog::{Entry, Kind, Pack, PackInfo, Payload};
+        let info = PackInfo {
+            id: "t.p".into(),
+            name: "T".into(),
+            version: "1.0.0".into(),
+            description: String::new(),
+            license: "CC0-1.0".into(),
+            author: String::new(),
+            source: None,
+        };
+        catalog::load_packs(vec![Pack {
+            info,
+            enabled: true,
+            entries: vec![Entry {
+                id: "t.p/glow".into(),
+                kind: Kind::Effect,
+                name: "Glow".into(),
+                categories: vec![],
+                pack: "t.p".into(),
+                license: "CC0-1.0".into(),
+                author: String::new(),
+                source: None,
+                payload: Payload::Ffmpeg("gblur=sigma=2,eq=brightness=0.04*{intensity}".into()),
+            }],
         }]);
         let mut fx = ClipFx::default();
         fx.effects.push(FxRef {

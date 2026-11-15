@@ -746,6 +746,6 @@ impl App {
         }
         self.settings.plugin_states.insert(id.to_string(), on);
         self.settings.save();
-        self.refresh_plugin_fx();
+        self.refresh_catalog();
     }
 }
