@@ -1,6 +1,6 @@
 //! Spracherkennung: Parakeet TDT 0.6B v3 (bevorzugt) mit Whisper als Rückfall.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ort::value::Tensor;
@@ -490,9 +490,6 @@ pub fn parse_srt(text: &str) -> Vec<Segment> {
         })
         .collect()
 }
-
-/// Rückgabe für Aufrufer, die einen Pfad brauchen.
-pub fn _unused(_: PathBuf) {}
 
 #[cfg(test)]
 mod tests {
