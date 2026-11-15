@@ -526,34 +526,39 @@ impl App {
         });
         self.asset_cat.insert("cap-q", q.clone());
         self.asset_cat.insert("cap-r", rep);
-        // Stil bzw. Aufteilung der gewählten Vorlage auf alle
-        ui.horizontal_wrapped(|ui| {
-            let p = self.caption_preset();
-            if ui
-                .add(theme::ghost(format!("{}  {}", icon::PAINT_BRUSH, crate::tr(format!("Stil „{}“ auf alle", crate::tr(p.name))))))
-                .clicked()
-            {
-                let ops: Vec<EditOp> = items
-                    .iter()
-                    .map(|c| {
-                        let n = self.caption_clip(&text_of(c), c.start, c.duration);
-                        let mut c2 = c.clone();
-                        c2.content = n.content;
-                        c2.transform = n.transform;
-                        c2.anim = n.anim;
-                        EditOp::ReplaceClip { clip: c2 }
-                    })
-                    .collect();
-                self.apply_batch(ops);
-            }
-            if ui
-                .add(theme::ghost(format!("{}  {}", icon::SPLIT_HORIZONTAL, crate::tr("Neu aufteilen"))))
-                .on_hover_text(crate::tr("Zeilen so lang wie in der gewählten Vorlage"))
-                .clicked()
-            {
-                self.resegment_captions(&items);
-            }
-        });
+        // Stil bzw. Aufteilung der gewählten Vorlage auf alle: nur echte Untertitel-Spuren, nie normale
+        // Textclips (die Liste zeigt in älteren Projekten ersatzweise alle Textspuren)
+        let bulk = bulk_targets(&self.project);
+        if !bulk.is_empty() {
+            let items = &bulk;
+            ui.horizontal_wrapped(|ui| {
+                let p = self.caption_preset();
+                if ui
+                    .add(theme::ghost(format!("{}  {}", icon::PAINT_BRUSH, crate::tr(format!("Stil „{}“ auf alle", crate::tr(p.name))))))
+                    .clicked()
+                {
+                    let ops: Vec<EditOp> = items
+                        .iter()
+                        .map(|c| {
+                            let n = self.caption_clip(&text_of(c), c.start, c.duration);
+                            let mut c2 = c.clone();
+                            c2.content = n.content;
+                            c2.transform = n.transform;
+                            c2.anim = n.anim;
+                            EditOp::ReplaceClip { clip: c2 }
+                        })
+                        .collect();
+                    self.apply_batch(ops);
+                }
+                if ui
+                    .add(theme::ghost(format!("{}  {}", icon::SPLIT_HORIZONTAL, crate::tr("Neu aufteilen"))))
+                    .on_hover_text(crate::tr("Zeilen so lang wie in der gewählten Vorlage"))
+                    .clicked()
+                {
+                    self.resegment_captions(items);
+                }
+            });
+        }
         ui.add_space(4.0);
         let mut jump = None;
         let mut ops: Vec<EditOp> = Vec::new();
@@ -710,6 +715,19 @@ impl App {
     }
 }
 
+/// Clips, die „Stil auf alle“ und „Neu aufteilen“ ändern: nur auf Spuren namens „Untertitel“.
+fn bulk_targets(p: &Project) -> Vec<Clip> {
+    let mut v: Vec<Clip> = p
+        .timeline
+        .tracks
+        .iter()
+        .filter(|t| t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME))
+        .flat_map(|t| t.clips.iter().cloned())
+        .collect();
+    v.sort_by_key(|c| c.start);
+    v
+}
+
 fn text_of(c: &Clip) -> String {
     match &c.content {
         ClipContent::Text(s) => s.text.clone(),
@@ -720,6 +738,21 @@ fn text_of(c: &Clip) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn style_for_all_leaves_plain_text_clips_alone() {
+        let mut p = Project::new("x");
+        let text = |s: &str| Clip::new(ClipContent::Text(TextStyle { text: s.into(), ..Default::default() }), Time::ZERO, Time::from_secs_f64(1.0));
+        let mut plain = Track::new(TrackKind::Text);
+        plain.clips.push(text("DER FILM"));
+        p.timeline.tracks.push(plain);
+        assert!(bulk_targets(&p).is_empty(), "normale Textspur ist kein Untertitel");
+        let mut caps = Track::new(TrackKind::Text);
+        caps.name = Some(TRACK_NAME.into());
+        caps.clips.push(text("Hallo"));
+        p.timeline.tracks.push(caps);
+        assert_eq!(bulk_targets(&p).iter().map(text_of).collect::<Vec<_>>(), ["Hallo"]);
+    }
 
     #[test]
     fn presets_are_valid() {
