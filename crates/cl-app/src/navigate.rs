@@ -12,6 +12,12 @@ pub fn marker_color(i: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
+/// Entf auf der Magnet-Hauptspur mit „Alles mitziehen“: die Lücke schließt sich auf allen
+/// Spuren (wie Umschalt+Entf), sonst blieben Overlays und Marker versetzt stehen.
+pub fn delete_ripples_all(magnet: bool, all_tracks: bool, sel_on_main: &[bool]) -> bool {
+    magnet && all_tracks && !sel_on_main.is_empty() && sel_on_main.iter().all(|m| *m)
+}
+
 /// „1:23“ bzw. „1:02:03“ wie in YouTube-Kapiteln
 pub fn chapter_time(t: Time) -> String {
     let s = t.as_secs_f64().max(0.0) as u64;
@@ -508,6 +514,16 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delete_on_magnet_main_moves_all_tracks_when_linked() {
+        assert!(delete_ripples_all(true, true, &[true, true]));
+        assert!(!delete_ripples_all(true, false, &[true]));
+        assert!(!delete_ripples_all(false, true, &[true]));
+        // Overlay in der Auswahl: normales Löschen
+        assert!(!delete_ripples_all(true, true, &[true, false]));
+        assert!(!delete_ripples_all(true, true, &[]));
+    }
 
     #[test]
     fn chapters_start_at_zero() {

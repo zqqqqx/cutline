@@ -1519,6 +1519,12 @@ impl App {
         if sel.is_empty() {
             return;
         }
+        let on_main: Vec<bool> = sel.iter().filter_map(|c| self.project.find_clip(*c).map(|(t, _)| t.main)).collect();
+        let s = &self.project.settings;
+        if crate::navigate::delete_ripples_all(s.main_track_magnet, s.ripple_all_tracks, &on_main) {
+            self.ripple_delete();
+            return;
+        }
         let first = sel
             .iter()
             .filter_map(|c| self.project.find_clip(*c).map(|(_, c)| c.start))
@@ -2909,6 +2915,12 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
+        // Oberflächengröße an die Fenstergröße binden: Dialoge passen immer ins Fenster
+        let zoom = ctx.zoom_factor();
+        let want = crate::chrome::effective_ui_scale(self.ui_scale, ctx.screen_rect().size() * zoom);
+        if (want - zoom).abs() > 0.005 {
+            ctx.set_zoom_factor(want);
+        }
         if perf() {
             self.perf_ui += 1;
             let el = self.perf_since.elapsed().as_secs_f64();
@@ -3074,8 +3086,9 @@ impl eframe::App for App {
             if !lay.timeline_full {
                 th = self.timeline_area(ctx, id_t, lay.timeline_top, sr, ft);
             }
-            // Vom Nutzer gezogene Breiten als Anteil merken (nur wenn das Fenster gleich blieb)
-            if !resized && sr.width() > 0.0 && sr.height() > 0.0 {
+            // Vom Nutzer gezogene Breiten als Anteil merken (nur beim Ziehen und wenn das Fenster
+            // gleich blieb: sonst überschreiben Mindestbreiten nach Zoom/Größenwechsel die Anteile)
+            if !resized && sr.width() > 0.0 && sr.height() > 0.0 && ctx.input(|i| i.pointer.primary_down()) {
                 self.layout_frac = (aw / sr.width(), r.width() / sr.width(), th / sr.height());
             }
             self.layout_screen = Some(sr);
