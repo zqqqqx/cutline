@@ -426,7 +426,9 @@ impl App {
             )
             .snap_to_frame(m.fps.unwrap_or(fps))
         } else {
-            Time::ZERO
+            // Bewegtes Bild: dasselbe Einzelbild wie im Export (Schleife bzw. letztes Bild halten)
+            // shortcut: beim Abspielen ein Einzelbild-Auftrag je Bild statt Strom, ausbauen falls es ruckelt
+            cl_media::animation(&m.path).map_or(Time::ZERO, |a| a.seek_time(l.t_rel))
         };
         let animated_fx = c.fx.effects.iter().any(|e| {
             matches!(

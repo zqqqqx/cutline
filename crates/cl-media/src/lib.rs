@@ -14,6 +14,9 @@ use std::thread::JoinHandle;
 use cl_core::{MediaId, MediaKind, MediaRef, Rational, Time};
 use serde::Deserialize;
 
+mod anim;
+pub use anim::{animation, Animation};
+
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
     #[error("FFmpeg/FFprobe nicht gefunden. Bitte installieren oder CUTLINE_FFMPEG_DIR setzen.")]
@@ -210,7 +213,9 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
                 && single
                 && duration <= Time::from_millis(100)
                 && audio.is_none())
-    }) && !fmt_name.contains("gif");
+    }) || fmt_name.contains("gif")
+        // bewegte Bilder laufen als Bild-Clip (siehe [`animation`]), nicht als Video
+        || fmt_name == "apng";
 
     let kind = match (video, is_image) {
         (Some(_), true) => MediaKind::Image,

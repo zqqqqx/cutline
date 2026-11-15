@@ -156,15 +156,21 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
     let dur = c.duration.as_secs_f64();
     let path = m.path.to_string_lossy().into_owned();
     let (_, seg_len) = source_segment(c);
+    // Bewegtes Bild (GIF/APNG): einmal abspielen und letztes Bild halten bzw. als Schleife;
+    // `-loop 1` kennen nur Standbild-Leser
+    let anim = if image { cl_media::animation(&m.path) } else { None };
     let i = if image {
-        ctx.input(vec![
-            "-loop".into(),
-            "1".into(),
+        let looping: &[&str] = match &anim {
+            None => &["-loop", "1"],
+            Some(a) if a.looping => &["-stream_loop", "-1"],
+            Some(_) => &[],
+        };
+        ctx.input(looping.iter().map(|s| s.to_string()).chain([
             "-t".into(),
             f(dur + 0.1),
             "-i".into(),
             path,
-        ])
+        ]).collect())
     } else {
         let (seg_in, _) = source_segment(c);
         ctx.input(vec![
@@ -205,6 +211,8 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool) -> Result<Sp
         }
         // Videos, die kürzer als der Clip sind (Rundung), halten das letzte Bild
         pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(0.5)));
+    } else if anim.is_some() {
+        pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(dur + 0.1)));
     }
     pre.push(format!("fps={}", ctx.fps));
     pre.push(format!("scale={bw}:{bh}:flags=bicubic"));

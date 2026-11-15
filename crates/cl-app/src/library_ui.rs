@@ -116,8 +116,31 @@ fn load_rgba(p: &std::path::Path, size: u32) -> Option<(u32, u32, Vec<u8>)> {
         let px = cl_fx::stickers::render_svg(&svg, size)?;
         return Some((size, size, px));
     }
-    let img = image::open(p).ok()?.thumbnail(size, size).to_rgba8();
+    let img = match anim_still(p) {
+        Some(b) => image::DynamicImage::from(b),
+        None => image::open(p).ok()?,
+    };
+    let img = img.thumbnail(size, size).to_rgba8();
     Some((img.width(), img.height(), img.into_raw()))
+}
+
+/// Bewegtes Bild: das Einzelbild mit der größten deckenden Fläche (bei einem Auftritt wäre das
+/// erste Bild leer).
+fn anim_still(p: &std::path::Path) -> Option<image::RgbaImage> {
+    use image::AnimationDecoder;
+    cl_media::animation(p)?;
+    let r = image::ImageReader::open(p).ok()?.with_guessed_format().ok()?;
+    let format = r.format()?;
+    let f = r.into_inner();
+    let frames = match format {
+        image::ImageFormat::Gif => image::codecs::gif::GifDecoder::new(f).ok()?.into_frames(),
+        image::ImageFormat::Png => image::codecs::png::PngDecoder::new(f).ok()?.apng().ok()?.into_frames(),
+        _ => return None,
+    };
+    frames
+        .filter_map(Result::ok)
+        .map(|f| f.into_buffer())
+        .max_by_key(|b| b.pixels().map(|p| p[3] as u64).sum::<u64>())
 }
 
 impl Thumbs {
@@ -738,5 +761,32 @@ impl App {
                     .visible(area, cat, q, &i.key, &i.name, &i.folder)
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn animated_tile_shows_the_fullest_frame() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        // Auftritt: von links wachsender Balken, erstes Bild leer
+        let grow = "color=red:size=64x64:rate=10:duration=1,format=rgba,geq=r=255:g=0:b=0:a='if(lt(X,T*64),255,0)'";
+        for (name, extra) in [("a.png", vec!["-plays", "1", "-f", "apng"]), ("a.gif", vec!["-vf", "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse"])] {
+            let f = dir.path().join(name);
+            let st = cl_media::ffmpeg_command()
+                .unwrap()
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i", grow])
+                .args(extra)
+                .arg(&f)
+                .status()
+                .unwrap();
+            assert!(st.success());
+            let (w, _, px) = super::load_rgba(&f, 64).unwrap();
+            let opaque = (0..w as usize).filter(|x| px[(32 * w as usize + x) * 4 + 3] > 128).count();
+            assert!(opaque >= 55, "{name}: {opaque}");
+        }
     }
 }
