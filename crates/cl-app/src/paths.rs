@@ -60,9 +60,109 @@ fn broken_json_is_kept_aside() {
 }
 
 /// Dateiname aus einem Projektnamen: nur Buchstaben, Ziffern, Leerzeichen und `-`
+/// Höchstens 100 Zeichen (Windows: 255 je Name, dazu kommen Endung und „ (Kopie 2)“), nie leer,
+/// keine reservierten Gerätenamen (`CON`, `NUL` …).
 pub fn safe_name(name: &str) -> String {
-    let s: String = name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
-    s.trim().to_string()
+    let s: String = name.chars().take(100).map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
+    let s = s.trim();
+    let reserved = ["CON", "PRN", "AUX", "NUL"].contains(&s.to_uppercase().as_str())
+        || (s.len() == 4 && ["COM", "LPT"].iter().any(|d| s.to_uppercase().starts_with(d)) && s.ends_with(|c: char| c.is_ascii_digit()));
+    match s {
+        "" => "Projekt".into(),
+        s if reserved => format!("{s}_"),
+        s => s.into(),
+    }
+}
+
+#[test]
+fn safe_name_is_a_writable_file_name() {
+    let d = tempfile::tempdir().unwrap();
+    for n in ["", "   ", "CON", "nul", "COM1", "lpt9", &"Ä".repeat(400), "a/b\\c:d*e?f\"g<h>i|j", "Ünïcödé 🎬 Name", "..", "."] {
+        let s = safe_name(n);
+        assert!(!s.is_empty() && s.chars().count() <= 101, "{n:?} → {s:?}");
+        let p = d.path().join(format!("{s} (Kopie 12).cutline"));
+        std::fs::write(&p, "{}").unwrap_or_else(|e| panic!("{n:?} → {s:?}: {e}"));
+        assert_eq!(p.parent(), Some(d.path()));
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "{}", "{n:?} → {s:?}");
+        std::fs::remove_file(&p).unwrap();
+    }
+    assert_eq!(safe_name("Urlaub 2026"), "Urlaub 2026");
+}
+
+/// Läuft der Prozess mit dieser PID noch? (Sperrdatei eines abgestürzten Fensters erkennen)
+/// shortcut: eine inzwischen neu vergebene PID gilt als laufend (nur eine Warnung zu viel), Programmname prüfen, wenn das stört.
+pub fn pid_alive(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        extern "system" {
+            fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+            fn GetExitCodeProcess(h: isize, code: *mut u32) -> i32;
+            fn CloseHandle(h: isize) -> i32;
+        }
+        const QUERY_LIMITED: u32 = 0x1000;
+        const STILL_ACTIVE: u32 = 259;
+        // SAFETY: nur Abfragen auf einem eigenen Handle, das danach geschlossen wird
+        unsafe {
+            let h = OpenProcess(QUERY_LIMITED, 0, pid);
+            if h == 0 {
+                return false;
+            }
+            let mut code = 0u32;
+            let ok = GetExitCodeProcess(h, &mut code) != 0;
+            CloseHandle(h);
+            ok && code == STILL_ACTIVE
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+}
+
+/// Gehört die Sperrdatei einem anderen, noch laufenden Cutline-Fenster? Liegengebliebene
+/// Sperren (Absturz, hartes Beenden) und Sperren älter als 12 h zählen nicht.
+pub fn lock_held_by_other(lock: &Path, me: u32) -> bool {
+    let fresh = std::fs::metadata(lock)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|d| d < std::time::Duration::from_secs(12 * 3600));
+    fresh
+        && std::fs::read_to_string(lock)
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .is_some_and(|pid| pid != me && pid_alive(pid))
+}
+
+#[test]
+fn stale_lock_of_dead_process_is_taken_over() {
+    let d = tempfile::tempdir().unwrap();
+    let lock = d.path().join("a.cutline.lock");
+    let me = std::process::id();
+    assert!(!lock_held_by_other(&lock, me), "keine Sperre");
+    // fremdes, laufendes Fenster: dieser Testprozess aus Sicht einer anderen PID
+    std::fs::write(&lock, me.to_string()).unwrap();
+    assert!(lock_held_by_other(&lock, me + 1));
+    assert!(!lock_held_by_other(&lock, me), "eigene Sperre");
+    // Prozess ist beendet (hartes Beenden): Sperre gilt nicht mehr
+    let mut c = if cfg!(windows) {
+        std::process::Command::new("cmd").args(["/c", "exit"]).spawn().unwrap()
+    } else {
+        std::process::Command::new("true").spawn().unwrap()
+    };
+    let dead = c.id();
+    c.wait().unwrap();
+    assert!(!pid_alive(dead));
+    std::fs::write(&lock, dead.to_string()).unwrap();
+    assert!(!lock_held_by_other(&lock, me), "liegengebliebene Sperre");
+    for junk in ["", "abc", "-5", "99999999999"] {
+        std::fs::write(&lock, junk).unwrap();
+        assert!(!lock_held_by_other(&lock, me), "{junk:?}");
+    }
 }
 
 /// Ordner für erzeugte Dateien, auf die Projekte zeigen (Freistell-Masken, SVG-Bilder).
