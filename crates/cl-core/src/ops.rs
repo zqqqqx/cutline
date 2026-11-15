@@ -502,7 +502,7 @@ impl EditOp {
                     }
                 }
                 after_change(p, ti);
-                resolve_overlaps(p, ti, clip);
+                resolve_overlaps(p, ti);
                 Ok(OpOutput::None)
             }
             EditOp::SetFx { clip, fx } => {
@@ -889,7 +889,7 @@ fn prune_if_empty(p: &mut Project, ti: usize) {
 
 /// Nach einer Längenänderung auf Nebenspuren: nachfolgende Clips, die jetzt
 /// überlappen, nach hinten schieben.
-fn resolve_overlaps(p: &mut Project, ti: usize, _changed: ClipId) {
+fn resolve_overlaps(p: &mut Project, ti: usize) {
     let magnet = p.settings.main_track_magnet;
     let t = &mut p.timeline.tracks[ti];
     // Hauptspur mit Magnet ist schon lückenlos zusammengeschoben; ohne Magnet wie Nebenspuren

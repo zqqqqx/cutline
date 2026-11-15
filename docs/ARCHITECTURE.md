@@ -35,6 +35,8 @@ crates/
   cl-gpu      Shader transitions (WGSL) on a headless wgpu device, shared by preview and export
   cl-mcp      MCP server (stdio and token-protected local HTTP); tools map to EditOps
   cl-update   Updates from GitHub Releases: check, download, SHA-256 verify, swap binary
+  cl-import   Projects from other editors: CapCut drafts, FCPXML (Final Cut Pro, DaVinci Resolve)
+  cl-epidemic Epidemic Sound integration: search, preview, download, favorites, sign-in, usage report
   cl-app      Desktop app (egui/wgpu), binary `cutline`
 plugins/
   cutline-basis  Reference asset pack (plugin.toml, FFmpeg chains)
@@ -79,7 +81,7 @@ downloaded only when needed.
 
 ## MCP
 
-The app can be controlled by MCP clients (AI assistants, scripts):
+The app can be controlled by MCP clients (scripts, tools):
 
 - **stdio:** `cutline --mcp project.cutline` runs headless.
 - **HTTP:** Settings → MCP interface. Binds to `127.0.0.1`, requires a bearer token, rejects

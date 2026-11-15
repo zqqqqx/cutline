@@ -628,21 +628,6 @@ pub fn transition_secs(a: &Clip, b: &Clip) -> f64 {
         .max(0.0)
 }
 
-/// Pfad als Wert einer Filteroption im Filtergraphen escapen (`C:/x.cube` → `C\\:/x.cube`).
-/// Zwei Ebenen: erst für die Option (`:` und `'`), dann für den Graphen (`\ ' [ ] , ;`) –
-/// so übersteht auch ein Apostroph im Pfad beide.
-pub fn escape_path(p: &str) -> String {
-    let opt = p.replace('\\', "/").replace(':', "\\:").replace('\'', "\\'");
-    let mut out = String::with_capacity(opt.len() + 8);
-    for c in opt.chars() {
-        if matches!(c, '\\' | '\'' | '[' | ']' | ',' | ';') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
 /// Strecke von (x, y) nach (x, y)
 type Seg = ((f64, f64), (f64, f64));
 
@@ -1193,7 +1178,7 @@ pub fn preview_graph(
             .as_secs_f64();
         lines.push(format!(
             "movie=filename={}:seek_point={src_t:.4},{}[mt]",
-            escape_path(m),
+            cl_media::escape_path(m),
             matte_pre.join(",")
         ));
         matte = Some("mt".to_string());
@@ -1481,7 +1466,7 @@ mod tests {
             let o = ChainOpts {
                 t_offset: 1.5,
                 apply_reverse: true,
-                lut: Some(escape_path(&lut.to_string_lossy())),
+                lut: Some(cl_media::escape_path(&lut.to_string_lossy())),
                 matte: None,
             };
             let src = Src {

@@ -240,10 +240,10 @@ pub fn ffmpeg_chain_allowed(f: &str) -> bool {
         if !ALLOWED_FILTERS.contains(&name) {
             return false;
         }
-        let Some(opts) = split_top(args, ':') else {
-            return false;
-        };
-        opts.iter().enumerate().all(|(i, o)| match o.split_once('=') {
+        // FFmpeg entfernt '…' schon auf Graph-Ebene und trennt erst danach an `:` – also wie FFmpeg
+        // ohne Anführungszeichen prüfen (`curves='r=0/0 1/1:psfile=x'` setzt sonst `psfile`)
+        let args = args.replace('\'', "");
+        args.split(':').enumerate().all(|(i, o)| match o.split_once('=') {
             Some((k, _)) => {
                 let k = k.trim().to_ascii_lowercase();
                 !(k.contains("file") || k == "result" || k == "url")
@@ -802,6 +802,14 @@ params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=
             "eq=gamma='1",
             "eq=gamma=1\\,movie=x.mp4",
             "unbekannt=1",
+            // FFmpeg entfernt die Anführungszeichen, bevor es die Optionen trennt
+            "curves='r=0/0 1/1:psfile=//host/share/x.acv'",
+            "curves=r=0/0 1/1:'ps''file'=x.acv",
+            "curves=r='0/0 1/1':'psfile=x.acv'",
+            "curves='none:0/0 1/1:0/0 1/1:0/0 1/1:0/0 1/1:0/0 1/1:x.acv'",
+            "eq='gamma=1',drawbox='c=red:t=2',curves='r=0/0 1/1':''psfile'='x.acv'",
+            "curves=\"r=0/0 1/1:psfile=x.acv\"",
+            r"curves='r=0/0 1/1\:psfile=x.acv'",
         ] {
             assert!(!ffmpeg_chain_allowed(bad), "{bad}");
         }

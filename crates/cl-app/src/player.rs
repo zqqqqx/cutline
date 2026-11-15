@@ -526,7 +526,7 @@ pub(crate) fn stream_alias(c: &Clip, m: &MediaRef, (w, h): (u32, u32), fps: Rati
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn open_job(o: crate::playcore::Open, c: &Clip, m: &MediaRef, path: std::path::PathBuf, (w, h): (u32, u32), fps: Rational, alias: u64) -> OpenJob {
-    let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_fx::escape_path);
+    let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
     let t_rel = Time((o.at - c.start).0.clamp(0, (c.duration.0 - 1000).max(0)));
     OpenJob {
         open: o,
@@ -697,7 +697,7 @@ pub(crate) mod still {
         let ClipContent::Media { media, .. } = &c.content else { return None };
         let m = project.media(*media)?;
         let (w, h) = decode_size(c, m, egui::vec2(cw as f32, ch as f32), 1.0);
-        let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_fx::escape_path);
+        let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
         let graph = cl_fx::preview_graph(c, w, h, t_rel.as_secs_f64(), None, lut);
         let src = still_src(c, m, t_rel, project.settings.fps);
         cl_media::decode_frame_fx(&m.path, src, w, h, graph.as_deref()).ok()
@@ -1435,7 +1435,7 @@ impl App {
             return;
         }
         let (w, h) = decode_size(c, m, canvas_px, div);
-        let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_fx::escape_path);
+        let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
         let src = still_src(c, m, l.t_rel, fps);
         let animated_fx = c.fx.effects.iter().any(|e| {
             matches!(

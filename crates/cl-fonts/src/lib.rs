@@ -205,6 +205,15 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
     if num == 0 || num > 4095 {
         return Err(FontError::Corrupt("WOFF-Tabellenzahl".into()));
     }
+    // Längen stammen aus der Datei: ohne Grenze für die SUMME reichen viele Einträge auf denselben
+    // kleinen zlib-Block für Hunderte GB Speicher
+    let mut total = 0u64;
+    for i in 0..num {
+        total += be_u32(d, 44 + i * 20 + 12)? as u64;
+    }
+    if total > 64 << 20 {
+        return Err(FontError::Corrupt("WOFF-Tabellen zu groß".into()));
+    }
     let mut tables = Vec::with_capacity(num);
     for i in 0..num {
         let e = 44 + i * 20;
@@ -213,10 +222,6 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
         let comp = be_u32(d, e + 8)? as usize;
         let orig = be_u32(d, e + 12)? as usize;
         let csum = be_u32(d, e + 16)?;
-        // Längen stammen aus der Datei: ohne Grenze reicht ein Header für 4 GiB Speicher
-        if orig > 64 << 20 {
-            return Err(FontError::Corrupt("WOFF-Tabelle zu groß".into()));
-        }
         let src = d
             .get(off..off + comp)
             .ok_or_else(|| FontError::Corrupt("WOFF-Tabelle außerhalb".into()))?;
@@ -612,6 +617,30 @@ mod tests {
         d[12..14].copy_from_slice(&1u16.to_be_bytes());
         d[44 + 4..44 + 8].copy_from_slice(&64u32.to_be_bytes());
         d[44 + 12..44 + 16].copy_from_slice(&u32::MAX.to_be_bytes());
+        let e = woff_to_sfnt(&d).unwrap_err();
+        assert!(e.to_string().contains("zu groß"), "{e}");
+    }
+
+    #[test]
+    fn woff_limits_the_sum_of_all_tables() {
+        use std::io::Write;
+        // 100 Einträge auf denselben kleinen Block, der auf je 1 MB aufgeht: zusammen über der Grenze
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+        z.write_all(&vec![0u8; 1 << 20]).unwrap();
+        let block = z.finish().unwrap();
+        let n = 100usize;
+        let off = 44 + n * 20;
+        let mut d = vec![0u8; off];
+        d[0..4].copy_from_slice(b"wOFF");
+        d[12..14].copy_from_slice(&(n as u16).to_be_bytes());
+        for i in 0..n {
+            let e = 44 + i * 20;
+            d[e..e + 4].copy_from_slice(&(i as u32).to_be_bytes());
+            d[e + 4..e + 8].copy_from_slice(&(off as u32).to_be_bytes());
+            d[e + 8..e + 12].copy_from_slice(&(block.len() as u32).to_be_bytes());
+            d[e + 12..e + 16].copy_from_slice(&(1u32 << 20).to_be_bytes());
+        }
+        d.extend_from_slice(&block);
         let e = woff_to_sfnt(&d).unwrap_err();
         assert!(e.to_string().contains("zu groß"), "{e}");
     }

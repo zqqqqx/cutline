@@ -23,8 +23,7 @@ pub struct HistoryEntry {
 
 /// Projekt + Undo/Redo-Verlauf.
 ///
-/// Phase 0 speichert Snapshots (Projekte sind kleine JSON-Bäume). Für sehr große
-/// Projekte werden später inverse Ops gespeichert. Die API bleibt dabei gleich.
+/// Speichert volle Snapshots; bei großen Projekten werden es dafür weniger Schritte (siehe `apply`).
 #[derive(Debug, Clone)]
 pub struct Document {
     project: Project,
@@ -72,8 +71,12 @@ impl Document {
                     at: std::time::SystemTime::now(),
                     snapshot: before,
                 });
-                if self.undo.len() > self.max_history {
-                    self.undo.remove(0);
+                // Ein Schritt ist eine volle Kopie (gemessen ≈1,1 KB je Clip): höchstens ≈100 000
+                // Clip-Kopien (≈110 MB), mindestens 10 Schritte; bis 1000 Clips bleibt es bei 100
+                let clips: usize = self.project.timeline.tracks.iter().map(|t| t.clips.len()).sum();
+                let cap = (100_000 / clips.max(1)).max(10).min(self.max_history);
+                if self.undo.len() > cap {
+                    self.undo.drain(..self.undo.len() - cap);
                 }
                 self.redo.clear();
                 self.revision += 1;
@@ -836,13 +839,13 @@ mod tests {
         let before = d.project().clone();
         d.apply(
             EditOp::RemoveClip { clip: id },
-            OpSource::Mcp("claude".into()),
+            OpSource::Mcp("test-client".into()),
         )
         .unwrap();
         assert!(d.project().find_clip(id).is_none());
         assert_eq!(
             d.history().last().unwrap().1,
-            &OpSource::Mcp("claude".into())
+            &OpSource::Mcp("test-client".into())
         );
         assert_eq!(d.undo().unwrap(), "Clip löschen");
         assert_eq!(d.project(), &before);

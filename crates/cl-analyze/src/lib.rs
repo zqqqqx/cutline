@@ -34,8 +34,6 @@ pub struct ModelInfo {
     pub files: &'static [(&'static str, &'static str)],
 }
 
-const PK: &str = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/";
-
 pub static CATALOG: &[ModelInfo] = &[
     ModelInfo {
         id: "onnxruntime",
@@ -72,8 +70,6 @@ pub static CATALOG: &[ModelInfo] = &[
         files: &[("rvm_mobilenetv3_fp32.onnx", "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx")],
     },
 ];
-
-const _: &str = PK;
 
 /// Modellordner mit Suchlogik für die einzelnen Dateien.
 #[derive(Debug, Clone)]
@@ -271,17 +267,6 @@ pub fn gray_frames(
     }
     let _ = child.wait();
     Ok(n)
-}
-
-/// Pfad für FFmpeg-Filteroptionen escapen.
-pub(crate) fn esc(p: &Path) -> String {
-    format!(
-        "'{}'",
-        p.to_string_lossy()
-            .replace('\\', "/")
-            .replace(':', "\\:")
-            .replace('\'', "")
-    )
 }
 
 #[cfg(test)]
