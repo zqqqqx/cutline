@@ -37,11 +37,8 @@ pub const LANGS: [(&str, &str); 8] = [
 fn task_bar(ui: &mut egui::Ui, app: &App, key: &str) -> bool {
     if let Some(t) = app.tasks.running(key) {
         ui.horizontal(|ui| {
-            ui.add(
-                egui::ProgressBar::new(t.progress()).fill(theme::ACCENT())
-                    .desired_width((ui.available_width() - 36.0).max(20.0))
-                    .desired_height(6.0),
-            );
+            let (r, _) = ui.allocate_exact_size(vec2((ui.available_width() - 36.0).max(20.0), 3.0), egui::Sense::hover());
+            widgets::task_line(ui.painter(), egui::Id::new(("task", t.id)), r, t.progress());
             if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
                 t.cancel();
             }
@@ -1099,33 +1096,6 @@ impl App {
                 Err(e) => TaskDone::Failed(e),
             },
         );
-    }
-
-    /// Laufende Aufgaben in der Titelleiste.
-    pub fn tasks_badge(&mut self, ui: &mut egui::Ui) {
-        if let Some(t) = self.tasks.list.first() {
-            let more = self.tasks.list.len() - 1;
-            let txt = format!(
-                "{}  {} {:.0} %{}",
-                icon::SPINNER_GAP,
-                t.label.trim_end_matches(" …"),
-                t.progress() * 100.0,
-                if more > 0 {
-                    format!(" (+{more})")
-                } else {
-                    String::new()
-                }
-            );
-            let r = ui.label(RichText::new(txt).size(theme::FS_UI).color(theme::TEXT_DIM()));
-            if r.on_hover_text(crate::tr("Klicken bricht ab"))
-                .interact(egui::Sense::click())
-                .clicked()
-            {
-                t.cancel();
-            }
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(200));
-        }
     }
 
     // ------------------------------------------------------------ Modelle
