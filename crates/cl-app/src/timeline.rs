@@ -1881,11 +1881,9 @@ impl App {
             });
             let name_x = head.left() + 32.0 + toggles.len() as f32 * 19.0 + 4.0;
             if name_x < head.right() - 16.0 {
-                let g = hp.layout_no_wrap(
-                    name,
-                    egui::FontId::proportional(theme::FS_HINT),
-                    theme::TEXT_DIM(),
-                );
+                let font = egui::FontId::proportional(theme::FS_HINT);
+                let name = theme::elide(&name, head.right() - 6.0 - name_x, |s| theme::text_width(hp.ctx(), s, font.clone()));
+                let g = hp.layout_no_wrap(name, font, theme::TEXT_DIM());
                 let clip = Rect::from_min_max(
                     pos2(name_x, head.top()),
                     pos2(head.right() - 6.0, head.bottom()),
@@ -2232,11 +2230,14 @@ impl App {
             }
         }
         if let ClipContent::Text(st) = &c.content {
+            let font = egui::FontId::new(11.5, self.font_family(st.font_family.as_deref()));
+            let room = body.right().min(lanes_clip.right()) - 4.0 - (body.left() + 8.0);
+            let ctx = p.ctx().clone();
             inner.text(
                 body.left_center() + vec2(8.0, 0.0),
                 egui::Align2::LEFT_CENTER,
-                &st.text,
-                egui::FontId::new(11.5, self.font_family(st.font_family.as_deref())),
+                theme::elide(&st.text, room, |s| theme::text_width(&ctx, s, font.clone())),
+                font,
                 Color32::from_white_alpha(230),
             );
         }
