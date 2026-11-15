@@ -1862,6 +1862,11 @@ impl App {
         paths::write_atomic(p, self.project.to_json()).map_err(|e| e.to_string())?;
         self.saved_revision = self.revision;
         self.last_saved = Some(Instant::now());
+        // neues Projekt oder „Speichern unter“: Sperre wandert zur neuen Datei
+        if self.lock_file.as_deref() != Some(lock_path(p).as_path()) {
+            self.release_lock();
+            self.take_lock(p);
+        }
         self.settings.add_recent(p);
         // Titelbild für die Startseite
         if let Some((path, at)) = self
