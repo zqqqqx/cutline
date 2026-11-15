@@ -603,12 +603,19 @@ pub fn transition_name(id: &str) -> String {
         .unwrap_or_else(|| "Übergang".into())
 }
 
-/// Pfad für FFmpeg-Filteroptionen escapen (`C:/x.cube` → `'C\:/x.cube'`).
+/// Pfad als Wert einer Filteroption im Filtergraphen escapen (`C:/x.cube` → `C\\:/x.cube`).
+/// Zwei Ebenen: erst für die Option (`:` und `'`), dann für den Graphen (`\ ' [ ] , ;`) –
+/// so übersteht auch ein Apostroph im Pfad beide.
 pub fn escape_path(p: &str) -> String {
-    format!(
-        "'{}'",
-        p.replace('\\', "/").replace(':', "\\:").replace('\'', "")
-    )
+    let opt = p.replace('\\', "/").replace(':', "\\:").replace('\'', "\\'");
+    let mut out = String::with_capacity(opt.len() + 8);
+    for c in opt.chars() {
+        if matches!(c, '\\' | '\'' | '[' | ']' | ',' | ';') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Strecke von (x, y) nach (x, y)
@@ -1362,7 +1369,9 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let lut = dir.path().join("t.cube");
+        // Apostroph, Komma und Klammern im Pfad (früher fehlte die LUT dann in der Vorschau)
+        let lut = dir.path().join("O'Brien, [x]").join("t.cube");
+        std::fs::create_dir_all(lut.parent().unwrap()).unwrap();
         let mut cube = String::from("LUT_3D_SIZE 2\n");
         for b in 0..2 {
             for g in 0..2 {
