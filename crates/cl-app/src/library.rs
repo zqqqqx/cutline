@@ -28,6 +28,13 @@ pub const MEDIA_EXT: &[&str] = &[
     "flac", "m4a", "aac", "opus",
 ];
 
+/// Wohin sich eine Mediendatei speichern lässt: Bilder/GIFs als Element, Ton als Sound.
+/// Videos nicht (Elemente können keine Videos, Ton daraus bräuchte eine Umwandlung).
+pub fn save_kind(p: &Path) -> Option<Kind> {
+    let ext = p.extension()?.to_str()?.to_ascii_lowercase();
+    [Kind::Sticker, Kind::Sound].into_iter().find(|k| k.exts().contains(&ext.as_str()))
+}
+
 /// Vorsatz für verknüpfte Ordner (eigene Ordner auf der Platte, werden nicht kopiert)
 pub fn link_label(name: &str) -> String {
     format!("{} {name}", crate::theme::icon::LINK_SIMPLE)
@@ -945,6 +952,27 @@ mod tests {
         assert!(!v(&lib, "hand"), "verborgen bleibt verborgen");
     }
 
+
+    #[test]
+    fn media_saves_as_element_or_sound_into_new_folder() {
+        assert_eq!(save_kind(Path::new("a.GIF")), Some(Kind::Sticker));
+        assert_eq!(save_kind(Path::new("a.png")), Some(Kind::Sticker));
+        assert_eq!(save_kind(Path::new("a.mp3")), Some(Kind::Sound));
+        assert_eq!(save_kind(Path::new("a.mp4")), None);
+        assert_eq!(save_kind(Path::new("a")), None);
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        let src = home.path().join("clip.gif");
+        std::fs::write(&src, b"x").unwrap();
+        let mut lib = Library::default();
+        // neuer Ordner und Kopie in einem Schritt, gleicher Name zweimal: zweite Kopie umbenannt
+        assert_eq!(lib.import(Kind::Sticker, "Memes", std::slice::from_ref(&src)), 1);
+        assert_eq!(lib.import(Kind::Sticker, "Memes", std::slice::from_ref(&src)), 1);
+        assert_eq!(lib.folders(Kind::Sticker), vec!["Memes".to_string()]);
+        assert_eq!(lib.own_items(Kind::Sticker).len(), 2);
+        assert!(src.is_file(), "Original bleibt");
+    }
 
     fn keys(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()

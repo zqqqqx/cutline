@@ -95,6 +95,36 @@ pub enum LibDialog {
         key: String,
         label: String,
     },
+    /// Mediendatei in einen neuen Ordner der Elemente bzw. Sounds kopieren
+    SaveAs {
+        kind: Kind,
+        file: PathBuf,
+        name: String,
+    },
+}
+
+/// Untermenü „Als Element/Sound speichern ▸ eigene Ordner · Neuer Ordner …“ (nur für passende Dateien).
+/// Gewählt: `Some(Some(ordner))`, neuer Ordner: `Some(None)`.
+pub fn save_as_menu(ui: &mut egui::Ui, kind: Option<Kind>, folders: &[String], pick: &mut Option<Option<String>>) {
+    let Some(k) = kind else { return };
+    let (g, label) = match k {
+        Kind::Sound => (icon::SPEAKER_HIGH, "Als Sound speichern"),
+        _ => (icon::STICKER, "Als Element speichern"),
+    };
+    theme::submenu(ui, g, label, |ui| {
+        ui.set_min_width(160.0);
+        // verknüpfte Ordner gehören nicht Cutline: dort nichts ablegen
+        for f in folders.iter().filter(|f| !f.starts_with(icon::LINK_SIMPLE)) {
+            // Ordnernamen sind Nutzertext: nicht übersetzen
+            if ui.add(theme::menu_row(format!("{}   {f}", icon::FOLDER_SIMPLE)).min_width(160.0)).clicked() {
+                *pick = Some(Some(f.clone()));
+                ui.close_menu();
+            }
+        }
+        if menu_item(ui, icon::FOLDER_PLUS, "Neuer Ordner …", "") {
+            *pick = Some(None);
+        }
+    });
 }
 
 /// Lädt Vorschaubilder eigener Sticker im Hintergrund.
@@ -304,6 +334,19 @@ fn insert_mark(p: &egui::Painter, r: egui::Rect, after: bool) {
 }
 
 impl App {
+    /// Datei als Element bzw. Sound in den Ordner kopieren (`None`: Namen erfragen, Ordner anlegen).
+    pub fn save_as(&mut self, kind: Kind, folder: Option<String>, file: PathBuf) {
+        let Some(f) = folder else {
+            self.lib_dialog = Some(LibDialog::SaveAs { kind, file, name: String::new() });
+            return;
+        };
+        if self.library.import(kind, &f, std::slice::from_ref(&file)) == 0 {
+            self.toast_err("Datei nicht gefunden");
+        } else {
+            self.toast(if kind == Kind::Sound { "Als Sound gespeichert" } else { "Als Element gespeichert" });
+        }
+    }
+
     /// Liste ordnen (eigene Reihenfolge bzw. Pins zuerst, nicht bei Suche) und das Umsortieren holen.
     pub fn lib_arrange<T>(
         &self,
@@ -797,7 +840,7 @@ impl App {
         let err = self.dialog_error.clone();
         let mut edited = false;
         let title = match d {
-            LibDialog::NewFolder { .. } => "Neuer Ordner",
+            LibDialog::NewFolder { .. } | LibDialog::SaveAs { .. } => "Neuer Ordner",
             LibDialog::Rename { .. } | LibDialog::RenameCat { .. } => "Umbenennen",
             LibDialog::DeleteCat { .. } => "Ordner entfernen?",
         };
@@ -805,7 +848,10 @@ impl App {
             ui.set_width(320.0);
             close |= crate::dialog::title(ui, title);
             match d {
-                LibDialog::NewFolder { name, .. } | LibDialog::Rename { name, .. } | LibDialog::RenameCat { name, .. } => {
+                LibDialog::NewFolder { name, .. }
+                | LibDialog::Rename { name, .. }
+                | LibDialog::RenameCat { name, .. }
+                | LibDialog::SaveAs { name, .. } => {
                     let r = ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY));
                     if fresh {
                         r.request_focus();
@@ -873,6 +919,10 @@ impl App {
                 Some(LibDialog::DeleteCat { area, key, .. }) => {
                     let used: Vec<PathBuf> = self.project.media.iter().map(|m| m.path.clone()).collect();
                     self.library.delete_cat(area, &key, area_kind(area), &used)
+                }
+                Some(LibDialog::SaveAs { kind, file, name }) => {
+                    // Ordner anlegen und gleich hineinkopieren
+                    self.library.create_folder(kind, &name).map(|_| self.save_as(kind, Some(name.trim().to_string()), file))
                 }
                 None => Ok(()),
             };

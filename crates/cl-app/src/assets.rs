@@ -579,6 +579,9 @@ impl App {
             let mut ins = false;
             let mut props = false;
             let mut to_lib = false;
+            let save_kind = crate::library::save_kind(&m.path);
+            let folders = save_kind.map(|k| self.library.folders(k)).unwrap_or_default();
+            let mut save = None;
             self.asset_menu_with(&resp, area, &key, None, &cat, &mut |ui| {
                 if menu_item(ui, icon::INFO, "Eigenschaften", "") {
                     props = true;
@@ -591,6 +594,7 @@ impl App {
                     to_lib = true;
                     ui.close_menu();
                 }
+                crate::library_ui::save_as_menu(ui, save_kind, &folders, &mut save);
                 if menu_item(ui, icon::PLUS, "Am Playhead einfügen", "") {
                     ins = true;
                 }
@@ -601,6 +605,9 @@ impl App {
             });
             if ins {
                 add = Some(m.id);
+            }
+            if let (Some(k), Some(f)) = (save_kind, save) {
+                self.save_as(k, f, m.path.clone());
             }
             if props {
                 self.props = Some(crate::props::Props::Media(m.id));
@@ -691,7 +698,16 @@ impl App {
         self.reorder_done(ui, ed, area.inner_rect);
         self.lib_drop = Some((Kind::Media, area.inner_rect));
         for (r, it) in menus {
-            self.asset_menu(&r, "libmedia", &it.key, it.is_own().then_some(&it), &cat);
+            let Some(path) = it.path.clone() else { continue };
+            let save_kind = crate::library::save_kind(&path);
+            let folders = save_kind.map(|k| self.library.folders(k)).unwrap_or_default();
+            let mut save = None;
+            self.asset_menu_with(&r, "libmedia", &it.key, it.is_own().then_some(&it), &cat, &mut |ui| {
+                crate::library_ui::save_as_menu(ui, save_kind, &folders, &mut save);
+            });
+            if let (Some(k), Some(f)) = (save_kind, save) {
+                self.save_as(k, f, path);
+            }
         }
         if let Some(p) = add {
             self.library.mark_used(&format!("file:{}", p.display()));
