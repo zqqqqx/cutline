@@ -643,4 +643,33 @@ mod tests {
         app.sync_project();
         assert_eq!(app.project, before);
     }
+
+    /// Ablage und Aufgabe laufen noch, als „Zur Startseite“ gedrückt wird: ihr Ergebnis darf das
+    /// verlassene Projekt nicht mehr ändern (es würde später ohne Sperre gespeichert).
+    #[test]
+    fn results_after_going_home_do_not_touch_the_left_project() {
+        let (mut app, _home, _g) = test_app();
+        app.set_doc(Project::new("Verlassen"));
+        let (tx, rx) = channel();
+        let entry = Entry { path: PathBuf::from("spät.mp4"), audio: false, state: State::Probing };
+        app.drops.list.push(Pending { target: None, entries: vec![entry], rx });
+        let (go_tx, go_rx) = channel::<()>();
+        app.tasks.spawn(&egui::Context::default(), "spät", "Spät", move |_, _| {
+            let _ = go_rx.recv();
+            TaskDone::Run(Box::new(|app: &mut App| {
+                app.apply(EditOp::ImportMedia { media: media(MediaKind::Image, 0.0, "aufgabe.png") });
+            }))
+        });
+        app.go_home();
+        // mit der Korrektur ist der Empfänger schon weg
+        let _ = tx.send((0, Ok(media(MediaKind::Video, 2.0, "spät.mp4"))));
+        go_tx.send(()).unwrap();
+        app.poll_file_drops();
+        while !app.tasks.list.is_empty() {
+            app.poll_tasks();
+            std::thread::yield_now();
+        }
+        app.sync_project();
+        assert!(app.project.media.is_empty(), "{:?}", app.project.media);
+    }
 }

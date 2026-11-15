@@ -2075,6 +2075,9 @@ impl App {
 
     pub(crate) fn reset_editor(&mut self) {
         self.stop_playback();
+        // Ergebnisse laufender Ablagen und Aufgaben gehören zum verlassenen Projekt
+        self.drops.list.clear();
+        self.tasks.next_generation();
         self.core.new_project();
         self.select_only(None);
         self.live = None;
