@@ -664,6 +664,20 @@ mod tests {
         assert_eq!(app.project, before);
     }
 
+    /// Eine abgelegte Schrift wird übernommen: Textclips der Zeitleiste werden neu gesetzt, nicht
+    /// erst nach der nächsten Änderung.
+    #[test]
+    fn new_fonts_redraw_text_clips() {
+        let (mut app, _home, _g) = test_app();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.register_fonts(ctx);
+            let before = app.project_epoch;
+            app.apply_pending_fonts(ctx);
+            assert!(app.project_epoch > before);
+        });
+    }
+
     /// Spuren T, M, A1 (gesperrt), A2; Video und Ton auf die untere Hälfte von A1: neue Videospur
     /// über M, neue Tonspur direkt unter A1 – wie die Vorschau sie zeigt.
     #[test]
