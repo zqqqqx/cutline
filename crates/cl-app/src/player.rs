@@ -1245,6 +1245,9 @@ impl App {
                             .max(now.duration_since(last).as_secs_f64());
                     }
                     self.perf_last_frame = Some(now);
+                    if crate::app::perf() {
+                        self.perf_frame_shown();
+                    }
                 }
                 self.set_frame(ctx, id, key, &f);
             }

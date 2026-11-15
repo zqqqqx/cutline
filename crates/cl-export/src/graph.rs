@@ -870,6 +870,24 @@ fn curve_pieces(id: &str, src: f64, dur: f64) -> Vec<(f64, f64, f32)> {
         .collect()
 }
 
+/// Hörbare Clips (mit Medium), die den Bereich `start..end` berühren – in Spur- und
+/// Clipreihenfolge (die Reihenfolge der Eingänge im Mix).
+pub(crate) fn audible_clips(p: &Project, start: Time, end: Time) -> impl Iterator<Item = (&Clip, &MediaRef)> {
+    p.timeline
+        .tracks
+        .iter()
+        .filter(|tr| !tr.muted && matches!(tr.kind, TrackKind::Video | TrackKind::Audio))
+        .flat_map(|tr| tr.clips.iter())
+        .filter(move |c| !c.disabled && c.end() > start && c.start < end)
+        .filter(|c| c.volume_db > -59.9 || !c.keyframes.get(Prop::Volume).is_empty())
+        .filter_map(|c| match &c.content {
+            ClipContent::Media { media, kind } if *kind != MediaKind::Image => {
+                p.media(*media).filter(|m| m.is_local() && m.has_audio).map(|m| (c, m))
+            }
+            _ => None,
+        })
+}
+
 /// Ton: alle hörbaren Clips (Geschwindigkeit, Rückwärts, Lautstärke-Keyframes,
 /// Ein-/Ausblenden, Verlängerung mit Stille) werden gemischt.
 pub(crate) fn audio_part(
@@ -883,131 +901,110 @@ pub(crate) fn audio_part(
     wait_probe: bool,
 ) -> String {
     let mut labels = Vec::new();
-    for tr in &p.timeline.tracks {
-        if tr.muted || !matches!(tr.kind, TrackKind::Video | TrackKind::Audio) {
-            continue;
+    for (c, m) in audible_clips(p, start, end) {
+        let dur = c.duration.as_secs_f64();
+        let (seg_in, seg_len) = source_segment(c);
+        let i = *next_input;
+        *next_input += 1;
+        inputs.extend([
+            "-ss".into(),
+            f(seg_in.as_secs_f64()),
+            "-t".into(),
+            f(seg_len.as_secs_f64().max(0.02)),
+            "-i".into(),
+            m.path.to_string_lossy().into_owned(),
+        ]);
+        let mut chain = vec![
+            "aresample=48000".to_string(),
+            "aformat=sample_fmts=fltp:channel_layouts=stereo".into(),
+            "asetpts=PTS-STARTPTS".into(),
+        ];
+        // Kanäle: z. B. Mikrofon nur links → auf beide Ohren
+        let mode = c.audio.channels.unwrap_or(p.settings.channels);
+        let silent = (mode == Channels::Auto)
+            .then(|| cl_media::silent_channel_opt(&m.path, wait_probe))
+            .flatten();
+        if let Some(pan) = mode.filter(silent) {
+            chain.push(pan.into());
         }
-        for c in tr.clips.iter().filter(|c| !c.disabled) {
-            let ClipContent::Media { media, kind } = &c.content else {
-                continue;
-            };
-            if *kind == MediaKind::Image {
-                continue;
+        if c.fx.reverse {
+            chain.push("areverse".into());
+        }
+        let mut src = format!("{i}:a");
+        if let Some(id) = &c.fx.speed_curve {
+            // Tempo-Kurve: Quelle in Abschnitte teilen, je Abschnitt konstantes atempo
+            let pieces = curve_pieces(id, seg_len.as_secs_f64(), dur);
+            let outs: String = (0..pieces.len()).map(|k| format!("[c{i}p{k}]")).collect();
+            graph.push(format!("[{src}]{},asplit={}{outs}", chain.join(","), pieces.len()));
+            for (k, (a, b, speed)) in pieces.iter().enumerate() {
+                let at = atempo_chain(*speed);
+                graph.push(format!(
+                    "[c{i}p{k}]atrim={}:{},asetpts=PTS-STARTPTS,{}[c{i}q{k}]",
+                    f(*a),
+                    f(*b),
+                    if at.is_empty() { "anull".into() } else { at }
+                ));
             }
-            let Some(m) = p.media(*media) else { continue };
-            if !m.is_local() {
-                continue;
+            let ins: String = (0..pieces.len()).map(|k| format!("[c{i}q{k}]")).collect();
+            graph.push(format!("{ins}concat=n={}:v=0:a=1[c{i}]", pieces.len()));
+            src = format!("c{i}");
+            chain.clear();
+        } else {
+            let at = atempo_chain(c.speed);
+            if !at.is_empty() {
+                chain.push(at);
             }
-            if !m.has_audio || (c.volume_db <= -59.9 && c.keyframes.get(Prop::Volume).is_empty()) {
-                continue;
+        }
+        chain.extend(cl_fx::audio::audio_chain(&c.audio));
+        // Länger gezogener Ton: mit Stille auffüllen
+        chain.push(format!("apad=whole_dur={}", f(dur)));
+        chain.push(format!("atrim=0:{}", f(dur)));
+        chain.push("asetpts=PTS-STARTPTS".into());
+        let vol = c.keyframes.get(Prop::Volume);
+        if vol.is_empty() {
+            if c.volume_db.abs() > 0.01 {
+                chain.push(format!("volume={:.2}dB", c.volume_db));
             }
-            if c.end() <= start || c.start >= end {
-                continue;
-            }
-            let dur = c.duration.as_secs_f64();
-            let (seg_in, seg_len) = source_segment(c);
-            let i = *next_input;
-            *next_input += 1;
-            inputs.extend([
-                "-ss".into(),
-                f(seg_in.as_secs_f64()),
-                "-t".into(),
-                f(seg_len.as_secs_f64().max(0.02)),
-                "-i".into(),
-                m.path.to_string_lossy().into_owned(),
-            ]);
-            let mut chain = vec![
-                "aresample=48000".to_string(),
-                "aformat=sample_fmts=fltp:channel_layouts=stereo".into(),
-                "asetpts=PTS-STARTPTS".into(),
-            ];
-            // Kanäle: z. B. Mikrofon nur links → auf beide Ohren
-            let mode = c.audio.channels.unwrap_or(p.settings.channels);
-            let silent = (mode == Channels::Auto)
-                .then(|| cl_media::silent_channel_opt(&m.path, wait_probe))
-                .flatten();
-            if let Some(pan) = mode.filter(silent) {
-                chain.push(pan.into());
-            }
-            if c.fx.reverse {
-                chain.push("areverse".into());
-            }
-            let mut src = format!("{i}:a");
-            if let Some(id) = &c.fx.speed_curve {
-                // Tempo-Kurve: Quelle in Abschnitte teilen, je Abschnitt konstantes atempo
-                let pieces = curve_pieces(id, seg_len.as_secs_f64(), dur);
-                let outs: String = (0..pieces.len()).map(|k| format!("[c{i}p{k}]")).collect();
-                graph.push(format!("[{src}]{},asplit={}{outs}", chain.join(","), pieces.len()));
-                for (k, (a, b, speed)) in pieces.iter().enumerate() {
-                    let at = atempo_chain(*speed);
-                    graph.push(format!(
-                        "[c{i}p{k}]atrim={}:{},asetpts=PTS-STARTPTS,{}[c{i}q{k}]",
-                        f(*a),
-                        f(*b),
-                        if at.is_empty() { "anull".into() } else { at }
-                    ));
-                }
-                let ins: String = (0..pieces.len()).map(|k| format!("[c{i}q{k}]")).collect();
-                graph.push(format!("{ins}concat=n={}:v=0:a=1[c{i}]", pieces.len()));
-                src = format!("c{i}");
-                chain.clear();
-            } else {
-                let at = atempo_chain(c.speed);
-                if !at.is_empty() {
-                    chain.push(at);
-                }
-            }
-            chain.extend(cl_fx::audio::audio_chain(&c.audio));
-            // Länger gezogener Ton: mit Stille auffüllen
-            chain.push(format!("apad=whole_dur={}", f(dur)));
-            chain.push(format!("atrim=0:{}", f(dur)));
+        } else {
+            let pts: Vec<(f64, f64)> = vol
+                .iter()
+                .map(|k| (k.t.as_secs_f64(), k.v as f64))
+                .collect();
+            chain.push(format!(
+                "volume='pow(10,({})/20)':eval=frame",
+                piecewise_expr(&pts, "t")
+            ));
+        }
+        // Blenden höchstens so lang wie der Clip (Teilen/Tempo/Trimmen kürzen ihn), sonst
+        // lehnt FFmpeg ein negatives `st` ab
+        let (fade_in, fade_out) = (c.fade_in.as_secs_f64().min(dur), c.fade_out.as_secs_f64().min(dur));
+        if fade_in > 0.0 {
+            chain.push(format!("afade=t=in:d={}", f(fade_in)));
+        }
+        if fade_out > 0.0 {
+            chain.push(format!(
+                "afade=t=out:st={}:d={}",
+                f((dur - fade_out).max(0.0)),
+                f(fade_out)
+            ));
+        }
+        let t0 = (c.start - start).as_secs_f64();
+        if t0 < 0.0 {
+            chain.push(format!("atrim=start={}", f(-t0)));
             chain.push("asetpts=PTS-STARTPTS".into());
-            let vol = c.keyframes.get(Prop::Volume);
-            if vol.is_empty() {
-                if c.volume_db.abs() > 0.01 {
-                    chain.push(format!("volume={:.2}dB", c.volume_db));
-                }
-            } else {
-                let pts: Vec<(f64, f64)> = vol
-                    .iter()
-                    .map(|k| (k.t.as_secs_f64(), k.v as f64))
-                    .collect();
-                chain.push(format!(
-                    "volume='pow(10,({})/20)':eval=frame",
-                    piecewise_expr(&pts, "t")
-                ));
-            }
-            // Blenden höchstens so lang wie der Clip (Teilen/Tempo/Trimmen kürzen ihn), sonst
-            // lehnt FFmpeg ein negatives `st` ab
-            let (fade_in, fade_out) = (c.fade_in.as_secs_f64().min(dur), c.fade_out.as_secs_f64().min(dur));
-            if fade_in > 0.0 {
-                chain.push(format!("afade=t=in:d={}", f(fade_in)));
-            }
-            if fade_out > 0.0 {
-                chain.push(format!(
-                    "afade=t=out:st={}:d={}",
-                    f((dur - fade_out).max(0.0)),
-                    f(fade_out)
-                ));
-            }
-            let t0 = (c.start - start).as_secs_f64();
-            if t0 < 0.0 {
-                chain.push(format!("atrim=start={}", f(-t0)));
-                chain.push("asetpts=PTS-STARTPTS".into());
-            }
-            let label = format!("a{i}");
-            if t0 > 0.0 {
-                // Stille aus eigener Quelle davor statt adelay: bei langem Versatz liefert
-                // adelay lange nichts, der Muxer hält dann das Video zurück (kein Fortschritt)
-                let fmt = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
-                graph.push(format!("[{src}]{},{fmt}[{label}x]", chain.join(",")));
-                graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{},{fmt}[{label}s]", f(t0)));
-                graph.push(format!("[{label}s][{label}x]concat=n=2:v=0:a=1[{label}]"));
-            } else {
-                graph.push(format!("[{src}]{}[{label}]", chain.join(",")));
-            }
-            labels.push(label);
         }
+        let label = format!("a{i}");
+        if t0 > 0.0 {
+            // Stille aus eigener Quelle davor statt adelay: bei langem Versatz liefert
+            // adelay lange nichts, der Muxer hält dann das Video zurück (kein Fortschritt)
+            let fmt = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
+            graph.push(format!("[{src}]{},{fmt}[{label}x]", chain.join(",")));
+            graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=0:{},{fmt}[{label}s]", f(t0)));
+            graph.push(format!("[{label}s][{label}x]concat=n=2:v=0:a=1[{label}]"));
+        } else {
+            graph.push(format!("[{src}]{}[{label}]", chain.join(",")));
+        }
+        labels.push(label);
     }
     let dur = f((end - start).as_secs_f64());
     if labels.is_empty() {

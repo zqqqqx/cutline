@@ -1004,14 +1004,32 @@ pub fn available_encoders() -> Vec<Encoder> {
     v
 }
 
-/// Ton der Zeitleiste ab `from` als f32le-Stereo mit `rate` Hz auf stdout (für die Vorschau-Wiedergabe).
+/// Ton der Zeitleiste ab `from` bis zum Projektende als f32le-Stereo mit `rate` Hz auf stdout.
 pub fn spawn_audio_preview(
     p: &Project,
     from: Time,
     rate: u32,
 ) -> Result<(Child, tempfile::TempDir)> {
+    spawn_audio_window(p, from, p.duration(), rate)
+}
+
+/// Ids der hörbaren Clips, die den Bereich `start..end` berühren (= Eingänge des Ton-Mixes).
+pub fn audio_clips_in(p: &Project, start: Time, end: Time) -> Vec<ClipId> {
+    graph::audible_clips(p, start, end).map(|(c, _)| c.id).collect()
+}
+
+/// Ton der Zeitleiste im Bereich `from..to` (höchstens bis zum Projektende) als f32le-Stereo mit
+/// `rate` Hz auf stdout (Vorschau-Wiedergabe in Fenstern). Gemischt werden nur die Clips, die den
+/// Bereich berühren; jeder Clip wird ab seinem Anfang gerechnet, darum klingt ein Abschnitt
+/// sample-gleich wie derselbe Abschnitt eines längeren Mixes.
+pub fn spawn_audio_window(
+    p: &Project,
+    from: Time,
+    to: Time,
+    rate: u32,
+) -> Result<(Child, tempfile::TempDir)> {
     let p = &in_edit_ranges(p);
-    let end = p.duration();
+    let end = p.duration().min(to);
     if end <= from {
         return Err(ExportError::Empty);
     }
@@ -1138,6 +1156,51 @@ mod tests {
         let meta = ffmetadata(&ms, s(34.13), s(36.13), "Kapitel").unwrap();
         assert!(ffmetadata(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter").unwrap().contains("title=Chapter\n"));
         assert!(meta.contains("START=0\nEND=1000\ntitle=Highlights\n") && meta.contains("START=1000\nEND=2000\ntitle=Interview\n"), "{meta}");
+    }
+
+    #[test]
+    fn audio_window_takes_only_audible_clips_touching_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let media = |name: &str, audio: bool, kind: MediaKind| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"x").unwrap();
+            MediaRef { id: MediaId::new(), path, kind, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: audio, video_codec: None, audio_codec: None }
+        };
+        let s = Time::from_secs_f64;
+        let (snd, mute_vid, img) = (media("a.wav", true, MediaKind::Audio), media("v.mp4", false, MediaKind::Video), media("i.png", false, MediaKind::Image));
+        let mut gone = media("weg.wav", true, MediaKind::Audio);
+        gone.path = dir.path().join("fehlt.wav");
+        let mut p = Project::new("T");
+        p.media.extend([snd.clone(), mute_vid.clone(), img.clone(), gone.clone()]);
+        let clip = |m: &MediaRef, a: f64, b: f64| Clip::new(ClipContent::Media { media: m.id, kind: m.kind }, s(a), s(b - a));
+        let mut t = Track::new(TrackKind::Audio);
+        let before = clip(&snd, 0.0, 10.0); // endet genau am Fensteranfang: nicht dabei
+        let across_start = clip(&snd, 5.0, 12.0);
+        let inside = clip(&snd, 12.0, 14.0);
+        let mut disabled = clip(&snd, 12.0, 14.0);
+        disabled.disabled = true;
+        let mut silent = clip(&snd, 14.0, 15.0);
+        silent.volume_db = -60.0;
+        let mut fading_in = clip(&snd, 15.0, 16.0);
+        fading_in.volume_db = -60.0;
+        fading_in.keyframes.set(Prop::Volume, Time::ZERO, -60.0);
+        let across_end = clip(&snd, 25.0, 40.0);
+        let after = clip(&snd, 30.0, 31.0); // beginnt genau am Fensterende: nicht dabei
+        let missing = clip(&gone, 12.0, 13.0);
+        for c in [&before, &across_start, &inside, &disabled, &silent, &fading_in, &across_end, &after, &missing] {
+            t.clips.push(c.clone());
+        }
+        let mut v = Track::new(TrackKind::Video);
+        let no_audio = clip(&mute_vid, 10.0, 20.0);
+        let image = clip(&img, 10.0, 20.0);
+        v.clips.extend([no_audio, image]);
+        let mut muted = Track::new(TrackKind::Audio);
+        muted.muted = true;
+        muted.clips.push(clip(&snd, 10.0, 20.0));
+        p.timeline.tracks.extend([t, v, muted]);
+        assert_eq!(audio_clips_in(&p, s(10.0), s(30.0)), vec![across_start.id, inside.id, fading_in.id, across_end.id]);
+        assert_eq!(audio_clips_in(&p, s(0.0), s(5.0)), vec![before.id]);
+        assert!(audio_clips_in(&p, s(41.0), s(60.0)).is_empty());
     }
 
     #[test]
