@@ -173,4 +173,39 @@ mod tests {
         assert!((o - 0.37).abs() < 0.02, "{o}");
         assert!(is_filler("Ähm,") && is_filler("uh") && !is_filler("Hallo"));
     }
+
+    #[test]
+    fn audio_helpers_on_empty_flat_and_odd_input() {
+        assert!(envelope_samples(&[], 16_000).is_empty());
+        assert_eq!(envelope_samples(&[1.0; 10], 16_000), vec![1.0]);
+        assert!(silences(&[], -30.0, 0.5).is_empty());
+        // alles leise (nur Stille): kein Bereich, denn der Pegel ist relativ zum Lautesten
+        let flat = vec![0.0f32; 300];
+        let s = silences(&flat, -30.0, 0.5);
+        assert!(s.iter().all(|(a, b)| a < b && *b <= 3.0 + 1e-9), "{s:?}");
+        // leiser Schluss wird bis zum Ende erkannt
+        let mut env = vec![0.5f32; 100];
+        env.extend(vec![0.0; 100]);
+        assert_eq!(silences(&env, -30.0, 0.5), vec![(1.0, 2.0)]);
+        // zu kurze Pause fällt weg
+        let mut env = vec![0.5f32; 100];
+        env.extend(vec![0.0; 10]);
+        env.extend(vec![0.5; 100]);
+        assert!(silences(&env, -30.0, 0.5).is_empty());
+        assert!(loud_moments(&[], 3, 1.0).is_empty());
+        assert!(loud_moments(&flat, 3, 1.0).is_empty(), "nichts ist lauter als die Umgebung");
+        assert!(loud_moments(&env, 0, 1.0).is_empty());
+        let nan = vec![f32::NAN; 200];
+        let _ = loud_moments(&nan, 3, 1.0);
+        let _ = silences(&nan, -30.0, 0.5);
+        assert!(offset(&[0.1; 10], &[0.1; 10], 1.0).is_none(), "zu kurz");
+        let a = burst_track(800, &[100, 300, 650]);
+        let (o, _) = offset(&a, &a, 2.0).unwrap();
+        assert_eq!(o, 0.0);
+        assert!(db(0.0).is_finite() && (db(1.0)).abs() < 1e-6);
+        for w in ["", "🎬", "...", "Ähm!!", "ÄHM", "hmmm"] {
+            let _ = is_filler(w);
+        }
+        assert!(is_filler("ÄHM") && !is_filler("") && !is_filler("hmmm"));
+    }
 }
