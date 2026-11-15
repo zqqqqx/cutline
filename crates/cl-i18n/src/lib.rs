@@ -233,4 +233,27 @@ mod tests {
                 && s.chars().count() as f32 >= "Import media …".chars().count() as f32 * 1.4
         );
     }
+
+    #[test]
+    fn locales_plural_edges_and_keys() {
+        for (s, l) in [("de-DE", Lang::De), ("DE_at", Lang::De), ("de", Lang::De), ("", Lang::En), ("en-US", Lang::En), ("fr", Lang::En), ("d", Lang::En)] {
+            assert_eq!(Lang::from_locale(s), l, "{s}");
+        }
+        let de = I18n::new(Lang::De);
+        for n in [0, -1, 2, i64::MAX, i64::MIN] {
+            let s = de.t_num("fonts-count", "count", n);
+            assert!(!s.contains('⟦') && !s.is_empty(), "{n}: {s}");
+        }
+        // falscher Argumentname: kein Absturz, Text bleibt lesbar
+        assert!(!de.t_num("fonts-count", "falsch", 3).is_empty());
+        assert!(!de.t_str("font-imported", "family", "🎬 {x} „").is_empty());
+        assert_eq!(de.t(""), "⟦⟧");
+        assert_eq!(keys("a = b\n  fortsetzung = x\n# c = d\nb=c\nd = \n = x"), vec!["a", "d"]);
+        let mut i = I18n::new(Lang::En);
+        i.set_lang(Lang::De);
+        assert_eq!(i.lang(), Lang::De);
+        assert_eq!(pseudo(""), "[]");
+        assert!(pseudo("äbc").starts_with("[äbc"));
+        I18n::new(Lang::De); // globale Sprache für andere Tests zurücksetzen
+    }
 }
