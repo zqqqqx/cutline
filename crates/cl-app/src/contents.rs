@@ -54,7 +54,7 @@ pub fn clip_title(c: &cl_core::Clip, p: &cl_core::Project) -> String {
                 g.get_or_insert_with(|| {
                     [Kind::Sticker, Kind::Sound]
                         .into_iter()
-                        .flat_map(catalog::list)
+                        .flat_map(catalog::list_all)
                         .filter_map(|e| match e.payload {
                             Payload::File(f) => Some((f, e.name)),
                             _ => None,
@@ -190,6 +190,7 @@ impl App {
     /// Katalog neu anmelden (nach Ein-/Ausschalten, Sprachwechsel, neuen Paketen).
     pub fn refresh_catalog(&mut self) {
         catalog::load_packs(catalog_packs(&self.plugins, self.i18n.lang().code()));
+        catalog::set_hidden(self.settings.hidden_packs.clone());
         *PACK_NAMES.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.invalidate_preview();
     }
@@ -233,9 +234,11 @@ impl App {
     pub fn contents_settings(&mut self, ui: &mut egui::Ui) {
         let root = user_root();
         let mut toggled = None;
+        let mut hide = None;
         let mut remove = None;
         for s in catalog::packs() {
             let standard = s.info.id == catalog::STANDARD;
+            let hidden = self.settings.hidden_packs.contains(&s.info.id);
             let own = self
                 .plugins
                 .plugins
@@ -265,6 +268,14 @@ impl App {
                             if !standard && widgets::toggle(ui, &mut on) {
                                 toggled = Some((s.info.id.clone(), on));
                             }
+                            let (glyph, tip) = if hidden {
+                                (icon::EYE_SLASH, "Ausgeblendet")
+                            } else {
+                                (icon::EYE, "In den Tabs anzeigen")
+                            };
+                            if theme::icon_button(ui, glyph, tip, on, false).clicked() {
+                                hide = Some(s.info.id.clone());
+                            }
                             if let Some(dir) = &own {
                                 ui.menu_button(icon::DOTS_THREE, |ui| {
                                     if menu_item(ui, icon::TRASH, "Entfernen", "") {
@@ -278,12 +289,25 @@ impl App {
                     if !s.info.description.is_empty() {
                         ui.label(RichText::new(crate::tr(&s.info.description)).small().color(theme::TEXT_DIM()));
                     }
-                    ui.label(RichText::new(counts_text(&s.counts)).small().color(theme::TEXT_DIM()));
+                    let mut counts = counts_text(&s.counts);
+                    if hidden {
+                        counts = format!("{counts} · {}", crate::tr("Ausgeblendet"));
+                    }
+                    ui.label(RichText::new(counts).small().color(theme::TEXT_DIM()));
                 });
             ui.add_space(6.0);
         }
         if let Some((id, on)) = toggled {
             self.set_plugin_enabled(&id, on);
+        }
+        if let Some(id) = hide {
+            let h = &mut self.settings.hidden_packs;
+            match h.iter().position(|x| *x == id) {
+                Some(i) => drop(h.remove(i)),
+                None => h.push(id),
+            }
+            self.settings.save();
+            catalog::set_hidden(self.settings.hidden_packs.clone());
         }
         if let Some((dir, name)) = remove {
             self.contents_dialog = Some(ContentsDialog::Remove { dir, name });

@@ -81,6 +81,41 @@ pub struct ShaderTile {
     pub pair_graph: String,
 }
 
+/// Balken der kleinen Sound-Wellenform (Zeilen und Kacheln)
+pub const SOUND_BARS: usize = 24;
+
+/// `n` Balken über die ganze Länge (Spitzenwert je Abschnitt), auf den lautesten normiert, 0…1.
+pub fn sound_bars(peaks: &[f32], n: usize) -> Vec<f32> {
+    let max = peaks.iter().copied().fold(1e-4, f32::max);
+    (0..n)
+        .map(|i| {
+            let a = (i * peaks.len() / n).min(peaks.len());
+            let b = ((i + 1) * peaks.len() / n).max(a + 1).min(peaks.len());
+            (peaks[a..b].iter().copied().fold(0.0, f32::max) / max).clamp(0.0, 1.0)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod sound_bar_tests {
+    use super::sound_bars;
+
+    #[test]
+    fn bars_are_fixed_count_and_normalized() {
+        let peaks: Vec<f32> = (0..500).map(|i| (i % 50) as f32 / 100.0).collect();
+        let b = sound_bars(&peaks, 24);
+        assert_eq!(b.len(), 24);
+        assert!(b.iter().all(|v| (0.0..=1.0).contains(v)));
+        assert!(b.iter().any(|v| *v == 1.0), "lautester Balken voll");
+        // Stille, leer und sehr kurz: feste Zahl, nichts außerhalb 0…1
+        assert!(sound_bars(&[0.0; 100], 24).iter().all(|v| *v == 0.0));
+        assert_eq!(sound_bars(&[], 24), vec![0.0; 24]);
+        let short = sound_bars(&[0.2, 0.8, 2.0], 24);
+        assert_eq!(short.len(), 24);
+        assert!(short.iter().all(|v| (0.0..=1.0).contains(v)) && short.contains(&1.0));
+    }
+}
+
 /// Filmstreifen eines Shader-Übergangs: `frames` Bilder bei Fortschritt k/frames (wie der
 /// `xfade`-Streifen), A und B aus dem Bildpaar `pair` (2·w × h).
 pub fn shader_strip(s: &ShaderTile, pair: &[u8], w: u32, h: u32, frames: u32) -> Result<Vec<u8>, String> {
@@ -283,17 +318,7 @@ fn run(job: Job) -> Option<Done> {
             }
             cl_media::probe(&path).and_then(|media| {
                 let peaks = cl_media::waveform(&path, 40)?;
-                // 40 Balken über die ganze Länge, auf den lautesten normiert
-                let n = 40;
-                let max = peaks.iter().copied().fold(1e-4, f32::max);
-                let bars = (0..n)
-                    .map(|i| {
-                        let a = i * peaks.len() / n;
-                        let b = ((i + 1) * peaks.len() / n).max(a + 1).min(peaks.len());
-                        peaks.get(a..b).map(|s| s.iter().copied().fold(0.0, f32::max)).unwrap_or(0.0) / max
-                    })
-                    .collect();
-                Ok(Done::SoundMeta { key, media, bars })
+                Ok(Done::SoundMeta { key, media, bars: sound_bars(&peaks, SOUND_BARS) })
             })
         }
         Job::FxThumb {

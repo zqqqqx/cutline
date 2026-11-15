@@ -147,6 +147,41 @@ fn catalog_item(
     })
 }
 
+/// Obergrenze des Sound-Zwischenspeichers (Länge und Wellenform je Eintrag)
+pub const SOUND_META_CAP: usize = 400;
+
+/// In den begrenzten Zwischenspeicher legen. Ist er voll, fliegt ein anderer Eintrag heraus und darf
+/// wieder angefordert werden (`req`), sobald seine Kachel sichtbar wird.
+pub fn put_capped<V>(
+    map: &mut std::collections::HashMap<String, V>,
+    req: &mut std::collections::HashSet<String>,
+    key: String,
+    v: V,
+    cap: usize,
+) {
+    while map.len() >= cap.max(1) && !map.contains_key(&key) {
+        let Some(old) = map.keys().next().cloned() else { break };
+        map.remove(&old);
+        req.remove(&old);
+    }
+    map.insert(key, v);
+}
+
+/// Abspielstand als Anteil 0…1 (aus der wirklichen Position des Vorhörens)
+pub fn play_fraction(pos: Time, len: Time) -> f32 {
+    (pos.as_secs_f64() / len.as_secs_f64().max(0.01)).clamp(0.0, 1.0) as f32
+}
+
+/// Länge eines Sounds: „2.4 s“ bzw. „1:05“
+fn sound_len(d: Time) -> String {
+    let s = d.as_secs_f64();
+    if s >= 60.0 {
+        format!("{}:{:02}", (s / 60.0) as u32, s as u32 % 60)
+    } else {
+        format!("{s:.1} s")
+    }
+}
+
 /// Audiodateien im Musikordner des Benutzers (einmalig im Hintergrund gesucht).
 static MUSIC_LIST: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
 static MUSIC_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -756,31 +791,26 @@ impl App {
                                 "",
                             );
                         }
-                        for it in &items {
+                        widgets::grid(ui, &items, 80.0, 16.0 / 10.0, 16.0, |ui, r, it| {
                             let key = format!("sfx:{}", it.key);
                             let fav = self.library.is_favorite(&it.key);
-                            let info = if fav {
-                                format!("{}  {}", icon::STAR, it.folder)
-                            } else {
-                                it.folder.clone()
-                            };
                             let builtin = it.builtin.and_then(cl_fx::sfx::sfx);
                             let (path, sfx) = match (builtin, &it.path) {
                                 (Some(s), _) => (App::sfx_path(s.id), Some(s.id)),
                                 (None, Some(p)) => (p.clone(), None),
-                                _ => continue,
+                                _ => return,
                             };
-                            let (play, add, drag) = self.sound_row(ui, &key, &it.name, &info, &path, sfx);
-                            if let Some(r) = &drag {
-                                r.dnd_set_drag_payload(match sfx {
-                                    Some(id) => DragAsset::Sfx(id),
-                                    None => DragAsset::File(path.clone()),
-                                });
-                            }
+                            let (play, add, resp) = self.sound_tile(ui, r, &key, &it.name, fav, &path, sfx);
+                            resp.dnd_set_drag_payload(match sfx {
+                                Some(id) => DragAsset::Sfx(id),
+                                None => DragAsset::File(path.clone()),
+                            });
+                            let resp = if it.folder.is_empty() { resp } else { resp.on_hover_text(crate::tr(&it.folder)) };
+                            menu.push((resp, it.clone()));
                             if add {
                                 if let Some(s) = builtin {
                                     if cl_fx::sfx::render(s, &path).is_err() {
-                                        continue;
+                                        return;
                                     }
                                 }
                             }
@@ -793,10 +823,7 @@ impl App {
                                 }
                                 self.add_file_at(path, self.playhead, None);
                             }
-                            if let Some(r) = drag {
-                                menu.push((r, it.clone()));
-                            }
-                        }
+                        });
                     });
                 self.lib_drop = Some((Kind::Sound, area.inner_rect));
                 for (r, it) in menu {
@@ -982,9 +1009,11 @@ impl App {
         if ui.is_rect_visible(r) {
             self.request_sound_meta(key, path, sfx);
         }
-        let playing = self.sfx_preview.as_ref().filter(|(k, _)| k == key).map(|(_, a)| {
-            (a.position().as_secs_f64() / self.sfx_preview_len.as_secs_f64().max(0.01)).clamp(0.0, 1.0) as f32
-        });
+        let playing = self
+            .sfx_preview
+            .as_ref()
+            .filter(|(k, _)| k == key)
+            .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len));
         let loading = self.sound_pending.as_deref() == Some(key);
         let meta = self.sound_meta.get(key);
         let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), theme::anim(0.12));
@@ -1031,14 +1060,7 @@ impl App {
             egui::FontId::proportional(theme::FS_TEXT),
             theme::TEXT(),
         );
-        let len = meta.map(|(m, _)| {
-            let s = m.duration.as_secs_f64();
-            if s >= 60.0 {
-                format!("{}:{:02}", (s / 60.0) as u32, s as u32 % 60)
-            } else {
-                format!("{s:.1} s")
-            }
-        });
+        let len = meta.map(|(m, _)| sound_len(m.duration));
         let sub = match (info.is_empty(), len) {
             (false, Some(l)) => format!("{} · {l}", crate::tr(info)),
             (true, Some(l)) => l,
@@ -1094,6 +1116,115 @@ impl App {
             add,
             Some(resp.on_hover_text(crate::tr("Klick spielt ab · Doppelklick, + oder Ziehen fügt ein"))),
         )
+    }
+
+    /// Kleine Sound-Kachel: Wellenform, Dauer unten rechts; Hover zeigt Play, Klick spielt/stoppt,
+    /// beim Abspielen füllt sich die Wellenform bis zur Abspielstelle. Doppelklick oder „+“ fügt ein.
+    /// Gibt (abspielen, hinzufügen, Antwort) zurück.
+    #[allow(clippy::too_many_arguments)]
+    fn sound_tile(
+        &mut self,
+        ui: &mut egui::Ui,
+        r: Rect,
+        key: &str,
+        name: &str,
+        fav: bool,
+        path: &std::path::Path,
+        sfx: Option<&'static str>,
+    ) -> (bool, bool, egui::Response) {
+        // nur sichtbare Kacheln (das Raster ruft nur sichtbare Zeilen auf)
+        if ui.is_rect_visible(r) {
+            self.request_sound_meta(key, path, sfx);
+        }
+        let playing = self
+            .sfx_preview
+            .as_ref()
+            .filter(|(k, _)| k == key)
+            .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len));
+        let loading = self.sound_pending.as_deref() == Some(key);
+        let meta = self.sound_meta.get(key);
+        let id = egui::Id::new(("sfx-tile", key));
+        let hover = ui.ctx().animate_bool_with_time(id.with("h"), ui.rect_contains_pointer(r), theme::anim(0.12));
+        let moving = theme::anim(1.0) > 0.0;
+        let t = ui.input(|i| i.time) as f32;
+        if loading && moving {
+            ui.ctx().request_repaint();
+        }
+        let resp = widgets::tile(ui, id, r, name, false, |p, a| {
+            let wave = Rect::from_min_max(a.min + vec2(8.0, 8.0), a.max - vec2(8.0, 16.0));
+            match meta {
+                Some((_, bars)) if !bars.is_empty() => {
+                    let n = bars.len();
+                    let bw = wave.width() / n as f32;
+                    for (i, v) in bars.iter().enumerate() {
+                        let x = wave.left() + (i as f32 + 0.5) * bw;
+                        let at = (i as f32 + 0.5) / n as f32;
+                        let mut h = (v.sqrt() * wave.height()).max(2.0);
+                        let col = match playing {
+                            Some(f) => {
+                                // Balken an der Abspielstelle heben sich leicht
+                                if moving {
+                                    let near = (1.0 - (at - f).abs() * n as f32 / 2.5).max(0.0);
+                                    h = (h * (1.0 + near * (0.25 + 0.1 * (t * 10.0 + i as f32).sin()))).min(wave.height() + 4.0);
+                                }
+                                if at <= f { theme::ACCENT() } else { theme::TEXT_FAINT() }
+                            }
+                            None => theme::TEXT_DIM().linear_multiply(1.0 - 0.5 * hover),
+                        };
+                        p.line_segment(
+                            [pos2(x, wave.center().y - h / 2.0), pos2(x, wave.center().y + h / 2.0)],
+                            egui::Stroke::new((bw * 0.55).clamp(1.0, 2.5), col),
+                        );
+                    }
+                }
+                // Platzhalter, bis die Werte da sind: ruhige Grundlinie
+                _ => {
+                    p.line_segment(
+                        [wave.left_center(), wave.right_center()],
+                        egui::Stroke::new(1.0_f32, theme::TEXT_FAINT().linear_multiply(0.6)),
+                    );
+                }
+            }
+            if let Some((m, _)) = meta.filter(|_| hover < 0.99) {
+                // Dauer unten rechts; beim Hovern liegt dort das „+“
+                p.text(
+                    a.right_bottom() - vec2(6.0, 4.0),
+                    egui::Align2::RIGHT_BOTTOM,
+                    sound_len(m.duration),
+                    egui::FontId::proportional(theme::FS_HINT),
+                    theme::TEXT_DIM().linear_multiply(1.0 - hover),
+                );
+            }
+            // Play/Stopp mittig (beim Hovern bzw. während des Abspielens)
+            let shown = if playing.is_some() || loading { 0.7 + 0.3 * hover } else { hover };
+            if shown > 0.01 {
+                let c = wave.center();
+                p.circle_filled(c, 11.0, theme::ACCENT().linear_multiply(shown));
+                if loading {
+                    let t = if moving { t } else { 0.0 };
+                    for k in 0..3 {
+                        let w = t * 6.0 + k as f32 * 2.1;
+                        p.circle_filled(c + vec2(w.cos(), w.sin()) * 5.0, 1.6, theme::ACCENT_INK().linear_multiply(shown));
+                    }
+                } else {
+                    p.text(
+                        c,
+                        egui::Align2::CENTER_CENTER,
+                        if playing.is_some() { icon::STOP } else { icon::PLAY },
+                        // Icon-Glyphe im 22-px-Kreis
+                        egui::FontId::proportional(11.0),
+                        theme::ACCENT_INK().linear_multiply(shown),
+                    );
+                }
+            }
+            if fav {
+                crate::library_ui::fav_badge(p, a);
+            }
+        });
+        let on_plus = widgets::hit_plus(&resp, r, 16.0);
+        let add = (resp.clicked() && on_plus) || resp.double_clicked();
+        let play = resp.clicked() && !on_plus;
+        (play, add, resp)
     }
 
     // ------------------------------------------------------------------ Text
@@ -2003,6 +2134,32 @@ pub(crate) fn parse_subtitles(bytes: &[u8]) -> Vec<(Time, Time, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sound_cache_is_capped_and_evicted_keys_can_be_requested_again() {
+        let mut map = std::collections::HashMap::new();
+        let mut req = std::collections::HashSet::new();
+        for i in 0..10 {
+            req.insert(format!("k{i}"));
+            put_capped(&mut map, &mut req, format!("k{i}"), i, 4);
+            assert!(map.len() <= 4);
+        }
+        assert!(map.contains_key("k9"), "neuester bleibt");
+        assert_eq!(req.len(), 4, "verdrängte Schlüssel sind wieder anforderbar");
+        assert!(map.keys().all(|k| req.contains(k)));
+        // gleicher Schlüssel ersetzt nur
+        put_capped(&mut map, &mut req, "k9".into(), 99, 4);
+        assert_eq!((map.len(), map["k9"]), (4, 99));
+    }
+
+    #[test]
+    fn play_fraction_follows_position_and_is_bounded() {
+        let s = Time::from_secs_f64;
+        assert_eq!(play_fraction(s(1.0), s(4.0)), 0.25);
+        assert_eq!(play_fraction(s(9.0), s(4.0)), 1.0);
+        assert_eq!(play_fraction(Time::ZERO, Time::ZERO), 0.0);
+        assert!(play_fraction(s(0.5), Time::ZERO) <= 1.0);
+    }
 
     /// Eingebaute Elemente heißen englisch eindeutig: keine Schnitt-Aktion („Teilen“ → „Split“) und
     /// kein Name, den schon ein mitgeliefertes Paket-Element trägt.

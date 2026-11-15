@@ -193,7 +193,31 @@ pub fn list_in(packs: &[Pack], kind: Kind) -> Vec<Entry> {
     v
 }
 
+/// Einträge für die Tabs: wie [`list_in`], ohne die ausgeblendeter Pakete (sie bleiben eingeschaltet,
+/// Auflösen per ID mit [`get`] geht weiter).
+pub fn shown_in(packs: &[Pack], hidden: &[String], kind: Kind) -> Vec<Entry> {
+    let mut v = list_in(packs, kind);
+    v.retain(|e| !hidden.contains(&e.pack));
+    v
+}
+
+/// Ausgeblendete Paket-IDs (Einstellungen)
+static HIDDEN: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+pub fn set_hidden(ids: Vec<String>) {
+    if let Ok(mut g) = HIDDEN.write() {
+        *g = ids;
+    }
+}
+
+/// Liste für die Tabs (ohne ausgeblendete Pakete).
 pub fn list(kind: Kind) -> Vec<Entry> {
+    let hidden = HIDDEN.read().map(|g| g.clone()).unwrap_or_default();
+    read(|p| shown_in(p, &hidden, kind))
+}
+
+/// Alle Einträge eingeschalteter Pakete, auch ausgeblendete (Namen auflösen).
+pub fn list_all(kind: Kind) -> Vec<Entry> {
     read(|p| list_in(p, kind))
 }
 
@@ -415,6 +439,28 @@ mod tests {
         let off = [pack(false)];
         assert_eq!(list_in(&off, Kind::Filter).len(), crate::FILTERS.len());
         assert!(get_in(&off, Kind::Effect, "t.pack/glow").is_none());
+    }
+
+    #[test]
+    fn hidden_packs_leave_tabs_but_still_resolve() {
+        let on = [pack(true)];
+        let hide = vec!["t.pack".to_string()];
+        assert_eq!(shown_in(&on, &hide, Kind::Filter).len(), crate::FILTERS.len());
+        assert_eq!(shown_in(&on, &[], Kind::Filter).len(), crate::FILTERS.len() + 2);
+        assert!(get_in(&on, Kind::Effect, "t.pack/glow").is_some());
+        assert_eq!(transition_plan_in(&[shader_pack(true)], "t.pack/swirl").xfade, "radial");
+        let mut p = Project::new("x");
+        let c = Clip::new(ClipContent::Effect(FxRef::new("t.pack/glow")), Time::ZERO, Time::from_secs_f64(1.0));
+        let mut t = Track::new(TrackKind::Effect);
+        t.clips = vec![c];
+        p.timeline.tracks.push(t);
+        assert!(missing_in(&on, &p).is_empty(), "ausgeblendet ist nicht fehlend");
+        // Grundausstattung ausblendbar: nur noch Paketeinträge
+        let std = vec![STANDARD.to_string()];
+        let l = shown_in(&on, &std, Kind::Filter);
+        assert_eq!(l.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["t.pack/warm", "t.pack/hot"]);
+        assert!(shown_in(&[], &std, Kind::Sound).is_empty());
+        assert!(get_in(&[], Kind::Sound, crate::sfx::SFX[0].id).is_some());
     }
 
     #[test]
