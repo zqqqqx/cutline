@@ -24,6 +24,50 @@ pub(crate) struct Ctx<'a> {
     pub uniq: usize,
     /// Transparenter Hintergrund statt Schwarz
     pub alpha: bool,
+    /// Shader-Übergänge vorbereiten (aus im Vorlauf selbst)
+    pub shader: bool,
+    /// Vorläufe für Shader-Übergänge (laufen vor dem Export, siehe [`ShaderPass`])
+    pub passes: Vec<ShaderPass>,
+}
+
+/// Vorlauf eines Shader-Übergangs. Ein FFmpeg liest die letzten Bilder von Clip A und die ersten
+/// von Clip B (gleiche Clip-Ketten wie im Hauptgraph, nebeneinander als RGBA), cl-gpu mischt sie,
+/// ein zweites FFmpeg schreibt sie verlustfrei (FFV1) nach `out_file`. Im Hauptgraph ersetzt
+/// `block` das Ergebnis des `xfade` (Rückfall) genau in diesem Fenster; scheitert der Vorlauf,
+/// kommt `fallback` an seine Stelle und es bleibt beim `xfade`.
+pub(crate) struct ShaderPass {
+    pub inputs: Vec<String>,
+    pub graph_file: String,
+    pub out_file: String,
+    pub w: u32,
+    pub h: u32,
+    pub fps: String,
+    pub shader: String,
+    pub params: Vec<f32>,
+    /// Fortschritt je Bild (wie `xfade`: aus der Bildzeit)
+    pub progress: Vec<f32>,
+    pub block: String,
+    pub fallback: String,
+}
+
+/// Bildrate als Zahl (`30000/1001` → 29,97).
+fn fps_value(fps: &str) -> f64 {
+    let mut it = fps.split('/');
+    let n: f64 = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(30.0);
+    let d: f64 = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(1.0);
+    if n > 0.0 && d > 0.0 {
+        n / d
+    } else {
+        30.0
+    }
+}
+
+/// Bilder des Übergangsfensters im verbundenen Strom: (erstes Bild, Anzahl). `xfade` mischt die
+/// Bilder ab der ersten Bildzeit ≥ `off` bis einschließlich `off + d` (Bilder liegen auf n/fps).
+pub(crate) fn window_frames(off: f64, d: f64, fps: f64) -> (usize, usize) {
+    let i0 = (off * fps - 1e-4).ceil().max(0.0) as usize;
+    let last = ((off + d) * fps + 1e-4).floor().max(i0 as f64) as usize;
+    (i0, last - i0 + 1)
 }
 
 impl Ctx<'_> {
@@ -532,14 +576,15 @@ fn sprite_for(ctx: &mut Ctx, p: &Project, c: &Clip) -> Result<Option<Sprite>> {
     }
 }
 
-/// Mehrere Clips mit Übergängen zu einem Vollbild-Strom verbinden (xfade, Länge bleibt).
-fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Option<Sprite>> {
+/// Ebene des `k`-ten Clips einer Übergangsgruppe: Vollbild, vorn und hinten um den halben
+/// Übergang verlängert (Bild gehalten). (Label, Länge, Dauer des Übergangs davor)
+fn group_layer(ctx: &mut Ctx, p: &Project, group: &[&Clip], k: usize) -> Result<Option<(String, f64, f64)>> {
     let (w, h) = (ctx.w, ctx.h);
-    let mut acc: Option<(String, f64)> = None;
-    for (k, c) in group.iter().enumerate() {
-        let Some(sp) = sprite_for(ctx, p, c)? else {
-            continue;
-        };
+    let c = group[k];
+    let Some(sp) = sprite_for(ctx, p, c)? else {
+        return Ok(None);
+    };
+    {
         let len = c.duration.as_secs_f64();
         let d_of = |cl: &Clip| {
             cl.transition_out
@@ -576,15 +621,32 @@ fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Optio
             ctx.fps
         ));
         let layer_len = len + d_prev / 2.0 + d_next / 2.0;
+        Ok(Some((layer, layer_len, d_prev)))
+    }
+}
+
+/// Mehrere Clips mit Übergängen zu einem Vollbild-Strom verbinden (xfade, Länge bleibt).
+/// Shader-Übergänge bekommen zusätzlich einen Vorlauf ([`ShaderPass`]).
+fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Option<Sprite>> {
+    let fps = fps_value(&ctx.fps);
+    let mut acc: Option<(String, f64)> = None;
+    // Bild im verbundenen Strom, an dem die vorige Ebene beginnt, und Ende des vorigen Fensters
+    let (mut layer_start, mut window_end) = (0usize, 0usize);
+    for k in 0..group.len() {
+        let Some((layer, layer_len, d_prev)) = group_layer(ctx, p, group, k)? else {
+            continue;
+        };
         acc = Some(match acc {
             None => (layer, layer_len),
             Some((a, a_len)) => {
                 let tr = group[k - 1].transition_out.as_ref().expect("Gruppe");
                 let out = ctx.label("xf");
-                // Id kommt ungeprüft aus Projektdatei/MCP: nur bekannte Übergänge in den Graphen
+                // Id kommt ungeprüft aus Projektdatei/MCP: der Katalog liefert nur eingebaute
+                // xfade-Namen (Paket-Übergänge: ihr Rückfall), alles andere wird „fade“
+                let plan = cl_fx::catalog::transition_plan(&tr.id);
                 let id = cl_fx::TRANSITIONS
                     .iter()
-                    .find(|t| t.0 == tr.id)
+                    .find(|t| t.0 == plan.xfade)
                     .map_or("fade", |t| t.0);
                 let d = d_prev.max(0.04);
                 let off = (a_len - d).max(0.0);
@@ -594,7 +656,17 @@ fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Optio
                     f(d),
                     f(off)
                 ));
-                (out, a_len + layer_len - d)
+                let (i0, n) = window_frames(off, d, fps);
+                let mut res = out.clone();
+                // shortcut: überlappen sich zwei Fenster (Clip kürzer als die halben Übergänge), bleibt
+                // der zweite beim xfade-Rückfall; ausbauen, wenn das bei echten Projekten auffällt
+                if let Some((file, params)) = plan.shader.filter(|_| ctx.shader && i0 >= window_end && a_len >= d) {
+                    if let Some(l) = shader_pass(ctx, p, group, k, &out, &file, &params, (i0, n), layer_start, (off, d))? {
+                        res = l;
+                    }
+                }
+                (layer_start, window_end) = (i0, i0 + n);
+                (res, a_len + layer_len - d)
             }
         });
     }
@@ -607,6 +679,82 @@ fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Optio
             y: "0".into(),
         }
     }))
+}
+
+/// Vorlauf für den Shader-Übergang zwischen `group[k-1]` und `group[k]` anlegen; gibt das Label
+/// zurück, das den `xfade`-Ausgang `xf` im Hauptgraph ersetzt. Fenster `win` = (erstes Bild, Anzahl)
+/// im verbundenen Strom, `a_start` = Bild, an dem Clip A dort beginnt, `od` = (Versatz, Dauer).
+#[allow(clippy::too_many_arguments)]
+fn shader_pass(
+    ctx: &mut Ctx,
+    p: &Project,
+    group: &[&Clip],
+    k: usize,
+    xf: &str,
+    file: &Path,
+    params: &[f32],
+    win: (usize, usize),
+    a_start: usize,
+    od: (f64, f64),
+) -> Result<Option<String>> {
+    let Ok(shader) = std::fs::read_to_string(file) else {
+        return Ok(None);
+    };
+    let ((i0, n), (off, d)) = (win, od);
+    let idx = ctx.passes.len();
+    // eigener Graph mit denselben Clip-Ketten; eigene Labels/Dateinamen (Zähler weit weg)
+    let mut sub = Ctx {
+        w: ctx.w,
+        h: ctx.h,
+        fps: ctx.fps.clone(),
+        start: ctx.start,
+        workdir: ctx.workdir,
+        fonts: ctx.fonts,
+        inputs: Vec::new(),
+        n_input: 0,
+        graph: Vec::new(),
+        uniq: 1_000_000 * (idx + 1),
+        alpha: ctx.alpha,
+        shader: false,
+        passes: Vec::new(),
+    };
+    let (Some((la, ..)), Some((lb, ..))) = (group_layer(&mut sub, p, group, k - 1)?, group_layer(&mut sub, p, group, k)?) else {
+        return Ok(None);
+    };
+    let a0 = i0 - a_start;
+    // Bild gehalten, falls die Ebene ein Bild zu früh endet (Rundung)
+    sub.graph.push(format!("[{la}]trim=start_frame={a0},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=1[pa]"));
+    sub.graph.push(format!("[{lb}]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=1[pb]"));
+    sub.graph.push("[pa][pb]hstack=inputs=2:shortest=1,format=rgba[pout]".into());
+    let graph_file = format!("shader_{idx}.txt");
+    std::fs::write(ctx.workdir.join(&graph_file), sub.graph.join(";\n"))?;
+    let fps = fps_value(&ctx.fps);
+    let progress = (0..n)
+        .map(|j| ((((i0 + j) as f64 / fps) - off) / d).clamp(0.0, 1.0) as f32)
+        .collect();
+    let out_file = format!("shader_{idx}.nut");
+    let (sv, res) = (ctx.label("shv"), ctx.label("xs"));
+    // Zeitbasis 1/fps: Bild j liegt genau auf Bild i0 + j des Stroms
+    let (num, den) = ctx.fps.split_once('/').unwrap_or((ctx.fps.as_str(), "1"));
+    let block = format!(
+        "movie={out_file},settb=expr={den}/{num},setpts=N+{i0},format=gbrap,setsar=1[{sv}];\n[{xf}][{sv}]blend=all_expr=B:eof_action=pass:enable='between(n,{i0},{})'[{res}]",
+        i0 + n - 1
+    );
+    ctx.graph.push(block.clone());
+    ctx.passes.push(ShaderPass {
+        inputs: sub.inputs,
+        graph_file,
+        out_file,
+        w: ctx.w,
+        h: ctx.h,
+        fps: ctx.fps.clone(),
+        shader,
+        params: params.to_vec(),
+        progress,
+        block,
+        fallback: format!("[{xf}]null[{res}]"),
+    });
+    Ok(Some(res))
 }
 
 /// Projekt in Exportgröße umrechnen (Positionen/Schriftgrößen in Projektpixeln).
