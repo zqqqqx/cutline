@@ -2423,6 +2423,10 @@ impl App {
         if !self.playing {
             return;
         }
+        // Vorschau-Ton: unlesbare Dateien fallen einzeln heraus, Hinweis einmal je Datei
+        for w in cl_export::take_audio_warnings() {
+            self.toast_err(w);
+        }
         if let Some(w) = self.play_warmup {
             let now = self.playhead;
             let active = self.playbacks.values().filter(|p| p.t0 <= now);
