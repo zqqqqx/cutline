@@ -449,6 +449,260 @@ pub static TEMPLATES: &[TextTemplate] = &[
             ..base("ACHTUNG")
         },
     },
+    TextTemplate {
+        id: "chapter-title",
+        name: "Kapitel-Titel",
+        category: "Titel",
+        text: "KAPITEL 2",
+        intro: Some("wipe-fade"),
+        style: || TextStyle {
+            size: 96.0,
+            font_family: Some("Fjalla One".into()),
+            color: [255, 255, 255, 255],
+            shadow: true,
+            ..base("KAPITEL 2")
+        },
+    },
+    TextTemplate {
+        id: "part-two",
+        name: "Teil 2",
+        category: "Titel",
+        text: "TEIL 2",
+        intro: Some("stamp"),
+        style: || TextStyle {
+            size: 120.0,
+            font_family: Some("Archivo Black".into()),
+            color: [255, 214, 0, 255],
+            outline: Some((8.0, [0, 0, 0, 255])),
+            shadow: true,
+            ..base("TEIL 2")
+        },
+    },
+    TextTemplate {
+        id: "quote",
+        name: "Zitat",
+        category: "Titel",
+        text: "„Gute Ideen brauchen Zeit.“",
+        intro: Some("fade"),
+        style: || TextStyle {
+            size: 72.0,
+            font_family: Some("DM Serif Display".into()),
+            color: [250, 245, 235, 255],
+            shadow: true,
+            line_spacing: 1.2,
+            ..base("„Gute Ideen brauchen Zeit.“")
+        },
+    },
+    TextTemplate {
+        id: "handwritten",
+        name: "Handschrift",
+        category: "Titel",
+        text: "Mein Tag",
+        intro: Some("tilt-in"),
+        style: || TextStyle {
+            size: 90.0,
+            font_family: Some("Permanent Marker".into()),
+            color: [255, 255, 255, 255],
+            shadow: true,
+            ..base("Mein Tag")
+        },
+    },
+    TextTemplate {
+        id: "script",
+        name: "Schreibschrift",
+        category: "Titel",
+        text: "Sommer",
+        intro: Some("unfold"),
+        style: || TextStyle {
+            size: 100.0,
+            font_family: Some("Pacifico".into()),
+            color: [255, 110, 170, 255],
+            outline: Some((4.0, [255, 255, 255, 255])),
+            shadow: true,
+            ..base("Sommer")
+        },
+    },
+    TextTemplate {
+        id: "neon-sign",
+        name: "Neonschild",
+        category: "Titel",
+        text: "NACHTS",
+        intro: Some("flicker"),
+        style: || TextStyle {
+            size: 110.0,
+            font_family: Some("Righteous".into()),
+            color: [90, 255, 240, 255],
+            outline: Some((4.0, [0, 40, 70, 255])),
+            shadow: true,
+            ..base("NACHTS")
+        },
+    },
+    TextTemplate {
+        id: "credits-line",
+        name: "Abspann",
+        category: "Titel",
+        text: "Schnitt: Alex Muster",
+        intro: Some("fade"),
+        style: || TextStyle {
+            size: 54.0,
+            font_family: Some("DM Serif Display".into()),
+            color: [235, 235, 235, 255],
+            shadow: false,
+            ..base("Schnitt: Alex Muster")
+        },
+    },
+    TextTemplate {
+        id: "glitch-title",
+        name: "Glitch",
+        category: "Gaming",
+        text: "SYSTEM ERROR",
+        intro: Some("glitch-in"),
+        style: || TextStyle {
+            size: 90.0,
+            font_family: Some("Russo One".into()),
+            color: [255, 40, 90, 255],
+            outline: Some((5.0, [0, 240, 255, 255])),
+            shadow: true,
+            ..base("SYSTEM ERROR")
+        },
+    },
+    TextTemplate {
+        id: "boss-fight",
+        name: "Bossfight",
+        category: "Gaming",
+        text: "BOSSFIGHT",
+        intro: Some("punch"),
+        style: || TextStyle {
+            size: 110.0,
+            font_family: Some("Black Ops One".into()),
+            color: [255, 60, 40, 255],
+            outline: Some((7.0, [0, 0, 0, 255])),
+            shadow: true,
+            ..base("BOSSFIGHT")
+        },
+    },
+    TextTemplate {
+        id: "new-video",
+        name: "Neues Video",
+        category: "Social",
+        text: "NEUES VIDEO",
+        intro: Some("snap-left"),
+        style: || TextStyle {
+            size: 80.0,
+            font_family: Some("Archivo Black".into()),
+            color: [255, 255, 255, 255],
+            background: Some([230, 30, 40, 255]),
+            shadow: false,
+            ..base("NEUES VIDEO")
+        },
+    },
+    TextTemplate {
+        id: "did-you-know",
+        name: "Wusstest du?",
+        category: "Social",
+        text: "Wusstest du?",
+        intro: Some("bounce-in"),
+        style: || TextStyle {
+            size: 64.0,
+            font_family: Some("Varela Round".into()),
+            color: [20, 20, 24, 255],
+            background: Some([255, 214, 0, 245]),
+            shadow: false,
+            ..base("Wusstest du?")
+        },
+    },
+    TextTemplate {
+        id: "follow-more",
+        name: "Folge für mehr",
+        category: "Social",
+        text: "Folge für mehr",
+        intro: Some("snap-up"),
+        style: || TextStyle {
+            size: 64.0,
+            font_family: Some("Righteous".into()),
+            color: [255, 255, 255, 255],
+            outline: Some((5.0, [90, 0, 160, 255])),
+            shadow: true,
+            ..base("Folge für mehr")
+        },
+    },
+    TextTemplate {
+        id: "big-number",
+        name: "Große Zahl",
+        category: "Social",
+        text: "1.000.000",
+        intro: Some("elastic"),
+        style: || TextStyle {
+            size: 120.0,
+            font_family: Some("Bungee".into()),
+            color: [255, 255, 255, 255],
+            outline: Some((6.0, [0, 0, 0, 255])),
+            shadow: true,
+            ..base("1.000.000")
+        },
+    },
+    TextTemplate {
+        id: "price-tag",
+        name: "Preisschild",
+        category: "Social",
+        text: "NUR 9,99 €",
+        intro: Some("stamp"),
+        style: || TextStyle {
+            size: 90.0,
+            font_family: Some("Archivo Black".into()),
+            color: [20, 20, 20, 255],
+            background: Some([255, 214, 0, 255]),
+            shadow: false,
+            ..base("NUR 9,99 €")
+        },
+    },
+    TextTemplate {
+        id: "name-tag",
+        name: "Namensschild",
+        category: "Hinweis",
+        text: "Alex Muster\nCreator",
+        intro: Some("snap-left"),
+        style: || TextStyle {
+            size: 46.0,
+            font_family: Some("Varela Round".into()),
+            align: -1,
+            color: [20, 20, 24, 255],
+            background: Some([255, 255, 255, 240]),
+            shadow: false,
+            line_spacing: 1.2,
+            ..base("Alex Muster\nCreator")
+        },
+    },
+    TextTemplate {
+        id: "caution",
+        name: "Vorsicht",
+        category: "Hinweis",
+        text: "VORSICHT!",
+        intro: Some("shake-in"),
+        style: || TextStyle {
+            size: 80.0,
+            font_family: Some("Russo One".into()),
+            color: [20, 20, 20, 255],
+            background: Some([255, 200, 0, 255]),
+            shadow: false,
+            ..base("VORSICHT!")
+        },
+    },
+    TextTemplate {
+        id: "place-time",
+        name: "Ort & Zeit",
+        category: "Hinweis",
+        text: "Hamburg · 07:30",
+        intro: Some("wipe-fade"),
+        style: || TextStyle {
+            size: 46.0,
+            font_family: Some("Space Mono".into()),
+            color: [255, 255, 255, 255],
+            background: Some([0, 0, 0, 170]),
+            shadow: false,
+            ..base("Hamburg · 07:30")
+        },
+    },
 ];
 
 impl TextTemplate {

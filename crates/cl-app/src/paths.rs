@@ -326,6 +326,14 @@ const BUNDLED_FONTS: &[(&str, &[u8])] = &[
     ("PressStart2P-Regular.ttf", include_bytes!("../assets/fonts/PressStart2P-Regular.ttf")),
     ("RussoOne-Regular.ttf", include_bytes!("../assets/fonts/RussoOne-Regular.ttf")),
     ("TitanOne-Regular.ttf", include_bytes!("../assets/fonts/TitanOne-Regular.ttf")),
+    ("ArchivoBlack-Regular.ttf", include_bytes!("../assets/fonts/ArchivoBlack-Regular.ttf")),
+    ("DMSerifDisplay-Regular.ttf", include_bytes!("../assets/fonts/DMSerifDisplay-Regular.ttf")),
+    ("FjallaOne-Regular.ttf", include_bytes!("../assets/fonts/FjallaOne-Regular.ttf")),
+    ("Pacifico-Regular.ttf", include_bytes!("../assets/fonts/Pacifico-Regular.ttf")),
+    ("PermanentMarker-Regular.ttf", include_bytes!("../assets/fonts/PermanentMarker-Regular.ttf")),
+    ("Righteous-Regular.ttf", include_bytes!("../assets/fonts/Righteous-Regular.ttf")),
+    ("SpaceMono-Regular.ttf", include_bytes!("../assets/fonts/SpaceMono-Regular.ttf")),
+    ("VarelaRound-Regular.ttf", include_bytes!("../assets/fonts/VarelaRound-Regular.ttf")),
 ];
 
 /// Mitgelieferte Schriften in den Schriftordner legen (fehlende werden ergänzt)
@@ -395,6 +403,11 @@ fn bundled_fonts_cover_all_template_fonts() {
     for t in cl_fx::text::TEMPLATES {
         if let Some(f) = t.make().font_family {
             assert!(system.contains(&f.as_str()) || fams.contains_key(&f), "{}: Schrift {f} fehlt", t.id);
+        }
+    }
+    for p in crate::captions::PRESETS {
+        if let Some(f) = (p.style)().font_family {
+            assert!(system.contains(&f.as_str()) || fams.contains_key(&f), "{}: Schrift {f} fehlt", p.id);
         }
     }
 }
