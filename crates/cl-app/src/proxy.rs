@@ -254,6 +254,9 @@ fn part_args(src: &Path, st: f64, pt: &Parting, k: u32, height: u32, gop: u32, e
     // ohne B-Bilder: Stücke verschiedener Encoder (Rückfall) haben sonst verschiedene Vorlaufzeiten,
     // zusammengefügt entstand an der Naht ein doppeltes Bild; beim Springen ohnehin schneller
     a.extend(["-bf".into(), "0".into(), "-g".into(), gop.to_string(), "-frames:v".into(), pt.per.to_string()]);
+    // FFmpeg 7 vergisst die Bildrate nach `setpts`: ohne `-r` hätte das letzte Bild jedes Stücks die
+    // Dauer 0 und fiele beim Zusammenfügen weg
+    a.extend(["-r".into(), format!("{}/{}", pt.fps.num, pt.fps.den)]);
     a
 }
 
@@ -1318,7 +1321,7 @@ mod tests {
             let a = part_args(Path::new("q.mp4"), 1.5, &pt, 2, 540, 15, enc, None).join(" ");
             assert!(a.contains("-ss 19.500000 -copyts -i q.mp4"), "{a}");
             assert!(a.contains("fps=30/1:start_time=21.500000,setpts=PTS-STARTPTS,scale=-2:540"), "{a}");
-            assert!(a.ends_with("-bf 0 -g 15 -frames:v 300"), "{a}");
+            assert!(a.ends_with("-bf 0 -g 15 -frames:v 300 -r 30/1"), "{a}");
         }
         // Media Foundation: nv12, nur Hardware, Bitrate nach Größe und Bildrate
         let a = part_args(Path::new("q.mp4"), 1.5, &pt, 2, 540, 15, Encoder::Mf, None).join(" ");
