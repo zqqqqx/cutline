@@ -325,16 +325,19 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
                 ctx.fps
             ));
         }
-        // Videos, die kürzer als der Clip sind (Rundung), halten das letzte Bild
-        pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(0.5)));
-    } else if anim.is_some() {
-        pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(dur + 0.1)));
     }
     if skip > 0.0 {
         // erstes Bild genau auf `skip` (ohne Sprung: auf 0), Bilder danach wie ohne Sprung
         pre.push(format!("fps={}:start_time={}", ctx.fps, f(skip)));
     } else {
         pre.push(format!("fps={}", ctx.fps));
+    }
+    // erst nach `fps`: FFmpeg 7 vergisst die Bildrate nach `setpts`, `tpad` hielte dann nichts.
+    // Videos, die kürzer als der Clip sind (Rundung), halten das letzte Bild
+    if !image {
+        pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(0.5)));
+    } else if anim.is_some() {
+        pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(dur + 0.1)));
     }
     pre.push(format!("scale={bw}:{bh}:flags=bicubic"));
     pre.push(if skip > 0.0 { format!("trim=end={}", f(dur)) } else { format!("trim=duration={}", f(dur)) });
@@ -831,8 +834,9 @@ fn shader_pass(
     };
     let a0 = i0 - a_start;
     // Bild gehalten, falls die Ebene ein Bild zu früh endet (Rundung)
-    sub.graph.push(format!("[{la}]trim=start_frame={a0},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=1[pa]"));
-    sub.graph.push(format!("[{lb}]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=1[pb]"));
+    // `tpad` vor `setpts` (FFmpeg 7 vergisst danach die Bildrate)
+    sub.graph.push(format!("[{la}]trim=start_frame={a0},tpad=stop_mode=clone:stop_duration=1,setpts=PTS-STARTPTS[pa]"));
+    sub.graph.push(format!("[{lb}]tpad=stop_mode=clone:stop_duration=1,setpts=PTS-STARTPTS[pb]"));
     sub.graph.push("[pa][pb]hstack=inputs=2:shortest=1,format=rgba[pout]".into());
     let graph_file = format!("shader_{idx}.txt");
     std::fs::write(ctx.workdir.join(&graph_file), sub.graph.join(";\n"))?;

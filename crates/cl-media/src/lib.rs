@@ -686,8 +686,9 @@ fn spawn_stream(
             &format!("fps={}/{},scale={w}:{h}:flags=bilinear,format=rgba", fps.num, fps.den),
         ]),
     };
+    // Bildrate nennen: FFmpeg 7 vergisst sie nach `setpts` im Graphen und wandelt sonst auf 25 Bilder/s
     Ok(cmd
-        .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .args(["-r", &format!("{}/{}", fps.num, fps.den), "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -901,6 +902,23 @@ mod tests {
             .unwrap();
         assert!(st.success());
         out
+    }
+
+    /// Ein Strom mit eigenem Graphen liefert jedes Bild des Graphen auf dem Raster der Strom-Bildrate,
+    /// auch wenn der Graph eine andere Bildrate meldet (FFmpeg 7: nach `setpts` gar keine, dann 25).
+    #[test]
+    fn graph_stream_keeps_every_frame_at_the_stream_rate() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = make_clip(dir.path());
+        // 20 Bilder (2 s bei 10/s), Zeitstempel im 30er-Raster; der Graph meldet weiter 10/s
+        let g = "[0:v]fps=10,setpts=N/(30*TB),scale=32:18,format=rgba[out]";
+        let s = FrameStream::open_fx(&src, Time::ZERO, 32, 18, Rational::new(30, 1), Some(g)).unwrap();
+        // + bis zu 2 für die Dauer des letzten Bildes (1/10 s); ohne Bildrate am Ausgang 9 (FFmpeg 8) bzw. ~17 (7)
+        let n = std::iter::from_fn(|| s.next_blocking()).count();
+        assert!((20..=22).contains(&n), "{n}");
     }
 
     #[test]
