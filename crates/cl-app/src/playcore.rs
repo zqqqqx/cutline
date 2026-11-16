@@ -755,7 +755,9 @@ impl<S: Source> PlayCore<S> {
             return Some(Open { id, key: w.key, at, gen: self.gen, seq: self.seq });
         }
         self.reopen.remove(&id);
-        let replace = self.cur.contains_key(&id) && !w.prefetch;
+        // auch ein vorab geöffneter Strom bleibt, bis sein Ersatz liefert (sonst stand das Bild
+        // am Schnitt, wenn sich der Schlüssel kurz davor änderte, z. B. die Qualitätsstufe)
+        let replace = self.cur.contains_key(&id);
         self.opening.insert(id, (w.key, replace, self.seq));
         let at = match self.cur.get(&id) {
             _ if w.prefetch => w.start,

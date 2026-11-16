@@ -521,6 +521,27 @@ fn audible_edits_restart_audio_once_after_debounce() {
     assert!(w.gap(1, 1.0, w.now()) <= 2.0 / 30.0 + 0.01, "Bild lief weiter");
 }
 
+/// Messlauf PL_gross 0:40: Kurz vor einem Schnitt änderte sich der Schlüssel des vorab
+/// geöffneten Stroms (Qualitätsstufe). Der fertige Vorab-Strom wurde verworfen und der neue
+/// (4K, Hardware-Start ~1 s) war am Schnitt nicht da – 1 s Stillstand. Jetzt bleibt der alte, bis
+/// der neue liefert.
+#[test]
+fn prefetched_stream_stays_until_its_replacement_delivers() {
+    let mut b = clip(2, 3.0, 10.0);
+    b.dec.delay = 0.9; // Strom braucht 0,9 s bis zum ersten Bild
+    let mut w = World::new(vec![clip(1, 0.0, 3.0), b]);
+    w.play();
+    w.run(2.6, DT); // Vorab-Strom ab 1,5 s geöffnet, seit 2,4 s bereit
+    w.clips[1].ver = 1; // neuer Schlüssel 0,4 s vor dem Schnitt
+    w.run(1.5, DT);
+    let t: Vec<f64> = w.shown.iter().filter(|s| s.0 > 2.5 && s.0 < 4.1).map(|s| s.0).collect();
+    let gap = t.windows(2).map(|x| x[1] - x[0]).fold(0.0, f64::max);
+    assert!(gap <= 2.0 / 30.0 + 0.01, "Lücke {gap:.2} s am Schnitt");
+    w.run(1.0, DT);
+    let new = w.key(&w.clips[1]);
+    assert!(w.core.streams().iter().filter(|x| x.0 == 2).all(|x| x.1 == new), "neuer Strom übernimmt");
+}
+
 #[test]
 fn cuts_between_many_short_clips_have_no_gap() {
     let clips: Vec<Clip> = (0..30).map(|i| clip(i + 1, i as f64 * 0.5, (i + 1) as f64 * 0.5)).collect();
