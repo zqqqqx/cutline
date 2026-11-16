@@ -18,6 +18,7 @@
 - **Zoom out further.** The whole project fits with free room at both ends; the ruler goes up to hours.
 - **Log export.** Settings → About exports the log of the last 24 hours for troubleshooting – without project names, file paths or keys.
 - **What's new.** The update window shows the changes of each version in plain words.
+- **Hardware encoding on more computers.** Besides NVIDIA, Intel and AMD encoders, Cutline can now use the encoder built into Windows, so older graphics cards encode in hardware again. Settings → Performance → "Hardware encoding" picks the way: automatic, one of the encoders found, or software.
 
 **Improved**
 - Opening, saving and autosaving large projects run in the background – no more frozen window. Leaving a project waits until it is really saved.
@@ -27,11 +28,15 @@
 - Epidemic Sound: downloaded tracks are kept and reused in other projects; clearer messages when the sign-in expired or a limit is reached.
 - Whisper subtitles work when the user folder contains an apostrophe.
 - One-time note when hardware encoding is only unavailable because the graphics driver is outdated.
+- Whisper subtitles work out of the box on Windows – the bundled FFmpeg now includes what they need.
+- Linux: works with the FFmpeg 7 of current distributions; a note appears at start if the installed FFmpeg is too old.
 
 **Fixed**
 - Sound could be silent after importing a large CapCut project.
 - Slideshows with more than 150 photos and transitions can be exported.
 - "Zoom pulse" played at half speed in 60 fps projects.
+- Linux: transition previews stayed empty, a clip's last frame did not hold, and shader transitions fell back to a simple one in the export.
+- Proxies of files whose video starts later than their audio were off by a few frames.
 - An export range starting in the middle of an effect clip no longer jumps.
 - Voice recordings no longer lose audio when the disk is briefly busy.
 - "Create new token" no longer switches MCP off.
@@ -51,6 +56,7 @@
 - **Weiter herauszoomen.** Das ganze Projekt passt mit freiem Platz an beiden Enden; das Lineal reicht bis Stunden.
 - **Protokoll exportieren.** Einstellungen → Über exportiert das Protokoll der letzten 24 Stunden zur Fehlersuche – ohne Projektnamen, Dateipfade oder Schlüssel.
 - **Was ist neu.** Das Update-Fenster zeigt die Änderungen jeder Version in einfachen Worten.
+- **Hardware-Kodierung auf mehr Rechnern.** Neben den Encodern von NVIDIA, Intel und AMD nutzt Cutline jetzt auch den in Windows eingebauten, sodass ältere Grafikkarten wieder in Hardware kodieren. Einstellungen → Leistung → „Hardware-Kodierung" legt den Weg fest: automatisch, einer der gefundenen Encoder oder Software.
 
 **Verbessert**
 - Öffnen, Speichern und automatisches Speichern großer Projekte laufen im Hintergrund – kein eingefrorenes Fenster mehr. Beim Verlassen eines Projekts wird gewartet, bis es wirklich gespeichert ist.
@@ -60,11 +66,15 @@
 - Epidemic Sound: Geladene Titel bleiben vorrätig und werden in anderen Projekten wiederverwendet; klarere Meldungen bei abgelaufener Anmeldung und erreichtem Limit.
 - Whisper-Untertitel funktionieren auch, wenn der Benutzerordner einen Apostroph enthält.
 - Einmaliger Hinweis, wenn die Hardware-Kodierung nur wegen eines veralteten Grafiktreibers nicht verfügbar ist.
+- Whisper-Untertitel funktionieren unter Windows ohne Zutun – das mitgelieferte FFmpeg bringt jetzt alles Nötige mit.
+- Linux: läuft mit dem FFmpeg 7 aktueller Distributionen; ist das installierte FFmpeg zu alt, kommt beim Start ein Hinweis.
 
 **Behoben**
 - Nach dem Import eines großen CapCut-Projekts konnte der Ton stumm sein.
 - Diashows mit mehr als 150 Fotos und Übergängen lassen sich exportieren.
 - „Zoom-Puls" lief in Projekten mit 60 Bildern/s halb so schnell.
+- Linux: Vorschaubilder der Übergänge blieben leer, das letzte Bild eines Clips blieb nicht stehen, und Shader-Übergänge fielen im Export auf einen einfachen zurück.
+- Proxys von Dateien, deren Bild später beginnt als der Ton, lagen um einige Bilder daneben.
 - Ein Export-Bereich, der mitten in einem Effekt-Clip beginnt, springt nicht mehr.
 - Sprachaufnahmen verlieren keinen Ton mehr, wenn die Platte kurz beschäftigt ist.
 - „Neues Token erzeugen" schaltet MCP nicht mehr ab.
