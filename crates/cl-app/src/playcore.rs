@@ -164,6 +164,10 @@ pub const AUDIO_DEBOUNCE: f64 = 0.15;
 const RETRY_OPEN: f64 = 1.0;
 /// Ein Ersatzstrom mit Bild übernimmt spätestens so lange nach dem Anhängen (auch mit Rückstand)
 const REPLACE_AFTER: f64 = 1.0;
+/// Geänderter Schlüssel beim Spielen (Regler ziehen: je UI-Bild ein neuer): Ersatz erst, wenn er
+/// so lange steht. Vorher startete je Bild ein FFmpeg ab dem Keyframe, verworfen, sobald der
+/// nächste Wert kam – das nahm dem laufenden Strom die Rechenzeit (Klicktest K5: Bild stand 1,8 s).
+const KEY_SETTLE: f64 = 0.15;
 /// Einzelbild beim Abspielen (Rückwärts, Tempo-Kurve, bewegte Bilder): ein laufender Auftrag wird
 /// nicht ersetzt, nur weil die Uhr weiter ist – sein Bild wird gezeigt, auch wenn es einige Bilder
 /// alt ist (sonst verhungert jeder Auftrag). Nur als Sicherung nach so langer Zeit neu.
@@ -265,6 +269,8 @@ pub struct PlayCore<S: Source> {
     failed: HashMap<Lid, (u64, f64)>,
     /// zuletzt neu geöffnet (Hängen, Aufholen): Sperrfrist [`REOPEN_BLOCK`]
     reopened: HashMap<Lid, f64>,
+    /// neuer Schlüssel je Ebene seit (für [`KEY_SETTLE`])
+    settle: HashMap<Lid, (u64, f64)>,
     /// in diesem UI-Bild gewollte Ebenen (ein Strom wird nur von einer nicht mehr gewollten übernommen)
     wanted: Vec<Lid>,
     /// höchste Stufe der automatischen Qualität (aus dem Takt)
@@ -304,6 +310,7 @@ impl<S: Source> Default for PlayCore<S> {
             reopen: HashMap::new(),
             failed: HashMap::new(),
             reopened: HashMap::new(),
+            settle: HashMap::new(),
             wanted: Vec::new(),
             max_level: 0,
             requested: HashMap::new(),
@@ -414,6 +421,7 @@ impl<S: Source> PlayCore<S> {
         // Sprung: laufende Einzelbilder gehören zur alten Stelle
         self.requested.clear();
         self.reopened.clear();
+        self.settle.clear();
         self.cur.clear();
         self.next.clear();
         self.opening.clear();
@@ -748,6 +756,19 @@ impl<S: Source> PlayCore<S> {
         if next || opening {
             return None;
         }
+        // Ersatz für einen laufenden Strom: erst, wenn der neue Schlüssel kurz steht
+        if !cur && !w.prefetch && self.mode == Mode::Spielen && self.cur.contains_key(&id) {
+            let since = match self.settle.get(&id) {
+                Some((k, t)) if *k == w.key => *t,
+                _ => {
+                    self.settle.insert(id, (w.key, now));
+                    now
+                }
+            };
+            if now - since < KEY_SETTLE {
+                return None;
+            }
+        }
         self.seq += 1;
         if cur {
             let at = self.reopen.remove(&id)?;
@@ -912,6 +933,7 @@ impl<S: Source> PlayCore<S> {
     pub fn visible(&mut self, ids: &[Lid]) {
         self.wanted.clear();
         self.reopened.retain(|id, _| ids.contains(id));
+        self.settle.retain(|id, _| ids.contains(id));
         self.cur.retain(|id, _| ids.contains(id));
         self.next.retain(|id, _| ids.contains(id));
         self.opening.retain(|id, _| ids.contains(id));

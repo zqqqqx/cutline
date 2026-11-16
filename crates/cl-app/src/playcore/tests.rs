@@ -446,6 +446,28 @@ fn click_during_play_rebuffers_at_new_position() {
     assert!(p >= 12.0 && f >= 12.0 && p - f < 0.1, "Bild {f} bei {p}");
 }
 
+/// Klicktest K5: Regler ziehen während Play – je UI-Bild ein neuer Schlüssel, je Bild ein neuer
+/// Strom, der gleich wieder verworfen wurde (Rechenzeit fehlte dem laufenden, Bild stand 1,8 s).
+/// Jetzt läuft der alte Strom mit dem alten Wert weiter; neu geöffnet wird, wenn der Wert steht.
+#[test]
+fn dragging_a_slider_during_play_does_not_open_a_stream_per_frame() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    w.play();
+    w.run(1.0, DT);
+    let (opens, t) = (w.opens, w.now());
+    for _ in 0..90 {
+        w.clips[0].ver += 1; // je UI-Bild ein neuer Wert (1,5 s lang)
+        w.step(1.0 / 60.0);
+    }
+    assert!(w.opens - opens <= 1, "{} Ströme beim Ziehen", w.opens - opens);
+    assert!(w.gap(1, t, w.now()) <= 2.0 / 30.0 + 0.01, "Bild läuft mit dem alten Wert weiter");
+    // Wert steht: der Ersatz kommt und übernimmt
+    w.run(1.0, DT);
+    let new = w.key(&w.clips[0]);
+    assert!(w.core.streams().iter().all(|x| x.1 == new), "{:?}", w.core.streams());
+    assert!(w.opens - opens <= 2);
+}
+
 #[test]
 fn visible_edit_keeps_picture_running_and_switches_stream() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
@@ -652,8 +674,13 @@ fn project_change_mid_play_drops_everything_of_the_old_project() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
     w.play();
     w.run(1.0, DT);
-    w.clips[0].ver = 7; // Ersatz wird gerade geöffnet …
-    w.step(DT);
+    w.clips[0].ver = 7; // Ersatz wird gerade geöffnet (nachdem der Schlüssel kurz stand) …
+    for _ in 0..40 {
+        if !w.opening.is_empty() {
+            break;
+        }
+        w.step(DT);
+    }
     assert!(!w.opening.is_empty());
     let gen = w.core.gen();
     w.core.new_project(); // … da wechselt das Projekt
