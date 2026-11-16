@@ -66,9 +66,53 @@ fn matte_cache(path: &std::path::Path) -> PathBuf {
         .join(format!("{:016x}.mkv", h.finish()))
 }
 
+/// Wählbare Spracherkennungen (Kennung, Name) und die geltende Wahl: „auto“ und jede
+/// installierte Erkennung (Whisper nur mit FFmpeg-Filter); eine gemerkte Wahl, die es nicht
+/// mehr gibt, gilt als „auto“.
+pub(crate) fn asr_offer(
+    parakeet: bool,
+    whisper: Option<String>,
+    filter: bool,
+    saved: &str,
+) -> (Vec<(&'static str, String)>, &'static str) {
+    let mut v = vec![("auto", "Automatisch".to_string())];
+    if parakeet {
+        v.push(("parakeet", cl_analyze::asr::Engine::Parakeet.name().to_string()));
+    }
+    if let Some(w) = whisper.filter(|_| filter) {
+        v.push(("whisper", w));
+    }
+    let cur = v.iter().find(|c| c.0 == saved).map_or("auto", |c| c.0);
+    (v, cur)
+}
+
+/// Gewählte Erkennung als Vorgabe für [`cl_analyze::asr::transcribe`] (`auto` = die beste).
+pub(crate) fn asr_force(id: &str) -> Option<cl_analyze::asr::Engine> {
+    match id {
+        "parakeet" => Some(cl_analyze::asr::Engine::Parakeet),
+        "whisper" => Some(cl_analyze::asr::Engine::Whisper),
+        _ => None,
+    }
+}
+
 impl App {
     pub fn models(&self) -> cl_analyze::Models {
         cl_analyze::Models::new(crate::paths::models_dir())
+    }
+
+    /// Angebot der Spracherkennung für diesen Rechner (siehe [`asr_offer`]).
+    fn asr_choices(&self, ctx: &egui::Context) -> (Vec<(&'static str, String)>, &'static str) {
+        let m = self.models();
+        let filter = cl_analyze::asr::whisper_filter_available();
+        if filter.is_none() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(300));
+        }
+        asr_offer(
+            m.installed("parakeet") && m.installed("onnxruntime"),
+            m.whisper().map(|p| cl_analyze::asr::whisper_label(&p)),
+            filter.unwrap_or(false),
+            &self.settings.asr_engine,
+        )
     }
 
     fn need_models(&mut self, ids: &[&str]) -> bool {
@@ -332,7 +376,7 @@ impl App {
             language: self.caption_lang.clone(),
             max_chars: pre.max_chars,
             max_dur: pre.max_dur,
-            ..Default::default()
+            force: asr_force(self.asr_choices(ctx).1),
         };
         match only_clip.and_then(|c| self.clip_view(c)) {
             Some(c) => {
@@ -800,10 +844,13 @@ impl App {
     pub fn captions_pro(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let m = self.models();
-        let engine = if m.installed("parakeet") && m.installed("onnxruntime") {
-            Some("Parakeet TDT 0.6B v3")
+        let (choices, cur) = self.asr_choices(&ctx);
+        let engine = if let Some(c) = choices.iter().find(|c| c.0 == cur && cur != "auto") {
+            Some(c.1.clone())
+        } else if m.installed("parakeet") && m.installed("onnxruntime") {
+            Some("Parakeet TDT 0.6B v3".to_string())
         } else if m.installed("whisper") {
-            Some("Whisper")
+            Some("Whisper".to_string())
         } else {
             None
         };
@@ -821,7 +868,7 @@ impl App {
                     .strong(),
                 );
                 ui.label(
-                    RichText::new(crate::tr(match engine {
+                    RichText::new(crate::tr(match &engine {
                         Some(e) => format!("Lokal mit {e} – nichts verlässt deinen Rechner"),
                         None => "Noch kein Spracherkennungsmodell installiert".into(),
                     }))
@@ -836,6 +883,20 @@ impl App {
                     }
                     return;
                 }
+                theme::row(ui, "Spracherkennung", |ui| {
+                    let name = |id: &str| choices.iter().find(|c| c.0 == id).map_or("", |c| c.1.as_str());
+                    egui::ComboBox::from_id_salt("cap-engine")
+                        .selected_text(crate::tr(name(cur)))
+                        .width((ui.available_width() - 12.0).max(60.0))
+                        .show_ui(ui, |ui| {
+                            for (id, n) in &choices {
+                                if ui.selectable_label(*id == cur, crate::tr(n.as_str())).clicked() {
+                                    self.settings.asr_engine = id.to_string();
+                                    self.settings.save();
+                                }
+                            }
+                        });
+                });
                 theme::row(ui, "Sprache", |ui| {
                     let cur = LANGS
                         .iter()
@@ -1297,4 +1358,32 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
         }
     }
     e
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cl_analyze::asr::Engine;
+
+    #[test]
+    fn asr_offer_lists_installed_engines_and_forces_the_choice() {
+        let ids = |v: &[(&'static str, String)]| v.iter().map(|c| c.0).collect::<Vec<_>>();
+        // beide installiert, Filter da: Whisper wählbar und geht als Vorgabe in die Erkennung
+        let (v, cur) = asr_offer(true, Some("Whisper Base".into()), true, "whisper");
+        assert_eq!(ids(&v), ["auto", "parakeet", "whisper"]);
+        assert_eq!(v[2].1, "Whisper Base");
+        assert_eq!(asr_force(cur), Some(Engine::Whisper));
+        // ohne FFmpeg-Filter kein Whisper; die gemerkte Wahl gilt still als automatisch
+        let (v, cur) = asr_offer(true, Some("Whisper Base".into()), false, "whisper");
+        assert_eq!(ids(&v), ["auto", "parakeet"]);
+        assert_eq!((cur, asr_force(cur)), ("auto", None));
+        // Parakeet fehlt
+        let (v, cur) = asr_offer(false, Some("Whisper Base".into()), true, "parakeet");
+        assert_eq!(ids(&v), ["auto", "whisper"]);
+        assert_eq!(cur, "auto");
+        let (_, cur) = asr_offer(true, None, true, "parakeet");
+        assert_eq!(asr_force(cur), Some(Engine::Parakeet));
+        // unbekannter Wert
+        assert_eq!(asr_offer(true, None, true, "gibts-nicht").1, "auto");
+    }
 }
