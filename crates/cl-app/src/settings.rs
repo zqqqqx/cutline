@@ -1152,11 +1152,15 @@ mod tests {
             let (addr, t) = cl_mcp::McpServer::new(doc, None).serve_http_until(port, "x".into(), stop.clone())?;
             Ok::<_, std::io::Error>(McpRunning { port: addr.port(), token: "x".into(), read_only: false, stop, thread: Some(t) })
         };
-        let first = start(0).unwrap();
-        let port = first.port;
-        drop(first);
-        let again = start(port).expect("Port nach dem Beenden sofort frei");
-        assert_eq!(again.port, port);
+        // Der Port kommt vom System: Parallel laufende Tests können ihn zwischen Beenden und Neustart
+        // zufällig bekommen. Hielte der alte Server ihn noch, scheiterte dagegen JEDER Versuch.
+        let ok = (0..5).any(|_| {
+            let first = start(0).unwrap();
+            let port = first.port;
+            drop(first);
+            start(port).is_ok_and(|again| again.port == port)
+        });
+        assert!(ok, "Port nach dem Beenden sofort frei");
     }
 
     #[test]
