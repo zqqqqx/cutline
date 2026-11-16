@@ -653,6 +653,55 @@ mod presence_tests {
         ask(&mut app);
         assert!(app.starter.rx.recv_timeout(std::time::Duration::from_millis(500)).is_err(), "fehlt: kein Strom");
     }
+
+    /// Strom aus Proxy-Stücken: der Auftrag zeigt auf die Stück-Liste, und die Zeit darin ist um
+    /// den Anfang des ersten Stücks verschoben. Die Quellenwahl steckt im Stromschlüssel und im
+    /// Quell-Fingerabdruck (ein Wechsel öffnet neu, ein Spender-Strom anderer Wahl wird nicht übernommen).
+    #[test]
+    fn stream_from_parts_opens_the_list_at_the_shifted_time() {
+        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        let (starter, jobs) = crate::preview::Starter::capture();
+        app.starter = starter;
+        app.settings.use_proxies = true;
+        let m = MediaRef {
+            id: cl_core::MediaId::new(),
+            path: home.path().join("q.mp4"),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(100.0),
+            width: 3840,
+            height: 2160,
+            fps: Some(Rational::new(30, 1)),
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: Some("h264".into()),
+            audio_codec: None,
+        };
+        app.project.media.push(m.clone());
+        let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(100.0));
+        let l = Layer { clip: c.clone(), t_rel: Time::from_secs_f64(12.0), alpha: 1.0, from: None };
+        let want = (app.settings.proxy_h, app.project.settings.fps);
+        let out = home.path().join("q-540.mp4");
+        // Stücke 1–3 (10–40 s) fertig
+        let ready: Vec<bool> = (0..10).map(|k| (1..4).contains(&k)).collect();
+        crate::proxy::set_test_entry(&m.path, out.clone(), want, ready.clone(), false);
+        app.playhead = Time::from_secs_f64(12.0);
+        app.core.play(app.playhead, 0, 0.0);
+        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None);
+        ask(&mut app);
+        let parts = jobs.try_recv().expect("Strom aus Stücken beauftragt");
+        assert_eq!(parts.path, home.path().join("q-540.teile").join("0001-0004.ffconcat"));
+        assert!((parts.source_at.as_secs_f64() - 2.0).abs() < 1e-3, "Quellzeit 12 s − Anfang Stück 1 (10 s): {:?}", parts.source_at);
+        ask(&mut app);
+        assert!(jobs.try_recv().is_err(), "gleiche Wahl: kein neuer Strom");
+        // fertig zusammengefügt: andere Wahl → anderer Schlüssel, neuer Strom aus der ganzen Datei
+        crate::proxy::set_test_entry(&m.path, out, want, ready, true);
+        ask(&mut app);
+        let full = jobs.try_recv().expect("Wechsel öffnet einen Ersatzstrom");
+        assert_eq!(full.path, m.path, "kein fertiger Proxy auf der Platte: Original");
+        assert!((full.source_at.as_secs_f64() - 12.0).abs() < 1e-3, "{:?}", full.source_at);
+        assert_ne!(full.open.key, parts.open.key);
+    }
 }
 
 #[cfg(test)]

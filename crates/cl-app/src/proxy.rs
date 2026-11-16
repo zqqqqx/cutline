@@ -1153,6 +1153,23 @@ impl App {
     }
 }
 
+/// Test: Bestand für `src` setzen – Quelle 100 s, Stücke à 10 s, fertig laut `ready` (je fertigem
+/// Stück eine Datei)
+#[cfg(test)]
+pub(crate) fn set_test_entry(src: &Path, out: PathBuf, want: (u32, Rational), ready: Vec<bool>, complete: bool) {
+    let pt = Parting::new(100.0, want.1, PART_SECS).unwrap();
+    let pdir = parts::parts_dir(&out);
+    std::fs::create_dir_all(&pdir).unwrap();
+    for k in (0..ready.len()).filter(|k| ready[*k]) {
+        std::fs::write(pdir.join(parts::part_name(k as u32)), b"x").unwrap();
+    }
+    let spec = ProxySpec { height: want.0, fps: None, gop: 15 };
+    let fails = vec![0; ready.len()];
+    let mut e = Entry { want, out, spec, pt: Some(pt), dur: 100.0, ready, fails, complete, dead: false, ranges: Arc::default() };
+    e.changed();
+    registry().insert(src.to_path_buf(), e);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1558,16 +1575,6 @@ mod tests {
         assert!(!pdir.exists(), "Stücke nach dem Zusammenfügen gelöscht");
     }
 
-    /// Bestand ohne Dateien: 10 Stücke à 10 s, fertig laut `ready`
-    fn test_entry(out: PathBuf, ready: Vec<bool>) -> Entry {
-        let pt = Parting::new(100.0, Rational::new(30, 1), PART_SECS).unwrap();
-        let spec = ProxySpec { height: 540, fps: None, gop: 15 };
-        let fails = vec![0; ready.len()];
-        let mut e = Entry { want: (540, Rational::new(30, 1)), out, spec, pt: Some(pt), dur: 100.0, ready, fails, complete: false, dead: false, ranges: Arc::default() };
-        e.changed();
-        e
-    }
-
     /// Zwei Videos übereinander am Playhead: Ist beim ersten das Playhead-Stück fertig, kommt das
     /// zweite dran, und nur dann gibt der Bau des ersten ab (vorher wählte die Suche immer wieder das
     /// erste, das sofort wieder abgab). Fehlt das zweite (NAS schläft) oder ist es gescheitert, gibt
@@ -1592,8 +1599,9 @@ mod tests {
         app.playhead = Time::from_secs_f64(42.0);
         let ready = |k: Option<usize>| (0..10).map(|i| Some(i) == k).collect::<Vec<_>>();
         let set = |x_ready: Option<usize>, y_ready: Option<usize>| {
-            registry().insert(x.path.clone(), test_entry(home.path().join("x-540.mp4"), ready(x_ready)));
-            registry().insert(y.path.clone(), test_entry(home.path().join("y-540.mp4"), ready(y_ready)));
+            let want = (540, Rational::new(30, 1));
+            set_test_entry(&x.path, home.path().join("x-540.mp4"), want, ready(x_ready), false);
+            set_test_entry(&y.path, home.path().join("y-540.mp4"), want, ready(y_ready), false);
         };
         let missing = [x.id, y.id];
         // keins fertig: Medienreihenfolge, keiner gibt ab
