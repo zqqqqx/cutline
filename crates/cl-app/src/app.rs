@@ -2884,6 +2884,9 @@ impl App {
             self.settings.save();
             self.toast_err(crate::tr("Grafiktreiber veraltet: Hardware-Kodierung geht erst nach einem Treiber-Update, bis dahin wird in Software kodiert"));
         }
+        if let Some(v) = crate::applog::take_old_ffmpeg() {
+            self.toast_err(format!("FFmpeg {v} gefunden – Cutline braucht {} oder neuer", crate::applog::MIN_FFMPEG));
+        }
         self.toasts
             .retain(|(_, t, err)| t.elapsed().as_secs_f32() < toast_secs(*err));
         if self.toasts.is_empty() {
