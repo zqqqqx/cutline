@@ -2253,6 +2253,7 @@ impl App {
     /// ging – dann bleibt das Projekt offen, sonst wären die Änderungen weg.
     pub(crate) fn flush_before_leaving(&mut self) -> bool {
         self.commit_live();
+        self.finish_file_drops(Duration::from_secs(10));
         if self.voiceover.recorder.is_some() {
             self.stop_voiceover();
         }
