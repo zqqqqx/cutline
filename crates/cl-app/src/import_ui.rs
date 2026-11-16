@@ -39,6 +39,8 @@ pub struct ImportState {
     pub open: bool,
     since: u64,
     drafts: Option<Vec<cl_import::capcut::Draft>>,
+    /// Entwurfsliste wird im Hintergrund gelesen (Ordner und Dateien, nicht im UI-Thread)
+    drafts_rx: Option<Receiver<Vec<cl_import::capcut::Draft>>>,
     job: Option<Job>,
     /// wartende Entwürfe; Zähler für „Projekt 2 von 5“
     queue: VecDeque<PathBuf>,
@@ -249,7 +251,23 @@ impl App {
         }
         let fresh = pass <= self.import.since + 1;
         if self.settings.import_capcut && self.import.drafts.is_none() {
-            self.import.drafts = Some(cl_import::capcut::list_drafts());
+            match &self.import.drafts_rx {
+                Some(rx) => {
+                    if let Ok(d) = rx.try_recv() {
+                        self.import.drafts = Some(d);
+                        self.import.drafts_rx = None;
+                    }
+                }
+                None => {
+                    let (tx, rx) = channel();
+                    let c = ctx.clone();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(cl_import::capcut::list_drafts());
+                        c.request_repaint();
+                    });
+                    self.import.drafts_rx = Some(rx);
+                }
+            }
         }
         let busy = self.import_busy();
         let summary = !busy && (!self.import.results.is_empty() || !self.import.errors.is_empty());
@@ -292,7 +310,9 @@ impl App {
             if self.settings.import_capcut {
                 theme::section(ui, "CapCut-Entwürfe auf diesem Rechner");
                 let drafts = self.import.drafts.clone().unwrap_or_default();
-                if drafts.is_empty() {
+                if self.import.drafts.is_none() {
+                    ui.spinner();
+                } else if drafts.is_empty() {
                     theme::empty_state(ui, icon::FOLDER_OPEN, "Keine Entwürfe gefunden", "");
                 } else {
                     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
@@ -336,6 +356,7 @@ impl App {
         } else if (m.should_close() && !fresh) || close {
             self.import.open = false;
             self.import.drafts = None;
+            self.import.drafts_rx = None;
             self.import.results.clear();
             self.import.errors.clear();
         }
@@ -456,6 +477,24 @@ mod tests {
         std::fs::write(d.join("draft_content.json"), j.to_string()).unwrap();
         std::fs::write(d.join("draft_meta_info.json"), serde_json::json!({"draft_name": "Mein Film"}).to_string()).unwrap();
         d
+    }
+
+    /// Import-Dialog: die CapCut-Entwürfe werden im Hintergrund gelesen, nicht im ersten Bild
+    /// (Ordner und Dateien im UI-Thread gaben ein langes Bild beim Import).
+    #[test]
+    fn draft_list_is_read_off_the_ui_thread() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        app.settings.import_capcut = true;
+        app.import.open = true;
+        let _ = ctx.run(Default::default(), |ctx| app.import_dialogs(ctx));
+        assert!(app.import.drafts.is_none(), "Entwurfsliste im UI-Thread gelesen");
+        let t = Instant::now();
+        while app.import.drafts.is_none() && t.elapsed().as_secs() < 30 {
+            std::thread::yield_now();
+            let _ = ctx.run(Default::default(), |ctx| app.import_dialogs(ctx));
+        }
+        assert!(app.import.drafts.is_some());
     }
 
     /// Fehlende Datei beim Import: Clip bleibt, beim Öffnen gilt sie als fehlend und
