@@ -48,6 +48,23 @@ fn key_focus(typing: bool, focused: bool, space: bool) -> KeyFocus {
     }
 }
 
+/// Leertaste vor dem Zeichnen aus der Eingabe nehmen, außer ein Textfeld hat den Fokus: egui löst
+/// sonst den fokussierten Knopf aus (nach Tab z. B. das Fenster-X – die App schloss sich). Der Fokus
+/// wird abgegeben; die Tastenkürzel bekommen die Taste zurück (Play/Pause). Enter löst fokussierte
+/// Knöpfe weiter aus.
+pub fn hold_space(ctx: &egui::Context, raw: &mut egui::RawInput) -> Vec<egui::Event> {
+    if typing(ctx) {
+        return Vec::new();
+    }
+    let (held, rest) = std::mem::take(&mut raw.events).into_iter().partition(|e| matches!(e, egui::Event::Key { key: Key::Space, .. }));
+    raw.events = rest;
+    let held: Vec<egui::Event> = held;
+    if !held.is_empty() {
+        release_text_focus(ctx);
+    }
+    held
+}
+
 pub fn release_text_focus(ctx: &egui::Context) {
     ctx.memory_mut(|m| {
         if let Some(id) = m.focused() {
@@ -246,6 +263,8 @@ pub struct App {
     pub copy_marker: bool,
     /// Clip mit laufender Bearbeitung im Inspektor (Vorschau, noch nicht im Verlauf)
     pub live: Option<Clip>,
+    /// Leertaste dieses Bildes, vor dem Zeichnen abgefangen (siehe [`hold_space`])
+    held_keys: Vec<egui::Event>,
     pub playhead: Time,
     pub playing: bool,
     pub timeline: TimelineState,
@@ -473,6 +492,7 @@ impl App {
             paste_track: None,
             copy_marker: false,
             live: None,
+            held_keys: Vec::new(),
             playhead: Time::ZERO,
             playing: false,
             timeline: TimelineState::default(),
@@ -2696,7 +2716,10 @@ impl App {
         if self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
             return;
         }
-        match key_focus(typing(ctx), ctx.wants_keyboard_input(), ctx.input(|i| i.key_pressed(Key::Space))) {
+        let held = std::mem::take(&mut self.held_keys);
+        let space = !held.is_empty() || ctx.input(|i| i.key_pressed(Key::Space));
+        ctx.input_mut(|i| i.events.extend(held));
+        match key_focus(typing(ctx), ctx.wants_keyboard_input(), space) {
             KeyFocus::Keep => return,
             KeyFocus::Release => release_text_focus(ctx),
             KeyFocus::Shortcuts => {}
@@ -3064,6 +3087,7 @@ impl eframe::App for App {
     /// Klicktests ohne echten Mauszeiger (nur mit `CUTLINE_SHOTS`), siehe `devinput.rs`
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         crate::devinput::feed(ctx, raw);
+        self.held_keys = hold_space(ctx, raw);
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -3876,6 +3900,50 @@ mod frame_rate_tests {
 
     /// Befund aus dem Review: der Fokus wurde in jedem Bild abgegeben – Tab-Navigation und Pfeile
     /// am Regler gingen nicht mehr. Abgeben nur, wenn die Leertaste kommt (die immer abspielt).
+    /// Klicktest K5: Tab bis aufs Fenster-X, dann Leertaste – das Fenster schloss sich, weil egui
+    /// den fokussierten Knopf im selben Bild auslöste. Jetzt kommt die Taste nie beim Knopf an,
+    /// sondern bei den Tastenkürzeln (Play/Pause); im Textfeld bleibt sie Text.
+    #[test]
+    fn space_never_clicks_a_focused_button() {
+        let ctx = egui::Context::default();
+        let mut text = String::new();
+        let space = egui::Event::Key { key: Key::Space, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
+        let frame = |ctx: &egui::Context, events: Vec<egui::Event>, hold: bool, text: &mut String| {
+            let mut raw = egui::RawInput { events, ..Default::default() };
+            let held = if hold { hold_space(ctx, &mut raw) } else { Vec::new() };
+            let mut ids = (egui::Id::NULL, egui::Id::NULL, false, false);
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let b = ui.button("X");
+                    ids.0 = b.id;
+                    ids.2 = b.clicked();
+                    ids.1 = ui.text_edit_singleline(text).id;
+                });
+                // Tastenkürzel: die zurückgegebene Taste löst Play aus
+                ctx.input_mut(|i| i.events.extend(held.clone()));
+                ids.3 = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Space));
+            });
+            ids
+        };
+        let ids = frame(&ctx, vec![], true, &mut text);
+        ctx.memory_mut(|m| m.request_focus(ids.0));
+        frame(&ctx, vec![], true, &mut text);
+        // ohne Abfangen: der Knopf würde ausgelöst (so schloss sich das Fenster)
+        let before = frame(&ctx, vec![space.clone()], false, &mut text);
+        assert!(before.2, "Voraussetzung: egui klickt den fokussierten Knopf mit der Leertaste");
+        ctx.memory_mut(|m| m.request_focus(ids.0));
+        frame(&ctx, vec![], true, &mut text);
+        let after = frame(&ctx, vec![space.clone()], true, &mut text);
+        assert!(!after.2, "Leertaste klickt den Knopf nicht");
+        assert!(after.3, "Leertaste geht an Play/Pause");
+        assert!(ctx.memory(|m| m.focused()).is_none(), "Fokus abgegeben");
+        // Textfeld mit Fokus: die Leertaste bleibt beim Feld
+        ctx.memory_mut(|m| m.request_focus(ids.1));
+        frame(&ctx, vec![], true, &mut text);
+        let mut raw = egui::RawInput { events: vec![space], ..Default::default() };
+        assert!(hold_space(&ctx, &mut raw).is_empty() && raw.events.len() == 1);
+    }
+
     #[test]
     fn focus_is_kept_except_for_space() {
         assert_eq!(key_focus(false, false, false), KeyFocus::Shortcuts, "nichts fokussiert");
