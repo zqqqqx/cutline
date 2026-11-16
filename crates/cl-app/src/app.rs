@@ -1008,6 +1008,19 @@ impl App {
         self.pending_fonts = Some(names);
     }
 
+    /// Je Bild: neu geladene Schriften übernehmen (erst jetzt kennt egui sie)
+    pub(crate) fn apply_pending_fonts(&mut self, ctx: &egui::Context) {
+        if let Some(f) = self.pending_fonts.take() {
+            let known = ctx.fonts(|fo| fo.families());
+            self.registered_fonts = f
+                .into_iter()
+                .filter(|n| known.contains(&egui::FontFamily::Name(n.clone().into())))
+                .collect();
+            // Textclips der Zeitleiste neu setzen (ihr Zwischenspeicher hängt an der Epoche)
+            self.project_epoch += 1;
+        }
+    }
+
     pub fn font_family(&self, family: Option<&str>) -> egui::FontFamily {
         match family {
             Some(f) if self.registered_fonts.contains(f) => egui::FontFamily::Name(f.into()),
@@ -2075,6 +2088,9 @@ impl App {
 
     pub(crate) fn reset_editor(&mut self) {
         self.stop_playback();
+        // Ergebnisse laufender Ablagen und Aufgaben gehören zum verlassenen Projekt
+        self.drops.list.clear();
+        self.tasks.next_generation();
         self.core.new_project();
         self.select_only(None);
         self.live = None;
@@ -3069,13 +3085,7 @@ impl eframe::App for App {
         if std::env::var_os("CUTLINE_DEBUG_HITS").is_some() {
             ctx.style_mut(|s| s.debug.show_widget_hits = true);
         }
-        if let Some(f) = self.pending_fonts.take() {
-            let known = ctx.fonts(|fo| fo.families());
-            self.registered_fonts = f
-                .into_iter()
-                .filter(|n| known.contains(&egui::FontFamily::Name(n.clone().into())))
-                .collect();
-        }
+        self.apply_pending_fonts(ctx);
         // „System“ folgt einem Wechsel des Betriebssystems sofort
         theme::select(ctx, &self.settings.theme);
         // Vorhören zu Ende → Knopf zurück auf „Abspielen“

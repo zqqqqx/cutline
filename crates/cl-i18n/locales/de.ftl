@@ -27,6 +27,10 @@ media-imported = { $count ->
     [one] Ein Medium importiert
    *[other] { $count } Medien importiert
 }
+files-importing = { $count ->
+    [one] Eine Datei wird importiert
+   *[other] { $count } Dateien werden importiert
+}
 
 text-add = Text hinzufügen
 text-default = Standardtext

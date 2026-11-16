@@ -130,12 +130,16 @@ pub fn layout(items: &[Item], at: Time, default: Time) -> Vec<Time> {
         .collect()
 }
 
-/// Spur für Dateien der Art `k` beim Ablegen an `p` – dieselben Regeln wie beim Ablegen aus dem
-/// Medien-Menü: passende Spur → dort (Hauptspur: wie ohne Ziel), unpassende oder gesperrte →
-/// neue Spur an dieser Stelle, über bzw. unter allen Spuren → neue Spur. `rows` = Zeilen in
-/// Anzeige-Reihenfolge (Spurindex, Fläche), `row_gap` = Abstand zwischen zwei Zeilen.
-pub fn lane_at(tracks: &[Track], rows: &[(usize, Rect)], p: Pos2, k: TrackKind, row_gap: f32) -> Lane {
-    let row = rows.iter().position(|(_, r)| p.y >= r.top() - row_gap / 2.0 && p.y < r.bottom() + row_gap / 2.0);
+/// Spur für Elemente der Art `k` beim Ablegen an `p` (Dateien von außen und aus dem Medien-Menü):
+/// passende Spur → dort (Hauptspur: wie ohne Ziel), unpassende oder gesperrte → neue Spur an
+/// dieser Stelle, über bzw. unter allen Spuren → neue Spur. `rows` = Zeilen in
+/// Anzeige-Reihenfolge (Spurindex, Fläche), `lanes` = sichtbarer Spurbereich (Zeilen unter dem
+/// Lineal zählen nicht), `row_gap` = Abstand zwischen zwei Zeilen.
+pub fn lane_at(tracks: &[Track], rows: &[(usize, Rect)], lanes: Rect, p: Pos2, k: TrackKind, row_gap: f32) -> Lane {
+    let row = rows
+        .iter()
+        .position(|(_, r)| p.y >= r.top() - row_gap / 2.0 && p.y < r.bottom() + row_gap / 2.0)
+        .filter(|_| lanes.contains(p));
     if let Some(r) = row {
         let t = &tracks[rows[r].0];
         if !fits(t, k) {
@@ -297,7 +301,7 @@ impl App {
         let id = self.drops.next;
         self.drops.next += 1;
         if !todo.is_empty() {
-            let label = crate::tr(format!("{} Dateien werden importiert", todo.len()));
+            let label = self.i18n.t_num("files-importing", "count", todo.len() as i64);
             self.tasks.spawn(ctx, format!("drop:{id}"), label, move |report, cancel| {
                 probe_all(&todo, |i, r| drop(tx.send((i, r))), report, cancel);
                 TaskDone::Run(Box::new(|_| {}))
@@ -390,25 +394,29 @@ impl App {
         // je Art: Spur (sobald bekannt) und nächste Startzeit
         let mut track: [Option<Option<TrackId>>; 2] = [None, None];
         let mut next = [t.at, t.at];
+        // neue Spuren vorab, höchster Index zuerst: sonst verschiebt die erste den Index der zweiten
+        let used = |k: usize| ids.iter().any(|&id| self.project.media(id).is_some_and(|m| usize::from(m.kind == MediaKind::Audio) == k));
+        let mut new: Vec<(usize, usize)> = (0..2)
+            .filter_map(|k| match lanes[k] {
+                Lane::New { index, .. } if used(k) => Some((index, k)),
+                _ => None,
+            })
+            .collect();
+        new.sort_by_key(|n| std::cmp::Reverse(n.0));
+        for (index, k) in new {
+            let kind = if k == 1 { TrackKind::Audio } else { TrackKind::Video };
+            if let Some(OpOutput::Track(tid)) = self.apply(EditOp::InsertTrack { index, kind }) {
+                self.timeline.reveal_track(tid);
+                track[k] = Some(Some(tid));
+            }
+        }
         for &id in ids {
             let Some(m) = self.project.media(id) else { continue };
             let k = usize::from(m.kind == MediaKind::Audio);
-            let tr = match track[k] {
-                Some(tr) => tr,
-                None => match lanes[k] {
-                    Lane::Track(tid) if self.project.timeline.tracks.iter().any(|x| x.id == tid) => Some(tid),
-                    Lane::New { index, .. } => {
-                        let kind = if k == 1 { TrackKind::Audio } else { TrackKind::Video };
-                        match self.apply(EditOp::InsertTrack { index, kind }) {
-                            Some(OpOutput::Track(tid)) => {
-                                self.timeline.reveal_track(tid);
-                                Some(tid)
-                            }
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                },
+            let tr = match (track[k], lanes[k]) {
+                (Some(tr), _) => tr,
+                (None, Lane::Track(tid)) if self.project.timeline.tracks.iter().any(|x| x.id == tid) => Some(tid),
+                _ => None,
             };
             if let Some(c) = self.add_media_at(id, next[k], tr) {
                 if let Some((x, c)) = self.project.find_clip(c) {
@@ -533,22 +541,34 @@ mod tests {
         let v = TrackKind::Video;
         let a = TrackKind::Audio;
         // Zeile 0 = eingeklappte Textspur: Video passt nicht → neue Spur darüber/darunter
-        assert!(matches!(lane_at(&t, &rows, at(0, 2.0), v, 5.0), Lane::New { gap: 0, .. }));
-        assert!(matches!(lane_at(&t, &rows, at(0, 10.0), v, 5.0), Lane::New { gap: 1, .. }));
+        assert!(matches!(lane_at(&t, &rows, Rect::EVERYTHING, at(0, 2.0), v, 5.0), Lane::New { gap: 0, .. }));
+        assert!(matches!(lane_at(&t, &rows, Rect::EVERYTHING, at(0, 10.0), v, 5.0), Lane::New { gap: 1, .. }));
         // Zeile 1 = Videospur: dort; Hauptspur: wie ohne Ziel
-        assert_eq!(lane_at(&t, &rows, at(1, 10.0), v, 5.0), Lane::Track(t[1].id));
-        assert_eq!(lane_at(&t, &rows, at(2, 10.0), v, 5.0), Lane::Auto);
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, at(1, 10.0), v, 5.0), Lane::Track(t[1].id));
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, at(2, 10.0), v, 5.0), Lane::Auto);
         // Ton über der Videospur → neue Tonspur (nur unter den Bildspuren erlaubt)
-        assert!(matches!(lane_at(&t, &rows, at(1, 10.0), a, 5.0), Lane::New { gap: 3, .. }));
-        assert_eq!(lane_at(&t, &rows, at(3, 10.0), a, 5.0), Lane::Track(t[3].id));
+        assert!(matches!(lane_at(&t, &rows, Rect::EVERYTHING, at(1, 10.0), a, 5.0), Lane::New { gap: 3, .. }));
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, at(3, 10.0), a, 5.0), Lane::Track(t[3].id));
         // gesperrte passende Spur → neue
         let mut l = t.clone();
         l[3].locked = true;
-        assert!(matches!(lane_at(&l, &rows, at(3, 10.0), a, 5.0), Lane::New { .. }));
+        assert!(matches!(lane_at(&l, &rows, Rect::EVERYTHING, at(3, 10.0), a, 5.0), Lane::New { .. }));
         // über allen Spuren: neues Bild oben; unter allen: neuer Ton unten; sonst wie ohne Ziel
-        assert_eq!(lane_at(&t, &rows, pos2(0.0, 50.0), v, 5.0), Lane::New { index: 4, gap: 0 });
-        assert_eq!(lane_at(&t, &rows, pos2(0.0, 50.0), a, 5.0), Lane::Auto);
-        assert_eq!(lane_at(&t, &rows, pos2(0.0, 400.0), a, 5.0), Lane::New { index: 4, gap: 4 });
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, pos2(0.0, 50.0), v, 5.0), Lane::New { index: 4, gap: 0 });
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, pos2(0.0, 50.0), a, 5.0), Lane::Auto);
+        assert_eq!(lane_at(&t, &rows, Rect::EVERYTHING, pos2(0.0, 400.0), a, 5.0), Lane::New { index: 4, gap: 4 });
+    }
+
+    /// Senkrecht gerollt: die Textspur liegt halb unter dem Lineal. Über dem Lineal gilt sie nicht
+    /// (Video wie ohne Ziel auf die Hauptspur, wie beim Ablegen aus dem Medien-Menü), im sichtbaren
+    /// Teil schon (Video passt nicht → neue Spur darunter).
+    #[test]
+    fn rows_under_the_ruler_do_not_count() {
+        let (t, rows) = tracks();
+        let lanes = Rect::from_min_max(pos2(0.0, 106.0), pos2(800.0, 400.0));
+        let v = TrackKind::Video;
+        assert_eq!(lane_at(&t, &rows, lanes, pos2(300.0, 103.0), v, 5.0), Lane::Auto);
+        assert!(matches!(lane_at(&t, &rows, lanes, pos2(300.0, 109.0), v, 5.0), Lane::New { gap: 1, .. }));
     }
 
     fn media(kind: MediaKind, secs: f64, name: &str) -> MediaRef {
@@ -642,5 +662,82 @@ mod tests {
         app.undo();
         app.sync_project();
         assert_eq!(app.project, before);
+    }
+
+    /// Eine abgelegte Schrift wird übernommen: Textclips der Zeitleiste werden neu gesetzt, nicht
+    /// erst nach der nächsten Änderung.
+    #[test]
+    fn new_fonts_redraw_text_clips() {
+        let (mut app, _home, _g) = test_app();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.register_fonts(ctx);
+            let before = app.project_epoch;
+            app.apply_pending_fonts(ctx);
+            assert!(app.project_epoch > before);
+        });
+    }
+
+    /// Spuren T, M, A1 (gesperrt), A2; Video und Ton auf die untere Hälfte von A1: neue Videospur
+    /// über M, neue Tonspur direkt unter A1 – wie die Vorschau sie zeigt.
+    #[test]
+    fn two_new_tracks_land_where_shown() {
+        let (mut app, _home, _g) = test_app();
+        let mut p = Project::new("Zwei neue");
+        let mut main = Track::new(TrackKind::Video);
+        main.main = true;
+        let mut a1 = Track::new(TrackKind::Audio);
+        a1.locked = true;
+        p.timeline.tracks = vec![main, Track::new(TrackKind::Text), a1, Track::new(TrackKind::Audio)];
+        app.set_doc(p);
+        let tracks = app.project.timeline.tracks.clone();
+        let rows: Vec<(usize, Rect)> = cl_core::display_order(&tracks)
+            .iter()
+            .enumerate()
+            .map(|(n, &i)| (i, Rect::from_min_size(pos2(0.0, 100.0 + n as f32 * 40.0), vec2(800.0, 34.0))))
+            .collect();
+        let p = pos2(300.0, rows[2].1.bottom() - 4.0);
+        let target = Target {
+            at: Time::ZERO,
+            video: lane_at(&tracks, &rows, Rect::EVERYTHING, p, TrackKind::Video, 6.0),
+            audio: lane_at(&tracks, &rows, Rect::EVERYTHING, p, TrackKind::Audio, 6.0),
+        };
+        assert!(matches!((target.video, target.audio), (Lane::New { .. }, Lane::New { .. })));
+        let d = pending(Some(target), vec![State::Ready(media(MediaKind::Video, 2.0, "a.mp4")), State::Ready(media(MediaKind::Audio, 2.0, "b.wav"))]);
+        app.commit_file_drop(d);
+        let t = &app.project.timeline.tracks;
+        let shown: Vec<(TrackKind, bool, usize)> =
+            cl_core::display_order(t).iter().map(|&i| (t[i].kind, t[i].locked, t[i].clips.len())).collect();
+        use TrackKind::{Audio, Text, Video};
+        assert_eq!(shown, [(Text, false, 0), (Video, false, 1), (Video, false, 0), (Audio, true, 0), (Audio, false, 1), (Audio, false, 0)]);
+    }
+
+    /// Ablage und Aufgabe laufen noch, als „Zur Startseite“ gedrückt wird: ihr Ergebnis darf das
+    /// verlassene Projekt nicht mehr ändern (es würde später ohne Sperre gespeichert).
+    #[test]
+    fn results_after_going_home_do_not_touch_the_left_project() {
+        let (mut app, _home, _g) = test_app();
+        app.set_doc(Project::new("Verlassen"));
+        let (tx, rx) = channel();
+        let entry = Entry { path: PathBuf::from("spät.mp4"), audio: false, state: State::Probing };
+        app.drops.list.push(Pending { target: None, entries: vec![entry], rx });
+        let (go_tx, go_rx) = channel::<()>();
+        app.tasks.spawn(&egui::Context::default(), "spät", "Spät", move |_, _| {
+            let _ = go_rx.recv();
+            TaskDone::Run(Box::new(|app: &mut App| {
+                app.apply(EditOp::ImportMedia { media: media(MediaKind::Image, 0.0, "aufgabe.png") });
+            }))
+        });
+        app.go_home();
+        // mit der Korrektur ist der Empfänger schon weg
+        let _ = tx.send((0, Ok(media(MediaKind::Video, 2.0, "spät.mp4"))));
+        go_tx.send(()).unwrap();
+        app.poll_file_drops();
+        while !app.tasks.list.is_empty() {
+            app.poll_tasks();
+            std::thread::yield_now();
+        }
+        app.sync_project();
+        assert!(app.project.media.is_empty(), "{:?}", app.project.media);
     }
 }
