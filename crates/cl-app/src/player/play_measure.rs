@@ -50,6 +50,8 @@ struct Run {
     stills_shown: u32,
     /// größte Zeit ohne neues Bild irgendeiner Ebene bei laufender Uhr (ms)
     freeze_ms: f64,
+    /// längste Zeit Auftrag → Einzelbild (ms)
+    still_max_ms: f64,
     /// Zwischenspeicher nach dem Anlauf und am Ende (Dauerlauf, `CUTLINE_QA_JUMP`)
     mem: Vec<String>,
 }
@@ -144,6 +146,8 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let jump_every: Option<f64> = std::env::var("CUTLINE_QA_JUMP").ok().and_then(|s| s.parse().ok());
     let mut last_jump = 0.0;
     let mut starter_queue = 0i64;
+    let debug = std::env::var_os("CUTLINE_QA_DEBUG").is_some();
+    let mut still_asked: std::collections::HashMap<u64, (f64, f64)> = Default::default();
     core.play(start, revision, now());
     let t_play = now();
     while now() - t_play < secs {
@@ -243,6 +247,13 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 let (id, key): (ClipId, u64) = ($id, $key);
                 first_any.get_or_insert(t);
                 if Some(id) == prim {
+                    if debug && t >= warm_until && prim_frames.last().is_some_and(|l| t - l > 0.15) {
+                        let what: Vec<String> = needs
+                            .iter()
+                            .map(|n| format!("{}{}{}{}", format!("{:04x}", lid(n.id) & 0xffff), if streamable(&n.clip) { " Strom" } else { " Einzelbild" }, if n.prefetch.is_some() { " vorab" } else { "" }, if n.overlay.is_some() { " Element" } else { "" }))
+                            .collect();
+                        eprintln!("Lücke {:.0} ms bis {rel:.2} s (pos {:.2}): Hauptebene {} – {what:?} | {}", (t - prim_frames.last().unwrap()) * 1000.0, playhead.as_secs_f64(), format!("{:04x}", lid(id) & 0xffff), core.sizes());
+                    }
                     prim_frames.push(t);
                 }
                 if edit_key.is_some_and(|(e, k)| e == id && k == key) {
@@ -257,6 +268,13 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
         while let Ok(d) = decoder.rx.try_recv() {
             match d {
                 Done::Frame { clip, key, .. } => {
+                    if let Some((ta, src)) = still_asked.remove(&key) {
+                        let ms = (t - ta) * 1000.0;
+                        if debug && ms > 700.0 {
+                            eprintln!("Einzelbild {ms:.0} ms bis {rel:.2} s (Quelle {src:.2} s)");
+                        }
+                        run.still_max_ms = run.still_max_ms.max(ms);
+                    }
                     if core.still_done(lid(clip), key) {
                         run.stills_shown += 1;
                         any_frame = t;
@@ -288,7 +306,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                     run.proxy |= p != m.path;
                     let j = open_job(o, c, m, p, (w, h), sfps, alias);
                     if std::env::var_os("CUTLINE_QA_DEBUG").is_some() {
-                        eprintln!("öffnen {:.2} s: {} ab {:.3} {}×{} hw={} graph={:?}", o.at.as_secs_f64(), j.path.display(), j.source_at.as_secs_f64(), w, h, j.hw, j.graph);
+                        eprintln!("öffnen {:.2} s: {} ab {:.3} {}×{} hw={:?} graph={:?}", o.at.as_secs_f64(), j.path.display(), j.source_at.as_secs_f64(), w, h, j.hw, j.graph);
                     }
                     starter.send(j);
                     starter_queue += 1;
@@ -307,6 +325,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 let key = App::frame_key(n.id, c, src, w, h, n.layer.t_rel, false, fx_hash_of(c), fps);
                 if core.still(lid(n.id), key, t) {
                     run.stills_req += 1;
+                    still_asked.insert(key, (t, src.as_secs_f64()));
                     let graph = cl_fx::preview_graph(c, w, h, n.layer.t_rel.as_secs_f64(), None, None);
                     decoder.send(Job::Frame { clip: n.id, key, path: path(), at: src, w, h, graph });
                 }
