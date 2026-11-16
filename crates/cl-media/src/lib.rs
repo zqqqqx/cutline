@@ -689,9 +689,12 @@ fn spawn_stream(
             &format!("fps={}/{},scale={w}:{h}:flags=bilinear,format=rgba", fps.num, fps.den),
         ]),
     };
-    // Bildrate nennen: FFmpeg 7 vergisst sie nach `setpts` im Graphen und wandelt sonst auf 25 Bilder/s
+    // Bilder unverändert weitergeben (das `fps` im Graphen liefert schon das Raster). Nicht `-r`:
+    // FFmpeg 7 vergaß zwar sonst die Bildrate nach `setpts` (25 Bilder/s), aber mit `-r` füllt
+    // FFmpeg 8 bei einem Graphen, dessen Zeit mitten im Clip beginnt (`setpts=…+t`, Effekte und
+    // Tempo), die Zeit davor mit Kopien des ersten Bildes – das Bild stand so viele Sekunden.
     Ok(cmd
-        .args(["-r", &format!("{}/{}", fps.num, fps.den), "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -1050,6 +1053,24 @@ mod tests {
         // ohne Bildrate am Ausgang 9 (FFmpeg 8) bzw. 16 (FFmpeg 7)
         let n = std::iter::from_fn(|| s.next_blocking()).count();
         assert!((19..=22).contains(&n), "{n}");
+    }
+
+    /// Nachtest K7: Strom mit Graph, dessen Zeit mitten im Clip beginnt (Tempo 2 ab Clipzeit 20 s:
+    /// `setpts=…+20 s`). Mit `-r` lieferte FFmpeg 8 erst 20 s lang Kopien des ersten Bildes – die
+    /// Ebene blieb ein Standbild. Jetzt bewegt sich das Bild sofort.
+    #[test]
+    fn graph_stream_with_a_late_clip_time_moves_at_once() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = gen(dir.path(), "lauf.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=30:d=4", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "30"]);
+        let g = "[0:v]setpts=PTS-STARTPTS,setpts=(PTS-STARTPTS)/2,fps=30/1,scale=32:18[pre];[pre]setpts=PTS-STARTPTS+round(20/TB)[pc];[pc]format=rgba[out]";
+        let s = FrameStream::open_fx(&src, Time::ZERO, 32, 18, Rational::new(30, 1), Some(g)).unwrap();
+        let frames: Vec<Vec<u8>> = std::iter::from_fn(|| s.next_blocking().map(|f| f.data)).take(20).collect();
+        assert_eq!(frames.len(), 20);
+        let distinct = frames.iter().collect::<HashSet<_>>().len();
+        assert!(distinct >= 15, "{distinct} verschiedene von 20 Bildern");
     }
 
     #[test]
