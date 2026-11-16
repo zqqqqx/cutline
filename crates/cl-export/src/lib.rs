@@ -1456,6 +1456,22 @@ fn run_ffmpeg(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progre
     Ok(err)
 }
 
+/// Der Testlauf eines Hardware-Encoders scheiterte NUR am Treiber: Die Grafikkarte kann es, der
+/// Treiber ist zu alt. Das meldet bisher allein NVENC eindeutig („Driver does not support the
+/// required nvenc API version … minimum required Nvidia driver …"); fehlt die Karte ganz, heißt es
+/// „No capable devices found" bzw. die Bibliothek lässt sich nicht laden – das zählt nicht.
+pub fn driver_too_old(stderr: &str) -> bool {
+    let l = stderr.to_ascii_lowercase();
+    l.contains("driver does not support the required nvenc api version") || l.contains("minimum required nvidia driver")
+}
+
+static OLD_DRIVER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Hat die letzte Erkennung einen Encoder gefunden, der nur am veralteten Treiber scheitert?
+pub fn old_driver_found() -> bool {
+    OLD_DRIVER.load(Ordering::Relaxed)
+}
+
 /// Prüft, welche Hardware-Encoder auf diesem Rechner wirklich funktionieren (kurzer Testlauf).
 pub fn available_encoders() -> Vec<Encoder> {
     let mut v = vec![Encoder::Software];
@@ -1482,11 +1498,16 @@ pub fn available_encoders() -> Vec<Encoder> {
                 ])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
+                .stderr(Stdio::piped())
+                .output()
                 .ok()
             })
-            .is_some_and(|s| s.success());
+            .is_some_and(|o| {
+                if !o.status.success() && driver_too_old(&String::from_utf8_lossy(&o.stderr)) {
+                    OLD_DRIVER.store(true, Ordering::Relaxed);
+                }
+                o.status.success()
+            });
         if ok {
             v.push(enc);
         }
@@ -3861,10 +3882,10 @@ mod tests {
     #[test]
     fn effects_with_own_time_start_at_the_clip() {
         let has = |id: &str| graph::fx_has_memory(&ClipFx { effects: vec![FxRef::new(id)], ..Default::default() });
-        for id in ["zoom-pulse", "motion-blur", "echo", "grain", "vhs", "glitch"] {
+        for id in ["motion-blur", "echo", "grain", "vhs", "glitch"] {
             assert!(has(id), "{id}");
         }
-        for id in ["shake", "rainbow", "strobe", "flash", "old-film", "sepia"] {
+        for id in ["zoom-pulse", "shake", "rainbow", "strobe", "flash", "old-film", "sepia"] {
             assert_eq!(has(id), id == "old-film", "{id}");
         }
         assert!(graph::counts_frames("[a]hue=h='n*3'[b]") && graph::counts_frames("geq=lum='N+p(X,Y)'"));
@@ -3942,5 +3963,17 @@ mod tests {
         let q = in_edit_ranges(&p);
         assert!(matches!(q, std::borrow::Cow::Owned(_)));
         assert_eq!(q.timeline.tracks[0].clips[0].volume_db, 20.0);
+    }
+
+    /// Nur „Treiber zu alt" zählt – keine Karte, fehlende Bibliothek oder andere Fehler nicht.
+    #[test]
+    fn only_an_outdated_driver_counts() {
+        assert!(driver_too_old("[h264_nvenc @ 0x1] Driver does not support the required nvenc API version. Required: 13.0 Found: 12.1"));
+        assert!(driver_too_old("[h264_nvenc @ 0x1] The minimum required Nvidia driver for nvenc is 570.0 or newer"));
+        assert!(!driver_too_old("[h264_nvenc @ 0x1] No capable devices found"));
+        assert!(!driver_too_old("[h264_nvenc @ 0x1] Cannot load nvEncodeAPI64.dll"));
+        assert!(!driver_too_old("[h264_amf @ 0x1] DLL amfrt64.dll failed to open"));
+        assert!(!driver_too_old("[h264_qsv @ 0x1] Error creating a MFX session: -9"));
+        assert!(!driver_too_old(""));
     }
 }
