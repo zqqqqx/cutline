@@ -349,7 +349,7 @@ fn build_with(
     cancel: &AtomicBool,
 ) -> Result<BuildReport, String> {
     std::fs::create_dir_all(out.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
-    let tmp = out.with_extension("part.mp4");
+    let tmp = parts::tmp_of(out);
     let mut cmd = encode_command()?;
     if let Some(h) = hw {
         cmd.args(["-hwaccel", h]);
@@ -536,7 +536,7 @@ fn build_part_with(
 ) -> Result<u64, String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let out = dir.join(parts::part_name(k));
-    let tmp = dir.join(format!("{k:04}.part.mp4"));
+    let tmp = parts::tmp_of(&out);
     let mut cmd = encode_command()?;
     cmd.args(part_args(&m.path, st, pt, k, spec.height, spec.gop, enc, hw));
     let secs = pt.start(k + 1) - pt.start(k);
@@ -551,7 +551,7 @@ fn build_part_with(
 /// Alle Stücke verlustfrei zur Ein-Datei-Proxy `out` zusammenfügen (erst fertig, dann umbenennen).
 fn merge(dir: &Path, pt: &Parting, out: &Path, cancel: &AtomicBool) -> Result<(), String> {
     let list = parts::concat_list(dir, 0, pt.count).map_err(|e| e.to_string())?;
-    let tmp = out.with_extension("part.mp4");
+    let tmp = parts::tmp_of(out);
     let mut cmd = encode_command()?;
     cmd.args(["-f", "concat", "-i"]).arg(&list).args(["-map", "0:v:0", "-c", "copy", "-movflags", "+faststart"]);
     let dur = pt.start(pt.count);
@@ -1428,7 +1428,7 @@ mod tests {
             let out = d.path().join(format!("{name}-ganz.mp4"));
             merge(&pdir, &pt, &out, &no).unwrap();
             assert_eq!(codes(&out), reference, "{name}: zusammengefügt anders");
-            assert!(!out.with_extension("part.mp4").exists());
+            assert!(!parts::tmp_of(&out).exists());
             // Strom über die Stücke 1.. ab 1,5 s (0,5 s ins Stück 1): Bild 45 und folgende
             if name == "cfr.mp4" {
                 let list = parts::concat_list(&pdir, 1, pt.count).unwrap();
@@ -1463,7 +1463,14 @@ mod tests {
         assert!(pt.count >= 3, "{pt:?}");
         let pdir = d.path().join("k.teile");
         let no = AtomicBool::new(false);
+        // Zwischendateien eines zweiten Fensters (anderer Prozess) bleiben unberührt
+        std::fs::create_dir_all(&pdir).unwrap();
+        let foreign = [pdir.join("0000.part.mp4"), pdir.join("0000.1.part.mp4")];
+        for f in &foreign {
+            std::fs::write(f, b"fremd").unwrap();
+        }
         let n: Vec<u64> = (0..pt.count).map(|k| build_part_with(&m, &pdir, &pt, 0.0, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap()).collect();
+        assert!(foreign.iter().all(|f| std::fs::read(f).unwrap() == b"fremd"), "fremde Zwischendatei überschrieben");
         assert_eq!(*n.last().unwrap(), 0, "{n:?}");
         assert_eq!(std::fs::metadata(pdir.join(parts::part_name(pt.count - 1))).unwrap().len(), 0);
         let out = d.path().join("k.mp4");
@@ -1500,7 +1507,7 @@ mod tests {
         std::fs::copy(pdir.join(parts::part_name(0)), pdir.join(parts::part_name(2))).unwrap();
         // „Neustart“: aufräumen, Bestand lesen, weiterbauen
         parts::cleanup(&root);
-        assert!(!pdir.join("0003.part.mp4").exists() && !pdir.join("0001.part.mp4").exists());
+        assert!(!pdir.join("0003.part.mp4").exists() && !parts::tmp_of(&pdir.join(parts::part_name(1))).exists());
         let ready = parts::scan_ready(&pdir, pt.count);
         assert_eq!(ready, [true, false, true, false]);
         let mut e = Entry {
@@ -1650,7 +1657,7 @@ mod tests {
         let out2 = d.path().join("q.mp4");
         build(&m, &out2, &spec, &|_| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(cl_media::probe(&out2).unwrap().height, 540);
-        assert!(!out2.with_extension("part.mp4").exists());
+        assert!(!parts::tmp_of(&out2).exists());
     }
 
     /// Abbrechen auch während der Pause: keine halbe Datei bleibt liegen.
@@ -1675,7 +1682,7 @@ mod tests {
             }
         }, &cancel);
         assert_eq!(r.unwrap_err(), "Abgebrochen");
-        assert!(!out.exists() && !out.with_extension("part.mp4").exists());
+        assert!(!out.exists() && !parts::tmp_of(&out).exists());
     }
 
     fn median(v: &mut [f64]) -> f64 {

@@ -1,6 +1,6 @@
 //! Proxy in Stücken: Die Quelle wird in gleich lange Stücke ([`PART_SECS`]) zerlegt gebaut, jedes
 //! fertige Stück ist sofort für Einzelbilder und Ströme nutzbar. Ablage je Proxy in einem Ordner
-//! neben der fertigen Datei (`<Proxy-Name>.teile/`): `0007.mp4` (fertig), `0007.part.mp4`
+//! neben der fertigen Datei (`<Proxy-Name>.teile/`): `0007.mp4` (fertig), `0007.<pid>.part.mp4`
 //! (entsteht; erst fertig schreiben, dann umbenennen), `0003-0012.ffconcat` (Liste für einen Strom
 //! über die Stücke 3…11) und `quelle.txt` (Pfad der Quelle, zum Aufräumen nach einer Änderung).
 //! Sind alle Stücke da, werden sie verlustfrei zur gewohnten Ein-Datei-Proxy zusammengefügt.
@@ -79,6 +79,13 @@ pub fn part_name(k: u32) -> String {
     format!("{k:04}.mp4")
 }
 
+/// Zwischendatei, in die FFmpeg schreibt, bevor sie zu `out` umbenannt wird. Mit Prozessnummer:
+/// zwei Cutline-Fenster mit derselben Quelle schreiben sonst in dieselbe Datei, und wer zuerst
+/// umbenennt, legt eine kaputte als fertig ab (`0007.mp4` → `0007.<pid>.part.mp4`).
+pub fn tmp_of(out: &Path) -> PathBuf {
+    out.with_extension(format!("{}.part.mp4", std::process::id()))
+}
+
 /// Stück-Ordner eines Proxys (`…/abc-540-30_1fps.mp4` → `…/abc-540-30_1fps.teile`)
 pub fn parts_dir(out: &Path) -> PathBuf {
     out.with_extension("teile")
@@ -91,6 +98,9 @@ pub fn scan_ready(dir: &Path, count: u32) -> Vec<bool> {
 
 /// Reste vom letzten Lauf: unfertige Dateien (`.part.mp4`, auch nach hartem Beenden), Strom-Listen
 /// und Stück-Ordner, deren Proxy schon zusammengefügt ist. Fertige Stücke bleiben.
+/// `.part` eines zweiten, laufenden Fensters zu löschen ist unschädlich: unter Windows scheitert es
+/// (FFmpeg hält die Datei offen), unter Unix scheitert danach dessen Umbenennen – das Stück gilt
+/// dort als gescheitert, eine kaputte Datei entsteht nie.
 pub fn cleanup(dir: &Path) {
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for e in rd.flatten() {
@@ -474,7 +484,8 @@ mod tests {
         std::fs::create_dir_all(&a).unwrap();
         std::fs::create_dir_all(&b).unwrap();
         touch(a.join("0000.mp4"));
-        touch(a.join("0001.part.mp4"));
+        touch(tmp_of(&a.join(part_name(1))));
+        touch(a.join("0002.12345.part.mp4"));
         touch(a.join("0000-0001.ffconcat"));
         touch(dir.join("aaaaaaaaaaaaaaaa-540.part.mp4"));
         touch(dir.join("cccccccccccccccc-540.mp4"));
@@ -483,11 +494,21 @@ mod tests {
         touch(b.join("0000.mp4"));
         cleanup(dir);
         assert!(a.join("0000.mp4").is_file(), "fertige Stücke bleiben");
-        assert!(!a.join("0001.part.mp4").exists() && !a.join("0000-0001.ffconcat").exists());
+        assert!(!tmp_of(&a.join(part_name(1))).exists() && !a.join("0002.12345.part.mp4").exists() && !a.join("0000-0001.ffconcat").exists());
         assert!(!dir.join("aaaaaaaaaaaaaaaa-540.part.mp4").exists());
         assert!(!b.exists());
         assert!(dir.join("cccccccccccccccc-540.mp4").is_file() && dir.join("bbbbbbbbbbbbbbbb-540.mp4").is_file());
         assert_eq!(scan_ready(&a, 3), vec![true, false, false]);
+    }
+
+    /// Zwei Fenster mit derselben Quelle: verschiedene Zwischendateien je Prozess, dieselbe fertige
+    #[test]
+    fn unfinished_file_names_differ_per_process() {
+        let out = Path::new("t").join(part_name(7));
+        let tmp = tmp_of(&out);
+        assert_eq!(tmp, Path::new("t").join(format!("0007.{}.part.mp4", std::process::id())));
+        assert_ne!(tmp.file_name().unwrap(), "0007.part.mp4");
+        assert_eq!(tmp_of(Path::new("abc-540.mp4")), PathBuf::from(format!("abc-540.{}.part.mp4", std::process::id())));
     }
 
     #[test]
