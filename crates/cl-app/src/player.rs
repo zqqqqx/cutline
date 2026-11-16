@@ -695,10 +695,11 @@ mod presence_tests {
         ask(&mut app);
         assert!(jobs.try_recv().is_err(), "gleiche Wahl: kein neuer Strom");
         // fertig zusammengefügt: andere Wahl → anderer Schlüssel, neuer Strom aus der ganzen Datei
-        crate::proxy::set_test_entry(&m.path, out, want, ready, true);
+        crate::proxy::set_test_entry(&m.path, out.clone(), want, ready, true);
         ask(&mut app);
         let full = jobs.try_recv().expect("Wechsel öffnet einen Ersatzstrom");
-        assert_eq!(full.path, m.path, "kein fertiger Proxy auf der Platte: Original");
+        // Datei aus dem Bestand, ohne auf der Platte nachzusehen (dort liegt sie im Test gar nicht)
+        assert_eq!(full.path, out);
         assert!((full.source_at.as_secs_f64() - 12.0).abs() < 1e-3, "{:?}", full.source_at);
         assert_ne!(full.open.key, parts.open.key);
         assert_ne!(full.alias, parts.alias, "Quellenwahl im Fingerabdruck");

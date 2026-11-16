@@ -625,8 +625,10 @@ struct Entry {
     dur: f64,
     ready: Vec<bool>,
     fails: Vec<u8>,
-    /// fertiger Proxy vorhanden (auch ein älterer Ein-Datei-Proxy)
+    /// fertiger Proxy vorhanden (auch ein älterer Ein-Datei-Proxy) …
     complete: bool,
+    /// … und seine Datei (Strom ohne Dateizugriff im UI-Thread)
+    file: Option<PathBuf>,
     /// Bau gescheitert oder abgebrochen: in dieser Sitzung nicht neu
     dead: bool,
     /// fertige Quellbereiche (Zeitleiste), nur bei Änderungen neu berechnet
@@ -640,6 +642,13 @@ impl Entry {
             Some(pt) => parts::ready_ranges(&pt, &self.ready, self.dur),
             None => Vec::new(),
         });
+    }
+
+    /// Der eigene Bau ist fertig: die Datei liegt unter `out`
+    fn built(&mut self) {
+        self.complete = true;
+        self.file = Some(self.out.clone());
+        self.changed();
     }
 
     /// Fehlt das Stück an Quellzeit `t` (ohne Einteilung: der ganze Proxy) und ist es baubar?
@@ -685,7 +694,8 @@ fn refresh_entry(root: &Path, m: &MediaRef, h: u32, fps: Rational, playing: bool
         let ready = pt.map_or_else(Vec::new, |pt| parts::scan_ready(&pdir, pt.count));
         parts::remove_stale(root, &m.path, &pdir);
         let fails = vec![0; ready.len()];
-        let mut e = Entry { want: (h, fps), out, spec, pt, dur, ready, fails, complete: full, dead: false, ranges: Arc::default() };
+        let file = found.as_ref().map(|f| f.0.clone());
+        let mut e = Entry { want: (h, fps), out, spec, pt, dur, ready, fails, complete: full, file, dead: false, ranges: Arc::default() };
         e.changed();
         registry().insert(m.path.clone(), e);
     }
@@ -693,8 +703,9 @@ fn refresh_entry(root: &Path, m: &MediaRef, h: u32, fps: Rational, playing: bool
         let mut reg = registry();
         let Some(e) = reg.get_mut(&m.path) else { return (found, false) };
         // nur aufwärts: der Bau kann gerade nach der Suche fertig geworden sein
-        if full && !e.complete {
+        if let Some(f) = found.as_ref().filter(|_| !e.complete) {
             e.complete = true;
+            e.file = Some(f.0.clone());
             e.changed();
         }
         (!e.complete && !e.dead, parts::parts_dir(&e.out))
@@ -788,10 +799,7 @@ fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progres
         return Err("Proxy-Stücke fehlgeschlagen".into());
     }
     merge(&pdir, pt, out, cancel)?;
-    with_mine(&m.path, out, |e| {
-        e.complete = true;
-        e.changed();
-    });
+    with_mine(&m.path, out, Entry::built);
     if !PLAYING.load(Ordering::Relaxed) {
         let _ = std::fs::remove_dir_all(&pdir);
     }
@@ -888,8 +896,9 @@ impl App {
                 at.and_then(|(d, s)| parts::concat_list(&d, first, end).ok().map(|l| (l, Time::from_secs_f64(s))))
                     .unwrap_or_else(|| (m.path.clone(), Time::ZERO))
             }
-            // gerade fertig geworden: der Zwischenspeicher kennt die Datei evtl. noch nicht
-            Pick::Full => (existing_proxy(m, self.settings.proxy_h, self.project.settings.fps).map_or_else(|| m.path.clone(), |p| p.0), Time::ZERO),
+            // Datei aus dem Bestand (gerade fertig geworden: die Suche kennt sie evtl. noch nicht),
+            // ohne Dateizugriff im UI-Thread
+            Pick::Full => (registry().get(&m.path).and_then(|e| e.file.clone()).unwrap_or_else(|| self.preview_path(m, need_h)), Time::ZERO),
             Pick::Whole => (self.preview_path(m, need_h), Time::ZERO),
         }
     }
@@ -1098,7 +1107,7 @@ impl App {
         if complete || !ok {
             self.proxies.done += 1;
         }
-        self.proxies.known.remove(&media);
+        // Zwischenspeicher bleibt bis zur gleich folgenden Suche (leer fragte der Player die Platte)
         self.proxies.scanned = None;
     }
 
@@ -1180,7 +1189,8 @@ pub(crate) fn set_test_entry(src: &Path, out: PathBuf, want: (u32, Rational), re
     }
     let spec = ProxySpec { height: want.0, fps: None, gop: 15 };
     let fails = vec![0; ready.len()];
-    let mut e = Entry { want, out, spec, pt: Some(pt), dur: 100.0, ready, fails, complete, dead: false, ranges: Arc::default() };
+    let file = complete.then(|| out.clone());
+    let mut e = Entry { want, out, spec, pt: Some(pt), dur: 100.0, ready, fails, complete, file, dead: false, ranges: Arc::default() };
     e.changed();
     registry().insert(src.to_path_buf(), e);
 }
@@ -1574,6 +1584,7 @@ mod tests {
             fails: vec![0; 4],
             ready,
             complete: false,
+            file: None,
             dead: false,
             ranges: Arc::default(),
         };
@@ -1672,6 +1683,25 @@ mod tests {
         assert!(r.is_err(), "{r:?}");
         let fails: u32 = registry().remove(&m.path).unwrap().fails.iter().map(|f| u32::from(*f)).sum();
         assert_eq!(fails, 2, "dritter Fehlschlag beendet den Bau");
+    }
+
+    /// Fertiger Proxy beim Strom: Datei aus dem Bestand, nicht von der Platte gesucht (dort fände
+    /// sie die Suche hier gar nicht); nach dem Bau bleibt der Zwischenspeicher bis zur nächsten Suche.
+    #[test]
+    fn full_proxy_stream_comes_from_the_registry() {
+        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let mut m = media(3840, 2160, Rational::new(30, 1), "h264");
+        m.path = home.path().join("v.mp4");
+        app.project.media.push(m.clone());
+        let want = (app.settings.proxy_h, app.project.settings.fps);
+        let out = home.path().join("woanders").join("v-540.mp4");
+        set_test_entry(&m.path, out.clone(), want, vec![true; 10], true);
+        assert_eq!(app.stream_source(&m, 540, Pick::Full), (out, Time::ZERO));
+        app.proxies.key = Some(want);
+        app.proxies.known.insert(m.id, None);
+        app.proxy_finished(m.id, true);
+        assert_eq!(app.proxies.cached(m.id, want), Some(None), "kein Nachsehen auf der Platte bis zur Suche");
+        registry().remove(&m.path);
     }
 
     #[test]
@@ -1892,6 +1922,7 @@ mod tests {
                 ready: vec![false; pt.count as usize],
                 fails: vec![0; pt.count as usize],
                 complete: false,
+                file: None,
                 dead: false,
                 ranges: Arc::default(),
             };
