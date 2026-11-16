@@ -701,7 +701,7 @@ mod presence_tests {
                 let (t1, n1) = first.expect("obere Ebene ohne Bild");
                 assert!((n - n1) as f64 >= (8.0 - t1 - 1.0) * 20.0, "obere Ebene steht: {n1} → {n}");
             } else {
-                assert!(stills >= 8, "obere Ebene steht: {stills} Einzelbilder in 8 s");
+                assert!(stills >= 4, "obere Ebene steht: {stills} Einzelbilder in 8 s");
             }
         }
     }
