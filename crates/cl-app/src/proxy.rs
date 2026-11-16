@@ -185,23 +185,6 @@ fn decode_attempts(enc: Encoder, m: &MediaRef) -> Vec<Option<&'static str>> {
     }
 }
 
-/// FFmpeg-Argumente nach dem Eingang: Größe, Bildrate, Schlüsselbilder, Encoder.
-/// Ziel ≤ 25 MB je Minute bei 1080p-Quellen (gemessen 14–19 MB/min).
-pub fn encode_args(enc: Encoder, spec: &ProxySpec) -> Vec<String> {
-    let mut vf = String::new();
-    if let Some(f) = spec.fps {
-        vf.push_str(&format!("fps={}/{},", f.num, f.den));
-    }
-    vf.push_str(&format!("scale=-2:{}:flags=bicubic,format=yuv420p", spec.height));
-    let mut a: Vec<String> = ["-map", "0:v:0", "-an", "-sn", "-dn", "-vf", &vf].map(String::from).into();
-    if spec.fps.is_none() {
-        a.extend(["-fpsmax", "60"].map(String::from));
-    }
-    a.extend(codec_args(enc).iter().map(|s| s.to_string()));
-    a.extend(["-g".to_string(), spec.gop.to_string()]);
-    a
-}
-
 /// Encoder-Argumente (Qualität: 540p ≈ 17 MB je Minute, Ziel ≤ 25)
 fn codec_args(enc: Encoder) -> &'static [&'static str] {
     match enc {
@@ -351,10 +334,9 @@ fn build_with(
     std::fs::create_dir_all(out.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
     let tmp = parts::tmp_of(out);
     let mut cmd = encode_command()?;
-    if let Some(h) = hw {
-        cmd.args(["-hwaccel", h]);
-    }
-    cmd.arg("-i").arg(&m.path).args(encode_args(enc, spec));
+    // derselbe Weg wie ein Stück über alles: gleiches Bildraster, gleicher Startversatz wie das Original
+    let whole = Parting { fps: out_fps(m, spec), per: u32::MAX, count: 1 };
+    cmd.args(part_args(&m.path, probe_start(&m.path), &whole, 0, spec.height, spec.gop, enc, hw));
     let dur = m.duration.as_secs_f64().max(0.1);
     let (report, n) = run_encode(cmd, &tmp, out, dur, progress, cancel)?;
     if n == 0 {
@@ -471,12 +453,14 @@ fn run_encode(
     Ok((report, n))
 }
 
-/// Startzeit des Videostroms (Quellen mit Versatz, z. B. aus Kameras oder geschnittenen Dateien)
+/// Startzeit der Datei (frühester Strom; Quellen mit Versatz, z. B. aus Kameras oder geschnittenen
+/// Dateien). Nicht die der Videospur: `-ss` am Original zählt ab dem Dateianfang, beginnt das Bild
+/// später als der Ton, füllt der `fps`-Filter vorne mit dem ersten Bild auf – wie das Original.
 fn probe_start(src: &Path) -> f64 {
     cl_media::ffprobe_command()
         .ok()
         .and_then(|mut c| {
-            c.args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=start_time", "-of", "csv=p=0"])
+            c.args(["-v", "error", "-show_entries", "format=start_time", "-of", "csv=p=0"])
                 .arg(src)
                 .stdin(Stdio::null())
                 .output()
@@ -1249,15 +1233,7 @@ mod tests {
 
     #[test]
     fn encode_args_set_size_rate_and_gop() {
-        let spec = ProxySpec { height: 540, fps: Some(Rational::new(30, 1)), gop: 15 };
-        for enc in [Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Software] {
-            let a = encode_args(enc, &spec).join(" ");
-            assert!(a.contains("fps=30/1,scale=-2:540:"), "{a}");
-            assert!(a.ends_with("-g 15") && !a.contains("fpsmax"), "{a}");
-        }
-        let a = encode_args(Encoder::Software, &ProxySpec { height: 720, fps: None, gop: 30 }).join(" ");
-        assert!(a.contains("-vf scale=-2:720:") && a.contains("-fpsmax 60") && a.contains("libx264"), "{a}");
-        // Stücke: gleiches Raster wie ein Bau in einem Zug, genau `per` Bilder, ohne B-Bilder
+        // Stücke (und der Bau in einem Zug als ein Stück über alles): gleiches Raster wie ein Bau in einem Zug, genau `per` Bilder, ohne B-Bilder
         // (Stücke verschiedener Encoder ergaben zusammengefügt ein doppeltes Bild an der Naht)
         let pt = Parting::new(25.0, Rational::new(30, 1), 10.0).unwrap();
         for enc in [Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Software] {
@@ -1438,6 +1414,53 @@ mod tests {
                 assert!(got.len() >= 80, "{}", got.len());
                 assert_eq!(&got[..80], &reference[45..125], "Strom über die Naht");
             }
+        }
+    }
+
+    /// Bildnummer des Einzelbilds, das der Player an `t` aus `path` holt (wie für das Original)
+    fn still_code(path: &Path, t: f64) -> u8 {
+        let (f, _) = cl_media::decode_frame_opts(path, Time::from_secs_f64(t), 2, 2, None, false, None).unwrap();
+        code_of_luma(16.0 + f.data[0] as f32 * 219.0 / 255.0)
+    }
+
+    /// Videospur beginnt 0,1 s nach dem Ton: Stück, zusammengefügter Proxy und Bau in einem Zug
+    /// zeigen an derselben Quellzeit dasselbe Bild wie das Original (`-ss` zählt ab Dateianfang).
+    #[test]
+    fn parts_and_proxy_match_the_original_when_video_starts_late() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("spaet.mp4");
+        assert!(cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-itsoffset", "0.1", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=60:d=4", "-f", "lavfi", "-i", "sine=d=4.1"])
+            .args(["-vf", "geq=lum='19+mod(N\\,32)*6':cb=128:cr=128", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", "-g", "600"])
+            .args(["-c:a", "aac", "-threads", "2"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success());
+        let m = cl_media::probe(&src).unwrap();
+        let spec = proxy_spec(&m, 90, Rational::new(30, 1));
+        let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
+        let pdir = d.path().join("s.teile");
+        let no = AtomicBool::new(false);
+        let st = probe_start(&src);
+        for k in 0..pt.count {
+            build_part_with(&m, &pdir, &pt, st, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
+        }
+        let merged = d.path().join("s-ganz.mp4");
+        merge(&pdir, &pt, &merged, &no).unwrap();
+        let whole = d.path().join("s-zug.mp4");
+        build_with(&m, &whole, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
+        // Zeiten auf dem Raster beider Bildraten (30 fps im Proxy, 60 fps im Original)
+        for t in [0.0, 1.0, 1.5, 2.0 + 1.0 / 30.0, 3.0] {
+            let want = still_code(&src, t);
+            let (k, rel) = parts::still_part(&pt, t).unwrap();
+            assert_eq!(still_code(&pdir.join(parts::part_name(k)), rel), want, "Stück bei {t} s");
+            assert_eq!(still_code(&merged, t), want, "zusammengefügt bei {t} s");
+            assert_eq!(still_code(&whole, t), want, "in einem Zug bei {t} s");
         }
     }
 
