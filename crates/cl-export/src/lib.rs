@@ -40,14 +40,25 @@ pub enum ExportError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Media(#[from] cl_media::MediaError),
-    /// Fehler in einem Abschnitt eines großen Exports (Zeiten der Zeitleiste)
+    /// Fehler in einem Abschnitt eines großen Exports (Zeiten der Zeitleiste; `args`: der
+    /// gescheiterte FFmpeg-Aufruf, leer bei anderen Fehlern)
     #[error("Abschnitt {from}–{to}: {err}")]
-    Section { from: String, to: String, err: Box<ExportError> },
+    Section { from: String, to: String, err: Box<ExportError>, args: Vec<String> },
     /// So viele Clips gleichzeitig, dass schon ein einzelnes Bild FFmpeg überfordert
     #[error("Zu viele gleichzeitige Clips bei {0} – FFmpeg kann sie nicht auf einmal öffnen")]
     TooManyClips(String),
     #[error("Zu wenig Speicherplatz für die Zwischendateien: {need} nötig, {free} frei")]
     NoSpace { need: String, free: String },
+}
+
+impl ExportError {
+    /// Argumente des gescheiterten FFmpeg-Laufs, wenn er nicht der Endlauf (`Job::args`) war.
+    pub fn failed_args(&self) -> Option<&[String]> {
+        match self {
+            ExportError::Section { args, .. } => Some(args),
+            _ => None,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, ExportError>;
@@ -432,7 +443,19 @@ fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, 
             return Ok(job);
         }
     }
-    build_sections(p, s, fonts, out, (start, end), &units, base, lim)
+    match build_sections(p, s, fonts, out, (start, end), &units, base, lim) {
+        // Übergangskette mit mehr Eingängen, als ein Abschnitt fassen darf (Diashow): ein
+        // Durchgang wie bisher, solange die Befehlszeile passt
+        Err(ExportError::TooManyClips(t)) => {
+            let job = build_single(p, s, fonts, out, start, end)?;
+            if sections::cmd_len(&job.args) + 300 <= sections::HARD_CMD {
+                Ok(job)
+            } else {
+                Err(ExportError::TooManyClips(t))
+            }
+        }
+        r => r,
+    }
 }
 
 /// Mit Ton? (Nur-Ton-Formate immer, GIF nie)
@@ -518,24 +541,10 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
         }
         _ => None,
     };
-    let mut args: Vec<String> = vec![
-        "-y".into(),
-        "-v".into(),
-        "error".into(),
-        "-nostdin".into(),
-        "-progress".into(),
-        "pipe:1".into(),
-        "-nostats".into(),
-    ];
+    let mut args = head();
     args.extend(std::mem::take(&mut ctx.inputs));
-    // Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel)
-    let chapters = (s.chapters && matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a))
-        .then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name))
-        .flatten();
-    if let Some(meta) = chapters {
-        std::fs::write(workdir.path().join("chapters.txt"), meta)?;
-        args.extend(["-f".into(), "ffmetadata".into(), "-i".into(), "chapters.txt".into()]);
-    }
+    let chapters = chapters_input(p, s, (start, end), workdir.path())?;
+    args.extend(chapters.iter().cloned());
     args.extend(["-/filter_complex".into(), "graph.txt".into()]);
     if let Some(v) = vlabel {
         args.extend(["-map".into(), format!("[{v}]")]);
@@ -543,7 +552,7 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
     if let Some(a) = &alabel {
         args.extend(["-map".into(), format!("[{a}]")]);
     }
-    if args.iter().any(|a| a == "chapters.txt") {
+    if !chapters.is_empty() {
         args.extend(["-map_chapters".into(), ctx.n_input.to_string()]);
     }
     args.extend(codec_args(s));
@@ -587,13 +596,28 @@ fn pix_fmt(s: &ExportSettings) -> &'static str {
 
 /// Ein FFmpeg-Aufruf eines Abschnitts: Graph in die Datei `gfile`, Eingänge, Ausgänge.
 fn section_run(dir: &Path, gfile: &str, inputs: Vec<String>, graph: &[String], outs: Vec<String>) -> Result<Vec<String>> {
-    std::fs::write(dir.join(gfile), graph.join(";
-"))?;
-    let mut args: Vec<String> = ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into();
+    std::fs::write(dir.join(gfile), graph.join(";\n"))?;
+    let mut args = head();
     args.extend(inputs);
     args.extend(["-/filter_complex".into(), gfile.into()]);
     args.extend(outs);
     Ok(args)
+}
+
+/// Feste Kopf-Argumente jedes Export-Laufs (Fortschritt über stdout).
+fn head() -> Vec<String> {
+    ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into()
+}
+
+/// Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel):
+/// schreibt `chapters.txt` in `dir` und gibt den Eingang dafür zurück (leer ohne Kapitel).
+fn chapters_input(p: &Project, s: &ExportSettings, (start, end): (Time, Time), dir: &Path) -> Result<Vec<String>> {
+    let fits = matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a);
+    let Some(meta) = (s.chapters && fits).then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name)).flatten() else {
+        return Ok(Vec::new());
+    };
+    std::fs::write(dir.join("chapters.txt"), meta)?;
+    Ok(["-f", "ffmetadata", "-i", "chapters.txt"].map(String::from).into())
 }
 
 /// Erstes Sample (48 kHz) zur Zeit `t` ab `start` (auf dem Abschnittsraster ganzzahlig).
@@ -607,7 +631,7 @@ fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
     let px = w as f64 * h as f64 * s.fps.as_f64();
     let video_bits = if s.format.audio_only() {
         0.0
-    } else if s.format == Format::Gif {
+    } else if s.format == Format::Gif || copy_unproven(s) {
         px * 8.0 // FFV1, verlustfrei
     } else if let Quality::Bitrate(k) = s.quality {
         k as f64 * 1100.0
@@ -618,6 +642,29 @@ fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
     };
     let audio = if wants_audio(s) { 48_000.0 * 8.0 } else { 0.0 };
     ((video_bits / 8.0 + audio) * dur) as u64 + (64 << 20)
+}
+
+/// Hardware-Encoder, deren Abschnitte beim Zusammenfügen mit `-c:v copy` nicht geprüft sind
+/// (QSV, AMF, AV1 über NVENC: auf dem Prüfrechner nicht startbar): Abschnitte dann verlustfrei
+/// (FFV1) und einmal über das Ganze mit dem gewählten Encoder kodieren, wie bei GIF.
+fn copy_unproven(s: &ExportSettings) -> bool {
+    matches!(
+        (video_codec(s), s.encoder),
+        (Codec::H264 | Codec::Hevc, Encoder::Qsv | Encoder::Amf) | (Codec::Av1, Encoder::Nvenc)
+    )
+}
+
+/// Nötiger Platz je Laufwerk (Ordner, Bytes): Die Abschnitte (`scratch`) bleiben liegen, bis die
+/// fertige Datei (etwa gleich groß) geschrieben ist; liegt sie auf demselben Laufwerk, zählt
+/// alles doppelt.
+fn space_needs(scratch: u64, work: &Path, out: &Path) -> Vec<(PathBuf, u64)> {
+    let dir = out.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let root = |p: &Path| std::path::absolute(p).ok().and_then(|a| a.components().next().map(|c| c.as_os_str().to_string_lossy().to_uppercase()));
+    if root(work) == root(dir) {
+        vec![(work.to_path_buf(), 2 * scratch)]
+    } else {
+        vec![(work.to_path_buf(), scratch), (dir.to_path_buf(), scratch)]
+    }
 }
 
 /// Großes Projekt: Abschnitte planen und je Abschnitt den Bereichs-Export bauen, dazu den
@@ -637,17 +684,18 @@ fn build_sections(
         .map_err(|t| ExportError::TooManyClips(sections::clock(t)))?;
     let workdir = tempfile::Builder::new().prefix("cutline-export-").tempdir()?;
     let dur = end - start;
-    let need = scratch_bytes(s, dur.as_secs_f64());
-    if let Some(free) = sections::free_space(workdir.path()) {
-        if free < need {
-            return Err(ExportError::NoSpace { need: sections::size_text(need), free: sections::size_text(free) });
+    for (dir, need) in space_needs(scratch_bytes(s, dur.as_secs_f64()), workdir.path(), out) {
+        if let Some(free) = sections::free_space(&dir) {
+            if free < need {
+                return Err(ExportError::NoSpace { need: sections::size_text(need), free: sections::size_text(free) });
+            }
         }
     }
     let (video, audio, gif) = (!s.format.audio_only(), wants_audio(s), s.format == Format::Gif);
     let (w, h) = (s.width & !1, s.height & !1);
     let fps = format!("{}/{}", s.fps.num, s.fps.den);
-    let ext = if gif { "nut" } else { s.format.extension() };
-    let head = || -> Vec<String> { ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into() };
+    let lossless = video && copy_unproven(s);
+    let ext = if gif || lossless { "nut" } else { s.format.extension() };
     let (mut uniq, mut pass_base) = (0, 0);
     let mut secs = Vec::new();
     for (k, &(a, b)) in plan.iter().enumerate() {
@@ -687,7 +735,7 @@ fn build_sections(
             } else {
                 ctx.graph.push(format!("[vmain]format={}[vout]", pix_fmt(s)));
                 outs.extend(["-map".into(), "[vout]".into()]);
-                outs.extend(video_args(s));
+                outs.extend(if lossless { ["-c:v", "ffv1", "-level", "3"].map(String::from).into() } else { video_args(s) });
             }
             outs.extend(["-t".into(), len.clone(), vname.clone()]);
             outs.extend(["-map", "[pv]", "-an", "-f", "image2", "-update", "1", "-q:v", "6", "-t", &len, PREVIEW_FILE].map(String::from));
@@ -757,13 +805,8 @@ fn build_sections(
         }
         _ => None,
     };
-    let chapters = (s.chapters && matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a))
-        .then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name))
-        .flatten();
-    if let Some(meta) = &chapters {
-        std::fs::write(workdir.path().join("chapters.txt"), meta)?;
-        args.extend(["-f".into(), "ffmetadata".into(), "-i".into(), "chapters.txt".into()]);
-    }
+    let chapters = chapters_input(p, s, (start, end), workdir.path())?;
+    args.extend(chapters.iter().cloned());
     if !graph.is_empty() {
         std::fs::write(workdir.path().join("graph.txt"), graph.join(";\n"))?;
         args.extend(["-/filter_complex".into(), "graph.txt".into()]);
@@ -774,10 +817,10 @@ fn build_sections(
     if let Some(a) = alabel {
         args.extend(["-map".into(), format!("[{a}]")]);
     }
-    if chapters.is_some() {
+    if !chapters.is_empty() {
         args.extend(["-map_chapters".into(), n.to_string()]);
     }
-    if gif {
+    if gif || lossless {
         args.extend(codec_args(s));
     } else {
         if video {
@@ -1155,10 +1198,8 @@ fn run_sections(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -
             Ok(())
         });
         match r {
-            Err(ExportError::Cancelled) => return Err(ExportError::Cancelled),
-            Err(e) => {
-                return Err(ExportError::Section { from: sections::clock(sec.from), to: sections::clock(sec.to), err: Box::new(e) });
-            }
+            Err(e @ (ExportError::Cancelled | ExportError::Section { .. })) => return Err(e),
+            Err(e) => return Err(section_error(sec, e, Vec::new())),
             Ok(()) => {}
         }
         if let Some(v) = &sec.video {
@@ -1207,10 +1248,18 @@ fn run_section(job: &Job, sec: &Section, cancel: &AtomicBool, progress: &mut dyn
     let mut at = share;
     for (args, w) in sec.runs.iter().zip(weights) {
         let w = w * (1.0 - share);
-        run_ffmpeg(job, args, secs, cancel, &mut |x| progress(at + x * w))?;
+        run_ffmpeg(job, args, secs, cancel, &mut |x| progress(at + x * w)).map_err(|e| match e {
+            ExportError::Cancelled => e,
+            e => section_error(sec, e, args.clone()),
+        })?;
         at += w;
     }
     Ok(())
+}
+
+/// Fehler eines Abschnitts mit Zeitbereich und dem gescheiterten Aufruf (für das Protokoll).
+fn section_error(sec: &Section, e: ExportError, args: Vec<String>) -> ExportError {
+    ExportError::Section { from: sections::clock(sec.from), to: sections::clock(sec.to), err: Box::new(e), args }
 }
 
 /// `.part` ans Ziel. Scheitert das (Ziel z. B. im Player geöffnet), bleibt die fertige Datei liegen.
@@ -3767,6 +3816,53 @@ mod tests {
         assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "rückwärts");
     }
 
+    /// Bild-Sprung trifft Quell- und Projektbilder und ganze µs.
+    #[test]
+    fn video_skip_lands_on_source_and_project_frames() {
+        let s = Time::from_secs_f64;
+        let c = Clip::new(ClipContent::Text(TextStyle::default()), s(10.0), s(100.0));
+        let r = Rational::new;
+        let at = |src, prj, t| graph::video_skip(&c, src, prj, s(t));
+        assert_eq!(at(Some(r(30, 1)), r(30, 1), 40.7), 29.0);
+        assert_eq!(at(Some(r(60000, 2000)), r(30000, 1001), 40.7), 0.0, "Raster 50,05 s");
+        assert_eq!(at(Some(r(60, 1)), r(30000, 1001), 71.0), 50.05);
+        assert_eq!(at(Some(r(24000, 1001)), r(30000, 1001), 40.7), 28.5285, "57 × 0,5005 s");
+        assert_eq!(at(None, r(30, 1), 40.7), 0.0, "Quellrate unbekannt");
+    }
+
+    /// Platzprüfung: Die fertige Datei braucht noch einmal so viel wie die Abschnitte – auf
+    /// demselben Laufwerk doppelt (1 h ProRes 1080p30 ≈ 100 GB: 110 GB frei reichen nicht).
+    #[test]
+    fn space_check_counts_the_finished_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = ExportSettings::from_project(&Project::new("p"));
+        (s.width, s.height, s.fps, s.format, s.codec) = (1920, 1080, Rational::new(30, 1), Format::Mov, Codec::ProRes);
+        let need = scratch_bytes(&s, 3600.0);
+        assert!((95..115).contains(&(need >> 30)), "{} GB", need >> 30);
+        let work = dir.path().join("work");
+        assert_eq!(space_needs(need, &work, &dir.path().join("ziel.mov")), vec![(work.clone(), 2 * need)]);
+        #[cfg(windows)]
+        {
+            let other = if dir.path().to_string_lossy().starts_with(['Z', 'z']) { "Y:/x/ziel.mov" } else { "Z:/x/ziel.mov" };
+            assert_eq!(space_needs(need, &work, Path::new(other)), vec![(work, need), (PathBuf::from(&other[..4]), need)]);
+        }
+    }
+
+    /// Effekte, die eigene Zeitstempel vergeben oder Bilder zählen, rechnen ab Clipbeginn;
+    /// Ausdrücke mit `t` (Zeitstempel bleiben Clipzeit) dürfen springen.
+    #[test]
+    fn effects_with_own_time_start_at_the_clip() {
+        let has = |id: &str| graph::fx_has_memory(&ClipFx { effects: vec![FxRef::new(id)], ..Default::default() });
+        for id in ["zoom-pulse", "motion-blur", "echo", "grain", "vhs", "glitch"] {
+            assert!(has(id), "{id}");
+        }
+        for id in ["shake", "rainbow", "strobe", "flash", "old-film", "sepia"] {
+            assert_eq!(has(id), id == "old-film", "{id}");
+        }
+        assert!(graph::counts_frames("[a]hue=h='n*3'[b]") && graph::counts_frames("geq=lum='N+p(X,Y)'"));
+        assert!(!graph::counts_frames("[u1n]eq=brightness='sin(t*3)':eval=frame,noise_x[o]"));
+    }
+
     /// Kaputte Datei: die Vorschau lässt sie aus und meldet sie einmal.
     #[test]
     fn unreadable_audio_is_left_out_and_reported_once() {
@@ -3780,5 +3876,47 @@ mod tests {
         assert!(!audio_readable(&bad, false), "Ergebnis gemerkt");
         let w: Vec<String> = take_audio_warnings().into_iter().filter(|w| w.contains("kaputt_c2.wav")).collect();
         assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    /// Shader-Übergang, durch den eine Abschnittsgrenze läuft (Grenze bei 1,5 s, Fenster
+    /// 1,2–1,8 s): beide Abschnitte rechnen ihren Vorlauf, das Ergebnis ist bildgleich mit dem
+    /// Durchgang (ohne GPU: der Rückfall, ebenso gleich).
+    #[test]
+    fn shader_transition_across_section_boundary() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        shader_pack();
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = shader_project(dir.path(), "t.shader/wipe", false);
+        // zweite Spur mit kurzen Clips: zwingt Abschnittsgrenzen alle 0,5 s
+        let c = color_video(dir.path(), "c.mp4", "green", 1.0, "320x180");
+        let mut t = Track::new(TrackKind::Video);
+        for i in 0..6 {
+            let mut k = Clip::new(ClipContent::Media { media: c.id, kind: MediaKind::Video }, Time::from_secs_f64(0.5 * i as f64), Time::from_secs_f64(0.5));
+            k.transform.scale = 0.2;
+            k.transform.x = -100.0;
+            t.clips.push(k);
+        }
+        p.media.push(c);
+        p.timeline.tracks.push(t);
+        let mut s = ExportSettings::from_project(&p);
+        (s.format, s.codec) = (Format::Mov, Codec::ProRes);
+        let (one, cut) = (dir.path().join("eins.mov"), dir.path().join("teile.mov"));
+        let job = build(&p, &s, &no_fonts, &one).unwrap();
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let job = build_limited(&p, &s, &no_fonts, &cut, 3).unwrap();
+        let bounds: Vec<f64> = job.sections.iter().map(|x| x.from.as_secs_f64()).collect();
+        assert!(bounds.iter().any(|b| *b > 1.2 && *b < 1.8), "Grenze im Übergang: {bounds:?}");
+        assert!(job.sections.iter().filter(|x| !x.passes.is_empty()).count() >= 2, "Vorlauf in beiden Abschnitten");
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        for n in 0..90 {
+            let d = mean_diff(&frame_n(&one, n).data, &frame_n(&cut, n).data);
+            assert!(d < 0.05, "Bild {n}: Abweichung {d}");
+        }
+        if cl_gpu::gpu().is_some() {
+            let used = job.sections.iter().filter(|x| std::fs::read_to_string(job.workdir.path().join(&x.graph)).unwrap().contains("movie=shader_")).count();
+            assert!(used >= 2, "Shader statt Rückfall in beiden Abschnitten: {used}");
+        }
     }
 }

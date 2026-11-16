@@ -891,7 +891,7 @@ impl ExportDialog {
                             *pr.lock().unwrap() = x;
                             c2.request_repaint();
                         });
-                        if let Err(e) = &r { log::error!(target: "export", "{} · Befehl: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(&job.args)); }
+                        if let Err(e) = &r { log::error!(target: "export", "{} · Befehl: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
                         *rs.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
                         c2.request_repaint();
                     });

@@ -209,8 +209,9 @@ fn post_transform(
 }
 
 /// Filter, deren Ergebnis von früheren Bildern abhängt (Zufall je Bild, Mittelung über Bilder,
-/// Rauschfilter mit Gedächtnis): mit ihnen darf ein Abschnitt nicht mitten im Clip einsteigen.
-const STATEFUL: &[&str] = &["noise", "tmix", "deflicker", "hqdn3d", "random", "minterpolate", "deshake", "lagfun", "atadenoise", "tblend", "sendcmd"];
+/// Rauschfilter mit Gedächtnis) oder die eigene Zeitstempel ab 0 vergeben (`zoompan`): mit ihnen
+/// darf ein Abschnitt nicht mitten im Clip einsteigen.
+const STATEFUL: &[&str] = &["noise", "tmix", "deflicker", "hqdn3d", "random", "minterpolate", "deshake", "lagfun", "atadenoise", "tblend", "sendcmd", "zoompan"];
 
 /// Ganze Sekunden, die ein Abschnitt (Beginn `start`) vom Anfang eines früher beginnenden Clips
 /// überspringen darf (Eingang per `-ss` näher heran, statt ab Clipbeginn zu dekodieren), mit
@@ -230,11 +231,40 @@ pub(crate) fn lead_skip(c: &Clip, start: Time) -> f64 {
     (into - 1.0).floor()
 }
 
+/// [`lead_skip`] für das Bild: abgerundet auf ein gemeinsames Vielfaches von Quellbild, Projektbild
+/// und 1 µs. Nur so trifft der Sprung ein Quellbild (gleiche Zeitstempel wie ab Clipbeginn) und das
+/// Bildraster des Projekts (`fps` wählt dieselben Bilder); ganze Sekunden reichen bei 29,97 fps
+/// nicht. Ohne bekannte Quellrate kein Sprung.
+pub(crate) fn video_skip(c: &Clip, src: Option<Rational>, project: Rational, start: Time) -> f64 {
+    fn gcd(a: u128, b: u128) -> u128 {
+        if b == 0 { a } else { gcd(b, a % b) }
+    }
+    let skip = lead_skip(c, start);
+    let Some(src) = src.filter(|r| r.num > 0 && r.den > 0 && skip > 0.0) else {
+        return 0.0;
+    };
+    // Bilddauer den/num gekürzt; kgV von Brüchen = kgV der Zähler / ggT der Nenner
+    let reduced = |r: Rational| {
+        let g = gcd(r.num as u128, r.den.max(1) as u128).max(1);
+        (r.den.max(1) as u128 / g, r.num.max(1) as u128 / g)
+    };
+    let ((ds, ns), (dp, np)) = (reduced(src), reduced(project));
+    let step_us = ds / gcd(ds, dp) * dp * 1_000_000 / gcd(gcd(ns, np), 1_000_000);
+    let skip_us = (skip * 1e6) as u128;
+    (skip_us / step_us * step_us) as f64 / 1e6
+}
+
 /// Hat die Effektkette des Clips Filter mit Gedächtnis ([`STATEFUL`])?
-fn fx_has_memory(fx: &ClipFx) -> bool {
+pub(crate) fn fx_has_memory(fx: &ClipFx) -> bool {
     let opts = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: None };
     let g = fx_graph(fx, Src { w: 64, h: 64, has_alpha: false }, &opts, "i", "o", "u").join(";");
-    STATEFUL.iter().any(|s| g.contains(s))
+    STATEFUL.iter().any(|s| g.contains(s)) || counts_frames(&g)
+}
+
+/// Nutzt ein Ausdruck den Bildzähler ab Filterbeginn (`n`/`N` in eq, hue, geq, crop, overlay …,
+/// z. B. aus Paket-Ketten)? Der zählt nach einem Sprung ab dem Abschnitt statt ab dem Clip.
+pub(crate) fn counts_frames(g: &str) -> bool {
+    g.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|w| w == "n" || w == "N")
 }
 
 fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -> Result<Sprite> {
@@ -273,7 +303,7 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
     let bw = ((m.width as f64 * fit).round() as u32).max(2) & !1;
     let bh = ((m.height as f64 * fit).round() as u32).max(2) & !1;
     // übersprungener Anfang: Zeitstempel bleiben Clipzeit (Animationen, Keyframes, Effekte)
-    let mut pre = vec![if skip > 0.0 { format!("setpts=PTS-STARTPTS+{}/TB", f(skip)) } else { "setpts=PTS-STARTPTS".to_string() }];
+    let mut pre = vec![if skip > 0.0 { format!("setpts=PTS-STARTPTS+round({}/TB)", f(skip)) } else { "setpts=PTS-STARTPTS".to_string() }];
     if !image {
         if c.fx.reverse {
             pre.push("reverse".into());
@@ -501,8 +531,10 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
 /// Sprite zur Zeit `t0` (s, relativ zum Exportbeginn, auch negativ) auf `cur` legen.
 fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, t0: f64, len: f64) -> String {
     let shifted = ctx.label("pl");
+    // gerundet wie `trim` (sonst schneidet setpts ab: bei 29,97 fps lag ein Clip im Durchgang ein
+    // Bild anders als in einem Abschnitt, der mitten in ihm beginnt)
     let shift = if t0 >= 0.0 {
-        format!("setpts=PTS-STARTPTS+{}/TB", f(t0))
+        format!("setpts=PTS-STARTPTS+round({}/TB)", f(t0))
     } else {
         format!("trim=start={},setpts=PTS-STARTPTS", f(-t0))
     };
@@ -904,7 +936,15 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
             } else {
                 let c = group[0];
                 let video = matches!(c.content, ClipContent::Media { kind: MediaKind::Video, .. });
-                let skip = if ctx.lead && video && !fx_has_memory(&c.fx) { lead_skip(c, ctx.start) } else { 0.0 };
+                let skip = if ctx.lead && video && !fx_has_memory(&c.fx) {
+                    let src = match &c.content {
+                        ClipContent::Media { media, .. } => proj.media(*media).and_then(|m| m.fps),
+                        _ => None,
+                    };
+                    video_skip(c, src, Rational::parse(&ctx.fps).unwrap_or(Rational::new(30, 1)), ctx.start)
+                } else {
+                    0.0
+                };
                 sprite_for(ctx, &proj, c, skip)?
             };
             let Some(sp) = sprite else { continue };

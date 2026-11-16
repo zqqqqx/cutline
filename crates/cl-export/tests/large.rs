@@ -441,6 +441,10 @@ fn progress_is_monotonic_and_errors_name_the_section() {
     let t = e.to_string();
     assert!(t.starts_with("Abschnitt ") && t.contains('–'), "{t}");
     assert!(!out.exists() && !job.part.exists());
+    // fürs Protokoll: der gescheiterte Aufruf des Abschnitts, nicht der nie gestartete Endlauf
+    let failed = e.failed_args().expect("Abschnitt");
+    assert!(job.section_args().iter().any(|a| a == failed) && failed != job.args.as_slice(), "{failed:?}");
+    assert!(failed.iter().any(|a| a.contains("kaputt.mp4")));
 }
 
 /// Ein Abschnitt des großen Projekts zum Nachmessen (Bereich 0–50 s).
@@ -529,4 +533,210 @@ fn audio_length_under_load() {
         hs.into_iter().map(|h| h.join().unwrap()).collect()
     });
     assert!(lens.iter().all(|&(a, b)| a == 576_000 && b == 576_000), "Samples (Durchgang, Abschnitte): {lens:?}");
+}
+
+/// Diashow: `n` Bild-Clips (je `len` s) mit Überblendungen zwischen allen – eine einzige
+/// Übergangsgruppe mit `n` Eingängen.
+fn slideshow(img: &Path, n: usize, len: f64) -> Project {
+    let m = MediaRef {
+        id: MediaId::new(),
+        path: img.to_path_buf(),
+        kind: MediaKind::Image,
+        duration: Time::ZERO,
+        width: 32,
+        height: 18,
+        fps: None,
+        has_audio: false,
+        audio_streams: 0,
+        video_codec: None,
+        audio_codec: None,
+    };
+    let mut p = Project::new("Diashow");
+    p.settings.width = 32;
+    p.settings.height = 18;
+    p.settings.fps = Rational::new(10, 1);
+    p.media.push(m.clone());
+    let mut t = Track::new(TrackKind::Video);
+    for i in 0..n {
+        let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Image }, Time::from_secs_f64(i as f64 * len), Time::from_secs_f64(len));
+        if i + 1 < n {
+            c.transition_out = Some(TransitionRef { id: "fade".into(), duration: Time::from_secs_f64(len / 3.0) });
+        }
+        t.clips.push(c);
+    }
+    p.timeline.tracks.push(t);
+    p
+}
+
+/// 160 Fotos mit Übergängen (mehr Eingänge als ein Abschnitt fasst, Kette unteilbar): ein
+/// Durchgang wie in 0.11.1 statt „Zu viele gleichzeitige Clips“.
+#[test]
+fn long_transition_chain_builds_as_one_pass() {
+    let dir = tempfile::tempdir().unwrap();
+    let img = dir.path().join("foto.png");
+    std::fs::write(&img, b"x").unwrap();
+    let p = slideshow(&img, 160, 3.0);
+    let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("d.mp4")).unwrap();
+    assert_eq!(job.sections(), 0);
+    assert_eq!(job.args.iter().filter(|a| *a == "-i").count(), 160);
+}
+
+/// Kette über der Eingangs-Grenze (hier 4) exportiert mit echtem FFmpeg vollständig.
+#[test]
+fn long_transition_chain_exports() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let img = dir.path().join("foto.png");
+    ffmpeg(&["-f", "lavfi", "-i", "testsrc2=s=32x18", "-frames:v", "1"], &img);
+    let p = slideshow(&img, 6, 0.6);
+    let out = dir.path().join("kette.mp4");
+    let job = cl_export::build_limited(&p, &ExportSettings::from_project(&p), &no_fonts, &out, 4).unwrap();
+    assert_eq!(job.sections(), 0);
+    run_job(&job);
+    assert_eq!(frame_times(&out).len(), 36);
+}
+
+/// Langer Hintergrund mit „Zoom-Puls“ (`zoompan` vergibt eigene Zeitstempel ab 0): in Abschnitten
+/// bildgleich mit dem Durchgang. Vorher sprang der Clip per `-ss` nahe an den Abschnitt und lief
+/// danach um den Sprung zu früh.
+#[test]
+fn zoom_pulse_on_long_clip_across_sections() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut q = rich_project(dir.path());
+    q.timeline.tracks[0].clips[0].fx.effects.push(FxRef::new("zoom-pulse"));
+    let mut s = ExportSettings::from_project(&q);
+    s.format = cl_export::Format::Mov;
+    s.codec = cl_export::Codec::ProRes;
+    let (one, cut, _) = both(&q, &s, dir.path(), "zoompuls", 3);
+    let fs = 128 * 72 * 3;
+    let (a, b) = (rgb(&one), rgb(&cut));
+    assert_eq!(a.len(), b.len());
+    let bad: Vec<usize> = a.chunks(fs).zip(b.chunks(fs)).enumerate().filter(|(_, (x, y))| mean_diff(x, y) > 0.01).map(|x| x.0).collect();
+    assert!(bad.is_empty(), "abweichende Bilder {bad:?}");
+}
+
+/// Hardware-Encoder, die hier starten (NVENC H.264/HEVC): Abschnitte per `-c:v copy` zusammengefügt
+/// ergeben alle Bilder, monotone Zeitstempel und decodieren ohne Fehler.
+#[test]
+fn sections_hardware_encoders_concat() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let hw: Vec<_> = cl_export::available_encoders().into_iter().filter(|e| *e != cl_export::Encoder::Software).collect();
+    if hw.is_empty() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let p = rich_project(dir.path());
+    for e in hw {
+        for codec in [cl_export::Codec::H264, cl_export::Codec::Hevc] {
+            let mut s = ExportSettings::from_project(&p);
+            (s.encoder, s.codec) = (e, codec);
+            let out = dir.path().join(format!("hw_{e:?}_{codec:?}.mp4"));
+            let job = cl_export::build_limited(&p, &s, &no_fonts, &out, 3).unwrap();
+            assert!(job.sections() >= 3);
+            run_job(&job);
+            let t = frame_times(&out);
+            assert_eq!(t.len(), 360, "{e:?} {codec:?}: Bilder");
+            assert!(t.windows(2).all(|w| w[1] > w[0]), "{e:?} {codec:?}: Zeitstempel");
+            let o = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-nostdin", "-i"]).arg(&out).args(["-f", "null", "-"]).output().unwrap();
+            assert!(o.status.success() && o.stderr.is_empty(), "{e:?} {codec:?}: {}", String::from_utf8_lossy(&o.stderr));
+        }
+    }
+}
+
+/// QSV, AMF und AV1 über NVENC (Zusammenfügen ungeprüft): Abschnitte verlustfrei, der Endlauf
+/// kodiert einmal mit dem gewählten Encoder statt `-c:v copy`.
+#[test]
+fn unproven_hardware_encoders_encode_once() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let p = rich_project(dir.path());
+    use cl_export::{Codec, Encoder};
+    for (e, codec, name, safe) in [
+        (Encoder::Qsv, Codec::H264, "h264_qsv", false),
+        (Encoder::Amf, Codec::Hevc, "hevc_amf", false),
+        (Encoder::Nvenc, Codec::Av1, "av1_nvenc", false),
+        (Encoder::Nvenc, Codec::Hevc, "hevc_nvenc", true),
+    ] {
+        let mut s = ExportSettings::from_project(&p);
+        (s.encoder, s.codec) = (e, codec);
+        let job = cl_export::build_limited(&p, &s, &no_fonts, &dir.path().join("x.mp4"), 3).unwrap();
+        let sec = &job.section_args()[0];
+        assert_eq!(sec.iter().any(|a| a == "ffv1"), !safe, "{name}: Abschnitte");
+        assert_eq!(job.args.iter().any(|a| a == name), !safe, "{name}: Endlauf kodiert");
+        assert_eq!(job.args.iter().any(|a| a == "copy"), safe, "{name}: copy");
+    }
+}
+
+/// Sprung an den Abschnitt (`lead_skip`) bei Projekten mit 29,97 und 23,976 fps und Quellen mit
+/// gleicher oder anderer Bildrate: ProRes bildgleich mit dem Durchgang. Vorher setzte `setpts` den
+/// Versatz abgeschnitten statt gerundet (Clips ein Bild versetzt), und Sprünge um ganze Sekunden
+/// verfehlen bei 29,97 fps ab etwa 17 s die Quellbilder.
+#[test]
+fn lead_skip_with_ntsc_project_and_other_source_rate() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let src = |r: &str| {
+        let f = dir.path().join(format!("e_{}.mp4", r.replace('/', "_")));
+        if !f.is_file() {
+            ffmpeg(&["-f", "lavfi", "-i", &format!("testsrc2=s=96x54:r={r}:d=60"), "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", "-pix_fmt", "yuv420p"], &f);
+        }
+        cl_media::probe(&f).unwrap()
+    };
+    let s = Time::from_secs_f64;
+    // (Projekt, Quelle; None = 60 fps, Bereich ab 25 s mit langem Hintergrund), springt?
+    let ntsc = Rational::new(30000, 1001);
+    for (fps, rate, long, jumps) in [
+        (ntsc, None, false, false),
+        (Rational::new(24000, 1001), Some("30000/1001"), false, true),
+        (ntsc, Some("24000/1001"), false, true),
+        (ntsc, Some("30000/1001"), true, true),
+    ] {
+        let mut q = rich_project(dir.path());
+        q.settings.fps = fps;
+        q.timeline.tracks[1].hidden = true;
+        if let Some(r) = rate {
+            let m = src(r);
+            let ClipContent::Media { media, .. } = &mut q.timeline.tracks[0].clips[0].content else { panic!() };
+            *media = m.id;
+            q.media.push(m);
+        }
+        let mut st = ExportSettings::from_project(&q);
+        if long {
+            // Hintergrund 40 s, Bereich 25–28 s, kurze Tonclips erzwingen Grenzen bei 26 und 27 s
+            q.timeline.tracks[0].clips[0].duration = s(40.0);
+            let mu = q.timeline.tracks[4].clips[0].clone();
+            for k in 0..3 {
+                let mut c = mu.clone();
+                c.id = ClipId::new();
+                (c.start, c.duration, c.fade_in, c.fade_out) = (s(25.0 + k as f64), s(1.0), Time::ZERO, Time::ZERO);
+                c.keyframes = Default::default();
+                q.timeline.tracks[4].clips.push(c);
+            }
+            st = ExportSettings::from_project(&q);
+            st.range = Some((s(25.0), s(28.0)));
+        }
+        st.format = cl_export::Format::Mov;
+        st.codec = cl_export::Codec::ProRes;
+        let name = format!("ntsc{}_{}{}", fps.num, rate.unwrap_or("60").replace('/', "_"), if long { "_lang" } else { "" });
+        let (one, cut, n) = both(&q, &st, dir.path(), &name, if long { 2 } else { 3 });
+        let job = cl_export::build_limited(&q, &st, &no_fonts, &cut, if long { 2 } else { 3 }).unwrap();
+        let skipped = (0..n).any(|k| std::fs::read_to_string(job.workdir.path().join(format!("graph_{k}.txt"))).unwrap().contains("start_time="));
+        assert_eq!(skipped, jumps, "{name}: Sprung");
+        let fs = 128 * 72 * 3;
+        let (a, b) = (rgb(&one), rgb(&cut));
+        assert_eq!(a.len(), b.len(), "{name}: Bilder");
+        let bad: Vec<usize> = a.chunks(fs).zip(b.chunks(fs)).enumerate().filter(|(_, (x, y))| mean_diff(x, y) > 0.01).map(|x| x.0).collect();
+        assert!(bad.is_empty(), "{name} ({n} Abschnitte): abweichende Bilder {bad:?}");
+    }
 }
