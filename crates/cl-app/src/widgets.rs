@@ -202,12 +202,25 @@ impl<'a> Slider<'a> {
         if dv.changed() {
             *self.value = shown / self.display;
             out.changed = true;
+            ui.data_mut(|d| d.insert_temp(dv.id, shown));
         }
         if dv.drag_stopped() || dv.lost_focus() {
+            // Enter meldet nur den Fokusverlust, die Zahl kam schon beim Tippen: Sie gilt auch für
+            // Aufrufer, die ihren Wert erst hier übernehmen (sonst verwarf Enter die Eingabe)
+            let typed = ui.data_mut(|d| d.remove_temp::<f32>(dv.id));
+            if let Some(v) = last_typed(typed, dv.changed()) {
+                *self.value = v / self.display;
+                out.changed = true;
+            }
             out.commit = true;
         }
         out
     }
+}
+
+/// Die zuletzt getippte Zahl eines Wertfelds, wenn sie in diesem Bild nicht ohnehin gemeldet wurde.
+fn last_typed(typed: Option<f32>, changed_now: bool) -> Option<f32> {
+    typed.filter(|_| !changed_now)
 }
 
 /// Schalter (Pill). Gibt `true` zurück, wenn umgeschaltet wurde.
@@ -1044,5 +1057,13 @@ mod tests {
         assert!(!built.is_empty() && built.len() <= 30, "{}", built.len());
         assert_eq!(built[0], 0);
         assert!(height > 300.0 / 6.0 * 80.0, "Inhalt muss so hoch bleiben wie alle Zeilen: {height}");
+    }
+
+    /// Enter im Wertfeld: Die getippte Zahl gilt beim Verlassen, außer sie kam im selben Bild schon.
+    #[test]
+    fn enter_keeps_the_typed_number() {
+        assert_eq!(super::last_typed(Some(1.5), false), Some(1.5));
+        assert_eq!(super::last_typed(Some(1.5), true), None);
+        assert_eq!(super::last_typed(None, false), None);
     }
 }

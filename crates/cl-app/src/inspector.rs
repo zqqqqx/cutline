@@ -1295,7 +1295,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 ui.add_space(theme::LABEL_W + 6.0);
                 for v in [0.5f32, 1.0, 1.5, 2.0, 3.0] {
-                    if theme::cat_chip(ui, &format!("{v}×"), (c.speed - v).abs() < 1e-3).clicked()
+                    if theme::cat_chip(ui, &format!("{}×", theme::local_num(v.to_string())), (c.speed - v).abs() < 1e-3).clicked()
                     {
                         self.commit_live();
                         self.apply(EditOp::SetSpeed {
