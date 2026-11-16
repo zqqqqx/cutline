@@ -41,6 +41,8 @@ struct Run {
     level_max: usize,
     /// Bearbeitung beim Abspielen: größte Lücke danach, bis das geänderte Bild zu sehen ist (ms)
     edit_gap_ms: f64,
+    /// Regler ziehen beim Abspielen: größte Lücke der untersten Ebene (ms)
+    drag_gap_ms: f64,
     edit_visible_ms: f64,
     /// Klick beim Abspielen → erstes Bild an der neuen Stelle (ms)
     click_ms: f64,
@@ -148,6 +150,8 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let mut starter_queue = 0i64;
     let debug = std::env::var_os("CUTLINE_QA_DEBUG").is_some();
     let mut still_asked: std::collections::HashMap<u64, (f64, f64)> = Default::default();
+    let drag_at = (edit_at + click_at) / 2.0;
+    let mut dragging = false;
     core.play(start, revision, now());
     let t_play = now();
     while now() - t_play < secs {
@@ -166,6 +170,22 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 core.edit(true, t);
                 edited = Some((t, id));
             }
+        }
+        // Regler ziehen (Inspektor): 1,5 s lang je UI-Bild ein neuer Effektwert und eine neue
+        // Größe der untersten Ebene, erst danach ein Schritt im Verlauf
+        if (drag_at..drag_at + 1.5).contains(&rel) {
+            let layers = layers_in(&project, None, playhead);
+            if let Some(id) = primary(&needs(&project, &layers, playhead, true, |_| {})) {
+                if let Some(c) = clip_mut(&mut project, id) {
+                    c.fx.adjust.contrast = 0.2 * ((rel - drag_at) * 7.0).sin() as f32;
+                    c.transform.scale = 1.0 + 0.3 * (rel - drag_at) as f32;
+                }
+            }
+            dragging = true;
+        } else if dragging {
+            dragging = false;
+            revision += 1;
+            core.edit(false, t);
         }
         // Klick an eine andere Stelle
         if clicked.is_none() && rel >= click_at {
@@ -372,6 +392,8 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
         .map(|w| (w[1] - w[0]) * 1000.0)
         .fold(0.0, f64::max);
     if let Some((te, _)) = edited {
+        let d0 = t_play + drag_at;
+        run.drag_gap_ms = prim_frames.windows(2).filter(|w| w[1] >= d0 && w[0] <= d0 + 2.5).map(|w| (w[1] - w[0]) * 1000.0).fold(0.0, f64::max);
         run.edit_gap_ms = prim_frames.windows(2).filter(|w| w[1] >= te && w[0] <= te + 3.0 && w[1] < click_t).map(|w| (w[1] - w[0]) * 1000.0).fold(0.0, f64::max);
     }
     run.dropped_per_s = dropped as f64 / secs;
@@ -426,6 +448,19 @@ fn play_measure() {
             continue;
         };
         let project = Project::from_json(&json).expect("Projekt lesbar");
+        // Messung mit Proxys: fehlende fertig bauen (in `CUTLINE_HOME`, nicht im Datenordner der App)
+        if std::env::var_os("CUTLINE_QA_PROXY").is_some() && std::env::var_os("CUTLINE_HOME").is_some() {
+            let (h, fps) = (crate::settings::AppSettings::default().proxy_h, project.settings.fps);
+            for m in project.media.iter().filter(|m| crate::proxy::wants_proxy(m) && m.path.is_file()) {
+                if crate::proxy::existing_proxy(m, h, fps).is_none() {
+                    let t = Instant::now();
+                    let out = crate::proxy::proxy_path(m, h, fps);
+                    let _ = std::fs::create_dir_all(out.parent().unwrap());
+                    let r = crate::proxy::build(m, &out, &crate::proxy::proxy_spec(m, h, fps), &|_| {}, &std::sync::atomic::AtomicBool::new(false));
+                    eprintln!("Proxy {} in {:.0} s: {}", m.path.display(), t.elapsed().as_secs_f64(), r.is_ok());
+                }
+            }
+        }
         let at: Vec<f64> = match std::env::var("CUTLINE_QA_AT").ok().and_then(|a| a.parse().ok()) {
             Some(a) => vec![a],
             None => at.to_vec(),
@@ -442,12 +477,12 @@ fn play_measure() {
     }
     eprintln!("\nkünstliche Last: {stress} rechnende Threads");
     eprintln!(
-        "\n| Lauf | Proxy | Play→Bild | Play→bewegt | Bilder/s (Soll) | größte Lücke | verworfen/s | Rückstand max/Ø | Ton-Aussetzer | aufgeholt | Stufe | Bearb.: Lücke / sichtbar | Klick→Bild | Stillstand max | Einzelbilder angef./gezeigt |"
+        "\n| Lauf | Proxy | Play→Bild | Play→bewegt | Bilder/s (Soll) | größte Lücke | verworfen/s | Rückstand max/Ø | Ton-Aussetzer | aufgeholt | Stufe | Bearb.: Lücke / sichtbar | Regler: Lücke | Klick→Bild | Stillstand max | Einzelbilder angef./gezeigt |"
     );
-    eprintln!("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+    eprintln!("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
     for r in &rows {
         eprintln!(
-            "| {} | {} | {:.0} ms | {:.0} ms | {:.1} ({:.0}) | {:.0} ms | {:.1} | {:.0} / {:.0} ms | {}× {:.0} ms | {} | {} | {:.0} / {:.0} ms | {:.0} ms | {:.0} ms | {} / {} |",
+            "| {} | {} | {:.0} ms | {:.0} ms | {:.1} ({:.0}) | {:.0} ms | {:.1} | {:.0} / {:.0} ms | {}× {:.0} ms | {} | {} | {:.0} / {:.0} ms | {:.0} ms | {:.0} ms | {:.0} ms | {} / {} |",
             r.label,
             if r.proxy { "ja" } else { "nein" },
             r.first_ms,
@@ -464,6 +499,7 @@ fn play_measure() {
             r.level_max,
             r.edit_gap_ms,
             r.edit_visible_ms,
+            r.drag_gap_ms,
             r.click_ms,
             r.freeze_ms,
             r.stills_req,
