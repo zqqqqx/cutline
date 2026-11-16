@@ -602,6 +602,60 @@ fn mix_pairs(project: &Project, layers: &[Layer], t: Time) -> Vec<(usize, usize,
 mod play_measure;
 
 #[cfg(test)]
+mod presence_tests {
+    use super::*;
+
+    /// Befund aus dem Review: beim Abspielen prüfte jedes UI-Bild je Ebene die Datei
+    /// (`is_local`, auf dem NAS blockierend). Jetzt entscheidet der Hintergrund-Zustand
+    /// `presence` – hier „vorhanden" für eine Datei, die es nicht gibt: Strom und Einzelbild
+    /// werden trotzdem angefordert, also fragt niemand das Dateisystem. Fehlt sie laut
+    /// Hintergrund-Prüfung, wird nichts angefordert (keine offenen Aufträge).
+    #[test]
+    fn requests_follow_the_background_presence_check() {
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        std::env::set_var("CUTLINE_NO_UPDATE", "1");
+        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
+        let ctx = egui::Context::default();
+        let mut app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None);
+        let path = home.path().join("gibt-es-nicht.mp4");
+        let m = MediaRef {
+            id: cl_core::MediaId::new(),
+            path: path.clone(),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(10.0),
+            width: 64,
+            height: 36,
+            fps: Some(Rational::new(30, 1)),
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: Some("h264".into()),
+            audio_codec: None,
+        };
+        let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
+        let l = Layer { clip: c.clone(), t_rel: Time::ZERO, alpha: 1.0, from: None };
+        let canvas = egui::vec2(64.0, 36.0);
+        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, canvas, None);
+        // Stand: Einzelbild nur, wenn vorhanden
+        app.presence.set_all([(path.clone(), false)].into(), 1);
+        ask(&mut app);
+        assert!(!app.core.has_requests(), "fehlende Datei: kein Auftrag");
+        app.presence.set_all([(path.clone(), true)].into(), 1);
+        ask(&mut app);
+        assert!(app.core.has_requests(), "laut Prüfung vorhanden: angefordert");
+        // Abspielen: Strom wird beauftragt (der Starter meldet sich, auch wenn das Öffnen scheitert)
+        app.core.play(Time::ZERO, 0, 0.0);
+        ask(&mut app);
+        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_secs(20)).is_ok(), "Strom beauftragt");
+        app.core.invalidate();
+        app.presence.set_all([(path, false)].into(), 1);
+        ask(&mut app);
+        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_millis(500)).is_err(), "fehlt: kein Strom");
+    }
+}
+
+#[cfg(test)]
 mod shader_tests {
     use super::*;
 
@@ -1060,6 +1114,10 @@ impl App {
                         self.set_frame(ctx, clip, key, &frame);
                     }
                 }
+                Done::FrameFailed { clip, key, error } => {
+                    log::warn!("Decoder: {error}");
+                    self.core.still_failed(lid(clip), key);
+                }
                 Done::Thumb { media, frame } => {
                     let tex = ctx.load_texture(
                         format!("thumb-{media}"),
@@ -1414,7 +1472,9 @@ impl App {
                 prefetch: prefetch_at.is_some(),
                 alias,
             };
-            if m.is_local() {
+            // vorhanden laut Hintergrund-Prüfung (kein Dateizugriff je Ebene und UI-Bild: auf
+            // einem schlafenden NAS blockierte der den UI-Thread)
+            if self.presence.get(&m.path) {
                 // Der Kern sagt, ob und ab wo: erster Strom, Ersatz nach einer Änderung (der alte
                 // zeigt weiter, bis der neue liefert), Aufholen, hängender Strom
                 if let Some(o) = self.core.want(&want, now) {
@@ -1440,7 +1500,6 @@ impl App {
             return;
         }
         let (w, h) = decode_size(c, m, canvas_px, div);
-        let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
         let src = still_src(c, m, l.t_rel, fps);
         let animated_fx = c.fx.effects.iter().any(|e| {
             matches!(
@@ -1456,10 +1515,10 @@ impl App {
             )
         });
         let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx, fxh, fps);
-        if self.core.still(lid(id), key, now) {
-            if !m.is_local() {
-                return;
-            }
+        // fehlende Datei (Hintergrund-Prüfung): gar nicht erst anfordern, sonst bliebe der Auftrag offen
+        if self.presence.get(&m.path) && self.core.still(lid(id), key, now) {
+            // LUT-Datei erst beim Anfordern prüfen, nicht je UI-Bild
+            let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
             let (path, at) = self.still_source(m, h, src);
             self.decoder.send(Job::Frame {

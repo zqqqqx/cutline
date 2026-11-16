@@ -172,6 +172,8 @@ struct World {
     level: usize,
     level_changes: u32,
     attached: Vec<(Open, bool)>,
+    /// Wandzeit des Anhängens je (Ebene, Schlüssel)
+    attached_at: HashMap<(Lid, u64), f64>,
 }
 
 impl World {
@@ -201,6 +203,7 @@ impl World {
             level: 0,
             level_changes: 0,
             attached: Vec::new(),
+            attached_at: HashMap::new(),
         }
     }
     fn now(&self) -> f64 {
@@ -264,6 +267,9 @@ impl World {
             let sim = Sim { clock: self.clock.clone(), opened: now, d, per_frame, n: 0, t0: o.at.as_secs_f64(), fps: self.fps };
             let accepted = self.core.attach_alias(o, self.fps, sim, now, alias);
             assert!(!accepted || o.gen == self.core.gen(), "Strom eines alten Projekts angehängt");
+            if accepted {
+                self.attached_at.insert((o.id, o.key), now);
+            }
             self.attached.push((o, accepted));
         }
         let p = pos.as_secs_f64();
@@ -287,10 +293,14 @@ impl World {
                     }
                 }
                 if active {
+                    let replacement = |core: &PlayCore<Sim>| core.streams().into_iter().find(|x| x.0 == c.id && x.2).map(|x| x.1);
+                    let had = replacement(&self.core);
                     if let Some(f) = self.core.pull(c.id, now, i == 0) {
                         // aus der Zukunft höchstens das erste Bild eines Clips, der im Übergang schon sichtbar ist
                         assert!(f <= p.max(c.start) + 1e-6, "Bild aus der Zukunft: {f} bei {p}");
-                        if let Some(&last) = self.last_frame.get(&c.id) {
+                        // ein Ersatz, der nach REPLACE_AFTER mit Rückstand übernimmt, darf älter sein
+                        let late = had.is_some_and(|k| replacement(&self.core).is_none() && self.attached_at.get(&(c.id, k)).is_some_and(|t| now - t > REPLACE_AFTER));
+                        if let Some(&last) = self.last_frame.get(&c.id).filter(|_| !late) {
                             assert!(f >= last - 1.01 / self.fps, "älteres Bild gezeigt: {f} nach {last}");
                         }
                         self.last_frame.insert(c.id, f);
@@ -451,6 +461,45 @@ fn visible_edit_keeps_picture_running_and_switches_stream() {
     let s = w.core.streams();
     assert_eq!(s.len(), 1, "alter Strom nach dem Wechsel frei: {s:?}");
     assert_eq!(s[0].1, w.key(&w.clips[0]));
+}
+
+/// Befund aus dem Review: ein Ersatz langsamer als Echtzeit (schwerer Effekt während Play
+/// hinzugefügt) übernahm nie – die Änderung blieb bis zum Clipende unsichtbar.
+#[test]
+fn slow_replacement_takes_over_after_a_second() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    w.play();
+    w.run(1.0, DT);
+    w.clips[0].ver = 1;
+    w.clips[0].dec.per_frame = 1.0 / 24.0; // 0,8× Echtzeit bei 30 Bildern/s
+    w.rev += 1;
+    w.core.edit(false, w.now());
+    w.run(2.5, DT);
+    let new = w.key(&w.clips[0]);
+    let s = w.core.streams();
+    assert!(s.iter().any(|x| !x.2 && x.1 == new), "Änderung sichtbar: {s:?}");
+    assert!(s.iter().all(|x| x.1 == new), "alter Strom frei: {s:?}");
+}
+
+/// Befund aus dem Review: ein Ersatz, der ohne Bild endet (Effekt-Graph geht nicht), blieb für
+/// immer stehen und wurde nie neu versucht.
+#[test]
+fn replacement_ending_without_a_frame_is_retried() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    w.play();
+    w.run(1.0, DT);
+    w.clips[0].ver = 1;
+    w.clips[0].dec.len = Some(0); // FFmpeg endet sofort
+    w.rev += 1;
+    let (opens, t) = (w.opens, w.now());
+    w.run(2.5, DT);
+    assert!(w.opens >= opens + 2, "neu versucht: {}", w.opens - opens);
+    assert!(w.opens <= opens + 4, "nicht in jedem Bild: {}", w.opens - opens);
+    assert!(w.gap(1, t, w.now()) <= 2.0 / 30.0 + 0.01, "alter Strom zeigt weiter");
+    w.clips[0].dec.len = None; // geht wieder
+    w.run(1.5, DT);
+    let new = w.key(&w.clips[0]);
+    assert!(w.core.streams().iter().all(|x| x.1 == new), "{:?}", w.core.streams());
 }
 
 #[test]
@@ -770,6 +819,31 @@ fn stills_in_stand_replace_running_requests_and_drive_the_wait_line() {
     core.visible(&[]);
     assert!(!core.waiting());
     assert_eq!(core.held(), Some(1));
+}
+
+/// Befund aus dem Review: ein gescheitertes Einzelbild blieb als Auftrag stehen – Ladelinie für
+/// immer, beim Abspielen stand das Bild bis `STILL_PATIENCE`.
+#[test]
+fn failed_still_ends_the_request_and_the_next_is_requested() {
+    let mut core: PlayCore<Sim> = PlayCore::default();
+    assert!(core.still(1, 10, 0.0));
+    assert!(core.has_requests());
+    core.still_failed(1, 9); // veraltet: ändert nichts
+    assert!(core.has_requests());
+    core.still_failed(1, 10);
+    assert!(!core.has_requests(), "Ladeanzeige endet");
+    assert!(!core.waiting());
+    assert!(!core.still(1, 10, 0.1), "derselbe nicht in jedem UI-Bild neu");
+    assert!(core.still(1, 11, 0.2), "das nächste wird angefordert");
+    // beim Abspielen (Rückwärts-Clip): das nächste sofort, nicht erst nach STILL_PATIENCE
+    core.shuttle(2.0, Time::ZERO, 1.0);
+    assert!(core.still(1, 20, 1.0));
+    assert!(!core.still(1, 21, 1.1), "laufender Auftrag wird nicht ersetzt");
+    core.still_failed(1, 20);
+    assert!(core.still(1, 21, 1.2));
+    // ein gelieferter Auftrag zählt ebenfalls nicht mehr als offen
+    assert!(core.still_done(1, 21));
+    assert!(!core.has_requests());
 }
 
 #[test]

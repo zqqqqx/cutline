@@ -28,6 +28,26 @@ pub fn typing(ctx: &egui::Context) -> bool {
     ctx.memory(|m| m.focused()).is_some_and(|id| egui::text_edit::TextEditState::load(ctx, id).is_some())
 }
 
+/// Was die Tastenkürzel mit dem Fokus tun
+#[derive(Debug, PartialEq, Eq)]
+enum KeyFocus {
+    /// Tasten gehören dem fokussierten Element (Textfeld; Tab-Navigation, Pfeile am Regler)
+    Keep,
+    /// Fokus abgeben, dann Kürzel (Leertaste = Abspielen statt Klick auf den fokussierten Knopf)
+    Release,
+    /// nichts fokussiert: Kürzel
+    Shortcuts,
+}
+
+/// `typing`: Textfeld hat den Fokus; `focused`: irgendein Element hat ihn; `space`: Leertaste gedrückt.
+fn key_focus(typing: bool, focused: bool, space: bool) -> KeyFocus {
+    match (typing, focused, space) {
+        (true, ..) | (false, true, false) => KeyFocus::Keep,
+        (false, true, true) => KeyFocus::Release,
+        (false, false, _) => KeyFocus::Shortcuts,
+    }
+}
+
 pub fn release_text_focus(ctx: &egui::Context) {
     ctx.memory_mut(|m| {
         if let Some(id) = m.focused() {
@@ -2418,7 +2438,7 @@ impl App {
             }
             std::borrow::Cow::Owned(p)
         };
-        match AudioPlayer::start_synced(&proj, at) {
+        match AudioPlayer::start_synced(proj, at) {
             Ok(a) => {
                 if anchor {
                     a.anchor(Instant::now());
@@ -2673,13 +2693,13 @@ impl App {
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
         // offenes Kontextmenü: Esc gehört dem Menü (sonst verbraucht das Kürzel die Taste)
-        if typing(ctx) || self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
+        if self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
             return;
         }
-        // Fokus auf einem Knopf, einer Kachel o. Ä. (kein Textfeld): abgeben, sonst löst die
-        // Leertaste dort einen Klick aus statt Abspielen
-        if ctx.wants_keyboard_input() {
-            release_text_focus(ctx);
+        match key_focus(typing(ctx), ctx.wants_keyboard_input(), ctx.input(|i| i.key_pressed(Key::Space))) {
+            KeyFocus::Keep => return,
+            KeyFocus::Release => release_text_focus(ctx),
+            KeyFocus::Shortcuts => {}
         }
         let mut actions: Vec<&str> = Vec::new();
         let binds = crate::keymap::bindings(&self.settings.shortcuts);
@@ -3843,6 +3863,18 @@ mod frame_rate_tests {
         ctx.memory_mut(|m| m.request_focus(ids.1));
         pass(&ctx);
         assert!(typing(&ctx), "Textfeld mit Fokus");
+    }
+
+    /// Befund aus dem Review: der Fokus wurde in jedem Bild abgegeben – Tab-Navigation und Pfeile
+    /// am Regler gingen nicht mehr. Abgeben nur, wenn die Leertaste kommt (die immer abspielt).
+    #[test]
+    fn focus_is_kept_except_for_space() {
+        assert_eq!(key_focus(false, false, false), KeyFocus::Shortcuts, "nichts fokussiert");
+        assert_eq!(key_focus(false, false, true), KeyFocus::Shortcuts);
+        assert_eq!(key_focus(false, true, true), KeyFocus::Release, "Knopf + Leertaste: abspielen");
+        assert_eq!(key_focus(false, true, false), KeyFocus::Keep, "Regler + Pfeil, Tab: bleibt");
+        assert_eq!(key_focus(true, true, true), KeyFocus::Keep, "Textfeld + Leertaste: Text");
+        assert_eq!(key_focus(true, true, false), KeyFocus::Keep, "Textfeld + Pfeil");
     }
 
     #[test]

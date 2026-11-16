@@ -891,7 +891,15 @@ pub fn missing_text(names: &[String]) -> String {
 /// Lautstärke und Tempo in die Bereiche der Bearbeitung (wie `EditOp::SetVolume`/`SetSpeed`):
 /// Projektdateien und MCP können mehr enthalten, +1000 dB bzw. Tempo 0,001 brachen den
 /// AAC-Encoder ab.
-fn in_edit_ranges(p: &Project) -> Project {
+/// Liegt schon alles in den Bereichen, ohne Kopie (Ton-Start der Vorschau bei jeder Bearbeitung).
+fn in_edit_ranges(p: &Project) -> std::borrow::Cow<'_, Project> {
+    let db = |v: f32| (-60.0..=20.0).contains(&v);
+    let ok = p.timeline.tracks.iter().flat_map(|t| t.clips.iter()).all(|c| {
+        db(c.volume_db) && (0.1..=100.0).contains(&c.speed) && c.keyframes.0.get(&Prop::Volume).is_none_or(|v| v.iter().all(|k| db(k.v)))
+    });
+    if ok {
+        return std::borrow::Cow::Borrowed(p);
+    }
     let mut p = p.clone();
     for c in p.timeline.tracks.iter_mut().flat_map(|t| t.clips.iter_mut()) {
         c.volume_db = c.volume_db.clamp(-60.0, 20.0);
@@ -902,7 +910,7 @@ fn in_edit_ranges(p: &Project) -> Project {
             }
         }
     }
-    p
+    std::borrow::Cow::Owned(p)
 }
 
 /// Kapitel (Start relativ zu `start`, Titel) aus den Markern im Bereich `start..end`.
@@ -1520,7 +1528,7 @@ pub fn spawn_audio_window(
         .tempdir()?;
     let (inputs, graph, label) = audio_window_graph(p, from, end)?;
     std::fs::write(workdir.path().join("graph.txt"), graph.join(";\n"))?;
-    let child = cl_media::ffmpeg_command()?
+    let child = cl_media::playback_command()?
         .args(["-v", "error", "-nostdin"])
         .args(&inputs)
         .args([
@@ -3918,5 +3926,21 @@ mod tests {
             let used = job.sections.iter().filter(|x| std::fs::read_to_string(job.workdir.path().join(&x.graph)).unwrap().contains("movie=shader_")).count();
             assert!(used >= 2, "Shader statt Rückfall in beiden Abschnitten: {used}");
         }
+    }
+
+    /// Ton-Start der Vorschau: liegt alles in den Bereichen, wird das Projekt nicht kopiert.
+    #[test]
+    fn edit_ranges_copy_only_when_needed() {
+        let mut p = Project::new("x");
+        let mut t = Track::new(TrackKind::Audio);
+        let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
+        c.volume_db = 6.0;
+        t.clips.push(c);
+        p.timeline.tracks.push(t);
+        assert!(matches!(in_edit_ranges(&p), std::borrow::Cow::Borrowed(_)));
+        p.timeline.tracks[0].clips[0].volume_db = 1000.0;
+        let q = in_edit_ranges(&p);
+        assert!(matches!(q, std::borrow::Cow::Owned(_)));
+        assert_eq!(q.timeline.tracks[0].clips[0].volume_db, 20.0);
     }
 }

@@ -156,6 +156,12 @@ pub enum Done {
         key: u64,
         frame: RgbaFrame,
     },
+    /// Player-Bild ließ sich nicht decodieren (der Auftrag ist damit beendet)
+    FrameFailed {
+        clip: ClipId,
+        key: u64,
+        error: String,
+    },
     Thumb {
         media: MediaId,
         frame: RgbaFrame,
@@ -244,6 +250,10 @@ pub struct Decoder {
     pub strips_wanted: Arc<Mutex<HashSet<String>>>,
     /// Projektgeneration: Aufträge eines verlassenen Projekts verwirft der Worker
     pub generation: Arc<AtomicU64>,
+    /// Zwischenspeicher des Verteilers: Bilder (Anzahl, Bytes), Animationen (Anzahl, Bytes);
+    /// liest der Dauerlauf-Mess-Test
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub held: Arc<[AtomicUsize; 4]>,
 }
 
 /// Nachricht an den Verteiler der Player-Bilder: neuer Auftrag oder fertiges Ergebnis.
@@ -359,6 +369,7 @@ fn frame_dispatcher(
     ctx: egui::Context,
     gen: Arc<AtomicU64>,
     busy: Arc<AtomicUsize>,
+    held: Arc<[AtomicUsize; 4]>,
 ) {
     let mut cache = FrameCache::new(384 << 20);
     let mut anims = Anims::default();
@@ -442,11 +453,14 @@ fn frame_dispatcher(
                         current.then_some(Done::Frame { clip, key, frame })
                     }
                     Err(cl_media::MediaError::Cancelled) => None,
-                    Err(e) => current.then(|| Done::Error(e.to_string())),
+                    Err(e) => current.then(|| Done::FrameFailed { clip, key, error: e.to_string() }),
                 }
             }
         };
         busy.store(inflight.len(), Ordering::Relaxed);
+        for (a, v) in held.iter().zip([cache.map.len(), cache.bytes, anims.map.len(), anims.bytes]) {
+            a.store(v, Ordering::Relaxed);
+        }
         if let Some(d) = out {
             if done_tx.send(d).is_err() {
                 return;
@@ -660,11 +674,12 @@ impl Decoder {
         let (tx, jobs) = channel::<Msg>();
         let generation = Arc::new(AtomicU64::new(0));
         let busy = Arc::new(AtomicUsize::new(0));
+        let held: Arc<[AtomicUsize; 4]> = Default::default();
         {
-            let (done_tx, ctx, gen, busy, tx) = (done_tx.clone(), ctx.clone(), generation.clone(), busy.clone(), tx.clone());
+            let (done_tx, ctx, gen, busy, tx, held) = (done_tx.clone(), ctx.clone(), generation.clone(), busy.clone(), tx.clone(), held.clone());
             std::thread::Builder::new()
                 .name("cl-decoder".into())
-                .spawn(move || frame_dispatcher(jobs, tx, done_tx, ctx, gen, busy))
+                .spawn(move || frame_dispatcher(jobs, tx, done_tx, ctx, gen, busy, held))
                 .expect("Decoder-Thread");
         }
         let strips_wanted: Arc<Mutex<HashSet<String>>> = Default::default();
@@ -735,6 +750,7 @@ impl Decoder {
             rx,
             strips_wanted,
             generation,
+            held,
         }
     }
 
@@ -788,12 +804,14 @@ impl Starter {
         std::thread::Builder::new()
             .name("cl-stream-start".into())
             .spawn(move || {
-                while let Ok(j) = jobs.recv() {
-                    let s = FrameStream::open_opts(&j.path, j.source_at, j.w, j.h, j.fps, j.graph.as_deref(), j.hw).ok();
-                    if done.send((j.open, j.fps.as_f64(), j.alias, s)).is_err() {
-                        return;
+                while let Ok(first) = jobs.recv() {
+                    for j in newest_per_layer(std::iter::once(first).chain(jobs.try_iter()).collect()) {
+                        let s = FrameStream::open_opts(&j.path, j.source_at, j.w, j.h, j.fps, j.graph.as_deref(), j.hw).ok();
+                        if done.send((j.open, j.fps.as_f64(), j.alias, s)).is_err() {
+                            return;
+                        }
+                        ctx.request_repaint();
                     }
-                    ctx.request_repaint();
                 }
             })
             .expect("Strom-Thread");
@@ -802,6 +820,18 @@ impl Starter {
     pub fn send(&self, j: OpenJob) {
         let _ = self.tx.send(j);
     }
+}
+
+/// Wartende Aufträge: je Ebene nur der neueste (der Kern hängt ohnehin nur die zuletzt beauftragte
+/// Nummer an). Sonst startete der Starter beim Ziehen eines Reglers während Play jeden veralteten
+/// Strom nacheinander, und der richtige käme erst nach diesem Rückstau.
+fn newest_per_layer(jobs: Vec<OpenJob>) -> Vec<OpenJob> {
+    let mut out: Vec<OpenJob> = Vec::with_capacity(jobs.len());
+    for j in jobs {
+        out.retain(|o| o.open.id != j.open.id);
+        out.push(j);
+    }
+    out
 }
 
 /// Hardware-Decodierung für einen Abspiel-Strom? Nur für Originale, deren Software-Decodierung
@@ -875,6 +905,9 @@ mod tests {
         assert!(stream_hw(&m(3840, 2160, 30, "h264"), p));
         assert!(!stream_hw(&m(1280, 720, 60, "h264"), p));
         assert!(!stream_hw(&m(1920, 1080, 60, "h264"), std::path::Path::new("proxy.mp4")), "Proxy: Software");
+        assert!(stream_hw(&m(1080, 1920, 30, "hevc"), p), "Hochkant");
+        assert!(!stream_hw(&m(1280, 720, 60, "hevc"), p));
+        assert!(!stream_hw(&m(3840, 2160, 60, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
     }
 
     #[test]
@@ -969,6 +1002,27 @@ mod tests {
         assert_eq!(f.len(), 0);
     }
 
+    /// Regler ziehen während Play: viele Aufträge derselben Ebene stauen sich – geöffnet wird nur
+    /// der neueste je Ebene, in der Reihenfolge ihres letzten Auftrags.
+    #[test]
+    fn starter_opens_only_the_newest_job_per_layer() {
+        let job = |id, seq| OpenJob {
+            open: crate::playcore::Open { id, key: seq, at: Time::ZERO, gen: 0, seq },
+            alias: 0,
+            path: PathBuf::from("a.mp4"),
+            source_at: Time::ZERO,
+            w: 16,
+            h: 16,
+            fps: Rational::new(30, 1),
+            graph: None,
+            hw: false,
+        };
+        let jobs = vec![job(1, 1), job(2, 2), job(1, 3), job(1, 4), job(3, 5), job(2, 6)];
+        let left: Vec<(u128, u64)> = newest_per_layer(jobs).iter().map(|j| (j.open.id, j.open.seq)).collect();
+        assert_eq!(left, vec![(1, 4), (3, 5), (2, 6)]);
+        assert!(newest_per_layer(Vec::new()).is_empty());
+    }
+
     #[test]
     fn background_waits_for_player_frames_but_not_forever() {
         let ms = std::time::Duration::from_millis;
@@ -977,38 +1031,13 @@ mod tests {
         assert!(bg_may_start(2, ms(1500)), "kein Verhungern beim Dauer-Scrubben");
     }
 
-    #[test]
-    fn hardware_streams_only_for_heavy_originals() {
-        let m = |w: u32, h: u32, codec: &str| cl_core::MediaRef {
-            id: cl_core::MediaId::new(),
-            path: PathBuf::from("o.mp4"),
-            kind: cl_core::MediaKind::Video,
-            duration: Time::from_secs_f64(1.0),
-            width: w,
-            height: h,
-            fps: Some(Rational::new(60, 1)),
-            has_audio: false,
-            audio_streams: 0,
-            video_codec: Some(codec.into()),
-            audio_codec: None,
-        };
-        let orig = std::path::Path::new("o.mp4");
-        assert!(stream_hw(&m(3840, 2160, "h264"), orig));
-        assert!(stream_hw(&m(1920, 1080, "hevc"), orig));
-        assert!(stream_hw(&m(1080, 1920, "hevc"), orig), "Hochkant");
-        // 1080p60-H.264 seit dem Lasttest auch in Hardware (1080p30 bleibt Software, eigener Test)
-        assert!(stream_hw(&m(1920, 1080, "h264"), orig));
-        assert!(!stream_hw(&m(1280, 720, "hevc"), orig));
-        assert!(!stream_hw(&m(3840, 2160, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
-    }
-
     /// Wartet auf das Bild mit Schlüssel `key`; zählt andere gelieferte Player-Bilder.
     fn wait_frame(d: &Decoder, key: u64, other: &mut usize) -> std::time::Instant {
         loop {
             match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("kein Bild") {
                 Done::Frame { key: k, .. } if k == key => return std::time::Instant::now(),
                 Done::Frame { .. } => *other += 1,
-                Done::Error(e) => panic!("{e}"),
+                Done::Error(e) | Done::FrameFailed { error: e, .. } => panic!("{e}"),
                 _ => {}
             }
         }

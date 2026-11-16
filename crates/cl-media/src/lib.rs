@@ -20,7 +20,7 @@ use serde::Deserialize;
 mod anim;
 mod proc;
 pub use anim::{animation, decode_all as decode_animation, frame_index as animation_frame, Animation};
-pub use proc::{cpu_time, lower_priority, raise_priority, suspend};
+pub use proc::{cpu_time, limit_threads, lower_priority, raise_priority, suspend};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
@@ -100,6 +100,14 @@ pub fn ffmpeg_command() -> Result<Command> {
     command("ffmpeg")
 }
 
+/// FFmpeg-Befehl eines Wiedergabe-Prozesses ohne Hardware-Decodierung (Ton-Fenster): Threads
+/// begrenzt. Nach dem Start unbedingt [`raise_priority`] aufrufen: erst das ordnet ihn dem Job zu.
+pub fn playback_command() -> Result<Command> {
+    let mut cmd = command_with("ffmpeg", false)?;
+    limit_threads(&mut cmd, false);
+    Ok(cmd)
+}
+
 /// FFprobe-Befehl (ohne Konsolenfenster).
 pub fn ffprobe_command() -> Result<Command> {
     command("ffprobe")
@@ -110,8 +118,14 @@ pub fn ffmpeg_available() -> bool {
 }
 
 fn command(name: &str) -> Result<Command> {
+    command_with(name, true)
+}
+
+/// `adopt`: der Wächter sucht das gestartete Kind und ordnet es dem Job zu (Windows); `false` nur,
+/// wenn danach [`raise_priority`] es direkt zuordnet (Wiedergabe: keine Prozess-Suche je Start).
+fn command_with(name: &str, adopt: bool) -> Result<Command> {
     let mut cmd = Command::new(tool(name)?);
-    proc::prepare(&mut cmd);
+    proc::prepare(&mut cmd, adopt);
     Ok(cmd)
 }
 
@@ -388,8 +402,11 @@ fn decode_once(
     accel: Option<&str>,
     kill: Option<&KillSwitch>,
 ) -> Result<(RgbaFrame, Option<Duration>)> {
-    let mut cmd = command("ffmpeg")?;
+    let mut cmd = command_with("ffmpeg", kill.is_none())?;
     cmd.args(["-v", "error", "-nostdin"]);
+    if kill.is_some() {
+        limit_threads(&mut cmd, accel.is_some());
+    }
     if let Some(a) = accel {
         cmd.args(["-hwaccel", a]);
     }
@@ -652,8 +669,9 @@ fn spawn_stream(
     graph: Option<&str>,
     accel: Option<&str>,
 ) -> Result<Child> {
-    let mut cmd = command("ffmpeg")?;
+    let mut cmd = command_with("ffmpeg", false)?;
     cmd.args(["-v", "error", "-nostdin"]);
+    limit_threads(&mut cmd, accel.is_some());
     if let Some(a) = accel {
         cmd.args(["-hwaccel", a]);
     }

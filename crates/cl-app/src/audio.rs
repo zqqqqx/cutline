@@ -2,7 +2,7 @@
 //! Die abgespielten Samples sind die Uhr (Audio-Clock), nach der sich das Bild richtet.
 //!
 //! Gemischt wird nie das ganze Projekt, sondern ein Fenster von [`WINDOW_SECS`] (nur die Clips
-//! darin, also wenige FFmpeg-Eingänge; das erste ist kürzer, damit der Ton schnell einsetzt).//! darin, also wenige FFmpeg-Eingänge). Bevor ein Fenster zu Ende geht, rechnet ein zweiter
+//! darin, also wenige FFmpeg-Eingänge; das erste ist kürzer, damit der Ton schnell einsetzt). Bevor ein Fenster zu Ende geht, rechnet ein zweiter
 //! Prozess das nächste; beide werden am Sample aneinandergehängt (jedes Fenster liefert genau
 //! seine Zahl Sample-Frames, Einschwingen von Resampler/Begrenzer liegt vor dem Fensteranfang
 //! und wird verworfen).
@@ -11,6 +11,7 @@
 //! [`AudioPlayer::anchor`]): kommt der Ton, überspringt die Ausgabe die schon vergangenen Samples
 //! und setzt mit kurzer Einblendung genau an der Stelle ein, an der das Bild gerade ist.
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::Read;
 use std::process::Child;
@@ -66,6 +67,23 @@ static DEVICE: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn set_output_device(name: Option<String>) {
     *DEVICE.lock().unwrap() = name;
+    *OUTPUT.lock().unwrap() = None;
+}
+
+/// Zuletzt genutztes Ausgabegerät mit Format (Name, Gerät, Format): Aufzählen der Geräte und
+/// `default_output_config` kosten je Ton-Start spürbar Zeit im UI-Thread. Vergessen bei
+/// Gerätewahl und wenn sich die Ausgabe nicht öffnen ließ (Gerät abgezogen).
+type Output = (String, (cpal::Device, cpal::SupportedStreamConfig));
+static OUTPUT: Mutex<Option<Output>> = Mutex::new(None);
+
+/// Wert für `name` aus `slot`, sonst mit `fetch` holen und merken.
+fn remembered<T: Clone, E>(slot: &mut Option<(String, T)>, name: &str, fetch: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    if let Some((_, v)) = slot.as_ref().filter(|(n, _)| n == name) {
+        return Ok(v.clone());
+    }
+    let v = fetch()?;
+    *slot = Some((name.to_string(), v.clone()));
+    Ok(v)
 }
 
 /// Namen aller Ausgabegeräte (für die Einstellungen)
@@ -416,12 +434,13 @@ fn render_block(sh: &Shared, pk: &[AtomicU32; 2], rate: u32, n: usize, now: Inst
 impl AudioPlayer {
     /// Spielt ab `from`, sobald Ton da ist (Scrubben, Vorhören).
     pub fn start(project: &Project, from: Time) -> Result<Self, String> {
-        Self::open(project, from, false, false)
+        Self::open(Cow::Borrowed(project), from, false, false)
     }
 
     /// Für die Wiedergabe mit Bild: Ton wird vorbereitet, setzt aber erst nach [`Self::anchor`] ein –
-    /// dann an der Stelle, an der die Uhr seit dem Anker steht.
-    pub fn start_synced(project: &Project, from: Time) -> Result<Self, String> {
+    /// dann an der Stelle, an der die Uhr seit dem Anker steht. Ein eigener Klon (z. B. mit Solo)
+    /// geht ohne weitere Kopie an die Zuführung.
+    pub fn start_synced(project: Cow<'_, Project>, from: Time) -> Result<Self, String> {
         Self::open(project, from, true, false)
     }
 
@@ -429,21 +448,29 @@ impl AudioPlayer {
     /// Systemzeit (Mess-Test ohne Fenster und ohne hörbaren Ton; Uhr, Aussetzer und Fenster wie echt).
     #[cfg(test)]
     pub fn start_null(project: &Project, from: Time) -> Result<Self, String> {
-        Self::open(project, from, true, true)
+        Self::open(Cow::Borrowed(project), from, true, true)
     }
 
-    fn open(project: &Project, from: Time, synced: bool, null: bool) -> Result<Self, String> {
+    fn open(project: Cow<'_, Project>, from: Time, synced: bool, null: bool) -> Result<Self, String> {
         let (device, config) = if null {
             (None, None)
         } else {
             let host = cpal::default_host();
-            // gewähltes Gerät; ist es nicht (mehr) da, der Systemstandard
+            // gewähltes Gerät (aus dem Speicher, sonst aufzählen); ist es nicht (mehr) da, der Systemstandard
             let wanted = DEVICE.lock().unwrap().clone();
-            let device = wanted
-                .and_then(|w| host.output_devices().ok()?.find(|d| d.name().ok().as_deref() == Some(w.as_str())))
-                .or_else(|| host.default_output_device())
-                .ok_or("Kein Audio-Ausgabegerät")?;
-            let config = device.default_output_config().map_err(|e| e.to_string())?;
+            let mut out = OUTPUT.lock().unwrap();
+            let hit = wanted.as_ref().and_then(|w| out.as_ref().filter(|(n, _)| n == w).map(|(_, v)| v.clone()));
+            let (device, config) = match hit {
+                Some(v) => v,
+                None => {
+                    let device = wanted
+                        .and_then(|w| host.output_devices().ok()?.find(|d| d.name().ok().as_deref() == Some(w.as_str())))
+                        .or_else(|| host.default_output_device())
+                        .ok_or("Kein Audio-Ausgabegerät")?;
+                    let name = device.name().unwrap_or_default();
+                    remembered(&mut out, &name, || device.default_output_config().map(|c| (device.clone(), c)).map_err(|e| e.to_string()))?
+                }
+            };
             (Some(device), Some(config))
         };
         let rate = config.as_ref().map_or(48_000, |c| c.sample_rate().0);
@@ -463,9 +490,9 @@ impl AudioPlayer {
             kids: Mutex::new(Vec::new()),
             first_sound: OnceLock::new(),
         });
-        let first = open_window(project, plan, rate, &shared)?;
+        let first = open_window(&project, plan, rate, &shared)?;
         {
-            let (p, sh) = (project.clone(), shared.clone());
+            let (p, sh) = (project.into_owned(), shared.clone());
             std::thread::Builder::new()
                 .name("cl-audio-feed".into())
                 .spawn(move || feed(p, from, rate, sh, first))
@@ -564,6 +591,8 @@ impl AudioPlayer {
                 if let Err(e) = out() {
                     log::warn!("Ton: {e}");
                     fail.store(true, Ordering::Relaxed);
+                    // Gerät abgezogen o. Ä.: beim nächsten Start neu suchen
+                    *OUTPUT.lock().unwrap() = None;
                 }
             })
             .map_err(|e| e.to_string())?;
@@ -657,6 +686,30 @@ mod tests {
     use super::*;
 
     const S: i64 = 1_000_000;
+
+    /// Befund aus dem Review: jeder Ton-Start zählte die Geräte auf und holte das Format neu.
+    /// Jetzt nur beim ersten Mal je Gerät (und nach Wechsel bzw. Vergessen).
+    #[test]
+    fn output_format_is_fetched_once_per_device() {
+        let mut slot = None;
+        let mut calls = 0;
+        let mut get = |slot: &mut Option<(String, u32)>, name: &str, v: u32| {
+            remembered(slot, name, || {
+                calls += 1;
+                Ok::<_, ()>(v)
+            })
+        };
+        assert_eq!(get(&mut slot, "A", 48_000), Ok(48_000));
+        assert_eq!(get(&mut slot, "A", 1), Ok(48_000), "aus dem Speicher");
+        assert_eq!(get(&mut slot, "B", 44_100), Ok(44_100), "anderes Gerät: neu");
+        slot = None; // Gerät gewechselt oder Ausgabe scheiterte
+        assert_eq!(get(&mut slot, "B", 96_000), Ok(96_000));
+        assert_eq!(calls, 3);
+        // Fehler werden nicht gemerkt
+        let mut s2: Option<(String, u32)> = None;
+        assert_eq!(remembered(&mut s2, "C", || Err::<u32, _>("weg")), Err("weg"));
+        assert!(s2.is_none());
+    }
 
     #[test]
     fn windows_tile_the_range_without_gap_or_overlap() {
@@ -1010,7 +1063,7 @@ mod tests {
         p.timeline.tracks[0].muted = true; // Stille aus eigener Quelle
         for i in 0..5 {
             let t0 = Instant::now();
-            let a = AudioPlayer::start_synced(&p, Time(S)).unwrap();
+            let a = AudioPlayer::start_synced(Cow::Borrowed(&p), Time(S)).unwrap();
             let opened = t0.elapsed();
             a.anchor(t0);
             while a.first_sound().is_none() && t0.elapsed() < Duration::from_secs(5) {

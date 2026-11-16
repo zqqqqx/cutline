@@ -6,7 +6,7 @@
 //!
 //! Zustände und Übergänge:
 //! - `Stand` --Play--> `Puffern` (Ströme öffnen, Ton vorbereiten, Uhr steht)
-//! - `Puffern` --alle Ströme am Playhead haben ein Bild, sonst nach 1 s--> `Spielen` (Uhr läuft,
+//! - `Puffern` --alle Ströme am Playhead haben ein Bild, sonst nach 0,5 s--> `Spielen` (Uhr läuft,
 //!   Ton setzt an der Uhr ein)
 //! - `Spielen` --Pause (Ton läuft, Tempo 1)--> `Pause` (Ströme und Ton bleiben offen)
 //! - `Pause` --Play an derselben Stelle ohne Änderung--> `Spielen` (ohne neue Ströme)
@@ -162,6 +162,8 @@ const WARM_MAX: f64 = 0.5;
 pub const AUDIO_DEBOUNCE: f64 = 0.15;
 /// Öffnen schlug fehl: so lange nicht erneut versuchen
 const RETRY_OPEN: f64 = 1.0;
+/// Ein Ersatzstrom mit Bild übernimmt spätestens so lange nach dem Anhängen (auch mit Rückstand)
+const REPLACE_AFTER: f64 = 1.0;
 /// Einzelbild beim Abspielen (Rückwärts, Tempo-Kurve, bewegte Bilder): ein laufender Auftrag wird
 /// nicht ersetzt, nur weil die Uhr weiter ist – sein Bild wird gezeigt, auch wenn es einige Bilder
 /// alt ist (sonst verhungert jeder Auftrag). Nur als Sicherung nach so langer Zeit neu.
@@ -267,7 +269,7 @@ pub struct PlayCore<S: Source> {
     wanted: Vec<Lid>,
     /// höchste Stufe der automatischen Qualität (aus dem Takt)
     max_level: usize,
-    /// Einzelbilder: angefordert (Schlüssel, seit) und gezeigt
+    /// Einzelbilder: angefordert (Schlüssel, seit) und erledigt (gezeigt oder gescheitert)
     requested: HashMap<Lid, (u64, f64)>,
     shown: HashMap<Lid, u64>,
     /// zuletzt mit einem Bild versorgte Ebene (es gibt ein anzeigbares Bild)
@@ -369,6 +371,24 @@ impl<S: Source> PlayCore<S> {
         self.cur.iter().map(|(id, s)| (*id, s.key, false)).chain(self.next.iter().map(|(id, s)| (*id, s.key, true))).collect()
     }
 
+    /// Größe aller Listen des Kerns (Dauerlauf-Messung)
+    #[cfg(test)]
+    pub fn sizes(&self) -> String {
+        format!(
+            "cur {} next {} opening {} reopen {} failed {} reopened {} wanted {} requested {} shown {} cmds {}",
+            self.cur.len(),
+            self.next.len(),
+            self.opening.len(),
+            self.reopen.len(),
+            self.failed.len(),
+            self.reopened.len(),
+            self.wanted.len(),
+            self.requested.len(),
+            self.shown.len(),
+            self.cmds.len()
+        )
+    }
+
     /// Offene Ströme (laufend und Ersatz)
     #[cfg(test)]
     pub fn stream_count(&self) -> usize {
@@ -449,9 +469,9 @@ impl<S: Source> PlayCore<S> {
         self.mode == Mode::Pause && self.paused == Some((at, revision))
     }
 
-    /// Gibt es Einzelbild-Aufträge (Ladeanzeige beim Öffnen eines Projekts)?
+    /// Gibt es offene Einzelbild-Aufträge (Ladeanzeige beim Öffnen eines Projekts)?
     pub fn has_requests(&self) -> bool {
-        !self.requested.is_empty()
+        self.requested.iter().any(|(id, (k, _))| self.shown.get(id) != Some(k))
     }
 
     /// Pause. Nur mit laufendem Ton bei Tempo 1 (`can_hold`, z. B. nicht bei Mehrkamera) bleiben
@@ -784,10 +804,12 @@ impl<S: Source> PlayCore<S> {
         if let Some(n) = self.next.get_mut(&id) {
             if let Some(f) = n.drain(pos, now, &mut self.stats, false) {
                 // erst übernehmen, wenn der Ersatz nicht hinter dem bisherigen Strom liegt (nie ein
-                // älteres Bild zeigen); bis dahin holt er auf und seine Bilder verfallen
+                // älteres Bild zeigen); bis dahin holt er auf und seine Bilder verfallen. Ist er
+                // langsamer als Echtzeit (schwerer Effekt), holt er nie auf: nach REPLACE_AFTER
+                // übernimmt er trotzdem, danach greifen Aufholen und automatische Qualität.
                 let behind = |s: &Slot<S>| s.lag(pos).unwrap_or(f64::MAX);
                 let old = self.cur.get(&id).filter(|c| !c.stalled(now) && !c.ended);
-                if old.is_none_or(|c| behind(n) <= behind(c) + 1e-9) {
+                if now - n.opened > REPLACE_AFTER || old.is_none_or(|c| behind(n) <= behind(c) + 1e-9) {
                     if let Some(n) = self.next.remove(&id) {
                         self.cur.insert(id, n);
                     }
@@ -795,6 +817,11 @@ impl<S: Source> PlayCore<S> {
                 } else {
                     self.stats.dropped += 1;
                 }
+            } else if n.stalled(now) {
+                // Ersatz endet bzw. hängt ohne Bild: verwerfen, nach RETRY_OPEN neu versuchen
+                let key = n.key;
+                self.next.remove(&id);
+                self.failed.insert(id, (key, now));
             }
         }
         let s = self.cur.get_mut(&id)?;
@@ -867,6 +894,15 @@ impl<S: Source> PlayCore<S> {
             true
         } else {
             false
+        }
+    }
+
+    /// Einzelbild ließ sich nicht decodieren: der Auftrag ist beendet (Ladeanzeige endet, beim
+    /// Abspielen wird gleich das nächste angefordert). Derselbe Schlüssel wird nicht sofort
+    /// wieder versucht (sonst ein FFmpeg je UI-Bild), erst nach einer Änderung.
+    pub fn still_failed(&mut self, id: Lid, key: u64) {
+        if self.requested.get(&id).is_some_and(|(k, _)| *k == key) {
+            self.shown.insert(id, key);
         }
     }
 

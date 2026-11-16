@@ -6,13 +6,18 @@ use std::process::{Child, Command};
 use std::time::Duration;
 
 /// Wird vor jedem Start eines FFmpeg/FFprobe aufgerufen (aus `command`).
-pub(crate) fn prepare(cmd: &mut Command) {
+/// `adopt`: das Kind per Prozess-Suche dem Job zuordnen (sonst tut es [`raise_priority`] direkt).
+pub(crate) fn prepare(cmd: &mut Command, adopt: bool) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(win::CREATE_NO_WINDOW); // kein Konsolenfenster aufblitzen lassen
-        win::watch();
+        if adopt {
+            win::watch();
+        }
     }
+    #[cfg(not(windows))]
+    let _ = adopt;
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt;
@@ -63,12 +68,14 @@ pub fn lower_priority(cmd: &mut Command) {
 /// Priorität über normal für die Prozesse der Wiedergabe (Bildströme, Einzelbilder des Players,
 /// Ton-Fenster): unter Volllast durch andere Programme bekommen sie sonst zu wenig Rechenzeit und
 /// das Bild bleibt stehen, obwohl der Ton läuft. `false`, wenn das System es nicht erlaubt (unter
-/// Linux/macOS braucht Anheben Rechte – dort bleibt es bei normal).
+/// Linux/macOS braucht Anheben Rechte – dort bleibt es bei normal). Unter Windows wird der Prozess
+/// dabei direkt dem Job-Objekt zugeordnet (endet mit der App, ohne Prozess-Suche je Start).
 pub fn raise_priority(child: &Child) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::io::AsRawHandle;
         const ABOVE_NORMAL_PRIORITY_CLASS: u32 = 0x0000_8000;
+        win::assign(child.as_raw_handle());
         // SAFETY: gültiges Prozess-Handle des noch nicht abgeholten Kindes.
         unsafe { win::SetPriorityClass(child.as_raw_handle(), ABOVE_NORMAL_PRIORITY_CLASS) != 0 }
     }
@@ -76,6 +83,23 @@ pub fn raise_priority(child: &Child) -> bool {
     {
         let _ = child;
         false
+    }
+}
+
+/// Threads eines angehobenen Wiedergabe-Prozesses: die Hälfte der Kerne (mindestens 1). Mit allen
+/// Kernen über normaler Priorität verdrängten zwei Software-Ströme sonst alles andere – auch den
+/// UI-Thread und die Ton-Zuführung, die die Bilder abholen.
+pub fn playback_threads(cores: usize) -> usize {
+    (cores / 2).max(1)
+}
+
+/// Thread-Grenze für einen Wiedergabe-Prozess (vor dem ersten `-i` aufrufen). `hw`: Decodierung auf
+/// der GPU – dann bleibt der Decoder unbegrenzt, begrenzt werden nur die Filter.
+pub fn limit_threads(cmd: &mut Command, hw: bool) {
+    let n = playback_threads(std::thread::available_parallelism().map_or(2, |n| n.get())).to_string();
+    cmd.args(["-filter_threads", &n, "-filter_complex_threads", &n]);
+    if !hw {
+        cmd.args(["-threads", &n]);
     }
 }
 
@@ -195,6 +219,8 @@ pub(crate) mod win {
         pub fn GetProcessTimes(h: Handle, c: *mut u64, e: *mut u64, k: *mut u64, u: *mut u64) -> i32;
         #[cfg(test)]
         pub fn WaitForSingleObject(h: Handle, ms: u32) -> u32;
+        #[cfg(test)]
+        pub fn IsProcessInJob(process: Handle, job: Handle, result: *mut i32) -> i32;
     }
     #[link(name = "ntdll")]
     extern "system" {
@@ -204,7 +230,7 @@ pub(crate) mod win {
 
     /// Job-Objekt mit „kill on job close“: Das Handle lebt bis zum Prozessende, schließt
     /// Windows es (auch beim harten Beenden), enden alle zugeordneten FFmpeg-Prozesse.
-    fn job() -> Option<usize> {
+    pub(super) fn job() -> Option<usize> {
         static JOB: OnceLock<Option<usize>> = OnceLock::new();
         *JOB.get_or_init(|| unsafe {
             let h = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
@@ -221,6 +247,14 @@ pub(crate) mod win {
             );
             (ok != 0).then_some(h as usize)
         })
+    }
+
+    /// Ordnet einen Prozess (Handle eines eigenen Kindes) direkt dem Job zu.
+    pub fn assign(process: Handle) {
+        if let Some(job) = job() {
+            // SAFETY: gültige Handles; scheitert es, bleibt der Prozess nur ohne Job.
+            unsafe { AssignProcessToJobObject(job as Handle, process) };
+        }
     }
 
     /// Ordnet alle laufenden FFmpeg/FFprobe-Kinder dieses Prozesses dem Job zu. Nur diese:
@@ -261,7 +295,8 @@ pub(crate) mod win {
     static WAKE: Condvar = Condvar::new();
 
     /// Ein FFmpeg wird gleich gestartet: der Wächter-Thread sucht in den nächsten 1,5 s
-    /// mehrmals nach neuen Kindern (sofort, dann seltener) und ordnet sie dem Job zu.
+    /// mehrmals nach neuen Kindern (sofort, dann seltener) und ordnet sie dem Job zu. Nicht für
+    /// die Wiedergabe-Prozesse: die ordnet `raise_priority` direkt zu.
     /// shortcut: Wer in den ersten Millisekunden nach dem Start hart beendet wird, kann noch
     /// eine Waise hinterlassen; ein direktes Zuordnen bräuchte `raw_attribute` (noch instabil).
     pub fn watch() {
@@ -317,6 +352,50 @@ mod tests {
         assert_eq!(super::raise_priority(&c), cfg!(windows));
         let _ = c.kill();
         let _ = c.wait();
+    }
+
+    /// Befund aus dem Review: angehobene Wiedergabe-Prozesse liefen mit allen Kernen.
+    #[test]
+    fn raised_processes_use_half_the_cores() {
+        use super::playback_threads as t;
+        assert_eq!((t(1), t(2), t(3), t(4), t(8), t(16)), (1, 1, 1, 2, 4, 8));
+        let args = |hw| {
+            let mut c = std::process::Command::new("ffmpeg");
+            super::limit_threads(&mut c, hw);
+            c.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>()
+        };
+        let n = t(std::thread::available_parallelism().map_or(2, |n| n.get())).to_string();
+        let sw = args(false);
+        assert!(sw.windows(2).any(|w| w[0] == "-threads" && w[1] == n), "{sw:?}");
+        assert!(sw.windows(2).any(|w| w[0] == "-filter_complex_threads" && w[1] == n));
+        // Hardware: Decoder nicht begrenzen, nur die Filter
+        let hw = args(true);
+        assert!(!hw.contains(&"-threads".to_string()) && hw.contains(&"-filter_threads".to_string()), "{hw:?}");
+    }
+
+    /// Befund aus dem Review: auch Wiedergabe-Prozesse (Ströme, Einzelbilder, Ton-Fenster) kamen
+    /// nur über die Prozess-Suche in den Job. Jetzt sind sie sofort nach `raise_priority` darin.
+    #[cfg(windows)]
+    #[test]
+    fn playback_processes_join_the_job_directly() {
+        use std::os::windows::io::AsRawHandle;
+        if !crate::ffmpeg_available() {
+            return;
+        }
+        let mut c = crate::playback_command()
+            .unwrap()
+            .args(["-v", "error", "-nostdin", "-re", "-f", "lavfi", "-i", "nullsrc=s=16x16:r=5", "-t", "3", "-f", "null", "-"])
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        super::raise_priority(&c);
+        let job = super::win::job().expect("Job-Objekt") as *mut std::ffi::c_void;
+        let mut inside = 0;
+        // SAFETY: gültige Handles
+        let ok = unsafe { super::win::IsProcessInJob(c.as_raw_handle(), job, &mut inside) };
+        let _ = c.kill();
+        let _ = c.wait();
+        assert!(ok != 0 && inside != 0, "nicht im Job");
     }
 
     #[cfg(windows)]
