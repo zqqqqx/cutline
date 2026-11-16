@@ -82,7 +82,8 @@ pub fn run_import(
     progress: &Progress,
 ) -> cl_import::Result<Imported> {
     let t = Instant::now();
-    let (project, report) = cl_import::import_with(src, progress)?;
+    let (project, mut report) = cl_import::import_with(src, progress)?;
+    report.missing.sort_by(|a, b| natural_cmp(&a.to_string_lossy(), &b.to_string_lossy()));
     progress.check()?;
     progress.set(Step::Save, 0, 2, &project.name);
     // Animationen der Bilder (Zeit des Vorschaubilds) hier lesen, nicht beim ersten Bild
@@ -119,6 +120,41 @@ pub fn run_import(
         );
     }
     Ok(Imported { name: project.name.clone(), path, project, report })
+}
+
+/// Natürliche Reihenfolge: Zahlen im Namen nach ihrem Wert („fehlt_2“ vor „fehlt_10“).
+fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let (mut a, mut b) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (a.peek().copied(), b.peek().copied()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, _) => return std::cmp::Ordering::Less,
+            (_, None) => return std::cmp::Ordering::Greater,
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let num = |it: &mut std::iter::Peekable<std::str::Chars>| {
+                    let mut s = String::new();
+                    while let Some(c) = it.next_if(|c| c.is_ascii_digit()) {
+                        s.push(c);
+                    }
+                    s.trim_start_matches('0').to_string()
+                };
+                let (n, m) = (num(&mut a), num(&mut b));
+                // ohne führende Nullen: erst die Länge, dann die Ziffern (keine Überläufe)
+                let o = n.len().cmp(&m.len()).then_with(|| n.cmp(&m));
+                if o.is_ne() {
+                    return o;
+                }
+            }
+            (Some(x), Some(y)) => {
+                let o = x.to_lowercase().cmp(y.to_lowercase());
+                if o.is_ne() {
+                    return o;
+                }
+                a.next();
+                b.next();
+            }
+        }
+    }
 }
 
 impl App {
@@ -516,6 +552,27 @@ mod tests {
         app.open_imported(0);
         assert_eq!(app.project.timeline.tracks[0].clips.len(), 1);
         assert!(app.missing_open && !app.presence.get(&gone));
+    }
+
+    #[test]
+    fn missing_files_are_listed_in_natural_order() {
+        let root = tempfile::tempdir().unwrap();
+        let src = draft_dir(root.path());
+        let names = ["fehlt_1", "fehlt_10", "fehlt_0", "Fehlt_3", "fehlt_2"];
+        let p = |n: &str| root.path().join(format!("{n}.mp4"));
+        let videos: Vec<_> = names.iter().map(|n| serde_json::json!({"id": n, "type": "video", "path": p(n).to_string_lossy()})).collect();
+        let segs: Vec<_> = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| serde_json::json!({"material_id": n, "target_timerange": {"start": i * 1000000, "duration": 1000000}}))
+            .collect();
+        let j = serde_json::json!({"materials": {"videos": videos}, "tracks": [{"type": "video", "segments": segs}]});
+        std::fs::write(src.join("draft_content.json"), j.to_string()).unwrap();
+        let fonts = Mutex::new(cl_fonts::FontLibrary::default());
+        let imp = run_import(&src, &root.path().join("Projekte"), &fonts, &Progress::default()).unwrap();
+        let want: Vec<_> = ["fehlt_0", "fehlt_1", "fehlt_2", "Fehlt_3", "fehlt_10"].iter().map(|n| p(n)).collect();
+        assert_eq!(imp.report.missing, want);
+        assert!(natural_cmp("a007", "a7").is_eq() && natural_cmp("a99999999999999999999999", "a100000000000000000000000").is_lt());
     }
 
     /// Abbrechen während „Schriften übernehmen“ (nach dem Schreiben): kein Projekt bleibt liegen.

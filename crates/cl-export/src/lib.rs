@@ -3879,6 +3879,10 @@ mod tests {
         let media = |n: usize| {
             let path = deep.join(format!("datei_{n}.wav"));
             std::fs::write(&path, b"x").unwrap();
+            // als lesbar vormerken: Die Prüfung im Hintergrund würde die Attrappe sonst mitten im
+            // Aufbau als unlesbar melden und ihre Clips fielen ab dann heraus (Test schwankte)
+            let meta = std::fs::metadata(&path).unwrap();
+            READABLE.lock().unwrap().get_or_insert_with(Default::default).insert((path.clone(), meta.len(), meta.modified().ok()), Some(true));
             MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None }
         };
         let dense = |files: usize| {

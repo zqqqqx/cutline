@@ -229,7 +229,8 @@ impl App {
         let bar = ui.max_rect();
 
         // Ganze Leiste ist Zieh-Fläche; Widgets darüber haben Vorrang.
-        let drag = ui.interact(bar, ui.id().with("title-drag"), Sense::click_and_drag());
+        // ohne Tastaturfokus: Tab soll nicht die ganze Leiste umrahmen
+        let drag = ui.interact(bar, ui.id().with("title-drag"), Sense::CLICK | Sense::DRAG);
         if drag.drag_started_by(egui::PointerButton::Primary) {
             ctx.send_viewport_cmd(ViewportCommand::StartDrag);
         }
@@ -633,6 +634,28 @@ mod scale_tests {
         assert!(crate::proxy::start_next(5, false, false));
         assert!(!crate::proxy::start_next(5, false, true), "pausiert: kein neuer Auftrag");
         assert!(!crate::proxy::start_next(5, true, false) && !crate::proxy::start_next(0, false, false));
+    }
+
+    #[test]
+    fn first_tab_does_not_focus_the_title_bar_drag_area() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        let mut bar = egui::Rect::NOTHING;
+        for tab in [false, true, false] {
+            let events = if tab {
+                vec![egui::Event::Key { key: egui::Key::Tab, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]
+            } else {
+                Vec::new()
+            };
+            let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
+                egui::TopBottomPanel::top("t").exact_height(40.0).show(ctx, |ui| {
+                    bar = ui.max_rect();
+                    app.title_bar(ui);
+                });
+            });
+        }
+        let focused = ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id));
+        assert!(focused.is_none_or(|r| r.rect != bar), "Fokus auf der Zieh-Fläche");
     }
 
     #[test]

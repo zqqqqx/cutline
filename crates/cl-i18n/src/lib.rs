@@ -206,6 +206,12 @@ mod tests {
         assert_eq!(de.t_num("files-importing", "count", 1), "Eine Datei wird importiert");
         assert_eq!(en.t_num("files-importing", "count", 3), "Importing 3 files");
         assert_eq!(en.t("does-not-exist"), "⟦does-not-exist⟧");
+        // Meldungen der Werkzeuge: Einzahl ohne „1 …n“
+        assert_eq!(de.t_num("sync-done", "count", 1), "Eine Aufnahme synchronisiert");
+        assert_eq!(de.t_num("sync-done", "count", 3), "3 Aufnahmen synchronisiert");
+        assert_eq!(en.t_num("recap-done", "count", 1), "Recap created from one marker");
+        let db = [("count", FluentValue::from(1)), ("db", FluentValue::from("12"))];
+        assert_eq!(de.t_args("music-ducked", &db), "Musik an einer Stelle abgesenkt (−12 dB)");
     }
 
     /// Bekannte Fehlübersetzungen dürfen bei uns nie auftauchen.

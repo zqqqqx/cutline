@@ -890,7 +890,7 @@ fn clip_rooms(cr: Rect, lanes_clip: Rect, missing: bool) -> (f32, f32, f32) {
 fn make_head(ctx: &egui::Context, kern: &mut Kerning, c: &Clip, project: &Project, fam: Option<egui::FontFamily>) -> Head {
     let mut tags = String::new();
     if c.speed != 1.0 || c.fx.speed_curve.is_some() {
-        tags.push_str(&format!(" {} {:.2}x", icon::GAUGE, c.speed));
+        tags.push_str(&format!(" {} {}x", icon::GAUGE, theme::dec(c.speed as f64, 2)));
     }
     if c.fx.reverse {
         tags.push_str(&format!(" {}", icon::ARROWS_LEFT_RIGHT));
@@ -2032,7 +2032,7 @@ impl App {
                     painter.text(
                         pos2(cx + 4.0, ruler.bottom() + 2.0),
                         egui::Align2::LEFT_TOP,
-                        crate::tr(format!("Slippen: Quelle ab {v:.2} s")),
+                        crate::tr(format!("Slippen: Quelle ab {}", theme::secs(v as f64, 2))),
                         egui::FontId::proportional(theme::FS_HINT),
                         theme::ACCENT(),
                     );
@@ -2530,8 +2530,8 @@ impl App {
                     let own = matches!(&self.timeline.drag, Drag::Audio { clip, .. } if *clip == c.id);
                     if let Some((h, v)) = audio_drag.filter(|_| own) {
                         let txt = match h {
-                            AudioHandle::Volume => format!("{v:+.1} dB"),
-                            _ => format!("{v:.1} s"),
+                            AudioHandle::Volume => format!("{} dB", theme::local_num(format!("{v:+.1}"))),
+                            _ => theme::secs(v as f64, 1),
                         };
                         let at = pointer.unwrap_or(body.center()) + vec2(10.0, -18.0);
                         let g = p.layout_no_wrap(txt, egui::FontId::proportional(theme::FS_HINT), Color32::WHITE);
@@ -2696,7 +2696,7 @@ impl App {
             p.text(
                 cr.left_top() + vec2(6.0, 2.0),
                 egui::Align2::LEFT_TOP,
-                crate::tr(format!("{}  Aufnahme {:.1} s", icon::RECORD, elapsed)),
+                crate::tr(format!("{}  Aufnahme {}", icon::RECORD, theme::secs(*elapsed, 1))),
                 egui::FontId::proportional(theme::FS_HINT),
                 Color32::WHITE,
             );

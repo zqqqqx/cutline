@@ -100,6 +100,8 @@ pub struct AppSettings {
     pub proxy_h: u32,
     /// Hardware-Kodierung für Export und Proxys: „auto“ oder [`cl_export::Encoder::id`]
     pub hw_encoder: String,
+    /// Spracherkennung für Untertitel: „auto“, „parakeet“ oder „whisper“
+    pub asr_engine: String,
     /// Downloads aus Plugins (Epidemic Sound, Pexels) auch in die Bibliothek legen
     pub lib_downloads: bool,
     /// Gewählter Untertitel-Stil (`captions::PRESETS`)
@@ -168,6 +170,7 @@ impl Default for AppSettings {
             new_channels: Default::default(),
             proxy_h: 540,
             hw_encoder: "auto".into(),
+            asr_engine: "auto".into(),
             lib_downloads: true,
             caption_preset: "classic".into(),
             export_sound: true,
@@ -811,7 +814,7 @@ impl App {
                 theme::section(ui, "Neue Projekte");
                 theme::row(ui, "Bildrate", |ui| {
                     egui::ComboBox::from_id_salt("set-new-fps")
-                        .selected_text(crate::tr(format!("{:.3} fps", self.settings.new_fps.as_f64())))
+                        .selected_text(crate::tr(format!("{} fps", theme::dec(self.settings.new_fps.as_f64(), 3))))
                         .show_ui(ui, |ui| {
                             for f in FPS_CHOICES {
                                 let r = cl_core::Rational::parse(f).unwrap_or_default();

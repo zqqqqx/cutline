@@ -101,3 +101,24 @@ plugin-effects = { $count } effects, transitions and filters
 voiceover = Voiceover
 language = Language
 phase0-note = Phase 0: preview without sound and effects. Editing, text, fonts, undo and MCP are active.
+
+music-ducked = { $count ->
+    [one] Music lowered in one place (−{ $db } dB)
+   *[other] Music lowered in { $count } places (−{ $db } dB)
+}
+multicam-done = { $count ->
+    [one] Multicam edit applied with one switch
+   *[other] Multicam edit applied with { $count } switches
+}
+speakers-done = { $count ->
+    [one] One speaker track created
+   *[other] { $count } speaker tracks created
+}
+recap-done = { $count ->
+    [one] Recap created from one marker
+   *[other] Recap created from { $count } markers
+}
+sync-done = { $count ->
+    [one] One recording synced
+   *[other] { $count } recordings synced
+}

@@ -916,11 +916,25 @@ pub fn icon_arrows(s: &str) -> String {
 
 /// Dauer in Sekunden für die Oberfläche („6,40 s“ deutsch, „6.40 s“ englisch).
 pub fn secs(v: f64, decimals: usize) -> String {
-    secs_text(v, decimals, cl_i18n::ui_lang() == cl_i18n::Lang::De)
+    format!("{} s", dec(v, decimals))
 }
-fn secs_text(v: f64, decimals: usize, comma: bool) -> String {
-    let s = format!("{v:.decimals$} s");
+
+/// Dezimalzahl für die Oberfläche („1,79“ deutsch, „1.79“ englisch); die Einheit setzt der
+/// Aufrufer dahinter. Nicht für Protokoll, FFmpeg-Argumente oder Dateien.
+pub fn dec(v: f64, decimals: usize) -> String {
+    local_num(format!("{v:.decimals$}"))
+}
+/// Schon formatierte Zahl („+1.5“, „05.20“) mit dem Dezimalzeichen der Oberfläche.
+pub fn local_num(s: String) -> String {
+    dec_mark(s, cl_i18n::ui_lang() == cl_i18n::Lang::De)
+}
+fn dec_mark(s: String, comma: bool) -> String {
     if comma { s.replace('.', ",") } else { s }
+}
+
+/// Getippte Dezimalzahl, mit Komma oder Punkt.
+pub fn parse_dec(s: &str) -> Option<f64> {
+    s.trim().replace(',', ".").parse().ok()
 }
 
 /// Zählertext mit richtiger Einzahl: `one`/`many` sind deutsche Vorlagen mit `{}` für die Zahl
@@ -1176,8 +1190,17 @@ mod tests {
 
     #[test]
     fn seconds_use_language_decimal_mark() {
-        assert_eq!(secs_text(6.4, 2, true), "6,40 s");
-        assert_eq!(secs_text(6.4, 1, false), "6.4 s");
+        assert_eq!(dec_mark(format!("{:.2}", 6.4), true), "6,40");
+        assert_eq!(dec_mark(format!("{:.1}", 6.4), false), "6.4");
+        assert_eq!((parse_dec(" 1,5 "), parse_dec("1.5"), parse_dec("x")), (Some(1.5), Some(1.5), None));
+    }
+
+    #[test]
+    fn shown_numbers_use_the_decimal_comma_in_german() {
+        cl_i18n::set_ui_lang(cl_i18n::Lang::De);
+        assert_eq!(crate::props::fmt_bytes(1_920_000_000), "1,79 GB");
+        assert_eq!(crate::props::fmt_bytes(5 << 20), "5,0 MB");
+        assert_eq!(secs(1.0, 1), "1,0 s");
     }
 
     #[test]

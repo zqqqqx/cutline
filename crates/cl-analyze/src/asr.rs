@@ -390,6 +390,49 @@ pub fn resegment(segs: &[Segment], max_chars: usize, max_dur: f64) -> Vec<Segmen
 
 // ---------------------------------------------------------------- Whisper
 
+/// Bringt das benutzte FFmpeg den Filter `whisper` mit? Ohne zu warten: `None`, solange die
+/// Prüfung (`ffmpeg -filters`, einmal je Programmlauf) im Hintergrund läuft.
+pub fn whisper_filter_available() -> Option<bool> {
+    static HAS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        std::thread::spawn(|| {
+            HAS.get_or_init(|| {
+                cl_media::ffmpeg_command()
+                    .ok()
+                    .and_then(|mut c| {
+                        c.args(["-hide_banner", "-filters"])
+                            .stdin(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .output()
+                            .ok()
+                    })
+                    .is_some_and(|o| lists_whisper_filter(&String::from_utf8_lossy(&o.stdout)))
+            });
+        });
+    });
+    HAS.get().copied()
+}
+
+/// Steht `whisper` in der Ausgabe von `ffmpeg -filters` (Spalten: Kennzeichen, Name, …)?
+pub fn lists_whisper_filter(filters: &str) -> bool {
+    filters.lines().any(|l| l.split_whitespace().nth(1) == Some("whisper"))
+}
+
+/// Anzeigename des Whisper-Modells: `ggml-base.bin` → „Whisper Base“.
+pub fn whisper_label(model: &Path) -> String {
+    let stem = model.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
+    let parts: Vec<String> = stem
+        .trim_start_matches("ggml-")
+        .split('-')
+        .map(|p| {
+            let mut c = p.chars();
+            c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+        })
+        .collect();
+    format!("Whisper {}", parts.join(" ")).trim_end().to_string()
+}
+
 pub fn whisper(
     model: &Path,
     path: &Path,
@@ -501,6 +544,15 @@ mod tests {
         let f = whisper_filter(Path::new("/home/O'Brien/m.bin"), "de", Path::new("/tmp/O'Brien/out.srt"));
         assert!(f.contains(r"model=/home/O\\\'Brien/m.bin:"), "{f}");
         assert!(f.contains(r"destination=/tmp/O\\\'Brien/out.srt:"), "{f}");
+    }
+
+    #[test]
+    fn whisper_filter_and_model_name() {
+        let list = " ... volume            A->A       Change input volume.\n ... whisper           A->A       Transcribe audio using whisper.cpp.\n";
+        assert!(lists_whisper_filter(list));
+        assert!(!lists_whisper_filter(" ... volume  A->A  Change input volume (whisper-free).\n"));
+        assert_eq!(whisper_label(Path::new("m/ggml-base.bin")), "Whisper Base");
+        assert_eq!(whisper_label(Path::new("ggml-large-v3-turbo.bin")), "Whisper Large V3 Turbo");
     }
 
     #[test]

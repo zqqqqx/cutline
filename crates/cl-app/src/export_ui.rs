@@ -468,15 +468,20 @@ impl ExportDialog {
         // Hintergrund-Export weiterverfolgen, auch wenn der Dialog geschlossen ist
         let started_rev = self.running.as_ref().map_or(rev, |r| r.rev);
         let finished = self.running.as_ref().map(|r| {
-            (
-                r.result.lock().unwrap().take(),
-                r.started.elapsed().as_secs_f32(),
-            )
+            let cancelled = r.cancel.load(Ordering::Relaxed);
+            let mut res = r.result.lock().unwrap().take();
+            // Abbruch während der Vorbereitung: nicht auf den Bau warten (er prüft je Datei den Ton
+            // und kennt kein Abbruch-Kennzeichen); der Faden endet danach ohne FFmpeg-Lauf
+            if res.is_none() && cancelled && r.job.lock().unwrap().is_none() {
+                res = Some(Err(cl_export::ExportError::Cancelled.to_string()));
+            }
+            (res, r.started.elapsed().as_secs_f32(), cancelled)
         });
         match finished {
-            Some((Some(res), secs)) => {
+            Some((Some(res), secs, cancelled)) => {
                 let (sidecars, used) = self.running.take().map(|r| (r.sidecars, Some(r.settings))).unwrap_or_default();
-                log::info!(target: "export", "{} nach {secs:.1} s: {} · {:?}", if res.is_ok() { "fertig" } else { "Fehler" }, self.last_output.as_deref().map(|p| p.display().to_string()).unwrap_or_default(), used.as_ref().map(|s| (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio)));
+                let res = res.map_err(|e| (!cancelled).then_some(e));
+                log::info!(target: "export", "{} nach {secs:.1} s: {} · {:?}", match res { Ok(()) => "fertig", Err(None) => "abgebrochen", Err(Some(_)) => "Fehler" }, self.last_output.as_deref().map(|p| p.display().to_string()).unwrap_or_default(), used.as_ref().map(|s| (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio)));
                 match res {
                     Ok(()) => {
                         self.done = Some((Instant::now(), secs));
@@ -492,8 +497,9 @@ impl ExportDialog {
                             }
                         }
                         toast = Some(format!(
-                            "{} Export fertig ({secs:.1} s)",
-                            icon::CHECK_CIRCLE
+                            "{} Export fertig ({})",
+                            icon::CHECK_CIRCLE,
+                            theme::secs(secs as f64, 1)
                         ));
                         if !failed.is_empty() {
                             let msg = format!("{}: {}", crate::tr("Begleitdatei nicht gespeichert"), failed.join(", "));
@@ -501,10 +507,10 @@ impl ExportDialog {
                             self.error = Some(msg);
                         }
                     }
-                    Err(e) => self.error = Some(e),
+                    Err(e) => self.error = e,
                 }
             }
-            Some((None, _)) => ctx.request_repaint_after(std::time::Duration::from_millis(100)),
+            Some((None, ..)) =>ctx.request_repaint_after(std::time::Duration::from_millis(100)),
             None => {}
         }
         if !self.open {
@@ -570,10 +576,10 @@ impl ExportDialog {
                         ui.add_space(8.0);
                         let secs = s.range.map_or(p.duration(), |(a, b)| b - a).as_secs_f64();
                         let info = if audio_only {
-                            format!("{} {secs:.1} s", icon::CLOCK)
+                            format!("{} {}", icon::CLOCK, theme::secs(secs, 1))
                         } else {
                             let (w, h) = s.output_size();
-                            format!("{} {secs:.1} s  ·  {w}×{h}", icon::CLOCK)
+                            format!("{} {}  ·  {w}×{h}", icon::CLOCK, theme::secs(secs, 1))
                         };
                         ui.label(RichText::new(crate::tr(info)).small().color(theme::TEXT_DIM()));
                         if !audio_only {
@@ -709,7 +715,7 @@ impl ExportDialog {
                                         s.quality = Quality::Bitrate(self.custom_kbps);
                                     }
                                     theme::row(ui, "Bildrate", |ui| {
-                                        egui::ComboBox::from_id_salt("exp-fps").selected_text(crate::tr(format!("{:.3} fps", s.fps.as_f64()))).width(200.0).show_ui(ui, |ui| {
+                                        egui::ComboBox::from_id_salt("exp-fps").selected_text(crate::tr(format!("{} fps", theme::dec(s.fps.as_f64(), 3)))).width(200.0).show_ui(ui, |ui| {
                                             for f in ["23.976", "24", "25", "29.97", "30", "50", "59.94", "60"] {
                                                 let r = cl_core::Rational::parse(f).unwrap();
                                                 ui.selectable_value(&mut s.fps, r, crate::tr(format!("{f} fps")));
@@ -1006,7 +1012,7 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
             egui::FontId::proportional(13.0 * pop.max(0.01)),
             theme::SUCCESS_BG,
         );
-        ui.label(RichText::new(crate::tr(format!("Fertig in {secs:.1} s"))).strong());
+        ui.label(RichText::new(crate::tr(format!("Fertig in {}", theme::secs(secs as f64, 1)))).strong());
     });
     if age < dur {
         ui.ctx().request_repaint();
@@ -1187,6 +1193,29 @@ fn frame(d: &mut ExportDialog, ctx: &egui::Context, p: &Project, enter: bool) {
     let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
         d.show(ctx, p, &HashMap::new(), None, 0);
     });
+}
+
+#[test]
+fn cancel_while_preparing_ends_at_once_without_error() {
+    let (ctx, p) = (egui::Context::default(), Project::new("t"));
+    let mut d = ExportDialog::default();
+    // Bau läuft noch (kein Auftrag, kein Ergebnis): Abbrechen wirkt im nächsten Bild
+    d.running = Some(running(None));
+    frame(&mut d, &ctx, &p, false);
+    assert!(d.running.is_some());
+    d.running.as_ref().unwrap().cancel.store(true, Ordering::Relaxed);
+    frame(&mut d, &ctx, &p, false);
+    assert!(d.running.is_none() && d.error.is_none());
+    // Abbruch während FFmpeg läuft: der Faden meldet „Abgebrochen“, das ist kein Fehler
+    let r = running(Some(Err("Abgebrochen".into())));
+    r.cancel.store(true, Ordering::Relaxed);
+    d.running = Some(r);
+    frame(&mut d, &ctx, &p, false);
+    assert!(d.running.is_none() && d.error.is_none());
+    // echter Fehler bleibt einer
+    d.running = Some(running(Some(Err("FFmpeg: kaputt".into()))));
+    frame(&mut d, &ctx, &p, false);
+    assert_eq!(d.error.as_deref(), Some("FFmpeg: kaputt"));
 }
 
 #[test]

@@ -152,7 +152,7 @@ impl App {
                     pick = Some(e);
                 }
                 ui.label(
-                    RichText::new(format!("{x1:.2} · {y1:.2} · {x2:.2} · {y2:.2}"))
+                    RichText::new([x1, y1, x2, y2].map(|v| theme::dec(v as f64, 2)).join(" · "))
                         .small()
                         .monospace()
                         .color(theme::TEXT_DIM()),

@@ -133,8 +133,8 @@ pub fn freesound_search(key: &str, q: &str) -> Result<Vec<Hit>, String> {
                 title: r["name"].as_str().unwrap_or("?").to_string(),
                 id: r["id"].to_string(),
                 info: format!(
-                    "{:.1} s · {}",
-                    r["duration"].as_f64().unwrap_or(0.0),
+                    "{} · {}",
+                    crate::theme::secs(r["duration"].as_f64().unwrap_or(0.0), 1),
                     r["username"].as_str().unwrap_or("")
                 ),
                 url,

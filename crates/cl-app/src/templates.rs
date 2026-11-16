@@ -148,6 +148,26 @@ pub fn cam_piece(angle: usize, audio: usize, active: bool) -> (bool, f32, bool) 
     }
 }
 
+/// Eintrag der Vorlagenliste auf der Startseite: linksbündig wie die übrigen Einträge der Spalte
+/// (add_sized zentriert), ein langer Name einzeilig mit „…“ gekürzt, voll im Tooltip.
+fn template_row(ui: &mut egui::Ui, name: &str) -> egui::Response {
+    let name = crate::tr(name);
+    let full = format!("{}  {name}", icon::COPY_SIMPLE);
+    let font = egui::FontId::proportional(theme::FS_UI);
+    let max = ui.available_width() - 2.0 * ui.spacing().button_padding.x;
+    let shown = theme::elide(&full, max, |t| theme::text_width(ui.ctx(), t, font.clone()));
+    let r = ui
+        .with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
+            ui.add(theme::ghost(shown.clone()).min_size(egui::vec2(0.0, 26.0)))
+        })
+        .inner;
+    if shown != full {
+        r.on_hover_text(name)
+    } else {
+        r
+    }
+}
+
 impl App {
     /// Startseite: Liste der Vorlagen unter „Neues Projekt“.
     pub fn home_templates(&mut self, ui: &mut egui::Ui) {
@@ -161,13 +181,7 @@ impl App {
         let mut open: Option<PathBuf> = None;
         let mut rename: Option<(PathBuf, String)> = None;
         let mut remove: Option<PathBuf> = None;
-        // linksbündig wie die übrigen Einträge der Spalte (add_sized zentriert)
-        let row = |ui: &mut egui::Ui, name: &str| {
-            ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
-                ui.add(theme::ghost(format!("{}  {name}", icon::COPY_SIMPLE)).min_size(egui::vec2(0.0, 26.0)))
-            })
-            .inner
-        };
+        let row = template_row;
         for i in 0..BUILTIN.len() {
             if row(ui, BUILTIN[i]).clicked() {
                 self.new_from_project(builtin(i));
@@ -398,6 +412,21 @@ mod tests {
         assert_eq!(safe("  Intro (v2) & Co. – Ä:1 "), "Intro (v2) & Co. – Ä_1");
         assert_eq!(safe(&"x".repeat(300)).len(), 100);
         assert_eq!(safe("con"), "con_");
+    }
+
+    #[test]
+    fn long_template_name_stays_on_one_line() {
+        let ctx = egui::Context::default();
+        let mut h = (0.0, 0.0);
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.allocate_ui(egui::vec2(185.0, 400.0), |ui| {
+                    h.0 = template_row(ui, "Kurz").rect.height();
+                    h.1 = template_row(ui, &"Vorlage mit sehr langem Namen ".repeat(4)).rect.height();
+                });
+            });
+        });
+        assert_eq!(h.0, h.1, "langer Name bricht um");
     }
 
     fn text_track(starts: &[f64]) -> Track {
