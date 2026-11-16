@@ -1914,7 +1914,7 @@ mod tests {
                 so.push(still(&src, at));
                 let first = |p: &Path, at: f64, hw: bool| {
                     let t = Instant::now();
-                    let s = cl_media::FrameStream::open_opts(p, Time::from_secs_f64(at), 960, 540, Rational::new(30, 1), None, hw).unwrap();
+                    let s = cl_media::FrameStream::open_opts(p, Time::from_secs_f64(at), 960, 540, Rational::new(30, 1), None, if hw { cl_media::Hw::On } else { cl_media::Hw::Off }).unwrap();
                     s.next_blocking().unwrap();
                     secs(t) * 1e3
                 };
@@ -1993,7 +1993,7 @@ mod tests {
                     let mut at = 0.0;
                     let (mut frames, mut late) = (0u64, 0u64);
                     while !stop.load(Ordering::Relaxed) {
-                        let s = cl_media::FrameStream::open_opts(&src, Time::from_secs_f64(at), 960, 540, Rational::new(30, 1), None, crate::preview::stream_hw(&m, &src)).unwrap();
+                        let s = cl_media::FrameStream::open_opts(&src, Time::from_secs_f64(at), 960, 540, Rational::new(30, 1), None, crate::preview::stream_decode(&m, &src)).unwrap();
                         let t0 = Instant::now();
                         while let Some(_f) = s.next_blocking() {
                             frames += 1;

@@ -533,7 +533,7 @@ pub(crate) fn open_job(o: crate::playcore::Open, c: &Clip, m: &MediaRef, path: s
         alias,
         source_at: c.source_time(c.start + t_rel),
         graph: cl_fx::preview_graph(c, w, h, t_rel.as_secs_f64(), Some(fps), lut),
-        hw: crate::preview::stream_hw(m, &path),
+        hw: crate::preview::stream_decode(m, &path),
         path,
         w,
         h,

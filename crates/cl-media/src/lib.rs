@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -657,8 +657,11 @@ pub struct FrameStream {
 }
 
 struct StreamShared {
-    child: Mutex<Option<Child>>,
+    /// laufende Prozesse: Software und ggf. Hardware (siehe [`FrameStream::open_opts`])
+    children: Mutex<Vec<Child>>,
     stop: AtomicBool,
+    /// Bild, ab dem die Hardware lieferte (`u64::MAX`: nie)
+    hw_from: AtomicU64,
 }
 
 fn spawn_stream(
@@ -695,6 +698,66 @@ fn spawn_stream(
         .spawn()?)
 }
 
+/// Decodierung eines Wiedergabe-Stroms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hw {
+    Off,
+    /// Hardware von Anfang an (ohne ein Bild: Software)
+    On,
+    /// Software zuerst (erstes Bild schneller), die Hardware übernimmt nahtlos; nur für Quellen,
+    /// die die Software kurz mitdecodieren kann (sonst bremst sie die Hardware aus)
+    AfterSoftware,
+}
+
+/// Hardware-Strom, der so lange nicht aufholt: aufgeben, nur noch Software
+const HW_TAKEOVER_MAX: Duration = Duration::from_secs(4);
+
+/// Liest Bilder (`len` Bytes) aus `out` in einen Kanal (`ahead` voraus); endet mit dem Prozess.
+fn read_frames(mut out: std::process::ChildStdout, len: usize, ahead: usize) -> Receiver<Vec<u8>> {
+    let (tx, rx) = sync_channel(ahead);
+    let _ = std::thread::Builder::new().name("cl-frame-read".into()).spawn(move || loop {
+        let mut buf = vec![0u8; len];
+        if out.read_exact(&mut buf).is_err() || tx.send(buf).is_err() {
+            return;
+        }
+    });
+    rx
+}
+
+enum HwCatch {
+    /// Bild Nummer `n` (das nächste fällige): ab hier liefert die Hardware
+    Frame(Vec<u8>),
+    Wait,
+    Gone,
+}
+
+/// Bilder der Hardware vor Nummer `n` verwerfen (Software hat sie schon geliefert).
+fn hw_catch_up(rx: &Receiver<Vec<u8>>, read: &mut u64, n: u64) -> HwCatch {
+    loop {
+        match rx.try_recv() {
+            Ok(b) => {
+                *read += 1;
+                if *read > n {
+                    return HwCatch::Frame(b);
+                }
+            }
+            Err(TryRecvError::Empty) => return HwCatch::Wait,
+            Err(TryRecvError::Disconnected) => return HwCatch::Gone,
+        }
+    }
+}
+
+/// Nächstes Bild der Hardware ab Nummer `n` (blockierend), `None` am Ende.
+fn hw_next(rx: &Receiver<Vec<u8>>, read: &mut u64, n: u64) -> Option<Vec<u8>> {
+    loop {
+        let b = rx.recv().ok()?;
+        *read += 1;
+        if *read > n {
+            return Some(b);
+        }
+    }
+}
+
 impl FrameStream {
     pub fn open(path: &Path, start: Time, w: u32, h: u32, fps: Rational) -> Result<Self> {
         Self::open_fx(path, start, w, h, fps, None)
@@ -709,12 +772,15 @@ impl FrameStream {
         fps: Rational,
         graph: Option<&str>,
     ) -> Result<Self> {
-        Self::open_opts(path, start, w, h, fps, graph, false)
+        Self::open_opts(path, start, w, h, fps, graph, Hw::Off)
     }
 
-    /// Wie [`FrameStream::open_fx`]; `hw`: Hardware-Decodierung versuchen (höchstens
-    /// [`MAX_HW_DECODERS`] gleichzeitig). Liefert der Hardware-Weg kein einziges Bild, läuft
-    /// derselbe Strom in Software weiter.
+    /// Wie [`FrameStream::open_fx`]; `hw`: Hardware-Decodierung (höchstens [`MAX_HW_DECODERS`]
+    /// gleichzeitig), siehe [`Hw`]. Ein Hardware-Decoder braucht bis zum ersten Bild 0,3–0,8 s
+    /// länger (gemessen FFmpeg 8.1/D3D11VA, Suche ab dem Keyframe); mit [`Hw::AfterSoftware`]
+    /// laufen beide ab derselben Stelle, und sobald die Hardware das nächste fällige Bild hat,
+    /// übernimmt sie und die Software endet. Liefert die Hardware gar nichts, bleibt es bei
+    /// Software (für den Rest der Sitzung, siehe `hw_failed`).
     pub fn open_opts(
         path: &Path,
         start: Time,
@@ -722,74 +788,133 @@ impl FrameStream {
         h: u32,
         fps: Rational,
         graph: Option<&str>,
-        hw: bool,
+        hw: Hw,
     ) -> Result<Self> {
-        let mut slot = if hw { HwSlot::acquire(path) } else { None };
+        let slot = if hw == Hw::Off { None } else { HwSlot::acquire(path) };
         let spawn = {
             let (path, graph) = (path.to_path_buf(), graph.map(str::to_string));
-            // Wiedergabe: vor anderer Last (siehe `raise_priority`)
             move |accel: Option<&str>| -> Result<Child> {
                 let c = spawn_stream(&path, start, (w, h), fps, graph.as_deref(), accel)?;
+                // Wiedergabe: vor anderer Last (siehe `raise_priority`)
                 raise_priority(&c);
                 Ok(c)
             }
         };
-        let mut child = spawn(slot.as_ref().map(|s| s.accel))?;
-        let mut stdout = child.stdout.take().expect("piped");
+        let frame_len = (w * h * 4) as usize;
+        let mut children = Vec::new();
+        let mut start_one = |accel: Option<&str>, ahead: usize| -> Result<(u32, Receiver<Vec<u8>>)> {
+            let mut c = spawn(accel)?;
+            let r = (c.id(), read_frames(c.stdout.take().expect("piped"), frame_len, ahead));
+            children.push(c);
+            Ok(r)
+        };
+        let sw = if slot.is_none() || hw == Hw::AfterSoftware { Some(start_one(None, 1)?) } else { None };
+        let hw_proc = match &slot {
+            // ohne Software-Strom muss die Hardware starten, sonst nur versuchen
+            Some(s) if sw.is_none() => Some(start_one(Some(s.accel), 2)?),
+            Some(s) => start_one(Some(s.accel), 2).ok(),
+            None => None,
+        };
+        let mut slot = slot.filter(|_| hw_proc.is_some());
+        let hw = hw_proc;
         let shared = Arc::new(StreamShared {
-            child: Mutex::new(Some(child)),
+            children: Mutex::new(children),
             stop: AtomicBool::new(false),
+            hw_from: AtomicU64::new(u64::MAX),
         });
         let (tx, rx) = sync_channel::<RgbaFrame>(6);
-        let frame_len = (w * h * 4) as usize;
         let sh = shared.clone();
         let path = path.to_path_buf();
         std::thread::Builder::new()
             .name("cl-frame-stream".into())
             .spawn(move || {
-                let mut retried = false;
-                loop {
-                    let mut n = 0u64;
-                    loop {
-                        let mut buf = vec![0u8; frame_len];
-                        if stdout.read_exact(&mut buf).is_err() {
-                            break;
+                let send = |data: Vec<u8>| tx.send(RgbaFrame { width: w, height: h, data }).is_ok();
+                let end = |pid: u32| {
+                    let mut g = sh.children.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some(i) = g.iter().position(|c| c.id() == pid) {
+                        let mut c = g.remove(i);
+                        let _ = c.kill();
+                        let _ = c.wait();
+                    }
+                };
+                let (mut sw, mut hw) = (sw, hw);
+                // gesendete Bilder, von der Hardware gelesene Bilder
+                let (mut n, mut hw_n) = (0u64, 0u64);
+                let opened = std::time::Instant::now();
+                let mut fallback = false;
+                while !sh.stop.load(Ordering::Acquire) {
+                    let catch = match (&sw, &hw) {
+                        (Some(_), Some((_, h))) => Some(hw_catch_up(h, &mut hw_n, n)),
+                        _ => None,
+                    };
+                    match catch {
+                        Some(HwCatch::Frame(buf)) => {
+                            if let Some((pid, _)) = sw.take() {
+                                end(pid);
+                            }
+                            sh.hw_from.store(n, Ordering::Release);
+                            if !send(buf) {
+                                break;
+                            }
+                            n += 1;
+                            continue;
                         }
-                        n += 1;
-                        if tx.send(RgbaFrame { width: w, height: h, data: buf }).is_err() {
-                            sh.stop.store(true, Ordering::Release);
-                            break;
+                        Some(HwCatch::Wait) if n == 0 || opened.elapsed() < HW_TAKEOVER_MAX => {}
+                        // ohne ein einziges Bild zu Ende bzw. holt nicht auf: nur noch Software
+                        Some(c) => {
+                            if matches!(c, HwCatch::Gone) && hw_n == 0 && n > 0 {
+                                hw_failed(&path);
+                            }
+                            if let Some((pid, _)) = hw.take() {
+                                end(pid);
+                            }
+                            slot = None;
+                        }
+                        None => {}
+                    }
+                    let next = match (&sw, &hw) {
+                        (Some((_, s)), Some(_)) => match s.recv_timeout(Duration::from_millis(5)) {
+                            Ok(b) => Some(b),
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                            // Software zu Ende: weiter mit der Hardware (ab dem nächsten Bild)
+                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                                sw = None;
+                                continue;
+                            }
+                        },
+                        (Some((_, s)), None) => s.recv().ok(),
+                        (None, Some((_, h))) => hw_next(h, &mut hw_n, n),
+                        (None, None) => None,
+                    };
+                    // nur Hardware und kein einziges Bild: in Software noch einmal
+                    if next.is_none() && n == 0 && hw.is_some() && sw.is_none() && !fallback && !sh.stop.load(Ordering::Acquire) {
+                        fallback = true;
+                        if let Some((pid, _)) = hw.take() {
+                            end(pid);
+                        }
+                        slot = None;
+                        match spawn(None) {
+                            Ok(mut c) => {
+                                sw = Some((c.id(), read_frames(c.stdout.take().expect("piped"), frame_len, 1)));
+                                sh.children.lock().unwrap_or_else(|e| e.into_inner()).push(c);
+                                continue;
+                            }
+                            Err(_) => break,
                         }
                     }
-                    if retried && n > 0 {
+                    if fallback && n == 0 && next.is_some() {
                         hw_failed(&path);
                     }
-                    // Hardware-Weg ohne ein einziges Bild: in Software noch einmal
-                    if n > 0 || slot.is_none() || sh.stop.load(Ordering::Acquire) {
+                    let Some(buf) = next else { break };
+                    if !send(buf) {
                         break;
                     }
-                    slot = None;
-                    retried = true;
-                    let mut g = sh.child.lock().unwrap_or_else(|e| e.into_inner());
-                    if let Some(mut old) = g.take() {
-                        let _ = old.kill();
-                        let _ = old.wait();
-                    }
-                    if sh.stop.load(Ordering::Acquire) {
-                        break;
-                    }
-                    match spawn(None) {
-                        Ok(mut c) => {
-                            stdout = c.stdout.take().expect("piped");
-                            *g = Some(c);
-                        }
-                        Err(_) => break,
-                    }
+                    n += 1;
                 }
                 drop(slot);
                 // Aufräumen hier statt im UI-Thread
-                let c = sh.child.lock().unwrap_or_else(|e| e.into_inner()).take();
-                if let Some(mut c) = c {
+                let cs = std::mem::take(&mut *sh.children.lock().unwrap_or_else(|e| e.into_inner()));
+                for mut c in cs {
                     let _ = c.kill();
                     let _ = c.wait();
                 }
@@ -802,6 +927,11 @@ impl FrameStream {
             fps,
             start,
         })
+    }
+
+    /// Bild, ab dem die Hardware lieferte (`None`: bisher nur Software)
+    pub fn hw_from(&self) -> Option<u64> {
+        Some(self.shared.hw_from.load(Ordering::Acquire)).filter(|n| *n != u64::MAX)
     }
 
     /// Nächstes Bild, falls schon dekodiert. `Ok(None)` = noch nicht bereit, `Err` = Ende.
@@ -824,7 +954,7 @@ impl Drop for FrameStream {
         // Nur beenden, nicht warten: Der Lese-Thread bekommt einen Lese- bzw. Sendefehler
         // (der Empfänger wird gleich danach verworfen) und holt den Prozess selbst ab.
         self.shared.stop.store(true, Ordering::Release);
-        if let Some(c) = self.shared.child.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        for c in self.shared.children.lock().unwrap_or_else(|e| e.into_inner()).iter_mut() {
             let _ = c.kill();
         }
     }
@@ -1075,7 +1205,7 @@ mod tests {
         assert!(d < 2.0, "mittlere Abweichung HW/SW {d:.2}");
         // Strom: gleiche Bildzahl und gleiches erstes Bild
         let count = |hw: bool| {
-            let s = FrameStream::open_opts(&clip, Time::from_secs_f64(1.0), 480, 270, Rational::new(30, 1), None, hw).unwrap();
+            let s = FrameStream::open_opts(&clip, Time::from_secs_f64(1.0), 480, 270, Rational::new(30, 1), None, if hw { Hw::On } else { Hw::Off }).unwrap();
             let first = s.next_blocking().unwrap();
             (1 + std::iter::from_fn(|| s.next_blocking()).count(), first.data)
         };
@@ -1083,6 +1213,44 @@ mod tests {
         let (n_hw, f_hw) = count(true);
         assert_eq!(n_sw, n_hw);
         assert!(mean_diff(&f_sw, &f_hw) < 2.0);
+    }
+
+    /// Hardware-Strom beginnt in Software (erstes Bild schneller) und die Hardware übernimmt
+    /// ohne Sprung: jedes Bild gleicht dem des reinen Software-Stroms, keins fehlt oder doppelt.
+    #[test]
+    fn hw_stream_starts_in_software_and_takes_over_seamlessly() {
+        if !ffmpeg_available() || hwaccel().is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let clip = gen(
+            dir.path(),
+            "lang.mp4",
+            &["-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=8", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "120"],
+        );
+        let works = decode_frame_opts(&clip, Time::from_secs_f64(3.0), 320, 180, None, true, None).is_ok_and(|(_, i)| i.hw);
+        // im Takt der Wiedergabe abholen (sonst ist die Software fertig, bevor die Hardware anläuft)
+        let frames = |hw: bool| {
+            let s = FrameStream::open_opts(&clip, Time::from_secs_f64(3.0), 320, 180, Rational::new(30, 1), None, if hw { Hw::AfterSoftware } else { Hw::Off }).unwrap();
+            let v: Vec<Vec<u8>> = std::iter::from_fn(|| {
+                std::thread::sleep(Duration::from_millis(20));
+                s.next_blocking().map(|f| f.data)
+            })
+            .collect();
+            (v, s.hw_from())
+        };
+        let (sw, none) = frames(false);
+        assert_eq!(none, None);
+        let (hw, from) = frames(true);
+        eprintln!("Hardware ab Bild {from:?} von {}", hw.len());
+        assert_ne!(from, Some(0), "erstes Bild aus der Software");
+        if works {
+            assert!(from.is_some(), "Hardware übernimmt");
+        }
+        assert_eq!(sw.len(), hw.len(), "kein Bild fehlt oder doppelt");
+        for (i, (a, b)) in sw.iter().zip(&hw).enumerate() {
+            assert!(mean_diff(a, b) < 2.0, "Bild {i} weicht ab");
+        }
     }
 
     /// Scheitert der Hardware-Weg (hier: Datei ohne Bild am Ende), kommt kein falsches

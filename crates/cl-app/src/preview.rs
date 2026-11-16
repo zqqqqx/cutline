@@ -786,7 +786,7 @@ pub struct OpenJob {
     pub h: u32,
     pub fps: Rational,
     pub graph: Option<String>,
-    pub hw: bool,
+    pub hw: cl_media::Hw,
 }
 
 /// Öffnet Wiedergabe-Ströme in einem eigenen, langlebigen Thread: der Prozessstart (5–20 ms unter
@@ -848,6 +848,17 @@ fn newest_per_layer(jobs: Vec<OpenJob>) -> Vec<OpenJob> {
 /// in Software kam ein einzelner 1080p60-Strom unter Fremdlast nicht mehr in Echtzeit mit). Proxys
 /// und 1080p30 sind in Software schnell genug, und das Öffnen eines Hardware-Decoders kostet
 /// 200–300 ms. Einzelbilder bleiben ganz in Software (Klick → Bild mit D3D11VA 0,2–0,4 s langsamer).
+/// Decodierung des Stroms: Hardware nach [`stream_hw`]; bis 1080p beginnt er in Software (erstes
+/// Bild 0,3–0,8 s früher, die Hardware übernimmt nach etwa 1 s). Größere Quellen gleich in
+/// Hardware: 4K in Software nebenher bremste beide (gemessen PL_gross: 38–53 statt 60 Bilder/s).
+pub fn stream_decode(m: &cl_core::MediaRef, path: &std::path::Path) -> cl_media::Hw {
+    match stream_hw(m, path) {
+        false => cl_media::Hw::Off,
+        true if m.width.max(m.height) <= 1920 && m.width.min(m.height) <= 1080 => cl_media::Hw::AfterSoftware,
+        true => cl_media::Hw::On,
+    }
+}
+
 pub fn stream_hw(m: &cl_core::MediaRef, path: &std::path::Path) -> bool {
     let codec = m.video_codec.as_deref().unwrap_or("").to_ascii_lowercase();
     let high_rate = m.fps.is_some_and(|f| f.as_f64() >= 50.0);
@@ -925,6 +936,12 @@ mod tests {
         assert!(stream_hw(&m(1080, 1920, 30, "hevc"), p), "Hochkant");
         assert!(!stream_hw(&m(1280, 720, 60, "hevc"), p));
         assert!(!stream_hw(&m(3840, 2160, 60, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
+        // bis 1080p beginnt der Strom in Software (erstes Bild früher), 4K gleich in Hardware
+        use cl_media::Hw;
+        assert_eq!(stream_decode(&m(1920, 1080, 60, "h264"), p), Hw::AfterSoftware);
+        assert_eq!(stream_decode(&m(1080, 1920, 30, "hevc"), p), Hw::AfterSoftware, "Hochkant");
+        assert_eq!(stream_decode(&m(3840, 2160, 60, "hevc"), p), Hw::On);
+        assert_eq!(stream_decode(&m(1920, 1080, 30, "h264"), p), Hw::Off);
     }
 
     #[test]
@@ -1032,7 +1049,7 @@ mod tests {
             h: 16,
             fps: Rational::new(30, 1),
             graph: None,
-            hw: false,
+            hw: cl_media::Hw::Off,
         };
         let jobs = vec![job(1, 1), job(2, 2), job(1, 3), job(1, 4), job(3, 5), job(2, 6)];
         let left: Vec<(u128, u64)> = newest_per_layer(jobs).iter().map(|j| (j.open.id, j.open.seq)).collect();
