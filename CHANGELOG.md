@@ -8,18 +8,68 @@
 ### English
 
 **New**
+- **Rebuilt player.** Playback starts right away, picture and sound stay in sync, and cutting while it plays no longer stalls the picture. If the computer gets busy, the preview quality drops automatically (shown as ½ or ¼ in the player) and comes back when you stop. Can be switched off under Settings → Performance.
+- **Proxies in pieces.** A proxy is usable seconds after the import – the part at the playhead is built first, a thin line at the bottom of the clip shows what is ready. Building continues after a restart instead of starting over.
+- **Drop files straight into the timeline.** Drag videos, images and audio from the file explorer onto the timeline; a preview shows where they land. Several files line up one after another, as one undo step.
+- **Guided import for large projects.** Importing a CapCut or Final Cut project shows each step with a counter and can be cancelled. At the end you see what was imported and what was not. Clips whose file is missing are kept and can be relinked. Nested (compound) clips are resolved.
+- **Audio track per clip.** For files with several audio tracks, pick the one to play in the inspector. CapCut projects with separated original sound and muted tracks now import with the right sound.
+- **Export of very large projects.** Projects with thousands of clips are exported in sections and joined at the end – before, the export could fail to start.
+- **Tracks.** Dropping a clip on a track of the wrong kind creates a matching track right there. Reorder tracks by dragging the track header. The "+" above the tracks adds one.
+- **Zoom out further.** The whole project fits with free room at both ends; the ruler goes up to hours.
+- **Log export.** Settings → About exports the log of the last 24 hours for troubleshooting – without project names, file paths or keys.
+- **What's new.** The update window shows the changes of each version in plain words.
 
 **Improved**
+- Opening, saving and autosaving large projects run in the background – no more frozen window. Leaving a project waits until it is really saved.
+- The timeline draws far faster with hundreds of clips; clips glide to their new place, zoom and scrolling are smooth.
+- Track names of text and effect tracks line up with the others.
+- Media tiles show their picture first; the scrub strip follows.
+- Epidemic Sound: downloaded tracks are kept and reused in other projects; clearer messages when the sign-in expired or a limit is reached.
+- Whisper subtitles work when the user folder contains an apostrophe.
+- One-time note when hardware encoding is only unavailable because the graphics driver is outdated.
 
 **Fixed**
+- Sound could be silent after importing a large CapCut project.
+- Slideshows with more than 150 photos and transitions can be exported.
+- "Zoom pulse" played at half speed in 60 fps projects.
+- An export range starting in the middle of an effect clip no longer jumps.
+- Voice recordings no longer lose audio when the disk is briefly busy.
+- "Create new token" no longer switches MCP off.
+- Tab and arrow keys work again on buttons and sliders; the space bar still starts playback.
+- Several rare cases in which changes or files could be lost (full disk, unplugged drive, two actions at once).
 
 ### Deutsch
 
 **Neu**
+- **Neuer Player.** Die Wiedergabe startet sofort, Bild und Ton bleiben synchron, und Schneiden während des Abspielens hält das Bild nicht mehr an. Wird der Rechner knapp, sinkt die Vorschauqualität automatisch (im Player als ½ oder ¼ zu sehen) und kommt im Stand zurück. Abschaltbar unter Einstellungen → Leistung.
+- **Proxys in Stücken.** Ein Proxy ist Sekunden nach dem Import nutzbar – die Stelle am Playhead wird zuerst gebaut, eine dünne Linie unten am Clip zeigt, was fertig ist. Nach einem Neustart geht der Bau weiter, statt von vorn zu beginnen.
+- **Dateien direkt in die Zeitleiste ziehen.** Videos, Bilder und Ton aus dem Explorer auf die Zeitleiste ziehen; eine Vorschau zeigt, wo sie landen. Mehrere Dateien reihen sich hintereinander, als ein Rückgängig-Schritt.
+- **Geführter Import großer Projekte.** Der Import eines CapCut- oder Final-Cut-Projekts zeigt jeden Schritt mit Zähler und lässt sich abbrechen. Am Ende steht, was übernommen wurde und was nicht. Clips, deren Datei fehlt, bleiben erhalten und lassen sich neu verknüpfen. Zusammengesetzte Clips werden aufgelöst.
+- **Tonspur je Clip.** Bei Dateien mit mehreren Tonspuren wählst du im Inspektor, welche spielt. CapCut-Projekte mit getrenntem Originalton und stummen Spuren kommen jetzt mit dem richtigen Ton an.
+- **Export sehr großer Projekte.** Projekte mit tausenden Clips werden in Abschnitten exportiert und am Ende zusammengefügt – vorher konnte der Export gar nicht starten.
+- **Spuren.** Ein Clip auf einer Spur der falschen Art legt genau dort eine passende Spur an. Spuren lassen sich am Spurkopf umsortieren. Das „+" über den Spuren fügt eine hinzu.
+- **Weiter herauszoomen.** Das ganze Projekt passt mit freiem Platz an beiden Enden; das Lineal reicht bis Stunden.
+- **Protokoll exportieren.** Einstellungen → Über exportiert das Protokoll der letzten 24 Stunden zur Fehlersuche – ohne Projektnamen, Dateipfade oder Schlüssel.
+- **Was ist neu.** Das Update-Fenster zeigt die Änderungen jeder Version in einfachen Worten.
 
 **Verbessert**
+- Öffnen, Speichern und automatisches Speichern großer Projekte laufen im Hintergrund – kein eingefrorenes Fenster mehr. Beim Verlassen eines Projekts wird gewartet, bis es wirklich gespeichert ist.
+- Die Zeitleiste zeichnet bei hunderten Clips um ein Vielfaches schneller; Clips gleiten an ihren neuen Platz, Zoom und Rollen laufen weich.
+- Die Namen von Text- und Effektspuren stehen in derselben Spalte wie die übrigen.
+- Medien-Kacheln zeigen zuerst ihr Bild, der Streifen zum Durchblättern folgt.
+- Epidemic Sound: Geladene Titel bleiben vorrätig und werden in anderen Projekten wiederverwendet; klarere Meldungen bei abgelaufener Anmeldung und erreichtem Limit.
+- Whisper-Untertitel funktionieren auch, wenn der Benutzerordner einen Apostroph enthält.
+- Einmaliger Hinweis, wenn die Hardware-Kodierung nur wegen eines veralteten Grafiktreibers nicht verfügbar ist.
 
 **Behoben**
+- Nach dem Import eines großen CapCut-Projekts konnte der Ton stumm sein.
+- Diashows mit mehr als 150 Fotos und Übergängen lassen sich exportieren.
+- „Zoom-Puls" lief in Projekten mit 60 Bildern/s halb so schnell.
+- Ein Export-Bereich, der mitten in einem Effekt-Clip beginnt, springt nicht mehr.
+- Sprachaufnahmen verlieren keinen Ton mehr, wenn die Platte kurz beschäftigt ist.
+- „Neues Token erzeugen" schaltet MCP nicht mehr ab.
+- Tab und Pfeiltasten funktionieren wieder auf Knöpfen und Reglern; die Leertaste startet weiterhin die Wiedergabe.
+- Mehrere seltene Fälle, in denen Änderungen oder Dateien verloren gehen konnten (volle Platte, abgezogenes Laufwerk, zwei Aktionen gleichzeitig).
 
 ## 0.11.1 – 2026-11-15
 
