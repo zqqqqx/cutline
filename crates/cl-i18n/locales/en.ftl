@@ -20,7 +20,7 @@ import-media = Import media …
 drop-hint = Drag and drop files here
 media-empty = No media yet. Import videos, images or audio.
 add-to-timeline = Add to timeline
-media-probe-error = Could not read { $file }: { $error }
+media-probe-error = Cannot read file: { $file }
 media-imported = { $count ->
     [one] Imported one item
    *[other] Imported { $count } items

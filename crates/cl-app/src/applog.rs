@@ -279,10 +279,52 @@ pub fn tilde(text: &str, home: &str) -> String {
     out
 }
 
-/// Inhalte unkenntlich machen (für Meldungen und Export-Fehler; Protokolle landen in öffentlichen Issues):
-/// Namen in „…“ werden `***`, Pfade (`C:\`, `C:/`, `\\`, `~/`, `~\` oder `/` am Wortanfang, bis Zeilenende
-/// oder `: `, `"`, `'`, `)`, `“`) werden `<pfad>` mit Endung.
+/// Endungen, an denen ein einzelner Dateiname (ohne Ordner) in einer Meldung erkannt wird
+const NAME_EXTS: &[&str] = &[
+    "mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts", "wmv", "flv", "3gp", "mxf", "mpg", "mpeg", "ts", "mp3", "wav",
+    "m4a", "aac", "flac", "ogg", "opus", "wma", "aif", "aiff", "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff",
+    "heic", "svg", "cutline", "srt", "vtt", "ass", "ttf", "otf", "zip", "lut", "cube",
+];
+
+/// Einzelne Dateinamen (`kaputt_text.mp4`) werden `<datei>` mit Endung; schon ersetzte (`<pfad>.mp4`)
+/// bleiben. shortcut: ein Name mit Leerzeichen verliert nur sein letztes Wort – Meldungen setzen
+/// Namen deshalb in „…“.
+fn anon_names(s: &str) -> String {
+    let sep = |c: char| c.is_whitespace() || "\"'()[]„“,;=".contains(c);
+    let mut out = String::with_capacity(s.len());
+    let mut start = 0;
+    for (i, c) in s.char_indices().chain(std::iter::once((s.len(), ' '))) {
+        if !sep(c) {
+            continue;
+        }
+        let w = &s[start..i];
+        // „name.mp4: Fehler“ – der Doppelpunkt gehört nicht zum Namen
+        let core = w.trim_end_matches([':', '.']);
+        match core.rsplit_once('.') {
+            Some((stem, ext)) if !stem.is_empty() && !core.starts_with('<') && NAME_EXTS.contains(&ext.to_ascii_lowercase().as_str()) => {
+                out.push_str("<datei>.");
+                out.push_str(ext);
+                out.push_str(&w[core.len()..]);
+            }
+            _ => out.push_str(w),
+        }
+        if i < s.len() {
+            out.push(c);
+        }
+        start = i + c.len_utf8();
+    }
+    out
+}
+
+/// Inhalte unkenntlich machen (für Meldungen, Export-Fehler und das exportierte Protokoll; Protokolle
+/// landen in öffentlichen Issues): Namen in „…“ werden `***`, Pfade (`C:\`, `C:/`, `\\`, `~/`, `~\` oder
+/// `/` am Wortanfang, bis Zeilenende oder `: `, ` · `, `"`, `'`, `)`, `“`) werden `<pfad>` mit Endung,
+/// einzelne Dateinamen `<datei>` mit Endung.
 pub fn anon(s: &str) -> String {
+    anon_names(&anon_paths(s))
+}
+
+fn anon_paths(s: &str) -> String {
     let mut q = String::with_capacity(s.len());
     let mut parts = s.split('„');
     q.push_str(parts.next().unwrap_or_default());
@@ -316,6 +358,7 @@ pub fn anon(s: &str) -> String {
             && !matches!(b[e], b'\n' | b'\r' | b'"' | b'\'' | b')')
             && !(b[e] == b':' && matches!(b.get(e + 1), None | Some(b' ')))
             && !b[e..].starts_with("“".as_bytes())
+            && !b[e..].starts_with(" · ".as_bytes())
         {
             e += 1;
         }
@@ -875,7 +918,8 @@ pub fn header(system: &str, ui: &str, mut settings: serde_json::Value, packages:
     redact(&text)
 }
 
-/// Ganze Exportdatei: Kopf + Zeilen der letzten 24 Stunden, Benutzerordner als `~`
+/// Ganze Exportdatei: Kopf + Zeilen der letzten 24 Stunden ohne Pfade und Dateinamen ([`anon`]),
+/// Benutzerordner als `~`
 pub fn export_text(dir: &Path, head: &str, now: i64, home: &str) -> String {
     let today = (now + offset() * 1000).div_euclid(DAY_MS);
     let texts: Vec<String> = log_files(dir)
@@ -884,7 +928,9 @@ pub fn export_text(dir: &Path, head: &str, now: i64, home: &str) -> String {
         .filter_map(|(_, p)| std::fs::read(p).ok())
         .map(|b| String::from_utf8_lossy(&b).into_owned())
         .collect();
-    tilde(&redact(&format!("{head}{}", last_24h(&texts, now))), home)
+    let text = redact(&format!("{head}{}", last_24h(&texts, now)));
+    let text: Vec<String> = text.split_inclusive('\n').map(anon).collect();
+    tilde(&text.concat(), home)
 }
 
 /// Vorschlag für den Dateinamen: `cutline-protokoll-JJJJ-MM-TT-HHMM.txt`
@@ -1022,6 +1068,33 @@ mod tests {
             ffmpeg_cmd(&args),
             "ffmpeg -y -i <pfad>.mov -/filter_complex graph.txt -c:v libx264 <pfad>.mp4"
         );
+    }
+
+    /// Zeilen aus einem exportierten Protokoll (Klicktest): Pfade mit `~/` und gemischten Trennern,
+    /// Dateinamen in Meldungen – im Export bleibt nur die Endung.
+    #[test]
+    fn exported_log_has_no_file_or_project_names() {
+        let lines = [
+            r"2026-11-16 19:09:17.136 +01:00 INFO  export: fertig nach 245.4 s: C:\Users\nutzer/AppData/Local/Temp/qa/K5_proj\entwurf.mp4 · Some((852, 480, Rational { num: 60, den: 1 }, Mp4, H264, Recommended, Nvenc, true))",
+            r"2026-11-16 19:10:31.628 +01:00 INFO  export: Fehler nach 27.3 s: ~/AppData/Local/Temp/qa/K5_proj\K5_abbruch.mp4 · Some((852, 480))",
+            r"2026-11-16 19:11:56.839 +01:00 INFO  export: fertig nach 12.0 s: ~/AppData/Local/Temp/qa/K5_proj\entwurf.gif · Some((1920, 1080))",
+            "2026-11-16 18:44:12.469 +01:00 INFO  proxy: videoplayback.mp4 fertig in 129747 ms",
+            "2026-11-16 18:51:54.712 +01:00 ERROR meldung: kaputt_text.mp4 konnte nicht gelesen werden: Datei kann nicht gelesen werden",
+            "2026-11-16 18:52:57.789 +01:00 INFO  meldung: Vorlage „Mein Projekt“ gespeichert",
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let now = lines.iter().filter_map(|l| parse_stamp(l)).max().unwrap() + 1000;
+        std::fs::write(dir.path().join(file_name(now, offset())), lines.join("\n") + "\n").unwrap();
+        let out = export_text(dir.path(), "", now, r"C:\Users\nutzer");
+        for bad in ["entwurf", "K5_", "videoplayback", "kaputt_text", "AppData", "Mein Projekt", "nutzer"] {
+            assert!(!out.contains(bad), "{bad} in\n{out}");
+        }
+        assert!(out.contains("fertig nach 245.4 s: <pfad>.mp4 · Some((852, 480, Rational { num: 60, den: 1 }"), "{out}");
+        assert!(out.contains("<pfad>.gif · ") && out.contains("proxy: <datei>.mp4 fertig") && out.contains("meldung: <datei>.mp4 konnte"), "{out}");
+        // Versionen, Zeiten und Zahlen bleiben
+        for s in ["Cutline 0.11.1 (Release)", "18:44:12.469", "graph.txt", "10.0.26300.9974", "245.4 s"] {
+            assert_eq!(anon(s), s);
+        }
     }
 
     fn read_all(dir: &Path) -> String {

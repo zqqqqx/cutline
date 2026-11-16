@@ -101,6 +101,21 @@ pub fn dialog() -> rfd::FileDialog {
     }
 }
 
+/// Zu öffnendes Projekt aus der Befehlszeile: das erste Argument, das keine Option ist. Ein leeres
+/// Argument (Startskript mit `"$1"` ohne Projekt) ist keins – Windows meldete sonst „Pfad nicht
+/// gefunden (os error 3)“ beim Start.
+fn open_arg(args: &[String]) -> Option<std::path::PathBuf> {
+    args.iter().skip(1).find(|a| !a.starts_with("--") && !a.trim().is_empty()).map(std::path::PathBuf::from)
+}
+
+#[test]
+fn empty_argument_opens_no_project() {
+    let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(open_arg(&a(&["cutline", ""])), None);
+    assert_eq!(open_arg(&a(&["cutline", " ", "--x", "p.cutline"])), Some("p.cutline".into()));
+    assert_eq!(open_arg(&a(&["cutline"])), None);
+}
+
 fn main() -> anyhow::Result<()> {
     app::perf_mark("main");
     let args: Vec<String> = std::env::args().collect();
@@ -111,11 +126,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     applog::init();
-    let open = args
-        .iter()
-        .skip(1)
-        .find(|a| !a.starts_with("--"))
-        .map(std::path::PathBuf::from);
+    let open = open_arg(&args);
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Cutline")
         .with_inner_size([1440.0, 900.0])

@@ -338,7 +338,7 @@ impl App {
             };
             let done = !d.entries.iter().any(|e| matches!(e.state, State::Probing));
             for (file, error) in failed {
-                self.toast_err(self.i18n.t_args("media-probe-error", &[("file", file.into()), ("error", error.into())]));
+                self.probe_failed(&file, &error);
             }
             if done {
                 let d = self.drops.list.remove(i);
@@ -350,6 +350,31 @@ impl App {
                 i += 1;
             }
         }
+    }
+
+    /// Vor dem Verlassen des Projekts: laufende Ablagen zu Ende prüfen und übernehmen, damit
+    /// Abgelegtes vollständig im gespeicherten Stand liegt – nie halb und nie später in einem
+    /// geschlossenen Projekt. Hängt die Prüfung länger als `max`, wird die Ablage verworfen.
+    pub fn finish_file_drops(&mut self, max: Duration) {
+        let end = std::time::Instant::now() + max;
+        loop {
+            self.poll_file_drops();
+            if self.drops.list.is_empty() {
+                return;
+            }
+            if std::time::Instant::now() >= end {
+                log::warn!(target: "ablage", "Prüfung dauert zu lange, {} Ablage(n) verworfen", self.drops.list.len());
+                self.drops.list.clear();
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Datei unlesbar: kurze Meldung mit dem Namen; FFmpegs Rohtext nur ins Protokoll
+    pub(crate) fn probe_failed(&mut self, file: &str, error: &str) {
+        log::warn!(target: "import", "{file}: {error}");
+        self.toast_err(self.i18n.t_args("media-probe-error", &[("file", file.into())]));
     }
 
     /// Geprüfte Dateien übernehmen (Medien + Clips) – alles ein Verlaufsschritt.
@@ -712,15 +737,12 @@ mod tests {
         assert_eq!(shown, [(Text, false, 0), (Video, false, 1), (Video, false, 0), (Audio, true, 0), (Audio, false, 1), (Audio, false, 0)]);
     }
 
-    /// Ablage und Aufgabe laufen noch, als „Zur Startseite“ gedrückt wird: ihr Ergebnis darf das
+    /// Eine Aufgabe läuft noch, als „Zur Startseite“ gedrückt wird: ihr Ergebnis darf das
     /// verlassene Projekt nicht mehr ändern (es würde später ohne Sperre gespeichert).
     #[test]
     fn results_after_going_home_do_not_touch_the_left_project() {
         let (mut app, _home, _g) = test_app();
         app.set_doc(Project::new("Verlassen"));
-        let (tx, rx) = channel();
-        let entry = Entry { path: PathBuf::from("spät.mp4"), audio: false, state: State::Probing };
-        app.drops.list.push(Pending { target: None, entries: vec![entry], rx });
         let (go_tx, go_rx) = channel::<()>();
         app.tasks.spawn(&egui::Context::default(), "spät", "Spät", move |_, _| {
             let _ = go_rx.recv();
@@ -729,15 +751,33 @@ mod tests {
             }))
         });
         app.go_home();
-        // mit der Korrektur ist der Empfänger schon weg
-        let _ = tx.send((0, Ok(media(MediaKind::Video, 2.0, "spät.mp4"))));
         go_tx.send(()).unwrap();
-        app.poll_file_drops();
         while !app.tasks.list.is_empty() {
             app.poll_tasks();
             std::thread::yield_now();
         }
         app.sync_project();
         assert!(app.project.media.is_empty(), "{:?}", app.project.media);
+    }
+
+    /// Abgelegt und sofort „Zur Startseite“: die noch geprüften Dateien landen vollständig im
+    /// gespeicherten Stand, bevor das Projekt zugeht (vorher entschied der Zufall: schon geprüft →
+    /// drin, sonst verworfen).
+    #[test]
+    fn files_still_probing_land_before_going_home() {
+        let (mut app, home, _g) = test_app();
+        app.set_doc(Project::new("Ablegen"));
+        let file = home.path().join("Ablegen.cutline");
+        app.project_path = Some(file.clone());
+        let (tx, rx) = channel();
+        let entries = (0..2).map(|i| Entry { path: PathBuf::from(format!("b{i}.png")), audio: false, state: State::Probing }).collect();
+        let target = Target { at: Time::ZERO, video: Lane::Auto, audio: Lane::Auto };
+        app.drops.list.push(Pending { target: Some(target), entries, rx });
+        tx.send((0, Ok(media(MediaKind::Image, 0.0, "b0.png")))).unwrap();
+        std::thread::spawn(move || tx.send((1, Ok(media(MediaKind::Image, 0.0, "b1.png")))));
+        app.go_home();
+        let saved = std::fs::read_to_string(&file).unwrap();
+        assert!(saved.contains("b0.png") && saved.contains("b1.png"), "{saved}");
+        assert!(app.drops.list.is_empty());
     }
 }

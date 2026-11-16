@@ -136,8 +136,9 @@ fn gcd(a: u32, b: u32) -> u32 {
 
 struct Running {
     progress: Arc<Mutex<f32>>,
-    /// Lautheit wird vorher gemessen (erster Teil des Fortschritts)
-    measures: bool,
+    /// erst nach dem Bau des Auftrags im Hintergrund bekannt (bis dahin „Wird vorbereitet …“):
+    /// wird die Lautheit vorher gemessen (erster Teil des Fortschritts), Vorschaudatei von FFmpeg
+    job: Arc<Mutex<Option<(bool, Option<PathBuf>)>>>,
     result: Arc<Mutex<Option<Result<(), String>>>>,
     cancel: Arc<AtomicBool>,
     started: Instant,
@@ -147,8 +148,6 @@ struct Running {
     sidecars: Vec<(PathBuf, String)>,
     /// Einstellungen beim Start (Fingerabdruck für „Erneut exportieren“)
     settings: ExportSettings,
-    /// Vorschaubild, das FFmpeg während des Exports laufend überschreibt
-    preview: Option<PathBuf>,
     /// geladene Live-Bilder; Texturen werden mit `Running` freigegeben
     live: Live,
 }
@@ -555,8 +554,9 @@ impl ExportDialog {
                         }
                         let live = match self.running.as_mut() {
                             Some(r) => {
-                                if let Some(pv) = &r.preview {
-                                    r.live.poll(ui.ctx(), pv);
+                                let pv = r.job.lock().unwrap().as_ref().and_then(|j| j.1.clone());
+                                if let Some(pv) = pv {
+                                    r.live.poll(ui.ctx(), &pv);
                                 }
                                 let prog = *r.progress.lock().unwrap();
                                 paint_live(ui, rect, &r.live, prog)
@@ -596,7 +596,7 @@ impl ExportDialog {
                                 // Platz für den Ordner-Knopf lassen, sonst ragt die Zeile über das Fenster hinaus
                                 let w = (ui.available_width() - 32.0).max(40.0);
                                 ui.allocate_ui(vec2(w, 20.0), |ui| {
-                                    ui.add(egui::Label::new(RichText::new(crate::tr(self.folder.display().to_string())).small()).truncate());
+                                    ui.add(egui::Label::new(RichText::new(crate::paths::shown(&self.folder)).small()).truncate());
                                 });
                                 if theme::icon_button(ui, icon::FOLDER_OPEN, "Ordner wählen", true, false).clicked() {
                                     if let Some(d) = crate::dialog().set_directory(&self.folder).pick_folder() {
@@ -782,7 +782,17 @@ impl ExportDialog {
                 }
                 if let Some(r) = &self.running {
                     let prog = *r.progress.lock().unwrap();
-                    export_progress(ui, prog, r.started.elapsed().as_secs_f32(), r.measures && prog < cl_export::MEASURE_SHARE);
+                    let measures = r.job.lock().unwrap().as_ref().map(|j| j.0);
+                    match measures {
+                        Some(m) => export_progress(ui, prog, r.started.elapsed().as_secs_f32(), m && prog < cl_export::MEASURE_SHARE),
+                        None => {
+                            ui.label(RichText::new(crate::tr("Wird vorbereitet …")).color(theme::TEXT()));
+                            ui.add_space(4.0);
+                            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), egui::Sense::hover());
+                            crate::widgets::busy_line(ui.painter(), rect);
+                            ui.ctx().request_repaint();
+                        }
+                    }
                 } else if let Some((at, secs)) = self.done {
                     if !export_done(ui, at, secs) {
                         self.done = None;
@@ -843,7 +853,7 @@ impl ExportDialog {
                 if crate::dialog::title(ui, "Datei existiert bereits") {
                     choice = Some(2);
                 }
-                ui.label(RichText::new(crate::tr(file.display().to_string())).small().color(theme::TEXT_DIM()));
+                ui.label(RichText::new(crate::paths::shown(&file)).small().color(theme::TEXT_DIM()));
                 crate::dialog::footer(ui, |ui| {
                     if ui.add(theme::primary("Anderen Namen")).clicked() {
                         choice = Some(1);
@@ -889,45 +899,43 @@ impl ExportDialog {
             let sidecars = sidecars(p, &s, self.also_srt, &out);
             let fonts = fonts.clone();
             let resolver = move |fam: Option<&str>| fam.and_then(|f| fonts.get(f).cloned());
-            match cl_export::build(p, &s, &resolver, &out) {
-                Ok(job) => {
-                    let measures = job.measures_loudness();
-                    let preview = job.preview_path().map(Path::to_path_buf);
-                    let progress = Arc::new(Mutex::new(0.0));
-                    let result = Arc::new(Mutex::new(None));
-                    let cancel = Arc::new(AtomicBool::new(false));
-                    let (pr, rs, cc, c2) = (
-                        progress.clone(),
-                        result.clone(),
-                        cancel.clone(),
-                        ctx.clone(),
-                    );
-                    std::thread::spawn(move || {
-                        let r = cl_export::run(&job, cc, |x| {
-                            *pr.lock().unwrap() = x;
-                            c2.request_repaint();
-                        });
-                        if let Err(e) = &r { log::error!(target: "export", "{} · Befehl: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
-                        *rs.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
+            let progress = Arc::new(Mutex::new(0.0));
+            let job_info = Arc::new(Mutex::new(None));
+            let result = Arc::new(Mutex::new(None));
+            let cancel = Arc::new(AtomicBool::new(false));
+            let (pr, ji, rs, cc, c2) = (progress.clone(), job_info.clone(), result.clone(), cancel.clone(), ctx.clone());
+            let (p, s2, out2) = (p.clone(), s.clone(), out.clone());
+            // Bau des Auftrags (bei großen Projekten Sekunden: Tonprüfung je Datei) nicht im Oberflächen-Faden
+            std::thread::spawn(move || {
+                let r = cl_export::build(&p, &s2, &resolver, &out2).and_then(|job| {
+                    if cc.load(Ordering::Relaxed) {
+                        return Err(cl_export::ExportError::Cancelled);
+                    }
+                    *ji.lock().unwrap() = Some((job.measures_loudness(), job.preview_path().map(Path::to_path_buf)));
+                    c2.request_repaint();
+                    let r = cl_export::run(&job, cc, |x| {
+                        *pr.lock().unwrap() = x;
                         c2.request_repaint();
                     });
-                    self.done = None;
-                    self.running = Some(Running {
-                        progress,
-                        measures,
-                        result,
-                        cancel,
-                        started: Instant::now(),
-                        rev: self.rev,
-                        sidecars,
-                        settings: s.clone(),
-                        preview,
-                        live: Live::default(),
-                    });
-                    self.last_output = Some(out);
-                }
-                Err(e) => self.error = Some(e.to_string()),
-            }
+                    if let Err(e) = &r { log::error!(target: "export", "{} · Befehl: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
+                    r
+                });
+                *rs.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
+                c2.request_repaint();
+            });
+            self.done = None;
+            self.running = Some(Running {
+                progress,
+                job: job_info,
+                result,
+                cancel,
+                started: Instant::now(),
+                rev: self.rev,
+                sidecars,
+                settings: s.clone(),
+                live: Live::default(),
+            });
+            self.last_output = Some(out);
         }
         toast
     }
@@ -1206,8 +1214,36 @@ fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
     // erst ein neues Enter bestätigt – mit „Anderen Namen“, nie Überschreiben
     // (leeres Projekt: Start scheitert mit Fehler)
     frame(&mut d, &ctx, &p, true);
-    assert!(!d.confirm_overwrite && d.error.is_some());
+    assert!(!d.confirm_overwrite);
+    finish(&mut d, &ctx, &p);
+    assert!(d.error.is_some());
     assert!(d.name.starts_with("t ("), "{}", d.name);
+}
+
+/// Bilder zeichnen, bis der Export-Faden fertig ist
+#[cfg(test)]
+fn finish(d: &mut ExportDialog, ctx: &egui::Context, p: &Project) {
+    let t0 = Instant::now();
+    while d.running.is_some() && t0.elapsed().as_secs() < 30 {
+        std::thread::yield_now();
+        frame(d, ctx, p, false);
+    }
+}
+
+#[test]
+fn export_job_is_built_off_the_ui_thread() {
+    // großer Entwurf: der Bau dauerte Sekunden im Oberflächen-Faden (Tonprüfung je Datei).
+    // Hier scheitert der Bau (leeres Projekt) – das Ergebnis kommt trotzdem erst aus dem Faden.
+    let (ctx, p) = (egui::Context::default(), Project::new("t"));
+    let dir = tempfile::tempdir().unwrap();
+    let mut d = ExportDialog::default();
+    *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
+    d.open_for(&p, None, 0, None);
+    d.folder = dir.path().to_path_buf();
+    frame(&mut d, &ctx, &p, true);
+    assert!(d.running.is_some() && d.error.is_none(), "Auftrag im Aufrufer gebaut");
+    finish(&mut d, &ctx, &p);
+    assert_eq!(d.error.as_deref(), Some("Das Projekt ist leer"));
 }
 
 #[test]
@@ -1262,14 +1298,13 @@ fn live_preview_reload_blend_and_partial_jpeg() {
 fn running(result: Option<Result<(), String>>) -> Running {
     Running {
         progress: Default::default(),
-        measures: false,
+        job: Default::default(),
         result: Arc::new(Mutex::new(result)),
         cancel: Default::default(),
         started: Instant::now(),
         rev: 0,
         sidecars: Vec::new(),
         settings: ExportSettings::from_project(&Project::new("t")),
-        preview: None,
         live: Live::default(),
     }
 }
@@ -1341,14 +1376,13 @@ fn sidecars_follow_range_and_wait_for_success() {
     for ok in [false, true] {
         d.running = Some(Running {
             progress: Default::default(),
-            measures: false,
+            job: Default::default(),
             result: Arc::new(Mutex::new(Some(if ok { Ok(()) } else { Err("x".into()) }))),
             cancel: Default::default(),
             started: Instant::now(),
             rev: 0,
             sidecars: v.clone(),
             settings: s.clone(),
-            preview: None,
             live: Live::default(),
         });
         frame(&mut d, &ctx, &p, false);

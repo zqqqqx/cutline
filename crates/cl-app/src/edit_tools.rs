@@ -110,14 +110,11 @@ impl App {
         let mut dur = c.duration.as_secs_f64();
         let mut src = c.source_in.as_secs_f64();
         let limit = source_limit(self, c);
+        let fps_r = self.project.settings.fps;
+        // dieselbe Rundung wie der Zeitcode („ab 00:00:03:19“)
         let fmt = move |v: f64, _: std::ops::RangeInclusive<usize>| {
-            let f = (v * fps).round() as i64;
-            format!(
-                "{}:{:02}.{:02}",
-                f / (fps.round() as i64 * 60),
-                f / fps.round() as i64 % 60,
-                f % fps.round() as i64
-            )
+            let (s, f) = Time::from_secs_f64(v).secs_frames(fps_r);
+            format!("{}:{:02}.{:02}", s / 60, s % 60, f)
         };
         let step = 1.0 / fps;
         let mut changed = false;

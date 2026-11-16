@@ -147,7 +147,8 @@ pub struct Load {
 /// Projekt lesen und vorbereiten (Hintergrund-Thread).
 pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
     progress.set(Step::Read, 0, 1, &path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    // Meldung nennt die Datei (sonst steht nur „Pfad nicht gefunden“ da)
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {} ({e})", crate::tr("Projekt konnte nicht geöffnet werden"), path.display()))?;
     progress.check()?;
     let project = Project::from_json(&text).map_err(|e| e.to_string())?;
     drop(text);
@@ -384,6 +385,14 @@ mod tests {
         let f = dir.join("p.cutline");
         std::fs::write(&f, p.to_json()).unwrap();
         f
+    }
+
+    /// Fehlende Projektdatei: die Meldung sagt, welche (nicht nur „Pfad nicht gefunden“)
+    #[test]
+    fn missing_project_file_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = load(&dir.path().join("weg").join("Urlaub.cutline"), &Progress::default()).err().unwrap();
+        assert!(e.contains("Urlaub.cutline") && e.starts_with("Projekt konnte nicht geöffnet werden"), "{e}");
     }
 
     #[test]

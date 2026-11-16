@@ -22,7 +22,7 @@ import-media = Medien importieren …
 drop-hint = Dateien hierher ziehen und ablegen
 media-empty = Noch keine Medien. Importiere Videos, Bilder oder Audio.
 add-to-timeline = Zur Zeitleiste hinzufügen
-media-probe-error = { $file } konnte nicht gelesen werden: { $error }
+media-probe-error = Datei kann nicht gelesen werden: { $file }
 media-imported = { $count ->
     [one] Ein Medium importiert
    *[other] { $count } Medien importiert

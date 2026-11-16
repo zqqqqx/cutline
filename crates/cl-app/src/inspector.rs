@@ -1544,13 +1544,13 @@ impl App {
             theme::row(ui, "Speicherort", |ui| {
                 ui.add(
                     egui::Label::new(
-                        RichText::new(crate::tr(p.display().to_string()))
+                        RichText::new(crate::paths::shown(p))
                             .small()
                             .color(theme::TEXT_DIM()),
                     )
                     .truncate(),
                 )
-                .on_hover_text(crate::tr(p.display().to_string()));
+                .on_hover_text(crate::paths::shown(p));
             });
         }
         theme::section(ui, "Format");

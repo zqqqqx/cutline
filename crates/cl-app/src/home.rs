@@ -795,7 +795,7 @@ impl App {
                 close |= crate::dialog::title(ui, "Projekt löschen?");
                 let name = self.home.entries.iter().find(|e| e.path == path).map(|e| e.name.clone()).unwrap_or_default();
                 ui.label(crate::tr(format!("„{name}“ wird in den Cutline-Papierkorb verschoben. Deine Medien-Dateien bleiben unverändert.")));
-                ui.label(RichText::new(crate::tr(paths::data_dir().join("Papierkorb").display().to_string())).small().color(theme::TEXT_DIM()));
+                ui.label(RichText::new(paths::shown(&paths::data_dir().join("Papierkorb"))).small().color(theme::TEXT_DIM()));
                 crate::dialog::footer(ui, |ui| {
                     if ui.add(theme::danger("Löschen")).clicked() {
                         let trash = paths::data_dir().join("Papierkorb");

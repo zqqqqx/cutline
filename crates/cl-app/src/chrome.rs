@@ -66,13 +66,14 @@ impl App {
     /// Laufende Hintergrundaufgaben (Proxy, Analyse, Untertitel, Import …) in der Statuszeile:
     /// Name, Fortschritts- bzw. Lauflinie, Abbrechen; mehrere = Zähler mit aufklappbarer Liste.
     /// Erscheint erst nach 150 ms (kurze Aufgaben blitzen nicht auf).
-    pub fn tasks_badge(&mut self, ui: &mut egui::Ui) {
-        let id = egui::Id::new("tasks-badge");
-        // gleichartige Aufgaben als eine Zeile („Freistellen ×3“), Proxys mit Gesamtfortschritt
+    /// Zeilen der Aufgaben-Anzeige: gleichartige Aufgaben als eine Zeile („Freistellen ×3“), Proxys
+    /// mit Gesamtfortschritt. Zwischen zwei Proxy-Aufträgen (und solange pausiert) steht die Runde
+    /// als Zeile ohne Aufgabe (leere Gruppe), damit Pausieren/Fortsetzen nicht verschwindet.
+    fn task_rows(&self) -> Vec<(String, f32, Vec<usize>)> {
         let keys: Vec<&str> = self.tasks.list.iter().map(|t| t.key.as_str()).collect();
         let groups = crate::tasks::groups(&keys);
         let (pd, pt) = (self.proxies.done, self.proxies.total);
-        let rows: Vec<(String, f32, Vec<usize>)> = groups
+        let mut rows: Vec<(String, f32, Vec<usize>)> = groups
             .into_iter()
             .map(|g| {
                 let t = &self.tasks.list[g[0]];
@@ -87,6 +88,15 @@ impl App {
                 (name, p, g)
             })
             .collect();
+        if pt > 0 && pd < pt && !self.proxies.stopped && self.settings.use_proxies && self.tasks.running("proxy").is_none() {
+            rows.push((crate::tr(format!("Proxys {} / {}", pd + 1, pt)), (pd as f32 / pt as f32).max(1e-3), Vec::new()));
+        }
+        rows
+    }
+
+    pub fn tasks_badge(&mut self, ui: &mut egui::Ui) {
+        let id = egui::Id::new("tasks-badge");
+        let rows = self.task_rows();
         let list: Vec<(&str, f32)> = rows.iter().map(|(n, p, _)| (n.as_str(), *p)).collect();
         let now = task_summary(&list);
         if !theme::loading(ui.ctx(), id, now.is_some()) {
@@ -136,7 +146,7 @@ impl App {
                     });
                 });
                 let (lr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 3.0), Sense::hover());
-                crate::widgets::task_line(ui.painter(), egui::Id::new(("task", self.tasks.list[g[0]].id)), lr, *p);
+                crate::widgets::task_line(ui.painter(), egui::Id::new(("task", g.first().map(|i| self.tasks.list[*i].id))), lr, *p);
                 ui.add_space(6.0);
             }
         });
@@ -145,7 +155,8 @@ impl App {
     /// Abbrechen (alle der Gruppe) und bei Proxys Pausieren/Fortsetzen; Abbrechen der Proxys
     /// beendet den Proxy-Bau für dieses Projekt.
     fn task_buttons(&mut self, ui: &mut egui::Ui, group: &[usize]) {
-        let proxy = group.iter().any(|i| self.tasks.list.get(*i).is_some_and(|t| t.key == "proxy"));
+        // leere Gruppe: Proxy-Runde zwischen zwei Aufträgen (siehe `task_rows`)
+        let proxy = group.is_empty() || group.iter().any(|i| self.tasks.list.get(*i).is_some_and(|t| t.key == "proxy"));
         if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
             if proxy {
                 self.stop_proxies();
@@ -605,6 +616,23 @@ mod scale_tests {
         assert!((two.progress.unwrap() - 0.4).abs() < 1e-6);
         assert_eq!(task_summary(&[("A", 0.2), ("B", 0.0), ("C", 1.0)]).unwrap().progress, None);
         assert_eq!(task_summary(&[("A", 0.2), ("B", 0.0), ("C", 1.0)]).unwrap().count, 3);
+    }
+
+    /// Pausieren der Proxys: zwischen zwei Aufträgen verschwand der Knopf (Klick ins Leere), und
+    /// trotz Pause begann der nächste Auftrag.
+    #[test]
+    fn proxy_pause_stays_between_builds_and_holds_the_next() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        app.settings.use_proxies = true;
+        (app.proxies.done, app.proxies.total) = (3, 10);
+        let rows = app.task_rows();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].2.is_empty() && rows[0].0.contains("4 / 10"), "{rows:?}");
+        app.proxies.stopped = true;
+        assert!(app.task_rows().is_empty(), "abgebrochen: keine Zeile");
+        assert!(crate::proxy::start_next(5, false, false));
+        assert!(!crate::proxy::start_next(5, false, true), "pausiert: kein neuer Auftrag");
+        assert!(!crate::proxy::start_next(5, true, false) && !crate::proxy::start_next(0, false, false));
     }
 
     #[test]
