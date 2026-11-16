@@ -35,9 +35,10 @@ jobs:
       - name: FFmpeg 8
         shell: pwsh
         run: |
-          # feste Version mit Prüfsumme; 8.1 statt 9: NVENC in 9 verlangt Treiber 610+, den es für ältere Karten (GTX 10) nicht gibt
-          Invoke-WebRequest https://github.com/GyanD/codexffmpeg/releases/download/8.1/ffmpeg-8.1-essentials_build.zip -OutFile ffmpeg.zip
-          if ((Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash -ne '8748283D821613D930B0E7BE685AAA9DF4CA6F0AD4D0C42FD02622B3623463C6') { throw 'FFmpeg: Prüfsumme stimmt nicht' }
+          # pinned build with checksum. 8.1, not 9: NVENC in 9 needs driver 610+, which older cards (GTX 10) never get.
+          # full shared build: has the whisper filter (subtitles) and is smaller than the static essentials build
+          Invoke-WebRequest https://github.com/GyanD/codexffmpeg/releases/download/8.1/ffmpeg-8.1-full_build-shared.zip -OutFile ffmpeg.zip
+          if ((Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash -ne 'E184E012CA9A3527ED45D61F8E250C50B07B8661D90849820EA754239049EFB4') { throw 'FFmpeg: Prüfsumme stimmt nicht' }
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
           $bin = (Get-ChildItem ffmpeg-dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1).Directory.FullName
           echo "$bin" >> $env:GITHUB_PATH

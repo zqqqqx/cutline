@@ -67,3 +67,10 @@ Abweichende Angaben:
 - Schmelzen: Lizenz MIT · Autor 0gust1; Ian McEwan, Ashima Arts · Quelle https://github.com/gl-transitions/gl-transitions/blob/master/transitions/LuminanceMelt.glsl
 - Sanft hineinzoomen: Lizenz MIT · Autor 0gust1 · Quelle https://github.com/gl-transitions/gl-transitions/blob/master/transitions/SimpleZoom.glsl
 - Drehen und zoomen: Lizenz MIT · Autor Fernando Kuteken · Quelle https://github.com/gl-transitions/gl-transitions/blob/master/transitions/RotateScaleFade.glsl
+
+## Bundled programs (Windows package)
+
+These are separate programs and libraries that Cutline starts or loads; they are not part of Cutline's source and keep their own licenses.
+
+- **FFmpeg 8.1** (`ffmpeg/`), "full shared" build by gyan.dev, licensed under the GNU General Public License v3. Unmodified binaries from <https://github.com/GyanD/codexffmpeg/releases/tag/8.1>; source code: <https://ffmpeg.org/download.html> (release 8.1) and the build's own notes at <https://www.gyan.dev/ffmpeg/builds/>.
+- **ONNX Runtime 1.31.1** (`onnxruntime.dll` / `libonnxruntime.so`), MIT License, <https://github.com/microsoft/onnxruntime>.

@@ -790,7 +790,16 @@ mod tests {
             assert!(!p.info.license.trim().is_empty(), "{} ohne Lizenz", p.info.id);
             assert!(p.entries.iter().all(|e| !e.license.trim().is_empty()), "{}", p.info.id);
         }
-        let want = catalog::credits(&packs, &|s| s.to_string());
+        // dahinter fest: die Programme, die das Windows-Paket mitbringt (FFmpeg steht unter der GPL)
+        let bundled = "
+## Bundled programs (Windows package)
+
+These are separate programs and libraries that Cutline starts or loads; they are not part of Cutline's source and keep their own licenses.
+
+- **FFmpeg 8.1** (`ffmpeg/`), \"full shared\" build by gyan.dev, licensed under the GNU General Public License v3. Unmodified binaries from <https://github.com/GyanD/codexffmpeg/releases/tag/8.1>; source code: <https://ffmpeg.org/download.html> (release 8.1) and the build's own notes at <https://www.gyan.dev/ffmpeg/builds/>.
+- **ONNX Runtime 1.31.1** (`onnxruntime.dll` / `libonnxruntime.so`), MIT License, <https://github.com/microsoft/onnxruntime>.
+";
+        let want = catalog::credits(&packs, &|s| s.to_string()) + bundled;
         let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../THIRD_PARTY.md");
         if std::env::var_os("CUTLINE_WRITE_THIRD_PARTY").is_some() {
             std::fs::write(&file, &want).unwrap();
