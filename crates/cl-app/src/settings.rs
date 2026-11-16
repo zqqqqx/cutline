@@ -830,7 +830,7 @@ impl App {
                     theme::section(ui, name);
                     for d in self.library.linked(k) {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!("{}  {}", icon::LINK_SIMPLE, d.display())).small());
+                            ui.label(RichText::new(format!("{}  {}", icon::LINK_SIMPLE, crate::paths::shown(&d))).small());
                             if theme::icon_button(ui, icon::X, "Verknüpfung lösen", true, false).clicked() {
                                 self.library.unlink_folder(k, &d);
                             }

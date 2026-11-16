@@ -1169,13 +1169,7 @@ impl App {
                         .file_name()
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_default();
-                    self.toast_err(self.i18n.t_args(
-                        "media-probe-error",
-                        &[
-                            ("file", name.as_str().into()),
-                            ("error", e.to_string().into()),
-                        ],
-                    ));
+                    self.probe_failed(&name, &e.to_string());
                 }
             }
         }
@@ -2932,13 +2926,14 @@ impl App {
                             color: Color32::from_black_alpha(120),
                         })
                         .show(ui, |ui| {
-                            ui.label(RichText::new(toast_line(msg, *err)).color(
+                            // überlange Meldung (langer Vorlagenname): innerhalb des Fensters mit „…“ kürzen
+                            ui.add(egui::Label::new(RichText::new(toast_line(msg, *err)).color(
                                 if *err {
                                     theme::DANGER_TEXT()
                                 } else {
                                     theme::TEXT()
                                 },
-                            ));
+                            )).truncate());
                         })
                         .response;
                     if *err && r.interact(egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -3934,3 +3929,29 @@ mod frame_rate_tests {
 #[cfg(test)]
 #[path = "load_perf.rs"]
 mod load_perf;
+
+/// Unlesbare Datei: kurze Meldung mit dem Namen, kein FFmpeg-Rohtext in der Oberfläche
+#[test]
+fn unreadable_file_gives_a_short_message() {
+    let (mut app, home, _g) = crate::saving::tests::test_app();
+    app.set_doc(Project::new("Kaputt"));
+    let f = home.path().join("kaputt.mp4");
+    std::fs::write(&f, b"kein Video").unwrap();
+    assert!(app.import_media(vec![f]).is_empty());
+    let msgs: Vec<&str> = app.toasts.iter().map(|t| t.0.as_str()).collect();
+    assert_eq!(msgs, ["Datei kann nicht gelesen werden: kaputt.mp4"]);
+}
+
+/// Meldung mit sehr langem Namen bleibt im Fenster (gekürzt) statt links und rechts abgeschnitten
+#[test]
+fn long_toast_stays_inside_the_window() {
+    let (mut app, _home, _g) = crate::saving::tests::test_app();
+    app.toast(format!("Vorlage „{}“ gespeichert", "sehr lang ".repeat(40)));
+    let ctx = egui::Context::default();
+    let raw = || egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
+    for _ in 0..3 {
+        let _ = ctx.run(raw(), |ctx| app.draw_toasts(ctx));
+    }
+    let r = ctx.memory(|m| m.area_rect(egui::Id::new("toasts"))).unwrap();
+    assert!(r.left() >= 0.0 && r.right() <= 800.0, "{r:?}");
+}

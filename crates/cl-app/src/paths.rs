@@ -59,6 +59,28 @@ fn broken_json_is_kept_aside() {
     assert_eq!(read_json_or_quarantine::<Vec<u32>>(&p), vec![1, 2]);
 }
 
+/// Pfad zum Anzeigen, durchgehend mit dem Trenner des Systems (Einstellungen und Entwürfe liefern
+/// unter Windows auch `/`, angehängte Teile `\` – sonst stünde beides gemischt da).
+pub fn shown(p: &Path) -> String {
+    let s = p.display().to_string();
+    if cfg!(windows) {
+        s.replace('/', "\\")
+    } else {
+        s
+    }
+}
+
+#[test]
+fn shown_paths_use_one_separator() {
+    let p = Path::new("F:/projekte").join("K5_proj").join("a.cutline");
+    let s = shown(&p);
+    if cfg!(windows) {
+        assert_eq!(s, r"F:\projekte\K5_proj\a.cutline");
+    } else {
+        assert_eq!(s, "F:/projekte/K5_proj/a.cutline");
+    }
+}
+
 /// Dateiname aus einem Projektnamen: nur Buchstaben, Ziffern, Leerzeichen und `-`
 /// Höchstens 100 Zeichen (Windows: 255 je Name, dazu kommen Endung und „ (Kopie 2)“), nie leer,
 /// keine reservierten Gerätenamen (`CON`, `NUL` …).

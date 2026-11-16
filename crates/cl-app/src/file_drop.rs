@@ -338,7 +338,7 @@ impl App {
             };
             let done = !d.entries.iter().any(|e| matches!(e.state, State::Probing));
             for (file, error) in failed {
-                self.toast_err(self.i18n.t_args("media-probe-error", &[("file", file.into()), ("error", error.into())]));
+                self.probe_failed(&file, &error);
             }
             if done {
                 let d = self.drops.list.remove(i);
@@ -369,6 +369,12 @@ impl App {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    /// Datei unlesbar: kurze Meldung mit dem Namen; FFmpegs Rohtext nur ins Protokoll
+    pub(crate) fn probe_failed(&mut self, file: &str, error: &str) {
+        log::warn!(target: "import", "{file}: {error}");
+        self.toast_err(self.i18n.t_args("media-probe-error", &[("file", file.into())]));
     }
 
     /// Geprüfte Dateien übernehmen (Medien + Clips) – alles ein Verlaufsschritt.

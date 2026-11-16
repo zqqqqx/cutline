@@ -596,7 +596,7 @@ impl ExportDialog {
                                 // Platz für den Ordner-Knopf lassen, sonst ragt die Zeile über das Fenster hinaus
                                 let w = (ui.available_width() - 32.0).max(40.0);
                                 ui.allocate_ui(vec2(w, 20.0), |ui| {
-                                    ui.add(egui::Label::new(RichText::new(crate::tr(self.folder.display().to_string())).small()).truncate());
+                                    ui.add(egui::Label::new(RichText::new(crate::paths::shown(&self.folder)).small()).truncate());
                                 });
                                 if theme::icon_button(ui, icon::FOLDER_OPEN, "Ordner wählen", true, false).clicked() {
                                     if let Some(d) = crate::dialog().set_directory(&self.folder).pick_folder() {
@@ -853,7 +853,7 @@ impl ExportDialog {
                 if crate::dialog::title(ui, "Datei existiert bereits") {
                     choice = Some(2);
                 }
-                ui.label(RichText::new(crate::tr(file.display().to_string())).small().color(theme::TEXT_DIM()));
+                ui.label(RichText::new(crate::paths::shown(&file)).small().color(theme::TEXT_DIM()));
                 crate::dialog::footer(ui, |ui| {
                     if ui.add(theme::primary("Anderen Namen")).clicked() {
                         choice = Some(1);

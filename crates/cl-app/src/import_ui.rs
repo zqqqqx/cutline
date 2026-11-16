@@ -420,7 +420,7 @@ impl App {
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical().id_salt(("import-missing-list", i)).max_height(140.0).show(ui, |ui| {
                             for p in &r.missing {
-                                ui.label(RichText::new(p.display().to_string()).small().color(theme::TEXT_DIM()));
+                                ui.label(RichText::new(crate::paths::shown(p)).small().color(theme::TEXT_DIM()));
                             }
                         });
                     });

@@ -35,12 +35,23 @@ impl Time {
         let frame = (self.as_secs_f64() * fps.as_f64()).round();
         Time::from_secs_f64(frame / fps.as_f64())
     }
-    /// Zeitcode `HH:MM:SS:FF`.
-    pub fn timecode(self, fps: Rational) -> String {
+    /// Ganze Sekunden und das Bild darin, aufs nächste Bild gerundet – eine Regel für alle
+    /// Zeitanzeigen (Zeitcode, Inspektor), sonst lagen sie um ein Bild auseinander.
+    pub fn secs_frames(self, fps: Rational) -> (i64, i64) {
         let total = self.as_secs_f64().max(0.0);
         let fps_f = fps.as_f64();
-        let secs = total.floor() as i64;
-        let frames = ((total - secs as f64) * fps_f).floor() as i64;
+        let mut secs = total.floor() as i64;
+        let mut frames = ((total - secs as f64) * fps_f).round() as i64;
+        if frames >= (fps_f.round() as i64).max(1) {
+            secs += 1;
+            frames = 0;
+        }
+        (secs, frames)
+    }
+
+    /// Zeitcode `HH:MM:SS:FF`.
+    pub fn timecode(self, fps: Rational) -> String {
+        let (secs, frames) = self.secs_frames(fps);
         format!(
             "{:02}:{:02}:{:02}:{:02}",
             secs / 3600,
@@ -129,5 +140,9 @@ mod tests {
             Time::from_secs_f64(3661.5).timecode(Rational::new(30, 1)),
             "01:01:01:15"
         );
+        // knapp vor einem Bild (Gleitkomma): aufs nächste Bild, mit Übertrag in die Sekunde
+        let f30 = Rational::new(30, 1);
+        assert_eq!(Time::from_secs_f64(3.0 + 19.0 / 30.0 - 1e-6).timecode(f30), "00:00:03:19");
+        assert_eq!(Time::from_secs_f64(3.0 + 29.6 / 30.0).secs_frames(f30), (4, 0));
     }
 }

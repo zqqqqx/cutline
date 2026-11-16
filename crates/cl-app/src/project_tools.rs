@@ -292,12 +292,12 @@ impl App {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.label(RichText::new(icon::WARNING).color(theme::DANGER_TEXT()));
                             let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                            ui.add(egui::Label::new(RichText::new(&name).strong()).truncate()).on_hover_text(p.display().to_string());
-                            let dir = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
+                            ui.add(egui::Label::new(RichText::new(&name).strong()).truncate()).on_hover_text(crate::paths::shown(p));
+                            let dir = p.parent().map(crate::paths::shown).unwrap_or_default();
                             let font = egui::TextStyle::Small.resolve(ui.style());
                             let ctx = ui.ctx().clone();
                             let dir = theme::elide_middle(&dir, ui.available_width() - 4.0, |s| theme::text_width(&ctx, s, font.clone()));
-                            ui.label(RichText::new(dir).small().color(theme::TEXT_DIM())).on_hover_text(p.display().to_string());
+                            ui.label(RichText::new(dir).small().color(theme::TEXT_DIM())).on_hover_text(crate::paths::shown(p));
                         });
                     });
                 }

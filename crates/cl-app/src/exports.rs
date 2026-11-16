@@ -172,7 +172,7 @@ impl crate::app::App {
                                         .small()
                                         .color(theme::TEXT_DIM()),
                                 )
-                                .on_hover_text(e.path.display().to_string());
+                                .on_hover_text(crate::paths::shown(&e.path));
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.add(theme::secondary(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
