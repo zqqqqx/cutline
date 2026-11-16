@@ -513,7 +513,15 @@ impl McpServer {
                             let srv = self.clone();
                             let token = token.clone();
                             std::thread::spawn(move || {
+                                let end = stream.try_clone();
                                 let _ = srv.http_connection(stream, &token);
+                                // geordnet schließen: erst FIN, dann (begrenzt) warten, bis der
+                                // Client schließt – sofort geschlossen kam unter Last ab und zu RST
+                                // statt der schon gesendeten Antwort an
+                                if let Ok(s) = end {
+                                    let _ = s.shutdown(std::net::Shutdown::Write);
+                                    let _ = std::io::copy(&mut (&s).take(64 * 1024), &mut std::io::sink());
+                                }
                             });
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -564,23 +572,30 @@ impl McpServer {
         if !complete {
             return reply(&mut out, "431 Request Header Fields Too Large", "{}");
         }
+        // Vor einer Fehlerantwort den angekündigten Körper (höchstens 8 MiB) lesen und verwerfen:
+        // schließt der Server mit ungelesenen Daten, schickt das System RST statt FIN, und ein
+        // Client, der Kopf und Körper getrennt sendet, sieht statt 401/403 einen Verbindungsabbruch.
+        let mut fail = |out: &mut TcpStream, status: &str, body: &str| -> std::io::Result<()> {
+            let _ = std::io::copy(&mut (&mut reader).take(len.min(8 * 1024 * 1024) as u64), &mut std::io::sink());
+            reply(out, status, body)
+        };
         // Schutz gegen DNS-Rebinding: Host und Origin müssen genau localhost sein.
         if !local_authority(&host) {
-            return reply(&mut out, "403 Forbidden", r#"{"error":"host"}"#);
+            return fail(&mut out, "403 Forbidden", r#"{"error":"host"}"#);
         }
         if let Some(o) = origin {
             if !o.strip_prefix("http://").is_some_and(local_authority) {
-                return reply(&mut out, "403 Forbidden", r#"{"error":"origin"}"#);
+                return fail(&mut out, "403 Forbidden", r#"{"error":"origin"}"#);
             }
         }
         if path != "/mcp" {
-            return reply(&mut out, "404 Not Found", r#"{"error":"not found"}"#);
+            return fail(&mut out, "404 Not Found", r#"{"error":"not found"}"#);
         }
         if auth != format!("Bearer {token}") {
-            return reply(&mut out, "401 Unauthorized", r#"{"error":"token"}"#);
+            return fail(&mut out, "401 Unauthorized", r#"{"error":"token"}"#);
         }
         if method != "POST" {
-            return reply(
+            return fail(
                 &mut out,
                 "405 Method Not Allowed",
                 r#"{"error":"POST only"}"#,
@@ -774,12 +789,10 @@ mod tests {
     fn http_transport_requires_token() {
         let s = server();
         let (addr, _h) = s.serve_http(0, "geheim".into()).unwrap();
+        // in einem Stück senden (`write!` auf den Strom schrieb in vielen kleinen Teilen)
         let post = |auth: &str, body: &str| -> String {
-            let mut c = TcpStream::connect(addr).unwrap();
-            write!(c, "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: {auth}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", addr.port(), body.len()).unwrap();
-            let mut s = String::new();
-            c.read_to_string(&mut s).unwrap();
-            s
+            let req = format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: {auth}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", addr.port(), body.len());
+            http(addr, req.as_bytes())
         };
         let body = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
         assert!(post("Bearer falsch", body).starts_with("HTTP/1.1 401"));
@@ -826,6 +839,23 @@ mod tests {
         let mut s = String::new();
         let _ = c.read_to_string(&mut s);
         s
+    }
+
+    /// Client sendet Kopf und Körper getrennt, Token falsch: die 401 kommt an (der Server liest den
+    /// Körper vorher, sonst bricht die Verbindung mit RST ab und die Antwort geht verloren).
+    #[test]
+    fn error_reply_arrives_when_body_follows_the_head() {
+        let (addr, _h) = server().serve_http(0, "geheim".into()).unwrap();
+        let body = vec![b' '; 1 << 20];
+        for (host, auth, want) in [("localhost", "Bearer falsch", "HTTP/1.1 401"), ("evil.com", "Bearer geheim", "HTTP/1.1 403")] {
+            let mut c = TcpStream::connect(addr).unwrap();
+            let head = format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\nAuthorization: {auth}\r\nContent-Length: {}\r\n\r\n", body.len());
+            c.write_all(head.as_bytes()).unwrap();
+            let _ = c.write_all(&body);
+            let mut s = String::new();
+            c.read_to_string(&mut s).unwrap_or_else(|e| panic!("{host}: {e} {s:?}"));
+            assert!(s.starts_with(want), "{s}");
+        }
     }
 
     #[test]

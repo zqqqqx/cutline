@@ -820,6 +820,14 @@ impl Starter {
     pub fn send(&self, j: OpenJob) {
         let _ = self.tx.send(j);
     }
+
+    /// Test: Starter, der nichts öffnet – die Aufträge kommen beim zweiten Wert an
+    #[cfg(test)]
+    pub fn capture() -> (Self, Receiver<OpenJob>) {
+        let (tx, jobs) = channel();
+        let (_, rx) = channel();
+        (Self { tx, rx }, jobs)
+    }
 }
 
 /// Wartende Aufträge: je Ebene nur der neueste (der Kern hängt ohnehin nur die zuletzt beauftragte
