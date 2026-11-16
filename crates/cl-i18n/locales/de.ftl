@@ -103,3 +103,24 @@ plugin-effects = { $count } Effekte, Übergänge und Filter
 voiceover = Einsprechen
 language = Sprache
 phase0-note = Phase 0: Vorschau ohne Ton und Effekte. Schnitt, Text, Schriften, Undo und MCP sind aktiv.
+
+music-ducked = { $count ->
+    [one] Musik an einer Stelle abgesenkt (−{ $db } dB)
+   *[other] Musik an { $count } Stellen abgesenkt (−{ $db } dB)
+}
+multicam-done = { $count ->
+    [one] Multicam-Schnitt mit einem Wechsel übernommen
+   *[other] Multicam-Schnitt mit { $count } Wechseln übernommen
+}
+speakers-done = { $count ->
+    [one] Eine Sprecherspur angelegt
+   *[other] { $count } Sprecherspuren angelegt
+}
+recap-done = { $count ->
+    [one] Rückblick aus einem Marker erstellt
+   *[other] Rückblick aus { $count } Markern erstellt
+}
+sync-done = { $count ->
+    [one] Eine Aufnahme synchronisiert
+   *[other] { $count } Aufnahmen synchronisiert
+}

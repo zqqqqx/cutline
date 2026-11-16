@@ -317,7 +317,8 @@ impl App {
                         clip: id,
                         keyframes: c.keyframes,
                     });
-                    app.toast(format!("Musik an {n} Stellen abgesenkt (−{drop_db:.0} dB)"));
+                    let db = format!("{drop_db:.0}");
+                    app.toast(app.i18n.t_args("music-ducked", &[("count", n.into()), ("db", db.as_str().into())]));
                 }))
             });
     }
@@ -495,10 +496,7 @@ impl App {
             label: "Multicam-Schnitt".into(),
             ops,
         });
-        self.toast(format!(
-            "Multicam-Schnitt mit {} Wechseln übernommen",
-            cuts.len()
-        ));
+        self.toast(self.i18n.t_num("multicam-done", "count", cuts.len() as i64));
     }
 
     pub fn tool_speakers(&mut self, _ctx: &egui::Context) {
@@ -560,7 +558,7 @@ impl App {
             n += 1;
         }
         if n > 0 {
-            self.toast(format!("{n} Sprecherspuren angelegt"));
+            self.toast(self.i18n.t_num("speakers-done", "count", n as i64));
         }
     }
 
@@ -769,7 +767,7 @@ impl App {
             return;
         }
         self.set_doc(p);
-        self.toast(format!("Rückblick aus {} Markern erstellt", ms.len()));
+        self.toast(self.i18n.t_num("recap-done", "count", ms.len() as i64));
     }
 }
 
@@ -813,7 +811,7 @@ fn apply_sync(app: &mut App, rev: u64, moves: &[(ClipId, f64)]) {
         label: "Synchronisieren".into(),
         ops,
     });
-    app.toast(format!("{n} Aufnahmen synchronisiert"));
+    app.toast(app.i18n.t_num("sync-done", "count", n as i64));
 }
 
 #[cfg(test)]
