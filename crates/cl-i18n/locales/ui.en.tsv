@@ -1801,3 +1801,4 @@ Entwurf zu groß	Draft too large
 Grafiktreiber veraltet: Hardware-Kodierung geht erst nach einem Treiber-Update, bis dahin wird in Software kodiert	Graphics driver outdated: hardware encoding needs a driver update, encoding in software until then
 Hardware-Kodierung	Hardware encoding
 Windows (Media Foundation)	Windows (Media Foundation)
+FFmpeg {} gefunden – Cutline braucht {} oder neuer	FFmpeg {} found – Cutline needs {} or newer

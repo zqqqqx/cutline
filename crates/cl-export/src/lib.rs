@@ -1380,7 +1380,8 @@ fn run_pass(job: &Job, p: &graph::ShaderPass, cancel: &AtomicBool, progress: &mu
         .args(["-v", "error", "-nostdin"])
         .args(&p.inputs)
         .args(["-/filter_complex", &p.graph_file, "-map", "[pout]", "-frames:v", &n.to_string()])
-        .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        // Bildrate nennen: FFmpeg 7 kennt sie nach `setpts` nicht mehr und nähme 25
+        .args(["-r", &p.fps, "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(log(&format!("{}.read.log", p.graph_file)));
@@ -3456,6 +3457,28 @@ mod tests {
         let after = frame_n(&out, 55);
         assert!(mean_diff(&before.data, &red) < 8.0, "vorher nicht rot");
         assert!(mean_diff(&after.data, &blue) < 8.0, "nachher nicht blau");
+    }
+
+    /// FFmpeg 7 vergisst die Bildrate nach `setpts`; ein `tpad` direkt dahinter hält dann kein Bild
+    /// (Clip-Ende, Vorlauf des Shader-Übergangs). In keinem Graphen darf `tpad` auf `setpts` folgen.
+    #[test]
+    fn no_tpad_right_after_setpts() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        shader_pack();
+        let dir = tempfile::tempdir().unwrap();
+        let p = shader_project(dir.path(), "t.shader/wipe", false);
+        let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("x.mp4")).unwrap();
+        let mut graphs = 0;
+        for e in std::fs::read_dir(job.workdir.path()).unwrap() {
+            let g = std::fs::read_to_string(e.unwrap().path()).unwrap_or_default();
+            graphs += usize::from(g.contains("tpad="));
+            // Filter ohne vorangestellte Labels: „[a][b]xfade=…“ → „xfade=…“
+            let parts: Vec<&str> = g.split([',', ';', '\n']).map(|s| s.split(']').rfind(|x| !x.is_empty()).unwrap_or("")).collect();
+            assert!(!parts.windows(2).any(|w| w[0].starts_with("setpts=") && w[1].starts_with("tpad=")), "{g}");
+        }
+        assert!(graphs >= 2, "Hauptgraph und Vorlauf geprüft");
     }
 
     #[test]

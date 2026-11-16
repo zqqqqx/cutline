@@ -737,6 +737,23 @@ fn ram_gb() -> Option<f64> {
     }
 }
 
+/// Älteste FFmpeg-Hauptversion, mit der Cutline läuft (wie im README)
+pub const MIN_FFMPEG: u32 = 7;
+static OLD_FFMPEG: Mutex<Option<String>> = Mutex::new(None);
+
+/// Version aus der ersten Zeile von `ffmpeg -version`, wenn sie unter [`MIN_FFMPEG`] liegt.
+/// Entwicklungsstände („N-12345-g…“, „git-…“) und Unlesbares gelten als neu genug.
+pub fn ffmpeg_too_old(line: &str) -> Option<String> {
+    let v = line.strip_prefix("ffmpeg version ")?.split_whitespace().next()?;
+    let major: u32 = v.trim_start_matches('n').split(['.', '-']).next()?.parse().ok()?;
+    (major < MIN_FFMPEG).then(|| v.to_string())
+}
+
+/// Einmal je Sitzung: zu altes FFmpeg (gefundene Version), sobald `system_info` gelaufen ist
+pub fn take_old_ffmpeg() -> Option<String> {
+    OLD_FFMPEG.lock().unwrap_or_else(|e| e.into_inner()).take()
+}
+
 /// System, Kerne, Speicher, FFmpeg (einmal ermittelt, im Hintergrund)
 pub fn system_info() -> &'static str {
     static S: OnceLock<String> = OnceLock::new();
@@ -752,6 +769,10 @@ pub fn system_info() -> &'static str {
             c
         }));
         let hw = hw_encoders(&encoders);
+        if let Some(v) = ffmpeg_too_old(version.lines().next().unwrap_or("")) {
+            log::warn!(target: "system", "FFmpeg {v} ist zu alt: Cutline braucht {MIN_FFMPEG} oder neuer");
+            *OLD_FFMPEG.lock().unwrap_or_else(|e| e.into_inner()) = Some(v);
+        }
         format!(
             "Cutline {} ({}, {} {})\nSystem: {}\nCPU: {} Kerne · Arbeitsspeicher: {}\nFFmpeg: {path} · {}\nHardware-Encoder: {}",
             env!("CARGO_PKG_VERSION"),
@@ -962,6 +983,19 @@ pub fn crash_notice(ctx: &egui::Context, app: &mut crate::app::App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ffmpeg_version_check() {
+        let old = |v: &str| ffmpeg_too_old(&format!("ffmpeg version {v} Copyright (c) 2000-2026 the FFmpeg developers"));
+        assert_eq!(old("6.1.1-3ubuntu5"), Some("6.1.1-3ubuntu5".into()));
+        assert_eq!(old("4.4.2-0ubuntu0.22.04.1"), Some("4.4.2-0ubuntu0.22.04.1".into()));
+        assert_eq!(old("n6.0"), Some("n6.0".into()));
+        for v in ["7.1.5-0+deb13u1", "n8.1", "n8.1.3-35-gf1acb0a266-20261116", "8.0-full_build-www.gyan.dev", "N-12345-g0123abcd", "git-2026-11-01-abc"] {
+            assert_eq!(old(v), None, "{v}");
+        }
+        assert_eq!(ffmpeg_too_old(""), None);
+        assert_eq!(ffmpeg_too_old("?"), None);
+    }
 
     fn rec(ms: i64, level: Level, msg: &str) -> Rec {
         Rec { ms, level, area: "test".into(), msg: msg.into() }
