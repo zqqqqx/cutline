@@ -316,6 +316,8 @@ pub struct App {
     silent_warmed: (HashSet<PathBuf>, u64),
     /// Proxy-Ordner zuletzt gezählt: (Zeit, Anzahl, Bytes)
     pub proxy_stats: Option<(Instant, u64, u64)>,
+    /// Quelle je laufendem Strom (Original oder Proxy-Stücke), siehe `proxy::App::stream_pick`
+    pub proxy_picks: HashMap<u128, crate::proxy::Pick>,
     /// Eigenschaften-Fenster: Zeilen einmal berechnet (Ziel, Revision, Zeilen)
     pub props_cache: Option<(crate::props::Props, u64, crate::props::PropsRows)>,
     /// Projekt, das gerade im Hintergrund geöffnet wird
@@ -524,6 +526,7 @@ impl App {
             font_names: None,
             silent_warmed: (HashSet::new(), u64::MAX),
             proxy_stats: None,
+            proxy_picks: HashMap::new(),
             props_cache: None,
             load: None,
             presence: Default::default(),
