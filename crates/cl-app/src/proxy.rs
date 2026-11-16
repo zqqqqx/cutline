@@ -658,11 +658,11 @@ impl Entry {
         });
     }
 
-    /// Fehlt das Stück an Quellzeit `t` und ist es baubar?
+    /// Fehlt das Stück an Quellzeit `t` (ohne Einteilung: der ganze Proxy) und ist es baubar?
     fn needs(&self, t: f64) -> bool {
         !self.complete
             && !self.dead
-            && self.pt.is_some_and(|pt| {
+            && self.pt.is_none_or(|pt| {
                 let k = pt.part_of(t) as usize;
                 !self.ready.get(k).copied().unwrap_or(true) && self.fails.get(k).is_some_and(|f| *f < MAX_FAILS)
             })
@@ -722,13 +722,19 @@ fn refresh_entry(root: &Path, m: &MediaRef, h: u32, fps: Rational, playing: bool
     (found, needs)
 }
 
-/// Hat ein anderes Medium am Playhead Vorrang (dort fehlt das Stück, hier nicht)?
-fn other_media_first(src: &Path) -> bool {
+/// Quellen am Playhead, denen dort ein Stück fehlt. Dieselbe Regel für die Wahl des nächsten Baus
+/// und fürs Abgeben eines laufenden – sonst wählt die Suche das abgebende Medium gleich wieder.
+fn playhead_wants() -> HashSet<PathBuf> {
+    // Sperren nacheinander, nie beide zugleich
     let at: Vec<(PathBuf, f64)> = focus().iter().filter_map(|(p, f)| f.at.map(|a| (p.clone(), a.0))).collect();
     let reg = registry();
-    let needs = |p: &Path, t: f64| reg.get(p).is_some_and(|e| e.needs(t));
-    let mine = at.iter().any(|(p, t)| p == src && needs(p, *t));
-    !mine && at.iter().any(|(p, t)| p != src && needs(p, *t))
+    at.into_iter().filter(|(p, t)| reg.get(p).is_some_and(|e| e.needs(*t))).map(|(p, _)| p).collect()
+}
+
+/// Hat ein anderes Medium am Playhead Vorrang (dort fehlt das Stück, hier nicht)?
+fn other_media_first(src: &Path) -> bool {
+    let w = playhead_wants();
+    !w.contains(src) && !w.is_empty()
 }
 
 /// Stücke einer Quelle bauen, bis alle da sind (dann zusammenfügen) oder ein anderes Medium am
@@ -920,6 +926,12 @@ impl App {
         let w = ctx.screen_rect().width();
         let mut hs = std::collections::hash_map::DefaultHasher::new();
         (self.playhead.0, self.timeline.scroll.to_bits(), self.timeline.pps.to_bits(), w.to_bits(), self.project_epoch, self.project.media.len()).hash(&mut hs);
+        // nur Quellen, die gebaut werden können: ein fehlendes (NAS schläft) oder gescheitertes
+        // Medium am Playhead ließe den laufenden Bau sonst immer wieder abgeben
+        let usable = |m: &MediaRef| m.kind == MediaKind::Video && self.presence.get(&m.path) && !self.proxy_failed.contains(&m.id);
+        for m in &self.project.media {
+            (m.id, usable(m)).hash(&mut hs);
+        }
         let sig = hs.finish();
         {
             let mut l = LAST.lock().unwrap_or_else(|e| e.into_inner());
@@ -928,8 +940,7 @@ impl App {
             }
             *l = (sig, Some(Instant::now()));
         }
-        let paths: HashMap<MediaId, &Path> =
-            self.project.media.iter().filter(|m| m.kind == MediaKind::Video).map(|m| (m.id, m.path.as_path())).collect();
+        let paths: HashMap<MediaId, &Path> = self.project.media.iter().filter(|m| usable(m)).map(|m| (m.id, m.path.as_path())).collect();
         let v0 = self.timeline.scroll;
         let v1 = v0 + (w / self.timeline.pps.max(1e-3)) as f64;
         let mut map: HashMap<PathBuf, Focus> = HashMap::new();
@@ -1031,23 +1042,7 @@ impl App {
         if missing.is_empty() || self.tasks.running("proxy").is_some() {
             return;
         }
-        let (mut at, mut vis) = (HashSet::new(), HashSet::new());
-        let v0 = Time::from_secs_f64(self.timeline.scroll);
-        let v1 = Time::from_secs_f64(self.timeline.scroll + (ctx.screen_rect().width() / self.timeline.pps.max(1e-3)) as f64);
-        for c in self.project.timeline.tracks.iter().flat_map(|t| &t.clips) {
-            if let ClipContent::Media { media, .. } = c.content {
-                if c.start <= self.playhead && self.playhead < c.end() {
-                    at.insert(media);
-                }
-                if c.start < v1 && v0 < c.end() {
-                    vis.insert(media);
-                }
-            }
-        }
-        let Some(m) = next_proxy(&missing, &at, &vis)
-            .and_then(|id| self.project.media.iter().find(|m| m.id == id))
-            .cloned()
-        else {
+        let Some(m) = self.next_build(&missing, ctx).and_then(|id| self.project.media.iter().find(|m| m.id == id)).cloned() else {
             return;
         };
         let spec = proxy_spec(&m, key.0, key.1);
@@ -1070,6 +1065,28 @@ impl App {
             }
             TaskDone::Proxy { media: id, ok: crate::applog::outcome("proxy", &name, t0, r).is_ok() }
         });
+    }
+
+    /// Welches fehlende Medium als nächstes: am Playhead nur, wo dort ein Stück fehlt (wie beim
+    /// Abgeben, siehe [`other_media_first`]), dann sichtbare, dann der Rest.
+    fn next_build(&self, missing: &[MediaId], ctx: &egui::Context) -> Option<MediaId> {
+        let wants = playhead_wants();
+        let at: HashSet<MediaId> = self.project.media.iter().filter(|m| wants.contains(&m.path)).map(|m| m.id).collect();
+        let v0 = Time::from_secs_f64(self.timeline.scroll);
+        let v1 = Time::from_secs_f64(self.timeline.scroll + (ctx.screen_rect().width() / self.timeline.pps.max(1e-3)) as f64);
+        let vis: HashSet<MediaId> = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .filter(|c| c.start < v1 && v0 < c.end())
+            .filter_map(|c| match c.content {
+                ClipContent::Media { media, .. } => Some(media),
+                _ => None,
+            })
+            .collect();
+        next_proxy(missing, &at, &vis)
     }
 
     /// Ein Proxy-Auftrag ist zu Ende: gleich weitersuchen. Gezählt wird nur, was fertig oder
@@ -1509,6 +1526,73 @@ mod tests {
         assert!(c[90..].iter().enumerate().all(|(i, v)| *v == ((90 + i) * 2 % 32) as u8), "{c:?}");
         assert!(registry().get(&m.path).unwrap().complete);
         assert!(!pdir.exists(), "Stücke nach dem Zusammenfügen gelöscht");
+    }
+
+    /// Bestand ohne Dateien: 10 Stücke à 10 s, fertig laut `ready`
+    fn test_entry(out: PathBuf, ready: Vec<bool>) -> Entry {
+        let pt = Parting::new(100.0, Rational::new(30, 1), PART_SECS).unwrap();
+        let spec = ProxySpec { height: 540, fps: None, gop: 15 };
+        let fails = vec![0; ready.len()];
+        let mut e = Entry { want: (540, Rational::new(30, 1)), out, spec, pt: Some(pt), dur: 100.0, ready, fails, complete: false, dead: false, ranges: Arc::default() };
+        e.changed();
+        e
+    }
+
+    /// Zwei Videos übereinander am Playhead: Ist beim ersten das Playhead-Stück fertig, kommt das
+    /// zweite dran, und nur dann gibt der Bau des ersten ab (vorher wählte die Suche immer wieder das
+    /// erste, das sofort wieder abgab). Fehlt das zweite (NAS schläft) oder ist es gescheitert, gibt
+    /// niemand ab.
+    #[test]
+    fn second_media_at_playhead_gets_its_part() {
+        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        let mk = |name: &str| {
+            let mut m = media(3840, 2160, Rational::new(30, 1), "h264");
+            m.path = home.path().join(name);
+            m.duration = Time::from_secs_f64(100.0);
+            m
+        };
+        let (x, y) = (mk("x.mp4"), mk("y.mp4"));
+        for m in [&x, &y] {
+            let mut t = cl_core::Track::new(cl_core::TrackKind::Video);
+            t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(100.0)));
+            app.project.timeline.tracks.push(t);
+            app.project.media.push(m.clone());
+        }
+        app.playhead = Time::from_secs_f64(42.0);
+        let ready = |k: Option<usize>| (0..10).map(|i| Some(i) == k).collect::<Vec<_>>();
+        let set = |x_ready: Option<usize>, y_ready: Option<usize>| {
+            registry().insert(x.path.clone(), test_entry(home.path().join("x-540.mp4"), ready(x_ready)));
+            registry().insert(y.path.clone(), test_entry(home.path().join("y-540.mp4"), ready(y_ready)));
+        };
+        let missing = [x.id, y.id];
+        // keins fertig: Medienreihenfolge, keiner gibt ab
+        set(None, None);
+        app.update_focus(&ctx);
+        assert_eq!(app.next_build(&missing, &ctx), Some(x.id));
+        assert!(!other_media_first(&x.path) && !other_media_first(&y.path));
+        // beim ersten ist das Playhead-Stück (4) fertig: das zweite ist dran, das erste gibt ab
+        set(Some(4), None);
+        assert_eq!(app.next_build(&missing, &ctx), Some(y.id));
+        assert!(other_media_first(&x.path) && !other_media_first(&y.path));
+        // beide fertig: normale Reihenfolge, keiner gibt ab
+        set(Some(4), Some(4));
+        assert_eq!(app.next_build(&missing, &ctx), Some(x.id));
+        assert!(!other_media_first(&x.path));
+        // zweites fehlt laut Prüfung bzw. ist gescheitert: kein Abgeben
+        set(Some(4), None);
+        app.presence.set_all([(y.path.clone(), false)].into(), 2);
+        app.update_focus(&ctx);
+        assert!(!other_media_first(&x.path), "fehlendes Medium");
+        app.presence.set_all([(y.path.clone(), true)].into(), 2);
+        app.proxy_failed.insert(y.id);
+        app.update_focus(&ctx);
+        assert!(!other_media_first(&x.path), "gescheitertes Medium");
+        app.proxy_failed.clear();
+        app.update_focus(&ctx);
+        assert!(other_media_first(&x.path));
+        registry().remove(&x.path);
+        registry().remove(&y.path);
     }
 
     #[test]
