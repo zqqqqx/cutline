@@ -147,13 +147,33 @@ pub const PROXY_HEIGHTS: [(u32, &str); 3] = [(540, "Schnell · 540p"), (720, "Au
 
 // ------------------------------------------------------------------ Encoder
 
-/// Reihenfolge der Encoder: Hardware (NVENC → QSV → AMF), soweit vorhanden und in dieser
-/// Sitzung nicht gescheitert, zuletzt immer Software.
-pub fn encoder_chain(available: &[Encoder], broken: &[Encoder]) -> Vec<Encoder> {
-    [Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Software]
+/// Reihenfolge der Encoder wie beim Export ([`cl_export::encoder_chain`], `pref` = Einstellung
+/// „Hardware-Kodierung“) ohne die in dieser Sitzung gescheiterten, zuletzt immer Software.
+pub fn encoder_chain(available: &[Encoder], broken: &[Encoder], pref: &str) -> Vec<Encoder> {
+    cl_export::encoder_chain(available, pref)
         .into_iter()
-        .filter(|e| *e == Encoder::Software || (available.contains(e) && !broken.contains(e)))
+        .filter(|e| *e == Encoder::Software || !broken.contains(e))
         .collect()
+}
+
+static ENCODER_PREF: Mutex<String> = Mutex::new(String::new());
+
+/// Einstellung „Hardware-Kodierung“ (setzen die Einstellungen beim Laden und Ändern)
+pub fn set_encoder_pref(pref: &str) {
+    *ENCODER_PREF.lock().unwrap_or_else(|e| e.into_inner()) = pref.to_string();
+}
+
+pub fn encoder_pref() -> String {
+    ENCODER_PREF.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Gefundene Encoder, ohne zu warten: `None`, solange die Erkennung im Hintergrund läuft.
+pub fn found_encoders() -> Option<&'static [Encoder]> {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        std::thread::spawn(available_encoders);
+    });
+    AVAILABLE.get().map(Vec::as_slice)
 }
 
 /// Encoder, die in dieser Sitzung beim Proxy-Bau gescheitert sind
@@ -164,9 +184,10 @@ fn broken_encoders() -> std::sync::MutexGuard<'static, Vec<Encoder>> {
 
 /// Hardware-Encoder dieses Rechners (Erkennung des Exports, einmal je Sitzung).
 fn available_encoders() -> &'static [Encoder] {
-    static A: OnceLock<Vec<Encoder>> = OnceLock::new();
-    A.get_or_init(cl_export::available_encoders)
+    AVAILABLE.get_or_init(cl_export::available_encoders)
 }
+
+static AVAILABLE: OnceLock<Vec<Encoder>> = OnceLock::new();
 
 /// Hardware-Decodierung der Quelle beim Proxy-Bau: nur mit NVENC und nur bei Quellen, deren
 /// Software-Decodierung bremst (über 1080p, HEVC/AV1/VP9). Gemessen: 1080p-H.264 ist in Software
@@ -191,6 +212,8 @@ fn codec_args(enc: Encoder) -> &'static [&'static str] {
         Encoder::Nvenc => &["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "constqp", "-qp", "26"],
         Encoder::Qsv => &["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "26"],
         Encoder::Amf => &["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p", "26"],
+        // Bitrate je nach Größe: siehe `part_args`
+        Encoder::Mf => &["-c:v", "h264_mf", "-pix_fmt", "nv12", "-hw_encoding", "1"],
         Encoder::Software => &["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"],
     }
 }
@@ -224,6 +247,10 @@ fn part_args(src: &Path, st: f64, pt: &Parting, k: u32, height: u32, gop: u32, e
     );
     a.extend(["-map", "0:v:0", "-an", "-sn", "-dn", "-vf", &vf].map(String::from));
     a.extend(codec_args(enc).iter().map(|s| s.to_string()));
+    if enc == Encoder::Mf {
+        // ohne verlässliche konstante Qualität: Bitrate, 540p30 ≈ 2,5 Mbit/s (≈ 17 MB je Minute)
+        a.extend(["-b:v".into(), format!("{}k", (height as f64 * height as f64 * pt.fps.as_f64() / 3500.0).round() as u32)]);
+    }
     // ohne B-Bilder: Stücke verschiedener Encoder (Rückfall) haben sonst verschiedene Vorlaufzeiten,
     // zusammengefügt entstand an der Naht ein doppeltes Bild; beim Springen ohnehin schneller
     a.extend(["-bf".into(), "0".into(), "-g".into(), gop.to_string(), "-frames:v".into(), pt.per.to_string()]);
@@ -304,7 +331,7 @@ pub fn build(
     progress: &dyn Fn(f32),
     cancel: &AtomicBool,
 ) -> Result<BuildReport, String> {
-    let chain = encoder_chain(available_encoders(), &broken_encoders());
+    let chain = encoder_chain(available_encoders(), &broken_encoders(), &encoder_pref());
     let mut last = String::new();
     for enc in chain {
         for hw in decode_attempts(enc, m) {
@@ -492,7 +519,7 @@ fn build_part(
     let mut failed = Vec::new();
     let mut last = String::new();
     // erst lösen: in der Schleife wird die Liste wieder gesperrt
-    let chain = encoder_chain(available_encoders(), &broken_encoders());
+    let chain = encoder_chain(available_encoders(), &broken_encoders(), &encoder_pref());
     for enc in chain {
         for hw in decode_attempts(enc, m) {
             match build_part_with(m, dir, pt, st, k, spec, enc, hw, progress, cancel) {
@@ -1267,10 +1294,15 @@ mod tests {
     #[test]
     fn encoder_chain_falls_back_to_software() {
         use Encoder::*;
-        assert_eq!(encoder_chain(&[Software, Amf, Nvenc, Qsv], &[]), [Nvenc, Qsv, Amf, Software]);
-        assert_eq!(encoder_chain(&[Software, Nvenc, Qsv], &[Nvenc]), [Qsv, Software]);
-        assert_eq!(encoder_chain(&[], &[]), [Software]);
-        assert_eq!(encoder_chain(&[Software], &[Software]), [Software], "Software bleibt immer");
+        assert_eq!(encoder_chain(&[Software, Mf, Amf, Nvenc, Qsv], &[], "auto"), [Nvenc, Qsv, Amf, Mf, Software]);
+        assert_eq!(encoder_chain(&[Software, Nvenc, Qsv], &[Nvenc], "auto"), [Qsv, Software]);
+        assert_eq!(encoder_chain(&[], &[], "auto"), [Software]);
+        assert_eq!(encoder_chain(&[Software], &[Software], "auto"), [Software], "Software bleibt immer");
+        // Einstellung: gewählter Weg vorn; gescheitert oder nicht gefunden → wie automatisch bzw. Software
+        assert_eq!(encoder_chain(&[Software, Nvenc, Mf], &[], "mf"), [Mf, Software]);
+        assert_eq!(encoder_chain(&[Software, Nvenc, Mf], &[Mf], "mf"), [Software]);
+        assert_eq!(encoder_chain(&[Software, Mf], &[], "nvenc"), [Mf, Software]);
+        assert_eq!(encoder_chain(&[Software, Nvenc], &[], "software"), [Software]);
         let m = media(3840, 2160, Rational::new(60, 1), "hevc");
         assert_eq!(hw_decode(Nvenc, &m), Some("cuda"));
         assert_eq!(hw_decode(Software, &m), None);
@@ -1282,12 +1314,17 @@ mod tests {
         // Stücke (und der Bau in einem Zug als ein Stück über alles): gleiches Raster wie ein Bau in einem Zug, genau `per` Bilder, ohne B-Bilder
         // (Stücke verschiedener Encoder ergaben zusammengefügt ein doppeltes Bild an der Naht)
         let pt = Parting::new(25.0, Rational::new(30, 1), 10.0).unwrap();
-        for enc in [Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Software] {
+        for enc in Encoder::AUTO {
             let a = part_args(Path::new("q.mp4"), 1.5, &pt, 2, 540, 15, enc, None).join(" ");
             assert!(a.contains("-ss 19.500000 -copyts -i q.mp4"), "{a}");
             assert!(a.contains("fps=30/1:start_time=21.500000,setpts=PTS-STARTPTS,scale=-2:540"), "{a}");
             assert!(a.ends_with("-bf 0 -g 15 -frames:v 300"), "{a}");
         }
+        // Media Foundation: nv12, nur Hardware, Bitrate nach Größe und Bildrate
+        let a = part_args(Path::new("q.mp4"), 1.5, &pt, 2, 540, 15, Encoder::Mf, None).join(" ");
+        assert!(a.contains("-c:v h264_mf -pix_fmt nv12 -hw_encoding 1 -b:v 2499k -bf 0"), "{a}");
+        let a = part_args(Path::new("q.mp4"), 1.5, &pt, 2, 1080, 15, Encoder::Mf, None).join(" ");
+        assert!(a.contains("-b:v 9998k"), "{a}");
     }
 
     #[test]
@@ -1406,11 +1443,13 @@ mod tests {
     /// Stücke über mehrere Nähte = ein Bau in einem Zug: kein doppeltes, kein fehlendes Bild – auch
     /// bei Startversatz und schwankender Bildrate. Zusammengefügt dieselben Bilder; ein Strom über
     /// die Stück-Liste ab einer Stelle mitten im zweiten Stück liefert die passenden Bilder.
+    /// Wo Media Foundation startet, wechseln sich die Stücke zwischen ihr und Software ab.
     #[test]
     fn parts_join_frame_exact_and_merge_keeps_every_frame() {
         if !cl_media::ffmpeg_available() {
             return;
         }
+        let mix = if available_encoders().contains(&Encoder::Mf) { vec![Encoder::Mf, Encoder::Software] } else { vec![Encoder::Software] };
         let d = tempfile::tempdir().unwrap();
         let vfr = ",setpts='(N/60+0.006*sin(N*1.7))/TB'";
         let cases: [(&str, &str, &[&str]); 3] = [
@@ -1428,7 +1467,7 @@ mod tests {
             let no = AtomicBool::new(false);
             let mut joined = Vec::new();
             for k in 0..pt.count {
-                let n = build_part_with(&m, &pdir, &pt, st, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
+                let n = build_part_with(&m, &pdir, &pt, st, k, &spec, mix[k as usize % mix.len()], None, &|_| {}, &no).unwrap();
                 let c = codes(&pdir.join(parts::part_name(k)));
                 assert_eq!(c.len() as u64, n);
                 if k + 1 < pt.count {
@@ -1827,7 +1866,7 @@ mod tests {
         println!("Quelle {} ({:.0} s, {} Stücke à {} Bilder)", src.display(), m.duration.as_secs_f64(), pt.count, pt.per);
         let picks = [0, pt.count / 3, pt.count / 2, pt.count * 3 / 4, pt.count - 2];
         let mut built: Option<PathBuf> = None;
-        for enc in encoder_chain(available_encoders(), &[]) {
+        for enc in encoder_chain(available_encoders(), &[], "auto") {
             for hw in decode_attempts(enc, &m) {
                 let dir = d.path().join(format!("{enc:?}-{hw:?}"));
                 let t = Instant::now();
@@ -2000,7 +2039,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let spec = proxy_spec(&m, 540, Rational::new(30, 1));
         let dur = m.duration.as_secs_f64();
-        for enc in encoder_chain(available_encoders(), &[]) {
+        for enc in encoder_chain(available_encoders(), &[], "auto") {
             for hw in decode_attempts(enc, &m) {
                 let out = d.path().join(format!("{enc:?}-{hw:?}.mp4"));
                 match build_with(&m, &out, &spec, enc, hw, &|_| {}, &AtomicBool::new(false)) {

@@ -167,6 +167,36 @@ pub enum Encoder {
     Nvenc,
     Qsv,
     Amf,
+    /// Windows (Media Foundation): `h264_mf`/`hevc_mf`, nur Hardware
+    Mf,
+}
+
+impl Encoder {
+    /// Reihenfolge der automatischen Wahl
+    pub const AUTO: [Encoder; 5] = [Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Mf, Encoder::Software];
+
+    /// Kennung in den Einstellungen („Hardware-Kodierung“)
+    pub fn id(self) -> &'static str {
+        match self {
+            Encoder::Software => "software",
+            Encoder::Nvenc => "nvenc",
+            Encoder::Qsv => "qsv",
+            Encoder::Amf => "amf",
+            Encoder::Mf => "mf",
+        }
+    }
+}
+
+/// Encoder in der Reihenfolge der Versuche: der gewählte (`pref` = [`Encoder::id`]) und dann
+/// Software; sonst oder wenn der gewählte hier fehlt (anderer Rechner, Treiber weg) automatisch
+/// NVENC → QSV → AMF → Media Foundation → Software, soweit `found`. Software steht immer am Ende.
+pub fn encoder_chain(found: &[Encoder], pref: &str) -> Vec<Encoder> {
+    let have = |e: &Encoder| *e == Encoder::Software || found.contains(e);
+    match Encoder::AUTO.into_iter().find(|e| have(e) && e.id() == pref) {
+        Some(Encoder::Software) => vec![Encoder::Software],
+        Some(e) => vec![e, Encoder::Software],
+        None => Encoder::AUTO.into_iter().filter(have).collect(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -647,6 +677,7 @@ fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
 /// Hardware-Encoder, deren Abschnitte beim Zusammenfügen mit `-c:v copy` nicht geprüft sind
 /// (QSV, AMF, AV1 über NVENC: auf dem Prüfrechner nicht startbar): Abschnitte dann verlustfrei
 /// (FFV1) und einmal über das Ganze mit dem gewählten Encoder kodieren, wie bei GIF.
+/// Media Foundation ist geprüft (Test `sections_hardware_encoders_concat`, NVIDIA-MFT).
 fn copy_unproven(s: &ExportSettings) -> bool {
     matches!(
         (video_codec(s), s.encoder),
@@ -1034,6 +1065,19 @@ fn audio_args(s: &ExportSettings) -> Vec<String> {
     }
 }
 
+/// Bitrate (kbit/s) für Media Foundation: Ein Modus mit konstanter Qualität ist nicht bei jedem
+/// Hardware-MFT sicher (ein unbekannter wird still übergangen, dann kodiert er mit < 1 Mbit/s),
+/// darum Bits je Bildpunkt: 1080p60 H.264 ≈ 6 / 10 / 15 Mbit/s, HEVC 70 %.
+fn mf_kbps(s: &ExportSettings, c: Codec) -> u32 {
+    let (w, h) = s.output_size();
+    let bpp = match s.quality {
+        Quality::Lower => 0.05,
+        Quality::Higher => 0.12,
+        _ => 0.08,
+    } * if c == Codec::Hevc { 0.7 } else { 1.0 };
+    (w as f64 * h as f64 * s.fps.as_f64() * bpp / 1000.0).round().max(500.0) as u32
+}
+
 /// Bild-Encoder samt Bildrate (Videoformate).
 fn video_args(s: &ExportSettings) -> Vec<String> {
     let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
@@ -1072,6 +1116,15 @@ fn video_args(s: &ExportSettings) -> Vec<String> {
         ),
         (Codec::H264, Encoder::Amf) => a.extend(v(&["-c:v", "h264_amf", "-quality", "quality"])),
         (Codec::Hevc, Encoder::Amf) => a.extend(v(&["-c:v", "hevc_amf", "-quality", "quality"])),
+        (c @ (Codec::H264 | Codec::Hevc), Encoder::Mf) => {
+            let name = if c == Codec::H264 { "h264_mf" } else { "hevc_mf" };
+            // `-hw_encoding 1`: ohne Hardware-Weg scheitert der Start (kein Software-MFT);
+            // `-g 250` wie x264/NVENC (ohne: alle 12 Bilder ein Schlüsselbild)
+            a.extend(v(&["-c:v", name, "-pix_fmt", "nv12", "-hw_encoding", "1", "-g", "250"]));
+            if !matches!(s.quality, Quality::Bitrate(_)) {
+                a.extend(["-b:v".into(), format!("{}k", mf_kbps(s, c))]);
+            }
+        }
         (Codec::H264, _) => a.extend(
             v(&["-c:v", "libx264", "-preset", "medium", "-crf"])
                 .into_iter()
@@ -1467,51 +1520,57 @@ pub fn driver_too_old(stderr: &str) -> bool {
 
 static OLD_DRIVER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Hat die letzte Erkennung einen Encoder gefunden, der nur am veralteten Treiber scheitert?
+/// Hinweis „Grafiktreiber veraltet“ nach der letzten Erkennung (siehe [`driver_hint`])?
 pub fn old_driver_found() -> bool {
     OLD_DRIVER.load(Ordering::Relaxed)
+}
+
+/// Hinweis „Grafiktreiber veraltet“: nur wenn NVENC allein am Treiber scheitert UND kein anderer
+/// Hardware-Weg (QSV, AMF, Media Foundation) gefunden wurde – sonst kodiert die App ja in Hardware.
+pub fn driver_hint(nvenc_driver_old: bool, found: &[Encoder]) -> bool {
+    nvenc_driver_old && found.iter().all(|e| *e == Encoder::Software)
+}
+
+/// Testläufe der Hardware-Encoder: Encoder und Argumente (Media Foundation nur unter Windows,
+/// mit `nv12` und erzwungener Hardware wie im Export).
+fn encoder_probes() -> Vec<(Encoder, &'static [&'static str])> {
+    let mut v: Vec<(Encoder, &'static [&'static str])> = vec![
+        (Encoder::Nvenc, &["h264_nvenc"]),
+        (Encoder::Qsv, &["h264_qsv"]),
+        (Encoder::Amf, &["h264_amf"]),
+    ];
+    if cfg!(windows) {
+        v.push((Encoder::Mf, &["h264_mf", "-pix_fmt", "nv12", "-hw_encoding", "1"]));
+    }
+    v
 }
 
 /// Prüft, welche Hardware-Encoder auf diesem Rechner wirklich funktionieren (kurzer Testlauf).
 pub fn available_encoders() -> Vec<Encoder> {
     let mut v = vec![Encoder::Software];
-    for (enc, name) in [
-        (Encoder::Nvenc, "h264_nvenc"),
-        (Encoder::Qsv, "h264_qsv"),
-        (Encoder::Amf, "h264_amf"),
-    ] {
+    let mut old = false;
+    for (enc, codec) in encoder_probes() {
         let ok = cl_media::ffmpeg_command()
             .ok()
             .and_then(|mut c| {
-                c.args([
-                    "-v",
-                    "error",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=black:s=256x256:d=0.1",
-                    "-c:v",
-                    name,
-                    "-f",
-                    "null",
-                    "-",
-                ])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .output()
-                .ok()
+                c.args(["-v", "error", "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1", "-c:v"])
+                    .args(codec)
+                    .args(["-f", "null", "-"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .ok()
             })
             .is_some_and(|o| {
-                if !o.status.success() && driver_too_old(&String::from_utf8_lossy(&o.stderr)) {
-                    OLD_DRIVER.store(true, Ordering::Relaxed);
-                }
+                old |= enc == Encoder::Nvenc && !o.status.success() && driver_too_old(&String::from_utf8_lossy(&o.stderr));
                 o.status.success()
             });
         if ok {
             v.push(enc);
         }
     }
+    OLD_DRIVER.store(driver_hint(old, &v), Ordering::Relaxed);
     v
 }
 
@@ -3975,5 +4034,73 @@ mod tests {
         assert!(!driver_too_old("[h264_amf @ 0x1] DLL amfrt64.dll failed to open"));
         assert!(!driver_too_old("[h264_qsv @ 0x1] Error creating a MFX session: -9"));
         assert!(!driver_too_old(""));
+    }
+
+    /// Hinweis nur, wenn NVENC am Treiber scheitert und kein anderer Hardware-Weg da ist.
+    #[test]
+    fn driver_hint_only_without_other_hardware() {
+        use Encoder::*;
+        for old in [false, true] {
+            for found in [vec![Software], vec![Software, Qsv], vec![Software, Amf], vec![Software, Mf], vec![Software, Nvenc], vec![], vec![Software, Qsv, Amf, Mf]] {
+                let want = old && found.iter().all(|e| *e == Software);
+                assert_eq!(driver_hint(old, &found), want, "{old} {found:?}");
+            }
+        }
+        assert!(driver_hint(true, &[Software]));
+        assert!(!driver_hint(true, &[Software, Mf]));
+    }
+
+    /// Automatisch NVENC → QSV → AMF → Media Foundation → Software; ein gewählter Weg vorn, fehlt
+    /// er hier, gilt automatisch.
+    #[test]
+    fn encoder_chain_follows_setting_and_falls_back_to_auto() {
+        use Encoder::*;
+        let all = [Software, Mf, Amf, Qsv, Nvenc];
+        assert_eq!(encoder_chain(&all, "auto"), [Nvenc, Qsv, Amf, Mf, Software]);
+        assert_eq!(encoder_chain(&[Software, Mf], "auto"), [Mf, Software]);
+        assert_eq!(encoder_chain(&[Software, Mf, Nvenc], ""), [Nvenc, Mf, Software]);
+        assert_eq!(encoder_chain(&[], "auto"), [Software]);
+        assert_eq!(encoder_chain(&all, "mf"), [Mf, Software]);
+        assert_eq!(encoder_chain(&all, "software"), [Software]);
+        assert_eq!(encoder_chain(&[], "software"), [Software]);
+        // gewählter Weg fehlt (anderer Rechner, Treiber weg) oder unbekannt: automatisch
+        assert_eq!(encoder_chain(&[Software, Mf], "nvenc"), [Mf, Software]);
+        assert_eq!(encoder_chain(&[Software, Qsv], "quatsch"), [Qsv, Software]);
+        for e in Encoder::AUTO {
+            assert_eq!(encoder_chain(&all, e.id())[0], e);
+        }
+    }
+
+    /// Media Foundation: nv12, erzwungene Hardware, GOP 250, Bitrate nach Qualität; eigene
+    /// Bitrate ersetzt sie; andere Codecs nicht über diesen Weg.
+    #[test]
+    fn media_foundation_args() {
+        let mut s = ExportSettings::from_project(&Project::new("mf"));
+        (s.width, s.height, s.fps, s.format, s.encoder, s.include_audio) = (1920, 1080, Rational::new(60, 1), Format::Mp4, Encoder::Mf, false);
+        let args = |s: &ExportSettings| codec_args(s).join(" ");
+        s.codec = Codec::H264;
+        s.quality = Quality::Recommended;
+        assert_eq!(args(&s), "-c:v h264_mf -pix_fmt nv12 -hw_encoding 1 -g 250 -b:v 9953k -r 60/1 -movflags +faststart");
+        s.quality = Quality::Lower;
+        assert!(args(&s).contains("-b:v 6221k"), "{}", args(&s));
+        s.quality = Quality::Higher;
+        assert!(args(&s).contains("-b:v 14930k"), "{}", args(&s));
+        s.codec = Codec::Hevc;
+        s.quality = Quality::Recommended;
+        assert!(args(&s).starts_with("-c:v hevc_mf -pix_fmt nv12 -hw_encoding 1 -g 250 -b:v 6967k "), "{}", args(&s));
+        s.quality = Quality::Bitrate(8000);
+        let a = codec_args(&s);
+        assert_eq!(a.iter().filter(|x| *x == "-b:v").count(), 1, "{a:?}");
+        assert!(args(&s).contains("-b:v 8000k -maxrate 8800k"), "{}", args(&s));
+        // kleine Ausgabe: nie unter 500 kbit/s
+        (s.width, s.height, s.fps, s.quality) = (128, 72, Rational::new(30, 1), Quality::Lower);
+        assert!(args(&s).contains("-b:v 500k"), "{}", args(&s));
+        s.quality = Quality::Recommended;
+        for (format, codec) in [(Format::Mp4, Codec::Av1), (Format::WebM, Codec::Vp9), (Format::Mov, Codec::ProRes)] {
+            (s.format, s.codec) = (format, codec);
+            assert!(!args(&s).contains("_mf"), "{codec:?}: {}", args(&s));
+        }
+        (s.format, s.codec) = (Format::Gif, Codec::H264);
+        assert!(!args(&s).contains("_mf"));
     }
 }

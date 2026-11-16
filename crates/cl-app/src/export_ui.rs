@@ -259,6 +259,8 @@ pub struct ExportDialog {
     pub chapter_hint: bool,
     pub chapter_hint_off: bool,
     encoders: Arc<Mutex<Option<Vec<Encoder>>>>,
+    /// Encoder in diesem Dialog von Hand gewählt (sonst Vorauswahl nach den Einstellungen)
+    encoder_picked: bool,
     running: Option<Running>,
     last_output: Option<PathBuf>,
     error: Option<String>,
@@ -283,6 +285,17 @@ pub struct ExportDialog {
     quit_ok: bool,
     /// größte bisher gezeigte Höhe der Einstellungen (Dialog springt beim Formatwechsel nicht)
     right_h: f32,
+}
+
+/// Name eines Encoders (Export-Dialog, Einstellungen → Leistung)
+pub fn encoder_name(e: Encoder) -> &'static str {
+    match e {
+        Encoder::Software => "Software (beste Qualität)",
+        Encoder::Nvenc => "NVIDIA NVENC (schnell)",
+        Encoder::Qsv => "Intel Quick Sync (schnell)",
+        Encoder::Amf => "AMD AMF (schnell)",
+        Encoder::Mf => "Windows (Media Foundation)",
+    }
 }
 
 /// Darf das Fenster schließen? Während eines Exports nur nach Bestätigung.
@@ -369,9 +382,10 @@ impl ExportDialog {
             s.format = old.format;
             s.codec = old.codec;
             s.quality = old.quality;
-            s.encoder = old.encoder;
             s.include_audio = old.include_audio;
         }
+        // eine im Dialog getroffene Wahl gilt nur für diesen Export
+        self.encoder_picked = false;
         self.short_edge = 0;
         self.preset_hint = None;
         self.platform = None;
@@ -511,6 +525,11 @@ impl ExportDialog {
         };
         s.chapters = self.chapters;
         s.chapter_name = crate::tr("Kapitel");
+        // Vorauswahl nach „Hardware-Kodierung“, bis im Dialog gewählt wird (Erkennung im Hintergrund)
+        if !self.encoder_picked {
+            let found = self.encoders.lock().unwrap().clone().unwrap_or_default();
+            s.encoder = cl_export::encoder_chain(&found, &crate::proxy::encoder_pref())[0];
+        }
         let mut open = true;
         let mut start = false;
         // ohne Nachfrage überschreiben (bestätigt oder „Erneut exportieren“)
@@ -699,15 +718,12 @@ impl ExportDialog {
                                     });
                                     let encs = self.encoders.lock().unwrap().clone().unwrap_or_default();
                                     theme::row(ui, "Encoder", |ui| {
-                                        let name = |e: Encoder| match e {
-                                            Encoder::Software => "Software (beste Qualität)",
-                                            Encoder::Nvenc => "NVIDIA NVENC (schnell)",
-                                            Encoder::Qsv => "Intel Quick Sync (schnell)",
-                                            Encoder::Amf => "AMD AMF (schnell)",
-                                        };
+                                        let name = encoder_name;
                                         egui::ComboBox::from_id_salt("exp-enc").selected_text(crate::tr(name(s.encoder))).width(200.0).show_ui(ui, |ui| {
                                             for e in encs {
-                                                ui.selectable_value(&mut s.encoder, e, crate::tr(name(e)));
+                                                if ui.selectable_value(&mut s.encoder, e, crate::tr(name(e))).clicked() {
+                                                    self.encoder_picked = true;
+                                                }
                                             }
                                         });
                                     });

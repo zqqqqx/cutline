@@ -98,6 +98,8 @@ pub struct AppSettings {
     pub new_channels: cl_core::Channels,
     /// Höhe der Proxys (540, 720, 1080)
     pub proxy_h: u32,
+    /// Hardware-Kodierung für Export und Proxys: „auto“ oder [`cl_export::Encoder::id`]
+    pub hw_encoder: String,
     /// Downloads aus Plugins (Epidemic Sound, Pexels) auch in die Bibliothek legen
     pub lib_downloads: bool,
     /// Gewählter Untertitel-Stil (`captions::PRESETS`)
@@ -161,6 +163,7 @@ impl Default for AppSettings {
             new_fps: cl_core::Rational::new(30, 1),
             new_channels: Default::default(),
             proxy_h: 540,
+            hw_encoder: "auto".into(),
             lib_downloads: true,
             caption_preset: "classic".into(),
             export_sound: true,
@@ -195,6 +198,7 @@ impl AppSettings {
         crate::theme::set_animations(s.animations);
         crate::theme::set_accent(&s.accent);
         crate::audio::set_output_device(s.audio_device.clone());
+        crate::proxy::set_encoder_pref(&s.hw_encoder);
         if s.cache_days > 0 {
             let days = s.cache_days;
             std::thread::spawn(move || {
@@ -914,6 +918,36 @@ impl App {
                 if widgets::toggle_row(ui, "Vorschauqualität beim Abspielen automatisch anpassen", &mut self.settings.auto_quality) {
                     self.settings.save();
                 }
+                ui.add_space(8.0);
+                theme::section(ui, "Hardware-Kodierung");
+                theme::row(ui, "Encoder", |ui| {
+                    use cl_export::Encoder;
+                    // nur die Wege, deren Testlauf hier geklappt hat (Erkennung im Hintergrund)
+                    let found = crate::proxy::found_encoders();
+                    if found.is_none() {
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+                    }
+                    let found = found.unwrap_or(&[]);
+                    let mut choices = vec![("auto", "Automatisch")];
+                    choices.extend(
+                        Encoder::AUTO
+                            .into_iter()
+                            .filter(|e| *e == Encoder::Software || found.contains(e))
+                            .map(|e| (e.id(), crate::export_ui::encoder_name(e))),
+                    );
+                    // gewählter Weg hier nicht (mehr) gefunden: gilt als automatisch
+                    let cur = choices.iter().find(|c| c.0 == self.settings.hw_encoder).unwrap_or(&choices[0]).0;
+                    let name = |id: &str| choices.iter().find(|c| c.0 == id).map_or("", |c| c.1);
+                    egui::ComboBox::from_id_salt("set-hw-enc").selected_text(crate::tr(name(cur))).show_ui(ui, |ui| {
+                        for (id, n) in &choices {
+                            if ui.selectable_label(*id == cur, crate::tr(*n)).clicked() {
+                                self.settings.hw_encoder = id.to_string();
+                                crate::proxy::set_encoder_pref(id);
+                                self.settings.save();
+                            }
+                        }
+                    });
+                });
                 ui.add_space(8.0);
                 self.proxy_settings(ui);
                 ui.add_space(8.0);

@@ -620,7 +620,7 @@ fn zoom_pulse_on_long_clip_across_sections() {
     assert!(bad.is_empty(), "abweichende Bilder {bad:?}");
 }
 
-/// Hardware-Encoder, die hier starten (NVENC H.264/HEVC): Abschnitte per `-c:v copy` zusammengefügt
+/// Hardware-Encoder, die hier starten (NVENC und Media Foundation, H.264/HEVC): Abschnitte per `-c:v copy` zusammengefügt
 /// ergeben alle Bilder, monotone Zeitstempel und decodieren ohne Fehler.
 #[test]
 fn sections_hardware_encoders_concat() {
@@ -665,6 +665,9 @@ fn unproven_hardware_encoders_encode_once() {
         (Encoder::Amf, Codec::Hevc, "hevc_amf", false),
         (Encoder::Nvenc, Codec::Av1, "av1_nvenc", false),
         (Encoder::Nvenc, Codec::Hevc, "hevc_nvenc", true),
+        // geprüft in `sections_hardware_encoders_concat`
+        (Encoder::Mf, Codec::H264, "h264_mf", true),
+        (Encoder::Mf, Codec::Hevc, "hevc_mf", true),
     ] {
         let mut s = ExportSettings::from_project(&p);
         (s.encoder, s.codec) = (e, codec);
@@ -673,6 +676,33 @@ fn unproven_hardware_encoders_encode_once() {
         assert_eq!(sec.iter().any(|a| a == "ffv1"), !safe, "{name}: Abschnitte");
         assert_eq!(job.args.iter().any(|a| a == name), !safe, "{name}: Endlauf kodiert");
         assert_eq!(job.args.iter().any(|a| a == "copy"), safe, "{name}: copy");
+    }
+}
+
+/// Media Foundation (wo `h264_mf` mit Hardware startet): Export H.264 und HEVC mit allen Bildern,
+/// richtiger Dauer und dem gewählten Codec.
+#[test]
+fn media_foundation_export_h264_and_hevc() {
+    if !cl_media::ffmpeg_available() || !cl_export::available_encoders().contains(&cl_export::Encoder::Mf) {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let p = rich_project(dir.path());
+    for (codec, name) in [(cl_export::Codec::H264, "h264"), (cl_export::Codec::Hevc, "hevc")] {
+        let mut s = ExportSettings::from_project(&p);
+        (s.encoder, s.codec, s.width, s.height) = (cl_export::Encoder::Mf, codec, 640, 360);
+        let out = dir.path().join(format!("mf_{name}.mp4"));
+        let job = build(&p, &s, &no_fonts, &out).unwrap();
+        assert!(job.args.iter().any(|a| *a == format!("{name}_mf")), "{:?}", job.args);
+        run_job(&job);
+        let t = frame_times(&out);
+        assert_eq!(t.len(), 360, "{name}: Bilder");
+        assert!(t.windows(2).all(|w| w[1] > w[0]), "{name}: Zeitstempel");
+        let secs = stream_secs(&out, "v:0");
+        assert!((secs - 12.0).abs() < 0.05, "{name}: Dauer {secs}");
+        let m = cl_media::probe(&out).unwrap();
+        assert_eq!(m.video_codec.as_deref(), Some(name));
+        assert_eq!((m.width, m.height), (640, 360));
     }
 }
 
