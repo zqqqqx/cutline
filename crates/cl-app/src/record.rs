@@ -45,6 +45,11 @@ pub fn input_devices() -> Vec<String> {
 }
 
 pub fn default_input() -> Option<String> {
+    // Tests fragen die Tonhardware nicht ab: Jeder Test läuft in einem eigenen kurzlebigen Thread, und
+    // der Geräte-Lister von WASAPI überlebt das Ende seines ersten Threads nicht (Absturz in der CI)
+    if cfg!(test) {
+        return None;
+    }
     cpal::default_host()
         .default_input_device()
         .and_then(|d| d.name().ok())
