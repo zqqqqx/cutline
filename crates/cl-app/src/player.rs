@@ -701,6 +701,7 @@ mod presence_tests {
         assert_eq!(full.path, m.path, "kein fertiger Proxy auf der Platte: Original");
         assert!((full.source_at.as_secs_f64() - 12.0).abs() < 1e-3, "{:?}", full.source_at);
         assert_ne!(full.open.key, parts.open.key);
+        assert_ne!(full.alias, parts.alias, "Quellenwahl im Fingerabdruck");
     }
 }
 
@@ -1512,7 +1513,8 @@ impl App {
             // Quelle (Original/Proxy-Stücke) im Schlüssel: ein Wechsel öffnet einen Ersatzstrom
             let pick = self.stream_pick(lid(id), c, m, prefetch_at.unwrap_or(self.playhead));
             let key = key ^ pick.tag();
-            let alias = stream_alias(c, m, (w, h), stream_fps, fxh);
+            // auch im Fingerabdruck: nach dem Teilen kein Spender-Strom über andere Stücke
+            let alias = stream_alias(c, m, (w, h), stream_fps, fxh) ^ pick.tag();
             let want = Want {
                 id: lid(id),
                 key,
