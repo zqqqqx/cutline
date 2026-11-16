@@ -916,9 +916,10 @@ mod tests {
         // 20 Bilder (2 s bei 10/s), Zeitstempel im 30er-Raster; der Graph meldet weiter 10/s
         let g = "[0:v]fps=10,setpts=N/(30*TB),scale=32:18,format=rgba[out]";
         let s = FrameStream::open_fx(&src, Time::ZERO, 32, 18, Rational::new(30, 1), Some(g)).unwrap();
-        // + bis zu 2 für die Dauer des letzten Bildes (1/10 s); ohne Bildrate am Ausgang 9 (FFmpeg 8) bzw. ~17 (7)
+        // FFmpeg 8: + 2 für die Dauer des letzten Bildes (1/10 s), FFmpeg 7 kennt sie nicht (−1);
+        // ohne Bildrate am Ausgang 9 (FFmpeg 8) bzw. 16 (FFmpeg 7)
         let n = std::iter::from_fn(|| s.next_blocking()).count();
-        assert!((20..=22).contains(&n), "{n}");
+        assert!((19..=22).contains(&n), "{n}");
     }
 
     #[test]
