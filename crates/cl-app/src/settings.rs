@@ -120,9 +120,13 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            lang: cl_i18n::Lang::from_locale(
-                &std::env::var("LANG").unwrap_or_else(|_| "de".into()),
-            )
+            // Tests prüfen deutsche Texte: die Systemsprache (Linux: LANG=en_US…) darf die globale
+            // Sprache von `tr` nicht nebenbei auf Englisch stellen
+            lang: cl_i18n::Lang::from_locale(&if cfg!(test) {
+                "de".into()
+            } else {
+                std::env::var("LANG").unwrap_or_else(|_| "de".into())
+            })
             .code()
             .into(),
             ui_scale: 1.0,
@@ -1099,6 +1103,12 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_apps_stay_german_under_an_english_system_language() {
+        std::env::set_var("LANG", "en_US.UTF-8");
+        assert_eq!(AppSettings::default().lang(), cl_i18n::Lang::De);
+    }
 
     #[test]
     fn mcp_restarts_at_once_on_the_same_port() {
