@@ -591,6 +591,27 @@ fn loop_range_jumps_back_and_keeps_playing() {
     assert!(w.core.jumps() >= 3);
 }
 
+/// Nachtest K7: In der Pause zeichnet die Oberfläche kaum (kein Takt); beim Fortsetzen galt die
+/// ganze Pause als Messfenster ohne Bilder – die automatische Qualität senkte eine Stufe und
+/// öffnete Ersatzströme. Nach der Pause: kein Rückstand, keine Stufe, kein neuer Strom.
+#[test]
+fn resume_after_a_long_pause_without_ticks_keeps_quality_and_streams() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    w.max_q = 3;
+    w.play();
+    w.run(2.0, DT);
+    w.pause();
+    w.step(DT);
+    let opens = w.opens;
+    w.clock.set(w.now() + 3.0); // 3 s Pause ohne ein einziges UI-Bild
+    w.play();
+    w.run(3.0, DT);
+    assert_eq!(w.core.quality.level, 0, "Stufe bleibt");
+    assert_eq!(w.opens, opens, "kein neuer Strom");
+    let st = w.core.take_stats();
+    assert_eq!(st.catch_ups, 0);
+}
+
 #[test]
 fn pause_and_resume_at_same_place_opens_no_new_streams() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);

@@ -396,6 +396,12 @@ impl<S: Source> PlayCore<S> {
         )
     }
 
+    /// Bisher geholte Bilder des laufenden Stroms der Ebene (Test: läuft das Bild weiter?)
+    #[cfg(test)]
+    pub fn taken(&self, id: Lid) -> u64 {
+        self.cur.get(&id).map_or(0, |s| s.taken)
+    }
+
     /// Offene Ströme (laufend und Ersatz)
     #[cfg(test)]
     pub fn stream_count(&self) -> usize {
@@ -445,7 +451,12 @@ impl<S: Source> PlayCore<S> {
             for s in self.cur.values_mut() {
                 s.waiting_since = None;
                 s.behind_since = None;
+                s.win_frames = 0;
             }
+            // Messfenster der automatischen Qualität neu: in der Pause zeichnet die Oberfläche
+            // kaum (kein Takt), sonst zählte die ganze Pause als Fenster ohne Bilder
+            self.win_start = now;
+            self.win_catch_up = false;
             self.mode = Mode::Spielen;
             self.clock = Some((now, at));
             self.last_primary = None;
