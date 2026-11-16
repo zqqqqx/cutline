@@ -173,6 +173,9 @@ fn file_label(p: &Path) -> String {
 /// Verschachtelte Entwürfe (zusammengesetzte Clips) höchstens so tief auflösen
 const MAX_DEPTH: usize = 8;
 
+/// Höchstens so viele Segmente (alle Stufen zusammen); echte Entwürfe haben wenige Tausend
+const MAX_SEGMENTS: usize = 1_000_000;
+
 /// Materialien eines Entwurfs nach ID: (Art, Material)
 fn materials(d: &Value) -> HashMap<&str, (&str, &Value)> {
     let mut by_id = HashMap::new();
@@ -198,14 +201,23 @@ fn sub_draft(m: &Value) -> Option<&Value> {
 }
 
 /// Medien- und Schriftdateien, die der Import braucht (in der Reihenfolge der Spuren, auch in
-/// verschachtelten Entwürfen) – zum Prüfen vorab.
-fn collect_files(d: &Value, dir: &Path, depth: usize, media: &mut Vec<PathBuf>, fonts: &mut Vec<PathBuf>) {
+/// verschachtelten Entwürfen) – zum Prüfen vorab. `seen`: bisher besuchte Segmente; jedes Segment
+/// auf einen inneren Entwurf löst ihn neu auf, so wächst der Aufwand mit der Tiefe exponentiell.
+/// Die Zeitleiste geht danach genau dieselben Segmente durch, die Grenze gilt also für beide.
+fn collect_files(d: &Value, dir: &Path, depth: usize, media: &mut Vec<PathBuf>, fonts: &mut Vec<PathBuf>, seen: &mut usize, progress: &Progress) -> Result<()> {
     let by_id = materials(d);
     for t in d.get("tracks").and_then(|t| t.as_array()).into_iter().flatten() {
         if !matches!(t.get("type").and_then(|v| v.as_str()), Some("video" | "sticker" | "audio" | "text")) {
             continue;
         }
         for s in segments(t) {
+            *seen += 1;
+            if *seen > MAX_SEGMENTS {
+                return Err("Entwurf zu groß".into());
+            }
+            if *seen % 256 == 0 {
+                progress.check()?;
+            }
             let mid = s.get("material_id").and_then(|v| v.as_str()).unwrap_or("");
             let Some((kind, m)) = by_id.get(mid) else { continue };
             match *kind {
@@ -218,13 +230,14 @@ fn collect_files(d: &Value, dir: &Path, depth: usize, media: &mut Vec<PathBuf>, 
                 "texts" => fonts.extend(text_font(m, dir)),
                 "drafts" if depth < MAX_DEPTH => {
                     if let Some(sub) = sub_draft(m) {
-                        collect_files(sub, dir, depth + 1, media, fonts);
+                        collect_files(sub, dir, depth + 1, media, fonts, seen, progress)?;
                     }
                 }
                 _ => {}
             }
         }
     }
+    Ok(())
 }
 
 /// Doppelte entfernen, Reihenfolge behalten
@@ -281,13 +294,22 @@ struct Build<'a> {
 }
 
 impl Build<'_> {
-    fn media(&mut self, path: PathBuf) -> Option<MediaRef> {
+    /// `mkind`, `mat`: Materialart und Material (Angaben für den Platzhalter einer fehlenden Datei)
+    fn media(&mut self, path: PathBuf, mkind: &str, mat: &Value) -> Option<MediaRef> {
         if let Some(m) = self.used.get(&path) {
             return m.clone();
         }
         let m = if !self.exists.get(&path).copied().unwrap_or(false) {
             self.rep.missing.push(path.clone());
-            None
+            let kind = match (mkind, mat.get("type").and_then(|v| v.as_str())) {
+                ("audios", _) => MediaKind::Audio,
+                (_, Some("photo")) => MediaKind::Image,
+                _ => MediaKind::Video,
+            };
+            let dim = |k: &str| mat.get(k).and_then(|v| v.as_u64()).unwrap_or(0).min(u32::MAX as u64) as u32;
+            let ph = crate::placeholder(path.clone(), kind, Time(us(Some(mat), "duration").max(0)), dim("width"), dim("height"));
+            self.media.push(ph.clone());
+            Some(ph)
         } else {
             match self.probed.remove(&path) {
                 Some(Ok(m)) => {
@@ -372,7 +394,7 @@ impl Build<'_> {
                             });
                             continue;
                         }
-                        let Some(media) = self.media(resolve(raw, dir)) else {
+                        let Some(media) = self.media(resolve(raw, dir), mkind, m) else {
                             continue;
                         };
                         let kind = match media.kind {
@@ -670,7 +692,7 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
 
     // Medien finden
     let (mut media, mut fonts) = (Vec::new(), Vec::new());
-    collect_files(d, dir, 0, &mut media, &mut fonts);
+    collect_files(d, dir, 0, &mut media, &mut fonts, &mut 0, progress)?;
     let (media, fonts) = (unique(media), unique(fonts));
     progress.set(Step::Find, 0, media.len(), "");
     let mut exists = HashMap::new();
@@ -846,6 +868,51 @@ mod tests {
         assert!(!st.shadow);
         assert_eq!(st.outline.unwrap().1, [0, 0, 0, 255]);
         assert_eq!(c.anim.intro.as_ref().unwrap().id, "fade");
+    }
+
+    /// Fehlende Datei (Platte nicht angesteckt): Clip und Medium bleiben, das Medium ist ein
+    /// Platzhalter mit den Angaben des Materials, `missing` nennt die Datei.
+    #[test]
+    fn missing_file_keeps_clip_with_placeholder_media() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("fehlt.jpg");
+        let seg = |mid: &str, at: i64| serde_json::json!({"material_id": mid, "target_timerange": {"start": at, "duration": 1_000_000}});
+        let draft = serde_json::json!({
+            "materials": {
+                "videos": [{"id": "B", "type": "photo", "path": gone.to_string_lossy(), "width": 640, "height": 480, "duration": 5_000_000}],
+                "audios": [{"id": "A", "type": "music", "path": dir.path().join("fehlt.wav").to_string_lossy(), "duration": 9_000_000}]
+            },
+            "tracks": [
+                {"type": "video", "segments": [seg("B", 0), seg("B", 1_000_000)]},
+                {"type": "audio", "segments": [seg("A", 0)]}
+            ]
+        });
+        let (p, rep) = convert(&draft, dir.path(), "Fehlt").unwrap();
+        assert_eq!(rep.missing.len(), 2);
+        assert_eq!(rep.clips, 3);
+        assert_eq!(p.media.len(), 2, "jede Datei einmal");
+        let b = p.media.iter().find(|m| m.path == gone).unwrap();
+        assert_eq!((b.kind, b.width, b.height, b.duration), (MediaKind::Image, 640, 480, Time(5_000_000)));
+        assert_eq!(p.media.iter().find(|m| m.path != gone).unwrap().kind, MediaKind::Audio);
+        assert_eq!(p.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>(), 3);
+    }
+
+    /// 8 Stufen mit je 30 Segmenten auf denselben inneren Entwurf (30^8 Durchläufe, wenige KB):
+    /// endet schnell mit Fehler statt Speicher und Zeit aufzubrauchen.
+    #[test]
+    fn nested_draft_bomb_stops_early() {
+        let segs = |mid: &str| serde_json::json!([{"type": "video", "segments": (0..30).map(|_| serde_json::json!({"material_id": mid, "target_timerange": {"start": 0, "duration": 1000000}})).collect::<Vec<_>>()}]);
+        let mut d = serde_json::json!({"materials": {}, "tracks": segs("leer")});
+        for _ in 0..MAX_DEPTH {
+            d = serde_json::json!({"materials": {"drafts": [{"id": "D", "draft": d}]}, "tracks": segs("D")});
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(convert(&d, Path::new("."), "Bombe").map(|_| ()));
+        });
+        // ohne Grenze liefe das tagelang: dann scheitert der Test hier statt zu hängen
+        let r = rx.recv_timeout(std::time::Duration::from_secs(30)).expect("Import endet nicht");
+        assert_eq!(r.unwrap_err(), "Entwurf zu groß");
     }
 
     /// Echten Entwurf ansehen: CAPCUT_DRAFT=<Ordner> cargo test -- --ignored real_draft --nocapture

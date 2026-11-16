@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use cl_core::{MediaKind, Project};
 use cl_import::{Progress, Report, Step};
-use eframe::egui::{self, vec2, RichText};
+use eframe::egui::{self, RichText};
 
 use crate::app::App;
 use crate::theme::{self, icon};
@@ -101,6 +101,11 @@ pub fn run_import(
         let _ = fonts.lock().unwrap_or_else(|e| e.into_inner()).import_file(f);
     }
     progress.tick("");
+    // während der Schriften abgebrochen: auch dann bleibt kein Projekt liegen
+    if progress.cancelled() {
+        let _ = std::fs::remove_file(&path);
+        return Err(cl_import::CANCELLED.into());
+    }
     if crate::app::perf() {
         eprintln!(
             "perf: Import „{}“ {:.1} s, {} Medien, {} Clips, {} Texte",
@@ -164,7 +169,7 @@ impl App {
     }
 
     /// Alle Importe dieser Runde abbrechen (wirkt sofort; der Thread räumt hinter sich auf).
-    fn cancel_import(&mut self) {
+    pub(crate) fn cancel_import(&mut self) {
         if let Some(j) = self.import.job.take() {
             j.progress.cancel();
         }
@@ -209,7 +214,8 @@ impl App {
             return;
         }
         let imp = self.import.results.remove(i);
-        let present: HashMap<PathBuf, bool> = imp.project.media.iter().map(|m| (m.path.clone(), true)).collect();
+        // fehlende Dateien (Platzhalter): „Medien neu verknüpfen“ geht gleich auf
+        let present: HashMap<PathBuf, bool> = imp.project.media.iter().map(|m| (m.path.clone(), !imp.report.missing.contains(&m.path))).collect();
         let fonts = imp
             .project
             .timeline
@@ -432,7 +438,6 @@ impl App {
             ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_DIM()));
         }
         // Importieren selbst: Hauptmenü → „Projekt aus anderem Programm importieren …“
-        let _ = vec2(0.0, 0.0);
     }
 }
 
@@ -451,6 +456,59 @@ mod tests {
         std::fs::write(d.join("draft_content.json"), j.to_string()).unwrap();
         std::fs::write(d.join("draft_meta_info.json"), serde_json::json!({"draft_name": "Mein Film"}).to_string()).unwrap();
         d
+    }
+
+    /// Fehlende Datei beim Import: Clip bleibt, beim Öffnen gilt sie als fehlend und
+    /// „Medien neu verknüpfen“ geht auf.
+    #[test]
+    fn opened_import_marks_missing_media_for_relinking() {
+        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let src = draft_dir(home.path());
+        let gone = home.path().join("fehlt.mp4");
+        let j = serde_json::json!({
+            "materials": {"videos": [{"id": "V", "type": "video", "path": gone.to_string_lossy()}]},
+            "tracks": [{"type": "video", "segments": [{"material_id": "V", "target_timerange": {"start": 0, "duration": 1000000}}]}]
+        });
+        std::fs::write(src.join("draft_content.json"), j.to_string()).unwrap();
+        let fonts = Mutex::new(cl_fonts::FontLibrary::default());
+        let imp = run_import(&src, &home.path().join("Projekte"), &fonts, &Progress::default()).unwrap();
+        assert_eq!(imp.report.missing, [gone.clone()]);
+        app.import.results.push(imp);
+        app.open_imported(0);
+        assert_eq!(app.project.timeline.tracks[0].clips.len(), 1);
+        assert!(app.missing_open && !app.presence.get(&gone));
+    }
+
+    /// Abbrechen während „Schriften übernehmen“ (nach dem Schreiben): kein Projekt bleibt liegen.
+    #[test]
+    fn cancel_during_fonts_leaves_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let src = draft_dir(root.path());
+        let out = root.path().join("Projekte");
+        let fonts = Mutex::new(cl_fonts::FontLibrary::default());
+        let slot: Arc<std::sync::OnceLock<std::sync::Weak<Progress>>> = Arc::default();
+        let sl = slot.clone();
+        let p = Arc::new(Progress::new(move || {
+            let Some(p) = sl.get().and_then(|w| w.upgrade()) else { return };
+            let st = p.status();
+            if st.step == Step::Save && st.done >= st.total {
+                p.cancel();
+            }
+        }));
+        slot.set(Arc::downgrade(&p)).unwrap();
+        assert_eq!(run_import(&src, &out, &fonts, &p).err().as_deref(), Some(cl_import::CANCELLED));
+        assert_eq!(std::fs::read_dir(&out).map_or(0, |d| d.count()), 0, "kein halbes Projekt");
+    }
+
+    /// Beenden bricht einen laufenden Import ab (sonst laufen seine Prüfungen weiter).
+    #[test]
+    fn exit_cancels_running_import() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let progress = Arc::new(Progress::default());
+        let (_tx, rx) = channel();
+        app.import.job = Some(Job { label: "x".into(), progress: progress.clone(), rx });
+        eframe::App::on_exit(&mut app);
+        assert!(progress.cancelled());
     }
 
     #[test]

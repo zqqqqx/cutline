@@ -1966,7 +1966,7 @@ impl App {
 
     /// Projekt speichern: Momentaufnahme an den Speicher-Thread (serialisiert und schreibt
     /// atomisch im Hintergrund). Ein Fehler kommt später über [`App::poll_saves`].
-    pub fn write_project(&mut self, p: &Path) -> Result<(), String> {
+    pub fn write_project(&mut self, p: &Path) {
         self.saver.send(crate::saving::Job {
             kind: crate::saving::Kind::Project,
             path: p.to_path_buf(),
@@ -1982,7 +1982,6 @@ impl App {
         }
         self.settings.add_recent(p);
         self.send_project_thumb(p);
-        Ok(())
     }
 
     /// Titelbild für die Startseite anfordern (erstes Bild der Bildspuren).
@@ -2024,15 +2023,11 @@ impl App {
                 .save_file(),
         };
         if let Some(p) = path {
-            match self.write_project(&p) {
-                Ok(()) => {
-                    crate::applog::project("gespeichert", &self.project, Some(t0));
-                    self.toast(format!("{} Gespeichert", icon::CHECK));
-                    self.project_path = Some(p);
-                    self.settings.save();
-                }
-                Err(e) => self.toast_err(e),
-            }
+            self.write_project(&p);
+            crate::applog::project("gespeichert", &self.project, Some(t0));
+            self.toast(format!("{} Gespeichert", icon::CHECK));
+            self.project_path = Some(p);
+            self.settings.save();
         }
     }
 
@@ -2045,7 +2040,7 @@ impl App {
         if !needs_save(self.revision, self.saved_revision, self.project_path.is_some(), &self.project) {
             return;
         }
-        if self.doc.lock().unwrap().revision() != self.revision {
+        if self.doc.lock().unwrap().revision() != self.revision || self.saver.autosave_paused() {
             return;
         }
         static LAST_CHANGE: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
@@ -2058,22 +2053,9 @@ impl App {
                         .project_path
                         .clone()
                         .unwrap_or_else(|| self.default_project_path());
-                    match self.write_project(&p) {
-                        Ok(()) => {
-                            self.project_path = Some(p);
-                            self.settings.save();
-                        }
-                        // höchstens einmal pro Minute melden, sonst jeder Frame
-                        Err(e) => {
-                            static LAST_ERR: Mutex<Option<Instant>> = Mutex::new(None);
-                            let mut le = LAST_ERR.lock().unwrap();
-                            if le.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
-                                *le = Some(Instant::now());
-                                drop(le);
-                                self.toast_err(format!("Automatisch speichern fehlgeschlagen: {e}"));
-                            }
-                        }
-                    }
+                    self.write_project(&p);
+                    self.project_path = Some(p);
+                    self.settings.save();
                 }
             }
             _ => *lc = Some((self.revision, Instant::now())),
@@ -2169,6 +2151,7 @@ impl App {
         if !self.flush_before_leaving() {
             return false;
         }
+        self.cancel_load();
         self.reset_editor();
         let n = crate::home::next_project_name();
         let mut p = Project::new(n);
@@ -2233,6 +2216,15 @@ impl App {
     /// Projekt öffnen: Lesen, Prüfen und Vorbereiten im Hintergrund (siehe `loading.rs`); das
     /// offene Projekt bleibt, bis das neue fertig ist (Abbrechen ändert nichts).
     pub fn open_project(&mut self, p: &Path) {
+        // dasselbe Projekt noch einmal: erst den offenen Stand schreiben – das Laden liest die
+        // Datei sofort und hielte den alten Stand sonst für gespeichert
+        if self.project_path.as_deref() == Some(p) && self.screen == Screen::Editor {
+            if !self.flush_before_leaving() {
+                return;
+            }
+            // bis das Laden fertig ist (oder abgebrochen wird), bleibt das Projekt offen
+            self.take_lock(p);
+        }
         let ctx = self.ui_ctx.clone();
         self.start_load(p, crate::loading::LoadMode::Open, &ctx);
     }
@@ -2249,11 +2241,19 @@ impl App {
                 .project_path
                 .clone()
                 .unwrap_or_else(|| self.default_project_path());
-            if let Err(e) = self.write_project(&p) {
-                self.toast_err(format!("Projekt konnte nicht gespeichert werden: {e}"));
-                return false;
-            }
+            self.write_project(&p);
             self.project_path = Some(p);
+        }
+        // Speicher-Thread abwarten: erst wenn der Stand auf der Platte ist, darf das Projekt zu
+        // (Sperre frei, Editor leer, Datei verschoben/umbenannt)
+        let idle = self.saver.wait_idle(Duration::from_secs(30));
+        self.saver.last_err = None;
+        self.poll_saves();
+        if !idle {
+            self.toast_err(format!("Projekt konnte nicht gespeichert werden: {}", crate::tr("Speichern dauert zu lange")));
+        }
+        if !idle || needs_save(self.revision, self.saved_revision, self.project_path.is_some(), &self.project) {
+            return false;
         }
         self.settings.save();
         self.release_lock();
@@ -2285,6 +2285,7 @@ impl App {
         if !self.flush_before_leaving() {
             return;
         }
+        self.cancel_load();
         crate::applog::project("geschlossen", &self.project, None);
         // jeder Weg zurück in den Editor setzt ihn ohnehin zurück: Bilder, Texturen und
         // Decoder-Zwischenspeicher des Projekts schon jetzt freigeben
@@ -3341,6 +3342,8 @@ impl eframe::App for App {
         // laufenden Export sauber abbrechen: kein verwaistes FFmpeg, keine .part-Datei
         self.export.cancel_and_wait(Duration::from_secs(5));
         self.cancel_background_work();
+        // laufender Import räumt sein halbes Projekt weg, ffprobe-Prüfungen enden
+        self.cancel_import();
         let flushed = self.flush_before_leaving();
         // alles Wartende schreiben lassen (Speicher-Thread), bevor das Programm endet
         if !self.saver.wait_idle(Duration::from_secs(60)) {

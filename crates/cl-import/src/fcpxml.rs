@@ -121,8 +121,19 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
         });
         let m = src.map(|s| url_to_path(&s, dir)).and_then(|path| {
             if !path.is_file() {
-                rep.missing.push(path);
-                return None;
+                rep.missing.push(path.clone());
+                let dur = a.attribute("duration").map(parse_time);
+                let kind = match (a.attribute("hasVideo"), dur) {
+                    (Some("0"), _) => MediaKind::Audio,
+                    // Standbilder haben die Dauer 0s
+                    (_, Some(d)) if d <= 0.0 => MediaKind::Image,
+                    _ => MediaKind::Video,
+                };
+                let dur = dur.unwrap_or(0.0).max(0.0);
+                let (w, h, _) = a.attribute("format").and_then(|f| formats.get(f)).copied().unwrap_or((0, 0, 0.0));
+                let m = crate::placeholder(path, kind, Time::from_secs_f64(dur), w, h);
+                p.media.push(m.clone());
+                return Some(m);
             }
             let m = cl_media::probe(&path).ok()?;
             p.media.push(m.clone());
@@ -251,6 +262,21 @@ mod tests {
         let d = Path::new("");
         assert_eq!(url_to_path("file:///a%1€b", d), PathBuf::from("/a%1€b"));
         assert_eq!(url_to_path("file:///a%20b", d), PathBuf::from("/a b"));
+    }
+
+    /// Fehlende Datei: Clip bleibt mit Platzhalter-Medium (neu verknüpfbar), `missing` nennt sie.
+    #[test]
+    fn missing_asset_keeps_clip() {
+        let xml = r#"<?xml version="1.0"?><fcpxml version="1.9"><resources><format id="r1" frameDuration="1/25s" width="1280" height="720"/>
+            <asset id="r2" src="file:///gibt/es/nicht.mov" duration="6s" hasVideo="1" hasAudio="1" format="r1"/></resources>
+            <library><event><project name="P"><sequence format="r1"><spine>
+              <asset-clip ref="r2" offset="0s" start="1s" duration="2s"/>
+            </spine></sequence></project></event></library></fcpxml>"#;
+        let (p, rep) = convert(xml, "P", Path::new("")).unwrap();
+        assert_eq!(rep.missing, [PathBuf::from("/gibt/es/nicht.mov")]);
+        assert_eq!((p.media.len(), rep.clips, p.timeline.tracks[0].clips.len()), (1, 1, 1));
+        let m = &p.media[0];
+        assert_eq!((m.kind, m.width, m.height, m.duration), (MediaKind::Video, 1280, 720, Time::from_secs_f64(6.0)));
     }
 
     #[test]

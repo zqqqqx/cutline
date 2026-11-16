@@ -87,8 +87,9 @@ fn every_step_reports_monotonic_progress_and_errors_are_collected() {
     // eine kaputte und 20 fehlende Dateien halten nichts auf
     assert_eq!(rep.failed, vec![dir.path().join("kaputt.mp4")]);
     assert_eq!(rep.missing.len(), 20);
-    assert_eq!((rep.clips, rep.texts), (1, 1));
-    assert_eq!(proj.media.len(), 1);
+    // fehlende Dateien: Clips bleiben (Platzhalter zum Neu verknüpfen), die kaputte fällt weg
+    assert_eq!((rep.clips, rep.texts), (21, 1));
+    assert_eq!(proj.media.len(), 21);
 }
 
 #[test]
