@@ -814,7 +814,7 @@ impl App {
                 theme::section(ui, "Neue Projekte");
                 theme::row(ui, "Bildrate", |ui| {
                     egui::ComboBox::from_id_salt("set-new-fps")
-                        .selected_text(crate::tr(format!("{:.3} fps", self.settings.new_fps.as_f64())))
+                        .selected_text(crate::tr(format!("{} fps", theme::dec(self.settings.new_fps.as_f64(), 3))))
                         .show_ui(ui, |ui| {
                             for f in FPS_CHOICES {
                                 let r = cl_core::Rational::parse(f).unwrap_or_default();

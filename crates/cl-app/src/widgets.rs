@@ -187,12 +187,15 @@ impl<'a> Slider<'a> {
         }
         // Wert: direkt editierbar
         let mut shown = *self.value * self.display;
+        let decimals = self.decimals;
         let dv = ui.add_sized(
             [value_w, 18.0],
             egui::DragValue::new(&mut shown)
                 .range((a * self.display)..=(b * self.display))
                 .clamp_existing_to_range(false)
                 .fixed_decimals(self.decimals)
+                .custom_formatter(|v, _| crate::theme::dec(v, decimals))
+                .custom_parser(crate::theme::parse_dec)
                 .suffix(self.suffix)
                 .speed(((b - a) * self.display / 300.0).max(0.01)),
         );

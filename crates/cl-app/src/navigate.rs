@@ -359,6 +359,8 @@ impl App {
                         egui::DragValue::new(&mut dur)
                             .range(0.0..=3600.0)
                             .speed(0.05)
+                            .custom_formatter(|v, _| crate::theme::dec(v, 2))
+                            .custom_parser(crate::theme::parse_dec)
                             .suffix(" s"),
                     )
                 });

@@ -131,7 +131,7 @@ struct Src {
 
 fn mmss(t: Time) -> String {
     let s = t.as_secs_f64().max(0.0);
-    format!("{}:{:04.1}", (s / 60.0) as u64, s % 60.0)
+    format!("{}:{}", (s / 60.0) as u64, crate::theme::local_num(format!("{:04.1}", s % 60.0)))
 }
 
 impl App {
@@ -263,7 +263,7 @@ impl App {
                 if self.ripple_ranges(ranges, label) {
 
                     self.toast(if kind == QuickKind::Pauses {
-                        format!("{} ({total:.1} s)", crate::theme::count_text(n, "{} Pause entfernt", "{} Pausen entfernt"))
+                        format!("{} ({})", crate::theme::count_text(n, "{} Pause entfernt", "{} Pausen entfernt"), crate::theme::secs(total as f64, 1))
                     } else {
                         crate::theme::count_text(n, "{} Füllwort entfernt", "{} Füllwörter entfernt")
                     });
@@ -380,7 +380,7 @@ impl App {
                             for h in hits.iter_mut() {
                                 ui.horizontal(|ui| {
                                     widgets::toggle(ui, &mut h.on);
-                                    let text = format!("{}   {:.1} s   {}", mmss(h.from), (h.to - h.from).as_secs_f64(), h.text);
+                                    let text = format!("{}   {}   {}", mmss(h.from), theme::secs((h.to - h.from).as_secs_f64(), 1), h.text);
                                     let color = if h.on { theme::TEXT() } else { theme::TEXT_FAINT() };
                                     let r = ui.add(egui::Label::new(RichText::new(text).size(theme::FS_UI).color(color)).sense(egui::Sense::click()));
                                     if r.on_hover_text(crate::tr("Zum Treffer springen")).clicked() {
@@ -441,6 +441,12 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hit_times_use_the_decimal_comma_in_german() {
+        cl_i18n::set_ui_lang(cl_i18n::Lang::De);
+        assert_eq!(mmss(Time::from_secs_f64(65.3)), "1:05,3");
+    }
 
     #[test]
     fn cuts_snap_to_clip_edges_and_drop_slivers() {

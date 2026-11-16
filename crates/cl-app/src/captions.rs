@@ -589,7 +589,7 @@ impl App {
                                 let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
                                 let mut d = c.duration.as_secs_f64();
                                 if ui
-                                    .add(egui::DragValue::new(&mut d).range(0.2..=room.max(0.2)).speed(0.02).max_decimals(1).suffix(" s").update_while_editing(false))
+                                    .add(egui::DragValue::new(&mut d).range(0.2..=room.max(0.2)).speed(0.02).custom_formatter(|v, _| crate::theme::dec(v, 1)).custom_parser(crate::theme::parse_dec).suffix(" s").update_while_editing(false))
                                     .on_hover_text(crate::tr("Dauer"))
                                     .changed()
                                 {

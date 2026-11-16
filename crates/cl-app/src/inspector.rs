@@ -1488,9 +1488,9 @@ impl App {
                     ui.add_space(6.0);
                     ui.label(
                         RichText::new(crate::tr(format!(
-                            "{}  Verlängert: {:.1} s Stille am Ende",
+                            "{}  Verlängert: {} Stille am Ende",
                             icon::INFO,
-                            c.duration.as_secs_f64() - src
+                            theme::secs(c.duration.as_secs_f64() - src, 1)
                         )))
                         .small()
                         .color(theme::TEXT_DIM()),
@@ -1641,7 +1641,7 @@ impl App {
         });
         theme::row(ui, &self.t("frame-rate"), |ui| {
             egui::ComboBox::from_id_salt("fps")
-                .selected_text(crate::tr(format!("{:.3} fps", settings.fps.as_f64())))
+                .selected_text(crate::tr(format!("{} fps", theme::dec(settings.fps.as_f64(), 3))))
                 .width((ui.available_width() - 12.0).max(60.0))
                 .show_ui(ui, |ui| {
                     for f in crate::settings::FPS_CHOICES {

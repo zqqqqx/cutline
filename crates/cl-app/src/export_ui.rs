@@ -497,8 +497,9 @@ impl ExportDialog {
                             }
                         }
                         toast = Some(format!(
-                            "{} Export fertig ({secs:.1} s)",
-                            icon::CHECK_CIRCLE
+                            "{} Export fertig ({})",
+                            icon::CHECK_CIRCLE,
+                            theme::secs(secs as f64, 1)
                         ));
                         if !failed.is_empty() {
                             let msg = format!("{}: {}", crate::tr("Begleitdatei nicht gespeichert"), failed.join(", "));
@@ -575,10 +576,10 @@ impl ExportDialog {
                         ui.add_space(8.0);
                         let secs = s.range.map_or(p.duration(), |(a, b)| b - a).as_secs_f64();
                         let info = if audio_only {
-                            format!("{} {secs:.1} s", icon::CLOCK)
+                            format!("{} {}", icon::CLOCK, theme::secs(secs, 1))
                         } else {
                             let (w, h) = s.output_size();
-                            format!("{} {secs:.1} s  ·  {w}×{h}", icon::CLOCK)
+                            format!("{} {}  ·  {w}×{h}", icon::CLOCK, theme::secs(secs, 1))
                         };
                         ui.label(RichText::new(crate::tr(info)).small().color(theme::TEXT_DIM()));
                         if !audio_only {
@@ -714,7 +715,7 @@ impl ExportDialog {
                                         s.quality = Quality::Bitrate(self.custom_kbps);
                                     }
                                     theme::row(ui, "Bildrate", |ui| {
-                                        egui::ComboBox::from_id_salt("exp-fps").selected_text(crate::tr(format!("{:.3} fps", s.fps.as_f64()))).width(200.0).show_ui(ui, |ui| {
+                                        egui::ComboBox::from_id_salt("exp-fps").selected_text(crate::tr(format!("{} fps", theme::dec(s.fps.as_f64(), 3)))).width(200.0).show_ui(ui, |ui| {
                                             for f in ["23.976", "24", "25", "29.97", "30", "50", "59.94", "60"] {
                                                 let r = cl_core::Rational::parse(f).unwrap();
                                                 ui.selectable_value(&mut s.fps, r, crate::tr(format!("{f} fps")));
@@ -1011,7 +1012,7 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
             egui::FontId::proportional(13.0 * pop.max(0.01)),
             theme::SUCCESS_BG,
         );
-        ui.label(RichText::new(crate::tr(format!("Fertig in {secs:.1} s"))).strong());
+        ui.label(RichText::new(crate::tr(format!("Fertig in {}", theme::secs(secs as f64, 1)))).strong());
     });
     if age < dur {
         ui.ctx().request_repaint();

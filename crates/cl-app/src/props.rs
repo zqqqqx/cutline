@@ -19,9 +19,9 @@ pub enum Props {
 
 pub fn fmt_bytes(b: u64) -> String {
     if b >= 1 << 30 {
-        format!("{:.2} GB", b as f64 / (1u64 << 30) as f64)
+        format!("{} GB", theme::dec(b as f64 / (1u64 << 30) as f64, 2))
     } else if b >= 1 << 20 {
-        format!("{:.1} MB", b as f64 / (1u64 << 20) as f64)
+        format!("{} MB", theme::dec(b as f64 / (1u64 << 20) as f64, 1))
     } else {
         format!("{:.0} KB", (b as f64 / 1024.0).ceil())
     }
@@ -37,7 +37,7 @@ pub fn file_size(p: &std::path::Path) -> String {
 fn secs(t: Time) -> String {
     let s = t.as_secs_f64();
     if s >= 60.0 {
-        format!("{}:{:05.2}", (s / 60.0) as u64, s % 60.0)
+        format!("{}:{}", (s / 60.0) as u64, theme::local_num(format!("{:05.2}", s % 60.0)))
     } else {
         crate::theme::secs(s, 2)
     }
@@ -75,7 +75,7 @@ impl App {
                     rows.push(("Auflösung", format!("{} × {}", m.width, m.height)));
                 }
                 if let Some(f) = m.fps {
-                    rows.push(("Bildrate", format!("{:.3} fps", f.as_f64())));
+                    rows.push(("Bildrate", format!("{} fps", theme::dec(f.as_f64(), 3))));
                 }
                 if let Some(c) = &m.video_codec {
                     rows.push(("Video-Codec", c.clone()));
@@ -103,12 +103,12 @@ impl App {
                     }
                 }
                 if (c.speed - 1.0).abs() > 1e-3 || c.fx.speed_curve.is_some() {
-                    rows.push(("Tempo", format!("{:.2}×", c.speed)));
+                    rows.push(("Tempo", format!("{}×", theme::dec(c.speed as f64, 2))));
                 }
                 if c.fx.reverse {
                     rows.push(("Rückwärts", crate::tr("Ja")));
                 }
-                rows.push(("Lautstärke", format!("{:+.1} dB", c.volume_db)));
+                rows.push(("Lautstärke", format!("{} dB", theme::local_num(format!("{:+.1}", c.volume_db)))));
                 if c.fade_in > Time::ZERO || c.fade_out > Time::ZERO {
                     rows.push(("Ein-/Ausblenden", format!("{} / {}", secs(c.fade_in), secs(c.fade_out))));
                 }
@@ -155,7 +155,7 @@ impl App {
                 if let Some(p) = std::fs::read_to_string(path).ok().and_then(|s| Project::from_json(&s).ok()) {
                     rows.push(("Länge", secs(p.duration())));
                     rows.push(("Format", format!("{} × {}", p.settings.width, p.settings.height)));
-                    rows.push(("Bildrate", format!("{:.2} fps", p.settings.fps.as_f64())));
+                    rows.push(("Bildrate", format!("{} fps", theme::dec(p.settings.fps.as_f64(), 2))));
                     rows.push(("Medien", p.media.len().to_string()));
                     let missing = p.media.iter().filter(|m| !m.path.is_file()).count();
                     if missing > 0 {
