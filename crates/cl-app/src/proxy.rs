@@ -937,7 +937,7 @@ impl App {
         static LAST: Mutex<(u64, Option<Instant>)> = Mutex::new((0, None));
         let w = ctx.screen_rect().width();
         let mut hs = std::collections::hash_map::DefaultHasher::new();
-        (self.playhead.0, self.timeline.scroll.to_bits(), self.timeline.pps.to_bits(), w.to_bits(), self.project_epoch, self.project.media.len()).hash(&mut hs);
+        (self.playhead.0, self.timeline.scroll.to_bits(), self.timeline.pps.to_bits(), w.to_bits(), self.project_epoch, self.project.media.len(), self.revision).hash(&mut hs);
         // nur Quellen, die gebaut werden können: ein fehlendes (NAS schläft) oder gescheitertes
         // Medium am Playhead ließe den laufenden Bau sonst immer wieder abgeben
         let usable = |m: &MediaRef| m.kind == MediaKind::Video && self.presence.get(&m.path) && !self.proxy_failed.contains(&m.id);
@@ -1659,6 +1659,12 @@ mod tests {
         app.proxy_failed.clear();
         app.update_focus(&ctx);
         assert!(other_media_first(&x.path));
+        // Bearbeitung bei stehendem Playhead: das zweite Video rückt weg – der Fokus folgt
+        app.project.timeline.tracks[1].clips[0].start = Time::from_secs_f64(200.0);
+        app.revision += 1;
+        app.update_focus(&ctx);
+        assert!(!other_media_first(&x.path), "Fokus kennt die Bearbeitung");
+        assert_eq!(app.next_build(&missing, &ctx), Some(x.id));
         registry().remove(&x.path);
         registry().remove(&y.path);
     }
