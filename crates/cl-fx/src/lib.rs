@@ -205,12 +205,10 @@ pub static EFFECTS: &[FxDef] = &[
         category: "Bewegung",
         native_intensity: true,
         build: |i, s| {
-            format!(
-                "zoompan=z='1+{:.3}*(0.5+0.5*sin(it*6.2832))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={}x{}:fps=30",
-                0.15 * i,
-                s.w,
-                s.h
-            )
+            // nach der Zeit des Bildes skalieren und mittig zuschneiden: Bildzahl und Zeitstempel
+            // bleiben, wie sie sind (`zoompan` vergäbe eigene mit fester Bildrate)
+            let z = format!("(1+{:.3}*(0.5+0.5*sin(t*6.2832)))", 0.15 * i);
+            format!("scale=w='2*ceil(iw*{z}/2)':h='2*ceil(ih*{z}/2)':eval=frame,crop={}:{},setsar=1", s.w, s.h)
         },
     },
     FxDef {
@@ -1862,5 +1860,30 @@ mod tests {
             }
         }
         assert!(failed.is_empty(), "{} Ketten scheitern:\n{}", failed.len(), failed.join("\n"));
+    }
+
+    /// Zoom-Puls ändert weder Bildzahl noch Dauer – auch nicht bei 60 Bildern/s (mit `zoompan`
+    /// wurden aus 1 s zwei).
+    #[test]
+    fn zoom_pulse_keeps_frames_and_duration_at_60_fps() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let def = effect("zoom-pulse").unwrap();
+        let chain = (def.build)(1.0, Src { w: 320, h: 180, has_alpha: false });
+        let out = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=60:d=1", "-vf", &chain])
+            .args(["-f", "framecrc", "-"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let text = String::from_utf8_lossy(&out.stdout);
+        let rows: Vec<&str> = text.lines().filter(|l| !l.starts_with('#')).collect();
+        assert_eq!(rows.len(), 60);
+        // Spalte 2 = Zeitstempel des letzten Bildes in 1/60 s
+        let last: i64 = rows[59].split(',').nth(2).unwrap().trim().parse().unwrap();
+        assert_eq!(last, 59);
+        assert!(rows.iter().all(|l| l.contains("86400")), "Bildgröße bleibt 320x180");
     }
 }

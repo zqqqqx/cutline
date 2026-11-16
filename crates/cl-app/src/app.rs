@@ -2878,6 +2878,12 @@ impl App {
 
     fn draw_toasts(&mut self, ctx: &egui::Context) {
         crate::applog::crash_notice(ctx, self);
+        // einmalig: Die Grafikkarte könnte in Hardware kodieren, nur der Treiber ist zu alt
+        if !self.settings.driver_hint_shown && cl_export::old_driver_found() {
+            self.settings.driver_hint_shown = true;
+            self.settings.save();
+            self.toast_err(crate::tr("Grafiktreiber veraltet: Hardware-Kodierung geht erst nach einem Treiber-Update, bis dahin wird in Software kodiert"));
+        }
         self.toasts
             .retain(|(_, t, err)| t.elapsed().as_secs_f32() < toast_secs(*err));
         if self.toasts.is_empty() {

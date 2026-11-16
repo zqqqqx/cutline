@@ -50,6 +50,8 @@ pub struct AppSettings {
     pub export_chapters: bool,
     /// Hinweis auf Kapitel unter 10 s (lässt sich wegklicken)
     pub chapter_hint: bool,
+    /// Der Hinweis „Grafiktreiber veraltet" kam schon (er erscheint nur einmal)
+    pub driver_hint_shown: bool,
     pub mcp_enabled: bool,
     pub mcp_port: u16,
     pub mcp_read_only: bool,
@@ -133,6 +135,7 @@ impl Default for AppSettings {
             autosave: true,
             export_chapters: false,
             chapter_hint: true,
+            driver_hint_shown: false,
             mcp_enabled: false,
             mcp_port: 7316,
             mcp_read_only: false,
