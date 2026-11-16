@@ -8,6 +8,24 @@
 ### English
 
 **New**
+
+**Improved**
+
+**Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.12.0 – 2026-11-17
+
+### English
+
+**New**
 - **Rebuilt player.** Playback starts right away, picture and sound stay in sync, and cutting while it plays no longer stalls the picture. If the computer gets busy, the preview quality drops automatically (shown as ½ or ¼ in the player) and comes back when you stop. Can be switched off under Settings → Performance.
 - **Proxies in pieces.** A proxy is usable seconds after the import – the part at the playhead is built first, a thin line at the bottom of the clip shows what is ready. Building continues after a restart instead of starting over.
 - **Drop files straight into the timeline.** Drag videos, images and audio from the file explorer onto the timeline; a preview shows where they land. Several files line up one after another, as one undo step.
@@ -28,6 +46,8 @@
 - Epidemic Sound: downloaded tracks are kept and reused in other projects; clearer messages when the sign-in expired or a limit is reached.
 - Whisper subtitles work when the user folder contains an apostrophe.
 - One-time note when hardware encoding is only unavailable because the graphics driver is outdated.
+- Subtitles: choose the speech recognition (automatic, Parakeet or Whisper).
+- Numbers follow the language: a decimal comma in German, also when typing values.
 - Whisper subtitles work out of the box on Windows – the bundled FFmpeg now includes what they need.
 - Linux: works with the FFmpeg 7 of current distributions; a note appears at start if the installed FFmpeg is too old.
 
@@ -66,6 +86,8 @@
 - Epidemic Sound: Geladene Titel bleiben vorrätig und werden in anderen Projekten wiederverwendet; klarere Meldungen bei abgelaufener Anmeldung und erreichtem Limit.
 - Whisper-Untertitel funktionieren auch, wenn der Benutzerordner einen Apostroph enthält.
 - Einmaliger Hinweis, wenn die Hardware-Kodierung nur wegen eines veralteten Grafiktreibers nicht verfügbar ist.
+- Untertitel: Die Spracherkennung ist wählbar (automatisch, Parakeet oder Whisper).
+- Zahlen folgen der Sprache: Dezimalkomma im Deutschen, auch beim Eintippen von Werten.
 - Whisper-Untertitel funktionieren unter Windows ohne Zutun – das mitgelieferte FFmpeg bringt jetzt alles Nötige mit.
 - Linux: läuft mit dem FFmpeg 7 aktueller Distributionen; ist das installierte FFmpeg zu alt, kommt beim Start ein Hinweis.
 
