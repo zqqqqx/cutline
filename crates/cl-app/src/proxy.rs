@@ -309,7 +309,11 @@ pub fn build(
     for enc in chain {
         for hw in decode_attempts(enc, m) {
             match build_with(m, out, spec, enc, hw, progress, cancel) {
-                Ok(r) => return Ok(r),
+                Ok(r) => {
+                    // Bau in einem Zug (Dauer unbekannt): sonst zählte er nie als fertig
+                    with_mine(&m.path, out, Entry::built);
+                    return Ok(r);
+                }
                 Err(e) if e == "Abgebrochen" => return Err(e),
                 Err(e) => last = e,
             }
@@ -1755,10 +1759,15 @@ mod tests {
         // abspielbar: Strom liefert alle Bilder
         let s = cl_media::FrameStream::open(&out, Time::ZERO, 96, 54, Rational::new(30, 1)).unwrap();
         assert!(std::iter::from_fn(|| s.next_blocking()).count() >= 58);
-        // Gesamtweg mit Encoder-Kette (Hardware, falls vorhanden, sonst Software)
+        // Gesamtweg mit Encoder-Kette (Hardware, falls vorhanden, sonst Software); im Bestand ohne
+        // Einteilung (Dauer unbekannt) zählt er danach als fertig
         let out2 = d.path().join("q.mp4");
+        set_test_entry(&m.path, out2.clone(), (540, Rational::new(30, 1)), Vec::new(), false);
+        registry().get_mut(&m.path).unwrap().pt = None;
         build(&m, &out2, &spec, &|_| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(cl_media::probe(&out2).unwrap().height, 540);
+        let e = registry().remove(&m.path).unwrap();
+        assert!(e.complete && e.file.as_ref() == Some(&out2) && !e.needs(0.0));
         assert!(!parts::tmp_of(&out2).exists());
     }
 
