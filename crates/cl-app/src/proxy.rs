@@ -721,6 +721,19 @@ fn other_media_first(src: &Path) -> bool {
     !w.contains(src) && !w.is_empty()
 }
 
+/// So viele Stück-Versuche dürfen nacheinander scheitern, dann endet der Bau (Platte voll, Quelle
+/// weg) – sonst probierte jedes weitere Stück die ganze Encoder-Kette, bei 2 h tausende Starts.
+const MAX_FAILS_IN_ROW: u32 = 3;
+
+/// Gescheiterte Versuche in Folge nach einem Ergebnis; `None`: aufgeben
+fn fails_in_row(prev: u32, ok: bool) -> Option<u32> {
+    if ok {
+        Some(0)
+    } else {
+        Some(prev + 1).filter(|n| *n < MAX_FAILS_IN_ROW)
+    }
+}
+
 /// Stücke einer Quelle bauen, bis alle da sind (dann zusammenfügen) oder ein anderes Medium am
 /// Playhead Vorrang hat. Nach jedem Stück wird neu geplant (Playhead gesprungen: dort weiter; das
 /// laufende Stück wird fertig). Ein Stück, das wiederholt scheitert, wird übersprungen – dort
@@ -731,7 +744,7 @@ fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progres
     let _ = std::fs::write(pdir.join("quelle.txt"), m.path.to_string_lossy().as_bytes());
     let st = probe_start(&m.path);
     let name = m.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-    let mut paused = false;
+    let (mut paused, mut in_row) = (false, 0);
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err("Abgebrochen".into());
@@ -755,7 +768,9 @@ fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progres
         let Some(k) = next else { break };
         let n = pt.count.max(1) as f32;
         let base = done as f32 / n;
-        match build_part(m, &pdir, pt, st, k, spec, &|v| progress(base + v / n), cancel) {
+        let r = build_part(m, &pdir, pt, st, k, spec, &|v| progress(base + v / n), cancel);
+        in_row = fails_in_row(in_row, r.is_ok()).ok_or_else(|| format!("{MAX_FAILS_IN_ROW} Stücke nacheinander gescheitert"))?;
+        match r {
             Ok(_) => {
                 with_mine(&m.path, out, |e| {
                     e.ready[k as usize] = true;
@@ -1631,6 +1646,32 @@ mod tests {
         assert!(other_media_first(&x.path));
         registry().remove(&x.path);
         registry().remove(&y.path);
+    }
+
+    /// Quelle weg oder Platte voll: nach 3 gescheiterten Versuchen in Folge endet der Bau, statt
+    /// jedes Stück zweimal mit der ganzen Encoder-Kette zu probieren.
+    #[test]
+    fn build_gives_up_after_three_failures_in_a_row() {
+        assert_eq!(fails_in_row(0, false), Some(1));
+        assert_eq!(fails_in_row(1, false), Some(2));
+        assert_eq!(fails_in_row(2, false), None);
+        assert_eq!(fails_in_row(2, true), Some(0), "ein Erfolg setzt zurück");
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let d = tempfile::tempdir().unwrap();
+        let mut m = media(1920, 1080, Rational::new(30, 1), "h264");
+        m.path = d.path().join("weg.mp4");
+        let out = d.path().join("weg-540.mp4");
+        let want = (540, Rational::new(30, 1));
+        set_test_entry(&m.path, out.clone(), want, vec![false; 10], false);
+        let pt = Parting::new(100.0, want.1, PART_SECS).unwrap();
+        let spec = proxy_spec(&m, 540, want.1);
+        let r = build_parts(&m, &out, &spec, &pt, &|_| {}, &AtomicBool::new(false));
+        assert!(r.is_err(), "{r:?}");
+        let fails: u32 = registry().remove(&m.path).unwrap().fails.iter().map(|f| u32::from(*f)).sum();
+        assert_eq!(fails, 2, "dritter Fehlschlag beendet den Bau");
     }
 
     #[test]
