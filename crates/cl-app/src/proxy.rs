@@ -1013,7 +1013,9 @@ impl App {
     pub fn ensure_proxies(&mut self, ctx: &egui::Context) {
         let _s = crate::app::section("Proxys");
         set_play_state(self.playing, !self.settings.auto_quality || self.core.quality.level > 0);
-        if !self.core.streaming() || self.proxy_picks.len() > 512 {
+        // in der Pause behalten: sonst wählte Play an derselben Stelle die Stücke neu (anderes erstes
+        // Stück = anderer Schlüssel) und öffnete einen neuen Strom statt weiterzulaufen
+        if (!self.core.streaming() && self.core.mode() != crate::playcore::Mode::Pause) || self.proxy_picks.len() > 512 {
             self.proxy_picks.clear();
         }
         let key = self.proxy_want();
@@ -1735,6 +1737,29 @@ mod tests {
         assert!(r.is_err(), "{r:?}");
         let fails: u32 = registry().remove(&m.path).unwrap().fails.iter().map(|f| u32::from(*f)).sum();
         assert_eq!(fails, 2, "dritter Fehlschlag beendet den Bau");
+    }
+
+    /// Klicktest K5: Pause und Play an derselben Stelle öffneten einen neuen Strom, weil die
+    /// Quellwahl je Ebene in der Pause verworfen und danach mit anderem ersten Stück neu getroffen
+    /// wurde (neuer Schlüssel). In der Pause bleibt sie; im Stand wird sie frei.
+    #[test]
+    fn stream_picks_survive_a_pause() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        app.proxy_picks.insert(7, Pick::Parts { first: 2, end: 9 });
+        app.core.play(Time::ZERO, app.revision, 0.0);
+        let tick = |app: &mut crate::app::App, now: f64| {
+            let t = crate::playcore::Tick { now, playhead: app.core.pos(), revision: app.revision, audio: crate::playcore::AudioIn::Pending, end: Time::from_secs_f64(60.0), fps: 30.0, loop_range: None, recording: false, max_quality_level: 0 };
+            app.core.tick(&t);
+        };
+        tick(&mut app, 0.1);
+        assert_eq!(app.core.mode(), crate::playcore::Mode::Spielen);
+        app.core.pause(app.revision, true, true);
+        app.ensure_proxies(&ctx);
+        assert_eq!(app.proxy_picks.get(&7), Some(&Pick::Parts { first: 2, end: 9 }), "Pause: Wahl bleibt");
+        app.core.stop();
+        app.ensure_proxies(&ctx);
+        assert!(app.proxy_picks.is_empty(), "Stand: frei");
     }
 
     /// Fertiger Proxy beim Strom: Datei aus dem Bestand, nicht von der Platte gesucht (dort fände
