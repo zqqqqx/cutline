@@ -114,13 +114,13 @@ Integrations ship with Cutline but stay **off** until you turn them on. Keys and
 
 **Windows:** download `cutline-windows-x64-setup.exe` from the [latest release](https://github.com/zqqqqx/cutline/releases/latest). The installer needs no admin rights. It adds Cutline to the Start menu and opens `.cutline` files. FFmpeg and ONNX Runtime are included. A portable `cutline-windows-x64.zip` is available as well.
 
-**Linux:** download `cutline-linux-x64.zip`, unpack it and run `./cutline`. You need FFmpeg 7 or newer (8 for Whisper captions) installed on your system.
+**Linux:** download `cutline-linux-x64.zip`, unpack it and run `./cutline`. You need FFmpeg 7 or newer (8 for Whisper captions) installed on your system. The FFmpeg of Debian 13 (7.1) works; Ubuntu 24.04 (6.1) and older are too old, and Cutline warns about this at startup. Without a usable GPU (e.g. in a VM), shader transitions fall back to a built-in transition.
 
 AI models are not bundled. Download the ones you need under **Settings → Models**.
 
 ## Build from source
 
-Requirements: Rust (stable), and FFmpeg plus FFprobe on your `PATH` (or set `CUTLINE_FFMPEG_DIR`). On Windows you also need the MSVC build tools; on Linux, the usual X11/Wayland and ALSA development packages.
+Requirements: a current stable Rust from [rustup](https://rustup.rs) (the Rust packaged by distributions such as Debian 13, 1.85, is too old), and FFmpeg 7 or newer plus FFprobe on your `PATH` (or set `CUTLINE_FFMPEG_DIR`). On Windows you also need the MSVC build tools; on Linux, the usual X11/Wayland and ALSA development packages.
 
 ```bash
 cargo test --workspace
