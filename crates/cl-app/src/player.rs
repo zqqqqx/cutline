@@ -605,6 +605,107 @@ mod play_measure;
 mod presence_tests {
     use super::*;
 
+    /// Nachtest K7: 4K-Clip mit Tempo 2 über einem zweiten 4K-Clip blieb beim Abspielen ein
+    /// Standbild, solange sein Proxy in Stücken gebaut wurde. Hier mit der echten App (Quellwahl,
+    /// Starter, Kern) ohne Fenster: die obere Ebene muss fortlaufend Bilder holen.
+    /// `CUTLINE_QA_TEMPO` (2, 0.5, rev, kurve, scale), `CUTLINE_QA_PARTS`: so viele Proxy-Stücke der
+    /// oberen Quelle vorher bauen (der Rest fehlt, wie während des Baus).
+    /// `cargo test --release -p cl-app --bin cutline tempo_in_app -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn tempo_in_app() {
+        let (a, b) = (std::path::Path::new("F:/cutline-testmedien/4k60_h264_80mbit.mp4"), std::path::Path::new("F:/cutline-testmedien/4k60_hevc10_50mbit.mp4"));
+        if !cl_media::ffmpeg_available() || !a.is_file() || !b.is_file() {
+            return;
+        }
+        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", home.path());
+        std::env::set_var("CUTLINE_NO_UPDATE", "1");
+        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
+        let ctx = egui::Context::default();
+        let mut app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None);
+        let mode = std::env::var("CUTLINE_QA_TEMPO").unwrap_or_else(|_| "2".into());
+        let (ma, mb) = (cl_media::probe(a).unwrap(), cl_media::probe(b).unwrap());
+        let mut p = Project::new("tempo");
+        p.settings.fps = Rational::new(60, 1);
+        let mut v1 = cl_core::Track::new(TrackKind::Video);
+        v1.main = true;
+        v1.clips.push(Clip::new(ClipContent::Media { media: ma.id, kind: MediaKind::Video }, Time::ZERO, ma.duration));
+        let mut v2 = cl_core::Track::new(TrackKind::Video);
+        let mut c = Clip::new(ClipContent::Media { media: mb.id, kind: MediaKind::Video }, Time::ZERO, mb.duration);
+        match mode.as_str() {
+            "rev" => c.fx.reverse = true,
+            "kurve" => c.fx.speed_curve = Some("montage".into()),
+            "scale" => {
+                for (i, v) in [0.5f32, 1.5, 0.5, 1.5].iter().enumerate() {
+                    c.keyframes.set(Prop::Scale, Time::from_secs_f64(20.0 + i as f64 * 3.0), *v);
+                }
+            }
+            t => {
+                c.speed = t.parse().unwrap_or(2.0);
+                c.duration = Time::from_secs_f64(mb.duration.as_secs_f64() / c.speed as f64);
+            }
+        }
+        let top = c.id;
+        v2.clips.push(c);
+        p.timeline.tracks = vec![v1, v2];
+        p.media = vec![ma, mb.clone()];
+        app.project = p;
+        // Proxy in Stücken (wie im laufenden Bau): `CUTLINE_QA_PARTS` Stücke à 10 s fertig
+        if let Some(n) = std::env::var("CUTLINE_QA_PARTS").ok().and_then(|s| s.parse().ok()) {
+            let want = (app.settings.proxy_h, app.project.settings.fps);
+            let t = std::time::Instant::now();
+            crate::proxy::test_build_parts(&mb, home.path().join("p").join("b-540.mp4"), want, n);
+            eprintln!("{n} Stücke in {:.0} s", t.elapsed().as_secs_f64());
+        }
+        for at in [20.0, 33.0, 72.0] {
+            app.playhead = Time::from_secs_f64(at);
+            app.core.stop();
+            app.core.play(app.playhead, app.revision, app.core_now());
+            let t0 = std::time::Instant::now();
+            // Strombilder der oberen Ebene (über Stromwechsel hinweg) und ab wann
+            let (mut total, mut last_taken, mut first) = (0u64, 0u64, None);
+            // Einzelbilder (Rückwärts, Tempo-Kurve): jedes neue Bild hat einen neuen Schlüssel
+            let (mut stills, mut last_key) = (0u32, None);
+            while t0.elapsed().as_secs_f64() < 8.0 {
+                app.receive_decoded(&ctx);
+                let t = crate::playcore::Tick { now: app.core_now(), playhead: app.playhead, revision: app.revision, audio: crate::playcore::AudioIn::None, end: app.project.duration(), fps: 60.0, loop_range: None, recording: false, max_quality_level: 3 };
+                app.playhead = app.core.tick(&t);
+                let _ = app.core.cmds();
+                app.playing = app.core.playing();
+                let layers = app.layers_at(app.playhead);
+                app.update_layers(&ctx, &layers, egui::vec2(1280.0, 720.0));
+                let k = app.frames.get(&top).map(|f| f.0);
+                if k.is_some() && k != last_key {
+                    stills += 1;
+                    last_key = k;
+                }
+                let taken = app.core.taken(lid(top));
+                total += if taken >= last_taken { taken - last_taken } else { taken };
+                last_taken = taken;
+                if first.is_none() && total > 0 {
+                    first = Some((t0.elapsed().as_secs_f64(), total));
+                }
+                if std::env::var_os("CUTLINE_QA_DEBUG").is_some() {
+                    let el = t0.elapsed().as_secs_f64();
+                    if (el * 4.0).fract() < 0.03 {
+                        eprintln!("{el:.2} s pos {:.2}: oben {} Bilder, Wahl {:?}, Ströme {:?} {}", app.playhead.as_secs_f64(), app.core.taken(lid(top)), app.proxy_picks.get(&lid(top)), app.core.streams().iter().map(|x| (x.0 & 0xffff, x.1 & 0xffff, x.2)).collect::<Vec<_>>(), app.core.sizes());
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            let n = total;
+            eprintln!("Tempo {mode} ab {at}: obere Ebene {n} Strombilder (erstes {first:?}), {stills} Einzelbilder, Ströme {:?}", app.core.streams());
+            if streamable(app.project.find_clip(top).unwrap().1) {
+                let (t1, n1) = first.expect("obere Ebene ohne Bild");
+                assert!((n - n1) as f64 >= (8.0 - t1 - 1.0) * 20.0, "obere Ebene steht: {n1} → {n}");
+            } else {
+                assert!(stills >= 8, "obere Ebene steht: {stills} Einzelbilder in 8 s");
+            }
+        }
+    }
+
     /// Befund aus dem Review: beim Abspielen prüfte jedes UI-Bild je Ebene die Datei
     /// (`is_local`, auf dem NAS blockierend). Jetzt entscheidet der Hintergrund-Zustand
     /// `presence` – hier „vorhanden" für eine Datei, die es nicht gibt: Strom und Einzelbild

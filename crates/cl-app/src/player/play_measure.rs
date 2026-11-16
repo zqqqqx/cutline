@@ -54,6 +54,12 @@ struct Run {
     freeze_ms: f64,
     /// längste Zeit Auftrag → Einzelbild (ms)
     still_max_ms: f64,
+    /// in den 3 s nach Pause → Play an derselben Stelle: geöffnete Ströme, höchste Qualitätsstufe, Aufholen
+    resume_opens: u32,
+    resume_level: usize,
+    resume_catch_up: u32,
+    /// gezeigte Bilder je Ebene (Strom oder Einzelbild), Reihenfolge der Ebenen im Projekt
+    layer_frames: std::collections::BTreeMap<String, u32>,
     /// Zwischenspeicher nach dem Anlauf und am Ende (Dauerlauf, `CUTLINE_QA_JUMP`)
     mem: Vec<String>,
 }
@@ -151,6 +157,11 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let debug = std::env::var_os("CUTLINE_QA_DEBUG").is_some();
     let mut still_asked: std::collections::HashMap<u64, (f64, f64)> = Default::default();
     let drag_at = (edit_at + click_at) / 2.0;
+    // `CUTLINE_QA_PAUSE`: Pause und Play an derselben Stelle (vor der Bearbeitung); danach dürfen
+    // weder Ströme neu aufgehen noch die Qualität sinken (verfälscht die Bilder/s des ruhigen Teils)
+    let pause_at = if std::env::var_os("CUTLINE_QA_PAUSE").is_some() { edit_at * 0.5 } else { f64::MAX };
+    let mut paused_since: Option<f64> = None;
+    let mut resumed: Option<f64> = None;
     let mut dragging = false;
     core.play(start, revision, now());
     let t_play = now();
@@ -173,6 +184,21 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
         }
         // Regler ziehen (Inspektor): 1,5 s lang je UI-Bild ein neuer Effektwert und eine neue
         // Größe der untersten Ebene, erst danach ein Schritt im Verlauf
+        if paused_since.is_none() && resumed.is_none() && rel >= pause_at && core.mode() == Mode::Spielen {
+            let running = audio.as_ref().is_some_and(|a| a.started());
+            core.pause(revision, running, true);
+            paused_since = Some(rel);
+            if debug {
+                eprintln!("PAUSE {rel:.2} s pos {:.2} Stufe {}", playhead.as_secs_f64(), core.quality.level);
+            }
+        } else if paused_since.is_some_and(|p| rel - p >= 1.5) {
+            paused_since = None;
+            core.play(playhead, revision, t);
+            resumed = Some(t);
+            if debug {
+                eprintln!("PLAY {rel:.2} s pos {:.2} Stufe {} {}", playhead.as_secs_f64(), core.quality.level, core.sizes());
+            }
+        }
         if (drag_at..drag_at + 1.5).contains(&rel) {
             let layers = layers_in(&project, None, playhead);
             if let Some(id) = primary(&needs(&project, &layers, playhead, true, |_| {})) {
@@ -242,10 +268,19 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                     }
                 }
                 Cmd::StopAudio => audio = None,
-                Cmd::PauseAudio | Cmd::ResumeAudio => {}
+                Cmd::PauseAudio => {
+                    if !audio.as_ref().is_some_and(|a| a.pause()) {
+                        core.stop();
+                    }
+                }
+                Cmd::ResumeAudio => {
+                    if let Some(a) = &audio {
+                        a.resume();
+                    }
+                }
             }
         }
-        if !core.playing() {
+        if core.mode() == Mode::Stand {
             break; // Projektende
         }
         run.clock_audio |= matches!(ain, AudioIn::Running(_));
@@ -266,6 +301,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
             ($id:expr, $key:expr) => {{
                 let (id, key): (ClipId, u64) = ($id, $key);
                 first_any.get_or_insert(t);
+                *run.layer_frames.entry(format!("{:04x}", lid(id) & 0xffff)).or_insert(0) += 1;
                 if Some(id) == prim {
                     if debug && t >= warm_until && prim_frames.last().is_some_and(|l| t - l > 0.15) {
                         let what: Vec<String> = needs
@@ -326,7 +362,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                     run.proxy |= p != m.path;
                     let j = open_job(o, c, m, p, (w, h), sfps, alias);
                     if std::env::var_os("CUTLINE_QA_DEBUG").is_some() {
-                        eprintln!("öffnen {:.2} s: {} ab {:.3} {}×{} hw={:?} graph={:?}", o.at.as_secs_f64(), j.path.display(), j.source_at.as_secs_f64(), w, h, j.hw, j.graph);
+                        eprintln!("öffnen ({rel:.2} s, Stufe {}) {:.2} s: {} ab {:.3} {}×{} hw={:?} graph={:?}", core.quality.level, o.at.as_secs_f64(), j.path.display(), j.source_at.as_secs_f64(), w, h, j.hw, j.graph);
                     }
                     starter.send(j);
                     starter_queue += 1;
@@ -370,6 +406,12 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
             }
         }
         let st = core.take_stats();
+        if let Some(r) = resumed.filter(|r| t - r < 3.0) {
+            run.resume_opens += st.opens;
+            run.resume_level = run.resume_level.max(core.quality.level);
+            run.resume_catch_up += st.catch_ups;
+            let _ = r;
+        }
         if std::env::var_os("CUTLINE_QA_DEBUG").is_some() && (rel * 2.0).fract() < 0.01 {
             eprintln!("{rel:.1} s: pos {:.2} {:?} Ströme {} Ebenen {} prim {:?} Bilder {} {st:?}", playhead.as_secs_f64(), core.mode(), core.stream_count(), needs.len(), prim.is_some(), prim_frames.len());
         }
@@ -521,6 +563,52 @@ fn play_measure() {
 
 /// Kosten der Player-Logik je UI-Bild ohne Zeichnen (Ebenen, Bedarf, Schlüssel) und je Strombild
 /// (Umwandlung für die Textur), an vielen Stellen der Testprojekte.
+/// Zwei 4K-Ebenen, die obere mit Tempo `CUTLINE_QA_TEMPO` (Standard 2; `rev` = rückwärts,
+/// `kurve` = Tempo-Kurve, `scale` = Größen-Keyframes): beide Ebenen müssen fortlaufend Bilder
+/// zeigen (Nachtest K7: die Tempo-2-Ebene blieb ein Standbild).
+/// `cargo test --release -p cl-app --bin cutline tempo_layers -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn tempo_layers() {
+    let (a, b) = (std::path::Path::new("F:/cutline-testmedien/4k60_h264_80mbit.mp4"), std::path::Path::new("F:/cutline-testmedien/4k60_hevc10_50mbit.mp4"));
+    if !cl_media::ffmpeg_available() || !a.is_file() || !b.is_file() {
+        return;
+    }
+    let mode = std::env::var("CUTLINE_QA_TEMPO").unwrap_or_else(|_| "2".into());
+    let (ma, mb) = (cl_media::probe(a).unwrap(), cl_media::probe(b).unwrap());
+    let mut p = Project::new("tempo");
+    p.settings.fps = Rational::new(60, 1);
+    p.settings.width = 1920;
+    p.settings.height = 1080;
+    let mut v1 = cl_core::Track::new(TrackKind::Video);
+    v1.main = true;
+    v1.clips.push(Clip::new(ClipContent::Media { media: ma.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(120.0)));
+    let mut v2 = cl_core::Track::new(TrackKind::Video);
+    let mut c = Clip::new(ClipContent::Media { media: mb.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(100.0));
+    match mode.as_str() {
+        "rev" => c.fx.reverse = true,
+        "kurve" => c.fx.speed_curve = Some("montage".into()),
+        "scale" => {
+            for (i, v) in [0.5f32, 1.5, 0.5, 1.5].iter().enumerate() {
+                c.keyframes.set(Prop::Scale, Time::from_secs_f64(20.0 + i as f64 * 5.0), *v);
+            }
+        }
+        t => {
+            c.speed = t.parse().unwrap_or(2.0);
+            c.duration = Time::from_secs_f64(100.0 / c.speed as f64);
+        }
+    }
+    v2.clips.push(c);
+    p.timeline.tracks = vec![v1, v2];
+    p.media = vec![ma, mb];
+    let secs: f64 = std::env::var("CUTLINE_QA_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(12.0);
+    for at in [20.0, 33.0] {
+        let r = drive(p.clone(), &format!("Tempo {mode} ab {at}"), Time::from_secs_f64(at), secs);
+        eprintln!("{}: Bilder je Ebene {:?}, Bilder/s unten {:.1}, Einzelbilder {}/{}", r.label, r.layer_frames, r.fps, r.stills_req, r.stills_shown);
+        assert!(r.layer_frames.len() == 2 && r.layer_frames.values().all(|n| *n as f64 >= secs * 10.0), "{:?}", r.layer_frames);
+    }
+}
+
 #[test]
 #[ignore]
 fn player_cost() {

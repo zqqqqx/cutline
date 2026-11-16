@@ -1237,6 +1237,28 @@ pub(crate) fn set_test_entry(src: &Path, out: PathBuf, want: (u32, Rational), re
     registry().insert(src.to_path_buf(), e);
 }
 
+/// Test: echte Stücke `0..n` der Quelle `m` bauen und den Bestand wie im laufenden Bau setzen
+/// (Proxy unfertig). Wie die App: Stückung nach der Bildrate des Proxys.
+#[cfg(test)]
+pub(crate) fn test_build_parts(m: &MediaRef, out: PathBuf, want: (u32, Rational), n: u32) {
+    let spec = proxy_spec(m, want.0, want.1);
+    let fps = spec.fps.or(m.fps).unwrap_or(Rational::new(30, 1));
+    let dur = m.duration.as_secs_f64();
+    let pt = Parting::new(dur, fps, PART_SECS).unwrap();
+    let dir = parts::parts_dir(&out);
+    std::fs::create_dir_all(&dir).unwrap();
+    let st = probe_start(&m.path);
+    let mut ready = vec![false; pt.count as usize];
+    for k in 0..n.min(pt.count) {
+        build_part(m, &dir, &pt, st, k, &spec, &|_| {}, &AtomicBool::new(false)).unwrap();
+        ready[k as usize] = true;
+    }
+    let fails = vec![0; ready.len()];
+    let mut e = Entry { want, out, spec, pt: Some(pt), dur, ready, fails, complete: false, file: None, dead: false, ranges: Arc::default() };
+    e.changed();
+    registry().insert(m.path.clone(), e);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
