@@ -871,7 +871,9 @@ pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
 /// Läuft im Ordner der Kachel-Zwischenspeicher, siehe `Job::FxThumb`.
 pub fn sample_source(w: u32, h: u32, warm: bool) -> String {
     let f = if warm { "fx-sample-a.jpg" } else { "fx-sample-b.jpg" };
-    format!("movie={f},loop=loop=-1:size=1:start=0,setpts=N/25/TB,scale={w}:{h},setsar=1")
+    // `fps=25` nennt dem Graphen die Bildrate: ohne sie lehnt `xfade` in FFmpeg 7 (Linux-Distributionen)
+    // die Quelle ab – alle Übergangs-Kacheln blieben dort leer
+    format!("movie={f},loop=loop=-1:size=1:start=0,setpts=N/25/TB,fps=25,scale={w}:{h},setsar=1")
 }
 
 const SAMPLES: [(&str, &[u8]); 2] = [
@@ -882,6 +884,13 @@ const SAMPLES: [(&str, &[u8]); 2] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Die Beispielquelle der Kacheln nennt ihre Bildrate (FFmpeg 7 unter Linux verlangt sie für
+    /// `xfade`; nachgestellt mit Debian 13, FFmpeg 7.1: ohne `fps` „Error configuring filter graph").
+    #[test]
+    fn tile_source_declares_its_frame_rate() {
+        assert!(sample_source(192, 108, true).contains(",setpts=N/25/TB,fps=25,"));
+    }
 
     #[test]
     fn hardware_streams_for_large_or_fast_originals() {
