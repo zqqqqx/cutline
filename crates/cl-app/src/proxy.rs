@@ -635,6 +635,12 @@ pub fn scan_due(scanned: Option<(Instant, usize)>, media: usize) -> bool {
     scanned.is_none_or(|(t, n)| n != media || t.elapsed() >= Duration::from_secs(2))
 }
 
+/// Nächsten Proxy-Auftrag starten? Nur wenn etwas fehlt, keiner läuft und nicht pausiert ist
+/// (sonst endete jeder Auftrag mit Vorrang-Abgabe und der nächste begänne trotz Pause).
+pub fn start_next(missing: usize, running: bool, paused: bool) -> bool {
+    missing > 0 && !running && !paused
+}
+
 /// Neue Gesamtzahl der Runde: fertige plus fehlende; nichts fehlt → Runde vorbei.
 pub fn round(done: usize, missing: usize) -> (usize, usize) {
     if missing == 0 {
@@ -1081,7 +1087,7 @@ impl App {
         let (found, missing) = res;
         self.proxies.known.extend(found);
         (self.proxies.done, self.proxies.total) = round(self.proxies.done, missing.len());
-        if missing.is_empty() || self.tasks.running("proxy").is_some() {
+        if !start_next(missing.len(), self.tasks.running("proxy").is_some(), ProxyState::paused()) {
             return;
         }
         let Some(m) = self.next_build(&missing, ctx).and_then(|id| self.project.media.iter().find(|m| m.id == id)).cloned() else {
