@@ -199,6 +199,12 @@ pub fn encoder_chain(found: &[Encoder], pref: &str) -> Vec<Encoder> {
     }
 }
 
+/// Vorauswahl im Export-Dialog: Software – bei gleicher Qualität die kleinere Datei –, außer in den
+/// Einstellungen ist ausdrücklich ein Weg gewählt, den es hier gibt. („Automatisch" gilt für Proxys.)
+pub fn export_default(found: &[Encoder], pref: &str) -> Encoder {
+    Encoder::AUTO.into_iter().find(|e| e.id() == pref && found.contains(e)).unwrap_or(Encoder::Software)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExportSettings {
     pub width: u32,
@@ -4125,5 +4131,16 @@ mod tests {
         }
         (s.format, s.codec) = (Format::Gif, Codec::H264);
         assert!(!args(&s).contains("_mf"));
+    }
+
+    #[test]
+    fn export_preselects_software_unless_a_way_is_chosen() {
+        let found = [Encoder::Software, Encoder::Nvenc, Encoder::Mf];
+        assert_eq!(export_default(&found, "auto"), Encoder::Software);
+        assert_eq!(export_default(&found, ""), Encoder::Software);
+        assert_eq!(export_default(&found, Encoder::Nvenc.id()), Encoder::Nvenc);
+        assert_eq!(export_default(&found, Encoder::Mf.id()), Encoder::Mf);
+        assert_eq!(export_default(&found, Encoder::Qsv.id()), Encoder::Software, "gewählter Weg fehlt hier");
+        assert_eq!(export_default(&found, Encoder::Software.id()), Encoder::Software);
     }
 }

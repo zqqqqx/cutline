@@ -528,7 +528,7 @@ impl ExportDialog {
         // Vorauswahl nach „Hardware-Kodierung“, bis im Dialog gewählt wird (Erkennung im Hintergrund)
         if !self.encoder_picked {
             let found = self.encoders.lock().unwrap().clone().unwrap_or_default();
-            s.encoder = cl_export::encoder_chain(&found, &crate::proxy::encoder_pref())[0];
+            s.encoder = cl_export::export_default(&found, &crate::proxy::encoder_pref());
         }
         let mut open = true;
         let mut start = false;
