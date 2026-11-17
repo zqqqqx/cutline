@@ -187,6 +187,7 @@ impl<'a> Slider<'a> {
         }
         // Wert: direkt editierbar
         let mut shown = *self.value * self.display;
+        let before = shown;
         let decimals = self.decimals;
         let dv = ui.add_sized(
             [value_w, 18.0],
@@ -199,6 +200,10 @@ impl<'a> Slider<'a> {
                 .suffix(self.suffix)
                 .speed(((b - a) * self.display / 300.0).max(0.01)),
         );
+        let start = dv.id.with("vor");
+        if dv.gained_focus() {
+            ui.data_mut(|d| d.insert_temp(start, before));
+        }
         if dv.changed() {
             *self.value = shown / self.display;
             out.changed = true;
@@ -206,9 +211,11 @@ impl<'a> Slider<'a> {
         }
         if dv.drag_stopped() || dv.lost_focus() {
             // Enter meldet nur den Fokusverlust, die Zahl kam schon beim Tippen: Sie gilt auch für
-            // Aufrufer, die ihren Wert erst hier übernehmen (sonst verwarf Enter die Eingabe)
-            let typed = ui.data_mut(|d| d.remove_temp::<f32>(dv.id));
-            if let Some(v) = last_typed(typed, dv.changed()) {
+            // Aufrufer, die ihren Wert erst hier übernehmen (sonst verwarf Enter die Eingabe).
+            // Esc verwirft: der Wert vom Beginn des Tippens kommt zurück.
+            let (typed, began) = ui.data_mut(|d| (d.remove_temp::<f32>(dv.id), d.remove_temp::<f32>(start)));
+            let undo = began.filter(|_| field_esc(ui.ctx()));
+            if let Some(v) = last_typed(typed, dv.changed(), undo) {
                 *self.value = v / self.display;
                 out.changed = true;
             }
@@ -218,9 +225,22 @@ impl<'a> Slider<'a> {
     }
 }
 
-/// Die zuletzt getippte Zahl eines Wertfelds, wenn sie in diesem Bild nicht ohnehin gemeldet wurde.
-fn last_typed(typed: Option<f32>, changed_now: bool) -> Option<f32> {
-    typed.filter(|_| !changed_now)
+/// Wert eines Wertfelds beim Verlassen: bei Esc der Wert vom Beginn des Tippens (`undo`), sonst die
+/// zuletzt getippte Zahl, wenn sie in diesem Bild nicht ohnehin gemeldet wurde.
+fn last_typed(typed: Option<f32>, changed_now: bool, undo: Option<f32>) -> Option<f32> {
+    undo.or(typed.filter(|_| !changed_now))
+}
+
+/// Die App hat Esc in diesem Bild einem Feld zugesprochen und die Taste dafür verbraucht (damit das
+/// Kürzel „Auswahl aufheben" nicht greift) – das Feld selbst sähe sie sonst nicht mehr.
+pub fn mark_field_esc(ctx: &egui::Context) {
+    let now = ctx.cumulative_pass_nr(); // vor data_mut: beides sperrt den Kontext
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("field_esc"), now));
+}
+
+fn field_esc(ctx: &egui::Context) -> bool {
+    ctx.input(|i| i.key_pressed(egui::Key::Escape))
+        || ctx.data(|d| d.get_temp::<u64>(egui::Id::new("field_esc"))) == Some(ctx.cumulative_pass_nr())
 }
 
 /// Schalter (Pill). Gibt `true` zurück, wenn umgeschaltet wurde.
@@ -1062,8 +1082,22 @@ mod tests {
     /// Enter im Wertfeld: Die getippte Zahl gilt beim Verlassen, außer sie kam im selben Bild schon.
     #[test]
     fn enter_keeps_the_typed_number() {
-        assert_eq!(super::last_typed(Some(1.5), false), Some(1.5));
-        assert_eq!(super::last_typed(Some(1.5), true), None);
-        assert_eq!(super::last_typed(None, false), None);
+        assert_eq!(super::last_typed(Some(1.5), false, None), Some(1.5));
+        assert_eq!(super::last_typed(Some(1.5), true, None), None);
+        assert_eq!(super::last_typed(None, false, None), None);
+    }
+
+    /// Esc im Wertfeld: Der Wert vom Beginn des Tippens kommt zurück – auch wenn die App die Taste
+    /// schon verbraucht hat (dann sieht das Feld sie nur über die Markierung).
+    #[test]
+    fn esc_discards_the_typed_number() {
+        assert_eq!(super::last_typed(Some(7.0), false, Some(100.0)), Some(100.0));
+        assert_eq!(super::last_typed(None, false, Some(100.0)), Some(100.0));
+        let ctx = super::egui::Context::default();
+        assert!(!super::field_esc(&ctx));
+        super::mark_field_esc(&ctx);
+        assert!(super::field_esc(&ctx));
+        let _ = ctx.run(Default::default(), |_| {});
+        let _ = ctx.run(Default::default(), |ctx| assert!(!super::field_esc(ctx), "gilt nur für ein Bild"));
     }
 }

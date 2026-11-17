@@ -2728,6 +2728,7 @@ impl App {
         if std::mem::take(&mut self.esc_field) {
             // das Feld hat die Eingabe verworfen und den Fokus abgegeben – die Auswahl bleibt
             ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
+            crate::widgets::mark_field_esc(ctx);
         }
         match key_focus(typing(ctx), ctx.wants_keyboard_input(), space) {
             KeyFocus::Keep => return,
