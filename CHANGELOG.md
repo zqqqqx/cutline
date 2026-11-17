@@ -21,6 +21,22 @@
 
 **Behoben**
 
+## 0.12.1 – 2026-11-17
+
+### English
+
+**Fixed**
+- Dragging files in from the file explorer now scrolls the timeline at its edges, like dragging clips does.
+- Esc in a value field only discards the typed value; the clip stays selected.
+- A stock or Epidemic Sound download that was still running when you switched projects is no longer inserted into the other project.
+
+### Deutsch
+
+**Behoben**
+- Beim Ziehen von Dateien aus dem Explorer rollt die Zeitleiste am Rand mit, wie beim Ziehen von Clips.
+- Esc in einem Wertfeld verwirft nur die Eingabe; der Clip bleibt ausgewählt.
+- Ein Stock- oder Epidemic-Sound-Download, der beim Projektwechsel noch lief, wird nicht mehr in das andere Projekt eingefügt.
+
 ## 0.12.0 – 2026-11-17
 
 ### English
