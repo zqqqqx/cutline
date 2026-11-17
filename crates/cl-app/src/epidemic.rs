@@ -62,6 +62,8 @@ pub struct EsState {
     pub user: Option<String>,
     pub busy: bool,
     pub loading_track: Option<String>,
+    /// Der laufende Download begann in einem inzwischen verlassenen Projekt: nicht mehr einfügen
+    pub stray: bool,
     /// Titel, die schon im Vorrat liegen (Dateinamen ohne Endung)
     have: HashSet<String>,
     pub error: Option<String>,
@@ -128,6 +130,7 @@ impl Default for EsState {
             user: None,
             busy: false,
             loading_track: None,
+            stray: false,
             have: stored_ids(&es_store_dir()),
             error: None,
             limited_until: None,
@@ -309,6 +312,7 @@ impl App {
                 },
                 Msg::Downloaded { track, res, beats, fresh } => {
                     self.es.loading_track = None;
+                    let stray = std::mem::take(&mut self.es.stray);
                     match res {
                         Ok(path) => {
                             self.es.downloads.insert(path.clone(), track.id.clone());
@@ -318,7 +322,10 @@ impl App {
                             if fresh && self.settings.lib_downloads {
                                 self.library.import(crate::library::Kind::Sound, "Epidemic Sound", std::slice::from_ref(&path));
                             }
-                            if let Some(id) = self.add_file_at(path, self.playhead, None) {
+                            if stray {
+                                // der Titel bleibt im Vorrat, gehört aber nicht ins jetzt offene Projekt
+                                self.toast(format!("„{}“ geladen", track.title));
+                            } else if let Some(id) = self.add_file_at(path, self.playhead, None) {
                                 if !beats.is_empty() {
                                     if let Some(mut c) =
                                         self.project.find_clip(id).map(|(_, c)| c.clone())
@@ -616,7 +623,7 @@ impl App {
                 if playing {
                     self.sfx_preview = None;
                 } else {
-                    self.es.loading_track = Some(t.id.clone());
+                    self.es.stray = false; self.es.loading_track = Some(t.id.clone());
                     let id = t.id.clone();
                     let k = key.clone();
                     self.es.spawn(ctx, move |c| Msg::Preview {
@@ -648,7 +655,7 @@ impl App {
                     // `isPreviewOnly` ist laut Epidemic kein verlässliches Zeichen: immer versuchen – ist der
                     // Titel im Plan nicht enthalten, lehnt der Dienst ab (403) und das steht dann in der Meldung
                     {
-                        self.es.loading_track = Some(t.id.clone());
+                        self.es.stray = false; self.es.loading_track = Some(t.id.clone());
                         let track = t.clone();
                         let (dest, ours) = track_dest(
                             &self.es_media_dir(),

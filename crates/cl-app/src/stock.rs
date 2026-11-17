@@ -67,9 +67,19 @@ pub struct StockState {
     pub query: [String; 2],
     pub results: [Vec<Hit>; 2],
     pub busy: bool,
+    /// Die laufende Anfrage begann in einem inzwischen verlassenen Projekt: nichts mehr einfügen
+    pub stray: bool,
     pub photos: bool,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
+}
+
+#[cfg(test)]
+impl StockState {
+    /// Testhilfe: ein fertiger Download trifft ein (Datei gibt es nicht – sie darf nie angefasst werden)
+    pub fn test_downloaded(&self, title: &str) {
+        let _ = self.tx.send(Msg::Downloaded(FREESOUND, Ok((std::path::PathBuf::from("gibt-es-nicht.wav"), title.into()))));
+    }
 }
 
 impl Default for StockState {
@@ -80,6 +90,7 @@ impl Default for StockState {
             query: Default::default(),
             results: Default::default(),
             busy: false,
+            stray: false,
             photos: false,
             tx,
             rx,
@@ -241,11 +252,13 @@ impl App {
     pub fn poll_stock(&mut self) {
         while let Ok(m) = self.stock.rx.try_recv() {
             self.stock.busy = false;
+            let stray = std::mem::take(&mut self.stock.stray);
             match m {
                 Msg::Results(w, Ok(r)) => {
                     self.stock.results[if w == FREESOUND { 0 } else { 1 }] = r
                 }
                 Msg::Results(_, Err(e)) => self.toast_err(e),
+                Msg::Downloaded(_, Ok((_, title))) if stray => self.toast(format!("„{title}“ geladen")),
                 Msg::Downloaded(w, Ok((p, title))) => {
                     if w == FREESOUND {
                         self.library.invalidate();

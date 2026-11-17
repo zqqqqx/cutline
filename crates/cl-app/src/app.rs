@@ -65,6 +65,12 @@ pub fn hold_space(ctx: &egui::Context, raw: &mut egui::RawInput) -> Vec<egui::Ev
     held
 }
 
+/// Esc in einem Text- oder Wertfeld verwirft nur dessen Eingabe: Das Kürzel „Auswahl aufheben" darf
+/// im selben Bild nicht mehr greifen (das Feld gibt bei Esc den Fokus ab, danach sähe es die Taste).
+fn esc_for_field(typing: bool, esc_pressed: bool) -> bool {
+    typing && esc_pressed
+}
+
 pub fn release_text_focus(ctx: &egui::Context) {
     ctx.memory_mut(|m| {
         if let Some(id) = m.focused() {
@@ -265,6 +271,8 @@ pub struct App {
     pub live: Option<Clip>,
     /// Leertaste dieses Bildes, vor dem Zeichnen abgefangen (siehe [`hold_space`])
     held_keys: Vec<egui::Event>,
+    /// Esc kam, während ein Textfeld den Fokus hatte: gilt nur dem Feld (siehe [`esc_for_field`])
+    esc_field: bool,
     pub playhead: Time,
     pub playing: bool,
     pub timeline: TimelineState,
@@ -493,6 +501,7 @@ impl App {
             copy_marker: false,
             live: None,
             held_keys: Vec::new(),
+            esc_field: false,
             playhead: Time::ZERO,
             playing: false,
             timeline: TimelineState::default(),
@@ -2110,6 +2119,8 @@ impl App {
         // Ergebnisse laufender Ablagen und Aufgaben gehören zum verlassenen Projekt
         self.drops.list.clear();
         self.tasks.next_generation();
+        self.stock.stray = self.stock.busy;
+        self.es.stray = self.es.loading_track.is_some();
         self.core.new_project();
         self.select_only(None);
         self.live = None;
@@ -2714,6 +2725,10 @@ impl App {
         let held = std::mem::take(&mut self.held_keys);
         let space = !held.is_empty() || ctx.input(|i| i.key_pressed(Key::Space));
         ctx.input_mut(|i| i.events.extend(held));
+        if std::mem::take(&mut self.esc_field) {
+            // das Feld hat die Eingabe verworfen und den Fokus abgegeben – die Auswahl bleibt
+            ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
+        }
         match key_focus(typing(ctx), ctx.wants_keyboard_input(), space) {
             KeyFocus::Keep => return,
             KeyFocus::Release => release_text_focus(ctx),
@@ -3084,6 +3099,8 @@ impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         crate::devinput::feed(ctx, raw);
         self.held_keys = hold_space(ctx, raw);
+        let esc = raw.events.iter().any(|e| matches!(e, egui::Event::Key { key: Key::Escape, pressed: true, .. }));
+        self.esc_field = esc_for_field(typing(ctx), esc);
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -4008,6 +4025,30 @@ fn unreadable_file_gives_a_short_message() {
     assert!(app.import_media(vec![f]).is_empty());
     let msgs: Vec<&str> = app.toasts.iter().map(|t| t.0.as_str()).collect();
     assert_eq!(msgs, ["Datei kann nicht gelesen werden: kaputt.mp4"]);
+}
+
+/// Meldung mit sehr langem Namen bleibt im Fenster (gekürzt) statt links und rechts abgeschnitten
+#[test]
+fn download_running_at_a_project_change_is_not_inserted() {
+    let (mut app, _home, _g) = crate::saving::tests::test_app();
+    app.set_doc(Project::new("Alt"));
+    app.stock.busy = true;
+    app.es.loading_track = Some("t1".into());
+    app.reset_editor();
+    assert!(app.stock.stray && app.es.stray);
+    app.set_doc(Project::new("Neu"));
+    app.stock.test_downloaded("Klang");
+    app.poll_stock();
+    assert!(app.project.media.is_empty() && app.project.timeline.tracks.iter().all(|t| t.clips.is_empty()));
+    assert!(!app.stock.stray && app.toasts.iter().any(|t| t.0.contains("Klang")));
+}
+
+/// Esc im Feld verwirft nur die Eingabe
+#[test]
+fn esc_in_a_field_is_not_a_shortcut() {
+    assert!(esc_for_field(true, true));
+    assert!(!esc_for_field(false, true), "ohne Feld hebt Esc die Auswahl auf");
+    assert!(!esc_for_field(true, false));
 }
 
 /// Meldung mit sehr langem Namen bleibt im Fenster (gekürzt) statt links und rechts abgeschnitten
