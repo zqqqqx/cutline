@@ -481,6 +481,18 @@ fn round_px(x: f32, ppp: f32) -> f32 {
     (x * ppp).round() / ppp
 }
 
+/// Roll-Tempo am Rand beim Ziehen: 0 im Inneren, im Randstreifen `edge` bis ±1, weiter draußen
+/// bis ±3 (negativ = zum Anfang `lo` hin).
+fn edge_speed(p: f32, lo: f32, hi: f32, edge: f32) -> f32 {
+    if p < lo + edge {
+        -((lo + edge - p) / edge).min(3.0)
+    } else if p > hi - edge {
+        ((p - (hi - edge)) / edge).min(3.0)
+    } else {
+        0.0
+    }
+}
+
 /// Wellenform eines Clips: Lage, Ausschnitt, Zoom, Lautstärke und Daten, für die das Netz gilt
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct WaveKey {
@@ -1263,25 +1275,28 @@ impl App {
         }
         // Beim Ziehen (Playhead, Clips, Kanten) an den Rand: Zeitleiste rollt in diese Richtung,
         // je näher am Rand, desto schneller – auch wenn die Maus dort stillsteht.
-        if resp.dragged() && !matches!(self.timeline.drag, Drag::None | Drag::Slip { .. }) {
-            if let Some(p) = ui.input(|i| i.pointer.interact_pos()) {
-                let edge = 48.0;
-                let (l, r) = (x0, lanes.right());
-                let v = if p.x < l + edge {
-                    -((l + edge - p.x) / edge).min(3.0)
-                } else if p.x > r - edge {
-                    ((p.x - (r - edge)) / edge).min(3.0)
-                } else {
-                    0.0
-                };
-                if v != 0.0 {
-                    let dt = ui.input(|i| i.stable_dt).clamp(0.001, 0.05) as f64;
-                    let visible = ((r - x0) / pps) as f64;
-                    self.timeline.view_glide = None;
-                    self.timeline.scroll =
-                        (self.timeline.scroll + v as f64 * visible * 0.8 * dt).max(self.timeline.scroll.min(0.0));
-                    ui.ctx().request_repaint();
-                }
+        // Dasselbe für Dateien, die von außen (Explorer) über der Zeitleiste schweben: dort gibt es
+        // keine Mausereignisse, die Stelle kommt vom Betriebssystem (`drops.pos`).
+        let drag_p = (resp.dragged() && !matches!(self.timeline.drag, Drag::None | Drag::Slip { .. }))
+            .then(|| ui.input(|i| i.pointer.interact_pos()))
+            .flatten();
+        let file_p = self.drops.hover.as_ref().and(self.drops.pos).filter(|p| rect.contains(*p));
+        if let Some(p) = drag_p.or(file_p) {
+            let dt = ui.input(|i| i.stable_dt).clamp(0.001, 0.05);
+            let r = lanes.right();
+            let v = edge_speed(p.x, x0, r, 48.0);
+            if v != 0.0 {
+                let visible = ((r - x0) / pps) as f64;
+                self.timeline.view_glide = None;
+                self.timeline.scroll =
+                    (self.timeline.scroll + v as f64 * visible * 0.8 * dt as f64).max(self.timeline.scroll.min(0.0));
+                ui.ctx().request_repaint();
+            }
+            // Dateien von außen rollen auch die Spuren (wie das Umsortieren am Spurkopf)
+            let vy = if drag_p.is_none() { edge_speed(p.y, lanes.top(), lanes.bottom(), 28.0) } else { 0.0 };
+            if vy != 0.0 {
+                self.timeline.vscroll = (self.timeline.vscroll + vy * 500.0 * dt).clamp(0.0, overflow);
+                ui.ctx().request_repaint();
             }
         }
         // Springt der Playhead (Pos1/Ende, Marker, Schnitte …) aus dem sichtbaren Bereich,
@@ -1390,14 +1405,7 @@ impl App {
                         lifted_row = Some(from);
                         insert_lines.extend(target.map(gap_y));
                         // am oberen/unteren Rand rollen die Spuren mit
-                        let edge = 28.0;
-                        let v = if p.y < lanes.top() + edge {
-                            -((lanes.top() + edge - p.y) / edge).min(3.0)
-                        } else if p.y > lanes.bottom() - edge {
-                            ((p.y - (lanes.bottom() - edge)) / edge).min(3.0)
-                        } else {
-                            0.0
-                        };
+                        let v = edge_speed(p.y, lanes.top(), lanes.bottom(), 28.0);
                         let dt = ui.input(|i| i.stable_dt).clamp(0.001, 0.05);
                         self.timeline.vscroll = (self.timeline.vscroll + v * 500.0 * dt).clamp(0.0, overflow);
                     }
@@ -4625,5 +4633,15 @@ mod tests {
             }
             app.playing = false;
         }
+    }
+
+    /// Rollen am Rand: innen 0, im Randstreifen bis ±1, außerhalb gedeckelt, beidseitig gleich
+    #[test]
+    fn edge_speed_grows_towards_and_beyond_the_edge() {
+        let v = |p| super::edge_speed(p, 100.0, 900.0, 48.0);
+        assert_eq!((v(500.0), v(148.0), v(852.0)), (0.0, 0.0, 0.0));
+        assert_eq!((v(100.0), v(900.0)), (-1.0, 1.0));
+        assert_eq!((v(124.0), v(876.0)), (-0.5, 0.5));
+        assert_eq!((v(-500.0), v(5000.0)), (-3.0, 3.0));
     }
 }
