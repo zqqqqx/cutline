@@ -3,27 +3,27 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zqqqqx/cutline/releases/latest"><img src="https://img.shields.io/github/v/release/zqqqqx/cutline?label=download&color=F4F4F6&labelColor=17171A" alt="Latest release"></a>
-  <a href="https://github.com/zqqqqx/cutline/actions/workflows/ci.yml"><img src="https://github.com/zqqqqx/cutline/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/license-MPL--2.0-F4F4F6?labelColor=17171A" alt="MPL-2.0">
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-F4F4F6?labelColor=17171A" alt="Windows and Linux">
-</p>
-
-<p align="center">
   <b>The open video editor for creators.</b><br>
   Easy to use, fast, and entirely on your machine.
 </p>
 
 <p align="center">
-  <a href="https://github.com/zqqqqx/cutline/releases/latest"><b>Download for Windows</b></a> ·
-  <a href="https://github.com/zqqqqx/cutline/releases/latest"><b>Linux</b></a> ·
-  <a href="#build-from-source">Build from source</a> ·
+  <a href="https://github.com/zqqqqx/cutline/releases/latest"><img src="https://img.shields.io/github/v/release/zqqqqx/cutline?label=download&color=F4F4F6&labelColor=17171A" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-F4F4F6?labelColor=17171A" alt="Windows and Linux">
+  <img src="https://img.shields.io/badge/price-free-F4F4F6?labelColor=17171A" alt="Free">
+  <img src="https://img.shields.io/badge/license-MPL--2.0-F4F4F6?labelColor=17171A" alt="MPL-2.0">
+</p>
+
+<p align="center">
+  <a href="https://github.com/zqqqqx/cutline/releases/latest/download/cutline-windows-x64-setup.exe"><b>Download for Windows</b></a> ·
+  <a href="https://github.com/zqqqqx/cutline/releases/latest/download/cutline-linux-x64.zip"><b>Download for Linux</b></a> ·
+  <a href="https://github.com/zqqqqx/cutline/wiki"><b>Guide</b></a> ·
   <a href="CHANGELOG.md">What's new</a> ·
   <a href="docs/ROADMAP.md">Roadmap</a>
 </p>
 
 <p align="center">
-  <img src="docs/images/editor.jpg" alt="The Cutline editor with a beach video, title text, music and voiceover" width="100%">
+  <img src="docs/images/editor.jpg" alt="The Cutline editor: media on the left, the player in the middle, clip settings on the right and the timeline below" width="100%">
 </p>
 
 ## Why Cutline
@@ -36,47 +36,60 @@
     </td>
     <td width="33%" valign="top">
       <h3>Fast</h3>
-      Written in Rust. Proxy media keeps the preview smooth on large recordings, hardware encoders (NVENC, Quick Sync, AMF) make exports quick.
+      Playback starts right away, also with large recordings: proxies are usable seconds after the import. Hardware encoders make exports quick.
     </td>
     <td width="33%" valign="top">
       <h3>Open</h3>
-      Open source (MPL-2.0), runs locally, no account, no subscription, no watermark. Local AI for captions, cut-outs and noise removal – nothing is uploaded; no generative AI. Projects are plain JSON.
+      No account, no subscription, no watermark, no ads. Local AI for captions, cut-outs and noise removal – nothing is uploaded; no generative AI.
     </td>
   </tr>
 </table>
 
+## Start in three steps
+
+1. **Install.** Windows: run the [installer](https://github.com/zqqqqx/cutline/releases/latest/download/cutline-windows-x64-setup.exe) – it needs no admin rights and brings everything along. Linux: unpack the [zip](https://github.com/zqqqqx/cutline/releases/latest/download/cutline-linux-x64.zip) and run `./cutline` (needs FFmpeg 7 or newer on your system).
+2. **Drag your files in.** Drop videos, images and audio from the file explorer straight onto the timeline.
+3. **Cut and export.** Split with <kbd>Ctrl</kbd>+<kbd>B</kbd>, delete with <kbd>Del</kbd>, then pick a platform in the export window.
+
+The [guide](https://github.com/zqqqqx/cutline/wiki) walks you through your first video and explains every part of the editor.
+
 ## One click for the tedious parts
 
-<img src="docs/images/tools.jpg" alt="The Quick Actions menu with jump cuts, filler words, auto ducking, highlights, sync, multicam, punch-in, vertical layout, thumbnail and recap" width="100%">
+<img src="docs/images/tools.jpg" alt="The Quick Actions menu: remove pauses, remove filler words, lower music under speech, find highlights, sync recordings, multicam, punch-in, vertical layout, thumbnail and recap" width="100%">
 
 The **Quick Actions** menu in the timeline does the work that usually eats an evening: remove pauses from talking
-parts, cut filler words found by the local speech model, lower music under speech, turn loud moments of a
-long recording into markers, sync several recordings by their audio and cut between them live, switch to a
-9:16 layout with the facecam on top, or save the current frame as a thumbnail.
+parts, cut filler words, lower music under speech, turn the loud moments of a long recording into markers, sync
+several recordings by their audio and cut between them live, switch to a 9:16 layout with the facecam on top, or
+save the current frame as a thumbnail.
 
-## Set up in a minute
+## Captions without uploading anything
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/welcome.jpg" alt="Welcome screen"></td>
-    <td width="50%"><img src="docs/images/uses.jpg" alt="Choosing what you use Cutline for"></td>
-  </tr>
-  <tr>
-    <td>A short, skippable introduction on first start.</td>
-    <td>Tell Cutline what you make. It suggests matching tools, models and plugins, and nothing is turned on without your okay.</td>
-  </tr>
-</table>
+<img src="docs/images/captions.jpg" alt="The Captions tab with automatic captions and caption styles" width="100%">
 
-<img src="docs/images/tour.jpg" alt="Guided tour highlighting the timeline" width="100%">
+Automatic captions run on your computer, in 25 European languages with word timing, and in 99 languages with the
+fallback model. Pick a style, from classic to word by word, and edit the text like any other clip. The same goes for
+removing a background without a green screen and for cleaning up a noisy voice track.
 
-A guided tour points out each part of the editor. You can restart it any time from **Menu → Tour**.
+## Everything to dress up a video
+
+<img src="docs/images/library.jpg" alt="Text templates, elements, effects and transitions in the library" width="100%">
+
+Text templates, stickers and animated elements, effects, filters, transitions, sound effects and music sit in one
+library with search, favorites and your own folders. Add your own fonts, stickers, sounds and presets.
+
+## Look and sound
+
+<img src="docs/images/look-sound.jpg" alt="Sound effects, filters, color adjustments and audio clean-up" width="100%">
+
+Adjust light and color, load a LUT, mask, blend and animate with keyframes. For sound: fades, noise reduction,
+voice enhancement, loudness for streaming platforms and voiceover recording.
 
 ## Export for every platform
 
-<img src="docs/images/export.jpg" alt="Export presets for YouTube, Shorts, TikTok, Reels, Instagram and Twitch" width="70%">
+<img src="docs/images/export.jpg" alt="The export window with platform, resolution, codec, quality and frame rate" width="70%">
 
-Presets for YouTube (1080p, 1440p, 4K), Shorts/TikTok/Reels, Instagram and Twitch, with hardware encoding,
-transparent video and audio-only export. Cutline warns you when the project's aspect ratio does not match.
+Presets for YouTube (1080p, 1440p, 4K), Shorts/TikTok/Reels, Instagram and Twitch, with transparent video and
+audio-only export. Cutline warns you when the project's aspect ratio does not match the platform.
 
 ## Plugins
 
@@ -89,108 +102,54 @@ Integrations ship with Cutline but stay **off** until you turn them on. Keys and
 | Pexels | Free stock videos and photos in the Media tab (free key) |
 | Story tools | Characters with name, color and portrait; dialogue boxes and name tags in one click |
 
-## Features
+## Everything Cutline can do
 
 <details>
 <summary><b>Full feature list</b></summary>
 
 | | |
 |---|---|
-| **Timeline** | Multiple video, text and audio tracks · track names, solo and clip color labels · markers with notes (copy as YouTube chapters) · In/Out range with loop · J/K/L shuttle · roll, slip, nudge and numeric timing · clip groups · paste attributes · main-track magnet (ripple) · snapping to clips, playhead and beats · marquee and multi-selection · copy/paste · freeze frame · reverse · speed 0.1–10× and speed curves · smooth slow motion with interpolated frames |
-| **Player** | All layers live, picture-in-picture · drag, scale and rotate with snapping · zoom 50–400 % · large player mode · preview in its own window for a second screen · audio meters · proxy media for smooth playback of large recordings |
-| **Quick Actions** | Remove pauses (jump cuts) · remove filler words · auto ducking · highlights as markers · sync recordings by audio · multicam editing (1–9 while playing) · speaker recordings import · zoom punch-in · vertical 9:16 layout with facecam · thumbnail PNG · recap from markers · export presets for YouTube, Shorts/TikTok/Reels, Instagram and Twitch |
+| **Timeline** | Multiple video, text, effect and audio tracks · drop files straight from the file explorer · track names, solo and clip color labels · markers with notes (copy as YouTube chapters) · In/Out range with loop · J/K/L shuttle · roll, slip, nudge and numeric timing · clip groups · paste attributes · main-track magnet (ripple) · snapping to clips, playhead and beats · marquee and multi-selection · copy/paste · freeze frame · reverse · speed 0.1–10× and speed curves · smooth slow motion with interpolated frames |
+| **Player** | All layers live, picture-in-picture · drag, scale and rotate with snapping · zoom 50–400 % · large player mode · preview in its own window for a second screen · audio meters · proxies in pieces for smooth playback of large recordings · automatic preview quality when the computer gets busy |
+| **Quick Actions** | Remove pauses (jump cuts) · remove filler words · auto ducking · highlights as markers · sync recordings by audio · multicam editing (1–9 while playing) · speaker recordings import · zoom punch-in · vertical 9:16 layout with facecam · thumbnail PNG · recap from markers |
 | **Library** | One catalog for elements, sound effects, music, effects, filters, transitions, text templates, fonts and media: search, favorites, own folders, and every category can be moved, renamed or hidden · own stickers, sounds and presets · content packs you can switch on and off, with sources and licenses in one place ([THIRD_PARTY.md](THIRD_PARTY.md)) |
 | **Look** | Adjustments (light, color, HSL per range, sharpness, vignette, grain) · filters · LUT (.cube) · masks (linear, mirror, circle, rectangle) · blend and opacity · video noise reduction · deflicker |
 | **Motion** | Keyframes for position, scale, rotation, opacity and volume · in/out/combo animations · transitions between clips, including shader transitions (cube, whip pan, zoom blur, glitch) · animated elements (subscribe button, arrows, countdown, confetti) and animated emoji |
 | **Text** | Templates and text effects · outline, box and shadow · auto wrap · imported fonts · SRT import/export |
-| **Audio** | Waveforms · volume keyframes and fades · voiceover recording with countdown · noise reduction · voice enhancement · loudness to −14 LUFS · bass/treble · 13 voice changers · music folder and sound effects |
+| **Audio** | Waveforms · volume keyframes and fades · audio track per clip for files with several tracks · voiceover recording with countdown · noise reduction · voice enhancement · loudness to −14 LUFS · bass/treble · 13 voice changers · music folder and sound effects |
 | **Local AI** | Auto captions with NVIDIA Parakeet TDT 0.6B v3 (25 European languages, word timing), with Whisper as the fallback · background removal without a green screen (RobustVideoMatting), with blurred or colored background and person outline · chroma key with eyedropper · stabilization · object tracking · auto reframe for 9:16 · scene detection · beat detection |
-| **Export** | MP4, MOV, MKV, WebM, GIF · audio-only WAV, MP3, M4A, FLAC · H.264, HEVC, AV1, VP9, ProRes · NVENC, Quick Sync and AMF hardware encoding · up to 4K · transparent video (ProRes 4444, VP9 with alpha) · SRT side file |
-| **App** | Skippable introduction with plugin suggestions and a guided tour · project overview with search, duplicate and trash · project templates · autosave and automatic backups with restore · relink missing media · archive a project with its files · customizable shortcuts (Cutline, Premiere-like, Resolve-like) · optional plugins, off by default: Epidemic Sound, Freesound, Pexels, Story tools · English and German interface · adjustable UI scale · built-in updater |
+| **Export** | MP4, MOV, MKV, WebM, GIF · audio-only WAV, MP3, M4A, FLAC · H.264, HEVC, AV1, VP9, ProRes · hardware encoding with NVIDIA, Intel and AMD encoders or the encoder built into Windows · up to 4K · transparent video (ProRes 4444, VP9 with alpha) · SRT side file |
+| **Projects** | Project overview with search, duplicate and trash · project templates · autosave and automatic backups with restore · relink missing media · archive a project with its files · guided import of projects from other editors |
+| **App** | Skippable introduction and a guided tour · customizable shortcuts (Cutline, Premiere-like, Resolve-like) · English and German interface · themes, accent color and adjustable interface size · built-in updater with "What's new" · log export for troubleshooting, without project names, file paths or keys |
 
 </details>
 
-## Install
+## Help and feedback
 
-**Windows:** download `cutline-windows-x64-setup.exe` from the [latest release](https://github.com/zqqqqx/cutline/releases/latest). The installer needs no admin rights. It adds Cutline to the Start menu and opens `.cutline` files. FFmpeg and ONNX Runtime are included. A portable `cutline-windows-x64.zip` is available as well.
+- **Guide:** the [wiki](https://github.com/zqqqqx/cutline/wiki) covers installation, a first video, every area of the editor, shortcuts and troubleshooting.
+- **Something does not work:** open an [issue](https://github.com/zqqqqx/cutline/issues/new/choose) and attach the log from **Settings → About Cutline → Export log**. It contains no project names, file paths or keys.
+- **An idea:** feature requests are welcome as issues too. The [roadmap](docs/ROADMAP.md) shows what is planned.
 
-**Linux:** download `cutline-linux-x64.zip`, unpack it and run `./cutline`. You need FFmpeg 7 or newer (8 for Whisper captions) installed on your system. The FFmpeg of Debian 13 (7.1) works; Ubuntu 24.04 (6.1) and older are too old, and Cutline warns about this at startup. Without a usable GPU (e.g. in a VM), shader transitions fall back to a built-in transition.
+## System requirements
 
-AI models are not bundled. Download the ones you need under **Settings → Models**.
-
-## Build from source
-
-Requirements: a current stable Rust from [rustup](https://rustup.rs) (the Rust packaged by distributions such as Debian 13, 1.85, is too old), and FFmpeg 7 or newer plus FFprobe on your `PATH` (or set `CUTLINE_FFMPEG_DIR`). On Windows you also need the MSVC build tools; on Linux, the usual X11/Wayland and ALSA development packages.
-
-```bash
-cargo test --workspace
-cargo run -p cl-app --release
-```
-
-The export test renders every project in `crates/cl-export/tests/projects` with generated stand-in media. To add a case, save a project there. To run it before every commit:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-For local captions and background removal, place an ONNX Runtime 1.31 library (`onnxruntime.dll` / `libonnxruntime.so`) next to the binary or in the models folder.
-
-<details>
-<summary>Environment variables</summary>
-
-| Variable | Purpose |
+| | |
 |---|---|
-| `CUTLINE_HOME` | Data folder (fonts, plugins, settings); default `%APPDATA%\Cutline` |
-| `CUTLINE_MODELS` | Folder for AI models; default `CUTLINE_HOME/Models` |
-| `CUTLINE_FFMPEG_DIR` | Folder containing `ffmpeg` and `ffprobe` |
-| `CUTLINE_NO_UPDATE=1` | Don't check for updates on startup |
-| `CUTLINE_UI_SCALE`, `CUTLINE_WINDOW_SIZE`, `CUTLINE_WINDOW_POS`, `CUTLINE_MAXIMIZED=1` | Window and scale for testing |
-| `CUTLINE_MISSING_TR=file` | Debug builds: log UI strings that have no translation yet |
-| `CUTLINE_SHOTS=folder` | Save the window as PNG whenever a file named `take` appears in that folder (for docs) |
-| `CUTLINE_DEBUG_HITS=1` | Debug builds: highlight the widget under the pointer |
-| `CUTLINE_PERF=1` | Log preview frame rate, stream starts and the largest gap between frames once per second |
-| `CUTLINE_NO_ONBOARDING=1` | Skip the first-start introduction |
+| **Windows** | 64-bit Windows. FFmpeg and everything else is included. |
+| **Linux** | x86-64 with FFmpeg 7 or newer installed (8 for Whisper captions). The FFmpeg of Debian 13 works; Ubuntu 24.04 and older are too old, and Cutline says so at startup. |
+| **Graphics** | A graphics card helps with the preview, shader transitions and export, but is not required. |
+| **AI models** | Not bundled. Download the ones you need under **Settings → Models (local AI)**. |
 
-</details>
+## For developers
 
-## Keyboard shortcuts
-
-| Key | Action | Key | Action |
-|---|---|---|---|
-| Space | Play / pause | Ctrl+B | Split at playhead |
-| Q / W | Delete left / right of playhead | Del | Delete selection |
-| Ctrl+C / X / V / D | Copy / cut / paste / duplicate | Ctrl+Z / Ctrl+Shift+Z | Undo / redo |
-| ← / → | One frame back / forward | Home / End | Start / end |
-| P / N | Magnet / snapping | V | Disable clip |
-| R | Voiceover | F | Large player |
-| Ctrl+I / S / O / E | Import / save / open / export | Ctrl+wheel | Zoom timeline |
-| J / K / L | Shuttle back / pause / forward | I / O | In / Out point |
-| M | Marker | Shift+Del | Ripple delete |
-| Ctrl+G / Ctrl+Shift+G | Group / ungroup | Ctrl+Alt+V | Paste attributes |
-
-## Control Cutline over MCP
-
-**Headless (stdio):**
-
-```json
-{ "mcpServers": { "cutline": { "command": "cutline", "args": ["--mcp", "/path/to/project.cutline"] } } }
-```
-
-**Running app (HTTP):** go to Settings → MCP interface and turn it on. The server listens only on `127.0.0.1` and requires a bearer token. It can be set to read-only. Use the copy button to get a ready-made client configuration.
-
-## Project layout
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the crates, the preview and export pipelines, local AI, plugins, translations and the roadmap.
-
-## Contributing
-
-Issues and pull requests are welcome. Run `cargo test --workspace` and `cargo clippy --workspace` before you send a change. To add translations, edit `crates/cl-i18n/locales/ui.en.tsv`.
-
-Every change that users notice gets a line under `## Unreleased` in [`CHANGELOG.md`](CHANGELOG.md), in English and German, written for users rather than developers. The release notes on GitHub and the "What's new" view in Cutline are taken from that file.
+Cutline is written in Rust and open source under the MPL-2.0. Building, testing and the rules for changes are in
+[CONTRIBUTING.md](CONTRIBUTING.md), the structure of the code in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Cutline can also be controlled by other programs over MCP – see
+[Automation (MCP)](https://github.com/zqqqqx/cutline/wiki/Automation-MCP).
 
 ## License
 
-Cutline is licensed under the [Mozilla Public License 2.0](LICENSE). FFmpeg, ONNX Runtime and the AI models are separate programs and files under their own licenses.
+Cutline is licensed under the [Mozilla Public License 2.0](LICENSE). FFmpeg, ONNX Runtime and the AI models are
+separate programs and files under their own licenses; bundled content is listed in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ---
 

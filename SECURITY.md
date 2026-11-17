@@ -1,21 +1,15 @@
-# Security Policy
+# Security
 
-## Supported Versions
+## Supported versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Only the [latest release](https://github.com/zqqqqx/cutline/releases/latest) gets fixes. Cutline updates itself; you can also check under **Settings → Updates**.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Reporting a problem
 
-## Reporting a Vulnerability
+Please do not open a public issue for a security problem. Use **Security → Report a vulnerability** on this repository instead; the report stays private until a fix is released.
 
-Use this section to tell people how to report a vulnerability.
+Helpful in a report: the Cutline version, your operating system, what you did and what happened. Leave out keys, tokens and private files.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+## What Cutline does with your data
+
+Cutline works on your computer. Projects, media, captions and AI models stay there. It contacts the internet only to check for updates, to download models and content packs you ask for, and for plugins you switched on yourself (for example a stock library). Keys and sign-ins for plugins are stored on your computer.

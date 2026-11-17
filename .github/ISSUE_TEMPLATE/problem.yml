@@ -1,0 +1,39 @@
+name: Something does not work
+description: A crash, a wrong result or something that behaves differently than you expect.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect and what happened instead? A screenshot or a short recording helps a lot.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Cutline version
+      description: Shown under Settings → About Cutline.
+      placeholder: "0.12.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: System
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: "Settings → About Cutline → Export log, then drag the file in here. The log contains no project names, file paths or keys."
+  - type: textarea
+    id: media
+    attributes:
+      label: About your footage (optional)
+      description: "If playback or export is affected: resolution, frame rate and where the files come from (phone, screen recording, camera)."
