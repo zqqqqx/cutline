@@ -65,6 +65,52 @@ struct Shared {
 /// Gewähltes Ausgabegerät (Name); `None` = Systemstandard
 static DEVICE: Mutex<Option<String>> = Mutex::new(None);
 
+/// Lautstärke der Wiedergabe (Regler im Player): nur wie laut Cutline abspielt – nicht Projekt,
+/// Export oder Pegelanzeige. Überlebt den Neustart in `last-used.json`.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Volume {
+    /// 0–100
+    pub percent: f32,
+    pub muted: bool,
+}
+
+impl Default for Volume {
+    fn default() -> Self {
+        Self { percent: 100.0, muted: false }
+    }
+}
+
+impl Volume {
+    /// Verstärkung zum Regler: kubisch (fühlt sich gleichmäßig an), 100 % = unverändert, nie lauter
+    pub fn gain(self) -> f32 {
+        if self.muted {
+            return 0.0;
+        }
+        // max/min statt clamp: NaN aus einer kaputten Datei wird 0
+        (self.percent / 100.0).max(0.0).min(1.0).powi(3)
+    }
+
+    /// Ein 5-%-Schritt (Mausrad, Aktionen) auf dem 5er-Raster; lauter hebt „stumm“ auf
+    pub fn step(self, up: bool) -> Self {
+        let p = ((self.percent / 5.0).round() + if up { 1.0 } else { -1.0 }) * 5.0;
+        Self { percent: p.clamp(0.0, 100.0), muted: self.muted && !up }
+    }
+}
+
+/// Ziel-Verstärkung der Ausgabe (f32-Bits, 1.0); die Ausgabe gleitet in [`GAIN_RAMP_MS`] dorthin
+static GAIN: AtomicU32 = AtomicU32::new(0x3F80_0000);
+/// Rampe beim Ändern der Lautstärke (gegen Knacken)
+const GAIN_RAMP_MS: f32 = 5.0;
+
+pub fn set_volume(v: Volume) {
+    GAIN.store(v.gain().to_bits(), Ordering::Relaxed);
+}
+
+fn playback_gain() -> f32 {
+    f32::from_bits(GAIN.load(Ordering::Relaxed))
+}
+
 pub fn set_output_device(name: Option<String>) {
     *DEVICE.lock().unwrap() = name;
     *OUTPUT.lock().unwrap() = None;
@@ -176,6 +222,8 @@ struct Out {
     in_underrun: bool,
     underruns: u64,
     underrun_frames: u64,
+    /// aktuelle Verstärkung der Wiedergabe (gleitet zu [`GAIN`])
+    gain: f32,
 }
 
 impl Out {
@@ -191,6 +239,7 @@ impl Out {
             in_underrun: false,
             underruns: 0,
             underrun_frames: 0,
+            gain: playback_gain(),
         }
     }
 
@@ -406,18 +455,23 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
 
 /// Ein Ausgabe-Block von `n` Frames zur Zeit `now`: Uhr fortschreiben, Ton (oder Stille) an `put`
 /// geben, Pegel und ersten Ton merken. Gemeinsam für das Gerät und die Ausgabe ohne Gerät.
-fn render_block(sh: &Shared, pk: &[AtomicU32; 2], rate: u32, n: usize, now: Instant, mut put: impl FnMut(f32, f32)) {
+/// `gain` = Lautstärke der Wiedergabe; erst nach den Pegeln angewandt (die zeigen den Projektpegel).
+fn render_block(sh: &Shared, pk: &[AtomicU32; 2], rate: u32, n: usize, now: Instant, gain: f32, mut put: impl FnMut(f32, f32)) {
     let mut o = sh.out.lock().unwrap();
     let target = match o.phase {
         Phase::Anchored(at) => (now.saturating_duration_since(at).as_secs_f64() * rate as f64) as u64,
         _ => 0,
     };
     let (mut pl, mut pr) = (0.0f32, 0.0f32);
+    let step = 1000.0 / (rate.max(1) as f32 * GAIN_RAMP_MS);
+    let mut g = o.gain;
     let real = o.render(n, target, |l, r| {
         pl = pl.max(l.abs());
         pr = pr.max(r.abs());
-        put(l, r);
+        g += (gain - g).clamp(-step, step);
+        put(l * g, r * g);
     });
+    o.gain = g;
     let running = o.phase == Phase::Running;
     sh.played.store(o.played, Ordering::Relaxed);
     drop(o);
@@ -523,7 +577,7 @@ impl AudioPlayer {
                         let n = (now.duration_since(last).as_secs_f64() * rate as f64) as usize;
                         last += Duration::from_secs_f64(n as f64 / rate as f64);
                         if playing && n > 0 {
-                            render_block(&sh, &pk, rate, n, now, |_, _| {});
+                            render_block(&sh, &pk, rate, n, now, playback_gain(), |_, _| {});
                         }
                     }
                 })
@@ -541,7 +595,7 @@ impl AudioPlayer {
                         move |data: &mut [$t], _| {
                             let n = data.len() / channels.max(1);
                             let mut frames = data.chunks_mut(channels.max(1));
-                            render_block(&sh, &pk, rate, n, Instant::now(), |l, r| {
+                            render_block(&sh, &pk, rate, n, Instant::now(), playback_gain(), |l, r| {
                                 if let Some(frame) = frames.next() {
                                     for (i, s) in frame.iter_mut().enumerate() {
                                         *s = $conv(match i {
@@ -868,6 +922,63 @@ mod tests {
             kids: Mutex::new(Vec::new()),
             first_sound: OnceLock::new(),
         })
+    }
+
+    #[test]
+    fn volume_curve() {
+        let g = |p: f32| Volume { percent: p, muted: false }.gain();
+        assert_eq!(g(0.0), 0.0);
+        assert_eq!(g(100.0), 1.0);
+        assert!((g(50.0) - 0.125).abs() < 1e-6, "kubisch");
+        let mut last = -1.0;
+        for p in (0..=100).step_by(5) {
+            assert!(g(p as f32) > last, "monoton bei {p}");
+            last = g(p as f32);
+        }
+        // nie lauter als das Projekt, auch mit kaputten Werten
+        for p in [150.0, f32::INFINITY, -20.0, f32::NAN] {
+            assert!((0.0..=1.0).contains(&g(p)), "{p}");
+        }
+        assert_eq!(Volume { percent: 80.0, muted: true }.gain(), 0.0);
+        let v = |percent, muted| Volume { percent, muted };
+        assert_eq!(v(100.0, false).step(true), v(100.0, false));
+        assert_eq!(v(37.0, true).step(true), v(40.0, false));
+        assert_eq!(v(37.0, true).step(false), v(30.0, true));
+        assert_eq!(v(0.0, false).step(false), v(0.0, false));
+    }
+
+    /// Lautstärke der Wiedergabe wirkt an der Ausgabe (Gerät und ohne Gerät teilen `render_block`),
+    /// gleitet ohne Sprung und lässt die Pegelanzeige unberührt.
+    #[test]
+    fn playback_volume_reaches_the_output_but_not_the_meter() {
+        let rate = 1000; // 5 Frames Rampe
+        let run = |start: f32, gain: f32| {
+            let sh = test_shared(rate);
+            let pk = [AtomicU32::new(0), AtomicU32::new(0)];
+            {
+                let mut o = sh.out.lock().unwrap();
+                o.phase = Phase::Running;
+                o.gain = start;
+                o.buf.extend(std::iter::repeat_n(0.5, 200));
+            }
+            let mut v = Vec::new();
+            render_block(&sh, &pk, rate, 100, Instant::now(), gain, |l, r| v.push((l, r)));
+            (v, f32::from_bits(pk[0].load(Ordering::Relaxed)))
+        };
+        // 100 %: Samples unverändert
+        let (v, peak) = run(1.0, 1.0);
+        assert!(v.iter().all(|s| *s == (0.5, 0.5)));
+        assert_eq!(peak, 0.5);
+        // stumm/0 %: nach der Rampe Stille, Rampe ohne Sprung, Pegel weiter vom Projekt
+        let (v, peak) = run(1.0, Volume { percent: 100.0, muted: true }.gain());
+        assert!(v[10..].iter().all(|s| *s == (0.0, 0.0)));
+        assert!(v[0].0 > 0.3 && v[0].0 < 0.5, "gleitet: {:?}", v[0]);
+        assert!(v.windows(2).all(|w| w[0].0 - w[1].0 <= 0.1 + 1e-6), "kein Sprung");
+        assert_eq!(peak, 0.5, "Pegel vor dem Regler");
+        // wieder an: gleitet hoch
+        let (v, _) = run(0.0, 1.0);
+        assert!(v[0].0 > 0.0 && v[0].0 < 0.2);
+        assert!(v[10..].iter().all(|s| *s == (0.5, 0.5)));
     }
 
     /// Wiedergabe-Ton wie in der App (Fenster für Fenster über die Zuführung, ohne Ausgabegerät)
