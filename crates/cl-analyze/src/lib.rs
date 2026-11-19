@@ -40,7 +40,7 @@ pub static CATALOG: &[ModelInfo] = &[
         name: "ONNX Runtime 1.31",
         about: "Laufzeit für Parakeet und Freistellen (Microsoft, MIT-Lizenz)",
         size_mb: 17,
-        files: &[("onnxruntime.zip", "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-1.31.1.zip#sha256=5869e26bb25314375f2d5ef1877e3ea06b1543d6c710e6e4a1ec2f7177ab4b2c")],
+        files: &[("onnxruntime.zip", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/onnxruntime-win-x64-1.31.1.zip#sha256=5869e26bb25314375f2d5ef1877e3ea06b1543d6c710e6e4a1ec2f7177ab4b2c")],
     },
     ModelInfo {
         id: "parakeet",
