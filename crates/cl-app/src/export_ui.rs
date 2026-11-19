@@ -495,13 +495,7 @@ impl ExportDialog {
     }
 
     fn output_path(&self, f: Format) -> PathBuf {
-        let safe: String = self
-            .name
-            .chars()
-            .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
-            .collect();
-        self.folder
-            .join(format!("{}.{}", safe.trim(), f.extension()))
+        self.folder.join(format!("{}.{}", file_safe(&self.name), f.extension()))
     }
 
     /// Zieldatei schon vergeben: vorhandene Datei, laufender oder wartender Export
@@ -1032,6 +1026,85 @@ impl ExportDialog {
             self.start_next(ctx);
         }
         toast
+    }
+}
+
+/// Name für Dateien und Ordner: Zeichen, die Windows verbietet, werden zu `_`; Länge und
+/// Gerätenamen wie bei Projektdateien ([`crate::paths::fit_name`]).
+fn file_safe(name: &str) -> String {
+    let s: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect();
+    crate::paths::fit_name(&s)
+}
+
+/// „In Teile aufteilen“: gleich lange Teile, Teile fester Länge (Sekunden) oder Schnitt an Markern
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Split {
+    Count(u32),
+    Length(u32),
+    Markers,
+}
+
+/// Höchstzahl der Teile bei „Anzahl“
+const SPLIT_MAX: u32 = 50;
+/// Ein kürzerer Rest bei „Länge“ wird dem vorletzten Teil zugeschlagen
+const SPLIT_MIN_REST: Time = Time(3_000_000);
+
+/// Teile eines Exports von `a` bis `b`: Bereich und Dateiname je Teil, lückenlos und ohne
+/// Überlappung; Schnitte liegen auf Bildgrenzen des Projekts (`fps`). `name` ist schon
+/// dateitauglich, `part` das Wort „Teil“ in der Sprache der Oberfläche.
+fn split_parts(how: Split, (a, b): (Time, Time), fps: cl_core::Rational, markers: &[cl_core::Marker], name: &str, part: &str, ext: &str) -> Vec<((Time, Time), String)> {
+    let snap = |t: Time| t.snap_to_frame(fps);
+    // Schnittstellen mit Markername (leer ohne Marker)
+    let mut cuts: Vec<(Time, &str)> = match how {
+        Split::Count(n) => {
+            let n = n.clamp(2, SPLIT_MAX) as i64;
+            (1..n).map(|k| (snap(a + Time((b - a).0 * k / n)), "")).collect()
+        }
+        Split::Length(secs) => {
+            let step = Time(secs.max(1) as i64 * 1_000_000);
+            let mut v: Vec<(Time, &str)> = (1..).map(|k| a + Time(step.0 * k)).take_while(|t| *t < b).map(|t| (snap(t), "")).collect();
+            if v.last().is_some_and(|(t, _)| b - *t < SPLIT_MIN_REST) {
+                v.pop();
+            }
+            v
+        }
+        Split::Markers => markers.iter().map(|m| (snap(m.at), m.name.as_str())).collect(),
+    };
+    cuts.sort_by_key(|c| c.0);
+    // Marker genau am Anfang benennt den ersten Teil
+    let first = cuts.iter().find(|c| c.0 == snap(a) || c.0 == a).map_or("", |c| c.1);
+    // Rand nicht auf dem Bildraster: kein Splitterteil zwischen Rand und gerundetem Schnitt
+    cuts.retain(|c| c.0 > a.max(snap(a)) && c.0 < b.min(snap(b)));
+    cuts.dedup_by_key(|c| c.0);
+    let starts: Vec<(Time, &str)> = std::iter::once((a, first)).chain(cuts).collect();
+    let n = starts.len();
+    let digits = n.to_string().len().max(2);
+    starts
+        .iter()
+        .enumerate()
+        .map(|(i, &(t, label))| {
+            let end = starts.get(i + 1).map_or(b, |s| s.0);
+            let nr = format!("{:0digits$}", i + 1);
+            let file = match (how, file_safe(label)) {
+                (Split::Markers, l) if l.is_empty() => format!("{name} – {nr}.{ext}"),
+                (Split::Markers, l) => format!("{name} – {nr} {l}.{ext}"),
+                _ => format!("{name} – {part} {nr}.{ext}"),
+            };
+            ((t, end), file)
+        })
+        .collect()
+}
+
+/// Ergebniszeile unter „Aufteilen nach“: „6 Teile · je 1:00“ bzw. „4 Teile · 0:42 bis 2:10“
+fn split_summary(parts: &[((Time, Time), String)]) -> String {
+    let durs = parts.iter().map(|((a, b), _)| *b - *a);
+    // auf ganze Sekunden gerundet: 59,97 s (Bildraster) zeigt 1:00 wie die übrigen Teile
+    let t = |d: Option<Time>| crate::navigate::chapter_time(Time((d.unwrap_or_default().0 + 500_000) / 1_000_000 * 1_000_000));
+    let (lo, hi) = (t(durs.clone().min()), t(durs.max()));
+    if lo == hi {
+        crate::tr(format!("{} Teile · je {lo}", parts.len()))
+    } else {
+        crate::tr(format!("{} Teile · {lo} bis {hi}", parts.len()))
     }
 }
 
@@ -1636,4 +1709,67 @@ fn queued_exports_run_in_turn_from_their_own_snapshot() {
     assert_eq!(crate::exports::for_project("A", Some(&pa)).len(), 2);
     assert!(crate::exports::for_project("Anders", Some(&po)).is_empty());
     std::env::remove_var("CUTLINE_HOME");
+}
+
+#[test]
+fn split_parts_are_gapless_on_frames_with_names() {
+    let fps = cl_core::Rational::new(30, 1);
+    let s = Time::from_secs_f64;
+    let parts = |how, a: f64, b: f64, ms: &[cl_core::Marker]| split_parts(how, (s(a), s(b)), fps, ms, "Film", "Teil", "mp4");
+    // lückenlos, ohne Überlappung, Summe = Bereich, Schnitte auf Bildgrenzen
+    let check = |v: &[((Time, Time), String)], a: f64, b: f64| {
+        assert_eq!((v[0].0 .0, v.last().unwrap().0 .1), (s(a), s(b)));
+        for w in v.windows(2) {
+            assert_eq!(w[0].0 .1, w[1].0 .0);
+            let t = w[0].0 .1;
+            assert_eq!(t, t.snap_to_frame(fps), "{t:?}");
+            assert!(w[0].0 .0 < w[0].0 .1);
+        }
+    };
+    // Anzahl: 10 s (In/Out ab 1 s) in 3 Teile → 3,333 s auf Bilder gerundet
+    let v = parts(Split::Count(3), 1.0, 11.0, &[]);
+    check(&v, 1.0, 11.0);
+    assert_eq!(v.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), ["Film – Teil 01.mp4", "Film – Teil 02.mp4", "Film – Teil 03.mp4"]);
+    assert_eq!(v[0].0 .1, Time(4_333_333));
+    assert_eq!(split_summary(&v), "3 Teile · je 0:03");
+    // höchstens 50, mindestens 2 Teile; Stellen wachsen mit der Zahl (mindestens zwei)
+    assert_eq!(parts(Split::Count(80), 0.0, 100.0, &[]).len(), 50);
+    assert_eq!(parts(Split::Count(1), 0.0, 100.0, &[]).len(), 2);
+    // 1 s je Teil über 120 s: der Rest von 1 s geht an den vorletzten → 119 Teile, dreistellig
+    let v = parts(Split::Length(1), 0.0, 120.0, &[]);
+    assert_eq!((v.len(), v[0].1.as_str(), v[118].1.as_str()), (119, "Film – Teil 001.mp4", "Film – Teil 119.mp4"));
+    // Länge: Rest ab 3 s bleibt eigener Teil, darunter geht er an den vorletzten
+    let v = parts(Split::Length(60), 0.0, 363.0, &[]);
+    check(&v, 0.0, 363.0);
+    assert_eq!(v.iter().map(|p| (p.0 .1 - p.0 .0).as_secs_f64()).collect::<Vec<_>>(), [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 3.0]);
+    assert_eq!(split_summary(&v), "7 Teile · 0:03 bis 1:00");
+    let v = parts(Split::Length(60), 0.0, 362.9, &[]);
+    assert_eq!((v.len(), (v[5].0 .1 - v[5].0 .0).as_secs_f64()), (6, 62.9));
+    // kürzer als ein Teil: ein Teil
+    assert_eq!(parts(Split::Length(60), 0.0, 30.0, &[]).len(), 1);
+    // Marker: außerhalb und genau auf dem Ende zählen nicht, genau am Anfang benennt Teil 1;
+    // Namen bereinigt, leer → nur Nummer, doppelte Namen bleiben wegen der Nummer eindeutig
+    let mk = |at: f64, name: &str| cl_core::Marker { id: 0, at: s(at), duration: Time::ZERO, name: name.into(), note: String::new(), color: 0 };
+    let ms = [mk(1.0, "Vorher"), mk(2.0, "Start"), mk(4.01, "a/b: c?"), mk(6.0, ""), mk(7.0, "Ende"), mk(7.0, "Ende"), mk(9.0, "Ende"), mk(10.0, "Rand"), mk(12.0, "Danach")];
+    let v = parts(Split::Markers, 2.0, 10.0, &ms);
+    check(&v, 2.0, 10.0);
+    assert_eq!(
+        v.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(),
+        ["Film – 01 Start.mp4", "Film – 02 a_b_ c_.mp4", "Film – 03.mp4", "Film – 04 Ende.mp4", "Film – 05 Ende.mp4"]
+    );
+    // Marker auf 4,01 s rastet auf das Bild bei 4 s ein
+    assert_eq!(v[1].0 .0, s(4.0));
+    // Gerätenamen und Steuerzeichen
+    let v = parts(Split::Markers, 0.0, 10.0, &[mk(5.0, "CON"), mk(6.0, "x\ty")]);
+    assert_eq!(v.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), ["Film – 01.mp4", "Film – 02 CON_.mp4", "Film – 03 x_y.mp4"]);
+    // ohne Marker im Bereich: nur ein Teil (Auswahl ausgegraut)
+    assert_eq!(parts(Split::Markers, 2.0, 10.0, &[mk(1.0, "x"), mk(10.0, "y"), mk(2.0, "z")]).len(), 1);
+    // 29,97 fps: Schnitte auf dem Bildraster, Bereich bleibt exakt
+    let ntsc = cl_core::Rational::new(30000, 1001);
+    let v = split_parts(Split::Count(4), (s(0.0), s(7.0)), ntsc, &[], "F", "Part", "webm");
+    assert_eq!((v.len(), v[3].0 .1, v[0].1.as_str()), (4, s(7.0), "F – Part 01.webm"));
+    for w in v.windows(2) {
+        assert_eq!(w[0].0 .1, w[1].0 .0);
+        assert_eq!(w[0].0 .1, w[0].0 .1.snap_to_frame(ntsc));
+    }
 }
