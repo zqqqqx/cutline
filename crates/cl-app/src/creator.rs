@@ -112,6 +112,9 @@ impl App {
                 (sel().is_some_and(|c| c.kind() == TrackKind::Video), "Wähle einen Videoclip")
             }
             "quick_recap" => (!self.project.timeline.markers.is_empty(), "Setze zuerst Marker"),
+            l if l.starts_with("quick_layout_") => {
+                (crate::arrange::Arrange::from_id(l).is_some_and(|a| a.fits(self.layout_clips().len())), "")
+            }
             _ => (true, ""),
         }
     }
@@ -169,6 +172,21 @@ impl App {
                     .clicked()
                 {
                     act = Some(id);
+                }
+                if *id == "quick_vertical" {
+                    crate::theme::submenu(ui, crate::theme::icon::GRID_FOUR, "Layout", |ui| {
+                        for (i, id) in crate::arrange::IDS.iter().enumerate() {
+                            // Gruppen: 2 Clips, 3 Clips, 4 Clips, Bild-in-Bild, Zurücksetzen
+                            if matches!(i, 2 | 4 | 5 | 9) {
+                                ui.separator();
+                            }
+                            let name = crate::keymap::name(id).trim_start_matches("Layout: ");
+                            let on = self.quick_check(id).0;
+                            if ui.add_enabled_ui(on, |ui| crate::timeline::menu_item(ui, crate::keymap::icon(id), name, "")).inner {
+                                act = Some(id);
+                            }
+                        }
+                    });
                 }
             }
         }

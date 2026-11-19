@@ -1133,6 +1133,35 @@ mod transition_tests {
         }
     }
 
+    /// Splitscreen aus der Layout-Aktion (Zuschnitt + Transform zweier Spuren): Vorschau wie Export.
+    #[test]
+    fn splitscreen_matches_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = project(dir.path(), "fade", false, None);
+        // B auf eine eigene Spur über A, beide ab 0
+        let mut b = p.timeline.tracks[0].clips.pop().unwrap();
+        p.timeline.tracks[0].clips[0].transition_out = None;
+        b.start = Time::ZERO;
+        let mut t = Track::new(TrackKind::Video);
+        t.clips.push(b);
+        p.timeline.tracks.push(t);
+        let before = p.clone();
+        let sizes: Vec<(f32, f32)> = p.media.iter().map(|m| (m.width as f32, m.height as f32)).collect();
+        let geo = crate::arrange::arrange(320.0, 180.0, &sizes, crate::arrange::Arrange::Side);
+        for (t, (tf, k)) in p.timeline.tracks.iter_mut().zip(geo) {
+            (t.clips[0].transform, t.clips[0].crop) = (tf, k);
+        }
+        let ex = export_frame(&p, dir.path(), 15);
+        let at = Time::from_secs_f64(0.5);
+        let d = block_diff(&still::render(&p, at, 320, 180), &ex);
+        assert!(d < 8.0, "Splitscreen: Vorschau weicht vom Export ab: {d:.1}");
+        let d0 = block_diff(&still::render(&before, at, 320, 180), &ex);
+        assert!(d0 > 2.0 * d.max(2.0), "ohne Layout {d0:.1}, mit {d:.1}");
+    }
+
     /// Kreis öffnen unter einem Filter-Element (N_tr 26:50): gemischt wie der Export (Element auf
     /// dem fertigen Übergang), nicht übergeblendet.
     #[test]
