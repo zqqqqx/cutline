@@ -232,6 +232,47 @@ pub struct ExportSettings {
     /// Kapitelname für Marker ohne Namen (Sprache der Oberfläche)
     #[serde(default = "default_chapter_name")]
     pub chapter_name: String,
+    /// Zielgröße der Datei in MB (10⁶ Byte): Bitrate aus Größe und Dauer, Software-Encoder in
+    /// zwei Durchgängen (siehe [`ExportSettings::for_target`]); nur H.264, HEVC, AV1 und VP9
+    #[serde(default)]
+    pub target_mb: Option<u32>,
+}
+
+/// Bit je Pixel und Bild, unter denen bei Zielgröße verkleinert wird. Gemessen (x264, zwei
+/// Durchgänge, SSIM gegen das Original, drei echte Aufnahmen 1080p30): bei 0,015 ist 720p besser
+/// als 1080p, bei 0,03 etwa gleich, ab 0,05 ist 1080p besser.
+pub const TARGET_MIN_BPP: f64 = 0.03;
+/// Standardauflösungen (kürzere Kante), auf die bei zu wenig Bitrate verkleinert wird
+pub const TARGET_EDGES: [u32; 4] = [1080, 720, 540, 360];
+/// Anteil der Zielgröße, den Bild und Ton nutzen; der Rest fängt Container und die Streuung der
+/// Encoder ab (x264 zwei Durchgänge: gemessen bis 3,5 % über der Bitrate)
+const TARGET_SHARE: f64 = 0.95;
+
+/// Gesamtbitrate (kbit/s), mit der `mb` MB in `secs` Sekunden passen
+fn total_kbps(mb: u32, secs: f64) -> f64 {
+    mb as f64 * 8000.0 / secs.max(0.1)
+}
+
+/// Videobitrate (kbit/s) für eine Datei von höchstens `mb` MB bei `secs` Sekunden und
+/// `audio` kbit/s Ton (mindestens 50 kbit/s).
+pub fn target_kbps(mb: u32, secs: f64, audio: u32) -> u32 {
+    (total_kbps(mb, secs) * TARGET_SHARE - audio as f64).max(50.0) as u32
+}
+
+/// Zu wenig Bitrate für `w`×`h` (unter [`TARGET_MIN_BPP`]): größte Standardauflösung (kürzere
+/// Kante), bei der es reicht, sonst 360p – nie größer als jetzt. `None`: reicht wie es ist;
+/// sonst (Kante, reicht dort).
+pub fn target_edge(kbps: u32, (w, h): (u32, u32), fps: f64) -> Option<(u32, bool)> {
+    let short = w.min(h).max(1);
+    let enough = |e: u32| {
+        let f = e as f64 / short as f64;
+        kbps as f64 * 1000.0 / (w as f64 * f * h as f64 * f * fps.max(1.0)) >= TARGET_MIN_BPP
+    };
+    if enough(short) {
+        return None;
+    }
+    let e = TARGET_EDGES.into_iter().filter(|e| *e < short).find(|e| enough(*e)).unwrap_or(short.min(360));
+    Some((e, enough(e)))
 }
 
 fn default_chapter_name() -> String {
@@ -255,14 +296,42 @@ impl ExportSettings {
             audio_kbps: None,
             chapters: true,
             chapter_name: default_chapter_name(),
+            target_mb: None,
         }
+    }
+
+    /// Kann mit Zielgröße exportiert werden? (Bild mit H.264, HEVC, AV1 oder VP9)
+    pub fn target_possible(&self) -> bool {
+        !self.format.audio_only() && self.format != Format::Gif && matches!(video_codec(self), Codec::H264 | Codec::Hevc | Codec::Av1 | Codec::Vp9)
+    }
+
+    /// Einstellungen, mit denen eine Datei von `secs` Sekunden die Zielgröße einhält: Software-
+    /// Encoder, Videobitrate aus Größe minus Ton (bei knapper Größe höchstens ein Viertel, mindestens
+    /// 64 kbit/s), bei zu wenig Bit je Pixel eine kleinere Standardauflösung. Ohne Zielgröße unverändert.
+    pub fn for_target(&self, secs: f64) -> ExportSettings {
+        let mut s = self.clone();
+        let Some(mb) = self.target_mb.filter(|_| self.target_possible()) else {
+            return s;
+        };
+        s.encoder = Encoder::Software;
+        if s.include_audio {
+            s.audio_kbps = Some(s.audio_bitrate().min((total_kbps(mb, secs) / 4.0).max(64.0) as u32));
+        }
+        let k = target_kbps(mb, secs, s.audio_bitrate());
+        s.quality = Quality::Bitrate(k);
+        if let Some((e, _)) = target_edge(k, (s.width, s.height), s.fps.as_f64()) {
+            let f = e as f64 / s.width.min(s.height).max(1) as f64;
+            s.width = ((s.width as f64 * f).round() as u32).max(2) & !1;
+            s.height = ((s.height as f64 * f).round() as u32).max(2) & !1;
+        }
+        s
     }
 
     /// Tatsächliche Tonbitrate im Video (kbit/s, 0 = ohne Ton), wie in `codec_args`.
     pub fn audio_bitrate(&self) -> u32 {
         match (self.format, self.codec) {
             _ if !self.include_audio || self.format == Format::Gif => 0,
-            (Format::WebM, _) => 192,
+            (Format::WebM, _) => self.audio_kbps.unwrap_or(192).min(192),
             (_, Codec::ProRes) => 1536,
             _ => self.audio_kbps.unwrap_or(256),
         }
@@ -331,6 +400,8 @@ pub struct Job {
     /// Großes Projekt: Abschnitte, die vor `args` laufen; `args` hängt sie dann nur noch
     /// aneinander (Bild ohne Neukodierung, Ton einmal begrenzt/angeglichen/kodiert)
     sections: Vec<Section>,
+    /// Zielgröße: Bild in zwei Durchgängen (siehe [`run_encode`])
+    two_pass: bool,
 }
 
 /// Ein Abschnitt eines großen Exports (siehe `sections.rs`).
@@ -468,6 +539,8 @@ fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, 
     if end <= start {
         return Err(ExportError::Empty);
     }
+    // Zielgröße: Bitrate (und ggf. Größe) aus der Länge dieses Exports
+    let s = &s.for_target((end - start).as_secs_f64());
     let units = sections::units(p, start, end, !s.format.audio_only(), wants_audio(s));
     let base = BASE_CHARS + out.as_os_str().len();
     let one = sections::Limits { inputs: single.max(1), ..sections::Limits::DEFAULT };
@@ -615,6 +688,7 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
         passes,
         frames: dur.as_secs_f64() * s.fps.num as f64 / s.fps.den.max(1) as f64,
         sections: Vec::new(),
+        two_pass: s.target_mb.is_some() && s.target_possible(),
     })
 }
 
@@ -886,6 +960,7 @@ fn build_sections(
         passes: Vec::new(),
         frames: dur.as_secs_f64() * s.fps.as_f64(),
         sections: secs,
+        two_pass: s.target_mb.is_some() && s.target_possible(),
     })
 }
 
@@ -1065,7 +1140,7 @@ fn audio_args(s: &ExportSettings) -> Vec<String> {
         return Vec::new();
     }
     match (s.format, video_codec(s)) {
-        (Format::WebM, _) => v(&["-c:a", "libopus", "-b:a", "192k"]),
+        (Format::WebM, _) => vec!["-c:a".into(), "libopus".into(), "-b:a".into(), format!("{}k", s.audio_bitrate())],
         (_, Codec::ProRes) => v(&["-c:a", "pcm_s16le"]),
         _ => vec!["-c:a".into(), "aac".into(), "-b:a".into(), format!("{}k", s.audio_bitrate())],
     }
@@ -1235,9 +1310,9 @@ fn run_job(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Res
             let pass = second_pass(&log, m.target).ok_or(ExportError::Loudness)?;
             let g = format!("{};\n[aout]{pass}[anorm]", fallbacks(&m.graph));
             std::fs::write(job.workdir.path().join("graph.txt"), g)?;
-            run_ffmpeg(job, &job.args, secs, cancel, &mut |x| progress(MEASURE_SHARE + x * (1.0 - MEASURE_SHARE)))
+            run_encode(job, &job.args, secs, cancel, &mut |x| progress(MEASURE_SHARE + x * (1.0 - MEASURE_SHARE)))
         }),
-        None => run_ffmpeg(job, &job.args, secs, cancel, &mut progress),
+        None => run_encode(job, &job.args, secs, cancel, &mut progress),
     }
     .map(|_| ())
 }
@@ -1315,7 +1390,7 @@ fn run_section(job: &Job, sec: &Section, cancel: &AtomicBool, progress: &mut dyn
     let mut at = share;
     for (args, w) in sec.runs.iter().zip(weights) {
         let w = w * (1.0 - share);
-        run_ffmpeg(job, args, secs, cancel, &mut |x| progress(at + x * w)).map_err(|e| match e {
+        run_encode(job, args, secs, cancel, &mut |x| progress(at + x * w)).map_err(|e| match e {
             ExportError::Cancelled => e,
             e => section_error(sec, e, args.clone()),
         })?;
@@ -1447,6 +1522,36 @@ fn run_pass(job: &Job, p: &graph::ShaderPass, cancel: &AtomicBool, progress: &mu
 
 /// Dateiname des Live-Vorschaubilds im Arbeitsordner
 const PREVIEW_FILE: &str = "preview.jpg";
+/// Protokoll des ersten Durchgangs (im Arbeitsordner, fällt mit dem Job weg)
+const PASSLOG: &str = "pass";
+
+/// Argumente für Durchgang `n` (1 oder 2) bei Zielgröße. `None`: der Aufruf kodiert kein Bild mit
+/// einem Encoder, der zwei Durchgänge kann (Ton, Zusammenfügen, SVT-AV1: dort ein Durchgang mit
+/// fester Bitrate).
+fn with_pass(args: &[String], n: u8) -> Option<Vec<String>> {
+    let i = args.iter().position(|a| a == "-c:v")? + 2;
+    let extra: Vec<String> = match args.get(i - 1)?.as_str() {
+        "libx264" | "libvpx-vp9" | "libaom-av1" => vec!["-pass".into(), n.to_string(), "-passlogfile".into(), PASSLOG.into()],
+        // libx265 übernimmt `-pass` nicht, nur über die eigenen Parameter
+        "libx265" => vec!["-x265-params".into(), format!("pass={n}:stats={PASSLOG}.x265")],
+        _ => return None,
+    };
+    let mut a = args.to_vec();
+    a.splice(i..i, extra);
+    Some(a)
+}
+
+/// Ein Lauf; mit Zielgröße zwei Durchgänge. Der erste schreibt dieselben Ausgaben (auch die
+/// Live-Vorschau) und zählt als erste Hälfte des Fortschritts, der zweite überschreibt sie.
+fn run_encode(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<String> {
+    match (job.two_pass, with_pass(args, 1), with_pass(args, 2)) {
+        (true, Some(first), Some(second)) => {
+            run_ffmpeg(job, &first, secs, cancel, &mut |x| progress(x * 0.5))?;
+            run_ffmpeg(job, &second, secs, cancel, &mut |x| progress(0.5 + x * 0.5))
+        }
+        _ => run_ffmpeg(job, args, secs, cancel, progress),
+    }
+}
 
 /// Argumente ohne die Vorschau-Ausgabe; nimmt auch den Vorschau-Zweig aus dem Graphen.
 /// `None`, wenn `args` keine Vorschau enthält (dann gibt es nichts zu wiederholen).
@@ -4310,5 +4415,188 @@ mod tests {
         assert_eq!(export_default(&found, Encoder::Mf.id()), Encoder::Mf);
         assert_eq!(export_default(&found, Encoder::Qsv.id()), Encoder::Software, "gewählter Weg fehlt hier");
         assert_eq!(export_default(&found, Encoder::Software.id()), Encoder::Software);
+    }
+
+    #[test]
+    fn target_bitrate_and_resolution() {
+        // 10 MB in 60 s: 1333 kbit/s gesamt, 95 % davon minus 256 kbit/s Ton
+        assert_eq!(target_kbps(10, 60.0, 256), 1010);
+        // sehr knapp: nie unter 50 kbit/s
+        assert_eq!(target_kbps(1, 600.0, 64), 50);
+        // 1080p30 braucht 0,03 Bit je Pixel = 1866 kbit/s
+        assert_eq!(target_edge(1900, (1920, 1080), 30.0), None);
+        assert_eq!(target_edge(1800, (1920, 1080), 30.0), Some((720, true)));
+        assert_eq!(target_edge(500, (1920, 1080), 30.0), Some((540, true)));
+        assert_eq!(target_edge(250, (1920, 1080), 30.0), Some((360, true)));
+        assert_eq!(target_edge(100, (1920, 1080), 30.0), Some((360, false)));
+        // Hochkant: kürzere Kante zählt; 4K wird 1080p
+        assert_eq!(target_edge(1800, (1080, 1920), 30.0), Some((720, true)));
+        assert_eq!(target_edge(3000, (3840, 2160), 30.0), Some((1080, true)));
+        // schon klein: nie größer, höchstens 360p
+        assert_eq!(target_edge(10, (320, 180), 30.0), Some((180, false)));
+        assert_eq!(target_edge(10, (640, 480), 30.0), Some((360, false)));
+
+        let mut s = ExportSettings::from_project(&Project::new("z"));
+        (s.width, s.height, s.fps, s.encoder) = (1920, 1080, Rational::new(30, 1), Encoder::Nvenc);
+        // ohne Zielgröße unverändert
+        assert_eq!(s.for_target(60.0), s);
+        s.target_mb = Some(25);
+        let t = s.for_target(60.0);
+        // 25 MB / 60 s: 3333 kbit/s, Ton 256 → Bild 2910 kbit/s, reicht für 1080p, Software
+        assert_eq!((t.quality, t.width, t.height, t.encoder), (Quality::Bitrate(2910), 1920, 1080, Encoder::Software));
+        // 25 MB / 150 s: Bild 1010 kbit/s → 720p (1280×720 braucht 829)
+        let t = s.for_target(150.0);
+        assert_eq!((t.width, t.height), (1280, 720), "{:?}", t.quality);
+        // Ton höchstens ein Viertel der Gesamtrate, mindestens 64 kbit/s; WebM (Opus) ebenso
+        s.target_mb = Some(10);
+        let t = s.for_target(600.0);
+        assert_eq!((t.audio_bitrate(), t.width), (64, 640), "{:?}", t.quality);
+        s.format = Format::WebM;
+        s.codec = Codec::Vp9;
+        assert_eq!(s.for_target(600.0).audio_bitrate(), 64);
+        assert_eq!(s.for_target(10.0).audio_bitrate(), 192);
+        // ProRes, GIF, Ton: Zielgröße gilt nicht
+        for (f, c) in [(Format::Mov, Codec::ProRes), (Format::Gif, Codec::H264), (Format::Mp3, Codec::H264)] {
+            (s.format, s.codec) = (f, c);
+            assert!(!s.target_possible());
+            assert_eq!(s.for_target(600.0), s);
+        }
+    }
+
+    #[test]
+    fn two_pass_args_per_software_encoder() {
+        let mut s = ExportSettings::from_project(&Project::new("z"));
+        s.quality = Quality::Bitrate(1000);
+        let pass = |s: &ExportSettings, n| with_pass(&codec_args(s), n).map(|a| a.join(" "));
+        assert!(pass(&s, 1).unwrap().starts_with("-c:v libx264 -pass 1 -passlogfile pass -preset"), "{:?}", pass(&s, 1));
+        s.codec = Codec::Hevc;
+        assert!(pass(&s, 2).unwrap().starts_with("-c:v libx265 -x265-params pass=2:stats=pass.x265 -preset"));
+        (s.format, s.codec) = (Format::WebM, Codec::Vp9);
+        assert!(pass(&s, 2).unwrap().starts_with("-c:v libvpx-vp9 -pass 2 -passlogfile pass "));
+        (s.format, s.codec) = (Format::Mp4, Codec::Av1);
+        // SVT-AV1 kann in FFmpeg keine zwei Durchgänge: ein Durchgang mit fester Bitrate
+        assert_eq!(pass(&s, 1).is_some(), !has_svtav1());
+        // Ton, Zusammenfügen ohne Neukodierung, Hardware: ein Durchgang
+        assert!(with_pass(&["-c:a".into(), "aac".into()], 1).is_none());
+        assert!(with_pass(&["-c:v".into(), "copy".into()], 1).is_none());
+        s.codec = Codec::H264;
+        s.encoder = Encoder::Nvenc;
+        assert!(pass(&s, 1).is_none());
+    }
+
+    /// 480×270, 30 Bilder/s, starkes Rauschen (sonst unterschreitet der Encoder jede Bitrate) und Ton
+    fn noise_video(dir: &Path, secs: f64) -> MediaRef {
+        let path = dir.join("rauschen.mp4");
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+            .arg(format!("testsrc2=size=480x270:rate=30:duration={secs},noise=alls=40:allf=t"))
+            .args(["-f", "lavfi", "-i"])
+            .arg(format!("sine=f=440:d={secs}"))
+            .args(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        cl_media::probe(&path).unwrap()
+    }
+
+    /// Projekt aus `n` gleich langen Clips des Rauschvideos (mehrere: Abschnitte möglich)
+    fn noise_project(dir: &Path, secs: f64, n: usize) -> Project {
+        let m = noise_video(dir, secs);
+        let mut p = Project::new("Rauschen");
+        (p.settings.width, p.settings.height, p.settings.fps) = (480, 270, Rational::new(30, 1));
+        let mut t = Track::new(TrackKind::Video);
+        let len = secs / n as f64;
+        for i in 0..n {
+            t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::from_secs_f64(len * i as f64), Time::from_secs_f64(len)));
+        }
+        p.media.push(m);
+        p.timeline.tracks.push(t);
+        p
+    }
+
+    /// Zielgröße: zwei Durchgänge treffen 85–100 % der Größe; das Protokoll liegt im Arbeitsordner
+    /// des Auftrags (geht mit ihm), der erste Durchgang ist die erste Hälfte des Fortschritts.
+    /// Gemessene Größen: `cargo test --release -p cl-export target_size -- --nocapture`
+    #[test]
+    fn target_size_is_kept_in_two_passes() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = noise_project(dir.path(), 6.0, 1);
+        let mut s = ExportSettings::from_project(&p);
+        s.target_mb = Some(1);
+        for (format, codec, log) in [(Format::Mp4, Codec::H264, "pass-0.log"), (Format::Mp4, Codec::Hevc, "pass.x265"), (Format::WebM, Codec::Vp9, "pass-0.log"), (Format::Mp4, Codec::Av1, "")] {
+            (s.format, s.codec) = (format, codec);
+            let out = dir.path().join(format!("{codec:?}.{}", format.extension()));
+            let job = build(&p, &s, &no_fonts, &out).unwrap();
+            assert!(job.two_pass);
+            let mut seen = Vec::new();
+            run(&job, Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
+            // SVT-AV1 (ein Durchgang, feste Bitrate): nur die Obergrenze
+            let two = !log.is_empty() || !has_svtav1();
+            assert!(seen.windows(2).all(|w| w[0] <= w[1]) && (!two || seen.contains(&0.5)) && seen.last() == Some(&1.0), "{seen:?}");
+            let size = std::fs::metadata(&out).unwrap().len();
+            eprintln!("Zielgröße 1 MB, {codec:?}: {size} Byte ({:.1} %)", size as f64 / 1e4);
+            assert!(size <= 1_000_000 && (!two || size >= 850_000), "{codec:?}: {size}");
+            let work = job.workdir.path().to_path_buf();
+            if !log.is_empty() {
+                assert!(work.join(log).is_file(), "{codec:?}: Protokoll im Arbeitsordner");
+            }
+            drop(job);
+            assert!(!work.exists());
+        }
+    }
+
+    /// Abbrechen im ersten und im zweiten Durchgang: keine halbe Datei, Protokoll weg mit dem
+    /// Arbeitsordner.
+    #[test]
+    fn target_size_cancel_cleans_up() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = noise_project(dir.path(), 6.0, 1);
+        let mut s = ExportSettings::from_project(&p);
+        s.target_mb = Some(1);
+        for stop in [0.1, 0.6] {
+            let out = dir.path().join("abbruch.mp4");
+            let job = build(&p, &s, &no_fonts, &out).unwrap();
+            let cancel = Arc::new(AtomicBool::new(false));
+            let c = cancel.clone();
+            let r = run(&job, cancel, |x| {
+                if x >= stop {
+                    c.store(true, Ordering::Relaxed);
+                }
+            });
+            assert!(matches!(r, Err(ExportError::Cancelled)), "{stop}: {:?}", r.err());
+            assert!(!out.exists() && !job.part.exists());
+            let work = job.workdir.path().to_path_buf();
+            drop(job);
+            assert!(!work.exists());
+        }
+    }
+
+    /// Großes Projekt in Abschnitten: jeder Abschnitt in zwei Durchgängen mit derselben Bitrate,
+    /// das Ganze hält die Zielgröße.
+    #[test]
+    fn target_size_in_sections() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = noise_project(dir.path(), 6.0, 6);
+        let mut s = ExportSettings::from_project(&p);
+        s.target_mb = Some(1);
+        let out = dir.path().join("abschnitte.mp4");
+        let job = build_limited(&p, &s, &no_fonts, &out, 3).unwrap();
+        assert!(job.sections() >= 2, "{}", job.sections());
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let size = std::fs::metadata(&out).unwrap().len();
+        eprintln!("Zielgröße 1 MB in {} Abschnitten: {size} Byte", job.sections());
+        assert!((850_000..=1_000_000).contains(&size), "{size}");
+        assert!((cl_media::probe(&out).unwrap().duration.as_secs_f64() - 6.0).abs() < 0.1);
     }
 }

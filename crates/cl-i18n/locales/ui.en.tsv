@@ -1869,3 +1869,19 @@ Farbe hinzufügen	Add color
 Logo wählen …	Choose logo …
 Logo entfernen	Remove logo
 Dateityp wird nicht unterstützt	File type not supported
+In Teile aufteilen	Split into parts
+Aufteilen nach	Split by
+Anzahl	Count
+Teil	Part
+{} Teile · je {}	{} parts · {} each
+{} Teile · {} bis {}	{} parts · {} to {}
+Teil {} von {}	Part {} of {}
+{} Teile	{} parts
+{} Teile fertig ({} s)	{} parts finished ({} s)
+{} von {} Teilen fertig	{} of {} parts finished
+Exportiere Teil {} von {} …	Exporting part {} of {} …
+Dateien existieren bereits	Files already exist
+Höchstens {} MB	At most {} MB
+Eigene …	Custom …
+Wird in {}p exportiert	Will be exported in {}p
+Wird in {}p exportiert – auch dafür ist die Größe knapp	Will be exported in {}p – the size is tight even for that
