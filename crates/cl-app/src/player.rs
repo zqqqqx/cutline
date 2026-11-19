@@ -1474,6 +1474,140 @@ mod transition_tests {
         let ex = karaoke_export(&export_frame(&p, dir.path(), 45));
         assert!(pv.1 < 0.05 && ex.1 < 0.05 && (0.55..0.72).contains(&pv.2) && (0.55..0.72).contains(&ex.2), "{pv:?} {ex:?}");
     }
+
+    /// Feines Schachbrett (2 px) über 2 s, verlustfrei kodiert
+    fn checker(dir: &Path) -> MediaRef {
+        let path = dir.join("muster.mp4");
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=2"])
+            .args(["-vf", "format=gray,geq=lum='255*mod(floor(X/2)+floor(Y/2),2)'", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv444p"])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        cl_media::probe(&path).unwrap()
+    }
+
+    /// Ein Clip (0–2 s) mit dem Schachbrett; Zensur wandert von links (x 0,3) nach rechts (0,7)
+    fn censor_project(dir: &Path, blur: bool) -> Project {
+        let m = checker(dir);
+        let mut p = Project::new("Zensur");
+        (p.settings.width, p.settings.height) = (320, 180);
+        p.settings.fps = Rational { num: 30, den: 1 };
+        let mut t = Track::new(TrackKind::Video);
+        let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(2.0));
+        let key = |t: f64, cx: f32| CensorKey { t: Time::from_secs_f64(t), cx, cy: 0.5, w: 0.3, h: 0.5 };
+        c.fx.censor = vec![Censor { blur, path: vec![key(0.0, 0.3), key(2.0, 0.7)], ..Default::default() }];
+        t.clips.push(c);
+        p.media = vec![m];
+        p.timeline.tracks.push(t);
+        p
+    }
+
+    /// Mittlerer Unterschied benachbarter Pixel (Rot) im Bereich – hoch beim feinen Muster
+    fn detail(img: &[u8], x0: usize, x1: usize, y0: usize, y1: usize) -> f64 {
+        let at = |x: usize, y: usize| img[(y * 320 + x) * 4] as f64;
+        let (mut d, mut n) = (0.0, 0.0);
+        for y in y0..y1 {
+            for x in x0..x1 {
+                d += (at(x, y) - at(x + 1, y)).abs() + (at(x, y) - at(x, y + 1)).abs();
+                n += 1.0;
+            }
+        }
+        d / n
+    }
+
+    /// Feinheit je 16×16-Block: mittlere Abweichung zweier Bilder
+    fn detail_diff(a: &[u8], b: &[u8]) -> f64 {
+        let (mut d, mut n) = (0.0, 0.0);
+        for by in 0..11 {
+            for bx in 0..19 {
+                let r = (bx * 16, bx * 16 + 16, by * 16, by * 16 + 16);
+                d += (detail(a, r.0, r.1, r.2, r.3) - detail(b, r.0, r.1, r.2, r.3)).abs();
+                n += 1.0;
+            }
+        }
+        d / n
+    }
+
+    /// Export: unter der Fläche ist das feine Muster weg (Verpixeln und Weichzeichnen, schwächste
+    /// Stufe), daneben ist das Bild unverändert, und die Fläche liegt bei 0,2 s links, bei 1,8 s rechts.
+    #[test]
+    fn censor_destroys_the_pattern_only_inside_and_moves() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut plain = censor_project(dir.path(), false);
+        plain.timeline.tracks[0].clips[0].fx.censor.clear();
+        let orig = [export_frame(&plain, dir.path(), 6), export_frame(&plain, dir.path(), 54)];
+        // Fläche bei Bild 6: x 61–157, bei Bild 54: x 163–259; y 45–135
+        let (left, right) = ((66, 152), (168, 254));
+        assert!(detail(&orig[0], left.0, left.1, 50, 130) > 60.0, "Muster kommt im Export an");
+        for blur in [false, true] {
+            let p = censor_project(dir.path(), blur);
+            for (n, inside, outside, o) in [(6, left, right, &orig[0]), (54, right, left, &orig[1])] {
+                let f = export_frame(&p, dir.path(), n);
+                let (di, dout) = (detail(&f, inside.0, inside.1, 50, 130), detail(&f, outside.0, outside.1, 50, 130));
+                eprintln!("blur={blur} Bild {n}: Feinheit innen {di:.1}, an der anderen Stelle {dout:.1}");
+                assert!(di < 6.0, "blur={blur} Bild {n}: Muster unter der Fläche noch da ({di:.1})");
+                assert!(dout > 60.0, "blur={blur} Bild {n}: Muster neben der Fläche fehlt ({dout:.1})");
+                // weit genug weg von der Fläche: wie ohne Zensur
+                let far = if n == 6 { 175..319 } else { 0..145 };
+                let diff: f64 = (0..180).flat_map(|y| far.clone().map(move |x| (x, y))).map(|(x, y)| (f[(y * 320 + x) * 4] as f64 - o[(y * 320 + x) * 4] as f64).abs()).sum::<f64>()
+                    / (180 * far.len()) as f64;
+                assert!(diff < 3.0, "blur={blur} Bild {n}: außerhalb verändert ({diff:.1})");
+            }
+        }
+    }
+
+    /// Vorschau gegen Export an zwei Zeitpunkten (die Fläche wandert dazwischen).
+    #[test]
+    fn censor_preview_matches_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = censor_project(dir.path(), false);
+        let mut q = p.clone();
+        q.timeline.tracks[0].clips[0].fx.censor.clear();
+        for (t, n) in [(0.2, 6), (1.8, 54)] {
+            let ex = export_frame(&p, dir.path(), n);
+            let pv = still::render(&p, Time::from_secs_f64(t), 320, 180);
+            let (d, c) = (detail_diff(&pv, &ex), block_diff(&pv, &ex));
+            let d0 = detail_diff(&still::render(&q, Time::from_secs_f64(t), 320, 180), &ex);
+            eprintln!("Zensur bei {t} s: Feinheit Vorschau/Export {d:.2} (ohne Zensur {d0:.2}), Farbe {c:.2}");
+            assert!(d < 6.0 && c < 8.0, "bei {t} s: Vorschau weicht vom Export ab ({d:.1}, {c:.1})");
+            assert!(d0 > 3.0 * d.max(2.0), "bei {t} s: Test greift nicht ({d0:.1} / {d:.1})");
+        }
+    }
+
+    /// Mit Zuschnitt, Skalierung und Verschiebung des Clips liegt die Fläche weiter auf derselben
+    /// Stelle des Quellbilds – in Vorschau und Export.
+    #[test]
+    fn censor_follows_crop_scale_and_position() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = censor_project(dir.path(), false);
+        let c = &mut p.timeline.tracks[0].clips[0];
+        c.crop = Crop { left: 0.05, right: 0.05, top: 0.1, bottom: 0.0 };
+        c.transform = Transform { x: 40.0, y: 0.0, scale: 0.6, rotation_deg: 0.0 };
+        // Bild 6: Fläche u 0,19–0,49, v 0,25–0,75 → x 160+40+(u−0,5)·192 = 144–201, y 90+(v−0,5)·108 = 63–117
+        let ex = export_frame(&p, dir.path(), 6);
+        let pv = still::render(&p, Time::from_secs_f64(0.2), 320, 180);
+        for (what, img) in [("Export", &ex), ("Vorschau", &pv)] {
+            let (di, dout) = (detail(img, 148, 197, 67, 113), detail(img, 212, 250, 67, 113));
+            eprintln!("{what}: Feinheit auf der Fläche {di:.1}, daneben {dout:.1}");
+            assert!(di < 6.0, "{what}: Fläche nicht auf dem Motiv ({di:.1})");
+            assert!(dout > 15.0, "{what}: daneben zensiert ({dout:.1})");
+        }
+        // Feinheit daneben unterscheidet sich (Skalierung des Musters), die Farben nicht
+        let d = block_diff(&pv, &ex);
+        assert!(d < 8.0, "Vorschau weicht vom Export ab ({d:.1})");
+    }
 }
 
 impl App {
@@ -1964,7 +2098,7 @@ impl App {
         if area_resp.clicked() || area_resp.drag_started() {
             crate::app::release_text_focus(ui.ctx());
         }
-        if !self.player_pick(ui, &area_resp, &regions) {
+        if !self.player_pick(ui, &area_resp, &regions) && !self.censor_gizmo(ui, &area_resp, &regions) {
             self.player_interact(ui, &area_resp, canvas, scale, &regions);
         }
         // Plattform-Bedienelemente (oben ~10 %, unten ~20 %, rechts ~12 %): nur Vorschau

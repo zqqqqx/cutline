@@ -41,6 +41,7 @@ impl PasteAttrs {
                 dst.fx.person.clone(),
                 dst.fx.speed_curve.clone(),
                 dst.fx.reverse,
+                std::mem::take(&mut dst.fx.censor),
             );
             dst.fx = src.fx.clone();
             (
@@ -48,6 +49,7 @@ impl PasteAttrs {
                 dst.fx.person,
                 dst.fx.speed_curve,
                 dst.fx.reverse,
+                dst.fx.censor,
             ) = keep;
         }
         if self.transform {

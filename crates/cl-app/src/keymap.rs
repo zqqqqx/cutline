@@ -204,6 +204,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("quick_layout_reset", "Layout zurücksetzen", &[]),
     ("quick_thumbnail", "Thumbnail …", &[]),
     ("quick_recap", "Rückblick aus Markern erstellen", &[]),
+    ("censor", "Zensieren …", &[]),
 ];
 
 /// Name einer Aktion (deutsch, `tr()` übersetzt), leer für unbekannte

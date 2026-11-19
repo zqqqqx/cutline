@@ -922,6 +922,10 @@ pub fn fx_graph(
     }
     // gerundet: setpts schneidet sonst ab (29,97 fps: 5,5055 s → ein Bild zu früh)
     g.push(format!("setpts=PTS-STARTPTS+round({:.6}/TB)", o.t_offset));
+    // vor allem anderen: Lage im Quellbild (vor Spiegeln, Stabilisieren, Freistellen)
+    for cs in &fx.censor {
+        censor_graph(&mut g, cs, src);
+    }
     if fx.deflicker {
         g.push("deflicker=size=7:mode=pm");
     }
@@ -1046,6 +1050,60 @@ pub fn fx_graph(
     g.finish(output)
 }
 
+/// Zensur-Fläche (Bahn in Clipzeit, siehe `Clip::censor_in_clip_time`): Kopie verpixeln bzw.
+/// weichzeichnen und nur innerhalb der Fläche über das Bild legen. Blöcke, Unschärfe und Maske
+/// hängen nur von der Bildgröße ab: die kleinere Vorschau sieht aus wie der Export. Die Maske
+/// entsteht aus einer Zeile und einer Spalte (`geq` mit Zeitverlauf je Pixel wäre teuer): je
+/// Richtung 0 innen bis 255 außen, addiert und bei 128 geschnitten – Rechteck wie Ellipse.
+pub fn censor_graph(g: &mut GraphBuilder, cs: &Censor, src: Src) {
+    let size = (CENSOR_MIN + cs.strength.clamp(0.0, 1.0) * (CENSOR_MAX - CENSOR_MIN))
+        * src.w.min(src.h).max(2) as f32;
+    let effect = if cs.blur {
+        format!("gblur=sigma={size:.2}")
+    } else {
+        let n = |v: u32| ((v as f32 / size).round() as u32).max(1);
+        format!(
+            "scale={}:{}:flags=area,scale={}:{}:flags=neighbor",
+            n(src.w),
+            n(src.h),
+            src.w,
+            src.h
+        )
+    };
+    let e = |f: fn(&CensorKey) -> f32| {
+        let pts: Vec<(f64, f64)> = cs.path.iter().map(|k| (k.t.as_secs_f64(), f(k) as f64)).collect();
+        piecewise_expr(&pts, "T")
+    };
+    // Abstand zur Mitte relativ zur halben Größe: 1 = Rand
+    let side = |pos: &str, full: &str, c: String, size: String| {
+        let d = format!("2*abs(({pos}+0.5)/{full}-({c}))/({size})");
+        if cs.ellipse {
+            format!("min(255,128*pow({d},2))")
+        } else {
+            format!("255*gt({d},1)")
+        }
+    };
+    let (sx, sy) = (side("X", "W", e(|k| k.cx), e(|k| k.w)), side("Y", "H", e(|k| k.cy), e(|k| k.h)));
+    let (w, h) = (src.w, src.h);
+    let cur = g.current();
+    let (a, b, mx, my) = (g.next_label("za"), g.next_label("zb"), g.next_label("zx"), g.next_label("zy"));
+    let (kx, ky) = (g.next_label("zkx"), g.next_label("zky"));
+    let (fx, mk, top, out) = (g.next_label("zf"), g.next_label("zk"), g.next_label("zt"), g.next_label("zo"));
+    g.lines.push(format!("[{cur}]split=4[{a}][{b}][{mx}][{my}]"));
+    g.lines.push(format!("[{b}]{effect}[{fx}]"));
+    g.lines.push(format!(
+        "[{mx}]scale={w}:1:flags=area,format=gray,geq=lum='{sx}',scale={w}:{h}:flags=neighbor[{kx}]"
+    ));
+    g.lines.push(format!(
+        "[{my}]scale=1:{h}:flags=area,format=gray,geq=lum='{sy}',scale={w}:{h}:flags=neighbor[{ky}]"
+    ));
+    g.lines.push(format!("[{kx}][{ky}]blend=all_mode=addition,lut=c0='255*lte(val,128)'[{mk}]"));
+    g.lines.push(format!("[{fx}][{mk}]alphamerge[{top}]"));
+    // shortcut: Bilder mit Alpha werden unter der Fläche deckend; reicht für Video und Fotos
+    g.lines.push(format!("[{a}][{top}]overlay=format=auto[{out}]"));
+    g.set_current(out);
+}
+
 /// Personen-Effekte: Person (Maske `m`) bleibt scharf, der Hintergrund wird verändert.
 /// Das Ergebnis ist deckend.
 fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src) {
@@ -1155,7 +1213,8 @@ pub fn preview_graph(
             || fx.stabilize > 0.0
             || cutout.is_some()
             || fx.denoise > 0.0
-            || fx.deflicker);
+            || fx.deflicker
+            || !fx.censor.is_empty());
     let speed_stream = stream.is_some() && ((speed - 1.0).abs() > 1e-3 || fx.speed_curve.is_some());
     if !needs && !speed_stream {
         return None;
@@ -1199,6 +1258,8 @@ pub fn preview_graph(
     let has_alpha = true;
     let mut fx2 = fx.clone();
     fx2.reverse = false;
+    // Einzelbild: nur die Lage zu dieser Zeit (kurzer Graph auf der Befehlszeile)
+    fx2.censor = c.censor_in_clip_time(stream.is_none().then(|| Time::from_secs_f64(t_offset)));
     let o = ChainOpts {
         t_offset,
         apply_reverse: false,
@@ -1490,6 +1551,22 @@ mod tests {
             let g = fx_graph(&fx, src, &o, "0:v", "out", "y").join(";\n");
             run_graph(&g, &[]).unwrap_or_else(|e| panic!("{shape:?}: {e}\n{g}"));
         }
+    }
+
+    #[test]
+    fn censor_never_goes_below_the_minimum() {
+        let src = Src { w: 1920, h: 1080, has_alpha: false };
+        let graph = |blur: bool, strength: f32| {
+            let mut g = GraphBuilder::new("i", "u");
+            let path = vec![CensorKey { t: Time::ZERO, cx: 0.5, cy: 0.5, w: 0.2, h: 0.3 }];
+            censor_graph(&mut g, &Censor { blur, ellipse: false, strength, track: false, path }, src);
+            g.finish("o").join(";")
+        };
+        // Blöcke ≥ 45 px (1080/24), Unschärfe σ ≥ 45 px – auch bei Stärke unter 0
+        assert!(graph(false, -1.0).contains("scale=43:24:flags=area"), "{}", graph(false, -1.0));
+        assert!(graph(true, -1.0).contains("gblur=sigma=45.00"));
+        assert!(graph(true, 1.0).contains("gblur=sigma=135.00"));
+        assert!(graph(false, 1.0).contains("scale=14:8:flags=area"));
     }
 
     #[test]

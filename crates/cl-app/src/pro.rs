@@ -21,6 +21,28 @@ pub enum Pick {
     Chroma(ClipId),
     /// Rahmen um das zu verfolgende Objekt ziehen (Overlay, Video darunter)
     Track { clip: ClipId, target: ClipId },
+    /// Rahmen um das zu zensierende Motiv ziehen
+    Censor(ClipId),
+}
+
+/// Laufendes Ziehen einer Zensur-Fläche im Player (Anzeige-Lage beim Drücken).
+#[derive(Clone, Copy)]
+pub struct CensorDrag {
+    clip: ClipId,
+    i: usize,
+    scale: bool,
+    press: egui::Pos2,
+    start: CensorKey,
+}
+
+fn is_video(c: &Clip) -> bool {
+    matches!(c.content, ClipContent::Media { kind: MediaKind::Video, .. })
+}
+
+/// Quellbild ↔ Anzeige (gespiegelt wie im Player); in beide Richtungen dieselbe Rechnung.
+fn censor_flip(c: &Clip, k: CensorKey) -> CensorKey {
+    let f = |v: f32, on: bool| if on { 1.0 - v } else { v };
+    CensorKey { cx: f(k.cx, c.fx.flip_h), cy: f(k.cy, c.fx.flip_v), ..k }
 }
 
 pub const LANGS: [(&str, &str); 8] = [
@@ -773,6 +795,9 @@ impl App {
             task_bar(ui, self, &format!("reframe:{}", c.id));
             task_bar(ui, self, &format!("scenes:{}", c.id));
         }
+        if is_media {
+            self.censor_ui(ui, c, e);
+        }
         if !on_main {
             theme::section(ui, "Bewegung verfolgen");
             let picking = matches!(self.pick, Some(Pick::Track { clip, .. }) if clip == c.id);
@@ -1017,14 +1042,14 @@ impl App {
         let painter = ui.painter_at(resp.rect);
         let hint = match pick {
             Pick::Chroma(_) => "Klicke auf die Farbe, die verschwinden soll",
-            Pick::Track { .. } => "Ziehe einen Rahmen um das Objekt",
+            Pick::Track { .. } | Pick::Censor(_) => "Ziehe einen Rahmen um das Objekt",
         };
         let g = painter.layout_no_wrap(
             format!(
                 "{}  {hint}  ·  Esc",
                 match pick {
                     Pick::Chroma(_) => icon::EYEDROPPER,
-                    Pick::Track { .. } => icon::CROSSHAIR,
+                    Pick::Track { .. } | Pick::Censor(_) => icon::CROSSHAIR,
                 }
             ),
             egui::FontId::proportional(theme::FS_TEXT),
@@ -1079,7 +1104,11 @@ impl App {
                     self.pick = None;
                 }
             }
-            Pick::Track { clip, target } => {
+            Pick::Track { .. } | Pick::Censor(_) => {
+                let (clip, target) = match pick {
+                    Pick::Track { clip, target } => (clip, target),
+                    Pick::Censor(c) | Pick::Chroma(c) => (c, c),
+                };
                 if resp.drag_started() {
                     self.pick_origin = ui
                         .input(|i| i.pointer.press_origin())
@@ -1108,9 +1137,17 @@ impl App {
                                 w: (u1 - u0).abs().max(0.02),
                                 h: (v1 - v0).abs().max(0.02),
                             };
-                            self.start_tracking(ui.ctx(), clip, target, bx);
+                            if matches!(pick, Pick::Censor(_)) {
+                                self.add_censor(ui.ctx(), clip, bx);
+                            } else {
+                                self.start_tracking(ui.ctx(), clip, target, bx);
+                            }
                         } else {
-                            self.toast_err("Das Video darunter ist am Playhead nicht sichtbar");
+                            self.toast_err(if matches!(pick, Pick::Censor(_)) {
+                                "Der Clip ist am Playhead nicht sichtbar"
+                            } else {
+                                "Das Video darunter ist am Playhead nicht sichtbar"
+                            });
                         }
                         self.pick = None;
                     }
@@ -1159,6 +1196,241 @@ impl App {
                 Err(e) => TaskDone::Failed(e),
             },
         );
+    }
+
+    // ------------------------------------------------------------ Zensieren
+
+    /// Zensur-Fläche aus dem gezogenen Rahmen (`bx` in Anzeige-Lage, also gespiegelt wie im
+    /// Player) anlegen: Art, Form, Stärke und „Verfolgen“ wie die zuletzt angelegte Fläche.
+    /// Die Fläche ist `CENSOR_PAD` größer als der Rahmen; bei Videos wird das Motiv verfolgt.
+    fn add_censor(&mut self, ctx: &egui::Context, clip: ClipId, bx: cl_analyze::track::BoxN) {
+        let Some(mut c) = self.clip_view(clip) else { return };
+        let t = c.source_time(self.playhead.clamp(c.start, c.end()));
+        let k = CensorKey { t, cx: bx.cx, cy: bx.cy, w: bx.w, h: bx.h };
+        let mut cs = c.fx.censor.last().cloned().unwrap_or(Censor { track: true, ..Default::default() });
+        cs.path = vec![censor_flip(&c, k).grown(CENSOR_PAD)];
+        let track = cs.track && is_video(&c);
+        c.fx.censor.push(cs);
+        let i = c.fx.censor.len() - 1;
+        self.live = None;
+        self.apply(EditOp::ReplaceClip { clip: c });
+        if track {
+            self.start_censor_tracking(ctx, clip, i);
+        }
+    }
+
+    /// Motiv der Fläche `i` ab der Lage am Playhead über den ganzen Clip verfolgen.
+    fn start_censor_tracking(&mut self, ctx: &egui::Context, clip: ClipId, i: usize) {
+        let Some(c) = self.clip_view(clip) else { return };
+        let ClipContent::Media { media, .. } = c.content else { return };
+        let (Some(m), Some(cs)) = (self.project.media(media).cloned(), c.fx.censor.get(i)) else {
+            return;
+        };
+        let at = c.source_time(self.playhead.clamp(c.start, c.end()));
+        let k = cs.at(at);
+        let init = cl_analyze::track::BoxN { cx: k.cx, cy: k.cy, w: k.w / CENSOR_PAD, h: k.h / CENSOR_PAD };
+        let (a, b) = (c.source_time(c.start), c.source_time(c.end()));
+        let (s0, s1) = (a.min(b).as_secs_f64(), a.max(b).as_secs_f64());
+        self.tasks.spawn(ctx, format!("censor:{clip}:{i}"), "Zensur wird verfolgt …", move |p, cancel| {
+            match cl_analyze::track::track_box(&m.path, m.width, m.height, s0, s1 - s0, at.as_secs_f64(), init, p, cancel) {
+                Ok(_) if cancel.load(std::sync::atomic::Ordering::Relaxed) => TaskDone::Run(Box::new(|_| {})),
+                Ok(boxes) => {
+                    let keys: Vec<CensorKey> = boxes
+                        .iter()
+                        .map(|(t, b)| CensorKey { t: Time::from_secs_f64(*t), cx: b.cx, cy: b.cy, w: b.w, h: b.h })
+                        .collect();
+                    let path = censor_simplify(&keys);
+                    TaskDone::Run(Box::new(move |app: &mut App| {
+                        let Some(mut c) = app.clip_view(clip) else { return };
+                        let Some(cs) = c.fx.censor.get_mut(i).filter(|cs| cs.track) else { return };
+                        if path.is_empty() {
+                            return;
+                        }
+                        cs.path = path;
+                        let n = cs.path.len();
+                        app.live = None;
+                        app.apply(EditOp::ReplaceClip { clip: c });
+                        app.toast(format!("Zensur verfolgt ({n} Keyframes)"));
+                    }))
+                }
+                Err(e) => TaskDone::Failed(e),
+            }
+        });
+    }
+
+    /// Abschnitt „Zensur“ im Reiter „Smart“: Einstellungen je Fläche und „Zensieren …“.
+    fn censor_ui(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
+        theme::section(ui, "Zensur");
+        let video = is_video(c);
+        let now = c.source_time(self.playhead.clamp(c.start, c.end()));
+        let (mut remove, mut track) = (None, None);
+        for (i, cs) in c.fx.censor.iter_mut().enumerate() {
+            if i > 0 {
+                ui.add_space(8.0);
+            }
+            let mut kind = cs.blur as usize;
+            theme::row(ui, "Art", |ui| {
+                if widgets::segmented(ui, &["Verpixeln", "Weichzeichnen"], &mut kind) {
+                    cs.blur = kind == 1;
+                    e.commit = true;
+                }
+            });
+            let mut shape = cs.ellipse as usize;
+            theme::row(ui, "Form", |ui| {
+                if widgets::segmented(ui, &["Rechteck", "Ellipse"], &mut shape) {
+                    cs.ellipse = shape == 1;
+                    e.commit = true;
+                }
+            });
+            *e |= theme::row(ui, "Stärke", |ui| {
+                Slider::new(&mut cs.strength, 0.0..=1.0).percent().default(0.0).show(ui)
+            });
+            if video {
+                let mut on = cs.track;
+                if widgets::toggle_row(ui, "Verfolgen", &mut on) {
+                    cs.track = on;
+                    if on {
+                        track = Some(i);
+                    } else {
+                        if let Some(t) = self.tasks.running(&format!("censor:{}:{i}", c.id)) {
+                            t.cancel();
+                        }
+                        cs.path = vec![CensorKey { t: now, ..cs.at(now) }];
+                    }
+                    e.commit = true;
+                }
+                task_bar(ui, self, &format!("censor:{}:{i}", c.id));
+            }
+            ui.horizontal(|ui| {
+                ui.add_space(theme::LABEL_W + 6.0);
+                if ui.add(theme::ghost(format!("{}  Entfernen", icon::X))).clicked() {
+                    remove = Some(i);
+                }
+            });
+        }
+        if let Some(i) = remove {
+            if let Some(t) = self.tasks.running(&format!("censor:{}:{i}", c.id)) {
+                t.cancel();
+            }
+            c.fx.censor.remove(i);
+            e.commit = true;
+        }
+        if let Some(i) = track {
+            // liest die Fläche aus dem Projekt; das Ergebnis gilt nur, wenn „Verfolgen“ dann an ist
+            let ctx = ui.ctx().clone();
+            self.start_censor_tracking(&ctx, c.id, i);
+        }
+        ui.add_space(4.0);
+        let picking = self.pick == Some(Pick::Censor(c.id));
+        if ui.add(theme::secondary(format!("{}  Zensieren …", icon::EYE_SLASH))).clicked() {
+            self.pick = if picking { None } else { Some(Pick::Censor(c.id)) };
+        }
+    }
+
+    /// Flächen des ausgewählten Clips im Player verschieben (innen ziehen) oder skalieren (an
+    /// einer Ecke ziehen), solange der Reiter „Smart“ offen ist. Wirkt auf die ganze Bahn.
+    /// Gibt `true` zurück, wenn die Eingabe verbraucht wurde.
+    pub fn censor_gizmo(&mut self, ui: &egui::Ui, resp: &egui::Response, regions: &[Region]) -> bool {
+        if self.pick.is_some() || self.clip_tab != crate::app::ClipTab::Smart {
+            self.censor_drag = None;
+            return false;
+        }
+        let Some((c, reg)) = self
+            .selected
+            .and_then(|s| self.clip_view(s))
+            .filter(|c| !c.fx.censor.is_empty())
+            .and_then(|c| regions.iter().find(|r| r.clip == c.id).map(|r| (c, *r)))
+        else {
+            return false;
+        };
+        let now = c.source_time(self.playhead.clamp(c.start, c.end()));
+        // Anzeige-Lage (gespiegelt wie im Player) ↔ Bildschirm
+        let screen = |u: f32, v: f32| reg.corner(2.0 * u - 1.0, 2.0 * v - 1.0);
+        let local = |p: egui::Pos2| {
+            let d = p - reg.center;
+            let (s, co) = (-reg.angle).sin_cos();
+            ((d.x * co - d.y * s) / reg.size.x + 0.5, (d.x * s + d.y * co) / reg.size.y + 0.5)
+        };
+        let shown = |i: usize| censor_flip(&c, c.fx.censor[i].at(now));
+        let painter = ui.painter_at(resp.rect);
+        let pointer = ui.input(|i| i.pointer.latest_pos());
+        // laufendes Ziehen: neue Lage der Fläche (Anzeige-Lage)
+        let dragged = |d: &CensorDrag, p: egui::Pos2| {
+            let (u, v) = local(p);
+            let (u0, v0) = local(d.press);
+            if d.scale {
+                CensorKey { w: (2.0 * (u - d.start.cx).abs()).max(0.02), h: (2.0 * (v - d.start.cy).abs()).max(0.02), ..d.start }
+            } else {
+                CensorKey { cx: d.start.cx + u - u0, cy: d.start.cy + v - v0, ..d.start }
+            }
+        };
+        let hit = |p: egui::Pos2| -> Option<(usize, bool)> {
+            (0..c.fx.censor.len()).rev().find_map(|i| {
+                let k = shown(i);
+                let corner = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+                    .iter()
+                    .any(|(sx, sy)| p.distance(screen(k.cx + sx * k.w / 2.0, k.cy + sy * k.h / 2.0)) <= 10.0);
+                let (u, v) = local(p);
+                let inside = (u - k.cx).abs() <= k.w / 2.0 && (v - k.cy).abs() <= k.h / 2.0;
+                (corner || inside).then_some((i, corner))
+            })
+        };
+        if resp.drag_started() {
+            let press = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos());
+            if let Some((p, (i, scale))) = press.and_then(|p| hit(p).map(|h| (p, h))) {
+                self.censor_drag = Some(CensorDrag { clip: c.id, i, scale, press: p, start: shown(i) });
+            }
+        }
+        let drag = self.censor_drag.filter(|d| d.clip == c.id && d.i < c.fx.censor.len());
+        for i in 0..c.fx.censor.len() {
+            let k = match (drag, pointer) {
+                (Some(d), Some(p)) if d.i == i => dragged(&d, p),
+                _ => shown(i),
+            };
+            let pts: Vec<egui::Pos2> = if c.fx.censor[i].ellipse {
+                (0..48)
+                    .map(|j| {
+                        let a = j as f32 / 48.0 * std::f32::consts::TAU;
+                        screen(k.cx + a.cos() * k.w / 2.0, k.cy + a.sin() * k.h / 2.0)
+                    })
+                    .collect()
+            } else {
+                [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+                    .iter()
+                    .map(|(sx, sy)| screen(k.cx + sx * k.w / 2.0, k.cy + sy * k.h / 2.0))
+                    .collect()
+            };
+            painter.add(egui::Shape::closed_line(pts, Stroke::new(1.5_f32, theme::ACCENT())));
+            for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                painter.circle_filled(screen(k.cx + sx * k.w / 2.0, k.cy + sy * k.h / 2.0), 4.0, theme::ACCENT());
+            }
+        }
+        if let Some(d) = drag {
+            if resp.drag_stopped() {
+                self.censor_drag = None;
+                if let Some(p) = pointer {
+                    let (a, b) = (d.start, dragged(&d, p));
+                    let mut c = c.clone();
+                    let flip = |v: f32, f: bool| if f { -v } else { v };
+                    let (dx, dy) = (flip(b.cx - a.cx, c.fx.flip_h), flip(b.cy - a.cy, c.fx.flip_v));
+                    let (kx, ky) = (b.w / a.w.max(1e-4), b.h / a.h.max(1e-4));
+                    for k in &mut c.fx.censor[d.i].path {
+                        (k.cx, k.cy, k.w, k.h) = (k.cx + dx, k.cy + dy, k.w * kx, k.h * ky);
+                    }
+                    self.live = None;
+                    self.apply(EditOp::ReplaceClip { clip: c });
+                }
+            }
+            return true;
+        }
+        // ein anderswo begonnenes Ziehen (Clip verschieben) nicht unterbrechen
+        if let Some(p) = resp.hover_pos().filter(|_| !resp.dragged() && !resp.drag_stopped()) {
+            if let Some((_, corner)) = hit(p) {
+                ui.ctx().set_cursor_icon(if corner { egui::CursorIcon::ResizeNwSe } else { egui::CursorIcon::Move });
+                return true;
+            }
+        }
+        false
     }
 
     // ------------------------------------------------------------ Modelle
@@ -1386,5 +1658,117 @@ mod tests {
         assert_eq!(asr_force(cur), Some(Engine::Parakeet));
         // unbekannter Wert
         assert_eq!(asr_offer(true, None, true, "gibts-nicht").1, "auto");
+    }
+
+    fn video(dir: &std::path::Path, name: &str, args: &[&str]) -> MediaRef {
+        let path = dir.join(name);
+        let st = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-threads", "2"]).args(args).arg(&path).status().unwrap();
+        assert!(st.success());
+        cl_media::probe(&path).unwrap()
+    }
+
+    /// „Zensieren …“ nur mit ausgewähltem Video-/Bild-Clip; der Rahmen aus dem Player wird
+    /// (gespiegelt zurück ins Quellbild) um 15 % größer zur Fläche, weitere übernehmen die Art.
+    #[test]
+    fn censor_action_and_area_from_the_player_box() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        let img = MediaRef {
+            id: MediaId::new(),
+            path: "bild.png".into(),
+            kind: MediaKind::Image,
+            duration: Time::ZERO,
+            width: 640,
+            height: 360,
+            fps: None,
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: None,
+            audio_codec: None,
+        };
+        let mut p = Project::new("Zensur");
+        let mut t = Track::new(TrackKind::Video);
+        let mut c = Clip::new(ClipContent::Media { media: img.id, kind: MediaKind::Image }, Time::ZERO, Time::from_secs_f64(3.0));
+        c.fx.flip_h = true;
+        let (id, text) = (c.id, Clip::new(ClipContent::Text(TextStyle::default()), Time::ZERO, Time::from_secs_f64(1.0)));
+        let text_id = text.id;
+        t.clips.push(c);
+        let mut t2 = Track::new(TrackKind::Text);
+        t2.clips.push(text);
+        p.media.push(img);
+        p.timeline.tracks.extend([t, t2]);
+        app.set_doc(p);
+        assert!(!app.action_enabled("censor"));
+        app.select_only(Some(text_id));
+        assert!(!app.action_enabled("censor"));
+        app.select_only(Some(id));
+        assert!(app.action_enabled("censor"));
+        app.run_action(&ctx, "censor");
+        assert!(app.pick == Some(Pick::Censor(id)));
+        app.playhead = Time::from_secs_f64(1.0);
+        app.add_censor(&ctx, id, cl_analyze::track::BoxN { cx: 0.2, cy: 0.4, w: 0.2, h: 0.1 });
+        let cs = &app.clip_view(id).unwrap().fx.censor;
+        assert_eq!(cs.len(), 1);
+        let k = cs[0].path[0];
+        assert!((k.cx - 0.8).abs() < 1e-6 && (k.cy - 0.4).abs() < 1e-6, "{k:?}");
+        assert!((k.w - 0.23).abs() < 1e-6 && (k.h - 0.115).abs() < 1e-6, "{k:?}");
+        assert!(cs[0].track && !cs[0].blur && cs[0].strength == 0.0);
+        // zweite Fläche übernimmt Art und Form der letzten
+        let mut c = app.clip_view(id).unwrap();
+        (c.fx.censor[0].blur, c.fx.censor[0].ellipse) = (true, true);
+        app.apply(EditOp::ReplaceClip { clip: c });
+        app.add_censor(&ctx, id, cl_analyze::track::BoxN { cx: 0.6, cy: 0.6, w: 0.1, h: 0.1 });
+        let cs = &app.clip_view(id).unwrap().fx.censor;
+        assert_eq!(cs.len(), 2);
+        assert!(cs[1].blur && cs[1].ellipse && (cs[1].path[0].cx - 0.4).abs() < 1e-6);
+        // Look übernehmen/einfügen: Flächen gehören zum Clip
+        let look = crate::presets::Preset::from_clip("x", &app.clip_view(id).unwrap());
+        assert!(look.fx.censor.is_empty());
+        let mut other = app.clip_view(id).unwrap();
+        look.apply(&mut other);
+        assert_eq!(other.fx.censor.len(), 2);
+    }
+
+    /// Messung am Ersatzmedium: Kästchen wandert auf einer Kurve über das Bild (640×360, 30 Bilder/s,
+    /// 4 s), Rahmen bei 1 s gezogen. Die Fläche überdeckt es in jedem Bild; Zahl der Keyframes und
+    /// Verfolgungszeit werden ausgegeben.
+    #[test]
+    fn censor_tracking_covers_a_moving_object_in_every_frame() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let m = video(dir.path(), "kurve.mp4", &[
+            "-f", "lavfi", "-i", "color=0x203040:s=640x360:r=30:d=4",
+            "-f", "lavfi", "-i", "testsrc2=s=64x64:r=30:d=4",
+            "-filter_complex", "[0][1]overlay=x='60+110*t':y='150+70*sin(1.5*t)'",
+            "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "18",
+        ]);
+        let obj = |t: f64| {
+            let (x, y) = ((60.0 + 110.0 * t).floor(), (150.0 + 70.0 * (1.5 * t).sin()).floor());
+            CensorKey { t: Time::from_secs_f64(t), cx: ((x + 32.0) / 640.0) as f32, cy: ((y + 32.0) / 360.0) as f32, w: 64.0 / 640.0, h: 64.0 / 360.0 }
+        };
+        let o = obj(1.0);
+        let init = cl_analyze::track::BoxN { cx: o.cx, cy: o.cy, w: o.w, h: o.h };
+        let t0 = std::time::Instant::now();
+        let boxes = cl_analyze::track::track_box(&m.path, 640, 360, 0.0, 4.0, 1.0, init, &|_| {}, &std::sync::atomic::AtomicBool::new(false)).unwrap();
+        let secs = t0.elapsed().as_secs_f64();
+        let keys: Vec<CensorKey> = boxes.iter().map(|(t, b)| CensorKey { t: Time::from_secs_f64(*t), cx: b.cx, cy: b.cy, w: b.w, h: b.h }).collect();
+        let cs = Censor { path: censor_simplify(&keys), ..Default::default() };
+        eprintln!(
+            "Verfolgung: {} Rahmen, {} Keyframes, {:.2} s Rechenzeit je Sekunde Video",
+            boxes.len(),
+            cs.path.len(),
+            secs / 4.0
+        );
+        let mut missed = Vec::new();
+        for n in 0..120 {
+            let t = n as f64 / 30.0;
+            if !cs.at(Time::from_secs_f64(t)).covers(&obj(t)) {
+                missed.push(n);
+            }
+        }
+        assert!(missed.is_empty(), "nicht überdeckt in Bild {missed:?}");
+        assert!(cs.path.len() < boxes.len() / 2, "{} Keyframes", cs.path.len());
     }
 }

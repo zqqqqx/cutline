@@ -414,7 +414,7 @@ fn decode_once(
         .arg("-i")
         .arg(path);
     match graph {
-        Some(g) => cmd.args(["-filter_complex", g, "-map", "[out]"]),
+        Some(g) => graph_arg(&mut cmd, g)?.args(["-map", "[out]"]),
         None => cmd.args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba")]),
     };
     let mut child = cmd
@@ -664,6 +664,28 @@ struct StreamShared {
     hw_from: AtomicU64,
 }
 
+/// Filtergraph als Argument. Lange Graphen (Bahnen von Zensur-Flächen) gehen über eine Datei:
+/// die Windows-Befehlszeile fasst nur 32 767 Zeichen. Die Datei heißt nach dem Inhalt; dabei
+/// werden solche Dateien, die älter als eine Stunde sind, aufgeräumt (FFmpeg liest sie beim Start).
+fn graph_arg<'a>(cmd: &'a mut Command, g: &str) -> Result<&'a mut Command> {
+    use std::hash::{Hash, Hasher};
+    if g.len() < 16_000 {
+        return Ok(cmd.args(["-filter_complex", g]));
+    }
+    let dir = std::env::temp_dir();
+    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok());
+        if e.file_name().to_string_lossy().starts_with("cutline-graph-") && old.is_some_and(|d| d.as_secs() > 3600) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    g.hash(&mut h);
+    let file = dir.join(format!("cutline-graph-{:016x}.txt", h.finish()));
+    std::fs::write(&file, g)?;
+    Ok(cmd.arg("-/filter_complex").arg(file))
+}
+
 fn spawn_stream(
     path: &Path,
     start: Time,
@@ -683,7 +705,7 @@ fn spawn_stream(
         .arg(path)
         .args(["-an", "-sn"]);
     match graph {
-        Some(g) => cmd.args(["-filter_complex", g, "-map", "[out]"]),
+        Some(g) => graph_arg(&mut cmd, g)?.args(["-map", "[out]"]),
         None => cmd.args([
             "-vf",
             &format!("fps={}/{},scale={w}:{h}:flags=bilinear,format=rgba", fps.num, fps.den),
@@ -1071,6 +1093,22 @@ mod tests {
         assert_eq!(frames.len(), 20);
         let distinct = frames.iter().collect::<HashSet<_>>().len();
         assert!(distinct >= 15, "{distinct} verschiedene von 20 Bildern");
+    }
+
+    /// Graphen über 32 767 Zeichen (lange Zensur-Bahnen) gehen über eine Datei statt die
+    /// Befehlszeile zu sprengen – Einzelbild und Strom.
+    #[test]
+    fn long_graph_goes_through_a_file() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = make_clip(dir.path());
+        let g = format!("[0:v]{}scale=32:18,format=rgba[out]", "null,".repeat(8000));
+        assert!(g.len() > 40_000);
+        assert!(decode_frame_fx(&src, Time::ZERO, 32, 18, Some(&g)).is_ok());
+        let s = FrameStream::open_fx(&src, Time::ZERO, 32, 18, Rational::new(30, 1), Some(&g)).unwrap();
+        assert!(s.next_blocking().is_some());
     }
 
     #[test]
