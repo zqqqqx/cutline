@@ -59,24 +59,28 @@ pub struct Quick {
     confirm_replace: bool,
 }
 
-/// Zuletzt benutzte Werte aus `text` (Inhalt von `last-used.json`): Schnellaktionen und Safe-Area.
-/// Fehlt etwas oder ist die Datei kaputt, gilt dafür der Standard.
-pub fn last_used(text: &str) -> (Quick, bool) {
+/// Zuletzt benutzte Werte aus `text` (Inhalt von `last-used.json`): Schnellaktionen, Safe-Area
+/// und Thumbnail. Fehlt etwas oder ist die Datei kaputt, gilt dafür der Standard.
+pub fn last_used(text: &str) -> (Quick, bool, crate::thumb::Opts) {
     let v: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
-    (serde_json::from_value(v["quick"].clone()).unwrap_or_default(), v["safe_area"].as_bool().unwrap_or(false))
+    (
+        serde_json::from_value(v["quick"].clone()).unwrap_or_default(),
+        v["safe_area"].as_bool().unwrap_or(false),
+        serde_json::from_value(v["thumb"].clone()).unwrap_or_default(),
+    )
 }
 
 fn last_used_path() -> PathBuf {
     crate::paths::data_dir().join("last-used.json")
 }
 
-pub fn load_last_used() -> (Quick, bool) {
+pub fn load_last_used() -> (Quick, bool, crate::thumb::Opts) {
     last_used(&std::fs::read_to_string(last_used_path()).unwrap_or_default())
 }
 
 impl App {
     pub fn save_last_used(&self) {
-        let text = serde_json::json!({ "quick": self.quick, "safe_area": self.safe_area }).to_string();
+        let text = serde_json::json!({ "quick": self.quick, "safe_area": self.safe_area, "thumb": self.thumb_opts }).to_string();
         let _ = crate::paths::write_atomic(&last_used_path(), text);
     }
 
@@ -90,14 +94,16 @@ impl App {
 #[test]
 fn last_used_values_survive_a_restart() {
     let q = Quick { thresh_db: -40.0, words: "also".into(), whole_track: true, open: Some(QuickKind::Pauses), ..Default::default() };
-    let text = serde_json::json!({ "quick": q, "safe_area": true }).to_string();
-    let (back, safe) = last_used(&text);
+    let th = crate::thumb::Opts { person: true, bg: crate::thumb::Bg::Color, pos: 2, ..Default::default() };
+    let text = serde_json::json!({ "quick": q, "safe_area": true, "thumb": th }).to_string();
+    let (back, safe, th_back) = last_used(&text);
     assert!(safe && back.thresh_db == -40.0 && back.words == "also" && back.whole_track);
+    assert_eq!(th_back, th);
     assert!(back.open.is_none(), "das Fenster geht nicht von selbst wieder auf");
     assert_eq!(back.min_pause, Quick::default().min_pause);
     // kaputte oder leere Datei: Standard statt Absturz
     for bad in ["", "{", r#"{"quick": 7, "safe_area": "ja"}"#] {
-        let (d, safe) = last_used(bad);
+        let (d, safe, _) = last_used(bad);
         assert!(!safe && d.thresh_db == Quick::default().thresh_db, "{bad}");
     }
 }

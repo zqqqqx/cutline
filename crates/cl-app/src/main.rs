@@ -48,6 +48,7 @@ mod stock;
 mod story;
 mod tasks;
 mod templates;
+mod thumb;
 mod theme;
 mod timeline;
 mod update;

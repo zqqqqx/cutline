@@ -228,6 +228,9 @@ pub struct App {
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
     /// Trefferliste von „Highlights finden“ (Fenster offen)
     pub shorts: Option<crate::shorts::ShortsState>,
+    /// Fenster „Thumbnail“ (offen) und seine zuletzt benutzten Einstellungen
+    pub thumb: Option<crate::thumb::ThumbWin>,
+    pub thumb_opts: crate::thumb::Opts,
     /// Neues Seitenverhältnis, das auf die Wahl „Clips neu einpassen?“ wartet
     pub aspect_fit: Option<cl_core::ProjectSettings>,
     /// Hilfslinien für Plattform-Bedienelemente im Player
@@ -480,6 +483,8 @@ impl App {
             hires_timer: None,
             multicam: None,
             shorts: None,
+            thumb: None,
+            thumb_opts: last_used.2,
             aspect_fit: None,
             safe_area: last_used.1,
             multicam_audio: 0,
@@ -2158,6 +2163,7 @@ impl App {
         self.player_pan = egui::Vec2::ZERO;
         // Fenster mit Zeiten und Treffern des alten Projekts schließen
         self.shorts = None;
+        self.thumb = None;
         self.aspect_fit = None;
         self.quick.open = None;
         self.quick.hits = None;
@@ -2729,6 +2735,7 @@ impl App {
     fn dialog_open(&self) -> bool {
         self.quick.open.is_some()
             || self.shorts.is_some()
+            || self.thumb.is_some()
             || self.aspect_fit.is_some()
             || self.tpl_dialog.is_some()
             || self.paste_attrs_open
@@ -2997,7 +3004,7 @@ impl App {
                 "quick_speakers" => self.tool_speakers(ctx),
                 "quick_punch" => self.quick_open(crate::quick::QuickKind::Punch),
                 "quick_vertical" => self.tool_vertical(),
-                "quick_thumbnail" => self.tool_thumbnail(ctx),
+                "quick_thumbnail" => self.thumb_open(),
                 "quick_recap" => self.tool_recap(),
                 l if l.starts_with("quick_layout_") => self.tool_layout(l),
                 _ => {}

@@ -187,6 +187,7 @@ impl App {
         self.props_window(ctx);
         self.exports_window(ctx);
         self.shorts_window(ctx);
+        self.thumb_window(ctx);
         self.aspect_fit_dialog(ctx);
     }
 

@@ -202,7 +202,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("quick_layout_pip_bl", "Layout: Bild-in-Bild – unten links", &[]),
     ("quick_layout_pip_br", "Layout: Bild-in-Bild – unten rechts", &[]),
     ("quick_layout_reset", "Layout zurücksetzen", &[]),
-    ("quick_thumbnail", "Thumbnail exportieren (aktuelles Bild)", &[]),
+    ("quick_thumbnail", "Thumbnail …", &[]),
     ("quick_recap", "Rückblick aus Markern erstellen", &[]),
 ];
 

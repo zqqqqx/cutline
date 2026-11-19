@@ -145,7 +145,7 @@ impl App {
                 &[
                     ("quick_punch", "Kurzer Zoom auf 125 % mit Keyframes (danach anpassbar)"),
                     ("quick_vertical", "Stellt auf 1080×1920 um: Gameplay unten, Kopie des Clips oben als Facecam-Ausschnitt"),
-                    ("quick_thumbnail", "Speichert das Bild am Playhead als PNG (1280×720 bei 16:9)"),
+                    ("quick_thumbnail", "Vorschaubild 1280×720 mit freigestellter Person, Kontur und Text"),
                     ("quick_recap", "Neues Projekt mit je 3 s um jeden Marker, mit Überblendungen („Was bisher geschah“)"),
                 ],
             ),
@@ -629,48 +629,21 @@ impl App {
         let p = self.project.clone();
         let t = self.playhead;
         let fonts = self.font_files();
-        let fps = p.settings.fps;
         self.tasks
             .spawn(ctx, "tool", "Thumbnail wird erstellt …", move |_, _| {
-                let mut s = cl_export::ExportSettings::from_project(&p);
                 // 16:9 → 1280×720, sonst Projektgröße
-                if p.settings.width * 9 == p.settings.height * 16 {
-                    s.width = 1280;
-                    s.height = 720;
-                }
-                s.include_audio = false;
-                let frame = Time::from_secs_f64(1.0 / fps.as_f64());
-                s.range = Some((t, t + frame + frame));
+                let size = if p.settings.width * 9 == p.settings.height * 16 {
+                    (1280, 720)
+                } else {
+                    (p.settings.width, p.settings.height)
+                };
                 let tmp =
                     std::env::temp_dir().join(format!("cutline-thumb-{}.mp4", std::process::id()));
-                let resolver = move |fam: Option<&str>| {
-                    fam.and_then(|f| fonts.get(f).cloned())
-                        .or_else(|| cl_export::default_font().map(|p| (p, 0)))
-                };
-                let res = cl_export::build(&p, &s, &resolver, &tmp).and_then(|job| {
-                    cl_export::run(
-                        &job,
-                        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                        |_| {},
-                    )
-                });
-                if let Err(e) = res {
-                    return TaskDone::Failed(e.to_string());
-                }
-                let ok = cl_media::ffmpeg_command()
-                    .map(|mut c| {
-                        c.args(["-v", "error", "-y", "-i"])
-                            .arg(&tmp)
-                            .args(["-frames:v", "1"])
-                            .arg(&out)
-                            .status()
-                            .map(|s| s.success())
-                            .unwrap_or(false)
-                    })
-                    .unwrap_or(false);
+                let res = crate::thumb::export_frames(&p, t, size, &fonts, &tmp)
+                    .and_then(|_| crate::thumb::first_png(&tmp, &out));
                 let _ = std::fs::remove_file(&tmp);
-                if !ok {
-                    return TaskDone::Failed("Thumbnail konnte nicht gespeichert werden".into());
+                if let Err(e) = res {
+                    return TaskDone::Failed(e);
                 }
                 TaskDone::Run(Box::new(move |app: &mut App| {
                     app.toast(format!("Thumbnail gespeichert: {}", out.display()));

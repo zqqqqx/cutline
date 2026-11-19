@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn every_action_runs() {
         // öffnen einen Dateidialog des Systems und warten auf eine Wahl – ohne Fenster nicht testbar
-        const FILE_DIALOGS: &[&str] = &["import", "open", "save_as", "import_fonts", "archive", "quick_speakers", "quick_thumbnail"];
+        const FILE_DIALOGS: &[&str] = &["import", "open", "save_as", "import_fonts", "archive", "quick_speakers"];
         let (mut app, _home, _g) = crate::saving::tests::test_app();
         app.set_doc(cl_core::Project::new("Befehle"));
         let ctx = egui::Context::default();
