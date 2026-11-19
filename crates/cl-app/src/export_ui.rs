@@ -199,6 +199,11 @@ impl Running {
         let (p, s2, fonts) = (src.project.clone(), src.settings.clone(), src.fonts.clone());
         let parts: Vec<(Option<(Time, Time)>, PathBuf)> = src.parts.iter().map(|x| (x.range, x.out.clone())).collect();
         let folder = src.group().then(|| src.out.clone());
+        // noch im Oberflächen-Faden: ein abgebrochener Vorgänger, dessen Faden noch läuft, sieht
+        // den Ordner ab jetzt als belegt und löscht ihn nicht mehr
+        if let Some(d) = &folder {
+            folder_use(d, true);
+        }
         let resolver = move |fam: Option<&str>| fam.and_then(|f| fonts.get(f).cloned());
         // Bau des Auftrags (bei großen Projekten Sekunden: Tonprüfung je Datei) nicht im Oberflächen-Faden
         std::thread::spawn(move || {
@@ -242,9 +247,10 @@ impl Running {
                 }
                 at += w;
             }
-            // abgebrochen, bevor ein Teil fertig war: kein leerer Ordner (nicht leer: bleibt)
+            // abgebrochen, bevor ein Teil fertig war: kein leerer Ordner (nicht leer oder von einem
+            // neueren Export belegt: bleibt)
             if let Some(d) = &folder {
-                let _ = std::fs::remove_dir(d);
+                folder_use(d, false);
             }
             *rs.lock().unwrap() = Some(first_err.map_or(Ok(()), Err));
             c2.request_repaint();
@@ -255,6 +261,24 @@ impl Running {
     /// Gruppe: laufender Teil und Zahl der Teile (ab 1)
     fn part_of(&self) -> Option<(usize, usize)> {
         self.src.group().then(|| (self.part.load(Ordering::Relaxed) + 1, self.src.parts.len()))
+    }
+}
+
+/// Ordner von Teil-Exporten, die gerade laufen (Zahl je Ordner). Nach einem Abbruch während
+/// der Vorbereitung meldet `poll` sofort, der Faden räumt aber erst danach auf; startet inzwischen
+/// ein neuer Export in denselben Ordner, darf dieses Aufräumen ihn nicht löschen.
+static FOLDERS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+/// Ordner belegen (`true`) bzw. freigeben; beim letzten Freigeben wird er gelöscht, wenn er leer ist.
+fn folder_use(dir: &Path, take: bool) {
+    let mut v = FOLDERS.lock().unwrap_or_else(|e| e.into_inner());
+    if take {
+        v.push(dir.to_path_buf());
+    } else if let Some(i) = v.iter().position(|d| d == dir) {
+        v.swap_remove(i);
+        if !v.iter().any(|d| d == dir) {
+            let _ = std::fs::remove_dir(dir);
+        }
     }
 }
 
@@ -2063,20 +2087,15 @@ fn cancel_stops_the_whole_group_without_half_files() {
     let ctx = egui::Context::default();
     let p = text_project("Film", "eins", 8.0);
     let folder = dir.path().join("Film");
-    // sofort abgebrochen: kein Teil, kein leerer Ordner
-    let mut d = split_dialog(&p, dir.path(), 4);
+    // sofort abgebrochen (während der Vorbereitung): `poll` meldet gleich, der Faden räumt erst
+    // danach auf. Ein sofort gestarteter neuer Export in denselben Ordner darf dieses Aufräumen
+    // nicht treffen (früher: Ordner weg, alle Teile scheiterten)
+    let mut d = split_dialog(&p, dir.path(), 8);
     frame(&mut d, &ctx, &p, true);
     d.cancel_current();
     drain(&mut d, &ctx, &p);
     assert!(d.error.is_none());
-    // der Faden räumt kurz nach der Meldung auf (Abbruch während der Vorbereitung)
-    let t0 = Instant::now();
-    while folder.exists() && t0.elapsed().as_secs() < 30 {
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    assert!(!folder.exists());
-    // nach dem ersten Teil abgebrochen: fertige Teile bleiben, keine halbe Datei, Rest fehlt
-    let mut d = split_dialog(&p, dir.path(), 4);
+    // gleich neu: nach dem ersten Teil abgebrochen → fertige Teile bleiben, keine halbe Datei, Rest fehlt
     frame(&mut d, &ctx, &p, true);
     let t0 = Instant::now();
     while d.running.as_ref().is_some_and(|r| r.finished.lock().unwrap().is_empty()) && t0.elapsed().as_secs() < 60 {
@@ -2084,11 +2103,31 @@ fn cancel_stops_the_whole_group_without_half_files() {
     }
     d.cancel_current();
     drain(&mut d, &ctx, &p);
-    assert!(d.error.is_none());
+    assert!(d.error.is_none(), "{:?}", d.error);
     let names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
-    assert!(names.contains(&"Film – Teil 01.mp4".to_string()) && !names.contains(&"Film – Teil 04.mp4".to_string()), "{names:?}");
+    assert!(names.contains(&"Film – Teil 01.mp4".to_string()) && !names.contains(&"Film – Teil 08.mp4".to_string()), "{names:?}");
     assert!(names.iter().all(|n| !n.contains(".part")), "{names:?}");
     std::env::remove_var("CUTLINE_HOME");
+}
+
+#[test]
+fn cleanup_of_a_cancelled_group_spares_a_newer_export_in_the_same_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("Film");
+    std::fs::create_dir(&f).unwrap();
+    // alter Export belegt, neuer belegt, der alte räumt danach auf: Ordner bleibt (noch leer)
+    folder_use(&f, true);
+    folder_use(&f, true);
+    folder_use(&f, false);
+    assert!(f.is_dir());
+    // der letzte gibt frei: leerer Ordner weg; nicht leer: bleibt
+    folder_use(&f, false);
+    assert!(!f.exists());
+    std::fs::create_dir(&f).unwrap();
+    std::fs::write(f.join("x.mp4"), b"x").unwrap();
+    folder_use(&f, true);
+    folder_use(&f, false);
+    assert!(f.join("x.mp4").is_file());
 }
 
 /// Zielgröße gilt je Teil: Bitrate aus der Länge des Teils.
