@@ -57,10 +57,11 @@ fn random_op(p: &Project, media: &[MediaRef], r: &mut Lcg, depth: u32) -> EditOp
         8 | 9 => EditOp::MoveClip { clip, track: opt_track, start: time(r) },
         10 => EditOp::SetSpeed { clip, speed: r.range(0.05, 12.0) as f32 },
         11 => {
-            // Nur kürzen: freies Setzen darf (für Rollen im Batch) vorübergehend überlappen
+            // Frei setzen: Überlappung muss abgewiesen werden
             let Some((_, c)) = p.find_clip(clip) else { return EditOp::RemoveClip { clip } };
-            let dur = Time((c.duration.0 as f64 * r.range(0.1, 1.0)) as i64);
-            EditOp::SetClipTiming { clip, start: c.start, duration: dur, source_in: c.source_in }
+            let start = if r.chance(50) { c.start } else { time(r) };
+            let dur = Time((c.duration.0 as f64 * r.range(0.1, 3.0)) as i64);
+            EditOp::SetClipTiming { clip, start, duration: dur, source_in: c.source_in }
         }
         12 => {
             let t = p.timeline.tracks.iter().find(|t| t.id == track);

@@ -303,6 +303,24 @@ fn trim_stops_at_neighbour_on_free_tracks() {
     check(d.project(), "Hauptspur ohne Magnet");
 }
 
+/// Fehler: Zeit setzen (Zahleneingabe, MCP) schob einen Clip in den Nachbarn (Überlappung).
+#[test]
+fn set_timing_rejects_overlap_on_free_tracks() {
+    let mut d = Document::new(Project::new("T"));
+    let a = clip_out(apply(&mut d, EditOp::AddClip { track: None, clip: text_clip(0.0, 2.0) }));
+    let tr = track_of(d.project(), a);
+    let b = clip_out(apply(&mut d, EditOp::AddClip { track: Some(tr), clip: text_clip(3.0, 2.0) }));
+    let snap = d.project().clone();
+    for (clip, start, dur) in [(a, 0.0, 4.0), (b, 1.0, 2.0), (a, 2.5, 1.0)] {
+        let op = EditOp::SetClipTiming { clip, start: s(start), duration: s(dur), source_in: Time::ZERO };
+        assert_eq!(d.apply(op, OpSource::Ui), Err(CoreError::InvalidDuration), "{start} +{dur}");
+        assert_eq!(d.project(), &snap);
+    }
+    // bis an den Nachbarn heran geht
+    apply(&mut d, EditOp::SetClipTiming { clip: a, start: s(0.0), duration: s(3.0), source_in: Time::ZERO });
+    check(d.project(), "Zeit setzen");
+}
+
 /// Fehler: Langsamer machen auf der Hauptspur ohne Magnet überdeckte den nächsten Clip.
 #[test]
 fn slowing_down_on_main_without_magnet_pushes_the_next_clip() {

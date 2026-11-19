@@ -206,20 +206,26 @@ impl App {
             }
         }
         let t = |v: f64| Time::from_secs_f64(v);
-        self.apply_batch(vec![
+        let cut = t(to);
+        let mut ops = vec![
             EditOp::SetClipTiming {
                 clip: l.id,
                 start: l.start,
-                duration: t(to - l.start.as_secs_f64()),
+                duration: cut - l.start,
                 source_in: l.source_in,
             },
             EditOp::SetClipTiming {
                 clip: r.id,
-                start: t(to),
-                duration: t(r.end().as_secs_f64() - to),
+                start: cut,
+                duration: r.end() - cut,
                 source_in: t(r_src),
             },
-        ]);
+        ];
+        // Der kürzer werdende Clip zuerst, sonst überlappen beide kurz (wird abgewiesen)
+        if cut > r.start {
+            ops.reverse();
+        }
+        self.apply_batch(ops);
     }
 
     /// Slippen: Quellbeginn verschieben, Lage und Länge bleiben.
@@ -395,5 +401,29 @@ mod tests {
         // echte Änderung: ein Wert
         let t = Time::from_secs_f64;
         assert_eq!(timing_edit(&c, s, 2.0, src, 30.0), Some((Time::ZERO, t(2.0), t(2.0))));
+    }
+
+    /// Rollen in beide Richtungen: der Schnitt wandert, nichts überlappt (der Kern weist
+    /// Überlappung ab, darum muss der kürzer werdende Clip zuerst gesetzt werden).
+    #[test]
+    fn roll_edit_moves_the_cut_both_ways() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let t = Time::from_secs_f64;
+        let mut p = cl_core::Project::new("R");
+        let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
+        let text = || ClipContent::Text(cl_core::TextStyle::default());
+        let (a, b) = (Clip::new(text(), t(0.0), t(2.0)), Clip::new(text(), t(2.0), t(2.0)));
+        let (ia, ib) = (a.id, b.id);
+        // Rollen nach links braucht Quellmaterial vor dem rechten Clip
+        let b = Clip { source_in: t(3.0), ..b };
+        tr.clips = vec![a, b];
+        p.timeline.tracks.push(tr);
+        app.set_doc(p);
+        for to in [3.0, 1.0] {
+            app.roll_edit(ia, ib, to);
+            app.sync_project();
+            let (l, r) = (app.project.find_clip(ia).unwrap().1, app.project.find_clip(ib).unwrap().1);
+            assert_eq!((l.end(), r.start, r.end()), (t(to), t(to), t(4.0)), "Schnitt nach {to}");
+        }
     }
 }

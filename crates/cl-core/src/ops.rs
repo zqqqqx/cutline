@@ -293,7 +293,13 @@ impl EditOp {
                 c.duration = duration;
                 c.source_in = source_in;
                 clamp_to_source(c, len);
+                let (start, duration) = (c.start, c.duration);
                 let magnet = p.settings.main_track_magnet;
+                // Ohne Magnet nicht in den Nachbarn hinein (wie Trimmen; Rollen kürzt zuerst)
+                let t = &p.timeline.tracks[clip_track_index(p, clip)?];
+                if !(t.main && magnet) && !t.is_free(start, duration, Some(clip)) {
+                    return Err(CoreError::InvalidDuration);
+                }
                 for t in &mut p.timeline.tracks {
                     t.sort();
                     // Hauptspur-Magnet: Lücken sofort schließen
