@@ -147,6 +147,22 @@ impl crate::app::App {
             *l = ExportsList::new(&l.name, l.path.as_deref());
         }
         let (name, list) = (&l.name, &l.items);
+        // Warteschlange (alle Projekte): laufender Export mit Fortschritt, darunter die wartenden
+        let file = |f: &Path| f.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let current = self.export.current().map(|(f, p)| (file(f), p));
+        let waiting: Vec<(String, String)> = self
+            .export
+            .waiting()
+            .map(|(f, s)| {
+                let mut d = crate::tr(s.format.label());
+                if !s.format.audio_only() {
+                    let (w, h) = s.output_size();
+                    d = format!("{d} · {w}×{h}");
+                }
+                (file(f), format!("{d} · {}", crate::tr("Wartet")))
+            })
+            .collect();
+        let (mut cancel, mut remove) = (false, None);
         let mut open = true;
         let title = format!("{}  Exporte", icon::EXPORT);
         crate::dialog::window(ctx, crate::tr(title.as_str()), "exports")
@@ -157,7 +173,40 @@ impl crate::app::App {
                 }
                 ui.label(RichText::new(name).strong().size(theme::FS_TEXT));
                 ui.add_space(6.0);
-                if list.is_empty() {
+                if let Some((f, prog)) = &current {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(icon::FILE_VIDEO).color(theme::TEXT_DIM()));
+                        ui.vertical(|ui| {
+                            ui.label(f);
+                            let (r, _) = ui.allocate_exact_size(egui::vec2(220.0, 3.0), egui::Sense::hover());
+                            crate::widgets::progress_line(ui.painter(), egui::Id::new("exports-current"), r, *prog);
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(RichText::new(format!("{:.0} %", prog * 100.0)).color(theme::TEXT_DIM()));
+                            cancel = theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked();
+                        });
+                    });
+                    ui.separator();
+                }
+                for (i, (f, d)) in waiting.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(icon::FILE_VIDEO).color(theme::TEXT_FAINT()));
+                        ui.vertical(|ui| {
+                            ui.label(f);
+                            ui.label(RichText::new(d).small().color(theme::TEXT_DIM()));
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if theme::icon_button(ui, icon::X, "Entfernen", true, false).clicked() {
+                                remove = Some(Some(i));
+                            }
+                        });
+                    });
+                    ui.separator();
+                }
+                if waiting.len() > 1 && ui.add(theme::secondary("Alle wartenden entfernen")).clicked() {
+                    remove = Some(None);
+                }
+                if list.is_empty() && current.is_none() && waiting.is_empty() {
                     theme::empty_state(ui, icon::EXPORT, "Noch nichts exportiert", "");
                 }
                 egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
@@ -184,6 +233,12 @@ impl crate::app::App {
                     }
                 });
             });
+        if cancel {
+            self.export.cancel_current();
+        }
+        if let Some(i) = remove {
+            self.export.remove_waiting(i);
+        }
         if !open {
             self.exports_for = None;
         }

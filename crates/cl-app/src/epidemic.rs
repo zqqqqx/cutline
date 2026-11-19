@@ -395,15 +395,14 @@ impl App {
     }
 
     /// Nach einem erfolgreichen Export: verwendete Epidemic-Titel melden.
-    pub fn report_epidemic_export(&mut self, ctx: &egui::Context) {
+    pub fn report_epidemic_export(&mut self, ctx: &egui::Context, p: &cl_core::Project) {
         if !self.epidemic_enabled() || !self.es.cfg.ready() {
             return;
         }
-        let ids: Vec<String> = self
-            .project
+        let ids: Vec<String> = p
             .media
             .iter()
-            .filter(|m| self.project.timeline.tracks.iter().any(|t| t.clips.iter().any(|c| matches!(&c.content, cl_core::ClipContent::Media { media, .. } if *media == m.id))))
+            .filter(|m| p.timeline.tracks.iter().any(|t| t.clips.iter().any(|c| matches!(&c.content, cl_core::ClipContent::Media { media, .. } if *media == m.id))))
             .filter_map(|m| self.es.downloads.get(&m.path).cloned())
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()

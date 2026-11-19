@@ -1815,3 +1815,9 @@ Zuschnitt	Crop
 Links	Left
 Rechts	Right
 Unten	Bottom
+In Warteschlange	Add to queue
+Wartet	Waiting
+Alle wartenden entfernen	Remove all waiting
+{} Exporte ausstehend – wirklich beenden?	{} exports pending – quit anyway?
+Name schon in der Warteschlange	Name already in the queue
+Höchstens {} wartende Exporte	At most {} waiting exports
