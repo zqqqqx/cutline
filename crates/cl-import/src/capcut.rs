@@ -385,6 +385,8 @@ impl Build<'_> {
                 // kaputte Entwürfe: nichts vor 0
                 let start = Time(us(target, "start").max(0));
                 let duration = Time(us(target, "duration").max(1));
+                // Zahl der Tonspuren der Datei, wenn sie geprüft wurde (nicht beim Platzhalter)
+                let mut streams = None;
                 let mut clip = match mkind {
                     "videos" | "audios" => {
                         let raw = m.get("path").and_then(|v| v.as_str()).unwrap_or("");
@@ -399,6 +401,9 @@ impl Build<'_> {
                         let Some(media) = self.media(resolve(raw, dir), mkind, m) else {
                             continue;
                         };
+                        if self.exists.get(&media.path).copied().unwrap_or(false) {
+                            streams = Some(media.audio_streams);
+                        }
                         let kind = match media.kind {
                             MediaKind::Image => MediaKind::Image,
                             _ if mkind == "audios" => MediaKind::Audio,
@@ -486,7 +491,11 @@ impl Build<'_> {
                         // Tonspur der Datei, 1-basiert (1 = Standard); ohne Verweis die erste
                         "audio_track_indexes" => {
                             let n = am.get("audio_track_index").and_then(|v| v.as_i64()).unwrap_or(1);
-                            clip.audio_stream = (n > 1).then(|| (n - 1) as u32);
+                            // Nur Spuren, die es geben kann; fehlt die Datei, höchstens 16. Nach dem
+                            // Neu-Verknüpfen prüfen Export (`graph.rs` `audio_stream`) und Zeitleiste
+                            // die Nummer gegen die echten `audio_streams`
+                            let max = i64::from(streams.unwrap_or(16));
+                            clip.audio_stream = (n > 1 && n <= max).then(|| (n - 1) as u32);
                             continue;
                         }
                         "audio_fades" => {
@@ -812,6 +821,23 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
 mod tests {
     use super::*;
 
+    /// Fehler: `audio_track_index` wurde ungeprüft übernommen (z. B. Spur 4 Mrd.). Ohne Datei
+    /// (Platzhalter) gilt ein fester Höchstwert, mit Datei die echte Spurenzahl (Test unten).
+    #[test]
+    fn audio_track_index_is_bounded_without_file() {
+        let seg = |at: i64, idx: &str| serde_json::json!({"material_id": "A", "target_timerange": {"start": at * 1_000_000, "duration": 1_000_000}, "extra_material_refs": [idx]});
+        let draft = serde_json::json!({
+            "materials": {
+                "audios": [{"id": "A", "type": "music", "path": "C:/gibt/es/nicht.wav", "duration": 9_000_000}],
+                "audio_track_indexes": [{"id": "I3", "audio_track_index": 3}, {"id": "I16", "audio_track_index": 16}, {"id": "IX", "audio_track_index": 4_000_000_000i64}, {"id": "I0", "audio_track_index": -5}]
+            },
+            "tracks": [{"type": "audio", "segments": [seg(0, "I3"), seg(1, "I16"), seg(2, "IX"), seg(3, "I0")]}]
+        });
+        let (p, _) = convert(&draft, Path::new("."), "T").unwrap();
+        let got: Vec<Option<u32>> = p.timeline.tracks.iter().flat_map(|t| &t.clips).map(|c| c.audio_stream).collect();
+        assert_eq!(got, [Some(2), Some(15), None, None]);
+    }
+
     /// Fehler: Unsinnige Zahlen aus kaputten Entwürfen (riesig, negativ, 0) landeten im Projekt
     /// (unendlich als f32, Zeiten jenseits von `Time::LIMIT`, Bildgröße 4 Mrd. px).
     /// Nicht endliche Werte lässt schon serde_json nicht durch.
@@ -1094,14 +1120,14 @@ mod tests {
                 "materials": {
                     "videos": [{"id": "V", "type": "video", "path": path}, {"id": "VS", "type": "video", "path": path, "has_sound_separated": true}],
                     "audios": [{"id": "O", "type": "video_original_sound", "video_id": "VS", "path": path}],
-                    "audio_track_indexes": [{"id": "I2", "audio_track_index": 2, "default_audio_track_index": 1}, {"id": "I1", "audio_track_index": 1, "default_audio_track_index": 1}],
+                    "audio_track_indexes": [{"id": "I2", "audio_track_index": 2, "default_audio_track_index": 1}, {"id": "I1", "audio_track_index": 1, "default_audio_track_index": 1}, {"id": "I3", "audio_track_index": 3}],
                     "audio_fades": [{"id": "F", "fade_in_duration": 0, "fade_out_duration": 600_000}]
                 },
                 "tracks": [
                     {"type": "video", "attribute": main_attr, "segments": [seg("V", 0, 0.0, Some(0.8), &[]), seg("V", 1, 1.0, None, &[]), seg("VS", 2, 1.0, None, &["I2"])]},
                     {"type": "video", "attribute": 1, "segments": [seg("V", 0, 0.0, None, &[])]},
                     {"type": "audio", "attribute": 0, "segments": [seg("O", 2, 1.0, None, &["I2", "F"]), seg("V", 4, 0.0, Some(1.0), &[]), seg("V", 5, 0.5, None, &["I1"])]},
-                    {"type": "audio", "attribute": 1, "segments": [seg("O", 8, 0.0, Some(1.0), &[])]},
+                    {"type": "audio", "attribute": 1, "segments": [seg("O", 8, 0.0, Some(1.0), &[]), seg("V", 12, 0.0, Some(1.0), &["I3"])]},
                     {"type": "audio", "attribute": 0, "segments": [seg("O", 9, 0.0, None, &[])]}
                 ]
             })
@@ -1129,6 +1155,9 @@ mod tests {
         let muted = audio.iter().find(|t| t.muted).unwrap();
         assert_eq!(vol(&muted.clips[0]), 0.0);
         assert_eq!(rep.skipped.iter().find(|(w, _)| w == "Spur stumm übernommen").map(|x| x.1), Some(3));
+        // Spur 3 gibt es in der Datei (2 Tonspuren) nicht: Standardspur
+        let c12 = tr.iter().flat_map(|t| &t.clips).find(|c| c.start == Time(12_000_000)).unwrap();
+        assert_eq!(c12.audio_stream, None);
         // `video_mute` schaltet die Hauptspur stumm, auch ohne Spur-Bit; ohne beides ist sie hörbar
         let (p, _) = convert(&draft(true, 0), dir.path(), "T").unwrap();
         let main = p.timeline.tracks.iter().find(|t| t.main).unwrap();
