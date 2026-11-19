@@ -37,7 +37,7 @@ fn random_op(p: &Project, media: &[MediaRef], r: &mut Lcg, depth: u32) -> EditOp
     let clip = pick_clip(p, r);
     let track = pick_track(p, r);
     let opt_track = if r.chance(50) { None } else { Some(track) };
-    match r.below(26) {
+    match r.below(27) {
         0..=2 => {
             let start = time(r);
             let dur = if r.chance(5) { Time(r.below(3) as i64 - 1) } else { s(r.range(0.04, 8.0)) };
@@ -102,6 +102,10 @@ fn random_op(p: &Project, media: &[MediaRef], r: &mut Lcg, depth: u32) -> EditOp
             clip,
             transition: r.chance(70).then(|| TransitionRef { id: "dissolve".into(), duration: time(r) }),
         },
+        25 => {
+            let mut v = || r.range(-0.2, 1.2) as f32;
+            EditOp::SetCrop { clip, crop: Crop { left: v(), right: v(), top: v(), bottom: v() } }
+        }
         _ if depth == 0 => EditOp::Batch {
             label: String::new(),
             ops: (0..1 + r.below(3)).map(|_| random_op(p, media, r, 1)).collect(),

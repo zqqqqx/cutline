@@ -147,6 +147,9 @@ pub fn check(p: &Project, ctx: &str) {
                 assert!(v.is_finite(), "{ctx}: Zahl nicht endlich");
             }
             assert!((0.0..=1.0).contains(&c.opacity), "{ctx}: Deckkraft {}", c.opacity);
+            let k = c.crop;
+            assert!(k.left.min(k.right).min(k.top).min(k.bottom) >= 0.0, "{ctx}: Zuschnitt {k:?}");
+            assert!(k.left + k.right <= 0.981 && k.top + k.bottom <= 0.981, "{ctx}: Zuschnitt {k:?}");
             if let ClipContent::Media { media, .. } = &c.content {
                 assert!(p.media(*media).is_some(), "{ctx}: Clip ohne Medium");
             }
