@@ -668,22 +668,48 @@ struct StreamShared {
 /// die Windows-Befehlszeile fasst nur 32 767 Zeichen. Die Datei heißt nach dem Inhalt; dabei
 /// werden solche Dateien, die älter als eine Stunde sind, aufgeräumt (FFmpeg liest sie beim Start).
 fn graph_arg<'a>(cmd: &'a mut Command, g: &str) -> Result<&'a mut Command> {
-    use std::hash::{Hash, Hasher};
     if g.len() < 16_000 {
         return Ok(cmd.args(["-filter_complex", g]));
     }
-    let dir = std::env::temp_dir();
-    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+    cleanup_graphs();
+    let file = graph_file(&std::env::temp_dir(), g)?;
+    Ok(cmd.arg("-/filter_complex").arg(file))
+}
+
+/// Datei für den Graphen `g` in `dir`. Gleicher Name = gleicher Inhalt: Eine vorhandene Datei
+/// wird nicht neu geschrieben (ein anderer Dekoder liest sie vielleicht gerade), nur ihre Zeit
+/// erneuert, damit das Aufräumen sie nicht erwischt. Neu entsteht sie über eine temporäre Datei
+/// mit Umbenennen – nie halb geschrieben sichtbar.
+fn graph_file(dir: &Path, g: &str) -> Result<PathBuf> {
+    use std::hash::{Hash, Hasher};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    g.hash(&mut h);
+    let file = dir.join(format!("cutline-graph-{:016x}.txt", h.finish()));
+    if let Ok(f) = std::fs::File::options().append(true).open(&file) {
+        let _ = f.set_modified(std::time::SystemTime::now());
+        return Ok(file);
+    }
+    let tmp = dir.join(format!("cutline-graph-{}-{}.tmp", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+    std::fs::write(&tmp, g)?;
+    // scheitert unter Windows, wenn ein gleichzeitiger Aufruf sie schon angelegt hat und FFmpeg liest
+    if let Err(e) = std::fs::rename(&tmp, &file) {
+        let _ = std::fs::remove_file(&tmp);
+        if !file.exists() {
+            return Err(e.into());
+        }
+    }
+    Ok(file)
+}
+
+/// Graph-Dateien (und Reste davon) im Temp-Ordner entfernen, die älter als eine Stunde sind.
+pub fn cleanup_graphs() {
+    for e in std::fs::read_dir(std::env::temp_dir()).into_iter().flatten().flatten() {
         let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok());
         if e.file_name().to_string_lossy().starts_with("cutline-graph-") && old.is_some_and(|d| d.as_secs() > 3600) {
             let _ = std::fs::remove_file(e.path());
         }
     }
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    g.hash(&mut h);
-    let file = dir.join(format!("cutline-graph-{:016x}.txt", h.finish()));
-    std::fs::write(&file, g)?;
-    Ok(cmd.arg("-/filter_complex").arg(file))
 }
 
 fn spawn_stream(
@@ -1003,6 +1029,29 @@ pub fn escape_path(p: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lange Graphen: Eine vorhandene Datei wird nicht neu geschrieben (ein anderer Dekoder liest
+    /// sie vielleicht gerade); gleichzeitige Aufrufe sehen nie eine halbe Datei, nichts bleibt liegen.
+    #[test]
+    fn graph_file_is_written_once_and_never_partially() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = "null,".repeat(20_000);
+        let f = graph_file(dir.path(), &g).unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), g);
+        // Stellvertreter für „wird gerade gelesen“: der Inhalt darf nicht angefasst werden
+        std::fs::write(&f, "gelesen").unwrap();
+        assert_eq!(graph_file(dir.path(), &g).unwrap(), f);
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "gelesen");
+        let g2 = "copy,".repeat(20_000);
+        let read: Vec<String> = std::thread::scope(|s| {
+            let hs: Vec<_> = (0..8)
+                .map(|_| s.spawn(|| std::fs::read_to_string(graph_file(dir.path(), &g2).unwrap()).unwrap()))
+                .collect();
+            hs.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert!(read.iter().all(|r| *r == g2));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
 
     #[test]
     fn escape_path_keeps_every_character() {

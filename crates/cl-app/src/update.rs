@@ -283,15 +283,16 @@ pub fn startup_cleanup() {
     }
     std::thread::spawn(|| {
         cleanup_temp(&std::env::temp_dir(), std::time::Duration::from_secs(2 * 86_400));
+        cl_media::cleanup_graphs();
         cl_update::packs::cleanup_parts(&crate::contents::download_dir(), crate::paths::pid_alive);
     });
 }
 
-/// Arbeitsordner von Ton-Vorschau, Export und Whisper bleiben nur nach einem Absturz oder einem
+/// Arbeitsordner von Ton-Vorschau, Export, Whisper und Thumbnail bleiben nur nach einem Absturz oder einem
 /// erzwungenen Beenden liegen (Exporte bis zu einigen MB). Entfernt werden nur eigene Ordner, die
 /// länger als `age` unverändert sind – laufende Instanzen benutzen ihre Ordner nicht so lange.
 fn cleanup_temp(dir: &std::path::Path, age: std::time::Duration) {
-    const OWN: [&str; 3] = ["cutline-audio-", "cutline-export-", "cutline-whisper-"];
+    const OWN: [&str; 4] = ["cutline-audio-", "cutline-export-", "cutline-whisper-", "cutline-thumb"];
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let own = OWN.iter().any(|p| e.file_name().to_string_lossy().starts_with(p));
         let old = e
@@ -312,7 +313,7 @@ mod temp_tests {
     #[test]
     fn cleanup_temp_removes_only_own_old_dirs() {
         let t = tempfile::tempdir().unwrap();
-        for d in ["cutline-audio-x1", "cutline-export-x2", "cutline-whisper-1-0", "cutline-models", "fremd"] {
+        for d in ["cutline-audio-x1", "cutline-export-x2", "cutline-whisper-1-0", "cutline-thumbAbc12", "cutline-models", "fremd"] {
             std::fs::create_dir(t.path().join(d)).unwrap();
         }
         std::fs::write(t.path().join("cutline-export-datei"), "x").unwrap();

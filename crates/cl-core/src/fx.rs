@@ -151,6 +151,28 @@ pub struct Censor {
     pub track: bool,
     /// Stützpunkte nach Zeit sortiert; einer = die Fläche steht still
     pub path: Vec<CensorKey>,
+    /// nur zur Laufzeit, siehe `CensorId`
+    #[serde(skip)]
+    pub id: CensorId,
+}
+
+/// Kennung einer Zensur-Fläche, die nur zur Laufzeit lebt (nicht gespeichert, jede neue Fläche
+/// bekommt eine eigene): Das Ergebnis einer laufenden Verfolgung findet darüber seine Fläche,
+/// auch wenn sich die Liste inzwischen verschoben hat. Zählt beim Vergleich nicht mit.
+#[derive(Debug, Clone, Copy)]
+pub struct CensorId(pub u64);
+
+impl Default for CensorId {
+    fn default() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        Self(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+impl PartialEq for CensorId {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// Lage der Zensur-Fläche zu einem Zeitpunkt (Mitte, Breite, Höhe als Anteil des Bildes).

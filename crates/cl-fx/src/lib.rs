@@ -1559,7 +1559,7 @@ mod tests {
         let graph = |blur: bool, strength: f32| {
             let mut g = GraphBuilder::new("i", "u");
             let path = vec![CensorKey { t: Time::ZERO, cx: 0.5, cy: 0.5, w: 0.2, h: 0.3 }];
-            censor_graph(&mut g, &Censor { blur, ellipse: false, strength, track: false, path }, src);
+            censor_graph(&mut g, &Censor { blur, ellipse: false, strength, track: false, path, ..Default::default() }, src);
             g.finish("o").join(";")
         };
         // Blöcke ≥ 45 px (1080/24), Unschärfe σ ≥ 45 px – auch bei Stärke unter 0

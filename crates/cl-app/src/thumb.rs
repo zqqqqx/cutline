@@ -68,9 +68,10 @@ impl Default for Opts {
     }
 }
 
-/// Was gerechnet wird: Stelle im Projekt, Einstellungen, Text
+/// Was gerechnet wird: Stand des Projekts (`App::revision`), Stelle, Einstellungen, Text
 #[derive(Clone, PartialEq, Debug)]
 pub struct Want {
+    pub rev: u64,
     pub at: Time,
     pub opts: Opts,
     pub text: String,
@@ -219,7 +220,8 @@ pub fn first_png(video: &Path, out: &Path) -> std::result::Result<(), String> {
 }
 
 /// Thumbnail für `w` aus `src` nach `out` (PNG). In `dir` bleiben Standbild und Maske je Stelle
-/// liegen, damit Änderungen an Text oder Umriss nur noch das Hilfsprojekt rechnen.
+/// des aktuellen Projektstands liegen, damit Änderungen an Text oder Umriss nur noch das
+/// Hilfsprojekt rechnen; die älterer Stände werden entfernt.
 pub fn render(
     src: &Project,
     w: &Want,
@@ -232,12 +234,19 @@ pub fn render(
     // Vorschau und Speichern teilen sich die Dateien im Arbeitsordner: nacheinander
     static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
-    let frame = dir.join(format!("frame-{}.mp4", w.at.0));
+    let frame = dir.join(format!("frame-{}-{}.mp4", w.rev, w.at.0));
     if !frame.is_file() {
+        let keep = [format!("frame-{}-", w.rev), format!("matte-{}-", w.rev)];
+        for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if (n.starts_with("frame-") || n.starts_with("matte-")) && !keep.iter().any(|k| n.starts_with(k)) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
         export_frames(src, w.at, contain(src.settings.width, src.settings.height), fonts, &frame)?;
     }
     let frame = cl_media::probe(&frame).map_err(|e| e.to_string())?;
-    let matte = dir.join(format!("matte-{}.mkv", w.at.0));
+    let matte = dir.join(format!("matte-{}-{}.mkv", w.rev, w.at.0));
     let matte = match models.filter(|_| w.opts.person) {
         Some(_) if matte.is_file() => Some(matte),
         // shortcut: RVM sieht das Standbild nur zweimal (rekurrentes Modell ohne Anlauf); bei
@@ -273,14 +282,13 @@ pub struct ThumbWin {
     asked: Option<Want>,
     /// letzter gesehener Stand und seit wann (Entprellen)
     seen: Option<(Want, f64)>,
-    /// Dauer der letzten Vorschau
-    pub last_ms: u128,
 }
 
 impl App {
     fn thumb_want(&self) -> Option<Want> {
         let w = self.thumb.as_ref()?;
         Some(Want {
+            rev: self.revision,
             at: Time::from_secs_f64(w.at as f64).snap_to_frame(self.project.settings.fps),
             opts: self.thumb_opts.clone(),
             text: w.text.clone(),
@@ -304,7 +312,6 @@ impl App {
             tex: None,
             asked: None,
             seen: None,
-            last_ms: 0,
         });
     }
 
@@ -364,7 +371,6 @@ impl App {
                     TaskDone::Run(Box::new(move |app: &mut App| {
                         if let Some(w) = app.thumb.as_mut() {
                             log::info!(target: "thumbnail", "Vorschau in {ms} ms");
-                            w.last_ms = ms;
                             w.tex = Some(ctx2.load_texture("thumb", ci, egui::TextureOptions::LINEAR));
                         }
                     }))
@@ -658,7 +664,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (fonts, stop) = (Fonts::new(), AtomicBool::new(false));
         let src = source(dir.path(), 1920, 1080);
-        let mut w = Want { at: Time::from_secs_f64(1.0), opts: Opts { pos: 4, ..Default::default() }, text: String::new() };
+        let mut w = Want { rev: 0, at: Time::from_secs_f64(1.0), opts: Opts { pos: 4, ..Default::default() }, text: String::new() };
         let (plain, with) = (dir.path().join("ohne.png"), dir.path().join("mit.png"));
         let t0 = std::time::Instant::now();
         render(&src, &w, &fonts, None, dir.path(), &plain, &stop).unwrap();
@@ -696,6 +702,30 @@ mod tests {
                 assert!(p[0] as u32 + p[1] as u32 + p[2] as u32 > 30, "schwarzer Rand bei {x},{y}: {p:?}");
             }
         }
+    }
+
+    /// Projekt bei offenem Fenster geändert (neuer Stand): Das Standbild wird neu gerechnet, die
+    /// Dateien des alten Stands verschwinden aus dem Arbeitsordner.
+    #[test]
+    fn project_change_renders_a_new_frame() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("arbeit");
+        std::fs::create_dir(&work).unwrap();
+        let (fonts, stop) = (Fonts::new(), AtomicBool::new(false));
+        let mut src = source(dir.path(), 640, 360);
+        let mut w = Want { rev: 1, at: Time::from_secs_f64(1.0), opts: Opts::default(), text: String::new() };
+        let (a, b) = (dir.path().join("a.png"), dir.path().join("b.png"));
+        render(&src, &w, &fonts, None, &work, &a, &stop).unwrap();
+        src.timeline.tracks[0].clips[0].fx.adjust.brightness = -1.0;
+        w.rev = 2;
+        render(&src, &w, &fonts, None, &work, &b, &stop).unwrap();
+        let luma = |p: &Path| rgba(p).pixels().map(|q| q[0] as u64 + q[1] as u64 + q[2] as u64).sum::<u64>() / (W * H) as u64;
+        assert!(luma(&b) + 30 < luma(&a), "alter Stand gespeichert: {} / {}", luma(&a), luma(&b));
+        let names: Vec<String> = std::fs::read_dir(&work).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert!(names.iter().all(|n| !n.starts_with("frame-1-")) && names.iter().any(|n| n.starts_with("frame-2-")), "{names:?}");
     }
 
     /// Öffnen, Ändern, Speichern: kein Verlaufsschritt, keine Revision, nichts ungespeichert.

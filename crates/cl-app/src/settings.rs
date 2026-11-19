@@ -547,6 +547,7 @@ impl App {
         }
         if !self.settings_open {
             self.settings.save();
+            self.brand_flush();
         }
     }
 

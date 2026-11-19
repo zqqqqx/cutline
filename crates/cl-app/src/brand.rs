@@ -170,8 +170,28 @@ impl App {
                 kit.logo = None;
             }
         });
+        let settled = !ui.ctx().is_using_pointer() && !ui.ctx().wants_keyboard_input();
+        self.brand_edited(ui.ctx(), kit, settled);
+    }
+
+    /// Bearbeitetes Kit übernehmen: Der Farbwähler folgt sofort, gespeichert wird erst, wenn die
+    /// Änderung abgeschlossen ist (`settled`: nichts wird gezogen, kein Textfeld aktiv) – nicht in
+    /// jedem Bild beim Ziehen. Den Rest schreiben Schließen der Einstellungen und Beenden.
+    fn brand_edited(&mut self, ctx: &egui::Context, kit: BrandKit, settled: bool) {
         if kit != self.brand {
-            self.set_brand(ui.ctx(), kit);
+            self.brand = kit;
+            publish(ctx, &self.brand);
+            self.brand_unsaved = true;
+        }
+        if settled {
+            self.brand_flush();
+        }
+    }
+
+    /// Noch nicht gespeicherte Änderung am Kit schreiben.
+    pub fn brand_flush(&mut self) {
+        if std::mem::take(&mut self.brand_unsaved) {
+            self.brand.save();
         }
     }
 
@@ -179,6 +199,7 @@ impl App {
     pub fn set_brand(&mut self, ctx: &egui::Context, kit: BrandKit) {
         self.brand = kit;
         self.brand.save();
+        self.brand_unsaved = false;
         publish(ctx, &self.brand);
     }
 
@@ -207,6 +228,29 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Ziehen im Farbwähler: Die Farbreihe folgt sofort, `brand.json` wird erst geschrieben, wenn
+    /// die Änderung abgeschlossen ist – oder beim Schließen bzw. Beenden.
+    #[test]
+    fn brand_saves_when_the_change_is_done() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        let mut kit = BrandKit::default();
+        for v in [10, 20, 30] {
+            kit.colors = vec![BrandColor { name: String::new(), rgb: [v, 0, 0] }];
+            app.brand_edited(&ctx, kit.clone(), false);
+            assert_eq!(colors(&ctx)[0].rgb, [v, 0, 0]);
+            assert_eq!(BrandKit::load(), BrandKit::default(), "beim Ziehen gespeichert");
+        }
+        app.brand_edited(&ctx, kit.clone(), true);
+        assert_eq!(BrandKit::load(), kit);
+        // noch im Feld, dann Einstellungen geschlossen bzw. Programm beendet
+        kit.colors[0].name = "Rot".into();
+        app.brand_edited(&ctx, kit.clone(), false);
+        assert_ne!(BrandKit::load(), kit);
+        app.brand_flush();
+        assert_eq!(BrandKit::load(), kit);
+    }
 
     #[test]
     fn brand_json_round_trip_limits_and_broken_files() {

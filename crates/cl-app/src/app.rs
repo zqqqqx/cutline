@@ -172,6 +172,8 @@ pub struct App {
     pub library: crate::library::Library,
     /// Farben, Schriften und Logo des Nutzers (`brand.json`)
     pub brand: crate::brand::BrandKit,
+    /// `brand` geändert, `brand.json` noch nicht geschrieben (siehe `brand_flush`)
+    pub brand_unsaved: bool,
     pub lib_dialog: Option<crate::library_ui::LibDialog>,
     pub lib_dialog_since: u64,
     /// Gespeicherte Look-Presets
@@ -451,6 +453,7 @@ impl App {
             es: Default::default(),
             library: crate::library::Library::load(),
             brand: crate::brand::BrandKit::load(),
+            brand_unsaved: false,
             lib_dialog: None,
             lib_dialog_since: 0,
             presets: crate::presets::load(),
@@ -3586,6 +3589,7 @@ impl eframe::App for App {
         self.cancel_background_work();
         // laufender Import räumt sein halbes Projekt weg, ffprobe-Prüfungen enden
         self.cancel_import();
+        self.brand_flush();
         let flushed = self.flush_before_leaving();
         // alles Wartende schreiben lassen (Speicher-Thread), bevor das Programm endet
         if !self.saver.wait_idle(Duration::from_secs(60)) {
