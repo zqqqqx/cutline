@@ -1359,6 +1359,80 @@ mod transition_tests {
         ((fr(lit.0) + fr(lit.1)) / 2.0, fr(lit.0), fr(lit.1))
     }
 
+    /// Mitte jeder Zeile (y, Projektpixel) in der Vorschau: Zeilen der Galley des Haupttexts
+    fn preview_lines(app: &App, st: &TextStyle) -> Vec<f32> {
+        let ctx = egui::Context::default();
+        ctx.begin_pass(egui::RawInput::default());
+        let painter = egui::Painter::new(ctx.clone(), egui::LayerId::background(), Rect::from_min_size(pos2(0.0, 0.0), vec2(640.0, 360.0)));
+        app.draw_text(&painter, st, pos2(320.0, 180.0), 1.0, 0.0, 1.0, 640.0, None);
+        let out = ctx.end_pass();
+        let ts = out.shapes.iter().rev().find_map(|s| match &s.shape {
+            egui::Shape::Text(ts) => Some(ts.clone()),
+            _ => None,
+        });
+        let ts = ts.unwrap();
+        ts.galley.rows.iter().filter(|r| !r.glyphs.is_empty()).map(|r| ts.pos.y + r.rect.center().y).collect()
+    }
+
+    /// Mitte jeder Zeile im Exportbild: Bänder heller Pixel (Großbuchstaben ohne Unterlängen,
+    /// deshalb wird die Mitte der Versalhöhe gemessen, nicht die der Zeilenbox)
+    fn export_lines(img: &[u8]) -> Vec<f32> {
+        let ink: Vec<bool> = (0..360).map(|y| (0..640).any(|x| img[(y * 640 + x) * 4..][..3].iter().all(|&v| v > 160))).collect();
+        let mut v = Vec::new();
+        let mut start = None;
+        for (y, &on) in ink.iter().chain([false].iter()).enumerate() {
+            match (on, start) {
+                (true, None) => start = Some(y),
+                (false, Some(s)) => {
+                    v.push((s + y) as f32 / 2.0);
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+        v
+    }
+
+    /// Zeilenlage und -abstand: zwei-, dreizeilig und automatisch umbrochen. Die Vorschau setzt
+    /// mit egui (eigene Schrift), der Export mit `drawtext`; verglichen werden Zeilenzahl, Abstand
+    /// der Zeilen und die Mitte des Blocks.
+    #[test]
+    fn text_lines_match_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let (app, _home, _g) = crate::saving::tests::test_app();
+        let dir = tempfile::tempdir().unwrap();
+        for text in ["AAA BBB\nCCC DDD", "EINS\nZWEI\nDREI", "HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH"] {
+            let st = TextStyle { text: text.into(), size: 44.0, shadow: false, ..Default::default() };
+            let mut p = Project::new("Zeilen");
+            (p.settings.width, p.settings.height) = (640, 360);
+            p.settings.fps = Rational { num: 30, den: 1 };
+            let mut t = Track::new(TrackKind::Text);
+            t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, Time::from_secs_f64(1.0)));
+            p.timeline.tracks.push(t);
+            let out = dir.path().join("z.mp4");
+            let job = cl_export::build(&p, &cl_export::ExportSettings::from_project(&p), &|_| None, &out).unwrap();
+            cl_export::run(&job, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}).unwrap();
+            let o = cl_media::ffmpeg_command()
+                .unwrap()
+                .args(["-v", "error", "-i"])
+                .arg(&out)
+                .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+                .output()
+                .unwrap();
+            let (pv, ex) = (preview_lines(&app, &st), export_lines(&o.stdout));
+            let pitch = |v: &[f32]| (v[v.len() - 1] - v[0]) / (v.len() - 1) as f32;
+            let mid = |v: &[f32]| (v[0] + v[v.len() - 1]) / 2.0;
+            eprintln!("{text:?}: Vorschau {pv:.1?}, Export {ex:.1?}");
+            assert_eq!(pv.len(), ex.len(), "{text:?}: Zeilenzahl");
+            assert!(pv.len() >= 2, "{text:?}");
+            let (dp, dm) = ((pitch(&pv) - pitch(&ex)).abs(), (mid(&pv) - mid(&ex)).abs());
+            eprintln!("{text:?}: Abweichung Zeilenabstand {dp:.1} px, Blockmitte {dm:.1} px (Größe 44)");
+            assert!(dp < 2.0 && dm < 5.0, "{text:?}: Abstand {dp:.1}, Mitte {dm:.1}");
+        }
+    }
+
     /// Karaoke an drei Zeitpunkten (und „Füllen“): in Vorschau und Export ist dasselbe Wort gelb.
     /// Die Vorschau nutzt die Schrift von egui, deshalb wird die Lage im Verhältnis zur Textbreite
     /// verglichen.
