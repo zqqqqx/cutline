@@ -3317,6 +3317,23 @@ impl eframe::App for App {
         }
         self.poll_epidemic(ctx);
         self.poll_stock();
+        // Exporte laufen auch auf der Startseite weiter, der nächste wartende startet von selbst
+        if let Some((msg, done)) = self.export.poll(ctx) {
+            // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen) – für das
+            // Projekt, aus dem er stammt
+            if let Some(p) = done.filter(|_| msg.contains("Export fertig")) {
+                self.report_epidemic_export(ctx, &p);
+                // nur wenn nichts vorgehört wird: `preview_sound` schaltet um und würde es abbrechen
+                if self.settings.export_sound
+                    && !self.playing
+                    && self.sfx_preview.is_none()
+                    && self.sound_pending.is_none()
+                {
+                    self.preview_sound("builtin:sfx:notify".into(), &Self::sfx_path("notify"), Some("notify"));
+                }
+            }
+            self.toast(msg);
+        }
         if self.screen == Screen::Editor {
             self.ensure_proxies(ctx);
         }
@@ -3486,18 +3503,6 @@ impl eframe::App for App {
         self.export.chapters = self.settings.export_chapters;
         self.export.chapter_hint = self.settings.chapter_hint;
         if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex, self.revision) {
-            // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen)
-            if msg.contains("Export fertig") {
-                self.report_epidemic_export(ctx);
-                // nur wenn nichts vorgehört wird: `preview_sound` schaltet um und würde es abbrechen
-                if self.settings.export_sound
-                    && !self.playing
-                    && self.sfx_preview.is_none()
-                    && self.sound_pending.is_none()
-                {
-                    self.preview_sound("builtin:sfx:notify".into(), &Self::sfx_path("notify"), Some("notify"));
-                }
-            }
             self.toast(msg);
         }
         // „Projekt auf 9:16 umstellen“ im Export-Dialog (die Vorgabe merkt sich der Block darunter)

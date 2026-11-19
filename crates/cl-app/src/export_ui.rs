@@ -134,6 +134,26 @@ fn gcd(a: u32, b: u32) -> u32 {
     }
 }
 
+/// Höchstzahl wartender Exporte. Ein Abbild ist eine volle `Project`-Kopie ohne Medien, gemessen
+/// ≈1,1 KB je Clip (siehe `cl_core::Document`): 3000 Clips ≈3,3 MB, 20 Abbilder ≈66 MB.
+pub const QUEUE_MAX: usize = 20;
+
+/// Export-Auftrag: Abbild des Projekts beim Einreihen, damit Weiterschneiden oder ein
+/// Projektwechsel ihn nicht mehr verändern.
+struct Queued {
+    project: Arc<Project>,
+    /// Projektdatei (Zuordnung in der Exporte-Liste)
+    project_path: Option<PathBuf>,
+    /// Einstellungen beim Einreihen (Fingerabdruck für „Erneut exportieren“)
+    settings: ExportSettings,
+    out: PathBuf,
+    /// Begleitdateien (Untertitel, Kapitel) mit Text vom Einreihen; erst nach Erfolg geschrieben
+    sidecars: Vec<(PathBuf, String)>,
+    fonts: HashMap<String, (PathBuf, u32)>,
+    /// Projektstand beim Einreihen
+    rev: u64,
+}
+
 struct Running {
     progress: Arc<Mutex<f32>>,
     /// erst nach dem Bau des Auftrags im Hintergrund bekannt (bis dahin „Wird vorbereitet …“):
@@ -142,14 +162,41 @@ struct Running {
     result: Arc<Mutex<Option<Result<(), String>>>>,
     cancel: Arc<AtomicBool>,
     started: Instant,
-    /// Projektstand beim Start des Exports
-    rev: u64,
-    /// Begleitdateien (Untertitel, Kapitel) mit Text vom Start; erst nach Erfolg geschrieben
-    sidecars: Vec<(PathBuf, String)>,
-    /// Einstellungen beim Start (Fingerabdruck für „Erneut exportieren“)
-    settings: ExportSettings,
+    src: Queued,
     /// geladene Live-Bilder; Texturen werden mit `Running` freigegeben
     live: Live,
+}
+
+impl Running {
+    /// Auftrag im Hintergrund bauen und ausführen; liest nur das Abbild, nie das offene Projekt.
+    fn start(ctx: &egui::Context, src: Queued) -> Self {
+        let progress = Arc::new(Mutex::new(0.0));
+        let job_info = Arc::new(Mutex::new(None));
+        let result = Arc::new(Mutex::new(None));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (pr, ji, rs, cc, c2) = (progress.clone(), job_info.clone(), result.clone(), cancel.clone(), ctx.clone());
+        let (p, s2, out2, fonts) = (src.project.clone(), src.settings.clone(), src.out.clone(), src.fonts.clone());
+        let resolver = move |fam: Option<&str>| fam.and_then(|f| fonts.get(f).cloned());
+        // Bau des Auftrags (bei großen Projekten Sekunden: Tonprüfung je Datei) nicht im Oberflächen-Faden
+        std::thread::spawn(move || {
+            let r = cl_export::build(&p, &s2, &resolver, &out2).and_then(|job| {
+                if cc.load(Ordering::Relaxed) {
+                    return Err(cl_export::ExportError::Cancelled);
+                }
+                *ji.lock().unwrap() = Some((job.measures_loudness(), job.preview_path().map(Path::to_path_buf)));
+                c2.request_repaint();
+                let r = cl_export::run(&job, cc, |x| {
+                    *pr.lock().unwrap() = x;
+                    c2.request_repaint();
+                });
+                if let Err(e) = &r { log::error!(target: "export", "{} · Befehl: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
+                r
+            });
+            *rs.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
+            c2.request_repaint();
+        });
+        Running { progress, job: job_info, result, cancel, started: Instant::now(), src, live: Live::default() }
+    }
 }
 
 /// Änderungszeit und Größe der Vorschaudatei
@@ -261,6 +308,9 @@ pub struct ExportDialog {
     /// Encoder in diesem Dialog von Hand gewählt (sonst Vorauswahl nach den Einstellungen)
     encoder_picked: bool,
     running: Option<Running>,
+    /// wartende Exporte, der vorderste startet nach dem laufenden.
+    /// shortcut: nur im Speicher, überlebt keinen Neustart; erst speichern, wenn das gewünscht wird
+    queue: std::collections::VecDeque<Queued>,
     last_output: Option<PathBuf>,
     error: Option<String>,
     /// Effekte/Filter, die der Katalog nicht kennt (fallen im Export weg)
@@ -310,7 +360,8 @@ impl ExportDialog {
     /// Fenster-Kreuz während eines Exports: Schließen aufhalten und nachfragen; „Beenden“ bricht
     /// den Export ab und schließt (FFmpeg räumt in [`Self::cancel_and_wait`] auf).
     pub fn guard_close(&mut self, ctx: &egui::Context) {
-        if ctx.input(|i| i.viewport().close_requested()) && !close_allowed(self.running.is_some(), self.quit_ok) {
+        let pending = self.running.iter().count() + self.queue.len();
+        if ctx.input(|i| i.viewport().close_requested()) && !close_allowed(pending > 0, self.quit_ok) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.quit_ask = true;
         }
@@ -320,7 +371,8 @@ impl ExportDialog {
         let (mut quit, mut stay) = (false, false);
         let m = crate::dialog::modal(ctx, "export-quit").show(ctx, |ui| {
             ui.set_width(340.0);
-            stay |= crate::dialog::title(ui, "Export läuft – wirklich beenden?");
+            let t = theme::count_text(pending, "Export läuft – wirklich beenden?", "{} Exporte ausstehend – wirklich beenden?");
+            stay |= crate::dialog::title(ui, &t);
             let (q, c) = crate::dialog::buttons(ui, theme::danger("Cutline beenden"), true);
             quit = q;
             stay |= c;
@@ -328,6 +380,7 @@ impl ExportDialog {
         if quit {
             self.quit_ok = true;
             self.quit_ask = false;
+            self.queue.clear();
             if let Some(r) = &self.running {
                 r.cancel.store(true, Ordering::Relaxed);
             }
@@ -340,6 +393,7 @@ impl ExportDialog {
     /// Laufenden Export abbrechen und höchstens `max` warten, bis FFmpeg beendet und die
     /// `.part`-Datei gelöscht ist (beim Beenden des Programms).
     pub fn cancel_and_wait(&mut self, max: std::time::Duration) {
+        self.queue.clear();
         let Some(r) = &self.running else { return };
         r.cancel.store(true, Ordering::Relaxed);
         let t0 = Instant::now();
@@ -352,10 +406,7 @@ impl ExportDialog {
     /// welchen Weg (Knopf, Menü, Tastenkürzel) exportiert wird.
     pub fn open_for(&mut self, p: &Project, project_path: Option<&Path>, rev: u64, range: Option<(Time, Time)>) {
         self.rev = rev;
-        if self.running.is_some() {
-            self.open = true;
-            return;
-        }
+        // auch während eines Exports neu einrichten: das offene Projekt lässt sich dann einreihen
         self.open = true;
         self.range_avail = range.filter(|(a, b)| b > a);
         self.error = None;
@@ -453,20 +504,50 @@ impl ExportDialog {
             .join(format!("{}.{}", safe.trim(), f.extension()))
     }
 
-    /// Zeigt den Dialog. Gibt eine Meldung für einen Toast zurück, wenn ein Export fertig ist.
-    pub fn show(
-        &mut self,
-        ctx: &egui::Context,
-        p: &Project,
-        fonts: &HashMap<String, (PathBuf, u32)>,
-        cover: Option<(egui::TextureId, egui::Vec2)>,
-        rev: u64,
-    ) -> Option<String> {
-        // aktueller Projektstand: nach einer Änderung gilt der letzte Export als veraltet
-        self.rev = rev;
+    /// Zieldatei schon vergeben: vorhandene Datei, laufender oder wartender Export
+    fn taken(&self, f: &Path) -> bool {
+        f.exists() || self.running.as_ref().is_some_and(|r| r.src.out == f) || self.queue.iter().any(|q| q.out == f)
+    }
+
+    /// Laufender Export für die Exporte-Liste: Zieldatei und Fortschritt
+    pub fn current(&self) -> Option<(&Path, f32)> {
+        self.running.as_ref().map(|r| (r.src.out.as_path(), *r.progress.lock().unwrap()))
+    }
+
+    /// Wartende Exporte: Zieldatei und Einstellungen
+    pub fn waiting(&self) -> impl Iterator<Item = (&Path, &ExportSettings)> {
+        self.queue.iter().map(|q| (q.out.as_path(), &q.settings))
+    }
+
+    pub fn cancel_current(&self) {
+        if let Some(r) = &self.running {
+            r.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Wartenden Export entfernen (`None`: alle)
+    pub fn remove_waiting(&mut self, i: Option<usize>) {
+        match i {
+            Some(i) => drop(self.queue.remove(i)),
+            None => self.queue.clear(),
+        }
+    }
+
+    /// Vordersten wartenden Export starten, wenn keiner läuft
+    fn start_next(&mut self, ctx: &egui::Context) {
+        if self.running.is_none() {
+            if let Some(q) = self.queue.pop_front() {
+                self.last_output = Some(q.out.clone());
+                self.running = Some(Running::start(ctx, q));
+            }
+        }
+    }
+
+    /// Laufenden Export weiterverfolgen (jedes Bild, auch auf der Startseite und bei geschlossenem
+    /// Dialog) und danach den nächsten wartenden starten. Gibt eine Meldung für einen Toast zurück,
+    /// wenn ein Export fertig ist, bei Erfolg mit dem Projekt-Abbild, aus dem er stammt.
+    pub fn poll(&mut self, ctx: &egui::Context) -> Option<(String, Option<Arc<Project>>)> {
         let mut toast = None;
-        // Hintergrund-Export weiterverfolgen, auch wenn der Dialog geschlossen ist
-        let started_rev = self.running.as_ref().map_or(rev, |r| r.rev);
         let finished = self.running.as_ref().map(|r| {
             let cancelled = r.cancel.load(Ordering::Relaxed);
             let mut res = r.result.lock().unwrap().take();
@@ -479,52 +560,75 @@ impl ExportDialog {
         });
         match finished {
             Some((Some(res), secs, cancelled)) => {
-                let (sidecars, used) = self.running.take().map(|r| (r.sidecars, Some(r.settings))).unwrap_or_default();
+                let src = self.running.take().expect("läuft").src;
+                let s = &src.settings;
                 let res = res.map_err(|e| (!cancelled).then_some(e));
-                log::info!(target: "export", "{} nach {secs:.1} s: {} · {:?}", match res { Ok(()) => "fertig", Err(None) => "abgebrochen", Err(Some(_)) => "Fehler" }, self.last_output.as_deref().map(|p| p.display().to_string()).unwrap_or_default(), used.as_ref().map(|s| (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio)));
+                log::info!(target: "export", "{} nach {secs:.1} s: {} · {:?}", match res { Ok(()) => "fertig", Err(None) => "abgebrochen", Err(Some(_)) => "Fehler" }, src.out.display(), (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio));
                 match res {
                     Ok(()) => {
                         self.done = Some((Instant::now(), secs));
-                        let failed: Vec<String> = sidecars
+                        let failed: Vec<String> = src
+                            .sidecars
                             .iter()
                             .filter_map(|(f, txt)| std::fs::write(f, txt).err().map(|e| format!("{} ({e})", f.display())))
                             .collect();
-                        if let Some(out) = &self.last_output {
-                            // unter dem Projektnamen, nicht dem (änderbaren) Dateinamen
-                            crate::exports::record(&p.name, self.project_path.as_deref(), out);
-                            if let Some(used) = used {
-                                self.exported = Some((started_rev, out.clone(), used));
-                            }
+                        // dem Projekt zugeordnet, aus dem der Export stammt (nicht dem gerade offenen),
+                        // unter dem Projektnamen, nicht dem (änderbaren) Dateinamen
+                        crate::exports::record(&src.project.name, src.project_path.as_deref(), &src.out);
+                        // „Zur Datei“ nur im Dialog des Projekts, aus dem der Export stammt
+                        if src.project_path == self.project_path {
+                            self.exported = Some((src.rev, src.out.clone(), src.settings.clone()));
                         }
-                        toast = Some(format!(
-                            "{} Export fertig ({})",
-                            icon::CHECK_CIRCLE,
-                            theme::secs(secs as f64, 1)
-                        ));
+                        let mut msg = format!("{} Export fertig ({})", icon::CHECK_CIRCLE, theme::secs(secs as f64, 1));
                         if !failed.is_empty() {
-                            let msg = format!("{}: {}", crate::tr("Begleitdatei nicht gespeichert"), failed.join(", "));
-                            toast = Some(format!("{} {msg}", icon::WARNING_CIRCLE));
-                            self.error = Some(msg);
+                            let e = format!("{}: {}", crate::tr("Begleitdatei nicht gespeichert"), failed.join(", "));
+                            msg = format!("{} {e}", icon::WARNING_CIRCLE);
+                            self.error = Some(e);
                         }
+                        toast = Some((msg, Some(src.project)));
                     }
-                    Err(e) => self.error = e,
+                    Err(Some(e)) => {
+                        // bei geschlossenem Dialog sähe man den Fehler sonst nicht (die Schlange läuft weiter)
+                        if !self.open {
+                            let f = src.out.file_name().unwrap_or_default().to_string_lossy().to_string();
+                            toast = Some((format!("{} {f}: {e}", icon::WARNING_CIRCLE), None));
+                        }
+                        self.error = Some(e);
+                    }
+                    Err(None) => {}
                 }
             }
-            Some((None, ..)) =>ctx.request_repaint_after(std::time::Duration::from_millis(100)),
+            Some((None, ..)) => ctx.request_repaint_after(std::time::Duration::from_millis(100)),
             None => {}
         }
+        // Fehlschlag oder Abbruch halten die Schlange nicht an
+        self.start_next(ctx);
+        toast
+    }
+
+    /// Zeigt den Dialog. Gibt eine Meldung für einen Toast zurück („Kapitel kopiert“).
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        p: &Project,
+        fonts: &HashMap<String, (PathBuf, u32)>,
+        cover: Option<(egui::TextureId, egui::Vec2)>,
+        rev: u64,
+    ) -> Option<String> {
+        // aktueller Projektstand: nach einer Änderung gilt der letzte Export als veraltet
+        self.rev = rev;
+        let mut toast = None;
         if !self.open {
             return toast;
         }
-        // Esc schließt den Dialog, Enter löst die Hauptaktion aus (nicht während eines laufenden
-        // Exports oder der Überschreiben-Nachfrage)
+        // Esc schließt den Dialog (nicht während eines laufenden Exports), Enter löst die
+        // Hauptaktion aus (reiht ein, wenn schon einer läuft); beides nicht während der Nachfrage
         let (esc, enter) = crate::dialog::keys(ctx);
-        let idle = self.running.is_none() && !self.confirm_overwrite;
-        if idle && esc {
+        if self.running.is_none() && !self.confirm_overwrite && esc {
             self.open = false;
             return toast;
         }
-        let mut main = idle && enter;
+        let mut main = !self.confirm_overwrite && enter;
         let Some(mut s) = self.settings.clone() else {
             return toast;
         };
@@ -547,7 +651,6 @@ impl ExportDialog {
                 if crate::dialog::title(ui, &title) {
                     open = false;
                 }
-                let busy = self.running.is_some();
                 ui.horizontal_top(|ui| {
                     // Links: Cover/Vorschau
                     ui.vertical(|ui| {
@@ -596,7 +699,8 @@ impl ExportDialog {
                     let right = ui.vertical(|ui| {
                         // Formatwechsel blendet Zeilen aus: Höhe halten, damit Knöpfe nicht springen
                         ui.set_min_height(self.right_h);
-                        ui.add_enabled_ui(!busy, |ui| {
+                        // auch während eines Exports einstellbar: der nächste wird eingereiht
+                        ui.scope(|ui| {
                             theme::row(ui, "Name", |ui| ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(300.0)));
                             theme::row(ui, "Speichern in", |ui| {
                                 // Platz für den Ordner-Knopf lassen, sonst ragt die Zeile über das Fenster hinaus
@@ -767,7 +871,7 @@ impl ExportDialog {
                 });
 
                 ui.add_space(12.0);
-                if !self.missing.is_empty() && self.running.is_none() {
+                if !self.missing.is_empty() {
                     ui.label(
                         RichText::new(crate::tr(format!(
                             "{}  {}",
@@ -790,9 +894,12 @@ impl ExportDialog {
                     let prog = *r.progress.lock().unwrap();
                     let measures = r.job.lock().unwrap().as_ref().map(|j| j.0);
                     match measures {
-                        Some(m) => export_progress(ui, prog, r.started.elapsed().as_secs_f32(), m && prog < cl_export::MEASURE_SHARE),
+                        Some(m) => export_progress(ui, prog, r.started.elapsed().as_secs_f32(), m && prog < cl_export::MEASURE_SHARE, self.queue.len()),
                         None => {
-                            ui.label(RichText::new(crate::tr("Wird vorbereitet …")).color(theme::TEXT()));
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(crate::tr("Wird vorbereitet …")).color(theme::TEXT()));
+                                waiting_count(ui, self.queue.len());
+                            });
                             ui.add_space(4.0);
                             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), egui::Sense::hover());
                             crate::widgets::busy_line(ui.painter(), rect);
@@ -814,13 +921,8 @@ impl ExportDialog {
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if self.running.is_some() {
-                            if ui.add(theme::secondary(format!("{}  Abbrechen", icon::X))).clicked() {
-                                if let Some(r) = &self.running {
-                                    r.cancel.store(true, Ordering::Relaxed);
-                                }
-                            }
-                        } else if self.unchanged_since_export(&s) {
+                        let full = self.queue.len() >= QUEUE_MAX;
+                        if self.running.is_none() && self.unchanged_since_export(&s) {
                             // unverändert seit dem letzten Export: direkt zur fertigen Datei
                             if ui.add(theme::primary(format!("{}  Zur Datei", icon::FOLDER_OPEN))).clicked() || std::mem::take(&mut main) {
                                 if let Some((_, f, _)) = &self.exported {
@@ -831,12 +933,26 @@ impl ExportDialog {
                                 start = true;
                                 overwrite = true;
                             }
-                        } else if ui.add(theme::primary(format!("{}  Exportieren", icon::EXPORT))).clicked() || std::mem::take(&mut main) {
-                            start = true;
+                        } else {
+                            // läuft schon einer, stellt sich auch „Exportieren“ hinten an
+                            let tip = crate::tr(format!("Höchstens {QUEUE_MAX} wartende Exporte"));
+                            if ui.add_enabled(!full, theme::primary(format!("{}  Exportieren", icon::EXPORT))).on_disabled_hover_text(&tip).clicked() || (!full && std::mem::take(&mut main)) {
+                                start = true;
+                            }
+                            if ui.add_enabled(!full, theme::secondary(format!("{}  In Warteschlange", icon::LIST_PLUS))).on_disabled_hover_text(&tip).clicked() {
+                                // wie „Exportieren“: startet sofort, wenn keiner läuft; Fenster bleibt offen
+                                start = true;
+                            }
                         }
-                        let close_label = if self.done.is_some() || self.unchanged_since_export(&s) { "Schließen" } else { "Abbrechen" };
-                        if self.running.is_none() && ui.add(theme::secondary(close_label)).clicked() {
-                            open = false;
+                        if self.running.is_some() {
+                            if ui.add(theme::secondary(format!("{}  Abbrechen", icon::X))).clicked() {
+                                self.cancel_current();
+                            }
+                        } else {
+                            let close_label = if self.done.is_some() || self.unchanged_since_export(&s) { "Schließen" } else { "Abbrechen" };
+                            if ui.add(theme::secondary(close_label)).clicked() {
+                                open = false;
+                            }
                         }
                     });
                 });
@@ -845,7 +961,7 @@ impl ExportDialog {
         if !open {
             self.open = false;
         }
-        if start && !overwrite && self.output_path(s.format).exists() {
+        if start && !overwrite && self.taken(&self.output_path(s.format)) {
             self.confirm_overwrite = true;
             self.confirm_fresh = true;
             start = false;
@@ -856,7 +972,8 @@ impl ExportDialog {
             let file = self.output_path(s.format);
             let m = crate::dialog::modal(ctx, "export-overwrite").show(ctx, |ui| {
                 ui.set_width(380.0);
-                if crate::dialog::title(ui, "Datei existiert bereits") {
+                let t = if file.exists() { "Datei existiert bereits" } else { "Name schon in der Warteschlange" };
+                if crate::dialog::title(ui, t) {
                     choice = Some(2);
                 }
                 ui.label(RichText::new(crate::paths::shown(&file)).small().color(theme::TEXT_DIM()));
@@ -887,7 +1004,7 @@ impl ExportDialog {
                     let base = self.name.trim().to_string();
                     for n in 2.. {
                         self.name = format!("{base} ({n})");
-                        if !self.output_path(s.format).exists() {
+                        if !self.taken(&self.output_path(s.format)) {
                             break;
                         }
                     }
@@ -899,49 +1016,20 @@ impl ExportDialog {
                 self.confirm_overwrite = false;
             }
         }
-        if start {
+        if start && self.queue.len() < QUEUE_MAX {
             self.error = None;
-            let out = self.output_path(s.format);
-            let sidecars = sidecars(p, &s, self.also_srt, &out);
-            let fonts = fonts.clone();
-            let resolver = move |fam: Option<&str>| fam.and_then(|f| fonts.get(f).cloned());
-            let progress = Arc::new(Mutex::new(0.0));
-            let job_info = Arc::new(Mutex::new(None));
-            let result = Arc::new(Mutex::new(None));
-            let cancel = Arc::new(AtomicBool::new(false));
-            let (pr, ji, rs, cc, c2) = (progress.clone(), job_info.clone(), result.clone(), cancel.clone(), ctx.clone());
-            let (p, s2, out2) = (p.clone(), s.clone(), out.clone());
-            // Bau des Auftrags (bei großen Projekten Sekunden: Tonprüfung je Datei) nicht im Oberflächen-Faden
-            std::thread::spawn(move || {
-                let r = cl_export::build(&p, &s2, &resolver, &out2).and_then(|job| {
-                    if cc.load(Ordering::Relaxed) {
-                        return Err(cl_export::ExportError::Cancelled);
-                    }
-                    *ji.lock().unwrap() = Some((job.measures_loudness(), job.preview_path().map(Path::to_path_buf)));
-                    c2.request_repaint();
-                    let r = cl_export::run(&job, cc, |x| {
-                        *pr.lock().unwrap() = x;
-                        c2.request_repaint();
-                    });
-                    if let Err(e) = &r { log::error!(target: "export", "{} · Befehl: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
-                    r
-                });
-                *rs.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
-                c2.request_repaint();
-            });
             self.done = None;
-            self.running = Some(Running {
-                progress,
-                job: job_info,
-                result,
-                cancel,
-                started: Instant::now(),
-                rev: self.rev,
-                sidecars,
+            let out = self.output_path(s.format);
+            self.queue.push_back(Queued {
+                project: Arc::new(p.clone()),
+                project_path: self.project_path.clone(),
                 settings: s.clone(),
-                live: Live::default(),
+                sidecars: sidecars(p, &s, self.also_srt, &out),
+                out,
+                fonts: fonts.clone(),
+                rev: self.rev,
             });
-            self.last_output = Some(out);
+            self.start_next(ctx);
         }
         toast
     }
@@ -972,9 +1060,10 @@ fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(Pat
 }
 
 /// Fortschritt beim Export: Text mit Prozent und Restzeit, darunter die Fortschrittslinie.
-fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool) {
+fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool, waiting: usize) {
     ui.horizontal(|ui| {
         ui.label(RichText::new(crate::tr(if measuring { "Lautheit messen …" } else { "Exportiere …" })).color(theme::TEXT()));
+        waiting_count(ui, waiting);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if prog > 0.03 && elapsed > 2.0 {
                 let left = (elapsed / prog * (1.0 - prog)).max(0.0) as u32;
@@ -991,6 +1080,13 @@ fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool) 
     crate::widgets::progress_line(ui.painter(), egui::Id::new("export-prog"), rect, prog);
     // Restzeit läuft auch ohne neue Fortschrittsmeldung weiter
     ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+}
+
+/// Zahl der wartenden Exporte hinter dem laufenden („+2“)
+fn waiting_count(ui: &mut egui::Ui, n: usize) {
+    if n > 0 {
+        ui.label(RichText::new(format!("+{n}")).color(theme::TEXT_DIM()));
+    }
 }
 
 /// Erfolg: Häkchen wächst weich auf (`MOTION_SLOW`), bleibt 6 s sichtbar. `false` = ausgeblendet.
@@ -1191,6 +1287,7 @@ fn frame(d: &mut ExportDialog, ctx: &egui::Context, p: &Project, enter: bool) {
         Vec::new()
     };
     let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
+        d.poll(ctx);
         d.show(ctx, p, &HashMap::new(), None, 0);
     });
 }
@@ -1324,6 +1421,19 @@ fn live_preview_reload_blend_and_partial_jpeg() {
 }
 
 #[cfg(test)]
+fn queued(p: &Project, out: &Path) -> Queued {
+    Queued {
+        project: Arc::new(p.clone()),
+        project_path: None,
+        settings: ExportSettings::from_project(p),
+        out: out.to_path_buf(),
+        sidecars: Vec::new(),
+        fonts: HashMap::new(),
+        rev: 0,
+    }
+}
+
+#[cfg(test)]
 fn running(result: Option<Result<(), String>>) -> Running {
     Running {
         progress: Default::default(),
@@ -1331,9 +1441,7 @@ fn running(result: Option<Result<(), String>>) -> Running {
         result: Arc::new(Mutex::new(result)),
         cancel: Default::default(),
         started: Instant::now(),
-        rev: 0,
-        sidecars: Vec::new(),
-        settings: ExportSettings::from_project(&Project::new("t")),
+        src: queued(&Project::new("t"), Path::new("t.mp4")),
         live: Live::default(),
     }
 }
@@ -1400,21 +1508,124 @@ fn sidecars_follow_range_and_wait_for_success() {
     assert_eq!(off.len(), 2);
     assert!(off.iter().all(|(f, _)| !f.to_string_lossy().ends_with(".chapters.txt")));
     assert_eq!(get(".srt"), "1\n00:00:00,000 --> 00:00:10,000\ndrin\n");
-    // Begleitdateien erst nach erfolgreichem Export schreiben
+    // Begleitdateien erst nach erfolgreichem Export schreiben (Erfolg trägt in `exports.json` ein)
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::set_var("CUTLINE_HOME", dir.path());
     let (ctx, mut d) = (egui::Context::default(), ExportDialog::default());
     for ok in [false, true] {
-        d.running = Some(Running {
-            progress: Default::default(),
-            job: Default::default(),
-            result: Arc::new(Mutex::new(Some(if ok { Ok(()) } else { Err("x".into()) }))),
-            cancel: Default::default(),
-            started: Instant::now(),
-            rev: 0,
-            sidecars: v.clone(),
-            settings: s.clone(),
-            live: Live::default(),
-        });
+        let r = running(Some(if ok { Ok(()) } else { Err("x".into()) }));
+        d.running = Some(Running { src: Queued { sidecars: v.clone(), settings: s.clone(), out: dir.path().join("a.mp4"), ..r.src }, ..r });
         frame(&mut d, &ctx, &p, false);
         assert_eq!(v.iter().all(|(f, _)| f.is_file()), ok);
     }
+    std::env::remove_var("CUTLINE_HOME");
+}
+
+#[test]
+fn queue_takes_turns_names_limit_and_keeps_its_snapshot() {
+    let (ctx, dir, p) = (egui::Context::default(), tempfile::tempdir().unwrap(), Project::new("t"));
+    let mut d = ExportDialog::default();
+    *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
+    d.open_for(&p, None, 0, None);
+    d.folder = dir.path().to_path_buf();
+    // läuft schon einer: „Exportieren“ (Enter) stellt sich hinten an, statt abgewiesen zu werden
+    d.running = Some(running(None));
+    frame(&mut d, &ctx, &p, true);
+    assert_eq!(d.queue.len(), 1);
+    assert_eq!(d.queue[0].out, dir.path().join("t.mp4"));
+    // gleicher Zielpfad wie ein eingereihter: Nachfrage wie bei einer vorhandenen Datei,
+    // Enter wählt „Anderen Namen“
+    frame(&mut d, &ctx, &p, true);
+    assert!(d.confirm_overwrite && d.queue.len() == 1);
+    frame(&mut d, &ctx, &p, true);
+    assert!(!d.confirm_overwrite);
+    assert_eq!(d.queue.iter().map(|q| q.out.clone()).collect::<Vec<_>>(), [dir.path().join("t.mp4"), dir.path().join("t (2).mp4")]);
+    // offenes Projekt ändert sich: das Abbild bleibt
+    let mut changed = p.clone();
+    changed.name = "geändert".into();
+    frame(&mut d, &ctx, &changed, false);
+    assert!(d.queue.iter().all(|q| *q.project == p));
+    // einzelnen wartenden entfernen
+    d.queue.push_back(queued(&p, &dir.path().join("c.mp4")));
+    d.remove_waiting(Some(1));
+    assert_eq!(d.waiting().map(|(f, _)| f.to_path_buf()).collect::<Vec<_>>(), [dir.path().join("t.mp4"), dir.path().join("c.mp4")]);
+    // Obergrenze: weder Enter noch Knopf reihen mehr ein
+    while d.queue.len() < QUEUE_MAX {
+        d.queue.push_back(queued(&p, &dir.path().join(format!("{}.mp4", d.queue.len()))));
+    }
+    d.name = "frei".into();
+    frame(&mut d, &ctx, &p, true);
+    assert!(d.queue.len() == QUEUE_MAX && !d.confirm_overwrite);
+    // „Alle wartenden entfernen“: der laufende bleibt
+    d.remove_waiting(None);
+    assert!(d.queue.is_empty() && d.running.is_some());
+    // Abbruch des laufenden startet den nächsten; Fehlschläge halten die Schlange nicht an
+    // (leeres Projekt: der Bau scheitert sofort)
+    d.queue.extend([queued(&p, &dir.path().join("x.mp4")), queued(&p, &dir.path().join("y.mp4"))]);
+    d.cancel_current();
+    frame(&mut d, &ctx, &p, false);
+    assert_eq!((d.current().map(|c| c.0.to_path_buf()), d.queue.len()), (Some(dir.path().join("x.mp4")), 1));
+    finish(&mut d, &ctx, &p);
+    assert!(d.running.is_none() && d.queue.is_empty());
+    assert_eq!(d.error.as_deref(), Some("Das Projekt ist leer"));
+    // Beenden mit wartenden Exporten: Rückfrage nennt die Zahl, Schließen räumt die Schlange
+    d.running = Some(running(None));
+    d.queue.push_back(queued(&p, &dir.path().join("z.mp4")));
+    let mut raw = egui::RawInput::default();
+    raw.viewports.insert(egui::ViewportId::ROOT, egui::ViewportInfo { events: vec![egui::ViewportEvent::Close], ..Default::default() });
+    let _ = ctx.run(raw, |ctx| d.guard_close(ctx));
+    assert!(d.quit_ask);
+    d.running.as_ref().unwrap().result.lock().unwrap().replace(Err("Abgebrochen".into()));
+    d.cancel_and_wait(std::time::Duration::from_secs(1));
+    assert!(d.queue.is_empty());
+}
+
+#[test]
+fn queued_exports_run_in_turn_from_their_own_snapshot() {
+    use cl_core::{Clip, ClipContent, TextStyle, Track, TrackKind};
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let project = |name: &str, txt: &str, secs: f64| {
+        let mut p = Project::new(name);
+        (p.settings.width, p.settings.height) = (320, 180);
+        let mut t = Track::new(TrackKind::Text);
+        t.clips.push(Clip::new(ClipContent::Text(TextStyle { text: txt.into(), ..Default::default() }), Time::ZERO, Time::from_secs_f64(secs)));
+        p.timeline.tracks.push(t);
+        p
+    };
+    let (ctx, mut d) = (egui::Context::default(), ExportDialog::default());
+    *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
+    let (p, pa) = (project("A", "eins", 1.0), dir.path().join("A.cutline"));
+    d.open_for(&p, Some(&pa), 0, None);
+    d.folder = dir.path().to_path_buf();
+    d.also_srt = true;
+    // ein (nie fertiger) Export läuft: beide Fassungen warten
+    d.running = Some(running(None));
+    frame(&mut d, &ctx, &p, true);
+    d.name = "A kurz".into();
+    frame(&mut d, &ctx, &p, true);
+    assert_eq!(d.queue.len(), 2);
+    // anderes Projekt offen und länger, dann erst laufen die beiden
+    let other = project("Anders", "zwei", 3.0);
+    let po = dir.path().join("Anders.cutline");
+    d.open_for(&other, Some(&po), 7, None);
+    d.cancel_current();
+    let t0 = Instant::now();
+    while (d.running.is_some() || !d.queue.is_empty()) && t0.elapsed().as_secs() < 60 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        frame(&mut d, &ctx, &other, false);
+    }
+    assert_eq!(d.error, None);
+    for f in ["A.mp4", "A kurz.mp4"] {
+        let m = cl_media::probe(&dir.path().join(f)).unwrap();
+        // Länge und Größe aus dem Abbild (1 s, 320×180), nicht aus dem offenen Projekt (3 s)
+        assert!((m.duration.as_secs_f64() - 1.0).abs() < 0.2 && m.width == 320, "{f}: {:?}", m.duration);
+    }
+    // Begleitdatei aus dem Abbild
+    assert!(std::fs::read_to_string(dir.path().join("A kurz.srt")).unwrap().contains("eins"));
+    // Exporte-Liste: dem Projekt zugeordnet, aus dem sie stammen
+    assert_eq!(crate::exports::for_project("A", Some(&pa)).len(), 2);
+    assert!(crate::exports::for_project("Anders", Some(&po)).is_empty());
+    std::env::remove_var("CUTLINE_HOME");
 }

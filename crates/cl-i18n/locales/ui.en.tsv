@@ -1834,3 +1834,9 @@ Bild-in-Bild – unten links	Picture in picture – bottom left
 Layout: Bild-in-Bild – unten rechts	Layout: Picture in picture – bottom right
 Bild-in-Bild – unten rechts	Picture in picture – bottom right
 Layout zurücksetzen	Reset layout
+In Warteschlange	Add to queue
+Wartet	Waiting
+Alle wartenden entfernen	Remove all waiting
+{} Exporte ausstehend – wirklich beenden?	{} exports pending – quit anyway?
+Name schon in der Warteschlange	Name already in the queue
+Höchstens {} wartende Exporte	At most {} waiting exports
