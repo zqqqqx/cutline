@@ -89,6 +89,19 @@ fn fill(pw: f32, ph: f32, (sw, sh): (f32, f32), [x, y, cw, ch]: [f32; 4]) -> (Tr
     )
 }
 
+/// Quelle `sw`×`sh` klein in einer Ecke des Projekts `pw`×`ph` (0 oben links, 1 oben rechts,
+/// 2 unten links, 3 unten rechts): Breite `share` × Projektbreite, Rand 4 % der kürzeren Seite.
+/// Skalierung 1 = eingepasst (wie Player und Export).
+pub fn in_corner(pw: f32, ph: f32, (sw, sh): (f32, f32), share: f32, corner: u8) -> Transform {
+    let (sw, sh) = (sw.max(1.0), sh.max(1.0));
+    let (w, m) = (share * pw, 0.04 * pw.min(ph));
+    let h = w * sh / sw;
+    let x = if corner % 2 == 0 { m } else { pw - m - w };
+    let y = if corner < 2 { m } else { ph - m - h };
+    let fit = (pw / sw).min(ph / sh);
+    Transform { x: x + w / 2.0 - pw / 2.0, y: y + h / 2.0 - ph / 2.0, scale: w / sw / fit, rotation_deg: 0.0 }
+}
+
 /// Geometrie eines Layouts: Projekt `pw`×`ph`, angezeigte Quellgrößen (untere Spur zuerst) →
 /// je Clip (Transform, Zuschnitt). Passt die Zahl nicht, leer.
 pub fn arrange(pw: f32, ph: f32, sizes: &[(f32, f32)], a: Arrange) -> Vec<(Transform, Crop)> {
@@ -100,14 +113,7 @@ pub fn arrange(pw: f32, ph: f32, sizes: &[(f32, f32)], a: Arrange) -> Vec<(Trans
         Arrange::Pip(corner) => {
             // unten bildfüllend (Überstand liegt außerhalb des Bilds, kein Zuschnitt nötig)
             let back = (fill(pw, ph, sizes[0], [0.0, 0.0, pw, ph]).0, Crop::default());
-            let (sw, sh) = sizes[1];
-            let (w, m) = (0.28 * pw, 0.04 * pw.min(ph));
-            let h = w * sh / sw;
-            let x = if corner % 2 == 0 { m } else { pw - m - w };
-            let y = if corner < 2 { m } else { ph - m - h };
-            let fit = (pw / sw).min(ph / sh);
-            let small = Transform { x: x + w / 2.0 - pw / 2.0, y: y + h / 2.0 - ph / 2.0, scale: w / sw / fit, rotation_deg: 0.0 };
-            vec![back, (small, Crop::default())]
+            vec![back, (in_corner(pw, ph, sizes[1], 0.28, corner), Crop::default())]
         }
         _ => cells(a, pw, ph).into_iter().zip(sizes).map(|(c, s)| fill(pw, ph, *s, c)).collect(),
     }
