@@ -123,15 +123,26 @@ impl App {
             scale: 1.0,
             rotation_deg: 0.0,
         };
-        c.duration = Time::from_secs_f64(secs);
+        // ReplaceClip behält Lage und Länge; die Dauer setzt erst SetClipTiming
         self.apply(EditOp::ReplaceClip { clip: c.clone() });
         self.apply(EditOp::SetClipTiming {
             clip: id,
             start: c.start,
-            duration: Time::from_secs_f64(secs),
+            duration: self.room_until_next(id, Time::from_secs_f64(secs)),
             source_in: Time::ZERO,
         });
         Some(id)
+    }
+
+    /// Gewünschte Dauer, höchstens bis zum nächsten Clip derselben Spur (mindestens ein Bild,
+    /// soweit Platz ist): Überlappen würde der Kern abweisen.
+    fn room_until_next(&self, id: ClipId, want: Time) -> Time {
+        let Some((t, c)) = self.project.find_clip(id) else { return want };
+        let frame = Time::from_secs_f64(1.0 / self.project.settings.fps.as_f64());
+        match t.clips.iter().filter(|o| o.id != id && o.start >= c.start).map(|o| o.start).min() {
+            Some(n) => want.min(n - c.start).max(frame.min(n - c.start)),
+            None => want,
+        }
     }
 
     /// Dialogbox unten: Fläche in Figurfarbe, „Name: …“, Porträt links daneben.
@@ -173,7 +184,7 @@ impl App {
                     self.apply(EditOp::SetClipTiming {
                         clip: id,
                         start,
-                        duration: Time::from_secs_f64(secs),
+                        duration: self.room_until_next(id, Time::from_secs_f64(secs)),
                         source_in: Time::ZERO,
                     });
                 }
@@ -286,5 +297,34 @@ impl App {
         if changed {
             save(&self.characters);
         }
+    }
+}
+
+#[cfg(test)]
+mod room_tests {
+    use super::*;
+
+    /// Fehler: Lag auf der Textspur dahinter ein Clip, wies der Kern die 4 s ab (Fehlermeldung,
+    /// Dialogbox blieb bei der Standarddauer). Jetzt bis an den Nachbarn heran.
+    #[test]
+    fn dialog_text_stops_at_the_next_clip() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let t = Time::from_secs_f64;
+        let mut p = Project::new("S");
+        let mut tr = Track::new(TrackKind::Text);
+        tr.clips.push(Clip::new(ClipContent::Text(TextStyle::default()), t(1.0), t(2.0)));
+        p.timeline.tracks.push(tr);
+        app.set_doc(p);
+        app.settings.text_duration = 0.5;
+        let id = app.text_clip(TextStyle::default(), 0.0, 0.0, 4.0).expect("eingefügt");
+        app.sync_project();
+        let (tr, c) = app.project.find_clip(id).unwrap();
+        assert_eq!(tr.clips.len(), 2, "gleiche Spur");
+        assert_eq!((c.start, c.duration), (t(0.0), t(1.0)));
+        // ohne Nachbarn: volle Dauer
+        app.playhead = t(10.0);
+        let id = app.text_clip(TextStyle::default(), 0.0, 0.0, 4.0).unwrap();
+        app.sync_project();
+        assert_eq!(app.project.find_clip(id).unwrap().1.duration, t(4.0));
     }
 }
