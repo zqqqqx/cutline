@@ -13,6 +13,7 @@ fn variant(op: &EditOp) -> &'static str {
         EditOp::ImportMedia { .. } => "ImportMedia",
         EditOp::AddTrack { .. } => "AddTrack",
         EditOp::SetTrackFlags { .. } => "SetTrackFlags",
+        EditOp::SetTrackCollapsed { .. } => "SetTrackCollapsed",
         EditOp::AddClip { .. } => "AddClip",
         EditOp::RemoveClip { .. } => "RemoveClip",
         EditOp::SplitClip { .. } => "SplitClip",
@@ -46,7 +47,7 @@ fn variant(op: &EditOp) -> &'static str {
         EditOp::Batch { .. } => "Batch",
     }
 }
-const VARIANTS: usize = 34;
+const VARIANTS: usize = 35;
 
 fn track_of(p: &Project, c: ClipId) -> TrackId {
     p.find_clip(c).unwrap().0.id
@@ -65,6 +66,7 @@ fn every_op_applies_undoes_and_redoes_exactly() {
         Box::new(|_| EditOp::ImportMedia { media: media(MediaKind::Video, 3.0) }),
         Box::new(|_| EditOp::AddTrack { kind: TrackKind::Sticker }),
         Box::new(move |p| EditOp::SetTrackFlags { track: track_of(p, a1), locked: false, hidden: true, muted: true }),
+        Box::new(move |p| EditOp::SetTrackCollapsed { track: track_of(p, a1), collapsed: true }),
         Box::new(move |_| EditOp::AddClip { track: None, clip: media_clip(&audio, 10.0, 1.0) }),
         Box::new(move |_| EditOp::RemoveClip { clip: t2 }),
         Box::new(move |_| EditOp::SplitClip { clip: v1, at: s(2.0) }),
@@ -529,4 +531,16 @@ fn ops_on_project_with_zero_length_clip_and_missing_media_do_not_panic() {
         let _ = d.apply(op, OpSource::Ui);
     }
     let _ = roundtrip(d.project());
+}
+
+/// Eingeklappte Spuren stehen im Projekt (früher nur Fensterzustand: nach dem Öffnen wieder offen);
+/// Projekte ohne das Feld laden als „nicht eingeklappt“, und nicht eingeklappte schreiben es nicht.
+#[test]
+fn collapsed_track_survives_save_and_old_projects_load() {
+    let mut t = Track::new(TrackKind::Video);
+    let open = serde_json::to_string(&t).unwrap();
+    assert!(!open.contains("collapsed"), "{open}");
+    assert!(!serde_json::from_str::<Track>(&open).unwrap().collapsed);
+    t.collapsed = true;
+    assert!(serde_json::from_str::<Track>(&serde_json::to_string(&t).unwrap()).unwrap().collapsed);
 }

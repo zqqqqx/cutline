@@ -739,8 +739,6 @@ pub struct TimelineState {
     ctx: Option<CtxTarget>,
     /// Höhenfaktor je Spur (Rechtsklick → Spurhöhe)
     pub heights: HashMap<TrackId, f32>,
-    /// Eingeklappte Spuren (schmal, bleiben aber sichtbar)
-    pub collapsed: std::collections::HashSet<TrackId>,
     last_click: Option<Pos2>,
     /// Playhead im letzten Bild (Sprünge per Taste → Ansicht folgt)
     last_playhead: Option<Time>,
@@ -811,7 +809,6 @@ impl Default for TimelineState {
             drag: Drag::None,
             ctx: None,
             heights: HashMap::new(),
-            collapsed: Default::default(),
             last_click: None,
             last_playhead: None,
             tool: Tool::Select,
@@ -995,7 +992,7 @@ impl App {
     }
 
     fn row_height(&self, t: &Track) -> f32 {
-        if self.timeline.collapsed.contains(&t.id) {
+        if t.collapsed {
             return COLLAPSED_H;
         }
         let base = if t.main {
@@ -1376,7 +1373,7 @@ impl App {
             if let Some((p, k)) = head.and_then(|p| Some((p, row_idx_at(p)?))) {
                 let tr = &tracks[rows[k].track];
                 // nicht auf den Schaltern (Sperren, Auge …): die bleiben Knöpfe
-                let n = toggle_count(tr, self.timeline.collapsed.contains(&tr.id));
+                let n = toggle_count(tr, tr.collapsed);
                 let on_toggle = n > 0 && p.x >= rect.left() + 23.0 && p.x < rect.left() + 32.0 + n as f32 * 19.0;
                 if !on_toggle && !tr.main {
                     self.timeline.track_drag = Some(TrackDrag { track: tr.id, origin: p, t0: now, lifted: false });
@@ -2798,7 +2795,7 @@ impl App {
                 ));
             }
             // eingeklappt: nur Symbol und Name, die Schalter hätten keinen Platz
-            if self.timeline.collapsed.contains(&tr.id) {
+            if tr.collapsed {
                 toggles.clear();
             }
             // Spurname (eigener Name oder Art + Nummer)
@@ -3711,14 +3708,14 @@ impl App {
                 if menu_item(ui, icon::ARROWS_MERGE, "Lücken schließen", "") {
                     self.close_gaps(Some(tid));
                 }
-                let folded = self.timeline.collapsed.contains(&tid);
+                let folded = tr.collapsed;
                 let (g, label) = if folded {
                     (icon::CARET_DOWN, "Spur ausklappen")
                 } else {
                     (icon::CARET_UP, "Spur einklappen")
                 };
-                if menu_item(ui, g, label, "") && !self.timeline.collapsed.remove(&tid) {
-                    self.timeline.collapsed.insert(tid);
+                if menu_item(ui, g, label, "") {
+                    self.apply(EditOp::SetTrackCollapsed { track: tid, collapsed: !folded });
                 }
                 theme::submenu(
                     ui,

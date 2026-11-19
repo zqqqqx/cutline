@@ -307,6 +307,9 @@ pub struct Track {
     /// Eigener Spurname (sonst Art + Nummer)
     #[serde(default)]
     pub name: Option<String>,
+    /// In der Zeitleiste eingeklappt (schmal, bleibt sichtbar)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub collapsed: bool,
 }
 
 impl Track {
@@ -320,6 +323,7 @@ impl Track {
             muted: false,
             clips: Vec::new(),
             name: None,
+            collapsed: false,
         }
     }
     pub fn end(&self) -> Time {
