@@ -10,6 +10,22 @@
 **New**
 
 **Improved**
+
+**Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.12.2 – 2026-11-19
+
+### English
+
+**Improved**
 - The exported log now has one line per playback (time to the first picture and sound, dropped frames). That makes playback problems much easier to track down.
 
 **Fixed**
@@ -22,8 +38,6 @@
 - Rolling a cut to the left works between text, image and effect clips.
 
 ### Deutsch
-
-**Neu**
 
 **Verbessert**
 - Das exportierte Protokoll enthält jetzt eine Zeile je Wiedergabe (Zeit bis zum ersten Bild und Ton, verworfene Bilder). Damit lassen sich Wiedergabe-Probleme viel leichter eingrenzen.
