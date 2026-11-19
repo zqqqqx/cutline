@@ -1857,6 +1857,9 @@ impl App {
                     ev.rotation_deg = lt.rotation_deg;
                 }
             }
+            if let Some((_, k)) = self.gizmo.live_crop.filter(|l| l.0 == c.id) {
+                ev.crop = k;
+            }
             let tr = Transform {
                 x: ev.x,
                 y: ev.y,
@@ -1908,6 +1911,7 @@ impl App {
                         size: ts * fit,
                         angle,
                         tr,
+                        crop: ev.crop,
                     };
                     if mixed.is_some() {
                         regions.push(region);
@@ -1972,6 +1976,7 @@ impl App {
                         size,
                         angle,
                         tr,
+                        crop: Crop::default(),
                     });
                 }
             }

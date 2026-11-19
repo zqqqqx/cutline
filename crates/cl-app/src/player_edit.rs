@@ -4,9 +4,10 @@
 //! - Eckgriffe skalieren gleichmäßig um den Mittelpunkt
 //! - Drehgriff unten dreht, rastet bei 0/90/180/270° ein, Winkel-Badge
 //! - ✕ oben links löscht
+//! - Balken in der Mitte der Kanten (Bild, Video, Element) schneiden zu
 //! - Während des Ziehens nur Vorschau; beim Loslassen genau ein Undo-Schritt
 
-use cl_core::{ClipContent, ClipId, Transform};
+use cl_core::{ClipContent, ClipId, Crop, EditOp, Transform};
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::app::App;
@@ -22,6 +23,8 @@ pub struct Region {
     pub angle: f32,
     /// Ausgewertete Transformation am Playhead (Startwert für Gesten)
     pub tr: Transform,
+    /// Zuschnitt (`size` bleibt die volle Clipgröße)
+    pub crop: Crop,
 }
 
 impl Region {
@@ -41,6 +44,36 @@ impl Region {
     pub fn rotate_handle(&self) -> Pos2 {
         self.center + self.rot(vec2(0.0, self.size.y / 2.0 + 22.0))
     }
+    /// Griff der Zuschnitt-Kante `edge` (0 links, 1 rechts, 2 oben, 3 unten): Mitte der sichtbaren Kante.
+    pub fn crop_handle(&self, edge: usize) -> Pos2 {
+        let k = self.crop;
+        let (u0, u1, v0, v1) = (k.left, 1.0 - k.right, k.top, 1.0 - k.bottom);
+        let (u, v) = match edge {
+            0 => (u0, (v0 + v1) / 2.0),
+            1 => (u1, (v0 + v1) / 2.0),
+            2 => ((u0 + u1) / 2.0, v0),
+            _ => ((u0 + u1) / 2.0, v1),
+        };
+        self.corner(2.0 * u - 1.0, 2.0 * v - 1.0)
+    }
+}
+
+/// Zuschnitt beim Ziehen der Kante `edge` von `start` an die Stelle `p` (Bildschirm): die Kante
+/// folgt dem Zeiger im (gedrehten) Clip, die Gegenseite lässt mindestens `Crop::MIN_REST` übrig.
+fn crop_drag(r: &Region, edge: usize, start: Crop, p: Pos2) -> Crop {
+    let d = p - r.center;
+    let (s, c) = r.angle.sin_cos();
+    let u = (d.x * c + d.y * s) / r.size.x.max(1.0) + 0.5;
+    let v = (-d.x * s + d.y * c) / r.size.y.max(1.0) + 0.5;
+    let max = 1.0 - Crop::MIN_REST;
+    let mut k = start;
+    match edge {
+        0 => k.left = u.clamp(0.0, (max - k.right).max(0.0)),
+        1 => k.right = (1.0 - u).clamp(0.0, (max - k.left).max(0.0)),
+        2 => k.top = v.clamp(0.0, (max - k.bottom).max(0.0)),
+        _ => k.bottom = (1.0 - v).clamp(0.0, (max - k.top).max(0.0)),
+    }
+    k
 }
 
 #[derive(Clone, Copy)]
@@ -48,6 +81,7 @@ enum Mode {
     Move { press: Pos2, start: Transform },
     Scale { start: Transform, press_dist: f32 },
     Rotate { start: Transform, press_angle: f32 },
+    Crop { edge: usize, start: Crop },
 }
 
 #[derive(Default)]
@@ -55,6 +89,8 @@ pub struct Gizmo {
     drag: Option<(ClipId, Mode)>,
     /// Laufende Änderung (nur Vorschau, noch nicht im Verlauf)
     pub live: Option<(ClipId, Transform)>,
+    /// Laufender Zuschnitt (nur Vorschau)
+    pub live_crop: Option<(ClipId, Crop)>,
     /// Aktive Hilfslinien (Projektpixel relativ zur Bildmitte): senkrecht bei x, waagrecht bei y
     guides_x: Vec<f32>,
     guides_y: Vec<f32>,
@@ -108,6 +144,9 @@ impl App {
 
         // Was liegt unter dem Zeiger? (Griffe des ausgewählten Elements haben Vorrang)
         let sel_tr = sel.map(|r| r.tr);
+        let croppable = sel.is_some_and(|r| {
+            self.project.find_clip(r.clip).is_some_and(|(_, c)| matches!(c.content, ClipContent::Media { .. }))
+        });
         let hit_handle = move |p: Pos2| -> Option<Mode> {
             let r = sel?;
             let t = sel_tr?;
@@ -126,7 +165,9 @@ impl App {
                     });
                 }
             }
-            None
+            (0..4)
+                .find(|&e| croppable && p.distance(r.crop_handle(e)) <= HANDLE + 2.0)
+                .map(|edge| Mode::Crop { edge, start: r.crop })
         };
         let delete_btn = sel.map(|r| r.corner(-1.0, -1.0));
 
@@ -134,6 +175,8 @@ impl App {
             if let Some(m) = hit_handle(p) {
                 ui.ctx().set_cursor_icon(match m {
                     Mode::Rotate { .. } => egui::CursorIcon::Alias,
+                    Mode::Crop { edge: 0 | 1, .. } => egui::CursorIcon::ResizeHorizontal,
+                    Mode::Crop { .. } => egui::CursorIcon::ResizeVertical,
                     _ => egui::CursorIcon::ResizeNwSe,
                 });
             } else if regions.iter().any(|r| r.contains(p)) {
@@ -201,6 +244,7 @@ impl App {
                 Mode::Move { start, .. }
                 | Mode::Scale { start, .. }
                 | Mode::Rotate { start, .. } => start,
+                Mode::Crop { .. } => reg.map(|r| r.tr).unwrap_or_default(),
             };
             self.gizmo.guides_x.clear();
             self.gizmo.guides_y.clear();
@@ -284,8 +328,18 @@ impl App {
                         badge = Some(format!("{deg:.1}°"));
                     }
                 }
+                Mode::Crop { edge, start } => {
+                    if let Some(r) = reg {
+                        let k = crop_drag(&r, edge, start, p);
+                        let v = [k.left, k.right, k.top, k.bottom][edge];
+                        badge = Some(format!("{:.0} %", v * 100.0));
+                        self.gizmo.live_crop = Some((clip, k));
+                    }
+                }
             }
-            self.gizmo.live = Some((clip, t));
+            if !matches!(mode, Mode::Crop { .. }) {
+                self.gizmo.live = Some((clip, t));
+            }
             ui.ctx().request_repaint();
         }
         if resp.drag_stopped() {
@@ -293,6 +347,10 @@ impl App {
                 (self.gizmo.drag.take(), self.gizmo.live.take())
             {
                 self.commit_transform(clip, t);
+            }
+            if let Some((clip, crop)) = self.gizmo.live_crop.take() {
+                self.commit_live();
+                self.apply(EditOp::SetCrop { clip, crop });
             }
             self.gizmo.guides_x.clear();
             self.gizmo.guides_y.clear();
@@ -346,6 +404,22 @@ impl App {
                     theme::ACCENT(),
                     Stroke::new(1.0_f32, theme::ACCENT_INK()),
                 );
+            }
+            // Zuschnitt: sichtbarer Teil und Balken in der Mitte seiner Kanten
+            if croppable {
+                let k = r.crop;
+                if !k.is_none() {
+                    let vis = [(k.left, k.top), (1.0 - k.right, k.top), (1.0 - k.right, 1.0 - k.bottom), (k.left, 1.0 - k.bottom)]
+                        .map(|(u, v)| r.corner(2.0 * u - 1.0, 2.0 * v - 1.0));
+                    for i in 0..4 {
+                        painter.line_segment([vis[i], vis[(i + 1) % 4]], Stroke::new(1.0_f32, theme::ACCENT()));
+                    }
+                }
+                for e in 0..4 {
+                    let along = r.rot(if e < 2 { vec2(0.0, 7.0) } else { vec2(7.0, 0.0) });
+                    let h = r.crop_handle(e);
+                    painter.line_segment([h - along, h + along], Stroke::new(4.0_f32, theme::ACCENT()));
+                }
             }
             // ✕ löschen
             painter.circle(
@@ -407,6 +481,7 @@ mod tests {
             size: vec2(100.0, 20.0),
             angle: std::f32::consts::FRAC_PI_2,
             tr: Transform::default(),
+            crop: Crop::default(),
         };
         // um 90° gedreht: jetzt hoch und schmal
         assert!(r.contains(pos2(100.0, 145.0)));
@@ -416,6 +491,32 @@ mod tests {
             (c.x - 90.0).abs() < 0.01 && (c.y - 150.0).abs() < 0.01,
             "{c:?}"
         );
+    }
+
+    /// Zuschnitt-Griffe: liegen mitten auf den sichtbaren Kanten, Ziehen folgt dem Zeiger auch
+    /// gedreht, die Gegenseite lässt 2 % übrig.
+    #[test]
+    fn crop_handles_follow_the_pointer() {
+        let mut r = Region {
+            clip: ClipId::new(),
+            center: pos2(100.0, 100.0),
+            size: vec2(200.0, 100.0),
+            angle: 0.0,
+            tr: Transform::default(),
+            crop: Crop { left: 0.25, ..Default::default() },
+        };
+        let near = |a: Pos2, b: Pos2| a.distance(b) < 0.01;
+        assert!(near(r.crop_handle(0), pos2(50.0, 100.0)), "{:?}", r.crop_handle(0));
+        assert!(near(r.crop_handle(2), pos2(125.0, 50.0)), "{:?}", r.crop_handle(2));
+        // links auf 40 % ziehen, rechts über die linke Kante hinaus: 2 % bleiben
+        let k = crop_drag(&r, 0, r.crop, pos2(80.0, 130.0));
+        assert!((k.left - 0.4).abs() < 1e-5, "{k:?}");
+        let k = crop_drag(&r, 1, k, pos2(0.0, 100.0));
+        assert!((k.right - 0.58).abs() < 1e-5, "{k:?}");
+        // um 90° gedreht: die obere Kante liegt jetzt rechts
+        r.angle = std::f32::consts::FRAC_PI_2;
+        let k = crop_drag(&r, 2, Crop::default(), pos2(125.0, 100.0));
+        assert!((k.top - 0.25).abs() < 1e-5, "{k:?}");
     }
 }
 
