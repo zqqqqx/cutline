@@ -405,7 +405,7 @@ impl App {
                         }
                     }
                     if busy {
-                        ui.put(egui::Rect::from_min_size(r.right_top() + vec2(-26.0, 8.0), vec2(18.0, 18.0)), egui::Spinner::new());
+                        widgets::busy_line(ui.painter(), egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - 2.0), r.max));
                     }
                     ui.add_space(12.0);
                     ui.vertical(|ui| {
