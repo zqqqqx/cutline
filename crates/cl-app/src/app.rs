@@ -356,6 +356,7 @@ pub struct App {
     pub tasks: crate::tasks::Tasks,
     pub pick: Option<crate::pro::Pick>,
     pub pick_origin: Option<egui::Pos2>,
+    pub censor_drag: Option<crate::pro::CensorDrag>,
     pub frame_cpu: Option<(ClipId, cl_media::RgbaFrame)>,
     /// Vorschau von Shader-Übergängen (cl-gpu)
     pub shader_preview: crate::player::ShaderPreview,
@@ -578,6 +579,7 @@ impl App {
             tasks: Default::default(),
             pick: None,
             pick_origin: None,
+            censor_drag: None,
             frame_cpu: None,
             shader_preview: Default::default(),
             caption_lang: "auto".into(),
@@ -1973,6 +1975,13 @@ impl App {
             flip_v: c.fx.flip_v,
             filter: c.fx.filter.clone(),
             adjust: c.fx.adjust,
+            // Standbild aus der Quelle: die Zensur an dieser Stelle muss mit
+            censor: c
+                .fx
+                .censor
+                .iter()
+                .map(|cs| Censor { path: vec![CensorKey { t: Time::ZERO, ..cs.at(c.source_time(at)) }], track: false, ..cs.clone() })
+                .collect(),
             ..Default::default()
         };
         let mut ops = Vec::new();
@@ -3006,6 +3015,12 @@ impl App {
                 "quick_vertical" => self.tool_vertical(),
                 "quick_thumbnail" => self.thumb_open(),
                 "quick_recap" => self.tool_recap(),
+                "censor" => {
+                    if let Some(id) = self.selected.filter(|_| self.action_enabled("censor")) {
+                        self.clip_tab = ClipTab::Smart;
+                        self.pick = Some(crate::pro::Pick::Censor(id));
+                    }
+                }
                 l if l.starts_with("quick_layout_") => self.tool_layout(l),
                 _ => {}
             }
@@ -3027,6 +3042,9 @@ impl App {
             "group" => self.selection().len() >= 2,
             "ungroup" => self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| c.group.is_some()),
             "import_project" => self.import_enabled(),
+            "censor" => self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| {
+                matches!(c.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Image, .. })
+            }),
             q if q.starts_with("quick_") => self.quick_check(q).0,
             _ => true,
         }

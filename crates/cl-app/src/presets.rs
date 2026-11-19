@@ -30,13 +30,14 @@ fn one() -> f32 {
 
 impl Preset {
     /// Look eines Clips übernehmen. Clip-gebundene Dinge (Maske aus „Hintergrund entfernen“,
-    /// Geschwindigkeitskurve, Rückwärts) bleiben außen vor.
+    /// Geschwindigkeitskurve, Rückwärts, Zensur-Flächen) bleiben außen vor.
     pub fn from_clip(name: &str, c: &Clip) -> Self {
         let mut fx = c.fx.clone();
         fx.cutout = None;
         fx.person = None;
         fx.speed_curve = None;
         fx.reverse = false;
+        fx.censor.clear();
         let text = match &c.content {
             ClipContent::Text(t) => Some(TextStyle {
                 text: String::new(),
@@ -61,9 +62,10 @@ impl Preset {
             c.fx.person.clone(),
             c.fx.speed_curve.clone(),
             c.fx.reverse,
+            std::mem::take(&mut c.fx.censor),
         );
         c.fx = self.fx.clone();
-        (c.fx.cutout, c.fx.person, c.fx.speed_curve, c.fx.reverse) = keep;
+        (c.fx.cutout, c.fx.person, c.fx.speed_curve, c.fx.reverse, c.fx.censor) = keep;
         c.anim = self.anim.clone();
         c.opacity = self.opacity;
         c.audio = self.audio.clone();

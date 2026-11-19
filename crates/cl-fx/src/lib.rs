@@ -1053,7 +1053,8 @@ pub fn fx_graph(
 /// Zensur-Fläche (Bahn in Clipzeit, siehe `Clip::censor_in_clip_time`): Kopie verpixeln bzw.
 /// weichzeichnen und nur innerhalb der Fläche über das Bild legen. Blöcke, Unschärfe und Maske
 /// hängen nur von der Bildgröße ab: die kleinere Vorschau sieht aus wie der Export. Die Maske
-/// wird auf ⅙ der Größe je Pixel berechnet (`geq` mit Zeitverlauf ist teuer) und hochskaliert.
+/// entsteht aus einer Zeile und einer Spalte (`geq` mit Zeitverlauf je Pixel wäre teuer): je
+/// Richtung 0 innen bis 255 außen, addiert und bei 128 geschnitten – Rechteck wie Ellipse.
 pub fn censor_graph(g: &mut GraphBuilder, cs: &Censor, src: Src) {
     let size = (CENSOR_MIN + cs.strength.clamp(0.0, 1.0) * (CENSOR_MAX - CENSOR_MIN))
         * src.w.min(src.h).max(2) as f32;
@@ -1073,24 +1074,30 @@ pub fn censor_graph(g: &mut GraphBuilder, cs: &Censor, src: Src) {
         let pts: Vec<(f64, f64)> = cs.path.iter().map(|k| (k.t.as_secs_f64(), f(k) as f64)).collect();
         piecewise_expr(&pts, "T")
     };
-    let (cx, cy, w, h) = (e(|k| k.cx), e(|k| k.cy), e(|k| k.w), e(|k| k.h));
-    let (u, v) = (format!("((X+0.5)/W-({cx}))"), format!("((Y+0.5)/H-({cy}))"));
-    // je Seite 1,5 Maskenpixel größer: nach dem Hochskalieren ist die ganze Fläche voll deckend
-    let inside = if cs.ellipse {
-        format!("lte(hypot({u}/({w}+3/W),{v}/({h}+3/H)),0.5)")
-    } else {
-        format!("lte(abs({u})*2,{w}+3/W)*lte(abs({v})*2,{h}+3/H)")
+    // Abstand zur Mitte relativ zur halben Größe: 1 = Rand
+    let side = |pos: &str, full: &str, c: String, size: String| {
+        let d = format!("2*abs(({pos}+0.5)/{full}-({c}))/({size})");
+        if cs.ellipse {
+            format!("min(255,128*pow({d},2))")
+        } else {
+            format!("255*gt({d},1)")
+        }
     };
-    let (mw, mh) = (ev(src.w / 6).max(16), ev(src.h / 6).max(16));
+    let (sx, sy) = (side("X", "W", e(|k| k.cx), e(|k| k.w)), side("Y", "H", e(|k| k.cy), e(|k| k.h)));
+    let (w, h) = (src.w, src.h);
     let cur = g.current();
-    let (a, b, m) = (g.next_label("za"), g.next_label("zb"), g.next_label("zm"));
+    let (a, b, mx, my) = (g.next_label("za"), g.next_label("zb"), g.next_label("zx"), g.next_label("zy"));
+    let (kx, ky) = (g.next_label("zkx"), g.next_label("zky"));
     let (fx, mk, top, out) = (g.next_label("zf"), g.next_label("zk"), g.next_label("zt"), g.next_label("zo"));
-    g.lines.push(format!("[{cur}]split=3[{a}][{b}][{m}]"));
-    g.lines.push(format!("[{b}]{effect},format=rgb24[{fx}]"));
+    g.lines.push(format!("[{cur}]split=4[{a}][{b}][{mx}][{my}]"));
+    g.lines.push(format!("[{b}]{effect}[{fx}]"));
     g.lines.push(format!(
-        "[{m}]scale={mw}:{mh}:flags=area,format=gray,geq=lum='255*{inside}',scale={}:{}:flags=bilinear[{mk}]",
-        src.w, src.h
+        "[{mx}]scale={w}:1:flags=area,format=gray,geq=lum='{sx}',scale={w}:{h}:flags=neighbor[{kx}]"
     ));
+    g.lines.push(format!(
+        "[{my}]scale=1:{h}:flags=area,format=gray,geq=lum='{sy}',scale={w}:{h}:flags=neighbor[{ky}]"
+    ));
+    g.lines.push(format!("[{kx}][{ky}]blend=all_mode=addition,lut=c0='255*lte(val,128)'[{mk}]"));
     g.lines.push(format!("[{fx}][{mk}]alphamerge[{top}]"));
     // shortcut: Bilder mit Alpha werden unter der Fläche deckend; reicht für Video und Fotos
     g.lines.push(format!("[{a}][{top}]overlay=format=auto[{out}]"));
@@ -1552,7 +1559,7 @@ mod tests {
         let graph = |blur: bool, strength: f32| {
             let mut g = GraphBuilder::new("i", "u");
             let path = vec![CensorKey { t: Time::ZERO, cx: 0.5, cy: 0.5, w: 0.2, h: 0.3 }];
-            censor_graph(&mut g, &Censor { blur, ellipse: false, strength, path }, src);
+            censor_graph(&mut g, &Censor { blur, ellipse: false, strength, track: false, path }, src);
             g.finish("o").join(";")
         };
         // Blöcke ≥ 45 px (1080/24), Unschärfe σ ≥ 45 px – auch bei Stärke unter 0

@@ -147,6 +147,8 @@ pub struct Censor {
     pub ellipse: bool,
     /// 0 = Mindeststärke (schon unkenntlich, siehe `CENSOR_MIN`) … 1 = sehr grob
     pub strength: f32,
+    /// Motiv verfolgen (sonst steht die Fläche still)
+    pub track: bool,
     /// Stützpunkte nach Zeit sortiert; einer = die Fläche steht still
     pub path: Vec<CensorKey>,
 }
