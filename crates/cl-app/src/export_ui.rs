@@ -667,7 +667,7 @@ impl ExportDialog {
             s.target_mb = Some(self.custom_mb.max(1));
         }
         // nie still verkleinern (bei Teilen gilt der längste)
-        let t = s.for_target(self.longest_part(p, s).0);
+        let t = s.for_target(self.longest_part(p, s).0, audible(p, s));
         if let Quality::Bitrate(k) = t.quality {
             if let Some((e, enough)) = cl_export::target_edge(k, (s.width, s.height), s.fps.as_f64()) {
                 let h = if enough { format!("Wird in {e}p exportiert") } else { format!("Wird in {e}p exportiert – auch dafür ist die Größe knapp") };
@@ -899,7 +899,7 @@ impl ExportDialog {
                         let info = if audio_only {
                             format!("{} {}", icon::CLOCK, theme::secs(secs, 1))
                         } else {
-                            let (w, h) = s.for_target(longest).output_size();
+                            let (w, h) = s.for_target(longest, audible(p, &s)).output_size();
                             format!("{} {}  ·  {w}×{h}", icon::CLOCK, theme::secs(secs, 1))
                         };
                         ui.label(RichText::new(crate::tr(info)).small().color(theme::TEXT_DIM()));
@@ -1304,6 +1304,12 @@ impl ExportDialog {
         }
         toast
     }
+}
+
+/// Hörbarer Ton im Exportbereich? (Zielgröße: sonst wird für Ton nichts eingeplant)
+fn audible(p: &Project, s: &ExportSettings) -> bool {
+    let (a, b) = s.range.unwrap_or((Time::ZERO, p.duration()));
+    !cl_export::audio_clips_in(p, a, b).is_empty()
 }
 
 /// Name für Dateien und Ordner: Zeichen, die Windows verbietet, werden zu `_`; Länge und
