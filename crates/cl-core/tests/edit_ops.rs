@@ -303,6 +303,51 @@ fn trim_stops_at_neighbour_on_free_tracks() {
     check(d.project(), "Hauptspur ohne Magnet");
 }
 
+/// Fehler: Zeit setzen (Zahleneingabe, MCP) schob einen Clip in den Nachbarn (Überlappung).
+#[test]
+fn set_timing_rejects_overlap_on_free_tracks() {
+    let mut d = Document::new(Project::new("T"));
+    let a = clip_out(apply(&mut d, EditOp::AddClip { track: None, clip: text_clip(0.0, 2.0) }));
+    let tr = track_of(d.project(), a);
+    let b = clip_out(apply(&mut d, EditOp::AddClip { track: Some(tr), clip: text_clip(3.0, 2.0) }));
+    let snap = d.project().clone();
+    for (clip, start, dur) in [(a, 0.0, 4.0), (b, 1.0, 2.0), (a, 2.5, 1.0)] {
+        let op = EditOp::SetClipTiming { clip, start: s(start), duration: s(dur), source_in: Time::ZERO };
+        assert_eq!(d.apply(op, OpSource::Ui), Err(CoreError::InvalidDuration), "{start} +{dur}");
+        assert_eq!(d.project(), &snap);
+    }
+    // bis an den Nachbarn heran geht
+    apply(&mut d, EditOp::SetClipTiming { clip: a, start: s(0.0), duration: s(3.0), source_in: Time::ZERO });
+    check(d.project(), "Zeit setzen");
+}
+
+/// Fehler: Nach Tempo oder Trimmen waren die Blenden länger als der Clip. Wie beim Setzen
+/// (SetFades) höchstens je die halbe Länge.
+#[test]
+fn shortening_clamps_fades_like_set_fades() {
+    let mut d = Document::new(Project::new("F"));
+    let a = clip_out(apply(&mut d, EditOp::AddClip { track: None, clip: text_clip(0.0, 8.0) }));
+    let half = |d: &Document| {
+        let c = d.project().find_clip(a).unwrap().1;
+        let h = Time(c.duration.0 / 2);
+        assert!(c.fade_in <= h && c.fade_out <= h, "{:?}+{:?} bei {:?}", c.fade_in, c.fade_out, c.duration);
+        assert!(c.fade_in > Time::ZERO && c.fade_out > Time::ZERO, "nicht ganz weg");
+    };
+    let fades = || EditOp::SetFades { clip: a, fade_in: s(4.0), fade_out: s(4.0) };
+    apply(&mut d, fades());
+    apply(&mut d, EditOp::SetSpeed { clip: a, speed: 4.0 });
+    half(&d);
+    apply(&mut d, EditOp::SetSpeed { clip: a, speed: 1.0 });
+    apply(&mut d, fades());
+    apply(&mut d, EditOp::TrimClip { clip: a, edge: Edge::End, to: s(3.0) });
+    half(&d);
+    apply(&mut d, fades());
+    apply(&mut d, EditOp::TrimClip { clip: a, edge: Edge::Start, to: s(2.0) });
+    half(&d);
+    apply(&mut d, EditOp::SetClipTiming { clip: a, start: s(2.0), duration: s(0.5), source_in: Time::ZERO });
+    half(&d);
+}
+
 /// Fehler: Langsamer machen auf der Hauptspur ohne Magnet überdeckte den nächsten Clip.
 #[test]
 fn slowing_down_on_main_without_magnet_pushes_the_next_clip() {

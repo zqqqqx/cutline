@@ -101,6 +101,8 @@ fn us(v: Option<&Value>, key: &str) -> i64 {
                 .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
         })
         .unwrap_or(0)
+        // kaputte Entwürfe: nichts jenseits von Time::LIMIT (wie im Kern)
+        .clamp(-Time::LIMIT.0, Time::LIMIT.0)
 }
 
 fn f(v: &Value, path: &[&str]) -> Option<f64> {
@@ -449,22 +451,23 @@ impl Build<'_> {
                 if mkind == "videos" && m.get("has_sound_separated").and_then(|v| v.as_bool()).unwrap_or(false) {
                     vol = 0.0;
                 }
+                // Grenzen wie beim Bearbeiten (ReplaceClip, Ziehen im Player); unsinnige Werte
+                // aus kaputten Entwürfen wären als f32 sonst unendlich
+                let fin = |v: f64, d: f32| Some(v as f32).filter(|v| v.is_finite()).unwrap_or(d);
                 clip.volume_db = if vol <= 0.0001 {
                     -60.0
                 } else {
-                    (20.0 * vol.log10()) as f32
+                    ((20.0 * vol.log10()) as f32).clamp(-60.0, 20.0)
                 };
                 clip.disabled = !s.get("visible").and_then(|v| v.as_bool()).unwrap_or(true);
                 clip.fx.reverse = s.get("reverse").and_then(|v| v.as_bool()).unwrap_or(false);
                 if let Some(c) = s.get("clip").filter(|c| !c.is_null()) {
-                    clip.opacity = f(c, &["alpha"]).unwrap_or(1.0) as f32;
-                    clip.transform.scale = f(c, &["scale", "x"]).unwrap_or(1.0) as f32;
-                    clip.transform.rotation_deg = f(c, &["rotation"]).unwrap_or(0.0) as f32;
+                    clip.opacity = (f(c, &["alpha"]).unwrap_or(1.0) as f32).clamp(0.0, 1.0);
+                    clip.transform.scale = (f(c, &["scale", "x"]).unwrap_or(1.0) as f32).clamp(0.02, 20.0);
+                    clip.transform.rotation_deg = fin(f(c, &["rotation"]).unwrap_or(0.0), 0.0);
                     // CapCut: Anteil der halben Bildbreite/-höhe, y nach oben
-                    clip.transform.x =
-                        (f(c, &["transform", "x"]).unwrap_or(0.0) * w as f64 / 2.0) as f32;
-                    clip.transform.y =
-                        (-f(c, &["transform", "y"]).unwrap_or(0.0) * h as f64 / 2.0) as f32;
+                    clip.transform.x = fin(f(c, &["transform", "x"]).unwrap_or(0.0) * w as f64 / 2.0, 0.0);
+                    clip.transform.y = fin(-f(c, &["transform", "y"]).unwrap_or(0.0) * h as f64 / 2.0, 0.0);
                     clip.fx.flip_h = c
                         .pointer("/flip/horizontal")
                         .and_then(|v| v.as_bool())
@@ -615,7 +618,8 @@ impl Build<'_> {
                 })
                 .unwrap_or_else(|| vec![0, 0, 0]);
             st.outline = Some((
-                (sw * 60.0) as f32,
+                // höchstens so stark wie der Regler im Inspektor
+                ((sw * 60.0) as f32).clamp(0.0, 20.0),
                 [
                     c.first().copied().unwrap_or(0),
                     c.get(1).copied().unwrap_or(0),
@@ -670,10 +674,11 @@ pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
 /// Schriften lesen, Zeitleiste aufbauen.
 pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> Result<(Project, Report)> {
     let mut p = Project::new(name);
-    let w = f(d, &["canvas_config", "width"]).unwrap_or(1920.0).max(2.0) as u32 & !1;
+    // Grenzen wie `ProjectSettings::valid` (16…16384 px, über 0 bis 240 fps)
+    let w = f(d, &["canvas_config", "width"]).unwrap_or(1920.0).clamp(16.0, 16384.0) as u32 & !1;
     let h = f(d, &["canvas_config", "height"])
         .unwrap_or(1080.0)
-        .max(2.0) as u32
+        .clamp(16.0, 16384.0) as u32
         & !1;
     p.settings.width = w;
     p.settings.height = h;
@@ -686,7 +691,7 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
         a
     };
     p.settings.aspect = AspectPreset::Ratio(w / g, h / g);
-    if let Some(fps) = f(d, &["fps"]).and_then(crate::fps_from) {
+    if let Some(fps) = f(d, &["fps"]).filter(|f| *f <= 240.0).and_then(crate::fps_from) {
         p.settings.fps = fps;
     }
 
@@ -806,6 +811,44 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fehler: Unsinnige Zahlen aus kaputten Entwürfen (riesig, negativ, 0) landeten im Projekt
+    /// (unendlich als f32, Zeiten jenseits von `Time::LIMIT`, Bildgröße 4 Mrd. px).
+    /// Nicht endliche Werte lässt schon serde_json nicht durch.
+    #[test]
+    fn absurd_numbers_are_clamped_where_read() {
+        assert!(serde_json::from_str::<Value>("1e999").is_err());
+        let content = serde_json::json!({"text": "x", "styles": [{"size": 1e300, "strokes": [{"width": 1e300}]}]}).to_string();
+        let clip = |v: f64| serde_json::json!({"alpha": v, "scale": {"x": v}, "rotation": v, "transform": {"x": v, "y": -v}});
+        let seg = |start: f64, dur: f64, speed: f64, vol: f64, c: Value| {
+            serde_json::json!({"material_id": "T", "target_timerange": {"start": start, "duration": dur}, "speed": speed, "volume": vol, "clip": c})
+        };
+        let draft = serde_json::json!({
+            "canvas_config": {"width": 1e300, "height": 0},
+            "fps": 500.0,
+            "materials": {"texts": [{"id": "T", "content": content}]},
+            "tracks": [
+                {"type": "text", "segments": [seg(1e300, 1e300, 0.0, 1e300, clip(1e300)), seg(-5.0, -7.0, -1.0, -1.0, clip(-1e300))]},
+                {"type": "text", "segments": [seg(0.0, 1e6, 1.0, 1.0, clip(0.0))]}
+            ]
+        });
+        let (p, _) = convert(&draft, Path::new("."), "T").unwrap();
+        assert!(p.settings.valid(), "{:?}", p.settings);
+        for c in p.timeline.tracks.iter().flat_map(|t| &t.clips) {
+            assert!(c.start >= Time::ZERO && c.duration > Time::ZERO && c.end() <= Time::LIMIT + Time::LIMIT, "{c:?}");
+            assert!(c.source_in >= Time::ZERO && c.source_in <= Time::LIMIT);
+            let t = &c.transform;
+            for v in [c.speed, c.opacity, c.volume_db, t.x, t.y, t.scale, t.rotation_deg] {
+                assert!(v.is_finite(), "{c:?}");
+            }
+            assert!((0.0..=1.0).contains(&c.opacity) && (-60.0..=20.0).contains(&c.volume_db) && t.scale > 0.0, "{c:?}");
+            if let ClipContent::Text(st) = &c.content {
+                assert!(st.size.is_finite() && st.outline.is_none_or(|o| o.0.is_finite() && o.0 <= 20.0), "{st:?}");
+            }
+        }
+        let back = Project::from_json(&p.to_json()).expect("Projekt lädt wieder");
+        assert_eq!(back, p);
+    }
 
     #[test]
     fn layers_follow_render_index_and_fonts_are_taken_over() {

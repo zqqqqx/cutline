@@ -293,7 +293,14 @@ impl EditOp {
                 c.duration = duration;
                 c.source_in = source_in;
                 clamp_to_source(c, len);
+                clamp_fades(c);
+                let (start, duration) = (c.start, c.duration);
                 let magnet = p.settings.main_track_magnet;
+                // Ohne Magnet nicht in den Nachbarn hinein (wie Trimmen; Rollen kürzt zuerst)
+                let t = &p.timeline.tracks[clip_track_index(p, clip)?];
+                if !(t.main && magnet) && !t.is_free(start, duration, Some(clip)) {
+                    return Err(CoreError::InvalidDuration);
+                }
                 for t in &mut p.timeline.tracks {
                     t.sort();
                     // Hauptspur-Magnet: Lücken sofort schließen
@@ -471,6 +478,7 @@ impl EditOp {
                         }
                     }
                 }
+                clamp_fades(c);
                 after_change(p, ti);
                 Ok(OpOutput::None)
             }
@@ -515,6 +523,7 @@ impl EditOp {
                         k.t = Time((k.t.0 as f64 * f).round() as i64);
                     }
                 }
+                clamp_fades(c);
                 after_change(p, ti);
                 resolve_overlaps(p, ti);
                 Ok(OpOutput::None)
@@ -549,9 +558,9 @@ impl EditOp {
                 fade_out,
             } => {
                 let c = clip_mut(p, clip)?;
-                let half = Time(c.duration.0 / 2);
-                c.fade_in = Time(fade_in.0.clamp(0, half.0));
-                c.fade_out = Time(fade_out.0.clamp(0, half.0));
+                c.fade_in = fade_in;
+                c.fade_out = fade_out;
+                clamp_fades(c);
                 Ok(OpOutput::None)
             }
             EditOp::ReplaceClip { clip } => {
@@ -835,6 +844,13 @@ fn source_length(p: &Project, c: &Clip) -> Option<Time> {
             .filter(|d| *d > Time::ZERO),
         _ => None,
     }
+}
+
+/// Blenden je höchstens die halbe Clip-Länge (beim Setzen und wenn der Clip kürzer wird).
+fn clamp_fades(c: &mut Clip) {
+    let half = c.duration.0 / 2;
+    c.fade_in = Time(c.fade_in.0.clamp(0, half));
+    c.fade_out = Time(c.fade_out.0.clamp(0, half));
 }
 
 /// Video/Ton: Dauer höchstens bis zum Quellende ab `source_in` (Tempo beachtet).
