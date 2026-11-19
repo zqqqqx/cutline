@@ -119,6 +119,8 @@ fn run(seed: u64, steps: usize) {
     d.max_history = usize::MAX;
     let start = d.project().clone();
     let (mut ok, mut err) = (0, 0);
+    // Verlauf wurde vorne gekürzt (große Projekte): Rückgängig erreicht den Anfang nicht mehr
+    let mut trimmed = false;
     for step in 0..steps {
         let ctx = format!("Seed {seed}, Schritt {step}");
         let before = d.project().clone();
@@ -145,8 +147,13 @@ fn run(seed: u64, steps: usize) {
                 ok += 1;
                 let after = d.project();
                 check(after, &format!("{ctx}: {desc}"));
-                // ohne Änderung kein Verlaufsschritt
-                assert_eq!(d.undo_entries().len(), hist + usize::from(after != &before), "{ctx}");
+                // ohne Änderung kein Verlaufsschritt; gewollte Grenze (Document::apply): höchstens
+                // 100 000 Clip-Kopien, mindestens 10 Schritte, älteste fallen weg
+                let clips: usize = after.timeline.tracks.iter().map(|t| t.clips.len()).sum();
+                let cap = (100_000 / clips.max(1)).max(10);
+                let want = if after != &before { (hist + 1).min(cap) } else { hist };
+                assert_eq!(d.undo_entries().len(), want, "{ctx}: Verlaufslänge");
+                trimmed |= after != &before && hist + 1 > cap;
                 // gesperrte Spuren: Clips unverändert, Spur bleibt bestehen
                 // (eine Op, die selbst Sperren ändert, z. B. Batch „entsperren + löschen“, ausgenommen)
                 let flags = op_dbg.contains("SetTrackFlags");
@@ -173,7 +180,9 @@ fn run(seed: u64, steps: usize) {
     assert_eq!(&roundtrip(&end), &end);
     let n = d.undo_entries().len();
     assert_eq!(d.step(-(n as isize)), n);
-    assert_eq!(d.project(), &start, "Seed {seed}: Rückgängig bis zum Anfang");
+    if !trimmed {
+        assert_eq!(d.project(), &start, "Seed {seed}: Rückgängig bis zum Anfang");
+    }
     assert_eq!(d.step(n as isize), n);
     assert_eq!(d.project(), &end, "Seed {seed}: alles wiederholen");
 }
