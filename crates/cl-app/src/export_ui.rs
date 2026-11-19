@@ -199,6 +199,11 @@ impl Running {
         let (p, s2, fonts) = (src.project.clone(), src.settings.clone(), src.fonts.clone());
         let parts: Vec<(Option<(Time, Time)>, PathBuf)> = src.parts.iter().map(|x| (x.range, x.out.clone())).collect();
         let folder = src.group().then(|| src.out.clone());
+        // noch im Oberflächen-Faden: ein abgebrochener Vorgänger, dessen Faden noch läuft, sieht
+        // den Ordner ab jetzt als belegt und löscht ihn nicht mehr
+        if let Some(d) = &folder {
+            folder_use(d, true);
+        }
         let resolver = move |fam: Option<&str>| fam.and_then(|f| fonts.get(f).cloned());
         // Bau des Auftrags (bei großen Projekten Sekunden: Tonprüfung je Datei) nicht im Oberflächen-Faden
         std::thread::spawn(move || {
@@ -242,9 +247,10 @@ impl Running {
                 }
                 at += w;
             }
-            // abgebrochen, bevor ein Teil fertig war: kein leerer Ordner (nicht leer: bleibt)
+            // abgebrochen, bevor ein Teil fertig war: kein leerer Ordner (nicht leer oder von einem
+            // neueren Export belegt: bleibt)
             if let Some(d) = &folder {
-                let _ = std::fs::remove_dir(d);
+                folder_use(d, false);
             }
             *rs.lock().unwrap() = Some(first_err.map_or(Ok(()), Err));
             c2.request_repaint();
@@ -255,6 +261,24 @@ impl Running {
     /// Gruppe: laufender Teil und Zahl der Teile (ab 1)
     fn part_of(&self) -> Option<(usize, usize)> {
         self.src.group().then(|| (self.part.load(Ordering::Relaxed) + 1, self.src.parts.len()))
+    }
+}
+
+/// Ordner von Teil-Exporten, die gerade laufen (Zahl je Ordner). Nach einem Abbruch während
+/// der Vorbereitung meldet `poll` sofort, der Faden räumt aber erst danach auf; startet inzwischen
+/// ein neuer Export in denselben Ordner, darf dieses Aufräumen ihn nicht löschen.
+static FOLDERS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+/// Ordner belegen (`true`) bzw. freigeben; beim letzten Freigeben wird er gelöscht, wenn er leer ist.
+fn folder_use(dir: &Path, take: bool) {
+    let mut v = FOLDERS.lock().unwrap_or_else(|e| e.into_inner());
+    if take {
+        v.push(dir.to_path_buf());
+    } else if let Some(i) = v.iter().position(|d| d == dir) {
+        v.swap_remove(i);
+        if !v.iter().any(|d| d == dir) {
+            let _ = std::fs::remove_dir(dir);
+        }
     }
 }
 
@@ -393,6 +417,8 @@ pub struct ExportDialog {
     quit_ok: bool,
     /// größte bisher gezeigte Höhe der Einstellungen (Dialog springt beim Formatwechsel nicht)
     right_h: f32,
+    /// rechte Spalte im letzten Bild: sichtbare Höhe, Inhaltshöhe (Layout-Test)
+    right_view: (f32, f32),
     /// „In Teile aufteilen“: an/aus, Art (0 Anzahl, 1 Länge, 2 Marker), Zahl, Sekunden je Teil
     split_on: bool,
     split_by: usize,
@@ -403,8 +429,10 @@ pub struct ExportDialog {
     custom_mb: u32,
 }
 
-/// Höchste Höhe der Einstellungen rechts; mehr scrollt (Fenster passt in 1280×720)
-const RIGHT_MAX_H: f32 = 480.0;
+/// Höhe des Export-Fensters ohne die Einstellungen rechts (Titel, Meldungen, Fortschritt,
+/// Knopfzeile, Ränder): bis zur Programmfensterhöhe minus diesem Wert zeigt die rechte Spalte alles,
+/// darüber scrollt sie
+const DIALOG_CHROME_H: f32 = 250.0;
 
 /// Name eines Encoders (Export-Dialog, Einstellungen → Leistung)
 pub fn encoder_name(e: Encoder) -> &'static str {
@@ -639,7 +667,7 @@ impl ExportDialog {
             s.target_mb = Some(self.custom_mb.max(1));
         }
         // nie still verkleinern (bei Teilen gilt der längste)
-        let t = s.for_target(self.longest_part(p, s).0);
+        let t = s.for_target(self.longest_part(p, s).0, audible(p, s));
         if let Quality::Bitrate(k) = t.quality {
             if let Some((e, enough)) = cl_export::target_edge(k, (s.width, s.height), s.fps.as_f64()) {
                 let h = if enough { format!("Wird in {e}p exportiert") } else { format!("Wird in {e}p exportiert – auch dafür ist die Größe knapp") };
@@ -871,7 +899,7 @@ impl ExportDialog {
                         let info = if audio_only {
                             format!("{} {}", icon::CLOCK, theme::secs(secs, 1))
                         } else {
-                            let (w, h) = s.for_target(longest).output_size();
+                            let (w, h) = s.for_target(longest, audible(p, &s)).output_size();
                             format!("{} {}  ·  {w}×{h}", icon::CLOCK, theme::secs(secs, 1))
                         };
                         ui.label(RichText::new(crate::tr(info)).small().color(theme::TEXT_DIM()));
@@ -891,9 +919,16 @@ impl ExportDialog {
                     });
                     ui.add_space(12.0);
                     // Rechts: Einstellungen
-                    let right = ui.vertical(|ui| {
-                        // feste Höchsthöhe, darüber scrollt es (das Fenster passt in ein 1280×720-Programmfenster)
-                        egui::ScrollArea::vertical().id_salt("export-settings").max_height(RIGHT_MAX_H).show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        // so hoch wie der Inhalt (größte bisher gezeigte Fassung: springt nicht beim
+                        // Umschalten), höchstens bis das Fenster ins Programmfenster passt; dann scrollt es.
+                        // Ohne Mindesthöhe nähme der Bereich nur die Höhe der linken Spalte.
+                        let max_h = (ctx.screen_rect().height() - DIALOG_CHROME_H).max(160.0);
+                        let sc = egui::ScrollArea::vertical()
+                            .id_salt("export-settings")
+                            .max_height(max_h)
+                            .min_scrolled_height(self.right_h.min(max_h))
+                            .show(ui, |ui| {
                         // Formatwechsel blendet Zeilen aus: Höhe halten, damit Knöpfe nicht springen
                         ui.set_min_height(self.right_h);
                         // auch während eines Exports einstellbar: der nächste wird eingereiht
@@ -1072,8 +1107,9 @@ impl ExportDialog {
                             }
                         });
                         });
+                        self.right_view = (sc.inner_rect.height(), sc.content_size.y);
+                        self.right_h = self.right_h.max(sc.content_size.y);
                     });
-                    self.right_h = self.right_h.max(right.response.rect.height());
                 });
 
                 ui.add_space(12.0);
@@ -1183,6 +1219,10 @@ impl ExportDialog {
             let mut choice = None;
             let file = out.clone();
             let exists = parts.iter().any(|f| f.1.exists());
+            // Teile eines früheren Laufs, die es diesmal nicht mehr gibt (z. B. „Teil 06“ von 6, jetzt 4)
+            let keep: Vec<PathBuf> = parts.iter().map(|f| f.1.clone()).collect();
+            let stale = if self.split(&s).is_some() { stale_parts(&out, &file_safe(&self.name), s.format.extension(), &keep) } else { Vec::new() };
+            let old = stale.iter().filter(|f| f.extension().is_some_and(|e| e == s.format.extension())).count();
             let m = crate::dialog::modal(ctx, "export-overwrite").show(ctx, |ui| {
                 ui.set_width(380.0);
                 let t = match (exists, parts.len() > 1) {
@@ -1194,6 +1234,9 @@ impl ExportDialog {
                     choice = Some(2);
                 }
                 ui.label(RichText::new(crate::paths::shown(&file)).small().color(theme::TEXT_DIM()));
+                if old > 0 {
+                    ui.label(RichText::new(crate::tr(format!("Beim Überschreiben werden {old} ältere Teile entfernt"))).small().color(theme::TEXT_DIM()));
+                }
                 crate::dialog::footer(ui, |ui| {
                     if ui.add(theme::primary("Anderen Namen")).clicked() {
                         choice = Some(1);
@@ -1216,7 +1259,12 @@ impl ExportDialog {
                 choice = Some(2);
             }
             match choice {
-                Some(0) => start = true,
+                Some(0) => {
+                    for f in &stale {
+                        let _ = std::fs::remove_file(f);
+                    }
+                    start = true;
+                }
                 Some(1) => {
                     let base = self.name.trim().to_string();
                     for n in 2.. {
@@ -1258,11 +1306,44 @@ impl ExportDialog {
     }
 }
 
+/// Hörbarer Ton im Exportbereich? (Zielgröße: sonst wird für Ton nichts eingeplant)
+fn audible(p: &Project, s: &ExportSettings) -> bool {
+    let (a, b) = s.range.unwrap_or((Time::ZERO, p.duration()));
+    !cl_export::audio_clips_in(p, a, b).is_empty()
+}
+
 /// Name für Dateien und Ordner: Zeichen, die Windows verbietet, werden zu `_`; Länge und
 /// Gerätenamen wie bei Projektdateien ([`crate::paths::fit_name`]).
 fn file_safe(name: &str) -> String {
     let s: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect();
     crate::paths::fit_name(&s)
+}
+
+/// Dateien einer früheren Teile-Gruppe in `dir`, die nicht zu den neuen Teilen `keep` gehören. Nur
+/// genau das Muster dieser Gruppe: `Name – Teil NN`, `Name – Part NN` oder `Name – NN[ Marker]`
+/// mit der Endung des Formats oder als Begleitdatei (.srt, .vtt, .chapters.txt); sonst nichts.
+fn stale_parts(dir: &Path, name: &str, ext: &str, keep: &[PathBuf]) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let ends = [format!(".{ext}"), ".srt".into(), ".vtt".into(), ".chapters.txt".into()];
+    let prefix = format!("{name} – ");
+    let nr = |t: &str| t.len() >= 2 && t.bytes().all(|b| b.is_ascii_digit());
+    let ours = |n: &str| {
+        let Some(rest) = ends.iter().find_map(|e| n.strip_suffix(e.as_str())).and_then(|x| x.strip_prefix(&prefix)) else {
+            return false;
+        };
+        match rest.split_once(' ') {
+            Some(("Teil" | "Part", t)) => nr(t),
+            Some((h, t)) => nr(h) && !t.trim().is_empty(),
+            None => nr(rest),
+        }
+    };
+    let kept = |f: &Path| keep.iter().any(|k| ["srt", "vtt", "chapters.txt"].iter().any(|e| k.with_extension(e) == f) || k == f);
+    let mut v: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|f| f.is_file() && f.file_name().is_some_and(|n| ours(&n.to_string_lossy())) && !kept(f))
+        .collect();
+    v.sort();
+    v
 }
 
 /// „In Teile aufteilen“: gleich lange Teile, Teile fester Länge (Sekunden) oder Schnitt an Markern
@@ -2063,20 +2144,15 @@ fn cancel_stops_the_whole_group_without_half_files() {
     let ctx = egui::Context::default();
     let p = text_project("Film", "eins", 8.0);
     let folder = dir.path().join("Film");
-    // sofort abgebrochen: kein Teil, kein leerer Ordner
-    let mut d = split_dialog(&p, dir.path(), 4);
+    // sofort abgebrochen (während der Vorbereitung): `poll` meldet gleich, der Faden räumt erst
+    // danach auf. Ein sofort gestarteter neuer Export in denselben Ordner darf dieses Aufräumen
+    // nicht treffen (früher: Ordner weg, alle Teile scheiterten)
+    let mut d = split_dialog(&p, dir.path(), 8);
     frame(&mut d, &ctx, &p, true);
     d.cancel_current();
     drain(&mut d, &ctx, &p);
     assert!(d.error.is_none());
-    // der Faden räumt kurz nach der Meldung auf (Abbruch während der Vorbereitung)
-    let t0 = Instant::now();
-    while folder.exists() && t0.elapsed().as_secs() < 30 {
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    assert!(!folder.exists());
-    // nach dem ersten Teil abgebrochen: fertige Teile bleiben, keine halbe Datei, Rest fehlt
-    let mut d = split_dialog(&p, dir.path(), 4);
+    // gleich neu: nach dem ersten Teil abgebrochen → fertige Teile bleiben, keine halbe Datei, Rest fehlt
     frame(&mut d, &ctx, &p, true);
     let t0 = Instant::now();
     while d.running.as_ref().is_some_and(|r| r.finished.lock().unwrap().is_empty()) && t0.elapsed().as_secs() < 60 {
@@ -2084,11 +2160,97 @@ fn cancel_stops_the_whole_group_without_half_files() {
     }
     d.cancel_current();
     drain(&mut d, &ctx, &p);
-    assert!(d.error.is_none());
+    assert!(d.error.is_none(), "{:?}", d.error);
     let names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
-    assert!(names.contains(&"Film – Teil 01.mp4".to_string()) && !names.contains(&"Film – Teil 04.mp4".to_string()), "{names:?}");
+    assert!(names.contains(&"Film – Teil 01.mp4".to_string()) && !names.contains(&"Film – Teil 08.mp4".to_string()), "{names:?}");
     assert!(names.iter().all(|n| !n.contains(".part")), "{names:?}");
     std::env::remove_var("CUTLINE_HOME");
+}
+
+/// Höhe des Export-Fensters ohne echtes Fenster: im Programmfenster `w`×`h` zwei Bilder zeichnen
+/// (das erste kennt die Inhaltshöhe noch nicht). Gibt das Fensterrechteck und (sichtbare Höhe,
+/// Inhaltshöhe) der Einstellungen rechts zurück.
+#[cfg(test)]
+fn dialog_layout(d: &mut ExportDialog, p: &Project, w: f32, h: f32) -> (Rect, (f32, f32)) {
+    let ctx = egui::Context::default();
+    // Öffnen-Animation aus
+    ctx.style_mut(|s| s.animation_time = 0.0);
+    for _ in 0..4 {
+        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(w, h))), ..Default::default() };
+        let _ = ctx.run(raw, |ctx| {
+            d.show(ctx, p, &HashMap::new(), None, 0);
+        });
+    }
+    (ctx.memory(|m| m.area_rect(egui::Id::new("export-dialog"))).expect("Fenster gezeichnet"), d.right_view)
+}
+
+#[test]
+fn export_dialog_shows_all_settings_when_there_is_room() {
+    let mut p = text_project("Film", "eins", 600.0);
+    (p.settings.width, p.settings.height) = (1920, 1080);
+    let mut d = ExportDialog::default();
+    *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
+    d.open_for(&p, None, 0, None);
+    // volle Fassung: Teile mit Ergebniszeile, Zielgröße mit Hinweis („wird in 360p exportiert“)
+    d.split_on = true;
+    d.settings.as_mut().unwrap().target_mb = Some(10);
+    // 1440×900: alles sichtbar, nichts scrollt
+    let (win, (shown, content)) = dialog_layout(&mut d, &p, 1440.0, 900.0);
+    assert!(content > 400.0, "{content}");
+    assert!(shown >= content - 1.0, "rechte Spalte scrollt: {shown} von {content}");
+    assert!(win.bottom() <= 900.0 && win.top() >= 0.0, "{win:?}");
+    // 1280×720: scrollt, aber das Fenster (Titel und Knöpfe) bleibt im Programmfenster
+    let (win, (shown, content)) = dialog_layout(&mut d, &p, 1280.0, 720.0);
+    assert!(win.top() >= 0.0 && win.bottom() <= 720.0, "{win:?}");
+    assert!(shown > 300.0 && shown <= content, "{shown} von {content}");
+}
+
+#[test]
+fn overwriting_a_group_finds_only_its_own_older_parts() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    let files = [
+        "Film – Teil 01.mp4", "Film – Teil 04.mp4", "Film – Teil 05.mp4", "Film – Teil 06.mp4", "Film – Teil 06.srt",
+        "Film – Teil 06.vtt", "Film – Teil 06.chapters.txt", "Film – Part 07.mp4", "Film – 08 Ende.mp4", "Film – 09.mp4",
+        // fremd: andere Endung, anderer Name, Zusatz, einstellige Nummer, Notizen
+        "Film – Teil 06.mov", "Film – Teil 06 Kopie.mp4", "Anderer – Teil 06.mp4", "Film – Teil 6.mp4", "Notizen.txt", "Film.mp4",
+        "Film – 10 .mp4",
+    ];
+    for f in files {
+        std::fs::write(d.join(f), b"x").unwrap();
+    }
+    std::fs::create_dir(d.join("Film – Teil 11.mp4")).unwrap();
+    let keep: Vec<PathBuf> = (1..=4).map(|i| d.join(format!("Film – Teil 0{i}.mp4"))).collect();
+    let stale: Vec<String> = stale_parts(d, "Film", "mp4", &keep).iter().map(|f| f.file_name().unwrap().to_string_lossy().to_string()).collect();
+    assert_eq!(
+        stale,
+        ["Film – 08 Ende.mp4", "Film – 09.mp4", "Film – Part 07.mp4", "Film – Teil 05.mp4", "Film – Teil 06.chapters.txt", "Film – Teil 06.mp4", "Film – Teil 06.srt", "Film – Teil 06.vtt"]
+    );
+    // Begleitdatei eines bleibenden Teils bleibt
+    std::fs::write(d.join("Film – Teil 01.srt"), b"x").unwrap();
+    assert!(!stale_parts(d, "Film", "mp4", &keep).iter().any(|f| f.ends_with("Film – Teil 01.srt")));
+    // ohne Ordner: nichts
+    assert!(stale_parts(&d.join("fehlt"), "Film", "mp4", &keep).is_empty());
+}
+
+#[test]
+fn cleanup_of_a_cancelled_group_spares_a_newer_export_in_the_same_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("Film");
+    std::fs::create_dir(&f).unwrap();
+    // alter Export belegt, neuer belegt, der alte räumt danach auf: Ordner bleibt (noch leer)
+    folder_use(&f, true);
+    folder_use(&f, true);
+    folder_use(&f, false);
+    assert!(f.is_dir());
+    // der letzte gibt frei: leerer Ordner weg; nicht leer: bleibt
+    folder_use(&f, false);
+    assert!(!f.exists());
+    std::fs::create_dir(&f).unwrap();
+    std::fs::write(f.join("x.mp4"), b"x").unwrap();
+    folder_use(&f, true);
+    folder_use(&f, false);
+    assert!(f.join("x.mp4").is_file());
 }
 
 /// Zielgröße gilt je Teil: Bitrate aus der Länge des Teils.

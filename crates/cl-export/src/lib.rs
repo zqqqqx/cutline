@@ -308,16 +308,19 @@ impl ExportSettings {
     /// Einstellungen, mit denen eine Datei von `secs` Sekunden die Zielgröße einhält: Software-
     /// Encoder, Videobitrate aus Größe minus Ton (bei knapper Größe höchstens ein Viertel, mindestens
     /// 64 kbit/s), bei zu wenig Bit je Pixel eine kleinere Standardauflösung. Ohne Zielgröße unverändert.
-    pub fn for_target(&self, secs: f64) -> ExportSettings {
+    /// `audible`: der Bereich hat hörbaren Ton (sonst bleibt nur eine stille Spur von wenigen kbit/s,
+    /// für die nichts abgezogen wird; siehe [`audio_clips_in`]).
+    pub fn for_target(&self, secs: f64, audible: bool) -> ExportSettings {
         let mut s = self.clone();
         let Some(mb) = self.target_mb.filter(|_| self.target_possible()) else {
             return s;
         };
         s.encoder = Encoder::Software;
-        if s.include_audio {
+        let audio = s.include_audio && audible;
+        if audio {
             s.audio_kbps = Some(s.audio_bitrate().min((total_kbps(mb, secs) / 4.0).max(64.0) as u32));
         }
-        let k = target_kbps(mb, secs, s.audio_bitrate());
+        let k = target_kbps(mb, secs, if audio { s.audio_bitrate() } else { 0 });
         s.quality = Quality::Bitrate(k);
         if let Some((e, _)) = target_edge(k, (s.width, s.height), s.fps.as_f64()) {
             let f = e as f64 / s.width.min(s.height).max(1) as f64;
@@ -540,7 +543,7 @@ fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, 
         return Err(ExportError::Empty);
     }
     // Zielgröße: Bitrate (und ggf. Größe) aus der Länge dieses Exports
-    let s = &s.for_target((end - start).as_secs_f64());
+    let s = &s.for_target((end - start).as_secs_f64(), graph::audible_clips(p, start, end).next().is_some());
     let units = sections::units(p, start, end, !s.format.audio_only(), wants_audio(s));
     let base = BASE_CHARS + out.as_os_str().len();
     let one = sections::Limits { inputs: single.max(1), ..sections::Limits::DEFAULT };
@@ -4439,27 +4442,33 @@ mod tests {
         let mut s = ExportSettings::from_project(&Project::new("z"));
         (s.width, s.height, s.fps, s.encoder) = (1920, 1080, Rational::new(30, 1), Encoder::Nvenc);
         // ohne Zielgröße unverändert
-        assert_eq!(s.for_target(60.0), s);
+        assert_eq!(s.for_target(60.0, true), s);
         s.target_mb = Some(25);
-        let t = s.for_target(60.0);
+        let t = s.for_target(60.0, true);
         // 25 MB / 60 s: 3333 kbit/s, Ton 256 → Bild 2910 kbit/s, reicht für 1080p, Software
         assert_eq!((t.quality, t.width, t.height, t.encoder), (Quality::Bitrate(2910), 1920, 1080, Encoder::Software));
         // 25 MB / 150 s: Bild 1010 kbit/s → 720p (1280×720 braucht 829)
-        let t = s.for_target(150.0);
+        let t = s.for_target(150.0, true);
         assert_eq!((t.width, t.height), (1280, 720), "{:?}", t.quality);
         // Ton höchstens ein Viertel der Gesamtrate, mindestens 64 kbit/s; WebM (Opus) ebenso
         s.target_mb = Some(10);
-        let t = s.for_target(600.0);
+        let t = s.for_target(600.0, true);
         assert_eq!((t.audio_bitrate(), t.width), (64, 640), "{:?}", t.quality);
         s.format = Format::WebM;
         s.codec = Codec::Vp9;
-        assert_eq!(s.for_target(600.0).audio_bitrate(), 64);
-        assert_eq!(s.for_target(10.0).audio_bitrate(), 192);
+        assert_eq!(s.for_target(600.0, true).audio_bitrate(), 64);
+        assert_eq!(s.for_target(10.0, true).audio_bitrate(), 192);
+        // ohne hörbaren Ton (oder „Ton exportieren“ aus): nichts für Ton abziehen
+        (s.format, s.codec, s.target_mb) = (Format::Mp4, Codec::H264, Some(25));
+        assert_eq!(s.for_target(60.0, false).quality, Quality::Bitrate(3166));
+        s.include_audio = false;
+        assert_eq!(s.for_target(60.0, true).quality, Quality::Bitrate(3166));
+        s.include_audio = true;
         // ProRes, GIF, Ton: Zielgröße gilt nicht
         for (f, c) in [(Format::Mov, Codec::ProRes), (Format::Gif, Codec::H264), (Format::Mp3, Codec::H264)] {
             (s.format, s.codec) = (f, c);
             assert!(!s.target_possible());
-            assert_eq!(s.for_target(600.0), s);
+            assert_eq!(s.for_target(600.0, true), s);
         }
     }
 
@@ -4486,14 +4495,19 @@ mod tests {
 
     /// 480×270, 30 Bilder/s, starkes Rauschen (sonst unterschreitet der Encoder jede Bitrate) und Ton
     fn noise_video(dir: &Path, secs: f64) -> MediaRef {
-        let path = dir.join("rauschen.mp4");
-        let st = cl_media::ffmpeg_command()
-            .unwrap()
-            .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
-            .arg(format!("testsrc2=size=480x270:rate=30:duration={secs},noise=alls=40:allf=t"))
-            .args(["-f", "lavfi", "-i"])
-            .arg(format!("sine=f=440:d={secs}"))
-            .args(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+        noise_video_with(dir, secs, true)
+    }
+
+    fn noise_video_with(dir: &Path, secs: f64, sound: bool) -> MediaRef {
+        let path = dir.join(if sound { "rauschen.mp4" } else { "rauschen_stumm.mp4" });
+        let mut c = cl_media::ffmpeg_command().unwrap();
+        c.args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+            .arg(format!("testsrc2=size=480x270:rate=30:duration={secs},noise=alls=40:allf=t"));
+        if sound {
+            c.args(["-f", "lavfi", "-i"]).arg(format!("sine=f=440:d={secs}")).args(["-c:a", "aac", "-shortest"]);
+        }
+        let st = c
+            .args(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p"])
             .arg(&path)
             .status()
             .unwrap();
@@ -4547,6 +4561,32 @@ mod tests {
             }
             drop(job);
             assert!(!work.exists());
+        }
+    }
+
+    /// Ohne hörbaren Ton wird nichts für Ton eingeplant: 90–100 % der Zielgröße (vorher ≈85 %).
+    #[test]
+    fn target_size_without_sound_uses_the_budget() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let m = noise_video_with(dir.path(), 6.0, false);
+        let mut p = noise_project(dir.path(), 6.0, 1);
+        p.media = vec![m.clone()];
+        if let ClipContent::Media { media, .. } = &mut p.timeline.tracks[0].clips[0].content {
+            *media = m.id;
+        }
+        let mut s = ExportSettings::from_project(&p);
+        s.target_mb = Some(1);
+        // stumme Quelle (Spur wird still gemischt) und „Ton exportieren“ aus
+        for include_audio in [true, false] {
+            s.include_audio = include_audio;
+            let out = dir.path().join(format!("stumm_{include_audio}.mp4"));
+            run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+            let size = std::fs::metadata(&out).unwrap().len();
+            eprintln!("Zielgröße 1 MB ohne Ton (Spur {include_audio}): {size} Byte");
+            assert!((900_000..=1_000_000).contains(&size), "{include_audio}: {size}");
         }
     }
 
