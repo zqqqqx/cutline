@@ -121,20 +121,25 @@ pub fn arrange(pw: f32, ph: f32, sizes: &[(f32, f32)], a: Arrange) -> Vec<(Trans
 
 impl App {
     /// Clips für ein Layout mit angezeigter Quellgröße (gedrehte Videos sind beim Einlesen
-    /// schon getauscht): ausgewählte Bildclips, sonst alle am Playhead; untere Spur zuerst.
-    pub fn layout_clips(&self) -> Vec<(ClipId, (f32, f32))> {
+    /// schon getauscht): ausgewählte Bildclips (ab zwei, beim Zurücksetzen ab einem), sonst die
+    /// Videos am Playhead (Bilder wie Logo/Sticker nur, wenn ausgewählt); untere Spur zuerst.
+    pub fn layout_clips(&self, a: Arrange) -> Vec<(ClipId, (f32, f32))> {
         let sel = self.selection();
         let pick = |only_sel: bool| -> Vec<(ClipId, (f32, f32))> {
             let mut v = Vec::new();
             for t in self.project.timeline.tracks.iter().filter(|t| !t.hidden) {
                 for c in t.clips.iter().filter(|c| !c.disabled) {
-                    let ClipContent::Media { media, kind: MediaKind::Video | MediaKind::Image } = &c.content else {
+                    let ClipContent::Media { media, kind: kind @ (MediaKind::Video | MediaKind::Image) } = &c.content else {
                         continue;
                     };
                     let Some(m) = self.project.media(*media).filter(|m| m.width > 0 && m.height > 0) else {
                         continue;
                     };
-                    let hit = if only_sel { sel.contains(&c.id) } else { c.start <= self.playhead && self.playhead < c.end() };
+                    let hit = if only_sel {
+                        sel.contains(&c.id)
+                    } else {
+                        c.start <= self.playhead && self.playhead < c.end() && (*kind == MediaKind::Video || sel.contains(&c.id))
+                    };
                     if hit {
                         v.push((c.id, (m.width as f32, m.height as f32)));
                     }
@@ -143,7 +148,7 @@ impl App {
             v
         };
         let v = pick(true);
-        if v.len() >= 2 { v } else { pick(false) }
+        if v.len() >= 2 || (a == Arrange::Reset && !v.is_empty()) { v } else { pick(false) }
     }
 
     /// Layout `id` anwenden: ein Verlaufsschritt; Keyframes auf Position, Größe und Drehung
@@ -152,7 +157,7 @@ impl App {
         let Some(a) = Arrange::from_id(id) else {
             return;
         };
-        let clips = self.layout_clips();
+        let clips = self.layout_clips(a);
         let sizes: Vec<(f32, f32)> = clips.iter().map(|c| c.1).collect();
         let (pw, ph) = (self.project.settings.width as f32, self.project.settings.height as f32);
         let geo = arrange(pw, ph, &sizes, a);
@@ -257,6 +262,61 @@ mod tests {
         assert!(arrange(1920.0, 1080.0, &[s; 3], Arrange::Pip(0)).is_empty());
         assert_eq!(arrange(1920.0, 1080.0, &[s], Arrange::Reset), vec![(Transform::default(), Crop::default())]);
         assert!(IDS.iter().all(|id| Arrange::from_id(id).is_some() && !crate::keymap::name(id).is_empty()));
+    }
+
+    /// Logo (Bild über die ganze Länge) zählt ohne Auswahl nicht mit; Zurücksetzen mit Auswahl
+    /// wirkt nur auf die Auswahl.
+    #[test]
+    fn logo_is_no_layout_clip_and_reset_keeps_to_the_selection() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut p = Project::new("Logo");
+        (p.settings.width, p.settings.height) = (1920, 1080);
+        let sec = Time::from_secs_f64;
+        let media = |kind| MediaRef {
+            id: MediaId::new(),
+            path: "a".into(),
+            kind,
+            duration: sec(10.0),
+            width: 1920,
+            height: 1080,
+            fps: None,
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: None,
+            audio_codec: None,
+        };
+        let mut ids = Vec::new();
+        for kind in [MediaKind::Video, MediaKind::Video, MediaKind::Image] {
+            let m = media(kind);
+            let mut c = Clip::new(ClipContent::Media { media: m.id, kind }, sec(0.0), sec(5.0));
+            c.transform.x = 100.0;
+            c.keyframes.set(Prop::Scale, sec(1.0), 0.5);
+            ids.push(c.id);
+            p.media.push(m);
+            let mut t = Track::new(TrackKind::Video);
+            t.clips.push(c);
+            p.timeline.tracks.push(t);
+        }
+        app.set_doc(p);
+        app.playhead = sec(1.0);
+        assert!(app.quick_check("quick_layout_side").0 && !app.quick_check("quick_layout_columns").0);
+        // ausgewähltes Bild zählt mit
+        app.select_only(Some(ids[2]));
+        assert!(app.quick_check("quick_layout_columns").0);
+        // Zurücksetzen mit einem ausgewählten Clip: nur dieser
+        app.select_only(Some(ids[0]));
+        let before = app.project.clone();
+        app.tool_layout("quick_layout_reset");
+        let clip = |p: &Project, i: usize| p.find_clip(ids[i]).unwrap().1.clone();
+        assert_eq!(clip(&app.project, 0).transform, Transform::default());
+        assert!(clip(&app.project, 0).keyframes.get(Prop::Scale).is_empty());
+        assert_eq!(clip(&app.project, 1), clip(&before, 1));
+        assert_eq!(clip(&app.project, 2), clip(&before, 2));
+        // ohne Auswahl: nur die Videos, das Logo bleibt
+        app.select_only(None);
+        app.tool_layout("quick_layout_reset");
+        assert_eq!(clip(&app.project, 1).transform, Transform::default());
+        assert_eq!(clip(&app.project, 2), clip(&before, 2));
     }
 
     /// Anwenden ist ein Verlaufsschritt (samt entfernten Keyframes), Rückgängig stellt alles her.

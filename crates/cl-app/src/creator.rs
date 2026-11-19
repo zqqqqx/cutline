@@ -113,7 +113,7 @@ impl App {
             }
             "quick_recap" => (!self.project.timeline.markers.is_empty(), "Setze zuerst Marker"),
             l if l.starts_with("quick_layout_") => {
-                (crate::arrange::Arrange::from_id(l).is_some_and(|a| a.fits(self.layout_clips().len())), "")
+                (crate::arrange::Arrange::from_id(l).is_some_and(|a| a.fits(self.layout_clips(a).len())), "")
             }
             _ => (true, ""),
         }
