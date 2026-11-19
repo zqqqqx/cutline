@@ -179,14 +179,24 @@ pub fn project(
 
 /// Breite und Höhe eines Texts wie im Export (Schrift über `fonts`, sonst Systemschrift)
 fn measure(fonts: &Fonts, st: &TextStyle) -> (f32, f32) {
-    let font = st.font_family.as_deref().and_then(|f| fonts.get(f).cloned()).or_else(|| cl_export::default_font().map(|p| (p, 0)));
+    let (data, idx) = font_data(fonts, st.font_family.as_deref());
+    measure_in(&data, idx, st)
+}
+
+/// Schriftdatei (Inhalt, Index) einer Familie wie im Export, sonst die Systemschrift
+pub fn font_data(fonts: &Fonts, family: Option<&str>) -> (Vec<u8>, u32) {
+    let font = family.and_then(|f| fonts.get(f).cloned()).or_else(|| cl_export::default_font().map(|p| (p, 0)));
     let data = font.as_ref().and_then(|f| std::fs::read(&f.0).ok()).unwrap_or_default();
-    let idx = font.map_or(0, |f| f.1);
+    (data, font.map_or(0, |f| f.1))
+}
+
+/// Wie [`measure`] mit schon gelesener Schrift
+pub fn measure_in(data: &[u8], idx: u32, st: &TextStyle) -> (f32, f32) {
     let txt = if st.uppercase { st.text.to_uppercase() } else { st.text.clone() };
     let lines: Vec<&str> = txt.split('\n').collect();
     let tw = lines
         .iter()
-        .map(|l| cl_fonts::text_width(&data, idx, st.size, l).unwrap_or(st.size * 0.6 * l.chars().count() as f32))
+        .map(|l| cl_fonts::text_width(data, idx, st.size, l).unwrap_or(st.size * 0.6 * l.chars().count() as f32))
         .fold(0.0f32, f32::max);
     let border = st.outline.map_or(0.0, |o| 2.0 * o.0);
     (tw + border, st.size * 1.3 * st.line_spacing.max(0.5) * lines.len() as f32 + border)

@@ -126,7 +126,7 @@ pub fn youtube_kbps(short_edge: u32, fps: f64) -> Option<u32> {
     Some(if fps > 30.5 { hi } else { lo })
 }
 
-fn gcd(a: u32, b: u32) -> u32 {
+pub fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 {
         a.max(1)
     } else {
