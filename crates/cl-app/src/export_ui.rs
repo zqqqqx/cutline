@@ -417,6 +417,8 @@ pub struct ExportDialog {
     quit_ok: bool,
     /// größte bisher gezeigte Höhe der Einstellungen (Dialog springt beim Formatwechsel nicht)
     right_h: f32,
+    /// rechte Spalte im letzten Bild: sichtbare Höhe, Inhaltshöhe (Layout-Test)
+    right_view: (f32, f32),
     /// „In Teile aufteilen“: an/aus, Art (0 Anzahl, 1 Länge, 2 Marker), Zahl, Sekunden je Teil
     split_on: bool,
     split_by: usize,
@@ -427,8 +429,10 @@ pub struct ExportDialog {
     custom_mb: u32,
 }
 
-/// Höchste Höhe der Einstellungen rechts; mehr scrollt (Fenster passt in 1280×720)
-const RIGHT_MAX_H: f32 = 480.0;
+/// Höhe des Export-Fensters ohne die Einstellungen rechts (Titel, Meldungen, Fortschritt,
+/// Knopfzeile, Ränder): bis zur Programmfensterhöhe minus diesem Wert zeigt die rechte Spalte alles,
+/// darüber scrollt sie
+const DIALOG_CHROME_H: f32 = 250.0;
 
 /// Name eines Encoders (Export-Dialog, Einstellungen → Leistung)
 pub fn encoder_name(e: Encoder) -> &'static str {
@@ -915,9 +919,16 @@ impl ExportDialog {
                     });
                     ui.add_space(12.0);
                     // Rechts: Einstellungen
-                    let right = ui.vertical(|ui| {
-                        // feste Höchsthöhe, darüber scrollt es (das Fenster passt in ein 1280×720-Programmfenster)
-                        egui::ScrollArea::vertical().id_salt("export-settings").max_height(RIGHT_MAX_H).show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        // so hoch wie der Inhalt (größte bisher gezeigte Fassung: springt nicht beim
+                        // Umschalten), höchstens bis das Fenster ins Programmfenster passt; dann scrollt es.
+                        // Ohne Mindesthöhe nähme der Bereich nur die Höhe der linken Spalte.
+                        let max_h = (ctx.screen_rect().height() - DIALOG_CHROME_H).max(160.0);
+                        let sc = egui::ScrollArea::vertical()
+                            .id_salt("export-settings")
+                            .max_height(max_h)
+                            .min_scrolled_height(self.right_h.min(max_h))
+                            .show(ui, |ui| {
                         // Formatwechsel blendet Zeilen aus: Höhe halten, damit Knöpfe nicht springen
                         ui.set_min_height(self.right_h);
                         // auch während eines Exports einstellbar: der nächste wird eingereiht
@@ -1096,8 +1107,9 @@ impl ExportDialog {
                             }
                         });
                         });
+                        self.right_view = (sc.inner_rect.height(), sc.content_size.y);
+                        self.right_h = self.right_h.max(sc.content_size.y);
                     });
-                    self.right_h = self.right_h.max(right.response.rect.height());
                 });
 
                 ui.add_space(12.0);
@@ -2108,6 +2120,44 @@ fn cancel_stops_the_whole_group_without_half_files() {
     assert!(names.contains(&"Film – Teil 01.mp4".to_string()) && !names.contains(&"Film – Teil 08.mp4".to_string()), "{names:?}");
     assert!(names.iter().all(|n| !n.contains(".part")), "{names:?}");
     std::env::remove_var("CUTLINE_HOME");
+}
+
+/// Höhe des Export-Fensters ohne echtes Fenster: im Programmfenster `w`×`h` zwei Bilder zeichnen
+/// (das erste kennt die Inhaltshöhe noch nicht). Gibt das Fensterrechteck und (sichtbare Höhe,
+/// Inhaltshöhe) der Einstellungen rechts zurück.
+#[cfg(test)]
+fn dialog_layout(d: &mut ExportDialog, p: &Project, w: f32, h: f32) -> (Rect, (f32, f32)) {
+    let ctx = egui::Context::default();
+    // Öffnen-Animation aus
+    ctx.style_mut(|s| s.animation_time = 0.0);
+    for _ in 0..4 {
+        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(w, h))), ..Default::default() };
+        let _ = ctx.run(raw, |ctx| {
+            d.show(ctx, p, &HashMap::new(), None, 0);
+        });
+    }
+    (ctx.memory(|m| m.area_rect(egui::Id::new("export-dialog"))).expect("Fenster gezeichnet"), d.right_view)
+}
+
+#[test]
+fn export_dialog_shows_all_settings_when_there_is_room() {
+    let mut p = text_project("Film", "eins", 600.0);
+    (p.settings.width, p.settings.height) = (1920, 1080);
+    let mut d = ExportDialog::default();
+    *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
+    d.open_for(&p, None, 0, None);
+    // volle Fassung: Teile mit Ergebniszeile, Zielgröße mit Hinweis („wird in 360p exportiert“)
+    d.split_on = true;
+    d.settings.as_mut().unwrap().target_mb = Some(10);
+    // 1440×900: alles sichtbar, nichts scrollt
+    let (win, (shown, content)) = dialog_layout(&mut d, &p, 1440.0, 900.0);
+    assert!(content > 400.0, "{content}");
+    assert!(shown >= content - 1.0, "rechte Spalte scrollt: {shown} von {content}");
+    assert!(win.bottom() <= 900.0 && win.top() >= 0.0, "{win:?}");
+    // 1280×720: scrollt, aber das Fenster (Titel und Knöpfe) bleibt im Programmfenster
+    let (win, (shown, content)) = dialog_layout(&mut d, &p, 1280.0, 720.0);
+    assert!(win.top() >= 0.0 && win.bottom() <= 720.0, "{win:?}");
+    assert!(shown > 300.0 && shown <= content, "{shown} von {content}");
 }
 
 #[test]
