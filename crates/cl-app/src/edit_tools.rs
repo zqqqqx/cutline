@@ -52,6 +52,7 @@ impl PasteAttrs {
         }
         if self.transform {
             dst.transform = src.transform;
+            dst.crop = src.crop;
             dst.keyframes = src.keyframes.clone();
         }
         if self.opacity {
@@ -387,6 +388,20 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Der Zuschnitt geht mit den Transform-Attributen mit, nicht mit dem Look.
+    #[test]
+    fn paste_attrs_carries_crop_with_transform() {
+        let m = ClipContent::Media { media: cl_core::MediaId::new(), kind: MediaKind::Video };
+        let mut src = Clip::new(m, Time::ZERO, Time::from_secs_f64(1.0));
+        src.crop.left = 0.25;
+        let mut dst = src.clone();
+        dst.crop = Default::default();
+        PasteAttrs::default().apply(&src, &mut dst);
+        assert!(dst.crop.is_none());
+        PasteAttrs { transform: true, ..Default::default() }.apply(&src, &mut dst);
+        assert_eq!(dst.crop.left, 0.25);
+    }
 
     #[test]
     fn timing_edit_writes_only_real_changes() {

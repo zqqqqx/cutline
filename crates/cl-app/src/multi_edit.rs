@@ -55,6 +55,16 @@ fn set_path(v: &mut Value, path: &[String], val: Value) -> bool {
     }
 }
 
+/// Clip als JSON, auch mit leerem Zuschnitt (fehlt sonst in der Datei und ließe sich weder
+/// vergleichen noch übertragen).
+fn to_value(c: &Clip) -> serde_json::Result<Value> {
+    let mut v = serde_json::to_value(c)?;
+    if let Some(o) = v.as_object_mut() {
+        o.entry("crop").or_insert(serde_json::to_value(Crop::default())?);
+    }
+    Ok(v)
+}
+
 /// Ersetzungen für die übrigen Clips in `selection`, die `orig → edited` am Haupt-Clip entsprechen.
 pub fn propagate(p: &Project, orig: &Clip, edited: &Clip, selection: &[ClipId]) -> Vec<EditOp> {
     let others: Vec<&Clip> = selection
@@ -65,7 +75,7 @@ pub fn propagate(p: &Project, orig: &Clip, edited: &Clip, selection: &[ClipId]) 
     if others.is_empty() {
         return Vec::new();
     }
-    let (Ok(a), Ok(b)) = (serde_json::to_value(orig), serde_json::to_value(edited)) else {
+    let (Ok(a), Ok(b)) = (to_value(orig), to_value(edited)) else {
         return Vec::new();
     };
     let mut changes = Vec::new();
@@ -81,7 +91,7 @@ pub fn propagate(p: &Project, orig: &Clip, edited: &Clip, selection: &[ClipId]) 
     }
     let mut ops = Vec::new();
     for o in others {
-        let Ok(mut v) = serde_json::to_value(o) else {
+        let Ok(mut v) = to_value(o) else {
             continue;
         };
         let mut any = false;
@@ -148,5 +158,33 @@ mod tests {
             panic!()
         };
         assert_eq!(s.text, "b", "Text bleibt, wenn er nicht geändert wurde");
+    }
+
+    /// Zuschnitt fehlt im JSON, wenn er leer ist: Setzen, Ändern und Zurücksetzen gehen trotzdem
+    /// auf die anderen ausgewählten Clips über.
+    #[test]
+    fn crop_goes_to_all_selected_clips() {
+        let mut p = Project::new("t");
+        let mk = |s: f64| Clip::new(ClipContent::Text(TextStyle::default()), Time::from_secs_f64(s), Time::from_secs_f64(1.0));
+        let (mut a, mut b) = (mk(0.0), mk(2.0));
+        a.crop.left = 0.2;
+        let mut t = Track::new(TrackKind::Text);
+        t.clips = vec![a.clone(), b.clone()];
+        p.timeline.tracks.push(t);
+        let bid = b.id;
+        let other = |orig: &Clip, e: &Clip, p: &Project| match propagate(p, orig, e, &[orig.id, bid]).as_slice() {
+            [EditOp::ReplaceClip { clip }] => clip.crop,
+            o => panic!("{o:?}"),
+        };
+        // Ändern: b hat noch keinen Zuschnitt
+        let mut e = a.clone();
+        e.crop.top = 0.3;
+        assert_eq!(other(&a, &e, &p), Crop { top: 0.3, ..Default::default() });
+        // Zurücksetzen (Feld fällt aus dem JSON)
+        b.crop = Crop { left: 0.5, ..Default::default() };
+        p.timeline.tracks[0].clips[1] = b.clone();
+        let mut e = a.clone();
+        e.crop = Crop::default();
+        assert_eq!(other(&a, &e, &p), Crop::default());
     }
 }
