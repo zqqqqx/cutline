@@ -131,6 +131,109 @@ pub struct ClipFx {
     pub deflicker: bool,
     /// Zeitlupe mit berechneten Zwischenbildern (optischer Fluss) statt doppelter Bilder
     pub smooth_slowmo: bool,
+    /// Zensur-Flächen (Verpixeln/Weichzeichnen); leer = Feld fehlt in der Datei
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub censor: Vec<Censor>,
+}
+
+/// Zensur-Fläche: verpixelt bzw. zeichnet ein Rechteck oder eine Ellipse weich. Lage als Anteil
+/// des Quellbilds (vor Spiegeln, Zuschnitt und Transform), Bahn in Quellzeit – Teilen, Trimmen,
+/// Tempo und Rückwärts nehmen sie so ohne Umrechnung mit (wie `Clip::beats`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Censor {
+    /// Weichzeichnen statt Verpixeln
+    pub blur: bool,
+    pub ellipse: bool,
+    /// 0 = Mindeststärke (schon unkenntlich, siehe `CENSOR_MIN`) … 1 = sehr grob
+    pub strength: f32,
+    /// Stützpunkte nach Zeit sortiert; einer = die Fläche steht still
+    pub path: Vec<CensorKey>,
+}
+
+/// Lage der Zensur-Fläche zu einem Zeitpunkt (Mitte, Breite, Höhe als Anteil des Bildes).
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct CensorKey {
+    pub t: Time,
+    pub cx: f32,
+    pub cy: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+/// Blockgröße bzw. Unschärfe (Sigma) der Zensur als Anteil der kürzeren Bildseite bei Stärke 0
+/// und 1. Mindestens 1/24 (45 px in 1080p): ein Gesicht (~300 px) hat dann höchstens ~7 Blöcke
+/// in der Breite bzw. ist über 45 px verwischt – nicht mehr erkennbar.
+pub const CENSOR_MIN: f32 = 1.0 / 24.0;
+pub const CENSOR_MAX: f32 = 1.0 / 8.0;
+/// Die Fläche ist so viel größer als der verfolgte Rahmen; nach dem Vereinfachen der Bahn
+/// bleibt mindestens `CENSOR_KEEP` Rand.
+pub const CENSOR_PAD: f32 = 1.15;
+pub const CENSOR_KEEP: f32 = 1.05;
+
+impl CensorKey {
+    fn lerp(a: CensorKey, b: CensorKey, t: Time) -> CensorKey {
+        let q = ((t.0 - a.t.0) as f64 / (b.t.0 - a.t.0).max(1) as f64).clamp(0.0, 1.0) as f32;
+        let m = |x: f32, y: f32| x + (y - x) * q;
+        CensorKey { t, cx: m(a.cx, b.cx), cy: m(a.cy, b.cy), w: m(a.w, b.w), h: m(a.h, b.h) }
+    }
+    /// Um `k` vergrößert (Mitte bleibt)
+    pub fn grown(self, k: f32) -> CensorKey {
+        CensorKey { w: self.w * k, h: self.h * k, ..self }
+    }
+    /// Liegt `inner` ganz in dieser Fläche (als Rechteck)?
+    pub fn covers(&self, inner: &CensorKey) -> bool {
+        const EPS: f32 = 1e-5;
+        self.cx - self.w / 2.0 <= inner.cx - inner.w / 2.0 + EPS
+            && self.cx + self.w / 2.0 >= inner.cx + inner.w / 2.0 - EPS
+            && self.cy - self.h / 2.0 <= inner.cy - inner.h / 2.0 + EPS
+            && self.cy + self.h / 2.0 >= inner.cy + inner.h / 2.0 - EPS
+    }
+}
+
+impl Censor {
+    /// Lage zur Zeit `t` (linear zwischen den Stützpunkten, davor/danach gehalten).
+    pub fn at(&self, t: Time) -> CensorKey {
+        let p = &self.path;
+        let Some(first) = p.first() else {
+            return CensorKey { t, cx: 0.5, cy: 0.5, w: 0.3, h: 0.3 };
+        };
+        if t <= first.t {
+            return CensorKey { t, ..*first };
+        }
+        match p.windows(2).find(|w| t <= w[1].t) {
+            Some(w) => CensorKey::lerp(w[0], w[1], t),
+            None => CensorKey { t, ..p[p.len() - 1] },
+        }
+    }
+}
+
+/// Verfolgte Rahmen (gleichmäßig abgetastet, nach Zeit sortiert) → Bahn der Zensur-Fläche: um
+/// `CENSOR_PAD` vergrößert und vereinfacht. Ein Stützpunkt fällt weg, solange die Gerade zwischen
+/// den Nachbarn jeden Rahmen dazwischen noch mit `CENSOR_KEEP` Rand überdeckt; höchstens 2 s
+/// zwischen zwei Stützpunkten. Da Bahn und Rahmen zwischen den Abtastzeiten linear verlaufen,
+/// gilt die Überdeckung dann auch für jedes Bild dazwischen.
+pub fn censor_simplify(boxes: &[CensorKey]) -> Vec<CensorKey> {
+    let pad = |k: CensorKey| k.grown(CENSOR_PAD);
+    let Some(first) = boxes.first() else { return Vec::new() };
+    let fits = |i: usize, j: usize| {
+        let (a, b) = (pad(boxes[i]), pad(boxes[j]));
+        b.t.0 - a.t.0 <= 2_000_000
+            && boxes[i + 1..j]
+                .iter()
+                .all(|m| CensorKey::lerp(a, b, m.t).covers(&m.grown(CENSOR_KEEP)))
+    };
+    let mut out = vec![pad(*first)];
+    let mut i = 0;
+    while i + 1 < boxes.len() {
+        let mut j = i + 1;
+        while j + 1 < boxes.len() && fits(i, j + 1) {
+            j += 1;
+        }
+        out.push(pad(boxes[j]));
+        i = j;
+    }
+    out
 }
 
 /// Personen-Effekte auf Basis der Maske aus „Hintergrund entfernen“.

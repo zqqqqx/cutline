@@ -518,6 +518,46 @@ impl Clip {
             Time(self.source_in.0 + rel.round() as i64)
         }
     }
+    /// Zensur-Flächen mit der Bahn in Clipzeit (ab Clipbeginn) statt Quellzeit, wie die
+    /// Filterkette sie braucht. `at`: nur die Lage zu dieser Clipzeit (Einzelbild).
+    pub fn censor_in_clip_time(&self, at: Option<Time>) -> Vec<Censor> {
+        let dur = self.duration;
+        let mut ts = vec![Time::ZERO, dur];
+        if let Some(a) = at {
+            ts = vec![a];
+        } else if self.fx.speed_curve.is_some() {
+            // Kurve: Zuordnung nicht linear, in Bildschritten abtasten
+            let step = Time::from_secs_f64(1.0 / 30.0);
+            ts.extend((1..dur.0 / step.0.max(1)).map(|i| Time(i * step.0)));
+        }
+        let sp = self.speed.max(0.01) as f64;
+        self.fx
+            .censor
+            .iter()
+            .map(|cs| {
+                let mut ts = ts.clone();
+                if at.is_none() && self.fx.speed_curve.is_none() {
+                    ts.extend(
+                        cs.path
+                            .iter()
+                            .map(|k| {
+                                let rel = (k.t - self.source_in).0 as f64;
+                                let rel = if self.fx.reverse { self.source_span().0 as f64 - rel } else { rel };
+                                Time((rel / sp).round() as i64)
+                            })
+                            .filter(|t| *t > Time::ZERO && *t < dur),
+                    );
+                }
+                ts.sort();
+                ts.dedup();
+                let path = ts
+                    .into_iter()
+                    .map(|t| CensorKey { t, ..cs.at(self.source_time(self.start + t)) })
+                    .collect();
+                Censor { path, ..cs.clone() }
+            })
+            .collect()
+    }
     /// Länge des genutzten Quellbereichs.
     pub fn source_span(&self) -> Time {
         Time((self.duration.0 as f64 * self.speed.max(0.01) as f64).round() as i64)
