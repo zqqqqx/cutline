@@ -345,6 +345,11 @@ pub fn kf_button(ui: &mut egui::Ui, state: Kf) -> egui::Response {
 
 /// Segment-Umschalter (gleich breite Felder). Gibt `true` bei Änderung zurück.
 pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
+    segmented_some(ui, items, sel, &[])
+}
+
+/// Wie [`segmented`]; Felder mit `false` in `enabled` sind ausgegraut und nicht wählbar.
+pub fn segmented_some(ui: &mut egui::Ui, items: &[&str], sel: &mut usize, enabled: &[bool]) -> bool {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 24.0), Sense::hover());
     ui.painter().rect_filled(rect, theme::R_CARD, theme::BG_INPUT());
@@ -377,7 +382,8 @@ pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
     let mut changed = false;
     for (i, t) in texts.iter().enumerate() {
         let r = rects[i];
-        let resp = ui.interact(r, ui.id().with(("seg", i, items[i])), Sense::click());
+        let on = enabled.get(i).copied().unwrap_or(true);
+        let resp = ui.interact(r, ui.id().with(("seg", i, items[i])), if on { Sense::click() } else { Sense::hover() });
         let active = *sel == i;
         if !active && resp.hovered() {
             ui.painter().rect_filled(r, theme::R_CTRL, theme::BG_RAISED());
@@ -388,7 +394,7 @@ pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
             t,
             font.clone(),
             // aktiv: neutrale Fläche + heller Text (kein Akzent-Text)
-            if active { theme::TEXT() } else { theme::TEXT_DIM() },
+            if active { theme::TEXT() } else if on { theme::TEXT_DIM() } else { theme::TEXT_FAINT() },
         );
         if extra < 0.0 {
             resp.clone().on_hover_text(t);

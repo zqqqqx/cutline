@@ -149,15 +149,18 @@ impl crate::app::App {
         let (name, list) = (&l.name, &l.items);
         // Warteschlange (alle Projekte): laufender Export mit Fortschritt, darunter die wartenden
         let file = |f: &Path| f.file_name().unwrap_or_default().to_string_lossy().to_string();
-        let current = self.export.current().map(|(f, p)| (file(f), p));
+        let current = self.export.current();
         let waiting: Vec<(String, String)> = self
             .export
             .waiting()
-            .map(|(f, s)| {
+            .map(|(f, s, parts)| {
                 let mut d = crate::tr(s.format.label());
                 if !s.format.audio_only() {
                     let (w, h) = s.output_size();
                     d = format!("{d} · {w}×{h}");
+                }
+                if parts > 0 {
+                    d = format!("{d} · {}", crate::tr(format!("{parts} Teile")));
                 }
                 (file(f), format!("{d} · {}", crate::tr("Wartet")))
             })
