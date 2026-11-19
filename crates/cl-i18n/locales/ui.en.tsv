@@ -1885,3 +1885,4 @@ Höchstens {} MB	At most {} MB
 Eigene …	Custom …
 Wird in {}p exportiert	Will be exported in {}p
 Wird in {}p exportiert – auch dafür ist die Größe knapp	Will be exported in {}p – the size is tight even for that
+Beim Überschreiben werden {} ältere Teile entfernt	{} older parts will be removed when overwriting

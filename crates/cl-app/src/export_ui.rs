@@ -1219,6 +1219,10 @@ impl ExportDialog {
             let mut choice = None;
             let file = out.clone();
             let exists = parts.iter().any(|f| f.1.exists());
+            // Teile eines früheren Laufs, die es diesmal nicht mehr gibt (z. B. „Teil 06“ von 6, jetzt 4)
+            let keep: Vec<PathBuf> = parts.iter().map(|f| f.1.clone()).collect();
+            let stale = if self.split(&s).is_some() { stale_parts(&out, &file_safe(&self.name), s.format.extension(), &keep) } else { Vec::new() };
+            let old = stale.iter().filter(|f| f.extension().is_some_and(|e| e == s.format.extension())).count();
             let m = crate::dialog::modal(ctx, "export-overwrite").show(ctx, |ui| {
                 ui.set_width(380.0);
                 let t = match (exists, parts.len() > 1) {
@@ -1230,6 +1234,9 @@ impl ExportDialog {
                     choice = Some(2);
                 }
                 ui.label(RichText::new(crate::paths::shown(&file)).small().color(theme::TEXT_DIM()));
+                if old > 0 {
+                    ui.label(RichText::new(crate::tr(format!("Beim Überschreiben werden {old} ältere Teile entfernt"))).small().color(theme::TEXT_DIM()));
+                }
                 crate::dialog::footer(ui, |ui| {
                     if ui.add(theme::primary("Anderen Namen")).clicked() {
                         choice = Some(1);
@@ -1252,7 +1259,12 @@ impl ExportDialog {
                 choice = Some(2);
             }
             match choice {
-                Some(0) => start = true,
+                Some(0) => {
+                    for f in &stale {
+                        let _ = std::fs::remove_file(f);
+                    }
+                    start = true;
+                }
                 Some(1) => {
                     let base = self.name.trim().to_string();
                     for n in 2.. {
@@ -1299,6 +1311,33 @@ impl ExportDialog {
 fn file_safe(name: &str) -> String {
     let s: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect();
     crate::paths::fit_name(&s)
+}
+
+/// Dateien einer früheren Teile-Gruppe in `dir`, die nicht zu den neuen Teilen `keep` gehören. Nur
+/// genau das Muster dieser Gruppe: `Name – Teil NN`, `Name – Part NN` oder `Name – NN[ Marker]`
+/// mit der Endung des Formats oder als Begleitdatei (.srt, .vtt, .chapters.txt); sonst nichts.
+fn stale_parts(dir: &Path, name: &str, ext: &str, keep: &[PathBuf]) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let ends = [format!(".{ext}"), ".srt".into(), ".vtt".into(), ".chapters.txt".into()];
+    let prefix = format!("{name} – ");
+    let nr = |t: &str| t.len() >= 2 && t.bytes().all(|b| b.is_ascii_digit());
+    let ours = |n: &str| {
+        let Some(rest) = ends.iter().find_map(|e| n.strip_suffix(e.as_str())).and_then(|x| x.strip_prefix(&prefix)) else {
+            return false;
+        };
+        match rest.split_once(' ') {
+            Some(("Teil" | "Part", t)) => nr(t),
+            Some((h, t)) => nr(h) && !t.trim().is_empty(),
+            None => nr(rest),
+        }
+    };
+    let kept = |f: &Path| keep.iter().any(|k| ["srt", "vtt", "chapters.txt"].iter().any(|e| k.with_extension(e) == f) || k == f);
+    let mut v: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|f| f.is_file() && f.file_name().is_some_and(|n| ours(&n.to_string_lossy())) && !kept(f))
+        .collect();
+    v.sort();
+    v
 }
 
 /// „In Teile aufteilen“: gleich lange Teile, Teile fester Länge (Sekunden) oder Schnitt an Markern
@@ -2158,6 +2197,34 @@ fn export_dialog_shows_all_settings_when_there_is_room() {
     let (win, (shown, content)) = dialog_layout(&mut d, &p, 1280.0, 720.0);
     assert!(win.top() >= 0.0 && win.bottom() <= 720.0, "{win:?}");
     assert!(shown > 300.0 && shown <= content, "{shown} von {content}");
+}
+
+#[test]
+fn overwriting_a_group_finds_only_its_own_older_parts() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    let files = [
+        "Film – Teil 01.mp4", "Film – Teil 04.mp4", "Film – Teil 05.mp4", "Film – Teil 06.mp4", "Film – Teil 06.srt",
+        "Film – Teil 06.vtt", "Film – Teil 06.chapters.txt", "Film – Part 07.mp4", "Film – 08 Ende.mp4", "Film – 09.mp4",
+        // fremd: andere Endung, anderer Name, Zusatz, einstellige Nummer, Notizen
+        "Film – Teil 06.mov", "Film – Teil 06 Kopie.mp4", "Anderer – Teil 06.mp4", "Film – Teil 6.mp4", "Notizen.txt", "Film.mp4",
+        "Film – 10 .mp4",
+    ];
+    for f in files {
+        std::fs::write(d.join(f), b"x").unwrap();
+    }
+    std::fs::create_dir(d.join("Film – Teil 11.mp4")).unwrap();
+    let keep: Vec<PathBuf> = (1..=4).map(|i| d.join(format!("Film – Teil 0{i}.mp4"))).collect();
+    let stale: Vec<String> = stale_parts(d, "Film", "mp4", &keep).iter().map(|f| f.file_name().unwrap().to_string_lossy().to_string()).collect();
+    assert_eq!(
+        stale,
+        ["Film – 08 Ende.mp4", "Film – 09.mp4", "Film – Part 07.mp4", "Film – Teil 05.mp4", "Film – Teil 06.chapters.txt", "Film – Teil 06.mp4", "Film – Teil 06.srt", "Film – Teil 06.vtt"]
+    );
+    // Begleitdatei eines bleibenden Teils bleibt
+    std::fs::write(d.join("Film – Teil 01.srt"), b"x").unwrap();
+    assert!(!stale_parts(d, "Film", "mp4", &keep).iter().any(|f| f.ends_with("Film – Teil 01.srt")));
+    // ohne Ordner: nichts
+    assert!(stale_parts(&d.join("fehlt"), "Film", "mp4", &keep).is_empty());
 }
 
 #[test]
