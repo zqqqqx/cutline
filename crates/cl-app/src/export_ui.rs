@@ -398,6 +398,9 @@ pub struct ExportDialog {
     split_by: usize,
     split_count: u32,
     split_secs: u32,
+    /// „Dateigröße: Eigene …“ gewählt; Wert in MB
+    size_custom: bool,
+    custom_mb: u32,
 }
 
 /// Höchste Höhe der Einstellungen rechts; mehr scrollt (Fenster passt in 1280×720)
@@ -500,6 +503,7 @@ impl ExportDialog {
             s.codec = old.codec;
             s.quality = old.quality;
             s.include_audio = old.include_audio;
+            s.target_mb = old.target_mb;
         }
         // eine im Dialog getroffene Wahl gilt nur für diesen Export
         self.encoder_picked = false;
@@ -515,7 +519,7 @@ impl ExportDialog {
             self.custom_kbps = 12000;
         }
         if self.split_count == 0 {
-            (self.split_count, self.split_secs) = (2, 60);
+            (self.split_count, self.split_secs, self.custom_mb) = (2, 60, 200);
         }
         // Hardware-Encoder einmalig im Hintergrund prüfen
         if self.encoders.lock().unwrap().is_none() {
@@ -591,6 +595,57 @@ impl ExportDialog {
         let parts = split_parts(how, range, p.settings.fps, &p.timeline.markers, &name, &crate::tr("Teil"), s.format.extension());
         let parts = parts.into_iter().map(|(r, f)| (Some(r), dir.join(f))).collect();
         (dir, parts)
+    }
+
+    /// Längster Teil (Sekunden) und Zahl der Teile (1 ohne Aufteilen); die Zielgröße gilt je Teil
+    fn longest_part(&self, p: &Project, s: &ExportSettings) -> (f64, usize) {
+        let (_, parts) = self.targets(p, s);
+        let len = |r: &Option<(Time, Time)>| r.map_or(p.duration(), |(a, b)| b - a).as_secs_f64();
+        (parts.iter().map(|x| len(&x.0)).fold(0.0, f64::max), parts.len())
+    }
+
+    /// „Dateigröße“: Automatisch, feste Zielgrößen oder eigene; ausgegraut ohne passenden Codec.
+    /// Darunter der Hinweis, wenn dafür verkleinert wird.
+    fn size_rows(&mut self, ui: &mut egui::Ui, p: &Project, s: &mut ExportSettings) {
+        let can = s.target_possible();
+        if !can {
+            s.target_mb = None;
+        }
+        ui.add_enabled_ui(can, |ui| {
+            theme::row(ui, "Dateigröße", |ui| {
+                let label = match s.target_mb {
+                    None => "Automatisch".to_string(),
+                    Some(_) if self.size_custom => "Eigene …".into(),
+                    Some(m) => format!("Höchstens {m} MB"),
+                };
+                egui::ComboBox::from_id_salt("exp-size").selected_text(crate::tr(label)).width(200.0).show_ui(ui, |ui| {
+                    if ui.selectable_label(s.target_mb.is_none(), crate::tr("Automatisch")).clicked() {
+                        (s.target_mb, self.size_custom) = (None, false);
+                    }
+                    for m in [10, 25, 50, 100] {
+                        if ui.selectable_label(s.target_mb == Some(m) && !self.size_custom, crate::tr(format!("Höchstens {m} MB"))).clicked() {
+                            (s.target_mb, self.size_custom) = (Some(m), false);
+                        }
+                    }
+                    if ui.selectable_label(s.target_mb.is_some() && self.size_custom, crate::tr("Eigene …")).clicked() {
+                        (s.target_mb, self.size_custom) = (Some(self.custom_mb.max(1)), true);
+                    }
+                });
+            });
+        });
+        let Some(_) = s.target_mb else { return };
+        if self.size_custom {
+            theme::row(ui, "", |ui| ui.add(egui::DragValue::new(&mut self.custom_mb).range(1..=100_000).suffix(" MB")));
+            s.target_mb = Some(self.custom_mb.max(1));
+        }
+        // nie still verkleinern (bei Teilen gilt der längste)
+        let t = s.for_target(self.longest_part(p, s).0);
+        if let Quality::Bitrate(k) = t.quality {
+            if let Some((e, enough)) = cl_export::target_edge(k, (s.width, s.height), s.fps.as_f64()) {
+                let h = if enough { format!("Wird in {e}p exportiert") } else { format!("Wird in {e}p exportiert – auch dafür ist die Größe knapp") };
+                ui.label(RichText::new(crate::tr(h)).small().color(theme::WARN_TEXT()));
+            }
+        }
     }
 
     /// „In Teile aufteilen“ mit Art, Zahl bzw. Länge und Ergebniszeile (Abschnitt „Video“)
@@ -687,7 +742,7 @@ impl ExportDialog {
                 let src = run.src;
                 let s = &src.settings;
                 let res = res.map_err(|e| (!cancelled).then_some(e));
-                log::info!(target: "export", "{} nach {secs:.1} s: {} · {} von {} Teilen · {:?}", match res { Ok(()) => "fertig", Err(None) => "abgebrochen", Err(Some(_)) => "Fehler" }, src.out.display(), done.len(), src.parts.len(), (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio));
+                log::info!(target: "export", "{} nach {secs:.1} s: {} · {} von {} Teilen · {:?}", match res { Ok(()) => "fertig", Err(None) => "abgebrochen", Err(Some(_)) => "Fehler" }, src.out.display(), done.len(), src.parts.len(), (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio, s.target_mb));
                 // fertige Teile (auch wenn andere scheiterten oder danach abgebrochen wurde):
                 // Begleitdateien schreiben, dem Projekt zugeordnet, aus dem der Export stammt (nicht
                 // dem gerade offenen), unter dem Projektnamen, nicht dem (änderbaren) Dateinamen
@@ -811,16 +866,23 @@ impl ExportDialog {
                         }
                         ui.add_space(8.0);
                         let secs = s.range.map_or(p.duration(), |(a, b)| b - a).as_secs_f64();
+                        // Zielgröße gilt je Teil: Größe des Bildes wie beim längsten Teil
+                        let (longest, n) = self.longest_part(p, &s);
                         let info = if audio_only {
                             format!("{} {}", icon::CLOCK, theme::secs(secs, 1))
                         } else {
-                            let (w, h) = s.output_size();
+                            let (w, h) = s.for_target(longest).output_size();
                             format!("{} {}  ·  {w}×{h}", icon::CLOCK, theme::secs(secs, 1))
                         };
                         ui.label(RichText::new(crate::tr(info)).small().color(theme::TEXT_DIM()));
                         if !audio_only {
                             let (est, exact) = estimate_mb(&s, p.duration());
-                            let txt = if exact { format!("{} {est:.0} MB", icon::HARD_DRIVES) } else { format!("{} ca. {est:.0} MB", icon::HARD_DRIVES) };
+                            let txt = match s.target_mb.filter(|_| s.target_possible()) {
+                                Some(m) if n > 1 => format!("{} {n} × {m} MB", icon::HARD_DRIVES),
+                                Some(m) => format!("{} {m} MB", icon::HARD_DRIVES),
+                                None if exact => format!("{} {est:.0} MB", icon::HARD_DRIVES),
+                                None => format!("{} ca. {est:.0} MB", icon::HARD_DRIVES),
+                            };
                             ui.label(RichText::new(crate::tr(txt)).small().color(theme::TEXT_DIM()));
                         }
                         if live {
@@ -916,6 +978,7 @@ impl ExportDialog {
                                     s.width = ((pw as f64 * f).round() as u32) & !1;
                                     s.height = ((ph as f64 * f).round() as u32) & !1;
                                 }
+                                self.size_rows(ui, p, &mut s);
                                 if s.format != Format::Gif {
                                     theme::row(ui, "Codec", |ui| {
                                         if !Codec::for_format(s.format).contains(&s.codec) {
@@ -933,7 +996,8 @@ impl ExportDialog {
                                                 .on_hover_text(crate::tr("Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen"));
                                         });
                                     }
-                                    theme::row(ui, "Qualität", |ui| {
+                                    // mit Zielgröße bestimmt sie die Bitrate
+                                    ui.add_enabled_ui(s.target_mb.is_none(), |ui| theme::row(ui, "Qualität", |ui| {
                                         let label = match s.quality {
                                             Quality::Lower => "Kleinere Datei".to_string(),
                                             Quality::Recommended => "Empfohlen".into(),
@@ -946,7 +1010,7 @@ impl ExportDialog {
                                             ui.selectable_value(&mut s.quality, Quality::Higher, crate::tr("Höher"));
                                             ui.selectable_value(&mut s.quality, Quality::Bitrate(self.custom_kbps), crate::tr("Benutzerdefinierte Bitrate"));
                                         });
-                                    });
+                                    }));
                                     if let Quality::Bitrate(_) = s.quality {
                                         theme::row(ui, "", |ui| {
                                             ui.add(egui::DragValue::new(&mut self.custom_kbps).range(500..=200_000).suffix(" kbit/s").speed(100));
@@ -962,16 +1026,19 @@ impl ExportDialog {
                                         });
                                     });
                                     let encs = self.encoders.lock().unwrap().clone().unwrap_or_default();
-                                    theme::row(ui, "Encoder", |ui| {
+                                    // mit Zielgröße immer Software (zwei Durchgänge); die Wahl bleibt für danach
+                                    let target = s.target_mb.is_some();
+                                    ui.add_enabled_ui(!target, |ui| theme::row(ui, "Encoder", |ui| {
                                         let name = encoder_name;
-                                        egui::ComboBox::from_id_salt("exp-enc").selected_text(crate::tr(name(s.encoder))).width(200.0).show_ui(ui, |ui| {
+                                        let shown = if target { Encoder::Software } else { s.encoder };
+                                        egui::ComboBox::from_id_salt("exp-enc").selected_text(crate::tr(name(shown))).width(200.0).show_ui(ui, |ui| {
                                             for e in encs {
                                                 if ui.selectable_value(&mut s.encoder, e, crate::tr(name(e))).clicked() {
                                                     self.encoder_picked = true;
                                                 }
                                             }
                                         });
-                                    });
+                                    }));
                                     self.split_rows(ui, p, &s);
                                     theme::section(ui, "Ton");
                                     crate::widgets::check(ui, &mut s.include_audio, crate::tr(format!("Ton exportieren (AAC {} kbit/s, bei WebM Opus)", s.audio_kbps.unwrap_or(256))));
@@ -2021,6 +2088,46 @@ fn cancel_stops_the_whole_group_without_half_files() {
     let names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
     assert!(names.contains(&"Film – Teil 01.mp4".to_string()) && !names.contains(&"Film – Teil 04.mp4".to_string()), "{names:?}");
     assert!(names.iter().all(|n| !n.contains(".part")), "{names:?}");
+    std::env::remove_var("CUTLINE_HOME");
+}
+
+/// Zielgröße gilt je Teil: Bitrate aus der Länge des Teils.
+#[test]
+fn target_size_applies_per_part() {
+    use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    // starkes Rauschen (sonst unterschreitet der Encoder jede Bitrate) und Ton (der eingeplante
+    // Anteil bliebe sonst ungenutzt)
+    let v = dir.path().join("rauschen.mp4");
+    let st = cl_media::ffmpeg_command()
+        .unwrap()
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=480x270:rate=30:duration=4,noise=alls=40:allf=t"])
+        .args(["-f", "lavfi", "-i", "sine=f=440:d=4"])
+        .args(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+        .arg(&v)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    let m = cl_media::probe(&v).unwrap();
+    let mut p = Project::new("Klein");
+    (p.settings.width, p.settings.height) = (480, 270);
+    let mut t = Track::new(TrackKind::Video);
+    t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0)));
+    p.media.push(m);
+    p.timeline.tracks.push(t);
+    let mut d = split_dialog(&p, dir.path(), 2);
+    d.settings.as_mut().unwrap().target_mb = Some(1);
+    frame(&mut d, &ctx, &p, true);
+    drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
+    for n in ["Klein – Teil 01.mp4", "Klein – Teil 02.mp4"] {
+        let size = std::fs::metadata(dir.path().join("Klein").join(n)).unwrap().len();
+        eprintln!("Zielgröße 1 MB je Teil (2 s): {n} {size} Byte");
+        assert!((850_000..=1_000_000).contains(&size), "{n}: {size}");
+    }
     std::env::remove_var("CUTLINE_HOME");
 }
 

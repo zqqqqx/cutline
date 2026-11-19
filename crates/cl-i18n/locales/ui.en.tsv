@@ -1881,3 +1881,7 @@ Teil {} von {}	Part {} of {}
 {} von {} Teilen fertig	{} of {} parts finished
 Exportiere Teil {} von {} …	Exporting part {} of {} …
 Dateien existieren bereits	Files already exist
+Höchstens {} MB	At most {} MB
+Eigene …	Custom …
+Wird in {}p exportiert	Will be exported in {}p
+Wird in {}p exportiert – auch dafür ist die Größe knapp	Will be exported in {}p – the size is tight even for that
