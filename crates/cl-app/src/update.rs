@@ -283,6 +283,7 @@ pub fn startup_cleanup() {
     }
     std::thread::spawn(|| {
         cleanup_temp(&std::env::temp_dir(), std::time::Duration::from_secs(2 * 86_400));
+        cl_media::cleanup_graphs();
         cl_update::packs::cleanup_parts(&crate::contents::download_dir(), crate::paths::pid_alive);
     });
 }
