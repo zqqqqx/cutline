@@ -251,7 +251,7 @@ pub enum PersonFx {
         color: [u8; 3],
         width: f32,
         /// Hintergrund durchsichtig: nur Umriss und Person (Ebene über einem anderen Bild)
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         transparent: bool,
     },
 }
@@ -971,6 +971,25 @@ pub fn curve_speed_at(id: &str, u: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Umriss ohne „durchsichtig“ schreibt das Feld nicht (Projektdatei wie vor 0.13)
+    #[test]
+    fn outline_without_transparent_is_saved_as_before() {
+        use crate::model::*;
+        let mut p = Project::new("Umriss");
+        let mut t = Track::new(TrackKind::Video);
+        let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
+        c.fx.person = Some(PersonFx::Outline { color: [255, 255, 255], width: 8.0, transparent: false });
+        t.clips.push(c);
+        p.timeline.tracks.push(t);
+        let s = p.to_json();
+        assert!(s.contains("\"outline\"") && !s.contains("transparent"), "{s}");
+        assert_eq!(Project::from_json(&s).unwrap().to_json(), s);
+        if let Some(PersonFx::Outline { transparent, .. }) = &mut p.timeline.tracks[0].clips[0].fx.person {
+            *transparent = true;
+        }
+        assert!(p.to_json().contains("\"transparent\": true"));
+    }
 
     #[test]
     fn keyframes_interpolate_and_edit() {
