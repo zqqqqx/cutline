@@ -1815,3 +1815,22 @@ Zuschnitt	Crop
 Links	Left
 Rechts	Right
 Unten	Bottom
+Layout: Nebeneinander	Layout: Side by side
+Nebeneinander	Side by side
+Layout: Übereinander	Layout: Stacked
+Übereinander	Stacked
+Layout: Einer groß, zwei rechts	Layout: One large, two on the right
+Einer groß, zwei rechts	One large, two on the right
+Layout: Drei Spalten	Layout: Three columns
+Drei Spalten	Three columns
+Layout: Raster 2×2	Layout: Grid 2×2
+Raster 2×2	Grid 2×2
+Layout: Bild-in-Bild – oben links	Layout: Picture in picture – top left
+Bild-in-Bild – oben links	Picture in picture – top left
+Layout: Bild-in-Bild – oben rechts	Layout: Picture in picture – top right
+Bild-in-Bild – oben rechts	Picture in picture – top right
+Layout: Bild-in-Bild – unten links	Layout: Picture in picture – bottom left
+Bild-in-Bild – unten links	Picture in picture – bottom left
+Layout: Bild-in-Bild – unten rechts	Layout: Picture in picture – bottom right
+Bild-in-Bild – unten rechts	Picture in picture – bottom right
+Layout zurücksetzen	Reset layout

@@ -2,6 +2,7 @@
 
 mod app;
 mod applog;
+mod arrange;
 mod assets;
 mod captions;
 mod audio;

@@ -191,6 +191,17 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("quick_speakers", "Sprecher-Aufnahmen importieren …", &[]),
     ("quick_punch", "Zoom-Punch-in am Playhead", &[]),
     ("quick_vertical", "Hochkant-Layout (9:16, Facecam oben)", &[]),
+    // Untermenü „Layout“ (`arrange.rs`); im Menü ohne „Layout: “
+    ("quick_layout_side", "Layout: Nebeneinander", &[]),
+    ("quick_layout_stack", "Layout: Übereinander", &[]),
+    ("quick_layout_big_left", "Layout: Einer groß, zwei rechts", &[]),
+    ("quick_layout_columns", "Layout: Drei Spalten", &[]),
+    ("quick_layout_grid", "Layout: Raster 2×2", &[]),
+    ("quick_layout_pip_tl", "Layout: Bild-in-Bild – oben links", &[]),
+    ("quick_layout_pip_tr", "Layout: Bild-in-Bild – oben rechts", &[]),
+    ("quick_layout_pip_bl", "Layout: Bild-in-Bild – unten links", &[]),
+    ("quick_layout_pip_br", "Layout: Bild-in-Bild – unten rechts", &[]),
+    ("quick_layout_reset", "Layout zurücksetzen", &[]),
     ("quick_thumbnail", "Thumbnail exportieren (aktuelles Bild)", &[]),
     ("quick_recap", "Rückblick aus Markern erstellen", &[]),
 ];
@@ -254,6 +265,13 @@ pub fn icon(id: &str) -> &'static str {
         "quick_punch" => i::MAGNIFYING_GLASS_PLUS,
         "quick_vertical" => i::DEVICE_MOBILE,
         "quick_thumbnail" => i::IMAGE,
+        "quick_layout_side" => i::SQUARE_SPLIT_HORIZONTAL,
+        "quick_layout_stack" => i::SQUARE_SPLIT_VERTICAL,
+        "quick_layout_big_left" => i::LAYOUT,
+        "quick_layout_columns" => i::COLUMNS,
+        "quick_layout_grid" => i::SQUARES_FOUR,
+        "quick_layout_pip_tl" | "quick_layout_pip_tr" | "quick_layout_pip_bl" | "quick_layout_pip_br" => i::PICTURE_IN_PICTURE,
+        "quick_layout_reset" => i::ARROW_COUNTER_CLOCKWISE,
         _ => "",
     }
 }

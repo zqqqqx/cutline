@@ -2999,6 +2999,7 @@ impl App {
                 "quick_vertical" => self.tool_vertical(),
                 "quick_thumbnail" => self.tool_thumbnail(ctx),
                 "quick_recap" => self.tool_recap(),
+                l if l.starts_with("quick_layout_") => self.tool_layout(l),
                 _ => {}
             }
         }
