@@ -996,42 +996,49 @@ impl App {
         track: Option<cl_core::TrackId>,
     ) -> Option<cl_core::ClipId> {
         self.library.mark_used(&format!("file:{}", path.display()));
-        // SVG wird für den Clip einmal als PNG gerendert
-        let file = if path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
-        {
-            // nicht im Cache (das Projekt zeigt darauf); Pfad-Kennung trennt gleichnamige SVGs
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            std::hash::Hash::hash(path, &mut h);
-            let out = crate::paths::generated_dir().join("svg").join(format!(
-                "{}-{:016x}.png",
-                path.file_stem()?.to_string_lossy(),
-                std::hash::Hasher::finish(&h)
-            ));
-            if !out.is_file() {
-                let svg = std::fs::read_to_string(path).ok()?;
-                let px = cl_fx::stickers::render_svg(&svg, 512)?;
-                let _ = std::fs::create_dir_all(out.parent()?);
-                // vormultipliziert → gerade
-                let mut px = px;
-                for c in px.chunks_mut(4) {
-                    let a = c[3] as f32 / 255.0;
-                    if a > 0.0 {
-                        for v in &mut c[..3] {
-                            *v = ((*v as f32 / a).min(255.0)) as u8;
-                        }
-                    }
-                }
-                image::save_buffer(&out, &px, 512, 512, image::ExtendedColorType::Rgba8).ok()?;
-            }
-            out
-        } else {
-            path.to_path_buf()
-        };
+        let file = own_sticker_file(path)?;
         self.add_image_overlay_at(file, at, track)
     }
+}
 
+/// Datei für den Bild-Clip eines eigenen Stickers: SVG wird einmal als PNG gerendert.
+pub fn own_sticker_file(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let file = if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
+    {
+        // nicht im Cache (das Projekt zeigt darauf); Pfad-Kennung trennt gleichnamige SVGs
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(path, &mut h);
+        let out = crate::paths::generated_dir().join("svg").join(format!(
+            "{}-{:016x}.png",
+            path.file_stem()?.to_string_lossy(),
+            std::hash::Hasher::finish(&h)
+        ));
+        if !out.is_file() {
+            let svg = std::fs::read_to_string(path).ok()?;
+            let px = cl_fx::stickers::render_svg(&svg, 512)?;
+            let _ = std::fs::create_dir_all(out.parent()?);
+            // vormultipliziert → gerade
+            let mut px = px;
+            for c in px.chunks_mut(4) {
+                let a = c[3] as f32 / 255.0;
+                if a > 0.0 {
+                    for v in &mut c[..3] {
+                        *v = ((*v as f32 / a).min(255.0)) as u8;
+                    }
+                }
+            }
+            image::save_buffer(&out, &px, 512, 512, image::ExtendedColorType::Rgba8).ok()?;
+        }
+        out
+    } else {
+        path.to_path_buf()
+    };
+    Some(file)
+}
+
+impl App {
     /// Eingebaute und eigene Einträge eines Bereichs nach Kategorie und Suche gefiltert.
     pub fn lib_items(
         &mut self,

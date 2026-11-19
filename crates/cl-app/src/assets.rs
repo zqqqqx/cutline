@@ -1717,10 +1717,16 @@ impl App {
             .into_iter()
             .filter_map(|e| catalog_item(e, "builtin:st:", |id| cl_fx::stickers::sticker(id).map(|s| s.id)))
             .collect();
-        let items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
+        let mut items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
         let ed = self.reorder(ui, "sticker", &cat, &items, |i| i.key.clone());
+        // Logo aus dem Brand Kit als erste Kachel (nicht sortier- oder ziehbar)
+        if let Some(p) = self.brand.logo.clone().filter(|_| cat == "Alle" && q.is_empty()) {
+            let name = crate::tr(crate::keymap::name("brand_logo"));
+            items.insert(0, Item { key: format!("brand:{}", p.display()), name, folder: String::new(), builtin: None, path: Some(p), linked: false, tags: Vec::new() });
+        }
         let ctx = ui.ctx().clone();
         let mut add: Option<Item> = None;
+        let mut logo = false;
         let mut menu: Vec<(egui::Response, Item)> = Vec::new();
         let area = egui::ScrollArea::vertical()
             .id_salt("stickers")
@@ -1796,6 +1802,10 @@ impl App {
                             }
                         },
                     );
+                    if it.key.starts_with("brand:") {
+                        logo |= widgets::tile_adds(&resp, false, false);
+                        return;
+                    }
                     let editing = ed.tile(ui, &resp, &it.key, true);
                     match (it.builtin.and_then(cl_fx::stickers::sticker), &it.path) {
                         _ if editing => {}
@@ -1815,6 +1825,9 @@ impl App {
         self.lib_drop = Some((Kind::Sticker, area.inner_rect));
         for (r, it) in menu {
             self.asset_menu(&r, "sticker", &it.key, it.is_own().then_some(&it), &cat);
+        }
+        if logo {
+            self.insert_logo();
         }
         if let Some(it) = add {
             match (it.builtin.and_then(cl_fx::stickers::sticker), it.path) {

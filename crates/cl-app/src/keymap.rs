@@ -204,6 +204,8 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("quick_layout_reset", "Layout zurücksetzen", &[]),
     ("quick_thumbnail", "Thumbnail …", &[]),
     ("quick_recap", "Rückblick aus Markern erstellen", &[]),
+    // Brand Kit (Einstellungen → Brand Kit)
+    ("brand_logo", "Logo einfügen", &[]),
 ];
 
 /// Name einer Aktion (deutsch, `tr()` übersetzt), leer für unbekannte
@@ -251,6 +253,7 @@ pub fn icon(id: &str) -> &'static str {
         "archive" => i::ARCHIVE,
         "relink" => i::LINK,
         "settings" => i::GEAR_SIX,
+        "brand_logo" => i::IMAGE,
         "go_home" => i::HOUSE,
         "tour" => i::COMPASS,
         "onboarding" => i::HAND_WAVING,

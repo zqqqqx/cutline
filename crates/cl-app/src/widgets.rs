@@ -725,8 +725,40 @@ pub fn hit_plus(resp: &egui::Response, r: Rect, label_h: f32) -> bool {
         .is_some_and(|p| p.x > area_br.x - 26.0 && p.y > area_br.y - 26.0 && p.y <= area_br.y)
 }
 
-/// Farbfeld mit Popup-Wähler.
+/// Farbfeld mit Popup-Wähler; hat das Brand Kit Farben, stehen sie als Reihe daneben (ein Klick
+/// übernimmt die Farbe, die Deckkraft bleibt).
 pub fn color_button(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
+    let brand = crate::brand::colors(ui.ctx());
+    if brand.is_empty() {
+        return color_picker(ui, rgba);
+    }
+    ui.horizontal(|ui| {
+        let mut changed = color_picker(ui, rgba);
+        ui.spacing_mut().item_spacing.x = 3.0;
+        for b in brand.iter() {
+            let (r, resp) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::click());
+            let p = ui.painter();
+            p.rect_filled(r, theme::R_CTRL, Color32::from_rgb(b.rgb[0], b.rgb[1], b.rgb[2]));
+            let stroke = if rgba[..3] == b.rgb {
+                Stroke::new(1.5_f32, theme::ACCENT())
+            } else if resp.hovered() {
+                Stroke::new(1.0_f32, theme::TEXT_DIM())
+            } else {
+                Stroke::new(1.0_f32, theme::BORDER())
+            };
+            p.rect_stroke(r, theme::R_CTRL, stroke, egui::StrokeKind::Outside);
+            let resp = if b.name.is_empty() { resp } else { resp.on_hover_text(&b.name) };
+            if resp.clicked() {
+                rgba[..3].copy_from_slice(&b.rgb);
+                changed = true;
+            }
+        }
+        changed
+    })
+    .inner
+}
+
+fn color_picker(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
     let mut c = Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
     let r = egui::widgets::color_picker::color_edit_button_srgba(
         ui,

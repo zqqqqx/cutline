@@ -170,6 +170,8 @@ pub struct App {
     pub es: crate::epidemic::EsState,
     /// Eigene Sticker und Sounds
     pub library: crate::library::Library,
+    /// Farben, Schriften und Logo des Nutzers (`brand.json`)
+    pub brand: crate::brand::BrandKit,
     pub lib_dialog: Option<crate::library_ui::LibDialog>,
     pub lib_dialog_since: u64,
     /// Gespeicherte Look-Presets
@@ -447,6 +449,7 @@ impl App {
             plugins,
             es: Default::default(),
             library: crate::library::Library::load(),
+            brand: crate::brand::BrandKit::load(),
             lib_dialog: None,
             lib_dialog_since: 0,
             presets: crate::presets::load(),
@@ -598,6 +601,7 @@ impl App {
             ui_ctx: cc.egui_ctx.clone(),
         };
         app.register_fonts(&cc.egui_ctx);
+        crate::brand::publish(&cc.egui_ctx, &app.brand);
         app.prewarm_sounds();
         cc.egui_ctx.set_zoom_factor(app.ui_scale);
         if app.settings.mcp_enabled {
@@ -1281,6 +1285,7 @@ impl App {
             Some(t) => t.make(),
             None => TextStyle {
                 text: self.t("text-default"),
+                font_family: self.brand.font(crate::brand::TEXT).cloned(),
                 ..Default::default()
             },
         };
@@ -1322,10 +1327,17 @@ impl App {
         at: Time,
         track: Option<TrackId>,
     ) -> Option<ClipId> {
-        self.one_step(|s| s.add_image_overlay_step(path, at, track))
+        self.one_step(|s| s.add_image_overlay_step(path, at, track, |_, _| {}))
     }
 
-    fn add_image_overlay_step(&mut self, path: PathBuf, at: Time, track: Option<TrackId>) -> Option<ClipId> {
+    /// `place` ändert Dauer und Lage vor der Spurwahl (Logo aus dem Brand Kit).
+    pub(crate) fn add_image_overlay_step(
+        &mut self,
+        path: PathBuf,
+        at: Time,
+        track: Option<TrackId>,
+        place: impl FnOnce(&Self, &mut Clip),
+    ) -> Option<ClipId> {
         let media = *self.import_media(vec![path]).first()?;
         let clip = Clip::new(
             ClipContent::Media {
@@ -1337,6 +1349,7 @@ impl App {
         );
         let mut clip = clip;
         clip.transform.scale = 0.35;
+        place(self, &mut clip);
         // Sticker liegen immer über dem Video: freie Overlay-Spur suchen oder anlegen
         let track = track.or_else(|| {
             self.project
@@ -3006,6 +3019,9 @@ impl App {
                 "quick_vertical" => self.tool_vertical(),
                 "quick_thumbnail" => self.thumb_open(),
                 "quick_recap" => self.tool_recap(),
+                "brand_logo" => {
+                    self.insert_logo();
+                }
                 l if l.starts_with("quick_layout_") => self.tool_layout(l),
                 _ => {}
             }
@@ -3027,6 +3043,7 @@ impl App {
             "group" => self.selection().len() >= 2,
             "ungroup" => self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| c.group.is_some()),
             "import_project" => self.import_enabled(),
+            "brand_logo" => self.brand.logo.is_some(),
             q if q.starts_with("quick_") => self.quick_check(q).0,
             _ => true,
         }
