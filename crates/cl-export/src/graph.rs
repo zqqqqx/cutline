@@ -473,15 +473,14 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         );
     }
     let lines: Vec<&str> = txt.split('\n').collect();
-    let tw = lines
-        .iter()
-        .map(|l| {
-            cl_fonts::text_width(&data, idx, size, l)
-                .unwrap_or(size * 0.6 * l.chars().count() as f32)
-        })
-        .fold(0.0f32, f32::max);
+    let width = |l: &str| cl_fonts::text_width(&data, idx, size, l).unwrap_or(size * 0.6 * l.chars().count() as f32);
+    let tw = lines.iter().map(|l| width(l)).fold(0.0f32, f32::max);
     let ls = st.line_spacing.max(0.5);
-    let th = size * 1.3 * ls * lines.len() as f32;
+    // Zeilenabstand wie die Vorschau (egui: Zeilenhöhe 1,25 × Größe × Zeilenabstand)
+    let pitch = size * 1.25 * ls;
+    let (asc, desc) = cl_fonts::v_metrics(&data, idx, size).unwrap_or((size * 0.9, size * 0.25));
+    let block = pitch * lines.len() as f32;
+    let th = (size * 1.3 * ls * lines.len() as f32).max(block);
     let outline = st.outline.map(|o| o.0).unwrap_or(0.0);
     let pad = (size * 0.4 + outline * 2.0 + 8.0).ceil();
     // sehr lange Zeilen ohne Umbruch: Fläche begrenzen (Rest liegt ohnehin außerhalb des Bilds)
@@ -489,8 +488,7 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     let slant = if st.italic { ITALIC_SHEAR * th } else { 0.0 };
     let lw = (((tw + pad * 2.0 + slant).ceil() as u32 + 1) & !1).min(8192);
     let lh = (((th + pad * 2.0).ceil() as u32 + 1) & !1).min(8192);
-    let text_file = format!("text_{n}.txt");
-    std::fs::write(ctx.workdir.join(&text_file), txt.as_bytes())?;
+    let (lwf, lhf) = (lw as f32, lh as f32);
     let rgba = |c: [u8; 4]| {
         format!(
             "0x{:02x}{:02x}{:02x}@{:.3}",
@@ -500,27 +498,32 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
             c[3] as f32 / 255.0
         )
     };
-    let align = match st.align {
-        a if a < 0 => "L",
-        a if a > 0 => "R",
-        _ => "C",
-    };
-    let spacing = size * 0.3 * ls + size * (ls - 1.0).max(0.0);
+    // Jede Zeile mit eigenem drawtext an selbst berechneter Grundlinie: FFmpeg 8.1 zeichnet einen
+    // Zeilenumbruch in `textfile` als Kästchen (und verschiebt die Zeile), und `y_align=baseline`
+    // hängt nicht von den Buchstaben der Zeile ab. Zeilen mittig im Block, Schrift mittig in der Zeile.
+    let top = lhf / 2.0 - block / 2.0;
+    let mut files = Vec::new();
+    for (i, line) in lines.iter().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
+        let file = format!("text_{n}_{i}.txt");
+        std::fs::write(ctx.workdir.join(&file), line.as_bytes())?;
+        let x = match st.align {
+            a if a < 0 => format!("{:.1}", (lwf - tw) / 2.0),
+            a if a > 0 => format!("{:.1}-text_w", (lwf + tw) / 2.0),
+            _ => "(w-text_w)/2".to_string(),
+        };
+        let baseline = top + i as f32 * pitch + (pitch - asc - desc) / 2.0 + asc;
+        files.push((file, x, format!("{baseline:.1}")));
+    }
     let core = |dx: f32, col: [u8; 4], file: &str, x: &str, y: &str| {
         format!(
-            "drawtext=fontfile={font_file}:textfile={file}:expansion=none:fontsize={size:.1}:fontcolor={}:text_align={align}:x={x}+{dx:.1}:y={y}:line_spacing={spacing:.1}",
+            "drawtext=fontfile={font_file}:textfile={file}:expansion=none:fontsize={size:.1}:fontcolor={}:x={x}+{dx:.1}:y={y}:y_align=baseline",
             rgba(col),
         )
     };
-    let box_opt = |bg: [u8; 4]| format!(":box=1:boxcolor={}:boxborderw={:.0}", rgba(bg), (size * 0.25).max(4.0));
-    // `with_box`: Fläche hinter dem Text mitzeichnen
-    let draw_one = |col: [u8; 4], file: &str, x: &str, y: &str, with_box: bool| {
+    let draw_one = |col: [u8; 4], file: &str, x: &str, y: &str| {
         let mut dt = core(0.0, col, file, x, y);
         if let Some((bw, col)) = st.outline {
             dt.push_str(&format!(":borderw={bw:.1}:bordercolor={}", rgba(col)));
-        }
-        if let Some(bg) = st.background.filter(|_| with_box) {
-            dt.push_str(&box_opt(bg));
         }
         if st.shadow {
             dt.push_str(":shadowx=3:shadowy=3:shadowcolor=black@0.6");
@@ -533,14 +536,35 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         }
         dt
     };
-    let draw = |col: [u8; 4]| draw_one(col, &text_file, "(w-text_w)/2", "(h-text_h)/2", true);
+    // Fläche: ein Kasten um alle Zeilen (breiteste Zeile × Block), Innenabstand wie bisher
+    let backdrop = st.background.map(|bg| {
+        let b = (size * 0.25).max(4.0);
+        let x = match st.align {
+            a if a < 0 => (lwf - tw) / 2.0,
+            a if a > 0 => (lwf + tw) / 2.0 - tw,
+            _ => (lwf - tw) / 2.0,
+        };
+        let r = |v: f32| v.round().max(0.0) as i64;
+        let (bx, by) = (r(x - b), r(top + (pitch - asc - desc) / 2.0 - b));
+        let bw = r(tw + 2.0 * b).min(lw as i64 - bx);
+        let bh = r(block - (pitch - asc - desc) + 2.0 * b).min(lh as i64 - by);
+        format!("drawbox=x={bx}:y={by}:w={bw}:h={bh}:color={}:t=fill:replace=1", rgba(bg))
+    });
+    let draw = |col: [u8; 4]| {
+        let mut v: Vec<String> = backdrop.clone().into_iter().collect();
+        v.extend(files.iter().map(|(file, x, y)| draw_one(col, file, x, y)));
+        if v.is_empty() {
+            "null".to_string()
+        } else {
+            v.join(",")
+        }
+    };
     let shear = if st.italic { format!(",shear=shx={ITALIC_SHEAR}:fillcolor=black@0") } else { String::new() };
     let dur = c.duration.as_secs_f64();
     let src = ctx.label("tx");
     let layer = format!("color=c=black@0.0:s={lw}x{lh}:r={}:d={},format=rgba", ctx.fps, f(dur));
     let boxes = match &st.karaoke {
         Some(k) => {
-            let pitch = cl_fonts::line_height(&data, idx, size).unwrap_or(size * 1.2) + spacing;
             let geo = Geo { data: &data, idx, size, tw, lw, lh, pitch, align: st.align, bold: st.bold };
             karaoke_states(&geo, &txt, &k.starts(&st.text, c.duration), k.fill, dur)
         }
@@ -548,36 +572,13 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     };
     match &st.karaoke {
         Some(k) if !boxes.is_empty() => {
-            // Karaoke: jede Zeile einzeln setzen (Lage genau bekannt; FFmpeg 8.1 zeichnet den
-            // Zeilenumbruch sonst als Kästchen mit, das verschiebt die Zeile), Fläche als Ganzes
-            let n_lines = lines.len() as f32;
-            let mut files = Vec::new();
-            for (i, line) in lines.iter().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
-                let file = format!("text_{n}_{i}.txt");
-                std::fs::write(ctx.workdir.join(&file), line.as_bytes())?;
-                let x = match st.align {
-                    a if a < 0 => format!("{:.1}", (lw as f32 - tw) / 2.0),
-                    a if a > 0 => format!("{:.1}-text_w", (lw as f32 + tw) / 2.0),
-                    _ => "(w-text_w)/2".to_string(),
-                };
-                let y = format!("{:.1}+({:.1})*(line_h+{spacing:.1})-line_h/2", lh as f32 / 2.0, i as f32 - (n_lines - 1.0) / 2.0);
-                files.push((file, x, y));
-            }
-            let draw_lines = |col: [u8; 4]| {
-                let mut v: Vec<String> = st
-                    .background
-                    .map(|bg| core(0.0, [0; 4], &text_file, "(w-text_w)/2", "(h-text_h)/2") + &box_opt(bg))
-                    .into_iter()
-                    .collect();
-                v.extend(files.iter().map(|(file, x, y)| draw_one(col, file, x, y, false)));
-                v.join(",")
-            };
+            // Karaoke: hervorgehobene Fassung je Wort ausschneiden und für seine Zeit darüberlegen
             let base = ctx.label("kb");
-            ctx.graph.push(format!("{layer},{}[{base}]", draw_lines(st.color)));
+            ctx.graph.push(format!("{layer},{}[{base}]", draw(st.color)));
             let parts: Vec<String> = boxes.iter().map(|_| ctx.label("kp")).collect();
             ctx.graph.push(format!(
                 "{layer},{},split={}{}",
-                draw_lines(k.color),
+                draw(k.color),
                 parts.len(),
                 parts.iter().map(|p| format!("[{p}]")).collect::<String>()
             ));
@@ -613,7 +614,7 @@ struct Geo<'a> {
     tw: f32,
     lw: u32,
     lh: u32,
-    /// Abstand der Zeilen: Zeilenhöhe der Schrift + `line_spacing`
+    /// Abstand der Zeilen (wie in `text_sprite`)
     pitch: f32,
     align: i8,
     bold: bool,

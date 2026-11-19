@@ -1242,7 +1242,11 @@ fn every_text_style_reaches_the_export_like_the_preview() {
     assert!(styles.iter().any(|(_, s)| s.italic) && styles.iter().any(|(_, s)| s.bold));
     let dir = tempfile::tempdir().unwrap();
     let none = |_: Option<&str>| None;
-    for (name, st) in styles {
+    for (name, mut st) in styles {
+        // Untertitel-Stile haben keinen Text; leere Zeilen werden nicht gezeichnet
+        if st.text.trim().is_empty() {
+            st.text = "Probe".into();
+        }
         let mut p = Project::new("t");
         let mut t = Track::new(TrackKind::Text);
         t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, Time::from_secs_f64(1.0)));
@@ -1252,10 +1256,14 @@ fn every_text_style_reaches_the_export_like_the_preview() {
         let [r, gr, b, a] = st.color;
         assert!(g.contains(&format!("fontcolor=0x{r:02x}{gr:02x}{b:02x}@{:.3}", a as f32 / 255.0)), "{name}: Farbe");
         // Schnitt aus denselben Schaltern wie die Vorschau: fett = zweiter Abdruck, kursiv = Scherung
-        assert_eq!(g.matches("drawtext=").count(), if st.bold { 2 } else { 1 }, "{name}: fett");
+        // je Zeile ein Abdruck; Karaoke: zweite Fassung in der Hervorhebungsfarbe
+        let zeilen = st.text.lines().filter(|l| !l.trim().is_empty()).count();
+        let fassungen = if st.karaoke.is_some() { 2 } else { 1 };
+        assert_eq!(g.matches("drawtext=").count(), zeilen * fassungen * if st.bold { 2 } else { 1 }, "{name}: fett");
         assert_eq!(g.contains("shear=shx=0.25"), st.italic, "{name}: kursiv");
         assert_eq!(g.contains(":borderw="), st.outline.is_some(), "{name}: Umriss");
-        assert_eq!(g.contains("box=1"), st.background.is_some(), "{name}: Hintergrund");
+        // Fläche als ein Kasten um alle Zeilen
+        assert_eq!(g.contains("drawbox="), st.background.is_some(), "{name}: Hintergrund");
         assert_eq!(g.contains("shadowx="), st.shadow, "{name}: Schatten");
     }
 }

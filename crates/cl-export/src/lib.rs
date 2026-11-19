@@ -3419,6 +3419,48 @@ mod tests {
         [f.data[i], f.data[i + 1], f.data[i + 2]]
     }
 
+    /// Waagrechte Ausdehnung (erste, letzte Spalte) heller Pixel je Zeilenband [y0, y1)
+    fn ink_x(f: &cl_media::RgbaFrame, y0: u32, y1: u32) -> Option<(u32, u32)> {
+        let cols: Vec<u32> = (0..f.width).filter(|&x| (y0..y1).any(|y| rgb_at(f, x, y).iter().all(|&v| v > 160))).collect();
+        Some((*cols.first()?, *cols.last()?))
+    }
+
+    /// Mehrzeiliger Text: FFmpeg 8.1 zeichnete den Zeilenumbruch als Kästchen ans Ende jeder
+    /// Zeile außer der letzten und verschob die Zeile um dessen halbe Breite. Zwei gleiche Zeilen
+    /// müssen genau so breit und so gelegen sein wie dieselbe Zeile allein – in jeder Ausrichtung.
+    #[test]
+    fn multiline_text_has_no_box_at_line_ends() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        for align in [-1i8, 0, 1] {
+            let frame = |text: &str, name: &str| {
+                let mut p = Project::new("Zeilen");
+                (p.settings.width, p.settings.height) = (640, 360);
+                p.settings.fps = Rational { num: 30, den: 1 };
+                let mut tt = Track::new(TrackKind::Text);
+                tt.clips.push(Clip::new(
+                    ClipContent::Text(TextStyle { text: text.into(), size: 50.0, shadow: false, align, ..Default::default() }),
+                    Time::ZERO,
+                    Time::from_secs_f64(1.0),
+                ));
+                p.timeline.tracks.push(tt);
+                let (out, _job) = export(&p, dir.path(), name);
+                frame_n(&out, 5)
+            };
+            let one = ink_x(&frame("AAA BBB", "eins.mp4"), 0, 360).unwrap();
+            let two = frame("AAA BBB\nAAA BBB", "zwei.mp4");
+            let (top, bottom) = (ink_x(&two, 0, 180).unwrap(), ink_x(&two, 180, 360).unwrap());
+            for (name, l) in [("erste Zeile", top), ("zweite Zeile", bottom)] {
+                assert!(
+                    l.0.abs_diff(one.0) <= 2 && l.1.abs_diff(one.1) <= 2,
+                    "Ausrichtung {align}, {name}: {l:?} statt {one:?} wie einzeilig"
+                );
+            }
+        }
+    }
+
     /// Karaoke über zwei Zeilen mit Kontur und Fett: zu jeder Zeit ist genau das gesprochene Wort
     /// ganz gelb (keine weißen Reste darin, nichts Gelbes in den anderen Wörtern).
     #[test]
