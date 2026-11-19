@@ -355,6 +355,9 @@ impl EditOp {
                 if at <= c.start || at >= c.end() {
                     return Err(CoreError::InvalidSplit);
                 }
+                // Karaoke: beide Teile zeigen die ganze Zeile, die Hervorhebung läuft über den
+                // Schnitt weiter
+                c.retime_words(|t| t);
                 let mut right = c.clone();
                 right.id = ClipId::new();
                 right.start = at;
@@ -383,6 +386,7 @@ impl EditOp {
                     right.source_in = c.source_in + rel_src;
                 }
                 right.keyframes.shift(rel);
+                right.retime_words(|t| t - rel);
                 // Ausblend-Animation und Übergang gehören zum rechten Teil, Einblenden zum linken
                 right.anim.intro = None;
                 c.anim.outro = None;
@@ -453,6 +457,7 @@ impl EditOp {
                             c.source_in = Time((c.source_in + to_src(delta)).0.max(0));
                         }
                         c.keyframes.shift(delta);
+                        c.retime_words(|t| t - delta);
                         c.start = to;
                         c.duration = new_dur;
                     }
@@ -521,9 +526,11 @@ impl EditOp {
                 let span = c.source_span();
                 let old = c.duration;
                 c.speed = speed;
-                c.duration = Time(((span.0 as f64 / speed as f64).round() as i64).clamp(1000, Time::LIMIT.0));
-                // Keyframes proportional mitziehen
-                let f = c.duration.0 as f64 / old.0.max(1) as f64;
+                let new = Time(((span.0 as f64 / speed as f64).round() as i64).clamp(1000, Time::LIMIT.0));
+                // Keyframes und Wortzeiten proportional mitziehen
+                let f = new.0 as f64 / old.0.max(1) as f64;
+                c.retime_words(|t| Time((t.0 as f64 * f).round() as i64));
+                c.duration = new;
                 for list in c.keyframes.0.values_mut() {
                     for k in list.iter_mut() {
                         k.t = Time((k.t.0 as f64 * f).round() as i64);

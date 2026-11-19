@@ -497,6 +497,14 @@ impl Clip {
     pub fn contains(&self, t: Time) -> bool {
         t >= self.start && t < self.end()
     }
+    /// Karaoke-Wortzeiten wie Keyframes ändern (`f` je Zeit). Vor dem Ändern der Dauer aufrufen:
+    /// gleichmäßig verteilte Wörter werden dabei mit der bisherigen Dauer festgehalten.
+    pub fn retime_words(&mut self, f: impl Fn(Time) -> Time) {
+        let dur = self.duration;
+        if let ClipContent::Text(TextStyle { text, karaoke: Some(k), .. }) = &mut self.content {
+            k.words = k.starts(text, dur).into_iter().map(f).collect();
+        }
+    }
     /// Zeitleisten-Zeit → Quellzeit (berücksichtigt Geschwindigkeit und Rückwärts).
     pub fn source_time(&self, t: Time) -> Time {
         let mut rel = (t - self.start).0 as f64 * self.speed.max(0.01) as f64;
@@ -634,6 +642,75 @@ pub struct TextStyle {
     /// Ausrichtung: -1 links, 0 Mitte, 1 rechts
     #[serde(default)]
     pub align: i8,
+    /// Karaoke: das gerade gesprochene Wort in eigener Farbe
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub karaoke: Option<Karaoke>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Karaoke {
+    /// Hervorhebungsfarbe
+    pub color: [u8; 4],
+    /// „Füllen“: bereits gesprochene Wörter behalten die Hervorhebung
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fill: bool,
+    /// Beginn je Wort relativ zum Clipanfang (Spracherkennung); passt die Wortzahl nicht zum
+    /// Text, werden die Wörter gleichmäßig nach Zeichenzahl verteilt
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub words: Vec<Time>,
+}
+
+/// Byte-Bereiche der Wörter (getrennt an Leerraum).
+pub fn word_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut v = Vec::new();
+    let mut start = None;
+    for (i, c) in text.char_indices().chain(std::iter::once((text.len(), ' '))) {
+        match (c.is_whitespace(), start) {
+            (true, Some(s)) => {
+                v.push(s..i);
+                start = None;
+            }
+            (false, None) => start = Some(i),
+            _ => {}
+        }
+    }
+    v
+}
+
+impl Karaoke {
+    /// Beginn der Wörter von `text` bei Clipdauer `dur`: die gespeicherten, wenn die Wortzahl
+    /// passt, sonst gleichmäßig nach Zeichenzahl (wie `resegment` der Spracherkennung).
+    pub fn starts(&self, text: &str, dur: Time) -> Vec<Time> {
+        let words = text.split_whitespace().map(|w| w.chars().count() + 1).collect::<Vec<_>>();
+        if self.words.len() == words.len() {
+            return self.words.clone();
+        }
+        let total = words.iter().sum::<usize>().max(1) as f64;
+        let mut acc = 0;
+        words
+            .iter()
+            .map(|n| {
+                let t = Time((dur.0 as f64 * acc as f64 / total).round() as i64);
+                acc += n;
+                t
+            })
+            .collect()
+    }
+}
+
+/// Zur Zeit `t` (relativ zum Clipanfang) hervorgehobenes Wort: das zuletzt begonnene, auch in
+/// Sprechpausen bis zum nächsten; vor dem ersten Wort keins.
+pub fn karaoke_word(starts: &[Time], t: Time) -> Option<usize> {
+    starts.partition_point(|s| *s <= t).checked_sub(1)
+}
+
+impl TextStyle {
+    /// Hervorgehobene Wörter (Indizes) zur Zeit `t` eines Clips der Dauer `dur`.
+    pub fn karaoke_lit(&self, dur: Time, t: Time) -> Option<std::ops::Range<usize>> {
+        let k = self.karaoke.as_ref()?;
+        let i = karaoke_word(&k.starts(&self.text, dur), t)?;
+        Some(if k.fill { 0..i + 1 } else { i..i + 1 })
+    }
 }
 
 impl Default for TextStyle {
@@ -652,6 +729,7 @@ impl Default for TextStyle {
             shadow: true,
             line_spacing: 1.0,
             align: 0,
+            karaoke: None,
         }
     }
 }

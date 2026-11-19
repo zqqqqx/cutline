@@ -15,11 +15,13 @@ pub struct Word {
 }
 
 /// Eine Untertitelzeile.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Segment {
     pub start: f64,
     pub end: f64,
     pub text: String,
+    /// Beginn je Wort (wie `start`); leer, wenn unbekannt (Whisper, SRT)
+    pub words: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -340,12 +342,14 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
                 c.text.push(' ');
                 c.text.push_str(&w.text);
                 c.end = w.end;
+                c.words.push(w.start);
             }
             None => {
                 cur = Some(Segment {
                     start: w.start,
                     end: w.end,
                     text: w.text.clone(),
+                    words: vec![w.start],
                 })
             }
         }
@@ -368,18 +372,20 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
 }
 
 /// Vorhandene Zeilen neu aufteilen (z. B. kürzer oder Wort für Wort). Die Zeit eines Wortes
-/// wird nach seiner Zeichenzahl innerhalb der Zeile geschätzt.
+/// kommt aus `words`, sonst wird sie nach seiner Zeichenzahl innerhalb der Zeile geschätzt.
 pub fn resegment(segs: &[Segment], max_chars: usize, max_dur: f64) -> Vec<Segment> {
     let mut words = Vec::new();
     for s in segs {
         let ws: Vec<&str> = s.text.split_whitespace().collect();
         let total = ws.iter().map(|w| w.chars().count() + 1).sum::<usize>().max(1) as f64;
+        let known = s.words.len() == ws.len();
         let mut t = s.start;
-        for w in ws {
+        for (i, w) in ws.iter().enumerate() {
             let d = (s.end - s.start) * (w.chars().count() + 1) as f64 / total;
+            let (a, b) = if known { (s.words[i], s.words.get(i + 1).copied().unwrap_or(s.end)) } else { (t, t + d) };
             words.push(Word {
-                start: t,
-                end: t + d,
+                start: a,
+                end: b,
                 text: w.to_string(),
             });
             t += d;
@@ -529,6 +535,7 @@ pub fn parse_srt(text: &str) -> Vec<Segment> {
                 start: ts(a)?,
                 end: ts(b)?,
                 text: txt,
+                ..Default::default()
             })
         })
         .collect()
@@ -587,6 +594,7 @@ mod tests {
         ];
         let s = group_words(&words, 24, 5.0);
         assert_eq!(s[0].text, "Hallo Welt.");
+        assert_eq!(s[0].words, [0.0, 0.4], "Wortzeiten bleiben je Zeile erhalten");
         assert!(s.iter().all(|x| x.text.chars().count() <= 24 + 14), "{s:?}");
         assert_eq!(s.last().unwrap().text, "Pause");
         assert!(s.windows(2).all(|p| p[0].end <= p[1].start));
@@ -595,8 +603,8 @@ mod tests {
     #[test]
     fn resegment_splits_word_by_word_and_keeps_order() {
         let segs = vec![
-            Segment { start: 0.0, end: 3.0, text: "Das ist ein Test".into() },
-            Segment { start: 3.0, end: 4.0, text: "Ende".into() },
+            Segment { start: 0.0, end: 3.0, text: "Das ist ein Test".into(), ..Default::default() },
+            Segment { start: 3.0, end: 4.0, text: "Ende".into(), ..Default::default() },
         ];
         let w = resegment(&segs, 1, 1.0);
         assert_eq!(w.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["Das", "ist", "ein", "Test", "Ende"]);
@@ -686,8 +694,12 @@ mod tests {
         let g = group_words(&[w(0.0, 1.0, "Donaudampfschifffahrt"), w(1.0, 2.0, "🎬"), w(2.0, 3.0, "مرحبا")], 0, 5.0);
         assert_eq!(g.len(), 3);
         assert!(g.iter().all(|s| !s.text.is_empty()));
-        assert!(resegment(&[Segment { start: 0.0, end: 1.0, text: "   ".into() }], 10, 2.0).is_empty());
-        let r = resegment(&[Segment { start: 2.0, end: 2.0, text: "a b".into() }], 1, 1.0);
+        assert!(resegment(&[Segment { start: 0.0, end: 1.0, text: "   ".into(), ..Default::default() }], 10, 2.0).is_empty());
+        // bekannte Wortzeiten bleiben beim Neu-Aufteilen erhalten
+        let k = resegment(&[Segment { start: 0.0, end: 3.0, text: "a b c".into(), words: vec![0.0, 2.0, 2.5] }], 1, 1.0);
+        assert_eq!(k.iter().map(|s| s.start).collect::<Vec<_>>(), [0.0, 2.0, 2.5]);
+        assert_eq!(k[1].words, [2.0]);
+        let r = resegment(&[Segment { start: 2.0, end: 2.0, text: "a b".into(), ..Default::default() }], 1, 1.0);
         assert!(r.iter().all(|s| s.end >= s.start));
         for junk in ["", "\n\n\n", "-->", "1\n-->\nText", "1\nx --> y\nText", "1\n00:00:01,000 --> 00:00:02,000\n", "\u{feff}1\r\n00:00:01,000 --> 00:00:02,000\r\nÄ\r\n"] {
             let s = parse_srt(junk);

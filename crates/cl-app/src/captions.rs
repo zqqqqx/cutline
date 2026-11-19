@@ -291,7 +291,41 @@ pub static PRESETS: &[CapPreset] = &[
             })
         },
     },
+    CapPreset {
+        id: "karaoke",
+        name: "Karaoke",
+        tip: "Das gesprochene Wort leuchtet auf",
+        max_chars: 30,
+        max_dur: 3.5,
+        y: 0.25,
+        intro: None,
+        style: || karaoke_style(false),
+    },
+    CapPreset {
+        id: "karaoke-fill",
+        name: "Karaoke füllen",
+        tip: "Gesprochene Wörter bleiben hervorgehoben",
+        max_chars: 30,
+        max_dur: 3.5,
+        y: 0.25,
+        intro: None,
+        style: || karaoke_style(true),
+    },
 ];
+
+/// Hervorhebung wie beim Stil „Gelb auf Schwarz“
+pub const KARAOKE_YELLOW: [u8; 4] = [255, 221, 0, 255];
+
+fn karaoke_style(fill: bool) -> TextStyle {
+    st(|s| {
+        s.size = 64.0;
+        s.font_family = Some("Archivo Black".into());
+        s.color = [255, 255, 255, 255];
+        s.outline = Some((6.0, [0, 0, 0, 255]));
+        s.shadow = true;
+        s.karaoke = Some(Karaoke { color: KARAOKE_YELLOW, fill, words: Vec::new() });
+    })
+}
 
 /// Längere Zeilen auf zwei möglichst gleich lange Zeilen verteilen (Stil „Podcast“)
 fn two_lines(text: &str) -> String {
@@ -347,18 +381,15 @@ impl App {
         Some(t)
     }
 
-    /// Untertitel-Clip im gewählten Stil
-    pub fn caption_clip(&self, text: &str, start: Time, dur: Time) -> Clip {
+    /// Untertitel-Clip im gewählten Stil; `words`: Beginn je Wort relativ zum Clipanfang (Karaoke)
+    pub fn caption_clip(&self, text: &str, start: Time, dur: Time, words: Vec<Time>) -> Clip {
         let p = self.caption_preset();
         let text = if p.id == "podcast" { two_lines(text) } else { text.to_string() };
-        let mut c = Clip::new(
-            ClipContent::Text(TextStyle {
-                text,
-                ..(p.style)()
-            }),
-            start,
-            dur,
-        );
+        let mut st = TextStyle { text, ..(p.style)() };
+        if let Some(k) = &mut st.karaoke {
+            k.words = words;
+        }
+        let mut c = Clip::new(ClipContent::Text(st), start, dur);
         c.transform.y = self.project.settings.height as f32 * p.y;
         if let Some(a) = p.intro {
             c.anim.intro = Some(AnimRef {
@@ -381,6 +412,7 @@ impl App {
                     &s.text,
                     offset + Time::from_secs_f64(s.start),
                     Time::from_secs_f64(s.end - s.start),
+                    s.words.iter().map(|w| Time::from_secs_f64(w - s.start)).collect(),
                 ),
             })
             .collect();
@@ -517,7 +549,7 @@ impl App {
                     let ops: Vec<EditOp> = items
                         .iter()
                         .map(|c| {
-                            let n = self.caption_clip(&text_of(c), c.start, c.duration);
+                            let n = self.caption_clip(&text_of(c), c.start, c.duration, karaoke_words(c));
                             let mut c2 = c.clone();
                             c2.content = n.content;
                             c2.transform = n.transform;
@@ -577,8 +609,14 @@ impl App {
                                 if let Some(n) = next {
                                     if theme::icon_button(ui, icon::ARROWS_MERGE, "Mit dem nächsten zusammenführen", true, false).clicked() {
                                         let mut m = c.clone();
+                                        // Wortzeiten beider Teile zusammen (der zweite ab seinem Anfang)
+                                        let mut words = karaoke_words(c);
+                                        words.extend(karaoke_words(n).into_iter().map(|w| w + (n.start - c.start)));
                                         if let ClipContent::Text(s) = &mut m.content {
                                             s.text = format!("{} {}", text, text_of(n));
+                                            if let Some(k) = &mut s.karaoke {
+                                                k.words = words;
+                                            }
                                         }
                                         ops.push(EditOp::RemoveClip { clip: n.id });
                                         ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: n.end() - c.start, source_in: c.source_in });
@@ -670,7 +708,7 @@ impl App {
             .find(|t| t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME))
             .map(|t| t.id)
             .or_else(|| self.new_caption_track());
-        let clip = self.caption_clip(&crate::tr("Neuer Untertitel"), at, dur);
+        let clip = self.caption_clip(&crate::tr("Neuer Untertitel"), at, dur, Vec::new());
         if let Some(OpOutput::Clip(id)) = self.apply(EditOp::AddClip { track, clip }) {
             self.select_only(Some(id));
             self.caption_focus = Some(id);
@@ -685,6 +723,7 @@ impl App {
                 start: c.start.as_secs_f64(),
                 end: c.end().as_secs_f64(),
                 text: text_of(c),
+                words: karaoke_words(c).iter().map(|w| (c.start + *w).as_secs_f64()).collect(),
             })
             .collect();
         let p = self.caption_preset();
@@ -711,6 +750,14 @@ fn bulk_targets(p: &Project) -> Vec<Clip> {
         .collect();
     v.sort_by_key(|c| c.start);
     v
+}
+
+/// Beginn je Wort eines Karaoke-Untertitels (gespeichert oder gleichmäßig verteilt), sonst leer
+fn karaoke_words(c: &Clip) -> Vec<Time> {
+    match &c.content {
+        ClipContent::Text(TextStyle { text, karaoke: Some(k), .. }) => k.starts(text, c.duration),
+        _ => Vec::new(),
+    }
 }
 
 fn text_of(c: &Clip) -> String {
