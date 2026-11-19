@@ -3409,6 +3409,54 @@ mod tests {
         [f.data[i], f.data[i + 1], f.data[i + 2]]
     }
 
+    /// Karaoke über zwei Zeilen mit Kontur und Fett: zu jeder Zeit ist genau das gesprochene Wort
+    /// ganz gelb (keine weißen Reste darin, nichts Gelbes in den anderen Wörtern).
+    #[test]
+    fn karaoke_highlights_exactly_the_spoken_word() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = Project::new("Karaoke");
+        (p.settings.width, p.settings.height) = (640, 360);
+        p.settings.fps = Rational { num: 30, den: 1 };
+        let mut tt = Track::new(TrackKind::Text);
+        tt.clips.push(Clip::new(
+            ClipContent::Text(TextStyle {
+                text: "AAA BBB\nCCC DDD".into(),
+                size: 60.0,
+                bold: true,
+                outline: Some((4.0, [0, 0, 0, 255])),
+                karaoke: Some(Karaoke { color: [255, 221, 0, 255], fill: false, words: [0.0, 1.0, 2.0, 3.0].map(Time::from_secs_f64).to_vec() }),
+                ..Default::default()
+            }),
+            Time::ZERO,
+            Time::from_secs_f64(4.0),
+        ));
+        p.timeline.tracks.push(tt);
+        let (out, _job) = export(&p, dir.path(), "k.mp4");
+        for word in 0..4u32 {
+            let f = frame_n(&out, (word * 30 + 15) as usize);
+            // Viertel des Bilds um die Textmitte: Zeile oben/unten, Wort links/rechts
+            let (mut yellow, mut white_in, mut yellow_out) = (0, 0, 0);
+            for y in 0..360 {
+                for x in 0..640 {
+                    let [r, g, b] = rgb_at(&f, x, y);
+                    let inside = (y >= 180) == (word >= 2) && (x >= 320) == (word % 2 == 1);
+                    let is_yellow = r > 170 && g > 140 && b < 100;
+                    let is_white = r > 200 && g > 200 && b > 200;
+                    match (inside, is_yellow, is_white) {
+                        (true, true, _) => yellow += 1,
+                        (true, _, true) => white_in += 1,
+                        (false, true, _) => yellow_out += 1,
+                        _ => {}
+                    }
+                }
+            }
+            assert!(yellow > 500 && white_in < 20 && yellow_out < 20, "Wort {word}: gelb {yellow}, weiß darin {white_in}, gelb daneben {yellow_out}");
+        }
+    }
+
     #[test]
     fn window_frames_match_xfade() {
         // 30 Bilder/s, Versatz 1,2 s, 0,6 s: Bilder 36 bis 54

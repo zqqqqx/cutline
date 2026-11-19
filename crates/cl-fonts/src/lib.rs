@@ -499,6 +499,12 @@ impl FontLibrary {
     }
 }
 
+/// Zeilenhöhe in Pixeln wie FreeType (`drawtext`): Ober- bis Unterlänge plus Zeilenabstand der Schrift.
+pub fn line_height(data: &[u8], index: u32, size: f32) -> Option<f32> {
+    let face = ttf_parser::Face::parse(data, index).ok()?;
+    Some((face.height() as i32 + face.line_gap() as i32) as f32 * size / face.units_per_em() as f32)
+}
+
 /// Misst Textbreite in Pixeln (Advance-Breiten, ohne Kerning) – für Zeilenumbruch beim Export.
 pub fn text_width(data: &[u8], index: u32, size: f32, text: &str) -> Option<f32> {
     let face = ttf_parser::Face::parse(data, index).ok()?;
