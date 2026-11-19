@@ -27,6 +27,7 @@ mod library_ui;
 mod multi_edit;
 mod navigate;
 mod onboarding;
+mod palette;
 mod paths;
 mod playcore;
 mod player;

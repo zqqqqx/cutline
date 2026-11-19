@@ -275,6 +275,8 @@ pub struct App {
     held_keys: Vec<egui::Event>,
     /// Esc kam, während ein Textfeld den Fokus hatte: gilt nur dem Feld (siehe [`esc_for_field`])
     esc_field: bool,
+    /// Befehlssuche (Strg+K)
+    pub palette: crate::palette::Palette,
     pub playhead: Time,
     pub playing: bool,
     pub timeline: TimelineState,
@@ -506,6 +508,7 @@ impl App {
             live: None,
             held_keys: Vec::new(),
             esc_field: false,
+            palette: Default::default(),
             playhead: Time::ZERO,
             playing: false,
             timeline: TimelineState::default(),
@@ -2734,6 +2737,7 @@ impl App {
             || self.lib_dialog.is_some()
             || self.preset_dialog.is_some()
             || self.updater.view.is_some()
+            || self.palette.open
     }
 
     fn esc_closes(&mut self, ctx: &egui::Context) -> bool {
@@ -2955,6 +2959,7 @@ impl App {
                     }
                     self.apply(EditOp::SetSettings { settings: s });
                 }
+                "command_search" => self.palette.show(),
                 "copy" => self.copy_selection(),
                 "cut" => self.cut_selection(),
                 "paste" => self.paste(),
@@ -3360,6 +3365,7 @@ impl eframe::App for App {
         {
             self.shortcuts(ctx);
         }
+        self.command_palette(ctx);
         // Countdown vor der Voiceover-Aufnahme
         if let Some(until) = self.voiceover.countdown_until {
             if Instant::now() >= until {
@@ -4252,6 +4258,46 @@ fn download_running_at_a_project_change_is_not_inserted() {
     app.poll_stock();
     assert!(app.project.media.is_empty() && app.project.timeline.tracks.iter().all(|t| t.clips.is_empty()));
     assert!(!app.stock.stray && app.toasts.iter().any(|t| t.0.contains("Klang")));
+}
+
+/// Befehlssuche im Ablauf eines Bildes: Strg+K öffnet, das Feld hat den Fokus, die Leertaste tippt
+/// ein Leerzeichen (kein Abspielen), Esc schließt nur die Suche (Auswahl bleibt), Enter führt aus.
+#[test]
+fn command_search_keys_stay_in_the_search() {
+    let (mut app, _home, _g) = crate::saving::tests::test_app();
+    app.set_doc(Project::new("Suche"));
+    let ctx = egui::Context::default();
+    let key = |key: Key, modifiers: Modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+    let frame = |app: &mut App, events: Vec<egui::Event>| {
+        let mut raw = egui::RawInput { events, ..Default::default() };
+        eframe::App::raw_input_hook(app, &ctx, &mut raw);
+        let _ = ctx.run(raw, |ctx| {
+            if !app.esc_closes(ctx) {
+                app.shortcuts(ctx);
+            }
+            app.command_palette(ctx);
+        });
+    };
+    let clip = ClipId::new();
+    app.selected = Some(clip);
+    frame(&mut app, vec![key(Key::K, Modifiers::COMMAND)]);
+    assert!(app.palette.open, "Strg+K öffnet");
+    frame(&mut app, vec![]);
+    assert!(typing(&ctx), "das Feld hat den Fokus");
+    frame(&mut app, vec![key(Key::Space, Modifiers::NONE), egui::Event::Text(" ".into())]);
+    assert!(!app.core.playing() && app.palette.open, "Leertaste spielt nicht ab");
+    assert_eq!(app.palette.query, " ", "… sondern tippt ein Leerzeichen");
+    frame(&mut app, vec![key(Key::Escape, Modifiers::NONE)]);
+    assert!(!app.palette.open, "Esc schließt die Suche");
+    assert_eq!(app.selected, Some(clip), "… und lässt die Auswahl stehen");
+    frame(&mut app, vec![]);
+    assert_eq!(app.selected, Some(clip));
+    // wieder öffnen (Feld leer), tippen, Enter führt den ersten Treffer aus
+    frame(&mut app, vec![key(Key::K, Modifiers::COMMAND)]);
+    frame(&mut app, vec![egui::Event::Text("einstellungen".into())]);
+    frame(&mut app, vec![key(Key::Enter, Modifiers::NONE)]);
+    assert!(app.settings_open && !app.palette.open);
+    assert_eq!(app.selected, Some(clip));
 }
 
 /// Esc im Feld verwirft nur die Eingabe
