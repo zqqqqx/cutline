@@ -8,6 +8,24 @@
 ### English
 
 **New**
+
+**Improved**
+
+**Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.13.0 – 2026-11-19
+
+### English
+
+**New**
 - **Crop.** Cut away the edges of any video or image: four sliders under Basic → Crop, or drag the bars at the edges right in the player. The rest of the picture stays where it is.
 - **Command search.** Ctrl+K opens a search for every command of the editor, including everything from the menu and the Quick Actions. Type a few letters, press Enter. It shows the shortcut next to each command.
 - **Layouts.** Split screen for two, three or four clips and picture-in-picture in any corner, in one click: Quick Actions → Layout. Each clip is scaled and cropped to fill its cell.
