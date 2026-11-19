@@ -391,6 +391,7 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
     };
     let mut fx = c.fx.clone();
     fx.reverse = false;
+    fx.censor = c.censor_in_clip_time(None);
     ctx.graph.extend(fx_graph(
         &fx,
         Src {
