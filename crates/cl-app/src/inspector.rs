@@ -930,7 +930,7 @@ impl App {
                     |p, a| {
                         p.rect_filled(a, theme::R_CARD, theme::STAGE);
                         let k = (a.height() * 0.5) / 64.0;
-                        self.draw_text(p, &s2, a.center(), k, 0.0, 1.0, a.width());
+                        self.draw_text(p, &s2, a.center(), k, 0.0, 1.0, a.width(), None);
                     },
                 );
                 if resp.on_hover_text(crate::tr(fx.name)).clicked() {
