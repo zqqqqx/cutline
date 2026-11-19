@@ -56,6 +56,7 @@ impl Chord {
                 Key::ArrowRight => "→",
                 Key::ArrowUp => "↑",
                 Key::ArrowDown => "↓",
+                Key::Comma => ",",
                 k => k.name(),
             }
             .to_string(),
@@ -126,6 +127,10 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
         "Clip 10 Bilder nach rechts",
         &["Alt+Shift+ArrowRight"],
     ),
+    // kommen meist als Kopier-/Einfügeereignis, nicht als Taste (siehe `App::shortcuts`)
+    ("copy", "Kopieren", &["Ctrl+C"]),
+    ("cut", "Ausschneiden", &["Ctrl+X"]),
+    ("paste", "Einfügen", &["Ctrl+V"]),
     ("paste_attrs", "Attribute einfügen", &["Ctrl+Alt+V"]),
     ("group", "Gruppieren", &["Ctrl+G"]),
     ("ungroup", "Gruppe auflösen", &["Ctrl+Shift+G"]),
@@ -152,6 +157,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("open", "Öffnen", &["Ctrl+O"]),
     ("export", "Exportieren", &["Ctrl+E"]),
     ("settings", "Einstellungen", &["Ctrl+Comma"]),
+    ("command_search", "Befehlssuche", &["Ctrl+K"]),
     (
         "zoom_in",
         "Oberfläche größer",
@@ -160,7 +166,135 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("zoom_out", "Oberfläche kleiner", &["Ctrl+Minus"]),
     ("zoom_reset", "Oberfläche 100 %", &["Ctrl+0"]),
     ("escape", "Auswahl aufheben", &["Escape"]),
+    // Menü oben links (Namen wie im Menü)
+    ("new_project", "Neues Projekt", &[]),
+    ("import_project", "Projekt aus anderem Programm importieren …", &[]),
+    ("import_fonts", "Schrift importieren …", &[]),
+    ("exports", "Exporte", &[]),
+    ("history", "Bearbeitungsverlauf", &[]),
+    ("layout_edit", "Layout bearbeiten …", &[]),
+    ("template_save", "Als Vorlage speichern …", &[]),
+    ("template_insert", "Aus Vorlage einfügen …", &[]),
+    ("archive", "Projekt archivieren …", &[]),
+    ("relink", "Medien neu verknüpfen …", &[]),
+    ("backups", "Sicherungen …", &[]),
+    ("go_home", "Projektübersicht", &[]),
+    ("tour", "Rundgang", &[]),
+    ("onboarding", "Einführung wiederholen", &[]),
+    // Schnellaktionen (Menü in der Zeitleiste)
+    ("quick_pauses", "Pausen entfernen (Jump Cuts)", &[]),
+    ("quick_fillers", "Füllwörter entfernen (äh, ähm, uh, um)", &[]),
+    ("quick_ducking", "Musik unter Sprache absenken (Auto-Ducking)", &[]),
+    ("quick_highlights", "Highlights finden (laute Momente → Marker)", &[]),
+    ("quick_sync", "Auswahl per Ton synchronisieren", &[]),
+    ("quick_multicam", "Multicam-Schnitt starten", &[]),
+    ("quick_speakers", "Sprecher-Aufnahmen importieren …", &[]),
+    ("quick_punch", "Zoom-Punch-in am Playhead", &[]),
+    ("quick_vertical", "Hochkant-Layout (9:16, Facecam oben)", &[]),
+    ("quick_thumbnail", "Thumbnail exportieren (aktuelles Bild)", &[]),
+    ("quick_recap", "Rückblick aus Markern erstellen", &[]),
 ];
+
+/// Name einer Aktion (deutsch, `tr()` übersetzt), leer für unbekannte
+pub fn name(id: &str) -> &'static str {
+    ACTIONS.iter().find(|a| a.0 == id).map_or("", |a| a.1)
+}
+
+/// Symbol einer Aktion (wie in Menüs und Werkzeugleiste), leer ohne
+pub fn icon(id: &str) -> &'static str {
+    use crate::theme::icon as i;
+    match id {
+        "play" => i::PLAY,
+        "shuttle_stop" => i::STOP,
+        "mark_in" | "mark_out" => i::BRACKETS_SQUARE,
+        "clear_range" => i::X,
+        "loop" => i::REPEAT,
+        "marker" => i::BOOKMARK_SIMPLE,
+        "split" | "cut" => i::SCISSORS,
+        "del_left" => i::ARROW_LINE_LEFT,
+        "del_right" => i::ARROW_LINE_RIGHT,
+        "ripple_delete" => i::TRASH_SIMPLE,
+        "delete" => i::TRASH,
+        "copy" => i::COPY,
+        "paste" => i::CLIPBOARD_TEXT,
+        "paste_attrs" => i::CLIPBOARD,
+        "group" => i::BOUNDING_BOX,
+        "ungroup" => i::SELECTION_SLASH,
+        "duplicate" | "template_save" | "template_insert" => i::COPY_SIMPLE,
+        "undo" => i::ARROW_COUNTER_CLOCKWISE,
+        "redo" => i::ARROW_CLOCKWISE,
+        "magnet" => i::MAGNET,
+        "snap" => i::ARROWS_IN_LINE_HORIZONTAL,
+        "voiceover" => i::MICROPHONE,
+        "new_project" => i::FILE_PLUS,
+        "import" => i::FILE_ARROW_DOWN,
+        "import_project" => i::DOWNLOAD_SIMPLE,
+        "import_fonts" => i::TEXT_AA,
+        "save" => i::FLOPPY_DISK,
+        "save_as" => i::FLOPPY_DISK_BACK,
+        "open" => i::FOLDER_OPEN,
+        "export" => i::EXPORT,
+        "exports" => i::FILE_VIDEO,
+        "history" | "backups" | "quick_recap" => i::CLOCK_COUNTER_CLOCKWISE,
+        "layout_edit" => i::LAYOUT,
+        "archive" => i::ARCHIVE,
+        "relink" => i::LINK,
+        "settings" => i::GEAR_SIX,
+        "go_home" => i::HOUSE,
+        "tour" => i::COMPASS,
+        "onboarding" => i::HAND_WAVING,
+        "command_search" | "zoom_in" | "zoom_out" | "zoom_reset" => i::MAGNIFYING_GLASS,
+        "quick_pauses" => i::SCISSORS,
+        "quick_fillers" => i::CHAT_CIRCLE_DOTS,
+        "quick_ducking" => i::SPEAKER_SIMPLE_LOW,
+        "quick_highlights" => i::LIGHTNING,
+        "quick_sync" => i::WAVEFORM,
+        "quick_multicam" => i::VIDEO_CAMERA,
+        "quick_speakers" => i::USERS,
+        "quick_punch" => i::MAGNIFYING_GLASS_PLUS,
+        "quick_vertical" => i::DEVICE_MOBILE,
+        "quick_thumbnail" => i::IMAGE,
+        _ => "",
+    }
+}
+
+/// Befehlssuche: Reihenfolge der Treffer. `items` = (Aktion, Namen, nach denen gesucht wird).
+/// Jedes Wort der Eingabe muss in einem Namen vorkommen (Groß/Klein egal); Aktionen, deren Wörter
+/// alle an einem Wortanfang stehen, kommen zuerst, sonst bleibt die Reihenfolge der Liste.
+/// Leere Eingabe: zuletzt benutzte (`recent`) zuerst, darunter alle übrigen.
+pub fn search(query: &str, items: &[(&'static str, Vec<String>)], recent: &[&str]) -> Vec<&'static str> {
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    if words.is_empty() {
+        let mut out: Vec<&'static str> = recent.iter().filter_map(|r| items.iter().find(|i| i.0 == *r).map(|i| i.0)).collect();
+        let rest: Vec<&'static str> = items.iter().map(|i| i.0).filter(|id| !out.contains(id)).collect();
+        out.extend(rest);
+        return out;
+    }
+    // 0 = Wortanfang, 1 = Wortmitte, None = fehlt
+    let hit = |name: &str, w: &str| -> Option<u8> {
+        let n = name.to_lowercase();
+        let mut best = None;
+        for (i, _) in n.match_indices(w) {
+            if n[..i].chars().next_back().is_none_or(|c| !c.is_alphanumeric()) {
+                return Some(0);
+            }
+            best = Some(1);
+        }
+        best
+    };
+    let mut ranked: Vec<(u8, &'static str)> = items
+        .iter()
+        .filter_map(|(id, names)| {
+            let mut worst = 0;
+            for w in &words {
+                worst = worst.max(names.iter().filter_map(|n| hit(n, w)).min()?);
+            }
+            Some((worst, *id))
+        })
+        .collect();
+    ranked.sort_by_key(|r| r.0);
+    ranked.into_iter().map(|r| r.1).collect()
+}
 
 /// Vorlagen: (Name, Abweichungen von der Standardbelegung)
 pub const PRESETS: &[(&str, &[(&str, &str)])] = &[
@@ -169,6 +303,7 @@ pub const PRESETS: &[(&str, &[(&str, &str)])] = &[
         "Premiere-ähnlich",
         &[
             ("split", "Ctrl+K"),
+            ("command_search", "Ctrl+Shift+K"),
             ("ripple_delete", "Shift+Delete"),
             ("del_left", "Q"),
             ("del_right", "W"),
@@ -186,8 +321,10 @@ pub const PRESETS: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
-/// Wirksame Belegung: eigene Einträge ersetzen die Standardbelegung der Aktion.
+/// Wirksame Belegung: eigene Einträge ersetzen die Standardbelegung der Aktion. Eine Standardtaste,
+/// die schon eine eigene Belegung benutzt, entfällt (eine neue Aktion nimmt niemandem seine Taste).
 pub fn bindings(custom: &BTreeMap<String, String>) -> Vec<(Chord, &'static str)> {
+    let taken: Vec<Chord> = custom.values().filter_map(|c| Chord::parse(c)).collect();
     let mut v: Vec<(Chord, &'static str)> = Vec::new();
     for (id, _, defaults) in ACTIONS {
         match custom.get(*id) {
@@ -197,6 +334,7 @@ pub fn bindings(custom: &BTreeMap<String, String>) -> Vec<(Chord, &'static str)>
                 defaults
                     .iter()
                     .filter_map(|d| Chord::parse(d))
+                    .filter(|ch| !taken.contains(ch))
                     .map(|ch| (ch, *id)),
             ),
         }
@@ -417,6 +555,84 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Befehlssuche: Standard Strg+K, im Premiere-Preset Strg+Umschalt+K (dort teilt Strg+K);
+    /// wer Strg+K schon selbst belegt hat, behält die Taste.
+    #[test]
+    fn command_search_keys() {
+        let of = |custom: &BTreeMap<String, String>, id: &str| -> Vec<String> {
+            bindings(custom).into_iter().filter(|(_, a)| *a == id).map(|(c, _)| c.store()).collect()
+        };
+        assert_eq!(of(&BTreeMap::new(), "command_search"), ["Ctrl+K"]);
+        let premiere: BTreeMap<String, String> =
+            PRESETS[1].1.iter().map(|(a, k)| (a.to_string(), k.to_string())).collect();
+        assert_eq!(of(&premiere, "command_search"), ["Ctrl+Shift+K"]);
+        assert_eq!(of(&premiere, "split"), ["Ctrl+K"]);
+        // eigene Belegung (z. B. aus dem Premiere-Preset vor 0.13, ohne Eintrag für die Suche)
+        for id in ["split", "marker"] {
+            let custom = BTreeMap::from([(id.to_string(), "Ctrl+K".to_string())]);
+            assert_eq!(of(&custom, id), ["Ctrl+K"], "{id}");
+            assert!(of(&custom, "command_search").is_empty(), "{id}");
+        }
+        // eigene Belegung der Suche selbst gilt
+        let custom = BTreeMap::from([("command_search".to_string(), "Ctrl+P".to_string())]);
+        assert_eq!(of(&custom, "command_search"), ["Ctrl+P"]);
+    }
+
+    #[test]
+    fn every_action_has_a_name_and_english_text() {
+        let en: std::collections::HashSet<&str> = cl_i18n::ui_entries().into_iter().map(|e| e.0).collect();
+        for (id, what, _) in ACTIONS {
+            assert_eq!(name(id), *what);
+            assert!(en.contains(what.trim()), "{id}: „{what}“ fehlt in ui.en.tsv");
+        }
+        assert_eq!(name("gibt-es-nicht"), "");
+    }
+
+    #[test]
+    fn search_ranks_word_starts_first() {
+        let items: Vec<(&'static str, Vec<String>)> = [
+            ("a", "Exportieren"),
+            ("b", "Thumbnail exportieren (aktuelles Bild)"),
+            ("c", "Am Playhead teilen"),
+            ("d", "Projekt archivieren …"),
+            ("e", "Überblendung"),
+        ]
+        .into_iter()
+        .map(|(id, n)| (id, vec![n.to_string()]))
+        .collect();
+        // Wortanfang vor Wortmitte, sonst Reihenfolge der Liste
+        assert_eq!(search("port", &items, &[]), ["a", "b"]);
+        assert_eq!(search("EXP", &items, &[]), ["a", "b"]);
+        assert_eq!(search("tieren", &items, &[]), ["a", "b"], "Wortmitte zählt auch");
+        assert_eq!(search("ren", &items, &[]), ["a", "b", "d"]);
+        assert_eq!(search("arch", &items, &[]), ["d"]);
+        assert_eq!(search("hiv proj", &items, &[]), ["d"], "mehrere Wörter, beliebige Reihenfolge");
+        assert_eq!(search("bild export", &items, &[]), ["b"]);
+        assert_eq!(search("teilen x", &items, &[]), Vec::<&str>::new());
+        // Umlaute wie geschrieben, Groß/Klein egal
+        assert_eq!(search("über", &items, &[]), ["e"]);
+        assert_eq!(search("ÜBER", &items, &[]), ["e"]);
+        assert!(search("xyz", &items, &[]).is_empty());
+        // Wortanfang auch innerhalb des Namens („teilen“) vor Treffern in der Wortmitte
+        let more: Vec<(&'static str, Vec<String>)> =
+            vec![("m", vec!["Verteilen".into()]), ("s", vec!["Am Playhead teilen".into()])];
+        assert_eq!(search("teil", &more, &[]), ["s", "m"]);
+        // zweiter Name (deutsch bei englischer Oberfläche) zählt auch
+        let en: Vec<(&'static str, Vec<String>)> = vec![("x", vec!["Split at playhead".into(), "Am Playhead teilen".into()])];
+        assert_eq!(search("teilen", &en, &[]), ["x"]);
+        assert_eq!(search("split", &en, &[]), ["x"]);
+    }
+
+    #[test]
+    fn empty_search_shows_recent_first() {
+        let items: Vec<(&'static str, Vec<String>)> =
+            ["a", "b", "c", "d"].into_iter().map(|id| (id, vec![id.to_string()])).collect();
+        assert_eq!(search("", &items, &[]), ["a", "b", "c", "d"]);
+        assert_eq!(search("  ", &items, &["c", "a"]), ["c", "a", "b", "d"]);
+        // Unbekanntes aus dem Verlauf fällt weg
+        assert_eq!(search("", &items, &["weg", "d"]), ["d", "a", "b", "c"]);
     }
 
     #[test]

@@ -450,106 +450,43 @@ impl App {
             .size(theme::FS_TEXT),
             |ui| {
                 ui.set_min_width(230.0);
-                let item = |ui: &mut egui::Ui, g: &str, t: &str, k: &str| {
-                    ui.add(theme::menu_row(crate::tr(format!("{g}   {t}"))).keys(k))
-                };
-                if item(ui, icon::FILE_PLUS, "Neues Projekt", "").clicked() {
-                    ui.close_menu();
-                    self.new_project();
-                }
-                if item(ui, icon::FOLDER_OPEN, "Öffnen …", "Strg+O").clicked() {
-                    ui.close_menu();
-                    self.open_dialog();
-                }
-                if item(ui, icon::FLOPPY_DISK, "Speichern", "Strg+S").clicked() {
-                    ui.close_menu();
-                    self.save(false);
-                }
-                if item(
-                    ui,
-                    icon::FLOPPY_DISK_BACK,
-                    "Speichern unter …",
-                    "Strg+Umschalt+S",
-                )
-                .clicked()
-                {
-                    ui.close_menu();
-                    self.save(true);
-                }
-                ui.separator();
-                if item(ui, icon::FILE_ARROW_DOWN, &self.t("import-media"), "Strg+I").clicked() {
-                    ui.close_menu();
-                    self.pick_media();
-                }
-                // gleicher Dialog wie auf der Startseite; aus, wenn alle Formate abgeschaltet sind
-                let can_import = self.import_enabled();
-                if ui
-                    .add_enabled_ui(can_import, |ui| {
-                        item(ui, icon::DOWNLOAD_SIMPLE, "Projekt aus anderem Programm importieren …", "")
-                    })
-                    .inner
-                    .on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve"))
-                    .clicked()
-                {
-                    ui.close_menu();
-                    self.import.open = true;
-                }
-                if item(ui, icon::TEXT_AA, &self.t("import-fonts"), "").clicked() {
-                    ui.close_menu();
-                    let ctx = ui.ctx().clone();
-                    self.pick_fonts(&ctx);
-                }
-                if item(ui, icon::EXPORT, &self.t("export"), "Strg+E").clicked() {
-                    ui.close_menu();
-                    self.commit_live();
-                    self.export
-                        .open_for(&self.project, self.project_path.as_deref(), self.revision, self.range_in.zip(self.range_out));
-                }
-                if item(ui, icon::FILE_VIDEO, "Exporte", "").clicked() {
-                    ui.close_menu();
-                    self.exports_for = Some(crate::exports::ExportsList::new(&self.project.name, self.project_path.as_deref()));
-                }
-                if item(ui, icon::CLOCK_COUNTER_CLOCKWISE, "Bearbeitungsverlauf", "").clicked() {
-                    ui.close_menu();
-                    self.show_history();
-                }
-                if item(ui, icon::LAYOUT, "Layout bearbeiten …", "").clicked() {
-                    ui.close_menu();
-                    if self.settings.layout_locked {
-                        self.toast("Layout ist gesperrt (Einstellungen → Allgemein → Anordnung)");
-                    } else {
-                        self.player_max = false;
-                        self.layout_edit = true;
+                let ctx = ui.ctx().clone();
+                // Einträge sind Aktionen aus `keymap::ACTIONS` und laufen über `run_action` (wie die
+                // Befehlssuche); Text wie bisher im Menü, Kürzel aus der aktuellen Belegung
+                let mut act: Option<&str> = None;
+                let mut item = |app: &Self, ui: &mut egui::Ui, id: &'static str, t: &str| {
+                    let g = crate::keymap::icon(id);
+                    let r = ui.add_enabled(
+                        app.action_enabled(id),
+                        theme::menu_row(crate::tr(format!("{g}   {t}"))).keys(&app.key_of(id)),
+                    );
+                    if r.clicked() {
+                        act = Some(id);
                     }
-                }
+                    r
+                };
+                item(self, ui, "new_project", "Neues Projekt");
+                item(self, ui, "open", "Öffnen …");
+                item(self, ui, "save", "Speichern");
+                item(self, ui, "save_as", "Speichern unter …");
                 ui.separator();
-                if item(ui, icon::COPY_SIMPLE, "Als Vorlage speichern …", "").clicked() {
-                    ui.close_menu();
-                    self.tpl_dialog = Some(crate::templates::TplDialog::Save {
-                        name: self.project.name.clone(),
-                    });
-                }
-                if item(ui, icon::COPY_SIMPLE, "Aus Vorlage einfügen …", "").clicked() {
-                    ui.close_menu();
-                    self.tpl_dialog = Some(crate::templates::TplDialog::Insert(crate::templates::load_all()));
-                }
-                if item(ui, icon::ARCHIVE, "Projekt archivieren …", "")
-                    .on_hover_text(crate::tr(
-                        "Projekt mit allen Medien und Schriften in einen Ordner kopieren",
-                    ))
-                    .clicked()
-                {
-                    ui.close_menu();
-                    self.start_archive(ui.ctx());
-                }
-                if item(ui, icon::LINK, "Medien neu verknüpfen …", "").clicked() {
-                    ui.close_menu();
-                    self.missing_open = true;
-                }
-                if item(ui, icon::CLOCK_COUNTER_CLOCKWISE, "Sicherungen …", "").clicked() {
-                    ui.close_menu();
-                    self.backups_open = true;
-                }
+                item(self, ui, "import", &self.t("import-media"));
+                // gleicher Dialog wie auf der Startseite; aus, wenn alle Formate abgeschaltet sind
+                item(self, ui, "import_project", "Projekt aus anderem Programm importieren …")
+                    .on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve"));
+                item(self, ui, "import_fonts", &self.t("import-fonts"));
+                item(self, ui, "export", &self.t("export"));
+                item(self, ui, "exports", "Exporte");
+                item(self, ui, "history", "Bearbeitungsverlauf");
+                item(self, ui, "layout_edit", "Layout bearbeiten …");
+                ui.separator();
+                item(self, ui, "template_save", "Als Vorlage speichern …");
+                item(self, ui, "template_insert", "Aus Vorlage einfügen …");
+                item(self, ui, "archive", "Projekt archivieren …").on_hover_text(crate::tr(
+                    "Projekt mit allen Medien und Schriften in einen Ordner kopieren",
+                ));
+                item(self, ui, "relink", "Medien neu verknüpfen …");
+                item(self, ui, "backups", "Sicherungen …");
                 ui.separator();
                 theme::submenu(
                     ui,
@@ -577,22 +514,14 @@ impl App {
                     },
                 );
                 ui.separator();
-                if item(ui, icon::GEAR_SIX, "Einstellungen …", "Strg+,").clicked() {
-                    self.settings_open = true;
-                    ui.close_menu();
-                }
-                if item(ui, icon::HOUSE, "Projektübersicht", "").clicked() {
-                    ui.close_menu();
-                    self.go_home();
-                }
+                item(self, ui, "settings", "Einstellungen …");
+                item(self, ui, "go_home", "Projektübersicht");
                 ui.separator();
-                if item(ui, icon::COMPASS, "Rundgang", "").clicked() {
+                item(self, ui, "tour", "Rundgang");
+                item(self, ui, "onboarding", "Einführung wiederholen");
+                if let Some(a) = act {
                     ui.close_menu();
-                    self.start_tour();
-                }
-                if item(ui, icon::HAND_WAVING, "Einführung wiederholen", "").clicked() {
-                    ui.close_menu();
-                    self.start_onboarding();
+                    self.run_action(&ctx, a);
                 }
             },
         );

@@ -1628,6 +1628,22 @@ impl App {
 
     pub fn split_at_playhead(&mut self) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
+        let targets = self.split_targets();
+        if targets.is_empty() {
+            return;
+        }
+        let ops: Vec<EditOp> = targets
+            .iter()
+            .map(|c| EditOp::SplitClip { clip: *c, at })
+            .collect();
+        if let Some(OpOutput::Clip(r)) = self.apply_batch(ops) {
+            self.select_only(Some(r));
+        }
+    }
+
+    /// Clips, die „Teilen“ am Playhead trifft: die Auswahl, sonst der Clip der Hauptspur
+    pub fn split_targets(&self) -> Vec<ClipId> {
+        let at = self.playhead.snap_to_frame(self.project.settings.fps);
         // Keine Splitter kürzer als ein halbes Bild (entstehen sonst an Clipgrenzen
         // mit krummer Bildrate und stören den Export)
         let half = Time::from_secs_f64(0.5 / self.project.settings.fps.as_f64());
@@ -1653,16 +1669,7 @@ impl App {
                 .map(|c| vec![c.id])
                 .unwrap_or_default();
         }
-        if targets.is_empty() {
-            return;
-        }
-        let ops: Vec<EditOp> = targets
-            .iter()
-            .map(|c| EditOp::SplitClip { clip: *c, at })
-            .collect();
-        if let Some(OpOutput::Clip(r)) = self.apply_batch(ops) {
-            self.select_only(Some(r));
-        }
+        targets
     }
 
     /// Löscht die Auswahl. Der Playhead springt an den Anfang des (ersten) gelöschten Clips.
@@ -2825,6 +2832,10 @@ impl App {
                     actions.push("paste_attrs");
                 }
             }
+            // kam die Taste selbst (Belegung „copy“/„cut“/„paste“), nicht doppelt ausführen
+            r.0 &= !actions.contains(&"copy");
+            r.1 &= !actions.contains(&"cut");
+            r.2 &= !actions.contains(&"paste");
             r
         });
         if copy {
@@ -2944,8 +2955,67 @@ impl App {
                     }
                     self.apply(EditOp::SetSettings { settings: s });
                 }
+                "copy" => self.copy_selection(),
+                "cut" => self.cut_selection(),
+                "paste" => self.paste(),
+                // Menü oben links
+                "new_project" => {
+                    self.new_project();
+                }
+                "import_project" => self.import.open = true,
+                "import_fonts" => self.pick_fonts(ctx),
+                "exports" => self.exports_for = Some(crate::exports::ExportsList::new(&self.project.name, self.project_path.as_deref())),
+                "history" => self.show_history(),
+                "layout_edit" => {
+                    if self.settings.layout_locked {
+                        self.toast("Layout ist gesperrt (Einstellungen → Allgemein → Anordnung)");
+                    } else {
+                        self.player_max = false;
+                        self.layout_edit = true;
+                    }
+                }
+                "template_save" => self.tpl_dialog = Some(crate::templates::TplDialog::Save { name: self.project.name.clone() }),
+                "template_insert" => self.tpl_dialog = Some(crate::templates::TplDialog::Insert(crate::templates::load_all())),
+                "archive" => self.start_archive(ctx),
+                "relink" => self.missing_open = true,
+                "backups" => self.backups_open = true,
+                "go_home" => self.go_home(),
+                "tour" => self.start_tour(),
+                "onboarding" => self.start_onboarding(),
+                // Schnellaktionen
+                "quick_pauses" => self.quick_open(crate::quick::QuickKind::Pauses),
+                "quick_fillers" => self.quick_open(crate::quick::QuickKind::Fillers),
+                "quick_ducking" => self.quick_open(crate::quick::QuickKind::Ducking),
+                "quick_highlights" => self.tool_highlights(ctx),
+                "quick_sync" => self.tool_sync(ctx),
+                "quick_multicam" => self.tool_multicam_start(),
+                "quick_speakers" => self.tool_speakers(ctx),
+                "quick_punch" => self.quick_open(crate::quick::QuickKind::Punch),
+                "quick_vertical" => self.tool_vertical(),
+                "quick_thumbnail" => self.tool_thumbnail(ctx),
+                "quick_recap" => self.tool_recap(),
                 _ => {}
             }
+        }
+    }
+
+    /// Ist die Aktion gerade möglich? Nur die Prüfungen, die Menüs und Werkzeugleiste ohnehin
+    /// machen; alles andere gilt als möglich.
+    pub fn action_enabled(&self, a: &str) -> bool {
+        match a {
+            "undo" | "redo" => {
+                let d = self.doc.lock().unwrap_or_else(|e| e.into_inner());
+                if a == "undo" { d.can_undo() } else { d.can_redo() }
+            }
+            "split" => !self.split_targets().is_empty(),
+            "del_left" | "del_right" => !self.project.timeline.tracks.is_empty(),
+            "delete" => self.selected.is_some() || !self.sel_extra.is_empty() || self.selected_transition.is_some(),
+            "paste" | "paste_attrs" => !self.clipboard.is_empty(),
+            "group" => self.selection().len() >= 2,
+            "ungroup" => self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| c.group.is_some()),
+            "import_project" => self.import_enabled(),
+            q if q.starts_with("quick_") => self.quick_check(q).0,
+            _ => true,
         }
     }
 

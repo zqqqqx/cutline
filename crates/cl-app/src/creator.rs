@@ -12,7 +12,6 @@ use eframe::egui;
 
 use crate::app::App;
 use crate::tasks::TaskDone;
-use crate::theme::icon;
 
 /// Ergebnisse einer Hintergrund-Analyse beziehen sich auf die Clip-Lagen bei ihrem Start: hat sich
 /// das Projekt seitdem geändert, nicht übernehmen.
@@ -100,120 +99,78 @@ impl App {
             .and_then(|s| self.project.find_clip(s).map(|(_, c)| c.clone()))
     }
 
-    /// Menü „Schnellaktionen“ (in der Werkzeugleiste der Zeitleiste)
+    /// Ist die Schnellaktion `id` (Kennung aus `keymap::ACTIONS`) gerade möglich? Sonst mit Grund.
+    pub fn quick_check(&self, id: &str) -> (bool, &'static str) {
+        let sel = || self.selected_clip();
+        match id {
+            "quick_pauses" | "quick_fillers" | "quick_ducking" | "quick_highlights" => (
+                sel().is_some_and(|c| clip_audio(self, &c).is_some()),
+                "Wähle zuerst einen Clip mit Ton",
+            ),
+            "quick_sync" | "quick_multicam" => (self.selection().len() >= 2, "Wähle zwei oder mehr Clips"),
+            "quick_punch" | "quick_vertical" => {
+                (sel().is_some_and(|c| c.kind() == TrackKind::Video), "Wähle einen Videoclip")
+            }
+            "quick_recap" => (!self.project.timeline.markers.is_empty(), "Setze zuerst Marker"),
+            _ => (true, ""),
+        }
+    }
+
+    /// Menü „Schnellaktionen“ (in der Werkzeugleiste der Zeitleiste). Einträge sind Aktionen aus
+    /// `keymap::ACTIONS` (Name, Symbol) und laufen über `run_action` wie in der Befehlssuche.
     pub fn tools_menu(&mut self, ui: &mut egui::Ui) {
-        let sel = self.selected_clip();
-        let has_audio = sel.as_ref().is_some_and(|c| clip_audio(self, c).is_some());
-        let visual = sel.as_ref().is_some_and(|c| c.kind() == TrackKind::Video);
-        let n_sel = self.selection().len();
-        // `why`: Grund im Tooltip, solange der Eintrag ausgegraut ist
-        let item = |ui: &mut egui::Ui, (enabled, why): (bool, &str), g: &str, t: &str, tip: &str| -> bool {
-            ui.add_enabled(
-                enabled,
-                crate::theme::menu_row(crate::tr(format!("{g}   {t}"))).min_width(250.0),
-            )
-            .on_hover_text(crate::tr(tip))
-            .on_disabled_hover_text(crate::tr(why))
-            .clicked()
-        };
-        // Abschnittstitel auf der Symbolkante (Einzug wie `theme::menu_row`)
-        let title = |ui: &mut egui::Ui, t: &str| {
-            ui.horizontal(|ui| {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(crate::tr(t)).small().color(crate::theme::TEXT_DIM()));
-            });
-        };
-        let audio = (has_audio, "Wähle zuerst einen Clip mit Ton");
-        let two = (n_sel >= 2, "Wähle zwei oder mehr Clips");
-        let video = (visual, "Wähle einen Videoclip");
-        let always = (true, "");
+        const SECTIONS: &[(&str, &[(&str, &str)])] = &[
+            (
+                "Ton und Sprache",
+                &[
+                    ("quick_pauses", "Schneidet stille Stellen aus dem ausgewählten Clip"),
+                    ("quick_fillers", "Erkennt Füllwörter lokal (Parakeet) und schneidet sie heraus"),
+                    ("quick_ducking", "Ausgewählter Musik-Clip wird leiser, wo auf anderen Spuren gesprochen wird"),
+                    ("quick_highlights", "Setzt Marker an Schreien, Explosionen, Jubel im ausgewählten Clip"),
+                ],
+            ),
+            (
+                "Mehrere Aufnahmen",
+                &[
+                    ("quick_sync", "Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)"),
+                    ("quick_multicam", "Synchronisierte Clips auf eigenen Spuren: während der Wiedergabe mit 1–9 den Blickwinkel wählen"),
+                    ("quick_speakers", "Eine Datei pro Person (z. B. aus einer Call-Aufnahme, auch als ZIP): je eine benannte Tonspur am Playhead"),
+                ],
+            ),
+            (
+                "Bild und Format",
+                &[
+                    ("quick_punch", "Kurzer Zoom auf 125 % mit Keyframes (danach anpassbar)"),
+                    ("quick_vertical", "Stellt auf 1080×1920 um: Gameplay unten, Kopie des Clips oben als Facecam-Ausschnitt"),
+                    ("quick_thumbnail", "Speichert das Bild am Playhead als PNG (1280×720 bei 16:9)"),
+                    ("quick_recap", "Neues Projekt mit je 3 s um jeden Marker, mit Überblendungen („Was bisher geschah“)"),
+                ],
+            ),
+        ];
         let ctx = ui.ctx().clone();
         let mut act: Option<&str> = None;
-        title(ui, "Ton und Sprache");
-        if item(
-            ui,
-            audio,
-            icon::SCISSORS,
-            "Pausen entfernen (Jump Cuts)",
-            "Schneidet stille Stellen aus dem ausgewählten Clip",
-        ) {
-            act = Some("jump");
-        }
-        if item(
-            ui,
-            audio,
-            icon::CHAT_CIRCLE_DOTS,
-            "Füllwörter entfernen (äh, ähm, uh, um)",
-            "Erkennt Füllwörter lokal (Parakeet) und schneidet sie heraus",
-        ) {
-            act = Some("filler");
-        }
-        if item(
-            ui,
-            audio,
-            icon::SPEAKER_SIMPLE_LOW,
-            "Musik unter Sprache absenken (Auto-Ducking)",
-            "Ausgewählter Musik-Clip wird leiser, wo auf anderen Spuren gesprochen wird",
-        ) {
-            act = Some("duck");
-        }
-        if item(
-            ui,
-            audio,
-            icon::LIGHTNING,
-            "Highlights finden (laute Momente → Marker)",
-            "Setzt Marker an Schreien, Explosionen, Jubel im ausgewählten Clip",
-        ) {
-            act = Some("highlights");
-        }
-        ui.separator();
-        title(ui, "Mehrere Aufnahmen");
-        if item(ui, two, icon::WAVEFORM, "Auswahl per Ton synchronisieren", "Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)") {
-            act = Some("sync");
-        }
-        if item(ui, two, icon::VIDEO_CAMERA, "Multicam-Schnitt starten", "Synchronisierte Clips auf eigenen Spuren: während der Wiedergabe mit 1–9 den Blickwinkel wählen") {
-            act = Some("multicam");
-        }
-        if item(ui, always, icon::USERS, "Sprecher-Aufnahmen importieren …", "Eine Datei pro Person (z. B. aus einer Call-Aufnahme, auch als ZIP): je eine benannte Tonspur am Playhead") {
-            act = Some("speakers");
-        }
-        ui.separator();
-        title(ui, "Bild und Format");
-        if item(
-            ui,
-            video,
-            icon::MAGNIFYING_GLASS_PLUS,
-            "Zoom-Punch-in am Playhead",
-            "Kurzer Zoom auf 125 % mit Keyframes (danach anpassbar)",
-        ) {
-            act = Some("punch");
-        }
-        if item(
-            ui,
-            video,
-            icon::DEVICE_MOBILE,
-            "Hochkant-Layout (9:16, Facecam oben)",
-            "Stellt auf 1080×1920 um: Gameplay unten, Kopie des Clips oben als Facecam-Ausschnitt",
-        ) {
-            act = Some("vertical");
-        }
-        if item(
-            ui,
-            always,
-            icon::IMAGE,
-            "Thumbnail exportieren (aktuelles Bild)",
-            "Speichert das Bild am Playhead als PNG (1280×720 bei 16:9)",
-        ) {
-            act = Some("thumb");
-        }
-        if item(
-            ui,
-            (!self.project.timeline.markers.is_empty(), "Setze zuerst Marker"),
-            icon::CLOCK_COUNTER_CLOCKWISE,
-            "Rückblick aus Markern erstellen",
-            "Neues Projekt mit je 3 s um jeden Marker, mit Überblendungen („Was bisher geschah“)",
-        ) {
-            act = Some("recap");
+        for (i, (title, items)) in SECTIONS.iter().enumerate() {
+            if i > 0 {
+                ui.separator();
+            }
+            // Abschnittstitel auf der Symbolkante (Einzug wie `theme::menu_row`)
+            ui.horizontal(|ui| {
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new(crate::tr(title)).small().color(crate::theme::TEXT_DIM()));
+            });
+            for (id, tip) in *items {
+                // `why`: Grund im Tooltip, solange der Eintrag ausgegraut ist
+                let (enabled, why) = self.quick_check(id);
+                let text = format!("{}   {}", crate::keymap::icon(id), crate::keymap::name(id));
+                if ui
+                    .add_enabled(enabled, crate::theme::menu_row(crate::tr(text)).min_width(250.0))
+                    .on_hover_text(crate::tr(tip))
+                    .on_disabled_hover_text(crate::tr(why))
+                    .clicked()
+                {
+                    act = Some(id);
+                }
+            }
         }
         if crate::story::enabled(self) {
             ui.separator();
@@ -221,19 +178,7 @@ impl App {
         }
         if let Some(a) = act {
             ui.close_menu();
-            match a {
-                "jump" => self.quick_open(crate::quick::QuickKind::Pauses),
-                "filler" => self.quick_open(crate::quick::QuickKind::Fillers),
-                "duck" => self.quick_open(crate::quick::QuickKind::Ducking),
-                "highlights" => self.tool_highlights(&ctx),
-                "sync" => self.tool_sync(&ctx),
-                "multicam" => self.tool_multicam_start(),
-                "speakers" => self.tool_speakers(&ctx),
-                "punch" => self.quick_open(crate::quick::QuickKind::Punch),
-                "vertical" => self.tool_vertical(),
-                "thumb" => self.tool_thumbnail(&ctx),
-                _ => self.tool_recap(),
-            }
+            self.run_action(&ctx, a);
         }
     }
 
