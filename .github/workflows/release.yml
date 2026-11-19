@@ -1,5 +1,5 @@
 # Release: Tag `vX.Y.Z` pushen → Pakete bauen → GitHub-Release mit
-#   cutline-<os>-<arch>.zip + .sha256
+#   cutline-<os>-<arch>.zip + .sha256, changes.json („Was ist neu“ für die App, beide Sprachen)
 # Die App (cl-update) findet das Paket über `releases/latest` und prüft die Prüfsumme.
 name: Release
 
@@ -144,6 +144,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Änderungen dieser und früherer Versionen für „Was ist neu“ (die App liest sie statt des Release-Texts)
+      - name: changes.json aus CHANGELOG.md
+        run: sh .github/changes-json.sh "$GITHUB_REF_NAME" > dist/changes.json
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*

@@ -3,28 +3,39 @@
 //! Aufbau: je Version `## 0.11.1 – 2026-11-15` (oder `## Unreleased`), darin `### English` und
 //! `### Deutsch`, Gruppen als Zeile `**New**`, Einträge `- **Titel.** Satz.` oder `- Satz.`.
 //! Alles andere (Kopf, `<details>`, „Full Changelog“-Link) wird übergangen.
+//!
+//! Neuere Releases tragen dieselben Daten zusätzlich als Anhang `changes.json`
+//! (`.github/changes-json.sh`, gelesen von [`parse_json`]); dann braucht es den Release-Text nicht.
+
+use serde::Deserialize;
 
 use crate::Version;
 
 /// Die Änderungsliste dieses Builds.
 pub const CHANGELOG: &str = include_str!("../../../CHANGELOG.md");
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
 pub struct Entry {
     /// Fetter Titel (leer bei Einträgen ohne Titel)
     pub title: String,
     pub text: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
 pub struct Group {
+    #[serde(rename = "group")]
     pub title: String,
+    #[serde(rename = "items")]
     pub entries: Vec<Entry>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
 pub struct Notes {
     /// `None` bei `## Unreleased`
+    #[serde(deserialize_with = "version_text")]
     pub version: Option<Version>,
     /// Datum wie im Text (`JJJJ-MM-TT`), sonst leer
     pub date: String,
@@ -45,6 +56,23 @@ impl Notes {
 
 fn has_entries(g: &[Group]) -> bool {
     g.iter().any(|g| !g.entries.is_empty())
+}
+
+/// `"0.12.1"` → Version (unlesbar: `None`, die Version fällt dann bei [`between`] heraus)
+fn version_text<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Version>, D::Error> {
+    Ok(Version::parse(&String::deserialize(d)?))
+}
+
+/// `changes.json` eines Releases (Format 1, Aufbau siehe `.github/changes-json.sh`).
+/// `None` bei kaputtem JSON oder unbekanntem `format`: dann gilt der Release-Text.
+pub fn parse_json(text: &str) -> Option<Vec<Notes>> {
+    #[derive(Deserialize)]
+    struct File {
+        format: u32,
+        versions: Vec<Notes>,
+    }
+    let f: File = serde_json::from_str(text).ok()?;
+    (f.format == 1).then_some(f.versions)
 }
 
 /// Liest alle Versionen in Textreihenfolge. Leere Gruppen bleiben erhalten (Vorlage in `Unreleased`).
@@ -253,6 +281,68 @@ mod tests {
         assert_eq!(got, [cur], "Update von einer Version ohne Merker");
         assert!(news_after_update(&all, Some(v("0.11.0")), v("9.0.0"), true).len() >= 1);
         assert!(news_after_update(&all, None, v("9.0.0"), true).is_empty(), "keine Notiz für diese Version");
+    }
+
+    #[test]
+    fn changes_json_is_read_or_rejected() {
+        let ok = r#"{"format": 1, "versions": [
+            {"version": "1.2.0", "date": "2026-03-01",
+             "en": [{"group": "New", "items": [{"title": "A.", "text": "b"}, {"text": "nur Satz"}]}],
+             "de": [{"group": "Neu", "items": [{"title": "A.", "text": "b \"zitiert\""}]}],
+             "später": true},
+            {"version": "1.1.0", "en": [{"group": "Fixed", "items": [{"text": "x"}]}]}]}"#;
+        let all = parse_json(ok).unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!((all[0].version, all[0].date.as_str()), (Some(Version(1, 2, 0)), "2026-03-01"));
+        assert_eq!(all[0].en[0].entries[1], Entry { title: String::new(), text: "nur Satz".into() });
+        assert_eq!(all[0].groups(true)[0].entries[0].text, "b \"zitiert\"");
+        // fehlende Sprache: die andere
+        assert_eq!(all[1].groups(true)[0].title, "Fixed");
+        assert_eq!(all[1].date, "");
+        let got: Vec<_> = between(&all, Version(1, 0, 0), Version(1, 2, 0)).iter().filter_map(|n| n.version).collect();
+        assert_eq!(got, [Version(1, 2, 0), Version(1, 1, 0)]);
+        // unbekanntes Format, kaputtes JSON, falsche Form: Rückfall auf den Release-Text
+        assert!(parse_json(&ok.replace(r#""format": 1"#, r#""format": 2"#)).is_none());
+        assert!(parse_json(&ok[..ok.len() - 3]).is_none());
+        for bad in ["", "null", "[]", "{}", r#"{"format": 1}"#, r#"{"format": "1", "versions": []}"#, r#"{"format": 1, "versions": [{"en": "x"}]}"#] {
+            assert!(parse_json(bad).is_none(), "{bad}");
+        }
+        assert_eq!(parse_json(r#"{"format": 1, "versions": []}"#), Some(Vec::new()));
+    }
+
+    /// `changes-json.sh` aus dem Release-Workflow ergibt dieselben Daten wie `parse` aus
+    /// `CHANGELOG.md` – für die Version und alle früheren. Läuft nur, wo `sh` und `awk` da sind.
+    #[test]
+    fn changes_json_script_matches_the_changelog() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let run = |ver: &str, file: &std::path::Path| {
+            std::process::Command::new("sh")
+                .arg(root.join(".github/changes-json.sh"))
+                .args([ver, &file.to_string_lossy()])
+                .output()
+        };
+        let Ok(out) = run("v0.11.0", &root.join("CHANGELOG.md")) else {
+            eprintln!("kein sh – übersprungen");
+            return;
+        };
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let got = parse_json(&String::from_utf8(out.stdout).unwrap()).expect("gültiges changes.json");
+        let want: Vec<Notes> = parse(CHANGELOG).into_iter().filter(|n| n.version.is_some_and(|v| v <= Version(0, 11, 0))).collect();
+        assert!(want.len() >= 4);
+        assert_eq!(got, want);
+        // kleines Beispiel: Sonderzeichen, Fortsetzungszeilen, Eintrag ohne Gruppe, Vorabversion
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("CHANGELOG.md");
+        let text = "# Changelog\r\n\r\n## Unreleased\r\n### English\r\n**New**\r\n- offen\r\n\r\n## [1.1.0] - 2026-02-03\r\n### English\r\n- ohne Gruppe\r\n#### Fixed:\r\n- **Pfad \"C:\\x\".**\tTab\r\n  zweite Zeile\r\n### Deutsch\r\n**Behoben**\r\n* Ä ö 🎬\r\n\r\n## 1.0.0\r\n**New**\r\n- alt\r\n";
+        std::fs::write(&f, text).unwrap();
+        let out = run("1.1.0-rc.1", &f).unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let got = parse_json(&String::from_utf8(out.stdout).unwrap()).expect("gültig");
+        assert_eq!(got, parse(text)[1..]);
+        assert_eq!(got[0].en[1].entries[0], Entry { title: "Pfad \"C:\\x\".".into(), text: "Tab zweite Zeile".into() });
+        // fehlender Abschnitt bricht ohne Ausgabe ab
+        let out = run("9.9.9", &f).unwrap();
+        assert!(!out.status.success() && out.stdout.is_empty());
     }
 
     /// Das Skript aus dem Release-Workflow schneidet genau den Abschnitt der Version aus, und die

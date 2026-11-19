@@ -84,6 +84,10 @@ pub struct Release {
     pub asset_url: String,
     pub asset_size: u64,
     pub sha_url: Option<String>,
+    /// Anhang `changes.json` (ältere Releases haben ihn nicht)
+    pub changes_url: Option<String>,
+    /// „Was ist neu“ aus `changes.json`; `None` = aus dem Release-Text (`notes`) lesen
+    pub changes: Option<Vec<changelog::Notes>>,
 }
 
 #[derive(Deserialize)]
@@ -166,7 +170,23 @@ pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, St
         asset_url: asset.browser_download_url.clone(),
         asset_size: asset.size,
         sha_url: Some(sha.browser_download_url.clone()),
+        changes_url: r.assets.iter().find(|a| a.name == "changes.json").map(|a| a.browser_download_url.clone()),
+        changes: None,
     }))
+}
+
+/// Höchstgröße von `changes.json` (alle Versionen beider Sprachen: heute etwa 60 KB)
+const MAX_CHANGES: u64 = 2 << 20;
+
+/// `changes.json` laden; `None` = nicht erreichbar, zu groß oder unlesbar (dann gilt der Release-Text).
+pub fn fetch_changes(url: &str) -> Option<Vec<changelog::Notes>> {
+    let resp = agent().get(url).set("User-Agent", "cutline-updater").call().ok()?;
+    let mut text = String::new();
+    resp.into_reader().take(MAX_CHANGES + 1).read_to_string(&mut text).ok()?;
+    if text.len() as u64 > MAX_CHANGES {
+        return None;
+    }
+    changelog::parse_json(&text)
 }
 
 /// Neueste Version abfragen. `Ok(None)` = schon aktuell.
@@ -181,7 +201,11 @@ pub fn check(current: &str) -> Result<Option<Release>, String> {
     {
         Ok(resp) => {
             let body = resp.into_string().map_err(|e| e.to_string())?;
-            parse_release(&body, cur)
+            let mut r = parse_release(&body, cur)?;
+            if let Some(rel) = &mut r {
+                rel.changes = rel.changes_url.as_deref().and_then(fetch_changes);
+            }
+            Ok(r)
         }
         Err(ureq::Error::Status(404, _)) => Err("Noch keine öffentlichen Releases gefunden".into()),
         Err(ureq::Error::Status(code, _)) => Err(format!("GitHub antwortet mit {code}")),
@@ -766,7 +790,31 @@ mod tests {
             asset_url: format!("{base}/pkg.zip"),
             asset_size: 5,
             sha_url: Some(format!("{base}/pkg.sha256")),
+            changes_url: None,
+            changes: None,
         }
+    }
+
+    #[test]
+    fn changes_json_is_found_and_fetched() {
+        let mut j: serde_json::Value = serde_json::from_str(&release_json("v0.3.0", true)).unwrap();
+        assert_eq!(parse_release(&j.to_string(), Version(0, 2, 0)).unwrap().unwrap().changes_url, None, "älteres Release");
+        j["assets"].as_array_mut().unwrap().push(serde_json::json!({ "name": "changes.json", "browser_download_url": "https://x/changes.json" }));
+        let r = parse_release(&j.to_string(), Version(0, 2, 0)).unwrap().unwrap();
+        assert_eq!(r.changes_url.as_deref(), Some("https://x/changes.json"));
+        let good = br#"{"format": 1, "versions": [{"version": "0.3.0", "en": [{"group": "New", "items": [{"text": "x"}]}]}]}"#;
+        let big = format!(r#"{{"format": 1, "versions": [], "x": "{}"}}"#, "a".repeat(MAX_CHANGES as usize));
+        let base = serve(vec![
+            ok(good, None),
+            ok(br#"{"format": 9, "versions": []}"#, None),
+            ok(big.as_bytes(), None),
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+        ]);
+        let got = fetch_changes(&format!("{base}/c")).expect("gelesen");
+        assert_eq!(got[0].version, Some(Version(0, 3, 0)));
+        assert!(fetch_changes(&format!("{base}/c")).is_none(), "unbekanntes Format");
+        assert!(fetch_changes(&format!("{base}/c")).is_none(), "zu groß");
+        assert!(fetch_changes(&format!("{base}/c")).is_none(), "fehlt");
     }
 
     #[test]

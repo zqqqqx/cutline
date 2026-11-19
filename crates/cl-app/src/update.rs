@@ -91,6 +91,8 @@ fn fake_release() -> Release {
         asset_url: "http://127.0.0.1:9/cutline.zip".into(),
         asset_size: 48_300_000,
         sha_url: Some("http://127.0.0.1:9/cutline.zip.sha256".into()),
+        changes_url: None,
+        changes: None,
     }
 }
 
@@ -106,11 +108,11 @@ fn exe_dir() -> Option<std::path::PathBuf> {
         .map(|p| p.to_path_buf())
 }
 
-/// Änderungen der neuen Version(en) in der Release-Notiz. Leer = Text nicht lesbar.
-/// Übersprungene Versionen stehen mit drin, soweit die Notiz sie enthält (der Release-Workflow hängt
-/// bis zu drei ältere eingeklappt an) – eine weitere Anfrage an GitHub gibt es dafür nicht.
+/// Änderungen der neuen Version(en): aus dem Anhang `changes.json` (alle Versionen), bei älteren
+/// Releases aus der Release-Notiz (bis zu drei ältere eingeklappt angehängt). Leer = nicht lesbar.
 pub fn release_notes(rel: &Release, installed: Version) -> Vec<Notes> {
-    changelog::between(&changelog::parse(&rel.notes), installed, rel.version)
+    let all = rel.changes.clone().unwrap_or_else(|| changelog::parse(&rel.notes));
+    changelog::between(&all, installed, rel.version)
         .into_iter()
         .cloned()
         .collect()
@@ -151,7 +153,8 @@ fn update_dir() -> std::path::PathBuf {
 fn check_outcome(r: Result<Option<Release>, String>) -> (UpdateState, String) {
     match r {
         Ok(Some(rel)) => {
-            let line = format!("Version {} verfügbar", rel.version);
+            let from = if rel.changes.is_some() { " (Änderungen aus changes.json)" } else { "" };
+            let line = format!("Version {} verfügbar{from}", rel.version);
             (UpdateState::Available(Box::new(rel)), line)
         }
         Ok(None) => (UpdateState::UpToDate, "aktuell".into()),
@@ -723,5 +726,25 @@ mod tests {
         assert!(!all.is_empty());
         assert!(all.iter().all(|n| n.version.is_some_and(|v| v <= own_version())));
         assert!(all.windows(2).all(|w| w[0].version > w[1].version));
+    }
+
+    /// Mit `changes.json` kommt „Was ist neu“ daraus (auch ältere übersprungene Versionen),
+    /// ohne aus dem Release-Text; fehlt der Anhang, gilt der Text.
+    #[test]
+    fn update_prefers_changes_json() {
+        let mut rel = fake_release();
+        rel.version = Version(0, 11, 1);
+        rel.notes = "## 0.11.1\n### English\n**New**\n- aus dem Text\n".into();
+        let from_text: Vec<_> = release_notes(&rel, Version(0, 9, 0)).iter().map(|n| n.groups(false)[0].entries[0].text.clone()).collect();
+        assert_eq!(from_text, ["aus dem Text"]);
+        rel.changes = cl_update::changelog::parse_json(
+            r#"{"format": 1, "versions": [
+                {"version": "0.11.1", "en": [{"group": "New", "items": [{"text": "aus changes.json"}]}]},
+                {"version": "0.10.0", "de": [{"group": "Neu", "items": [{"text": "übersprungen"}]}]},
+                {"version": "0.9.0", "en": [{"group": "New", "items": [{"text": "schon installiert"}]}]}]}"#,
+        );
+        let got: Vec<_> = release_notes(&rel, Version(0, 9, 0)).iter().map(|n| n.groups(false)[0].entries[0].text.clone()).collect();
+        assert_eq!(got, ["aus changes.json", "übersprungen"]);
+        assert!(check_outcome(Ok(Some(rel))).1.contains("changes.json"));
     }
 }
