@@ -35,14 +35,26 @@ impl Region {
     pub fn corner(&self, sx: f32, sy: f32) -> Pos2 {
         self.center + self.rot(vec2(sx * self.size.x / 2.0, sy * self.size.y / 2.0))
     }
+    /// Ecke des sichtbaren (zugeschnittenen) Bereichs, `sx`/`sy` = ±1
+    pub fn vis_corner(&self, sx: f32, sy: f32) -> Pos2 {
+        let k = self.crop;
+        let u = if sx < 0.0 { k.left } else { 1.0 - k.right };
+        let v = if sy < 0.0 { k.top } else { 1.0 - k.bottom };
+        self.corner(2.0 * u - 1.0, 2.0 * v - 1.0)
+    }
+    /// Liegt `p` im sichtbaren (zugeschnittenen) Bereich? 2 px Spielraum.
     pub fn contains(&self, p: Pos2) -> bool {
         let d = p - self.center;
         let (s, c) = (-self.angle).sin_cos();
-        let local = vec2(d.x * c - d.y * s, d.x * s + d.y * c);
-        local.x.abs() <= self.size.x / 2.0 + 2.0 && local.y.abs() <= self.size.y / 2.0 + 2.0
+        let local = vec2(d.x * c - d.y * s, d.x * s + d.y * c) + self.size / 2.0;
+        let k = self.crop;
+        let (x0, x1) = (k.left * self.size.x - 2.0, (1.0 - k.right) * self.size.x + 2.0);
+        let (y0, y1) = (k.top * self.size.y - 2.0, (1.0 - k.bottom) * self.size.y + 2.0);
+        (x0..=x1).contains(&local.x) && (y0..=y1).contains(&local.y)
     }
+    /// Drehgriff: 22 px unter der Mitte der sichtbaren Unterkante
     pub fn rotate_handle(&self) -> Pos2 {
-        self.center + self.rot(vec2(0.0, self.size.y / 2.0 + 22.0))
+        self.crop_handle(3) + self.rot(vec2(0.0, 22.0))
     }
     /// Griff der Zuschnitt-Kante `edge` (0 links, 1 rechts, 2 oben, 3 unten): Mitte der sichtbaren Kante.
     pub fn crop_handle(&self, edge: usize) -> Pos2 {
@@ -74,6 +86,30 @@ fn crop_drag(r: &Region, edge: usize, start: Crop, p: Pos2) -> Crop {
         _ => k.bottom = (1.0 - v).clamp(0.0, (max - k.top).max(0.0)),
     }
     k
+}
+
+/// Griff des ausgewählten Elements unter `p`. Der nächste gewinnt: bei kleinem sichtbarem
+/// Ausschnitt liegen Eckgriffe, Zuschnitt-Balken und Drehgriff dicht beieinander.
+/// Skalieren rechnet um `r.center` (Mitte des ganzen Clips, um die die Skalierung wirkt).
+fn handle_at(r: &Region, croppable: bool, p: Pos2) -> Option<Mode> {
+    let t = r.tr;
+    let mut best: Option<(f32, Mode)> = None;
+    let mut take = |at: Pos2, tol: f32, m: Mode| {
+        let d = p.distance(at);
+        if d <= tol && best.is_none_or(|(b, _)| d < b) {
+            best = Some((d, m));
+        }
+    };
+    take(r.rotate_handle(), HANDLE + 3.0, Mode::Rotate { start: t, press_angle: (p - r.center).angle() });
+    for (sx, sy) in [(1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+        take(r.vis_corner(sx, sy), HANDLE + 2.0, Mode::Scale { start: t, press_dist: p.distance(r.center).max(1.0) });
+    }
+    if croppable {
+        for edge in 0..4 {
+            take(r.crop_handle(edge), HANDLE + 2.0, Mode::Crop { edge, start: r.crop });
+        }
+    }
+    best.map(|b| b.1)
 }
 
 #[derive(Clone, Copy)]
@@ -143,33 +179,11 @@ impl App {
         let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
 
         // Was liegt unter dem Zeiger? (Griffe des ausgewählten Elements haben Vorrang)
-        let sel_tr = sel.map(|r| r.tr);
         let croppable = sel.is_some_and(|r| {
             self.project.find_clip(r.clip).is_some_and(|(_, c)| matches!(c.content, ClipContent::Media { .. }))
         });
-        let hit_handle = move |p: Pos2| -> Option<Mode> {
-            let r = sel?;
-            let t = sel_tr?;
-            if p.distance(r.rotate_handle()) <= HANDLE + 3.0 {
-                let a = (p - r.center).angle();
-                return Some(Mode::Rotate {
-                    start: t,
-                    press_angle: a,
-                });
-            }
-            for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
-                if (sx, sy) != (-1.0, -1.0) && p.distance(r.corner(sx, sy)) <= HANDLE + 2.0 {
-                    return Some(Mode::Scale {
-                        start: t,
-                        press_dist: p.distance(r.center).max(1.0),
-                    });
-                }
-            }
-            (0..4)
-                .find(|&e| croppable && p.distance(r.crop_handle(e)) <= HANDLE + 2.0)
-                .map(|edge| Mode::Crop { edge, start: r.crop })
-        };
-        let delete_btn = sel.map(|r| r.corner(-1.0, -1.0));
+        let hit_handle = move |p: Pos2| sel.and_then(|r| handle_at(&r, croppable, p));
+        let delete_btn = sel.map(|r| r.vis_corner(-1.0, -1.0));
 
         if let Some(p) = resp.hover_pos() {
             if let Some(m) = hit_handle(p) {
@@ -387,11 +401,12 @@ impl App {
         let mut painter = painter;
         painter.multiply_opacity(show);
         if let Some(r) = sel.filter(|_| show > 0.01) {
+            // Rahmen und Griffe am sichtbaren (zugeschnittenen) Bereich
             let pts = [
-                r.corner(-1.0, -1.0),
-                r.corner(1.0, -1.0),
-                r.corner(1.0, 1.0),
-                r.corner(-1.0, 1.0),
+                r.vis_corner(-1.0, -1.0),
+                r.vis_corner(1.0, -1.0),
+                r.vis_corner(1.0, 1.0),
+                r.vis_corner(-1.0, 1.0),
             ];
             let frame = Stroke::new(1.0_f32, Color32::from_white_alpha(230));
             for i in 0..4 {
@@ -405,14 +420,12 @@ impl App {
                     Stroke::new(1.0_f32, theme::ACCENT_INK()),
                 );
             }
-            // Zuschnitt: sichtbarer Teil und Balken in der Mitte seiner Kanten
+            // Zuschnitt: ganzer Clip dezent und Balken in der Mitte der sichtbaren Kanten
             if croppable {
-                let k = r.crop;
-                if !k.is_none() {
-                    let vis = [(k.left, k.top), (1.0 - k.right, k.top), (1.0 - k.right, 1.0 - k.bottom), (k.left, 1.0 - k.bottom)]
-                        .map(|(u, v)| r.corner(2.0 * u - 1.0, 2.0 * v - 1.0));
+                if !r.crop.is_none() {
+                    let full = [r.corner(-1.0, -1.0), r.corner(1.0, -1.0), r.corner(1.0, 1.0), r.corner(-1.0, 1.0)];
                     for i in 0..4 {
-                        painter.line_segment([vis[i], vis[(i + 1) % 4]], Stroke::new(1.0_f32, theme::ACCENT()));
+                        painter.line_segment([full[i], full[(i + 1) % 4]], Stroke::new(1.0_f32, Color32::from_white_alpha(60)));
                     }
                 }
                 for e in 0..4 {
@@ -438,7 +451,7 @@ impl App {
             // Drehgriff
             let rh = r.rotate_handle();
             painter.line_segment(
-                [r.center + r.rot(vec2(0.0, r.size.y / 2.0)), rh],
+                [r.crop_handle(3), rh],
                 Stroke::new(1.0_f32, Color32::from_white_alpha(140)),
             );
             painter.circle(
@@ -491,6 +504,53 @@ mod tests {
             (c.x - 90.0).abs() < 0.01 && (c.y - 150.0).abs() < 0.01,
             "{c:?}"
         );
+    }
+
+    fn region(center: Pos2, size: Vec2, angle: f32, crop: Crop) -> Region {
+        Region { clip: ClipId::new(), center, size, angle, tr: Transform::default(), crop }
+    }
+
+    /// Splitscreen „Nebeneinander“: der rechte (obere) Clip reicht unsichtbar in die linke Hälfte.
+    /// Treffer nur im sichtbaren Teil, ✕ an der sichtbaren Ecke (in der Bühne).
+    #[test]
+    fn hits_and_handles_follow_the_crop() {
+        let k = Crop { left: 0.25, right: 0.25, top: 0.0, bottom: 0.0 };
+        let regions = [region(pos2(50.0, 50.0), vec2(200.0, 100.0), 0.0, k), region(pos2(150.0, 50.0), vec2(200.0, 100.0), 0.0, k)];
+        let top = |p: Pos2| regions.iter().rev().position(|r| r.contains(p)).map(|i| 1 - i);
+        assert_eq!(top(pos2(60.0, 50.0)), Some(0));
+        assert_eq!(top(pos2(140.0, 50.0)), Some(1));
+        let near = |a: Pos2, b: Pos2| a.distance(b) < 0.01;
+        assert!(near(regions[0].vis_corner(-1.0, -1.0), pos2(0.0, 0.0)), "{:?}", regions[0].vis_corner(-1.0, -1.0));
+        assert!(near(regions[1].vis_corner(1.0, 1.0), pos2(200.0, 100.0)));
+        // gedreht (90°) und doppelt so groß, links die Hälfte weg: sichtbar ist nur die untere Hälfte
+        let r = region(pos2(100.0, 100.0), vec2(400.0, 200.0), std::f32::consts::FRAC_PI_2, Crop { left: 0.5, ..Default::default() });
+        assert!(r.contains(pos2(100.0, 250.0)) && r.contains(pos2(0.0, 150.0)));
+        assert!(!r.contains(pos2(100.0, 50.0)) && !r.contains(pos2(100.0, 310.0)));
+        // Drehgriff unter der sichtbaren Unterkante
+        let r = region(pos2(100.0, 100.0), vec2(200.0, 100.0), 0.0, Crop { bottom: 0.5, ..Default::default() });
+        assert!(near(r.rotate_handle(), pos2(100.0, 122.0)), "{:?}", r.rotate_handle());
+    }
+
+    /// Schmaler sichtbarer Ausschnitt: jeder Griff bleibt an seiner Stelle greifbar; Skalieren
+    /// rechnet vom Mittelpunkt des ganzen Clips.
+    #[test]
+    fn close_handles_pick_the_nearest() {
+        let r = region(pos2(100.0, 100.0), vec2(200.0, 100.0), 0.0, Crop { left: 0.45, right: 0.45, top: 0.0, bottom: 0.0 });
+        assert!(matches!(handle_at(&r, true, r.crop_handle(2)), Some(Mode::Crop { edge: 2, .. })));
+        assert!(matches!(handle_at(&r, true, r.crop_handle(3)), Some(Mode::Crop { edge: 3, .. })));
+        assert!(matches!(handle_at(&r, true, r.crop_handle(1)), Some(Mode::Crop { edge: 1, .. })));
+        assert!(matches!(handle_at(&r, true, r.rotate_handle()), Some(Mode::Rotate { .. })));
+        let c = r.vis_corner(1.0, -1.0);
+        assert!(near_pos(c, pos2(110.0, 50.0)));
+        match handle_at(&r, true, c) {
+            Some(Mode::Scale { press_dist, .. }) => assert!((press_dist - c.distance(r.center)).abs() < 1e-3),
+            _ => panic!("Eckgriff"),
+        }
+        assert!(matches!(handle_at(&r, false, r.crop_handle(2)), Some(Mode::Scale { .. })));
+    }
+
+    fn near_pos(a: Pos2, b: Pos2) -> bool {
+        a.distance(b) < 0.01
     }
 
     /// Zuschnitt-Griffe: liegen mitten auf den sichtbaren Kanten, Ziehen folgt dem Zeiger auch
