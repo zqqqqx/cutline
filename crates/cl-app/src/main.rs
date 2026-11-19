@@ -6,6 +6,7 @@ mod arrange;
 mod assets;
 mod captions;
 mod audio;
+mod brand;
 mod chrome;
 mod contents;
 mod curves;

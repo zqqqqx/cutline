@@ -386,6 +386,12 @@ impl App {
         let p = self.caption_preset();
         let text = if p.id == "podcast" { two_lines(text) } else { text.to_string() };
         let mut st = TextStyle { text, ..(p.style)() };
+        // Brand-Schrift für Untertitel nur im Stil „Klassisch“ (die anderen haben eigene Schriften)
+        if p.id == "classic" {
+            if let Some(f) = self.brand.font(crate::brand::CAPTION) {
+                st.font_family = Some(f.clone());
+            }
+        }
         if let Some(k) = &mut st.karaoke {
             k.words = words;
         }

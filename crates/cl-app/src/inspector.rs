@@ -748,9 +748,9 @@ impl App {
         }
     }
 
-    fn text_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
-        // Schriftliste nicht in jedem Bild neu aufbauen: höchstens alle 2 s
-        let fonts = match &self.font_names {
+    /// Namen aller Schriften, sortiert. Nicht in jedem Bild neu aufbauen: höchstens alle 2 s
+    pub fn font_name_list(&mut self) -> std::sync::Arc<Vec<String>> {
+        match &self.font_names {
             Some((t, v)) if t.elapsed() < std::time::Duration::from_secs(2) => v.clone(),
             _ => {
                 let mut v: Vec<String> = self.font_files().into_keys().collect();
@@ -759,7 +759,13 @@ impl App {
                 self.font_names = Some((std::time::Instant::now(), v.clone()));
                 v
             }
-        };
+        }
+    }
+
+    fn text_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
+        let fonts = self.font_name_list();
+        // Brand-Schriften oben, soweit vorhanden
+        let brand: Vec<String> = self.brand.font_list().into_iter().filter(|f| fonts.contains(f)).collect();
         let ClipContent::Text(st) = &mut c.content else {
             return;
         };
@@ -788,6 +794,16 @@ impl App {
                 .width((ui.available_width() - 12.0).max(60.0))
                 .height(320.0)
                 .show_ui(ui, |ui| {
+                    for f in &brand {
+                        let txt = RichText::new(f).font(egui::FontId::new(15.0, self.font_family(Some(f))));
+                        if ui.selectable_label(st.font_family.as_deref() == Some(f), txt).clicked() {
+                            st.font_family = Some(f.clone());
+                            e.commit = true;
+                        }
+                    }
+                    if !brand.is_empty() {
+                        ui.separator();
+                    }
                     if ui
                         .selectable_label(st.font_family.is_none(), crate::tr("System"))
                         .clicked()

@@ -286,6 +286,8 @@ impl AppSettings {
                 self.anim_duration = d.anim_duration;
             }
             Section::Shortcuts => self.shortcuts.clear(),
+            // eigene Datei (`brand.json`): leert `App::reset_settings_section`
+            Section::Brand => {}
             _ => return false,
         }
         true
@@ -322,6 +324,7 @@ pub enum Section {
     General,
     Library,
     Contents,
+    Brand,
     Projects,
     Audio,
     Editing,
@@ -338,13 +341,14 @@ pub enum Section {
 impl Section {
     /// Zurücksetzen gibt es nur, wo mehrere Werte verstellt sein können (nicht bei zwei, drei Schaltern)
     pub fn resettable(self) -> bool {
-        matches!(self, Section::General | Section::Projects | Section::Audio | Section::Editing | Section::Shortcuts)
+        matches!(self, Section::General | Section::Projects | Section::Audio | Section::Editing | Section::Shortcuts | Section::Brand)
     }
 }
 
-const SECTIONS: [(Section, &str, &str); 14] = [
+const SECTIONS: [(Section, &str, &str); 15] = [
     (Section::Library, icon::BOOKMARKS, "Bibliothek"),
     (Section::Contents, icon::PACKAGE, "Inhalte"),
+    (Section::Brand, icon::PALETTE, "Brand Kit"),
     (Section::General, icon::GEAR_SIX, "Allgemein"),
     (Section::Projects, icon::FOLDERS, "Projekte"),
     (Section::Editing, icon::SCISSORS, "Bearbeiten"),
@@ -426,10 +430,13 @@ impl App {
                                         .size(theme::FS_TITLE),
                                 );
                                 ui.add_space(12.0);
+                                // alle Einträge zusammen so hoch wie früher 14 mit 28 px: das Fenster bleibt gleich groß
+                                let sp = ui.spacing().item_spacing.y;
+                                let row_h = 14.0 * (28.0 + sp) / SECTIONS.len() as f32 - sp;
                                 for (s, g, label) in SECTIONS {
                                     let active = self.settings_section == s;
                                     let (r, resp) = ui.allocate_exact_size(
-                                        vec2(ui.available_width(), 28.0),
+                                        vec2(ui.available_width(), row_h),
                                         egui::Sense::click(),
                                     );
                                     if active {
@@ -605,6 +612,7 @@ impl App {
                 }
             }
             Section::Shortcuts => self.capture_key = None,
+            Section::Brand => self.set_brand(ctx, Default::default()),
             _ => {}
         }
         self.settings.save();
@@ -1093,6 +1101,7 @@ impl App {
             Section::Updates => self.updates_settings(ui),
             Section::Integrations => self.integrations_settings(ui),
             Section::Contents => self.contents_settings(ui),
+            Section::Brand => self.brand_settings(ui),
             Section::Import => self.import_settings(ui),
             Section::Models => self.models_settings(ui),
             Section::About => {
@@ -1280,5 +1289,25 @@ mod tests {
                 assert_eq!(seen.contains(k), !keep.contains(&k.as_str()), "{k}");
             }
         }
+    }
+
+    /// Zurücksetzen im Bereich „Brand Kit“ leert das Kit samt `brand.json`, die Einstellungen
+    /// bleiben (die Logo-Kopie bleibt, Projekte können darauf zeigen)
+    #[test]
+    fn brand_reset_empties_the_kit() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut kit = crate::brand::BrandKit::default();
+        kit.colors.push(crate::brand::BrandColor { name: "Rot".into(), rgb: [255, 0, 0] });
+        kit.fonts[1] = Some("Poppins".into());
+        let ctx = egui::Context::default();
+        app.set_brand(&ctx, kit);
+        assert_eq!(crate::brand::BrandKit::load(), app.brand);
+        let before = serde_json::to_value(&app.settings).unwrap();
+        app.settings_section = Section::Brand;
+        app.reset_settings_section(&ctx);
+        assert_eq!(app.brand, crate::brand::BrandKit::default());
+        assert_eq!(crate::brand::BrandKit::load(), crate::brand::BrandKit::default());
+        assert!(crate::brand::colors(&ctx).is_empty());
+        assert_eq!(serde_json::to_value(&app.settings).unwrap(), before);
     }
 }
