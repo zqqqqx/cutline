@@ -191,8 +191,10 @@ impl App {
         let max = r.end().as_secs_f64() - 1.0 / fps;
         let to = to.clamp(min, max);
         let delta = to - r.start.as_secs_f64();
-        // Quellgrenzen beachten: rechts braucht Material davor, links danach
-        let r_src = r.source_in.as_secs_f64() + delta * r.speed as f64;
+        // Quellgrenzen beachten: rechts braucht Material davor, links danach. Nur Video/Ton
+        // haben eine zeitgebundene Quelle (wie TrimClip im Kern); Text, Bild, Effekt nicht
+        let timed = matches!(r.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Audio, .. });
+        let r_src = r.source_in.as_secs_f64() + if timed { delta * r.speed as f64 } else { 0.0 };
         if r_src < 0.0 {
             self.toast_err("Am Anfang des rechten Clips gibt es keine weiteren Medien");
             return;
@@ -404,7 +406,8 @@ mod tests {
     }
 
     /// Rollen in beide Richtungen: der Schnitt wandert, nichts überlappt (der Kern weist
-    /// Überlappung ab, darum muss der kürzer werdende Clip zuerst gesetzt werden).
+    /// Überlappung ab, darum muss der kürzer werdende Clip zuerst gesetzt werden). Text hat
+    /// keine Quelle: nach links rollen geht auch ohne Material vor dem rechten Clip.
     #[test]
     fn roll_edit_moves_the_cut_both_ways() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -414,8 +417,6 @@ mod tests {
         let text = || ClipContent::Text(cl_core::TextStyle::default());
         let (a, b) = (Clip::new(text(), t(0.0), t(2.0)), Clip::new(text(), t(2.0), t(2.0)));
         let (ia, ib) = (a.id, b.id);
-        // Rollen nach links braucht Quellmaterial vor dem rechten Clip
-        let b = Clip { source_in: t(3.0), ..b };
         tr.clips = vec![a, b];
         p.timeline.tracks.push(tr);
         app.set_doc(p);
