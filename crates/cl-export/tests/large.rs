@@ -113,6 +113,76 @@ fn measure_2500_clips() {
     println!("run: {:?} nach {:?}", r.as_ref().err().map(|e| e.to_string()), t0.elapsed());
 }
 
+/// Messung: 300 Karaoke-Untertitel à 6 Wörter (10 min Hochformat 1080×1920 über Video) gegen
+/// dieselben Untertitel ohne Karaoke – Filter im Graphen, Eingänge, Exportzeit.
+/// `cargo test --release -p cl-export --test large -- --ignored --nocapture measure_karaoke`
+#[test]
+#[ignore]
+fn measure_karaoke_300_captions() {
+    let root = tempfile::tempdir().unwrap();
+    let m = media(root.path());
+    let mut p = Project::new("Karaoke");
+    (p.settings.width, p.settings.height) = (1080, 1920);
+    p.settings.fps = Rational::new(30, 1);
+    p.media.push(m[0].clone());
+    let mut v = Track::new(TrackKind::Video);
+    for i in 0..10 {
+        let mut c = Clip::new(ClipContent::Media { media: m[0].id, kind: MediaKind::Video }, Time::from_secs_f64(60.0 * i as f64), Time::from_secs_f64(60.0));
+        c.transform.scale = 20.0;
+        v.clips.push(c);
+    }
+    p.timeline.tracks.push(v);
+    let mut caps = Track::new(TrackKind::Text);
+    caps.name = Some("Untertitel".into());
+    for i in 0..300 {
+        let st = TextStyle {
+            text: format!("Satz {i} mit sechs Wörtern drin"),
+            size: 64.0,
+            bold: true,
+            outline: Some((6.0, [0, 0, 0, 255])),
+            karaoke: Some(Karaoke { color: [255, 221, 0, 255], fill: false, words: Vec::new() }),
+            ..Default::default()
+        };
+        let mut c = Clip::new(ClipContent::Text(st), Time::from_secs_f64(2.0 * i as f64), Time::from_secs_f64(2.0));
+        c.transform.y = 480.0;
+        caps.clips.push(c);
+    }
+    p.timeline.tracks.push(caps);
+    let mut plain = p.clone();
+    for c in &mut plain.timeline.tracks[1].clips {
+        if let ClipContent::Text(s) = &mut c.content {
+            s.karaoke = None;
+        }
+    }
+    for (name, p) in [("ohne Karaoke", &plain), ("Karaoke", &p)] {
+        let out = root.path().join("k.mp4");
+        let t0 = Instant::now();
+        let job = build(p, &ExportSettings::from_project(p), &no_fonts, &out).unwrap();
+        let built = t0.elapsed();
+        // alle Graphen (bei Abschnitten mehrere)
+        let mut chains = 0;
+        let mut filters = 0;
+        let mut graphs = 0;
+        for e in std::fs::read_dir(job.workdir.path()).unwrap().flatten() {
+            let f = e.file_name().to_string_lossy().into_owned();
+            if f.starts_with("graph") && f.ends_with(".txt") {
+                let g = std::fs::read_to_string(e.path()).unwrap();
+                graphs += 1;
+                chains += g.split(";\n").count();
+                filters += g.split(";\n").map(|c| c.split(',').filter(|x| x.contains('=') || x.contains(']')).count()).sum::<usize>();
+            }
+        }
+        let inputs = job.args.iter().filter(|a| *a == "-i").count();
+        let t0 = Instant::now();
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        println!(
+            "{name}: Graphen {graphs}, Ketten {chains}, Filter ~{filters}, Eingänge -i {inputs}, Befehl {} Zeichen, build {built:?}, Export {:.1} s",
+            cmd_chars(&job.args),
+            t0.elapsed().as_secs_f64()
+        );
+    }
+}
+
 // ---------- Abschnitte gleich Durchgang (echtes FFmpeg, klein) ----------
 
 fn run_job(job: &cl_export::Job) {

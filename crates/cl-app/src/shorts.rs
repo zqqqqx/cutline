@@ -107,6 +107,7 @@ pub fn make_short(p: &Project, a: Time, b: Time, name: &str, captions: Option<(&
             } else {
                 c.source_in = c.source_in + src(head);
             }
+            c.retime_words(|t| t - head);
             if head > Time::ZERO {
                 c.keyframes.shift(head);
                 c.anim.intro = None;

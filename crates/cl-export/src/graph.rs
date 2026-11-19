@@ -505,43 +505,96 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         a if a > 0 => "R",
         _ => "C",
     };
-    let core = |dx: f32| {
+    let spacing = size * 0.3 * ls + size * (ls - 1.0).max(0.0);
+    let core = |dx: f32, col: [u8; 4], file: &str, x: &str, y: &str| {
         format!(
-            "drawtext=fontfile={font_file}:textfile={text_file}:expansion=none:fontsize={size:.1}:fontcolor={}:text_align={align}:x=(w-text_w)/2+{dx:.1}:y=(h-text_h)/2:line_spacing={:.1}",
-            rgba(st.color),
-            size * 0.3 * ls + size * (ls - 1.0).max(0.0)
+            "drawtext=fontfile={font_file}:textfile={file}:expansion=none:fontsize={size:.1}:fontcolor={}:text_align={align}:x={x}+{dx:.1}:y={y}:line_spacing={spacing:.1}",
+            rgba(col),
         )
     };
-    let mut dt = core(0.0);
-    if let Some((bw, col)) = st.outline {
-        dt.push_str(&format!(":borderw={bw:.1}:bordercolor={}", rgba(col)));
-    }
-    if let Some(bg) = st.background {
-        dt.push_str(&format!(
-            ":box=1:boxcolor={}:boxborderw={:.0}",
-            rgba(bg),
-            (size * 0.25).max(4.0)
-        ));
-    }
-    if st.shadow {
-        dt.push_str(":shadowx=3:shadowy=3:shadowcolor=black@0.6");
-    }
-    // Fett und kursiv wie die Vorschau (`draw_text` im Player) aus den Schaltern des Stils, nicht
-    // aus dem Schnitt der Schriftdatei: zweiter Abdruck um 3 % der Größe versetzt, Scherung
-    if st.bold {
-        dt.push(',');
-        dt.push_str(&core(size * 0.03));
-    }
-    if st.italic {
-        dt.push_str(&format!(",shear=shx={ITALIC_SHEAR}:fillcolor=black@0"));
-    }
+    let box_opt = |bg: [u8; 4]| format!(":box=1:boxcolor={}:boxborderw={:.0}", rgba(bg), (size * 0.25).max(4.0));
+    // `with_box`: Fläche hinter dem Text mitzeichnen
+    let draw_one = |col: [u8; 4], file: &str, x: &str, y: &str, with_box: bool| {
+        let mut dt = core(0.0, col, file, x, y);
+        if let Some((bw, col)) = st.outline {
+            dt.push_str(&format!(":borderw={bw:.1}:bordercolor={}", rgba(col)));
+        }
+        if let Some(bg) = st.background.filter(|_| with_box) {
+            dt.push_str(&box_opt(bg));
+        }
+        if st.shadow {
+            dt.push_str(":shadowx=3:shadowy=3:shadowcolor=black@0.6");
+        }
+        // Fett und kursiv wie die Vorschau (`draw_text` im Player) aus den Schaltern des Stils, nicht
+        // aus dem Schnitt der Schriftdatei: zweiter Abdruck um 3 % der Größe versetzt, Scherung
+        if st.bold {
+            dt.push(',');
+            dt.push_str(&core(size * 0.03, col, file, x, y));
+        }
+        dt
+    };
+    let draw = |col: [u8; 4]| draw_one(col, &text_file, "(w-text_w)/2", "(h-text_h)/2", true);
+    let shear = if st.italic { format!(",shear=shx={ITALIC_SHEAR}:fillcolor=black@0") } else { String::new() };
     let dur = c.duration.as_secs_f64();
     let src = ctx.label("tx");
-    ctx.graph.push(format!(
-        "color=c=black@0.0:s={lw}x{lh}:r={}:d={},format=rgba,{dt}[{src}]",
-        ctx.fps,
-        f(dur)
-    ));
+    let layer = format!("color=c=black@0.0:s={lw}x{lh}:r={}:d={},format=rgba", ctx.fps, f(dur));
+    let boxes = match &st.karaoke {
+        Some(k) => {
+            let pitch = cl_fonts::line_height(&data, idx, size).unwrap_or(size * 1.2) + spacing;
+            let geo = Geo { data: &data, idx, size, tw, lw, lh, pitch, align: st.align, bold: st.bold };
+            karaoke_states(&geo, &txt, &k.starts(&st.text, c.duration), k.fill, dur)
+        }
+        None => Vec::new(),
+    };
+    match &st.karaoke {
+        Some(k) if !boxes.is_empty() => {
+            // Karaoke: jede Zeile einzeln setzen (Lage genau bekannt; FFmpeg 8.1 zeichnet den
+            // Zeilenumbruch sonst als Kästchen mit, das verschiebt die Zeile), Fläche als Ganzes
+            let n_lines = lines.len() as f32;
+            let mut files = Vec::new();
+            for (i, line) in lines.iter().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
+                let file = format!("text_{n}_{i}.txt");
+                std::fs::write(ctx.workdir.join(&file), line.as_bytes())?;
+                let x = match st.align {
+                    a if a < 0 => format!("{:.1}", (lw as f32 - tw) / 2.0),
+                    a if a > 0 => format!("{:.1}-text_w", (lw as f32 + tw) / 2.0),
+                    _ => "(w-text_w)/2".to_string(),
+                };
+                let y = format!("{:.1}+({:.1})*(line_h+{spacing:.1})-line_h/2", lh as f32 / 2.0, i as f32 - (n_lines - 1.0) / 2.0);
+                files.push((file, x, y));
+            }
+            let draw_lines = |col: [u8; 4]| {
+                let mut v: Vec<String> = st
+                    .background
+                    .map(|bg| core(0.0, [0; 4], &text_file, "(w-text_w)/2", "(h-text_h)/2") + &box_opt(bg))
+                    .into_iter()
+                    .collect();
+                v.extend(files.iter().map(|(file, x, y)| draw_one(col, file, x, y, false)));
+                v.join(",")
+            };
+            let base = ctx.label("kb");
+            ctx.graph.push(format!("{layer},{}[{base}]", draw_lines(st.color)));
+            let parts: Vec<String> = boxes.iter().map(|_| ctx.label("kp")).collect();
+            ctx.graph.push(format!(
+                "{layer},{},split={}{}",
+                draw_lines(k.color),
+                parts.len(),
+                parts.iter().map(|p| format!("[{p}]")).collect::<String>()
+            ));
+            let mut cur = base;
+            for (b, part) in boxes.iter().zip(parts) {
+                let (cut, out) = (ctx.label("kc"), ctx.label("ko"));
+                ctx.graph.push(format!("[{part}]crop={}:{}:{}:{}[{cut}]", b.w, b.h, b.x, b.y));
+                ctx.graph.push(format!(
+                    "[{cur}][{cut}]overlay={}:{}:format=rgb:enable='{}'[{out}]",
+                    b.x, b.y, b.enable
+                ));
+                cur = out;
+            }
+            ctx.graph.push(format!("[{cur}]null{shear}[{src}]"));
+        }
+        _ => ctx.graph.push(format!("{layer},{}{shear}[{src}]", draw(st.color))),
+    }
     let s = samples(c, ctx.w as f32, ctx.h as f32);
     let label = post_transform(ctx, &src, lw, lh, &s);
     Ok(Some(Sprite {
@@ -549,6 +602,78 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         x: value_expr(&s, |e| e.x, "TT"),
         y: value_expr(&s, |e| e.y, "TT"),
     }))
+}
+
+/// Maße der Textfläche für die Karaoke-Ausschnitte (wie `drawtext` den Text setzt)
+struct Geo<'a> {
+    data: &'a [u8],
+    idx: u32,
+    size: f32,
+    /// breiteste Zeile (geschätzt wie die Flächengröße)
+    tw: f32,
+    lw: u32,
+    lh: u32,
+    /// Abstand der Zeilen: Zeilenhöhe der Schrift + `line_spacing`
+    pitch: f32,
+    align: i8,
+    bold: bool,
+}
+
+/// Ausschnitt der hervorgehobenen Fassung und wann er gilt
+#[derive(Debug)]
+struct KBox {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    enable: String,
+}
+
+/// Rechteck je Wort von `txt` (fertig umbrochen) auf der Textfläche, mit der Zeit, in der es
+/// hervorgehoben ist (`starts` relativ zum Clipanfang, wie `karaoke_word`). Die Rechtecke reichen
+/// bis zur Mitte der Leerzeichen und der Zeilenabstände: beide Fassungen unterscheiden sich nur in
+/// der Füllfarbe der Buchstaben, kleine Messfehler fallen also nicht auf.
+fn karaoke_states(g: &Geo, txt: &str, starts: &[Time], fill: bool, dur: f64) -> Vec<KBox> {
+    let width = |s: &str| cl_fonts::text_width(g.data, g.idx, g.size, s).unwrap_or(g.size * 0.6 * s.chars().count() as f32);
+    let space = width(" ");
+    let bold = if g.bold { g.size * 0.03 } else { 0.0 };
+    let lines: Vec<&str> = txt.split('\n').collect();
+    let n = lines.len() as f32;
+    let (lw, lh) = (g.lw as f32, g.lh as f32);
+    let mut out = Vec::new();
+    let mut i = 0;
+    for (li, line) in lines.iter().enumerate() {
+        let line_w = width(line);
+        let left = match g.align {
+            a if a < 0 => (lw - g.tw) / 2.0,
+            a if a > 0 => (lw + g.tw) / 2.0 - line_w,
+            _ => (lw - line_w) / 2.0,
+        };
+        let cy = lh / 2.0 + (li as f32 - (n - 1.0) / 2.0) * g.pitch;
+        let y0 = if li == 0 { 0.0 } else { (cy - g.pitch / 2.0).max(0.0) };
+        let y1 = if li + 1 == lines.len() { lh } else { (cy + g.pitch / 2.0).min(lh) };
+        for r in word_ranges(line) {
+            let Some(&a) = starts.get(i) else { break };
+            let next = starts.get(i + 1).copied();
+            i += 1;
+            let a = a.as_secs_f64();
+            let b = if fill { None } else { next.map(|b| b.as_secs_f64()) };
+            if a >= dur || b.is_some_and(|b| b <= 0.0 || b <= a) {
+                continue;
+            }
+            let x0 = (left + width(&line[..r.start]) - space / 2.0).max(0.0);
+            let x1 = (left + width(&line[..r.end]) + space / 2.0 + bold).min(lw);
+            let (x, y) = ((x0.floor() as u32).min(g.lw - 1), (y0.floor() as u32).min(g.lh - 1));
+            let w = (x1.ceil() as u32).saturating_sub(x).clamp(1, g.lw - x);
+            let h = (y1.ceil() as u32).saturating_sub(y).clamp(1, g.lh - y);
+            let enable = match b {
+                Some(b) => format!("gte(t,{})*lt(t,{})", f(a), f(b)),
+                None => format!("gte(t,{})", f(a)),
+            };
+            out.push(KBox { x, y, w, h, enable });
+        }
+    }
+    out
 }
 
 /// Sprite zur Zeit `t0` (s, relativ zum Exportbeginn, auch negativ) auf `cur` legen.

@@ -1315,6 +1315,91 @@ mod transition_tests {
             }
         }
     }
+
+    /// Lage des gelben Bereichs (Mitte, linker und rechter Rand) im Verhältnis zur Textbreite in
+    /// der Vorschau: dieselbe Zeichnung wie im Player, ausgewertet an den Glyphen
+    fn karaoke_preview(app: &App, st: &TextStyle, dur: Time, t: f64) -> (f32, f32, f32) {
+        let ctx = egui::Context::default();
+        ctx.begin_pass(egui::RawInput::default());
+        let painter = egui::Painter::new(ctx.clone(), egui::LayerId::background(), Rect::from_min_size(pos2(0.0, 0.0), vec2(320.0, 180.0)));
+        app.draw_text(&painter, st, pos2(160.0, 90.0), 1.0, 0.0, 1.0, 320.0, st.karaoke_lit(dur, Time::from_secs_f64(t)));
+        let out = ctx.end_pass();
+        let hi = st.karaoke.as_ref().unwrap().color;
+        let hi = Color32::from_rgba_unmultiplied(hi[0], hi[1], hi[2], hi[3]);
+        let (mut all, mut lit) = ((f32::MAX, f32::MIN), (f32::MAX, f32::MIN));
+        for s in &out.shapes {
+            let egui::Shape::Text(ts) = &s.shape else { continue };
+            for g in ts.galley.rows.iter().flat_map(|r| r.glyphs.iter()).filter(|g| !g.chr.is_whitespace()) {
+                let (x0, x1) = (ts.pos.x + g.pos.x, ts.pos.x + g.pos.x + g.advance_width);
+                all = (all.0.min(x0), all.1.max(x1));
+                if ts.galley.job.sections[g.section_index as usize].format.color == hi {
+                    lit = (lit.0.min(x0), lit.1.max(x1));
+                }
+            }
+        }
+        let fr = |x: f32| (x - all.0) / (all.1 - all.0);
+        (fr((lit.0 + lit.1) / 2.0), fr(lit.0), fr(lit.1))
+    }
+
+    /// Dasselbe im Exportbild: gelbe Spalten gegen alle Textspalten
+    fn karaoke_export(img: &[u8]) -> (f32, f32, f32) {
+        let (mut all, mut lit) = ((usize::MAX, 0), (usize::MAX, 0));
+        for (i, c) in img.chunks_exact(4).enumerate() {
+            let x = i % 320;
+            let yellow = c[0] > 170 && c[1] > 140 && c[2] < 100;
+            if yellow || c.iter().take(3).all(|&v| v > 170) {
+                all = (all.0.min(x), all.1.max(x + 1));
+            }
+            if yellow {
+                lit = (lit.0.min(x), lit.1.max(x + 1));
+            }
+        }
+        assert!(lit.0 < lit.1, "kein gelbes Wort im Export");
+        let fr = |x: usize| (x as f32 - all.0 as f32) / (all.1 - all.0) as f32;
+        ((fr(lit.0) + fr(lit.1)) / 2.0, fr(lit.0), fr(lit.1))
+    }
+
+    /// Karaoke an drei Zeitpunkten (und „Füllen“): in Vorschau und Export ist dasselbe Wort gelb.
+    /// Die Vorschau nutzt die Schrift von egui, deshalb wird die Lage im Verhältnis zur Textbreite
+    /// verglichen.
+    #[test]
+    fn karaoke_word_matches_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let (app, _home, _g) = crate::saving::tests::test_app();
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = Project::new("Karaoke");
+        (p.settings.width, p.settings.height) = (320, 180);
+        p.settings.fps = Rational { num: 30, den: 1 };
+        let words = [0.0, 1.0, 2.0].map(Time::from_secs_f64).to_vec();
+        let mut st = TextStyle {
+            text: "AAA BBB CCC".into(),
+            size: 36.0,
+            shadow: false,
+            karaoke: Some(Karaoke { color: [255, 221, 0, 255], fill: false, words }),
+            ..Default::default()
+        };
+        let dur = Time::from_secs_f64(3.0);
+        let mut t = Track::new(TrackKind::Text);
+        t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, dur));
+        p.timeline.tracks.push(t);
+        for (t, word) in [(0.5f64, 0usize), (1.5, 1), (2.5, 2)] {
+            let pv = karaoke_preview(&app, &st, dur, t);
+            let ex = karaoke_export(&export_frame(&p, dir.path(), (t * 30.0).round() as usize));
+            eprintln!("Karaoke bei {t} s: Vorschau {pv:.2?}, Export {ex:.2?}");
+            assert_eq!(((pv.0 * 3.0) as usize, (ex.0 * 3.0) as usize), (word, word), "bei {t} s");
+            assert!((pv.0 - ex.0).abs() < 0.06, "bei {t} s: Vorschau {pv:?}, Export {ex:?}");
+            // nur das eine Wort: nichts färbt in die Nachbarn
+            assert!(ex.2 - ex.1 < 0.36 && pv.2 - pv.1 < 0.36, "bei {t} s: {pv:?} {ex:?}");
+        }
+        // Füllen: bei 1,5 s sind die ersten beiden Wörter gelb
+        st.karaoke.as_mut().unwrap().fill = true;
+        p.timeline.tracks[0].clips[0].content = ClipContent::Text(st.clone());
+        let pv = karaoke_preview(&app, &st, dur, 1.5);
+        let ex = karaoke_export(&export_frame(&p, dir.path(), 45));
+        assert!(pv.1 < 0.05 && ex.1 < 0.05 && (0.55..0.72).contains(&pv.2) && (0.55..0.72).contains(&ex.2), "{pv:?} {ex:?}");
+    }
 }
 
 impl App {
@@ -1998,6 +2083,7 @@ impl App {
                         angle,
                         alpha,
                         canvas.width(),
+                        st.karaoke_lit(c.duration, l.t_rel),
                     );
                     regions.push(Region {
                         clip: c.id,
@@ -2084,8 +2170,8 @@ impl App {
         }
     }
 
-    /// Text wie im Export: Fläche, Kontur, Schatten, Ausrichtung, Zeilenabstand.
-    /// Gibt die Größe des Textblocks (Bildschirm) zurück.
+    /// Text wie im Export: Fläche, Kontur, Schatten, Ausrichtung, Zeilenabstand; `lit`: Wörter
+    /// in der Karaoke-Farbe. Gibt die Größe des Textblocks (Bildschirm) zurück.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_text(
         &self,
@@ -2096,6 +2182,7 @@ impl App {
         angle: f32,
         alpha: f32,
         canvas_w: f32,
+        lit: Option<std::ops::Range<usize>>,
     ) -> egui::Vec2 {
         let txt = if st.uppercase {
             st.text.to_uppercase()
@@ -2112,19 +2199,28 @@ impl App {
         let a = |c: [u8; 4]| {
             Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (c[3] as f32 * alpha) as u8)
         };
-        let job = |col: Color32| {
+        // Karaoke: Byte-Bereich der hervorgehobenen Wörter und ihre Farbe
+        let hi = st.karaoke.as_ref().zip(lit).and_then(|(kar, lit)| {
+            let w = cl_core::word_ranges(&txt);
+            Some((w.get(lit.start)?.start..w.get(lit.end - 1)?.end, a(kar.color)))
+        });
+        let job = |col: Color32, hi: Option<(std::ops::Range<usize>, Color32)>| {
             let mut j = egui::text::LayoutJob::default();
-            j.append(
-                &txt,
-                0.0,
-                egui::TextFormat {
-                    font_id: font.clone(),
-                    color: col,
-                    line_height: Some(px * 1.25 * st.line_spacing.max(0.5)),
-                    italics: st.italic,
-                    ..Default::default()
-                },
-            );
+            let fmt = |color| egui::TextFormat {
+                font_id: font.clone(),
+                color,
+                line_height: Some(px * 1.25 * st.line_spacing.max(0.5)),
+                italics: st.italic,
+                ..Default::default()
+            };
+            match hi {
+                Some((r, hc)) => {
+                    j.append(&txt[..r.start], 0.0, fmt(col));
+                    j.append(&txt[r.clone()], 0.0, fmt(hc));
+                    j.append(&txt[r.end..], 0.0, fmt(col));
+                }
+                None => j.append(&txt, 0.0, fmt(col)),
+            }
             j.wrap.max_width = wrap;
             j.halign = match st.align {
                 x if x < 0 => egui::Align::LEFT,
@@ -2133,7 +2229,7 @@ impl App {
             };
             j
         };
-        let galley = p.layout_job(job(a(st.color)));
+        let galley = p.layout_job(job(a(st.color), hi.clone()));
         let size = galley.size();
         let rot = |v: egui::Vec2| {
             let (s, c) = angle.sin_cos();
@@ -2162,12 +2258,12 @@ impl App {
             p.add(egui::Shape::convex_polygon(pts, a(bg), egui::Stroke::NONE));
         }
         if st.shadow {
-            let sg = p.layout_job(job(Color32::from_black_alpha((150.0 * alpha) as u8)));
+            let sg = p.layout_job(job(Color32::from_black_alpha((150.0 * alpha) as u8), None));
             let off = rot(vec2(1.0, 1.0) * (px / 22.0).clamp(1.0, 4.0));
             p.add(egui::epaint::TextShape::new(anchor + off, sg, Color32::BLACK).with_angle(angle));
         }
         if let Some((w, col)) = st.outline {
-            let og = p.layout_job(job(a(col)));
+            let og = p.layout_job(job(a(col), None));
             let r = (w * k).clamp(0.6, 12.0);
             for i in 0..12 {
                 let ang = i as f32 / 12.0 * std::f32::consts::TAU;
@@ -2184,7 +2280,7 @@ impl App {
         p.add(egui::epaint::TextShape::new(anchor, galley, a(st.color)).with_angle(angle));
         if st.bold {
             // Fettdruck nachahmen, wenn die Schrift keinen eigenen Schnitt hat
-            let g2 = p.layout_job(job(a(st.color)));
+            let g2 = p.layout_job(job(a(st.color), hi));
             p.add(
                 egui::epaint::TextShape::new(anchor + rot(vec2(px * 0.03, 0.0)), g2, a(st.color))
                     .with_angle(angle),

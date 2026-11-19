@@ -1525,7 +1525,7 @@ impl App {
         let k = ((a.width() * 0.8) / probe.size().x.max(1.0))
             .min((a.height() * 0.6) / probe.size().y.max(1.0))
             .min(1.0);
-        self.draw_text(p, &s, a.center(), k, 0.0, 1.0, a.width());
+        self.draw_text(p, &s, a.center(), k, 0.0, 1.0, a.width(), None);
     }
 
     fn fonts_section(&mut self, ui: &mut egui::Ui) {

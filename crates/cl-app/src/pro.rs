@@ -403,6 +403,7 @@ impl App {
                             for s in &mut segs {
                                 s.start /= speed;
                                 s.end /= speed;
+                                s.words.iter_mut().for_each(|w| *w /= speed);
                             }
                             TaskDone::Captions {
                                 segments: segs,
