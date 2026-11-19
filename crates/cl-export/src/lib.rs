@@ -3418,6 +3418,70 @@ mod tests {
         assert_eq!(graph::window_frames(0.0, 0.04, 25.0), (0, 2));
     }
 
+    /// Zuschnitt: der abgeschnittene Bereich ist leer (schwarz), der Rest liegt Pixel für Pixel
+    /// an derselben Stelle wie ohne Zuschnitt – auch verkleinert, verschoben und gedreht.
+    #[test]
+    fn crop_blanks_the_edges_and_keeps_the_rest_in_place() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let (v, _) = make_media(dir.path());
+        let crop = Crop { left: 0.25, right: 0.1, top: 0.2, bottom: 0.0 };
+        for (n, tf) in [
+            Transform { x: 20.0, y: 0.0, scale: 0.8, rotation_deg: 0.0 },
+            Transform { x: 0.0, y: 10.0, scale: 1.0, rotation_deg: 180.0 },
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut p = Project::new("Zuschnitt");
+            (p.settings.width, p.settings.height) = (320, 180);
+            p.settings.fps = Rational { num: 30, den: 1 };
+            p.media = vec![v.clone()];
+            let mut c = Clip::new(ClipContent::Media { media: v.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.0));
+            c.transform = tf;
+            let mut t = Track::new(TrackKind::Video);
+            t.clips.push(c);
+            p.timeline.tracks.push(t);
+            let (plain, _) = export(&p, dir.path(), &format!("ohne{n}.mp4"));
+            p.timeline.tracks[0].clips[0].crop = crop;
+            let (cut, job) = export(&p, dir.path(), &format!("mit{n}.mp4"));
+            let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+            assert!(g.contains("crop=208:144:80:36,pad=320:180:80:36"), "{g}");
+            let (a, b) = (frame_n(&plain, 15), frame_n(&cut, 15));
+            // Ausgabepixel → Quellpixel (Quelle 320×180 = Clipgröße, Drehung um die Bildmitte)
+            let (rad, s) = (tf.rotation_deg.to_radians(), tf.scale);
+            let (mut gone, mut kept, mut diff) = (0, 0, 0u32);
+            for py in (2..178).step_by(4) {
+                for px in (2..318).step_by(4) {
+                    let dx = px as f32 + 0.5 - (160.0 + tf.x);
+                    let dy = py as f32 + 0.5 - (90.0 + tf.y);
+                    let sx = (dx * rad.cos() + dy * rad.sin()) / s + 160.0;
+                    let sy = (-dx * rad.sin() + dy * rad.cos()) / s + 90.0;
+                    let inside = |m: f32| sx > m && sx < 320.0 - m && sy > m && sy < 180.0 - m;
+                    if !inside(6.0) {
+                        continue;
+                    }
+                    let (l, r, top) = (80.0, 320.0 - 32.0, 36.0);
+                    if sx < l - 6.0 || sx > r + 6.0 || sy < top - 6.0 {
+                        let v = rgb_at(&b, px, py);
+                        assert!(v.iter().all(|&c| c < 30), "#{n} ({px},{py}) sollte leer sein: {v:?}");
+                        gone += 1;
+                    } else if sx > l + 6.0 && sx < r - 6.0 && sy > top + 6.0 {
+                        let (x, y) = (rgb_at(&a, px, py), rgb_at(&b, px, py));
+                        // einzelne Pixel weichen durch die Kodierung ab (4:2:0 an Farbkanten)
+                        diff += (0..3).map(|i| x[i].abs_diff(y[i]) as u32).sum::<u32>();
+                        kept += 1;
+                    }
+                }
+            }
+            assert!(gone > 100 && kept > 400, "#{n}: {gone} leer, {kept} gleich");
+            let mean = diff as f64 / (kept * 3) as f64;
+            assert!(mean < 6.0, "#{n}: Rest weicht im Mittel um {mean:.1} ab (verschoben?)");
+        }
+    }
+
     /// Shader-Übergang im Export: gleiche Länge und Ströme wie mit xfade, Mitte = cl-gpu-Bild,
     /// davor/danach reine Clips, Ebenen darüber bleiben, kaputter Shader → Rückfall.
     #[test]

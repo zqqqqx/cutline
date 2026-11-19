@@ -64,6 +64,11 @@ pub enum EditOp {
         clip: ClipId,
         transform: Transform,
     },
+    /// Zuschnitt setzen (wird begrenzt, siehe `Crop::clamped`).
+    SetCrop {
+        clip: ClipId,
+        crop: Crop,
+    },
     SetOpacity {
         clip: ClipId,
         opacity: f32,
@@ -202,6 +207,7 @@ impl EditOp {
             EditOp::MoveClip { .. } => "Clip verschieben",
             EditOp::SetText { .. } => "Text bearbeiten",
             EditOp::SetTransform { .. } => "Transformieren",
+            EditOp::SetCrop { .. } => "Zuschnitt",
             EditOp::SetOpacity { .. } => "Deckkraft",
             EditOp::SetVolume { .. } => "Lautstärke",
             EditOp::SetSettings { .. } => "Projekteinstellungen",
@@ -585,6 +591,7 @@ impl EditOp {
                 c.speed = speed;
                 c.opacity = c.opacity.clamp(0.0, 1.0);
                 c.volume_db = c.volume_db.clamp(-60.0, 20.0);
+                c.crop = c.crop.clamped();
                 Ok(OpOutput::None)
             }
             EditOp::InsertTrack { index, kind } => {
@@ -750,6 +757,10 @@ impl EditOp {
             }
             EditOp::SetTransform { clip, transform } => {
                 clip_mut(p, clip)?.transform = transform;
+                Ok(OpOutput::None)
+            }
+            EditOp::SetCrop { clip, crop } => {
+                clip_mut(p, clip)?.crop = crop.clamped();
                 Ok(OpOutput::None)
             }
             EditOp::SetOpacity { clip, opacity } => {
@@ -951,6 +962,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
     // Werte von außen (MCP, Plugins): nichts vor 0, nichts jenseits von Time::LIMIT
     clip.start = Time(clip.start.0.max(0));
     clip.source_in = Time(clip.source_in.0.max(0));
+    clip.crop = clip.crop.clamped();
     if clip.duration <= Time::ZERO || clip.duration > Time::LIMIT || clip.start > Time::LIMIT {
         return Err(CoreError::InvalidDuration);
     }

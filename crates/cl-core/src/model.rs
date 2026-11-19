@@ -400,6 +400,45 @@ pub struct Clip {
     /// Gruppe: Clips mit gleicher Kennung werden gemeinsam ausgewählt und bewegt
     #[serde(default)]
     pub group: Option<u64>,
+    /// Zuschnitt des Quellbilds (ohne Keyframes); leer = Feld fehlt in der Datei
+    #[serde(default, skip_serializing_if = "Crop::is_none")]
+    pub crop: Crop,
+}
+
+/// Zuschnitt: Ränder als Anteil der Quellbreite/-höhe (0…1). Wirkt vor Skalierung, Drehung
+/// und Position; der Rest bleibt an seiner Stelle im Bild.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Crop {
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
+impl Crop {
+    /// Mindestens so viel bleibt je Richtung übrig.
+    pub const MIN_REST: f32 = 0.02;
+
+    pub fn is_none(&self) -> bool {
+        *self == Crop::default()
+    }
+
+    /// Ränder auf 0…1 begrenzen; reicht der Rest nicht, werden beide Seiten anteilig gekürzt.
+    pub fn clamped(self) -> Self {
+        fn pair(a: f32, b: f32) -> (f32, f32) {
+            let (a, b) = (a.clamp(0.0, 1.0), b.clamp(0.0, 1.0));
+            let max = 1.0 - Crop::MIN_REST;
+            if a + b <= max {
+                (a, b)
+            } else {
+                (a * max / (a + b), b * max / (a + b))
+            }
+        }
+        let (left, right) = pair(self.left, self.right);
+        let (top, bottom) = pair(self.top, self.bottom);
+        Self { left, right, top, bottom }
+    }
 }
 
 fn one() -> f32 {
@@ -433,6 +472,7 @@ impl Clip {
             beats: Vec::new(),
             label: None,
             group: None,
+            crop: Crop::default(),
         }
     }
 
@@ -487,6 +527,7 @@ impl Clip {
                 .unwrap_or(self.transform.rotation_deg),
             opacity: k.eval(Prop::Opacity, t_rel).unwrap_or(self.opacity),
             volume_db: k.eval(Prop::Volume, t_rel).unwrap_or(self.volume_db),
+            crop: self.crop,
         };
         let mut apply = |d: AnimDelta| {
             e.x += d.dx * canvas_w;

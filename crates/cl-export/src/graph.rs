@@ -403,6 +403,7 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
         &fl,
         &u,
     ));
+    let fl = crop_layer(ctx, &fl, bw, bh, c.crop);
     let s = samples(c, w as f32, h as f32);
     let label = post_transform(ctx, &fl, bw, bh, &s);
     Ok(Sprite {
@@ -410,6 +411,25 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
         x: value_expr(&s, |e| e.x, "TT"),
         y: value_expr(&s, |e| e.y, "TT"),
     })
+}
+
+/// Zuschnitt nach Effekten und Maske (wie die Vorschau, die die fertige Textur beschneidet), vor
+/// Skalierung und Drehung: die Ränder werden transparent, die Bildgröße bleibt, damit der Rest an
+/// seiner Stelle steht und Drehpunkt sowie Position gleich bleiben.
+fn crop_layer(ctx: &mut Ctx, input: &str, bw: u32, bh: u32, k: Crop) -> String {
+    if k.is_none() {
+        return input.to_string();
+    }
+    let px = |v: f32, n: u32| ((v * n as f32).round() as u32).min(n - 1);
+    let (x, y) = (px(k.left, bw), px(k.top, bh));
+    let cw = bw.saturating_sub(x + px(k.right, bw)).max(1);
+    let ch = bh.saturating_sub(y + px(k.bottom, bh)).max(1);
+    let out = ctx.label("crop");
+    // rgba vor `crop`: sonst rundet crop den Versatz bei 4:2:0 auf gerade Pixel
+    ctx.graph.push(format!(
+        "[{input}]format=rgba,crop={cw}:{ch}:{x}:{y},pad={bw}:{bh}:{x}:{y}:color=black@0[{out}]"
+    ));
+    out
 }
 
 /// Neigung kursiver Schrift: obere Kante um ¼ der Höhe nach rechts (wie egui in der Vorschau).

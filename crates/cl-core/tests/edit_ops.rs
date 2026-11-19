@@ -21,6 +21,7 @@ fn variant(op: &EditOp) -> &'static str {
         EditOp::MoveClip { .. } => "MoveClip",
         EditOp::SetText { .. } => "SetText",
         EditOp::SetTransform { .. } => "SetTransform",
+        EditOp::SetCrop { .. } => "SetCrop",
         EditOp::SetOpacity { .. } => "SetOpacity",
         EditOp::SetVolume { .. } => "SetVolume",
         EditOp::SetSettings { .. } => "SetSettings",
@@ -47,7 +48,7 @@ fn variant(op: &EditOp) -> &'static str {
         EditOp::Batch { .. } => "Batch",
     }
 }
-const VARIANTS: usize = 35;
+const VARIANTS: usize = 36;
 
 fn track_of(p: &Project, c: ClipId) -> TrackId {
     p.find_clip(c).unwrap().0.id
@@ -74,6 +75,7 @@ fn every_op_applies_undoes_and_redoes_exactly() {
         Box::new(move |_| EditOp::MoveClip { clip: t1, track: None, start: s(8.0) }),
         Box::new(move |_| EditOp::SetText { clip: t1, style: TextStyle { text: "Neu 🎬 שלום".into(), ..Default::default() } }),
         Box::new(move |_| EditOp::SetTransform { clip: v2, transform: Transform { x: 10.0, y: -5.0, scale: 1.5, rotation_deg: 30.0 } }),
+        Box::new(move |_| EditOp::SetCrop { clip: v2, crop: Crop { left: 0.1, right: 0.2, top: 0.05, bottom: 0.25 } }),
         Box::new(move |_| EditOp::SetOpacity { clip: v2, opacity: 0.5 }),
         Box::new(move |_| EditOp::SetVolume { clip: a1, volume_db: -6.0 }),
         Box::new(|p| {
@@ -437,6 +439,7 @@ fn non_finite_numbers_are_rejected() {
         EditOp::SetKeyframes { clip: r.v1, keyframes: k },
         EditOp::SetFx { clip: r.v1, fx },
         EditOp::SetSpeed { clip: r.v1, speed: f32::NAN },
+        EditOp::SetCrop { clip: r.v1, crop: Crop { top: f32::NAN, ..Default::default() } },
         EditOp::Batch { label: String::new(), ops: vec![EditOp::SetOpacity { clip: r.v1, opacity: f32::NAN }] },
     ] {
         let name = format!("{op:?}");
@@ -451,6 +454,33 @@ fn non_finite_numbers_are_rejected() {
     .unwrap();
     assert!(d.apply(op, OpSource::Mcp("x".into())).is_err());
     assert_eq!(roundtrip(d.project()), *d.project());
+}
+
+/// Zuschnitt: Grenzen (mind. 2 % Rest), Speichern ohne Feld, wenn leer, alte Projekte laden.
+#[test]
+fn crop_is_clamped_and_only_saved_when_set() {
+    let r = rich();
+    let mut d = r.doc;
+    // ohne Zuschnitt steht das Feld nicht in der Datei; Dateien ohne Feld laden mit leerem Zuschnitt
+    assert!(!d.project().to_json().contains("\"crop\""));
+    let old = Project::from_json(&d.project().to_json()).unwrap();
+    assert!(old.find_clip(r.v1).unwrap().1.crop.is_none());
+    let get = |d: &Document| d.project().find_clip(r.v1).unwrap().1.crop;
+    apply(&mut d, EditOp::SetCrop { clip: r.v1, crop: Crop { left: -1.0, right: 0.3, top: 2.0, bottom: 0.0 } });
+    let c = get(&d);
+    assert_eq!((c.left, c.right, c.bottom), (0.0, 0.3, 0.0));
+    assert!((c.top - 0.98).abs() < 1e-6, "{c:?}");
+    apply(&mut d, EditOp::SetCrop { clip: r.v1, crop: Crop { left: 0.9, right: 0.9, top: 0.49, bottom: 0.49 } });
+    let c = get(&d);
+    assert!((c.left + c.right - 0.98).abs() < 1e-6 && (c.left - c.right).abs() < 1e-6, "{c:?}");
+    assert_eq!((c.top, c.bottom), (0.49, 0.49));
+    // mit Zuschnitt: gespeichert und verlustfrei geladen; auch Clips von außen werden begrenzt
+    assert!(d.project().to_json().contains("\"crop\""));
+    assert_eq!(roundtrip(d.project()), *d.project());
+    let mut c = text_clip(20.0, 1.0);
+    c.crop.left = 5.0;
+    let id = clip_out(apply(&mut d, EditOp::AddClip { track: None, clip: c }));
+    assert!((d.project().find_clip(id).unwrap().1.crop.left - 0.98).abs() < 1e-6);
 }
 
 #[test]

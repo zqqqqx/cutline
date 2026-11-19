@@ -46,6 +46,28 @@ fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
     }
 }
 
+/// Zuschnitt: vier Ränder; je Richtung bleiben mindestens `Crop::MIN_REST` übrig.
+fn crop_ui(ui: &mut egui::Ui, k: &mut Crop) -> Edit {
+    theme::section(ui, "Zuschnitt");
+    let mut e = Edit::default();
+    let max = 1.0 - Crop::MIN_REST;
+    let pairs = [("Links", 0, 1), ("Rechts", 1, 0), ("Oben", 2, 3), ("Unten", 3, 2)];
+    let mut v = [k.left, k.right, k.top, k.bottom];
+    for (label, i, other) in pairs {
+        let hi = (max - v[other]).max(0.0);
+        e |= theme::row(ui, label, |ui| Slider::new(&mut v[i], 0.0..=hi).percent().default(0.0).show(ui));
+    }
+    [k.left, k.right, k.top, k.bottom] = v;
+    ui.horizontal(|ui| {
+        ui.add_space(theme::LABEL_W + 6.0);
+        if ui.add(theme::ghost(format!("{}  Zurücksetzen", icon::ARROW_COUNTER_CLOCKWISE))).clicked() {
+            *k = Crop::default();
+            e.commit = true;
+        }
+    });
+    e
+}
+
 /// Masken-Auswahl und -Regler (Clip oder Effekt-Element).
 fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
     let mut e = Edit::default();
@@ -690,6 +712,9 @@ impl App {
                 *kf = Some(vec![Prop::X, Prop::Y, Prop::Scale, Prop::Rotation]);
             }
         });
+        if matches!(c.content, ClipContent::Media { .. }) {
+            *e |= crop_ui(ui, &mut c.crop);
+        }
         theme::section(ui, "Mischen");
         *e |= self.prop_slider(
             ui,
