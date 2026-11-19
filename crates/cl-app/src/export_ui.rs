@@ -126,6 +126,19 @@ pub fn youtube_kbps(short_edge: u32, fps: f64) -> Option<u32> {
     Some(if fps > 30.5 { hi } else { lo })
 }
 
+/// Wahl „Seitenverhältnis“ im Export (nach „Projekt“)
+pub const ASPECTS: [(u32, u32); 4] = [(16, 9), (9, 16), (1, 1), (4, 5)];
+
+/// Seitenverhältnis einer Plattform als Wahl im Export: 0 (Projekt), wenn es zum Projekt passt
+fn platform_aspect(pl: &Platform, s: &cl_core::ProjectSettings) -> usize {
+    let g = gcd(pl.w, pl.h);
+    if pl.fits(s) {
+        0
+    } else {
+        ASPECTS.iter().position(|a| *a == (pl.w / g, pl.h / g)).map_or(0, |i| i + 1)
+    }
+}
+
 pub fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 {
         a.max(1)
@@ -377,7 +390,12 @@ pub struct ExportDialog {
     custom_kbps: u32,
     /// In/Out-Bereich der Zeitleiste, falls gesetzt
     range_avail: Option<(Time, Time)>,
-    preset_hint: Option<String>,
+    /// „Seitenverhältnis“: 0 = Projekt, sonst Eintrag `aspect - 1` aus [`ASPECTS`]
+    aspect: usize,
+    /// „Bild“ bei anderem Seitenverhältnis: 0 Füllen, 1 Einpassen
+    fit: usize,
+    /// umgebautes Abbild (Projektstand, Format, Bild) für Vorschau und Export
+    framed: Option<((u64, (u32, u32), usize), Arc<Project>)>,
     /// Gewählte Plattform (wird im Projekt gemerkt, wenn das Format passt)
     platform: Option<&'static str>,
     picked_platform: Option<&'static str>,
@@ -409,8 +427,6 @@ pub struct ExportDialog {
     /// Nachfrage erst in diesem Bild geöffnet: Enter/Esc noch nicht auswerten
     /// (das Enter, das „Exportieren“ ausgelöst hat, ist im selben Bild noch gedrückt)
     confirm_fresh: bool,
-    /// „Projekt auf 9:16 umstellen“ geklickt (App stellt das Format um)
-    switch_aspect: bool,
     /// Fenster soll schließen, während ein Export läuft: Rückfrage offen
     quit_ask: bool,
     /// Beenden trotz laufendem Export bestätigt
@@ -536,11 +552,12 @@ impl ExportDialog {
         // eine im Dialog getroffene Wahl gilt nur für diesen Export
         self.encoder_picked = false;
         self.short_edge = 0;
-        self.preset_hint = None;
+        (self.aspect, self.framed) = (0, None);
         self.platform = None;
         if let Some(pl) = p.settings.platform.as_deref().and_then(platform) {
             Self::apply_platform(&mut s, &mut self.short_edge, &mut self.custom_kbps, pl);
             self.platform = Some(pl.id);
+            self.aspect = platform_aspect(pl, &p.settings);
         }
         self.settings = Some(s);
         if self.custom_kbps == 0 {
@@ -578,9 +595,37 @@ impl ExportDialog {
         }
     }
 
-    /// „Projekt auf 9:16 umstellen“ wurde geklickt (einmalig abholen).
-    pub fn take_switch_aspect(&mut self) -> bool {
-        std::mem::take(&mut self.switch_aspect)
+    /// Plattform-Vorlage wählen: Export-Werte und das Seitenverhältnis der Plattform, wenn das
+    /// Projekt ein anderes hat (sonst „Projekt“; nur dann merkt sich das Projekt die Plattform)
+    fn pick_platform(&mut self, s: &mut ExportSettings, p: &Project, pl: &'static Platform) {
+        Self::apply_platform(s, &mut self.short_edge, &mut self.custom_kbps, pl);
+        self.platform = Some(pl.id);
+        self.aspect = platform_aspect(pl, &p.settings);
+        if pl.fits(&p.settings) {
+            self.picked_platform = Some(pl.id);
+        }
+    }
+
+    /// Format des Exports bei anderem Seitenverhältnis als das Projekt (kürzere Kante bleibt),
+    /// sonst `None`
+    fn canvas(&self, p: &Project) -> Option<(u32, u32)> {
+        let (a, b) = *ASPECTS.get(self.aspect.checked_sub(1)?)?;
+        let mut ps = p.settings.clone();
+        ps.apply_aspect(cl_core::AspectPreset::Ratio(a, b));
+        let r = |w: u32, h: u32| w as f32 / h.max(1) as f32;
+        ((r(ps.width, ps.height) - r(p.settings.width, p.settings.height)).abs() >= 0.02).then_some((ps.width, ps.height))
+    }
+
+    /// Abbild im gewählten Seitenverhältnis (`None`: Format des Projekts); bleibt bis zur nächsten
+    /// Änderung von Projekt oder Wahl gemerkt
+    fn framed(&mut self, p: &Project, fonts: &HashMap<String, (PathBuf, u32)>) -> Option<Arc<Project>> {
+        let c = self.canvas(p)?;
+        let key = (self.rev, c, self.fit);
+        if self.framed.as_ref().is_none_or(|f| f.0 != key) {
+            let m = crate::shorts::text_measure(fonts);
+            self.framed = Some((key, Arc::new(crate::shorts::reframe(p, c, self.fit == 0, &m))));
+        }
+        self.framed.as_ref().map(|f| f.1.clone())
     }
 
     /// Im Export gewählte Plattform (einmalig abholen), damit das Projekt sie sich merkt.
@@ -828,7 +873,7 @@ impl ExportDialog {
         ctx: &egui::Context,
         p: &Project,
         fonts: &HashMap<String, (PathBuf, u32)>,
-        cover: Option<(egui::TextureId, egui::Vec2)>,
+        cover: Option<(cl_core::ClipId, egui::TextureId, egui::Vec2)>,
         rev: u64,
     ) -> Option<String> {
         // aktueller Projektstand: nach einer Änderung gilt der letzte Export als veraltet
@@ -855,6 +900,8 @@ impl ExportDialog {
             let found = self.encoders.lock().unwrap().clone().unwrap_or_default();
             s.encoder = cl_export::export_default(&found, &crate::proxy::encoder_pref());
         }
+        // Vorschau aus dem umgebauten Abbild (Wahl vom letzten Bild)
+        let framed = self.framed(p, fonts);
         let mut open = true;
         let mut start = false;
         // ohne Nachfrage überschreiben (bestätigt oder „Erneut exportieren“)
@@ -888,9 +935,12 @@ impl ExportDialog {
                             }
                             None => false,
                         };
-                        if let Some((id, ts)) = cover.filter(|_| !live && !audio_only) {
-                            // Bild füllt das Projektformat (Hochkant zeigt Hochkant, keine Balken)
-                            ui.painter().image(id, rect, fill_uv(ts, rect.size()), Color32::WHITE);
+                        if let Some((cid, id, ts)) = cover.filter(|_| !live && !audio_only) {
+                            match framed.as_deref().map(|f| cover_layers(f, cid)).filter(|l| !l.is_empty()) {
+                                Some(layers) => paint_cover(ui, rect, id, &layers),
+                                // Bild füllt das Projektformat (Hochkant zeigt Hochkant, keine Balken)
+                                None => drop(ui.painter().image(id, rect, fill_uv(ts, rect.size()), Color32::WHITE)),
+                            }
                         }
                         ui.add_space(8.0);
                         let secs = s.range.map_or(p.duration(), |(a, b)| b - a).as_secs_f64();
@@ -970,31 +1020,30 @@ impl ExportDialog {
                                     egui::ComboBox::from_id_salt("exp-preset").selected_text(sel).width(200.0).show_ui(ui, |ui| {
                                         for pl in PLATFORMS {
                                             if ui.selectable_label(self.platform == Some(pl.id), crate::tr(pl.name)).clicked() {
-                                                Self::apply_platform(&mut s, &mut self.short_edge, &mut self.custom_kbps, pl);
-                                                self.platform = Some(pl.id);
-                                                self.preset_hint = (!pl.fits(&p.settings)).then(|| crate::tr("Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Schnellaktionen → Hochkant-Layout"));
-                                                if pl.fits(&p.settings) {
-                                                    self.picked_platform = Some(pl.id);
-                                                }
+                                                self.pick_platform(&mut s, p, pl);
                                             }
                                         }
                                     });
                                 });
-                                if let Some(h) = &self.preset_hint {
-                                    ui.label(egui::RichText::new(h).small().color(theme::WARN_TEXT()));
-                                }
-                                // Hochkant-Vorgabe im Querformat-Projekt: Format direkt umstellen
-                                let vertical = self.platform.and_then(platform).filter(|pl| pl.w * 16 == pl.h * 9 && !pl.fits(&p.settings));
-                                if let Some(pl) = vertical.filter(|_| p.settings.width > p.settings.height) {
-                                    if ui.add(theme::secondary(format!("{}  Projekt auf 9:16 umstellen", icon::DEVICE_MOBILE))).clicked() {
-                                        self.switch_aspect = true;
-                                        self.picked_platform = Some(pl.id);
-                                        self.preset_hint = None;
-                                    }
+                                // anderes Seitenverhältnis: das Abbild wird umgebaut, das Projekt bleibt
+                                theme::row(ui, "Seitenverhältnis", |ui| {
+                                    let label = |i: usize| ASPECTS.get(i.wrapping_sub(1)).map_or_else(|| crate::tr("Projekt"), |(a, b)| format!("{a}:{b}"));
+                                    egui::ComboBox::from_id_salt("exp-aspect").selected_text(label(self.aspect)).width(200.0).show_ui(ui, |ui| {
+                                        for i in 0..=ASPECTS.len() {
+                                            ui.selectable_value(&mut self.aspect, i, label(i));
+                                        }
+                                    });
+                                });
+                                let canvas = self.canvas(p);
+                                if canvas.is_some() {
+                                    theme::row(ui, "Bild", |ui| {
+                                        ui.allocate_ui(vec2(200.0, 24.0), |ui| crate::widgets::segmented(ui, &["Füllen", "Einpassen"], &mut self.fit));
+                                    });
                                 }
                                 theme::row(ui, "Auflösung", |ui| {
+                                    let (pw, ph) = canvas.unwrap_or((p.settings.width, p.settings.height));
                                     let label = |e: u32| match e {
-                                        0 => format!("Projekt ({}×{})", p.settings.width, p.settings.height),
+                                        0 => format!("Projekt ({pw}×{ph})"),
                                         2160 => "4K (2160p)".into(),
                                         e => format!("{e}p"),
                                     };
@@ -1004,7 +1053,8 @@ impl ExportDialog {
                                         }
                                     });
                                 });
-                                let (pw, ph) = (p.settings.width.max(2), p.settings.height.max(2));
+                                let (pw, ph) = canvas.unwrap_or((p.settings.width, p.settings.height));
+                                let (pw, ph) = (pw.max(2), ph.max(2));
                                 if self.short_edge == 0 {
                                     s.width = pw;
                                     s.height = ph;
@@ -1291,8 +1341,9 @@ impl ExportDialog {
                 .into_iter()
                 .map(|(range, f)| Part { sidecars: sidecars(p, &ExportSettings { range, ..s.clone() }, self.also_srt, &f), range, out: f })
                 .collect();
+            let project = self.framed(p, fonts).unwrap_or_else(|| Arc::new(p.clone()));
             self.queue.push_back(Queued {
-                project: Arc::new(p.clone()),
+                project,
                 project_path: self.project_path.clone(),
                 settings: s.clone(),
                 parts,
@@ -1557,6 +1608,45 @@ fn estimate_mb(s: &ExportSettings, d: Time) -> (f64, bool) {
     };
     let exact = matches!(s.quality, Quality::Bitrate(_)) && s.codec != Codec::ProRes;
     ((kbps + s.audio_bitrate() as f64) * secs / 8.0 / 1000.0, exact)
+}
+
+/// Ebenen des Titelbilds (Clip `id`) im Abbild `p`: weichgezeichneter Hintergrund, falls da, dann
+/// der Clip; je Lage als Anteil der Bildfläche, UV-Ausschnitt (Zuschnitt), weichgezeichnet
+fn cover_layers(p: &Project, id: cl_core::ClipId) -> Vec<(Rect, Rect, bool)> {
+    let (w, h) = (p.settings.width.max(2) as f32, p.settings.height.max(2) as f32);
+    [(id.derived(crate::shorts::BACK_SALT), true), (id, false)]
+        .into_iter()
+        .filter_map(|(id, blur)| {
+            let c = p.find_clip(id)?.1;
+            let cl_core::ClipContent::Media { media, .. } = &c.content else { return None };
+            let m = p.media(*media).filter(|m| m.width > 0 && m.height > 0)?;
+            let d = c.transform.scale * (w / m.width as f32).min(h / m.height as f32);
+            let size = vec2(m.width as f32 * d / w, m.height as f32 * d / h);
+            let full = Rect::from_center_size(egui::pos2(0.5 + c.transform.x / w, 0.5 + c.transform.y / h), size);
+            let cr = c.crop.clamped();
+            let uv = Rect::from_min_max(egui::pos2(cr.left, cr.top), egui::pos2(1.0 - cr.right, 1.0 - cr.bottom));
+            Some((Rect::from_min_max(full.lerp_inside(uv.min.to_vec2()), full.lerp_inside(uv.max.to_vec2())), uv, blur))
+        })
+        .collect()
+}
+
+/// Titelbild nach [`cover_layers`] in `rect`; weichgezeichnet als Mittel aus 16 versetzten Kopien
+fn paint_cover(ui: &egui::Ui, rect: Rect, tex: egui::TextureId, layers: &[(Rect, Rect, bool)]) {
+    let p = ui.painter().with_clip_rect(rect);
+    for (r, uv, blur) in layers {
+        let r = Rect::from_min_max(rect.lerp_inside(r.min.to_vec2()), rect.lerp_inside(r.max.to_vec2()));
+        if !*blur {
+            p.image(tex, r, *uv, Color32::WHITE);
+            continue;
+        }
+        let rad = rect.width().min(rect.height()) * 0.04;
+        for i in 0..16 {
+            let a = i as f32 * std::f32::consts::TAU / 16.0;
+            let off = vec2(a.cos(), a.sin()) * rad * if i % 2 == 0 { 1.0 } else { 0.5 };
+            // Anteil 1/(i+1): ergibt den Mittelwert aller Kopien
+            p.image(tex, r.translate(off), *uv, Color32::WHITE.gamma_multiply(1.0 / (i + 1) as f32));
+        }
+    }
 }
 
 /// UV-Ausschnitt eines Bilds der Größe `ts`, der `area` ohne Balken füllt (mittig beschnitten).
@@ -2194,6 +2284,8 @@ fn export_dialog_shows_all_settings_when_there_is_room() {
     // volle Fassung: Teile mit Ergebniszeile, Zielgröße mit Hinweis („wird in 360p exportiert“)
     d.split_on = true;
     d.settings.as_mut().unwrap().target_mb = Some(10);
+    // anderes Seitenverhältnis: Zeilen „Seitenverhältnis“ und „Bild“
+    d.aspect = 2;
     // 1440×900: alles sichtbar, nichts scrollt
     let (win, (shown, content)) = dialog_layout(&mut d, &p, 1440.0, 900.0);
     assert!(content > 400.0, "{content}");
@@ -2354,4 +2446,266 @@ fn split_parts_are_gapless_on_frames_with_names() {
         assert_eq!(w[0].0 .1, w[1].0 .0);
         assert_eq!(w[0].0 .1, w[0].0 .1.snap_to_frame(ntsc));
     }
+}
+
+/// Testbild 320×180: roter Kreis (Radius 30) in der Mitte auf grauem 4-px-Schachbrett, 2 s mit Ton
+#[cfg(test)]
+fn circle_video(dir: &Path) -> cl_core::MediaRef {
+    let path = dir.join("testbild.mp4");
+    let gray = "64+128*mod(floor(X/4)+floor(Y/4)\\,2)";
+    let inside = "lt(hypot(X-160\\,Y-90)\\,30)";
+    let vf = format!("format=rgb24,geq=r='if({inside}\\,255\\,{gray})':g='if({inside}\\,0\\,{gray})':b='if({inside}\\,0\\,{gray})'");
+    let st = cl_media::ffmpeg_command()
+        .unwrap()
+        .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2"])
+        .args(["-vf", &vf, "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv444p", "-c:a", "aac", "-shortest"])
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    cl_media::probe(&path).unwrap()
+}
+
+/// 16:9-Projekt 320×180 mit dem Testbild bildfüllend (Länge `secs`, Clip wiederholt)
+#[cfg(test)]
+fn circle_project(dir: &Path, secs: f64) -> Project {
+    use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
+    let m = circle_video(dir);
+    let mut p = Project::new("Kreis");
+    (p.settings.width, p.settings.height) = (320, 180);
+    let mut t = Track::new(TrackKind::Video);
+    t.main = true;
+    let mut at = 0.0;
+    while at < secs - 1e-6 {
+        let len = (secs - at).min(2.0);
+        t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::from_secs_f64(at), Time::from_secs_f64(len)));
+        at += len;
+    }
+    p.media.push(m);
+    p.timeline.tracks.push(t);
+    p
+}
+
+/// Bild `n` einer Datei als RGBA (Breite, Höhe, Pixel)
+#[cfg(test)]
+fn grab(path: &Path, n: usize) -> (usize, usize, Vec<u8>) {
+    let m = cl_media::probe(path).unwrap();
+    let o = cl_media::ffmpeg_command()
+        .unwrap()
+        .args(["-v", "error", "-threads", "2", "-i"])
+        .arg(path)
+        .args(["-vf", &format!("select=eq(n\\,{n})"), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .output()
+        .unwrap();
+    let (w, h) = (m.width as usize, m.height as usize);
+    assert_eq!(o.stdout.len(), w * h * 4);
+    (w, h, o.stdout)
+}
+
+/// Mittlere Helligkeit und Feinheit (Unterschied benachbarter Pixel) im Bereich
+#[cfg(test)]
+fn region(img: &(usize, usize, Vec<u8>), x: std::ops::Range<usize>, y: std::ops::Range<usize>) -> (f64, f64) {
+    let (w, _, px) = img;
+    let at = |x: usize, y: usize| px[(y * w + x) * 4 + 1] as f64;
+    let (mut light, mut d, mut n) = (0.0, 0.0, 0.0);
+    for yy in y.clone() {
+        for xx in x.clone() {
+            light += at(xx, yy);
+            d += (at(xx, yy) - at(xx + 1, yy)).abs() + (at(xx, yy) - at(xx, yy + 1)).abs();
+            n += 1.0;
+        }
+    }
+    (light / n, d / n)
+}
+
+/// Rote Pixel (Kreis) im Zeilenbereich: Breite und Höhe ihres Rahmens
+#[cfg(test)]
+fn red_box(img: &(usize, usize, Vec<u8>), rows: std::ops::Range<usize>) -> (usize, usize) {
+    let (w, _, px) = img;
+    let (mut x0, mut x1, mut y0, mut y1) = (usize::MAX, 0, usize::MAX, 0);
+    for y in rows {
+        for x in 0..*w {
+            let p = &px[(y * w + x) * 4..];
+            if p[0] > 180 && p[1] < 70 && p[2] < 70 {
+                (x0, x1, y0, y1) = (x0.min(x), x1.max(x), y0.min(y), y1.max(y));
+            }
+        }
+    }
+    (x1.saturating_sub(x0) + 1, y1.saturating_sub(y0) + 1)
+}
+
+/// Exportfenster für `p` nach `dir`, Seitenverhältnis 9:16 über die Vorlage „Shorts“ in
+/// Projektgröße (kürzere Kante bleibt 180)
+#[cfg(test)]
+fn shorts_dialog(p: &Project, dir: &Path) -> ExportDialog {
+    let mut d = ExportDialog::default();
+    *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
+    d.open_for(p, Some(&dir.join("p.cutline")), 0, None);
+    d.folder = dir.to_path_buf();
+    let mut s = d.settings.clone().unwrap();
+    d.pick_platform(&mut s, p, platform("shorts").unwrap());
+    d.settings = Some(s);
+    d.short_edge = 0;
+    d
+}
+
+#[test]
+fn platform_template_sets_the_aspect_and_leaves_the_project_alone() {
+    let (ctx, p) = (egui::Context::default(), text_project("Film", "eins", 2.0));
+    let mut wide = p.clone();
+    (wide.settings.width, wide.settings.height) = (1920, 1080);
+    let mut d = ExportDialog::default();
+    d.open_for(&wide, None, 0, None);
+    let mut s = d.settings.clone().unwrap();
+    // Shorts bei 16:9: 9:16 mit 1080×1920, das Projekt merkt sich die Plattform nicht
+    d.pick_platform(&mut s, &wide, platform("shorts").unwrap());
+    d.settings = Some(s.clone());
+    assert_eq!(ASPECTS[d.aspect - 1], (9, 16));
+    assert_eq!(d.take_picked_platform(), None);
+    frame(&mut d, &ctx, &wide, false);
+    let s = d.settings.clone().unwrap();
+    assert_eq!((s.width, s.height), (1080, 1920));
+    // Instagram: 4:5; Vorlage im Projektformat: „Projekt“, wird im Projekt gemerkt
+    let mut s = d.settings.clone().unwrap();
+    d.pick_platform(&mut s, &wide, platform("instagram").unwrap());
+    assert_eq!(ASPECTS[d.aspect - 1], (4, 5));
+    d.pick_platform(&mut s, &wide, platform("youtube-1080").unwrap());
+    assert_eq!((d.aspect, d.canvas(&wide)), (0, None));
+    assert_eq!(d.take_picked_platform(), Some("youtube-1080"));
+    d.settings = Some(s);
+    frame(&mut d, &ctx, &wide, false);
+    let s = d.settings.clone().unwrap();
+    assert_eq!((s.width, s.height), (1920, 1080));
+    // Projekt mit Plattform „shorts“, aber 16:9: beim Öffnen gleich 9:16
+    wide.settings.platform = Some("shorts".into());
+    d.open_for(&wide, None, 0, None);
+    assert_eq!(d.canvas(&wide), Some((1080, 1920)));
+}
+
+/// Vorschau links: Titelbild aus dem umgebauten Abbild
+#[test]
+fn cover_preview_comes_from_the_reframed_snapshot() {
+    use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Track, TrackKind};
+    let mut p = Project::new("t");
+    let m = MediaRef { id: cl_core::MediaId::new(), path: "a.mp4".into(), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+    let mut t = Track::new(TrackKind::Video);
+    let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(9.0));
+    let id = c.id;
+    t.clips.push(c);
+    (p.media, p.timeline.tracks) = (vec![m], vec![t]);
+    let mut d = ExportDialog::default();
+    d.open_for(&p, None, 0, None);
+    assert!(d.framed(&p, &HashMap::new()).is_none(), "Projektformat: kein Umbau");
+    d.aspect = 2;
+    let unit = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    // Füllen: eine Ebene, deckt die Fläche (seitlich beschnitten)
+    let f = d.framed(&p, &HashMap::new()).unwrap();
+    assert_eq!((f.settings.width, f.settings.height), (1080, 1920));
+    let l = cover_layers(&f, id);
+    assert_eq!(l.len(), 1);
+    assert!(l[0].0.contains_rect(unit) && (l[0].0.height() - 1.0).abs() < 1e-3, "{l:?}");
+    // Einpassen: weichgezeichneter, deckender Hintergrund, darüber das ganze Bild
+    d.fit = 1;
+    let l = cover_layers(&d.framed(&p, &HashMap::new()).unwrap(), id);
+    assert_eq!(l.iter().map(|x| x.2).collect::<Vec<_>>(), [true, false]);
+    assert!(l[0].0.contains_rect(unit));
+    assert!(unit.expand(1e-3).contains_rect(l[1].0) && (l[1].0.width() - 1.0).abs() < 1e-3, "{l:?}");
+}
+
+/// Echter Export 16:9 → 9:16: Hochkant-Datei, Füllen ohne Balken, Einpassen mit
+/// weichgezeichnetem Hintergrund; der Kreis bleibt rund; das Projekt bleibt unverändert.
+#[test]
+fn vertical_export_fills_or_fits_with_a_blurred_background() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    let p = circle_project(dir.path(), 2.0);
+    let before = p.clone();
+    for fit in [0, 1] {
+        let mut d = shorts_dialog(&p, dir.path());
+        d.fit = fit;
+        d.name = format!("Kreis {fit}");
+        frame(&mut d, &ctx, &p, true);
+        drain(&mut d, &ctx, &p);
+        assert_eq!(d.error, None);
+        assert_eq!(d.take_picked_platform(), None, "kein Verlaufsschritt im Projekt");
+        let img = grab(&dir.path().join(format!("Kreis {fit}.mp4")), 15);
+        assert_eq!((img.0, img.1), (180, 320));
+        let (top, mid, bottom) = (region(&img, 2..170, 2..60), region(&img, 2..170, 115..140), region(&img, 2..170, 262..316));
+        let edges = [region(&img, 0..3, 0..319), region(&img, 176..179, 0..319)];
+        eprintln!("fit={fit}: oben {top:?}, Mitte {mid:?}, unten {bottom:?}, Ränder {edges:?}");
+        assert!(top.0 > 40.0 && bottom.0 > 40.0, "fit={fit}: oben/unten schwarz");
+        assert!(edges.iter().all(|e| e.0 > 40.0), "fit={fit}: seitlich schwarz");
+        if fit == 0 {
+            // Füllen: überall das Schachbrett (scharf)
+            assert!(top.1 > 20.0 && bottom.1 > 20.0, "fit=0: oben/unten nicht das Bild");
+            let (w, h) = red_box(&img, 0..320);
+            assert!((95..=115).contains(&w) && w.abs_diff(h) <= 3, "fit=0: Kreis {w}×{h}");
+        } else {
+            // Einpassen: oben/unten weichgezeichnet, in der Mitte das scharfe Bild
+            assert!(top.1 < 8.0 && bottom.1 < 8.0 && mid.1 > 20.0, "fit=1: Hintergrund nicht weich");
+            let (w, h) = red_box(&img, 112..208);
+            assert!((30..=40).contains(&w) && w.abs_diff(h) <= 3, "fit=1: Kreis {w}×{h}");
+        }
+    }
+    assert_eq!(p, before);
+    std::env::remove_var("CUTLINE_HOME");
+}
+
+/// Zensur nach dem Umbau weiter auf dem Motiv (Pixeltest wie im Player)
+#[test]
+fn censor_stays_on_its_subject_after_reframing() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    let mut p = circle_project(dir.path(), 2.0);
+    // Quelle x 136–184, y 18–54 → im 9:16-Bild (Faktor 16/9) etwa x 47–132, y 32–96
+    p.timeline.tracks[0].clips[0].fx.censor =
+        vec![cl_core::Censor { path: vec![cl_core::CensorKey { t: Time::ZERO, cx: 0.5, cy: 0.2, w: 0.15, h: 0.2 }], ..Default::default() }];
+    let mut d = shorts_dialog(&p, dir.path());
+    frame(&mut d, &ctx, &p, true);
+    drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
+    let img = grab(&dir.path().join("Kreis.mp4"), 15);
+    let (inside, beside) = (region(&img, 58..122, 40..88), region(&img, 3..36, 40..88));
+    eprintln!("Zensur: innen {inside:?}, daneben {beside:?}");
+    assert!(inside.1 < 8.0, "Muster unter der Fläche noch da: {inside:?}");
+    assert!(beside.1 > 20.0, "Muster neben der Fläche fehlt: {beside:?}");
+    std::env::remove_var("CUTLINE_HOME");
+}
+
+/// Hochkant, in 2 Teile, Zielgröße: alles in einem Export
+#[test]
+fn vertical_split_with_target_size() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    let p = circle_project(dir.path(), 4.0);
+    let mut d = shorts_dialog(&p, dir.path());
+    (d.split_on, d.split_by, d.split_count) = (true, 0, 2);
+    d.settings.as_mut().unwrap().target_mb = Some(1);
+    frame(&mut d, &ctx, &p, true);
+    drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
+    for n in ["Kreis – Teil 01.mp4", "Kreis – Teil 02.mp4"] {
+        let f = dir.path().join("Kreis").join(n);
+        let m = cl_media::probe(&f).unwrap();
+        let size = std::fs::metadata(&f).unwrap().len();
+        assert_eq!((m.width, m.height), (180, 320), "{n}");
+        assert!((m.duration.as_secs_f64() - 2.0).abs() < 0.1 && size <= 1_000_000, "{n}: {:?} {size}", m.duration);
+    }
+    assert_eq!(crate::exports::for_project("Kreis", Some(&dir.path().join("p.cutline"))).len(), 2);
+    std::env::remove_var("CUTLINE_HOME");
 }

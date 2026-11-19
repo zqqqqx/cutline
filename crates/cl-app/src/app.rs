@@ -3521,11 +3521,11 @@ impl eframe::App for App {
             .iter()
             .find(|t| t.main)
             .and_then(|t| t.clips.iter().find(|c| c.contains(self.playhead)))
-            .and_then(|c| self.frames.get(&c.id));
+            .and_then(|c| self.frames.get(&c.id).map(|f| (c.id, f)));
         // nur Bilder von Clips, die es noch gibt (sonst zeigt ein leeres Projekt ein altes Bild)
         let tex = main
-            .or_else(|| self.project.timeline.tracks.iter().flat_map(|t| &t.clips).find_map(|c| self.frames.get(&c.id)))
-            .map(|(_, t)| (t.id(), t.size_vec2()));
+            .or_else(|| self.project.timeline.tracks.iter().flat_map(|t| &t.clips).find_map(|c| self.frames.get(&c.id).map(|f| (c.id, f))))
+            .map(|(id, (_, t))| (id, t.id(), t.size_vec2()));
         if std::mem::take(&mut self.export.chapter_hint_off) {
             self.settings.chapter_hint = false;
             self.settings.save();
@@ -3534,10 +3534,6 @@ impl eframe::App for App {
         self.export.chapter_hint = self.settings.chapter_hint;
         if let Some(msg) = self.export.show(ctx, &self.project, &fonts_owned, tex, self.revision) {
             self.toast(msg);
-        }
-        // „Projekt auf 9:16 umstellen“ im Export-Dialog (die Vorgabe merkt sich der Block darunter)
-        if self.export.take_switch_aspect() {
-            self.set_aspect(cl_core::AspectPreset::Ratio(9, 16));
         }
         if let Some(id) = self.export.take_picked_platform() {
             if let Some(s) = &mut self.aspect_fit {

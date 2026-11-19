@@ -71,6 +71,9 @@ fn visual<'a>(p: &'a Project, c: &Clip) -> Option<&'a MediaRef> {
     }
 }
 
+/// Kennung der weichgezeichneten Hintergrund-Kopie eines Clips (`ClipId::derived`)
+pub const BACK_SALT: u128 = 0xB1;
+
 /// Bildfüllende Ebene: Bildclip, nicht verkleinert, ohne Zuschnitt (Layout-Zellen haben einen),
 /// Lage auch mit Keyframes nahe der Mitte
 fn full_frame(c: &Clip, w: f32, h: f32) -> bool {
@@ -157,7 +160,7 @@ pub fn reframe(p: &Project, (w2, h2): (u32, u32), fill: bool, measure: Measure) 
                         let shown = c.transform.scale * fit(nw, nh);
                         needs_back |= shown * mw < nw - 1.0 || shown * mh < nh - 1.0;
                         let mut b = orig;
-                        b.id = c.id.derived(0xB1);
+                        b.id = c.id.derived(BACK_SALT);
                         b.group = None;
                         base(&mut b, cover);
                         if !b.fx.effects.iter().any(|e| e.id == "blur") {
@@ -222,8 +225,8 @@ pub fn reframe(p: &Project, (w2, h2): (u32, u32), fill: bool, measure: Measure) 
             // Übergang nur, wenn der folgende Clip der Spur auch eine Kopie hat
             let copied: Vec<ClipId> = back.iter().map(|b| b.id).collect();
             for b in &mut back {
-                let i = t.clips.iter().position(|c| c.id.derived(0xB1) == b.id).expect("Kopie eines Clips der Spur");
-                if !t.clips.get(i + 1).is_some_and(|n| copied.contains(&n.id.derived(0xB1))) {
+                let i = t.clips.iter().position(|c| c.id.derived(BACK_SALT) == b.id).expect("Kopie eines Clips der Spur");
+                if !t.clips.get(i + 1).is_some_and(|n| copied.contains(&n.id.derived(BACK_SALT))) {
                     b.transition_out = None;
                 }
             }
@@ -869,7 +872,7 @@ mod tests {
                     assert_eq!(bt.clips.len(), 2);
                     for (b, id) in bt.clips.iter().zip([s.base, s.kb]) {
                         let c = clip(&s.p, id);
-                        assert_eq!(b.id, id.derived(0xB1));
+                        assert_eq!(b.id, id.derived(BACK_SALT));
                         assert!(b.fx.effects.iter().any(|e| e.id == "blur"), "{case}");
                         assert_eq!((b.start, b.duration, b.speed, &b.fx.censor, b.crop), (c.start, c.duration, c.speed, &c.fx.censor, c.crop));
                         assert!(covers(&o, shown(&o, b, Time::ZERO)), "{case}: Hintergrund");
