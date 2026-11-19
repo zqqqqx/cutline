@@ -494,6 +494,8 @@ pub struct Evaluated {
     pub rotation_deg: f32,
     pub opacity: f32,
     pub volume_db: f32,
+    /// Zuschnitt des Clips (nicht animiert)
+    pub crop: crate::model::Crop,
 }
 
 /// Wirkung einer Animation bei Fortschritt p (0 = Beginn, 1 = Ruhezustand).

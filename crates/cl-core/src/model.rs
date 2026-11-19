@@ -527,6 +527,7 @@ impl Clip {
                 .unwrap_or(self.transform.rotation_deg),
             opacity: k.eval(Prop::Opacity, t_rel).unwrap_or(self.opacity),
             volume_db: k.eval(Prop::Volume, t_rel).unwrap_or(self.volume_db),
+            crop: self.crop,
         };
         let mut apply = |d: AnimDelta| {
             e.x += d.dx * canvas_w;

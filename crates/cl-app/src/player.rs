@@ -232,22 +232,25 @@ fn fold_fx(base: &mut [u8], fx: &[u8], k: f32) {
 }
 
 /// Fassung `fx` (Effekt-/Filter-Element) über dem Bild `base` an den Ecken `corners` zeichnen,
-/// mit Maske nur in der Form (umgekehrt: überall außer der Form).
-fn draw_fx(content: &egui::Painter, base: egui::TextureId, fx: egui::TextureId, corners: [egui::Pos2; 4], mask: &Option<Mask>, alpha: f32, canvas: Rect) {
+/// mit Maske nur in der Form (umgekehrt: überall außer der Form), nur im sichtbaren Teil `shown`
+/// (Zuschnitt; sonst gleich `corners`).
+#[allow(clippy::too_many_arguments)]
+fn draw_fx(content: &egui::Painter, base: egui::TextureId, fx: egui::TextureId, corners: [egui::Pos2; 4], shown: [egui::Pos2; 4], mask: &Option<Mask>, alpha: f32, canvas: Rect) {
     let Some(mk) = mask else {
-        crate::fx_mask::draw_textured(content, fx, corners, &corners, alpha);
+        crate::fx_mask::draw_textured(content, fx, corners, &shown, alpha);
         return;
     };
     let (polys, inverted) = crate::fx_mask::polygons(mk, canvas);
+    let polys = polys.iter().map(|p| crate::fx_mask::clip_convex(p, &shown));
     if inverted {
         // alles außer der Form: Effekt ganz, Original in der Form darüber
-        crate::fx_mask::draw_textured(content, fx, corners, &corners, alpha);
-        for poly in &polys {
-            crate::fx_mask::draw_textured(content, base, corners, poly, alpha);
+        crate::fx_mask::draw_textured(content, fx, corners, &shown, alpha);
+        for poly in polys {
+            crate::fx_mask::draw_textured(content, base, corners, &poly, alpha);
         }
     } else {
-        for poly in &polys {
-            crate::fx_mask::draw_textured(content, fx, corners, poly, alpha);
+        for poly in polys {
+            crate::fx_mask::draw_textured(content, fx, corners, &poly, alpha);
         }
     }
 }
@@ -277,12 +280,15 @@ pub(crate) fn place_on_canvas(src: &cl_media::RgbaFrame, ev: &Evaluated, cw: u32
     let (cx, cy) = (cw as f32 / 2.0 + ev.x * kx, ch as f32 / 2.0 + ev.y * ky);
     let (s, c) = (-ev.rotation_deg.to_radians()).sin_cos();
     let alpha = ev.opacity.clamp(0.0, 1.0);
+    // Zuschnitt: nur dieser Teil des Clipbilds, an seiner Stelle
+    let k = ev.crop;
+    let (u0, u1, v0, v1) = (k.left * sw, (1.0 - k.right) * sw, k.top * sh, (1.0 - k.bottom) * sh);
     // Zeilen auf mehrere Kerne verteilt: beim Abspielen zählt jede Millisekunde
     cl_fx::xfade::rows(&mut out, cw as i32, &|y, line| {
         let (dx, dy) = (0.5 - cx, y as f32 + 0.5 - cy);
         let (mut u, mut v) = ((dx * c - dy * s) / fit + sw / 2.0, (dx * s + dy * c) / fit + sh / 2.0);
         for o in line.chunks_exact_mut(4) {
-            if u >= 0.0 && v >= 0.0 && u < sw && v < sh {
+            if u >= u0 && v >= v0 && u < u1 && v < v1 {
                 let i = ((v as u32 * src.width + u as u32) * 4) as usize;
                 // wie das Overlay auf die durchsichtige Fläche im Export: Farbe außerhalb der Maske
                 // (und bei Deckkraft < 1) geht in Schwarz über, statt beim Mischen durchzuscheinen
@@ -853,7 +859,7 @@ mod shader_tests {
 
     #[test]
     fn transition_layers_are_placed_like_on_screen() {
-        let id = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0 };
+        let id = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         let frame = |w: u32, h: u32, a: u8| cl_media::RgbaFrame { width: w, height: h, data: [255, 0, 0, a].repeat((w * h) as usize) };
         let alpha = |img: &[u8], cw: u32, x: u32, y: u32| img[((y * cw + x) * 4 + 3) as usize];
         // unverändert: füllt die Fläche
@@ -1101,6 +1107,32 @@ mod transition_tests {
         assert!(d < 8.0, "Vorschau weicht vom Export ab: {d:.1}");
     }
 
+    /// Zuschnitt (verschoben, verkleinert, gedreht) allein und in einem gemischten Übergang mit
+    /// anderem Zuschnitt bei B: Vorschau wie Export.
+    #[test]
+    fn crop_matches_export() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = project(dir.path(), "circleopen", false, None);
+        let clips = &mut p.timeline.tracks[0].clips;
+        clips[0].crop = Crop { left: 0.3, right: 0.0, top: 0.2, bottom: 0.1 };
+        clips[0].transform = Transform { x: 30.0, y: -10.0, scale: 0.7, rotation_deg: 20.0 };
+        clips[1].crop = Crop { left: 0.0, right: 0.25, top: 0.0, bottom: 0.3 };
+        for t in [0.5f64, 1.5, 2.5] {
+            let ex = export_frame(&p, dir.path(), (t * 30.0).round() as usize);
+            let pv = still::render(&p, Time::from_secs_f64(t), 320, 180);
+            let d = block_diff(&pv, &ex);
+            assert!(d < 8.0, "Zuschnitt bei {t} s: Vorschau weicht vom Export ab: {d:.1}");
+            // ohne Zuschnitt in der Vorschau wäre es deutlich anders (prüft, dass der Test greift)
+            let mut q = p.clone();
+            q.timeline.tracks[0].clips.iter_mut().for_each(|c| c.crop = Crop::default());
+            let d0 = block_diff(&still::render(&q, Time::from_secs_f64(t), 320, 180), &ex);
+            assert!(d0 > 2.0 * d.max(2.0), "bei {t} s: ohne Zuschnitt {d0:.1}, mit {d:.1}");
+        }
+    }
+
     /// Kreis öffnen unter einem Filter-Element (N_tr 26:50): gemischt wie der Export (Element auf
     /// dem fertigen Übergang), nicht übergeblendet.
     #[test]
@@ -1194,7 +1226,7 @@ mod transition_tests {
     fn background_mix_matches_direct_mix_with_elements() {
         // gleiche Rechnung wie vorher im Oberflächen-Thread: Mischbild, unmaskiertes Element
         // eingerechnet, maskiertes als eigenes Bild
-        let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0 };
+        let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         let f = |v: u8| std::sync::Arc::new(cl_media::RgbaFrame { width: 32, height: 18, data: [v, 255 - v, 90, 255].repeat(32 * 18) });
         let plan = cl_fx::catalog::transition_plan("circleopen");
         let mask = Mask::new(MaskShape::Circle);
@@ -1232,7 +1264,7 @@ mod transition_tests {
     #[ignore]
     fn mix_time() {
         load_shipped_packs();
-        let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0 };
+        let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         for (cw, ch) in [(1920, 1080), (1600, 900), (1280, 720), (960, 540)] {
             let f = |v: u8| cl_media::RgbaFrame { width: cw, height: ch, data: [v, 255 - v, 90, 255].repeat((cw * ch) as usize) };
             let (fa, fb) = (f(30), f(200));
@@ -1406,7 +1438,8 @@ impl App {
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 (plan.xfade, &plan.shader.as_ref().map(|s| &s.0), p.to_bits(), cw, ch).hash(&mut h);
                 for e in [&ea, &eb] {
-                    [e.x, e.y, e.scale, e.rotation_deg, e.opacity].map(f32::to_bits).hash(&mut h);
+                    let k = e.crop;
+                    [e.x, e.y, e.scale, e.rotation_deg, e.opacity, k.left, k.right, k.top, k.bottom].map(f32::to_bits).hash(&mut h);
                 }
                 for ((ka, _), (kb, _)) in &frames {
                     (ka, kb).hash(&mut h);
@@ -1849,7 +1882,7 @@ impl App {
                         // fertigen Übergang)
                         let corners = [canvas.left_top(), canvas.right_top(), canvas.right_bottom(), canvas.left_bottom()];
                         for (fx_tex, mk, k) in &self.shader_preview.fx {
-                            draw_fx(content, t.id(), fx_tex.id(), corners, mk, *k, canvas);
+                            draw_fx(content, t.id(), fx_tex.id(), corners, corners, mk, *k, canvas);
                         }
                     }
                     let Some(tex) = self.frames.get(&c.id).map(|f| &f.1) else {
@@ -1880,19 +1913,14 @@ impl App {
                         regions.push(region);
                         continue;
                     }
+                    // Zuschnitt als Ausschnitt der Textur; der Rest bleibt an seiner Stelle
+                    let k = ev.crop;
+                    let uvs = [(k.left, k.top), (1.0 - k.right, k.top), (1.0 - k.right, 1.0 - k.bottom), (k.left, 1.0 - k.bottom)];
+                    let shown = uvs.map(|(u, v)| region.corner(2.0 * u - 1.0, 2.0 * v - 1.0));
                     let mut mesh = egui::Mesh::with_texture(tex.id());
                     let col = Color32::from_white_alpha((alpha * 255.0) as u8);
-                    for (sx, sy, u, v) in [
-                        (-1.0, -1.0, 0.0, 0.0),
-                        (1.0, -1.0, 1.0, 0.0),
-                        (1.0, 1.0, 1.0, 1.0),
-                        (-1.0, 1.0, 0.0, 1.0),
-                    ] {
-                        mesh.vertices.push(egui::epaint::Vertex {
-                            pos: region.corner(sx, sy),
-                            uv: pos2(u, v),
-                            color: col,
-                        });
+                    for (pos, (u, v)) in shown.into_iter().zip(uvs) {
+                        mesh.vertices.push(egui::epaint::Vertex { pos, uv: pos2(u, v), color: col });
                     }
                     mesh.indices.extend([0, 1, 2, 0, 2, 3]);
                     content.add(egui::Shape::mesh(mesh));
@@ -1910,7 +1938,7 @@ impl App {
                         let Some((_, fx_tex)) = self.frames.get(did) else {
                             continue;
                         };
-                        draw_fx(content, tex.id(), fx_tex.id(), corners, mk, alpha * k, canvas);
+                        draw_fx(content, tex.id(), fx_tex.id(), corners, shown, mk, alpha * k, canvas);
                     }
                     regions.push(region);
                 }
