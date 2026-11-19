@@ -26,7 +26,7 @@ const PANIC: &str = "Absturz";
 const LIMIT_NOTE: &str = "Obergrenze der Datei erreicht – ab hier nur noch Warnungen und Fehler";
 const DAY_MS: i64 = 86_400_000;
 /// Bereiche, die Cutline selbst mit `target:` benutzt (alles mit `cutline::…` gehört ohnehin dazu)
-const OWN: &[&str] = &["sitzung", "system", "perf", "projekt", "export", "proxy", "update", "paket", "import", "meldung"];
+const OWN: &[&str] = &["sitzung", "system", "perf", "projekt", "export", "proxy", "update", "paket", "import", "meldung", "wiedergabe"];
 
 pub struct Rec {
     pub ms: i64,

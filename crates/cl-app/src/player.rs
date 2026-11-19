@@ -1642,7 +1642,7 @@ impl App {
             }
             let primary = id == l.clip.id;
             if let Some(f) = self.core.pull(lid(id), now, primary) {
-                if primary && self.core.mode() == Mode::Spielen && crate::app::perf() {
+                if primary && self.core.mode() == Mode::Spielen {
                     self.perf_frame_shown();
                 }
                 self.set_frame(ctx, id, key, &f);

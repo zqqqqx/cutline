@@ -144,6 +144,19 @@ pub struct Stats {
     pub max_lag: f64,
 }
 
+impl Stats {
+    /// Messwerte zweier Abschnitte zusammen (Summen bzw. Größtwerte)
+    pub fn add(&mut self, o: &Stats) {
+        self.opens += o.opens;
+        self.frames += o.frames;
+        self.dropped += o.dropped;
+        self.catch_ups += o.catch_ups;
+        self.stalls += o.stalls;
+        self.max_gap = self.max_gap.max(o.max_gap);
+        self.max_lag = self.max_lag.max(o.max_lag);
+    }
+}
+
 /// Rückstand, ab dem gezielt aufgeholt wird: zwei Bildintervalle …
 const LAG_FRAMES: f64 = 2.0;
 /// … länger als diese Zeit: dann eine Qualitätsstufe kleiner (Strom zu langsam)
@@ -371,6 +384,10 @@ impl<S: Source> PlayCore<S> {
     }
     pub fn take_stats(&mut self) -> Stats {
         std::mem::take(&mut self.stats)
+    }
+    /// Messwerte seit dem letzten `take_stats`, ohne sie zurückzusetzen
+    pub fn stats(&self) -> Stats {
+        self.stats
     }
     #[cfg(test)]
     /// Offene Ströme: (Ebene, Schlüssel, ist Ersatz)

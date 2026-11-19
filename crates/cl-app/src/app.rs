@@ -220,6 +220,8 @@ pub struct App {
     pub perf_since: Instant,
     /// Messung: Start der Wiedergabe bzw. des Ton-Neustarts (erstes Bild, erster Ton noch offen?)
     pub perf_play: Option<PerfPlay>,
+    /// laufende Wiedergabe fürs normale Protokoll (eine Zeile, wenn sie endet)
+    pub play_log: Option<PlayLog>,
     /// Feiner System-Takt, solange abgespielt wird (Windows: 1 ms statt 15,6 ms)
     hires_timer: Option<HiresTimer>,
     /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
@@ -472,6 +474,7 @@ impl App {
             perf_ui: 0,
             perf_since: Instant::now(),
             perf_play: None,
+            play_log: None,
             hires_timer: None,
             multicam: None,
             shorts: None,
@@ -2359,6 +2362,8 @@ impl App {
 
     /// Ton-Aufträge des Kerns ausführen und seinen Zustand für die Oberfläche spiegeln.
     pub fn run_core(&mut self) {
+        // Beginn einer Wiedergabe vor dem Tonstart (der blockiert ein wenig)
+        let t0 = self.play_log.is_none().then(Instant::now);
         loop {
             let cmds = self.core.cmds();
             if cmds.is_empty() {
@@ -2396,6 +2401,35 @@ impl App {
             self.multicam_finish();
         }
         self.playing = playing;
+        self.play_log_step(playing, t0);
+    }
+
+    /// Eine Zeile je Wiedergabe ins Protokoll: beginnt mit dem Abspielen, endet mit Stopp, Pause,
+    /// Ende oder Sprung. Je UI-Bild nur ein paar Zuweisungen.
+    fn play_log_step(&mut self, playing: bool, t0: Option<Instant>) {
+        if !playing {
+            self.end_play_log();
+            return;
+        }
+        if let Some(l) = &mut self.play_log {
+            l.quality = l.quality.max(self.core.quality.level);
+            return;
+        }
+        if !perf() {
+            // ohne `CUTLINE_PERF` liest sonst niemand die Zähler: ab hier zählen
+            // shortcut: mit `CUTLINE_PERF` zählt bis zu 1 s vor dem Start mit; reicht für die Zeile
+            self.core.take_stats();
+        }
+        self.play_log = Some(PlayLog::new(self.playhead, t0.unwrap_or_else(Instant::now)));
+    }
+
+    fn end_play_log(&mut self) {
+        if let Some(mut l) = self.play_log.take() {
+            l.stats.add(&self.core.stats());
+            if let Some(s) = l.line(l.pressed.elapsed(), self.settings.use_proxies) {
+                log::info!(target: "wiedergabe", "{s}");
+            }
+        }
     }
 
     pub fn toggle_play(&mut self) {
@@ -2547,6 +2581,10 @@ impl App {
             recording: self.voiceover.recorder.is_some(),
             max_quality_level: max_q,
         };
+        // Sprung beim Abspielen beendet die Wiedergabe fürs Protokoll (die nächste beginnt dort)
+        if self.core.playing() && self.playhead != self.core.pos() {
+            self.end_play_log();
+        }
         self.playhead = self.core.tick(&t);
         self.run_core();
     }
@@ -3060,8 +3098,14 @@ impl App {
         wait + EGUI_PREDICTED_DT
     }
 
-    /// Messpunkte der Wiedergabe (`CUTLINE_PERF`): Play → erster Ton, Ton-Aussetzer
+    /// Messpunkte der Wiedergabe: Play → erster Ton (auch fürs normale Protokoll), Ton-Aussetzer (`CUTLINE_PERF`)
     fn perf_audio(&mut self) {
+        if let (Some(l), Some(t)) = (&mut self.play_log, self.audio.as_ref().and_then(|a| a.first_sound())) {
+            // nach einer Pause gilt der Ton von vorher nicht
+            if l.sound.is_none() && t >= l.pressed {
+                l.sound = Some(t - l.pressed);
+            }
+        }
         if !perf() {
             return;
         }
@@ -3084,6 +3128,9 @@ impl App {
 
     /// Messpunkt: ein Strombild der Hauptebene wurde gezeigt (Play → erstes weitergeschaltetes Bild)
     pub fn perf_frame_shown(&mut self) {
+        if let Some(l) = self.play_log.as_mut().filter(|l| l.frame.is_none() && self.playhead > l.at) {
+            l.frame = Some(l.pressed.elapsed());
+        }
         if let Some(p) = self.perf_play.as_mut().filter(|p| !p.frame && self.playhead > p.at) {
             p.frame = true;
             crate::applog::perf_line!("perf: {} → erstes Bild weitergeschaltet {:.0} ms", p.what, p.pressed.elapsed().as_secs_f64() * 1000.0);
@@ -3122,6 +3169,9 @@ impl eframe::App for App {
             let el = self.perf_since.elapsed().as_secs_f64();
             if el >= 1.0 {
                 let st = self.core.take_stats();
+                if let Some(l) = &mut self.play_log {
+                    l.stats.add(&st);
+                }
                 let ord = std::sync::atomic::Ordering::Relaxed;
                 crate::applog::perf_line!(
                     "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}, Bildzeit Ø {:.2} / max {:.1} ms, Player Ø {:.2} / max {:.1} ms",
@@ -3646,6 +3696,95 @@ pub struct PerfPlay {
 impl PerfPlay {
     fn new(what: &'static str, at: Time) -> Self {
         Self { what, pressed: Instant::now(), at, frame: what != "Play", sound: false }
+    }
+}
+
+/// Eine Wiedergabe fürs normale Protokoll: eine Zeile, wenn sie endet (Stopp, Pause, Ende, Sprung).
+/// Die Zähler sind die von `playcore::Stats`, die Zeiten die der `CUTLINE_PERF`-Messpunkte.
+pub struct PlayLog {
+    pressed: Instant,
+    /// Playhead beim Start (erstes Bild „weitergeschaltet“ = Playhead danach)
+    at: Time,
+    frame: Option<Duration>,
+    sound: Option<Duration>,
+    stats: crate::playcore::Stats,
+    /// höchste erreichte Qualitätsstufe
+    quality: usize,
+}
+
+/// Kürzere Wiedergaben (Doppeltipp auf die Leertaste) schreiben keine Zeile
+const PLAY_LOG_MIN: Duration = Duration::from_millis(300);
+
+impl PlayLog {
+    fn new(at: Time, pressed: Instant) -> Self {
+        Self { pressed, at, frame: None, sound: None, stats: Default::default(), quality: 0 }
+    }
+
+    /// Die Zeile, nur Messwerte (keine Namen, keine Pfade); `None` bei sehr kurzer Wiedergabe
+    fn line(&self, took: Duration, proxies: bool) -> Option<String> {
+        if took < PLAY_LOG_MIN {
+            return None;
+        }
+        let ms = |d: Option<Duration>| d.map_or_else(|| "–".to_string(), |d| format!("{} ms", d.as_millis()));
+        let s = &self.stats;
+        Some(format!(
+            "{:.1} s · erstes Bild {} · erster Ton {} · {} Ströme geöffnet · {} verworfen · Rückstand max {:.0} ms · Lücke max {:.0} ms · aufgeholt {}× · hängend {}× · Qualitätsstufe max {} · Proxys {}",
+            took.as_secs_f64(),
+            ms(self.frame),
+            ms(self.sound),
+            s.opens,
+            s.dropped,
+            s.max_lag * 1000.0,
+            s.max_gap * 1000.0,
+            s.catch_ups,
+            s.stalls,
+            self.quality,
+            if proxies { "an" } else { "aus" }
+        ))
+    }
+}
+
+#[cfg(test)]
+mod play_log_tests {
+    use super::*;
+
+    #[test]
+    fn line_has_the_values_and_no_names() {
+        let mut l = PlayLog::new(Time::ZERO, Instant::now());
+        l.frame = Some(Duration::from_millis(180));
+        l.stats = crate::playcore::Stats { opens: 2, frames: 100, dropped: 3, catch_ups: 1, stalls: 0, max_gap: 0.09, max_lag: 0.12 };
+        l.stats.add(&crate::playcore::Stats { opens: 1, max_gap: 0.05, max_lag: 0.2, ..Default::default() });
+        l.quality = 1;
+        assert_eq!(
+            l.line(Duration::from_millis(4200), true).as_deref(),
+            Some("4.2 s · erstes Bild 180 ms · erster Ton – · 3 Ströme geöffnet · 3 verworfen · Rückstand max 200 ms · Lücke max 90 ms · aufgeholt 1× · hängend 0× · Qualitätsstufe max 1 · Proxys an")
+        );
+    }
+
+    #[test]
+    fn very_short_playback_writes_nothing() {
+        let l = PlayLog::new(Time::ZERO, Instant::now());
+        assert_eq!(l.line(Duration::from_millis(299), false), None);
+        assert!(l.line(PLAY_LOG_MIN, false).is_some());
+    }
+
+    /// Ablauf: Play beginnt die Wiedergabe, die Qualitätsstufe wird mitgeführt, Stopp beendet sie
+    #[test]
+    fn playback_starts_and_ends_the_record() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        app.core.play(Time::ZERO, 0, 0.0);
+        let _ = app.core.cmds();
+        app.play_log_step(app.core.playing(), None);
+        assert!(app.play_log.is_some());
+        app.core.quality.level = 2;
+        app.play_log_step(true, None);
+        app.core.quality.level = 0;
+        app.play_log_step(true, None);
+        assert_eq!(app.play_log.as_ref().map(|l| l.quality), Some(2));
+        app.core.stop();
+        let _ = app.core.cmds();
+        app.play_log_step(app.core.playing(), None);
+        assert!(app.play_log.is_none());
     }
 }
 
