@@ -8,18 +8,44 @@
 ### English
 
 **New**
+- **Crop.** Cut away the edges of any video or image: four sliders under Basic → Crop, or drag the bars at the edges right in the player. The rest of the picture stays where it is.
+- **Command search.** Ctrl+K opens a search for every command of the editor, including everything from the menu and the Quick Actions. Type a few letters, press Enter. It shows the shortcut next to each command.
+- **Layouts.** Split screen for two, three or four clips and picture-in-picture in any corner, in one click: Quick Actions → Layout. Each clip is scaled and cropped to fill its cell.
+- **Export queue.** "Add to queue" in the export window lines up several exports – other formats, other names, other projects. They run one after another while you keep editing.
+- **Thumbnail tool.** Quick Actions → Thumbnail: pick the frame, cut out the person with an outline, blur or darken the background, add a title from a template, and save a 1280×720 PNG.
+- **Karaoke captions.** Two new caption styles highlight the word that is being spoken. Any text clip can switch it on in the inspector; the highlight colour is yours to choose.
+- **Censor.** Smart → Censor: drag a frame around a face, a licence plate or a name, and the pixelated or blurred area follows it through the clip. Several areas per clip are possible.
+- **Brand Kit.** Keep your colours, fonts and logo in Settings → Brand Kit. The colours appear next to every colour picker, the fonts at the top of the font list, and "Insert logo" puts the logo in the corner for the whole video.
 
 **Improved**
+- The menu shows your own shortcuts, and every menu command can be given one under Settings → Keyboard shortcuts.
+- Text lines in the exported video are spaced exactly as in the preview.
 
 **Fixed**
+- Text with several lines showed a small box at the end of each line in the exported video.
+- A shortcut of your own could end up on two commands when a new version added a default with the same key.
+- A finished export was listed under the project that happened to be open instead of the one it came from.
 
 ### Deutsch
 
 **Neu**
+- **Zuschnitt.** Schneide die Ränder von Videos und Bildern weg: vier Regler unter Basis → Zuschnitt, oder ziehe die Balken an den Kanten direkt im Player. Der Rest des Bilds bleibt an seiner Stelle.
+- **Befehlssuche.** Strg+K öffnet eine Suche über alle Befehle des Editors, auch alles aus dem Menü und den Schnellaktionen. Ein paar Buchstaben tippen, Enter drücken. Neben jedem Befehl steht seine Taste.
+- **Layouts.** Splitscreen für zwei, drei oder vier Clips und Bild-in-Bild in jeder Ecke, mit einem Klick: Schnellaktionen → Layout. Jeder Clip wird so skaliert und zugeschnitten, dass er sein Feld füllt.
+- **Export-Warteschlange.** „In Warteschlange“ im Export-Fenster reiht mehrere Exporte ein – andere Formate, andere Namen, andere Projekte. Sie laufen nacheinander, während du weiterschneidest.
+- **Thumbnail-Werkzeug.** Schnellaktionen → Thumbnail: Bild wählen, Person mit Kontur freistellen, Hintergrund weichzeichnen oder abdunkeln, Titel aus einer Vorlage dazu, als PNG in 1280×720 speichern.
+- **Karaoke-Untertitel.** Zwei neue Untertitel-Stile heben das gerade gesprochene Wort hervor. Jeder Text-Clip kann das im Inspektor einschalten; die Farbe der Hervorhebung wählst du selbst.
+- **Zensieren.** Smart → Zensieren: Rahmen um ein Gesicht, ein Kennzeichen oder einen Namen ziehen, und die verpixelte oder weichgezeichnete Fläche folgt dem Motiv durch den Clip. Mehrere Flächen je Clip sind möglich.
+- **Brand Kit.** Deine Farben, Schriften und dein Logo an einer Stelle: Einstellungen → Brand Kit. Die Farben stehen neben jedem Farbwähler, die Schriften oben in der Schriftliste, und „Logo einfügen“ setzt das Logo für das ganze Video in die Ecke.
 
 **Verbessert**
+- Das Menü zeigt deine eigenen Tastenkürzel, und jeder Menübefehl kann unter Einstellungen → Tastenkürzel eine Taste bekommen.
+- Textzeilen stehen im exportierten Video genau so weit auseinander wie in der Vorschau.
 
 **Behoben**
+- Text mit mehreren Zeilen zeigte im exportierten Video ein kleines Kästchen am Ende jeder Zeile.
+- Ein eigenes Tastenkürzel konnte auf zwei Befehlen landen, wenn eine neue Version dieselbe Taste als Standard vergab.
+- Ein fertiger Export wurde dem gerade geöffneten Projekt zugeordnet statt dem, aus dem er stammt.
 
 ## 0.12.2 – 2026-11-19
 
