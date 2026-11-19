@@ -459,7 +459,22 @@ impl App {
                             tp.text(c + d, egui::Align2::CENTER_CENTER, &sample, font.clone(), ocol);
                         }
                     }
-                    tp.text(c, egui::Align2::CENTER_CENTER, &sample, font, col);
+                    match &s.karaoke {
+                        // Karaoke: zweites Wort hervorgehoben (Füllen: die ersten beiden)
+                        Some(k) => {
+                            let hc = Color32::from_rgba_unmultiplied(k.color[0], k.color[1], k.color[2], k.color[3]);
+                            let (a, b) = word_ranges(&sample).get(1).map(|r| (if k.fill { 0 } else { r.start }, r.end)).unwrap_or((0, 0));
+                            let mut job = egui::text::LayoutJob::default();
+                            for (part, color) in [(&sample[..a], col), (&sample[a..b], hc), (&sample[b..], col)] {
+                                job.append(part, 0.0, egui::TextFormat { font_id: font.clone(), color, ..Default::default() });
+                            }
+                            let g = tp.layout_job(job);
+                            tp.galley(c - g.size() / 2.0, g, col);
+                        }
+                        None => {
+                            tp.text(c, egui::Align2::CENTER_CENTER, &sample, font, col);
+                        }
+                    }
                     let name = crate::tr(p.name);
                     let hint = egui::FontId::proportional(theme::FS_HINT);
                     let shown = theme::elide(&name, r.width() - 16.0, |t| theme::text_width(ui.ctx(), t, hint.clone()));
@@ -808,6 +823,38 @@ mod tests {
             let s = (p.style)();
             assert!(s.outline.is_some() || s.background.is_some() || p.id == "cinema", "{}", p.id);
         }
+    }
+
+    /// Erkannte Wortzeiten landen relativ zum Clipanfang im Karaoke-Untertitel; andere Stile
+    /// speichern keine (die Datei bleibt ohne neues Feld).
+    #[test]
+    fn karaoke_captions_keep_the_word_times() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        app.set_doc(Project::new("k"));
+        let seg = cl_analyze::asr::Segment { start: 1.0, end: 3.0, text: "Hallo Welt".into(), words: vec![1.0, 2.2] };
+        let words = |app: &App| -> Vec<Option<Vec<i64>>> {
+            app.caption_clips()
+                .iter()
+                .map(|c| match &c.content {
+                    ClipContent::Text(s) => s.karaoke.as_ref().map(|k| k.words.iter().map(|w| w.as_millis()).collect()),
+                    _ => None,
+                })
+                .collect()
+        };
+        app.settings.caption_preset = "karaoke".into();
+        assert_eq!(app.add_caption_segments(std::slice::from_ref(&seg), Time::from_secs_f64(10.0)), 1);
+        assert_eq!(words(&app), [Some(vec![0, 1200])]);
+        // Stil auf alle (Karaoke füllen) behält die Zeiten
+        let c = app.caption_clips()[0].clone();
+        app.settings.caption_preset = "karaoke-fill".into();
+        let n = app.caption_clip(&text_of(&c), c.start, c.duration, karaoke_words(&c));
+        let ClipContent::Text(s) = &n.content else { panic!() };
+        assert_eq!(s.karaoke.as_ref().map(|k| (k.fill, k.words.len())), Some((true, 2)));
+        app.set_doc(Project::new("k"));
+        app.settings.caption_preset = "classic".into();
+        app.add_caption_segments(&[seg], Time::ZERO);
+        assert_eq!(words(&app), [None]);
+        assert!(!app.project.to_json().contains("karaoke"));
     }
 
     #[test]

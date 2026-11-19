@@ -869,6 +869,21 @@ impl App {
                 e.commit = true;
             }
         });
+        let mut on = st.karaoke.is_some();
+        if widgets::toggle_row(ui, "Karaoke", &mut on) {
+            st.karaoke = on.then(|| Karaoke { color: crate::captions::KARAOKE_YELLOW, fill: false, words: Vec::new() });
+            e.commit = true;
+        }
+        if let Some(k) = &mut st.karaoke {
+            theme::row(ui, "Hervorhebung", |ui| {
+                if widgets::color_button(ui, &mut k.color) {
+                    e.commit = true;
+                }
+            });
+            if widgets::toggle_row(ui, "Füllen", &mut k.fill) {
+                e.commit = true;
+            }
+        }
         theme::section(ui, "Kontur");
         let mut on = st.outline.is_some();
         if widgets::toggle_row(ui, "Kontur", &mut on) {
