@@ -2565,6 +2565,88 @@ impl App {
         }
     }
 
+    /// Lautstärke der Wiedergabe setzen; `save` erst, wenn die Änderung abgeschlossen ist
+    pub fn set_volume(&mut self, v: crate::audio::Volume, save: bool) {
+        self.volume = v;
+        crate::audio::set_volume(v);
+        if save {
+            self.save_last_used();
+        }
+    }
+
+    pub fn step_volume(&mut self, up: bool) {
+        self.set_volume(self.volume.step(up), true);
+    }
+
+    /// Lautsprecher neben der Pegelanzeige: Klick = stumm/an, Mausrad = 5-%-Schritte, beim
+    /// Überfahren ein Regler darüber (eigene Ebene, nimmt der Leiste keinen Platz).
+    fn volume_button(&mut self, ui: &mut egui::Ui) {
+        let v = self.volume;
+        let glyph = if v.muted || v.percent <= 0.0 {
+            icon::SPEAKER_SLASH
+        } else if v.percent < 50.0 {
+            icon::SPEAKER_LOW
+        } else {
+            icon::SPEAKER_HIGH
+        };
+        let tip = if v.muted {
+            "Lautstärke der Wiedergabe: stumm".to_string()
+        } else {
+            format!("Lautstärke der Wiedergabe: {:.0} %", v.percent)
+        };
+        let r = theme::icon_button(ui, glyph, crate::keymap::with_key(&tip, &self.key_of("playback_mute")), true, false);
+        if r.clicked() {
+            self.set_volume(crate::audio::Volume { muted: !v.muted, ..v }, true);
+        }
+        let pop = r.id.with("volume");
+        if r.hovered() {
+            // shortcut: je Rad-Ereignis ein Schritt (Touchpads liefern viele kleine), reicht für Mausräder
+            let steps: Vec<bool> = ui.input(|i| {
+                i.events
+                    .iter()
+                    .filter_map(|e| match e {
+                        egui::Event::MouseWheel { delta, .. } if delta.y != 0.0 => Some(delta.y > 0.0),
+                        _ => None,
+                    })
+                    .collect()
+            });
+            for up in steps {
+                self.step_volume(up);
+            }
+        }
+        // offen, solange die Maus auf dem Symbol oder dem Regler ist (oder ihn zieht)
+        let last: Option<Rect> = ui.data(|d| d.get_temp(pop));
+        let keep = last.is_some_and(|rect| {
+            let near = rect.expand(8.0);
+            ui.input(|i| {
+                i.pointer.hover_pos().is_some_and(|p| near.contains(p))
+                    || (i.pointer.primary_down() && i.pointer.press_origin().is_some_and(|p| near.contains(p)))
+            })
+        });
+        if !(r.hovered() || keep) {
+            ui.data_mut(|d| d.remove::<Rect>(pop));
+            return;
+        }
+        let area = egui::Area::new(pop)
+            .order(egui::Order::Foreground)
+            .pivot(egui::Align2::LEFT_BOTTOM)
+            .fixed_pos(r.rect.left_top() - vec2(0.0, 2.0))
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_width(150.0);
+                    let mut p = self.volume.percent;
+                    let e = crate::widgets::Slider::new(&mut p, 0.0..=100.0).suffix("%").default(100.0).show(ui);
+                    if e.changed {
+                        self.set_volume(crate::audio::Volume { percent: p, muted: false }, false);
+                    }
+                    if e.commit {
+                        self.save_last_used();
+                    }
+                });
+            });
+        ui.data_mut(|d| d.insert_temp(pop, area.response.rect));
+    }
+
     fn player_controls(&mut self, ui: &mut egui::Ui, h: f32) {
         let fps = self.project.settings.fps;
         let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), egui::Sense::hover());
@@ -2577,6 +2659,7 @@ impl App {
             |ui| {
                 ui.add_space(4.0);
                 self.level_meter(ui);
+                self.volume_button(ui);
                 ui.label(
                     RichText::new(crate::tr(self.playhead.timecode(fps)))
                         .color(theme::TEXT())

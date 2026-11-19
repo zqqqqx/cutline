@@ -239,6 +239,8 @@ pub struct App {
     pub aspect_fit: Option<cl_core::ProjectSettings>,
     /// Hilfslinien für Plattform-Bedienelemente im Player
     pub safe_area: bool,
+    /// Lautstärke der Wiedergabe (Regler im Player, nur Abhören)
+    pub volume: crate::audio::Volume,
     /// Multicam: Index des Blickwinkels, dessen Ton durchgehend läuft
     pub multicam_audio: usize,
     /// Quick-Action-Fenster (Pausen, Füllwörter, Ducking, Punch-in)
@@ -436,7 +438,9 @@ impl App {
             Screen::Home
         };
         let last_used = crate::quick::load_last_used();
+        crate::audio::set_volume(last_used.3);
         let mut app = Self {
+            volume: last_used.3,
             doc: Arc::new(Mutex::new(Document::new(project.clone()))),
             project,
             revision: 0,
@@ -2906,6 +2910,9 @@ impl App {
                 "home" => self.playhead = Time::ZERO,
                 "end" => self.playhead = self.last_frame(),
                 "max" => self.player_max = !self.player_max,
+                "playback_mute" => self.set_volume(crate::audio::Volume { muted: !self.volume.muted, ..self.volume }, true),
+                "playback_louder" => self.step_volume(true),
+                "playback_quieter" => self.step_volume(false),
                 "voiceover" => self.voiceover.open = !self.voiceover.open,
                 "del_left" => self.delete_side(true),
                 "del_right" => self.delete_side(false),
