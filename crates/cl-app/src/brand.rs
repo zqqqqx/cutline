@@ -90,16 +90,9 @@ pub fn copy_logo(src: &Path) -> std::result::Result<PathBuf, String> {
     Ok(dest)
 }
 
-/// Lage des Logos: oben rechts, 12 % der Projektbreite breit, Rand 4 % der kürzeren Seite (wie
-/// Bild-in-Bild in `arrange.rs`). Das Bild wird wie im Player eingepasst, `scale` wirkt darauf.
+/// Lage des Logos: oben rechts, 12 % der Projektbreite breit (Ecke wie Bild-in-Bild).
 pub fn logo_transform(pw: f32, ph: f32, iw: f32, ih: f32) -> Transform {
-    let (iw, ih) = (iw.max(1.0), ih.max(1.0));
-    let fit = (pw / iw).min(ph / ih);
-    let w = 0.12 * pw;
-    let scale = w / (iw * fit);
-    let h = ih * fit * scale;
-    let m = 0.04 * pw.min(ph);
-    Transform { x: pw / 2.0 - m - w / 2.0, y: -(ph / 2.0 - m - h / 2.0), scale, rotation_deg: 0.0 }
+    crate::arrange::in_corner(pw, ph, (iw, ih), 0.12, 1)
 }
 
 fn colors_id() -> egui::Id {

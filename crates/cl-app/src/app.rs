@@ -1977,29 +1977,7 @@ impl App {
         let Some(img) = self.import_media(vec![out]).first().copied() else {
             return;
         };
-        let mut f = Clip::new(
-            ClipContent::Media {
-                media: img,
-                kind: MediaKind::Image,
-            },
-            at,
-            Time::from_secs_f64(3.0),
-        );
-        f.transform = c.transform;
-        f.fx = ClipFx {
-            flip_h: c.fx.flip_h,
-            flip_v: c.fx.flip_v,
-            filter: c.fx.filter.clone(),
-            adjust: c.fx.adjust,
-            // Standbild aus der Quelle: die Zensur an dieser Stelle muss mit
-            censor: c
-                .fx
-                .censor
-                .iter()
-                .map(|cs| Censor { path: vec![CensorKey { t: Time::ZERO, ..cs.at(c.source_time(at)) }], track: false, ..cs.clone() })
-                .collect(),
-            ..Default::default()
-        };
+        let f = freeze_clip(&c, img, at);
         let mut ops = Vec::new();
         if at > c.start && at < c.end() {
             ops.push(EditOp::SplitClip { clip: c.id, at });
@@ -3790,6 +3768,46 @@ impl Drop for PerfSection {
             PERF_SECTIONS.with(|s| s.borrow_mut().push((self.0, t.elapsed())));
         }
     }
+}
+
+/// Standbild-Clip (3 s, Bild `img`) aus Clip `c` am Zeitpunkt `at`: gleiche Lage, gleicher
+/// Zuschnitt, Spiegeln, Filter und die Zensur an dieser Stelle.
+fn freeze_clip(c: &Clip, img: MediaId, at: Time) -> Clip {
+    let mut f = Clip::new(
+        ClipContent::Media {
+            media: img,
+            kind: MediaKind::Image,
+        },
+        at,
+        Time::from_secs_f64(3.0),
+    );
+    f.transform = c.transform;
+    f.crop = c.crop;
+    f.fx = ClipFx {
+        flip_h: c.fx.flip_h,
+        flip_v: c.fx.flip_v,
+        filter: c.fx.filter.clone(),
+        adjust: c.fx.adjust,
+        // Standbild aus der Quelle: die Zensur an dieser Stelle muss mit
+        censor: c
+            .fx
+            .censor
+            .iter()
+            .map(|cs| Censor { path: vec![CensorKey { t: Time::ZERO, ..cs.at(c.source_time(at)) }], track: false, ..cs.clone() })
+            .collect(),
+        ..Default::default()
+    };
+    f
+}
+
+/// Splitscreen-Spalte → Standbild bleibt in der Spalte (Zuschnitt geht mit)
+#[test]
+fn freeze_frame_keeps_crop() {
+    let mut c = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(5.0));
+    c.transform.scale = 1.0;
+    c.crop = Crop { left: 1.0 / 3.0, right: 1.0 / 3.0, top: 0.0, bottom: 0.0 };
+    let f = freeze_clip(&c, MediaId::new(), Time::from_secs_f64(1.0));
+    assert_eq!((f.transform, f.crop), (c.transform, c.crop));
 }
 
 /// Dauer und Abschnitte des letzten UI-Bildes (Mess-Tests)
