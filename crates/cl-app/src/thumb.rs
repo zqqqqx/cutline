@@ -282,8 +282,6 @@ pub struct ThumbWin {
     asked: Option<Want>,
     /// letzter gesehener Stand und seit wann (Entprellen)
     seen: Option<(Want, f64)>,
-    /// Dauer der letzten Vorschau
-    pub last_ms: u128,
 }
 
 impl App {
@@ -314,7 +312,6 @@ impl App {
             tex: None,
             asked: None,
             seen: None,
-            last_ms: 0,
         });
     }
 
@@ -374,7 +371,6 @@ impl App {
                     TaskDone::Run(Box::new(move |app: &mut App| {
                         if let Some(w) = app.thumb.as_mut() {
                             log::info!(target: "thumbnail", "Vorschau in {ms} ms");
-                            w.last_ms = ms;
                             w.tex = Some(ctx2.load_texture("thumb", ci, egui::TextureOptions::LINEAR));
                         }
                     }))
