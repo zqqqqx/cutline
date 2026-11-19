@@ -10,16 +10,32 @@
 **New**
 
 **Improved**
+- The exported log now has one line per playback (time to the first picture and sound, dropped frames). That makes playback problems much easier to track down.
 
 **Fixed**
+- Collapsed tracks and track heights are saved with the project.
+- Quick Actions remember the values you set, and the safe area stays on after a restart.
+- Typing a start or duration for a clip can no longer push it over its neighbour.
+- Fades shrink with the clip when a speed change or trimming makes it shorter.
+- CapCut import: nonsense numbers in a draft no longer produce broken clips.
+- Story tools: a dialogue box inserted right before another text ends where that one starts instead of failing.
+- Rolling a cut to the left works between text, image and effect clips.
 
 ### Deutsch
 
 **Neu**
 
 **Verbessert**
+- Das exportierte Protokoll enthält jetzt eine Zeile je Wiedergabe (Zeit bis zum ersten Bild und Ton, verworfene Bilder). Damit lassen sich Wiedergabe-Probleme viel leichter eingrenzen.
 
 **Behoben**
+- Eingeklappte Spuren und Spurhöhen werden mit dem Projekt gespeichert.
+- Schnellaktionen merken sich die eingestellten Werte, und die Safe-Area bleibt nach einem Neustart an.
+- Ein getippter Start oder eine getippte Dauer kann einen Clip nicht mehr über seinen Nachbarn schieben.
+- Blenden schrumpfen mit, wenn ein Clip durch Tempo oder Trimmen kürzer wird.
+- CapCut-Import: unsinnige Zahlen in einem Entwurf ergeben keine kaputten Clips mehr.
+- Story-Werkzeuge: Eine Dialogbox direkt vor einem anderen Text endet an dessen Anfang, statt zu scheitern.
+- Einen Schnitt nach links rollen klappt jetzt auch zwischen Text-, Bild- und Effekt-Clips.
 
 ## 0.12.1 – 2026-11-17
 
