@@ -655,7 +655,7 @@ impl App {
                                 }
                             });
                         }
-                        Some(PersonFx::Outline { color, width }) => {
+                        Some(PersonFx::Outline { color, width, .. }) => {
                             theme::row(ui, "Farbe", |ui| {
                                 let mut rgba = [color[0], color[1], color[2], 255];
                                 if widgets::color_button(ui, &mut rgba) {

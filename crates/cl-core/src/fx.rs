@@ -142,7 +142,13 @@ pub enum PersonFx {
     /// Hintergrund durch eine Farbe ersetzen
     ColorBackground { color: [u8; 3] },
     /// Leuchtender Umriss um die Person, Hintergrund bleibt
-    Outline { color: [u8; 3], width: f32 },
+    Outline {
+        color: [u8; 3],
+        width: f32,
+        /// Hintergrund durchsichtig: nur Umriss und Person (Ebene über einem anderen Bild)
+        #[serde(default)]
+        transparent: bool,
+    },
 }
 
 impl PersonFx {
@@ -162,6 +168,7 @@ impl PersonFx {
             2 => PersonFx::Outline {
                 color: [255, 255, 255],
                 width: 0.4,
+                transparent: false,
             },
             _ => PersonFx::BlurBackground { amount: 0.6 },
         }

@@ -983,7 +983,10 @@ pub fn fx_graph(
         }
     }
     let src = Src {
-        has_alpha: src.has_alpha || (o.matte.is_some() && !person_done) || fx.chroma.is_some(),
+        has_alpha: src.has_alpha
+            || (o.matte.is_some()
+                && (!person_done || matches!(fx.person, Some(cl_core::PersonFx::Outline { transparent: true, .. }))))
+            || fx.chroma.is_some(),
         ..src
     };
     let colour_work = !fx.adjust.is_identity()
@@ -1077,7 +1080,7 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
                 "[{bg}][{fg}]overlay=format=auto,format=rgb24[{out}]"
             ));
         }
-        PersonFx::Outline { color, width } => {
+        PersonFx::Outline { color, width, transparent } => {
             // Maske verbreitern und weich zeichnen → farbiger Saum hinter der Person
             let px =
                 (2.0 + 22.0 * width.clamp(0.0, 1.0)) * (src.w.max(src.h) as f32 / 1920.0).max(0.25);
@@ -1089,8 +1092,13 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
                 g.next_label("pbs"),
                 g.next_label("prd"),
             );
-            g.lines
-                .push(format!("[{cur}]split=3[{fg_src}][{bg_src}][{base}]"));
+            // ohne Hintergrund: der Umriss ist die Grundfläche, das Ergebnis behält Alpha
+            if *transparent {
+                g.lines.push(format!("[{cur}]split[{fg_src}][{bg_src}]"));
+            } else {
+                g.lines
+                    .push(format!("[{cur}]split=3[{fg_src}][{bg_src}][{base}]"));
+            }
             g.lines.push(format!("[{m}]split[{m1}][{m2}]"));
             g.lines.push(format!(
                 "[{m2}]format=gray,gblur=sigma={:.2},lut=y='min(255,val*4)'[{mm}]",
@@ -1101,11 +1109,17 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
                 hex(*color)
             ));
             g.lines.push(format!("[{col}][{mm}]alphamerge[{ring}]"));
-            g.lines
-                .push(format!("[{base}][{ring}]overlay=format=auto[{ringed}]"));
+            let under = if *transparent {
+                ring
+            } else {
+                g.lines
+                    .push(format!("[{base}][{ring}]overlay=format=auto[{ringed}]"));
+                ringed
+            };
             g.lines.push(format!("[{fg_src}][{m1}]alphamerge[{fg}]"));
             g.lines.push(format!(
-                "[{ringed}][{fg}]overlay=format=auto,format=rgb24[{out}]"
+                "[{under}][{fg}]overlay=format=auto,format={}[{out}]",
+                if *transparent { "rgba" } else { "rgb24" }
             ));
         }
     }

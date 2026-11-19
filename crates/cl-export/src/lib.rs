@@ -2981,11 +2981,21 @@ mod tests {
             PersonFx::Outline {
                 color: [255, 0, 0],
                 width: 0.5,
+                transparent: false,
             },
         ] {
             let p = mk(Some(pf), 1.0);
             render(&p, &ExportSettings::from_project(&p), "pf.mp4");
         }
+        // Umriss mit und ohne Hintergrund: ohne bleibt rechts (Maske schwarz) die Leinwand schwarz
+        let right = |transparent: bool| {
+            let p = mk(Some(PersonFx::Outline { color: [255, 0, 0], width: 0.5, transparent }), 1.0);
+            let out = render(&p, &ExportSettings::from_project(&p), "ring.mp4");
+            let f = cl_media::decode_frame(&out, Time::from_secs_f64(0.5), 320, 180).unwrap();
+            f.data[(90 * 320 + 300) * 4..(90 * 320 + 300) * 4 + 3].iter().map(|&v| v as u32).sum::<u32>()
+        };
+        assert!(right(false) > 60, "mit Hintergrund ist rechts das Bild");
+        assert!(right(true) < 30, "ohne Hintergrund ist rechts die schwarze Leinwand");
         // Transparenter Export: freigestellt ohne Personen-Effekt → Alpha in MOV und WebM
         let p = mk(None, 1.0);
         for (fmt, codec, name) in [
