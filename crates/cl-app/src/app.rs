@@ -423,6 +423,7 @@ impl App {
         } else {
             Screen::Home
         };
+        let last_used = crate::quick::load_last_used();
         let mut app = Self {
             doc: Arc::new(Mutex::new(Document::new(project.clone()))),
             project,
@@ -475,9 +476,9 @@ impl App {
             multicam: None,
             shorts: None,
             aspect_fit: None,
-            safe_area: false,
+            safe_area: last_used.1,
             multicam_audio: 0,
-            quick: Default::default(),
+            quick: last_used.0,
             characters: crate::story::load(),
             stock: Default::default(),
             last_backup: None,

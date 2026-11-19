@@ -28,10 +28,11 @@ pub enum EditOp {
         hidden: bool,
         muted: bool,
     },
-    /// Spur in der Zeitleiste ein- oder ausklappen (wird mit dem Projekt gespeichert)
-    SetTrackCollapsed {
+    /// Darstellung der Spur in der Zeitleiste: eingeklappt, Höhenfaktor (wird mit dem Projekt gespeichert)
+    SetTrackView {
         track: TrackId,
         collapsed: bool,
+        height: f32,
     },
     /// `track = None`: passende Spur automatisch wählen (Video → Hauptspur).
     AddClip {
@@ -193,8 +194,7 @@ impl EditOp {
             EditOp::ImportMedia { .. } => "Medium importieren",
             EditOp::AddTrack { .. } => "Spur hinzufügen",
             EditOp::SetTrackFlags { .. } => "Spur-Eigenschaften",
-            EditOp::SetTrackCollapsed { collapsed: true, .. } => "Spur einklappen",
-            EditOp::SetTrackCollapsed { .. } => "Spur ausklappen",
+            EditOp::SetTrackView { .. } => "Spuransicht",
             EditOp::AddClip { .. } => "Clip hinzufügen",
             EditOp::RemoveClip { .. } => "Clip löschen",
             EditOp::SplitClip { .. } => "Teilen",
@@ -265,8 +265,11 @@ impl EditOp {
                 t.muted = muted;
                 Ok(OpOutput::None)
             }
-            EditOp::SetTrackCollapsed { track, collapsed } => {
-                track_mut(p, track)?.collapsed = collapsed;
+            EditOp::SetTrackView { track, collapsed, height } => {
+                let t = track_mut(p, track)?;
+                t.collapsed = collapsed;
+                // Werte von außen (MCP) machen keine unsichtbare oder riesige Spur
+                t.height = height.clamp(0.5, 3.0);
                 Ok(OpOutput::None)
             }
             EditOp::AddClip { track, clip } => add_clip(p, track, clip, None),

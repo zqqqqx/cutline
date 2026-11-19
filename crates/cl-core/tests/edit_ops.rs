@@ -13,7 +13,7 @@ fn variant(op: &EditOp) -> &'static str {
         EditOp::ImportMedia { .. } => "ImportMedia",
         EditOp::AddTrack { .. } => "AddTrack",
         EditOp::SetTrackFlags { .. } => "SetTrackFlags",
-        EditOp::SetTrackCollapsed { .. } => "SetTrackCollapsed",
+        EditOp::SetTrackView { .. } => "SetTrackView",
         EditOp::AddClip { .. } => "AddClip",
         EditOp::RemoveClip { .. } => "RemoveClip",
         EditOp::SplitClip { .. } => "SplitClip",
@@ -66,7 +66,7 @@ fn every_op_applies_undoes_and_redoes_exactly() {
         Box::new(|_| EditOp::ImportMedia { media: media(MediaKind::Video, 3.0) }),
         Box::new(|_| EditOp::AddTrack { kind: TrackKind::Sticker }),
         Box::new(move |p| EditOp::SetTrackFlags { track: track_of(p, a1), locked: false, hidden: true, muted: true }),
-        Box::new(move |p| EditOp::SetTrackCollapsed { track: track_of(p, a1), collapsed: true }),
+        Box::new(move |p| EditOp::SetTrackView { track: track_of(p, a1), collapsed: true, height: 1.5 }),
         Box::new(move |_| EditOp::AddClip { track: None, clip: media_clip(&audio, 10.0, 1.0) }),
         Box::new(move |_| EditOp::RemoveClip { clip: t2 }),
         Box::new(move |_| EditOp::SplitClip { clip: v1, at: s(2.0) }),
@@ -541,6 +541,22 @@ fn collapsed_track_survives_save_and_old_projects_load() {
     let open = serde_json::to_string(&t).unwrap();
     assert!(!open.contains("collapsed"), "{open}");
     assert!(!serde_json::from_str::<Track>(&open).unwrap().collapsed);
+    assert!(!open.contains("height"), "{open}");
+    assert_eq!(serde_json::from_str::<Track>(&open).unwrap().height, 1.0);
     t.collapsed = true;
-    assert!(serde_json::from_str::<Track>(&serde_json::to_string(&t).unwrap()).unwrap().collapsed);
+    t.height = 2.2;
+    let back: Track = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();
+    assert!(back.collapsed && back.height == 2.2);
+}
+
+/// Unsinnige Höhen (von außen über MCP) werden begrenzt statt eine unsichtbare Spur zu ergeben
+#[test]
+fn track_height_is_limited() {
+    let mut d = Document::new(Project::new("x"));
+    let Ok(OpOutput::Track(t)) = d.apply(EditOp::AddTrack { kind: TrackKind::Video }, OpSource::Ui) else { panic!() };
+    assert!(d.apply(EditOp::SetTrackView { track: t, collapsed: false, height: f32::NAN }, OpSource::Ui).is_err());
+    for (given, want) in [(0.0, 0.5), (99.0, 3.0), (1.5, 1.5)] {
+        d.apply(EditOp::SetTrackView { track: t, collapsed: false, height: given }, OpSource::Ui).unwrap();
+        assert_eq!(d.project().timeline.tracks.iter().find(|x| x.id == t).unwrap().height, want);
+    }
 }

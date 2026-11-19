@@ -310,6 +310,13 @@ pub struct Track {
     /// In der Zeitleiste eingeklappt (schmal, bleibt sichtbar)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub collapsed: bool,
+    /// Höhenfaktor in der Zeitleiste (1 = normal)
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub height: f32,
+}
+
+fn is_one(v: &f32) -> bool {
+    *v == 1.0
 }
 
 impl Track {
@@ -324,6 +331,7 @@ impl Track {
             clips: Vec::new(),
             name: None,
             collapsed: false,
+            height: 1.0,
         }
     }
     pub fn end(&self) -> Time {

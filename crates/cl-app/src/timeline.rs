@@ -737,8 +737,6 @@ pub struct TimelineState {
     pub vscroll: f32,
     drag: Drag,
     ctx: Option<CtxTarget>,
-    /// Höhenfaktor je Spur (Rechtsklick → Spurhöhe)
-    pub heights: HashMap<TrackId, f32>,
     last_click: Option<Pos2>,
     /// Playhead im letzten Bild (Sprünge per Taste → Ansicht folgt)
     last_playhead: Option<Time>,
@@ -808,7 +806,6 @@ impl Default for TimelineState {
             vscroll: 0.0,
             drag: Drag::None,
             ctx: None,
-            heights: HashMap::new(),
             last_click: None,
             last_playhead: None,
             tool: Tool::Select,
@@ -1002,7 +999,7 @@ impl App {
         } else {
             ROW_H
         };
-        base * self.timeline.heights.get(&t.id).copied().unwrap_or(1.0)
+        base * t.height
     }
 
     pub fn timeline_panel(&mut self, ui: &mut egui::Ui) {
@@ -3715,14 +3712,14 @@ impl App {
                     (icon::CARET_UP, "Spur einklappen")
                 };
                 if menu_item(ui, g, label, "") {
-                    self.apply(EditOp::SetTrackCollapsed { track: tid, collapsed: !folded });
+                    self.apply(EditOp::SetTrackView { track: tid, collapsed: !folded, height: tr.height });
                 }
                 theme::submenu(
                     ui,
                     icon::ARROWS_VERTICAL,
                     "Spurhöhe",
                     |ui| {
-                        let cur = self.timeline.heights.get(&tid).copied().unwrap_or(1.0);
+                        let cur = tr.height;
                         for (n, f) in [
                             ("Klein", 0.7f32),
                             ("Normal", 1.0),
@@ -3733,7 +3730,7 @@ impl App {
                                 .selectable_label((cur - f).abs() < 0.01, crate::tr(n))
                                 .clicked()
                             {
-                                self.timeline.heights.insert(tid, f);
+                                self.apply(EditOp::SetTrackView { track: tid, collapsed: tr.collapsed, height: f });
                                 ui.close_menu();
                             }
                         }

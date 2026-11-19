@@ -2349,6 +2349,7 @@ impl App {
         let sa = if self.safe_area { icon::CHECK } else { icon::DEVICE_MOBILE };
         if menu_item(ui, sa, "Safe-Area", "") {
             self.safe_area = !self.safe_area;
+            self.save_last_used();
         }
     }
 

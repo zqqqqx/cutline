@@ -30,8 +30,12 @@ pub struct Hit {
     pub on: bool,
 }
 
-/// Fensterzustand und zuletzt benutzte Werte (Standard = die früheren festen Werte)
+/// Fensterzustand und zuletzt benutzte Werte (Standard = die früheren festen Werte). Die Werte
+/// überleben den Neustart (`last-used.json`), der Fensterzustand nicht.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Quick {
+    #[serde(skip)]
     pub open: Option<QuickKind>,
     pub thresh_db: f32,
     pub min_pause: f32,
@@ -43,12 +47,59 @@ pub struct Quick {
     pub zoom: f32,
     pub zoom_dur: f32,
     pub whole_track: bool,
+    #[serde(skip)]
     pub hits: Option<Vec<Hit>>,
     /// Projektstand der Analyse: ändert sich das Projekt, ist die Liste veraltet
+    #[serde(skip)]
     hits_rev: u64,
     /// Analysierte Clipbereiche (Spur, von, bis): außerhalb gilt eine Spur als still
+    #[serde(skip)]
     cover: Vec<(TrackId, Time, Time)>,
+    #[serde(skip)]
     confirm_replace: bool,
+}
+
+/// Zuletzt benutzte Werte aus `text` (Inhalt von `last-used.json`): Schnellaktionen und Safe-Area.
+/// Fehlt etwas oder ist die Datei kaputt, gilt dafür der Standard.
+pub fn last_used(text: &str) -> (Quick, bool) {
+    let v: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
+    (serde_json::from_value(v["quick"].clone()).unwrap_or_default(), v["safe_area"].as_bool().unwrap_or(false))
+}
+
+fn last_used_path() -> PathBuf {
+    crate::paths::data_dir().join("last-used.json")
+}
+
+pub fn load_last_used() -> (Quick, bool) {
+    last_used(&std::fs::read_to_string(last_used_path()).unwrap_or_default())
+}
+
+impl App {
+    pub fn save_last_used(&self) {
+        let text = serde_json::json!({ "quick": self.quick, "safe_area": self.safe_area }).to_string();
+        let _ = crate::paths::write_atomic(&last_used_path(), text);
+    }
+
+    fn close_quick(&mut self) {
+        self.quick.open = None;
+        self.save_last_used();
+    }
+}
+
+/// Eingestellte Werte der Schnellaktionen und die Safe-Area gingen beim Neustart verloren
+#[test]
+fn last_used_values_survive_a_restart() {
+    let q = Quick { thresh_db: -40.0, words: "also".into(), whole_track: true, open: Some(QuickKind::Pauses), ..Default::default() };
+    let text = serde_json::json!({ "quick": q, "safe_area": true }).to_string();
+    let (back, safe) = last_used(&text);
+    assert!(safe && back.thresh_db == -40.0 && back.words == "also" && back.whole_track);
+    assert!(back.open.is_none(), "das Fenster geht nicht von selbst wieder auf");
+    assert_eq!(back.min_pause, Quick::default().min_pause);
+    // kaputte oder leere Datei: Standard statt Absturz
+    for bad in ["", "{", r#"{"quick": 7, "safe_area": "ja"}"#] {
+        let (d, safe) = last_used(bad);
+        assert!(!safe && d.thresh_db == Quick::default().thresh_db, "{bad}");
+    }
 }
 
 impl Default for Quick {
@@ -416,23 +467,23 @@ impl App {
         }
         if x {
             self.quick.confirm_replace = false;
-            self.quick.open = None;
+            self.close_quick();
         } else if main && no_model {
             // wie bei den Untertiteln: Einstellungen → Modelle
-            self.quick.open = None;
+            self.close_quick();
             self.settings_section = crate::settings::Section::Models;
             self.settings_open = true;
         } else if close {
             if self.quick.confirm_replace {
                 self.quick.confirm_replace = false;
             } else {
-                self.quick.open = None;
+                self.close_quick();
             }
         } else if main && !busy {
             if analyzes && self.quick.hits.is_none() {
                 self.quick_analyze(ctx, kind);
             } else if self.quick_apply(ctx, kind) {
-                self.quick.open = None;
+                self.close_quick();
             }
         }
     }
