@@ -132,15 +132,24 @@ pub struct Gizmo {
     guides_y: Vec<f32>,
 }
 
-/// Halbe Breite/Höhe der achsparallelen Hülle eines (gedrehten) Elements in Bildschirmpixeln.
-fn half_extent(r: &Region) -> Vec2 {
-    let pts = [r.corner(-1.0, -1.0), r.corner(1.0, -1.0), r.corner(1.0, 1.0), r.corner(-1.0, 1.0)];
-    let (mut w, mut h) = (0.0f32, 0.0f32);
-    for p in pts {
-        w = w.max((p.x - r.center.x).abs());
-        h = h.max((p.y - r.center.y).abs());
+/// Achsparallele Hülle des sichtbaren (zugeschnittenen, gedrehten) Bereichs relativ zu
+/// `r.center` in Bildschirmpixeln: (min, max).
+fn vis_bounds(r: &Region) -> (Vec2, Vec2) {
+    let (mut lo, mut hi) = (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY));
+    for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+        let d = r.vis_corner(sx, sy) - r.center;
+        lo = lo.min(d);
+        hi = hi.max(d);
     }
-    vec2(w, h)
+    (lo, hi)
+}
+
+/// Merkmale fürs Einrasten in Projektpixeln, wenn die Clipmitte bei `at` liegt:
+/// Kanten und Mitte des sichtbaren Bereichs, je (x, y).
+fn snap_feats(r: &Region, at: Vec2, px_per_unit: f32) -> ([f32; 3], [f32; 3]) {
+    let (lo, hi) = vis_bounds(r);
+    let (lo, hi) = (at + lo / px_per_unit, at + hi / px_per_unit);
+    ([lo.x, (lo.x + hi.x) / 2.0, hi.x], [lo.y, (lo.y + hi.y) / 2.0, hi.y])
 }
 
 /// Bester Versatz, der eines der Merkmale `feats` an einen Kandidaten `cands` bringt
@@ -272,20 +281,19 @@ impl App {
                     t.y = start.y + d.y;
                     if let (Some(r), false) = (reg, free) {
                         // Kanten und Mitte an Bildrand, Mitte, Dritteln und anderen Elementen
-                        let he = half_extent(&r) / px_per_unit;
+                        let (fx, fy) = snap_feats(&r, vec2(t.x, t.y), px_per_unit);
                         let mut cx = vec![-pw / 2.0, -pw / 6.0, 0.0, pw / 6.0, pw / 2.0];
                         let mut cy = vec![-ph / 2.0, -ph / 6.0, 0.0, ph / 6.0, ph / 2.0];
                         for o in regions.iter().filter(|o| o.clip != clip) {
-                            let oc = (o.center - canvas.center()) / px_per_unit;
-                            let oe = half_extent(o) / px_per_unit;
-                            cx.extend([oc.x - oe.x, oc.x, oc.x + oe.x]);
-                            cy.extend([oc.y - oe.y, oc.y, oc.y + oe.y]);
+                            let (ox, oy) = snap_feats(o, (o.center - canvas.center()) / px_per_unit, px_per_unit);
+                            cx.extend(ox);
+                            cy.extend(oy);
                         }
-                        if let Some((dx, line)) = best_snap(&[t.x - he.x, t.x, t.x + he.x], &cx, tol) {
+                        if let Some((dx, line)) = best_snap(&fx, &cx, tol) {
                             t.x += dx;
                             self.gizmo.guides_x.push(line);
                         }
-                        if let Some((dy, line)) = best_snap(&[t.y - he.y, t.y, t.y + he.y], &cy, tol) {
+                        if let Some((dy, line)) = best_snap(&fy, &cy, tol) {
                             t.y += dy;
                             self.gizmo.guides_y.push(line);
                         }
@@ -298,22 +306,28 @@ impl App {
                         if !free {
                             // Kanten am Bildrand einrasten, außerdem bei 100 %
                             let cur = self.gizmo.live.map(|l| l.1.scale).unwrap_or(start.scale).max(0.001);
-                            let base = half_extent(&r) / px_per_unit / cur;
+                            let (lo, hi) = vis_bounds(&r);
+                            let (lo, hi) = (lo / px_per_unit / cur, hi / px_per_unit / cur);
+                            let reach = (-lo).max(hi).max_elem();
                             let raw = t.scale;
                             let mut best: Option<(f32, Option<(bool, f32)>)> = None;
                             let mut consider = |sc: f32, line: Option<(bool, f32)>| {
-                                let near = ((sc - raw) * base.x.max(base.y) * px_per_unit).abs() <= SNAP_PX;
+                                let near = ((sc - raw) * reach * px_per_unit).abs() <= SNAP_PX;
                                 if sc > 0.02 && near && best.is_none_or(|(b, _)| (sc - raw).abs() < (b - raw).abs()) {
                                     best = Some((sc, line));
                                 }
                             };
-                            if base.x > 0.0 {
-                                consider((pw / 2.0 - t.x) / base.x, Some((true, pw / 2.0)));
-                                consider((pw / 2.0 + t.x) / base.x, Some((true, -pw / 2.0)));
+                            if hi.x > 0.0 {
+                                consider((pw / 2.0 - t.x) / hi.x, Some((true, pw / 2.0)));
                             }
-                            if base.y > 0.0 {
-                                consider((ph / 2.0 - t.y) / base.y, Some((false, ph / 2.0)));
-                                consider((ph / 2.0 + t.y) / base.y, Some((false, -ph / 2.0)));
+                            if lo.x < 0.0 {
+                                consider((pw / 2.0 + t.x) / -lo.x, Some((true, -pw / 2.0)));
+                            }
+                            if hi.y > 0.0 {
+                                consider((ph / 2.0 - t.y) / hi.y, Some((false, ph / 2.0)));
+                            }
+                            if lo.y < 0.0 {
+                                consider((ph / 2.0 + t.y) / -lo.y, Some((false, -ph / 2.0)));
                             }
                             consider(1.0, None);
                             if let Some((sc, line)) = best {
@@ -471,7 +485,7 @@ impl App {
                 let g = painter.layout_no_wrap(b, egui::FontId::proportional(theme::FS_UI), Color32::BLACK);
                 let top = pts.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
                 let br = Rect::from_center_size(
-                    pos2(r.center.x, top - 16.0),
+                    pos2((pts[0].x + pts[2].x) / 2.0, top - 16.0),
                     g.size() + vec2(12.0, 6.0),
                 );
                 painter.rect_filled(br, 9.0, Color32::from_white_alpha(235)); // Pille: Radius = halbe Höhe
@@ -547,6 +561,33 @@ mod tests {
             _ => panic!("Eckgriff"),
         }
         assert!(matches!(handle_at(&r, false, r.crop_handle(2)), Some(Mode::Scale { .. })));
+    }
+
+    /// Einrasten nach dem sichtbaren Teil: links 50 % weg, sichtbare linke Kante an den Bildrand,
+    /// sichtbare Mitte an die Bildmitte; ohne Zuschnitt Kanten bei ±halber Breite. Auch gedreht.
+    #[test]
+    fn move_snaps_to_the_visible_part() {
+        let cands = [-200.0, 0.0, 200.0]; // Bild 400 breit, 1 Bildschirmpixel = 1 Projektpixel
+        let half = Crop { left: 0.5, ..Default::default() };
+        let r = region(pos2(0.0, 0.0), vec2(200.0, 100.0), 0.0, half);
+        // sichtbar: 0..100 rechts der Clipmitte
+        let (fx, fy) = snap_feats(&r, vec2(-198.0, 0.0), 1.0);
+        assert_eq!(fx, [-198.0, -148.0, -98.0]);
+        assert_eq!(fy, [-50.0, 0.0, 50.0]);
+        assert_eq!(best_snap(&fx, &cands, 10.0), Some((-2.0, -200.0)));
+        let (fx, _) = snap_feats(&r, vec2(-48.0, 0.0), 1.0);
+        assert_eq!(best_snap(&fx, &cands, 10.0), Some((-2.0, 0.0)));
+        // ohne Zuschnitt wie bisher
+        let full = region(pos2(0.0, 0.0), vec2(200.0, 100.0), 0.0, Crop::default());
+        let (fx, fy) = snap_feats(&full, vec2(-98.0, 3.0), 1.0);
+        assert_eq!(fx, [-198.0, -98.0, 2.0]);
+        assert_eq!(fy, [-47.0, 3.0, 53.0]);
+        // um 90° gedreht und doppelte Bildschirmgröße: sichtbar ist die untere Hälfte (y 0..200 px)
+        let rot = region(pos2(0.0, 0.0), vec2(400.0, 200.0), std::f32::consts::FRAC_PI_2, half);
+        let (fx, fy) = snap_feats(&rot, vec2(0.0, 0.0), 2.0);
+        let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-3);
+        assert!(close(fx, [-50.0, 0.0, 50.0]), "{fx:?}");
+        assert!(close(fy, [0.0, 50.0, 100.0]), "{fy:?}");
     }
 
     fn near_pos(a: Pos2, b: Pos2) -> bool {
