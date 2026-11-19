@@ -141,7 +141,7 @@ pub const QUEUE_MAX: usize = 20;
 /// Export-Auftrag: Abbild des Projekts beim Einreihen, damit Weiterschneiden oder ein
 /// Projektwechsel ihn nicht mehr verändern.
 struct Queued {
-    project: Project,
+    project: Arc<Project>,
     /// Projektdatei (Zuordnung in der Exporte-Liste)
     project_path: Option<PathBuf>,
     /// Einstellungen beim Einreihen (Fingerabdruck für „Erneut exportieren“)
@@ -546,7 +546,7 @@ impl ExportDialog {
     /// Laufenden Export weiterverfolgen (jedes Bild, auch auf der Startseite und bei geschlossenem
     /// Dialog) und danach den nächsten wartenden starten. Gibt eine Meldung für einen Toast zurück,
     /// wenn ein Export fertig ist, bei Erfolg mit dem Projekt-Abbild, aus dem er stammt.
-    pub fn poll(&mut self, ctx: &egui::Context) -> Option<(String, Option<Project>)> {
+    pub fn poll(&mut self, ctx: &egui::Context) -> Option<(String, Option<Arc<Project>>)> {
         let mut toast = None;
         let finished = self.running.as_ref().map(|r| {
             let cancelled = r.cancel.load(Ordering::Relaxed);
@@ -1021,7 +1021,7 @@ impl ExportDialog {
             self.done = None;
             let out = self.output_path(s.format);
             self.queue.push_back(Queued {
-                project: p.clone(),
+                project: Arc::new(p.clone()),
                 project_path: self.project_path.clone(),
                 settings: s.clone(),
                 sidecars: sidecars(p, &s, self.also_srt, &out),
@@ -1423,7 +1423,7 @@ fn live_preview_reload_blend_and_partial_jpeg() {
 #[cfg(test)]
 fn queued(p: &Project, out: &Path) -> Queued {
     Queued {
-        project: p.clone(),
+        project: Arc::new(p.clone()),
         project_path: None,
         settings: ExportSettings::from_project(p),
         out: out.to_path_buf(),
@@ -1544,7 +1544,7 @@ fn queue_takes_turns_names_limit_and_keeps_its_snapshot() {
     let mut changed = p.clone();
     changed.name = "geändert".into();
     frame(&mut d, &ctx, &changed, false);
-    assert!(d.queue.iter().all(|q| q.project == p));
+    assert!(d.queue.iter().all(|q| *q.project == p));
     // einzelnen wartenden entfernen
     d.queue.push_back(queued(&p, &dir.path().join("c.mp4")));
     d.remove_waiting(Some(1));
