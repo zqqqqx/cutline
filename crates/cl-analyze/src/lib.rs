@@ -48,8 +48,8 @@ pub static CATALOG: &[ModelInfo] = &[
         about: "Beste Spracherkennung für Deutsch und 24 weitere europäische Sprachen, Wort-genaue Zeiten (NVIDIA, CC-BY-4.0)",
         size_mb: 670,
         files: &[
-            ("parakeet-tdt-0.6b-v3/config.json", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/config.json"),
-            ("parakeet-tdt-0.6b-v3/vocab.txt", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/vocab.txt"),
+            ("parakeet-tdt-0.6b-v3/config.json", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/config.json#sha256=666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466"),
+            ("parakeet-tdt-0.6b-v3/vocab.txt", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/vocab.txt#sha256=d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"),
             ("parakeet-tdt-0.6b-v3/nemo128.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/nemo128.onnx#sha256=a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f"),
             ("parakeet-tdt-0.6b-v3/decoder_joint-model.int8.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/decoder_joint-model.int8.onnx#sha256=eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70"),
             ("parakeet-tdt-0.6b-v3/encoder-model.int8.onnx", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/encoder-model.int8.onnx#sha256=6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09"),
@@ -67,7 +67,7 @@ pub static CATALOG: &[ModelInfo] = &[
         name: "RobustVideoMatting",
         about: "Personen freistellen ohne Greenscreen (GPL-3.0)",
         size_mb: 15,
-        files: &[("rvm_mobilenetv3_fp32.onnx", "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx")],
+        files: &[("rvm_mobilenetv3_fp32.onnx", "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx#sha256=88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828")],
     },
 ];
 
@@ -267,6 +267,18 @@ pub fn gray_frames(
     }
     let _ = child.wait();
     Ok(n)
+}
+
+/// Jede Datei des Katalogs wird nach dem Laden gegen eine SHA-256-Summe geprüft (`#sha256=` an der
+/// Adresse, ausgewertet von `cl_update::download_to`) – eine neue Datei ohne Summe fällt hier auf.
+#[test]
+fn every_model_file_has_a_checksum() {
+    for m in CATALOG {
+        for (name, url) in m.files {
+            let sum = url.rsplit_once("#sha256=").map(|(_, h)| h).unwrap_or("");
+            assert!(sum.len() == 64 && sum.bytes().all(|b| b.is_ascii_hexdigit()), "{}: {name} ohne Prüfsumme", m.id);
+        }
+    }
 }
 
 #[cfg(test)]
