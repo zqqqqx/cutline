@@ -40,6 +40,11 @@ fn is_video(c: &Clip) -> bool {
 }
 
 /// Quellbild ↔ Anzeige (gespiegelt wie im Player); in beide Richtungen dieselbe Rechnung.
+/// Aufgaben-Schlüssel der Verfolgung einer Fläche (über ihre Kennung, nicht die Listenstelle).
+fn censor_task(clip: ClipId, id: CensorId) -> String {
+    format!("censor:{clip}:{}", id.0)
+}
+
 fn censor_flip(c: &Clip, k: CensorKey) -> CensorKey {
     let f = |v: f32, on: bool| if on { 1.0 - v } else { v };
     CensorKey { cx: f(k.cx, c.fx.flip_h), cy: f(k.cy, c.fx.flip_v), ..k }
@@ -1209,21 +1214,22 @@ impl App {
         let k = CensorKey { t, cx: bx.cx, cy: bx.cy, w: bx.w, h: bx.h };
         let mut cs = c.fx.censor.last().cloned().unwrap_or(Censor { track: true, ..Default::default() });
         cs.path = vec![censor_flip(&c, k).grown(CENSOR_PAD)];
-        let track = cs.track && is_video(&c);
+        cs.id = CensorId::default();
+        let (track, id) = (cs.track && is_video(&c), cs.id);
         c.fx.censor.push(cs);
-        let i = c.fx.censor.len() - 1;
         self.live = None;
         self.apply(EditOp::ReplaceClip { clip: c });
         if track {
-            self.start_censor_tracking(ctx, clip, i);
+            self.start_censor_tracking(ctx, clip, id);
         }
     }
 
-    /// Motiv der Fläche `i` ab der Lage am Playhead über den ganzen Clip verfolgen.
-    fn start_censor_tracking(&mut self, ctx: &egui::Context, clip: ClipId, i: usize) {
+    /// Motiv der Fläche `id` ab der Lage am Playhead über den ganzen Clip verfolgen.
+    fn start_censor_tracking(&mut self, ctx: &egui::Context, clip: ClipId, id: CensorId) {
         let Some(c) = self.clip_view(clip) else { return };
         let ClipContent::Media { media, .. } = c.content else { return };
-        let (Some(m), Some(cs)) = (self.project.media(media).cloned(), c.fx.censor.get(i)) else {
+        let cs = c.fx.censor.iter().find(|cs| cs.id.0 == id.0);
+        let (Some(m), Some(cs)) = (self.project.media(media).cloned(), cs) else {
             return;
         };
         let at = c.source_time(self.playhead.clamp(c.start, c.end()));
@@ -1231,7 +1237,7 @@ impl App {
         let init = cl_analyze::track::BoxN { cx: k.cx, cy: k.cy, w: k.w / CENSOR_PAD, h: k.h / CENSOR_PAD };
         let (a, b) = (c.source_time(c.start), c.source_time(c.end()));
         let (s0, s1) = (a.min(b).as_secs_f64(), a.max(b).as_secs_f64());
-        self.tasks.spawn(ctx, format!("censor:{clip}:{i}"), "Zensur wird verfolgt …", move |p, cancel| {
+        self.tasks.spawn(ctx, censor_task(clip, id), "Zensur wird verfolgt …", move |p, cancel| {
             match cl_analyze::track::track_box(&m.path, m.width, m.height, s0, s1 - s0, at.as_secs_f64(), init, p, cancel) {
                 Ok(_) if cancel.load(std::sync::atomic::Ordering::Relaxed) => TaskDone::Run(Box::new(|_| {})),
                 Ok(boxes) => {
@@ -1240,22 +1246,45 @@ impl App {
                         .map(|(t, b)| CensorKey { t: Time::from_secs_f64(*t), cx: b.cx, cy: b.cy, w: b.w, h: b.h })
                         .collect();
                     let path = censor_simplify(&keys);
-                    TaskDone::Run(Box::new(move |app: &mut App| {
-                        let Some(mut c) = app.clip_view(clip) else { return };
-                        let Some(cs) = c.fx.censor.get_mut(i).filter(|cs| cs.track) else { return };
-                        if path.is_empty() {
-                            return;
-                        }
-                        cs.path = path;
-                        let n = cs.path.len();
-                        app.live = None;
-                        app.apply(EditOp::ReplaceClip { clip: c });
-                        app.toast(format!("Zensur verfolgt ({n} Keyframes)"));
-                    }))
+                    TaskDone::Run(Box::new(move |app: &mut App| app.censor_tracked(media, id, path)))
                 }
                 Err(e) => TaskDone::Failed(e),
             }
         });
+    }
+
+    /// Ergebnis der Verfolgung von Fläche `id` eintragen – in jedem Clip dieses Mediums, der sie
+    /// (noch) hat und sie verfolgt: Nach dem Teilen gehört sie beiden Hälften, die Bahn liegt in
+    /// Quellzeit. Gibt es die Fläche nicht mehr (entfernt, rückgängig, Clip gelöscht) oder ist
+    /// „Verfolgen“ aus, wird das Ergebnis verworfen.
+    fn censor_tracked(&mut self, media: MediaId, id: CensorId, path: Vec<CensorKey>) {
+        if path.is_empty() {
+            return;
+        }
+        let ids: Vec<ClipId> = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .filter(|c| matches!(c.content, ClipContent::Media { media: m, .. } if m == media))
+            .map(|c| c.id)
+            .collect();
+        let ops: Vec<EditOp> = ids
+            .into_iter()
+            .filter_map(|clip| {
+                let mut c = self.clip_view(clip)?;
+                let cs = c.fx.censor.iter_mut().find(|cs| cs.id.0 == id.0 && cs.track)?;
+                cs.path = path.clone();
+                Some(EditOp::ReplaceClip { clip: c })
+            })
+            .collect();
+        if ops.is_empty() {
+            return;
+        }
+        self.live = None;
+        self.apply(EditOp::Batch { label: "Zensur verfolgt".into(), ops });
+        self.toast(format!("Zensur verfolgt ({} Keyframes)", path.len()));
     }
 
     /// Abschnitt „Zensur“ im Reiter „Smart“: Einstellungen je Fläche und „Zensieren …“.
@@ -1265,6 +1294,7 @@ impl App {
         let now = c.source_time(self.playhead.clamp(c.start, c.end()));
         let (mut remove, mut track) = (None, None);
         for (i, cs) in c.fx.censor.iter_mut().enumerate() {
+            let key = censor_task(c.id, cs.id);
             if i > 0 {
                 ui.add_space(8.0);
             }
@@ -1290,16 +1320,16 @@ impl App {
                 if widgets::toggle_row(ui, "Verfolgen", &mut on) {
                     cs.track = on;
                     if on {
-                        track = Some(i);
+                        track = Some(cs.id);
                     } else {
-                        if let Some(t) = self.tasks.running(&format!("censor:{}:{i}", c.id)) {
+                        if let Some(t) = self.tasks.running(&key) {
                             t.cancel();
                         }
                         cs.path = vec![CensorKey { t: now, ..cs.at(now) }];
                     }
                     e.commit = true;
                 }
-                task_bar(ui, self, &format!("censor:{}:{i}", c.id));
+                task_bar(ui, self, &key);
             }
             ui.horizontal(|ui| {
                 ui.add_space(theme::LABEL_W + 6.0);
@@ -1309,16 +1339,16 @@ impl App {
             });
         }
         if let Some(i) = remove {
-            if let Some(t) = self.tasks.running(&format!("censor:{}:{i}", c.id)) {
+            if let Some(t) = self.tasks.running(&censor_task(c.id, c.fx.censor[i].id)) {
                 t.cancel();
             }
             c.fx.censor.remove(i);
             e.commit = true;
         }
-        if let Some(i) = track {
+        if let Some(id) = track {
             // liest die Fläche aus dem Projekt; das Ergebnis gilt nur, wenn „Verfolgen“ dann an ist
             let ctx = ui.ctx().clone();
-            self.start_censor_tracking(&ctx, c.id, i);
+            self.start_censor_tracking(&ctx, c.id, id);
         }
         ui.add_space(4.0);
         let picking = self.pick == Some(Pick::Censor(c.id));
@@ -1727,6 +1757,104 @@ mod tests {
         let mut other = app.clip_view(id).unwrap();
         look.apply(&mut other);
         assert_eq!(other.fx.censor.len(), 2);
+    }
+
+    /// Das Ergebnis einer Verfolgung findet seine Fläche über die Kennung, nicht die Listenstelle:
+    /// Entfernen davor/dahinter, Rückgängig, Teilen und Löschen des Clips während der Verfolgung.
+    #[test]
+    fn censor_tracking_result_goes_to_its_own_area() {
+        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        let m = MediaRef {
+            id: MediaId::new(),
+            path: "film.mp4".into(),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(10.0),
+            width: 640,
+            height: 360,
+            fps: None,
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: None,
+            audio_codec: None,
+        };
+        let media = m.id;
+        let c = Clip::new(ClipContent::Media { media, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0));
+        let clip = c.id;
+        let mut p = Project::new("Zensur");
+        let mut t = Track::new(TrackKind::Video);
+        t.clips.push(c);
+        p.media.push(m);
+        p.timeline.tracks.push(t);
+        let key = |x: f32| CensorKey { t: Time::ZERO, cx: x, cy: 0.5, w: 0.1, h: 0.1 };
+        let tracked = vec![key(0.9), CensorKey { t: Time::from_secs_f64(2.0), ..key(0.95) }];
+        let fresh = |app: &mut App| {
+            let mut p = p.clone();
+            p.timeline.tracks[0].clips[0].fx.censor = [0.1, 0.2, 0.3]
+                .map(|x| Censor { track: true, path: vec![key(x)], ..Default::default() })
+                .to_vec();
+            app.set_doc(p);
+            app.clip_view(clip).unwrap().fx.censor.iter().map(|cs| cs.id).collect::<Vec<_>>()
+        };
+        let xs = |app: &App, clip: ClipId| {
+            app.clip_view(clip).unwrap().fx.censor.iter().map(|cs| (cs.path.len(), cs.path[0].cx)).collect::<Vec<_>>()
+        };
+        let remove = |app: &mut App, i: usize| {
+            let mut c = app.clip_view(clip).unwrap();
+            c.fx.censor.remove(i);
+            app.apply(EditOp::ReplaceClip { clip: c });
+        };
+        // B wird verfolgt, A davor entfernt: B (jetzt Stelle 0) bekommt die Bahn, C bleibt
+        let ids = fresh(&mut app);
+        remove(&mut app, 0);
+        app.censor_tracked(media, ids[1], tracked.clone());
+        assert_eq!(xs(&app, clip), vec![(2, 0.9), (1, 0.3)]);
+        // C dahinter entfernt
+        let ids = fresh(&mut app);
+        remove(&mut app, 2);
+        app.censor_tracked(media, ids[1], tracked.clone());
+        assert_eq!(xs(&app, clip), vec![(1, 0.1), (2, 0.9)]);
+        // B selbst entfernt: Ergebnis verworfen, kein Verlaufsschritt
+        let ids = fresh(&mut app);
+        remove(&mut app, 1);
+        let rev = app.doc.lock().unwrap().revision();
+        app.censor_tracked(media, ids[1], tracked.clone());
+        assert_eq!((xs(&app, clip), app.doc.lock().unwrap().revision()), (vec![(1, 0.1), (1, 0.3)], rev));
+        // A entfernt, dann rückgängig: B ist wieder an Stelle 1 und bekommt die Bahn
+        let ids = fresh(&mut app);
+        remove(&mut app, 0);
+        app.undo();
+        app.sync_project();
+        app.censor_tracked(media, ids[1], tracked.clone());
+        assert_eq!(xs(&app, clip), vec![(1, 0.1), (2, 0.9), (1, 0.3)]);
+        // „Verfolgen“ aus: verworfen
+        let ids = fresh(&mut app);
+        let mut c = app.clip_view(clip).unwrap();
+        c.fx.censor[1].track = false;
+        app.apply(EditOp::ReplaceClip { clip: c });
+        app.censor_tracked(media, ids[1], tracked.clone());
+        assert_eq!(xs(&app, clip)[1], (1, 0.2));
+        // neue Fläche über „Zensieren“ bekommt eine eigene Kennung, auch wenn sie die letzte übernimmt
+        let ids = fresh(&mut app);
+        app.add_censor(&ctx, clip, cl_analyze::track::BoxN { cx: 0.5, cy: 0.5, w: 0.1, h: 0.1 });
+        let all = app.clip_view(clip).unwrap().fx.censor;
+        assert!(all[3].id.0 != ids[2].0);
+        app.censor_tracked(media, ids[2], tracked.clone());
+        assert_eq!(xs(&app, clip)[2..].to_vec(), vec![(2, 0.9), (1, all[3].path[0].cx)]);
+        // Clip geteilt: beide Hälften bekommen die Bahn (sie liegt in Quellzeit)
+        let ids = fresh(&mut app);
+        let Some(OpOutput::Clip(right)) = app.apply(EditOp::SplitClip { clip, at: Time::from_secs_f64(2.0) }) else {
+            panic!()
+        };
+        app.censor_tracked(media, ids[1], tracked.clone());
+        assert_eq!(xs(&app, clip)[1], (2, 0.9));
+        assert_eq!(xs(&app, right)[1], (2, 0.9));
+        // Clip gelöscht: verworfen
+        let ids = fresh(&mut app);
+        app.apply(EditOp::RemoveClip { clip });
+        let rev = app.doc.lock().unwrap().revision();
+        app.censor_tracked(media, ids[1], tracked);
+        assert_eq!(app.doc.lock().unwrap().revision(), rev);
     }
 
     /// Messung am Ersatzmedium: Kästchen wandert auf einer Kurve über das Bild (640×360, 30 Bilder/s,
