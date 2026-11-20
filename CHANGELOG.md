@@ -41,6 +41,7 @@
 - **The exported log** no longer shows parts of file names that contain spaces.
 - **The first export after starting** waits a moment for your graphics card instead of quietly using the slower software encoder.
 - **Saving** reports a failure every time you press Save, not just once a minute.
+- **Pausing a reversed clip** now shows exactly the frame under the playhead. On a slow disk it could stay on a neighbouring frame.
 
 ### Deutsch
 
@@ -60,6 +61,7 @@
 - **Das exportierte Protokoll** zeigt keine Teile von Dateinamen mit Leerzeichen mehr.
 - **Der erste Export nach dem Start** wartet kurz auf die Grafikkarte, statt still den langsameren Software-Encoder zu nehmen.
 - **Speichern** meldet einen Fehler bei jedem Druck auf Speichern, nicht nur einmal pro Minute.
+- **Pause auf einem Rückwärts-Clip** zeigt jetzt genau das Bild unter dem Abspielkopf. Auf langsamen Platten konnte ein Nachbarbild stehen bleiben.
 
 ## 0.15.1 – 2026-11-20
 
