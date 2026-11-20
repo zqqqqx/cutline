@@ -1,5 +1,5 @@
-# Eingebautes Plugin: Figuren, Dialogboxen und Namensschilder für Story-Videos.
-# Standardmäßig aus. Einschalten unter Plugins oder Einstellungen → Integrationen.
+# Built-in plugin: characters, dialog boxes and name tags for story videos.
+# Off by default. Turn it on under Plugins or Settings → Integrations.
 [plugin]
 id = "cutline.story-tools"
 version = "0.1.0"

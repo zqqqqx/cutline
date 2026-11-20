@@ -1,5 +1,5 @@
-// Nach „DirectionalWarp“ von pschroen (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Weichheit der Kante
+// Based on "DirectionalWarp" by pschroen (GL Transitions, MIT license), ported to WGSL.
+// p0 = edge softness
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   var v = normalize(vec2f(-1.0, 1.0));
   v /= abs(v.x) + abs(v.y);

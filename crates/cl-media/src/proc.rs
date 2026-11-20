@@ -1,17 +1,17 @@
-//! Betriebssystem-Teil der FFmpeg-Kindprozesse: keine Waisen nach hartem Beenden der App,
-//! niedrige Priorität, Anhalten/Fortsetzen und CPU-Zeit. Ohne zusätzliche Crates (direkte
-//! Systemaufrufe), jeweils mit stillem Rückfall, wenn das System es nicht kann.
+//! OS part of the FFmpeg child processes: no orphans after the app is killed,
+//! low priority, pause/resume and CPU time. Without extra crates (direct
+//! system calls), each with a silent fallback if the system cannot do it.
 
 use std::process::{Child, Command};
 use std::time::Duration;
 
-/// Wird vor jedem Start eines FFmpeg/FFprobe aufgerufen (aus `command`).
-/// `adopt`: das Kind per Prozess-Suche dem Job zuordnen (sonst tut es [`raise_priority`] direkt).
+/// Called before every start of an FFmpeg/FFprobe (from `command`).
+/// `adopt`: assign the child to the job via process search (otherwise [`raise_priority`] does it directly).
 pub(crate) fn prepare(cmd: &mut Command, adopt: bool) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(win::CREATE_NO_WINDOW); // kein Konsolenfenster aufblitzen lassen
+        cmd.creation_flags(win::CREATE_NO_WINDOW); // don't let a console window flash up
         if adopt {
             win::watch();
         }
@@ -24,10 +24,10 @@ pub(crate) fn prepare(cmd: &mut Command, adopt: bool) {
         extern "C" {
             fn prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> i32;
         }
-        // Kind endet mit dem Elternprozess (PR_SET_PDEATHSIG = 1, SIGKILL = 9). Achtung: Linux
-        // meldet das Ende des *startenden Threads* – lange laufende Prozesse daher aus Threads
-        // starten, die mindestens so lange leben (UI-Thread oder ein wartender Arbeits-Thread).
-        // SAFETY: nur ein async-signal-sicherer Systemaufruf zwischen fork und exec.
+        // the child ends with the parent process (PR_SET_PDEATHSIG = 1, SIGKILL = 9). Note: Linux
+        // reports the end of the *starting thread* – so start long-running processes from threads
+        // that live at least as long (UI thread or a waiting worker thread).
+        // SAFETY: only one async-signal-safe system call between fork and exec.
         unsafe {
             cmd.pre_exec(|| {
                 prctl(1, 9, 0, 0, 0);
@@ -39,7 +39,7 @@ pub(crate) fn prepare(cmd: &mut Command, adopt: bool) {
     let _ = cmd;
 }
 
-/// Startet den Prozess mit Priorität unter normal (Hintergrundarbeit wie Proxys).
+/// Starts the process with below-normal priority (background work like proxies).
 pub fn lower_priority(cmd: &mut Command) {
     #[cfg(windows)]
     {
@@ -53,7 +53,7 @@ pub fn lower_priority(cmd: &mut Command) {
         extern "C" {
             fn nice(inc: i32) -> i32;
         }
-        // SAFETY: nice() ist async-signal-sicher.
+        // SAFETY: nice() is async-signal-safe.
         unsafe {
             cmd.pre_exec(|| {
                 nice(10);
@@ -65,18 +65,18 @@ pub fn lower_priority(cmd: &mut Command) {
     let _ = cmd;
 }
 
-/// Priorität über normal für die Prozesse der Wiedergabe (Bildströme, Einzelbilder des Players,
-/// Ton-Fenster): unter Volllast durch andere Programme bekommen sie sonst zu wenig Rechenzeit und
-/// das Bild bleibt stehen, obwohl der Ton läuft. `false`, wenn das System es nicht erlaubt (unter
-/// Linux/macOS braucht Anheben Rechte – dort bleibt es bei normal). Unter Windows wird der Prozess
-/// dabei direkt dem Job-Objekt zugeordnet (endet mit der App, ohne Prozess-Suche je Start).
+/// Above-normal priority for the playback processes (frame streams, player single frames,
+/// audio windows): under full load from other programs they otherwise get too little CPU time and
+/// the picture freezes while the audio runs. `false` if the system does not allow it (on
+/// Linux/macOS raising needs privileges – there it stays at normal). On Windows the process
+/// is assigned directly to the job object as well (ends with the app, no process search per start).
 pub fn raise_priority(child: &Child) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::io::AsRawHandle;
         const ABOVE_NORMAL_PRIORITY_CLASS: u32 = 0x0000_8000;
         win::assign(child.as_raw_handle());
-        // SAFETY: gültiges Prozess-Handle des noch nicht abgeholten Kindes.
+        // SAFETY: valid process handle of the not yet reaped child.
         unsafe { win::SetPriorityClass(child.as_raw_handle(), ABOVE_NORMAL_PRIORITY_CLASS) != 0 }
     }
     #[cfg(not(windows))]
@@ -86,15 +86,15 @@ pub fn raise_priority(child: &Child) -> bool {
     }
 }
 
-/// Threads eines angehobenen Wiedergabe-Prozesses: die Hälfte der Kerne (mindestens 1). Mit allen
-/// Kernen über normaler Priorität verdrängten zwei Software-Ströme sonst alles andere – auch den
-/// UI-Thread und die Ton-Zuführung, die die Bilder abholen.
+/// Threads of a raised playback process: half the cores (at least 1). With all
+/// cores above normal priority two software streams would otherwise crowd out everything else – including the
+/// UI thread and the audio feed that fetch the frames.
 pub fn playback_threads(cores: usize) -> usize {
     (cores / 2).max(1)
 }
 
-/// Thread-Grenze für einen Wiedergabe-Prozess (vor dem ersten `-i` aufrufen). `hw`: Decodierung auf
-/// der GPU – dann bleibt der Decoder unbegrenzt, begrenzt werden nur die Filter.
+/// Thread limit for a playback process (call before the first `-i`). `hw`: decoding on
+/// the GPU – then the decoder stays unlimited, only the filters are limited.
 pub fn limit_threads(cmd: &mut Command, hw: bool) {
     let n = playback_threads(std::thread::available_parallelism().map_or(2, |n| n.get())).to_string();
     cmd.args(["-filter_threads", &n, "-filter_complex_threads", &n]);
@@ -103,12 +103,12 @@ pub fn limit_threads(cmd: &mut Command, hw: bool) {
     }
 }
 
-/// Hält einen Prozess an (`true`) oder setzt ihn fort. `false`, wenn das System es nicht kann.
+/// Pauses a process (`true`) or resumes it. `false` if the system cannot do it.
 pub fn suspend(child: &Child, on: bool) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::io::AsRawHandle;
-        // SAFETY: gültiges Prozess-Handle des noch nicht abgeholten Kindes.
+        // SAFETY: valid process handle of the not yet reaped child.
         unsafe {
             let h = child.as_raw_handle();
             (if on { win::NtSuspendProcess(h) } else { win::NtResumeProcess(h) }) >= 0
@@ -123,7 +123,7 @@ pub fn suspend(child: &Child, on: bool) -> bool {
         let (stop, cont) = (17, 19);
         #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
         let (stop, cont) = (19, 18);
-        // SAFETY: Signal an das eigene Kind.
+        // SAFETY: signal to our own child.
         unsafe { kill(child.id() as i32, if on { stop } else { cont }) == 0 }
     }
     #[cfg(not(any(windows, unix)))]
@@ -133,13 +133,13 @@ pub fn suspend(child: &Child, on: bool) -> bool {
     }
 }
 
-/// Verbrauchte CPU-Zeit (Benutzer + System) eines Kindprozesses, soweit ermittelbar.
+/// CPU time used (user + system) by a child process, as far as obtainable.
 pub fn cpu_time(child: &Child) -> Option<Duration> {
     #[cfg(windows)]
     {
         use std::os::windows::io::AsRawHandle;
         let mut t = [0u64; 4];
-        // SAFETY: vier FILETIME-Felder (je 64 Bit), gültiges Handle.
+        // SAFETY: four FILETIME fields (64 bits each), valid handle.
         let ok = unsafe {
             win::GetProcessTimes(
                 child.as_raw_handle(),
@@ -228,8 +228,8 @@ pub(crate) mod win {
         pub fn NtResumeProcess(h: Handle) -> i32;
     }
 
-    /// Job-Objekt mit „kill on job close“: Das Handle lebt bis zum Prozessende, schließt
-    /// Windows es (auch beim harten Beenden), enden alle zugeordneten FFmpeg-Prozesse.
+    /// Job object with "kill on job close": the handle lives until the process ends; when
+    /// Windows closes it (also on a hard kill), all assigned FFmpeg processes end.
     pub(super) fn job() -> Option<usize> {
         static JOB: OnceLock<Option<usize>> = OnceLock::new();
         *JOB.get_or_init(|| unsafe {
@@ -249,16 +249,16 @@ pub(crate) mod win {
         })
     }
 
-    /// Ordnet einen Prozess (Handle eines eigenen Kindes) direkt dem Job zu.
+    /// Assigns a process (handle of our own child) directly to the job.
     pub fn assign(process: Handle) {
         if let Some(job) = job() {
-            // SAFETY: gültige Handles; scheitert es, bleibt der Prozess nur ohne Job.
+            // SAFETY: valid handles; if it fails, the process just stays without a job.
             unsafe { AssignProcessToJobObject(job as Handle, process) };
         }
     }
 
-    /// Ordnet alle laufenden FFmpeg/FFprobe-Kinder dieses Prozesses dem Job zu. Nur diese:
-    /// andere Kinder (Installer der Aktualisierung, Browser) sollen die App überleben.
+    /// Assigns all running FFmpeg/FFprobe children of this process to the job. Only these:
+    /// other children (update installer, browser) should outlive the app.
     pub fn adopt_children() {
         let Some(job) = job() else { return };
         unsafe {
@@ -294,11 +294,11 @@ pub(crate) mod win {
     static HINT: Mutex<Option<Instant>> = Mutex::new(None);
     static WAKE: Condvar = Condvar::new();
 
-    /// Ein FFmpeg wird gleich gestartet: der Wächter-Thread sucht in den nächsten 1,5 s
-    /// mehrmals nach neuen Kindern (sofort, dann seltener) und ordnet sie dem Job zu. Nicht für
-    /// die Wiedergabe-Prozesse: die ordnet `raise_priority` direkt zu.
-    /// shortcut: Wer in den ersten Millisekunden nach dem Start hart beendet wird, kann noch
-    /// eine Waise hinterlassen; ein direktes Zuordnen bräuchte `raw_attribute` (noch instabil).
+    /// An FFmpeg is about to start: the watcher thread searches for new children several times
+    /// in the next 1.5 s (at once, then less often) and assigns them to the job. Not for
+    /// the playback processes: `raise_priority` assigns those directly.
+    /// shortcut: whoever is killed in the first milliseconds after the start can still
+    /// leave an orphan; assigning directly would need `raw_attribute` (still unstable).
     pub fn watch() {
         static STARTED: OnceLock<()> = OnceLock::new();
         STARTED.get_or_init(|| {
@@ -325,7 +325,7 @@ pub(crate) mod win {
         WAKE.notify_one();
     }
 
-    /// Abstand der Suchläufe: kurz nach einem Start dicht, danach seltener.
+    /// Interval of the search runs: dense shortly after a start, then less often.
     pub(crate) fn scan_pause(since_hint: Duration) -> Duration {
         Duration::from_millis(match since_hint.as_millis() {
             0..=50 => 10,
@@ -337,7 +337,7 @@ pub(crate) mod win {
 
 #[cfg(test)]
 mod tests {
-    /// Wiedergabe-Prozesse laufen über normaler Priorität (Windows); anderswo bleibt es still bei normal.
+    /// Playback processes run above normal priority (Windows); elsewhere it silently stays at normal.
     #[test]
     fn playback_processes_can_be_raised() {
         if !crate::ffmpeg_available() {
@@ -354,7 +354,7 @@ mod tests {
         let _ = c.wait();
     }
 
-    /// Befund aus dem Review: angehobene Wiedergabe-Prozesse liefen mit allen Kernen.
+    /// Review finding: raised playback processes ran with all cores.
     #[test]
     fn raised_processes_use_half_the_cores() {
         use super::playback_threads as t;
@@ -368,13 +368,13 @@ mod tests {
         let sw = args(false);
         assert!(sw.windows(2).any(|w| w[0] == "-threads" && w[1] == n), "{sw:?}");
         assert!(sw.windows(2).any(|w| w[0] == "-filter_complex_threads" && w[1] == n));
-        // Hardware: Decoder nicht begrenzen, nur die Filter
+        // hardware: don't limit the decoder, only the filters
         let hw = args(true);
         assert!(!hw.contains(&"-threads".to_string()) && hw.contains(&"-filter_threads".to_string()), "{hw:?}");
     }
 
-    /// Befund aus dem Review: auch Wiedergabe-Prozesse (Ströme, Einzelbilder, Ton-Fenster) kamen
-    /// nur über die Prozess-Suche in den Job. Jetzt sind sie sofort nach `raise_priority` darin.
+    /// Review finding: playback processes too (streams, single frames, audio windows) only got
+    /// into the job via the process search. Now they are in it right after `raise_priority`.
     #[cfg(windows)]
     #[test]
     fn playback_processes_join_the_job_directly() {
@@ -391,11 +391,11 @@ mod tests {
         super::raise_priority(&c);
         let job = super::win::job().expect("Job-Objekt") as *mut std::ffi::c_void;
         let mut inside = 0;
-        // SAFETY: gültige Handles
+        // SAFETY: valid handles
         let ok = unsafe { super::win::IsProcessInJob(c.as_raw_handle(), job, &mut inside) };
         let _ = c.kill();
         let _ = c.wait();
-        assert!(ok != 0 && inside != 0, "nicht im Job");
+        assert!(ok != 0 && inside != 0, "not in the job");
     }
 
     #[cfg(windows)]
@@ -407,8 +407,8 @@ mod tests {
         assert!(p(Duration::from_millis(100)) < p(Duration::from_secs(1)));
     }
 
-    /// Hilfsprozess für `ffmpeg_dies_with_its_owner`: startet ein endloses FFmpeg, meldet
-    /// dessen PID und wartet dann für immer.
+    /// Helper process for `ffmpeg_dies_with_its_owner`: starts an endless FFmpeg, reports
+    /// its PID and then waits forever.
     #[test]
     #[ignore]
     fn orphan_helper() {
@@ -423,7 +423,7 @@ mod tests {
             .unwrap();
         #[cfg(windows)]
         super::win::adopt_children();
-        // direkt schreiben: `println!` hielte der Test-Rahmen bis zum Ende zurück
+        // write directly: the test harness would hold back `println!` until the end
         use std::io::Write;
         let mut o = std::io::stdout();
         let _ = writeln!(o, "PID={}", c.id());
@@ -431,7 +431,7 @@ mod tests {
         let _ = c.wait();
     }
 
-    /// Hartes Beenden des Besitzers (TerminateProcess) beendet auch sein FFmpeg.
+    /// Hard kill of the owner (TerminateProcess) also ends its FFmpeg.
     #[cfg(windows)]
     #[test]
     fn ffmpeg_dies_with_its_owner() {
@@ -451,18 +451,18 @@ mod tests {
             .lines()
             .map_while(Result::ok)
             .find_map(|l| l.split("PID=").nth(1).and_then(|p| p.trim().parse().ok()))
-            .expect("Hilfsprozess meldet keine PID");
+            .expect("helper process reports no PID");
         extern "system" {
             fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut std::ffi::c_void;
             fn CloseHandle(h: *mut std::ffi::c_void) -> i32;
         }
-        // SAFETY: SYNCHRONIZE-Handle auf das FFmpeg, vor dem Beenden des Besitzers geöffnet
+        // SAFETY: SYNCHRONIZE handle to the FFmpeg, opened before the owner is killed
         let h = unsafe { OpenProcess(0x0010_0000, 0, pid) };
-        assert!(!h.is_null(), "FFmpeg {pid} läuft nicht");
+        assert!(!h.is_null(), "FFmpeg {pid} is not running");
         helper.kill().unwrap();
         let _ = helper.wait();
         let r = unsafe { super::win::WaitForSingleObject(h, 5000) };
         unsafe { CloseHandle(h) };
-        assert_eq!(r, 0, "FFmpeg lebt nach dem Ende seines Besitzers weiter");
+        assert_eq!(r, 0, "FFmpeg lives on after its owner ended");
     }
 }

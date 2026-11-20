@@ -1,8 +1,8 @@
-//! Bewegte Bilder (GIF, APNG) als Bild-Clip: Einzelbild-Zeiten und Schleife aus dem Dateikopf.
+//! Animated images (GIF, APNG) as an image clip: frame times and loop from the file header.
 //!
-//! Ein bewegtes Bild läuft im Bild-Clip einmal ab und bleibt dann auf dem letzten Bild stehen,
-//! außer die Datei ist als Endlosschleife gespeichert (APNG `num_plays = 0`, GIF-Schleifenzähler 0)
-//! – dann wiederholt es sich über die ganze Cliplänge. Vorschau und Export nutzen beide diese Angaben.
+//! An animated image plays once in the image clip and then stays on the last frame,
+//! unless the file is stored as an endless loop (APNG `num_plays = 0`, GIF loop count 0)
+//! – then it repeats over the whole clip length. Preview and export both use this data.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,15 +12,15 @@ use cl_core::Time;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Animation {
-    /// Beginn jedes Einzelbilds (aufsteigend, erstes = 0)
+    /// Start of each frame (ascending, first = 0)
     pub starts: Vec<Time>,
     pub duration: Time,
     pub looping: bool,
 }
 
 impl Animation {
-    /// Suchzeit (`-ss`) für das Bild, das `t` nach Clipbeginn zu sehen ist. Liegt 1 ms vor dem
-    /// Bildbeginn, weil FFmpeg ab `-ss` nur Bilder liefert, die nicht früher beginnen.
+    /// Seek time (`-ss`) for the frame visible `t` after clip start. Lies 1 ms before the
+    /// frame start because from `-ss` FFmpeg only delivers frames that don't start earlier.
     pub fn seek_time(&self, t: Time) -> Time {
         let t = if self.looping && self.duration.0 > 0 {
             Time(t.0.rem_euclid(self.duration.0))
@@ -32,9 +32,9 @@ impl Animation {
     }
 }
 
-/// Bewegtes Bild? Erkannt am Inhalt (GIF-Kopf bzw. PNG mit `acTL`), nicht an der Endung.
-/// `None` für Standbilder und alles andere. Ergebnis wird je Pfad zwischengespeichert.
-// shortcut: Cache kennt keine Dateiänderung, ausbauen falls Bilder im laufenden Betrieb ersetzt werden
+/// Animated image? Detected by content (GIF header or PNG with `acTL`), not by extension.
+/// `None` for still images and everything else. The result is cached per path.
+// shortcut: the cache knows no file changes, upgrade if images get replaced while running
 pub fn animation(path: &Path) -> Option<Animation> {
     static CACHE: Mutex<Option<HashMap<PathBuf, Option<Animation>>>> = Mutex::new(None);
     if let Some(a) = CACHE.lock().ok()?.get_or_insert_with(HashMap::new).get(path) {
@@ -49,9 +49,9 @@ pub fn animation(path: &Path) -> Option<Animation> {
     a
 }
 
-/// Alle Einzelbilder eines bewegten Bildes in `w`×`h` (RGBA, Reihenfolge wie `starts`) mit einem
-/// FFmpeg-Lauf: die Vorschau hält sie im Speicher, statt je Bild ein FFmpeg zu starten. `None`, wenn
-/// es kein bewegtes Bild ist, mehr als `max_bytes` würden oder FFmpeg nicht alle Bilder liefert.
+/// All frames of an animated image in `w`×`h` (RGBA, order as `starts`) with one
+/// FFmpeg run: the preview keeps them in memory instead of starting one FFmpeg per frame. `None` if
+/// it is not an animated image, it would exceed `max_bytes` or FFmpeg does not deliver all frames.
 pub fn decode_all(path: &Path, w: u32, h: u32, max_bytes: usize) -> Option<Vec<crate::RgbaFrame>> {
     let a = animation(path)?;
     let len = (w as usize) * (h as usize) * 4;
@@ -72,20 +72,20 @@ pub fn decode_all(path: &Path, w: u32, h: u32, max_bytes: usize) -> Option<Vec<c
     (frames.len() == a.starts.len()).then_some(frames)
 }
 
-/// FFmpeg für [`decode_all`]: höchstens `frames` Bilder – zählt FFmpeg mehr als der eigene Leser
-/// (ungewöhnliche Datei), wüchse die Ausgabe sonst über die geprüfte Speichergrenze.
+/// FFmpeg for [`decode_all`]: at most `frames` frames – if FFmpeg counts more than our own reader
+/// (unusual file), the output would otherwise grow past the checked memory limit.
 fn decode_all_cmd(path: &Path, w: u32, h: u32, frames: usize) -> Option<std::process::Command> {
     let mut cmd = crate::ffmpeg_command().ok()?;
     cmd.args(["-v", "error", "-nostdin", "-i"])
         .arg(path)
-        // wie das Einzelbild (`decode_frame`): gleiche Skalierung, jedes Bild genau einmal
+        // like the single frame (`decode_frame`): same scaling, every frame exactly once
         .args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba"), "-fps_mode", "passthrough"])
         .args(["-frames:v", &frames.to_string()])
         .args(["-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]);
     Some(cmd)
 }
 
-/// Index des Bildes, das die Suchzeit `seek` (aus [`Animation::seek_time`]) trifft
+/// Index of the frame hit by seek time `seek` (from [`Animation::seek_time`])
 pub fn frame_index(a: &Animation, seek: Time) -> usize {
     a.starts.partition_point(|s| s.0 <= seek.0 + 1000).saturating_sub(1)
 }
@@ -114,8 +114,8 @@ fn be32(b: &[u8], i: usize) -> Option<u32> {
     Some(u32::from_be_bytes(b.get(i..i + 4)?.try_into().ok()?))
 }
 
-/// Bilddauern (µs) und Schleife aus `acTL`/`fcTL`, wie der APNG-Leser von FFmpeg
-/// (Verzögerung 0 → 1/15 s).
+/// Frame durations (µs) and loop from `acTL`/`fcTL`, like FFmpeg's APNG reader
+/// (delay 0 → 1/15 s).
 fn apng(b: &[u8]) -> Option<(Vec<i64>, bool)> {
     let (mut i, mut delays, mut plays) = (8, Vec::new(), None);
     while i + 8 <= b.len() {
@@ -139,8 +139,8 @@ fn apng(b: &[u8]) -> Option<(Vec<i64>, bool)> {
     Some((delays, plays? == 0))
 }
 
-/// Bilddauern (µs) und Schleife (NETSCAPE-Block mit Zähler 0) eines GIF, wie der GIF-Leser von
-/// FFmpeg (Verzögerung unter 2/100 s → 1/10 s).
+/// Frame durations (µs) and loop (NETSCAPE block with count 0) of a GIF, like FFmpeg's GIF
+/// reader (delay below 2/100 s → 1/10 s).
 fn gif(b: &[u8]) -> Option<(Vec<i64>, bool)> {
     let skip_blocks = |mut i: usize| -> Option<usize> {
         loop {
@@ -184,8 +184,8 @@ fn gif(b: &[u8]) -> Option<(Vec<i64>, bool)> {
 mod tests {
     use super::*;
 
-    /// Befund aus dem Review: die Speichergrenze galt nur für die selbst gezählten Bilder, FFmpeg
-    /// lieferte aber alle. Jetzt höchstens so viele, wie geprüft wurden.
+    /// Review finding: the memory limit only applied to the frames we counted, but FFmpeg
+    /// delivered all of them. Now at most as many as were checked.
     #[test]
     fn decode_all_reads_at_most_the_counted_frames() {
         let Some(cmd) = decode_all_cmd(Path::new("a.gif"), 8, 8, 7) else { return };
@@ -221,14 +221,14 @@ mod tests {
             assert_eq!(a.looping, looping, "{f}");
             assert_eq!(a.starts.len(), 10, "{f}");
             assert!((a.duration.as_secs_f64() - 1.0).abs() < 0.02, "{f}: {:?}", a.duration);
-            // bewegte Bilder sind Bilder (Bild-Clip mit freier Länge), keine Videos
+            // animated images are images (image clip with free length), not videos
             assert_eq!(crate::probe(Path::new(&p(f))).unwrap().kind, cl_core::MediaKind::Image, "{f}");
         }
         assert!(animation(Path::new(&p("still.png"))).is_none());
         assert!(animation(Path::new(&p("fehlt.gif"))).is_none());
     }
 
-    /// Alle Bilder auf einmal (Vorschau im Speicher) = dieselben Bilder wie einzeln mit `-ss`.
+    /// All frames at once (preview in memory) = the same frames as one by one with `-ss`.
     #[test]
     fn decode_all_matches_single_frames() {
         if !crate::ffmpeg_available() {
@@ -252,13 +252,13 @@ mod tests {
                 let one = crate::decode_frame(&f, seek, 24, 16).unwrap();
                 assert!(one.data == frames[i].data, "{n}: Bild {i} weicht ab");
             }
-            // zu groß: nicht im Speicher
+            // too large: not in memory
             assert!(decode_all(&f, 24, 16, 100).is_none());
         }
         assert!(decode_all(&dir.path().join("fehlt.gif"), 24, 16, 1 << 20).is_none());
     }
 
-    /// Die Vorschau dekodiert mit `-ss seek_time` genau das Bild, das der Export zeigt.
+    /// The preview decodes with `-ss seek_time` exactly the frame the export shows.
     #[test]
     fn seek_time_hits_the_frame_with_ffmpeg() {
         if !crate::ffmpeg_available() {
@@ -278,7 +278,7 @@ mod tests {
             args.push(&fs);
             ffmpeg(&args);
             let a = animation(&f).unwrap();
-            // linker Rand des Streifens in Zeile 32
+            // left edge of the stripe in row 32
             let left = |t: f64| {
                 let fr = crate::decode_frame(&f, a.seek_time(Time::from_secs_f64(t)), 64, 64).unwrap();
                 (0..64).find(|x| fr.data[((32 * 64 + x) * 4 + 3) as usize] > 128)
@@ -287,7 +287,7 @@ mod tests {
                 assert_eq!(left(k as f64 * 0.1 + 0.05), Some((k as f64 * 4.8).ceil() as u32), "{name}.{ext} Bild {k}");
             }
             let want = if name == "loop" { 24 } else { 44 };
-            assert_eq!(left(3.55), Some(want), "{name}.{ext} bei 3,55 s");
+            assert_eq!(left(3.55), Some(want), "{name}.{ext} at 3.55 s");
         }
     }
 
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(a.seek_time(Time::ZERO), Time::ZERO);
         a.looping = true;
         assert_eq!(a.seek_time(Time::from_millis(3500)), Time::from_millis(499));
-        // abgeschnittene Dateien sind kein bewegtes Bild
+        // truncated files are not an animated image
         assert!(parse(b"GIF89a").is_none());
         assert!(parse(b"\x89PNG\r\n\x1a\n\0\0").is_none());
     }

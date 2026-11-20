@@ -1,6 +1,6 @@
 [package]
 name = "cl-export"
-description = "Cutline: Export und Audio-Vorschau über FFmpeg-Filtergraphen"
+description = "Cutline: export and audio preview via FFmpeg filter graphs"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

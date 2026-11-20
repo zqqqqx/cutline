@@ -1,5 +1,5 @@
-// Nach „SimpleZoom“ von 0gust1 (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Anteil des Übergangs, der gezoomt wird
+// Based on "SimpleZoom" by 0gust1 (GL Transitions, MIT license), ported to WGSL.
+// p0 = share of the transition that is zoomed
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   let q = clamp(params.p0, 0.2, 1.0);
   let amount = smoothstep(0.0, q, progress);

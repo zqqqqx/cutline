@@ -1,5 +1,5 @@
-//! Tonspur der Datei je Clip (`Clip::audio_stream`): Vorschau-Ton nimmt die gewählte Spur, eine
-//! nicht vorhandene Spur fällt auf die erste zurück, statt den Mix scheitern zu lassen.
+//! Audio stream of the file per clip (`Clip::audio_stream`): preview audio takes the chosen stream, a
+//! missing stream falls back to the first instead of failing the mix.
 
 use std::io::Read;
 
@@ -34,7 +34,7 @@ fn clip_plays_chosen_audio_stream() {
     assert!(ok);
     let m = cl_media::probe(&v).unwrap();
     assert_eq!(m.audio_streams, 2);
-    // Wellenform der zweiten Spur lässt sich berechnen
+    // the waveform of the second stream can be computed
     assert!(!cl_media::waveform_stream(&v, 50, 1).unwrap().is_empty());
     let play = |stream: Option<u32>| {
         let mut p = Project::new("t");

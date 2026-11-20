@@ -1,12 +1,12 @@
-//! Auto-Reframe: Wo ist das Wichtige im Bild? Schwerpunkt aus Bewegung (Bilddifferenz)
-//! und Kanten, zeitlich geglättet. Daraus setzt die App Keyframes für die Position.
+//! Auto reframe: where is the important part of the image? Center of interest from motion (frame difference)
+//! and edges, smoothed over time. From it the app sets keyframes for the position.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const FPS: f64 = 5.0;
 
-/// (Zeit relativ zu `start`, Schwerpunkt x, y) normiert 0…1.
+/// (time relative to `start`, center x, y) normalized 0…1.
 pub fn focus_path(
     path: &Path,
     src_w: u32,
@@ -37,7 +37,7 @@ pub fn focus_path(
                     .as_ref()
                     .map(|pv| (f[y * wi + x] as f64 - pv[y * wi + x] as f64).abs())
                     .unwrap_or(0.0);
-                // Bewegung zählt stärker; Mitte leicht bevorzugt
+                // motion counts more; the center is slightly preferred
                 let cw = 1.0 - 0.3 * (((x as f64 / wi as f64) - 0.5).abs() * 2.0);
                 let v = (grad * 0.25 + motion * 2.0).powf(1.5) * cw;
                 sx += v * x as f64;
@@ -55,7 +55,7 @@ pub fn focus_path(
         progress((i as f64 / total).min(1.0) as f32);
         true
     })?;
-    // Glätten (±0,6 s)
+    // smoothing (±0.6 s)
     let k = (FPS * 0.6) as usize;
     let smooth = (0..raw.len())
         .map(|i| {
@@ -82,7 +82,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let v = dir.path().join("subj.mp4");
-        // ruhiger Hintergrund, Objekt bewegt sich von links nach rechts
+        // calm background, object moves from left to right
         let st = cl_media::ffmpeg_command()
             .unwrap()
             .args([
@@ -115,7 +115,7 @@ mod tests {
         assert!(first < 0.35 && last > 0.6, "{first} → {last}");
         assert!(
             p.windows(2).all(|w| w[1].1 >= w[0].1 - 0.03),
-            "monoton nach rechts"
+            "monotonically to the right"
         );
     }
 }

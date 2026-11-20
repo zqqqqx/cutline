@@ -1,22 +1,22 @@
-//! Einfügen aus der Zwischenablage: Zielspur je Clip und „Nachfolgende schieben“.
+//! Paste from the clipboard: target track per clip and „Nachfolgende schieben“.
 //!
-//! Ablauf: [`paste_targets`] legt Zielspur und Stelle fest, [`paste_splits`] teilt einen Clip, der
-//! an der Einfügestelle liegt, danach (auf dem geteilten Stand) schieben [`paste_ops`] die späteren
-//! Clips der Zielspur nach rechts und fügen ein. Beides zusammen ist ein Verlaufsschritt.
+//! Flow: [`paste_targets`] decides target track and position, [`paste_splits`] splits a clip that
+//! lies at the paste position, then (on the split state) [`paste_ops`] push the later
+//! clips of the target track right and paste. Both together are one history step.
 
 use crate::model::*;
 use crate::ops::EditOp;
 use crate::time::Time;
 
-/// Index der Spur `t`, falls sie Clips der Art `k` aufnimmt (passende Art, nicht gesperrt).
+/// Index of track `t` if it takes clips of kind `k` (matching kind, not locked).
 fn fits(p: &Project, t: TrackId, k: TrackKind) -> Option<usize> {
     p.timeline.tracks.iter().position(|x| x.id == t && x.kind.accepts(k) && !x.locked)
 }
 
-/// Zielspur (`None` = bisherige Automatik) und Clip an seiner neuen Stelle (neue Kennung) je
-/// kopiertem Clip. `clips`: (Herkunftsspur, Clip); `target`: nach dem Kopieren angeklickte Spur
-/// (sonst `None` = Herkunftsspur); `at`: Playhead. Der früheste Clip kommt in die Zielspur, die
-/// anderen behalten ihren Spur-Abstand zu ihm; passt eine Spur nicht, gilt die Herkunftsspur.
+/// Target track (`None` = previous automatic choice) and clip at its new position (new id) per
+/// copied clip. `clips`: (source track, clip); `target`: track clicked after copying
+/// (otherwise `None` = source track); `at`: playhead. The earliest clip goes to the target track, the
+/// others keep their track distance to it; if a track does not fit, the source track applies.
 pub fn paste_targets(
     p: &Project,
     clips: &[(TrackId, Clip)],
@@ -28,7 +28,7 @@ pub fn paste_targets(
     };
     let t0 = clips[first].1.start;
     let idx = |t: TrackId| p.timeline.tracks.iter().position(|x| x.id == t);
-    // Spur-Versatz der Zielspur gegenüber der Herkunftsspur des ersten Clips
+    // track offset of the target track relative to the source track of the first clip
     let shift = target
         .and_then(|t| fits(p, t, clips[first].1.kind()))
         .zip(idx(clips[first].0))
@@ -57,7 +57,7 @@ pub fn paste_targets(
         .collect()
 }
 
-/// Je Zielspur: (Spur, Beginn, Ende) der eingefügten Clips.
+/// Per target track: (track, start, end) of the pasted clips.
 fn spans(items: &[(Option<TrackId>, Clip)]) -> Vec<(TrackId, Time, Time)> {
     let mut out: Vec<(TrackId, Time, Time)> = Vec::new();
     for (t, c) in items {
@@ -73,7 +73,7 @@ fn spans(items: &[(Option<TrackId>, Clip)]) -> Vec<(TrackId, Time, Time)> {
     out
 }
 
-/// Schritt 1: Clips, die an der Einfügestelle einer Zielspur liegen (Playhead mitten im Clip), dort teilen.
+/// Step 1: split clips that lie at the paste position of a target track (playhead inside the clip) there.
 pub fn paste_splits(p: &Project, items: &[(Option<TrackId>, Clip)]) -> Vec<EditOp> {
     spans(items)
         .into_iter()
@@ -85,9 +85,9 @@ pub fn paste_splits(p: &Project, items: &[(Option<TrackId>, Clip)]) -> Vec<EditO
         .collect()
 }
 
-/// Schritt 2 (auf dem geteilten Stand): ist die Stelle belegt, rücken alle späteren Clips der
-/// Zielspur um die eingefügte Länge nach rechts (nur diese Spur); dann einfügen. Die Magnet-Hauptspur
-/// reiht beim Einfügen ohnehin ein.
+/// Step 2 (on the split state): if the position is occupied, all later clips of the
+/// target track move right by the pasted length (this track only); then paste. The magnet main track
+/// lines up on paste anyway.
 pub fn paste_ops(p: &Project, items: &[(Option<TrackId>, Clip)]) -> Vec<EditOp> {
     let mut ops = Vec::new();
     for (t, g0, g1) in spans(items) {
@@ -99,7 +99,7 @@ pub fn paste_ops(p: &Project, items: &[(Option<TrackId>, Clip)]) -> Vec<EditOp> 
             continue;
         }
         let mut later: Vec<&Clip> = tr.clips.iter().filter(|c| c.start >= g0).collect();
-        // von hinten: jeder Clip rückt in schon frei gewordenen Platz
+        // from the back: each clip moves into space already freed
         later.sort_by_key(|c| std::cmp::Reverse(c.start));
         ops.extend(later.into_iter().map(|c| EditOp::MoveClip {
             clip: c.id,
@@ -131,7 +131,7 @@ mod tests {
         let Ok(OpOutput::Clip(id)) = d.apply(EditOp::AddClip { track: Some(t), clip: c }, OpSource::Ui) else { panic!() };
         id
     }
-    /// Wie die App: Teilen, dann Schieben + Einfügen, als ein Schritt.
+    /// Like the app: split, then push + paste, as one step.
     fn paste(d: &mut Document, clips: &[(TrackId, Clip)], target: Option<TrackId>, at: f64) {
         let rev = d.revision();
         let items = paste_targets(d.project(), clips, target, s(at));
@@ -152,11 +152,11 @@ mod tests {
         let (a, b) = (track(&mut d, TrackKind::Text), track(&mut d, TrackKind::Text));
         let c = text(0.0, 1.0);
         add(&mut d, b, c.clone());
-        // Spur a ist frei und läge bei der Automatik vorn: trotzdem Herkunftsspur b
+        // track a is free and would come first automatically: source track b anyway
         paste(&mut d, &[(b, c.clone())], None, 5.0);
         assert_eq!(starts(&d, b), vec![0.0, 5.0]);
         assert!(starts(&d, a).is_empty());
-        // nach dem Kopieren in Spur a geklickt: dorthin
+        // clicked track a after copying: goes there
         paste(&mut d, &[(b, c)], Some(a), 2.0);
         assert_eq!(starts(&d, a), vec![2.0]);
     }
@@ -170,18 +170,18 @@ mod tests {
         add(&mut d, a, text(3.0, 1.0));
         add(&mut d, b, text(1.0, 4.0));
         let before = d.project().clone();
-        // Playhead am Anfang eines Clips: dieser und alle späteren rücken 2 s
+        // playhead at the start of a clip: it and all later ones move 2 s
         paste(&mut d, &[(a, c.clone())], None, 0.0);
         assert_eq!(starts(&d, a), vec![0.0, 2.0, 5.0]);
         assert_eq!(starts(&d, b), vec![1.0], "andere Spuren bleiben");
-        // ein Verlaufsschritt: Rückgängig stellt alles wieder her
+        // one history step: undo restores everything
         d.undo().unwrap();
         assert_eq!(d.project(), &before);
-        // Playhead mitten im Clip: dort geteilt, der rechte Teil rückt mit
+        // playhead inside the clip: split there, the right part moves along
         paste(&mut d, &[(a, c)], None, 1.0);
         assert_eq!(starts(&d, a), vec![0.0, 1.0, 3.0, 5.0]);
         let total: f64 = d.project().timeline.tracks.iter().find(|t| t.id == a).unwrap().clips.iter().map(|c| c.duration.as_secs_f64()).sum();
-        assert!((total - 5.0).abs() < 1e-6, "nichts geht verloren");
+        assert!((total - 5.0).abs() < 1e-6, "nothing gets lost");
         d.undo().unwrap();
         assert_eq!(d.project(), &before);
     }
@@ -194,11 +194,11 @@ mod tests {
         let c = text(0.0, 1.0);
         add(&mut d, txt, c.clone());
         let it = paste_targets(d.project(), &[(txt, c.clone())], Some(fx), s(4.0));
-        assert_eq!(it[0].0, Some(txt), "Text gehört nicht auf eine Effektspur");
+        assert_eq!(it[0].0, Some(txt), "text does not belong on an effect track");
         d.apply(EditOp::SetTrackFlags { track: other, locked: true, hidden: false, muted: false }, OpSource::Ui).unwrap();
         let it = paste_targets(d.project(), &[(txt, c.clone())], Some(other), s(4.0));
         assert_eq!(it[0].0, Some(txt), "gesperrte Spur");
-        // Herkunftsspur weg: bisherige Automatik
+        // source track gone: previous automatic choice
         let it = paste_targets(d.project(), &[(TrackId::new(), c)], None, s(4.0));
         assert_eq!(it[0].0, None);
         assert_eq!(it[0].1.start, s(4.0));
@@ -212,11 +212,11 @@ mod tests {
         add(&mut d, a, x.clone());
         add(&mut d, b, y.clone());
         let clips = [(b, y), (a, x)];
-        // Ziel b für den frühesten (aus a): der aus b landet eine Spur weiter in c, 2 s später
+        // target b for the earliest (from a): the one from b lands one track further in c, 2 s later
         let it = paste_targets(d.project(), &clips, Some(b), s(10.0));
         assert_eq!((it[0].0, it[0].1.start), (Some(c), s(12.0)));
         assert_eq!((it[1].0, it[1].1.start), (Some(b), s(10.0)));
-        // keine Spur über c: Herkunftsspur
+        // no track above c: source track
         let it = paste_targets(d.project(), &clips, Some(c), s(10.0));
         assert_eq!((it[0].0, it[1].0), (Some(b), Some(c)));
         assert!(it.iter().all(|(_, n)| n.id != clips[0].1.id && n.id != clips[1].1.id), "neue Kennungen");

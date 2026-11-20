@@ -1,5 +1,5 @@
-//! FCPXML (Final Cut Pro 10.4+, DaVinci Resolve): Assets, Hauptspur (`spine`) und
-//! verbundene Clips (`lane`). Zeiten sind Brüche wie `3003/30000s`.
+//! FCPXML (Final Cut Pro 10.4+, DaVinci Resolve): assets, main track (`spine`) and
+//! connected clips (`lane`). Times are fractions like `3003/30000s`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -8,14 +8,14 @@ use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Project, Time, Track, Trac
 
 use crate::{Report, Result};
 
-/// `1001/30000s`, `5s`, `0s` → Sekunden
+/// `1001/30000s`, `5s`, `0s` → seconds
 pub fn parse_time(s: &str) -> f64 {
     let s = s.trim().trim_end_matches('s');
     let v = match s.split_once('/') {
         Some((n, d)) => n.parse::<f64>().unwrap_or(0.0) / d.parse::<f64>().unwrap_or(1.0).max(1e-9),
         None => s.parse().unwrap_or(0.0),
     };
-    // „NaN“, „inf“, „1e999“ aus kaputten Dateien
+    // "NaN", "inf", "1e999" from broken files
     if v.is_finite() { v } else { 0.0 }
 }
 
@@ -28,13 +28,13 @@ fn url_to_path(src: &str, dir: &Path) -> PathBuf {
         .strip_prefix("file://localhost")
         .or_else(|| src.strip_prefix("file://"))
         .unwrap_or(src);
-    // %20 usw. dekodieren
+    // decode %20 etc.
     let mut out = Vec::new();
     let b = s.as_bytes();
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%' && i + 2 < b.len() {
-            // auf Bytes dekodieren: ein &str-Schnitt mitten in „€“ würde abstürzen
+            // decode to bytes: a &str slice in the middle of "€" would crash
             if let Some(v) = hex_byte(&b[i + 1..i + 3]) {
                 out.push(v);
                 i += 3;
@@ -51,7 +51,7 @@ fn url_to_path(src: &str, dir: &Path) -> PathBuf {
     } else {
         p
     };
-    // relative Verweise (z. B. in .fcpxmld-Paketen) gelten ab dem Ordner der Datei
+    // relative references (e.g. in .fcpxmld packages) apply from the file's folder
     let p = PathBuf::from(p);
     if p.is_relative() && !p.has_root() {
         dir.join(p)
@@ -64,7 +64,7 @@ pub fn import(path: &Path) -> Result<(Project, Report)> {
     import_with(path, &crate::Progress::default())
 }
 
-/// Wie [`import`], mit Fortschritt und Abbruch.
+/// Like [`import`], with progress and cancel.
 pub fn import_with(path: &Path, progress: &crate::Progress) -> Result<(Project, Report)> {
     progress.set(crate::Step::Read, 0, 1, &path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
@@ -75,7 +75,7 @@ pub fn import_with(path: &Path, progress: &crate::Progress) -> Result<(Project, 
     convert_with(&text, &name, path.parent().unwrap_or(Path::new("")), progress)
 }
 
-/// `dir`: Ordner der FCPXML-Datei (für relative Medienpfade).
+/// `dir`: folder of the FCPXML file (for relative media paths).
 pub fn convert(text: &str, name: &str, dir: &Path) -> Result<(Project, Report)> {
     convert_with(text, name, dir, &crate::Progress::default())
 }
@@ -88,7 +88,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
     }
     let mut rep = Report::default();
     let mut p = Project::new(name);
-    // Formate (Größe, Bildrate)
+    // formats (size, frame rate)
     let mut formats: HashMap<String, (u32, u32, f64)> = HashMap::new();
     for f in root.descendants().filter(|n| n.has_tag_name("format")) {
         let id = f.attribute("id").unwrap_or("").to_string();
@@ -106,7 +106,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
             .unwrap_or(1.0 / 30.0);
         formats.insert(id, (w, h, fd));
     }
-    // Assets
+    // assets
     let mut assets: HashMap<String, Option<MediaRef>> = HashMap::new();
     let n = root.descendants().filter(|n| n.has_tag_name("asset")).count();
     progress.set(crate::Step::Probe, 0, n, "");
@@ -125,7 +125,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
                 let dur = a.attribute("duration").map(parse_time);
                 let kind = match (a.attribute("hasVideo"), dur) {
                     (Some("0"), _) => MediaKind::Audio,
-                    // Standbilder haben die Dauer 0s
+                    // still images have duration 0s
                     (_, Some(d)) if d <= 0.0 => MediaKind::Image,
                     _ => MediaKind::Video,
                 };
@@ -149,7 +149,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
     if let Some((w, h, fd)) = seq.attribute("format").and_then(|f| formats.get(f)) {
         p.settings.width = *w & !1;
         p.settings.height = *h & !1;
-        // Fehler: frameDuration 0 ergab 4 Milliarden fps; unbrauchbare Werte → Standard
+        // bug: frameDuration 0 gave 4 billion fps; unusable values → default
         if let Some(fps) = crate::fps_from(1.0 / fd) {
             p.settings.fps = fps;
         }
@@ -159,7 +159,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
         .descendants()
         .find(|n| n.has_tag_name("spine"))
         .ok_or("Keine Hauptspur (spine) gefunden")?;
-    // lane → Spur
+    // lane → track
     let mut lanes: std::collections::BTreeMap<i32, Track> = Default::default();
     let mut main = Track::new(TrackKind::Video);
     main.main = true;
@@ -174,7 +174,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
                     main.clips.push(c);
                 }
             }
-            // verbundene Clips: Zeit relativ zum Elternclip
+            // connected clips: time relative to the parent clip
             for child in item
                 .children()
                 .filter(|n| n.is_element() && clip_tags.contains(&n.tag_name().name()))
@@ -211,7 +211,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
         }
     }
     p.timeline.tracks.push(main);
-    // positive Lanes über, negative unter der Hauptspur (bei uns: Audio ans Ende)
+    // positive lanes above, negative below the main track (for us: audio at the end)
     let mut rest: Vec<Track> = lanes.into_values().collect();
     rest.sort_by_key(|t| t.kind == TrackKind::Audio);
     p.timeline.tracks.extend(rest);
@@ -264,7 +264,7 @@ mod tests {
         assert_eq!(url_to_path("file:///a%20b", d), PathBuf::from("/a b"));
     }
 
-    /// Fehlende Datei: Clip bleibt mit Platzhalter-Medium (neu verknüpfbar), `missing` nennt sie.
+    /// Missing file: the clip stays with a placeholder media (relinkable), `missing` names it.
     #[test]
     fn missing_asset_keeps_clip() {
         let xml = r#"<?xml version="1.0"?><fcpxml version="1.9"><resources><format id="r1" frameDuration="1/25s" width="1280" height="720"/>
@@ -326,7 +326,7 @@ mod tests {
             p.timeline.tracks[0].clips[1].start,
             Time::from_secs_f64(3.0)
         );
-        // verbundener Clip: 0 + (1.5 - 1) = 0.5 s
+        // connected clip: 0 + (1.5 - 1) = 0.5 s
         assert_eq!(
             p.timeline.tracks[1].clips[0].start,
             Time::from_secs_f64(0.5)

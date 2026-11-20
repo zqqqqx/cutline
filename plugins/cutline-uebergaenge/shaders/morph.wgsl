@@ -1,5 +1,5 @@
-// Nach „Morph“ von paniq (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Stärke der Verschiebung
+// Based on "Morph" by paniq (GL Transitions, MIT license), ported to WGSL.
+// p0 = strength of the displacement
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   let ca = from_color(uv);
   let cb = to_color(uv);

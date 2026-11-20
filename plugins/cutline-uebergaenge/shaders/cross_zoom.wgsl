@@ -1,5 +1,5 @@
-// Nach „CrossZoom“ von rectalogic (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Stärke der Zoom-Unschärfe
+// Based on "CrossZoom" by rectalogic (GL Transitions, MIT license), ported to WGSL.
+// p0 = strength of the zoom blur
 fn cz_rand(co: vec2f) -> f32 {
   return fract(sin(dot(co, vec2f(12.9898, 78.233))) * 43758.5453);
 }
@@ -15,7 +15,7 @@ fn cz_expo(t: f32) -> f32 {
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   let center = vec2f(0.25 + 0.5 * progress, 0.5);
   let dissolve = cz_expo(progress);
-  // 0 → Stärke → 0
+  // 0 → strength → 0
   let strength = -params.p0 / 2.0 * (cos(3.141592653589793 * progress / 0.5) - 1.0);
   let to_center = center - uv;
   let offset = cz_rand(uv);

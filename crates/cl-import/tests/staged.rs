@@ -1,5 +1,5 @@
-//! Import in Schritten: Fortschritt, Abbruch in jedem Schritt, gesammelte Fehler,
-//! verschachtelte Entwürfe, sehr große Entwürfe.
+//! Import in steps: progress, cancel in every step, collected errors,
+//! nested drafts, very large drafts.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -33,7 +33,7 @@ fn text_mat(id: &str, t: &str) -> Value {
     json!({"id": id, "content": json!({"text": t, "styles": [{"size": 10.0}]}).to_string()})
 }
 
-/// Entwurf mit Medien (vorhanden, fehlend, unlesbar), Texten und Effekten
+/// Draft with media (present, missing, unreadable), texts and effects
 fn draft(dir: &Path, v: &Path) -> Value {
     let junk = dir.join("kaputt.mp4");
     std::fs::write(&junk, b"kein video").unwrap();
@@ -54,7 +54,7 @@ fn draft(dir: &Path, v: &Path) -> Value {
     })
 }
 
-/// Fortschritt mit Aufzeichnung; `cancel_at`: in diesem Schritt abbrechen
+/// Progress with recording; `cancel_at`: cancel in this step
 fn recorder(cancel_at: Option<Step>) -> (Arc<Progress>, Arc<Mutex<Vec<Status>>>) {
     let log: Arc<Mutex<Vec<Status>>> = Arc::default();
     let slot: Arc<OnceLock<std::sync::Weak<Progress>>> = Arc::default();
@@ -79,15 +79,15 @@ fn every_step_reports_monotonic_progress_and_errors_are_collected() {
     let (proj, rep) = capcut::convert_with(&draft(dir.path(), &v), dir.path(), "x", &p).unwrap();
     let log = log.lock().unwrap();
     for s in [Step::Find, Step::Probe, Step::Timeline] {
-        assert!(log.iter().any(|x| x.step == s && x.done == x.total), "{s:?} meldet kein Ende: {log:?}");
+        assert!(log.iter().any(|x| x.step == s && x.done == x.total), "{s:?} reports no end: {log:?}");
     }
     let f: Vec<f32> = log.iter().map(|s| s.fraction()).collect();
     assert!(f.windows(2).all(|w| w[0] <= w[1] + 1e-6), "{f:?}");
     assert!(f.iter().all(|x| (0.0..=1.0).contains(x)));
-    // eine kaputte und 20 fehlende Dateien halten nichts auf
+    // one broken and 20 missing files hold nothing up
     assert_eq!(rep.failed, vec![dir.path().join("kaputt.mp4")]);
     assert_eq!(rep.missing.len(), 20);
-    // fehlende Dateien: Clips bleiben (Platzhalter zum Neu verknüpfen), die kaputte fällt weg
+    // missing files: clips stay (placeholder for relinking), the broken one drops out
     assert_eq!((rep.clips, rep.texts), (21, 1));
     assert_eq!(proj.media.len(), 21);
 }
@@ -103,7 +103,7 @@ fn cancel_in_any_step_stops_with_cancelled() {
         let r = cl_import::import_with(dir.path(), &p);
         assert_eq!(r.unwrap_err(), cl_import::CANCELLED, "{step:?}");
     }
-    // schon vor dem Start abgebrochen
+    // cancelled even before the start
     let p = Progress::default();
     p.cancel();
     assert_eq!(capcut::convert_with(&d, dir.path(), "x", &p).unwrap_err(), cl_import::CANCELLED);
@@ -133,7 +133,7 @@ fn probe_all_keeps_order_and_limits_workers() {
         let want = if i == 7 { "kaputt".to_string() } else { i.to_string() };
         assert_eq!(r.as_ref().unwrap_err(), &want);
     }
-    // abgebrochen: Fehler statt halber Liste
+    // cancelled: error instead of a half list
     let p = Progress::default();
     p.cancel();
     assert!(cl_import::probe_all(&paths, 3, &p, |_| Err(String::new())).is_err());
@@ -141,12 +141,12 @@ fn probe_all_keeps_order_and_limits_workers() {
 
 #[test]
 fn nested_drafts_are_resolved_level_by_level() {
-    // innen: Text 0–4 s; außen: zusammengesetzter Clip zeigt innen 1–3 s bei 10 s
+    // inside: text 0–4 s; outside: compound clip shows inside 1–3 s at 10 s
     let inner = json!({
         "materials": {"texts": [text_mat("IT", "innen")]},
         "tracks": [{"type": "text", "segments": [seg("IT", 0, 4 * S, 0)]}]
     });
-    // zweite Stufe: Entwurf im Entwurf
+    // second level: draft in the draft
     let outer_inner = json!({
         "materials": {"drafts": [{"id": "D2", "type": "combination", "draft": inner}]},
         "tracks": [{"type": "video", "segments": [seg("D2", 0, 4 * S, 0)]}]
@@ -167,7 +167,7 @@ fn nested_drafts_are_resolved_level_by_level() {
     assert_eq!(rep.nested, 2, "{rep:?}");
     assert_eq!(rep.texts, 2);
     let n = |w: &str| rep.skipped.iter().find(|(k, _)| k == w).map_or(0, |x| x.1);
-    assert_eq!(n("Zusammengesetzte Clips"), 1, "ohne inneren Entwurf");
+    assert_eq!(n("Zusammengesetzte Clips"), 1, "without inner draft");
     assert_eq!(n("Zusammengesetzte Clips mit Tempo"), 1);
     let inner: Vec<_> = p
         .timeline
@@ -191,7 +191,7 @@ fn place_trims_to_the_window() {
     let mut c = Clip::new(st(), Time(2 * S), Time(2 * S));
     c.speed = 2.0;
     t.clips.push(c);
-    // innen 1–3 s bei außen 10 s
+    // inside 1–3 s at outside 10 s
     let out = capcut::place(t, Time(10 * S), Time(2 * S), Time(S));
     let v: Vec<_> = out.clips.iter().map(|c| (c.start.0 / 1000, c.duration.0 / 1000, c.source_in.0 / 1000)).collect();
     assert_eq!(v, [(10_000, 2_000, 1_000), (11_000, 1_000, 0)]);
@@ -218,12 +218,12 @@ fn very_large_draft_is_converted_quickly() {
     assert!(t.elapsed().as_secs_f64() < 10.0, "{:?}", t.elapsed());
 }
 
-/// Mess-Test: großer Testentwurf (F:/cutline-testmedien/import, `mkdraft.py`) mit Zeiten je Schritt.
+/// Measurement test: large test draft (F:/cutline-testmedien/import, `mkdraft.py`) with times per step.
 /// `cargo test --release -p cl-import --test staged -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn measure_big_draft_steps() {
-    // anderer Entwurf: CUTLINE_IMPORT_DRAFT=<Ordner oder draft_content.json>
+    // another draft: CUTLINE_IMPORT_DRAFT=<folder or draft_content.json>
     let dir = std::env::var_os("CUTLINE_IMPORT_DRAFT").map(PathBuf::from).unwrap_or_else(|| {
         std::env::var_os("CUTLINE_IMPORT_MEDIA")
             .map(PathBuf::from)
@@ -241,10 +241,10 @@ fn measure_big_draft_steps() {
         let Some(p) = sl.get().and_then(|w| w.upgrade()) else { return };
         let st = p.status();
         let mut l = l.lock().unwrap();
-        // längste Zeit ohne Fortschrittsmeldung
+        // longest time without a progress report
         l.2 = l.2.max(l.1.elapsed().as_secs_f64());
         if st.step != l.0 {
-            println!("{:?} fertig nach {:.2} s", l.0, t0.elapsed().as_secs_f64());
+            println!("{:?} done after {:.2} s", l.0, t0.elapsed().as_secs_f64());
             l.0 = st.step;
         }
         l.1 = std::time::Instant::now();
@@ -252,7 +252,7 @@ fn measure_big_draft_steps() {
     slot.set(Arc::downgrade(&p)).unwrap();
     let (proj, rep) = cl_import::import_with(&dir, &p).unwrap();
     println!(
-        "gesamt {:.1} s, längste Zeit ohne Meldung {:.2} s; {} Medien, {} Clips, {} Texte, fehlend {}, verschachtelt {}, übersprungen {:?}",
+        "total {:.1} s, longest time without report {:.2} s; {} media, {} clips, {} texts, missing {}, nested {}, skipped {:?}",
         t0.elapsed().as_secs_f64(),
         last.lock().unwrap().2,
         proj.media.len(),

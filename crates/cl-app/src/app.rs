@@ -1,5 +1,5 @@
-//! App-Zustand und alle Aktionen. Oberfläche: `chrome` (Titelleiste), `home` (Startseite),
-//! `assets` (links), `player`, `inspector` (rechts), `timeline`, `settings`, `voiceover`.
+//! App state and all actions. UI: `chrome` (title bar), `home` (start page),
+//! `assets` (left), `player`, `inspector` (right), `timeline`, `settings`, `voiceover`.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -20,26 +20,26 @@ use crate::settings::{AppSettings, McpRunning, Section};
 use crate::theme::{self, icon};
 use crate::{paths, timeline::TimelineState};
 
-/// Fokus aus Textfeldern nehmen (Tastenkürzel gehen dann wieder an die App).
-/// Wird gerade Text eingegeben? Nur ein fokussiertes Textfeld (auch ein Zahlenfeld im
-/// Eingabemodus) – nicht irgendein Widget mit Fokus: ein fokussierter Knopf oder eine Kachel
-/// (z. B. nach dem Ziehen eines Übergangs) schluckte sonst alle Tastenkürzel, auch die Leertaste.
+/// Take focus away from text fields (shortcuts then go to the app again).
+/// Is text being typed right now? Only a focused text field (also a number field in
+/// input mode) – not just any widget with focus: a focused button or tile
+/// (e.g. after dragging a transition) would otherwise swallow all shortcuts, the space bar too.
 pub fn typing(ctx: &egui::Context) -> bool {
     ctx.memory(|m| m.focused()).is_some_and(|id| egui::text_edit::TextEditState::load(ctx, id).is_some())
 }
 
-/// Was die Tastenkürzel mit dem Fokus tun
+/// What the shortcuts do with the focus
 #[derive(Debug, PartialEq, Eq)]
 enum KeyFocus {
-    /// Tasten gehören dem fokussierten Element (Textfeld; Tab-Navigation, Pfeile am Regler)
+    /// Keys belong to the focused element (text field; Tab navigation, arrows on a slider)
     Keep,
-    /// Fokus abgeben, dann Kürzel (Leertaste = Abspielen statt Klick auf den fokussierten Knopf)
+    /// Release focus, then shortcuts (space = play instead of clicking the focused button)
     Release,
-    /// nichts fokussiert: Kürzel
+    /// nothing focused: shortcuts
     Shortcuts,
 }
 
-/// `typing`: Textfeld hat den Fokus; `focused`: irgendein Element hat ihn; `space`: Leertaste gedrückt.
+/// `typing`: a text field has the focus; `focused`: any element has it; `space`: space bar pressed.
 fn key_focus(typing: bool, focused: bool, space: bool) -> KeyFocus {
     match (typing, focused, space) {
         (true, ..) | (false, true, false) => KeyFocus::Keep,
@@ -48,10 +48,10 @@ fn key_focus(typing: bool, focused: bool, space: bool) -> KeyFocus {
     }
 }
 
-/// Leertaste vor dem Zeichnen aus der Eingabe nehmen, außer ein Textfeld hat den Fokus: egui löst
-/// sonst den fokussierten Knopf aus (nach Tab z. B. das Fenster-X – die App schloss sich). Der Fokus
-/// wird abgegeben; die Tastenkürzel bekommen die Taste zurück (Play/Pause). Enter löst fokussierte
-/// Knöpfe weiter aus.
+/// Take the space bar out of the input before drawing unless a text field has the focus: egui would
+/// otherwise trigger the focused button (after Tab e.g. the window X – the app closed). The focus
+/// is released; the shortcuts get the key back (Play/Pause). Enter still triggers focused
+/// buttons.
 pub fn hold_space(ctx: &egui::Context, raw: &mut egui::RawInput) -> Vec<egui::Event> {
     if typing(ctx) {
         return Vec::new();
@@ -65,8 +65,8 @@ pub fn hold_space(ctx: &egui::Context, raw: &mut egui::RawInput) -> Vec<egui::Ev
     held
 }
 
-/// Esc in einem Text- oder Wertfeld verwirft nur dessen Eingabe: Das Kürzel „Auswahl aufheben" darf
-/// im selben Bild nicht mehr greifen (das Feld gibt bei Esc den Fokus ab, danach sähe es die Taste).
+/// Esc in a text or value field only discards its input: the shortcut „Auswahl aufheben" must
+/// no longer act in the same frame (the field releases focus on Esc, afterwards it would see the key).
 fn esc_for_field(typing: bool, esc_pressed: bool) -> bool {
     typing && esc_pressed
 }
@@ -110,31 +110,31 @@ pub enum ClipTab {
     Text,
     Effects,
     Adjust,
-    /// Freistellen, Greenscreen, Bildqualität, Stabilisieren & Co. (Video/Bild)
+    /// Cut-out, green screen, image quality, stabilize & co. (video/image)
     Smart,
     Animation,
     Speed,
     Audio,
 }
 
-/// Was aus dem Asset-Bereich in Zeitleiste oder Player gezogen werden kann.
+/// What can be dragged from the asset area into the timeline or player.
 #[derive(Clone, Debug)]
 pub enum DragAsset {
     Media(MediaId),
-    /// Text, optional mit Vorlage
+    /// Text, optionally with a template
     Text(Option<&'static str>),
     Sticker(&'static str),
-    /// Eigener Sticker / eigenes Bild aus der Bibliothek
+    /// Own sticker / own image from the library
     OwnSticker(PathBuf),
     Effect(String),
     Filter(String),
-    /// Eingebauter (`xfade`-Name) oder Paket-Übergang (`<paket-id>/<asset-id>`)
+    /// Built-in (`xfade` name) or package transition (`<paket-id>/<asset-id>`)
     Transition(String),
     Sfx(&'static str),
     File(PathBuf),
 }
 
-/// Zustand des Voiceover-Panels.
+/// State of the voice-over panel.
 pub struct Voiceover {
     pub open: bool,
     pub device: Option<String>,
@@ -144,19 +144,19 @@ pub struct Voiceover {
     pub gain_db: f32,
     pub countdown_until: Option<Instant>,
     pub recorder: Option<Recorder>,
-    /// 0 = Aufnahme, 1 = Einstellungen
+    /// 0 = recording, 1 = settings
     pub tab: usize,
-    /// Lautstärke und Ton-Werkzeuge für die neue Aufnahme
+    /// Volume and audio tools for the new recording
     pub volume_db: f32,
     pub audio: AudioFx,
 }
 
 pub struct App {
     pub doc: Arc<Mutex<Document>>,
-    /// Kopie des Projekts für die Darstellung, erneuert bei jeder Revision.
+    /// Copy of the project for display, renewed on every revision.
     pub project: Project,
     pub revision: u64,
-    /// Zählt jeden Wechsel von `project` (auch neues Dokument mit gleicher Revision)
+    /// Counts every change of `project` (also a new document with the same revision)
     pub project_epoch: u64,
     pub screen: Screen,
     pub settings: AppSettings,
@@ -166,127 +166,127 @@ pub struct App {
     pub fonts: Arc<Mutex<cl_fonts::FontLibrary>>,
     pub system_font_count: Arc<Mutex<Option<usize>>>,
     pub plugins: cl_plugin::Registry,
-    /// Epidemic-Sound-Integration (nur aktiv, wenn das Plugin eingeschaltet ist)
+    /// Epidemic Sound integration (only active when the plugin is switched on)
     pub es: crate::epidemic::EsState,
-    /// Eigene Sticker und Sounds
+    /// Own stickers and sounds
     pub library: crate::library::Library,
-    /// Farben, Schriften und Logo des Nutzers (`brand.json`)
+    /// The user's colours, fonts and logo (`brand.json`)
     pub brand: crate::brand::BrandKit,
-    /// `brand` geändert, `brand.json` noch nicht geschrieben (siehe `brand_flush`)
+    /// `brand` changed, `brand.json` not yet written (see `brand_flush`)
     pub brand_unsaved: bool,
     pub lib_dialog: Option<crate::library_ui::LibDialog>,
     pub lib_dialog_since: u64,
-    /// Gespeicherte Look-Presets
+    /// Saved look presets
     pub presets: Vec<crate::presets::Preset>,
     pub preset_dialog: Option<crate::presets::PresetDialog>,
     pub preset_dialog_since: u64,
     pub preset_list_open: bool,
-    /// Projekt-Import aus anderen Programmen
+    /// Project import from other programs
     pub import: crate::import_ui::ImportState,
-    /// In/Out-Bereich und Schleife
+    /// In/out range and loop
     pub range_in: Option<Time>,
     pub range_out: Option<Time>,
     pub loop_range: bool,
-    /// Spuren, die solo gehört werden (nur Vorschau, nicht im Export)
+    /// Tracks heard solo (preview only, not in the export)
     pub solo: HashSet<TrackId>,
-    /// Einstellungsseite: Aktion, deren Taste gerade aufgenommen wird
+    /// Settings page: action whose key is being recorded right now
     pub capture_key: Option<&'static str>,
-    /// Geöffneter Marker-Editor
+    /// Open marker editor
     pub marker_edit: Option<u64>,
     pub marker_draft: Option<cl_core::Marker>,
-    /// Spur umbenennen: (Spur, Eingabe)
+    /// Rename track: (track, input)
     pub track_rename: Option<(TrackId, String)>,
-    /// Pegelanzeige: (Wert, Halten, Haltezeit) links/rechts
+    /// Level meter: (value, hold, hold time) left/right
     pub meter: [(f32, f32, f32); 2],
     pub paste_attrs: crate::edit_tools::PasteAttrs,
     pub paste_attrs_open: bool,
     pub tpl_dialog: Option<crate::templates::TplDialog>,
-    /// Medien, deren Proxy nicht erstellt werden konnte (nicht erneut versuchen)
+    /// Media whose proxy could not be created (do not retry)
     pub proxy_failed: HashSet<MediaId>,
-    /// Vorschau in eigenem Fenster
+    /// Preview in its own window
     pub ext_preview: bool,
-    /// Vorschaufenster im Vollbild (randlos maximiert)
+    /// Preview window in full screen (borderless maximized)
     pub ext_full: bool,
-    /// Vorschaugröße beim Start der Wiedergabe (bleibt bis zum Anhalten)
+    /// Preview size at the start of playback (stays until paused)
     pub play_canvas_px: Option<egui::Vec2>,
-    /// im Stand vorab geöffneter Strom einer schweren Ebene (siehe `App::update_preroll`)
+    /// stream of a heavy layer opened ahead while stopped (see `App::update_preroll`)
     pub preroll: Option<crate::player::Preroll>,
-    /// Aufteilung (Medien-, Inspektor-Breite, Zeitleisten-Höhe) als Anteil des Fensters
+    /// Layout (media width, inspector width, timeline height) as a share of the window
     pub layout_frac: (f32, f32, f32),
     pub layout_screen: Option<egui::Rect>,
-    /// Einführung (erster Start) und Rundgang
+    /// Introduction (first start) and tour
     pub onboard: Option<crate::onboarding::Onboard>,
     pub tour: Option<usize>,
-    /// Lage der Bereiche für den Rundgang
+    /// Position of the areas for the tour
     pub tour_rects: HashMap<&'static str, egui::Rect>,
-    /// Vorschau: maskierte Effekt-Elemente (Clip, zweite Fassung, Maske)
+    /// Preview: masked effect elements (clip, second version, mask)
     pub fx_overlays: Vec<(ClipId, ClipId, Option<Mask>, f32)>,
-    /// Messung (CUTLINE_PERF): UI-Bilder; Ströme und Bilder zählt der Player-Kern
+    /// Measurement (CUTLINE_PERF): UI frames; streams and frames are counted by the player core
     pub perf_ui: u32,
     pub perf_since: Instant,
-    /// Messung: Start der Wiedergabe bzw. des Ton-Neustarts (erstes Bild, erster Ton noch offen?)
+    /// Measurement: start of playback or of the audio restart (first frame, first sound still pending?)
     pub perf_play: Option<PerfPlay>,
-    /// laufende Wiedergabe fürs normale Protokoll (eine Zeile, wenn sie endet)
+    /// running playback for the normal log (one line when it ends)
     pub play_log: Option<PlayLog>,
-    /// Feiner System-Takt, solange abgespielt wird (Windows: 1 ms statt 15,6 ms)
+    /// Fine system timer while playing (Windows: 1 ms instead of 15.6 ms)
     hires_timer: Option<HiresTimer>,
-    /// Multicam-Modus: (Blickwinkel-Clips, Wechsel (Zeit, Index))
+    /// Multicam mode: (angle clips, switches (time, index))
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
-    /// Trefferliste von „Highlights finden“ (Fenster offen)
+    /// Result list of „Highlights finden“ (window open)
     pub shorts: Option<crate::shorts::ShortsState>,
-    /// Fenster „Thumbnail“ (offen) und seine zuletzt benutzten Einstellungen
+    /// Window „Thumbnail“ (open) and its last used settings
     pub thumb: Option<crate::thumb::ThumbWin>,
     pub thumb_opts: crate::thumb::Opts,
-    /// Neues Seitenverhältnis, das auf die Wahl „Clips neu einpassen?“ wartet
+    /// New aspect ratio waiting for the choice „Clips neu einpassen?“
     pub aspect_fit: Option<cl_core::ProjectSettings>,
-    /// Hilfslinien für Plattform-Bedienelemente im Player
+    /// Guides for platform controls in the player
     pub safe_area: bool,
-    /// Lautstärke der Wiedergabe (Regler im Player, nur Abhören)
+    /// Playback volume (slider in the player, monitoring only)
     pub volume: crate::audio::Volume,
-    /// Multicam: Index des Blickwinkels, dessen Ton durchgehend läuft
+    /// Multicam: index of the angle whose sound runs throughout
     pub multicam_audio: usize,
-    /// Quick-Action-Fenster (Pausen, Füllwörter, Ducking, Punch-in)
+    /// Quick action window (pauses, filler words, ducking, punch-in)
     pub quick: crate::quick::Quick,
-    /// Figuren (Plugin „Story-Werkzeuge“)
+    /// Characters (plugin „Story-Werkzeuge“)
     pub characters: Vec<crate::story::Character>,
-    /// Plugins Freesound und Pexels
+    /// Plugins Freesound and Pexels
     pub stock: crate::stock::StockState,
-    /// Letzte automatische Sicherung
+    /// Last automatic backup
     pub last_backup: Option<Instant>,
     pub backup_revision: u64,
     pub backups_open: bool,
-    /// Fehlende Medien nach dem Öffnen
+    /// Missing media after opening
     pub missing_open: bool,
-    /// Laufendes Archivieren: Fortschritt/Ergebnis
+    /// Running archiving: progress/result
     pub archive: Option<std::sync::mpsc::Receiver<Result<PathBuf, String>>>,
     pub lib_thumbs: crate::library_ui::Thumbs,
-    /// Ablagefläche der Bibliotheksliste im letzten Frame (Dateien dort landen in der Bibliothek)
+    /// Drop area of the library list in the last frame (files there land in the library)
     pub lib_drop: Option<(crate::library::Kind, egui::Rect)>,
     pub i18n: I18n,
     pub tab: LeftTab,
     pub inspector_tab: InspectorTab,
     pub clip_tab: ClipTab,
     pub asset_cat: HashMap<&'static str, String>,
-    /// Zuletzt angeklickter Clip (Inspektor, Player-Rahmen)
+    /// Last clicked clip (inspector, player frame)
     pub selected: Option<ClipId>,
-    /// Weitere ausgewählte Clips (Mehrfachauswahl)
+    /// Further selected clips (multi-selection)
     pub sel_extra: HashSet<ClipId>,
-    /// Ausgewählter Übergang (Clip, dessen `transition_out` gemeint ist)
+    /// Selected transition (clip whose `transition_out` is meant)
     pub selected_transition: Option<ClipId>,
     pub clipboard: Vec<Clip>,
-    /// Herkunftsspur je Clip der Zwischenablage (gleiche Reihenfolge)
+    /// Origin track per clip of the clipboard (same order)
     pub clipboard_src: Vec<TrackId>,
-    /// Spur, in die nach dem Kopieren geklickt wurde: dorthin fügt Strg+V ein (sonst Herkunftsspur)
+    /// Track clicked after copying: Ctrl+V pastes there (otherwise origin track)
     pub paste_track: Option<TrackId>,
-    /// Beim nächsten Frame eine Markierung in die System-Zwischenablage legen
+    /// Put a marker into the system clipboard on the next frame
     pub copy_marker: bool,
-    /// Clip mit laufender Bearbeitung im Inspektor (Vorschau, noch nicht im Verlauf)
+    /// Clip with a running edit in the inspector (preview, not yet in the history)
     pub live: Option<Clip>,
-    /// Leertaste dieses Bildes, vor dem Zeichnen abgefangen (siehe [`hold_space`])
+    /// Space bar of this frame, intercepted before drawing (see [`hold_space`])
     held_keys: Vec<egui::Event>,
-    /// Esc kam, während ein Textfeld den Fokus hatte: gilt nur dem Feld (siehe [`esc_for_field`])
+    /// Esc came while a text field had the focus: applies only to the field (see [`esc_for_field`])
     esc_field: bool,
-    /// Befehlssuche (Strg+K)
+    /// Command search (Ctrl+K)
     pub palette: crate::palette::Palette,
     pub playhead: Time,
     pub playing: bool,
@@ -307,57 +307,57 @@ pub struct App {
     pub focus_text: bool,
     toasts: Vec<(String, Instant, bool)>,
     pub decoder: Decoder,
-    /// Vorschau-Texturen je Clip (+ Schlüssel des angezeigten Bildes)
+    /// Preview textures per clip (+ key of the displayed frame)
     pub frames: HashMap<ClipId, (u64, egui::TextureHandle)>,
-    /// Player-Kern: Zustand der Wiedergabe, Ströme, Uhr, automatische Qualität (`playcore`);
-    /// `playing` ist nur sein Spiegel für die Oberfläche
+    /// Player core: playback state, streams, clock, automatic quality (`playcore`);
+    /// `playing` is only its mirror for the UI
     pub core: PlayCore<cl_media::FrameStream>,
-    /// öffnet Wiedergabe-Ströme im Hintergrund
+    /// opens playback streams in the background
     pub starter: Starter,
-    /// Bezugspunkt der Zeit des Kerns
+    /// Reference point of the core's time
     pub core_t0: Instant,
-    /// Fingerabdruck der Effekte je Clip für den Bearbeitungsstand (`player::fx_hash`)
+    /// Fingerprint of the effects per clip for the edit state (`player::fx_hash`)
     pub fx_hashes: (u64, HashMap<ClipId, u64>),
-    /// Fingerabdruck alles Hörbaren (Ton nur bei Änderungen neu starten)
+    /// Fingerprint of everything audible (restart sound only on changes)
     pub audio_sig: u64,
     pub audio: Option<AudioPlayer>,
     pub sfx_preview: Option<(String, AudioPlayer)>,
-    /// Länge des gerade vorgehörten Sounds (Ende erkennen, Fortschritt zeigen)
+    /// Length of the sound being previewed (detect end, show progress)
     pub sfx_preview_len: Time,
-    /// Bibliotheks-Sounds: geprüftes Medium und Wellenform (40 Balken), im Hintergrund geladen
+    /// Library sounds: checked medium and waveform (40 bars), loaded in the background
     pub sound_meta: HashMap<String, (MediaRef, Vec<f32>)>,
     pub sound_meta_req: HashSet<String>,
-    /// Wellenformen der Sound-Kacheln (auf Platte gemerkt, sofort da)
+    /// Waveforms of the sound tiles (remembered on disk, there at once)
     pub sound_bars: crate::soundbars::SoundBars,
-    /// Abspielen, sobald die Daten dieses Sounds da sind
+    /// Play as soon as this sound's data is there
     pub sound_pending: Option<String>,
     pub thumbs: HashMap<MediaId, egui::TextureHandle>,
-    /// Wellenform je Datei und Tonspur (0 = erste)
+    /// Waveform per file and audio track (0 = first)
     pub waves: HashMap<(MediaId, u32), Vec<f32>>,
     pub fx_thumbs: HashMap<String, egui::TextureHandle>,
     pub fx_thumbs_requested: HashSet<String>,
-    /// Rechtsklick → Eigenschaften
+    /// Right click → properties
     pub props: Option<crate::props::Props>,
-    /// Fenster „Exporte“ für dieses Projekt (Name)
+    /// Window „Exporte“ for this project (name)
     pub exports_for: Option<crate::exports::ExportsList>,
-    /// Sperrdatei des offenen Projekts (siehe `take_lock`)
+    /// Lock file of the open project (see `take_lock`)
     lock_file: Option<PathBuf>,
-    /// Ton beim Ziehen: (letzte Stelle, Zeitpunkt, Stopp-Signal des laufenden Stücks)
+    /// Sound while dragging: (last place, time, stop signal of the running snippet)
     pub scrub: Option<(Time, Instant, Option<Arc<std::sync::atomic::AtomicBool>>)>,
-    /// Untertitel, dessen Textfeld im nächsten Bild den Fokus bekommt
+    /// Subtitle whose text field gets the focus in the next frame
     pub caption_focus: Option<ClipId>,
-    /// Eingabefehler im gerade offenen Dialog (wird dort angezeigt, der Dialog bleibt offen)
+    /// Input error in the currently open dialog (shown there, the dialog stays open)
     pub dialog_error: Option<String>,
-    /// „Layout bearbeiten“ aktiv; Name für ein neues Profil
+    /// „Layout bearbeiten“ active; name for a new profile
     pub layout_edit: bool,
     pub layout_name: String,
-    /// Fehlermeldung im Einstellungsfenster (bleibt offen, statt nur eine Meldung unten)
+    /// Error message in the settings window (stays open instead of only a message at the bottom)
     pub settings_error: Option<String>,
-    /// Rückfrage/Fenster der Einstellungsseite „Inhalte“
+    /// Question/window of the settings page „Inhalte“
     pub contents_dialog: Option<crate::contents::ContentsDialog>,
-    /// Nachladbare Pakete: Liste und Downloads
+    /// Downloadable packages: list and downloads
     pub packs: crate::contents::PackDownloads,
-    /// Belegter Cache (zuletzt gezählt, Bytes)
+    /// Used cache (last counted, bytes)
     pub cache_size: Option<(Instant, u64)>,
     pub sticker_tex: HashMap<&'static str, egui::TextureHandle>,
     pub updater: crate::update::Updater,
@@ -366,36 +366,36 @@ pub struct App {
     pub pick_origin: Option<egui::Pos2>,
     pub censor_drag: Option<crate::pro::CensorDrag>,
     pub frame_cpu: Option<(ClipId, cl_media::RgbaFrame)>,
-    /// Vorschau von Shader-Übergängen (cl-gpu)
+    /// Preview of shader transitions (cl-gpu)
     pub shader_preview: crate::player::ShaderPreview,
     pub caption_lang: String,
     pub caption_from_clip: bool,
     registered_fonts: HashSet<String>,
-    /// egui übernimmt `set_fonts` erst im nächsten Frame. Bis dahin bleiben neue Familien hier.
+    /// egui takes over `set_fonts` only in the next frame. Until then new families stay here.
     pending_fonts: Option<HashSet<String>>,
-    /// Schriftnamen für den Inspektor (sortiert, höchstens alle 2 s neu gelesen)
+    /// Font names for the inspector (sorted, re-read at most every 2 s)
     pub font_names: Option<(Instant, Arc<Vec<String>>)>,
-    /// Stereo-Prüfung (ein Kanal stumm?) schon angestoßen: Dateien, zuletzt geprüfte Revision
+    /// Stereo check (one channel silent?) already started: files, last checked revision
     silent_warmed: (HashSet<PathBuf>, u64),
-    /// Proxy-Ordner zuletzt gezählt: (Zeit, Anzahl, Bytes)
+    /// Proxy folder last counted: (time, count, bytes)
     pub proxy_stats: Option<(Instant, u64, u64)>,
-    /// Quelle je laufendem Strom (Original oder Proxy-Stücke), siehe `proxy::App::stream_pick`
+    /// Source per running stream (original or proxy parts), see `proxy::App::stream_pick`
     pub proxy_picks: HashMap<u128, crate::proxy::Pick>,
-    /// Eigenschaften-Fenster: Zeilen einmal berechnet (Ziel, Revision, Zeilen)
+    /// Properties window: rows computed once (target, revision, rows)
     pub props_cache: Option<(crate::props::Props, u64, crate::props::PropsRows)>,
-    /// Projekt, das gerade im Hintergrund geöffnet wird
+    /// Project currently being opened in the background
     pub load: Option<crate::loading::Load>,
-    /// Medien vorhanden? (im Hintergrund geprüft, nie je Bild)
+    /// Media present? (checked in the background, never per frame)
     pub presence: crate::loading::Presence,
-    /// Dateien von außen in die Zeitleiste ziehen
+    /// Drag files from outside into the timeline
     pub drops: crate::file_drop::Drops,
-    /// Speichern, Autosave und Sicherungen im Hintergrund
+    /// Saving, autosave and backups in the background
     pub saver: crate::saving::Saver,
-    /// Vorschaubild schon angefordert (Medium, Pfad): nicht bei jeder Änderung erneut
+    /// Thumbnail already requested (medium, path): not again on every change
     thumb_requested: HashSet<(MediaId, PathBuf)>,
-    /// Proxy-Bau: Zwischenspeicher, Zähler, Pause
+    /// Proxy build: cache, counters, pause
     pub proxies: crate::proxy::ProxyState,
-    /// zum Wecken der Oberfläche aus Hintergrund-Aufträgen
+    /// to wake the UI from background jobs
     pub ui_ctx: egui::Context,
 }
 
@@ -628,7 +628,7 @@ impl App {
         if let Some(p) = open {
             app.open_project(&p);
         }
-        // Klicktest (nur mit CUTLINE_SHOTS): Entwurf ohne Datei-Dialog importieren
+        // click test (only with CUTLINE_SHOTS): import a draft without a file dialog
         if std::env::var_os("CUTLINE_SHOTS").is_some() {
             if let Some(d) = std::env::var_os("CUTLINE_IMPORT_DRAFT") {
                 app.import.open = true;
@@ -656,7 +656,7 @@ impl App {
             .push((crate::tr(msg), Instant::now(), true));
     }
 
-    /// Einziger Weg für Änderungen aus der Oberfläche.
+    /// The only way for changes from the UI.
     pub fn apply(&mut self, op: EditOp) -> Option<OpOutput> {
         let r = self.doc.lock().unwrap_or_else(|e| e.into_inner()).apply(op, OpSource::Ui);
         match r {
@@ -671,7 +671,7 @@ impl App {
         }
     }
 
-    /// Mehrere Ops als ein Undo-Schritt.
+    /// Several ops as one undo step.
     pub fn apply_batch(&mut self, ops: Vec<EditOp>) -> Option<OpOutput> {
         match ops.len() {
             0 => None,
@@ -683,7 +683,7 @@ impl App {
         }
     }
 
-    /// Alles, was `f` am Projekt ändert, als EIN Verlaufsschritt (z. B. neue Spur + Clip darin).
+    /// Everything `f` changes in the project as ONE history step (e.g. new track + clip in it).
     pub fn one_step<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         let rev = self.doc.lock().unwrap_or_else(|e| e.into_inner()).revision();
         let r = f(self);
@@ -699,7 +699,7 @@ impl App {
             Err(e) => self.toast_err(e.to_string()),
         }
     }
-    /// Zeitleiste als Bereich oben oder unten; gibt die Höhe zurück
+    /// Timeline as an area at the top or bottom; returns the height
     fn timeline_area(&mut self, ctx: &egui::Context, id: &'static str, top: bool, sr: egui::Rect, ft: f32) -> f32 {
         let p = if top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
         let r = p
@@ -715,7 +715,7 @@ impl App {
         r.height()
     }
 
-    /// Mehrere Schritte auf einmal (negativ = rückgängig)
+    /// Several steps at once (negative = undo)
     pub fn history_step(&mut self, steps: isize) {
         self.commit_live();
         self.live = None;
@@ -726,7 +726,7 @@ impl App {
         }
     }
 
-    /// Verlauf rechts im Inspektor zeigen
+    /// Show the history on the right in the inspector
     pub fn show_history(&mut self) {
         self.select_only(None);
         self.selected_transition = None;
@@ -771,15 +771,15 @@ impl App {
                     self.live = None;
                 }
             }
-            // Einzelbilder neu anfordern; laufende Ströme bleiben – ihr Schlüssel enthält Effekte
-            // und Timing, geänderte Clips wechseln ohne Stocken auf einen neuen Strom.
+            // request single frames anew; running streams stay – their key contains effects
+            // and timing, changed clips switch to a new stream without stalling.
             self.core.forget_stills();
             let sig = audio_signature(&self.project);
             if sig != self.audio_sig {
                 self.audio_sig = sig;
                 if self.playing && self.voiceover.recorder.is_none() {
-                    // hörbare Änderungen kurz danach hörbar (Regler ziehen startet den Ton nicht bei
-                    // jedem Schritt neu); das Bild läuft weiter
+                    // audible changes audible shortly after (dragging a slider does not restart the sound at
+                    // every step); the picture keeps running
                     self.core.edit(true, self.core_now());
                     if perf() && self.core.mode() == Mode::Spielen {
                         self.perf_play = Some(PerfPlay::new("Ton neu (Änderung)", self.playhead));
@@ -790,13 +790,13 @@ impl App {
         }
     }
 
-    /// Vorschaubilder und Wellenformen der vorhandenen Medien je einmal anfordern (nach Änderungen
-    /// und wenn die Prüfung der Dateien Neues meldet). Kein Dateisystem-Zugriff: Vorhandensein aus
-    /// dem Zwischenspeicher, Animationen der Bilder hat das Laden schon gelesen.
+    /// Request thumbnails and waveforms of the present media once each (after changes
+    /// and when the file check reports something new). No file system access: presence from
+    /// the cache, the loading already read the animations of the images.
     fn request_media_previews(&mut self) {
         let _s = section("Vorschaubilder anfordern");
-        // Vorschaubilder zuerst: Sie sind schnell und sollen nicht hinter den Wellenformen langer
-        // Dateien warten (die Aufträge laufen der Reihe nach)
+        // thumbnails first: they are fast and should not wait behind the waveforms of long
+        // files (the jobs run in order)
         for m in self.project.media.iter().filter(|m| self.presence.get(&m.path)) {
             if m.kind != MediaKind::Audio && !self.thumbs.contains_key(&m.id) && self.thumb_requested.insert((m.id, m.path.clone())) {
                 let anim = if m.kind == MediaKind::Image { cl_media::animation(&m.path) } else { None };
@@ -810,7 +810,7 @@ impl App {
         }
         for m in self.project.media.iter().filter(|m| self.presence.get(&m.path)) {
             if m.has_audio && !self.waves.contains_key(&(m.id, 0)) {
-                self.waves.insert((m.id, 0), Vec::new()); // Platzhalter: Auftrag nur einmal senden
+                self.waves.insert((m.id, 0), Vec::new()); // placeholder: send the job only once
                 self.decoder.send(Job::Wave {
                     media: m.id,
                     path: m.path.clone(),
@@ -818,7 +818,7 @@ impl App {
                 });
             }
         }
-        // weitere Tonspuren nur, wenn ein Clip sie spielt
+        // further audio tracks only if a clip plays them
         for c in self.project.timeline.tracks.iter().flat_map(|t| t.clips.iter()) {
             let (ClipContent::Media { media, .. }, Some(n)) = (&c.content, c.audio_stream) else { continue };
             let Some(m) = self.project.media(*media).filter(|m| n > 0 && n < m.audio_streams && self.presence.get(&m.path)) else { continue };
@@ -829,12 +829,12 @@ impl App {
         }
     }
 
-    /// Vorschau neu anfordern (Texturen bleiben bis zum neuen Bild stehen).
+    /// Request the preview anew (textures stay until the new frame).
     pub fn invalidate_preview(&mut self) {
         self.core.invalidate();
     }
 
-    // ---------- Auswahl ----------
+    // ---------- Selection ----------
 
     pub fn selection(&self) -> Vec<ClipId> {
         let mut v: Vec<ClipId> = self.sel_extra.iter().copied().collect();
@@ -885,7 +885,7 @@ impl App {
         self.sel_extra = all.into_iter().collect();
     }
 
-    /// Clip, wie er gerade dargestellt wird (inkl. laufender Inspektor-Bearbeitung).
+    /// Clip as it is currently displayed (incl. a running inspector edit).
     pub fn clip_view(&self, id: ClipId) -> Option<Clip> {
         match &self.live {
             Some(l) if l.id == id => Some(l.clone()),
@@ -893,7 +893,7 @@ impl App {
         }
     }
 
-    /// Wie `clip_view` für einen schon vorliegenden Clip: ohne Suche und ohne Klon
+    /// Like `clip_view` for a clip already at hand: without search and without clone
     pub fn clip_ref<'a>(&'a self, c: &'a Clip) -> &'a Clip {
         match &self.live {
             Some(l) if l.id == c.id => l,
@@ -901,7 +901,7 @@ impl App {
         }
     }
 
-    /// Laufende Inspektor-Bearbeitung in den Verlauf schreiben.
+    /// Write the running inspector edit into the history.
     pub fn commit_live(&mut self) {
         let Some(c) = self.live.take() else {
             return;
@@ -912,7 +912,7 @@ impl App {
         if orig == c {
             return;
         }
-        // Mehrfachauswahl: dieselben Änderungen auf alle anderen ausgewählten Clips übertragen
+        // multi-selection: apply the same changes to all other selected clips
         let mut ops = crate::multi_edit::propagate(&self.project, &orig, &c, &self.selection());
         if ops.is_empty() {
             self.apply(EditOp::ReplaceClip { clip: c });
@@ -922,12 +922,12 @@ impl App {
         }
     }
 
-    /// Clip-Zeit (relativ zum Clipbeginn) des Playheads, auf den Clip begrenzt.
+    /// Clip time (relative to the clip start) of the playhead, limited to the clip.
     pub fn rel_time(&self, c: &Clip) -> Time {
         Time((self.playhead - c.start).0.clamp(0, c.duration.0.max(0)))
     }
 
-    /// Eigenschaft setzen: mit Keyframes → Keyframe am Playhead, sonst Grundwert.
+    /// Set a property: with keyframes → keyframe at the playhead, otherwise base value.
     pub fn set_prop(&self, c: &mut Clip, p: Prop, v: f32) {
         if !c.keyframes.get(p).is_empty() {
             let t = self.rel_time(c);
@@ -949,7 +949,7 @@ impl App {
         }
     }
 
-    /// Keyframe am Playhead setzen/entfernen.
+    /// Set/remove a keyframe at the playhead.
     pub fn toggle_keyframe(&mut self, id: ClipId, props: &[Prop]) {
         let Some(mut c) = self.clip_view(id) else {
             return;
@@ -974,7 +974,7 @@ impl App {
                     Prop::Volume => ev.volume_db,
                     Prop::Strength => c.strength_at(t),
                 };
-                // Erster Keyframe: Grundwert übernehmen, damit nichts springt
+                // first keyframe: take over the base value so nothing jumps
                 c.keyframes.set(*p, t, v);
             }
         }
@@ -985,7 +985,7 @@ impl App {
         });
     }
 
-    /// Transformation aus dem Player übernehmen (Keyframes werden respektiert).
+    /// Apply the transformation from the player (keyframes are respected).
     pub fn commit_transform(&mut self, id: ClipId, tr: Transform) {
         let Some(mut c) = self.clip_view(id) else {
             return;
@@ -1001,9 +1001,9 @@ impl App {
         }
     }
 
-    // ---------- Schriften ----------
+    // ---------- Fonts ----------
 
-    /// Registriert UI-Schriften, Icons und alle Familien der Bibliothek bei egui.
+    /// Registers UI fonts, icons and all families of the library with egui.
     pub fn register_fonts(&mut self, ctx: &egui::Context) {
         let lib = self.fonts.lock().unwrap();
         let mut defs = egui::FontDefinitions::default();
@@ -1045,7 +1045,7 @@ impl App {
             .cloned()
             .unwrap_or_default();
         let mut names = HashSet::new();
-        // Bibliothek + häufige Systemschriften für Textvorlagen
+        // library + common system fonts for text templates
         let mut sources: Vec<(String, PathBuf, u32)> = Vec::new();
         for (family, faces) in lib.families() {
             if let Some(face) = faces
@@ -1088,7 +1088,7 @@ impl App {
         self.pending_fonts = Some(names);
     }
 
-    /// Je Bild: neu geladene Schriften übernehmen (erst jetzt kennt egui sie)
+    /// Each frame: take over newly loaded fonts (only now egui knows them)
     pub(crate) fn apply_pending_fonts(&mut self, ctx: &egui::Context) {
         if let Some(f) = self.pending_fonts.take() {
             let known = ctx.fonts(|fo| fo.families());
@@ -1096,7 +1096,7 @@ impl App {
                 .into_iter()
                 .filter(|n| known.contains(&egui::FontFamily::Name(n.clone().into())))
                 .collect();
-            // Textclips der Zeitleiste neu setzen (ihr Zwischenspeicher hängt an der Epoche)
+            // lay out the timeline's text clips anew (their cache hangs on the epoch)
             self.project_epoch += 1;
         }
     }
@@ -1108,7 +1108,7 @@ impl App {
         }
     }
 
-    /// Schriftdatei für den Export: Bibliothek, dann Systemschriften.
+    /// Font file for the export: library, then system fonts.
     pub fn font_files(&self) -> HashMap<String, (PathBuf, u32)> {
         let lib = self.fonts.lock().unwrap();
         let mut m: HashMap<String, (PathBuf, u32)> = lib
@@ -1173,11 +1173,11 @@ impl App {
         }
     }
 
-    // ---------- Medien ----------
+    // ---------- Media ----------
 
     pub fn import_media(&mut self, files: Vec<PathBuf>) -> Vec<MediaId> {
-        // ffprobe für neue Dateien vorab parallel (bis zu 8 Threads), übernommen wird unten
-        // wie bisher der Reihe nach
+        // ffprobe for new files in advance in parallel (up to 8 threads), taken over below
+        // in order as before
         let mut todo: Vec<&PathBuf> = files
             .iter()
             .filter(|f| {
@@ -1209,7 +1209,7 @@ impl App {
             if cl_fonts::FONT_EXTENSIONS.contains(&ext.as_str()) {
                 continue;
             }
-            // Schon importiert? Dann wiederverwenden
+            // already imported? Then reuse
             if let Some(m) = self.project.media.iter().find(|m| m.path == f) {
                 ids.push(m.id);
                 continue;
@@ -1255,7 +1255,7 @@ impl App {
         None
     }
 
-    /// Medium an Position `at` einfügen (Video → Hauptspur, Audio → Audiospur).
+    /// Insert a medium at position `at` (video → main track, audio → audio track).
     pub fn add_media_at(
         &mut self,
         media: MediaId,
@@ -1332,7 +1332,7 @@ impl App {
         self.add_image_overlay_at(path, at, track)
     }
 
-    /// Bild als Sticker-Clip (verkleinert) auf eine freie Overlay-Spur legen (ein Verlaufsschritt).
+    /// Put an image as a sticker clip (shrunk) on a free overlay track (one history step).
     pub fn add_image_overlay_at(
         &mut self,
         path: PathBuf,
@@ -1342,7 +1342,7 @@ impl App {
         self.one_step(|s| s.add_image_overlay_step(path, at, track, |_, _| {}))
     }
 
-    /// `place` ändert Dauer und Lage vor der Spurwahl (Logo aus dem Brand Kit).
+    /// `place` changes duration and position before the track choice (logo from the brand kit).
     pub(crate) fn add_image_overlay_step(
         &mut self,
         path: PathBuf,
@@ -1362,7 +1362,7 @@ impl App {
         let mut clip = clip;
         clip.transform.scale = 0.35;
         place(self, &mut clip);
-        // Sticker liegen immer über dem Video: freie Overlay-Spur suchen oder anlegen
+        // stickers always lie above the video: find or create a free overlay track
         let track = track.or_else(|| {
             self.project
                 .timeline
@@ -1389,8 +1389,8 @@ impl App {
         self.insert_clip(clip, track)
     }
 
-    /// Datei eines eingebauten Sounds; der Name enthält einen Fingerabdruck der Quelle, damit
-    /// verbesserte Sounds neu erzeugt werden
+    /// File of a built-in sound; the name contains a fingerprint of the source so
+    /// improved sounds are generated anew
     pub fn sfx_path(id: &str) -> PathBuf {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -1420,7 +1420,7 @@ impl App {
         self.add_media_at(media, at, track)
     }
 
-    /// Asset ablegen (aus Liste, Zeitleiste oder Player).
+    /// Drop an asset (from the list, timeline or player).
     pub fn drop_asset(
         &mut self,
         a: &DragAsset,
@@ -1447,8 +1447,8 @@ impl App {
             DragAsset::File(p) => {
                 self.add_file_at(p.clone(), at, track);
             }
-            // Auf einen Clip gezogen: wirkt auf diesen Clip. Ins Freie: eigenes Element auf einer
-            // Effekt-/Filterspur, das auf alles darunter wirkt.
+            // dragged onto a clip: acts on that clip. Into free space: own element on an
+            // effect/filter track that acts on everything below.
             DragAsset::Effect(id) => match self.visual_target(on_clip) {
                 Some(c) => self.add_effect(c, id),
                 None => {
@@ -1468,7 +1468,7 @@ impl App {
         }
     }
 
-    /// Clip unter dem Mauszeiger, falls er ein Bild hat (Video, Bild, Sticker).
+    /// Clip under the mouse pointer if it has a picture (video, image, sticker).
     fn visual_target(&self, on_clip: Option<ClipId>) -> Option<ClipId> {
         on_clip.filter(|c| {
             self.project.find_clip(*c).is_some_and(|(_, c)| {
@@ -1483,8 +1483,8 @@ impl App {
         })
     }
 
-    /// Effekt oder Filter als eigenes Element (3 s) bei `at` einfügen; eine dafür angelegte Spur
-    /// gehört zum selben Verlaufsschritt.
+    /// Insert an effect or filter as its own element (3 s) at `at`; a track created for it
+    /// belongs to the same history step.
     pub fn add_fx_clip(
         &mut self,
         id: &str,
@@ -1591,7 +1591,7 @@ impl App {
         self.clip_tab = ClipTab::Effects;
     }
 
-    /// Übergang zwischen `clip` und seinem direkten Nachfolger setzen.
+    /// Set the transition between `clip` and its direct successor.
     pub fn set_transition(&mut self, clip: ClipId, id: Option<&str>) {
         if let Some(i) = id {
             self.library.mark_used(&format!("tr:{i}"));
@@ -1625,7 +1625,7 @@ impl App {
         }
     }
 
-    /// Direkter Nachfolger auf derselben Spur (für Übergänge).
+    /// Direct successor on the same track (for transitions).
     pub fn next_adjacent(&self, clip: ClipId) -> Option<ClipId> {
         let (tr, c) = self.project.find_clip(clip)?;
         tr.clips
@@ -1634,7 +1634,7 @@ impl App {
             .map(|n| n.id)
     }
 
-    /// Übergang am nächstgelegenen Schnitt der Hauptspur (oder am ausgewählten Clip).
+    /// Transition at the nearest cut of the main track (or at the selected clip).
     pub fn apply_transition_near_playhead(&mut self, id: &str) {
         if let Some(c) = self.selected.filter(|c| self.next_adjacent(*c).is_some()) {
             self.set_transition(c, Some(id));
@@ -1657,7 +1657,7 @@ impl App {
         }
     }
 
-    // ---------- Bearbeiten ----------
+    // ---------- Edit ----------
 
     pub fn split_at_playhead(&mut self) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
@@ -1674,11 +1674,11 @@ impl App {
         }
     }
 
-    /// Clips, die „Teilen“ am Playhead trifft: die Auswahl, sonst der Clip der Hauptspur
+    /// Clips that „Teilen“ hits at the playhead: the selection, otherwise the main track's clip
     pub fn split_targets(&self) -> Vec<ClipId> {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
-        // Keine Splitter kürzer als ein halbes Bild (entstehen sonst an Clipgrenzen
-        // mit krummer Bildrate und stören den Export)
+        // no splinters shorter than half a frame (they come about at clip boundaries
+        // with odd frame rates and disturb the export)
         let half = Time::from_secs_f64(0.5 / self.project.settings.fps.as_f64());
         let splittable = |c: &Clip| c.contains(at) && at - c.start >= half && c.end() - at >= half;
         let sel = self.selection();
@@ -1705,7 +1705,7 @@ impl App {
         targets
     }
 
-    /// Löscht die Auswahl. Der Playhead springt an den Anfang des (ersten) gelöschten Clips.
+    /// Deletes the selection. The playhead jumps to the start of the (first) deleted clip.
     pub fn delete_selected(&mut self) {
         self.live = None;
         if let Some(t) = self.selected_transition.take() {
@@ -1742,7 +1742,7 @@ impl App {
         }
     }
 
-    /// Q / W: links bzw. rechts vom Playhead wegschneiden (ausgewählter Clip oder Hauptspur).
+    /// Q / W: cut away left or right of the playhead (selected clip or main track).
     pub fn delete_side(&mut self, left: bool) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
         let target = self
@@ -1807,7 +1807,7 @@ impl App {
                 clips.len(),
                 if clips.len() == 1 { "Clip" } else { "Clips" }
             ));
-            // Ziel zurück auf die Herkunftsspur, bis wieder in eine Spur geklickt wird
+            // target back to the origin track until a track is clicked again
             self.paste_track = None;
             (self.clipboard_src, self.clipboard) = clips.into_iter().unzip();
             self.copy_marker = true;
@@ -1823,7 +1823,7 @@ impl App {
         if self.clipboard.is_empty() {
             return;
         }
-        // Herkunftsspur bzw. zuletzt angeklickte Spur am Playhead; belegt: Nachfolgende schieben
+        // origin track or last clicked track at the playhead; taken: push the following ones
         let clips: Vec<(TrackId, Clip)> = self.clipboard_src.iter().copied().zip(self.clipboard.iter().cloned()).collect();
         let items = cl_core::paste_targets(&self.project, &clips, self.paste_track, self.playhead);
         let out = self.one_step(|s| {
@@ -1873,7 +1873,7 @@ impl App {
         self.apply_batch(ops);
     }
 
-    /// Ton eines Videoclips als eigenen Audioclip anlegen und im Video stummschalten.
+    /// Create a video clip's sound as its own audio clip and mute it in the video.
     pub fn extract_audio(&mut self, id: ClipId) {
         let Some(c) = self.clip_view(id) else { return };
         let ClipContent::Media {
@@ -1913,7 +1913,7 @@ impl App {
         self.toast(format!("{} Ton extrahiert", icon::WAVEFORM));
     }
 
-    /// Standbild: aktuelles Bild als 3-s-Bild am Playhead einfügen.
+    /// Still frame: insert the current frame as a 3 s image at the playhead.
     pub fn freeze_frame(&mut self) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
         let target = self
@@ -1998,7 +1998,7 @@ impl App {
         }
     }
 
-    /// Schnelle Änderung an allen ausgewählten Clips.
+    /// Quick change to all selected clips.
     pub fn modify_selection(&mut self, f: impl Fn(&mut Clip)) {
         self.commit_live();
         let ops: Vec<EditOp> = self
@@ -2022,7 +2022,7 @@ impl App {
         self.apply_batch(ops);
     }
 
-    // ---------- Projekte ----------
+    // ---------- Projects ----------
 
     pub fn default_project_path(&self) -> PathBuf {
         let name: String = paths::safe_name(&self.project.name);
@@ -2036,8 +2036,8 @@ impl App {
         p
     }
 
-    /// Projekt speichern: Momentaufnahme an den Speicher-Thread (serialisiert und schreibt
-    /// atomisch im Hintergrund). Ein Fehler kommt später über [`App::poll_saves`].
+    /// Save the project: snapshot to the save thread (serializes and writes
+    /// atomically in the background). An error comes later via [`App::poll_saves`].
     pub fn write_project(&mut self, p: &Path) {
         self.saver.send(crate::saving::Job {
             kind: crate::saving::Kind::Project,
@@ -2047,7 +2047,7 @@ impl App {
         });
         self.saved_revision = self.revision;
         self.last_saved = Some(Instant::now());
-        // neues Projekt oder „Speichern unter“: Sperre wandert zur neuen Datei
+        // new project or „Speichern unter“: the lock moves to the new file
         if self.lock_file.as_deref() != Some(lock_path(p).as_path()) {
             self.release_lock();
             self.take_lock(p);
@@ -2056,7 +2056,7 @@ impl App {
         self.send_project_thumb(p);
     }
 
-    /// Titelbild für die Startseite anfordern (erstes Bild der Bildspuren).
+    /// Request the cover image for the start page (first frame of the picture tracks).
     pub fn send_project_thumb(&mut self, p: &Path) {
         if let Some((path, at)) = self
             .project
@@ -2103,7 +2103,7 @@ impl App {
         }
     }
 
-    /// Automatisch speichern (1,5 s nach der letzten Änderung).
+    /// Save automatically (1.5 s after the last change).
     fn autosave(&mut self) {
         let _s = section("Autosave");
         if !self.settings.autosave || self.screen != Screen::Editor {
@@ -2145,7 +2145,7 @@ impl App {
 
     pub(crate) fn reset_editor(&mut self) {
         self.stop_playback();
-        // Ergebnisse laufender Ablagen und Aufgaben gehören zum verlassenen Projekt
+        // results of running drops and tasks belong to the left project
         self.drops.list.clear();
         self.tasks.next_generation();
         self.stock.stray = self.stock.busy;
@@ -2156,8 +2156,8 @@ impl App {
         self.playhead = Time::ZERO;
         self.timeline = TimelineState::default();
         self.frames.clear();
-        // Zwischenspeicher des alten Projekts freigeben und seine wartenden Aufträge verwerfen;
-        // Effekt-/Filter-/Übergangskacheln gelten für alle Projekte und bleiben
+        // free the old project's caches and discard its waiting jobs;
+        // effect/filter/transition tiles apply to all projects and stay
         self.decoder.next_generation();
         self.thumbs.clear();
         self.thumb_requested.clear();
@@ -2171,25 +2171,25 @@ impl App {
         self.invalidate_preview();
         self.player_zoom = 1.0;
         self.player_pan = egui::Vec2::ZERO;
-        // Fenster mit Zeiten und Treffern des alten Projekts schließen
+        // close windows with times and hits of the old project
         self.shorts = None;
         self.thumb = None;
         self.aspect_fit = None;
         self.quick.open = None;
         self.quick.hits = None;
-        // Umbau-Abbild gemerkt nach Projektstand, der je Projekt wieder bei 0 beginnt
+        // rebuild snapshot remembered by project state, which starts at 0 again per project
         self.export.framed = None;
     }
 
-    /// Beim Beenden: laufende Hintergrundaufgaben abbrechen, damit ihre FFmpeg-Prozesse enden
+    /// On quit: cancel running background tasks so their FFmpeg processes end
     pub fn cancel_background_work(&mut self) {
         for t in &self.tasks.list {
             t.cancel();
         }
     }
 
-    /// Stereo-Prüfung der Medien vorab anstoßen (Import, geladenes Projekt): sonst klingt das
-    /// erste Abspielen einseitig, solange das Ergebnis fehlt. Nacheinander in einem Thread.
+    /// Start the stereo check of the media in advance (import, loaded project): otherwise the
+    /// first playback sounds one-sided while the result is missing. One after another in a thread.
     fn warm_silent_channels(&mut self) {
         if self.silent_warmed.1 == self.revision {
             return;
@@ -2212,8 +2212,8 @@ impl App {
         }
     }
 
-    /// Projekt in den Editor setzen. Es gilt als ungespeichert (ein neues `Document` beginnt
-    /// wieder bei Revision 0 – sonst hielte man eine Wiederherstellung für gespeichert).
+    /// Put a project into the editor. It counts as unsaved (a new `Document` starts
+    /// at revision 0 again – otherwise a restore would be taken as saved).
     pub fn set_doc(&mut self, proj: Project) {
         *self.doc.lock().unwrap() = Document::new(proj);
         self.tasks.next_generation();
@@ -2223,7 +2223,7 @@ impl App {
         self.saved_revision = UNSAVED;
     }
 
-    /// `false`: altes Projekt ließ sich nicht speichern, es bleibt offen.
+    /// `false`: the old project could not be saved, it stays open.
     pub fn new_project(&mut self) -> bool {
         if !self.flush_before_leaving() {
             return false;
@@ -2241,21 +2241,21 @@ impl App {
         true
     }
 
-    /// Projektordner ändern und vorhandene Projekte mitnehmen. Fehler bleiben im
-    /// Einstellungsfenster stehen.
+    /// Change the project folder and take existing projects along. Errors stay in
+    /// the settings window.
     pub fn change_projects_dir(&mut self, new: PathBuf) {
         let old = paths::projects_dir();
         if new == old {
             return;
         }
-        // offenes Projekt erst sichern und Dateien freigeben (laufende Wiedergabe hält sie offen)
+        // save the open project first and release files (running playback keeps them open)
         self.stop_playback();
         if !self.flush_before_leaving() {
             return;
         }
         let mut reopen = None;
         let (moved, errs) = paths::move_projects(&old, &new);
-        // was umgezogen ist, wird nachgetragen – auch wenn anderes fehlschlug
+        // what moved is recorded – even if something else failed
         if !moved.is_empty() {
             crate::exports::move_dir(&old, &new);
             crate::exports::move_projects(&moved);
@@ -2272,7 +2272,7 @@ impl App {
                 reopen = Some(b.clone());
             }
         }
-        // Ordner nur wechseln, wenn nichts zurückgeblieben ist
+        // switch the folder only if nothing stayed behind
         if errs.is_empty() {
             let default = paths::data_dir().join("Projects");
             self.settings.projects_dir = (new != default).then_some(new.clone());
@@ -2284,30 +2284,30 @@ impl App {
         }
         self.settings.save();
         self.home.refresh();
-        // das offene Projekt vom neuen Ort laden (seine Medienpfade wurden umgeschrieben)
+        // load the open project from the new place (its media paths were rewritten)
         if let Some(p) = reopen {
             self.open_project(&p);
         }
     }
 
-    /// Projekt öffnen: Lesen, Prüfen und Vorbereiten im Hintergrund (siehe `loading.rs`); das
-    /// offene Projekt bleibt, bis das neue fertig ist (Abbrechen ändert nichts).
+    /// Open a project: reading, checking and preparing in the background (see `loading.rs`); the
+    /// open project stays until the new one is ready (cancelling changes nothing).
     pub fn open_project(&mut self, p: &Path) {
-        // dasselbe Projekt noch einmal: erst den offenen Stand schreiben – das Laden liest die
-        // Datei sofort und hielte den alten Stand sonst für gespeichert
+        // the same project once more: write the open state first – loading reads the
+        // file at once and would otherwise take the old state as saved
         if self.project_path.as_deref() == Some(p) && self.screen == Screen::Editor {
             if !self.flush_before_leaving() {
                 return;
             }
-            // bis das Laden fertig ist (oder abgebrochen wird), bleibt das Projekt offen
+            // the project stays open until loading is done (or cancelled)
             self.take_lock(p);
         }
         let ctx = self.ui_ctx.clone();
         self.start_load(p, crate::loading::LoadMode::Open, &ctx);
     }
 
-    /// Vor dem Verlassen eines Projekts: offene Änderungen speichern. `false`, wenn das nicht
-    /// ging – dann bleibt das Projekt offen, sonst wären die Änderungen weg.
+    /// Before leaving a project: save open changes. `false` if that did not
+    /// work – then the project stays open, otherwise the changes would be lost.
     pub(crate) fn flush_before_leaving(&mut self) -> bool {
         self.commit_live();
         self.finish_file_drops(Duration::from_secs(10));
@@ -2322,8 +2322,8 @@ impl App {
             self.write_project(&p);
             self.project_path = Some(p);
         }
-        // Speicher-Thread abwarten: erst wenn der Stand auf der Platte ist, darf das Projekt zu
-        // (Sperre frei, Editor leer, Datei verschoben/umbenannt)
+        // wait for the save thread: only once the state is on disk may the project close
+        // (lock free, editor empty, file moved/renamed)
         let idle = self.saver.wait_idle(Duration::from_secs(30));
         self.saver.last_err = None;
         self.poll_saves();
@@ -2338,8 +2338,8 @@ impl App {
         true
     }
 
-    /// Sperrdatei `<Projekt>.lock` (Inhalt: PID): warnt, wenn ein zweites Fenster dasselbe
-    /// Projekt öffnet – beide würden sich sonst still gegenseitig überschreiben.
+    /// Lock file `<project>.lock` (content: PID): warns when a second window opens the same
+    /// project – both would otherwise silently overwrite each other.
     pub(crate) fn take_lock(&mut self, p: &Path) {
         let lock = lock_path(p);
         let me = std::process::id();
@@ -2352,7 +2352,7 @@ impl App {
 
     fn release_lock(&mut self) {
         if let Some(l) = self.lock_file.take() {
-            // nur die eigene Sperre entfernen
+            // remove only our own lock
             if std::fs::read_to_string(&l).is_ok_and(|s| s.trim() == std::process::id().to_string()) {
                 let _ = std::fs::remove_file(l);
             }
@@ -2365,14 +2365,14 @@ impl App {
         }
         self.cancel_load();
         crate::applog::project("geschlossen", &self.project, None);
-        // jeder Weg zurück in den Editor setzt ihn ohnehin zurück: Bilder, Texturen und
-        // Decoder-Zwischenspeicher des Projekts schon jetzt freigeben
+        // every way back into the editor resets it anyway: free the project's frames, textures and
+        // decoder caches right now
         self.reset_editor();
         self.home.refresh();
         self.screen = Screen::Home;
     }
 
-    // ---------- Wiedergabe ----------
+    // ---------- Playback ----------
 
     pub fn last_frame(&self) -> Time {
         Time(
@@ -2383,14 +2383,14 @@ impl App {
         )
     }
 
-    /// Zeit für den Player-Kern (Sekunden seit dem Start)
+    /// Time for the player core (seconds since the start)
     pub fn core_now(&self) -> f64 {
         self.core_t0.elapsed().as_secs_f64()
     }
 
-    /// Ton-Aufträge des Kerns ausführen und seinen Zustand für die Oberfläche spiegeln.
+    /// Carry out the core's audio commands and mirror its state for the UI.
     pub fn run_core(&mut self) {
-        // Beginn einer Wiedergabe vor dem Tonstart (der blockiert ein wenig)
+        // start of a playback before the audio start (which blocks a little)
         let t0 = self.play_log.is_none().then(Instant::now);
         loop {
             let cmds = self.core.cmds();
@@ -2413,7 +2413,7 @@ impl App {
                     }
                     Cmd::ResumeAudio => {
                         if !self.audio.as_ref().is_some_and(|a| a.resume()) {
-                            // Ton ließ sich nicht fortsetzen: an derselben Stelle neu puffern
+                            // sound could not be resumed: buffer anew at the same place
                             let at = self.core.pos();
                             self.core.stop();
                             self.core.play(at, self.revision, self.core_now());
@@ -2423,7 +2423,7 @@ impl App {
             }
         }
         let playing = self.core.playing();
-        // Mehrkamera: Schnitte übernehmen, sobald die Wiedergabe endet (Stopp, Ende, Pause)
+        // multicam: take over cuts as soon as playback ends (stop, end, pause)
         if self.playing && !playing && self.multicam.as_ref().is_some_and(|m| !m.1.is_empty()) {
             self.playing = false;
             self.multicam_finish();
@@ -2432,8 +2432,8 @@ impl App {
         self.play_log_step(playing, t0);
     }
 
-    /// Eine Zeile je Wiedergabe ins Protokoll: beginnt mit dem Abspielen, endet mit Stopp, Pause,
-    /// Ende oder Sprung. Je UI-Bild nur ein paar Zuweisungen.
+    /// One line per playback in the log: begins with playing, ends with stop, pause,
+    /// end or jump. Only a few assignments per UI frame.
     fn play_log_step(&mut self, playing: bool, t0: Option<Instant>) {
         if !playing {
             self.end_play_log();
@@ -2444,8 +2444,8 @@ impl App {
             return;
         }
         if !perf() {
-            // ohne `CUTLINE_PERF` liest sonst niemand die Zähler: ab hier zählen
-            // shortcut: mit `CUTLINE_PERF` zählt bis zu 1 s vor dem Start mit; reicht für die Zeile
+            // without `CUTLINE_PERF` nobody reads the counters otherwise: count from here
+            // shortcut: with `CUTLINE_PERF` it counts up to 1 s before the start too; enough for the line
             self.core.take_stats();
         }
         self.play_log = Some(PlayLog::new(self.playhead, t0.unwrap_or_else(Instant::now)));
@@ -2463,8 +2463,8 @@ impl App {
     pub fn toggle_play(&mut self) {
         let now = self.core_now();
         if self.core.playing() {
-            // Pause mit offenen Strömen und Ton (an derselben Stelle ohne neues Puffern weiter);
-            // ohne laufenden Ton, bei J/K/L oder Mehrkamera: Stopp
+            // pause with open streams and sound (continue at the same place without new buffering);
+            // without running sound, with J/K/L or multicam: stop
             let running = self.audio.as_ref().is_some_and(|a| a.started());
             let hold = !self.multicam.as_ref().is_some_and(|m| !m.1.is_empty());
             self.core.pause(self.revision, running, hold);
@@ -2472,7 +2472,7 @@ impl App {
             self.core.play(self.playhead, self.revision, now);
         } else {
             self.commit_live();
-            // Mit In/Out-Bereich: im Bereich starten
+            // with an in/out range: start in the range
             if let (Some(a), Some(b)) = (self.range_in, self.range_out) {
                 if self.loop_range && (self.playhead < a || self.playhead >= b) {
                     self.playhead = a;
@@ -2481,8 +2481,8 @@ impl App {
             if self.playhead >= self.last_frame() {
                 self.playhead = Time::ZERO;
             }
-            // Erst puffern: der Playhead läuft los, wenn die Bildströme bereit sind. Der Ton wird
-            // gleichzeitig vorbereitet und setzt ein, sobald er da ist – das Bild wartet nicht auf ihn.
+            // buffer first: the playhead starts when the frame streams are ready. The sound is
+            // prepared at the same time and comes in as soon as it is there – the picture does not wait for it.
             self.core.play(self.playhead, self.revision, now);
             if perf() {
                 self.perf_play = Some(PerfPlay::new("Play", self.playhead));
@@ -2491,7 +2491,7 @@ impl App {
         self.run_core();
     }
 
-    /// J/K/L: mit Tempo `rate` abspielen (Einzelbilder, ohne Ton)
+    /// J/K/L: play at speed `rate` (single frames, without sound)
     pub fn start_shuttle(&mut self, rate: f64) {
         self.core.shuttle(rate, self.playhead, self.core_now());
         self.run_core();
@@ -2502,20 +2502,20 @@ impl App {
         self.run_core();
     }
 
-    /// Ton ab dem Playhead neu starten (Solo, Ausgabegerät). Die Uhr läuft weiter; der Ton setzt
-    /// ohne Sprung an der dann aktuellen Stelle ein (während des Pufferns erst mit dessen Ende).
+    /// Restart the sound from the playhead (solo, output device). The clock keeps running; the sound comes in
+    /// without a jump at the then current place (while buffering only when that ends).
     pub fn restart_audio(&mut self) {
         self.core.restart_audio(self.core_now());
         self.run_core();
     }
 
-    /// Ton ab `at` vorbereiten; `anchor`: sofort an der laufenden Uhr einsetzen
+    /// Prepare sound from `at`; `anchor`: come in at the running clock at once
     fn start_audio(&mut self, at: Time, anchor: bool) {
         self.audio = None;
         if self.voiceover.recorder.is_some() && self.voiceover.mute_project {
             return;
         }
-        // Solo: alle anderen Tonspuren stumm (nur in der Vorschau)
+        // solo: all other audio tracks muted (only in the preview)
         let proj = if self.solo.is_empty() {
             std::borrow::Cow::Borrowed(&self.project)
         } else {
@@ -2538,18 +2538,18 @@ impl App {
         }
     }
 
-    /// Ton beim Ziehen des Playheads: alle 250 ms ein kurzes Stück ab der aktuellen Stelle.
+    /// Sound while dragging the playhead: every 250 ms a short snippet from the current place.
     fn scrub_audio(&mut self, ctx: &egui::Context) {
         let moved = self.scrub.as_ref().is_none_or(|(t, _, _)| *t != self.playhead);
         let dragging = ctx.input(|i| i.pointer.primary_down());
         if self.settings.scrub_audio && !self.playing && dragging && moved {
             let due = self.scrub.as_ref().is_none_or(|(_, at, _)| at.elapsed() > Duration::from_millis(250));
-            // erster Aufruf nach dem Start merkt sich nur die Stelle
+            // the first call after the start only remembers the place
             if due && self.scrub.is_some() {
                 use std::sync::atomic::{AtomicBool, Ordering};
-                // Starten (FFmpeg, Audiogerät) und Beenden blockieren: beides im eigenen Thread.
-                // Der cpal-Strom ist nicht Send, also lebt das Stück ganz dort; die Oberfläche
-                // hält nur das Stopp-Signal und beendet damit das vorige Stück.
+                // starting (FFmpeg, audio device) and stopping block: both in their own thread.
+                // The cpal stream is not Send, so the snippet lives entirely there; the UI
+                // only holds the stop signal and ends the previous snippet with it.
                 if let Some((_, _, Some(old))) = &self.scrub {
                     old.store(true, Ordering::Relaxed);
                 }
@@ -2560,7 +2560,7 @@ impl App {
                     if perf() {
                         crate::applog::perf_line!("scrub: Ton ab {:.2} s, ok={}", at.as_secs_f64(), a.is_some());
                     }
-                    // Stück nach 350 ms beenden (oder früher, wenn das nächste beginnt)
+                    // end the snippet after 350 ms (or earlier when the next begins)
                     let t0 = Instant::now();
                     while a.is_some() && !s.load(Ordering::Relaxed) && t0.elapsed() < Duration::from_millis(350) {
                         std::thread::sleep(Duration::from_millis(10));
@@ -2573,7 +2573,7 @@ impl App {
         }
     }
 
-    /// Ton aus Sicht des Player-Kerns
+    /// Sound as seen by the player core
     fn audio_in(&self) -> AudioIn {
         match &self.audio {
             None => AudioIn::None,
@@ -2585,15 +2585,15 @@ impl App {
         }
     }
 
-    /// Stufen der automatischen Qualität (Teiler, halbe Bildrate); die erste ist die gewählte
+    /// Levels of the automatic quality (divisor, half frame rate); the first is the chosen one
     pub fn quality_steps(&self) -> Vec<(u32, bool)> {
         crate::playcore::quality_steps(self.settings.preview_div.max(1), self.project.settings.fps.as_f64())
     }
 
-    /// Takt des Player-Kerns: Playhead fortschreiben (Ton-Uhr, sonst Systemzeit), Puffern
-    /// beenden, Ende/Schleife, Pause verwerfen, wenn Playhead oder Projekt sich änderten.
+    /// Tick of the player core: advance the playhead (audio clock, otherwise system time), end
+    /// buffering, end/loop, discard the pause when playhead or project changed.
     fn advance_playhead(&mut self) {
-        // Vorschau-Ton: unlesbare Dateien fallen einzeln heraus, Hinweis einmal je Datei
+        // preview sound: unreadable files drop out one by one, hint once per file
         for w in cl_export::take_audio_warnings() {
             self.toast_err(w);
         }
@@ -2610,7 +2610,7 @@ impl App {
             recording: self.voiceover.recorder.is_some(),
             max_quality_level: max_q,
         };
-        // Sprung beim Abspielen beendet die Wiedergabe fürs Protokoll (die nächste beginnt dort)
+        // a jump during playback ends the playback for the log (the next begins there)
         if self.core.playing() && self.playhead != self.core.pos() {
             self.end_play_log();
         }
@@ -2618,7 +2618,7 @@ impl App {
         self.run_core();
     }
 
-    /// Daten eines Bibliotheks-Sounds anfordern (einmal je Schlüssel, im Hintergrund).
+    /// Request the data of a library sound (once per key, in the background).
     pub fn request_sound_meta(&mut self, key: &str, path: &Path, sfx: Option<&'static str>) {
         if self.sound_meta_req.insert(key.to_string()) {
             self.decoder.send(crate::preview::Job::SoundMeta {
@@ -2629,8 +2629,8 @@ impl App {
         }
     }
 
-    /// Vorhören umschalten. Ohne fertige Daten wird angefordert und danach gestartet –
-    /// die Oberfläche wartet nicht auf FFmpeg.
+    /// Toggle the preview. Without finished data it is requested and started afterwards –
+    /// the UI does not wait for FFmpeg.
     pub fn preview_sound(&mut self, key: String, path: &Path, sfx: Option<&'static str>) {
         if self.sfx_preview.as_ref().is_some_and(|(k, _)| *k == key)
             || self.sound_pending.as_deref() == Some(key.as_str())
@@ -2652,7 +2652,7 @@ impl App {
         }
     }
 
-    /// Vorhören eines bereits geprüften Mediums (auch Netz-Adressen, z. B. HLS).
+    /// Preview an already checked medium (also network addresses, e.g. HLS).
     pub fn preview_media(&mut self, key: String, m: MediaRef) {
         let mut p = Project::new("vorhören");
         let id = m.id;
@@ -2677,7 +2677,7 @@ impl App {
         }
     }
 
-    // ---------- Voiceover ----------
+    // ---------- Voice-over ----------
 
     pub fn start_voiceover(&mut self) {
         if self.voiceover.countdown && self.voiceover.countdown_until.is_none() {
@@ -2721,10 +2721,10 @@ impl App {
             Ok(path) => {
                 let ids = self.import_media(vec![path]);
                 if let Some(id) = ids.first() {
-                    // Live-Waveform übernehmen, bis die genaue berechnet ist
+                    // take over the live waveform until the exact one is computed
                     self.waves.entry((*id, 0)).or_insert(peaks);
                     if let Some(c) = self.add_media_at(*id, start, None) {
-                        // Einstellungen aus dem Einsprech-Fenster übernehmen
+                        // take over the settings from the voice-over window
                         let tuned = self.voiceover.volume_db.abs() > 0.01 || !self.voiceover.audio.is_empty();
                         if let Some(mut clip) = self.project.find_clip(c).map(|(_, x)| x.clone()).filter(|_| tuned) {
                             clip.volume_db = self.voiceover.volume_db;
@@ -2740,11 +2740,11 @@ impl App {
         }
     }
 
-    // ---------- Tastatur ----------
+    // ---------- Keyboard ----------
 
-    /// Esc schließt das oberste offene Fenster (Eigenschaften, Exporte, Sicherungen, Neu verknüpfen).
-    /// Läuft vor den Kürzeln, sonst verbraucht dort „escape“ die Taste und hebt nur die Auswahl auf.
-    /// Ein Dialog, der Esc/Enter selbst auswertet, ist offen
+    /// Esc closes the topmost open window (properties, exports, backups, relink).
+    /// Runs before the shortcuts, otherwise „escape“ uses up the key there and only clears the selection.
+    /// A dialog that evaluates Esc/Enter itself is open
     fn dialog_open(&self) -> bool {
         self.quick.open.is_some()
             || self.shorts.is_some()
@@ -2761,7 +2761,7 @@ impl App {
     }
 
     fn esc_closes(&mut self, ctx: &egui::Context) -> bool {
-        // darüber liegende Fenster zuerst: sonst schlösse Esc ein verdecktes Fenster dahinter
+        // windows on top first: otherwise Esc would close a hidden window behind
         if self.settings_open || self.dialog_open() {
             return false;
         }
@@ -2788,7 +2788,7 @@ impl App {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        // offenes Kontextmenü: Esc gehört dem Menü (sonst verbraucht das Kürzel die Taste)
+        // open context menu: Esc belongs to the menu (otherwise the shortcut uses up the key)
         if self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
             return;
         }
@@ -2796,7 +2796,7 @@ impl App {
         let space = !held.is_empty() || ctx.input(|i| i.key_pressed(Key::Space));
         ctx.input_mut(|i| i.events.extend(held));
         if std::mem::take(&mut self.esc_field) {
-            // das Feld hat die Eingabe verworfen und den Fokus abgegeben – die Auswahl bleibt
+            // the field has discarded the input and released the focus – the selection stays
             ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
             crate::widgets::mark_field_esc(ctx);
         }
@@ -2833,7 +2833,7 @@ impl App {
                 }
             }
         });
-        // Kopieren/Ausschneiden/Einfügen kommen als Ereignisse
+        // copy/cut/paste come as events
         let (copy, cut, paste) = ctx.input_mut(|i| {
             let mut r = (false, false, false);
             for e in &i.events {
@@ -2844,19 +2844,19 @@ impl App {
                     _ => {}
                 }
             }
-            // Falls das System kein Kopier-/Einfüge-Ereignis liefert (z. B. leere
-            // Zwischenablage), die Tasten direkt auswerten
+            // if the system delivers no copy/paste event (e.g. empty
+            // clipboard), evaluate the keys directly
             r.0 |= i.consume_key(Modifiers::COMMAND, Key::C);
             r.1 |= i.consume_key(Modifiers::COMMAND, Key::X);
             r.2 |= i.consume_key(Modifiers::COMMAND, Key::V);
-            // Strg+Alt+V (Windows: AltGr) ist „Attribute einfügen“, kein normales Einfügen
+            // Ctrl+Alt+V (Windows: AltGr) is „Attribute einfügen“, not a normal paste
             if r.2 && (i.modifiers.alt || actions.contains(&"paste_attrs")) {
                 r.2 = false;
                 if !actions.contains(&"paste_attrs") {
                     actions.push("paste_attrs");
                 }
             }
-            // kam die Taste selbst (Belegung „copy“/„cut“/„paste“), nicht doppelt ausführen
+            // if the key itself came (binding „copy“/„cut“/„paste“), do not run it twice
             r.0 &= !actions.contains(&"copy");
             r.1 &= !actions.contains(&"cut");
             r.2 &= !actions.contains(&"paste");
@@ -2866,7 +2866,7 @@ impl App {
             self.copy_selection();
         }
         if std::mem::take(&mut self.copy_marker) {
-            // Text in der Zwischenablage sorgt dafür, dass Strg+V ein Einfüge-Ereignis auslöst
+            // text in the clipboard makes Ctrl+V trigger a paste event
             ctx.copy_text("Cutline-Clips".into());
         }
         if cut {
@@ -2880,7 +2880,7 @@ impl App {
         }
     }
 
-    /// Erste Belegung einer Aktion als Text (für Menüzeilen), leer ohne Belegung.
+    /// First binding of an action as text (for menu rows), empty without a binding.
     pub fn key_of(&self, action: &str) -> String {
         crate::keymap::bindings(&self.settings.shortcuts)
             .into_iter()
@@ -2889,7 +2889,7 @@ impl App {
             .unwrap_or_default()
     }
 
-    /// Eine Aktion aus `keymap::ACTIONS` ausführen – Tastenkürzel und Menüs teilen sich das.
+    /// Run an action from `keymap::ACTIONS` – shortcuts and menus share this.
     pub fn run_action(&mut self, ctx: &egui::Context, a: &str) {
         let frame = Time::from_secs_f64(1.0 / self.project.settings.fps.as_f64());
         {
@@ -2986,7 +2986,7 @@ impl App {
                 "copy" => self.copy_selection(),
                 "cut" => self.cut_selection(),
                 "paste" => self.paste(),
-                // Menü oben links
+                // menu at the top left
                 "new_project" => {
                     self.new_project();
                 }
@@ -3010,7 +3010,7 @@ impl App {
                 "go_home" => self.go_home(),
                 "tour" => self.start_tour(),
                 "onboarding" => self.start_onboarding(),
-                // Schnellaktionen
+                // quick actions
                 "quick_pauses" => self.quick_open(crate::quick::QuickKind::Pauses),
                 "quick_fillers" => self.quick_open(crate::quick::QuickKind::Fillers),
                 "quick_ducking" => self.quick_open(crate::quick::QuickKind::Ducking),
@@ -3037,8 +3037,8 @@ impl App {
         }
     }
 
-    /// Ist die Aktion gerade möglich? Nur die Prüfungen, die Menüs und Werkzeugleiste ohnehin
-    /// machen; alles andere gilt als möglich.
+    /// Is the action possible right now? Only the checks that menus and toolbar do
+    /// anyway; everything else counts as possible.
     pub fn action_enabled(&self, a: &str) -> bool {
         match a {
             "undo" | "redo" => {
@@ -3063,7 +3063,7 @@ impl App {
 
     fn draw_toasts(&mut self, ctx: &egui::Context) {
         crate::applog::crash_notice(ctx, self);
-        // einmalig: Die Grafikkarte könnte in Hardware kodieren, nur der Treiber ist zu alt
+        // once: the graphics card could encode in hardware, only the driver is too old
         if !self.settings.driver_hint_shown && cl_export::old_driver_found() {
             self.settings.driver_hint_shown = true;
             self.settings.save();
@@ -3077,7 +3077,7 @@ impl App {
         if self.toasts.is_empty() {
             return;
         }
-        // gleiten von unten herein und blenden ein, am Ende aus; ohne Animationen sofort
+        // glide in from below and fade in, fade out at the end; without animations at once
         let (fade_in, fade_out) = (theme::anim(theme::MOTION), theme::anim(theme::MOTION_SLOW));
         let newest = self.toasts.last().map_or(1.0, |t| t.1.elapsed().as_secs_f32());
         let rise = if fade_in > 0.0 { 1.0 - theme::ease(newest / fade_in) } else { 0.0 };
@@ -3089,10 +3089,10 @@ impl App {
         egui::Area::new(egui::Id::new("toasts"))
             .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -24.0))
             .order(egui::Order::Foreground)
-            // nur Fehler-Toasts schließen per Klick; sonst bleibt die Fläche durchklickbar
+            // only error toasts close on click; otherwise the area stays click-through
             .interactable(self.toasts.iter().any(|t| t.2))
             .show(ctx, |ui| {
-                // Meldungen nicht Wort für Wort umbrechen (die Fläche hat keine feste Breite)
+                // do not wrap messages word by word (the area has no fixed width)
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 for (i, (msg, at, err)) in self.toasts.iter().enumerate().rev().take(3) {
                     let age = at.elapsed().as_secs_f32();
@@ -3116,7 +3116,7 @@ impl App {
                             color: Color32::from_black_alpha(120),
                         })
                         .show(ui, |ui| {
-                            // überlange Meldung (langer Vorlagenname): innerhalb des Fensters mit „…“ kürzen
+                            // overlong message (long template name): shorten with „…“ within the window
                             ui.add(egui::Label::new(RichText::new(toast_line(msg, *err)).color(
                                 if *err {
                                     theme::DANGER_TEXT()
@@ -3153,7 +3153,7 @@ impl App {
         if dropped.is_empty() {
             return;
         }
-        // Über der Sticker- bzw. Soundliste abgelegt: in die eigene Bibliothek
+        // dropped over the sticker or sound list: into the own library
         if let (Some((kind, rect)), Some(pos)) =
             (self.lib_drop, ctx.input(|i| i.pointer.hover_pos()).or(self.drops.pos))
         {
@@ -3180,7 +3180,7 @@ impl App {
         if !fonts.is_empty() {
             self.import_fonts(ctx, fonts);
         }
-        // Mediendateien im Hintergrund, über der Zeitleiste abgelegt auch gleich dorthin
+        // media files in the background, dropped over the timeline also right there
         let (files, other): (Vec<_>, Vec<_>) = media.into_iter().partition(|p| crate::file_drop::is_media(p));
         let target = if self.screen == Screen::Editor { self.drop_target() } else { None };
         if !files.is_empty() {
@@ -3196,11 +3196,11 @@ impl App {
 }
 
 impl App {
-    /// Bildtakt der Oberfläche beim Abspielen: etwa zwei UI-Bilder pro Videobild.
-    /// Wartezeit für `request_repaint_after` bis zum nächsten fälligen Bild (Projekt-Bildrate);
-    /// beim Puffern kurz nachsehen. egui zieht von jeder Wartezeit die erwartete Bildzeit ab
-    /// (`predicted_dt`, fest 1/60 s), deshalb wird sie hier aufgeschlagen. Genau wird der Termin
-    /// erst mit dem feinen Zeitgeber ([`HiresTimer`]); sonst rastet Windows auf ~15,6 ms.
+    /// Frame pacing of the UI during playback: about two UI frames per video frame.
+    /// Waiting time for `request_repaint_after` until the next due frame (project frame rate);
+    /// while buffering check shortly. egui subtracts the expected frame time from every waiting time
+    /// (`predicted_dt`, fixed 1/60 s), so it is added here. The deadline is only exact
+    /// with the fine timer ([`HiresTimer`]); otherwise Windows snaps to ~15.6 ms.
     pub fn play_repaint_delay(&self) -> Duration {
         let wait = if self.core.mode() == Mode::Puffern {
             Duration::from_millis(10)
@@ -3210,10 +3210,10 @@ impl App {
         wait + EGUI_PREDICTED_DT
     }
 
-    /// Messpunkte der Wiedergabe: Play → erster Ton (auch fürs normale Protokoll), Ton-Aussetzer (`CUTLINE_PERF`)
+    /// Playback measurement points: Play → first sound (also for the normal log), audio dropouts (`CUTLINE_PERF`)
     fn perf_audio(&mut self) {
         if let (Some(l), Some(t)) = (&mut self.play_log, self.audio.as_ref().and_then(|a| a.first_sound())) {
-            // nach einer Pause gilt der Ton von vorher nicht
+            // after a pause the sound from before does not count
             if l.sound.is_none() && t >= l.pressed {
                 l.sound = Some(t - l.pressed);
             }
@@ -3238,7 +3238,7 @@ impl App {
         }
     }
 
-    /// Messpunkt: ein Strombild der Hauptebene wurde gezeigt (Play → erstes weitergeschaltetes Bild)
+    /// Measurement point: a stream frame of the main layer was shown (Play → first advanced frame)
     pub fn perf_frame_shown(&mut self) {
         if let Some(l) = self.play_log.as_mut().filter(|l| l.frame.is_none() && self.playhead > l.at) {
             l.frame = Some(l.pressed.elapsed());
@@ -3251,12 +3251,12 @@ impl App {
 }
 
 impl eframe::App for App {
-    /// Fenstergrund in der Farbe des Themes (sichtbar in den Lücken zwischen den Karten)
+    /// Window background in the theme colour (visible in the gaps between the cards)
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
         visuals.panel_fill.to_normalized_gamma_f32()
     }
 
-    /// Klicktests ohne echten Mauszeiger (nur mit `CUTLINE_SHOTS`), siehe `devinput.rs`
+    /// Click tests without a real mouse pointer (only with `CUTLINE_SHOTS`), see `devinput.rs`
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         crate::devinput::feed(ctx, raw);
         self.held_keys = hold_space(ctx, raw);
@@ -3266,7 +3266,7 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
-        // Oberflächengröße an die Fenstergröße binden: Dialoge passen immer ins Fenster
+        // bind the UI size to the window size: dialogs always fit into the window
         let zoom = ctx.zoom_factor();
         let want = crate::chrome::effective_ui_scale(self.ui_scale, ctx.screen_rect().size() * zoom);
         if (want - zoom).abs() > 0.005 {
@@ -3320,9 +3320,9 @@ impl eframe::App for App {
             ctx.style_mut(|s| s.debug.show_widget_hits = true);
         }
         self.apply_pending_fonts(ctx);
-        // „System“ folgt einem Wechsel des Betriebssystems sofort
+        // „System“ follows a change of the operating system at once
         theme::select(ctx, &self.settings.theme);
-        // Vorhören zu Ende → Knopf zurück auf „Abspielen“
+        // preview finished → button back to „Abspielen“
         if let Some((_, a)) = &self.sfx_preview {
             if a.started() && a.position() + Time::from_millis(40) >= self.sfx_preview_len {
                 self.sfx_preview = None;
@@ -3353,13 +3353,13 @@ impl eframe::App for App {
         }
         self.poll_epidemic(ctx);
         self.poll_stock();
-        // Exporte laufen auch auf der Startseite weiter, der nächste wartende startet von selbst
+        // exports keep running on the start page too, the next waiting one starts by itself
         if let Some((msg, done)) = self.export.poll(ctx) {
-            // Erfolgreicher Export mit Epidemic-Musik wird gemeldet (Nutzungsbedingungen) – für das
-            // Projekt, aus dem er stammt
+            // a successful export with Epidemic music is reported (terms of use) – for the
+            // project it comes from
             if let Some(p) = done.filter(|_| msg.contains("Export fertig")) {
                 self.report_epidemic_export(ctx, &p);
-                // nur wenn nichts vorgehört wird: `preview_sound` schaltet um und würde es abbrechen
+                // only if nothing is being previewed: `preview_sound` toggles and would abort it
                 if self.settings.export_sound
                     && !self.playing
                     && self.sfx_preview.is_none()
@@ -3375,7 +3375,7 @@ impl eframe::App for App {
         }
 
         self.window_frame(ctx);
-        // Fenster-Kreuz während eines Exports: erst nachfragen
+        // window close button during an export: ask first
         self.export.guard_close(ctx);
         egui::TopBottomPanel::top("top")
             .exact_height(theme::TITLE_H)
@@ -3414,13 +3414,13 @@ impl eframe::App for App {
             && self.onboard.is_none()
             && self.tour.is_none()
             && !self.esc_closes(ctx)
-            // Esc im Bearbeiten-Modus der Reihenfolge beendet nur diesen
+            // Esc in the reorder edit mode only ends that
             && (self.settings_open || self.dialog_open() || !crate::library_ui::esc_order_edit(ctx))
         {
             self.shortcuts(ctx);
         }
         self.command_palette(ctx);
-        // Countdown vor der Voiceover-Aufnahme
+        // countdown before the voice-over recording
         if let Some(until) = self.voiceover.countdown_until {
             if Instant::now() >= until {
                 self.start_voiceover();
@@ -3437,16 +3437,16 @@ impl eframe::App for App {
         self.scrub_audio(ctx);
 
         if !self.player_max {
-            // Aufteilung relativ zur Fenstergröße: der Player behält immer genug Platz
+            // layout relative to the window size: the player always keeps enough room
             let sr = ctx.screen_rect();
-            // Bereiche als Anteil der Fenstergröße: Wird das Fenster kleiner und wieder größer,
-            // wachsen Medien, Inspektor und Zeitleiste wieder mit (statt gestaucht zu bleiben).
+            // areas as a share of the window size: if the window gets smaller and larger again,
+            // media, inspector and timeline grow along again (instead of staying squeezed).
             let resized = self
                 .layout_screen
                 .is_some_and(|s| (s.width() - sr.width()).abs() > 1.0 || (s.height() - sr.height()).abs() > 1.0);
             let (fa, fi, ft) = self.layout_frac;
             let lay = self.settings.layout.clone();
-            // eigene Kennungen je Seite, damit gemerkte Größen nicht zwischen den Seiten springen
+            // own ids per side so remembered sizes do not jump between the sides
             let (id_a, id_i, id_t) = (
                 if lay.assets_right { "assets-r" } else { "assets" },
                 if lay.assets_right { "inspector-l" } else { "inspector" },
@@ -3467,7 +3467,7 @@ impl eframe::App for App {
             }
             let small = sr.width() < 1200.0;
             let mut th = 0.0;
-            // Zeitleiste über die volle Breite: vor den Seitenbereichen anlegen
+            // timeline across the full width: create before the side areas
             if lay.timeline_full {
                 th = self.timeline_area(ctx, id_t, lay.timeline_top, sr, ft);
             }
@@ -3498,8 +3498,8 @@ impl eframe::App for App {
             if !lay.timeline_full {
                 th = self.timeline_area(ctx, id_t, lay.timeline_top, sr, ft);
             }
-            // Vom Nutzer gezogene Breiten als Anteil merken (nur beim Ziehen und wenn das Fenster
-            // gleich blieb: sonst überschreiben Mindestbreiten nach Zoom/Größenwechsel die Anteile)
+            // remember widths dragged by the user as a share (only while dragging and if the window
+            // stayed the same: otherwise minimum widths after zoom/resize would overwrite the shares)
             if !resized && sr.width() > 0.0 && sr.height() > 0.0 && ctx.input(|i| i.pointer.primary_down()) {
                 self.layout_frac = (aw / sr.width(), r.width() / sr.width(), th / sr.height());
             }
@@ -3517,9 +3517,9 @@ impl eframe::App for App {
         self.voiceover_window(ctx);
         self.settings_window(ctx);
         self.update_dialog(ctx);
-        // nur der offene Dialog startet Exporte und braucht die Schriften
+        // only the open dialog starts exports and needs the fonts
         let fonts_owned = if self.export.is_open() { self.font_files() } else { HashMap::new() };
-        // Titelbild: der Clip der Hauptspur am Playhead (sonst irgendein sichtbares Bild)
+        // cover image: the main track's clip at the playhead (otherwise any visible frame)
         let main = self
             .project
             .timeline
@@ -3528,7 +3528,7 @@ impl eframe::App for App {
             .find(|t| t.main)
             .and_then(|t| t.clips.iter().find(|c| c.contains(self.playhead)))
             .and_then(|c| self.frames.get(&c.id).map(|f| (c.id, f)));
-        // nur Bilder von Clips, die es noch gibt (sonst zeigt ein leeres Projekt ein altes Bild)
+        // only frames of clips that still exist (otherwise an empty project shows an old frame)
         let tex = main
             .or_else(|| self.project.timeline.tracks.iter().flat_map(|t| &t.clips).find_map(|c| self.frames.get(&c.id).map(|f| (c.id, f))))
             .map(|(id, (_, t))| (id, t.id(), t.size_vec2(), self.playhead));
@@ -3543,7 +3543,7 @@ impl eframe::App for App {
         }
         if let Some(id) = self.export.take_picked_platform() {
             if let Some(s) = &mut self.aspect_fit {
-                // Formatwechsel wartet auf „Clips neu einpassen?“: Plattform kommt mit (Esc verwirft beides)
+                // format change waits for „Clips neu einpassen?“: the platform comes along (Esc discards both)
                 s.platform = Some(id.to_string());
             } else if self.project.settings.platform.as_deref() != Some(id) {
                 let mut s = self.project.settings.clone();
@@ -3571,20 +3571,20 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
-        // laufenden Export sauber abbrechen: kein verwaistes FFmpeg, keine .part-Datei
+        // cancel the running export cleanly: no orphaned FFmpeg, no .part file
         self.export.cancel_and_wait(Duration::from_secs(5));
         self.cancel_background_work();
-        // laufender Import räumt sein halbes Projekt weg, ffprobe-Prüfungen enden
+        // a running import cleans away its half project, ffprobe checks end
         self.cancel_import();
         self.brand_flush();
         let flushed = self.flush_before_leaving();
-        // alles Wartende schreiben lassen (Speicher-Thread), bevor das Programm endet
+        // let everything waiting be written (save thread) before the program ends
         if !self.saver.wait_idle(Duration::from_secs(60)) {
             eprintln!("Speichern beim Beenden dauert zu lange");
         }
         self.poll_saves();
         if !flushed || self.saved_revision == UNSAVED {
-            // letzter Ausweg: Stand in die Sicherungen schreiben
+            // last resort: write the state into the backups
             let dir = match &self.project_path {
                 Some(p) => crate::project_tools::backup_dir(p),
                 None => paths::data_dir().join("Backups").join(paths::safe_name(&self.project.name)),
@@ -3606,7 +3606,7 @@ fn lock_path(p: &Path) -> PathBuf {
     PathBuf::from(l)
 }
 
-/// Fingerabdruck aller hörbaren Eigenschaften (Spuren, Tonclips, Lautstärke, Tempo, Ton-Effekte).
+/// Fingerprint of all audible properties (tracks, audio clips, volume, speed, audio effects).
 fn audio_signature(p: &Project) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -3647,7 +3647,7 @@ fn audio_signature(p: &Project) -> u64 {
 }
 
 impl App {
-    /// Beim Ziehen aus der Bibliothek: Symbol und Name am Mauszeiger, damit klar ist, was bewegt wird.
+    /// When dragging from the library: icon and name at the mouse pointer, so it is clear what is being moved.
     fn drag_ghost(&self, ctx: &egui::Context) {
         let Some(a) = egui::DragAndDrop::payload::<DragAsset>(ctx) else {
             return;
@@ -3716,7 +3716,7 @@ impl App {
                     })
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            // Icon-Glyphe
+                            // icon glyph
                             ui.label(egui::RichText::new(glyph).size(16.0).color(theme::TEXT()));
                             let mut l = label;
                             if l.chars().count() > 28 {
@@ -3731,13 +3731,13 @@ impl App {
     }
 }
 
-/// Messung mit `CUTLINE_PERF` (Variable einmal gelesen, nicht in jedem Bild)
+/// Measurement with `CUTLINE_PERF` (variable read once, not in every frame)
 pub fn perf() -> bool {
     static P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *P.get_or_init(|| std::env::var_os("CUTLINE_PERF").is_some())
 }
 
-/// Messung: Rechenzeit je UI-Bild (Summe und Maximum seit der letzten `perf`-Zeile, µs)
+/// Measurement: compute time per UI frame (sum and maximum since the last `perf` line, µs)
 static PERF_SUM_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static PERF_MAX_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 struct PerfFrame(Instant);
@@ -3756,17 +3756,17 @@ impl Drop for PerfFrame {
     }
 }
 
-/// Ab hier meldet `CUTLINE_PERF` ein Bild als zu lang.
+/// From here on `CUTLINE_PERF` reports a frame as too long.
 const SLOW_FRAME: Duration = Duration::from_millis(100);
 thread_local! {
-    /// Abschnitte des laufenden UI-Bildes (nur mit `CUTLINE_PERF`)
+    /// Sections of the running UI frame (only with `CUTLINE_PERF`)
     static PERF_SECTIONS: std::cell::RefCell<Vec<(&'static str, Duration)>> = const { std::cell::RefCell::new(Vec::new()) };
-    /// Dauer und Abschnitte des letzten UI-Bildes (für Mess-Tests)
+    /// Duration and sections of the last UI frame (for measurement tests)
     static PERF_LAST: std::cell::RefCell<(Duration, Vec<(&'static str, Duration)>)> = const { std::cell::RefCell::new((Duration::ZERO, Vec::new())) };
 }
 
-/// Abschnitt eines UI-Bildes messen (`CUTLINE_PERF`), bis der Wächter fällt:
-/// `let _s = section("Proxys");`. Ohne Messung kostet er nichts.
+/// Measure a section of a UI frame (`CUTLINE_PERF`) until the guard drops:
+/// `let _s = section("Proxys");`. Without measurement it costs nothing.
 pub fn section(what: &'static str) -> PerfSection {
     PerfSection(what, perf().then(Instant::now))
 }
@@ -3779,8 +3779,8 @@ impl Drop for PerfSection {
     }
 }
 
-/// Standbild-Clip (3 s, Bild `img`) aus Clip `c` am Zeitpunkt `at`: gleiche Lage, gleicher
-/// Zuschnitt, Spiegeln, Filter und die Zensur an dieser Stelle.
+/// Still-frame clip (3 s, image `img`) from clip `c` at time `at`: same position, same
+/// crop, mirroring, filters and the censoring at this place.
 fn freeze_clip(c: &Clip, img: MediaId, at: Time) -> Clip {
     let mut f = Clip::new(
         ClipContent::Media {
@@ -3797,7 +3797,7 @@ fn freeze_clip(c: &Clip, img: MediaId, at: Time) -> Clip {
         flip_v: c.fx.flip_v,
         filter: c.fx.filter.clone(),
         adjust: c.fx.adjust,
-        // Standbild aus der Quelle: die Zensur an dieser Stelle muss mit
+        // still frame from the source: the censoring at this place must come along
         censor: c
             .fx
             .censor
@@ -3809,7 +3809,7 @@ fn freeze_clip(c: &Clip, img: MediaId, at: Time) -> Clip {
     f
 }
 
-/// Splitscreen-Spalte → Standbild bleibt in der Spalte (Zuschnitt geht mit)
+/// Split-screen column → still frame stays in the column (crop comes along)
 #[test]
 fn freeze_frame_keeps_crop() {
     let mut c = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(5.0));
@@ -3819,13 +3819,13 @@ fn freeze_frame_keeps_crop() {
     assert_eq!((f.transform, f.crop), (c.transform, c.crop));
 }
 
-/// Dauer und Abschnitte des letzten UI-Bildes (Mess-Tests)
+/// Duration and sections of the last UI frame (measurement tests)
 #[cfg(test)]
 pub fn last_frame() -> (Duration, Vec<(&'static str, Duration)>) {
     PERF_LAST.with(|l| l.borrow().clone())
 }
 
-/// Teuerster Abschnitt eines Bildes; was keinem Abschnitt gehört, zählt als „übrige Oberfläche“.
+/// Most expensive section of a frame; whatever belongs to no section counts as „übrige Oberfläche“.
 fn slowest_section(total: Duration, sections: &[(&'static str, Duration)]) -> (&'static str, Duration) {
     let mut sum: std::collections::HashMap<&'static str, Duration> = std::collections::HashMap::new();
     for (w, d) in sections {
@@ -3838,11 +3838,11 @@ fn slowest_section(total: Duration, sections: &[(&'static str, Duration)]) -> (&
         .unwrap_or(("übrige Oberfläche", rest))
 }
 
-/// Messung (`CUTLINE_PERF`): eine Wiedergabe bzw. ein Ton-Neustart
+/// Measurement (`CUTLINE_PERF`): one playback or one audio restart
 pub struct PerfPlay {
     pub what: &'static str,
     pub pressed: Instant,
-    /// Playhead beim Start (erstes Bild „weitergeschaltet“ = Playhead danach)
+    /// Playhead at the start (first frame "advanced" = playhead after it)
     pub at: Time,
     pub frame: bool,
     pub sound: bool,
@@ -3854,20 +3854,20 @@ impl PerfPlay {
     }
 }
 
-/// Eine Wiedergabe fürs normale Protokoll: eine Zeile, wenn sie endet (Stopp, Pause, Ende, Sprung).
-/// Die Zähler sind die von `playcore::Stats`, die Zeiten die der `CUTLINE_PERF`-Messpunkte.
+/// One playback for the normal log: one line when it ends (stop, pause, end, jump).
+/// The counters are those of `playcore::Stats`, the times those of the `CUTLINE_PERF` measurement points.
 pub struct PlayLog {
     pressed: Instant,
-    /// Playhead beim Start (erstes Bild „weitergeschaltet“ = Playhead danach)
+    /// Playhead at the start (first frame "advanced" = playhead after it)
     at: Time,
     frame: Option<Duration>,
     sound: Option<Duration>,
     stats: crate::playcore::Stats,
-    /// höchste erreichte Qualitätsstufe
+    /// highest quality level reached
     quality: usize,
 }
 
-/// Kürzere Wiedergaben (Doppeltipp auf die Leertaste) schreiben keine Zeile
+/// Shorter playbacks (double tap on the space bar) write no line
 const PLAY_LOG_MIN: Duration = Duration::from_millis(300);
 
 impl PlayLog {
@@ -3875,7 +3875,7 @@ impl PlayLog {
         Self { pressed, at, frame: None, sound: None, stats: Default::default(), quality: 0 }
     }
 
-    /// Die Zeile, nur Messwerte (keine Namen, keine Pfade); `None` bei sehr kurzer Wiedergabe
+    /// The line, only measurements (no names, no paths); `None` for a very short playback
     fn line(&self, took: Duration, proxies: bool) -> Option<String> {
         if took < PLAY_LOG_MIN {
             return None;
@@ -3923,7 +3923,7 @@ mod play_log_tests {
         assert!(l.line(PLAY_LOG_MIN, false).is_some());
     }
 
-    /// Ablauf: Play beginnt die Wiedergabe, die Qualitätsstufe wird mitgeführt, Stopp beendet sie
+    /// Flow: Play begins the playback, the quality level is tracked, stop ends it
     #[test]
     fn playback_starts_and_ends_the_record() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -3943,8 +3943,8 @@ mod play_log_tests {
     }
 }
 
-/// Feiner Zeitgeber, solange er lebt (Windows: `timeBeginPeriod(1)`; die Ereignisschleife wartet
-/// sonst im 15,6-ms-Raster und Bilder kommen zu spät). Andere Systeme sind ohnehin genau.
+/// Fine timer while it lives (Windows: `timeBeginPeriod(1)`; the event loop otherwise waits
+/// on the 15.6 ms grid and frames come too late). Other systems are exact anyway.
 struct HiresTimer {
     #[cfg(windows)]
     ok: bool,
@@ -3960,7 +3960,7 @@ extern "system" {
 impl HiresTimer {
     fn new() -> Self {
         Self {
-            // SAFETY: einfacher Systemaufruf ohne Zeiger; 0 = Erfolg (sonst bleibt der grobe Takt)
+            // SAFETY: simple system call without pointers; 0 = success (otherwise the coarse timer stays)
             #[cfg(windows)]
             ok: unsafe { timeBeginPeriod(1) } == 0,
         }
@@ -3971,23 +3971,23 @@ impl Drop for HiresTimer {
     fn drop(&mut self) {
         #[cfg(windows)]
         if self.ok {
-            // SAFETY: Gegenstück zum erfolgreichen timeBeginPeriod(1)
+            // SAFETY: counterpart to the successful timeBeginPeriod(1)
             unsafe { timeEndPeriod(1) };
         }
     }
 }
 
-/// Von egui je `request_repaint_after` abgezogene Bildzeit (`RawInput::predicted_dt`, eframe setzt
-/// sie nie anders)
+/// Frame time egui subtracts per `request_repaint_after` (`RawInput::predicted_dt`, eframe never
+/// sets it differently)
 const EGUI_PREDICTED_DT: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
-/// Beginn von Bild `n` bei `fps` (µs, aufgerundet: ab dann ist das Bild fällig)
+/// Start of frame `n` at `fps` (µs, rounded up: from then on the frame is due)
 fn frame_start(n: i128, fps: Rational) -> i128 {
     let (num, den) = (fps.num.max(1) as i128, fps.den.max(1) as i128);
     (n * den * 1_000_000).div_euclid(num) + i128::from((n * den * 1_000_000).rem_euclid(num) != 0)
 }
 
-/// Nächster Bildwechsel nach `pos` in Laufrichtung (aus der Bildnummer, also ohne Drift)
+/// Next frame change after `pos` in the play direction (from the frame number, so without drift)
 fn next_frame_at(pos: Time, fps: Rational, forward: bool) -> Time {
     let (num, den) = (fps.num.max(1) as i128, fps.den.max(1) as i128);
     let n = (pos.0 as i128 * num).div_euclid(den * 1_000_000);
@@ -3998,8 +3998,8 @@ fn next_frame_at(pos: Time, fps: Rational, forward: bool) -> Time {
     Time(at as i64)
 }
 
-/// Wartezeit bis zum nächsten Bildwechsel bei Abspieltempo `rate` (+1 ms, damit die Uhr dann
-/// sicher hinter der Grenze steht; ein zu frühes Bild zeigte nichts Neues)
+/// Waiting time until the next frame change at play speed `rate` (+1 ms, so the clock is then
+/// surely past the boundary; a frame too early showed nothing new)
 fn next_frame_delay(pos: Time, fps: Rational, rate: f64) -> Duration {
     let rate = if rate.abs() < 1e-6 { 1.0 } else { rate };
     let at = next_frame_at(pos, fps, rate > 0.0);
@@ -4007,12 +4007,12 @@ fn next_frame_delay(pos: Time, fps: Rational, rate: f64) -> Duration {
     Duration::from_secs_f64(secs.min(1.0)) + Duration::from_millis(1)
 }
 
-/// Kürzester Abstand zweier UI-Bilder (höchstens 125 je Sekunde). Ohne VSync (siehe `main.rs`)
-/// zeichnet egui bei jeder Animation (Hover-Kacheln, Einblenden) sonst ungebremst mehrere hundert
-/// Bilder je Sekunde und belegt einen ganzen Kern. Abspielen fordert seltener an (`play_repaint_delay`).
+/// Shortest distance between two UI frames (at most 125 per second). Without VSync (see `main.rs`)
+/// egui otherwise draws several hundred frames per second unthrottled on every animation (hover tiles, fade-ins)
+/// and occupies a whole core. Playback requests less often (`play_repaint_delay`).
 const MIN_FRAME: Duration = Duration::from_millis(8);
 
-/// Wartezeit vor dem nächsten UI-Bild, wenn das letzte vor `since_last` begann
+/// Waiting time before the next UI frame if the last one began `since_last` ago
 fn frame_wait(since_last: Duration) -> Duration {
     MIN_FRAME.saturating_sub(since_last)
 }
@@ -4027,7 +4027,7 @@ fn limit_frame_rate() {
     });
 }
 
-/// Messpunkt beim Start (`CUTLINE_PERF`): Zeit seit dem ersten Aufruf (in `main`)
+/// Measurement point at startup (`CUTLINE_PERF`): time since the first call (in `main`)
 pub fn perf_mark(what: &str) {
     static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     let t0 = *T0.get_or_init(Instant::now);
@@ -4036,8 +4036,8 @@ pub fn perf_mark(what: &str) {
     }
 }
 
-/// Für Dokumentation: Mit `CUTLINE_SHOTS=<Ordner>` speichert Cutline das Fensterbild als PNG,
-/// sobald dort eine Datei `take` liegt (direkt aus der App, ohne überlagernde Fenster).
+/// For documentation: with `CUTLINE_SHOTS=<folder>` Cutline saves the window image as PNG
+/// as soon as a file `take` lies there (straight from the app, without overlapping windows).
 fn dev_screenshot(ctx: &egui::Context) {
     static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     let Some(dir) = DIR
@@ -4072,9 +4072,9 @@ fn dev_screenshot(ctx: &egui::Context) {
     }
 }
 
-/// Inhalt in genau der verfügbaren Fläche zeichnen. Seitenleisten von egui wachsen sonst mit
-/// ihrem breitesten Inhalt mit, und beim Tab-Wechsel springt die ganze Oberfläche.
-/// So bestimmt nur der Nutzer (Ziehen am Rand) die Breite.
+/// Draw content in exactly the available area. egui's side panels otherwise grow with
+/// their widest content, and switching tabs makes the whole UI jump.
+/// This way only the user (dragging the edge) determines the width.
 pub fn fixed_width(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     let rect = ui.available_rect_before_wrap();
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
@@ -4083,9 +4083,9 @@ pub fn fixed_width(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.allocate_rect(rect, egui::Sense::hover());
 }
 
-/// Standzeit eines Toasts: Fehler bleiben länger stehen (und schließen per Klick)
-/// Text eines Toasts mit Symbol davor; bringt die Meldung schon ein eigenes Symbol mit, bleibt
-/// es bei diesem (sonst stünden zwei Häkchen vor „Gespeichert“).
+/// Display time of a toast: errors stay longer (and close on click)
+/// Text of a toast with an icon in front; if the message already brings its own icon,
+/// that one stays (otherwise two check marks would stand before „Gespeichert“).
 fn toast_line(msg: &str, err: bool) -> String {
     if msg.starts_with(|c: char| ('\u{E000}'..='\u{F8FF}').contains(&c)) {
         return msg.to_string();
@@ -4098,24 +4098,24 @@ fn toast_secs(err: bool) -> f32 {
     if err { 10.0 } else { 4.0 }
 }
 
-/// Deckkraft eines Toasts im Alter `age` (s); Ein-/Ausblenddauer 0 = sofort da/weg
+/// Opacity of a toast at age `age` (s); fade in/out duration 0 = there/gone at once
 fn toast_alpha(age: f32, life: f32, fade_in: f32, fade_out: f32) -> f32 {
     let a_in = if fade_in > 0.0 { age / fade_in } else { 1.0 };
     let a_out = if fade_out > 0.0 { (life - age) / fade_out } else if age < life { 1.0 } else { 0.0 };
     a_in.min(a_out).clamp(0.0, 1.0)
 }
 
-/// `saved_revision` nach `set_doc`: keine echte Revision trifft diesen Wert.
+/// `saved_revision` after `set_doc`: no real revision hits this value.
 pub const UNSAVED: u64 = u64::MAX - 1;
 
-/// Ungespeicherte Änderungen schreiben? Ein leeres neues Projekt legt keine Datei an; ein
-/// gespeichertes, das leer geräumt wurde, wird gespeichert (sonst käme der alte Stand wieder).
+/// Write unsaved changes? An empty new project creates no file; a
+/// saved one that was emptied is saved (otherwise the old state would come back).
 fn needs_save(rev: u64, saved: u64, has_file: bool, p: &Project) -> bool {
     rev != saved && (has_file || !(p.media.is_empty() && p.duration() == Time::ZERO))
 }
 
-/// Zeitpunkt des Vorschaubilds eines Mediums: Video kurz nach Beginn, bewegtes Bild (APNG/GIF) in
-/// der Mitte – viele Elemente beginnen mit einem leeren Bild und blenden erst dann ein.
+/// Time of a medium's thumbnail: video shortly after the start, animated image (APNG/GIF) in
+/// the middle – many elements begin with an empty frame and only fade in then.
 fn thumb_time(kind: MediaKind, dur: Time, anim: Option<&cl_media::Animation>) -> Time {
     match (kind, anim) {
         (MediaKind::Video, _) => Time::from_secs_f64((dur.as_secs_f64() * 0.1).min(1.0)),
@@ -4142,7 +4142,7 @@ mod toast_tests {
 
     #[test]
     fn replaced_document_counts_as_unsaved() {
-        // Wiederherstellen/Vorlage/Rückblick ersetzen das Dokument: Revision beginnt bei 0
+        // restore/template/review replace the document: revision starts at 0
         let p = Project::new("x");
         let rev = Document::new(p.clone()).revision();
         assert!(needs_save(rev, UNSAVED, true, &p));
@@ -4151,8 +4151,8 @@ mod toast_tests {
     #[test]
     fn emptied_saved_project_is_saved() {
         let empty = Project::new("x");
-        assert!(needs_save(5, 3, true, &empty), "gespeichert und leer geräumt");
-        assert!(!needs_save(5, 3, false, &empty), "neues leeres Projekt: keine Datei");
+        assert!(needs_save(5, 3, true, &empty), "saved and then emptied");
+        assert!(!needs_save(5, 3, false, &empty), "new empty project: no file");
         assert!(!needs_save(3, 3, true, &empty));
     }
 
@@ -4161,7 +4161,7 @@ mod toast_tests {
         let saved = toast_line(&format!("{} Gespeichert", icon::CHECK), false);
         assert_eq!(saved.matches(icon::CHECK).count() + saved.matches(icon::CHECK_CIRCLE).count(), 1, "{saved}");
         assert_eq!(toast_line(&format!("{} Export fertig (1.0 s)", icon::CHECK_CIRCLE), false).matches(icon::CHECK_CIRCLE).count(), 1);
-        // ohne eigenes Symbol: Häkchen bzw. Warnung davor
+        // without its own icon: check mark or warning in front
         assert_eq!(toast_line("Kopiert", false), format!("{}  Kopiert", icon::CHECK_CIRCLE));
         assert!(toast_line("Fehler", true).starts_with(icon::WARNING_CIRCLE));
     }
@@ -4171,7 +4171,7 @@ mod toast_tests {
         assert_eq!(toast_alpha(0.0, 4.0, 0.0, 0.0), 1.0);
         assert_eq!(toast_alpha(3.99, 4.0, 0.0, 0.0), 1.0);
         assert_eq!(toast_alpha(4.0, 4.0, 0.0, 0.0), 0.0);
-        // mit Animationen wie bisher
+        // with animations as before
         assert_eq!(toast_alpha(0.0, 4.0, 0.15, 0.4), 0.0);
         assert!((toast_alpha(3.8, 4.0, 0.15, 0.4) - 0.5).abs() < 1e-4);
         assert!(toast_secs(true) > toast_secs(false));
@@ -4182,8 +4182,8 @@ mod toast_tests {
 mod frame_rate_tests {
     use super::*;
 
-    /// Mangel aus dem Klicktest: Leertaste startete nicht, solange ein Knopf/eine Kachel den
-    /// Fokus hatte; ein Textfeld mit Fokus behält dagegen die Tasten.
+    /// Flaw from the click test: the space bar did not start playback while a button/tile had the
+    /// focus; a text field with focus keeps the keys, on the other hand.
     #[test]
     fn only_text_fields_block_shortcuts() {
         let ctx = egui::Context::default();
@@ -4201,17 +4201,17 @@ mod frame_rate_tests {
         let ids = pass(&ctx);
         ctx.memory_mut(|m| m.request_focus(ids.0));
         pass(&ctx);
-        assert!(ctx.wants_keyboard_input() && !typing(&ctx), "Knopf mit Fokus ist keine Texteingabe");
+        assert!(ctx.wants_keyboard_input() && !typing(&ctx), "a button with focus is no text input");
         ctx.memory_mut(|m| m.request_focus(ids.1));
         pass(&ctx);
-        assert!(typing(&ctx), "Textfeld mit Fokus");
+        assert!(typing(&ctx), "text field with focus");
     }
 
-    /// Befund aus dem Review: der Fokus wurde in jedem Bild abgegeben – Tab-Navigation und Pfeile
-    /// am Regler gingen nicht mehr. Abgeben nur, wenn die Leertaste kommt (die immer abspielt).
-    /// Klicktest K5: Tab bis aufs Fenster-X, dann Leertaste – das Fenster schloss sich, weil egui
-    /// den fokussierten Knopf im selben Bild auslöste. Jetzt kommt die Taste nie beim Knopf an,
-    /// sondern bei den Tastenkürzeln (Play/Pause); im Textfeld bleibt sie Text.
+    /// Review finding: the focus was released every frame – Tab navigation and arrows
+    /// on a slider no longer worked. Release only when the space bar comes (which always plays).
+    /// Click test K5: Tab up to the window X, then space – the window closed because egui
+    /// triggered the focused button in the same frame. Now the key never reaches the button
+    /// but the shortcuts (Play/Pause); in the text field it stays text.
     #[test]
     fn space_never_clicks_a_focused_button() {
         let ctx = egui::Context::default();
@@ -4228,7 +4228,7 @@ mod frame_rate_tests {
                     ids.2 = b.clicked();
                     ids.1 = ui.text_edit_singleline(text).id;
                 });
-                // Tastenkürzel: die zurückgegebene Taste löst Play aus
+                // shortcuts: the returned key triggers Play
                 ctx.input_mut(|i| i.events.extend(held.clone()));
                 ids.3 = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Space));
             });
@@ -4237,16 +4237,16 @@ mod frame_rate_tests {
         let ids = frame(&ctx, vec![], true, &mut text);
         ctx.memory_mut(|m| m.request_focus(ids.0));
         frame(&ctx, vec![], true, &mut text);
-        // ohne Abfangen: der Knopf würde ausgelöst (so schloss sich das Fenster)
+        // without intercepting: the button would be triggered (that is how the window closed)
         let before = frame(&ctx, vec![space.clone()], false, &mut text);
-        assert!(before.2, "Voraussetzung: egui klickt den fokussierten Knopf mit der Leertaste");
+        assert!(before.2, "precondition: egui clicks the focused button with the space bar");
         ctx.memory_mut(|m| m.request_focus(ids.0));
         frame(&ctx, vec![], true, &mut text);
         let after = frame(&ctx, vec![space.clone()], true, &mut text);
-        assert!(!after.2, "Leertaste klickt den Knopf nicht");
-        assert!(after.3, "Leertaste geht an Play/Pause");
-        assert!(ctx.memory(|m| m.focused()).is_none(), "Fokus abgegeben");
-        // Textfeld mit Fokus: die Leertaste bleibt beim Feld
+        assert!(!after.2, "space bar does not click the button");
+        assert!(after.3, "space bar goes to Play/Pause");
+        assert!(ctx.memory(|m| m.focused()).is_none(), "focus released");
+        // text field with focus: the space bar stays with the field
         ctx.memory_mut(|m| m.request_focus(ids.1));
         frame(&ctx, vec![], true, &mut text);
         let mut raw = egui::RawInput { events: vec![space], ..Default::default() };
@@ -4255,12 +4255,12 @@ mod frame_rate_tests {
 
     #[test]
     fn focus_is_kept_except_for_space() {
-        assert_eq!(key_focus(false, false, false), KeyFocus::Shortcuts, "nichts fokussiert");
+        assert_eq!(key_focus(false, false, false), KeyFocus::Shortcuts, "nothing focused");
         assert_eq!(key_focus(false, false, true), KeyFocus::Shortcuts);
-        assert_eq!(key_focus(false, true, true), KeyFocus::Release, "Knopf + Leertaste: abspielen");
-        assert_eq!(key_focus(false, true, false), KeyFocus::Keep, "Regler + Pfeil, Tab: bleibt");
-        assert_eq!(key_focus(true, true, true), KeyFocus::Keep, "Textfeld + Leertaste: Text");
-        assert_eq!(key_focus(true, true, false), KeyFocus::Keep, "Textfeld + Pfeil");
+        assert_eq!(key_focus(false, true, true), KeyFocus::Release, "button + space: play");
+        assert_eq!(key_focus(false, true, false), KeyFocus::Keep, "slider + arrow, Tab: stays");
+        assert_eq!(key_focus(true, true, true), KeyFocus::Keep, "text field + space: text");
+        assert_eq!(key_focus(true, true, false), KeyFocus::Keep, "text field + arrow");
     }
 
     #[test]
@@ -4270,25 +4270,25 @@ mod frame_rate_tests {
             let mut pos = Time::ZERO;
             for n in 1..=10_000i64 {
                 pos = next_frame_at(pos, fps, true);
-                // genau der (aufgerundete) Bildbeginn, unabhängig von der Vorgeschichte
+                // exactly the (rounded up) frame start, regardless of history
                 let exact = n as f64 / f * 1e6;
-                assert!(pos.0 as f64 >= exact - 1e-6 && (pos.0 as f64) < exact + 1.0, "{fps:?} Bild {n}: {pos:?}");
-                // die Uhr liegt dort wirklich im Bild n
+                assert!(pos.0 as f64 >= exact - 1e-6 && (pos.0 as f64) < exact + 1.0, "{fps:?} frame {n}: {pos:?}");
+                // the clock really lies in frame n there
                 assert_eq!((pos.as_secs_f64() * f + 1e-9).floor() as i64, n, "{fps:?} {n}");
             }
-            // mitten im Bild: Wartezeit bis zum Ende des Bildes (+1 ms), nie länger als ein Bild
+            // in the middle of a frame: wait until the end of the frame (+1 ms), never longer than a frame
             let mid = Time::from_secs_f64(100.5 / f);
             let d = next_frame_delay(mid, fps, 1.0).as_secs_f64();
             assert!((d - (0.5 / f + 0.001)).abs() < 2e-6, "{fps:?} {d}");
             assert!(next_frame_delay(Time::from_secs_f64(7.0 / f), fps, 1.0).as_secs_f64() <= 1.0 / f + 0.0011);
         }
-        // 30 fps: größte Lücke 33,3 ms + 1 ms ≤ 40 ms
+        // 30 fps: largest gap 33.3 ms + 1 ms ≤ 40 ms
         let worst = (0..1000)
             .map(|i| next_frame_delay(Time(i * 997), Rational::new(30, 1), 1.0))
             .max()
             .unwrap();
         assert!(worst <= Duration::from_millis(40), "{worst:?}");
-        // doppeltes Tempo: halbe Wartezeit; rückwärts: bis zum Beginn des laufenden Bildes
+        // double speed: half the waiting time; reverse: until the start of the current frame
         let fps = Rational::new(30, 1);
         let t = Time::from_secs_f64(10.5 / 30.0);
         assert!((next_frame_delay(t, fps, 2.0).as_secs_f64() - (0.25 / 30.0 + 0.001)).abs() < 2e-6);
@@ -4301,7 +4301,7 @@ mod frame_rate_tests {
     fn frame_wait_caps_ui_rate() {
         assert_eq!(frame_wait(Duration::from_millis(2)), Duration::from_millis(6));
         assert_eq!(frame_wait(Duration::ZERO), MIN_FRAME);
-        // seltene Bilder (Leerlauf, Abspielen) warten nie
+        // rare frames (idle, playback) never wait
         assert_eq!(frame_wait(Duration::from_millis(30)), Duration::ZERO);
         assert!(1.0 / MIN_FRAME.as_secs_f64() <= 125.0);
     }
@@ -4311,7 +4311,7 @@ mod frame_rate_tests {
 #[path = "load_perf.rs"]
 mod load_perf;
 
-/// Unlesbare Datei: kurze Meldung mit dem Namen, kein FFmpeg-Rohtext in der Oberfläche
+/// Unreadable file: short message with the name, no raw FFmpeg text in the UI
 #[test]
 fn unreadable_file_gives_a_short_message() {
     let (mut app, home, _g) = crate::saving::tests::test_app();
@@ -4323,7 +4323,7 @@ fn unreadable_file_gives_a_short_message() {
     assert_eq!(msgs, ["Datei kann nicht gelesen werden: kaputt.mp4"]);
 }
 
-/// Meldung mit sehr langem Namen bleibt im Fenster (gekürzt) statt links und rechts abgeschnitten
+/// A message with a very long name stays in the window (shortened) instead of being cut off left and right
 #[test]
 fn download_running_at_a_project_change_is_not_inserted() {
     let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -4339,8 +4339,8 @@ fn download_running_at_a_project_change_is_not_inserted() {
     assert!(!app.stock.stray && app.toasts.iter().any(|t| t.0.contains("Klang")));
 }
 
-/// Projektwechsel: das Umbau-Abbild des Exports gehört zum alten Projekt (gleicher Stand 0,
-/// gleiches Format träfe sonst denselben Schlüssel)
+/// Project change: the export's rebuild snapshot belongs to the old project (same state 0,
+/// same format would otherwise hit the same key)
 #[test]
 fn export_reframe_snapshot_is_dropped_with_the_project() {
     let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -4349,8 +4349,8 @@ fn export_reframe_snapshot_is_dropped_with_the_project() {
     assert!(app.export.framed.is_none());
 }
 
-/// Befehlssuche im Ablauf eines Bildes: Strg+K öffnet, das Feld hat den Fokus, die Leertaste tippt
-/// ein Leerzeichen (kein Abspielen), Esc schließt nur die Suche (Auswahl bleibt), Enter führt aus.
+/// Command search in the flow of a frame: Ctrl+K opens, the field has the focus, the space bar types
+/// a space (no playback), Esc closes only the search (selection stays), Enter runs.
 #[test]
 fn command_search_keys_stay_in_the_search() {
     let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -4370,18 +4370,18 @@ fn command_search_keys_stay_in_the_search() {
     let clip = ClipId::new();
     app.selected = Some(clip);
     frame(&mut app, vec![key(Key::K, Modifiers::COMMAND)]);
-    assert!(app.palette.open, "Strg+K öffnet");
+    assert!(app.palette.open, "Ctrl+K opens");
     frame(&mut app, vec![]);
-    assert!(typing(&ctx), "das Feld hat den Fokus");
+    assert!(typing(&ctx), "the field has the focus");
     frame(&mut app, vec![key(Key::Space, Modifiers::NONE), egui::Event::Text(" ".into())]);
-    assert!(!app.core.playing() && app.palette.open, "Leertaste spielt nicht ab");
-    assert_eq!(app.palette.query, " ", "… sondern tippt ein Leerzeichen");
+    assert!(!app.core.playing() && app.palette.open, "space bar does not play");
+    assert_eq!(app.palette.query, " ", "… but types a space");
     frame(&mut app, vec![key(Key::Escape, Modifiers::NONE)]);
-    assert!(!app.palette.open, "Esc schließt die Suche");
-    assert_eq!(app.selected, Some(clip), "… und lässt die Auswahl stehen");
+    assert!(!app.palette.open, "Esc closes the search");
+    assert_eq!(app.selected, Some(clip), "… and leaves the selection alone");
     frame(&mut app, vec![]);
     assert_eq!(app.selected, Some(clip));
-    // wieder öffnen (Feld leer), tippen, Enter führt den ersten Treffer aus
+    // open again (field empty), type, Enter runs the first hit
     frame(&mut app, vec![key(Key::K, Modifiers::COMMAND)]);
     frame(&mut app, vec![egui::Event::Text("einstellungen".into())]);
     frame(&mut app, vec![key(Key::Enter, Modifiers::NONE)]);
@@ -4389,15 +4389,15 @@ fn command_search_keys_stay_in_the_search() {
     assert_eq!(app.selected, Some(clip));
 }
 
-/// Esc im Feld verwirft nur die Eingabe
+/// Esc in the field only discards the input
 #[test]
 fn esc_in_a_field_is_not_a_shortcut() {
     assert!(esc_for_field(true, true));
-    assert!(!esc_for_field(false, true), "ohne Feld hebt Esc die Auswahl auf");
+    assert!(!esc_for_field(false, true), "without a field Esc clears the selection");
     assert!(!esc_for_field(true, false));
 }
 
-/// Meldung mit sehr langem Namen bleibt im Fenster (gekürzt) statt links und rechts abgeschnitten
+/// A message with a very long name stays in the window (shortened) instead of being cut off left and right
 #[test]
 fn long_toast_stays_inside_the_window() {
     let (mut app, _home, _g) = crate::saving::tests::test_app();

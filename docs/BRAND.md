@@ -1,7 +1,8 @@
 # Cutline brand
 
-**Cutline – das offene Schnittprogramm für Creator.** / The open video editor for creators.
-Einfach zu bedienen, schnell, komplett auf deinem Rechner. / Easy to use, fast, and entirely on your machine.
+**Cutline – the open video editor for creators.** Easy to use, fast, and entirely on your machine.
+German wording: **Cutline – das offene Schnittprogramm für Creator.** Einfach zu bedienen, schnell, komplett auf
+deinem Rechner.
 
 It is made for content creators: YouTube, Shorts/TikTok/Reels, streaming, podcasts. The brand stays out of the
 way of the footage: dark, monochrome, one accent, no gradients on controls, no hype. Details and wording
@@ -9,13 +10,13 @@ examples: [`POSITIONING.md`](POSITIONING.md).
 
 ## Pillars
 
-1. **Einfach / Simple** – familiar layout, drag in, cut, export; every function is unlocked from the first start.
-2. **Schnell / Fast** – written in Rust, smooth preview with proxies, quick exports with hardware encoders.
-3. **Offen / Open** – open source, runs locally, no account, no subscription, no watermark.
+1. **Simple** (German: Einfach) – familiar layout, drag in, cut, export; every function is unlocked from the first start.
+2. **Fast** (Schnell) – written in Rust, smooth preview with proxies, quick exports with hardware encoders.
+3. **Open** (Offen) – open source, runs locally, no account, no subscription, no watermark.
 
-AI is described one way everywhere: "Lokale KI für Untertitel, Freistellen und Entrauschen – nichts wird
-hochgeladen; keine erzeugende KI." / "Local AI for captions, cut-outs and noise removal – nothing is uploaded;
-no generative AI."
+AI is described one way everywhere: "Local AI for captions, cut-outs and noise removal – nothing is uploaded;
+no generative AI." German wording: "Lokale KI für Untertitel, Freistellen und Entrauschen – nichts wird
+hochgeladen; keine erzeugende KI."
 
 ## Name
 
@@ -84,27 +85,28 @@ Existing sizes (28, 22, 16, 11) move to this scale as screens are touched.
 - No upsell, no exclamation marks, no fake urgency. Optional things are labeled optional.
 - German and English are both first-class; every UI string goes through `tr()`.
 
-## Wörterbuch
+## Glossary (German terms)
 
-Fixed terms for German UI text and docs. English follows the same split.
+Fixed terms for German UI text. The left column is the German wording on purpose; English follows the same
+split.
 
-| Begriff | Bedeutung / Regel |
+| German term | Meaning / rule |
 |---|---|
-| Clip | nicht "Element" |
-| Medien | nicht "Material" |
-| Inspektor | Panel für Clip-Einstellungen |
-| Eigenschaften | Info-Fenster per Rechtsklick |
-| Tempo | nicht "Geschwindigkeit" |
-| Vorlage | Projektvorlage |
-| Look | gespeicherte Clip-Einstellungen |
-| Stil | Untertitel- und Textstil |
-| Löschen | endgültig weg |
-| Entfernen | aus einer Liste nehmen |
-| Verbergen | ausblenden |
-| Klinge | Werkzeug (Schneiden) |
-| Teilen | Aktion (Clip am Playhead teilen) |
-| Schnellaktionen | Creator-Werkzeuge (Menü in der Zeitleiste); englisch „Quick Actions“ |
-| Im Explorer zeigen | Datei im Dateimanager anzeigen |
+| Clip | not "Element" |
+| Medien | media; not "Material" |
+| Inspektor | panel for clip settings |
+| Eigenschaften | properties: info window via right-click |
+| Tempo | speed; not "Geschwindigkeit" |
+| Vorlage | project template |
+| Look | saved clip settings |
+| Stil | caption and text style |
+| Löschen | delete: gone for good |
+| Entfernen | remove from a list |
+| Verbergen | hide |
+| Klinge | blade: tool (cutting) |
+| Teilen | split: action (split clip at the playhead) |
+| Schnellaktionen | creator tools (menu in the timeline); English "Quick Actions" |
+| Im Explorer zeigen | show the file in the file manager |
 
 ## Principles
 

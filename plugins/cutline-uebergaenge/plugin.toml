@@ -1,6 +1,6 @@
-# Shader-Übergänge (WGSL, gerendert mit cl-gpu). Ohne GPU läuft der Rückfall-Übergang (`fallback`).
-# Eigene Übergänge: CC0-1.0 (Cutline-Projekt). Portierte GL Transitions: MIT, Autor und Quelle je Übergang,
-# Lizenztext in LICENSE-gl-transitions.txt.
+# Shader transitions (WGSL, rendered with cl-gpu). Without a GPU the fallback transition (`fallback`) runs.
+# Own transitions: CC0-1.0 (Cutline project). Ported GL Transitions: MIT, author and source per transition,
+# license text in LICENSE-gl-transitions.txt.
 [plugin]
 id = "cutline.uebergaenge"
 version = "1.0.0"

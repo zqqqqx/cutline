@@ -1,9 +1,9 @@
-//! Ton-Werkzeuge: Rauschen entfernen, Stimme hervorheben, Lautheit angleichen,
-//! Bass/Höhen und Stimmfilter (Voice Changer) – alles als FFmpeg-Audiokette.
+//! Audio tools: denoise, enhance voice, normalize loudness,
+//! bass/treble and voice filters (voice changer) – all as an FFmpeg audio chain.
 
 use cl_core::AudioFx;
 
-/// Stimmfilter: (id, Name, FFmpeg-Kette).
+/// Voice filters: (id, name, FFmpeg chain).
 pub static VOICES: &[(&str, &str, &str)] = &[
     ("chipmunk", "Chipmunk", "rubberband=pitch=1.7:formant=preserved"),
     ("high", "Hoch", "rubberband=pitch=1.3"),
@@ -20,7 +20,7 @@ pub static VOICES: &[(&str, &str, &str)] = &[
     ("underwater", "Unter Wasser", "lowpass=f=700,aecho=0.7:0.6:30:0.5,vibrato=f=1.5:d=0.3"),
 ];
 
-/// Audiofilter: (id, Name, FFmpeg-Kette).
+/// Audio filters: (id, name, FFmpeg chain).
 pub static FILTERS: &[(&str, &str, &str)] = &[
     ("podcast", "Podcast", "highpass=f=80,acompressor=threshold=0.1:ratio=3:attack=10:release=150:makeup=2,equalizer=f=3000:t=q:w=1.4:g=3"),
     ("warm", "Wärmer", "bass=g=4:f=150,treble=g=-3:f=6000"),
@@ -34,7 +34,7 @@ pub static FILTERS: &[(&str, &str, &str)] = &[
     ("wide", "Breiter", "extrastereo=m=2"),
 ];
 
-/// Kette für die Ton-Bearbeitung (leer, wenn nichts eingestellt ist).
+/// Chain for audio editing (empty if nothing is set).
 pub fn audio_chain(a: &AudioFx) -> Vec<String> {
     let mut v = Vec::new();
     if a.rumble {
@@ -49,7 +49,7 @@ pub fn audio_chain(a: &AudioFx) -> Vec<String> {
         v.push("adeclick".into());
     }
     if a.voice_isolate {
-        // Sprachband, Rauschen und Hintergrund absenken, Sprache anheben
+        // speech band, lower noise and background, raise speech
         v.push("highpass=f=90".into());
         v.push("lowpass=f=9000".into());
         v.push("afftdn=nr=18:nf=-35:tn=1".into());
@@ -144,7 +144,7 @@ mod tests {
             };
             let ch = audio_chain(&a).join(",");
             let peak = run(&ch).unwrap_or_else(|e| panic!("{id}: {e}"));
-            assert!(peak > 0.02, "{id} ist stumm ({peak})");
+            assert!(peak > 0.02, "{id} is silent ({peak})");
         }
         for (id, ..) in FILTERS {
             let a = AudioFx {
@@ -153,7 +153,7 @@ mod tests {
             };
             let ch = audio_chain(&a).join(",");
             let peak = run(&ch).unwrap_or_else(|e| panic!("{id}: {e}"));
-            assert!(peak > 0.02, "{id} ist stumm ({peak})");
+            assert!(peak > 0.02, "{id} is silent ({peak})");
         }
         let all = AudioFx {
             denoise: 0.7,

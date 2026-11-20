@@ -1,5 +1,5 @@
-//! Zeitrechnung, Keyframes/Kurven an den Rändern, Tempo hin und zurück und das Laden
-//! kaputter, alter und fremder Projektdateien.
+//! Time arithmetic, keyframes/curves at the edges, speed there and back, and loading
+//! broken, old and foreign project files.
 
 mod common;
 use cl_core::*;
@@ -15,12 +15,12 @@ fn time_rounding_saturation_and_conversions() {
     assert_eq!(Time::from_secs_f64(-1e300), Time(i64::MIN));
     assert_eq!(Time::from_millis(1500).as_millis(), 1500);
     assert_eq!(Time(-1999).as_millis(), -1);
-    // Fehler: Addition lief bei riesigen Werten über (Release: negativ, Debug: Absturz)
+    // bug: addition overflowed with huge values (release: negative, debug: crash)
     assert_eq!(Time(i64::MAX) + Time(1), Time(i64::MAX));
     assert_eq!(Time(i64::MIN) - Time(1), Time(i64::MIN));
     assert_eq!(Time(5) - Time(7), Time(-2));
     assert_eq!(format!("{}", Time::from_secs_f64(1.5)), "1.500s");
-    // 100 Stunden bleiben auf die Mikrosekunde genau
+    // 100 hours stay exact to the microsecond
     let big = Time(360_000 * 1_000_000 + 1);
     assert_eq!(Time::from_secs_f64(big.as_secs_f64()).0 - big.0, 0);
 }
@@ -30,11 +30,11 @@ fn ntsc_rates_timecode_and_snapping() {
     for (s_, num, den) in [("23.976", 24000, 1001), ("29.97", 30000, 1001), ("59.94", 60000, 1001), ("23.98", 24000, 1001), ("47.952", 48000, 1001)] {
         assert_eq!(Rational::parse(s_), Some(Rational::new(num, den)), "{s_}");
     }
-    // Fehler: 12,5 fps wurde zu 12513/1001 (= 12,5005)
+    // bug: 12.5 fps became 12513/1001 (= 12.5005)
     assert_eq!(Rational::parse("12.5"), Some(Rational::new(12500, 1000)));
     assert_eq!(Rational::parse(" 25 "), Some(Rational::new(25, 1)));
     assert_eq!(Rational::parse("24000/1001"), Some(Rational::new(24000, 1001)));
-    // Fehler: 0, negative, NaN und Unendlich wurden als Bildrate angenommen
+    // bug: 0, negative, NaN and infinity were accepted as frame rate
     for bad in ["0", "-30", "NaN", "inf", "1e300", "0/1", "30/0", "", "abc", "30/", "/1", "-1/2", "0.0000001"] {
         assert_eq!(Rational::parse(bad), None, "{bad}");
     }
@@ -44,18 +44,18 @@ fn ntsc_rates_timecode_and_snapping() {
         for i in 0..2000 {
             let t = Time::from_secs_f64(i as f64 * 0.0371);
             let snapped = t.snap_to_frame(fps);
-            assert_eq!(snapped.snap_to_frame(fps), snapped, "Einrasten ist idempotent");
+            assert_eq!(snapped.snap_to_frame(fps), snapped, "snapping is idempotent");
             assert!((snapped.as_secs_f64() - t.as_secs_f64()).abs() <= 0.5 / f + 1e-6);
             let tc = t.timecode(fps);
             let frames: u32 = tc[9..].parse().unwrap();
-            assert!(frames < f.ceil() as u32, "{tc} bei {f}");
-            assert!(tc >= last, "Zeitcode läuft rückwärts: {last} → {tc}");
+            assert!(frames < f.ceil() as u32, "{tc} at {f}");
+            assert!(tc >= last, "timecode runs backwards: {last} → {tc}");
             last = tc;
         }
     }
     assert_eq!(Time::from_secs_f64(-5.0).timecode(Rational::new(30, 1)), "00:00:00:00");
     assert!(Time(i64::MAX).timecode(Rational::new(30, 1)).len() > 11);
-    // Fehler: Bildrate 0 (kaputte Datei) zog jede Zeit auf 0
+    // bug: frame rate 0 (broken file) pulled every time to 0
     assert_eq!(s(3.3).snap_to_frame(Rational::new(0, 1)), s(3.3));
     assert_eq!(Rational::new(30, 0).as_f64(), 30.0);
 }
@@ -66,17 +66,17 @@ fn keyframes_at_the_edges() {
     assert!(k.is_empty() && k.times().is_empty());
     assert!(!k.remove(Prop::X, Time::ZERO));
     k.set(Prop::X, s(1.0), 5.0);
-    // ein einziger Keyframe gilt überall
+    // a single keyframe applies everywhere
     for t in [Time(i64::MIN), Time::ZERO, s(1.0), Time(i64::MAX)] {
         assert_eq!(k.eval(Prop::X, t), Some(5.0));
     }
     assert_eq!(k.eval(Prop::Y, s(1.0)), None);
-    // innerhalb 1 ms ersetzt, sonst neu
+    // replaced within 1 ms, otherwise new
     k.set(Prop::X, s(1.0) + Time(999), 6.0);
     assert_eq!(k.get(Prop::X).len(), 1);
     k.set(Prop::X, s(1.0) + Time(1000), 7.0);
     assert_eq!(k.get(Prop::X).len(), 2);
-    // zwei Keyframes 1 µs auseinander: kein Teilen durch 0
+    // two keyframes 1 µs apart: no division by 0
     let mut k = Keyframes::default();
     k.0.insert(Prop::Scale, vec![
         Keyframe { t: s(1.0), v: 1.0, ease: Ease::Linear },
@@ -121,7 +121,7 @@ fn tempo_maps_source_and_timeline_both_ways() {
                     near(a, c.source_in);
                     near(b, c.source_in + span);
                 }
-                // monoton über die ganze Länge
+                // monotonic over the whole length
                 let mut last = a;
                 for i in 1..=200 {
                     let t = c.start + Time(c.duration.0 * i / 200);
@@ -132,13 +132,13 @@ fn tempo_maps_source_and_timeline_both_ways() {
             }
         }
     }
-    // Beats: nur im genutzten Bereich, in Zeitleistenzeit umgerechnet
+    // beats: only in the used range, converted to timeline time
     let mut c = media_clip(&m, 2.0, 4.0);
     c.source_in = s(1.0);
     c.speed = 2.0;
     c.beats = vec![s(0.5), s(1.0), s(5.0), s(9.0), s(9.1)];
     assert_eq!(c.beat_times(), vec![s(2.0), s(4.0), s(6.0)]);
-    c.speed = 0.0; // kaputter Wert: kein Teilen durch 0
+    c.speed = 0.0; // broken value: no division by 0
     assert!(c.beat_times().iter().all(|t| t.0 >= 0));
 }
 
@@ -159,11 +159,11 @@ fn broken_project_files_give_errors_not_panics() {
     for bad in ["", " ", "null", "[]", "{}", "\"Projekt\"", "{\"schema_version\":1}", "\u{feff}{}", "{\"name\":"] {
         assert!(Project::from_json(bad).is_err(), "{bad:?}");
     }
-    // abgeschnitten an vielen Stellen
+    // truncated at many places
     for cut in (1..json.len() - 1).step_by(41).filter(|i| json.is_char_boundary(*i)) {
-        assert!(Project::from_json(&json[..cut]).is_err(), "abgeschnitten bei {cut}");
+        assert!(Project::from_json(&json[..cut]).is_err(), "truncated at {cut}");
     }
-    // falsche Typen und unmögliche Zahlen
+    // wrong types and impossible numbers
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     let swaps: [(&str, serde_json::Value); 7] = [
         ("/timeline/tracks/0/clips/0/start", "zehn".into()),
@@ -179,7 +179,7 @@ fn broken_project_files_give_errors_not_panics() {
         *w.pointer_mut(ptr).unwrap_or_else(|| panic!("{ptr}")) = val;
         assert!(Project::from_json(&w.to_string()).is_err(), "{ptr}");
     }
-    // Zahl größer als i64
+    // number larger than i64
     let w = json.replacen("\"schema_version\": 1", "\"schema_version\": 99999999999999999999999", 1);
     assert!(Project::from_json(&w).is_err());
 }
@@ -188,7 +188,7 @@ fn broken_project_files_give_errors_not_panics() {
 fn unknown_fields_and_old_files_still_load() {
     let json = full_project_json();
     let p = Project::from_json(&json).unwrap();
-    // unbekannte Felder (neuere Version) überall
+    // unknown fields (newer version) everywhere
     let mut v: serde_json::Value = serde_json::from_str(&json).unwrap();
     fn add_unknown(v: &mut serde_json::Value) {
         match v {
@@ -203,15 +203,15 @@ fn unknown_fields_and_old_files_still_load() {
         }
     }
     add_unknown(&mut v);
-    // Ausnahmen: Keyframe-Listen sind Maps mit festen Schlüsseln (Prop), Adjust.hsl ist ein Array
+    // exceptions: keyframe lists are maps with fixed keys (Prop), Adjust.hsl is an array
     let mut v2: serde_json::Value = serde_json::from_str(&json).unwrap();
     v2["zukunft"] = 1.into();
     v2["settings"]["zukunft"] = 1.into();
     v2["timeline"]["tracks"][0]["zukunft"] = 1.into();
     v2["timeline"]["tracks"][0]["clips"][0]["zukunft"] = 1.into();
     assert_eq!(Project::from_json(&v2.to_string()).unwrap(), p);
-    let _ = Project::from_json(&v.to_string()); // darf scheitern, aber nicht abstürzen
-    // Alte Dateien: alle Felder mit Standardwert fehlen
+    let _ = Project::from_json(&v.to_string()); // may fail, but must not crash
+    // old files: all fields with default value are missing
     let mut old: serde_json::Value = serde_json::from_str(&json).unwrap();
     for k in ["ripple_all_tracks", "platform", "channels"] {
         old["settings"].as_object_mut().unwrap().remove(k);
@@ -245,14 +245,14 @@ fn unknown_fields_and_old_files_still_load() {
         _ => None,
     });
     assert!(text.unwrap().shadow, "alter Text bekommt Schatten-Standard");
-    // geladene alte Datei lässt sich weiter bearbeiten
+    // a loaded old file can still be edited
     let mut d = Document::new(p_old);
     let id = d.project().timeline.tracks[0].clips[0].id;
     apply(&mut d, EditOp::SplitClip { clip: id, at: Time(1) });
-    check(d.project(), "alte Datei");
+    check(d.project(), "old file");
 }
 
-/// Fehler: eine URL als Medienpfad ging an FFmpeg (Netz) und galt beim Neu-Verknüpfen nicht als fehlend.
+/// Bug: a URL as media path went to FFmpeg (network) and did not count as missing on relink.
 #[test]
 fn only_local_files_count_as_media() {
     let mut m: MediaRef = serde_json::from_value(serde_json::json!({
@@ -264,7 +264,7 @@ fn only_local_files_count_as_media() {
     assert!(m.is_local());
 }
 
-/// Fehler: SetSettings nahm Breite 0 oder Bildrate 0 an (apply_ops, Projektdatei) – der Export scheiterte.
+/// Bug: SetSettings accepted width 0 or frame rate 0 (apply_ops, project file) – the export failed.
 #[test]
 fn invalid_settings_are_rejected_and_repaired_on_load() {
     let mut d = Document::new(Project::new("T"));
@@ -279,5 +279,5 @@ fn invalid_settings_are_rejected_and_repaired_on_load() {
     p.settings.fps = Rational::new(0, 1);
     let back = Project::from_json(&p.to_json()).unwrap();
     assert!(back.settings.valid());
-    assert_eq!(back.settings.height, 1080, "gültige Werte bleiben");
+    assert_eq!(back.settings.height, 1080, "valid values stay");
 }

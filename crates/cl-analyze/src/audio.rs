@@ -1,12 +1,12 @@
-//! Ton-Analysen für Schnittwerkzeuge: Lautstärkeverlauf, Pausen (Jump Cuts, Auto-Ducking),
-//! laute Momente (Highlights) und Versatz zweier Aufnahmen derselben Szene (Synchronisieren).
+//! Audio analyses for editing tools: loudness curve, pauses (jump cuts, auto ducking),
+//! loud moments (highlights) and offset of two recordings of the same scene (sync).
 
 use std::path::Path;
 
-/// Werte pro Sekunde im Lautstärkeverlauf
+/// Values per second in the loudness curve
 pub const ENV_RATE: u32 = 100;
 
-/// RMS-Verlauf (linear, 0…1) mit 100 Werten pro Sekunde.
+/// RMS curve (linear, 0…1) with 100 values per second.
 pub fn envelope(path: &Path, start: f64, dur: Option<f64>) -> Result<Vec<f32>, String> {
     let sr = 16_000u32;
     let x = crate::decode_audio(path, sr, start, dur)?;
@@ -24,8 +24,8 @@ pub fn db(v: f32) -> f32 {
     20.0 * v.max(1e-6).log10()
 }
 
-/// Leise Abschnitte (Sekunden relativ zum Verlauf), länger als `min_pause`.
-/// `thresh_db` relativ zum lautesten Wert (z. B. −35 dB).
+/// Quiet sections (seconds relative to the curve), longer than `min_pause`.
+/// `thresh_db` relative to the loudest value (e.g. −35 dB).
 pub fn silences(env: &[f32], thresh_db: f32, min_pause: f64) -> Vec<(f64, f64)> {
     let peak = env.iter().copied().fold(0.0f32, f32::max).max(1e-6);
     let limit = peak * 10f32.powf(thresh_db / 20.0);
@@ -52,9 +52,9 @@ pub fn silences(env: &[f32], thresh_db: f32, min_pause: f64) -> Vec<(f64, f64)> 
     out
 }
 
-/// Die `n` lautesten Momente (geglättet über 0,5 s), mindestens `min_gap` Sekunden auseinander.
+/// The `n` loudest moments (smoothed over 0.5 s), at least `min_gap` seconds apart.
 pub fn loud_moments(env: &[f32], n: usize, min_gap: f64) -> Vec<f64> {
-    // zentriert geglättet (±0,25 s), damit der Zeitpunkt in der Mitte des Ereignisses liegt
+    // smoothed centered (±0.25 s) so the point in time lies in the middle of the event
     let half = (ENV_RATE / 4) as usize;
     let mut pre = vec![0.0f32; env.len() + 1];
     for (i, v) in env.iter().enumerate() {
@@ -66,7 +66,7 @@ pub fn loud_moments(env: &[f32], n: usize, min_gap: f64) -> Vec<f64> {
             (pre[b] - pre[a]) / (b - a) as f32
         })
         .collect();
-    // Im Verhältnis zur Umgebung (5 s) laut: Schreie, Explosionen, Jubel
+    // loud relative to the surroundings (5 s): screams, explosions, cheers
     let ctx = (ENV_RATE * 5) as usize;
     let mut scored: Vec<(f32, usize)> = (0..smooth.len())
         .map(|i| {
@@ -91,11 +91,11 @@ pub fn loud_moments(env: &[f32], n: usize, min_gap: f64) -> Vec<f64> {
     picks
 }
 
-/// Versatz von `b` gegenüber `a` in Sekunden (positiv: Ereignis kommt in `b` später).
-/// Kreuzkorrelation der Hüllkurven-Änderungen, Suchbereich ±`max_shift`.
+/// Offset of `b` relative to `a` in seconds (positive: the event comes later in `b`).
+/// Cross-correlation of the envelope changes, search range ±`max_shift`.
 pub fn offset(a: &[f32], b: &[f32], max_shift: f64) -> Option<(f64, f32)> {
     let prep = |x: &[f32]| -> Vec<f32> {
-        // Änderungen statt Pegel: unabhängig von Mikrofon und Lautstärke
+        // changes instead of levels: independent of microphone and volume
         let d: Vec<f32> = x.windows(2).map(|w| (w[1] - w[0]).max(0.0)).collect();
         let m = d.iter().sum::<f32>() / d.len().max(1) as f32;
         let v = (d.iter().map(|x| (x - m) * (x - m)).sum::<f32>() / d.len().max(1) as f32)
@@ -129,7 +129,7 @@ pub fn offset(a: &[f32], b: &[f32], max_shift: f64) -> Option<(f64, f32)> {
     (best.1 > f32::MIN).then(|| (best.0 as f64 / ENV_RATE as f64, best.1))
 }
 
-/// Füllwörter (Deutsch/Englisch), kleingeschrieben ohne Satzzeichen
+/// Filler words (German/English), lowercase without punctuation
 pub const FILLERS: &[&str] = &[
     "äh", "ähm", "öh", "öhm", "hm", "hmm", "mhm", "äähm", "uh", "um", "uhm", "erm", "ehm", "eh",
 ];
@@ -179,26 +179,26 @@ mod tests {
         assert!(envelope_samples(&[], 16_000).is_empty());
         assert_eq!(envelope_samples(&[1.0; 10], 16_000), vec![1.0]);
         assert!(silences(&[], -30.0, 0.5).is_empty());
-        // alles leise (nur Stille): kein Bereich, denn der Pegel ist relativ zum Lautesten
+        // everything quiet (silence only): no range, since the level is relative to the loudest
         let flat = vec![0.0f32; 300];
         let s = silences(&flat, -30.0, 0.5);
         assert!(s.iter().all(|(a, b)| a < b && *b <= 3.0 + 1e-9), "{s:?}");
-        // leiser Schluss wird bis zum Ende erkannt
+        // a quiet ending is detected up to the end
         let mut env = vec![0.5f32; 100];
         env.extend(vec![0.0; 100]);
         assert_eq!(silences(&env, -30.0, 0.5), vec![(1.0, 2.0)]);
-        // zu kurze Pause fällt weg
+        // too short a pause drops out
         let mut env = vec![0.5f32; 100];
         env.extend(vec![0.0; 10]);
         env.extend(vec![0.5; 100]);
         assert!(silences(&env, -30.0, 0.5).is_empty());
         assert!(loud_moments(&[], 3, 1.0).is_empty());
-        assert!(loud_moments(&flat, 3, 1.0).is_empty(), "nichts ist lauter als die Umgebung");
+        assert!(loud_moments(&flat, 3, 1.0).is_empty(), "nothing is louder than the surroundings");
         assert!(loud_moments(&env, 0, 1.0).is_empty());
         let nan = vec![f32::NAN; 200];
         let _ = loud_moments(&nan, 3, 1.0);
         let _ = silences(&nan, -30.0, 0.5);
-        assert!(offset(&[0.1; 10], &[0.1; 10], 1.0).is_none(), "zu kurz");
+        assert!(offset(&[0.1; 10], &[0.1; 10], 1.0).is_none(), "too short");
         let a = burst_track(800, &[100, 300, 650]);
         let (o, _) = offset(&a, &a, 2.0).unwrap();
         assert_eq!(o, 0.0);

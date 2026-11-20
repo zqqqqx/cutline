@@ -1,5 +1,5 @@
-//! Eingebaute Sticker als SVG (eigene Zeichnungen, frei verwendbar). Sie werden mit
-//! resvg zu PNG gerendert und dann wie ein Bild-Clip behandelt.
+//! Built-in stickers as SVG (own drawings, free to use). They are rendered to PNG
+//! with resvg and then treated like an image clip.
 
 use std::path::Path;
 
@@ -7,12 +7,12 @@ pub struct Sticker {
     pub id: &'static str,
     pub name: &'static str,
     pub category: &'static str,
-    /// SVG mit viewBox 0 0 100 100
+    /// SVG with viewBox 0 0 100 100
     pub svg: &'static str,
 }
 
-/// Ordner des Tabs „Elemente“ in dieser Reihenfolge; Pakete sortieren sich mit gleichem Namen ein
-/// (Reaktionen, Symbole, Tiere & Essen auch für Emoji). Leere Ordner zeigt der Tab nicht.
+/// Folders of the „Elemente“ tab in this order; packages sort in by the same name
+/// (reactions, symbols, animals & food also for emoji). The tab does not show empty folders.
 pub const STICKER_CATEGORIES: [&str; 10] = [
     "Aufrufe",
     "Zeigen",
@@ -437,7 +437,7 @@ pub fn sticker(id: &str) -> Option<&'static Sticker> {
     STICKERS.iter().find(|s| s.id == id)
 }
 
-/// SVG-Optionen mit der mitgelieferten Schrift „Anton“ (OFL) für Sticker mit Text
+/// SVG options with the bundled font „Anton“ (OFL) for stickers with text
 fn options() -> &'static resvg::usvg::Options<'static> {
     static OPT: std::sync::OnceLock<resvg::usvg::Options<'static>> = std::sync::OnceLock::new();
     OPT.get_or_init(|| {
@@ -448,12 +448,12 @@ fn options() -> &'static resvg::usvg::Options<'static> {
     })
 }
 
-/// Beliebiges SVG quadratisch rendern (vormultipliziertes RGBA).
+/// Render any SVG square (premultiplied RGBA).
 pub fn render_svg(svg: &str, size: u32) -> Option<Vec<u8>> {
     render_svg_wh(svg, size, size)
 }
 
-/// SVG in `w`×`h` Pixel rendern, eingepasst an der oberen linken Ecke (vormultipliziertes RGBA).
+/// Render an SVG at `w`×`h` pixels, fitted at the top left corner (premultiplied RGBA).
 pub fn render_svg_wh(svg: &str, w: u32, h: u32) -> Option<Vec<u8>> {
     let tree = resvg::usvg::Tree::from_str(svg, options()).ok()?;
     let mut pm = resvg::tiny_skia::Pixmap::new(w, h)?;
@@ -466,7 +466,7 @@ pub fn render_svg_wh(svg: &str, w: u32, h: u32) -> Option<Vec<u8>> {
     Some(pm.take())
 }
 
-/// Rendert einen Sticker quadratisch (`size` px) als vormultipliziertes RGBA.
+/// Renders a sticker square (`size` px) as premultiplied RGBA.
 pub fn render_rgba(st: &Sticker, size: u32) -> Option<Vec<u8>> {
     let tree = resvg::usvg::Tree::from_str(st.svg, options()).ok()?;
     let mut pm = resvg::tiny_skia::Pixmap::new(size, size)?;
@@ -479,7 +479,7 @@ pub fn render_rgba(st: &Sticker, size: u32) -> Option<Vec<u8>> {
     Some(pm.take())
 }
 
-/// Rendert einen Sticker als PNG-Datei.
+/// Renders a sticker as a PNG file.
 pub fn render_png(st: &Sticker, size: u32, out: &Path) -> Result<(), String> {
     let tree = resvg::usvg::Tree::from_str(st.svg, options())
         .map_err(|e| e.to_string())?;
@@ -504,7 +504,7 @@ mod tests {
     fn all_stickers_render() {
         for st in STICKERS {
             let px = render_rgba(st, 64).unwrap_or_else(|| panic!("{}", st.id));
-            assert!(px.chunks(4).any(|p| p[3] > 0), "{} ist leer", st.id);
+            assert!(px.chunks(4).any(|p| p[3] > 0), "{} is empty", st.id);
             assert!(STICKER_CATEGORIES.contains(&st.category));
         }
         let mut ids: Vec<&str> = STICKERS.iter().map(|s| s.id).collect();
@@ -512,10 +512,10 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), STICKERS.len());
         assert!(STICKERS.len() >= 50);
-        // Text in Stickern wird mit der eingebetteten Schrift gezeichnet (sonst bliebe er leer)
+        // text in stickers is drawn with the embedded font (otherwise it would stay empty)
         let with_text = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="70" font-family="Anton" font-size="60" text-anchor="middle" fill="#FF0000">GG</text></svg>"##;
         let px = render_svg(with_text, 64).unwrap();
-        assert!(px.chunks(4).any(|p| p[3] > 0), "Text nicht gezeichnet");
+        assert!(px.chunks(4).any(|p| p[3] > 0), "text not drawn");
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("s/heart.png");
         render_png(&STICKERS[0], 256, &p).unwrap();
@@ -523,8 +523,8 @@ mod tests {
         assert!(STICKERS.len() >= 24);
     }
 
-    /// Paket „Bewegte Elemente“: jede Datei ist ein bewegtes Bild, Schleife genau dort, wo das
-    /// Manifest „schleife“ sagt, Größenbudget 6 MB (neu erzeugen: Beispiel `gen_elemente`).
+    /// Package „Bewegte Elemente“: every file is an animated image, looping exactly where the
+    /// manifest says `schleife`, size budget 6 MB (regenerate: example `gen_elemente`).
     #[test]
     fn animated_elements_pack_is_consistent() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/cutline-elemente");
@@ -537,7 +537,7 @@ mod tests {
                 .map(|f| f.trim_end_matches('"'))
                 .unwrap();
             let path = root.join(file);
-            let a = cl_media::animation(&path).unwrap_or_else(|| panic!("{file}: kein bewegtes Bild"));
+            let a = cl_media::animation(&path).unwrap_or_else(|| panic!("{file}: not an animated image"));
             assert_eq!(a.looping, block.contains("\"schleife\""), "{file}");
             assert!(a.duration.as_secs_f64() >= 0.5, "{file}");
             bytes += std::fs::metadata(&path).unwrap().len();

@@ -1,8 +1,8 @@
-; Cutline – Windows-Installer (Inno Setup 6)
-; Installiert pro Benutzer ohne Administratorrechte, damit der eingebaute Updater
-; die Programmdateien ersetzen kann.
+; Cutline – Windows installer (Inno Setup 6)
+; Installs per user without administrator rights, so the built-in updater
+; can replace the program files.
 ;
-; Bauen:  iscc /DAppVersion=0.11.1 /DSrcDir=..\pkg installer\cutline.iss
+; Build:  iscc /DAppVersion=0.11.1 /DSrcDir=..\pkg installer\cutline.iss
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -62,7 +62,7 @@ Name: "{autoprograms}\Cutline"; Filename: "{app}\cutline.exe"
 Name: "{autodesktop}\Cutline"; Filename: "{app}\cutline.exe"; Tasks: desktopicon
 
 [Registry]
-; Dateizuordnung pro Benutzer (HKCU über HKA bei Installation ohne Adminrechte)
+; File association per user (HKCU via HKA when installed without admin rights)
 Root: HKA; Subkey: "Software\Classes\.cutline"; ValueType: string; ValueName: ""; ValueData: "Cutline.Project"; Flags: uninsdeletevalue; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\.cutline\OpenWithProgids"; ValueType: string; ValueName: "Cutline.Project"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\Cutline.Project"; ValueType: string; ValueName: ""; ValueData: "{cm:ProjectType}"; Flags: uninsdeletekey; Tasks: assoc

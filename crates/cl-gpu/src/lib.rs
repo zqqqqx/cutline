@@ -1,25 +1,25 @@
-//! Übergänge als WGSL-Shader, gerendert auf der GPU (headless über wgpu).
+//! Transitions as WGSL shaders, rendered on the GPU (headless via wgpu).
 //!
-//! Ein Übergangs-Shader enthält nur die Funktion
-//! `fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f` und liest die beiden Bilder
-//! über `from_color(uv)` und `to_color(uv)`. `uv` läuft wie bei GL Transitions von (0, 0) unten
-//! links bis (1, 1) oben rechts, `ratio` = Breite/Höhe der Ausgabe. Parameter stehen als
-//! `params.p0` … `params.p7` bereit (Standardwerte aus dem Manifest). Hülle (Uniforms,
-//! Sampler, Vollbild-Dreieck) stellt diese Crate.
+//! A transition shader contains only the function
+//! `fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f` and reads the two images
+//! via `from_color(uv)` and `to_color(uv)`. `uv` runs like in GL Transitions from (0, 0) bottom
+//! left to (1, 1) top right, `ratio` = width/height of the output. Parameters are available as
+//! `params.p0` … `params.p7` (default values from the manifest). This crate provides the wrapper
+//! (uniforms, sampler, full-screen triangle).
 //!
-//! Gemischt wird im gamma-kodierten RGB wie bei FFmpeg `xfade` (Texturen ohne sRGB-Umrechnung),
-//! damit Anfang und Ende genau an die Bilder davor und danach anschließen.
+//! Blending happens in gamma-encoded RGB like FFmpeg `xfade` (textures without sRGB conversion)
+//! so start and end join exactly to the frames before and after.
 //!
-//! Ohne GPU-Adapter (oder mit `CUTLINE_NO_GPU`) liefert [`gpu`] `None`; Aufrufer fallen dann
-//! auf ihren `xfade`-Rückfall zurück. Treiberfehler werden zu `Err`, nie zu einem Panic.
+//! Without a GPU adapter (or with `CUTLINE_NO_GPU`) [`gpu`] returns `None`; callers then fall
+//! back to their `xfade` fallback. Driver errors become `Err`, never a panic.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-/// Anzahl der Shader-Parameter (`params.p0` … `params.p7`).
+/// Number of shader parameters (`params.p0` … `params.p7`).
 pub const PARAMS: usize = 8;
 
-/// Hülle um den Shader eines Übergangs.
+/// Wrapper around the shader of a transition.
 const PRELUDE: &str = "struct ClParams { progress: f32, ratio: f32, pad0: f32, pad1: f32, p0: f32, p1: f32, p2: f32, p3: f32, p4: f32, p5: f32, p6: f32, p7: f32 };
 @group(0) @binding(0) var<uniform> params: ClParams;
 @group(0) @binding(1) var cl_from: texture_2d<f32>;
@@ -40,12 +40,12 @@ struct ClVertex { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 }
 ";
 
-/// Vollständiger WGSL-Code (Hülle + Shader).
+/// Complete WGSL code (wrapper + shader).
 pub fn wrap(shader: &str) -> String {
     format!("{PRELUDE}\n{shader}\n")
 }
 
-/// Prüft einen Übergangs-Shader ohne GPU (naga: parsen und validieren).
+/// Checks a transition shader without GPU (naga: parse and validate).
 pub fn validate(shader: &str) -> Result<(), String> {
     let src = wrap(shader);
     let module = naga::front::wgsl::parse_str(&src).map_err(|e| e.emit_to_string(&src))?;
@@ -55,7 +55,7 @@ pub fn validate(shader: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Ein Bild als RGBA (8 Bit je Kanal, Zeilen von oben nach unten, ohne Zeilenabstand).
+/// An image as RGBA (8 bits per channel, rows top to bottom, without row padding).
 #[derive(Clone, Copy)]
 pub struct Frame<'a> {
     pub rgba: &'a [u8],
@@ -82,7 +82,7 @@ struct Tex {
 }
 
 struct State {
-    /// je Shader-Quelltext: fertige Pipeline oder Fehlermeldung (nicht jedes Bild neu bauen)
+    /// per shader source: finished pipeline or error message (don't rebuild for every frame)
     pipelines: HashMap<String, Result<wgpu::RenderPipeline, String>>,
     from: Option<Tex>,
     to: Option<Tex>,
@@ -93,25 +93,25 @@ struct State {
     pipeline_layout: wgpu::PipelineLayout,
 }
 
-/// Headless-Gerät (einmal je Prozess).
+/// Headless device (once per process).
 pub struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     state: Mutex<State>,
-    /// Name des Adapters (für Meldungen und Messungen)
+    /// Name of the adapter (for messages and measurements)
     pub adapter: String,
     max_size: u32,
 }
 
 static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
 
-/// Das Gerät, falls eine GPU (oder ein Software-Adapter) da ist.
+/// The device, if a GPU (or a software adapter) is present.
 pub fn gpu() -> Option<&'static Gpu> {
     GPU.get_or_init(|| {
         if std::env::var_os("CUTLINE_NO_GPU").is_some() {
             return None;
         }
-        // Treiber können beim Anfragen abstürzen: nie über die Aufrufer hinweg
+        // drivers can crash while requesting: never across the callers
         std::panic::catch_unwind(init).ok().flatten()
     })
     .as_ref()
@@ -140,7 +140,7 @@ fn init() -> Option<Gpu> {
         None,
     ))
     .ok()?;
-    // Standard wäre ein Panic bei nicht abgefangenen Fehlern
+    // the default would be a panic on uncaught errors
     device.on_uncaptured_error(Box::new(|e| eprintln!("cl-gpu: {e}")));
     let max_size = device.limits().max_texture_dimension_2d;
     let tex_entry = |binding| wgpu::BindGroupLayoutEntry {
@@ -217,8 +217,8 @@ fn init() -> Option<Gpu> {
 const UNIFORM_SIZE: u64 = 4 * (4 + PARAMS as u64);
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
-/// Übergang rendern: `from`/`to` beliebiger Größe (werden auf die Ausgabe gestreckt),
-/// Ergebnis als RGBA in `out`-Größe. Kurzform für `gpu()?.render(…)`.
+/// Render a transition: `from`/`to` of any size (stretched to the output),
+/// result as RGBA at `out` size. Shorthand for `gpu()?.render(…)`.
 pub fn render(
     shader: &str,
     params: &[f32; PARAMS],
@@ -233,7 +233,7 @@ pub fn render(
 }
 
 impl Gpu {
-    /// Siehe [`render`]. Pipelines und Texturen werden wiederverwendet.
+    /// See [`render`]. Pipelines and textures are reused.
     pub fn render(
         &self,
         shader: &str,
@@ -255,8 +255,8 @@ impl Gpu {
         .unwrap_or_else(|_| Err("GPU-Fehler".into()))
     }
 
-    /// Pipeline für `shader` vorab bauen (das Übersetzen dauert beim ersten Mal spürbar);
-    /// ein späteres [`render`] nutzt sie wieder.
+    /// Build the pipeline for `shader` up front (compiling takes noticeably long the first time);
+    /// a later [`render`] reuses it.
     pub fn prepare(&self, shader: &str) -> Result<(), String> {
         let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.pipeline(&mut st, shader).map(|_| ())))
@@ -495,7 +495,7 @@ mod tests {
     const CROSSFADE: &str =
         "fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f { return mix(from_color(uv), to_color(uv), progress); }";
 
-    /// Reproduzierbares Rauschen (hart für jede Abweichung beim Abtasten)
+    /// Reproducible noise (hard on any deviation in sampling)
     pub(crate) fn noise(w: u32, h: u32, seed: u32) -> Vec<u8> {
         let mut x = seed.wrapping_mul(2654435761).wrapping_add(1);
         (0..w * h * 4)
@@ -503,7 +503,7 @@ mod tests {
                 x ^= x << 13;
                 x ^= x >> 17;
                 x ^= x << 5;
-                // Deckkraft voll, damit Farben eindeutig bleiben
+                // full opacity so colors stay unambiguous
                 if i % 4 == 3 {
                     255
                 } else {
@@ -518,7 +518,7 @@ mod tests {
         a.iter().zip(b).map(|(x, y)| x.abs_diff(*y)).max().unwrap_or(0)
     }
 
-    /// Alle Übergänge mit Shader aus den mitgelieferten Paketen: (ID, Quelltext, Parameter)
+    /// All transitions with a shader from the bundled packages: (ID, source, parameters)
     fn shipped() -> Vec<(String, String, [f32; PARAMS])> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
         let reg = cl_plugin::Registry::scan([root.as_path()]);
@@ -555,7 +555,7 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
         let reg = cl_plugin::Registry::scan([root.as_path()]);
         for (_, a) in reg.assets(cl_plugin::AssetKind::Transition) {
-            let fb = a.fallback.as_deref().unwrap_or_else(|| panic!("{}: kein Rückfall", a.id));
+            let fb = a.fallback.as_deref().unwrap_or_else(|| panic!("{}: no fallback", a.id));
             assert!(cl_fx::TRANSITIONS.iter().any(|t| t.0 == fb), "{}: {fb}", a.id);
         }
     }
@@ -563,7 +563,7 @@ mod tests {
     #[test]
     fn crossfade_ends_and_middle() {
         let Some(g) = gpu() else {
-            eprintln!("keine GPU, übersprungen");
+            eprintln!("no GPU, skipped");
             return;
         };
         let (w, h) = (64, 36);
@@ -576,14 +576,14 @@ mod tests {
         let mid = g.render(CROSSFADE, &p, fa, fb, (w, h), 0.5).unwrap();
         let mean: Vec<u8> = a.iter().zip(&b).map(|(x, y)| ((*x as f32 + *y as f32) / 2.0).round() as u8).collect();
         assert!(max_diff(&mid, &mean) <= 1);
-        // verlangte Größe, auch ungerade, und zwei verschieden große Eingaben
+        // requested size, odd too, and two inputs of different size
         let small = noise(31, 17, 3);
         let fs = Frame { rgba: &small, width: 31, height: 17 };
         let o = g.render(CROSSFADE, &p, fa, fs, (101, 57), 0.3).unwrap();
         assert_eq!(o.len(), 101 * 57 * 4);
         let o = g.render(CROSSFADE, &p, fs, fa, (20, 40), 0.7).unwrap();
         assert_eq!(o.len(), 20 * 40 * 4);
-        // falsche Daten sind ein Fehler, kein Absturz
+        // wrong data is an error, not a crash
         assert!(g.render(CROSSFADE, &p, Frame { rgba: &a[4..], width: w, height: h }, fb, (w, h), 0.5).is_err());
         assert!(g.render("kaputt", &p, fa, fb, (w, h), 0.5).is_err());
         assert!(g.render(CROSSFADE, &p, fa, fb, (0, h), 0.5).is_err());
@@ -592,23 +592,23 @@ mod tests {
     #[test]
     fn prepare_builds_the_pipeline_ahead() {
         let Some(g) = gpu() else {
-            eprintln!("keine GPU, übersprungen");
+            eprintln!("no GPU, skipped");
             return;
         };
         let shader = CROSSFADE.replace("progress)", "progress * 1.0)");
         g.prepare(&shader).unwrap();
         assert!(g.prepare("kaputt").is_err());
-        // vor dem ersten Bild liegt die Pipeline bereit
+        // the pipeline is ready before the first frame
         assert!(g.state.lock().unwrap().pipelines.get(&shader).is_some_and(|p| p.is_ok()));
     }
 
     #[test]
     fn every_shipped_shader_starts_with_a_and_ends_with_b() {
         let Some(g) = gpu() else {
-            eprintln!("keine GPU, übersprungen");
+            eprintln!("no GPU, skipped");
             return;
         };
-        // quer und hochkant
+        // landscape and portrait
         for (w, h) in [(96, 54), (54, 96)] {
             let (a, b) = (noise(w, h, 7), noise(w, h, 9));
             let fa = Frame { rgba: &a, width: w, height: h };

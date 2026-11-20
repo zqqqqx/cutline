@@ -17,10 +17,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable # bei SHA-Pin Pflicht
+          toolchain: stable # required with a SHA pin
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libgtk-3-dev libxkbcommon-dev libwayland-dev
-      - name: FFmpeg 8.1.3 (fest, statisch; Kopie im Release ci-tools)
+      - name: FFmpeg 8.1.3 (pinned, static; copy in the ci-tools release)
         run: |
           curl -sL -o ffmpeg.tar.xz https://github.com/zqqqqx/cutline/releases/download/ci-tools/ffmpeg-n8.1.3-36-ge22a4510c9-linux64-gpl-8.1.tar.xz
           echo "fce424851b0a982bdd4ac4e96f0e7b32cf29de999e54500676d41ad175ed0c79  ffmpeg.tar.xz" | sha256sum -c -
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable # bei SHA-Pin Pflicht
+          toolchain: stable # required with a SHA pin
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: FFmpeg 8
         shell: pwsh
@@ -43,7 +43,7 @@ jobs:
           # pinned build with checksum. 8.1, not 9: NVENC in 9 needs driver 610+, which older cards (GTX 10) never get.
           # full shared build: has the whisper filter (subtitles) and is smaller than the static essentials build
           Invoke-WebRequest https://github.com/GyanD/codexffmpeg/releases/download/8.1/ffmpeg-8.1-full_build-shared.zip -OutFile ffmpeg.zip
-          if ((Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash -ne 'E184E012CA9A3527ED45D61F8E250C50B07B8661D90849820EA754239049EFB4') { throw 'FFmpeg: Prüfsumme stimmt nicht' }
+          if ((Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash -ne 'E184E012CA9A3527ED45D61F8E250C50B07B8661D90849820EA754239049EFB4') { throw 'FFmpeg: checksum mismatch' }
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
           $bin = (Get-ChildItem ffmpeg-dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1).Directory.FullName
           echo "$bin" >> $env:GITHUB_PATH

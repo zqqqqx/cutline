@@ -1,5 +1,5 @@
-//! Textvorlagen (fertige Titel mit Stil und Animation) und Texteffekte
-//! (Stil-Voreinstellungen, die nur das Aussehen ändern und den Text behalten).
+//! Text templates (finished titles with style and animation) and text effects
+//! (style presets that only change the look and keep the text).
 
 use cl_core::TextStyle;
 
@@ -8,7 +8,7 @@ pub struct TextTemplate {
     pub name: &'static str,
     pub category: &'static str,
     pub text: &'static str,
-    /// Einblend-Animation (id aus `cl_core::ANIMATIONS`)
+    /// In animation (id from `cl_core::ANIMATIONS`)
     pub intro: Option<&'static str>,
     pub style: fn() -> TextStyle,
 }
@@ -713,7 +713,7 @@ impl TextTemplate {
     }
 }
 
-/// Texteffekte: ändern das Aussehen eines bestehenden Textes.
+/// Text effects: change the look of an existing text.
 pub struct TextEffect {
     pub id: &'static str,
     pub name: &'static str,

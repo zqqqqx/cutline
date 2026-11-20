@@ -1,6 +1,6 @@
 [package]
 name = "cl-analyze"
-description = "Cutline: lokale Analysen (Spracherkennung Parakeet/Whisper, Freistellen, Szenen, Beats, Tracking, Auto-Reframe)"
+description = "Cutline: local analysis (speech recognition Parakeet/Whisper, background removal, scenes, beats, tracking, auto-reframe)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

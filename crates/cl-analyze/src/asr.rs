@@ -1,4 +1,4 @@
-//! Spracherkennung: Parakeet TDT 0.6B v3 (bevorzugt) mit Whisper als Rückfall.
+//! Speech recognition: Parakeet TDT 0.6B v3 (preferred) with Whisper as fallback.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,13 +14,13 @@ pub struct Word {
     pub text: String,
 }
 
-/// Eine Untertitelzeile.
+/// One subtitle line.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Segment {
     pub start: f64,
     pub end: f64,
     pub text: String,
-    /// Beginn je Wort (wie `start`); leer, wenn unbekannt (Whisper, SRT)
+    /// Start of each word (like `start`); empty if unknown (Whisper, SRT)
     pub words: Vec<f64>,
 }
 
@@ -41,13 +41,13 @@ impl Engine {
 
 #[derive(Debug, Clone)]
 pub struct Options {
-    /// Sprache für Whisper (`de`, `en`, `auto`); Parakeet erkennt sie selbst
+    /// Language for Whisper (`de`, `en`, `auto`); Parakeet detects it itself
     pub language: String,
-    /// Höchstens so viele Zeichen je Zeile
+    /// At most this many characters per line
     pub max_chars: usize,
-    /// Höchstdauer je Zeile (s)
+    /// Maximum duration per line (s)
     pub max_dur: f64,
-    /// Engine erzwingen (sonst die beste verfügbare)
+    /// Force an engine (otherwise the best available)
     pub force: Option<Engine>,
 }
 
@@ -62,8 +62,8 @@ impl Default for Options {
     }
 }
 
-/// Ton einer Datei transkribieren (Bereich `start`..`start+dur` in Quellzeit).
-/// Zeiten im Ergebnis sind relativ zu `start`.
+/// Transcribe the audio of a file (range `start`..`start+dur` in source time).
+/// Times in the result are relative to `start`.
 pub fn transcribe(
     models: &Models,
     path: &Path,
@@ -99,7 +99,7 @@ pub fn transcribe(
 // ---------------------------------------------------------------- Parakeet
 
 const SR: u32 = 16_000;
-/// Sekunden je Encoder-Schritt (10 ms Hop × 8 Unterabtastung)
+/// Seconds per encoder step (10 ms hop × 8 subsampling)
 const FRAME: f64 = 0.08;
 const CHUNK_S: f64 = 20.0;
 
@@ -137,7 +137,7 @@ impl Parakeet {
         })
     }
 
-    /// Encoder-Ausgabe als Zeilen je Zeitschritt (T × D).
+    /// Encoder output as rows per time step (T × D).
     fn encode(&mut self, wave: &[f32]) -> Result<(Vec<Vec<f32>>, usize), String> {
         let e = |e: ort::Error| e.to_string();
         let w = Tensor::from_array(([1usize, wave.len()], wave.to_vec())).map_err(e)?;
@@ -164,14 +164,14 @@ impl Parakeet {
             .map_err(e)?;
         let (dim, t) = (s[1] as usize, s[2] as usize);
         let n = (elen[0] as usize).min(t);
-        // [1, D, T] → T Zeilen à D
+        // [1, D, T] → T rows of D
         let rows = (0..n)
             .map(|ti| (0..dim).map(|di| data[di * t + ti]).collect())
             .collect();
         Ok((rows, dim))
     }
 
-    /// TDT-Greedy-Dekodierung: (Token-ID, Zeitschritt).
+    /// TDT greedy decoding: (token ID, time step).
     fn decode(&mut self, frames: &[Vec<f32>], dim: usize) -> Result<Vec<(usize, usize)>, String> {
         let e = |e: ort::Error| e.to_string();
         let mut s1 = vec![0f32; 2 * 640];
@@ -231,7 +231,7 @@ impl Parakeet {
             let time = offset + *t as f64 * FRAME;
             let new_word = piece.starts_with('\u{2581}') || words.is_empty();
             let clean = piece.replace('\u{2581}', "");
-            // Satzzeichen hängen am vorigen Wort
+            // punctuation attaches to the previous word
             let punct = !clean.is_empty()
                 && clean
                     .chars()
@@ -255,7 +255,7 @@ impl Parakeet {
     }
 }
 
-/// Grenzen für Abschnitte: leise Stellen nahe an jeweils `CHUNK_S` Sekunden.
+/// Boundaries for chunks: quiet spots close to every `CHUNK_S` seconds.
 fn chunk_bounds(wave: &[f32]) -> Vec<(usize, usize)> {
     let total = wave.len();
     let target = (CHUNK_S * SR as f64) as usize;
@@ -266,7 +266,7 @@ fn chunk_bounds(wave: &[f32]) -> Vec<(usize, usize)> {
             out.push((a, total));
             break;
         }
-        // leisestes 50-ms-Fenster in den letzten 4 s vor dem Ziel
+        // quietest 50 ms window in the last 4 s before the target
         let win = SR as usize / 20;
         let search = (a + target - SR as usize * 4)..(a + target);
         let cut = search
@@ -314,7 +314,7 @@ pub fn parakeet(
     Ok(words)
 }
 
-/// Wörter zu gut lesbaren Untertitelzeilen gruppieren.
+/// Group words into easily readable subtitle lines.
 pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segment> {
     let mut out: Vec<Segment> = Vec::new();
     let mut cur: Option<Segment> = None;
@@ -323,7 +323,7 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
         let flush = match &cur {
             Some(c) => {
                 let len = c.text.chars().count() + 1 + w.text.chars().count();
-                // Ein Satzende darf die Zeile etwas überziehen, statt allein zu stehen
+                // a sentence end may overrun the line a bit instead of standing alone
                 let ends = w.text.ends_with(['.', '!', '?']);
                 let too_long = if ends {
                     len > max_chars + 14
@@ -353,13 +353,13 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
                 })
             }
         }
-        // Satzende beendet die Zeile
+        // a sentence end ends the line
         if w.text.ends_with(['.', '!', '?']) {
             out.extend(cur.take());
         }
     }
     out.extend(cur);
-    // Mindestdauer und keine Überlappung
+    // minimum duration and no overlap
     for i in 0..out.len() {
         let next = out.get(i + 1).map(|n| n.start);
         let s = &mut out[i];
@@ -371,8 +371,8 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
     out
 }
 
-/// Vorhandene Zeilen neu aufteilen (z. B. kürzer oder Wort für Wort). Die Zeit eines Wortes
-/// kommt aus `words`, sonst wird sie nach seiner Zeichenzahl innerhalb der Zeile geschätzt.
+/// Re-split existing lines (e.g. shorter or word by word). The time of a word
+/// comes from `words`, otherwise it is estimated by its character count within the line.
 pub fn resegment(segs: &[Segment], max_chars: usize, max_dur: f64) -> Vec<Segment> {
     let mut words = Vec::new();
     for s in segs {
@@ -396,8 +396,8 @@ pub fn resegment(segs: &[Segment], max_chars: usize, max_dur: f64) -> Vec<Segmen
 
 // ---------------------------------------------------------------- Whisper
 
-/// Bringt das benutzte FFmpeg den Filter `whisper` mit? Ohne zu warten: `None`, solange die
-/// Prüfung (`ffmpeg -filters`, einmal je Programmlauf) im Hintergrund läuft.
+/// Does the FFmpeg used bring the `whisper` filter? Without waiting: `None` while the
+/// check (`ffmpeg -filters`, once per program run) runs in the background.
 pub fn whisper_filter_available() -> Option<bool> {
     static HAS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     static STARTED: std::sync::Once = std::sync::Once::new();
@@ -420,12 +420,12 @@ pub fn whisper_filter_available() -> Option<bool> {
     HAS.get().copied()
 }
 
-/// Steht `whisper` in der Ausgabe von `ffmpeg -filters` (Spalten: Kennzeichen, Name, …)?
+/// Is `whisper` in the output of `ffmpeg -filters` (columns: flags, name, …)?
 pub fn lists_whisper_filter(filters: &str) -> bool {
     filters.lines().any(|l| l.split_whitespace().nth(1) == Some("whisper"))
 }
 
-/// Anzeigename des Whisper-Modells: `ggml-base.bin` → „Whisper Base“.
+/// Display name of the Whisper model: `ggml-base.bin` → "Whisper Base".
 pub fn whisper_label(model: &Path) -> String {
     let stem = model.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
     let parts: Vec<String> = stem
@@ -447,7 +447,7 @@ pub fn whisper(
     language: &str,
     progress: &dyn Fn(f32),
 ) -> Result<Vec<Segment>, String> {
-    // eigener Ordner je Aufruf: zwei gleichzeitige Läufe löschen sich nichts weg
+    // own folder per call: two simultaneous runs don't delete each other's files
     static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("cutline-whisper-{}-{n}", std::process::id()));
@@ -493,7 +493,7 @@ fn whisper_in(
         .args(["-vn", "-af", &af, "-f", "null", "-"])
         .stdin(std::process::Stdio::null())
         .output();
-    // Arbeitsordner auch bei Fehlern entfernen (sonst bleibt je Programmlauf einer in %TEMP%)
+    // remove the work folder on errors too (otherwise one per program run stays in %TEMP%)
     let text = std::fs::read_to_string(&srt).unwrap_or_default();
     let _ = std::fs::remove_dir_all(dir);
     let out = out.map_err(|e| e.to_string())?;
@@ -510,7 +510,7 @@ fn whisper_in(
     Ok(parse_srt(&text))
 }
 
-/// SRT lesen (Zeilen mit `-->`).
+/// Read SRT (lines with `-->`).
 pub fn parse_srt(text: &str) -> Vec<Segment> {
     let ts = |s: &str| -> Option<f64> {
         let s = s.trim().replace(',', ".");
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(w.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["Das", "ist", "ein", "Test", "Ende"]);
         assert!(w.windows(2).all(|p| p[0].end <= p[1].start + 1e-9 && p[0].start < p[1].start));
         assert!((w[0].start - 0.0).abs() < 1e-9 && w.last().unwrap().end >= 3.9);
-        // lange Zeilen bleiben zusammen, wenn sie passen
+        // long lines stay together if they fit
         let l = resegment(&segs, 42, 5.0);
         assert_eq!(l[0].text, "Das ist ein Test Ende");
     }
@@ -623,7 +623,7 @@ mod tests {
         assert!((s[0].end - 2.5).abs() < 1e-9);
     }
 
-    /// Echter Durchlauf mit deutscher Sprachausgabe (nur wenn Modelle + Windows-Stimme da sind).
+    /// Real run with German speech output (only if models + Windows voice are present).
     #[test]
     fn transcribes_german_with_parakeet_and_whisper() {
         let Some(models) = testutil::models() else {
@@ -686,16 +686,16 @@ mod tests {
     fn grouping_and_srt_edge_cases() {
         assert!(group_words(&[], 30, 5.0).is_empty());
         let w = |s: f64, e: f64, t: &str| Word { start: s, end: e, text: t.into() };
-        // einzelnes kurzes Wort bekommt Mindestdauer, folgende Zeile wird nicht überdeckt
+        // a single short word gets the minimum duration, the following line is not covered
         let g = group_words(&[w(0.0, 0.1, "Ja."), w(0.5, 0.6, "Nein.")], 30, 5.0);
         assert_eq!(g.len(), 2);
         assert!(g[0].end <= g[1].start && g[1].end >= g[1].start + 0.8 - 1e-9, "{g:?}");
-        // ein Wort länger als die Zeile bleibt ganz, max_chars 0 erzeugt keine leeren Zeilen
+        // a word longer than the line stays whole, max_chars 0 creates no empty lines
         let g = group_words(&[w(0.0, 1.0, "Donaudampfschifffahrt"), w(1.0, 2.0, "🎬"), w(2.0, 3.0, "مرحبا")], 0, 5.0);
         assert_eq!(g.len(), 3);
         assert!(g.iter().all(|s| !s.text.is_empty()));
         assert!(resegment(&[Segment { start: 0.0, end: 1.0, text: "   ".into(), ..Default::default() }], 10, 2.0).is_empty());
-        // bekannte Wortzeiten bleiben beim Neu-Aufteilen erhalten
+        // known word times are kept when re-splitting
         let k = resegment(&[Segment { start: 0.0, end: 3.0, text: "a b c".into(), words: vec![0.0, 2.0, 2.5] }], 1, 1.0);
         assert_eq!(k.iter().map(|s| s.start).collect::<Vec<_>>(), [0.0, 2.0, 2.5]);
         assert_eq!(k[1].words, [2.0]);

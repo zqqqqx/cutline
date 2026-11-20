@@ -1,4 +1,4 @@
-# Emoji für Reaktionen: Microsoft Fluent Emoji (MIT), unbewegt. Auswahl und Namen: Cutline-Projekt.
+# Emoji for reactions: Microsoft Fluent Emoji (MIT), static. Selection and names: Cutline project.
 [plugin]
 id = "cutline.emoji"
 version = "0.1.0"

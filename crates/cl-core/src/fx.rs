@@ -1,6 +1,6 @@
-//! Clip-Eigenschaften für Phase 2: Effekte, Filter, Anpassungen, Maske,
-//! Keyframes, Animationen und Übergänge. Die Auswertung (`Clip::eval_at`) ist die
-//! gemeinsame Wahrheit für Vorschau und Export.
+//! Clip properties for phase 2: effects, filters, adjustments, mask,
+//! keyframes, animations and transitions. The evaluation (`Clip::eval_at`) is the
+//! shared truth for preview and export.
 
 use crate::time::Time;
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ fn one() -> f32 {
     1.0
 }
 
-/// Verweis auf einen Katalog-Eintrag (Effekt oder Filter) mit Parametern.
+/// Reference to a catalog entry (effect or filter) with parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FxRef {
     pub id: String,
@@ -30,7 +30,7 @@ impl FxRef {
     }
 }
 
-/// Grundlegende Farb- und Bildanpassungen (alle 0 = unverändert, Bereich etwa −1…1).
+/// Basic color and image adjustments (all 0 = unchanged, range about −1…1).
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Adjust {
@@ -45,9 +45,9 @@ pub struct Adjust {
     pub vignette: f32,
     pub grain: f32,
     pub fade: f32,
-    /// Farbton-Drehung in Grad
+    /// Hue rotation in degrees
     pub hue: f32,
-    /// HSL je Farbbereich (Rot, Gelb, Grün, Cyan, Blau, Magenta): Farbton, Sättigung, Helligkeit (−1…1)
+    /// HSL per color range (red, yellow, green, cyan, blue, magenta): hue, saturation, lightness (−1…1)
     pub hsl: [[f32; 3]; 6],
 }
 
@@ -74,7 +74,7 @@ pub enum MaskShape {
     Rect,
 }
 
-/// Maske relativ zum Clip: Mittelpunkt und Größe als Anteil der Clipgröße.
+/// Mask relative to the clip: center and size as a fraction of the clip size.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Mask {
     pub shape: MaskShape,
@@ -83,7 +83,7 @@ pub struct Mask {
     pub w: f32,
     pub h: f32,
     pub rotation_deg: f32,
-    /// Weiche Kante als Anteil der Clipgröße
+    /// Soft edge as a fraction of the clip size
     pub feather: f32,
     pub invert: bool,
 }
@@ -110,55 +110,55 @@ pub struct ClipFx {
     pub filter: Option<FxRef>,
     pub adjust: Adjust,
     pub mask: Option<Mask>,
-    /// LUT-Datei (.cube)
+    /// LUT file (.cube)
     pub lut: Option<String>,
     pub flip_h: bool,
     pub flip_v: bool,
     pub reverse: bool,
-    /// Geschwindigkeitskurve (verteilt die Zeit um, die Cliplänge bleibt)
+    /// Speed curve (redistributes time, the clip length stays)
     pub speed_curve: Option<String>,
-    /// Farbe freistellen (Greenscreen)
+    /// Chroma key (green screen)
     pub chroma: Option<ChromaKey>,
-    /// Verwackeln ausgleichen (0 = aus, 1 = stark)
+    /// Stabilization (0 = off, 1 = strong)
     pub stabilize: f32,
-    /// Hintergrund entfernen: Pfad des Maskenvideos (Graustufen, gleiche Zeitbasis wie die Quelle)
+    /// Remove background: path of the mask video (grayscale, same time base as the source)
     pub cutout: Option<String>,
-    /// Was mit dem Hintergrund passiert, wenn eine Personen-Maske vorhanden ist
+    /// What happens to the background when a person mask exists
     pub person: Option<PersonFx>,
-    /// Bildrauschen entfernen 0…1
+    /// Denoise 0…1
     pub denoise: f32,
-    /// Helligkeitsflackern ausgleichen (Kunstlicht, Zeitraffer)
+    /// Deflicker brightness (artificial light, time-lapse)
     pub deflicker: bool,
-    /// Zeitlupe mit berechneten Zwischenbildern (optischer Fluss) statt doppelter Bilder
+    /// Slow motion with computed in-between frames (optical flow) instead of doubled frames
     pub smooth_slowmo: bool,
-    /// Zensur-Flächen (Verpixeln/Weichzeichnen); leer = Feld fehlt in der Datei
+    /// Censor areas (pixelate/blur); empty = field missing in the file
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub censor: Vec<Censor>,
 }
 
-/// Zensur-Fläche: verpixelt bzw. zeichnet ein Rechteck oder eine Ellipse weich. Lage als Anteil
-/// des Quellbilds (vor Spiegeln, Zuschnitt und Transform), Bahn in Quellzeit – Teilen, Trimmen,
-/// Tempo und Rückwärts nehmen sie so ohne Umrechnung mit (wie `Clip::beats`).
+/// Censor area: pixelates or blurs a rectangle or an ellipse. Position as a fraction
+/// of the source image (before flip, crop and transform), path in source time – split, trim,
+/// speed and reverse thus carry it along without conversion (like `Clip::beats`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Censor {
-    /// Weichzeichnen statt Verpixeln
+    /// Blur instead of pixelate
     pub blur: bool,
     pub ellipse: bool,
-    /// 0 = Mindeststärke (schon unkenntlich, siehe `CENSOR_MIN`) … 1 = sehr grob
+    /// 0 = minimum strength (already unrecognizable, see `CENSOR_MIN`) … 1 = very coarse
     pub strength: f32,
-    /// Motiv verfolgen (sonst steht die Fläche still)
+    /// Track the subject (otherwise the area stands still)
     pub track: bool,
-    /// Stützpunkte nach Zeit sortiert; einer = die Fläche steht still
+    /// Keypoints sorted by time; one = the area stands still
     pub path: Vec<CensorKey>,
-    /// nur zur Laufzeit, siehe `CensorId`
+    /// runtime only, see `CensorId`
     #[serde(skip)]
     pub id: CensorId,
 }
 
-/// Kennung einer Zensur-Fläche, die nur zur Laufzeit lebt (nicht gespeichert, jede neue Fläche
-/// bekommt eine eigene): Das Ergebnis einer laufenden Verfolgung findet darüber seine Fläche,
-/// auch wenn sich die Liste inzwischen verschoben hat. Zählt beim Vergleich nicht mit.
+/// Id of a censor area that only lives at runtime (not saved, every new area
+/// gets its own): the result of a running track finds its area through it,
+/// even if the list has shifted meanwhile. Ignored in comparisons.
 #[derive(Debug, Clone, Copy)]
 pub struct CensorId(pub u64);
 
@@ -175,7 +175,7 @@ impl PartialEq for CensorId {
     }
 }
 
-/// Lage der Zensur-Fläche zu einem Zeitpunkt (Mitte, Breite, Höhe als Anteil des Bildes).
+/// Position of the censor area at a point in time (center, width, height as a fraction of the image).
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct CensorKey {
     pub t: Time,
@@ -185,13 +185,13 @@ pub struct CensorKey {
     pub h: f32,
 }
 
-/// Blockgröße bzw. Unschärfe (Sigma) der Zensur als Anteil der kürzeren Bildseite bei Stärke 0
-/// und 1. Mindestens 1/24 (45 px in 1080p): ein Gesicht (~300 px) hat dann höchstens ~7 Blöcke
-/// in der Breite bzw. ist über 45 px verwischt – nicht mehr erkennbar.
+/// Block size or blur (sigma) of the censor as a fraction of the shorter image side at strength 0
+/// and 1. At least 1/24 (45 px in 1080p): a face (~300 px) then has at most ~7 blocks
+/// across or is blurred over 45 px – no longer recognizable.
 pub const CENSOR_MIN: f32 = 1.0 / 24.0;
 pub const CENSOR_MAX: f32 = 1.0 / 8.0;
-/// Die Fläche ist so viel größer als der verfolgte Rahmen; nach dem Vereinfachen der Bahn
-/// bleibt mindestens `CENSOR_KEEP` Rand.
+/// The area is this much larger than the tracked box; after simplifying the path
+/// at least `CENSOR_KEEP` margin remains.
 pub const CENSOR_PAD: f32 = 1.15;
 pub const CENSOR_KEEP: f32 = 1.05;
 
@@ -201,11 +201,11 @@ impl CensorKey {
         let m = |x: f32, y: f32| x + (y - x) * q;
         CensorKey { t, cx: m(a.cx, b.cx), cy: m(a.cy, b.cy), w: m(a.w, b.w), h: m(a.h, b.h) }
     }
-    /// Um `k` vergrößert (Mitte bleibt)
+    /// Enlarged by `k` (center stays)
     pub fn grown(self, k: f32) -> CensorKey {
         CensorKey { w: self.w * k, h: self.h * k, ..self }
     }
-    /// Liegt `inner` ganz in dieser Fläche (als Rechteck)?
+    /// Does `inner` lie entirely in this area (as a rectangle)?
     pub fn covers(&self, inner: &CensorKey) -> bool {
         const EPS: f32 = 1e-5;
         self.cx - self.w / 2.0 <= inner.cx - inner.w / 2.0 + EPS
@@ -216,7 +216,7 @@ impl CensorKey {
 }
 
 impl Censor {
-    /// Lage zur Zeit `t` (linear zwischen den Stützpunkten, davor/danach gehalten).
+    /// Position at time `t` (linear between keypoints, held before/after).
     pub fn at(&self, t: Time) -> CensorKey {
         let p = &self.path;
         let Some(first) = p.first() else {
@@ -232,11 +232,11 @@ impl Censor {
     }
 }
 
-/// Verfolgte Rahmen (gleichmäßig abgetastet, nach Zeit sortiert) → Bahn der Zensur-Fläche: um
-/// `CENSOR_PAD` vergrößert und vereinfacht. Ein Stützpunkt fällt weg, solange die Gerade zwischen
-/// den Nachbarn jeden Rahmen dazwischen noch mit `CENSOR_KEEP` Rand überdeckt; höchstens 2 s
-/// zwischen zwei Stützpunkten. Da Bahn und Rahmen zwischen den Abtastzeiten linear verlaufen,
-/// gilt die Überdeckung dann auch für jedes Bild dazwischen.
+/// Tracked boxes (sampled evenly, sorted by time) → path of the censor area: enlarged
+/// by `CENSOR_PAD` and simplified. A keypoint is dropped as long as the line between
+/// its neighbours still covers every box in between with `CENSOR_KEEP` margin; at most 2 s
+/// between two keypoints. Since path and boxes are linear between sample times,
+/// the coverage then holds for every frame in between too.
 pub fn censor_simplify(boxes: &[CensorKey]) -> Vec<CensorKey> {
     let pad = |k: CensorKey| k.grown(CENSOR_PAD);
     let Some(first) = boxes.first() else { return Vec::new() };
@@ -260,19 +260,19 @@ pub fn censor_simplify(boxes: &[CensorKey]) -> Vec<CensorKey> {
     out
 }
 
-/// Personen-Effekte auf Basis der Maske aus „Hintergrund entfernen“.
+/// Person effects based on the mask from „Hintergrund entfernen“.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PersonFx {
-    /// Hintergrund unscharf (Porträt-Look), Stärke 0…1
+    /// Blurred background (portrait look), strength 0…1
     BlurBackground { amount: f32 },
-    /// Hintergrund durch eine Farbe ersetzen
+    /// Replace the background with a color
     ColorBackground { color: [u8; 3] },
-    /// Leuchtender Umriss um die Person, Hintergrund bleibt
+    /// Glowing outline around the person, background stays
     Outline {
         color: [u8; 3],
         width: f32,
-        /// Hintergrund durchsichtig: nur Umriss und Person (Ebene über einem anderen Bild)
+        /// Transparent background: only outline and person (layer over another image)
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         transparent: bool,
     },
@@ -305,11 +305,11 @@ impl PersonFx {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ChromaKey {
     pub color: [u8; 3],
-    /// Toleranz 0…1
+    /// Tolerance 0…1
     pub similarity: f32,
-    /// weiche Kante 0…1
+    /// soft edge 0…1
     pub blend: f32,
-    /// Farbsaum entfernen 0…1
+    /// remove color spill 0…1
     pub spill: f32,
 }
 
@@ -324,49 +324,49 @@ impl Default for ChromaKey {
     }
 }
 
-/// Ton-Bearbeitung eines Clips.
+/// Audio editing of a clip.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AudioFx {
-    /// Rauschen entfernen 0…1
+    /// Denoise 0…1
     pub denoise: f32,
-    /// Stimme hervorheben (Hintergrund absenken)
+    /// Enhance voice (lower the background)
     pub voice_isolate: bool,
-    /// Lautheit angleichen (−14 LUFS, Social-Media-Standard)
+    /// Normalize loudness (−14 LUFS, social media standard)
     pub normalize: bool,
-    /// Stimmfilter (id aus `cl_fx::audio::VOICES`)
+    /// Voice filter (id from `cl_fx::audio::VOICES`)
     pub voice: Option<String>,
-    /// Bass / Höhen in dB (−12…12)
+    /// Bass / treble in dB (−12…12)
     pub bass: f32,
     pub treble: f32,
-    /// Netzbrummen entfernen (50/60 Hz und Obertöne)
+    /// Remove mains hum (50/60 Hz and harmonics)
     pub hum: bool,
-    /// Rumpeln und Wind entfernen (Tiefen unter ~90 Hz)
+    /// Remove rumble and wind (lows below ~90 Hz)
     pub rumble: bool,
-    /// Klicks und Knackser entfernen
+    /// Remove clicks and crackles
     pub declick: bool,
-    /// Kompressor 0…1 (gleichmäßigere Lautstärke)
+    /// Compressor 0…1 (more even volume)
     pub compress: f32,
-    /// Audiofilter (id aus `cl_fx::audio::FILTERS`)
+    /// Audio filter (id from `cl_fx::audio::FILTERS`)
     pub filter: Option<String>,
-    /// Kanäle; `None` = Standard des Projekts
+    /// Channels; `None` = project default
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channels: Option<Channels>,
 }
 
-/// Umgang mit den Tonkanälen eines Clips.
+/// Handling of a clip's audio channels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Channels {
-    /// Ist nur ein Kanal belegt (z. B. Mikrofon nur links), auf beide verteilen
+    /// If only one channel is used (e.g. microphone only left), spread it to both
     #[default]
     Auto,
-    /// Unverändert
+    /// Unchanged
     Stereo,
-    /// Beide Kanäle mischen, auf beiden gleich
+    /// Mix both channels, same on both
     Mono,
-    /// Nur den linken Kanal verwenden (auf beiden)
+    /// Use only the left channel (on both)
     Left,
-    /// Nur den rechten Kanal verwenden (auf beiden)
+    /// Use only the right channel (on both)
     Right,
 }
 
@@ -381,7 +381,7 @@ impl Channels {
     pub fn name(self) -> &'static str {
         Self::ALL.iter().find(|c| c.0 == self).map(|c| c.1).unwrap_or("")
     }
-    /// FFmpeg-Filter (nach `aformat=…stereo`). `silent`: Index des stummen Kanals (nur für Auto).
+    /// FFmpeg filter (after `aformat=…stereo`). `silent`: index of the silent channel (Auto only).
     pub fn filter(self, silent: Option<u8>) -> Option<&'static str> {
         let left = "pan=stereo|c0=c0|c1=c0";
         let right = "pan=stereo|c0=c1|c1=c1";
@@ -419,7 +419,7 @@ pub enum Prop {
     Rotation,
     Opacity,
     Volume,
-    /// Stärke eines Effekt-/Filter-Elements (0…1)
+    /// Strength of an effect/filter element (0…1)
     Strength,
 }
 
@@ -442,8 +442,8 @@ pub enum Ease {
     EaseOut,
     EaseInOut,
     Hold,
-    /// Eigene Kurve wie CSS `cubic-bezier(x1, y1, x2, y2)`; y darf über 0…1 hinausgehen
-    /// (Ausholen, Überschwingen)
+    /// Custom curve like CSS `cubic-bezier(x1, y1, x2, y2)`; y may go beyond 0…1
+    /// (anticipation, overshoot)
     Bezier(f32, f32, f32, f32),
 }
 
@@ -462,7 +462,7 @@ impl Ease {
                     let u = 1.0 - s;
                     3.0 * u * u * s * a + 3.0 * u * s * s * b + s * s * s
                 };
-                // x(s) wächst monoton: Parameter zu p per Halbierung suchen
+                // x(s) grows monotonically: find the parameter for p by bisection
                 let (mut lo, mut hi) = (0.0f32, 1.0f32);
                 for _ in 0..24 {
                     let mid = (lo + hi) / 2.0;
@@ -476,7 +476,7 @@ impl Ease {
             }
         }
     }
-    /// Steuerpunkte der Kurve (für den Kurven-Editor); `None` bei „Halten“
+    /// Control points of the curve (for the curve editor); `None` for „Halten“
     pub fn bezier(self) -> Option<(f32, f32, f32, f32)> {
         match self {
             Ease::Linear => Some((0.0, 0.0, 1.0, 1.0)),
@@ -498,7 +498,7 @@ fn bezier_ease_hits_ends_and_can_overshoot() {
     let back = Ease::Bezier(0.34, 1.56, 0.64, 1.0);
     assert!(back.apply(0.0).abs() < 1e-3 && (back.apply(1.0) - 1.0).abs() < 1e-3);
     assert!((0..=20).any(|i| back.apply(i as f32 / 20.0) > 1.02), "schwingt über");
-    // alte Projekte ohne Kurve und neue mit Kurve lesen
+    // read old projects without curve and new ones with curve
     assert_eq!(serde_json::from_str::<Ease>("\"EaseIn\"").unwrap(), Ease::EaseIn);
     let s = serde_json::to_string(&back).unwrap();
     assert_eq!(serde_json::from_str::<Ease>(&s).unwrap(), back);
@@ -506,14 +506,14 @@ fn bezier_ease_hits_ends_and_can_overshoot() {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Keyframe {
-    /// Zeit relativ zum Clipanfang (Zeitleisten-Zeit)
+    /// Time relative to the clip start (timeline time)
     pub t: Time,
     pub v: f32,
     #[serde(default)]
     pub ease: Ease,
 }
 
-/// Keyframes je Eigenschaft (sortiert nach Zeit).
+/// Keyframes per property (sorted by time).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Keyframes(pub BTreeMap<Prop, Vec<Keyframe>>);
@@ -525,7 +525,7 @@ impl Keyframes {
     pub fn get(&self, p: Prop) -> &[Keyframe] {
         self.0.get(&p).map(|v| v.as_slice()).unwrap_or(&[])
     }
-    /// Keyframe bei `t` setzen (ersetzt einen vorhandenen innerhalb von 1 ms).
+    /// Set a keyframe at `t` (replaces an existing one within 1 ms).
     pub fn set(&mut self, p: Prop, t: Time, v: f32) {
         let list = self.0.entry(p).or_default();
         if let Some(k) = list.iter_mut().find(|k| (k.t.0 - t.0).abs() < 1000) {
@@ -554,7 +554,7 @@ impl Keyframes {
     pub fn has_at(&self, p: Prop, t: Time) -> bool {
         self.get(p).iter().any(|k| (k.t.0 - t.0).abs() < 1000)
     }
-    /// Interpolierter Wert oder `None`, wenn die Eigenschaft keine Keyframes hat.
+    /// Interpolated value, or `None` if the property has no keyframes.
     pub fn eval(&self, p: Prop, t: Time) -> Option<f32> {
         let list = self.get(p);
         let first = list.first()?;
@@ -571,7 +571,7 @@ impl Keyframes {
         }
         list.last().map(|k| k.v)
     }
-    /// Alle Keyframes um `delta` nach vorn verschieben (beim Trimmen am Anfang).
+    /// Shift all keyframes forward by `delta` (when trimming the start).
     pub fn shift(&mut self, delta: Time) {
         for list in self.0.values_mut() {
             for k in list.iter_mut() {
@@ -579,7 +579,7 @@ impl Keyframes {
             }
         }
     }
-    /// Alle Keyframe-Zeiten (für die Anzeige in der Zeitleiste).
+    /// All keyframe times (for display in the timeline).
     pub fn times(&self) -> Vec<Time> {
         let mut v: Vec<Time> = self
             .0
@@ -603,7 +603,7 @@ pub struct AnimRef {
 pub struct Animations {
     pub intro: Option<AnimRef>,
     pub outro: Option<AnimRef>,
-    /// Schleife über die ganze Cliplänge (Dauer = Periode)
+    /// Loop over the whole clip length (duration = period)
     pub combo: Option<AnimRef>,
 }
 
@@ -619,7 +619,7 @@ pub struct TransitionRef {
     pub duration: Time,
 }
 
-/// Ausgewertete Darstellung eines Clips zu einem Zeitpunkt.
+/// Evaluated appearance of a clip at a point in time.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Evaluated {
     pub x: f32,
@@ -628,12 +628,12 @@ pub struct Evaluated {
     pub rotation_deg: f32,
     pub opacity: f32,
     pub volume_db: f32,
-    /// Zuschnitt des Clips (nicht animiert)
+    /// Crop of the clip (not animated)
     pub crop: crate::model::Crop,
 }
 
-/// Wirkung einer Animation bei Fortschritt p (0 = Beginn, 1 = Ruhezustand).
-/// Verschiebungen als Anteil der Projektbreite/-höhe.
+/// Effect of an animation at progress p (0 = start, 1 = rest state).
+/// Offsets as a fraction of the project width/height.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AnimDelta {
     pub dx: f32,
@@ -653,7 +653,7 @@ impl AnimDelta {
     };
 }
 
-/// Eingebaute Ein-/Ausblend-Animationen (id, Name).
+/// Built-in in/out animations (id, name).
 pub const ANIMATIONS: &[(&str, &str)] = &[
     ("fade", "Einblenden"),
     ("slide-left", "Von links"),
@@ -685,7 +685,7 @@ pub const ANIMATIONS: &[(&str, &str)] = &[
     ("shake-in", "Rütteln"),
 ];
 
-/// Kombi-Animationen über die ganze Dauer (id, Name).
+/// Combo animations over the whole duration (id, name).
 pub const COMBO_ANIMATIONS: &[(&str, &str)] = &[
     ("pulse", "Pulsieren"),
     ("wobble", "Wackeln"),
@@ -702,13 +702,13 @@ pub const COMBO_ANIMATIONS: &[(&str, &str)] = &[
     ("glitch", "Glitch-Schleife"),
 ];
 
-/// Ausholen und Überschwingen (endet bei p = 1 exakt auf 1), `s` = Stärke
+/// Anticipation and overshoot (ends exactly on 1 at p = 1), `s` = strength
 fn back_out(p: f32, s: f32) -> f32 {
     let x = p - 1.0;
     1.0 + (s + 1.0) * x * x * x + s * x * x
 }
 
-/// Feste Pseudo-Zufallszahl −1…1 je Schritt (gleich in Vorschau und Export)
+/// Fixed pseudo-random number −1…1 per step (same in preview and export)
 fn jitter(i: u32) -> f32 {
     ((i.wrapping_add(7).wrapping_mul(2_654_435_761) >> 16) & 0xffff) as f32 / 32767.5 - 1.0
 }
@@ -758,7 +758,7 @@ pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
             d.opacity_mul = p;
         }
         "bounce-in" => {
-            // fällt von oben und springt zweimal nach
+            // falls from above and bounces twice
             let r = 1.0 - p;
             d.dy = -0.3 * r * r * (p * std::f32::consts::PI * 3.5).cos().abs();
             d.opacity_mul = (p * 4.0).min(1.0);
@@ -769,7 +769,7 @@ pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
             d.opacity_mul = (p * 5.0).min(1.0);
         }
         "stamp" => {
-            // groß → kurz zu klein (Aufprall) → normal
+            // large → briefly too small (impact) → normal
             d.scale_mul = if p < 0.5 {
                 2.2 - 1.28 * (p / 0.5).powi(2)
             } else {
@@ -780,7 +780,7 @@ pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
             d.opacity_mul = (p * 3.0).min(1.0);
         }
         "punch" => {
-            // über das Ziel hinaus, zurück, kurz nachfedern
+            // past the target, back, brief spring
             let r = 1.0 - p;
             d.scale_mul = (1.0 - 0.4 * r * r * (p * std::f32::consts::PI * 4.0).cos()).max(0.01);
             d.opacity_mul = (p * 6.0).min(1.0);
@@ -795,7 +795,7 @@ pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
             }
         }
         "unfold" => {
-            // weiche S-Kurve aus dem Nichts, ohne Überschwingen
+            // soft S-curve out of nothing, without overshoot
             let s = p * p * p * (p * (p * 6.0 - 15.0) + 10.0);
             d.scale_mul = 0.02 + 0.98 * s;
             d.opacity_mul = (p * 2.0).min(1.0);
@@ -822,7 +822,7 @@ pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
             d.opacity_mul = e;
         }
         "flicker" => {
-            // Leuchtröhre springt an: feste Helligkeitsstufen
+            // neon tube flickers on: fixed brightness steps
             const STEPS: [f32; 10] = [0.0, 0.8, 0.1, 0.0, 1.0, 0.3, 1.0, 0.6, 1.0, 1.0];
             d.opacity_mul = STEPS[((p * 10.0) as usize).min(9)];
         }
@@ -845,7 +845,7 @@ pub fn anim_delta(id: &str, p: f32) -> AnimDelta {
     d
 }
 
-/// Kombi-Animation (t in Sekunden ab Clipbeginn, period = Dauer einer Schleife).
+/// Combo animation (t in seconds from clip start, period = duration of one loop).
 pub fn combo_delta(id: &str, t: f32, period: f32) -> AnimDelta {
     let w = std::f32::consts::TAU * t / period.max(0.05);
     let mut d = AnimDelta::NONE;
@@ -863,7 +863,7 @@ pub fn combo_delta(id: &str, t: f32, period: f32) -> AnimDelta {
             d.dy = -0.01 * (1.0 - (2.0 * w).cos()) / 2.0;
         }
         "heartbeat" => {
-            // zwei Schläge kurz hintereinander, dann Pause
+            // two beats in quick succession, then a pause
             let u = (t / period.max(0.05)).fract();
             let bump = |a: f32, b: f32| {
                 if (a..b).contains(&u) {
@@ -893,7 +893,7 @@ pub fn combo_delta(id: &str, t: f32, period: f32) -> AnimDelta {
         }
         "ken-burns" => d.scale_mul = 1.0 + 0.08 * (1.0 - w.cos()) / 2.0,
         "glitch" => {
-            // kurzer Ausreißer im Takt, sonst ruhig
+            // short outlier in the beat, otherwise calm
             let u = (t / period.max(0.05)).fract();
             if (0.2..0.4).contains(&u) {
                 let i = (u * 40.0) as u32;
@@ -906,7 +906,7 @@ pub fn combo_delta(id: &str, t: f32, period: f32) -> AnimDelta {
     d
 }
 
-/// Geschwindigkeitskurven: Stützpunkte (Position 0…1 in der Clipzeit, relative Geschwindigkeit).
+/// Speed curves: keypoints (position 0…1 in clip time, relative speed).
 pub const SPEED_CURVES: &[(&str, &str, &[(f32, f32)])] = &[
     (
         "montage",
@@ -963,7 +963,7 @@ fn curve_speed(pts: &[(f32, f32)], u: f32) -> f32 {
     pts.last().map(|p| p.1).unwrap_or(1.0)
 }
 
-/// Anteil des Quellbereichs, der bei Clip-Fortschritt `u` (0…1) erreicht ist.
+/// Fraction of the source range reached at clip progress `u` (0…1).
 pub fn curve_progress(id: &str, u: f32) -> f32 {
     let Some(pts) = curve_points(id) else {
         return u.clamp(0.0, 1.0);
@@ -985,7 +985,7 @@ pub fn curve_progress(id: &str, u: f32) -> f32 {
     (upto / total.max(1e-6)).clamp(0.0, 1.0)
 }
 
-/// Relative Geschwindigkeit der Kurve bei `u` (für die Anzeige).
+/// Relative speed of the curve at `u` (for display).
 pub fn curve_speed_at(id: &str, u: f32) -> f32 {
     curve_points(id).map(|p| curve_speed(p, u)).unwrap_or(1.0)
 }
@@ -994,7 +994,7 @@ pub fn curve_speed_at(id: &str, u: f32) -> f32 {
 mod tests {
     use super::*;
 
-    /// Umriss ohne „durchsichtig“ schreibt das Feld nicht (Projektdatei wie vor 0.13)
+    /// Outline without „durchsichtig“ does not write the field (project file as before 0.13)
     #[test]
     fn outline_without_transparent_is_saved_as_before() {
         use crate::model::*;
@@ -1042,7 +1042,7 @@ mod tests {
     }
 
     fn rest_dist(d: AnimDelta) -> f32 {
-        // Drehung um volle Umdrehungen ist Ruhezustand (Rotieren)
+        // rotation by full turns is the rest state (rotate)
         let rot = (d.rot_add + 180.0).rem_euclid(360.0) - 180.0;
         d.dx.abs() + d.dy.abs() + (d.scale_mul - 1.0).abs() + rot.abs() / 90.0 + (d.opacity_mul - 1.0).abs()
     }
@@ -1062,14 +1062,14 @@ mod tests {
         assert_eq!(ids.len(), ANIMATIONS.len(), "doppelte id");
         for (id, _) in ANIMATIONS {
             assert!(rest_dist(anim_delta(id, 0.3)) > 1e-3, "{id} tut nichts");
-            assert!(rest_dist(anim_delta(id, 1.0)) < 1e-4, "{id} endet nicht in Ruhe");
+            assert!(rest_dist(anim_delta(id, 1.0)) < 1e-4, "{id} does not end at rest");
             assert!(rest_dist(anim_delta(id, 0.995)) < 0.05, "{id} springt am Ende");
             for i in 0..=200 {
                 let d = anim_delta(id, i as f32 / 200.0);
-                assert!(sane(d), "{id} bei {i}: {d:?}");
+                assert!(sane(d), "{id} at {i}: {d:?}");
             }
         }
-        // bestehende Animationen behalten ihr Verhalten (gespeicherte Projekte)
+        // existing animations keep their behaviour (saved projects)
         assert!((anim_delta("pop", 0.35).scale_mul - 0.575).abs() < 1e-4);
         assert!((anim_delta("slide-left", 0.5).dx + 0.25).abs() < 1e-6);
         assert!((anim_delta("spin", 0.0).rot_add + 180.0).abs() < 1e-4);
@@ -1084,12 +1084,12 @@ mod tests {
         for (id, _) in COMBO_ANIMATIONS {
             assert!(rest_dist(combo_delta(id, 0.3 * period, period)) > 1e-3, "{id} tut nichts");
             for t in [0.0, period, 3.0 * period] {
-                assert!(rest_dist(combo_delta(id, t, period)) < 1e-3, "{id} bei {t}");
+                assert!(rest_dist(combo_delta(id, t, period)) < 1e-3, "{id} at {t}");
             }
             assert!(rest_dist(combo_delta(id, period * 0.999, period)) < 0.05, "{id} Schleife springt");
             for i in 0..=240 {
                 let d = combo_delta(id, i as f32 / 100.0, period);
-                assert!(sane(d), "{id} bei {i}: {d:?}");
+                assert!(sane(d), "{id} at {i}: {d:?}");
             }
         }
         assert!((combo_delta("pulse", 0.3, 1.2).scale_mul - 1.06).abs() < 1e-4);

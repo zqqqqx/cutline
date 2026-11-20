@@ -1,5 +1,5 @@
-// Nach „Kaleidoscope“ von nwoeanhinnogaehr (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Geschwindigkeit, p1 = Winkel, p2 = Verlauf
+// Based on "Kaleidoscope" by nwoeanhinnogaehr (GL Transitions, MIT license), ported to WGSL.
+// p0 = speed, p1 = angle, p2 = gradient
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   var p = uv - 0.5;
   var t = pow(progress, params.p2) * params.p0;

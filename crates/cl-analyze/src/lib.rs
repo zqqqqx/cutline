@@ -1,14 +1,14 @@
-//! Lokale Analysen für Phase 3 – alles läuft auf diesem Rechner, nichts geht in eine Cloud:
+//! Local analyses for phase 3 – everything runs on this computer, nothing goes to a cloud:
 //!
-//! - [`asr`]: Spracherkennung mit **NVIDIA Parakeet TDT 0.6B v3** (ONNX, 25 europäische
-//!   Sprachen, Wort-Zeitstempel); Rückfall auf **Whisper** (in FFmpeg 8 eingebaut)
-//! - [`matte`]: Hintergrund entfernen mit **RobustVideoMatting** (ONNX) → Masken-Video
-//! - [`scenes`]: Szenenwechsel (FFmpeg `scdet`)
-//! - [`beats`]: Beat-Erkennung (Onsets + Tempo-Raster)
-//! - [`track`]: Bewegung verfolgen (Vorlagenvergleich) → Keyframes
-//! - [`reframe`]: Auto-Reframe (Bildschwerpunkt je Zeitpunkt)
+//! - [`asr`]: speech recognition with **NVIDIA Parakeet TDT 0.6B v3** (ONNX, 25 European
+//!   languages, word timestamps); fallback to **Whisper** (built into FFmpeg 8)
+//! - [`matte`]: background removal with **RobustVideoMatting** (ONNX) → mask video
+//! - [`scenes`]: scene changes (FFmpeg `scdet`)
+//! - [`beats`]: beat detection (onsets + tempo grid)
+//! - [`track`]: motion tracking (template matching) → keyframes
+//! - [`reframe`]: auto reframe (image center of interest per point in time)
 //!
-//! Modelle werden nicht mitgeliefert, sondern bei Bedarf geladen ([`CATALOG`]).
+//! Models are not bundled but downloaded on demand ([`CATALOG`]).
 
 pub mod asr;
 pub mod audio;
@@ -23,9 +23,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::OnceLock;
 
-/// Lädbare Modelle: (id, Name, Beschreibung, Größe MB, Dateien (Ziel relativ zum Modellordner, URL)).
-/// URLs zeigen auf feste Commits; `#sha256=<hex>` am Ende wird von `cl_update::download_to`
-/// vor dem Umbenennen geprüft (fehlt bei Dateien ohne veröffentlichte Prüfsumme).
+/// Downloadable models: (id, name, description, size MB, files (target relative to the model folder, URL)).
+/// URLs point to fixed commits; `#sha256=<hex>` at the end is checked by `cl_update::download_to`
+/// before renaming (missing for files without a published checksum).
 pub struct ModelInfo {
     pub id: &'static str,
     pub name: &'static str,
@@ -71,7 +71,7 @@ pub static CATALOG: &[ModelInfo] = &[
     },
 ];
 
-/// Modellordner mit Suchlogik für die einzelnen Dateien.
+/// Model folder with search logic for the individual files.
 #[derive(Debug, Clone)]
 pub struct Models {
     pub dir: PathBuf,
@@ -82,7 +82,7 @@ impl Models {
         Self { dir: dir.into() }
     }
 
-    /// `onnxruntime.dll` neben der EXE, im Modellordner oder im entpackten Release-Ordner.
+    /// `onnxruntime.dll` next to the EXE, in the model folder or in the unpacked release folder.
     pub fn ort_dll(&self) -> Option<PathBuf> {
         let name = if cfg!(windows) {
             "onnxruntime.dll"
@@ -132,7 +132,7 @@ impl Models {
     pub fn rvm(&self) -> Option<PathBuf> {
         Some(self.dir.join("rvm_mobilenetv3_fp32.onnx")).filter(|p| p.is_file())
     }
-    /// Ist ein Katalogeintrag vollständig vorhanden?
+    /// Is a catalog entry completely present?
     pub fn installed(&self, id: &str) -> bool {
         match id {
             "onnxruntime" => self.ort_dll().is_some(),
@@ -146,7 +146,7 @@ impl Models {
 
 static ENV: OnceLock<Result<ort::environment::Environment, String>> = OnceLock::new();
 
-/// ONNX-Runtime einmalig laden.
+/// Load the ONNX runtime once.
 pub fn ort_env(models: &Models) -> Result<&'static ort::environment::Environment, String> {
     ENV.get_or_init(|| {
         let dll = models
@@ -177,7 +177,7 @@ pub(crate) fn session(models: &Models, path: &Path) -> Result<ort::session::Sess
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Ton als 16-kHz-Mono-f32 (für Spracherkennung und Beats).
+/// Audio as 16 kHz mono f32 (for speech recognition and beats).
 pub fn decode_audio(
     path: &Path,
     rate: u32,
@@ -219,7 +219,7 @@ pub fn decode_audio(
         .collect())
 }
 
-/// Videobilder als Graustufen (w×h) mit `fps` Bildern pro Sekunde, ab `start` für `dur` Sekunden.
+/// Video frames as grayscale (w×h) at `fps` frames per second, from `start` for `dur` seconds.
 pub fn gray_frames(
     path: &Path,
     w: u32,
@@ -269,8 +269,8 @@ pub fn gray_frames(
     Ok(n)
 }
 
-/// Jede Datei des Katalogs wird nach dem Laden gegen eine SHA-256-Summe geprüft (`#sha256=` an der
-/// Adresse, ausgewertet von `cl_update::download_to`) – eine neue Datei ohne Summe fällt hier auf.
+/// Every catalog file is checked against a SHA-256 sum after download (`#sha256=` at the
+/// address, evaluated by `cl_update::download_to`) – a new file without a sum shows up here.
 #[test]
 fn every_model_file_has_a_checksum() {
     for m in CATALOG {
@@ -285,7 +285,7 @@ fn every_model_file_has_a_checksum() {
 pub(crate) mod testutil {
     use super::*;
 
-    /// Modellordner der Entwicklungsumgebung (CUTLINE_MODELS oder %LOCALAPPDATA%/cutline-models).
+    /// Model folder of the development environment (CUTLINE_MODELS or %LOCALAPPDATA%/cutline-models).
     pub fn models() -> Option<Models> {
         let d = std::env::var_os("CUTLINE_MODELS")
             .map(PathBuf::from)
@@ -295,7 +295,7 @@ pub(crate) mod testutil {
         d.is_dir().then(|| Models::new(d))
     }
 
-    /// Gesprochenes Deutsch als Testdatei (Windows-Sprachausgabe), sonst None.
+    /// Spoken German as a test file (Windows speech output), otherwise None.
     pub fn speech(dir: &Path, text: &str) -> Option<PathBuf> {
         if !cfg!(windows) {
             return None;

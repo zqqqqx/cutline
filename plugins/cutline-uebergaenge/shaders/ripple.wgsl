@@ -1,5 +1,5 @@
-// Nach „Ripple“ von gre (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Frequenz der Wellen, p1 = Geschwindigkeit
+// Based on "Ripple" by gre (GL Transitions, MIT license), ported to WGSL.
+// p0 = wave frequency, p1 = speed
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   let dir = uv - vec2f(0.5);
   let dist = length(dir);

@@ -1,5 +1,5 @@
-//! Tests des Player-Kerns ohne Fenster: simulierter Decoder (Anlaufzeit, Zeit je Bild, liefert nie,
-//! Ende, Öffnen scheitert) und simulierter Ton (Anlaufzeit, Fehler, Abbruch).
+//! Tests of the player core without a window: simulated decoder (startup time, time per frame, never delivers,
+//! end, opening fails) and simulated sound (startup time, error, abort).
 
 use super::*;
 use std::cell::Cell;
@@ -7,12 +7,12 @@ use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug)]
 struct Dec {
-    /// Öffnen bis erstes Bild (s)
+    /// Open to first frame (s)
     delay: f64,
-    /// Decodierzeit je Bild (s) bei voller Qualität
+    /// Decode time per frame (s) at full quality
     per_frame: f64,
     never: bool,
-    /// Strom endet nach so vielen Bildern
+    /// Stream ends after this many frames
     len: Option<u64>,
     fail_open: bool,
 }
@@ -23,7 +23,7 @@ impl Default for Dec {
     }
 }
 
-/// Simulierter Strom: Bild n ist ab `opened + delay + n·per_frame` fertig; Bildwert = Zeitleistenzeit.
+/// Simulated stream: frame n is ready from `opened + delay + n·per_frame`; frame value = timeline time.
 struct Sim {
     clock: Rc<Cell<f64>>,
     opened: f64,
@@ -62,12 +62,12 @@ enum AState {
     Done,
 }
 
-/// Simulierter Ton: setzt `latency` nach dem Start an der Stelle der Uhr ein.
+/// Simulated sound: comes in `latency` after the start at the clock's place.
 struct Aud {
     st: AState,
     latency: f64,
     fail: bool,
-    /// Ton bricht zu dieser Wandzeit ab
+    /// Sound aborts at this wall time
     cut_at: Option<f64>,
     starts: u32,
 }
@@ -132,11 +132,11 @@ struct Clip {
     end: f64,
     ver: u64,
     dec: Dec,
-    /// Rückwärts/Tempo-Kurve: nur Einzelbilder
+    /// Reverse/speed curve: only single frames
     still_only: bool,
-    /// schon so lange vor `start` sichtbar (Übergang vom Vorgänger)
+    /// visible this long before `start` already (transition from the predecessor)
     lead_in: f64,
-    /// Quell-Fingerabdruck (gleiche Quelle nach Teilen), 0 = keiner
+    /// Source fingerprint (same source after splitting), 0 = none
     alias: u64,
 }
 
@@ -144,7 +144,7 @@ fn clip(id: Lid, start: f64, end: f64) -> Clip {
     Clip { id, start, end, ver: 0, dec: Dec::default(), still_only: false, lead_in: 0.0, alias: 0 }
 }
 
-/// Treiber wie in der App, aber mit simulierten Strömen, Einzelbildern und Ton.
+/// Driver as in the app, but with simulated streams, single frames and sound.
 struct World {
     core: PlayCore<Sim>,
     clock: Rc<Cell<f64>>,
@@ -156,14 +156,14 @@ struct World {
     playhead: Time,
     loop_range: Option<(Time, Time)>,
     max_q: usize,
-    /// Einzelbilder in Arbeit: (Ebene, Schlüssel, fertig um)
+    /// Single frames in progress: (layer, key, ready at)
     stills: Vec<(Lid, u64, f64)>,
     still_time: f64,
-    /// geöffnete, noch nicht angehängte Ströme (Starter-Thread): (fertig um, Auftrag, Decoder)
+    /// opened, not yet attached streams (starter thread): (ready at, job, decoder)
     opening: Vec<(f64, Open, Dec, u64, u64)>,
-    /// je Ebene zuletzt gezeigtes Strombild (Zeitleistenzeit)
+    /// last shown stream frame per layer (timeline time)
     last_frame: HashMap<Lid, f64>,
-    /// (Wandzeit, Stelle, Ebene, Bildzeit) aller gezeigten Strombilder
+    /// (wall time, place, layer, frame time) of all shown stream frames
     shown: Vec<(f64, f64, Lid, f64)>,
     stills_shown: u32,
     ever_shown: bool,
@@ -173,7 +173,7 @@ struct World {
     level: usize,
     level_changes: u32,
     attached: Vec<(Open, bool)>,
-    /// Wandzeit des Anhängens je (Ebene, Schlüssel)
+    /// Wall time of attaching per (layer, key)
     attached_at: HashMap<(Lid, u64), f64>,
 }
 
@@ -247,9 +247,9 @@ impl World {
         };
         let pos = self.core.tick(&t);
         self.cmds();
-        // Uhr läuft nie rückwärts außer bei einem Sprung (oder rückwärts abspielen)
+        // the clock never runs backwards except on a jump (or reverse playback)
         if self.core.playing() && self.core.jumps() == self.jumps && self.core.rate() > 0.0 {
-            assert!(pos >= self.last_pos, "Uhr zurück ohne Sprung: {:?} → {:?}", self.last_pos, pos);
+            assert!(pos >= self.last_pos, "clock back without a jump: {:?} → {:?}", self.last_pos, pos);
         }
         if self.core.jumps() != self.jumps {
             self.jumps = self.core.jumps();
@@ -260,14 +260,14 @@ impl World {
             self.level = self.core.quality.level;
             self.level_changes += 1;
         }
-        // Starter-Thread: fertige Ströme anhängen (alte Projekte werden abgelehnt)
+        // starter thread: attach finished streams (old projects are rejected)
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.opening).into_iter().partition(|o| o.0 <= now);
         self.opening = rest;
         for (_, o, d, level, alias) in ready {
             let per_frame = d.per_frame / 2f64.powi(level as i32 * 2);
             let sim = Sim { clock: self.clock.clone(), opened: now, d, per_frame, n: 0, t0: o.at.as_secs_f64(), fps: self.fps };
             let accepted = self.core.attach_alias(o, self.fps, sim, now, alias);
-            assert!(!accepted || o.gen == self.core.gen(), "Strom eines alten Projekts angehängt");
+            assert!(!accepted || o.gen == self.core.gen(), "stream of an old project attached");
             if accepted {
                 self.attached_at.insert((o.id, o.key), now);
             }
@@ -297,15 +297,15 @@ impl World {
                     let replacement = |core: &PlayCore<Sim>| core.streams().into_iter().find(|x| x.0 == c.id && x.2).map(|x| x.1);
                     let had = replacement(&self.core);
                     if let Some(f) = self.core.pull(c.id, now, i == 0) {
-                        // aus der Zukunft höchstens das erste Bild eines Clips, der im Übergang schon sichtbar ist
-                        assert!(f <= p.max(c.start) + 1e-6, "Bild aus der Zukunft: {f} bei {p}");
-                        // ein Ersatz, der nach REPLACE_AFTER oder nach dem Ende des alten Stroms (`len`)
-                        // mit Rückstand übernimmt, darf älter sein
+                        // from the future at most the first frame of a clip already visible in the transition
+                        assert!(f <= p.max(c.start) + 1e-6, "frame from the future: {f} at {p}");
+                        // a replacement that takes over with lag after REPLACE_AFTER or after the end of the old
+                        // stream (`len`) may be older
                         let late = had.is_some_and(|k| {
                             replacement(&self.core).is_none() && (c.dec.len.is_some() || self.attached_at.get(&(c.id, k)).is_some_and(|t| now - t > REPLACE_AFTER))
                         });
                         if let Some(&last) = self.last_frame.get(&c.id).filter(|_| !late) {
-                            assert!(f >= last - 1.01 / self.fps, "älteres Bild gezeigt: {f} nach {last}");
+                            assert!(f >= last - 1.01 / self.fps, "older frame shown: {f} after {last}");
                         }
                         self.last_frame.insert(c.id, f);
                         self.shown.push((now, p, c.id, f));
@@ -333,15 +333,15 @@ impl World {
     }
 
     fn check(&self) {
-        // je Ebene höchstens ein laufender Strom und ein Ersatz, der ihn gleich ablöst
+        // per layer at most one running stream and one replacement about to take over
         let s = self.core.streams();
         for (id, _, _) in &s {
             let same: Vec<_> = s.iter().filter(|x| x.0 == *id).collect();
-            assert!(same.len() <= 2, "mehr als zwei Ströme für {id}");
-            assert!(same.iter().filter(|x| !x.2).count() == 1, "zwei laufende Ströme für {id}");
+            assert!(same.len() <= 2, "more than two streams for {id}");
+            assert!(same.iter().filter(|x| !x.2).count() == 1, "two running streams for {id}");
         }
         if self.ever_shown {
-            assert!(self.core.held().is_some(), "kein anzeigbares Bild mehr");
+            assert!(self.core.held().is_some(), "no displayable frame any more");
         }
     }
 
@@ -352,7 +352,7 @@ impl World {
         }
     }
 
-    /// Größte Lücke zwischen zwei gezeigten Bildern der Ebene `id` im Zeitraum (Wandzeit)
+    /// Largest gap between two shown frames of layer `id` in the period (wall time)
     fn gap(&self, id: Lid, from: f64, to: f64) -> f64 {
         let t: Vec<f64> = self.shown.iter().filter(|s| s.2 == id && s.0 >= from && s.0 <= to).map(|s| s.0).collect();
         t.windows(2).map(|w| w[1] - w[0]).fold(0.0, f64::max)
@@ -372,18 +372,18 @@ fn play_from_stand_buffers_then_runs_with_audio_clock() {
     w.play();
     assert_eq!(w.core.mode(), Mode::Puffern);
     assert!(w.core.waiting());
-    // Ton vorbereitet, aber noch nicht eingesetzt
+    // sound prepared but not yet come in
     assert!(matches!(w.aud.st, AState::Prep { anchor: None, .. }));
     w.run(0.2, DT);
     assert_eq!(w.core.mode(), Mode::Spielen);
     assert!(!w.core.waiting());
     let t_play = w.shown.first().unwrap().0;
-    assert!(t_play < 0.1, "erstes Bild nach {t_play} s");
+    assert!(t_play < 0.1, "first frame after {t_play} s");
     w.run(3.0, DT);
-    // Uhr = Ton-Uhr, läuft in Echtzeit; 30 Bilder/s ohne Lücke über 2 Intervalle
+    // clock = audio clock, runs in real time; 30 fps without a gap over 2 intervals
     assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)));
     let ran = w.core.pos().as_secs_f64();
-    assert!((ran - 3.0).abs() < 0.15, "Uhr {ran}");
+    assert!((ran - 3.0).abs() < 0.15, "clock {ran}");
     assert!(w.gap(1, 0.5, 3.0) <= 2.0 / 30.0 + 0.01);
     assert!(w.frames(1.0, 3.0) >= 58);
     let st = w.core.take_stats();
@@ -391,22 +391,22 @@ fn play_from_stand_buffers_then_runs_with_audio_clock() {
     assert_eq!(st.opens, 1);
 }
 
-/// Kalte Platte: das erste Ton-Fenster braucht 3 s. Die Uhr wartet darauf, statt Sekunden nach
-/// Systemzeit zu laufen (der Ton jagte ihr dann hinterher – oder holte sie nie ein).
+/// Cold disk: the first audio window takes 3 s. The clock waits for it instead of running seconds on
+/// system time (the sound then chased it – or never caught up).
 #[test]
 fn clock_waits_for_late_first_audio() {
     let mut w = World::new(vec![clip(1, 0.0, 10.0)]);
     w.aud.latency = 3.0;
     w.play();
     w.run(2.9, DT);
-    assert_eq!(w.core.mode(), Mode::Puffern, "Uhr läuft ohne Ton");
+    assert_eq!(w.core.mode(), Mode::Puffern, "clock runs without sound");
     assert_eq!(w.core.pos(), Time::ZERO);
     w.run(0.2, DT);
     assert_eq!(w.core.mode(), Mode::Spielen);
-    assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)), "Ton setzt mit der Uhr ein");
+    assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)), "sound comes in with the clock");
 }
 
-/// Kommt gar kein Ton, läuft die Uhr nach der Sicherungsfrist trotzdem (kein Hänger).
+/// If no sound comes at all, the clock still runs after the safety limit (no hang).
 #[test]
 fn clock_starts_without_audio_after_wait_limit() {
     let mut w = World::new(vec![clip(1, 0.0, 60.0)]);
@@ -425,7 +425,7 @@ fn warmup_ends_after_deadline_if_decoder_never_delivers() {
     w.run(0.4, DT);
     assert_eq!(w.core.mode(), Mode::Puffern);
     w.run(0.2, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen, "kein Hänger: nach 0,5 s läuft die Uhr");
+    assert_eq!(w.core.mode(), Mode::Spielen, "no hang: the clock runs after 0.5 s");
     w.run(2.0, DT);
     assert!(w.core.pos().as_secs_f64() > 1.5);
 }
@@ -436,20 +436,20 @@ fn never_delivering_stream_holds_last_frame_and_is_reopened() {
     w.play();
     w.run(1.0, DT);
     assert!(w.ever_shown);
-    // ab jetzt liefert der Decoder nichts mehr
+    // from now on the decoder delivers nothing
     w.clips[0].dec.never = true;
-    w.clips[0].ver = 1; // neuer Schlüssel → Ersatzstrom, der nie liefert
+    w.clips[0].ver = 1; // new key → replacement stream that never delivers
     w.run(3.0, DT);
-    assert!(w.core.held().is_some(), "gehaltenes Bild statt Schwarz");
+    assert!(w.core.held().is_some(), "held frame instead of black");
     assert_eq!(w.core.mode(), Mode::Spielen);
-    // alter Strom zeigt weiter, bis der Ersatz liefert: Bilder laufen weiter
+    // old stream keeps showing until the replacement delivers: frames keep running
     assert!(w.frames(1.5, 4.0) > 50);
 }
 
 #[test]
 fn stalled_stream_is_reopened_at_current_position() {
     let mut c = clip(1, 0.0, 30.0);
-    c.dec.len = Some(40); // Strom endet vorzeitig (FFmpeg abgebrochen)
+    c.dec.len = Some(40); // stream ends prematurely (FFmpeg aborted)
     let mut w = World::new(vec![c]);
     w.play();
     w.run(3.0, DT);
@@ -465,19 +465,19 @@ fn click_during_play_rebuffers_at_new_position() {
     w.play();
     w.run(1.0, DT);
     let starts = w.aud.starts;
-    w.playhead = Time::from_secs_f64(12.0); // Klick in die Zeitleiste
+    w.playhead = Time::from_secs_f64(12.0); // click in the timeline
     w.step(DT);
     assert_eq!(w.core.mode(), Mode::Puffern);
-    assert_eq!(w.aud.starts, starts + 1, "Ton ab der neuen Stelle");
+    assert_eq!(w.aud.starts, starts + 1, "sound from the new place");
     w.run(0.5, DT);
     assert_eq!(w.core.mode(), Mode::Spielen);
     let (_, p, _, f) = *w.shown.last().unwrap();
-    assert!(p >= 12.0 && f >= 12.0 && p - f < 0.1, "Bild {f} bei {p}");
+    assert!(p >= 12.0 && f >= 12.0 && p - f < 0.1, "frame {f} at {p}");
 }
 
-/// Klicktest K5: Regler ziehen während Play – je UI-Bild ein neuer Schlüssel, je Bild ein neuer
-/// Strom, der gleich wieder verworfen wurde (Rechenzeit fehlte dem laufenden, Bild stand 1,8 s).
-/// Jetzt läuft der alte Strom mit dem alten Wert weiter; neu geöffnet wird, wenn der Wert steht.
+/// Click test K5: dragging a slider during Play – a new key per UI frame, per frame a new
+/// stream that was discarded right away (the running one lacked computing time, picture stood 1.8 s).
+/// Now the old stream keeps running with the old value; it is reopened once the value stays.
 #[test]
 fn dragging_a_slider_during_play_does_not_open_a_stream_per_frame() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
@@ -485,12 +485,12 @@ fn dragging_a_slider_during_play_does_not_open_a_stream_per_frame() {
     w.run(1.0, DT);
     let (opens, t) = (w.opens, w.now());
     for _ in 0..90 {
-        w.clips[0].ver += 1; // je UI-Bild ein neuer Wert (1,5 s lang)
+        w.clips[0].ver += 1; // a new value per UI frame (for 1.5 s)
         w.step(1.0 / 60.0);
     }
-    assert!(w.opens - opens <= 1, "{} Ströme beim Ziehen", w.opens - opens);
-    assert!(w.gap(1, t, w.now()) <= 2.0 / 30.0 + 0.01, "Bild läuft mit dem alten Wert weiter");
-    // Wert steht: der Ersatz kommt und übernimmt
+    assert!(w.opens - opens <= 1, "{} streams while dragging", w.opens - opens);
+    assert!(w.gap(1, t, w.now()) <= 2.0 / 30.0 + 0.01, "picture keeps running with the old value");
+    // value stays: the replacement comes and takes over
     w.run(1.0, DT);
     let new = w.key(&w.clips[0]);
     assert!(w.core.streams().iter().all(|x| x.1 == new), "{:?}", w.core.streams());
@@ -500,54 +500,54 @@ fn dragging_a_slider_during_play_does_not_open_a_stream_per_frame() {
 #[test]
 fn visible_edit_keeps_picture_running_and_switches_stream() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
-    w.clips[0].dec.delay = 0.3; // neuer Strom braucht lange
+    w.clips[0].dec.delay = 0.3; // new stream takes long
     w.play();
     w.run(1.0, DT);
-    w.clips[0].ver = 1; // Effekt geändert
+    w.clips[0].ver = 1; // effect changed
     w.rev += 1;
     w.core.edit(false, w.now());
     let t = w.now();
     w.run(1.5, DT);
-    assert!(w.gap(1, t, t + 1.5) <= 2.0 / 30.0 + 0.01, "Bild stand beim Bearbeiten");
+    assert!(w.gap(1, t, t + 1.5) <= 2.0 / 30.0 + 0.01, "picture stood while editing");
     let s = w.core.streams();
-    assert_eq!(s.len(), 1, "alter Strom nach dem Wechsel frei: {s:?}");
+    assert_eq!(s.len(), 1, "old stream freed after the change: {s:?}");
     assert_eq!(s[0].1, w.key(&w.clips[0]));
 }
 
-/// Befund aus dem Review: ein Ersatz langsamer als Echtzeit (schwerer Effekt während Play
-/// hinzugefügt) übernahm nie – die Änderung blieb bis zum Clipende unsichtbar.
+/// Review finding: a replacement slower than real time (heavy effect added during Play)
+/// never took over – the change stayed invisible until the clip end.
 #[test]
 fn slow_replacement_takes_over_after_a_second() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
     w.play();
     w.run(1.0, DT);
     w.clips[0].ver = 1;
-    w.clips[0].dec.per_frame = 1.0 / 24.0; // 0,8× Echtzeit bei 30 Bildern/s
+    w.clips[0].dec.per_frame = 1.0 / 24.0; // 0.8× real time at 30 fps
     w.rev += 1;
     w.core.edit(false, w.now());
     w.run(2.5, DT);
     let new = w.key(&w.clips[0]);
     let s = w.core.streams();
-    assert!(s.iter().any(|x| !x.2 && x.1 == new), "Änderung sichtbar: {s:?}");
-    assert!(s.iter().all(|x| x.1 == new), "alter Strom frei: {s:?}");
+    assert!(s.iter().any(|x| !x.2 && x.1 == new), "change visible: {s:?}");
+    assert!(s.iter().all(|x| x.1 == new), "old stream freed: {s:?}");
 }
 
-/// Befund aus dem Review: ein Ersatz, der ohne Bild endet (Effekt-Graph geht nicht), blieb für
-/// immer stehen und wurde nie neu versucht.
+/// Review finding: a replacement that ends without a frame (effect graph fails) stayed
+/// forever and was never retried.
 #[test]
 fn replacement_ending_without_a_frame_is_retried() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
     w.play();
     w.run(1.0, DT);
     w.clips[0].ver = 1;
-    w.clips[0].dec.len = Some(0); // FFmpeg endet sofort
+    w.clips[0].dec.len = Some(0); // FFmpeg ends at once
     w.rev += 1;
     let (opens, t) = (w.opens, w.now());
     w.run(2.5, DT);
-    assert!(w.opens >= opens + 2, "neu versucht: {}", w.opens - opens);
-    assert!(w.opens <= opens + 4, "nicht in jedem Bild: {}", w.opens - opens);
-    assert!(w.gap(1, t, w.now()) <= 2.0 / 30.0 + 0.01, "alter Strom zeigt weiter");
-    w.clips[0].dec.len = None; // geht wieder
+    assert!(w.opens >= opens + 2, "retried: {}", w.opens - opens);
+    assert!(w.opens <= opens + 4, "not in every frame: {}", w.opens - opens);
+    assert!(w.gap(1, t, w.now()) <= 2.0 / 30.0 + 0.01, "old stream keeps showing");
+    w.clips[0].dec.len = None; // works again
     w.run(1.5, DT);
     let new = w.key(&w.clips[0]);
     assert!(w.core.streams().iter().all(|x| x.1 == new), "{:?}", w.core.streams());
@@ -559,17 +559,17 @@ fn audible_edits_restart_audio_once_after_debounce() {
     w.play();
     w.run(1.0, DT);
     let starts = w.aud.starts;
-    // Lautstärke-Regler ziehen: 10 Änderungen im Abstand von 50 ms
+    // dragging the volume slider: 10 changes 50 ms apart
     for _ in 0..10 {
         w.core.edit(true, w.now());
         w.run(0.05, DT);
     }
-    assert_eq!(w.aud.starts, starts, "Ton nicht bei jedem Schritt neu");
+    assert_eq!(w.aud.starts, starts, "sound not renewed at every step");
     w.run(0.2, DT);
     assert_eq!(w.aud.starts, starts + 1);
     w.run(0.5, DT);
     assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)));
-    assert!(w.gap(1, 1.0, w.now()) <= 2.0 / 30.0 + 0.01, "Bild lief weiter");
+    assert!(w.gap(1, 1.0, w.now()) <= 2.0 / 30.0 + 0.01, "picture kept running");
 }
 
 #[test]
@@ -580,9 +580,9 @@ fn cuts_between_many_short_clips_have_no_gap() {
     w.run(14.0, DT);
     let t: Vec<f64> = w.shown.iter().filter(|s| s.0 > 0.3).map(|s| s.0).collect();
     let gap = t.windows(2).map(|x| x[1] - x[0]).fold(0.0, f64::max);
-    assert!(gap <= 2.0 / 30.0 + 0.01, "Lücke {gap} s am Schnitt");
-    // je Clip ein Strom (vorab geöffnet), keine Neustarts
-    assert!(w.opens <= 31, "{} Ströme", w.opens);
+    assert!(gap <= 2.0 / 30.0 + 0.01, "gap {gap} s at the cut");
+    // one stream per clip (opened ahead), no restarts
+    assert!(w.opens <= 31, "{} streams", w.opens);
 }
 
 #[test]
@@ -592,7 +592,7 @@ fn several_tracks_all_deliver() {
     w.run(5.0, DT);
     for id in [1, 2, 3] {
         let from = if id == 3 { 2.2 } else { 0.5 };
-        assert!(w.gap(id, from, 5.0) <= 2.0 / 30.0 + 0.01, "Ebene {id}");
+        assert!(w.gap(id, from, 5.0) <= 2.0 / 30.0 + 0.01, "layer {id}");
     }
 }
 
@@ -620,9 +620,9 @@ fn loop_range_jumps_back_and_keeps_playing() {
     assert!(w.core.jumps() >= 3);
 }
 
-/// Nachtest K7: In der Pause zeichnet die Oberfläche kaum (kein Takt); beim Fortsetzen galt die
-/// ganze Pause als Messfenster ohne Bilder – die automatische Qualität senkte eine Stufe und
-/// öffnete Ersatzströme. Nach der Pause: kein Rückstand, keine Stufe, kein neuer Strom.
+/// Follow-up test K7: in the pause the UI hardly draws (no tick); on resume the whole
+/// pause counted as a measurement window without frames – the automatic quality dropped a level and
+/// opened replacement streams. After the pause: no lag, no level, no new stream.
 #[test]
 fn resume_after_a_long_pause_without_ticks_keeps_quality_and_streams() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
@@ -632,11 +632,11 @@ fn resume_after_a_long_pause_without_ticks_keeps_quality_and_streams() {
     w.pause();
     w.step(DT);
     let opens = w.opens;
-    w.clock.set(w.now() + 3.0); // 3 s Pause ohne ein einziges UI-Bild
+    w.clock.set(w.now() + 3.0); // 3 s pause without a single UI frame
     w.play();
     w.run(3.0, DT);
-    assert_eq!(w.core.quality.level, 0, "Stufe bleibt");
-    assert_eq!(w.opens, opens, "kein neuer Strom");
+    assert_eq!(w.core.quality.level, 0, "level stays");
+    assert_eq!(w.opens, opens, "no new stream");
     let st = w.core.take_stats();
     assert_eq!(st.catch_ups, 0);
 }
@@ -651,12 +651,12 @@ fn pause_and_resume_at_same_place_opens_no_new_streams() {
     let at = w.core.pos();
     let opens = w.opens;
     w.run(1.0, DT);
-    assert_eq!(w.core.pos(), at, "Uhr steht in der Pause");
+    assert_eq!(w.core.pos(), at, "clock stands in the pause");
     w.play();
-    assert_eq!(w.core.mode(), Mode::Spielen, "direkt weiter, ohne Puffern");
+    assert_eq!(w.core.mode(), Mode::Spielen, "straight on, without buffering");
     let t = w.now();
     w.run(1.0, DT);
-    assert_eq!(w.opens, opens, "keine neuen Ströme");
+    assert_eq!(w.opens, opens, "no new streams");
     assert!(w.gap(1, t, t + 1.0) <= 2.0 / 30.0 + 0.01);
     assert!((w.core.pos() - at).as_secs_f64() > 0.9);
 }
@@ -667,7 +667,7 @@ fn pause_then_move_frees_streams_and_play_rebuffers() {
     w.play();
     w.run(1.0, DT);
     w.pause();
-    w.playhead = Time::from_secs_f64(5.0); // verschoben
+    w.playhead = Time::from_secs_f64(5.0); // moved
     w.step(DT);
     assert_eq!(w.core.mode(), Mode::Stand);
     assert!(w.core.streams().is_empty());
@@ -703,7 +703,7 @@ fn project_change_mid_play_drops_everything_of_the_old_project() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
     w.play();
     w.run(1.0, DT);
-    w.clips[0].ver = 7; // Ersatz wird gerade geöffnet (nachdem der Schlüssel kurz stand) …
+    w.clips[0].ver = 7; // replacement is being opened (after the key stayed for a moment) …
     for _ in 0..40 {
         if !w.opening.is_empty() {
             break;
@@ -712,13 +712,13 @@ fn project_change_mid_play_drops_everything_of_the_old_project() {
     }
     assert!(!w.opening.is_empty());
     let gen = w.core.gen();
-    w.core.new_project(); // … da wechselt das Projekt
+    w.core.new_project(); // … then the project changes
     w.cmds();
     assert_eq!(w.core.gen(), gen + 1);
     assert_eq!(w.core.mode(), Mode::Stand);
     assert!(w.core.held().is_none());
     w.ever_shown = false;
-    w.step(DT); // hängt den alten an: wird abgelehnt (Assertion im Treiber)
+    w.step(DT); // attaches the old one: is rejected (assertion in the driver)
     assert!(w.core.streams().is_empty());
     assert_eq!(w.aud.st, AState::Off);
 }
@@ -726,14 +726,14 @@ fn project_change_mid_play_drops_everything_of_the_old_project() {
 #[test]
 fn audio_failure_lets_picture_run_on_system_clock() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
-    w.aud.cut_at = Some(1.0); // Ton bricht nach 1 s ab
+    w.aud.cut_at = Some(1.0); // sound aborts after 1 s
     w.play();
     w.run(3.0, DT);
     assert_eq!(w.core.mode(), Mode::Spielen);
     let p = w.core.pos().as_secs_f64();
-    assert!((p - 3.0).abs() < 0.15, "Uhr {p}");
+    assert!((p - 3.0).abs() < 0.15, "clock {p}");
     assert!(w.gap(1, 0.5, 3.0) <= 2.0 / 30.0 + 0.01);
-    assert_eq!(w.aud.st, AState::Off, "Ton freigegeben");
+    assert_eq!(w.aud.st, AState::Off, "sound released");
 }
 
 #[test]
@@ -754,9 +754,9 @@ fn shuttle_runs_on_stills_at_rate_and_stops_at_zero_backwards() {
     assert!(!w.core.streaming());
     w.run(1.0, DT);
     assert!((w.core.pos().as_secs_f64() - 4.0).abs() < 0.05);
-    assert!(w.core.streams().is_empty(), "keine Ströme bei Tempo ≠ 1");
-    // Einzelbilder kommen laufend (laufender Auftrag wird nicht ständig abgebrochen)
-    assert!(w.stills_shown >= 8, "{} Einzelbilder", w.stills_shown);
+    assert!(w.core.streams().is_empty(), "no streams at speed ≠ 1");
+    // single frames keep coming (the running job is not constantly aborted)
+    assert!(w.stills_shown >= 8, "{} single frames", w.stills_shown);
     w.core.shuttle(-2.0, w.playhead, w.now());
     w.cmds();
     w.run(2.5, DT);
@@ -767,19 +767,19 @@ fn shuttle_runs_on_stills_at_rate_and_stops_at_zero_backwards() {
 #[test]
 fn reverse_clip_during_play_shows_stills_and_never_goes_black() {
     let mut c = clip(2, 1.0, 4.0);
-    c.still_only = true; // Rückwärts-Clip
+    c.still_only = true; // reverse clip
     let mut w = World::new(vec![clip(1, 0.0, 1.0), c, clip(3, 4.0, 6.0)]);
-    w.still_time = 0.15; // langsames Einzelbild
+    w.still_time = 0.15; // slow single frame
     w.play();
     w.run(5.5, DT);
-    assert!(w.stills_shown >= 10, "{} Einzelbilder im Rückwärts-Clip", w.stills_shown);
+    assert!(w.stills_shown >= 10, "{} single frames in the reverse clip", w.stills_shown);
     assert!(w.core.held().is_some());
 }
 
 #[test]
 fn slow_stream_catches_up_instead_of_drifting() {
     let mut c = clip(1, 0.0, 60.0);
-    c.dec.per_frame = 1.0 / 40.0; // 40 statt 60 Bilder/s
+    c.dec.per_frame = 1.0 / 40.0; // 40 instead of 60 fps
     c.dec.delay = 0.15;
     let mut w = World::new(vec![c]);
     w.fps = 60.0;
@@ -787,28 +787,28 @@ fn slow_stream_catches_up_instead_of_drifting() {
     w.run(10.0, DT);
     let st = w.core.take_stats();
     assert!(st.catch_ups >= 1, "{st:?}");
-    // ohne automatische Qualität: Rückstand bleibt begrenzt (ohne Aufholen wüchse er auf über 3 s),
-    // neu geöffnet wird höchstens alle 5 s
-    assert!(st.max_lag < 2.0, "Rückstand {} s", st.max_lag);
+    // without automatic quality: lag stays bounded (without catching up it would grow beyond 3 s),
+    // reopened at most every 5 s
+    assert!(st.max_lag < 2.0, "lag {} s", st.max_lag);
     assert!(st.catch_ups <= 2, "{st:?}");
 }
 
 #[test]
 fn auto_quality_restores_frame_rate_of_slow_stream() {
     let mut c = clip(1, 0.0, 60.0);
-    c.dec.per_frame = 1.0 / 40.0; // voll: 40 Bilder/s; ½: 160 Bilder/s
+    c.dec.per_frame = 1.0 / 40.0; // full: 40 fps; ½: 160 fps
     let mut w = World::new(vec![c]);
     w.fps = 60.0;
     w.max_q = 3;
     w.play();
     w.run(3.0, DT);
-    assert!(w.core.quality.level >= 1, "nach 1–2 s eine Stufe kleiner");
+    assert!(w.core.quality.level >= 1, "one level smaller after 1–2 s");
     w.run(27.0, DT);
-    // Versuche, wieder voll zu rechnen, werden seltener (4, 8, 16 s): kaum Verlust, kein Flattern
+    // attempts to compute at full size again become rarer (4, 8, 16 s): hardly any loss, no flapping
     let n = w.frames(2.0, 30.0) as f64 / 28.0;
-    assert!(n >= 55.0, "{n} Bilder/s mit automatischer Qualität");
-    assert!(w.level_changes <= 6, "{} Wechsel", w.level_changes);
-    // im Stand zurück auf voll
+    assert!(n >= 55.0, "{n} fps with automatic quality");
+    assert!(w.level_changes <= 6, "{} changes", w.level_changes);
+    // when stopped back to full
     w.core.stop();
     w.cmds();
     w.step(DT);
@@ -830,29 +830,29 @@ fn auto_quality_off_keeps_level() {
 #[test]
 fn quality_decisions_have_hysteresis() {
     let mut q = AutoQuality::default();
-    // zu langsam → eine Stufe, dann Ruhe während der Umstellung
+    // too slow → one level, then quiet during the switch
     assert_eq!(q.decide(1.0, Some(0.8), 3, true), 1);
     assert_eq!(q.decide(2.0, Some(0.5), 3, true), 1);
     assert_eq!(q.decide(3.0, Some(0.5), 3, true), 2);
-    // nie über die höchste Stufe
+    // never above the highest level
     assert_eq!(q.decide(5.0, Some(0.5), 2, true), 2);
-    // reicht es wieder: erst nach 4 s am Stück zurück
+    // enough again: back only after 4 s in a row
     for t in 6..10 {
         assert_eq!(q.decide(t as f64, Some(1.0), 2, true), 2, "t={t}");
     }
     assert_eq!(q.decide(10.0, Some(1.0), 2, true), 1);
-    // Hochschalten scheitert gleich wieder → nächster Versuch erst nach 8 s
+    // stepping up fails again at once → next attempt only after 8 s
     assert_eq!(q.decide(12.0, Some(0.7), 2, true), 2);
     for t in 14..21 {
         assert_eq!(q.decide(t as f64, Some(1.0), 2, true), 2, "t={t}");
     }
     assert_eq!(q.decide(22.0, Some(1.0), 2, true), 1);
-    // zwischen den Schwellen: bleibt, Gut-Zeit beginnt neu
+    // between the thresholds: stays, good time restarts
     assert_eq!(q.decide(24.0, Some(0.95), 2, true), 1);
-    // Stand: sofort voll
+    // stopped: full at once
     assert_eq!(q.decide(25.0, None, 2, false), 0);
     assert_eq!(q.level, 0);
-    // aus: immer 0
+    // off: always 0
     assert_eq!(q.decide(26.0, Some(0.1), 0, true), 0);
 }
 
@@ -872,7 +872,7 @@ fn open_failure_retries_after_a_while() {
     let mut w = World::new(vec![c]);
     w.play();
     w.run(2.5, DT);
-    assert!((2..=4).contains(&w.opens), "{} Versuche", w.opens);
+    assert!((2..=4).contains(&w.opens), "{} attempts", w.opens);
     assert_eq!(w.core.mode(), Mode::Spielen);
 }
 
@@ -881,16 +881,16 @@ fn stills_in_stand_replace_running_requests_and_drive_the_wait_line() {
     let mut core: PlayCore<Sim> = PlayCore::default();
     assert!(!core.waiting());
     assert!(core.still(1, 10, 0.0));
-    assert!(core.waiting(), "angefordert, noch nichts da");
-    assert!(!core.still(1, 10, 0.01), "derselbe Auftrag läuft schon");
-    // Scrubben: der neue ersetzt den alten sofort
+    assert!(core.waiting(), "requested, nothing there yet");
+    assert!(!core.still(1, 10, 0.01), "the same job is already running");
+    // scrubbing: the new one replaces the old one at once
     assert!(core.still(1, 11, 0.02));
-    assert!(!core.still_done(1, 10), "veraltetes Bild wird nicht gezeigt");
+    assert!(!core.still_done(1, 10), "stale frame is not shown");
     assert!(core.waiting());
     assert!(core.still_done(1, 11));
     assert!(!core.waiting());
     assert_eq!(core.held(), Some(1));
-    // Projekt geändert: neu anfordern, Bild bleibt stehen
+    // project changed: request again, picture stays
     core.forget_stills();
     assert!(core.still(1, 11, 0.1));
     core.visible(&[]);
@@ -898,27 +898,27 @@ fn stills_in_stand_replace_running_requests_and_drive_the_wait_line() {
     assert_eq!(core.held(), Some(1));
 }
 
-/// Befund aus dem Review: ein gescheitertes Einzelbild blieb als Auftrag stehen – Ladelinie für
-/// immer, beim Abspielen stand das Bild bis `STILL_PATIENCE`.
+/// Review finding: a failed single frame stayed as a job – loading line
+/// forever, during playback the picture stood until `STILL_PATIENCE`.
 #[test]
 fn failed_still_ends_the_request_and_the_next_is_requested() {
     let mut core: PlayCore<Sim> = PlayCore::default();
     assert!(core.still(1, 10, 0.0));
     assert!(core.has_requests());
-    core.still_failed(1, 9); // veraltet: ändert nichts
+    core.still_failed(1, 9); // stale: changes nothing
     assert!(core.has_requests());
     core.still_failed(1, 10);
-    assert!(!core.has_requests(), "Ladeanzeige endet");
+    assert!(!core.has_requests(), "loading indicator ends");
     assert!(!core.waiting());
-    assert!(!core.still(1, 10, 0.1), "derselbe nicht in jedem UI-Bild neu");
-    assert!(core.still(1, 11, 0.2), "das nächste wird angefordert");
-    // beim Abspielen (Rückwärts-Clip): das nächste sofort, nicht erst nach STILL_PATIENCE
+    assert!(!core.still(1, 10, 0.1), "the same one not renewed every UI frame");
+    assert!(core.still(1, 11, 0.2), "the next one is requested");
+    // during playback (reverse clip): the next one at once, not only after STILL_PATIENCE
     core.shuttle(2.0, Time::ZERO, 1.0);
     assert!(core.still(1, 20, 1.0));
-    assert!(!core.still(1, 21, 1.1), "laufender Auftrag wird nicht ersetzt");
+    assert!(!core.still(1, 21, 1.1), "running job is not replaced");
     core.still_failed(1, 20);
     assert!(core.still(1, 21, 1.2));
-    // ein gelieferter Auftrag zählt ebenfalls nicht mehr als offen
+    // a delivered job no longer counts as open either
     assert!(core.still_done(1, 21));
     assert!(!core.has_requests());
 }
@@ -926,12 +926,12 @@ fn failed_still_ends_the_request_and_the_next_is_requested() {
 #[test]
 fn play_during_buffering_seek_and_stop_from_every_state() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
-    // Puffern → Stopp
+    // buffering → stop
     w.play();
     w.core.stop();
     w.cmds();
     assert_eq!(w.core.mode(), Mode::Stand);
-    // Pause → Stopp
+    // pause → stop
     w.play();
     w.run(1.0, DT);
     w.pause();
@@ -939,28 +939,28 @@ fn play_during_buffering_seek_and_stop_from_every_state() {
     w.cmds();
     assert_eq!(w.core.mode(), Mode::Stand);
     assert!(w.core.streams().is_empty());
-    // Sprung im Stand bewegt nur die Stelle
+    // jump when stopped moves only the place
     w.core.seek(Time::from_secs_f64(3.0), w.now());
     assert_eq!(w.core.mode(), Mode::Stand);
     assert_eq!(w.core.pos(), Time::from_secs_f64(3.0));
-    // Sprung in der Pause beendet sie
+    // jump in the pause ends it
     w.playhead = w.core.pos();
     w.play();
     w.run(0.5, DT);
     w.pause();
     w.core.seek(Time::from_secs_f64(8.0), w.now());
     assert_eq!(w.core.mode(), Mode::Stand);
-    // Ton sofort neu (Solo, Gerät) nur beim Abspielen
+    // renew sound at once (solo, device) only during playback
     let s = w.aud.starts;
     w.core.restart_audio(w.now());
     w.cmds();
     assert_eq!(w.aud.starts, s);
 }
 
-/// Zufallstest: 10 000 Ereignisfolgen; die Invarianten prüft der Treiber in jedem Takt
-/// (`World::step`/`check`): nie zwei Ströme mit demselben Schlüssel je Ebene, kein Strom eines
-/// alten Projekts, Uhr nur bei Sprüngen zurück, kein Bild aus der Zukunft oder älter als das
-/// gezeigte, immer ein anzeigbares Bild, sobald eins da war.
+/// Random test: 10 000 event sequences; the driver checks the invariants every tick
+/// (`World::step`/`check`): never two streams with the same key per layer, no stream of an
+/// old project, clock back only on jumps, no frame from the future or older than the
+/// shown one, always a displayable frame once there was one.
 #[test]
 fn random_event_sequences_keep_invariants() {
     let mut seed = 0x9E37_79B9_7F4A_7C15u64;
@@ -1039,74 +1039,74 @@ fn stream_opened_before_a_seek_is_not_attached() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
     w.play();
     w.clock.set(w.now() + 0.001);
-    w.step(0.001); // Öffnen ab 0 beauftragt, Starter noch nicht fertig
+    w.step(0.001); // open from 0 requested, starter not done yet
     assert_eq!(w.opening.len(), 1);
-    w.playhead = Time::from_secs_f64(9.0); // Sprung, bevor der Strom da ist
+    w.playhead = Time::from_secs_f64(9.0); // jump before the stream is there
     w.run(0.3, DT);
     let stale: Vec<_> = w.attached.iter().filter(|(o, _)| o.at < Time::from_secs_f64(9.0)).collect();
-    assert!(stale.iter().all(|(_, ok)| !ok), "Strom von vor dem Sprung angehängt: {stale:?}");
+    assert!(stale.iter().all(|(_, ok)| !ok), "stream from before the jump attached: {stale:?}");
     assert!(w.shown.iter().all(|s| s.3 >= 9.0));
 }
 
 #[test]
 fn incoming_clip_in_transition_shows_its_first_frame_before_its_start() {
     let mut b = clip(2, 2.0, 6.0);
-    b.lead_in = 0.25; // Übergang: B ist ab 1,75 s sichtbar, sein Strom beginnt bei 2 s
+    b.lead_in = 0.25; // transition: B is visible from 1.75 s, its stream begins at 2 s
     let mut w = World::new(vec![clip(1, 0.0, 2.25), b]);
     w.play();
     w.run(1.9, DT);
     let early: Vec<_> = w.shown.iter().filter(|s| s.2 == 2 && s.1 < 2.0).collect();
-    assert!(!early.is_empty(), "B zeigt im Übergang vor seinem Anfang nichts");
-    assert!(early.iter().all(|s| (s.3 - 2.0).abs() < 1e-6), "vor dem Anfang nur das erste Bild");
+    assert!(!early.is_empty(), "B shows nothing in the transition before its start");
+    assert!(early.iter().all(|s| (s.3 - 2.0).abs() < 1e-6), "only the first frame before the start");
     w.run(1.0, DT);
     assert!(w.gap(2, 2.1, 2.9) <= 2.0 / 30.0 + 0.01);
 }
 
-/// Mangel aus dem Klicktest: Einzelbilder beim Abspielen (Rückwärts, Tempo-Kurve, bewegte Bilder)
-/// wurden je Bild der Oberfläche neu angefordert und der laufende Auftrag dabei beendet – dauert
-/// einer länger als ein paar Bilder, kam nie eins an (Standbild bei laufendem Ton).
+/// Flaw from the click test: single frames during playback (reverse, speed curve, animated images)
+/// were requested anew per UI frame and the running job was ended – if one takes
+/// longer than a few frames, none ever arrived (still picture with sound running).
 #[test]
 fn slow_stills_during_play_are_finished_and_shown() {
     let mut c = clip(1, 0.0, 20.0);
     c.still_only = true;
     let mut w = World::new(vec![c]);
-    w.still_time = 1.5; // unter Last: 1,5 s je Einzelbild
+    w.still_time = 1.5; // under load: 1.5 s per single frame
     w.play();
     w.run(8.0, DT);
-    assert!(w.stills_shown >= 4, "{} Einzelbilder in 8 s", w.stills_shown);
-    // Sprung: der laufende Auftrag gehört zur alten Stelle und wird ersetzt
+    assert!(w.stills_shown >= 4, "{} single frames in 8 s", w.stills_shown);
+    // jump: the running job belongs to the old place and is replaced
     let before = w.stills.len();
     w.playhead = Time::from_secs_f64(15.0);
     w.run(0.1, DT);
-    assert!(w.stills.len() > before || w.stills.iter().any(|s| s.2 > w.now()), "neuer Auftrag nach dem Sprung");
+    assert!(w.stills.len() > before || w.stills.iter().any(|s| s.2 > w.now()), "new job after the jump");
 }
 
-/// Mangel aus dem Klicktest: ein Strom, der nichts mehr liefert, wurde jede Sekunde neu geöffnet
-/// (bei langer GOP holt er so nie auf). Jetzt: erst nach 2 s ohne Bild, dann höchstens alle 5 s.
+/// Flaw from the click test: a stream that delivers nothing more was reopened every second
+/// (with a long GOP it never catches up that way). Now: only after 2 s without a frame, then at most every 5 s.
 #[test]
 fn hanging_stream_is_reopened_rarely() {
     let mut c = clip(1, 0.0, 60.0);
-    c.dec.len = Some(30); // liefert eine Sekunde, dann nichts mehr (FFmpeg beendet)
+    c.dec.len = Some(30); // delivers for one second, then nothing more (FFmpeg ended)
     c.dec.delay = 0.1;
     let mut w = World::new(vec![c]);
     w.play();
     w.run(20.0, DT);
-    // erster Strom + Neustarts nach Ende, je höchstens alle 5 s
-    assert!(w.opens <= 6, "{} Ströme in 20 s", w.opens);
+    // first stream + restarts after the end, each at most every 5 s
+    assert!(w.opens <= 6, "{} streams in 20 s", w.opens);
     assert!(w.opens >= 3);
 }
 
-/// Mangel aus dem Klicktest: Teilen während Play hielt das Bild an (neuer Clip = neuer Strom ab
-/// dem Keyframe). Jetzt übernimmt der rechte Teil den laufenden Strom derselben Quelle.
+/// Flaw from the click test: splitting during Play stopped the picture (new clip = new stream from
+/// the keyframe). Now the right part takes over the running stream of the same source.
 #[test]
 fn split_during_play_takes_over_the_running_stream() {
     let mut a = clip(1, 0.0, 10.0);
     a.alias = 77;
-    a.dec.delay = 1.5; // neuer Strom bräuchte 1,5 s (lange GOP)
+    a.dec.delay = 1.5; // new stream would need 1.5 s (long GOP)
     let mut w = World::new(vec![a]);
     w.play();
     w.run(1.0 + w.clips[0].dec.delay, DT);
-    // Teilen am Playhead: links bleibt Clip 1 (bis hier), rechts neuer Clip 2 aus derselben Quelle
+    // split at the playhead: clip 1 stays on the left (up to here), new clip 2 from the same source on the right
     let cut = w.core.pos().as_secs_f64();
     let mut b = w.clips[0].clone();
     (b.id, b.start) = (2, cut);
@@ -1116,7 +1116,7 @@ fn split_during_play_takes_over_the_running_stream() {
     w.core.edit(true, w.now());
     let (opens, t) = (w.opens, w.now());
     w.run(2.0, DT);
-    assert_eq!(w.opens, opens, "kein neuer Strom");
+    assert_eq!(w.opens, opens, "no new stream");
     let gap = w.shown.iter().filter(|s| s.0 >= t - 0.1).map(|s| s.0).collect::<Vec<_>>().windows(2).map(|x| x[1] - x[0]).fold(0.0, f64::max);
-    assert!(gap <= 2.0 / 30.0 + 0.01, "Lücke {gap} s nach dem Teilen");
+    assert!(gap <= 2.0 / 30.0 + 0.01, "gap {gap} s after splitting");
 }

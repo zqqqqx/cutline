@@ -1,15 +1,15 @@
-//! Ein Katalog für alle Inhalte: eingebaute Effekte, Filter, Übergänge, Sounds und Sticker
-//! (Paket „Grundausstattung“, `cutline.standard`) und Inhalte aus Paketen (`asset-pack`).
+//! One catalog for all content: built-in effects, filters, transitions, sounds and stickers
+//! (package „Grundausstattung“, `cutline.standard`) and content from packages (`asset-pack`).
 //!
-//! Eingebaute Einträge stehen weiter im Code (IDs unverändert), Pakete werden mit
-//! [`load_packs`] angemeldet. Vorschau, Export und die Tabs lesen von hier.
+//! Built-in entries stay in the code (IDs unchanged), packages are registered with
+//! [`load_packs`]. Preview, export and the tabs read from here.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use cl_core::{ClipContent, Project};
 
-/// Paket-ID der eingebauten Inhalte.
+/// Package ID of the built-in content.
 pub const STANDARD: &str = "cutline.standard";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -25,17 +25,17 @@ impl Kind {
     pub const ALL: [Kind; 5] = [Kind::Effect, Kind::Filter, Kind::Transition, Kind::Sound, Kind::Sticker];
 }
 
-/// Was ein Eintrag mitbringt.
+/// What an entry brings along.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Payload {
-    /// Im Code definiert ([`crate::EFFECTS`], [`crate::sfx::SFX`] …)
+    /// Defined in code ([`crate::EFFECTS`], [`crate::sfx::SFX`] …)
     Builtin,
-    /// FFmpeg-Kette mit `{intensity}` (Effekt/Filter aus Paketen)
+    /// FFmpeg chain with `{intensity}` (effect/filter from packages)
     Ffmpeg(String),
-    /// Datei im Paketordner (Sound/Sticker)
+    /// File in the package folder (sound/sticker)
     File(PathBuf),
-    /// Übergang als WGSL-Shader (cl-gpu) mit eingebautem `xfade`-Rückfall und den
-    /// Standardwerten der Parameter (`params.p0` …)
+    /// Transition as a WGSL shader (cl-gpu) with a built-in `xfade` fallback and the
+    /// default values of the parameters (`params.p0` …)
     Shader {
         file: PathBuf,
         fallback: String,
@@ -43,17 +43,17 @@ pub enum Payload {
     },
 }
 
-/// Wie ein Übergang gerendert wird.
+/// How a transition is rendered.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransitionPlan {
-    /// Eingebauter `xfade`-Name (immer gültig: Rückfall oder `fade`)
+    /// Built-in `xfade` name (always valid: fallback or `fade`)
     pub xfade: &'static str,
-    /// Shader-Datei und Parameter, wenn das Paket eingeschaltet ist
+    /// Shader file and parameters if the package is enabled
     pub shader: Option<(PathBuf, Vec<f32>)>,
 }
 
-/// Übergang `id` auflösen: eingebaut → `xfade`; Paket-Übergang → Shader samt Rückfall;
-/// Paket aus → nur der Rückfall; unbekannt (Paket fehlt) → Überblenden.
+/// Resolve transition `id`: built-in → `xfade`; package transition → shader with fallback;
+/// package off → only the fallback; unknown (package missing) → cross-fade.
 pub fn transition_plan_in(packs: &[Pack], id: &str) -> TransitionPlan {
     let builtin = |x: &str| crate::TRANSITIONS.iter().find(|t| t.0 == x).map(|t| t.0);
     if let Some(x) = builtin(id) {
@@ -78,23 +78,23 @@ pub fn transition_plan(id: &str) -> TransitionPlan {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
-    /// Eingebaut: wie bisher (`blur`, `heart` …); Paket: `<paket-id>/<asset-id>`
+    /// Built-in: as before (`blur`, `heart` …); package: `<package-id>/<asset-id>`
     pub id: String,
     pub kind: Kind,
-    /// Name in der aktuellen Sprache (eingebaut: deutsch, die Oberfläche übersetzt)
+    /// Name in the current language (built-in: German, the UI translates)
     pub name: String,
     pub categories: Vec<String>,
     pub pack: String,
     pub license: String,
     pub author: String,
     pub source: Option<String>,
-    /// Schlagworte (Paket-Manifest `tags`): die Suche in den Tabs findet den Eintrag auch darüber
+    /// Tags (package manifest `tags`): the search in the tabs also finds the entry by them
     pub tags: Vec<String>,
     pub payload: Payload,
 }
 
 impl Entry {
-    /// Erste Kategorie (Ordner im Tab)
+    /// First category (folder in the tab)
     pub fn category(&self) -> &str {
         self.categories.first().map(String::as_str).unwrap_or("")
     }
@@ -118,7 +118,7 @@ pub struct Pack {
     pub entries: Vec<Entry>,
 }
 
-/// Paket mit Anzahl der Einträge je Art.
+/// Package with the number of entries per kind.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackSummary {
     pub info: PackInfo,
@@ -128,7 +128,7 @@ pub struct PackSummary {
 
 static PACKS: std::sync::RwLock<Vec<Pack>> = std::sync::RwLock::new(Vec::new());
 
-/// Paketeinträge neu laden (ersetzt die bisherigen; eingeschaltet oder nicht).
+/// Reload package entries (replaces the previous ones; enabled or not).
 pub fn load_packs(packs: Vec<Pack>) {
     if let Ok(mut g) = PACKS.write() {
         *g = packs;
@@ -142,7 +142,7 @@ fn read<T>(f: impl FnOnce(&[Pack]) -> T) -> T {
     }
 }
 
-/// Angaben zur Grundausstattung.
+/// Details of the base package.
 pub fn standard_info() -> PackInfo {
     PackInfo {
         id: STANDARD.into(),
@@ -181,7 +181,7 @@ fn builtin(kind: Kind) -> Vec<Entry> {
     }
 }
 
-/// Eingebaute zuerst (heutige Reihenfolge), dann eingeschaltete Pakete.
+/// Built-in ones first (current order), then enabled packages.
 pub fn list_in(packs: &[Pack], kind: Kind) -> Vec<Entry> {
     let mut v = builtin(kind);
     v.extend(
@@ -193,15 +193,15 @@ pub fn list_in(packs: &[Pack], kind: Kind) -> Vec<Entry> {
     v
 }
 
-/// Einträge für die Tabs: wie [`list_in`], ohne die ausgeblendeter Pakete (sie bleiben eingeschaltet,
-/// Auflösen per ID mit [`get`] geht weiter).
+/// Entries for the tabs: like [`list_in`], without those of hidden packages (they stay enabled,
+/// resolving by ID with [`get`] still works).
 pub fn shown_in(packs: &[Pack], hidden: &[String], kind: Kind) -> Vec<Entry> {
     let mut v = list_in(packs, kind);
     v.retain(|e| !hidden.contains(&e.pack));
     v
 }
 
-/// Ausgeblendete Paket-IDs (Einstellungen)
+/// Hidden package IDs (settings)
 static HIDDEN: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
 
 pub fn set_hidden(ids: Vec<String>) {
@@ -210,13 +210,13 @@ pub fn set_hidden(ids: Vec<String>) {
     }
 }
 
-/// Liste für die Tabs (ohne ausgeblendete Pakete).
+/// List for the tabs (without hidden packages).
 pub fn list(kind: Kind) -> Vec<Entry> {
     let hidden = HIDDEN.read().map(|g| g.clone()).unwrap_or_default();
     read(|p| shown_in(p, &hidden, kind))
 }
 
-/// Alle Einträge eingeschalteter Pakete, auch ausgeblendete (Namen auflösen).
+/// All entries of enabled packages, hidden ones too (resolving names).
 pub fn list_all(kind: Kind) -> Vec<Entry> {
     read(|p| list_in(p, kind))
 }
@@ -244,7 +244,7 @@ pub fn get(kind: Kind, id: &str) -> Option<Entry> {
     read(|p| get_in(p, kind, id))
 }
 
-/// Name eines Paket-Eintrags, auch bei ausgeschaltetem Paket (fehlende Inhalte lesbar benennen).
+/// Name of a package entry, even with the package disabled (to name missing content readably).
 pub fn name_any_in(packs: &[Pack], id: &str) -> Option<String> {
     packs.iter().flat_map(|p| p.entries.iter()).find(|e| e.id == id).map(|e| e.name.clone())
 }
@@ -253,7 +253,7 @@ pub fn name_any(id: &str) -> Option<String> {
     read(|p| name_any_in(p, id))
 }
 
-/// FFmpeg-Kette eines Paket-Effekts/-Filters mit eingesetzter Stärke.
+/// FFmpeg chain of a package effect/filter with the strength filled in.
 pub(crate) fn pack_chain(kind: Kind, id: &str, intensity: f32) -> Option<String> {
     read(|packs| {
         packs
@@ -276,7 +276,7 @@ fn counts(entries: &[Entry]) -> BTreeMap<Kind, usize> {
     m
 }
 
-/// Grundausstattung zuerst, dann alle geladenen Pakete (auch ausgeschaltete).
+/// Base package first, then all loaded packages (disabled ones too).
 pub fn packs_in(packs: &[Pack]) -> Vec<PackSummary> {
     let std_entries: Vec<Entry> = Kind::ALL.iter().flat_map(|k| builtin(*k)).collect();
     let mut v = vec![PackSummary {
@@ -296,8 +296,8 @@ pub fn packs() -> Vec<PackSummary> {
     read(packs_in)
 }
 
-/// Danksagung als Markdown: je Paket Name, Lizenz, Autor, Quelle; abweichende Angaben
-/// einzelner Inhalte gruppiert. `tr` übersetzt die festen Texte.
+/// Credits as Markdown: per package name, license, author, source; differing details
+/// of individual items grouped. `tr` translates the fixed texts.
 pub fn credits(packs: &[Pack], tr: &dyn Fn(&str) -> String) -> String {
     let std = Pack {
         info: standard_info(),
@@ -315,7 +315,7 @@ pub fn credits(packs: &[Pack], tr: &dyn Fn(&str) -> String) -> String {
         if let Some(s) = &i.source {
             out += &format!("- {}: {s}\n", tr("Quelle"));
         }
-        // (Lizenz, Autor, Quelle) → Namen, in Reihenfolge des ersten Auftretens
+        // (license, author, source) → names, in order of first appearance
         let mut groups: Vec<((&str, &str, Option<&str>), Vec<&str>)> = Vec::new();
         for e in &p.entries {
             let k = (e.license.as_str(), e.author.as_str(), e.source.as_deref());
@@ -344,7 +344,7 @@ pub fn credits(packs: &[Pack], tr: &dyn Fn(&str) -> String) -> String {
     out
 }
 
-/// Effekt-/Filter-/Übergangs-IDs der Clips, die der Katalog nicht kennt: (id, Clipname).
+/// Effect/filter/transition IDs of clips the catalog does not know: (id, clip name).
 pub fn missing_in(packs: &[Pack], p: &Project) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for c in p.timeline.tracks.iter().flat_map(|t| t.clips.iter()) {
@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(list_in(&[], Kind::Transition).len(), crate::TRANSITIONS.len());
         assert_eq!(list_in(&[], Kind::Sound).len(), crate::sfx::SFX.len());
         assert_eq!(list_in(&[], Kind::Sticker).len(), crate::stickers::STICKERS.len());
-        // heutige Reihenfolge
+        // current order
         assert_eq!(list_in(&[], Kind::Effect)[0].id, crate::EFFECTS[0].id);
         let s = packs_in(&[pack(false)]);
         assert_eq!(s[0].info.id, STANDARD);
@@ -435,7 +435,7 @@ mod tests {
         assert_eq!(l.len(), crate::FILTERS.len() + 2);
         assert_eq!(l[crate::FILTERS.len()].id, "t.pack/warm");
         assert!(get_in(&on, Kind::Effect, "t.pack/glow").is_some());
-        assert!(get_in(&on, Kind::Filter, "t.pack/glow").is_none(), "Art zählt");
+        assert!(get_in(&on, Kind::Filter, "t.pack/glow").is_none(), "kind counts");
         let off = [pack(false)];
         assert_eq!(list_in(&off, Kind::Filter).len(), crate::FILTERS.len());
         assert!(get_in(&off, Kind::Effect, "t.pack/glow").is_none());
@@ -454,8 +454,8 @@ mod tests {
         let mut t = Track::new(TrackKind::Effect);
         t.clips = vec![c];
         p.timeline.tracks.push(t);
-        assert!(missing_in(&on, &p).is_empty(), "ausgeblendet ist nicht fehlend");
-        // Grundausstattung ausblendbar: nur noch Paketeinträge
+        assert!(missing_in(&on, &p).is_empty(), "hidden is not missing");
+        // base package can be hidden: only package entries remain
         let std = vec![STANDARD.to_string()];
         let l = shown_in(&on, &std, Kind::Filter);
         assert_eq!(l.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["t.pack/warm", "t.pack/hot"]);
@@ -469,7 +469,7 @@ mod tests {
         assert!(c.contains("## Grundausstattung (cutline.standard)"), "{c}");
         assert!(c.contains("## Test (t.pack)\n\n- Lizenz: CC0-1.0\n- Autor: A\n"), "{c}");
         assert!(c.contains("- warm, hot: Lizenz CC-BY-4.0 · Autor A\n"), "{c}");
-        assert!(!c.contains("glow"), "Angaben wie das Paket: nicht einzeln");
+        assert!(!c.contains("glow"), "details as the package: not listed separately");
     }
 
     #[test]
@@ -491,7 +491,7 @@ mod tests {
             ]
         );
         assert_eq!(missing_in(&[pack(true)], &p).len(), 1);
-        // Name auch bei ausgeschaltetem Paket; nur ganz fehlende Pakete bleiben bei der Kennung
+        // name even with the package disabled; only entirely missing packages stay at the id
         assert_eq!(name_any_in(&[pack(false)], "t.pack/warm").as_deref(), Some("warm"));
         assert_eq!(name_any_in(&[pack(false)], "weg/filter"), None);
     }
@@ -524,20 +524,20 @@ mod tests {
         assert_eq!(plan.xfade, "radial");
         assert_eq!(plan.shader, Some((PathBuf::from("swirl.wgsl"), vec![1.0])));
         assert_eq!(list_in(&on, Kind::Transition).len(), crate::TRANSITIONS.len() + 1);
-        // Paket aus: Rückfall ohne Shader; Paket fehlt: Überblenden
+        // package off: fallback without shader; package missing: cross-fade
         let off = [shader_pack(false)];
         assert_eq!(transition_plan_in(&off, "t.pack/swirl"), TransitionPlan { xfade: "radial", shader: None });
         assert_eq!(transition_plan_in(&[], "t.pack/swirl").xfade, "fade");
         assert_eq!(transition_plan_in(&[], "wipeleft"), TransitionPlan { xfade: "wipeleft", shader: None });
-        // eingeschleuster Text wird nie zum Filternamen
+        // injected text never becomes a filter name
         assert_eq!(transition_plan_in(&[], "fade:x;movie").xfade, "fade");
-        // unbekannter Rückfall im Paket → Überblenden
+        // unknown fallback in the package → cross-fade
         let mut bad = shader_pack(true);
         if let Payload::Shader { fallback, .. } = &mut bad.entries[0].payload {
             *fallback = "gibtsnicht".into();
         }
         assert_eq!(transition_plan_in(&[bad], "t.pack/swirl").xfade, "fade");
-        // fehlende Übergänge werden gemeldet
+        // missing transitions are reported
         let mut p = Project::new("x");
         let mut c = Clip::new(ClipContent::Effect(FxRef::new("blur")), Time::ZERO, Time::from_secs_f64(1.0));
         c.transition_out = Some(TransitionRef { id: "t.pack/swirl".into(), duration: Time::from_secs_f64(0.5) });

@@ -1,17 +1,17 @@
 #!/bin/sh
-# changes.json aus CHANGELOG.md: Änderungen der Version und aller früheren, beide Sprachen, ohne
-# Markdown (die App liest sie für „Was ist neu“ statt des Release-Texts). Aufbau wie
-# `cl_update::changelog::Notes`; `format` steigt nur bei inkompatiblen Änderungen:
+# changes.json from CHANGELOG.md: changes of the version and all earlier ones, both languages,
+# without Markdown (the app reads it for "What's new" instead of the release text). Same shape as
+# `cl_update::changelog::Notes`; `format` only goes up on incompatible changes:
 #   {"format": 1, "versions": [{"version": "0.12.1", "date": "2026-11-17",
-#     "en": [{"group": "Fixed", "items": [{"title": "Titel.", "text": "Satz."}]}], "de": [...]}]}
-# Zerlegt wie `changelog::parse` (Test `changes_json_script_matches_the_changelog`).
-# Aufruf: changes-json.sh <version> [CHANGELOG.md]   (Vorabversion 1.2.0-rc.1 nimmt sonst 1.2.0)
+#     "en": [{"group": "Fixed", "items": [{"title": "Title.", "text": "Sentence."}]}], "de": [...]}]}
+# Parsed like `changelog::parse` (test `changes_json_script_matches_the_changelog`).
+# Usage: changes-json.sh <version> [CHANGELOG.md]   (pre-release 1.2.0-rc.1 falls back to 1.2.0)
 set -eu
 ver="${1#v}"
 file="${2:-CHANGELOG.md}"
 awk -v ver="$ver" -v base="${ver%%-*}" '
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
-# JSON-Zeichenkette; zeichenweise statt gsub (Backslashes in gsub verhalten sich je awk anders)
+# JSON string; char by char instead of gsub (backslashes in gsub behave differently per awk)
 function q(s,   o, i, c) {
   o = ""
   for (i = 1; i <= length(s); i++) {
@@ -60,7 +60,7 @@ t ~ /^### / {
   lang = (h == "deutsch" || h == "de" || h == "german") ? "de" : "en"
   next
 }
-# Gruppe: **New** oder #### New
+# Group: **New** or #### New
 (length(t) >= 4 && t ~ /^\*\*.*\*\*$/ && index(substr(t, 3, length(t) - 4), "**") == 0) || t ~ /^#### / {
   x = (t ~ /^#### /) ? substr(t, 6) : substr(t, 3, length(t) - 4)
   x = trim(x); sub(/:+$/, "", x); x = trim(x)
@@ -77,10 +77,10 @@ t ~ /^[-*] / {
   epend = 1
   next
 }
-# eingerückte Fortsetzung des letzten Eintrags
+# indented continuation of the last entry
 t != "" && raw ~ /^[ \t]/ && epend { etext = trim(etext " " t) }
 END {
-  if (!found) { print "CHANGELOG.md: kein Abschnitt \"## " ver "\" – erst die Änderungen eintragen" > "/dev/stderr"; exit 1 }
+  if (!found) { print "CHANGELOG.md: no section \"## " ver "\" – add the changes first" > "/dev/stderr"; exit 1 }
   flush_version()
   print "\n]}"
 }' "$file"

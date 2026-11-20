@@ -1,13 +1,13 @@
-//! Zeitleiste:
-//! - kurzer Klick ins Leere setzt den Playhead (begrenzt aufs Projektende), gedrückt halten
-//!   und ziehen zieht einen Auswahlrahmen auf; Lineal und Playhead-Griff scrubben
-//! - Playhead und Clips rasten an Clipkanten (alle Spuren) und am Playhead ein
-//! - Clips ziehen: auf andere Spuren derselben Art, ins Leere darüber/darunter = neue Spur; über
-//!   einer unpassenden oder gesperrten Spur entsteht daneben eine neue (Einfüge-Linie)
-//! - Spurkopf gedrückt halten und ziehen ordnet die Spuren um; „+“ über den Spurköpfen legt eine an
-//! - Strg/Umschalt + Klick = Mehrfachauswahl, Rechtsklick-Menüs für Clip, Spur und Leerraum
-//! - Übergänge als Block auf dem Schnitt, Keyframe-Rauten, Live-Waveform beim Einsprechen
-//! - Mausrad scrollt die Spuren senkrecht, Umschalt+Rad waagerecht, Strg+Rad zoomt
+//! Timeline:
+//! - a short click into empty space sets the playhead (limited to the project end), press and hold
+//!   and drag draws a selection box; ruler and playhead handle scrub
+//! - playhead and clips snap to clip edges (all tracks) and to the playhead
+//! - dragging clips: onto other tracks of the same kind, into empty space above/below = new track; over
+//!   an unsuitable or locked track a new one is created next to it (insert line)
+//! - press and hold a track head and drag to reorder the tracks; „+“ above the track heads adds one
+//! - Ctrl/Shift + click = multi-selection, right-click menus for clip, track and empty space
+//! - transitions as a block on the cut, keyframe diamonds, live waveform during voice-over
+//! - mouse wheel scrolls the tracks vertically, Shift+wheel horizontally, Ctrl+wheel zooms
 
 use std::collections::{HashMap, HashSet};
 
@@ -26,7 +26,7 @@ const RULER_H: f32 = 22.0;
 const ROW_H: f32 = 34.0;
 const MAIN_ROW_H: f32 = 58.0;
 const AUDIO_ROW_H: f32 = 42.0;
-/// Höhe einer eingeklappten Spur
+/// Height of a collapsed track
 const COLLAPSED_H: f32 = 16.0;
 const ROW_GAP: f32 = 5.0;
 const EDGE_PX: f32 = 7.0;
@@ -38,7 +38,7 @@ const REC_ROW: usize = usize::MAX;
 enum Drag {
     None,
     Scrub,
-    /// `ids`: alle bewegten Clips mit Startzeit; `grab` = Abstand Zeiger ↔ Clipanfang
+    /// `ids`: all moved clips with start time; `grab` = distance pointer ↔ clip start
     Move {
         clip: ClipId,
         grab: f64,
@@ -48,12 +48,12 @@ enum Drag {
         clip: ClipId,
         edge: Edge,
     },
-    /// Alt+Kante zwischen zwei Clips: Schnitt verschieben
+    /// Alt+edge between two clips: move the cut
     Roll {
         left: ClipId,
         right: ClipId,
     },
-    /// Alt+Clip: Quellausschnitt verschieben (`src` = Quellbeginn beim Start, `x` = Startposition)
+    /// Alt+clip: move the source section (`src` = source start at the start, `x` = start position)
     Slip {
         clip: ClipId,
         src: f64,
@@ -63,7 +63,7 @@ enum Drag {
         origin: Pos2,
         additive: bool,
     },
-    /// Fade-Griff oder Lautstärkelinie auf einem Clip mit Ton (`value`: Sekunden bzw. dB)
+    /// Fade handle or volume line on a clip with sound (`value`: seconds or dB)
     Audio {
         clip: ClipId,
         handle: AudioHandle,
@@ -78,12 +78,12 @@ enum AudioHandle {
     Volume,
 }
 
-/// Lautstärke −60…+12 dB (Zeitleiste und Inspektor). Die Linie ist nicht linear: die oberen
-/// zwei Drittel decken −12…+12 dB ab (dort wird fein gemischt), das untere Drittel −60…−12 dB.
+/// Volume −60…+12 dB (timeline and inspector). The line is not linear: the upper
+/// two thirds cover −12…+12 dB (fine mixing happens there), the lower third −60…−12 dB.
 const VOL_MIN: f32 = -60.0;
 pub const VOL_MAX: f32 = 12.0;
 const VOL_KNEE: f32 = -12.0;
-/// dB → Anteil der Höhe (0 = unten, 1 = oben)
+/// dB → share of the height (0 = bottom, 1 = top)
 fn vol_norm(db: f32) -> f32 {
     let db = db.clamp(VOL_MIN, VOL_MAX);
     if db >= VOL_KNEE {
@@ -92,7 +92,7 @@ fn vol_norm(db: f32) -> f32 {
         (db - VOL_MIN) / (VOL_KNEE - VOL_MIN) / 3.0
     }
 }
-/// Anteil der Höhe → dB (Umkehrung von `vol_norm`)
+/// Share of the height → dB (inverse of `vol_norm`)
 fn norm_vol(n: f32) -> f32 {
     let n = n.clamp(0.0, 1.0);
     if n >= 1.0 / 3.0 {
@@ -104,14 +104,14 @@ fn norm_vol(n: f32) -> f32 {
 fn vol_y(body: Rect, db: f32) -> f32 {
     body.bottom() - 3.0 - vol_norm(db) * (body.height() - 6.0)
 }
-/// Beschriftung eines Hauptstrichs im Lineal: mm:ss, bei Schritten unter 1 s mit so vielen
-/// Nachkommastellen, wie der Schritt braucht (0,25 s → zwei). Sekunden abgeschnitten, nicht gerundet.
+/// Label of a major tick in the ruler: mm:ss, for steps below 1 s with as many
+/// decimals as the step needs (0.25 s → two). Seconds truncated, not rounded.
 fn ruler_label(t: f64, step: f64) -> String {
     let digits = if step >= 1.0 { 0 } else if (step * 10.0).fract().abs() < 1e-9 { 1 } else { 2 };
     let unit = 10i64.pow(digits);
     let n = (t.max(0.0) * unit as f64).round() as i64;
     let secs = n / unit;
-    // ab einer Stunde h:mm:ss
+    // from one hour on h:mm:ss
     let mm_ss = if secs >= 3600 {
         format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
     } else {
@@ -123,54 +123,54 @@ fn ruler_label(t: f64, step: f64) -> String {
     }
 }
 
-/// Schritte der Hauptstriche im Lineal (s): bis zu Stunden für weit herausgezoomte, lange Projekte
+/// Steps of the major ticks in the ruler (s): up to hours for far zoomed-out, long projects
 const RULER_STEPS: [f64; 22] = [
     0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 900.0, 1800.0, 3600.0, 7200.0,
     10_800.0, 21_600.0, 43_200.0, 86_400.0, 172_800.0,
 ];
 
-/// Kleinster Schritt, dessen Beschriftungen bei `pps` mindestens 70 px auseinanderliegen
+/// Smallest step whose labels are at least 70 px apart at `pps`
 fn ruler_step(pps: f32) -> f64 {
     RULER_STEPS.into_iter().find(|s| *s as f32 * pps >= 70.0).unwrap_or(RULER_STEPS[RULER_STEPS.len() - 1])
 }
 
-/// Größter Maßstab (px je Sekunde)
+/// Largest scale (px per second)
 const PPS_MAX: f32 = 400.0;
 
-/// Kleinster Maßstab bei sichtbarer Breite `width` (px) und Projektlänge `dur` (s): das ganze
-/// Projekt (leer bzw. kurz: 5 Minuten) belegt höchstens die Hälfte der Breite, rechts bleibt
-/// freier Platz. Nie enger als der frühere feste Wert von 2 px/s.
+/// Smallest scale at visible width `width` (px) and project length `dur` (s): the whole
+/// project (empty or short: 5 minutes) takes at most half the width, free space stays
+/// on the right. Never tighter than the former fixed value of 2 px/s.
 fn min_pps(dur: f64, width: f32) -> f32 {
     (0.5 * width.max(1.0) / dur.max(300.0) as f32).min(2.0)
 }
 
-/// „Ganze Zeitleiste zeigen“: (Maßstab, Bildlauf) mit 5 % Rand links und rechts
+/// „Ganze Zeitleiste zeigen“: (scale, scroll) with a 5 % margin left and right
 fn fit_all(dur: f64, width: f32, lo: f32) -> (f32, f64) {
     let d = dur.max(1.0);
     let pps = (width.max(1.0) / (d * 1.1) as f32).clamp(lo, PPS_MAX);
     (pps, -0.05 * d)
 }
 
-/// Zoom-Regler: Maßstab → Stellung 0…1 (logarithmisch zwischen `lo` und `PPS_MAX`)
+/// Zoom slider: scale → position 0…1 (logarithmic between `lo` and `PPS_MAX`)
 fn zoom_norm(pps: f32, lo: f32) -> f32 {
     ((pps.ln() - lo.ln()) / (PPS_MAX.ln() - lo.ln())).clamp(0.0, 1.0)
 }
 
-/// Zoom-Regler: Stellung 0…1 → Maßstab
+/// Zoom slider: position 0…1 → scale
 fn norm_zoom(n: f32, lo: f32) -> f32 {
     (lo.ln() + n.clamp(0.0, 1.0) * (PPS_MAX.ln() - lo.ln())).exp()
 }
 
-/// Was beim weichen Zoomen fest bleibt
+/// What stays fixed during smooth zooming
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Anchor {
-    /// Zeit `t` bleibt `x` px rechts der Spurkante (unter dem Zeiger); Bildlauf nicht unter `floor`
+    /// Time `t` stays `x` px right of the track edge (under the pointer); scroll not below `floor`
     At { t: f64, x: f32, floor: f64 },
-    /// Bildlauf gleitet von → nach
+    /// Scroll glides from → to
     Scroll(f64, f64),
 }
 
-/// Weicher Wechsel von Maßstab und Bildlauf (Zoom, „Ganze Zeitleiste zeigen“, Playhead folgen)
+/// Smooth change of scale and scroll (zoom, „Ganze Zeitleiste zeigen“, follow playhead)
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct ViewGlide {
     pps: (f32, f32),
@@ -179,7 +179,7 @@ struct ViewGlide {
 }
 
 impl ViewGlide {
-    /// (Maßstab, Bildlauf, fertig) `age` s nach dem Start; Maßstab gleitet logarithmisch
+    /// (scale, scroll, done) `age` s after the start; the scale glides logarithmically
     fn at(&self, age: f32, secs: f32) -> (f32, f64, bool) {
         let k = if secs <= 0.0 { 1.0 } else { theme::ease(age / secs) };
         let pps = if k >= 1.0 || self.pps.0 == self.pps.1 { self.pps.1 } else { (self.pps.0.ln() + (self.pps.1.ln() - self.pps.0.ln()) * k).exp() };
@@ -191,13 +191,13 @@ impl ViewGlide {
     }
 }
 
-// ---------- Bewegung der Clips und Spuren ----------
+// ---------- Movement of clips and tracks ----------
 
-/// Höchstens so viele Clips gleiten (bzw. blenden ein/aus) gleichzeitig; bei mehr springen sie
-/// sofort an ihren Platz, damit die Zeitleiste auch dann unter 8 ms je Bild bleibt.
+/// At most this many clips glide (or fade in/out) at the same time; with more they jump
+/// to their place at once, so the timeline stays below 8 ms per frame even then.
 const MAX_GLIDES: usize = 300;
 
-/// Lage eines Clips im Modell
+/// Position of a clip in the model
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct Place {
     s: f64,
@@ -205,8 +205,8 @@ struct Place {
     track: TrackId,
 }
 
-/// Gleiten eines Clips von seiner alten zur neuen Lage: Start (Beginn, Ende), senkrechter Versatz
-/// am Start (Spurwechsel, px; gleitet zu 0) und Startzeit.
+/// Glide of a clip from its old to its new position: start (begin, end), vertical offset
+/// at the start (track change, px; glides to 0) and start time.
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct ClipGlide {
     s0: f64,
@@ -216,7 +216,7 @@ struct ClipGlide {
 }
 
 impl ClipGlide {
-    /// Angezeigte Lage `age` s nach dem Start: (Beginn, Ende, Versatz); `secs` = 0 → sofort am Ziel
+    /// Displayed position `age` s after the start: (begin, end, offset); `secs` = 0 → at the target at once
     fn at(&self, to: Place, age: f32, secs: f32) -> (f64, f64, f32) {
         if secs <= 0.0 || age >= secs {
             return (to.s, to.e, 0.0);
@@ -227,7 +227,7 @@ impl ClipGlide {
     }
 }
 
-/// Was sich zwischen zwei Projektständen bewegt hat (je sortiert)
+/// What moved between two project states (each sorted)
 #[derive(Default, Debug, PartialEq)]
 struct Changes {
     moved: Vec<ClipId>,
@@ -242,10 +242,10 @@ fn places(tracks: &[Track]) -> HashMap<ClipId, Place> {
         .collect()
 }
 
-/// Bewegte, neue und gelöschte Clips. Nur der Beginn oder die Spur zählt als „bewegt“ (eine
-/// geänderte Länge bei gleichem Beginn, etwa beim Teilen, springt). Neue Clips an einer Stelle, wo
-/// vorher ein Clip derselben Spur lag (Teilen, Ersetzen), blenden nicht ein. Gar nichts, wenn
-/// es ein anderes Projekt ist (kein gemeinsamer Clip); je Art nichts über `MAX_GLIDES`.
+/// Moved, new and deleted clips. Only the begin or the track counts as "moved" (a
+/// changed length with the same begin, e.g. when splitting, jumps). New clips at a place where
+/// a clip of the same track lay before (split, replace) do not fade in. Nothing at all if
+/// it is another project (no shared clip); per kind nothing above `MAX_GLIDES`.
 fn changes(prev: &HashMap<ClipId, Place>, next: &HashMap<ClipId, Place>, skip: &HashSet<ClipId>) -> Changes {
     if prev.is_empty() || (!next.is_empty() && !next.keys().any(|k| prev.contains_key(k))) {
         return Changes::default();
@@ -274,10 +274,10 @@ fn changes(prev: &HashMap<ClipId, Place>, next: &HashMap<ClipId, Place>, skip: &
     ch
 }
 
-/// Gelöschter Clip, der mit seinem letzten Aussehen kurz ausblendet
+/// Deleted clip that fades out briefly with its last appearance
 struct GoneClip {
     clip: Clip,
-    /// Spur (ohne Clips) für Farbe/Sperre
+    /// Track (without clips) for colour/lock
     track: Track,
     s: f64,
     e: f64,
@@ -286,40 +286,40 @@ struct GoneClip {
     t0: f64,
 }
 
-/// Höhe einer Spur, die gleitet: (von, nach, Start)
+/// Height of a gliding track: (from, to, start)
 type HeightGlide = (f32, f32, f64);
 
-/// Bewegungszustand der Zeitleiste
+/// Movement state of the timeline
 #[derive(Default)]
 struct Motion {
     places: HashMap<ClipId, Place>,
     glides: HashMap<ClipId, ClipGlide>,
     born: HashMap<ClipId, f64>,
     gone: Vec<GoneClip>,
-    /// vom Nutzer selbst gezogen/getrimmt: folgen dem Zeiger, gleiten nach dem Loslassen nicht
+    /// dragged/trimmed by the user: follow the pointer, do not glide after release
     skip: HashSet<ClipId>,
-    /// Oberkante (Bildschirm) und Höhe je Spur im letzten Bild
+    /// Top edge (screen) and height per track in the last frame
     rows: HashMap<TrackId, (f32, f32)>,
-    /// Spuren im letzten Bild in Anzeigereihenfolge
+    /// Tracks in the last frame in display order
     order: Vec<TrackId>,
     heights: HashMap<TrackId, HeightGlide>,
-    /// weggefallene Spur: Platz über der Spur `anchor` (`None` = unten), schrumpft von `h` auf 0
+    /// removed track: space above track `anchor` (`None` = bottom), shrinks from `h` to 0
     spacers: Vec<(Option<TrackId>, f32, f64)>,
 }
 
 impl Motion {
-    /// Neuer Projektstand `next` (vorher `prev`); `row_top` = Oberkante je Spur in diesem Bild
+    /// New project state `next` (before `prev`); `row_top` = top edge per track in this frame
     fn update(&mut self, prev: &[Track], next: &[Track], row_top: &HashMap<TrackId, f32>, now: f64) {
         let target = places(next);
         let ch = changes(&self.places, &target, &self.skip);
         let (secs, fast) = (theme::anim(theme::MOTION), theme::anim(theme::MOTION_FAST));
         if ch == Changes::default() && !self.places.is_empty() && !target.keys().any(|k| self.places.contains_key(k)) {
-            // anderes Projekt: laufende Bewegungen verwerfen
+            // other project: discard running movements
             self.glides.clear();
             self.born.clear();
             self.gone.clear();
         }
-        // angezeigte Lage jetzt (läuft schon eine Bewegung, startet die neue dort)
+        // displayed position now (if a movement is already running, the new one starts there)
         let shown = |m: &Self, id: ClipId, p: Place| match m.glides.get(&id) {
             Some(g) => g.at(p, (now - g.t0) as f32, secs),
             None => (p.s, p.e, 0.0),
@@ -357,8 +357,8 @@ impl Motion {
     }
 }
 
-/// Angezeigte Höhe einer Spur mit Ziel `to`: neues Ziel startet am aktuellen Stand; eine neue Spur
-/// (`appear`) wächst von 0. Gibt (Zustand, Höhe) zurück.
+/// Displayed height of a track with target `to`: a new target starts at the current state; a new track
+/// (`appear`) grows from 0. Returns (state, height).
 fn height_at(state: Option<HeightGlide>, to: f32, appear: bool, now: f64, secs: f32) -> (HeightGlide, f32) {
     let cur = |g: HeightGlide| theme::glide_at(g.0, g.1, (now - g.2) as f32, secs);
     let g = match state {
@@ -370,7 +370,7 @@ fn height_at(state: Option<HeightGlide>, to: f32, appear: bool, now: f64, secs: 
     (g, cur(g))
 }
 
-/// Alpha eines ein- bzw. ausblendenden Clips `age` s nach dem Start
+/// Alpha of a clip fading in or out `age` s after the start
 fn fade_alpha(age: f32, secs: f32, appear: bool) -> f32 {
     let k = if secs <= 0.0 { 1.0 } else { theme::ease(age / secs) };
     if appear {
@@ -380,14 +380,14 @@ fn fade_alpha(age: f32, secs: f32, appear: bool) -> f32 {
     }
 }
 
-/// Zeiger greift die Lautstärkelinie nur dicht daran; auf flachen Clips (Tonspur) liegt die
-/// Linie sonst mitten im Clip und Ziehen in der Mitte verschiebt den Clip nicht mehr.
+/// The pointer grabs the volume line only close to it; on flat clips (audio track) the
+/// line otherwise lies in the middle of the clip and dragging in the middle no longer moves the clip.
 fn vol_line_hit(body: Rect, db: f32, y: f32) -> bool {
     (y - vol_y(body, db)).abs() <= (body.height() / 10.0).clamp(1.5, 4.0)
 }
-/// Text im Clipkopf (Vorbild von `clip_head_measured`): Name, Kennzeichen, Dauer. Wird es eng,
-/// fallen zuerst die Kennzeichen weg,
-/// dann wird der Name mit „…“ gekürzt; die Dauer bleibt so lange wie möglich sichtbar.
+/// Text in the clip head (model for `clip_head_measured`): name, tags, duration. When space gets tight,
+/// the tags go first,
+/// then the name is shortened with „…“; the duration stays visible as long as possible.
 #[cfg(test)]
 fn clip_head(name: &str, tags: &str, dur: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
     let sep = if dur.is_empty() { "" } else { "  " };
@@ -403,15 +403,15 @@ fn clip_head(name: &str, tags: &str, dur: &str, max_w: f32, width: impl Fn(&str)
     theme::elide(name, max_w, &width)
 }
 
-/// Text mit vorab gemessenen Zeichenbreiten: kürzt wie `theme::elide` bzw. `clip_head`, ohne je
-/// Versuch neu zu setzen. Rechnet wie egui: Unterschneidung zum vorigen Zeichen, Zeichen auf ganze
-/// Pixel gerundet, die Breite endet mit dem ungerundeten Vorschub des letzten Zeichens.
+/// Text with pre-measured glyph widths: shortens like `theme::elide` or `clip_head` without laying out
+/// anew per attempt. Computes like egui: kerning to the previous glyph, glyphs rounded to whole
+/// pixels, the width ends with the unrounded advance of the last glyph.
 #[derive(Clone, Debug, PartialEq)]
 struct Measured {
     chars: Vec<char>,
-    /// Breite der ersten k Zeichen (k = 0…n)
+    /// Width of the first k glyphs (k = 0…n)
     ends: Vec<f32>,
-    /// Breite der ersten k Zeichen mit „…“ dahinter
+    /// Width of the first k glyphs followed by „…“
     ell_at: Vec<f32>,
 }
 
@@ -440,7 +440,7 @@ impl Measured {
     fn text(&self) -> String {
         self.chars.iter().collect()
     }
-    /// Wie `theme::elide` für die ersten `n` Zeichen
+    /// Like `theme::elide` for the first `n` glyphs
     fn cut(&self, n: usize, max_w: f32) -> String {
         if self.ends[n] <= max_w {
             return self.chars[..n].iter().collect();
@@ -454,12 +454,12 @@ impl Measured {
     }
 }
 
-/// Unterschneidung je Zeichenpaar und Schrift, einmal gemessen (egui gibt sie nicht heraus):
-/// Breite von „ab“ minus gerundeter Vorschub von a minus Vorschub von b.
+/// Kerning per glyph pair and font, measured once (egui does not expose it):
+/// width of „ab“ minus rounded advance of a minus advance of b.
 #[derive(Default)]
 struct Kerning(HashMap<(u32, egui::FontFamily, char, char), f32>);
 
-/// Höchstens so viele Zeichenpaare (darüber: neu beginnen)
+/// At most this many glyph pairs (above: start over)
 const KERN_CAP: usize = 50_000;
 
 impl Kerning {
@@ -481,8 +481,8 @@ fn round_px(x: f32, ppp: f32) -> f32 {
     (x * ppp).round() / ppp
 }
 
-/// Roll-Tempo am Rand beim Ziehen: 0 im Inneren, im Randstreifen `edge` bis ±1, weiter draußen
-/// bis ±3 (negativ = zum Anfang `lo` hin).
+/// Edge scroll speed while dragging: 0 inside, in the edge strip `edge` up to ±1, further out
+/// up to ±3 (negative = towards the start `lo`).
 fn edge_speed(p: f32, lo: f32, hi: f32, edge: f32) -> f32 {
     if p < lo + edge {
         -((lo + edge - p) / edge).min(3.0)
@@ -493,23 +493,23 @@ fn edge_speed(p: f32, lo: f32, hi: f32, edge: f32) -> f32 {
     }
 }
 
-/// Wellenform eines Clips: Lage, Ausschnitt, Zoom, Lautstärke und Daten, für die das Netz gilt
+/// Waveform of a clip: position, section, zoom, volume and data the mesh applies to
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct WaveKey {
     geo: [u32; 12],
     peaks: (usize, usize),
-    /// Spur stumm: Wellenform blass (gehört zum Aussehen des Netzes)
+    /// Track muted: waveform pale (part of the mesh's appearance)
     muted: bool,
 }
 
-/// Wellenform-Netze je Clip (aus dem Zwischenspeicher geliehen) und ein Tessellierer für dieses Bild
+/// Waveform meshes per clip (borrowed from the cache) and a tessellator for this frame
 struct WaveMeshes {
     map: HashMap<ClipId, (WaveKey, std::sync::Arc<egui::Mesh>)>,
     tess: Option<egui::epaint::Tessellator>,
 }
 
 impl WaveMeshes {
-    /// Formen genau so zu einem Netz machen, wie es egui beim Zeichnen täte
+    /// Turn shapes into a mesh exactly as egui would when drawing
     fn tessellate(&mut self, ctx: &egui::Context, clip: Rect, shapes: Vec<egui::Shape>) -> std::sync::Arc<egui::Mesh> {
         let t = self.tess.get_or_insert_with(|| {
             let opts = ctx.tessellation_options(|o| *o);
@@ -525,7 +525,7 @@ impl WaveMeshes {
     }
 }
 
-/// Projektstand, für den der Zwischenspeicher gilt: Änderung am Projekt, Sprache, Skalierung
+/// Project state the cache applies to: change to the project, language, scaling
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct CacheKey {
     epoch: u64,
@@ -533,11 +533,11 @@ struct CacheKey {
     ppp: f32,
 }
 
-/// Höchstens so viele Clip-Texte im Zwischenspeicher (darüber: neu beginnen)
+/// At most this many clip texts in the cache (above: start over)
 const HEAD_CAP: usize = 20_000;
 
-/// Texte eines Clips: Kopfzeile und (Textclips) Text im Clip, gemessen; dazu der zuletzt
-/// gezeigte, fertig gesetzte Stand je Breite.
+/// Texts of a clip: head line and (text clips) text in the clip, measured; plus the last
+/// shown, laid-out state per width.
 struct Head {
     full: Measured,
     name_n: usize,
@@ -547,8 +547,8 @@ struct Head {
     body_shown: Option<(f32, std::sync::Arc<egui::Galley>)>,
 }
 
-/// Zwischenspeicher der Zeitleiste für einen Projektstand: Spuren (statt Klon je Bild),
-/// fehlende Dateien (statt Dateiprüfung je Clip und Bild), Clip-Texte (statt Setzen je Bild).
+/// Timeline cache for one project state: tracks (instead of a clone per frame),
+/// missing files (instead of a file check per clip and frame), clip texts (instead of layout per frame).
 #[derive(Default)]
 struct ViewCache {
     key: Option<CacheKey>,
@@ -559,13 +559,13 @@ struct ViewCache {
     waves: HashMap<ClipId, (WaveKey, std::sync::Arc<egui::Mesh>)>,
 }
 
-/// Fehlende Medien laut Hintergrundprüfung ([`crate::loading::Presence`]): keine Dateizugriffe je Bild
+/// Missing media per background check ([`crate::loading::Presence`]): no file access per frame
 fn missing_media(media: &[MediaRef], presence: &crate::loading::Presence) -> HashSet<MediaId> {
     media.iter().filter(|m| !presence.get(&m.path)).map(|m| m.id).collect()
 }
 
 impl ViewCache {
-    /// Auf Stand `key` bringen; `true`, wenn sich der Stand geändert hat (alles neu).
+    /// Bring up to state `key`; `true` if the state changed (everything anew).
     fn sync(&mut self, key: CacheKey, tracks: impl FnOnce() -> Vec<Track>) -> bool {
         if self.key == Some(key) {
             return false;
@@ -577,7 +577,7 @@ impl ViewCache {
         self.waves.clear();
         true
     }
-    /// Eintrag für `id` (neu mit `make`); bei voller Obergrenze wird zuerst geleert.
+    /// Entry for `id` (new with `make`); when the limit is full it is cleared first.
     fn head(&mut self, id: ClipId, make: impl FnOnce(&mut Kerning) -> Head) -> &mut Head {
         if self.heads.len() >= HEAD_CAP && !self.heads.contains_key(&id) {
             self.heads.clear();
@@ -587,8 +587,8 @@ impl ViewCache {
     }
 }
 
-/// `clip_head` über vorab gemessene Teile: `full` = Name + Kennzeichen + Abstand + Dauer,
-/// `name_n` = Zeichen des Namens, `tail` = Abstand + Dauer.
+/// `clip_head` from pre-measured parts: `full` = name + tags + gap + duration,
+/// `name_n` = glyphs of the name, `tail` = gap + duration.
 fn clip_head_measured(full: &Measured, name_n: usize, tail: &Measured, max_w: f32) -> String {
     if full.width() <= max_w {
         return full.text();
@@ -602,16 +602,16 @@ fn clip_head_measured(full: &Measured, name_n: usize, tail: &Measured, max_w: f3
 
 fn y_vol(body: Rect, y: f32) -> f32 {
     let db = norm_vol((body.bottom() - 3.0 - y) / (body.height() - 6.0).max(1.0));
-    // bei 0 dB leicht einrasten
+    // snap lightly at 0 dB
     if db.abs() < 0.8 { 0.0 } else { (db * 2.0).round() / 2.0 }
 }
 
-/// Längste erlaubte Blende: Cliplänge minus die andere Blende (Zeitleiste und Inspektor).
+/// Longest allowed fade: clip length minus the other fade (timeline and inspector).
 pub fn fade_max(duration: f64, other_fade: f64) -> f64 {
     (duration - other_fade).max(0.0)
 }
 
-/// Werkzeug in der Zeitleiste (wie in CapCut: A = Auswählen, B = Klinge)
+/// Tool in the timeline (as in CapCut: A = select, B = blade)
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Tool {
     #[default]
@@ -633,7 +633,7 @@ impl Tool {
     }
 }
 
-/// Spurarten zum Hinzufügen (Symbol, Name)
+/// Track kinds to add (icon, name)
 pub const TRACK_KINDS: [(TrackKind, &str); 5] = [
     (TrackKind::Video, "Videospur"),
     (TrackKind::Text, "Textspur"),
@@ -648,7 +648,7 @@ enum CtxTarget {
     Track(TrackId),
     Empty(Option<TrackId>),
     Transition(ClipId),
-    /// Lineal; mit Marker-ID, wenn der Rechtsklick einen Marker traf
+    /// Ruler; with marker ID if the right click hit a marker
     Ruler(Option<u64>),
 }
 
@@ -656,11 +656,11 @@ enum CtxTarget {
 enum Target {
     Same,
     Track(usize),
-    /// Neue Spur(en) neben Anzeige-Zeile (Zeile, obere Hälfte)
+    /// New track(s) next to display row (row, upper half)
     New(usize, bool),
 }
 
-/// Spurkopf gedrückt: Spur, Druckpunkt, Zeitpunkt, schon angehoben?
+/// Track head pressed: track, press point, time, already lifted?
 #[derive(Clone, Copy)]
 struct TrackDrag {
     track: TrackId,
@@ -669,14 +669,14 @@ struct TrackDrag {
     lifted: bool,
 }
 
-/// Spurkopf gedrückt gehalten: ab dieser Bewegung (px) oder Haltezeit (s) hebt sich die Spur
-/// zum Verschieben; darunter bleibt es ein Klick.
+/// Track head pressed and held: from this movement (px) or hold time (s) the track lifts
+/// for moving; below that it stays a click.
 fn track_lifted(moved: f32, held: f64) -> bool {
     moved >= 4.0 || held >= 0.15
 }
 
-/// Ziehen an einem schon ausgewählten Clip: er wird Hauptauswahl, die bisherige Hauptauswahl
-/// bleibt ausgewählt (sonst fiele sie aus der Auswahl und bliebe beim Verschieben liegen).
+/// Dragging an already selected clip: it becomes the primary selection, the previous primary selection
+/// stays selected (otherwise it would drop out of the selection and stay behind when moving).
 fn make_primary(selected: &mut Option<ClipId>, extra: &mut HashSet<ClipId>, c: ClipId) {
     if *selected == Some(c) {
         return;
@@ -687,7 +687,7 @@ fn make_primary(selected: &mut Option<ClipId>, extra: &mut HashSet<ClipId>, c: C
     extra.remove(&c);
 }
 
-/// Wie weit (px) muss senkrecht gerollt werden, damit `row` ganz in `lanes` liegt (4 px Rand)?
+/// How far (px) must it scroll vertically so that `row` lies entirely in `lanes` (4 px margin)?
 fn reveal_delta(row: Rect, lanes: Rect) -> f32 {
     if row.top() < lanes.top() + 4.0 {
         row.top() - lanes.top() - 4.0
@@ -698,12 +698,12 @@ fn reveal_delta(row: Rect, lanes: Rect) -> f32 {
     }
 }
 
-/// Zeit (s) an der Fensterstelle `x`: Spurkante `x0`, Bildlauf `scroll` (s), Maßstab `pps` (px/s)
+/// Time (s) at window position `x`: track edge `x0`, scroll `scroll` (s), scale `pps` (px/s)
 fn time_at(x: f32, x0: f32, scroll: f64, pps: f32) -> f64 {
     (((x - x0) / pps) as f64 + scroll).max(0.0)
 }
 
-/// Spurart, die ein Element aus dem Medien-Menü braucht (`None`: kein eigener Clip, z. B. Übergang).
+/// Track kind an item from the media menu needs (`None`: no clip of its own, e.g. transition).
 fn asset_kind(p: &Project, a: &DragAsset) -> Option<TrackKind> {
     match a {
         DragAsset::Media(m) => p.media(*m).map(|m| if m.kind == MediaKind::Audio { TrackKind::Audio } else { TrackKind::Video }),
@@ -716,7 +716,7 @@ fn asset_kind(p: &Project, a: &DragAsset) -> Option<TrackKind> {
     }
 }
 
-/// Anzahl der Schalter im Spurkopf (Sperren, Auge, Ton, Solo); eingeklappt keine.
+/// Number of toggles in the track head (lock, eye, sound, solo); none when collapsed.
 fn toggle_count(t: &Track, collapsed: bool) -> usize {
     if collapsed {
         return 0;
@@ -724,8 +724,8 @@ fn toggle_count(t: &Track, collapsed: bool) -> usize {
     1 + usize::from(t.kind != TrackKind::Audio) + 2 * usize::from(matches!(t.kind, TrackKind::Video | TrackKind::Audio))
 }
 
-/// Abstand des Spurnamens vom linken Rand des Spurkopfs: für alle Spurarten (auch eingeklappt)
-/// gleich – Platz für die größte Schalterzahl bleibt frei, fehlende Schalter bleiben leer.
+/// Distance of the track name from the left edge of the track head: the same for all track kinds
+/// (collapsed too) – room for the largest number of toggles stays free, missing toggles stay empty.
 fn name_column() -> f32 {
     let most = TRACK_KINDS.iter().map(|(k, _)| toggle_count(&Track::new(*k), false)).max().unwrap_or(0);
     32.0 + most as f32 * 19.0 + 4.0
@@ -738,52 +738,52 @@ pub struct TimelineState {
     drag: Drag,
     ctx: Option<CtxTarget>,
     last_click: Option<Pos2>,
-    /// Playhead im letzten Bild (Sprünge per Taste → Ansicht folgt)
+    /// Playhead in the last frame (jumps by key → view follows)
     last_playhead: Option<Time>,
     pub tool: Tool,
     track_drag: Option<TrackDrag>,
     cache: ViewCache,
-    /// laufender weicher Zoom/Bildlauf
+    /// running smooth zoom/scroll
     view_glide: Option<ViewGlide>,
-    /// sichtbare Breite der Spuren im letzten Bild (für die Zoom-Grenzen der Werkzeugleiste)
+    /// visible width of the tracks in the last frame (for the zoom limits of the toolbar)
     view_w: f32,
     motion: Motion,
-    /// neue Spur, die sichtbar gerollt wird: (Spur, Start, senkrechter Bildlauf beim Start)
+    /// new track being scrolled into view: (track, start, vertical scroll at the start)
     reveal: Option<(TrackId, f64, f32)>,
-    /// Zeit (egui) des letzten Bilds
+    /// Time (egui) of the last frame
     now: f64,
 }
 
 impl TimelineState {
-    /// Maßstab, auf den gerade gezoomt wird (Ziel einer laufenden Bewegung)
+    /// Scale being zoomed to right now (target of a running movement)
     fn target_pps(&self) -> f32 {
         self.view_glide.map_or(self.pps, |g| g.pps.1)
     }
-    /// Maßstab/Bildlauf weich ändern (Animationen aus: sofort)
+    /// Change scale/scroll smoothly (animations off: at once)
     fn glide_view(&mut self, pps: f32, anchor: Anchor, now: f64) {
         let g = ViewGlide { pps: (self.pps, pps), anchor, t0: now };
         self.view_glide = Some(g);
         self.step_view(now);
     }
-    /// Zoomen um den Punkt `x` px rechts der Spurkante
+    /// Zoom around the point `x` px right of the track edge
     fn zoom_to(&mut self, pps: f32, x: f32, now: f64) {
         let t = self.scroll + (x / self.pps) as f64;
         self.glide_view(pps, Anchor::At { t, x, floor: self.scroll.min(0.0) }, now);
     }
-    /// „Ganze Zeitleiste zeigen“: Projekt der Länge `dur` mit Rand einpassen (weich)
+    /// „Ganze Zeitleiste zeigen“: fit a project of length `dur` with margin (smoothly)
     fn show_all(&mut self, dur: f64, now: f64) {
         let (pps, scroll) = fit_all(dur, self.view_w, min_pps(dur, self.view_w));
         self.glide_view(pps, Anchor::Scroll(self.scroll, scroll), now);
     }
-    /// Bildlauf weich zu `scroll` (Maßstab bleibt)
+    /// Scroll smoothly to `scroll` (scale stays)
     fn scroll_to(&mut self, scroll: f64, now: f64) {
         self.glide_view(self.pps, Anchor::Scroll(self.scroll, scroll), now);
     }
-    /// Neue Spur weich sichtbar rollen
+    /// Scroll a new track smoothly into view
     pub(crate) fn reveal_track(&mut self, t: TrackId) {
         self.reveal = Some((t, self.now, self.vscroll));
     }
-    /// Laufende Bewegung fortschreiben; `true` = läuft noch
+    /// Advance the running movement; `true` = still running
     fn step_view(&mut self, now: f64) -> bool {
         let Some(g) = self.view_glide else {
             return false;
@@ -851,19 +851,19 @@ fn set_audio_handle(c: &mut Clip, h: AudioHandle, v: f32) {
     }
 }
 
-/// Liegt der Clip (Fläche `cr`) sichtbar in der Spurfläche `view`? Unsichtbare werden gar nicht
-/// erst gebaut – waagrecht wie senkrecht (Spuren außerhalb des Bildlaufs).
+/// Does the clip (area `cr`) lie visibly in the track area `view`? Invisible ones are not
+/// built at all – horizontally as well as vertically (tracks outside the scroll).
 fn clip_visible(cr: Rect, view: Rect) -> bool {
     cr.width() >= 1.0 && cr.right() >= view.left() && cr.left() <= view.right() && cr.bottom() >= view.top() && cr.top() <= view.bottom()
 }
 
-/// Schmaler als das (px): nur ein schlichter Balken ohne Text, Filmstreifen und Wellenform
+/// Narrower than this (px): only a plain bar without text, film strip and waveform
 const TINY_PX: f32 = 3.0;
-/// Mindestbreite eines Clips bzw. Balkens (px), damit er weit herausgezoomt sichtbar bleibt
+/// Minimum width of a clip or bar (px) so it stays visible when far zoomed out
 const BAR_MIN: f32 = 1.5;
 
-/// Schmalen Clip `r` an den laufenden Balken hängen (berührt ihn und gleiche Farbe), sonst den
-/// alten Balken zum Zeichnen zurückgeben und mit `r` neu beginnen.
+/// Attach narrow clip `r` to the running bar (touches it and same colour), otherwise return the
+/// old bar for drawing and start anew with `r`.
 fn merge_bar(bar: &mut Option<(Rect, Color32)>, r: Rect, col: Color32) -> Option<(Rect, Color32)> {
     match bar {
         Some((b, c)) if *c == col && r.left() <= b.right() + 1.0 => {
@@ -874,7 +874,7 @@ fn merge_bar(bar: &mut Option<(Rect, Color32)>, r: Rect, col: Color32) -> Option
     }
 }
 
-/// Farbe eines Clip-Balkens (wie die Clipfläche in `draw_clip`)
+/// Colour of a clip bar (like the clip area in `draw_clip`)
 fn bar_color(tr: &Track, c: &Clip) -> Color32 {
     let col = theme::clip_color(c.kind());
     if tr.hidden || (tr.muted && c.kind() == TrackKind::Audio) || c.disabled || tr.locked {
@@ -884,15 +884,15 @@ fn bar_color(tr: &Track, c: &Clip) -> Color32 {
     }
 }
 
-/// Lage der Clip-Texte: (x der Kopfzeile, Breite der Kopfzeile, Breite des Texts im Clip)
+/// Position of the clip texts: (x of the head line, width of the head line, width of the text in the clip)
 fn clip_rooms(cr: Rect, lanes_clip: Rect, missing: bool) -> (f32, f32, f32) {
     let x = cr.left().max(lanes_clip.left()) + 6.0 + if missing { 14.0 } else { 0.0 };
     let right = cr.right().min(lanes_clip.right()) - 4.0;
     (x, right - x, right - (cr.left() + 8.0))
 }
 
-/// Texte eines Clips messen (einmal je Projektstand): Kopfzeile (Name, Kennzeichen, Dauer) und
-/// bei Textclips der Text im Clip in seiner Schrift.
+/// Measure the texts of a clip (once per project state): head line (name, tags, duration) and
+/// for text clips the text in the clip in its font.
 fn make_head(ctx: &egui::Context, kern: &mut Kerning, c: &Clip, project: &Project, fam: Option<egui::FontFamily>) -> Head {
     let mut tags = String::new();
     if c.speed != 1.0 || c.fx.speed_curve.is_some() {
@@ -940,8 +940,8 @@ fn make_head(ctx: &egui::Context, kern: &mut Kerning, c: &Clip, project: &Projec
     })
 }
 
-/// Kopfzeile und Text im Clip für die Breiten `room`/`body_room`; neu gesetzt wird nur, wenn sich
-/// die Breite seit dem letzten Bild geändert hat.
+/// Head line and text in the clip for the widths `room`/`body_room`; laid out anew only if
+/// the width changed since the last frame.
 fn head_galleys(h: &mut Head, ctx: &egui::Context, room: f32, body_room: f32) -> (Option<std::sync::Arc<egui::Galley>>, Option<std::sync::Arc<egui::Galley>>) {
     let col = Color32::from_white_alpha(230);
     if h.shown.as_ref().is_none_or(|(w, _)| *w != room) {
@@ -956,19 +956,19 @@ fn head_galleys(h: &mut Head, ctx: &egui::Context, room: f32, body_room: f32) ->
             h.body_shown = Some((body_room, g));
         }
     }
-    // leere Texte gar nicht erst als Form ausgeben
+    // do not even output empty texts as a shape
     let some = |g: &std::sync::Arc<egui::Galley>| (!g.text().is_empty()).then(|| g.clone());
     (h.shown.as_ref().and_then(|s| some(&s.1)), h.body_shown.as_ref().and_then(|b| some(&b.1)))
 }
 
-/// Rechte Gruppe der Werkzeugleiste bei `room` px freier Breite: (Zoom-Regler zeigen, Zoom-Knöpfe zeigen).
-/// Schalter und Mikrofon bleiben immer.
+/// Right group of the toolbar at `room` px of free width: (show zoom slider, show zoom buttons).
+/// Toggles and microphone always stay.
 fn toolbar_room(room: f32) -> (bool, bool) {
     (room >= 300.0, room >= 210.0)
 }
 
 impl App {
-    /// Fade/Lautstärke aus der Zeitleiste übernehmen – bei Mehrfachauswahl für alle Clips mit Ton.
+    /// Apply fade/volume from the timeline – with multi-selection for all clips with sound.
     fn apply_audio_handle(&mut self, clip: ClipId, h: AudioHandle, v: f32) {
         let ids = if self.is_selected(clip) { self.selection() } else { vec![clip] };
         let ops: Vec<EditOp> = ids
@@ -1023,7 +1023,7 @@ impl App {
                 self.redo();
             }
             ui.add(egui::Separator::default().vertical().spacing(10.0));
-            // Werkzeug wählen (Auswählen, Teilen, alles links/rechts)
+            // choose tool (select, split, everything left/right)
             let cur = self.timeline.tool;
             ui.menu_button(
                 RichText::new(format!("{} {}", cur.icon(), icon::CARET_DOWN)).size(14.0) /* Icon-Glyphen im Werkzeugknopf */,
@@ -1044,7 +1044,7 @@ impl App {
             )
             .response
             .on_hover_text(crate::tr("Werkzeug"));
-            // nur das Symbol; der Name steht im Tooltip
+            // only the icon; the name is in the tooltip
             let tools = ui.menu_button(egui::RichText::new(icon::LIGHTNING).size(14.0), |ui| self.tools_menu(ui)).response;
             self.tour_rects.insert("tools", tools.rect);
             tools.on_hover_text(format!("{}: {}", crate::tr("Schnellaktionen"), crate::tr("Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …")));
@@ -1088,7 +1088,7 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 1.0;
                 ui.add_space(4.0);
-                // schmale Zeitleiste: sonst liegen diese Knöpfe über denen der linken Gruppe
+                // narrow timeline: otherwise these buttons lie over those of the left group
                 let (slider, zoom) = toolbar_room(ui.available_width());
                 let now = ui.input(|i| i.time);
                 let dur = self.project.duration().as_secs_f64();
@@ -1141,7 +1141,7 @@ impl App {
                 }
                 ui.add(egui::Separator::default().vertical().spacing(10.0));
                 let rec = self.voiceover.recorder.is_some();
-                // Eigener Knopf statt icon_button: bei laufender Aufnahme rot (icon_button kennt nur aktiv = Akzent)
+                // own button instead of icon_button: red while recording (icon_button only knows active = accent)
                 let mic = ui.add(
                     egui::Button::new(RichText::new(icon::MICROPHONE).size(14.0).color(if rec { theme::DANGER } else if self.voiceover.open { theme::ACCENT() } else { theme::TEXT_DIM() }))
                         .fill(if self.voiceover.open || rec { theme::overlay(22) } else { Color32::TRANSPARENT })
@@ -1182,7 +1182,7 @@ impl App {
             )
         });
 
-        // ---------- Mausrad ----------
+        // ---------- Mouse wheel ----------
         let ruler = Rect::from_min_max(
             pos2(x0, rect.top()),
             pos2(rect.right(), rect.top() + RULER_H),
@@ -1192,8 +1192,8 @@ impl App {
         if recording.is_some() {
             order.push(REC_ROW);
         }
-        // Spurhöhen gleiten (ein-/ausklappen, Spurhöhe, neue Spur wächst aus 0); nicht beim ersten
-        // Bild und nicht, wenn ein anderes Projekt geladen wurde
+        // track heights glide (collapse/expand, track height, a new track grows from 0); not on the first
+        // frame and not when another project was loaded
         let secs = theme::anim(theme::MOTION);
         let known: HashSet<TrackId> = self.timeline.motion.order.iter().copied().collect();
         let animate_tracks = !known.is_empty() && tracks.iter().any(|t| known.contains(&t.id));
@@ -1214,7 +1214,7 @@ impl App {
             })
             .collect();
         self.timeline.motion.heights = new_h;
-        // weggefallene Spuren: ihr Platz schrumpft (über der nächsten noch vorhandenen Spur)
+        // removed tracks: their space shrinks (above the next still existing track)
         if animate_tracks && secs > 0.0 {
             let m = &mut self.timeline.motion;
             for (i, id) in m.order.iter().enumerate() {
@@ -1243,10 +1243,10 @@ impl App {
                     i.pointer.hover_pos(),
                 )
             });
-            // Bildlauf links höchstens bis 0:00 – oder bis zum Rand, den „Ganze Zeitleiste zeigen“ ließ
+            // scroll left at most to 0:00 – or to the margin left by „Ganze Zeitleiste zeigen“
             let floor = self.timeline.scroll.min(0.0);
             if ctrl && dy != 0.0 {
-                // Zoom gleitet um die Zeigerposition; weitere Rad-Schritte setzen das Ziel fort
+                // zoom glides around the pointer position; further wheel steps continue the target
                 let lo = min_pps(total_t, self.timeline.view_w);
                 let to = (self.timeline.target_pps() * (1.0 + dy * 0.0015)).clamp(lo, PPS_MAX);
                 let ax = pointer.map_or(0.0, |p| (p.x - x0).max(0.0));
@@ -1267,10 +1267,10 @@ impl App {
                 }
             }
         }
-        // Beim Ziehen (Playhead, Clips, Kanten) an den Rand: Zeitleiste rollt in diese Richtung,
-        // je näher am Rand, desto schneller – auch wenn die Maus dort stillsteht.
-        // Dasselbe für Dateien, die von außen (Explorer) über der Zeitleiste schweben: dort gibt es
-        // keine Mausereignisse, die Stelle kommt vom Betriebssystem (`drops.pos`).
+        // dragging (playhead, clips, edges) to the edge: the timeline scrolls in that direction,
+        // the closer to the edge, the faster – even when the mouse stands still there.
+        // The same for files from outside (Explorer) hovering over the timeline: there are
+        // no mouse events there, the position comes from the operating system (`drops.pos`).
         let drag_p = (resp.dragged() && !matches!(self.timeline.drag, Drag::None | Drag::Slip { .. }))
             .then(|| ui.input(|i| i.pointer.interact_pos()))
             .flatten();
@@ -1286,15 +1286,15 @@ impl App {
                     (self.timeline.scroll + v as f64 * visible * 0.8 * dt as f64).max(self.timeline.scroll.min(0.0));
                 ui.ctx().request_repaint();
             }
-            // Dateien von außen rollen auch die Spuren (wie das Umsortieren am Spurkopf)
+            // files from outside scroll the tracks too (like reordering at the track head)
             let vy = if drag_p.is_none() { edge_speed(p.y, lanes.top(), lanes.bottom(), 28.0) } else { 0.0 };
             if vy != 0.0 {
                 self.timeline.vscroll = (self.timeline.vscroll + vy * 500.0 * dt).clamp(0.0, overflow);
                 ui.ctx().request_repaint();
             }
         }
-        // Springt der Playhead (Pos1/Ende, Marker, Schnitte …) aus dem sichtbaren Bereich,
-        // rollt die Ansicht hinterher.
+        // if the playhead jumps (Home/End, markers, cuts …) out of the visible range,
+        // the view scrolls after it.
         if !resp.dragged() && !self.playing && self.timeline.last_playhead != Some(self.playhead) {
             let t = self.playhead.as_secs_f64();
             let visible = ((lanes.right() - x0) / pps) as f64;
@@ -1309,7 +1309,7 @@ impl App {
         let tx = |t: f64| x0 + ((t - scroll) as f32) * pps;
         let xt = |x: f32| time_at(x, x0, scroll, pps);
 
-        // ---------- Zeilen ----------
+        // ---------- Rows ----------
         let mut y = if overflow > 0.0 {
             lanes.top() + 8.0 - self.timeline.vscroll
         } else {
@@ -1326,14 +1326,14 @@ impl App {
             });
             y += heights[k] + ROW_GAP;
         }
-        // Projektstand neu: bewegte Clips gleiten von ihrer angezeigten Lage, neue blenden ein,
-        // gelöschte blenden mit ihrem letzten Aussehen aus
+        // new project state: moved clips glide from their displayed position, new ones fade in,
+        // deleted ones fade out with their last appearance
         if changed {
             let row_top: HashMap<TrackId, f32> =
                 rows.iter().filter(|r| r.track != REC_ROW).map(|r| (tracks[r.track].id, r.rect.top())).collect();
             self.timeline.motion.update(&old_tracks, &tracks, &row_top, now_s);
         }
-        // neue Spur sichtbar machen: weich rollen, solange sie (aus 0 wachsend) noch nicht ganz zu sehen ist
+        // make a new track visible: scroll smoothly while it (growing from 0) is not yet fully visible
         if let Some((id, t0, from)) = self.timeline.reveal {
             let age = (now_s - t0) as f32;
             match rows.iter().find(|r| r.track != REC_ROW && tracks[r.track].id == id) {
@@ -1346,7 +1346,7 @@ impl App {
                 _ => self.timeline.reveal = None,
             }
         }
-        // Zeile (Anzeige-Index in `rows`) unter dem Zeiger; der Spalt zwischen zwei Zeilen zählt halb dazu
+        // row (display index in `rows`) under the pointer; the gap between two rows counts half
         let row_idx_at = |p: Pos2| {
             rows.iter().position(|r| {
                 p.y >= r.rect.top() - ROW_GAP / 2.0 && p.y < r.rect.bottom() + ROW_GAP / 2.0 && r.track != REC_ROW
@@ -1354,14 +1354,14 @@ impl App {
         };
         let row_at = |p: Pos2| row_idx_at(p).map(|k| rows[k].track);
         let n_rows = rows.iter().filter(|r| r.track != REC_ROW).count();
-        // senkrechte Lage der Lücke `g` (über Zeile g) – dort entsteht eine neue Spur
+        // vertical position of gap `g` (above row g) – a new track is created there
         let gap_y = |g: usize| match g {
             0 => rows.first().map_or(lanes.top() + 4.0, |r| r.rect.top() - ROW_GAP / 2.0),
             g => rows[g.min(n_rows) - 1].rect.bottom() + ROW_GAP / 2.0,
         };
         let mut insert_lines: Vec<f32> = Vec::new();
 
-        // ---------- Spur am Kopf ziehen ----------
+        // ---------- Drag a track by its head ----------
         let (primary_down, now, latest, esc) = ui.input(|i| {
             (i.pointer.primary_down(), i.time, i.pointer.latest_pos(), i.key_pressed(egui::Key::Escape))
         });
@@ -1369,7 +1369,7 @@ impl App {
             let head = latest.filter(|p| p.x < x0 - 4.0 && p.y >= lanes.top());
             if let Some((p, k)) = head.and_then(|p| Some((p, row_idx_at(p)?))) {
                 let tr = &tracks[rows[k].track];
-                // nicht auf den Schaltern (Sperren, Auge …): die bleiben Knöpfe
+                // not on the toggles (lock, eye …): they stay buttons
                 let n = toggle_count(tr, tr.collapsed);
                 let on_toggle = n > 0 && p.x >= rect.left() + 23.0 && p.x < rect.left() + 32.0 + n as f32 * 19.0;
                 if !on_toggle && !tr.main {
@@ -1378,7 +1378,7 @@ impl App {
             }
         }
         let mut lifted_row: Option<usize> = None;
-        // gedrückt, noch nicht angehoben: sofort sichtbar (Druck-Zustand im selben Bild)
+        // pressed, not yet lifted: visible at once (pressed state in the same frame)
         let mut pressed_row: Option<usize> = None;
         if let Some(mut d) = self.timeline.track_drag.take() {
             let from = rows.iter().position(|r| r.track != REC_ROW && tracks[r.track].id == d.track);
@@ -1398,7 +1398,7 @@ impl App {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                         lifted_row = Some(from);
                         insert_lines.extend(target.map(gap_y));
-                        // am oberen/unteren Rand rollen die Spuren mit
+                        // at the top/bottom edge the tracks scroll along
                         let v = edge_speed(p.y, lanes.top(), lanes.bottom(), 28.0);
                         let dt = ui.input(|i| i.stable_dt).clamp(0.001, 0.05);
                         self.timeline.vscroll = (self.timeline.vscroll + v * 500.0 * dt).clamp(0.0, overflow);
@@ -1420,7 +1420,7 @@ impl App {
             lane_paint.rect_filled(lane, theme::R_CTRL, fill);
         }
 
-        // ---------- Treffer ----------
+        // ---------- Hits ----------
         let hit = |p: Pos2| -> Option<(ClipId, Option<Edge>, usize)> {
             if p.x < x0 || !lanes.contains(p) {
                 return None;
@@ -1446,7 +1446,7 @@ impl App {
             }
             None
         };
-        // Übergangsblöcke
+        // transition blocks
         let mut tblocks: Vec<(ClipId, Rect)> = Vec::new();
         for row in rows.iter().filter(|r| r.track != REC_ROW) {
             let tr = &tracks[row.track];
@@ -1502,7 +1502,7 @@ impl App {
         let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
         let hovered_clip = resp.hover_pos().and_then(|p| hit(p).map(|h| h.0));
         let head_rect = Rect::from_center_size(pos2(tx(ph), rect.top() + 9.0), vec2(14.0, 18.0));
-        // Clips mit Ton: Fade-Griffe oben an den Ecken, Lautstärkelinie quer über den Clip
+        // clips with sound: fade handles at the top corners, volume line across the clip
         let audio_media: HashSet<MediaId> = self
             .project
             .media
@@ -1525,7 +1525,7 @@ impl App {
             None
         };
         let audio_hit = |p: Pos2| -> Option<(ClipId, AudioHandle, f32)> {
-            // Fade-Griffe sitzen in den oberen Ecken und gehen dort dem Trimmen an der Kante vor
+            // fade handles sit in the top corners and take precedence over trimming at the edge there
             let (id, edge, _) = hit(p)?;
             let (body, c) = clip_body(id)?;
             if !has_audio(&c) || body.width() < 24.0 || body.height() < 14.0 {
@@ -1559,14 +1559,14 @@ impl App {
             }
         }
 
-        // Klick in die Zeitleiste beendet Texteingaben (sonst landet Entf im Textfeld)
+        // a click in the timeline ends text input (otherwise Del lands in the text field)
         if resp.clicked() || resp.secondary_clicked() || resp.drag_started() {
             crate::app::release_text_focus(ui.ctx());
         }
-        // ---------- Klicks ----------
+        // ---------- Clicks ----------
         let mods = ui.input(|i| i.modifiers);
         let multi = mods.command || mods.shift;
-        // Marker im Lineal: Klick springt hin, Doppelklick öffnet den Editor
+        // marker in the ruler: click jumps there, double click opens the editor
         let markers = self.project.timeline.markers.clone();
         let marker_at = |p: Pos2| -> Option<(u64, Time)> {
             if p.y >= ruler.bottom() || p.x < x0 {
@@ -1598,7 +1598,7 @@ impl App {
                 } else {
                     egui::CursorIcon::PointingHand
                 });
-                // Vorschau: Schnittlinie bzw. Grenze der Auswahl
+                // preview: cut line or selection boundary
                 let line_col = if tool == Tool::Blade { theme::ACCENT() } else { theme::overlay(160) };
                 let (top, bottom) = match hit(p).and_then(|h| clip_body(h.0)) {
                     Some((b, _)) if tool == Tool::Blade => (b.top() - BAND_H, b.bottom()),
@@ -1651,7 +1651,7 @@ impl App {
                     }
                     self.expand_groups();
                 } else if p.x >= x0 {
-                    // Kurzer Klick ins Leere: Playhead dorthin (höchstens Projektende)
+                    // short click into empty space: playhead there (at most project end)
                     if !multi {
                         self.select_only(None);
                     }
@@ -1660,7 +1660,7 @@ impl App {
                 }
             }
         }
-        // Doppelklick nur, wenn beide Klicks dieselbe Stelle treffen (egui prüft nur die Zeit)
+        // double click only if both clicks hit the same place (egui only checks the time)
         let same_spot = resp
             .interact_pointer_pos()
             .zip(self.timeline.last_click)
@@ -1680,7 +1680,7 @@ impl App {
         if resp.secondary_clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
                 self.timeline.ctx = Some(if p.y < ruler.bottom() && p.x >= x0 {
-                    // Lineal: Playhead an die Stelle (bzw. auf den Marker), das Menü wirkt dort
+                    // ruler: playhead to the place (or onto the marker), the menu acts there
                     let m = marker_at(p);
                     let at = m.map(|m| m.1).unwrap_or(Time::from_secs_f64(xt(p.x)));
                     self.set_playhead_ui(at, false);
@@ -1706,13 +1706,13 @@ impl App {
         if resp.clicked() {
             self.timeline.last_click = resp.interact_pointer_pos();
         }
-        // Klick in eine Spur (Fläche, Clip, Spurkopf; auch Rechtsklick): dorthin fügt Strg+V ein
+        // click in a track (area, clip, track head; also right click): Ctrl+V pastes there
         if resp.clicked() || resp.secondary_clicked() {
             if let Some(t) = resp.interact_pointer_pos().filter(|p| p.y >= ruler.bottom()).and_then(row_at) {
                 self.paste_track = Some(tracks[t].id);
             }
         }
-        // ---------- Ziehen beginnen ----------
+        // ---------- Start dragging ----------
         if resp.drag_started_by(egui::PointerButton::Primary) {
             if let Some(p) = ui
                 .input(|i| i.pointer.press_origin())
@@ -1730,7 +1730,7 @@ impl App {
                     Drag::Audio { clip, handle, value }
                 } else {
                     let alt = ui.input(|i| i.modifiers.alt);
-                    // Nachbar, der an dieser Kante direkt anschließt
+                    // neighbour directly adjoining at this edge
                     let neighbor = |c: ClipId, edge: Edge| -> Option<(ClipId, ClipId)> {
                         let (t, x) = self.project.find_clip(c)?;
                         match edge {
@@ -1815,12 +1815,12 @@ impl App {
             }
         }
 
-        // ---------- Ziehen ----------
-        // Geist eines gezogenen Clips: (Clip, Beginn, Ende, Zeilenfläche, falls nicht die eigene)
+        // ---------- Dragging ----------
+        // ghost of a dragged clip: (clip, begin, end, row area if not its own)
         let mut ghost: Vec<(ClipId, f64, f64, Option<Rect>)> = Vec::new();
         let mut snap_line: Option<f64> = None;
         let dragging = resp.dragged() || resp.drag_stopped();
-        // Esc bricht das Verschieben von Clips ab (nichts wird geändert)
+        // Esc cancels moving clips (nothing is changed)
         if esc && matches!(self.timeline.drag, Drag::Move { .. }) {
             self.timeline.drag = Drag::None;
         }
@@ -1871,8 +1871,8 @@ impl App {
                     .max(0.0);
                     let orig = ids.iter().find(|x| x.0 == clip).map(|x| x.1).unwrap_or(0.0);
                     let delta = s - orig;
-                    // Ziel: andere Spur gleicher Art; ins Leere darüber/darunter oder über einer
-                    // unpassenden/gesperrten Spur = neue Spur(en) daneben (je Clip-Art eine)
+                    // target: another track of the same kind; into empty space above/below or over an
+                    // unsuitable/locked track = new track(s) next to it (one per clip kind)
                     let mut target = Target::Same;
                     if lanes.contains(p) && n_rows > 0 {
                         if p.y < rows[0].rect.top() - ROW_GAP && kind != TrackKind::Audio {
@@ -1912,14 +1912,14 @@ impl App {
                         let fr = |t: f64| Time::from_secs_f64(t).snap_to_frame(fps);
                         let ops: Vec<EditOp> = match target {
                             Target::New(k, upper) => {
-                                // neue Spur(en) + Verschieben = ein Verlaufsschritt
+                                // new track(s) + move = one history step
                                 let moves: Vec<(ClipId, Time)> =
                                     ids.iter().map(|(id, st)| (*id, fr((st + delta).max(0.0)))).collect();
                                 let r = move_to_new_tracks(&mut self.doc.lock().unwrap_or_else(|e| e.into_inner()), k, upper, &moves);
                                 match r {
                                     Ok(()) => {
                                         self.sync_project();
-                                        // neue Spur mit dem Clip weich in den sichtbaren Bereich rollen
+                                        // scroll the new track with the clip smoothly into the visible range
                                         let t = self.project.find_clip(clip).map(|(t, _)| t.id);
                                         self.timeline.reveal = t.map(|t| (t, now_s, self.timeline.vscroll));
                                     }
@@ -1959,7 +1959,7 @@ impl App {
                         .inspect(|s| snap_line = Some(*s))
                         .unwrap_or(raw);
                     let (cs, ce) = (c.start.as_secs_f64(), c.end().as_secs_f64());
-                    // Videos/Bilder: Grenzen der Quelle (Audio darf länger werden)
+                    // videos/images: limits of the source (audio may get longer)
                     let (min_s, max_e) = match &c.content {
                         ClipContent::Media {
                             media,
@@ -2027,7 +2027,7 @@ impl App {
                     let Some((_, c)) = self.project.find_clip(clip) else {
                         return;
                     };
-                    // nach rechts ziehen = früherer Ausschnitt (wie in anderen Schnittprogrammen)
+                    // dragging right = earlier section (as in other editing programs)
                     let lim = crate::edit_tools::source_limit(self, c).unwrap_or(0.0);
                     let v = (src - ((p.x - x) / pps) as f64 * c.speed as f64).clamp(0.0, lim);
                     let cx = tx(c.start.as_secs_f64());
@@ -2101,12 +2101,12 @@ impl App {
             }
         }
 
-        // ---------- Asset-Ablage (Hervorhebung) ----------
+        // ---------- Asset drop (highlight) ----------
         let drop_hover = resp.dnd_hover_payload::<DragAsset>();
         let mut drop_clip: Option<ClipId> = None;
         let mut drop_cut: Option<ClipId> = None;
-        // Spur beim Ablegen: dieselbe Regel wie für Dateien von außen ([`crate::file_drop::lane_at`]).
-        // Effekt/Filter auf einem Clip mit Bild wirkt dagegen auf diesen Clip.
+        // track on drop: the same rule as for files from outside ([`crate::file_drop::lane_at`]).
+        // An effect/filter on a clip with picture acts on that clip instead.
         let drows: Vec<(usize, Rect)> = rows.iter().filter(|r| r.track != REC_ROW).map(|r| (r.track, r.rect)).collect();
         let asset_lane = |a: &DragAsset, k: Option<TrackKind>, p: Pos2| -> crate::file_drop::Lane {
             let on_visual = hit(p).and_then(|h| tracks[h.2].clips.iter().find(|c| c.id == h.0)).is_some_and(|c| {
@@ -2153,10 +2153,10 @@ impl App {
             }
         }
 
-        // ---------- Dateien von außen (Explorer): Ziel und Platzhalter ----------
+        // ---------- Files from outside (Explorer): target and placeholder ----------
         self.drops.timeline_rect = Some(rect);
         let image_len = Time::from_secs_f64(self.settings.image_duration as f64);
-        // (Balken, Name, Platzhalter nach dem Ablegen?)
+        // (bar, name, placeholder after dropping?)
         let mut file_ghosts: Vec<(Rect, String, bool)> = Vec::new();
         let mut place_ghosts = |items: &[crate::file_drop::Item], t: &crate::file_drop::Target, pending: bool| {
             let lane_rect = |l: &crate::file_drop::Lane, audio: bool| match l {
@@ -2206,7 +2206,7 @@ impl App {
         // ---------- Ruler ----------
         let step = ruler_step(pps);
         let minor = step / 5.0;
-        // Zeit aus dem Strichindex statt aufsummiert: keine Rundungsfehler bei vielen Strichen
+        // time from the tick index instead of summed up: no rounding errors with many ticks
         let mut k = (scroll / minor).floor() as i64;
         let mut t = k as f64 * minor;
         let rp = painter.with_clip_rect(Rect::from_min_max(
@@ -2215,7 +2215,7 @@ impl App {
         ));
         while tx(t) < rect.right() {
             let x = tx(t);
-            // vor 0:00 (Rand von „Ganze Zeitleiste zeigen“) keine Striche
+            // no ticks before 0:00 (margin of „Ganze Zeitleiste zeigen“)
             if x >= x0 - 1.0 && t > -1e-9 {
                 let major = k.rem_euclid(5) == 0;
                 let hh = if major { 7.0 } else { 3.0 };
@@ -2251,7 +2251,7 @@ impl App {
             ],
             Stroke::new(1.0_f32, theme::BORDER()),
         );
-        // In/Out-Bereich
+        // in/out range
         if self.range_in.is_some() || self.range_out.is_some() {
             let a = self.range_in.map(|t| tx(t.as_secs_f64())).unwrap_or(x0);
             let b = self
@@ -2263,7 +2263,7 @@ impl App {
                 pos2(b.min(rect.right()), ruler.bottom()),
             );
             if r.width() > 0.0 {
-                // dezentes Band unten im Lineal (Schleife: Akzent)
+                // subtle band at the bottom of the ruler (loop: accent)
                 let band = Rect::from_min_max(pos2(r.left(), ruler.bottom() - 5.0), r.max);
                 rp.rect_filled(
                     band,
@@ -2296,14 +2296,14 @@ impl App {
                             pos2(x, ruler.bottom() - 2.0),
                             egui::Align2::CENTER_BOTTOM,
                             glyph,
-                            egui::FontId::monospace(11.0), // Glyphe der In-/Out-Marke am Lineal
+                            egui::FontId::monospace(11.0), // glyph of the in/out mark on the ruler
                             theme::ACCENT(),
                         );
                     }
                 }
             }
         }
-        // Marker
+        // markers
         for m in self.project.timeline.markers.clone() {
             let x = tx(m.at.as_secs_f64());
             if x < x0 - 6.0 || x > rect.right() + 6.0 {
@@ -2382,7 +2382,7 @@ impl App {
         let fast = theme::anim(theme::MOTION_FAST);
         let glides = std::mem::take(&mut self.timeline.motion.glides);
         let born = std::mem::take(&mut self.timeline.motion.born);
-        // gelöschte Clips zuerst (unter den übrigen), mit ihrem letzten Aussehen ausblendend
+        // deleted clips first (below the others), fading out with their last appearance
         let gone = std::mem::take(&mut self.timeline.motion.gone);
         for g in &gone {
             let top = rows
@@ -2402,13 +2402,13 @@ impl App {
         }
         for row in rows.iter().filter(|r| r.track != REC_ROW) {
             let tr = &tracks[row.track];
-            // weit herausgezoomt: sehr schmale Clips als schlichte Balken, Nachbarn verschmolzen
+            // far zoomed out: very narrow clips as plain bars, neighbours merged
             let mut bar: Option<(Rect, Color32)> = None;
             for c0 in &tr.clips {
                 let (mut s, mut e) = (c0.start.as_secs_f64(), c0.end().as_secs_f64());
                 let mut r = row.rect;
                 let mut is_ghost = false;
-                // gleitet noch: angezeigte Lage (Treffer-Tests bleiben an der Lage im Modell)
+                // still gliding: displayed position (hit tests stay at the position in the model)
                 if let Some(g) = glides.get(&c0.id) {
                     let (gs, ge, dy) = g.at(Place { s, e, track: tr.id }, (now_s - g.t0) as f32, secs);
                     (s, e, r) = (gs, ge, r.translate(vec2(0.0, dy)));
@@ -2442,9 +2442,9 @@ impl App {
                 let missing = matches!(&c0.content, ClipContent::Media { media, .. } if self.timeline.cache.missing.contains(media));
                 let rooms = clip_rooms(cr, lanes_clip, missing);
                 let ctx = ui.ctx();
-                // Texte: laufende Inspektor-Bearbeitung frisch, sonst aus dem Zwischenspeicher
+                // texts: running inspector edit fresh, otherwise from the cache
                 let labels = {
-                    // wie `clip_ref`, nur ohne `self` ganz zu leihen
+                    // like `clip_ref`, just without borrowing all of `self`
                     let shown = match &self.live {
                         Some(l) if live => l,
                         _ => c0,
@@ -2474,7 +2474,7 @@ impl App {
                     _ => None,
                 };
                 let w = (!live && matches!(c, std::borrow::Cow::Borrowed(_))).then_some(&mut waves);
-                // neu: blendet ein
+                // new: fades in
                 let faded;
                 let pc = match born.get(&c0.id) {
                     Some(t0) => {
@@ -2581,7 +2581,7 @@ impl App {
                             );
                             p.rect_filled(g, 2.0, theme::ACCENT());
                         }
-                        // Keyframes
+                        // keyframes
                         for kt in c.keyframes.times() {
                             let kx = tx(s + kt.as_secs_f64());
                             if kx >= cr.left() && kx <= cr.right() {
@@ -2607,7 +2607,7 @@ impl App {
             }
         }
         self.timeline.cache.waves = waves.map;
-        // abgelaufene Bewegungen entfernen; solange etwas läuft, weiter zeichnen
+        // remove finished movements; keep drawing while something runs
         let m = &mut self.timeline.motion;
         m.glides = glides;
         m.glides.retain(|_, g| ((now_s - g.t0) as f32) < secs);
@@ -2622,7 +2622,7 @@ impl App {
         }
         m.rows = rows.iter().filter(|r| r.track != REC_ROW).map(|r| (tracks[r.track].id, (r.rect.top(), r.rect.height()))).collect();
         m.order = rows.iter().filter(|r| r.track != REC_ROW).map(|r| tracks[r.track].id).collect();
-        // Übergänge
+        // transitions
         for (cid, r) in &tblocks {
             let sel = self.selected_transition == Some(*cid);
             let hov = pointer.is_some_and(|pp| r.contains(pp));
@@ -2647,7 +2647,7 @@ impl App {
                 r.center(),
                 egui::Align2::CENTER_CENTER,
                 icon::INTERSECT,
-                egui::FontId::proportional(11.0), // Icon-Glyphe im Übergangsblock
+                egui::FontId::proportional(11.0), // icon glyph in the transition block
                 if sel { theme::ACCENT_INK() } else { theme::TEXT() },
             );
         }
@@ -2668,7 +2668,7 @@ impl App {
                 }
             }
         }
-        // Aufnahme läuft: wachsender Clip mit Live-Waveform
+        // recording runs: growing clip with live waveform
         if let (Some((start, elapsed, peaks)), Some(row)) =
             (&recording, rows.iter().find(|r| r.track == REC_ROW))
         {
@@ -2708,7 +2708,7 @@ impl App {
             }
         }
 
-        // ---------- Spurköpfe (über allem, damit verschobene Clips darunter laufen) ----------
+        // ---------- Track heads (above everything, so moved clips run beneath) ----------
         let head_bg = Rect::from_min_max(
             pos2(rect.left(), lanes.top()),
             pos2(x0 - 4.0, rect.bottom()),
@@ -2725,7 +2725,7 @@ impl App {
                     head.left_center() + vec2(8.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     icon::MICROPHONE,
-                    egui::FontId::proportional(13.0), // Icon-Glyphe im Spurkopf
+                    egui::FontId::proportional(13.0), // icon glyph in the track head
                     theme::DANGER,
                 );
                 continue;
@@ -2742,7 +2742,7 @@ impl App {
                 head.left_center() + vec2(9.0, 0.0),
                 egui::Align2::LEFT_CENTER,
                 theme::track_icon(tr.kind),
-                egui::FontId::proportional(13.0), // Icon-Glyphe im Spurkopf
+                egui::FontId::proportional(13.0), // icon glyph in the track head
                 if tr.main {
                     theme::TEXT()
                 } else {
@@ -2791,11 +2791,11 @@ impl App {
                     if solo { "Solo aufheben" } else { "Solo (nur diese Spur hören)" },
                 ));
             }
-            // eingeklappt: nur Symbol und Name, die Schalter hätten keinen Platz
+            // collapsed: only icon and name, the toggles would have no room
             if tr.collapsed {
                 toggles.clear();
             }
-            // Spurname (eigener Name oder Art + Nummer)
+            // track name (own name or kind + number)
             let own = tr.name.as_deref().map(crate::captions::shown_track_name);
             let name = own.unwrap_or_else(|| {
                 let n = tracks
@@ -2844,7 +2844,7 @@ impl App {
                     c,
                     egui::Align2::CENTER_CENTER,
                     crate::tr(*glyph),
-                    egui::FontId::proportional(12.0), // Icon-Glyphe der Spurkopf-Schalter
+                    egui::FontId::proportional(12.0), // icon glyph of the track head toggles
                     if *on {
                         theme::ACCENT()
                     } else {
@@ -2874,12 +2874,12 @@ impl App {
                 }
             }
         }
-        // Angehobene Spur und Einfüge-Linien (über die ganze Breite, auch über die Spurköpfe)
+        // lifted track and insert lines (across the whole width, also over the track heads)
         let lp = painter.with_clip_rect(lanes);
         if let Some(r) = pressed_row.map(|k| rows[k].rect) {
             lp.rect_filled(r, theme::R_CTRL, theme::overlay(18));
         }
-        // angehobene Spur: Fläche und Rahmen blenden schnell ein, die Zeile hebt sich um 2 px
+        // lifted track: area and frame fade in quickly, the row lifts by 2 px
         let lift = theme::fade(ui.ctx(), ui.id().with("track-lift"), lifted_row.is_some(), theme::MOTION_FAST);
         if let Some(r) = lifted_row.map(|k| rows[k].rect.translate(vec2(0.0, -2.0 * lift))) {
             lp.rect_filled(r.translate(vec2(0.0, 3.0)), theme::R_CTRL, Color32::from_black_alpha((60.0 * lift) as u8));
@@ -2890,7 +2890,7 @@ impl App {
             lp.line_segment([pos2(rect.left() + 2.0, *y), pos2(rect.right() - 2.0, *y)], Stroke::new(2.0_f32, theme::ACCENT()));
             lp.circle_filled(pos2(rect.left() + 4.0, *y), 3.5, theme::ACCENT());
         }
-        // Dateien von außen: Geisterbalken beim Ziehen, Platzhalter mit Lauflinie bis zur Prüfung
+        // files from outside: ghost bar while dragging, placeholder with running line until the check
         let gp = painter.with_clip_rect(Rect::from_min_max(pos2(x0, lanes.top()), rect.max));
         for (r, name, pending) in &file_ghosts {
             gp.rect_filled(*r, theme::R_CTRL, theme::ACCENT().gamma_multiply(if *pending { 0.35 } else { 0.22 }));
@@ -2905,7 +2905,7 @@ impl App {
                 tp.line_segment([pos2(a, r.bottom() - 2.0), pos2(b, r.bottom() - 2.0)], Stroke::new(2.0_f32, theme::ACCENT()));
             }
         }
-        // „+“ über den Spurköpfen (Ecke neben dem Lineal): neue Spur ganz oben (Bild) bzw. ganz unten (Ton)
+        // „+“ above the track heads (corner next to the ruler): new track at the very top (picture) or very bottom (sound)
         let corner = Rect::from_min_max(pos2(rect.left() + 4.0, rect.top()), pos2(x0 - 4.0, ruler.bottom()));
         let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(corner).layout(egui::Layout::left_to_right(egui::Align::Center)));
         let add = theme::icon_button(&mut cui, icon::PLUS, "Spur hinzufügen", true, false);
@@ -2925,7 +2925,7 @@ impl App {
             let index = self.project.timeline.tracks.len();
             self.apply(EditOp::InsertTrack { index, kind });
         }
-        // Senkrechte Bildlaufleiste
+        // vertical scrollbar
         if overflow > 0.0 {
             let bar = Rect::from_min_max(
                 pos2(rect.right() - 4.0, lanes.top() + 2.0),
@@ -2941,7 +2941,7 @@ impl App {
             );
         }
 
-        // ---------- Ablegen ----------
+        // ---------- Drop ----------
         if let Some(payload) = resp.dnd_release_payload::<DragAsset>() {
             let at = pointer.map(|p| {
                 let t = xt(p.x);
@@ -2949,7 +2949,7 @@ impl App {
             });
             let at = at.unwrap_or(self.playhead);
             let kind = asset_kind(&self.project, &payload);
-            // neue Spur und Ablegen sind ein Verlaufsschritt (sonst bliebe nach Rückgängig eine leere Spur)
+            // new track and drop are one history step (otherwise an empty track would remain after undo)
             let rev = self.doc.lock().unwrap_or_else(|e| e.into_inner()).revision();
             let mut track = None;
             match (pointer.map(|p| asset_lane(&payload, kind, p)), kind) {
@@ -2984,7 +2984,7 @@ impl App {
             }
         }
 
-        // Einrast-Linie
+        // snap line
         if let Some(s) = snap_line {
             let x = tx(s);
             painter.line_segment(
@@ -3013,16 +3013,16 @@ impl App {
                 Stroke::NONE,
             ));
         }
-        // Playhead folgen: kurz hinterhergleiten (blättern) statt hart umspringen
+        // follow the playhead: glide after it briefly (page) instead of jumping hard
         if self.playing && recording.is_none() && (px > rect.right() - 40.0 || px < x0) && self.timeline.view_glide.is_none() {
             self.timeline.scroll_to((self.playhead.as_secs_f64() - 1.0).max(0.0), now_s);
         }
 
-        // ---------- Kontextmenüs ----------
+        // ---------- Context menus ----------
         resp.context_menu(|ui| self.timeline_menu(ui));
     }
 
-    /// Playhead setzen (Klick); `clamp` begrenzt aufs Projektende.
+    /// Set the playhead (click); `clamp` limits it to the project end.
     fn set_playhead_ui(&mut self, t: Time, clamp: bool) {
         let fps = self.project.settings.fps;
         if self.playing {
@@ -3075,7 +3075,7 @@ impl App {
             );
         }
         if let Some(l) = c.label {
-            // Farbmarkierung als Kopfband
+            // colour label as a head band
             p.rect_filled(
                 band,
                 egui::CornerRadius {
@@ -3096,7 +3096,7 @@ impl App {
                     let th = body.height();
                     let tw = (ts.x / ts.y * th).max(8.0);
                     let mut x = body.left().max(x0 - tw);
-                    // auf Kachelraster ausrichten
+                    // align to the tile grid
                     x = body.left() + ((x - body.left()) / tw).floor() * tw;
                     while x < body.right().min(right) {
                         let uv = if c.fx.flip_h {
@@ -3134,7 +3134,7 @@ impl App {
                 } else {
                     Color32::from_rgba_unmultiplied(0xC8, 0xF0, 0xF2, 160)
                 };
-                // Ton stumm (Spur stumm oder −60 dB), obwohl die Datei Ton hat: Wellenform blass
+                // sound muted (track muted or −60 dB) although the file has sound: waveform pale
                 let wcol = if tr.muted || c.volume_db <= -59.9 { wcol.gamma_multiply(0.35) } else { wcol };
                 if !audio {
                     inner.rect_filled(
@@ -3162,7 +3162,7 @@ impl App {
                             let h = (v.sqrt() * wave_h * 10f32.powf(c.volume_db.min(6.0) / 40.0)).clamp(1.0, wave_h.max(1.0));
                             out.push(egui::Shape::line_segment([pos2(x, base), pos2(x, base - h)], Stroke::new(1.5_f32, wcol)));
                         } else {
-                            // verlängert: Stille
+                            // extended: silence
                             out.push(egui::Shape::line_segment(
                                 [pos2(x, base), pos2(x, base - 1.0)],
                                 Stroke::new(1.0_f32, Color32::from_white_alpha(50)),
@@ -3171,8 +3171,8 @@ impl App {
                         x += 2.0;
                     }
                 };
-                // Balken als fertiges Netz zwischenspeichern (eine Form statt einer je 2 px);
-                // laufende Bearbeitung im Inspektor wird frisch gezeichnet
+                // cache bars as a finished mesh (one shape instead of one per 2 px);
+                // a running edit in the inspector is drawn fresh
                 let cl = inner.clip_rect();
                 let key = WaveKey {
                     geo: [body.min.x, body.min.y, body.max.x, body.max.y, x0, x_end, pps, c.volume_db, cl.min.x, cl.min.y, cl.max.x, cl.max.y]
@@ -3204,7 +3204,7 @@ impl App {
                     }
                 }
             }
-            // Stille-Bereich bei verlängertem Ton schraffieren
+            // hatch the silence range of extended sound
             if *mk == MediaKind::Audio {
                 let real_end = c.start.as_secs_f64()
                     + (src_len - c.source_in.as_secs_f64()) / c.speed.max(0.01) as f64;
@@ -3227,7 +3227,7 @@ impl App {
             let at = egui::Align2::LEFT_CENTER.anchor_size(body.left_center() + vec2(8.0, 0.0), g.size()).min;
             inner.galley(at, g, Color32::from_white_alpha(230));
         }
-        // Beat-Markierungen
+        // beat marks
         for b in c.beat_times() {
             let bx = x0 + (((b.as_secs_f64() - self.timeline.scroll) as f32) * pps)
                 - (cr.left()
@@ -3240,7 +3240,7 @@ impl App {
                 );
             }
         }
-        // Titelband
+        // title band
         p.rect_filled(
             band,
             egui::CornerRadius {
@@ -3265,7 +3265,7 @@ impl App {
             p.with_clip_rect(band.shrink2(vec2(4.0, 0.0)).intersect(lanes_clip))
                 .galley(at, head, Color32::from_white_alpha(230));
         }
-        // Ton-Fades als Rampen
+        // audio fades as ramps
         if c.fade_in > Time::ZERO || c.fade_out > Time::ZERO {
             let fi = c.fade_in.as_secs_f64() as f32 * pps;
             let fo = c.fade_out.as_secs_f64() as f32 * pps;
@@ -3289,7 +3289,7 @@ impl App {
                 );
             }
         }
-        // gesperrte und verborgene Spuren abgedunkelt
+        // locked and hidden tracks darkened
         if tr.locked || tr.hidden {
             p.rect_filled(cr, theme::R_CTRL, Color32::from_black_alpha(110));
         }
@@ -3330,7 +3330,7 @@ impl App {
                 {
                     self.paste();
                 }
-                // ausgegraut, solange nichts kopiert ist
+                // greyed out while nothing is copied
                 let attrs_key = self.key_of("paste_attrs");
                 if ui
                     .add_enabled_ui(!self.clipboard.is_empty(), |ui| {
@@ -3454,7 +3454,7 @@ impl App {
                         },
                     );
                 }
-                // gespeicherte Looks (wie die Preset-Leiste im Inspektor); ohne Presets kein Menü
+                // saved looks (like the preset bar in the inspector); no menu without presets
                 let is_text = matches!(c.content, ClipContent::Text(_));
                 let looks: Vec<(usize, String)> = self
                     .presets
@@ -3473,7 +3473,7 @@ impl App {
                         }
                     });
                 }
-                // dieselbe Liste wie „Schnellaktionen“ in der Leiste (nicht passende sind ausgegraut)
+                // the same list as „Schnellaktionen“ in the bar (unsuitable ones are greyed out)
                 theme::submenu(ui, icon::LIGHTNING, "Schnellaktionen", |ui| {
                     self.tools_menu(ui)
                 });
@@ -3509,7 +3509,7 @@ impl App {
                         self.modify_selection(|x| x.label = None);
                     }
                     for (i, (n, _)) in cl_core::MARKER_COLORS.iter().enumerate() {
-                        // Zeile wie die übrigen Menüs; der Farbpunkt sitzt an der Stelle des Symbols
+                        // row like the other menus; the colour dot sits in place of the icon
                         let r = ui.add(
                             theme::menu_row(format!("      {}", crate::tr(*n))).min_width(150.0),
                         );
@@ -3536,7 +3536,7 @@ impl App {
                 }
             }
             CtxTarget::Ruler(marker) => {
-                // dieselben Aktionen wie die Tasten (M, I, O, Alt+X, Strg+L)
+                // the same actions as the keys (M, I, O, Alt+X, Ctrl+L)
                 let ctx = ui.ctx().clone();
                 if menu_item(ui, icon::BOOKMARK_SIMPLE, "Marker hier setzen", &self.key_of("marker")) {
                     self.run_action(&ctx, "marker");
@@ -3606,7 +3606,7 @@ impl App {
                     }
                     theme::submenu(ui, glyph, label, |ui| {
                         for (k, name) in TRACK_KINDS {
-                            // Ton liegt immer unter den Bildspuren: nur passende Arten anbieten
+                            // sound always lies below the picture tracks: offer only suitable kinds
                             if (k == TrackKind::Audio) != audio {
                                 continue;
                             }
@@ -3684,7 +3684,7 @@ impl App {
                         muted: !tr.muted,
                     });
                 }
-                // Solo wie im Spurkopf (nur Vorschau, nicht im Export)
+                // solo as in the track head (preview only, not in the export)
                 let solo = self.solo.contains(&tid);
                 if matches!(tr.kind, TrackKind::Video | TrackKind::Audio)
                     && menu_item(ui, icon::HEADPHONES, if solo { "Solo aufheben" } else { "Solo" }, "")
@@ -3790,7 +3790,7 @@ mod tests {
     fn window_x_to_time_with_zoom_and_scroll() {
         assert_eq!(time_at(300.0, 100.0, 0.0, 50.0), 4.0);
         assert_eq!(time_at(300.0, 100.0, 10.0, 200.0), 11.0);
-        // links der Spurkante: nie vor 0:00
+        // left of the track edge: never before 0:00
         assert_eq!(time_at(50.0, 100.0, 0.5, 50.0), 0.0);
     }
 
@@ -3807,17 +3807,17 @@ mod tests {
         let mut db = VOL_MIN;
         while db <= VOL_MAX {
             let back = y_vol(body, vol_y(body, db));
-            // 0,5-dB-Raster; um 0 dB rastet die Linie ein
+            // 0.5 dB grid; around 0 dB the line snaps
             let tol = if db.abs() < 0.8 { 0.8 } else { 0.26 };
             assert!((back - db).abs() <= tol, "{db} dB -> {back} dB");
             db += 0.25;
         }
-        // Knick: −12 dB auf einem Drittel, 0 dB bei zwei Dritteln, Grenzen an den Rändern
+        // bend: −12 dB at one third, 0 dB at two thirds, limits at the edges
         assert!((vol_norm(-12.0) - 1.0 / 3.0).abs() < 1e-6);
         assert!((vol_norm(0.0) - 2.0 / 3.0).abs() < 1e-6);
         assert_eq!(vol_norm(VOL_MIN), 0.0);
         assert!((vol_norm(VOL_MAX) - 1.0).abs() < 1e-6);
-        // alte Werte über +12 dB bleiben gespeichert, die Linie steht nur oben an
+        // old values above +12 dB stay stored, the line just stops at the top
         assert!((vol_norm(20.0) - 1.0).abs() < 1e-6);
     }
 
@@ -3846,11 +3846,11 @@ mod tests {
         let g = ClipGlide { s0: 10.0, e0: 14.0, dy0: -40.0, t0: 5.0 };
         let to = place(20.0, 24.0, tr);
         let secs = theme::MOTION;
-        assert_eq!(g.at(to, 0.0, secs), (10.0, 14.0, -40.0), "Anfang: alte Stelle");
+        assert_eq!(g.at(to, 0.0, secs), (10.0, 14.0, -40.0), "start: old place");
         let (s, e, dy) = g.at(to, secs / 2.0, secs);
-        assert!(s > 15.0 && s < 20.0 && (e - s - 4.0).abs() < 1e-9 && dy > -20.0 && dy < 0.0, "Mitte, auslaufend: {s} {dy}");
-        assert_eq!(g.at(to, secs, secs), (20.0, 24.0, 0.0), "Ende: Ziel");
-        assert_eq!(g.at(to, 0.0, 0.0), (20.0, 24.0, 0.0), "Animationen aus: sofort am Ziel");
+        assert!(s > 15.0 && s < 20.0 && (e - s - 4.0).abs() < 1e-9 && dy > -20.0 && dy < 0.0, "middle, easing out: {s} {dy}");
+        assert_eq!(g.at(to, secs, secs), (20.0, 24.0, 0.0), "end: target");
+        assert_eq!(g.at(to, 0.0, 0.0), (20.0, 24.0, 0.0), "animations off: at the target at once");
     }
 
     #[test]
@@ -3863,20 +3863,20 @@ mod tests {
         let rows = HashMap::from([(tr, 100.0f32)]);
         let mut m = Motion::default();
         m.update(&[], std::slice::from_ref(&a), &rows, 0.0);
-        assert!(m.glides.is_empty(), "erster Stand: nichts bewegt sich");
-        // nach rechts verschoben (Rückgängig, Lücke schließen …)
+        assert!(m.glides.is_empty(), "first state: nothing moves");
+        // moved right (undo, close gap …)
         let mut b = a.clone();
         c.start = Time::from_secs_f64(10.0);
         b.clips[0] = c.clone();
         m.update(std::slice::from_ref(&a), std::slice::from_ref(&b), &rows, 1.0);
         let secs = theme::anim(theme::MOTION);
         if secs == 0.0 {
-            assert!(m.glides.is_empty(), "Animationen aus: springt");
+            assert!(m.glides.is_empty(), "animations off: jumps");
             return;
         }
         let g = m.glides[&c.id];
         assert_eq!((g.s0, g.t0), (0.0, 1.0));
-        // halb unterwegs neues Ziel: die neue Bewegung beginnt an der gezeigten Stelle
+        // new target halfway: the new movement begins at the shown place
         let half = g.at(place(10.0, 12.0, tr), secs / 2.0, secs).0;
         let mut d = b.clone();
         d.clips[0].start = Time::from_secs_f64(30.0);
@@ -3898,11 +3898,11 @@ mod tests {
         c.id = id;
         nt.clips.push(c);
         let rows = HashMap::from([(t1, 100.0f32), (t2, 200.0)]);
-        // vom Nutzer gezogen: folgt dem Zeiger, kein Nachgleiten
+        // dragged by the user: follows the pointer, no gliding afterwards
         m.skip.insert(id);
         m.update(&[], std::slice::from_ref(&nt), &rows, 0.0);
         assert!(m.glides.is_empty() && m.skip.is_empty());
-        // durch etwas anderes (Rückgängig) auf die andere Spur: gleitet von 100 nach 200 senkrecht
+        // moved to the other track by something else (undo): glides vertically from 100 to 200
         m.places.insert(id, place(0.0, 2.0, t1));
         m.update(&[], std::slice::from_ref(&nt), &rows, 0.0);
         if theme::anim(theme::MOTION) > 0.0 {
@@ -3921,10 +3921,10 @@ mod tests {
             (ids[3], place(0.0, 9.0, b)),
         ]);
         let next = HashMap::from([
-            (ids[0], place(0.0, 1.0, a)), // nur kürzer (Teilen): springt
-            (ids[1], place(1.0, 3.0, a)), // Lücke geschlossen: gleitet
-            (ids[3], place(0.0, 9.0, a)), // andere Spur: gleitet
-            (ids[4], place(1.0, 2.0, a)), // Rest nach dem Teilen, lag schon dort: blendet nicht ein
+            (ids[0], place(0.0, 1.0, a)), // only shorter (split): jumps
+            (ids[1], place(1.0, 3.0, a)), // gap closed: glides
+            (ids[3], place(0.0, 9.0, a)), // other track: glides
+            (ids[4], place(1.0, 2.0, a)), // rest after splitting, already lay there: does not fade in
         ]);
         let mut ch = changes(&prev, &next, &HashSet::new());
         let mut moved = vec![ids[1], ids[3]];
@@ -3932,15 +3932,15 @@ mod tests {
         assert_eq!(ch.moved, moved);
         assert!(ch.born.is_empty());
         assert_eq!(ch.gone, vec![ids[2]]);
-        // neuer Clip an freier Stelle blendet ein
+        // a new clip in a free place fades in
         let mut next2 = next.clone();
         let fresh = ClipId::new();
         next2.insert(fresh, place(50.0, 52.0, b));
         ch = changes(&prev, &next2, &HashSet::new());
         assert_eq!(ch.born, vec![fresh]);
-        // selbst gezogener Clip gleitet nicht
+        // a clip dragged by the user does not glide
         assert!(!changes(&prev, &next, &HashSet::from([ids[1]])).moved.contains(&ids[1]));
-        // anderes Projekt (kein gemeinsamer Clip) bzw. erster Stand: nichts
+        // other project (no shared clip) or first state: nothing
         let other = HashMap::from([(ClipId::new(), place(0.0, 1.0, a))]);
         assert_eq!(changes(&prev, &other, &HashSet::new()), Changes::default());
         assert_eq!(changes(&HashMap::new(), &next, &HashSet::new()), Changes::default());
@@ -3952,7 +3952,7 @@ mod tests {
         for (n, glide) in [(MAX_GLIDES, true), (MAX_GLIDES + 1, false)] {
             let ids: Vec<ClipId> = (0..n + 1).map(|_| ClipId::new()).collect();
             let prev: HashMap<ClipId, Place> = ids.iter().enumerate().map(|(i, id)| (*id, place(i as f64, i as f64 + 1.0, a))).collect();
-            // alle bis auf den ersten rücken eine Sekunde weiter
+            // all but the first move on by one second
             let next: HashMap<ClipId, Place> =
                 ids.iter().enumerate().map(|(i, id)| (*id, place(i as f64 + (i > 0) as u8 as f64, i as f64 + 2.0, a))).collect();
             assert_eq!(changes(&prev, &next, &HashSet::new()).moved.len(), if glide { n } else { 0 }, "{n}");
@@ -3962,32 +3962,32 @@ mod tests {
     #[test]
     fn track_height_glides_and_new_track_grows() {
         let secs = theme::MOTION;
-        // erstes Bild: sofort am Ziel
+        // first frame: at the target at once
         let (g, h) = height_at(None, 34.0, false, 0.0, secs);
         assert_eq!(h, 34.0);
-        // einklappen: gleitet von 34 auf 16
+        // collapse: glides from 34 to 16
         let (g, h) = height_at(Some(g), 16.0, false, 1.0, secs);
         assert_eq!(h, 34.0);
         let (_, mid) = height_at(Some(g), 16.0, false, 1.0 + secs as f64 / 2.0, secs);
         assert!(mid > 16.0 && mid < 25.0, "{mid}");
         assert_eq!(height_at(Some(g), 16.0, false, 2.0, secs).1, 16.0);
-        // neue Spur wächst aus 0; Animationen aus: sofort
+        // a new track grows from 0; animations off: at once
         assert_eq!(height_at(None, 34.0, true, 0.0, secs).1, 0.0);
         assert_eq!(height_at(None, 34.0, true, 0.0, 0.0).1, 34.0);
-        // ein-/ausblenden
+        // fade in/out
         assert_eq!((fade_alpha(0.0, 0.09, true), fade_alpha(0.09, 0.09, true)), (0.0, 1.0));
         assert_eq!((fade_alpha(0.0, 0.09, false), fade_alpha(0.0, 0.0, false)), (1.0, 0.0));
     }
 
     #[test]
     fn dragging_any_selected_clip_keeps_the_whole_selection() {
-        // Strg-Auswahl: erst Video, dann Ton (Ton ist Hauptauswahl), gezogen wird am Video
+        // Ctrl selection: first video, then sound (sound is primary selection), dragged at the video
         let (v, a) = (ClipId::new(), ClipId::new());
         let (mut sel, mut extra) = (Some(a), HashSet::from([v]));
         make_primary(&mut sel, &mut extra, v);
         assert_eq!(sel, Some(v));
-        assert_eq!(extra, HashSet::from([a]), "Ton bleibt ausgewählt und wird mitgezogen");
-        // am Ton gezogen: unverändert
+        assert_eq!(extra, HashSet::from([a]), "sound stays selected and is dragged along");
+        // dragged at the sound: unchanged
         make_primary(&mut sel, &mut extra, v);
         assert_eq!((sel, extra.len()), (Some(v), 1));
     }
@@ -3996,15 +3996,15 @@ mod tests {
     fn new_track_is_rolled_into_view() {
         let lanes = Rect::from_min_max(pos2(0.0, 100.0), pos2(500.0, 300.0));
         let row = |top: f32, h: f32| Rect::from_min_size(pos2(0.0, top), vec2(500.0, h));
-        assert_eq!(reveal_delta(row(150.0, 40.0), lanes), 0.0, "schon sichtbar");
-        assert_eq!(reveal_delta(row(280.0, 42.0), lanes), 26.0, "unten halb abgeschnitten: so weit hoch");
-        assert_eq!(reveal_delta(row(60.0, 34.0), lanes), -44.0, "oben abgeschnitten: zurück");
-        // höher als die Ansicht: Oberkante bleibt sichtbar
+        assert_eq!(reveal_delta(row(150.0, 40.0), lanes), 0.0, "already visible");
+        assert_eq!(reveal_delta(row(280.0, 42.0), lanes), 26.0, "half cut off at the bottom: up this far");
+        assert_eq!(reveal_delta(row(60.0, 34.0), lanes), -44.0, "cut off at the top: back");
+        // taller than the view: the top edge stays visible
         assert_eq!(reveal_delta(row(150.0, 400.0), lanes), 46.0);
     }
 
-    /// Befund aus dem Klicktest: `PL_einfach` (ein Clip, 23:16 min) zeigte nach „Ganze Zeitleiste
-    /// zeigen“ nur 0:00–10:20. Nach der Bewegung muss das ganze Projekt mit Rand zu sehen sein.
+    /// Click test finding: `PL_einfach` (one clip, 23:16 min) showed only 0:00–10:20 after „Ganze Zeitleiste
+    /// zeigen“. After the movement the whole project must be visible with margin.
     #[test]
     fn show_all_fits_a_23_minute_project() {
         let dur = 23.0 * 60.0 + 16.0;
@@ -4013,21 +4013,21 @@ mod tests {
             st.show_all(dur, 0.0);
             st.step_view(1.0);
             let (from, to) = (st.scroll, st.scroll + (w / st.pps) as f64);
-            assert!(from < 0.0 && to > dur, "{w}: sichtbar {from:.1}…{to:.1} s");
-            assert!(to - from < dur * 1.2, "{w}: nicht viel weiter als nötig");
+            assert!(from < 0.0 && to > dur, "{w}: visible {from:.1}…{to:.1} s");
+            assert!(to - from < dur * 1.2, "{w}: not much wider than needed");
         }
     }
 
     #[test]
     fn track_head_lifts_early() {
-        assert!(track_lifted(0.0, 0.15), "nach 150 ms gehalten: hebt sich (Klicktest sah nach 100 ms noch nichts)");
+        assert!(track_lifted(0.0, 0.15), "held for 150 ms: lifts (click test saw nothing after 100 ms yet)");
         assert!(track_lifted(4.0, 0.0));
-        assert!(!track_lifted(3.0, 0.1), "kurzer Klick bleibt ein Klick");
+        assert!(!track_lifted(3.0, 0.1), "a short click stays a click");
     }
 
     #[test]
     fn track_names_start_in_one_column() {
-        // eine Spalte für alle Spurarten, eingeklappt oder nicht: immer hinter den eigenen Schaltern
+        // one column for all track kinds, collapsed or not: always behind its own toggles
         let col = name_column();
         for (k, _) in TRACK_KINDS {
             for folded in [false, true] {
@@ -4044,24 +4044,24 @@ mod tests {
         assert_eq!(ruler_label(61.0, 1.0), "01:01");
         assert_eq!(ruler_label(3600.0, 600.0), "1:00:00");
         assert_eq!(ruler_label(5.0 * 3600.0 + 61.0, 1.0), "5:01:01");
-        // Text → Sekunden (mm:ss[.f] bzw. h:mm:ss)
+        // text → seconds (mm:ss[.f] or h:mm:ss)
         let secs = |l: &str| l.split(':').fold(0.0, |a, p| a * 60.0 + p.parse::<f64>().unwrap());
-        // jede Schrittweite: aufeinanderfolgende Hauptstriche streng aufsteigend, keine doppelten Texte
+        // every step size: consecutive major ticks strictly ascending, no duplicate texts
         for step in RULER_STEPS {
             let minor = step / 5.0;
             let labels: Vec<String> = (0..4000i64).filter(|k| k % 5 == 0).map(|k| k as f64 * minor).take_while(|t| *t < 200_000.0).map(|t| ruler_label(t, step)).collect();
             for w in labels.windows(2) {
-                assert!(secs(&w[0]) < secs(&w[1]), "{step}: {} vor {}", w[0], w[1]);
+                assert!(secs(&w[0]) < secs(&w[1]), "{step}: {} before {}", w[0], w[1]);
             }
         }
-        // ganz herausgezoomt (10 s … 6 h, schmal bis breit): Beschriftungen ≥ 70 px auseinander,
-        // und es gibt höchstens rund zwei Dutzend
+        // fully zoomed out (10 s … 6 h, narrow to wide): labels ≥ 70 px apart,
+        // and there are at most about two dozen
         for dur in [10.0, 600.0, 3600.0, 6.0 * 3600.0] {
             for w in [400.0f32, 1400.0, 3800.0] {
                 let pps = min_pps(dur, w);
                 let step = ruler_step(pps);
                 assert!(step as f32 * pps >= 70.0, "{dur} {w}");
-                assert!(w / (step as f32 * pps) < 60.0, "{dur} {w}: zu viele Striche");
+                assert!(w / (step as f32 * pps) < 60.0, "{dur} {w}: too many ticks");
             }
         }
     }
@@ -4071,18 +4071,18 @@ mod tests {
         for dur in [0.0, 10.0, 644.0, 3600.0, 6.0 * 3600.0] {
             for w in [300.0f32, 1400.0, 3800.0] {
                 let lo = min_pps(dur, w);
-                // ganz herausgezoomt: Projekt (mind. 5 min) höchstens halb so breit wie die Ansicht
+                // fully zoomed out: project (min. 5 min) at most half as wide as the view
                 assert!(dur.max(300.0) as f32 * lo <= 0.5 * w + 1e-3, "{dur} {w}");
                 assert!(lo > 0.0 && lo <= 2.0);
-                // „alles zeigen“: ganzes Projekt mit 5 % Rand links und rechts
+                // "show all": whole project with 5 % margin left and right
                 let (pps, scroll) = fit_all(dur, w, lo);
                 if dur >= 1.0 && pps < PPS_MAX {
                     let x_end = ((dur - scroll) as f32) * pps;
-                    assert!((((0.0 - scroll) as f32 * pps) / w - 0.05 / 1.1).abs() < 1e-3, "Rand links {dur} {w}");
-                    assert!((x_end / w - 1.05 / 1.1).abs() < 1e-3, "Rand rechts {dur} {w}");
+                    assert!((((0.0 - scroll) as f32 * pps) / w - 0.05 / 1.1).abs() < 1e-3, "left margin {dur} {w}");
+                    assert!((x_end / w - 1.05 / 1.1).abs() < 1e-3, "right margin {dur} {w}");
                 }
                 assert!(pps >= lo);
-                // Regler: ganzer Bereich, hin und zurück
+                // slider: whole range, there and back
                 assert_eq!(zoom_norm(lo, lo), 0.0);
                 assert_eq!(zoom_norm(PPS_MAX, lo), 1.0);
                 for n in [0.0f32, 0.25, 0.5, 0.9, 1.0] {
@@ -4097,27 +4097,27 @@ mod tests {
         let g = ViewGlide { pps: (10.0, 80.0), anchor: Anchor::At { t: 100.0, x: 300.0, floor: 0.0 }, t0: 0.0 };
         for age in [0.0f32, 0.04, 0.08, 0.12, 0.16, 0.5] {
             let (pps, scroll, done) = g.at(age, theme::MOTION);
-            // Zeit unter dem Zeiger (300 px rechts der Kante) bleibt gleich
+            // time under the pointer (300 px right of the edge) stays the same
             assert!((scroll + (300.0 / pps) as f64 - 100.0).abs() < 1e-3, "{age}");
             assert_eq!(done, age >= theme::MOTION);
         }
-        assert_eq!(g.at(0.0, theme::MOTION).0, 10.0, "Anfang");
+        assert_eq!(g.at(0.0, theme::MOTION).0, 10.0, "start");
         let mid = g.at(theme::MOTION / 2.0, theme::MOTION).0;
-        assert!(mid > (10.0f32 * 80.0).sqrt() && mid < 80.0, "Mitte (auslaufend, logarithmisch): {mid}");
-        assert_eq!(g.at(1.0, theme::MOTION).0, 80.0, "Ende genau am Ziel");
-        // Animationen aus: sofort am Ziel
+        assert!(mid > (10.0f32 * 80.0).sqrt() && mid < 80.0, "middle (easing out, logarithmic): {mid}");
+        assert_eq!(g.at(1.0, theme::MOTION).0, 80.0, "end exactly at the target");
+        // animations off: at the target at once
         assert_eq!(g.at(0.0, 0.0), (80.0, 100.0 - 300.0 / 80.0, true));
-        // weit herausgezoomt am Anfang: Bildlauf nicht vor den erlaubten Rand
+        // far zoomed out at the start: scroll not before the allowed margin
         let z = ViewGlide { pps: (100.0, 2.0), anchor: Anchor::At { t: 1.0, x: 600.0, floor: -3.0 }, t0: 0.0 };
         assert_eq!(z.at(1.0, theme::MOTION).1, -3.0);
-        // Bildlauf gleitet (Maßstab bleibt), Ziel ändert sich mittendrin: weiter vom aktuellen Stand
+        // scroll glides (scale stays), target changes midway: continue from the current state
         let mut st = TimelineState { pps: 50.0, scroll: 0.0, ..Default::default() };
         st.scroll_to(100.0, 0.0);
         st.step_view(theme::MOTION as f64 / 2.0);
         let half = st.scroll;
         assert!(half > 50.0 && half < 100.0 && st.pps == 50.0, "{half}");
         st.scroll_to(0.0, theme::MOTION as f64 / 2.0);
-        assert_eq!(st.scroll, half, "neues Ziel beginnt am aktuellen Stand");
+        assert_eq!(st.scroll, half, "new target begins at the current state");
         assert!(!st.step_view(10.0));
         assert_eq!((st.scroll, st.view_glide), (0.0, None));
     }
@@ -4128,20 +4128,20 @@ mod tests {
         let (red, blue) = (Color32::RED, Color32::BLUE);
         let mut bar = None;
         assert_eq!(merge_bar(&mut bar, r(10.0, 11.5), red), None);
-        assert_eq!(merge_bar(&mut bar, r(12.0, 13.5), red), None, "berührt: verschmolzen");
+        assert_eq!(merge_bar(&mut bar, r(12.0, 13.5), red), None, "touches: merged");
         assert_eq!(bar, Some((r(10.0, 13.5), red)));
-        assert_eq!(merge_bar(&mut bar, r(20.0, 21.5), red), Some((r(10.0, 13.5), red)), "Lücke: alter Balken fertig");
-        assert_eq!(merge_bar(&mut bar, r(21.0, 22.5), blue), Some((r(20.0, 21.5), red)), "andere Farbe");
+        assert_eq!(merge_bar(&mut bar, r(20.0, 21.5), red), Some((r(10.0, 13.5), red)), "gap: old bar finished");
+        assert_eq!(merge_bar(&mut bar, r(21.0, 22.5), blue), Some((r(20.0, 21.5), red)), "other colour");
         assert_eq!(bar, Some((r(21.0, 22.5), blue)));
     }
 
     #[test]
     fn volume_line_grabs_only_close_to_line() {
-        // flacher Ton-Clip (Tonspur): Mitte gehört dem Verschieben, nicht der Linie bei 0 dB
+        // flat audio clip (audio track): the middle belongs to moving, not to the line at 0 dB
         let body = Rect::from_min_size(pos2(0.0, 100.0), vec2(200.0, 26.0));
         assert!(!vol_line_hit(body, 0.0, body.center().y));
         assert!(vol_line_hit(body, 0.0, vol_y(body, 0.0) + 1.0));
-        // hoher Clip: bis 4 px, nicht weiter
+        // tall clip: up to 4 px, no further
         let tall = Rect::from_min_size(pos2(0.0, 100.0), vec2(200.0, 60.0));
         assert!(vol_line_hit(tall, 0.0, vol_y(tall, 0.0) + 4.0));
         assert!(!vol_line_hit(tall, 0.0, vol_y(tall, 0.0) + 5.0));
@@ -4151,16 +4151,16 @@ mod tests {
     fn clip_head_keeps_duration_and_elides_name() {
         let w = |s: &str| s.chars().count() as f32 * 6.0;
         assert_eq!(clip_head("Sunset.webm", " ✧ 2", "2.0s", 500.0, w), "Sunset.webm ✧ 2  2.0s");
-        // eng: Kennzeichen weg, Name gekürzt, Dauer bleibt
+        // tight: tags gone, name shortened, duration stays
         let h = clip_head("Sunset Libreville.webm", " ✧ 2", "2.0s", 90.0, w);
         assert!(h.ends_with("…  2.0s") && w(&h) <= 90.0, "{h}");
-        // Effekt-Clip ohne Dauer: nur gekürzt mit „…“
+        // effect clip without duration: only shortened with „…“
         let h = clip_head("✧  Filmkorn", "", "", 40.0, w);
         assert!(h.ends_with('…') && w(&h) <= 40.0, "{h}");
     }
 
-    /// Breitenmodell wie egui (Vorschub je Zeichen, Unterschneidung, Rundung auf Pixel), als
-    /// Vorbild für `Measured`; ungerade Werte, damit Rundung und Unterschneidung zählen.
+    /// Width model like egui (advance per glyph, kerning, rounding to pixels), as
+    /// model for `Measured`; odd values so rounding and kerning count.
     fn model_adv(c: char) -> f32 {
         match c {
             ' ' => 2.6,
@@ -4207,8 +4207,8 @@ mod tests {
         }
     }
 
-    /// „Fehlt“ kommt aus der Hintergrundprüfung, nicht aus einem Dateizugriff im Oberflächen-Thread
-    /// (Netzlaufwerke würden die Oberfläche anhalten).
+    /// „Fehlt“ comes from the background check, not from a file access in the UI thread
+    /// (network drives would stall the UI).
     #[test]
     fn missing_media_comes_from_the_background_check() {
         let m = MediaRef {
@@ -4225,7 +4225,7 @@ mod tests {
             audio_codec: None,
         };
         let mut p = crate::loading::Presence::default();
-        assert!(missing_media(std::slice::from_ref(&m), &p).is_empty(), "noch nicht geprüft: gilt als vorhanden");
+        assert!(missing_media(std::slice::from_ref(&m), &p).is_empty(), "not checked yet: counts as present");
         p.set_all(HashMap::from([(m.path.clone(), false)]), 1);
         assert_eq!(missing_media(std::slice::from_ref(&m), &p), HashSet::from([m.id]));
     }
@@ -4243,19 +4243,19 @@ mod tests {
             body_shown: None,
         };
         let one = Track::new(TrackKind::Video);
-        // erster Stand: Spuren übernommen
+        // first state: tracks taken over
         assert!(c.sync(key(1), || vec![one.clone()]));
         c.head(ClipId::new(), head);
-        // gleicher Stand: nichts neu (der Spuren-Klon wird gar nicht erst gebaut)
+        // same state: nothing new (the tracks clone is not even built)
         assert!(!c.sync(key(1), || unreachable!()));
         assert_eq!(c.heads.len(), 1);
-        // neuer Stand, andere Sprache oder Skalierung: alles verworfen
+        // new state, other language or scaling: everything discarded
         for k in [key(2), CacheKey { lang: cl_i18n::Lang::En, ..key(2) }, CacheKey { ppp: 2.0, ..key(2) }] {
             c.head(ClipId::new(), head);
             assert!(c.sync(k, Vec::new));
             assert!(c.heads.is_empty() && c.tracks.is_empty());
         }
-        // Obergrenze: beim Überlauf neu beginnen
+        // limit: start over on overflow
         for _ in 0..HEAD_CAP + 5 {
             c.head(ClipId::new(), head);
         }
@@ -4266,15 +4266,15 @@ mod tests {
     fn only_visible_clips_are_built() {
         let view = Rect::from_min_max(pos2(172.0, 50.0), pos2(1000.0, 400.0));
         let clip = |x0: f32, x1: f32, y: f32| Rect::from_min_max(pos2(x0, y), pos2(x1, y + 30.0));
-        assert!(clip_visible(clip(100.0, 200.0, 100.0), view), "links angeschnitten");
-        assert!(clip_visible(clip(990.0, 1200.0, 100.0), view), "rechts angeschnitten");
-        assert!(!clip_visible(clip(10.0, 171.0, 100.0), view), "links außerhalb");
-        assert!(!clip_visible(clip(1001.0, 1100.0, 100.0), view), "rechts außerhalb");
-        assert!(!clip_visible(clip(300.0, 400.0, 0.0), view), "Spur über dem Bildlauf");
-        assert!(!clip_visible(clip(300.0, 400.0, 401.0), view), "Spur darunter");
-        assert!(clip_visible(clip(300.0, 400.0, 380.0), view), "halb sichtbare Spur");
-        assert!(!clip_visible(clip(300.0, 300.5, 100.0), view), "schmaler als ein Pixel");
-        // Texte: Kopfzeile ab der sichtbaren Kante (+ Platz für das Warnzeichen)
+        assert!(clip_visible(clip(100.0, 200.0, 100.0), view), "cut off on the left");
+        assert!(clip_visible(clip(990.0, 1200.0, 100.0), view), "cut off on the right");
+        assert!(!clip_visible(clip(10.0, 171.0, 100.0), view), "outside on the left");
+        assert!(!clip_visible(clip(1001.0, 1100.0, 100.0), view), "outside on the right");
+        assert!(!clip_visible(clip(300.0, 400.0, 0.0), view), "track above the scroll");
+        assert!(!clip_visible(clip(300.0, 400.0, 401.0), view), "track below");
+        assert!(clip_visible(clip(300.0, 400.0, 380.0), view), "half visible track");
+        assert!(!clip_visible(clip(300.0, 300.5, 100.0), view), "narrower than a pixel");
+        // texts: head line from the visible edge (+ room for the warning sign)
         let (x, room, body) = clip_rooms(clip(100.0, 400.0, 100.0), view, true);
         assert_eq!((x, room, body), (172.0 + 6.0 + 14.0, 396.0 - 192.0, 396.0 - 108.0));
     }
@@ -4294,14 +4294,14 @@ mod tests {
         assert!(c.fade_in + c.fade_out <= c.duration);
     }
 
-    /// Messung der Zeitleiste ohne Fenster (von Hand):
+    /// Timeline measurement without a window (by hand):
     /// `cargo test --release -p cl-app -- --ignored timeline_frame_time --nocapture --test-threads=1`
     mod bench {
         use super::*;
         use std::hash::{Hash, Hasher};
 
 
-        /// Projekt wie `qa/PL_schnitt.cutline` (gleiche Spuren und Anteile), auf `n` Clips skaliert.
+        /// Project like `qa/PL_schnitt.cutline` (same tracks and shares), scaled to `n` clips.
         pub(crate) fn synth_project(n: usize, file: &std::path::Path) -> Project {
             let mut p = Project::new("Messung");
             let media = |kind, audio, secs: f64| MediaRef {
@@ -4323,7 +4323,7 @@ mod tests {
             let img = media(MediaKind::Image, false, 0.0);
             let sfx = media(MediaKind::Audio, true, 2.0);
             let total = 644.0;
-            // (Spurart, Clips in PL_schnitt, Inhalt, Clipdauer-Anteil)
+            // (track kind, clips in PL_schnitt, content, clip duration share)
             let plan: [(TrackKind, usize, u8, f64); 9] = [
                 (TrackKind::Video, 150, 0, 1.0),
                 (TrackKind::Audio, 150, 1, 1.0),
@@ -4371,7 +4371,7 @@ mod tests {
             App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None)
         }
 
-        /// Projekt setzen; Vorschaubilder und Wellenformen liegen schon vor (kein Decoder-Auftrag).
+        /// Set the project; thumbnails and waveforms are already there (no decoder job).
         pub(crate) fn load(app: &mut App, ctx: &egui::Context, p: Project) {
             for m in &p.media {
                 if m.kind != MediaKind::Audio {
@@ -4390,7 +4390,7 @@ mod tests {
         pub(crate) const SCREEN: egui::Vec2 = egui::vec2(1600.0, 1000.0);
         pub(crate) const PANEL_H: f32 = 470.0;
 
-        /// Ein Bild: Zeitleiste in der unteren Leiste, Zeiger über den Clips. Gibt (ms, Formen, Prüfsumme).
+        /// One frame: timeline in the bottom bar, pointer over the clips. Returns (ms, shapes, checksum).
         pub(crate) fn frame(app: &mut App, ctx: &egui::Context, t: f64, pointer: Pos2) -> (f64, usize, u64) {
             let input = egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)),
@@ -4420,15 +4420,15 @@ mod tests {
             (ms, n, fingerprint(&prims))
         }
 
-        /// Prüfsumme des fertigen Bildes: alle Dreiecke in Zeichenreihenfolge mit Ausschnitt, Ecken,
-        /// Farben und Textur – unabhängig davon, wie der Tessellierer sie zu Netzen bündelt.
+        /// Checksum of the finished frame: all triangles in drawing order with clip rect, corners,
+        /// colours and texture – independent of how the tessellator bundles them into meshes.
         pub(crate) fn fingerprint(prims: &[egui::ClippedPrimitive]) -> u64 {
             let mut h = std::collections::hash_map::DefaultHasher::new();
             let q = |v: f32| (v * 4.0).round() as i32;
             for p in prims {
                 let r = p.clip_rect;
                 if let egui::epaint::Primitive::Mesh(m) = &p.primitive {
-                    // Schrift-Atlas: Lage der Zeichen darin hängt von der Reihenfolge des ersten Setzens ab
+                    // font atlas: the position of glyphs in it depends on the order of first layout
                     let font = m.texture_id == egui::TextureId::default();
                     let tex = format!("{:?}", m.texture_id);
                     for i in &m.indices {
@@ -4446,8 +4446,8 @@ mod tests {
             h.finish()
         }
 
-        /// Gemessene Kopfzeilen und Clip-Texte gleichen dem Setzen je Versuch (`clip_head`,
-        /// `theme::elide`) mit den echten Schriften der App.
+        /// Measured head lines and clip texts equal laying out per attempt (`clip_head`,
+        /// `theme::elide`) with the app's real fonts.
         #[test]
         #[ignore]
         fn measured_labels_match_layout() {
@@ -4481,16 +4481,16 @@ mod tests {
                     }
                 }
             }
-            assert!(bad.is_empty(), "{} Abweichungen:\n{}", bad.len(), bad[..bad.len().min(20)].join("\n"));
+            assert!(bad.is_empty(), "{} deviations:\n{}", bad.len(), bad[..bad.len().min(20)].join("\n"));
         }
 
-        /// (Median, Max, 10-%-Wert) – der 10-%-Wert ist auf belastetem Rechner am verlässlichsten
+        /// (median, max, 10 % value) – the 10 % value is the most reliable on a loaded computer
         pub(crate) fn stats(mut v: Vec<f64>) -> (f64, f64, f64) {
             v.sort_by(f64::total_cmp);
             (v[v.len() / 2], v[v.len() - 1], v[v.len() / 10])
         }
 
-        /// Bildzeit (Rechnen + Tessellieren) bei voll sichtbarer Zeitleiste: Stand und Abspielen.
+        /// Frame time (compute + tessellate) with the timeline fully visible: stopped and playing.
         #[test]
         #[ignore]
         fn timeline_frame_time() {
@@ -4533,7 +4533,7 @@ mod tests {
                         if playing { "Abspielen" } else { "Stand" }
                     );
                 }
-                // Bewegung (nur 657): 300 Clips gleiten hin und her, weicher Zoom, Abspielen gezoomt mit Blättern
+                // movement (only 657): 300 clips glide back and forth, smooth zoom, playback zoomed with paging
                 if n != 657 {
                     continue;
                 }
@@ -4595,7 +4595,7 @@ mod tests {
                 app.playing = false;
             }
             app.playing = false;
-            // echtes Projekt (z. B. `qa/PL_schnitt.cutline`), falls angegeben: CUTLINE_BENCH_PROJECT=Datei
+            // real project (e.g. `qa/PL_schnitt.cutline`), if given: CUTLINE_BENCH_PROJECT=file
             let Some(path) = std::env::var_os("CUTLINE_BENCH_PROJECT").filter(|p| std::path::Path::new(p).is_file()) else {
                 return;
             };
@@ -4629,7 +4629,7 @@ mod tests {
         }
     }
 
-    /// Rollen am Rand: innen 0, im Randstreifen bis ±1, außerhalb gedeckelt, beidseitig gleich
+    /// Edge scrolling: 0 inside, up to ±1 in the edge strip, capped outside, the same on both sides
     #[test]
     fn edge_speed_grows_towards_and_beyond_the_edge() {
         let v = |p| super::edge_speed(p, 100.0, 900.0, 48.0);

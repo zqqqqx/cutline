@@ -1,5 +1,5 @@
-// Nach „WaterDrop“ von Paweł Płóciennik (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Frequenz der Wellen, p1 = Geschwindigkeit, p2 = Lichtbrechung, p3 = Glanzlichter
+// Based on "WaterDrop" by Paweł Płóciennik (GL Transitions, MIT license), ported to WGSL.
+// p0 = wave frequency, p1 = speed, p2 = refraction, p3 = highlights
 fn wd_mirror(v: vec2f) -> vec2f {
   let m = v - 2.0 * floor(v / 2.0);
   return 1.0 - abs(1.0 - m);

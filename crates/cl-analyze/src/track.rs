@@ -1,12 +1,12 @@
-//! Bewegung verfolgen: Ein Bildausschnitt wird per Vorlagenvergleich (Summe der absoluten
-//! Differenzen, Grob-/Feinsuche) von Bild zu Bild wiedergefunden. Die Vorlage passt sich
-//! langsam an (Licht, leichte Drehung). Für Zensur-Flächen ([`track_box`]) wird zusätzlich die
-//! Größe nachgeführt, in beide Richtungen verfolgt und ein verlorenes Motiv erkannt.
+//! Motion tracking: an image patch is found again from frame to frame via template matching (sum of absolute
+//! differences, coarse/fine search). The template adapts
+//! slowly (light, slight rotation). For censor areas ([`track_box`]) the size is also
+//! followed, tracking runs in both directions and a lost subject is detected.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Bereich im Bild, normiert 0…1 (Mitte, Breite, Höhe).
+/// Region in the image, normalized 0…1 (center, width, height).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxN {
     pub cx: f32,
@@ -18,7 +18,7 @@ pub struct BoxN {
 const WORK_W: u32 = 320;
 pub const FPS: f64 = 15.0;
 
-/// Arbeitsgröße (Breite auf `WORK_W`, gerade)
+/// Working size (width at `WORK_W`, even)
 fn work_size(src_w: u32, src_h: u32) -> (u32, u32) {
     let ww = WORK_W.min(src_w.max(2)) & !1;
     let wh = (((ww as f64 * src_h as f64 / src_w.max(1) as f64).round() as u32).max(2)) & !1;
@@ -29,19 +29,19 @@ fn work_size(src_w: u32, src_h: u32) -> (u32, u32) {
 struct Tracker {
     w: i32,
     h: i32,
-    /// Raster der Vorlage
+    /// Grid of the template
     tw: i32,
     th: i32,
-    /// Mitte und Größe des Rahmens in Arbeitspixeln
+    /// Center and size of the box in working pixels
     cx: f32,
     cy: f32,
     bw: f32,
     bh: f32,
     tpl: Vec<f32>,
     search: i32,
-    /// Größe nachführen und Verlust erkennen (Zensur)
+    /// Follow the size and detect loss (censoring)
     boxed: bool,
-    /// mittlere Abweichung der bisherigen Treffer
+    /// mean deviation of the matches so far
     avg: f32,
 }
 
@@ -70,7 +70,7 @@ impl Tracker {
         }
     }
 
-    /// Rasterpunkt (gx, gy) des Rahmens mit Mitte (x, y) und Größe (bw, bh)
+    /// Grid point (gx, gy) of the box with center (x, y) and size (bw, bh)
     #[allow(clippy::too_many_arguments)]
     fn at(&self, f: &[u8], x: f32, y: f32, bw: f32, bh: f32, gx: i32, gy: i32) -> f32 {
         let px = (x - bw / 2.0 + (gx as f32 + 0.5) * bw / self.tw as f32).floor() as i32;
@@ -85,7 +85,7 @@ impl Tracker {
             .collect()
     }
 
-    /// Mittlere absolute Abweichung zur Vorlage (jeder `step`-te Rasterpunkt)
+    /// Mean absolute deviation from the template (every `step`-th grid point)
     fn sad(&self, f: &[u8], x: f32, y: f32, bw: f32, bh: f32, step: i32) -> f32 {
         let (mut s, mut n) = (0.0, 0.0);
         let mut gy = 0;
@@ -107,7 +107,7 @@ impl Tracker {
             self.tpl = self.patch(f, self.cx, self.cy, bw, bh);
             return;
         }
-        // grob (Schritt 2), dann fein um das Optimum
+        // coarse (step 2), then fine around the optimum
         let mut best = (self.cx, self.cy, f32::MAX);
         let mut dy = -self.search;
         while dy <= self.search {
@@ -135,7 +135,7 @@ impl Tracker {
         }
         let (mut nbw, mut nbh) = (bw, bh);
         if self.boxed {
-            // viel schlechter als bisher: Motiv verloren (verdeckt, aus dem Bild) → stehen bleiben
+            // much worse than before: subject lost (covered, out of frame) → stand still
             if self.avg > 0.0 && best.2 > (2.0 * self.avg).max(25.0) {
                 return;
             }
@@ -168,7 +168,7 @@ impl Tracker {
     }
 }
 
-/// Ergebnis: (Zeit relativ zu `start`, Mitte x, Mitte y) normiert.
+/// Result: (time relative to `start`, center x, center y) normalized.
 #[allow(clippy::too_many_arguments)]
 pub fn track(
     path: &Path,
@@ -196,10 +196,10 @@ pub fn track(
     Ok(out)
 }
 
-/// Rahmen samt Größe verfolgen (Zensur): `init` liegt bei Quellzeit `at`; verfolgt wird vorwärts
-/// bis `start + dur` und rückwärts bis `start` (in Stücken zu 4 s, rückwärts abgearbeitet).
-/// Ergebnis: (Quellzeit in s, Rahmen) nach Zeit sortiert, 15 je Sekunde. Wird der Vergleich
-/// plötzlich viel schlechter (Motiv verdeckt oder aus dem Bild), bleibt der Rahmen stehen.
+/// Track a box including its size (censoring): `init` lies at source time `at`; tracking runs forward
+/// to `start + dur` and backward to `start` (in chunks of 4 s, processed backwards).
+/// Result: (source time in s, box) sorted by time, 15 per second. If the match suddenly gets
+/// much worse (subject covered or out of frame), the box stands still.
 #[allow(clippy::too_many_arguments)]
 pub fn track_box(
     path: &Path,
@@ -269,7 +269,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let v = dir.path().join("move.mp4");
-        // gemustertes Kästchen wandert von x=40 nach x=240 (2 s), y fest
+        // patterned box moves from x=40 to x=240 (2 s), y fixed
         let st = cl_media::ffmpeg_command()
             .unwrap()
             .args([
@@ -315,22 +315,22 @@ mod tests {
         assert!(path.len() >= 28);
         for (t, x, y) in &path {
             let ex = (60.0 + 100.0 * t) / 320.0;
-            assert!((*x as f64 - ex).abs() < 0.03, "t={t} x={x} erwartet {ex}");
+            assert!((*x as f64 - ex).abs() < 0.03, "t={t} x={x} expected {ex}");
             assert!((*y - 0.5).abs() < 0.04, "y={y}");
         }
-        // Rahmen ab der Mitte (1 s): vorwärts und rückwärts, Größe bleibt
+        // box from the middle (1 s): forward and backward, size stays
         let mid = BoxN { cx: 160.0 / 320.0, ..init };
         let boxes = track_box(&v, 320, 180, 0.0, 2.0, 1.0, mid, &|_| {}, &AtomicBool::new(false)).unwrap();
         assert!(boxes.len() >= 28 && boxes.windows(2).all(|w| w[0].0 < w[1].0), "{}", boxes.len());
         assert!(boxes[0].0 < 0.1 && boxes.last().unwrap().0 > 1.85);
         for (t, b) in &boxes {
             let ex = (60.0 + 100.0 * t) / 320.0;
-            assert!((b.cx as f64 - ex).abs() < 0.03, "t={t} x={} erwartet {ex}", b.cx);
+            assert!((b.cx as f64 - ex).abs() < 0.03, "t={t} x={} expected {ex}", b.cx);
             assert!((b.cy - 0.5).abs() < 0.04 && (b.w / init.w - 1.0).abs() < 0.2, "t={t} {b:?}");
         }
     }
 
-    /// Wachsendes Kästchen: die Größe wächst mit; verschwindet es, bleibt der Rahmen stehen.
+    /// Growing box: the size grows along; if it disappears, the box stands still.
     #[test]
     fn box_follows_size_and_holds_when_lost() {
         if !cl_media::ffmpeg_available() {
@@ -338,7 +338,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let v = dir.path().join("grow.mp4");
-        // 0–2 s: wächst von 40 auf 80 px (Mitte fest bei 160/90); ab 2 s verschwunden
+        // 0–2 s: grows from 40 to 80 px (center fixed at 160/90); gone from 2 s
         let st = cl_media::ffmpeg_command()
             .unwrap()
             .args(["-v", "error", "-y", "-f", "lavfi", "-i", "color=0x203040:s=320x180:r=25:d=3"])
@@ -357,9 +357,9 @@ mod tests {
         let boxes = track_box(&v, 320, 180, 0.0, 3.0, 0.0, init, &|_| {}, &AtomicBool::new(false)).unwrap();
         let at = |t: f64| boxes.iter().min_by(|a, b| (a.0 - t).abs().total_cmp(&(b.0 - t).abs())).unwrap().1;
         let b = at(1.9);
-        assert!(b.w * 320.0 > 65.0, "Größe wächst mit: {b:?}");
+        assert!(b.w * 320.0 > 65.0, "size grows along: {b:?}");
         let gone = at(2.8);
-        assert!((gone.cx - 0.5).abs() < 0.05 && (gone.cy - 0.5).abs() < 0.05, "bleibt stehen: {gone:?}");
+        assert!((gone.cx - 0.5).abs() < 0.05 && (gone.cy - 0.5).abs() < 0.05, "stands still: {gone:?}");
         assert!(gone.w * 320.0 > 60.0, "{gone:?}");
     }
 }

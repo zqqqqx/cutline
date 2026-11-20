@@ -1,4 +1,4 @@
-// Nach „Mosaic“ von Xaychru (GL Transitions, MIT-Lizenz), nach WGSL portiert.
+// Based on "Mosaic" by Xaychru (GL Transitions, MIT license), ported to WGSL.
 const MO_PI = 3.14159265358979323;
 
 fn mo_rand(v: vec2f) -> f32 {

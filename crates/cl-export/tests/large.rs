@@ -1,5 +1,5 @@
-//! Große Projekte (tausende Clips): Befehlszeile, Abschnitte, Messung.
-//! Testmedien klein und kurz, Pfade künstlich lang (tiefe Ordner).
+//! Large projects (thousands of clips): command line, sections, measurement.
+//! Test media small and short, paths artificially long (deep folders).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -24,7 +24,7 @@ fn no_fonts(_: Option<&str>) -> Option<(PathBuf, u32)> {
     None
 }
 
-/// Ordner mit Pfadlänge ≈ `len` Zeichen unter `root`.
+/// Folder with a path length of ≈ `len` characters under `root`.
 fn deep_dir(root: &Path, len: usize) -> PathBuf {
     let mut d = root.to_path_buf();
     while d.to_string_lossy().len() + 20 < len {
@@ -34,7 +34,7 @@ fn deep_dir(root: &Path, len: usize) -> PathBuf {
     d
 }
 
-/// Vier Testdateien (60 s): zwei Videos mit Ton (verschiedene Farben/Töne), ein Video ohne Ton, ein MP3.
+/// Four test files (60 s): two videos with audio (different colors/tones), one video without audio, one MP3.
 fn media(dir: &Path) -> Vec<MediaRef> {
     let files = [
         ("a_video_mit_ton.mp4", vec!["-f", "lavfi", "-i", "testsrc2=s=96x54:r=30:d=60", "-f", "lavfi", "-i", "sine=f=300:d=60:r=48000", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"]),
@@ -54,7 +54,7 @@ fn media(dir: &Path) -> Vec<MediaRef> {
         .collect()
 }
 
-/// `n` Clips auf 4 Spuren (3 Video, 1 Ton) über `secs` Sekunden, Clips aus `m` reihum.
+/// `n` clips on 4 tracks (3 video, 1 audio) over `secs` seconds, clips from `m` in turn.
 fn big_project(m: &[MediaRef], n: usize, secs: f64) -> Project {
     let mut p = Project::new("Groß");
     p.settings.width = 96;
@@ -83,20 +83,20 @@ fn big_project(m: &[MediaRef], n: usize, secs: f64) -> Project {
     p
 }
 
-/// Zeichen der Befehlszeile wie unter Windows (Argumente mit Leerzeichen getrennt, ggf. in Anführungszeichen).
+/// Characters of the command line as on Windows (arguments separated by spaces, quoted if needed).
 fn cmd_chars(args: &[String]) -> usize {
     args.iter().map(|a| a.len() + 3).sum()
 }
 
-/// Messung: Projekt mit 2500 Clips (26 min, Pfade ~130 Zeichen) – Länge der Befehlszeile,
-/// Startversuch, Fehlertext. `cargo test --release -p cl-export --test large -- --ignored --nocapture measure_2500`
+/// Measurement: project with 2500 clips (26 min, paths ~130 characters) – command line length,
+/// start attempt, error text. `cargo test --release -p cl-export --test large -- --ignored --nocapture measure_2500`
 #[test]
 #[ignore]
 fn measure_2500_clips() {
     let root = tempfile::tempdir().unwrap();
     let dir = deep_dir(root.path(), 110);
     let m = media(&dir);
-    println!("Pfadlänge: {}", m[0].path.to_string_lossy().len());
+    println!("path length: {}", m[0].path.to_string_lossy().len());
     let p = big_project(&m, 2500, 26.0 * 60.0);
     let out = root.path().join("gross.mp4");
     let t0 = Instant::now();
@@ -107,14 +107,14 @@ fn measure_2500_clips() {
     let r = run(&job, Arc::new(AtomicBool::new(false)), |x| {
         if x > 0.0 && first.is_none() {
             first = Some(t0.elapsed());
-            println!("erster Fortschritt nach {:?}", t0.elapsed());
+            println!("first progress after {:?}", t0.elapsed());
         }
     });
-    println!("run: {:?} nach {:?}", r.as_ref().err().map(|e| e.to_string()), t0.elapsed());
+    println!("run: {:?} after {:?}", r.as_ref().err().map(|e| e.to_string()), t0.elapsed());
 }
 
-/// Messung: 300 Karaoke-Untertitel à 6 Wörter (10 min Hochformat 1080×1920 über Video) gegen
-/// dieselben Untertitel ohne Karaoke – Filter im Graphen, Eingänge, Exportzeit.
+/// Measurement: 300 karaoke subtitles of 6 words each (10 min portrait 1080×1920 over video) against
+/// the same subtitles without karaoke – filters in the graph, inputs, export time.
 /// `cargo test --release -p cl-export --test large -- --ignored --nocapture measure_karaoke`
 #[test]
 #[ignore]
@@ -154,12 +154,12 @@ fn measure_karaoke_300_captions() {
             s.karaoke = None;
         }
     }
-    for (name, p) in [("ohne Karaoke", &plain), ("Karaoke", &p)] {
+    for (name, p) in [("without karaoke", &plain), ("karaoke", &p)] {
         let out = root.path().join("k.mp4");
         let t0 = Instant::now();
         let job = build(p, &ExportSettings::from_project(p), &no_fonts, &out).unwrap();
         let built = t0.elapsed();
-        // alle Graphen (bei Abschnitten mehrere)
+        // all graphs (several with sections)
         let mut chains = 0;
         let mut filters = 0;
         let mut graphs = 0;
@@ -176,20 +176,20 @@ fn measure_karaoke_300_captions() {
         let t0 = Instant::now();
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         println!(
-            "{name}: Graphen {graphs}, Ketten {chains}, Filter ~{filters}, Eingänge -i {inputs}, Befehl {} Zeichen, build {built:?}, Export {:.1} s",
+            "{name}: graphs {graphs}, chains {chains}, filters ~{filters}, inputs -i {inputs}, command {} characters, build {built:?}, export {:.1} s",
             cmd_chars(&job.args),
             t0.elapsed().as_secs_f64()
         );
     }
 }
 
-// ---------- Abschnitte gleich Durchgang (echtes FFmpeg, klein) ----------
+// ---------- sections equal single pass (real FFmpeg, small) ----------
 
 fn run_job(job: &cl_export::Job) {
     run(job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
 }
 
-/// Rohdaten eines Stroms (`-map`), z. B. `0:v` als rgb24 oder `0:a` als s16le/f32le.
+/// Raw data of a stream (`-map`), e.g. `0:v` as rgb24 or `0:a` as s16le/f32le.
 fn decode(f: &Path, map: &str, fmt: &[&str]) -> Vec<u8> {
     let o = cl_media::ffmpeg_command()
         .unwrap()
@@ -208,7 +208,7 @@ fn rgb(f: &Path) -> Vec<u8> {
     decode(f, "0:v", &["-f", "rawvideo", "-pix_fmt", "rgb24"])
 }
 
-/// Zeitstempel der Bilder (ffprobe) – Anzahl und Monotonie.
+/// Timestamps of the frames (ffprobe) – count and monotonicity.
 fn frame_times(f: &Path) -> Vec<f64> {
     let o = cl_media::ffprobe_command()
         .unwrap()
@@ -219,7 +219,7 @@ fn frame_times(f: &Path) -> Vec<f64> {
     String::from_utf8_lossy(&o.stdout).lines().filter_map(|l| l.trim().trim_end_matches(',').parse().ok()).collect()
 }
 
-/// Ende eines Stroms in Sekunden (ffprobe, aus den Paketen).
+/// End of a stream in seconds (ffprobe, from the packets).
 fn stream_secs(f: &Path, sel: &str) -> f64 {
     let o = cl_media::ffprobe_command()
         .unwrap()
@@ -240,15 +240,15 @@ fn mean_diff(a: &[u8], b: &[u8]) -> f64 {
     a.iter().zip(b).map(|(x, y)| (*x as i32 - *y as i32).abs() as f64).sum::<f64>() / a.len().max(1) as f64
 }
 
-/// Größte mittlere Abweichung je Bild (rgb24, 128×72).
+/// Largest mean deviation per frame (rgb24, 128×72).
 fn worst_frame(a: &[u8], b: &[u8]) -> f64 {
     let fs = 128 * 72 * 3;
     a.chunks(fs).zip(b.chunks(fs)).map(|(x, y)| mean_diff(x, y)).fold(0.0, f64::max)
 }
 
-/// Kleines Projekt mit allem, was an einer Abschnittsgrenze schiefgehen kann: Übergang,
-/// Keyframe-Bewegung, Text-Animation, Tempo-Kurve, Effekt-Clip darüber, langer Hintergrund
-/// (springt per `-ss`), Musik mit Lautstärke-Keyframes (Ducking) und Blenden, Originalton.
+/// Small project with everything that can go wrong at a section boundary: transition,
+/// keyframe motion, text animation, speed curve, effect clip on top, long background
+/// (jumps via `-ss`), music with volume keyframes (ducking) and fades, original audio.
 fn rich_project(dir: &Path) -> Project {
     let m = media(dir);
     let mut p = Project::new("Nähte");
@@ -262,7 +262,7 @@ fn rich_project(dir: &Path) -> Project {
         c.source_in = s(src);
         c
     };
-    // Hintergrund über die ganze Länge (unten), darüber Schnitte
+    // background over the whole length (bottom), cuts above
     let mut bg = Track::new(TrackKind::Video);
     bg.clips.push(clip(&m[2], MediaKind::Video, 0.0, 12.0, 3.0));
     let mut v = Track::new(TrackKind::Video);
@@ -298,12 +298,12 @@ fn rich_project(dir: &Path) -> Project {
     p
 }
 
-/// Exportiert einmal im Durchgang und einmal in Abschnitten (höchstens `max` Eingänge).
+/// Exports once in a single pass and once in sections (at most `max` inputs).
 fn both(p: &Project, s: &ExportSettings, dir: &Path, name: &str, max: usize) -> (PathBuf, PathBuf, usize) {
     let ext = s.format.extension();
     let (one, cut) = (dir.join(format!("{name}_eins.{ext}")), dir.join(format!("{name}_teile.{ext}")));
     let job = build(p, s, &no_fonts, &one).unwrap();
-    assert_eq!(job.sections(), 0, "kleines Projekt: ein Durchgang");
+    assert_eq!(job.sections(), 0, "small project: one pass");
     run_job(&job);
     let job = cl_export::build_limited(p, s, &no_fonts, &cut, max).unwrap();
     let n = job.sections();
@@ -316,7 +316,7 @@ fn wav_samples(f: &Path) -> Vec<i16> {
     decode(f, "0:a", &["-f", "s16le"]).chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect()
 }
 
-/// Ton: in Abschnitten sample-gleich mit dem Durchgang (Begrenzer und Lautheit über das Ganze).
+/// Audio: in sections sample-identical to the single pass (limiter and loudness over the whole).
 #[test]
 fn sections_audio_equals_one_pass() {
     if !cl_media::ffmpeg_available() {
@@ -330,17 +330,17 @@ fn sections_audio_equals_one_pass() {
         s.loudness = loud;
         let (one, cut, n) = both(&p, &s, dir.path(), &format!("ton{}", loud.is_some()), 2);
         let (a, b) = (wav_samples(&one), wav_samples(&cut));
-        assert_eq!(a.len(), b.len(), "Länge in Samples ({n} Abschnitte)");
+        assert_eq!(a.len(), b.len(), "length in samples ({n} sections)");
         if let Some(i) = a.iter().zip(&b).position(|(x, y)| (*x as i32 - *y as i32).abs() > 1) {
-            panic!("erste Abweichung bei Sample {} ({} s): {:?} / {:?}", i / 2, i as f64 / 96_000.0, &a[i..(i + 8).min(a.len())], &b[i..(i + 8).min(b.len())]);
+            panic!("first deviation at sample {} ({} s): {:?} / {:?}", i / 2, i as f64 / 96_000.0, &a[i..(i + 8).min(a.len())], &b[i..(i + 8).min(b.len())]);
         }
         let worst = a.iter().zip(&b).map(|(x, y)| (*x as i32 - *y as i32).abs()).max().unwrap();
-        assert!(worst <= 1, "Lautheit {loud:?}: größte Abweichung {worst} (16 bit)");
-        assert!(a.iter().any(|x| x.abs() > 1000), "Ton hörbar");
+        assert!(worst <= 1, "loudness {loud:?}: largest deviation {worst} (16 bit)");
+        assert!(a.iter().any(|x| x.abs() > 1000), "audio audible");
     }
 }
 
-/// Bild: ProRes (je Bild unabhängig kodiert) in Abschnitten bildgleich mit dem Durchgang.
+/// Picture: ProRes (every frame encoded independently) in sections frame-identical to the single pass.
 #[test]
 fn sections_video_equals_one_pass_prores() {
     if !cl_media::ffmpeg_available() {
@@ -361,16 +361,16 @@ fn sections_video_equals_one_pass_prores() {
         assert!(d < 0.01, "Bild {k}: mittlere Abweichung {d}");
     }
     let (wa, wb) = (wav_samples(&one), wav_samples(&cut));
-    // Abschnitte: Ton genau 12 s. Der Durchgang endet in MOV gelegentlich schon mit dem letzten
-    // Clip (11,5 s, bekannt aus dem alten Weg) – verglichen wird die gemeinsame Länge.
-    assert_eq!(wb.len(), 12 * 48_000 * 2, "Ton in Abschnitten: volle Länge");
+    // sections: audio exactly 12 s. In MOV the single pass occasionally ends with the last
+    // clip (11.5 s, known from the old path) – the common length is compared.
+    assert_eq!(wb.len(), 12 * 48_000 * 2, "audio in sections: full length");
     assert!(wa.len() >= 11 * 48_000 * 2);
     let worst = wa.iter().zip(&wb).map(|(x, y)| (*x as i32 - *y as i32).abs()).max().unwrap();
-    assert!(worst <= 1, "PCM-Ton: größte Abweichung {worst}");
+    assert!(worst <= 1, "PCM audio: largest deviation {worst}");
 }
 
-/// H.264 + AAC: Bildzahl, monotone Zeitstempel, Dauer und A/V-Versatz, Bild nahe am Durchgang,
-/// Ton (einmal kodiert) gleich; dazu Kapitel und Fast-Start.
+/// H.264 + AAC: frame count, monotonic timestamps, duration and A/V offset, picture close to the single pass,
+/// audio (encoded once) equal; plus chapters and fast start.
 #[test]
 fn sections_h264_aac_seams() {
     if !cl_media::ffmpeg_available() {
@@ -391,13 +391,13 @@ fn sections_h264_aac_seams() {
     assert!((va - 12.0).abs() < 1.0 / 30.0, "Bild {va}");
     assert!((va - aa).abs() < 1.0 / 30.0, "A/V-Versatz {va} / {aa}");
     let worst = worst_frame(&rgb(&one), &rgb(&cut));
-    assert!(worst < 4.0, "größte mittlere Bildabweichung {worst}");
-    // AAC einmal über das Ganze kodiert: gleich wie im Durchgang (erste 10 s; der Durchgang endet
-    // gelegentlich schon mit dem letzten Clip, siehe ProRes-Test)
+    assert!(worst < 4.0, "largest mean frame deviation {worst}");
+    // AAC encoded once over the whole: same as in the single pass (first 10 s; the single pass
+    // occasionally ends with the last clip, see ProRes test)
     let (x, y) = (decode(&one, "0:a", &["-f", "f32le"]), decode(&cut, "0:a", &["-f", "f32le"]));
     let n = 10 * 48_000 * 8;
     assert!(x.len() >= n && y.len() >= n);
-    assert!(x[..n] == y[..n], "AAC einmal über das Ganze kodiert");
+    assert!(x[..n] == y[..n], "AAC encoded once over the whole");
     let o = cl_media::ffprobe_command().unwrap().args(["-v", "error", "-show_chapters", "-of", "csv=p=0"]).arg(&cut).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&o.stdout).lines().count(), 2, "Kapitel");
     let head = std::fs::read(&cut).unwrap();
@@ -406,7 +406,7 @@ fn sections_h264_aac_seams() {
     assert!(moov < mdat, "Fast-Start");
 }
 
-/// Weitere Formate: WebM/VP9 mit Alpha, GIF, nur Ton (M4A) – wie im Durchgang.
+/// More formats: WebM/VP9 with alpha, GIF, audio only (M4A) – as in the single pass.
 #[test]
 fn sections_other_formats() {
     if !cl_media::ffmpeg_available() {
@@ -418,12 +418,12 @@ fn sections_other_formats() {
     s.format = cl_export::Format::WebM;
     s.codec = cl_export::Codec::Vp9;
     s.transparent = true;
-    // ohne Hintergrund: um den verkleinerten ersten Clip bleibt es durchsichtig
+    // without background: it stays transparent around the scaled-down first clip
     let mut q = p.clone();
     q.timeline.tracks[0].hidden = true;
     let (one, cut, _) = both(&q, &s, dir.path(), "webm", 3);
     assert_eq!(frame_times(&cut).len(), frame_times(&one).len(), "WebM: Bilder");
-    // Alphakanal bleibt beim Zusammenfügen erhalten (libvpx liest ihn)
+    // the alpha channel survives joining (libvpx reads it)
     let ra = cl_media::ffmpeg_command()
         .unwrap()
         .args(["-v", "error", "-c:v", "libvpx-vp9", "-ss", "1", "-i"])
@@ -431,8 +431,8 @@ fn sections_other_formats() {
         .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .output()
         .unwrap();
-    assert!(ra.stdout.chunks_exact(4).any(|px| px[3] < 128), "transparente Pixel nach dem Zusammenfügen");
-    // mit Alpha vergleichen (ohne libvpx bliebe die Farbe unter durchsichtigen Stellen beliebig)
+    assert!(ra.stdout.chunks_exact(4).any(|px| px[3] < 128), "transparent pixels after joining");
+    // compare with alpha (without libvpx the color under transparent areas would be arbitrary)
     let rgba = |f: &Path| {
         let o = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-c:v", "libvpx-vp9", "-i"]).arg(f).args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"]).output().unwrap();
         o.stdout.chunks_exact(4).flat_map(|px| { let a = px[3] as u32; [px[0] as u32 * a / 255, px[1] as u32 * a / 255, px[2] as u32 * a / 255, a].map(|v| v as u8) }).collect::<Vec<u8>>()
@@ -442,14 +442,14 @@ fn sections_other_formats() {
     let fs = 128 * 72 * 4;
     let d: Vec<f64> = a.chunks(fs).zip(b.chunks(fs)).map(|(x, y)| mean_diff(x, y)).collect();
     let worst = d.iter().cloned().fold(0.0, f64::max);
-    assert!(worst < 6.0, "WebM: größte mittlere Bildabweichung {worst}: {:?}", d.iter().enumerate().filter(|x| *x.1 > 6.0).map(|x| x.0).collect::<Vec<_>>());
+    assert!(worst < 6.0, "WebM: largest mean frame deviation {worst}: {:?}", d.iter().enumerate().filter(|x| *x.1 > 6.0).map(|x| x.0).collect::<Vec<_>>());
 
     let mut g = ExportSettings::from_project(&p);
     g.format = cl_export::Format::Gif;
     let (one, cut, _) = both(&p, &g, dir.path(), "gif", 3);
     let (a, b) = (rgb(&one), rgb(&cut));
     assert_eq!(a.len(), b.len(), "GIF: Bilder");
-    assert!(a == b, "GIF: Palette und Bilder wie im Durchgang (Abweichung {})", mean_diff(&a, &b));
+    assert!(a == b, "GIF: palette and frames as in the single pass (deviation {})", mean_diff(&a, &b));
 
     let mut m = ExportSettings::from_project(&p);
     m.format = cl_export::Format::M4a;
@@ -457,7 +457,7 @@ fn sections_other_formats() {
     assert_eq!(decode(&one, "0:a", &["-f", "f32le"]), decode(&cut, "0:a", &["-f", "f32le"]), "M4A");
 }
 
-/// Abbrechen mitten in den Abschnitten: kein Ziel, kein `.part`, Arbeitsordner weg.
+/// Cancel in the middle of the sections: no target, no `.part`, work folder gone.
 #[test]
 fn cancel_during_sections_leaves_nothing() {
     if !cl_media::ffmpeg_available() {
@@ -483,10 +483,10 @@ fn cancel_during_sections_leaves_nothing() {
         "Zwischendateien liegen im Arbeitsordner"
     );
     drop(job);
-    assert!(!work.exists(), "Arbeitsordner aufgeräumt");
+    assert!(!work.exists(), "work folder cleaned up");
 }
 
-/// Fortschritt über alle Abschnitte stetig steigend bis 1; ein Fehler nennt den Zeitbereich.
+/// Progress over all sections rising steadily up to 1; an error names the time range.
 #[test]
 fn progress_is_monotonic_and_errors_name_the_section() {
     if !cl_media::ffmpeg_available() {
@@ -498,9 +498,9 @@ fn progress_is_monotonic_and_errors_name_the_section() {
     let mut seen = Vec::new();
     run(&job, Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
     assert!(seen.windows(2).all(|w| w[1] >= w[0] - 1e-6), "monoton");
-    assert!(seen.iter().any(|x| *x > 0.2 && *x < 0.8), "Zwischenstände");
+    assert!(seen.iter().any(|x| *x > 0.2 && *x < 0.8), "intermediate values");
     assert!((seen.last().unwrap() - 1.0).abs() < 1e-6);
-    // Datei nach dem Planen kaputt: Fehler mit Zeitbereich, keine halbe Zieldatei
+    // file broken after planning: error with time range, no half target file
     let bad = dir.path().join("kaputt.mp4");
     std::fs::write(&bad, b"kein Video").unwrap();
     let ClipContent::Media { media, .. } = p.timeline.tracks[1].clips[2].content.clone() else { panic!() };
@@ -511,13 +511,13 @@ fn progress_is_monotonic_and_errors_name_the_section() {
     let t = e.to_string();
     assert!(t.starts_with("Abschnitt ") && t.contains('–'), "{t}");
     assert!(!out.exists() && !job.part.exists());
-    // fürs Protokoll: der gescheiterte Aufruf des Abschnitts, nicht der nie gestartete Endlauf
+    // for the log: the failed call of the section, not the never started final run
     let failed = e.failed_args().expect("Abschnitt");
     assert!(job.section_args().iter().any(|a| a == failed) && failed != job.args.as_slice(), "{failed:?}");
     assert!(failed.iter().any(|a| a.contains("kaputt.mp4")));
 }
 
-/// Ein Abschnitt des großen Projekts zum Nachmessen (Bereich 0–50 s).
+/// One section of the large project for re-measuring (range 0–50 s).
 #[test]
 #[ignore]
 fn profile_one_section() {
@@ -552,9 +552,9 @@ fn profile_one_section() {
     println!("erster Fortschritt {:?}, gesamt {:?}", first, t0.elapsed());
 }
 
-/// Grenze mitten in einem Effekt-Clip und einem Übergang, ohne Hintergrund (auch mit Alpha):
-/// ProRes bildgleich mit dem Durchgang. Vorher lief die Effektzeit im Bereichs-Export ab 0 statt
-/// weiter (Wackeln usw. sprang an der Grenze).
+/// Boundary in the middle of an effect clip and a transition, without background (also with alpha):
+/// ProRes frame-identical to the single pass. Previously the effect time in the range export ran from 0 instead of
+/// continuing (shake etc. jumped at the boundary).
 #[test]
 fn boundary_inside_effect_and_transition() {
     if !cl_media::ffmpeg_available() {
@@ -577,8 +577,8 @@ fn boundary_inside_effect_and_transition() {
     }
 }
 
-/// Durchgang und Abschnitte je 6-mal parallel (Last): der Ton ist immer genau 12 s lang. Vorher
-/// endete der Durchgang unter Last gelegentlich schon mit dem letzten Clip (11,5 s).
+/// Single pass and sections 6 times in parallel each (load): the audio is always exactly 12 s long. Previously
+/// the single pass occasionally ended with the last clip under load (11.5 s).
 #[test]
 fn audio_length_under_load() {
     if !cl_media::ffmpeg_available() {
@@ -605,8 +605,8 @@ fn audio_length_under_load() {
     assert!(lens.iter().all(|&(a, b)| a == 576_000 && b == 576_000), "Samples (Durchgang, Abschnitte): {lens:?}");
 }
 
-/// Diashow: `n` Bild-Clips (je `len` s) mit Überblendungen zwischen allen – eine einzige
-/// Übergangsgruppe mit `n` Eingängen.
+/// Slideshow: `n` image clips (`len` s each) with cross-fades between all – a single
+/// transition group with `n` inputs.
 fn slideshow(img: &Path, n: usize, len: f64) -> Project {
     let m = MediaRef {
         id: MediaId::new(),
@@ -638,8 +638,8 @@ fn slideshow(img: &Path, n: usize, len: f64) -> Project {
     p
 }
 
-/// 160 Fotos mit Übergängen (mehr Eingänge als ein Abschnitt fasst, Kette unteilbar): ein
-/// Durchgang wie in 0.11.1 statt „Zu viele gleichzeitige Clips“.
+/// 160 photos with transitions (more inputs than a section holds, chain indivisible): one
+/// pass as in 0.11.1 instead of „Zu viele gleichzeitige Clips“.
 #[test]
 fn long_transition_chain_builds_as_one_pass() {
     let dir = tempfile::tempdir().unwrap();
@@ -651,7 +651,7 @@ fn long_transition_chain_builds_as_one_pass() {
     assert_eq!(job.args.iter().filter(|a| *a == "-i").count(), 160);
 }
 
-/// Kette über der Eingangs-Grenze (hier 4) exportiert mit echtem FFmpeg vollständig.
+/// A chain above the input limit (here 4) exports completely with real FFmpeg.
 #[test]
 fn long_transition_chain_exports() {
     if !cl_media::ffmpeg_available() {
@@ -668,9 +668,9 @@ fn long_transition_chain_exports() {
     assert_eq!(frame_times(&out).len(), 36);
 }
 
-/// Langer Hintergrund mit „Zoom-Puls“ (`zoompan` vergibt eigene Zeitstempel ab 0): in Abschnitten
-/// bildgleich mit dem Durchgang. Vorher sprang der Clip per `-ss` nahe an den Abschnitt und lief
-/// danach um den Sprung zu früh.
+/// Long background with „Zoom-Puls“ (`zoompan` assigns its own timestamps from 0): in sections
+/// frame-identical to the single pass. Previously the clip jumped via `-ss` close to the section and then ran
+/// too early by the jump.
 #[test]
 fn zoom_pulse_on_long_clip_across_sections() {
     if !cl_media::ffmpeg_available() {
@@ -690,8 +690,8 @@ fn zoom_pulse_on_long_clip_across_sections() {
     assert!(bad.is_empty(), "abweichende Bilder {bad:?}");
 }
 
-/// Hardware-Encoder, die hier starten (NVENC und Media Foundation, H.264/HEVC): Abschnitte per `-c:v copy` zusammengefügt
-/// ergeben alle Bilder, monotone Zeitstempel und decodieren ohne Fehler.
+/// Hardware encoders that start here (NVENC and Media Foundation, H.264/HEVC): sections joined via `-c:v copy`
+/// yield all frames, monotonic timestamps and decode without errors.
 #[test]
 fn sections_hardware_encoders_concat() {
     if !cl_media::ffmpeg_available() {
@@ -720,8 +720,8 @@ fn sections_hardware_encoders_concat() {
     }
 }
 
-/// QSV, AMF und AV1 über NVENC (Zusammenfügen ungeprüft): Abschnitte verlustfrei, der Endlauf
-/// kodiert einmal mit dem gewählten Encoder statt `-c:v copy`.
+/// QSV, AMF and AV1 via NVENC (joining unverified): sections lossless, the final run
+/// encodes once with the chosen encoder instead of `-c:v copy`.
 #[test]
 fn unproven_hardware_encoders_encode_once() {
     if !cl_media::ffmpeg_available() {
@@ -735,7 +735,7 @@ fn unproven_hardware_encoders_encode_once() {
         (Encoder::Amf, Codec::Hevc, "hevc_amf", false),
         (Encoder::Nvenc, Codec::Av1, "av1_nvenc", false),
         (Encoder::Nvenc, Codec::Hevc, "hevc_nvenc", true),
-        // geprüft in `sections_hardware_encoders_concat`
+        // verified in `sections_hardware_encoders_concat`
         (Encoder::Mf, Codec::H264, "h264_mf", true),
         (Encoder::Mf, Codec::Hevc, "hevc_mf", true),
     ] {
@@ -749,8 +749,8 @@ fn unproven_hardware_encoders_encode_once() {
     }
 }
 
-/// Media Foundation (wo `h264_mf` mit Hardware startet): Export H.264 und HEVC mit allen Bildern,
-/// richtiger Dauer und dem gewählten Codec.
+/// Media Foundation (where `h264_mf` starts with hardware): export H.264 and HEVC with all frames,
+/// correct duration and the chosen codec.
 #[test]
 fn media_foundation_export_h264_and_hevc() {
     if !cl_media::ffmpeg_available() || !cl_export::available_encoders().contains(&cl_export::Encoder::Mf) {
@@ -776,10 +776,10 @@ fn media_foundation_export_h264_and_hevc() {
     }
 }
 
-/// Sprung an den Abschnitt (`lead_skip`) bei Projekten mit 29,97 und 23,976 fps und Quellen mit
-/// gleicher oder anderer Bildrate: ProRes bildgleich mit dem Durchgang. Vorher setzte `setpts` den
-/// Versatz abgeschnitten statt gerundet (Clips ein Bild versetzt), und Sprünge um ganze Sekunden
-/// verfehlen bei 29,97 fps ab etwa 17 s die Quellbilder.
+/// Jump to the section (`lead_skip`) for projects at 29.97 and 23.976 fps and sources with
+/// the same or a different frame rate: ProRes frame-identical to the single pass. Previously `setpts` set the
+/// offset truncated instead of rounded (clips one frame off), and jumps by whole seconds
+/// miss the source frames at 29.97 fps from about 17 s.
 #[test]
 fn lead_skip_with_ntsc_project_and_other_source_rate() {
     if !cl_media::ffmpeg_available() {
@@ -794,7 +794,7 @@ fn lead_skip_with_ntsc_project_and_other_source_rate() {
         cl_media::probe(&f).unwrap()
     };
     let s = Time::from_secs_f64;
-    // (Projekt, Quelle; None = 60 fps, Bereich ab 25 s mit langem Hintergrund), springt?
+    // (project, source; None = 60 fps, range from 25 s with long background), jumps?
     let ntsc = Rational::new(30000, 1001);
     for (fps, rate, long, jumps) in [
         (ntsc, None, false, false),
@@ -813,7 +813,7 @@ fn lead_skip_with_ntsc_project_and_other_source_rate() {
         }
         let mut st = ExportSettings::from_project(&q);
         if long {
-            // Hintergrund 40 s, Bereich 25–28 s, kurze Tonclips erzwingen Grenzen bei 26 und 27 s
+            // background 40 s, range 25–28 s, short audio clips force boundaries at 26 and 27 s
             q.timeline.tracks[0].clips[0].duration = s(40.0);
             let mu = q.timeline.tracks[4].clips[0].clone();
             for k in 0..3 {

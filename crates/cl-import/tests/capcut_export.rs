@@ -1,5 +1,5 @@
-//! Messung (von Hand): großen CapCut-Entwurf importieren und ganz exportieren (Abschnitte).
-//! Ausgabe nur Zahlen (keine Namen/Pfade). Entwurf: `CUTLINE_CAPCUT_DRAFT` (Ordner mit
+//! Measurement (manual): import a large CapCut draft and export it entirely (sections).
+//! Output numbers only (no names/paths). Draft: `CUTLINE_CAPCUT_DRAFT` (folder with
 //! `draft_content.json`).
 //!
 //! `CUTLINE_CAPCUT_DRAFT=… cargo test --release -p cl-import --test capcut_export -- --ignored --nocapture`
@@ -16,7 +16,7 @@ fn no_fonts(_: Option<&str>) -> Option<(PathBuf, u32)> {
     None
 }
 
-/// Ein Bild (rgb24) bzw. 0,2 s Ton (f32, Stereo) einer Datei ab `t`.
+/// One frame (rgb24) or 0.2 s of audio (f32, stereo) of a file from `t`.
 fn grab(f: &Path, t: f64, video: bool) -> Vec<u8> {
     let mut c = cl_media::ffmpeg_command().unwrap();
     c.args(["-v", "error", "-nostdin", "-ss", &format!("{t:.4}"), "-i"])
@@ -66,7 +66,7 @@ fn capcut_big_export() {
         p.media.len(),
         rep.missing.len()
     );
-    // klein rechnen (Messung der Abschnitte, nicht des Encoders)
+    // compute small (measuring the sections, not the encoder)
     let w: u32 = std::env::var("CUTLINE_W")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -92,7 +92,7 @@ fn capcut_big_export() {
         .map(|a| a.iter().filter(|x| *x == "-i").count())
         .max()
         .unwrap_or(0);
-    println!("build {:.1} s: {} Abschnitte, längste Befehlszeile {longest} Zeichen, höchstens {most} Eingänge", t0.elapsed().as_secs_f64(), job.sections());
+    println!("build {:.1} s: {} sections, longest command line {longest} characters, at most {most} inputs", t0.elapsed().as_secs_f64(), job.sections());
     let work = job.workdir.path().to_path_buf();
     let secs = p.duration().as_secs_f64();
     let (mut vd, mut ad) = (0.0f64, 0.0f64);
@@ -122,7 +122,7 @@ fn capcut_big_export() {
         let n = frames(&out);
         let want = (secs * s.fps.as_f64()).ceil() as usize;
         println!(
-        "Export {:.0} s, erster Fortschritt {:.1} s, Zwischendateien höchstens {} MB, Bilder {n} (Soll {want}), Ergebnis {} MB",
+        "export {:.0} s, first progress {:.1} s, intermediate files at most {} MB, frames {n} (expected {want}), result {} MB",
         t0.elapsed().as_secs_f64(),
         first.unwrap_or_default().as_secs_f64(),
         peak >> 20,
@@ -130,11 +130,11 @@ fn capcut_big_export() {
     );
         assert!(
             (n as i64 - want as i64).abs() <= 1,
-            "Bildzahl {n} statt {want}"
+            "frame count {n} instead of {want}"
         );
-        // 20 Stichproben: kurzer Bereich im Durchgang gegen den Abschnitts-Export
+        // 20 samples: short range in the single pass against the section export
         for k in 0..20 {
-            // auf 50 ms (ganze Bilder und ganze Samples), sonst verschiebt schon das Nachmessen um Samples
+            // to 50 ms (whole frames and whole samples), otherwise re-measuring alone shifts by samples
         let t = Time::from_secs_f64((secs * (k as f64 + 0.5) / 20.0 * 20.0).round() / 20.0);
             let mut r = s.clone();
             r.range = Some((t, t + Time::from_secs_f64(0.5)));
@@ -152,7 +152,7 @@ fn capcut_big_export() {
             vd = vd.max(d);
         }
     }
-    // Ton ohne Kodierung vergleichen (AAC-Rahmen lägen bei kurzen Proben anders): WAV ganz und je Probe
+    // compare audio without encoding (AAC frames would lie differently with short samples): WAV whole and per sample
     let mut wav = s.clone();
     wav.format = cl_export::Format::Wav;
     let whole = out_dir.path().join("ganz.wav");
@@ -160,7 +160,7 @@ fn capcut_big_export() {
     let j = build(&p, &wav, &no_fonts, &whole).unwrap();
     run(&j, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
     println!(
-        "nur Ton (WAV): {} Abschnitte, {:.0} s",
+        "audio only (WAV): {} sections, {:.0} s",
         j.sections(),
         t0.elapsed().as_secs_f64()
     );
@@ -170,9 +170,9 @@ fn capcut_big_export() {
             .collect::<Vec<f32>>()
     };
     for k in 0..20 {
-        // auf 50 ms (ganze Bilder und ganze Samples), sonst verschiebt schon das Nachmessen um Samples
+        // to 50 ms (whole frames and whole samples), otherwise re-measuring alone shifts by samples
         let t = Time::from_secs_f64((secs * (k as f64 + 0.5) / 20.0 * 20.0).round() / 20.0);
-        // 3 s Vorlauf: der Begrenzer hat dort schon dieselbe Vorgeschichte wie im Ganzen
+        // 3 s lead: the limiter there already has the same history as in the whole
         let pre = 3.0f64.min(t.as_secs_f64());
         let mut r = wav.clone();
         r.range = Some((t - Time::from_secs_f64(pre), t + Time::from_secs_f64(0.5)));
@@ -189,7 +189,7 @@ fn capcut_big_export() {
             .map(|(a, b)| (a - b).abs() as f64)
             .fold(0.0, f64::max);
         let peak = y.iter().map(|v| v.abs() as f64).fold(0.0, f64::max);
-        // Versatz in Samples, bei dem beide am besten passen (Stereo verschränkt: nur links)
+        // offset in samples at which both fit best (stereo interleaved: left only)
         let (l, r): (Vec<f32>, Vec<f32>) = (x.iter().step_by(2).copied().collect(), y.iter().step_by(2).copied().collect());
         let lag = (-2000i64..=2000)
             .min_by_key(|&d| {
@@ -199,11 +199,11 @@ fn capcut_big_export() {
             .unwrap_or(0);
         let el: f64 = l.iter().map(|v| v.abs() as f64).sum::<f64>() / l.len().max(1) as f64;
         let er: f64 = r.iter().map(|v| v.abs() as f64).sum::<f64>() / r.len().max(1) as f64;
-        println!("Probe {k} bei {:.3} s: Abweichung {e:.5}, Spitze {peak:.3}, Versatz {lag} Samples, Pegel {el:.4}/{er:.4}", t.as_secs_f64());
+        println!("sample {k} at {:.3} s: deviation {e:.5}, peak {peak:.3}, offset {lag} samples, level {el:.4}/{er:.4}", t.as_secs_f64());
         ad = ad.max(e);
     }
     println!(
-        "Stichproben: Bild mittlere Abweichung höchstens {vd:.2} (0–255), Ton höchstens {ad:.4}"
+        "samples: picture mean deviation at most {vd:.2} (0–255), audio at most {ad:.4}"
     );
     assert!(ad < 1e-3, "Ton weicht ab: {ad}");
 }

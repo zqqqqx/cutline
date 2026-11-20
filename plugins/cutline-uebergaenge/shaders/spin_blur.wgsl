@@ -1,6 +1,6 @@
-// Dreh-Unschärfe: das Bild dreht sich einmal um die Mitte, mit Drehunschärfe; in der schnellsten
-// Phase wechselt es zu B. Eigenes Werk des Cutline-Projekts, CC0-1.0.
-// p0 = Stärke der Unschärfe
+// Spin blur: the image turns once around the center, with rotational blur; in the fastest
+// phase it switches to B. Original work of the Cutline project, CC0-1.0.
+// p0 = strength of the blur
 fn sb_mirror(v: vec2f) -> vec2f {
   let m = v - 2.0 * floor(v / 2.0);
   return 1.0 - abs(1.0 - m);
@@ -11,7 +11,7 @@ fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   let e = select(1.0 - pow(2.0 - 2.0 * t, 3.0) / 2.0, 4.0 * t * t * t, t < 0.5);
   let speed = select(pow(2.0 - 2.0 * t, 2.0), 4.0 * t * t, t < 0.5);
   let angle = 6.283185307 * e;
-  // etwas hineinzoomen, damit beim Drehen keine Ecken leer bleiben
+  // zoom in a little so no corners stay empty while turning
   let zoom = 1.0 + 0.4 * (1.0 - abs(2.0 * t - 1.0));
   let aspect = vec2f(ratio, 1.0);
   let d = (uv - 0.5) * aspect / zoom;

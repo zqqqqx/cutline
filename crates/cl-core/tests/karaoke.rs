@@ -1,5 +1,5 @@
-//! Karaoke-Untertitel: welches Wort ist dran, und was Teilen, Trimmen, Tempo und Textänderungen
-//! mit den Wortzeiten machen.
+//! Karaoke subtitles: which word is current, and what split, trim, speed and text edits
+//! do to the word times.
 
 use cl_core::*;
 
@@ -22,31 +22,31 @@ fn karaoke(text: &str, words: &[f64]) -> TextStyle {
 #[test]
 fn word_at_time_with_stored_times_and_at_the_edges() {
     let st = [s(0.5), s(1.0), s(2.0)];
-    assert_eq!(karaoke_word(&st, s(0.0)), None, "vor dem ersten Wort");
+    assert_eq!(karaoke_word(&st, s(0.0)), None, "before the first word");
     assert_eq!(karaoke_word(&st, s(0.5)), Some(0));
     assert_eq!(karaoke_word(&st, s(0.99)), Some(0));
-    assert_eq!(karaoke_word(&st, s(1.5)), Some(1), "Sprechpause: das letzte Wort bleibt");
+    assert_eq!(karaoke_word(&st, s(1.5)), Some(1), "speech pause: the last word stays");
     assert_eq!(karaoke_word(&st, s(2.0)), Some(2));
-    assert_eq!(karaoke_word(&st, s(99.0)), Some(2), "nach dem letzten Wort");
+    assert_eq!(karaoke_word(&st, s(99.0)), Some(2), "after the last word");
     assert_eq!(karaoke_word(&[], s(1.0)), None);
     let k = karaoke("eins zwei drei", &[0.5, 1.0, 2.0]);
     assert_eq!(k.karaoke_lit(s(3.0), s(1.2)), Some(1..2));
     let mut fill = k.clone();
     fill.karaoke.as_mut().unwrap().fill = true;
-    assert_eq!(fill.karaoke_lit(s(3.0), s(1.2)), Some(0..2), "Füllen: gesprochene bleiben");
+    assert_eq!(fill.karaoke_lit(s(3.0), s(1.2)), Some(0..2), "fill: spoken words stay");
     assert_eq!(TextStyle::default().karaoke_lit(s(3.0), s(1.2)), None);
 }
 
 #[test]
 fn even_distribution_by_characters() {
-    // ohne Zeiten (von Hand, SRT): Gewicht = Zeichen + 1
+    // without times (by hand, SRT): weight = characters + 1
     let k = Karaoke { color: [0; 4], fill: false, words: vec![] };
     assert_eq!(ms(&k.starts("ab abcd a", s(1.2))), [0, 360, 960]);
     assert_eq!(k.starts("", s(1.0)), Vec::<Time>::new());
-    // andere Wortzahl als gespeichert (Text geändert): gleichmäßig
+    // different word count than stored (text changed): even
     let k2 = Karaoke { words: vec![s(0.1), s(0.2)], ..k.clone() };
     assert_eq!(ms(&k2.starts("ab abcd a", s(1.2))), [0, 360, 960]);
-    // gleiche Wortzahl (Wort korrigiert): Zeiten bleiben
+    // same word count (word corrected): times stay
     assert_eq!(ms(&k2.starts("Hallo Welt", s(1.2))), [100, 200]);
     assert_eq!(word_ranges(" Hallo  schöne\nWelt "), [1..6, 8..15, 16..20]);
 }
@@ -75,11 +75,11 @@ fn split_keeps_times_with_the_right_halves() {
     let OpOutput::Clip(r) = d.apply(EditOp::SplitClip { clip: id, at: s(12.5) }, OpSource::Ui).unwrap() else { panic!() };
     assert_eq!(words(&d, id), [0, 1000, 2000, 3000]);
     assert_eq!(words(&d, r), [-2500, -1500, -500, 500]);
-    // die Hervorhebung läuft über den Schnitt weiter: rechts am Anfang „c“
+    // the highlight continues across the cut: on the right „c“ at the start
     let rc = d.project().find_clip(r).unwrap().1.clone();
     let ClipContent::Text(st) = &rc.content else { panic!() };
     assert_eq!(st.karaoke_lit(rc.duration, Time::ZERO), Some(2..3));
-    // gleichmäßig verteilte Wörter werden mit der ganzen Länge festgehalten
+    // evenly spread words are pinned with the whole length
     let (mut d, id) = doc_with(karaoke("a b c d", &[]), 0.0, 4.0);
     let OpOutput::Clip(r) = d.apply(EditOp::SplitClip { clip: id, at: s(1.0) }, OpSource::Ui).unwrap() else { panic!() };
     assert_eq!(words(&d, id), [0, 1000, 2000, 3000]);
@@ -90,12 +90,12 @@ fn split_keeps_times_with_the_right_halves() {
 fn trim_and_tempo_move_the_times() {
     let (mut d, id) = doc_with(karaoke("a b c", &[0.5, 1.0, 2.0]), 0.0, 3.0);
     d.apply(EditOp::TrimClip { clip: id, edge: Edge::Start, to: s(0.8) }, OpSource::Ui).unwrap();
-    assert_eq!(words(&d, id), [-300, 200, 1200], "Wörter bleiben an ihrer Stelle in der Zeitleiste");
+    assert_eq!(words(&d, id), [-300, 200, 1200], "words stay in place on the timeline");
     d.apply(EditOp::TrimClip { clip: id, edge: Edge::End, to: s(2.5) }, OpSource::Ui).unwrap();
     assert_eq!(words(&d, id), [-300, 200, 1200]);
     d.apply(EditOp::SetSpeed { clip: id, speed: 2.0 }, OpSource::Ui).unwrap();
     assert_eq!(words(&d, id), [-150, 100, 600]);
-    // Verschieben ändert nichts (relativ zum Clipanfang)
+    // moving changes nothing (relative to the clip start)
     d.apply(EditOp::MoveClip { clip: id, track: None, start: s(5.0) }, OpSource::Ui).unwrap();
     assert_eq!(words(&d, id), [-150, 100, 600]);
     d.undo().unwrap();
@@ -107,10 +107,10 @@ fn trim_and_tempo_move_the_times() {
 fn files_without_karaoke_stay_unchanged() {
     let (d, _) = doc_with(TextStyle { text: "Hallo".into(), ..Default::default() }, 0.0, 1.0);
     let json = d.project().to_json();
-    assert!(!json.contains("karaoke"), "kein neues Feld ohne Karaoke");
+    assert!(!json.contains("karaoke"), "no new field without karaoke");
     let p = Project::from_json(&json).unwrap();
     assert_eq!(p.to_json(), json);
-    // Karaoke ohne Zeiten und ohne Füllen: nur die Farbe
+    // karaoke without times and without fill: color only
     let (d, _) = doc_with(karaoke("a", &[]), 0.0, 1.0);
     let json = d.project().to_json();
     assert!(json.contains("karaoke") && !json.contains("words") && !json.contains("fill"), "{json}");

@@ -1,4 +1,4 @@
-//! CapCut-Desktop-Entwürfe (`draft_content.json`, Zeiten in Mikrosekunden).
+//! CapCut desktop drafts (`draft_content.json`, times in microseconds).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::{Progress, Report, Result, Step};
 
-/// Ein lokaler Entwurf für die Auswahlliste.
+/// A local draft for the selection list.
 #[derive(Debug, Clone)]
 pub struct Draft {
     pub name: String,
@@ -21,7 +21,7 @@ pub struct Draft {
     pub cover: Option<PathBuf>,
 }
 
-/// Bekannte Ablageorte der Entwürfe (Windows/macOS).
+/// Known storage locations of the drafts (Windows/macOS).
 pub fn draft_roots() -> Vec<PathBuf> {
     let mut v = Vec::new();
     if let Some(l) = std::env::var_os("LOCALAPPDATA") {
@@ -52,7 +52,7 @@ pub fn draft_roots() -> Vec<PathBuf> {
     v.into_iter().filter(|p| p.is_dir()).collect()
 }
 
-/// Alle lokalen Entwürfe, neueste zuerst.
+/// All local drafts, newest first.
 pub fn list_drafts() -> Vec<Draft> {
     let mut out = Vec::new();
     for root in draft_roots() {
@@ -101,7 +101,7 @@ fn us(v: Option<&Value>, key: &str) -> i64 {
                 .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
         })
         .unwrap_or(0)
-        // kaputte Entwürfe: nichts jenseits von Time::LIMIT (wie im Kern)
+        // broken drafts: nothing beyond Time::LIMIT (as in the core)
         .clamp(-Time::LIMIT.0, Time::LIMIT.0)
 }
 
@@ -113,7 +113,7 @@ fn f(v: &Value, path: &[&str]) -> Option<f64> {
     cur.as_f64()
 }
 
-/// Pfad eines Materials auflösen (Platzhalter für den Entwurfsordner ersetzen).
+/// Resolve the path of a material (replace placeholders for the draft folder).
 fn resolve(path: &str, draft_dir: &Path) -> PathBuf {
     if let Some(rest) = path.strip_prefix("##_draftpath_placeholder_") {
         if let Some((_, tail)) = rest.split_once("_##") {
@@ -123,12 +123,12 @@ fn resolve(path: &str, draft_dir: &Path) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Entwurf importieren: Ordner oder `draft_content.json`.
+/// Import a draft: folder or `draft_content.json`.
 pub fn import(path: &Path) -> Result<(Project, Report)> {
     import_with(path, &Progress::default())
 }
 
-/// Wie [`import`], mit Fortschritt und Abbruch (Hintergrund-Thread).
+/// Like [`import`], with progress and cancel (background thread).
 pub fn import_with(path: &Path, progress: &Progress) -> Result<(Project, Report)> {
     let (dir, json) = if path.is_dir() {
         (path.to_path_buf(), path.join("draft_content.json"))
@@ -172,13 +172,13 @@ fn file_label(p: &Path) -> String {
     p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// Verschachtelte Entwürfe (zusammengesetzte Clips) höchstens so tief auflösen
+/// Resolve nested drafts (compound clips) at most this deep
 const MAX_DEPTH: usize = 8;
 
-/// Höchstens so viele Segmente (alle Stufen zusammen); echte Entwürfe haben wenige Tausend
+/// At most this many segments (all levels together); real drafts have a few thousand
 const MAX_SEGMENTS: usize = 1_000_000;
 
-/// Materialien eines Entwurfs nach ID: (Art, Material)
+/// Materials of a draft by ID: (kind, material)
 fn materials(d: &Value) -> HashMap<&str, (&str, &Value)> {
     let mut by_id = HashMap::new();
     if let Some(obj) = d.get("materials").and_then(|m| m.as_object()) {
@@ -197,15 +197,15 @@ fn segments(t: &Value) -> impl Iterator<Item = &Value> {
     t.get("segments").and_then(|s| s.as_array()).into_iter().flatten()
 }
 
-/// Verschachtelter Entwurf eines Materials (CapCut „zusammengesetzter Clip“)
+/// Nested draft of a material (CapCut „zusammengesetzter Clip“)
 fn sub_draft(m: &Value) -> Option<&Value> {
     m.get("draft").filter(|v| v.is_object())
 }
 
-/// Medien- und Schriftdateien, die der Import braucht (in der Reihenfolge der Spuren, auch in
-/// verschachtelten Entwürfen) – zum Prüfen vorab. `seen`: bisher besuchte Segmente; jedes Segment
-/// auf einen inneren Entwurf löst ihn neu auf, so wächst der Aufwand mit der Tiefe exponentiell.
-/// Die Zeitleiste geht danach genau dieselben Segmente durch, die Grenze gilt also für beide.
+/// Media and font files the import needs (in track order, also in
+/// nested drafts) – for checking up front. `seen`: segments visited so far; every segment
+/// pointing to an inner draft resolves it anew, so the effort grows exponentially with depth.
+/// The timeline then walks exactly the same segments, so the limit applies to both.
 fn collect_files(d: &Value, dir: &Path, depth: usize, media: &mut Vec<PathBuf>, fonts: &mut Vec<PathBuf>, seen: &mut usize, progress: &Progress) -> Result<()> {
     let by_id = materials(d);
     for t in d.get("tracks").and_then(|t| t.as_array()).into_iter().flatten() {
@@ -242,7 +242,7 @@ fn collect_files(d: &Value, dir: &Path, depth: usize, media: &mut Vec<PathBuf>, 
     Ok(())
 }
 
-/// Doppelte entfernen, Reihenfolge behalten
+/// Remove duplicates, keep the order
 fn unique(v: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen = std::collections::HashSet::new();
     v.into_iter().filter(|p| seen.insert(p.clone())).collect()
@@ -264,7 +264,7 @@ fn first_style(content: &Value) -> Value {
         .unwrap_or_default()
 }
 
-/// Schriftdatei eines Textes: eigene Schrift des Textes, sonst die des Stils (CapCut-Standard)
+/// Font file of a text: the text's own font, otherwise that of the style (CapCut default)
 fn text_font(m: &Value, dir: &Path) -> Option<PathBuf> {
     let style0 = first_style(&text_content(m));
     let style_font = style0.pointer("/font/path").and_then(|v| v.as_str());
@@ -279,24 +279,24 @@ fn text_font(m: &Value, dir: &Path) -> Option<PathBuf> {
     font.map(|f| resolve(f, dir))
 }
 
-/// Zustand beim Aufbau der Zeitleiste: vorab geprüfte Dateien, übernommene Medien, Bericht.
+/// State while building the timeline: files checked up front, adopted media, report.
 struct Build<'a> {
     w: u32,
     h: u32,
     exists: HashMap<PathBuf, bool>,
     probed: HashMap<PathBuf, Result<MediaRef>>,
     fonts: HashMap<PathBuf, Option<String>>,
-    /// Medien nur einmal übernehmen
+    /// Adopt media only once
     used: HashMap<PathBuf, Option<MediaRef>>,
     media: Vec<MediaRef>,
     rep: Report,
     progress: &'a Progress,
-    /// Segmente seit der letzten Abbruch-Prüfung
+    /// Segments since the last cancel check
     since_check: usize,
 }
 
 impl Build<'_> {
-    /// `mkind`, `mat`: Materialart und Material (Angaben für den Platzhalter einer fehlenden Datei)
+    /// `mkind`, `mat`: material kind and material (details for the placeholder of a missing file)
     fn media(&mut self, path: PathBuf, mkind: &str, mat: &Value) -> Option<MediaRef> {
         if let Some(m) = self.used.get(&path) {
             return m.clone();
@@ -328,7 +328,7 @@ impl Build<'_> {
         m
     }
 
-    /// Spuren eines Entwurfs (Ebene nach CapCut-`render_index`); `depth` > 0: verschachtelt.
+    /// Tracks of a draft (layer by CapCut `render_index`); `depth` > 0: nested.
     fn tracks(&mut self, d: &Value, dir: &Path, depth: usize) -> Result<Vec<(Track, i64)>> {
         let by_id = materials(d);
         let tracks: Vec<&Value> = d.get("tracks").and_then(|t| t.as_array()).into_iter().flatten().collect();
@@ -367,8 +367,8 @@ impl Build<'_> {
                 // „Originalton der Hauptspur aus“
                 track.muted = d.pointer("/config/video_mute").and_then(|v| v.as_bool()).unwrap_or(false);
             }
-            // Stummschalter am Spurkopf (Bit 0); CapCut setzt dabei die Clips auf 0 und merkt sich
-            // die Lautstärke in `last_nonzero_volume` – in Cutline bleibt die Spur stumm (ein Klick hebt es auf)
+            // mute switch on the track header (bit 0); CapCut then sets the clips to 0 and remembers
+            // the volume in `last_nonzero_volume` – in Cutline the track stays muted (one click undoes it)
             track.muted |= t.get("attribute").and_then(|v| v.as_i64()).unwrap_or(0) & 1 == 1;
             for s in segments(t) {
                 self.since_check += 1;
@@ -382,10 +382,10 @@ impl Build<'_> {
                 };
                 let target = s.get("target_timerange");
                 let source = s.get("source_timerange");
-                // kaputte Entwürfe: nichts vor 0
+                // broken drafts: nothing before 0
                 let start = Time(us(target, "start").max(0));
                 let duration = Time(us(target, "duration").max(1));
-                // Zahl der Tonspuren der Datei, wenn sie geprüft wurde (nicht beim Platzhalter)
+                // number of audio streams in the file if it was probed (not for the placeholder)
                 let mut streams = None;
                 let mut clip = match mkind {
                     "videos" | "audios" => {
@@ -445,19 +445,19 @@ impl Build<'_> {
                         continue;
                     }
                 };
-                // gemeinsame Eigenschaften
+                // shared properties
                 let speed = s.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
                 clip.speed = speed.clamp(0.1, 10.0) as f32;
                 let mut vol = s.get("volume").and_then(|v| v.as_f64()).unwrap_or(1.0);
                 if vol <= 0.0001 && track.muted {
                     vol = s.get("last_nonzero_volume").and_then(|v| v.as_f64()).unwrap_or(vol);
                 }
-                // Ton vom Video getrennt: er liegt als eigener Ton-Clip vor (wie „Ton extrahieren“)
+                // audio split from the video: it exists as its own audio clip (like „Ton extrahieren“)
                 if mkind == "videos" && m.get("has_sound_separated").and_then(|v| v.as_bool()).unwrap_or(false) {
                     vol = 0.0;
                 }
-                // Grenzen wie beim Bearbeiten (ReplaceClip, Ziehen im Player); unsinnige Werte
-                // aus kaputten Entwürfen wären als f32 sonst unendlich
+                // limits as when editing (ReplaceClip, dragging in the player); nonsensical values
+                // from broken drafts would otherwise be infinite as f32
                 let fin = |v: f64, d: f32| Some(v as f32).filter(|v| v.is_finite()).unwrap_or(d);
                 clip.volume_db = if vol <= 0.0001 {
                     -60.0
@@ -470,7 +470,7 @@ impl Build<'_> {
                     clip.opacity = (f(c, &["alpha"]).unwrap_or(1.0) as f32).clamp(0.0, 1.0);
                     clip.transform.scale = (f(c, &["scale", "x"]).unwrap_or(1.0) as f32).clamp(0.02, 20.0);
                     clip.transform.rotation_deg = fin(f(c, &["rotation"]).unwrap_or(0.0), 0.0);
-                    // CapCut: Anteil der halben Bildbreite/-höhe, y nach oben
+                    // CapCut: fraction of half the image width/height, y upwards
                     clip.transform.x = fin(f(c, &["transform", "x"]).unwrap_or(0.0) * w as f64 / 2.0, 0.0);
                     clip.transform.y = fin(-f(c, &["transform", "y"]).unwrap_or(0.0) * h as f64 / 2.0, 0.0);
                     clip.fx.flip_h = c
@@ -482,18 +482,18 @@ impl Build<'_> {
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
                 }
-                // Ein-/Ausblend-Animationen: CapCuts eigene Animationen gibt es hier nicht, deshalb
-                // wird jede als weiche Blende mit gleicher Dauer übernommen
+                // in/out animations: CapCut's own animations don't exist here, so
+                // each one is adopted as a soft fade with the same duration
                 for r in s.get("extra_material_refs").and_then(|v| v.as_array()).into_iter().flatten() {
                     let Some(&(k, am)) = r.as_str().and_then(|id| by_id.get(id)) else { continue };
                     let us_of = |key: &str| Time(am.get(key).and_then(|v| v.as_i64()).unwrap_or(0).clamp(0, duration.0));
                     match k {
-                        // Tonspur der Datei, 1-basiert (1 = Standard); ohne Verweis die erste
+                        // audio stream of the file, 1-based (1 = default); without a reference the first
                         "audio_track_indexes" => {
                             let n = am.get("audio_track_index").and_then(|v| v.as_i64()).unwrap_or(1);
-                            // Nur Spuren, die es geben kann; fehlt die Datei, höchstens 16. Nach dem
-                            // Neu-Verknüpfen prüfen Export (`graph.rs` `audio_stream`) und Zeitleiste
-                            // die Nummer gegen die echten `audio_streams`
+                            // only streams that can exist; if the file is missing, at most 16. After
+                            // relinking, export (`graph.rs` `audio_stream`) and timeline check
+                            // the number against the real `audio_streams`
                             let max = i64::from(streams.unwrap_or(16));
                             clip.audio_stream = (n > 1 && n <= max).then(|| (n - 1) as u32);
                             continue;
@@ -519,7 +519,7 @@ impl Build<'_> {
                         self.rep.skip("Animation (als Blende übernommen)");
                     }
                 }
-                // Bei Text ist die Größe schon in der Schrift enthalten
+                // for text the size is already contained in the font
                 if matches!(clip.content, ClipContent::Text(_)) {
                     if let ClipContent::Text(st) = &mut clip.content {
                         st.size = (st.size * clip.transform.scale).clamp(8.0, 600.0);
@@ -531,8 +531,8 @@ impl Build<'_> {
             track.clips.sort_by_key(|c| c.start);
             out.push((track, layer_of(t, kind)));
         }
-        // Zusammengesetzte Clips: Spuren des inneren Entwurfs an die Stelle des Clips setzen,
-        // auf dessen Ausschnitt gekürzt (Stufe für Stufe, höchstens `MAX_DEPTH` tief)
+        // compound clips: put the tracks of the inner draft in place of the clip,
+        // trimmed to its section (level by level, at most `MAX_DEPTH` deep)
         for (sub, s, layer) in nested {
             let speed = s.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
             if (speed - 1.0).abs() > 1e-6 {
@@ -592,8 +592,8 @@ impl Build<'_> {
             rgb.get(2).copied().unwrap_or(255),
             255,
         ];
-        // CapCut-Größe 15 entspricht etwa 72 px bei 1080p
-        // 11,5: an CapCut 9.2 nachgemessen (Projekt mit Größe 15 und 8,1 bei 1080p)
+        // CapCut size 15 corresponds to about 72 px at 1080p
+        // 11.5: measured against CapCut 9.2 (project with size 15 and 8.1 at 1080p)
         st.size = (size as f32 * 11.5 * h.min(w) as f32 / 1080.0).clamp(8.0, 600.0);
         st.bold = style0
             .get("bold")
@@ -627,7 +627,7 @@ impl Build<'_> {
                 })
                 .unwrap_or_else(|| vec![0, 0, 0]);
             st.outline = Some((
-                // höchstens so stark wie der Regler im Inspektor
+                // at most as strong as the slider in the inspector
                 ((sw * 60.0) as f32).clamp(0.0, 20.0),
                 [
                     c.first().copied().unwrap_or(0),
@@ -637,13 +637,13 @@ impl Build<'_> {
                 ],
             ));
         }
-        // Schatten nur, wenn er in CapCut an ist (Cutline-Standard wäre „an“)
+        // shadow only if it is on in CapCut (the Cutline default would be "on")
         st.shadow = m.get("has_shadow").and_then(|v| v.as_bool()).unwrap_or(false);
         st
     }
 }
 
-/// Ebene einer Spur: höchster `render_index` ihrer Segmente
+/// Layer of a track: highest `render_index` of its segments
 fn layer_of(t: &Value, kind: TrackKind) -> i64 {
     segments(t)
         .filter_map(|s| s.get("render_index").and_then(|v| v.as_i64()))
@@ -651,8 +651,8 @@ fn layer_of(t: &Value, kind: TrackKind) -> i64 {
         .unwrap_or(if kind == TrackKind::Text { 14000 } else { 0 })
 }
 
-/// Clips einer inneren Spur auf die Zeitleiste außen setzen: innere Zeit `from` liegt bei
-/// `start`, sichtbar ist nur `[start, start + dur)`; angeschnittene Clips werden gekürzt.
+/// Put clips of an inner track onto the outer timeline: inner time `from` lies at
+/// `start`, only `[start, start + dur)` is visible; clips cut at the edge are shortened.
 pub fn place(mut t: Track, start: Time, dur: Time, from: Time) -> Track {
     let end = start + dur;
     t.clips = std::mem::take(&mut t.clips)
@@ -674,16 +674,16 @@ pub fn place(mut t: Track, start: Time, dur: Time, from: Time) -> Track {
     t
 }
 
-/// Umwandlung der JSON-Struktur (getrennt für Tests).
+/// Conversion of the JSON structure (separate for tests).
 pub fn convert(d: &Value, dir: &Path, name: &str) -> Result<(Project, Report)> {
     convert_with(d, dir, name, &Progress::default())
 }
 
-/// Wie [`convert`], in Schritten mit Fortschritt und Abbruch: Medien finden, parallel prüfen,
-/// Schriften lesen, Zeitleiste aufbauen.
+/// Like [`convert`], in steps with progress and cancel: find media, probe in parallel,
+/// read fonts, build the timeline.
 pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> Result<(Project, Report)> {
     let mut p = Project::new(name);
-    // Grenzen wie `ProjectSettings::valid` (16…16384 px, über 0 bis 240 fps)
+    // limits like `ProjectSettings::valid` (16…16384 px, above 0 up to 240 fps)
     let w = f(d, &["canvas_config", "width"]).unwrap_or(1920.0).clamp(16.0, 16384.0) as u32 & !1;
     let h = f(d, &["canvas_config", "height"])
         .unwrap_or(1080.0)
@@ -691,7 +691,7 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
         & !1;
     p.settings.width = w;
     p.settings.height = h;
-    // gekürztes Seitenverhältnis (1920×1080 → 16:9) statt „Eigenes“
+    // reduced aspect ratio (1920×1080 → 16:9) instead of „Eigenes“
     let g = {
         let (mut a, mut b) = (w.max(1), h.max(1));
         while b != 0 {
@@ -704,7 +704,7 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
         p.settings.fps = fps;
     }
 
-    // Medien finden
+    // find media
     let (mut media, mut fonts) = (Vec::new(), Vec::new());
     collect_files(d, dir, 0, &mut media, &mut fonts, &mut 0, progress)?;
     let (media, fonts) = (unique(media), unique(fonts));
@@ -715,12 +715,12 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
         exists.insert(m.clone(), m.is_file());
         progress.tick(&file_label(m));
     }
-    // Medien prüfen (ffprobe parallel)
+    // probe media (ffprobe in parallel)
     let found: Vec<PathBuf> = media.iter().filter(|m| exists[*m]).cloned().collect();
     let probed = crate::probe_all(&found, crate::probe_workers(), progress, |p| {
         cl_media::probe(p).map_err(|e| e.to_string())
     })?;
-    // Schriften
+    // fonts
     progress.set(Step::Fonts, 0, fonts.len(), "");
     let mut families = HashMap::new();
     for fp in fonts {
@@ -734,7 +734,7 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
         progress.tick(&file_label(&fp));
         families.insert(fp, fam);
     }
-    // Zeitleiste
+    // timeline
     let mut b = Build {
         w,
         h,
@@ -752,8 +752,8 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
     progress.set(Step::Timeline, 1, 1, "");
     let mut rep = b.rep;
     p.media = b.media;
-    // CapCut stapelt nach `render_index` (Text ab 14000, Overlays 1, 2, …), nicht nach der
-    // Reihenfolge der Spuren in der Datei
+    // CapCut stacks by `render_index` (text from 14000, overlays 1, 2, …), not by the
+    // order of the tracks in the file
     let mut layer: HashMap<TrackId, i64> = HashMap::new();
     for (t, ri) in tracks {
         layer.insert(t.id, ri);
@@ -764,8 +764,8 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
             p.timeline.tracks.push(t);
         }
     }
-    // Spuren gleicher Art ohne Überschneidung zusammenlegen (CapCut legt z. B. jede
-    // Sprachaufnahme auf eine eigene Spur)
+    // merge tracks of the same kind without overlap (CapCut e.g. puts every
+    // voice recording on its own track)
     let mut merged: Vec<Track> = Vec::new();
     for t in std::mem::take(&mut p.timeline.tracks) {
         if t.main || t.kind == TrackKind::Video {
@@ -804,8 +804,8 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
             t.main = true;
         }
     }
-    // Hauptspur nach unten, darüber nach CapCut-Ebene, Audio ans Ende
-    // (Cutline zeichnet Bildspuren von unten nach oben)
+    // main track to the bottom, above it by CapCut layer, audio at the end
+    // (Cutline draws visual tracks from bottom to top)
     p.timeline.tracks.sort_by_key(|t| match (t.main, t.kind) {
         (true, _) => (0, 0),
         (_, TrackKind::Audio) => (2, 0),
@@ -821,8 +821,8 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
 mod tests {
     use super::*;
 
-    /// Fehler: `audio_track_index` wurde ungeprüft übernommen (z. B. Spur 4 Mrd.). Ohne Datei
-    /// (Platzhalter) gilt ein fester Höchstwert, mit Datei die echte Spurenzahl (Test unten).
+    /// Bug: `audio_track_index` was adopted unchecked (e.g. stream 4 billion). Without a file
+    /// (placeholder) a fixed maximum applies, with a file the real stream count (test below).
     #[test]
     fn audio_track_index_is_bounded_without_file() {
         let seg = |at: i64, idx: &str| serde_json::json!({"material_id": "A", "target_timerange": {"start": at * 1_000_000, "duration": 1_000_000}, "extra_material_refs": [idx]});
@@ -838,9 +838,9 @@ mod tests {
         assert_eq!(got, [Some(2), Some(15), None, None]);
     }
 
-    /// Fehler: Unsinnige Zahlen aus kaputten Entwürfen (riesig, negativ, 0) landeten im Projekt
-    /// (unendlich als f32, Zeiten jenseits von `Time::LIMIT`, Bildgröße 4 Mrd. px).
-    /// Nicht endliche Werte lässt schon serde_json nicht durch.
+    /// Bug: nonsensical numbers from broken drafts (huge, negative, 0) ended up in the project
+    /// (infinite as f32, times beyond `Time::LIMIT`, image size 4 billion px).
+    /// serde_json already rejects non-finite values.
     #[test]
     fn absurd_numbers_are_clamped_where_read() {
         assert!(serde_json::from_str::<Value>("1e999").is_err());
@@ -872,7 +872,7 @@ mod tests {
                 assert!(st.size.is_finite() && st.outline.is_none_or(|o| o.0.is_finite() && o.0 <= 20.0), "{st:?}");
             }
         }
-        let back = Project::from_json(&p.to_json()).expect("Projekt lädt wieder");
+        let back = Project::from_json(&p.to_json()).expect("project loads again");
         assert_eq!(back, p);
     }
 
@@ -890,7 +890,7 @@ mod tests {
             .status()
             .unwrap()
             .success());
-        // Schriftdatei aus den mitgelieferten Cutline-Schriften
+        // font file from the bundled Cutline fonts
         let font = dir.path().join("Poppins-ExtraBold.ttf");
         std::fs::write(&font, include_bytes!("../../cl-app/assets/fonts/Poppins-ExtraBold.ttf")).unwrap();
         let content = serde_json::json!({"text": "Oben", "styles": [{"size": 15.0, "font": {"path": "C:/x/SystemFont/en.ttf"}}]}).to_string();
@@ -910,7 +910,7 @@ mod tests {
         });
         let (p, rep) = convert(&draft, dir.path(), "Ebenen").unwrap();
         let kinds: Vec<TrackKind> = p.timeline.tracks.iter().map(|t| t.kind).collect();
-        // Hauptspur, darüber das Overlay-Video, ganz oben der Text
+        // main track, above it the overlay video, on top the text
         assert_eq!(kinds, [TrackKind::Video, TrackKind::Video, TrackKind::Text]);
         assert!(p.timeline.tracks[0].main);
         let ClipContent::Text(st) = &p.timeline.tracks[2].clips[0].content else { panic!() };
@@ -920,7 +920,7 @@ mod tests {
 
     #[test]
     fn text_size_shadow_animation_and_empty_stroke_color() {
-        // leere Konturfarbe darf nicht abstürzen
+        // an empty outline color must not crash
         let content = serde_json::json!({"text": "Hi", "styles": [{"size": 15.0, "strokes": [{"width": 0.1, "content": {"solid": {"color": []}}}]}]}).to_string();
         let draft = serde_json::json!({
             "canvas_config": {"width": 1920, "height": 1080},
@@ -939,8 +939,8 @@ mod tests {
         assert_eq!(c.anim.intro.as_ref().unwrap().id, "fade");
     }
 
-    /// Fehlende Datei (Platte nicht angesteckt): Clip und Medium bleiben, das Medium ist ein
-    /// Platzhalter mit den Angaben des Materials, `missing` nennt die Datei.
+    /// Missing file (drive not plugged in): clip and media stay, the media is a
+    /// placeholder with the material's details, `missing` names the file.
     #[test]
     fn missing_file_keeps_clip_with_placeholder_media() {
         let dir = tempfile::tempdir().unwrap();
@@ -966,8 +966,8 @@ mod tests {
         assert_eq!(p.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>(), 3);
     }
 
-    /// 8 Stufen mit je 30 Segmenten auf denselben inneren Entwurf (30^8 Durchläufe, wenige KB):
-    /// endet schnell mit Fehler statt Speicher und Zeit aufzubrauchen.
+    /// 8 levels with 30 segments each on the same inner draft (30^8 passes, a few KB):
+    /// ends quickly with an error instead of using up memory and time.
     #[test]
     fn nested_draft_bomb_stops_early() {
         let segs = |mid: &str| serde_json::json!([{"type": "video", "segments": (0..30).map(|_| serde_json::json!({"material_id": mid, "target_timerange": {"start": 0, "duration": 1000000}})).collect::<Vec<_>>()}]);
@@ -979,12 +979,12 @@ mod tests {
         std::thread::spawn(move || {
             let _ = tx.send(convert(&d, Path::new("."), "Bombe").map(|_| ()));
         });
-        // ohne Grenze liefe das tagelang: dann scheitert der Test hier statt zu hängen
-        let r = rx.recv_timeout(std::time::Duration::from_secs(30)).expect("Import endet nicht");
+        // without a limit this would run for days: then the test fails here instead of hanging
+        let r = rx.recv_timeout(std::time::Duration::from_secs(30)).expect("import does not end");
         assert_eq!(r.unwrap_err(), "Entwurf zu groß");
     }
 
-    /// Echten Entwurf ansehen: CAPCUT_DRAFT=<Ordner> cargo test -- --ignored real_draft --nocapture
+    /// Look at a real draft: CAPCUT_DRAFT=<folder> cargo test -- --ignored real_draft --nocapture
     #[test]
     #[ignore]
     fn real_draft() {
@@ -1087,8 +1087,8 @@ mod tests {
         assert_eq!(p.timeline.tracks.last().unwrap().kind, TrackKind::Audio);
     }
 
-    /// Stummschaltung (Spur-Bit, `video_mute`, `last_nonzero_volume`), getrennter Originalton,
-    /// Tonspur der Datei und Tonblenden – alle Kombinationen.
+    /// Mute (track bit, `video_mute`, `last_nonzero_volume`), split original audio,
+    /// audio stream of the file and audio fades – all combinations.
     #[test]
     fn mute_separated_sound_stream_and_fades() {
         if !cl_media::ffmpeg_available() {
@@ -1133,32 +1133,32 @@ mod tests {
             })
         };
         let vol = |c: &Clip| (c.volume_db * 10.0).round() / 10.0;
-        // Hauptspur über das Spur-Bit stumm: Lautstärke aus `last_nonzero_volume`, Spur stumm
+        // main track muted via the track bit: volume from `last_nonzero_volume`, track muted
         let (p, rep) = convert(&draft(false, 1), dir.path(), "T").unwrap();
         assert_eq!(p.media[0].audio_streams, 2);
         let tr = &p.timeline.tracks;
         let main = tr.iter().find(|t| t.main).unwrap();
         assert!(main.muted);
-        assert_eq!(main.clips.iter().map(vol).collect::<Vec<_>>(), [-1.9, 0.0, -60.0], "0,8 übernommen; getrennter Ton stumm wie „Ton extrahieren“");
+        assert_eq!(main.clips.iter().map(vol).collect::<Vec<_>>(), [-1.9, 0.0, -60.0], "0.8 adopted; split audio muted like „Ton extrahieren“");
         assert_eq!(main.clips[2].audio_stream, Some(1));
-        // zweite Bildspur: stumm, Lautstärke 0 ohne `last_nonzero_volume` bleibt 0
+        // second visual track: muted, volume 0 without `last_nonzero_volume` stays 0
         let v2 = tr.iter().find(|t| t.kind == TrackKind::Video && !t.main).unwrap();
         assert!(v2.muted && vol(&v2.clips[0]) == -60.0);
-        // Tonspuren: stumme und hörbare werden nicht zusammengelegt
+        // audio tracks: muted and audible ones are not merged
         let audio: Vec<&Track> = tr.iter().filter(|t| t.kind == TrackKind::Audio).collect();
         let loud = audio.iter().find(|t| !t.muted && t.clips.len() == 4).unwrap();
         let c = &loud.clips;
         assert_eq!((c[0].audio_stream, c[0].fade_in, c[0].fade_out), (Some(1), Time::ZERO, Time(600_000)));
-        assert_eq!(vol(&c[1]), -60.0, "Clip-Lautstärke 0 auf hörbarer Spur bleibt 0");
+        assert_eq!(vol(&c[1]), -60.0, "clip volume 0 on an audible track stays 0");
         assert_eq!((vol(&c[2]), c[2].audio_stream), (-6.0, None), "Index 1 = erste Spur");
         assert_eq!(vol(&c[3]), -60.0);
         let muted = audio.iter().find(|t| t.muted).unwrap();
         assert_eq!(vol(&muted.clips[0]), 0.0);
         assert_eq!(rep.skipped.iter().find(|(w, _)| w == "Spur stumm übernommen").map(|x| x.1), Some(3));
-        // Spur 3 gibt es in der Datei (2 Tonspuren) nicht: Standardspur
+        // stream 3 does not exist in the file (2 audio streams): default stream
         let c12 = tr.iter().flat_map(|t| &t.clips).find(|c| c.start == Time(12_000_000)).unwrap();
         assert_eq!(c12.audio_stream, None);
-        // `video_mute` schaltet die Hauptspur stumm, auch ohne Spur-Bit; ohne beides ist sie hörbar
+        // `video_mute` mutes the main track, even without the track bit; without both it is audible
         let (p, _) = convert(&draft(true, 0), dir.path(), "T").unwrap();
         let main = p.timeline.tracks.iter().find(|t| t.main).unwrap();
         assert!(main.muted && vol(&main.clips[0]) == -1.9);

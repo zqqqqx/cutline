@@ -1,6 +1,6 @@
-//! Player: setzt alle sichtbaren Ebenen am Playhead zusammen (Video/Bild/Sticker mit
-//! Effektkette als Textur je Clip, Text mit Kontur/Fläche/Schatten), wertet Keyframes
-//! und Animationen aus und blendet Übergänge über. Bearbeitung direkt im Bild über
+//! Player: composes all visible layers at the playhead (video/image/sticker with
+//! effect chain as a texture per clip, text with outline/box/shadow), evaluates keyframes
+//! and animations and cross-fades transitions. Editing directly in the picture via
 //! `player_edit`.
 
 use std::hash::{Hash, Hasher};
@@ -14,67 +14,67 @@ use crate::playcore::{Mode, Want};
 use crate::preview::{to_color_image, Done, Job, OpenJob};
 use crate::theme::{self, icon};
 
-/// Messpunkt (`CUTLINE_PERF`): Zeit der Player-Fläche je UI-Bild (Summe und Höchstwert, µs)
+/// Measurement point (`CUTLINE_PERF`): time of the player area per UI frame (sum and maximum, µs)
 pub static PERF_PLAYER_SUM_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub static PERF_PLAYER_MAX_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Ebene des Player-Kerns zu einem Clip (bzw. einer abgeleiteten Fassung)
+/// Player-core layer for a clip (or a derived version)
 fn lid(id: ClipId) -> crate::playcore::Lid {
     id.0.as_u128()
 }
 
-/// Eine sichtbare Ebene zum Zeitpunkt t.
+/// A visible layer at time t.
 #[derive(Clone)]
 pub(crate) struct Layer {
     clip: Clip,
-    /// Zeit innerhalb des Clips (kann bei Übergängen außerhalb liegen)
+    /// Time within the clip (can lie outside during transitions)
     t_rel: Time,
-    /// Zusätzliche Deckkraft (Übergänge)
+    /// Additional opacity (transitions)
     alpha: f32,
-    /// Übergang vom vorigen Clip: (dessen ID, Fortschritt 0…1)
+    /// Transition from the previous clip: (its ID, progress 0…1)
     from: Option<(ClipId, f32)>,
 }
 
-/// Vorschau gemischter Übergänge: letzte Bilder der beteiligten Clips (CPU), das gemischte Bild
-/// und welche Übergänge fürs Abspielen zu langsam waren.
+/// Preview of blended transitions: last frames of the clips involved (CPU), the blended frame
+/// and which transitions were too slow for playback.
 #[derive(Default)]
 pub struct ShaderPreview {
     cpu: std::collections::HashMap<ClipId, (u64, std::sync::Arc<cl_media::RgbaFrame>)>,
-    /// mischt im Hintergrund (das Mischen kostet auf der CPU 10–150 ms je Bild)
+    /// blends in the background (blending costs 10–150 ms per frame on the CPU)
     mixer: Option<Mixer>,
-    /// beauftragte Mischung (höchstens eine) und die fertige, noch nicht übernommene
+    /// requested blend (at most one) and the finished one not yet taken over
     pending: Option<u64>,
     ready: Option<MixDone>,
-    /// außer den Clips mit Übergang: diese Bilder (Fassungen mit Effekt-Elementen) auch behalten
+    /// besides the clips with a transition: keep these frames too (versions with effect elements)
     wanted: Vec<ClipId>,
     tex: Option<egui::TextureHandle>,
-    /// gemischte Fassungen mit den Effekt-Elementen darüber: (Textur, Maske, Stärke)
+    /// blended versions with the effect elements on top: (texture, mask, strength)
     fx: Vec<(egui::TextureHandle, Option<Mask>, f32)>,
-    /// zuletzt gemischt: alle Eingaben (Bilder, Lage, Fläche, Fortschritt)
+    /// last blended: all inputs (frames, position, area, progress)
     last: Option<u64>,
-    /// gerade gezeigt statt A und B: (A, B)
+    /// currently shown instead of A and B: (A, B)
     current: Option<(ClipId, ClipId)>,
-    /// beim Abspielen zu langsam: diese Übergänge bis zum Anhalten überblenden
+    /// too slow during playback: cross-fade these transitions until paused
     slow: Vec<(ClipId, ClipId)>,
-    /// Anzahl zu langsamer Bilder im Übergang `slow_pair`
+    /// Number of too slow frames in the transition `slow_pair`
     slow_hits: u8,
     slow_pair: Option<(ClipId, ClipId)>,
-    /// Übergang, zu dem `tex` gehört (wird gehalten, solange ein Bild fehlt)
+    /// Transition that `tex` belongs to (held while a frame is missing)
     shown: Option<(ClipId, ClipId)>,
-    /// Wiedergabe lief im letzten Bild (Start erkennen: Shader vorbereiten)
+    /// Playback ran in the last frame (detect start: prepare shaders)
     was_playing: bool,
-    /// Shader schon einmal (beim ersten Bild nach dem Start) vorbereitet
+    /// Shaders already prepared once (on the first frame after the start)
     warmed: bool,
 }
 
-/// Was die Vorschau in einem Übergang zeigt, den sie mischt.
+/// What the preview shows in a transition it blends.
 #[derive(Debug, PartialEq)]
 enum Step {
-    /// alle Bilder da: mischen
+    /// all frames there: blend
     Mix,
-    /// ein Bild fehlt noch: letztes Mischbild dieses Übergangs stehen lassen
+    /// a frame is still missing: keep the last blended frame of this transition
     Hold,
-    /// überblenden (noch kein Mischbild oder beim Abspielen zu langsam)
+    /// cross-fade (no blended frame yet or too slow during playback)
     Skip,
 }
 
@@ -91,8 +91,8 @@ impl ShaderPreview {
         }
     }
 
-    /// Dauer eines Mischbilds beim Abspielen: zwei Bilder länger als ein Bild-Intervall → dieser
-    /// Übergang wird bis zum Anhalten überblendet (kein Hin und Her).
+    /// Duration of a blended frame during playback: two frames longer than a frame interval → this
+    /// transition is cross-faded until paused (no back and forth).
     fn note_time(&mut self, pair: (ClipId, ClipId), secs: f64, interval: f64) {
         if self.slow_pair != Some(pair) {
             (self.slow_pair, self.slow_hits) = (Some(pair), 0);
@@ -106,14 +106,14 @@ impl ShaderPreview {
     }
 }
 
-/// Mischauftrag an den Hintergrund-Thread: Bildpaare (Clips, dann Fassungen mit Effekt-Elementen)
-/// mit Lage, Fläche und Fortschritt.
+/// Blend job for the background thread: frame pairs (clips, then versions with effect elements)
+/// with position, area and progress.
 struct MixJob {
     id: u64,
     pair: (ClipId, ClipId),
     plan: cl_fx::catalog::TransitionPlan,
     frames: Vec<(std::sync::Arc<cl_media::RgbaFrame>, std::sync::Arc<cl_media::RgbaFrame>)>,
-    /// je Bildpaar ab dem zweiten: Maske und Stärke des Effekt-Elements
+    /// per frame pair from the second on: mask and strength of the effect element
     sets: Vec<(Option<Mask>, f32)>,
     ev: (Evaluated, Evaluated),
     size: (u32, u32),
@@ -121,8 +121,8 @@ struct MixJob {
     p: f32,
 }
 
-/// Fertige Mischung: Mischbild (unmaskierte Elemente eingerechnet), dann je maskiertem Element
-/// dessen gemischte Fassung. Leer, wenn das Mischen scheiterte.
+/// Finished blend: blended frame (unmasked elements included), then per masked element
+/// its blended version. Empty if blending failed.
 struct MixDone {
     id: u64,
     pair: (ClipId, ClipId),
@@ -141,7 +141,7 @@ fn run_mix(j: MixJob) -> MixDone {
         .collect();
     let (mut images, mut masked) = (Vec::new(), Vec::new());
     if let Some(mixed) = mixed {
-        // unmaskierte Elemente ins Mischbild einrechnen, maskierte zeichnet `draw_layers` in der Form
+        // include unmasked elements in the blended frame, masked ones are drawn in the shape by `draw_layers`
         let mut it = mixed.into_iter();
         let mut base = it.next().unwrap_or_default();
         let mut rest = Vec::new();
@@ -161,7 +161,7 @@ fn run_mix(j: MixJob) -> MixDone {
     MixDone { id: j.id, pair: j.pair, images, masked, secs: t0.elapsed().as_secs_f64() }
 }
 
-/// Hintergrund-Thread für Übergangs-Mischungen (das Ergebnis erscheint ein Bild später).
+/// Background thread for transition blends (the result appears one frame later).
 struct Mixer {
     tx: std::sync::mpsc::Sender<MixJob>,
     rx: std::sync::mpsc::Receiver<MixDone>,
@@ -183,20 +183,20 @@ impl Mixer {
     }
 }
 
-/// Längste Seite der Mischfläche beim Abspielen: so bleibt ein Mischbild auch auf der CPU deutlich
-/// unter einem Bild-Intervall, auch mit einem Effekt-Element darüber (Messung: Test `mix_time`).
+/// Longest side of the blend area during playback: this keeps a blended frame well below a frame
+/// interval even on the CPU, also with an effect element on top (measurement: test `mix_time`).
 const MIX_PLAY: f32 = 960.0;
 
-/// Mischfläche im Seitenverhältnis des Projekts `pw`×`ph`, so groß wie die Anzeige `px` (höchstens
-/// 1920, beim Abspielen höchstens [`MIX_PLAY`] an der langen Seite).
+/// Blend area in the project aspect ratio `pw`×`ph`, as large as the display `px` (at most
+/// 1920, during playback at most [`MIX_PLAY`] on the long side).
 fn mix_size(pw: f32, ph: f32, px: egui::Vec2, playing: bool) -> (u32, u32) {
     let max = if playing { MIX_PLAY } else { 1920.0 };
     let k = (px.x / pw).min(px.y / ph).min(max / pw.max(ph));
     (((pw * k).round() as u32).max(16), ((ph * k).round() as u32).max(16))
 }
 
-/// Shader-Übergänge des Projekts im Hintergrund vorbereiten (GPU öffnen, Pipelines übersetzen),
-/// damit das erste Mischbild beim Abspielen nicht hängt.
+/// Prepare the project's shader transitions in the background (open GPU, compile pipelines)
+/// so the first blended frame during playback does not hang.
 fn warm_shaders(project: &Project) {
     let mut files: Vec<std::path::PathBuf> = project
         .timeline
@@ -220,9 +220,9 @@ fn warm_shaders(project: &Project) {
     });
 }
 
-/// Unmaskierte Fassung `fx` eines Effekt-/Filter-Elements mit Stärke `k` in das Mischbild `base`
-/// einrechnen: wie der Export, der das Element auf den fertigen Übergang anwendet (darübergelegt
-/// schienen halbdurchsichtige Stellen des Übergangs, z. B. Spiegelungen, ungefiltert durch).
+/// Blend the unmasked version `fx` of an effect/filter element with strength `k` into the blended frame `base`:
+/// like the export, which applies the element to the finished transition (laid on top,
+/// semi-transparent parts of the transition, e.g. reflections, showed through unfiltered).
 fn fold_fx(base: &mut [u8], fx: &[u8], k: f32) {
     for (b, f) in base.chunks_exact_mut(4).zip(fx.chunks_exact(4)) {
         for c in 0..4 {
@@ -231,9 +231,9 @@ fn fold_fx(base: &mut [u8], fx: &[u8], k: f32) {
     }
 }
 
-/// Fassung `fx` (Effekt-/Filter-Element) über dem Bild `base` an den Ecken `corners` zeichnen,
-/// mit Maske nur in der Form (umgekehrt: überall außer der Form), nur im sichtbaren Teil `shown`
-/// (Zuschnitt; sonst gleich `corners`).
+/// Draw version `fx` (effect/filter element) over the frame `base` at the corners `corners`,
+/// with mask only in the shape (inverted: everywhere except the shape), only in the visible part `shown`
+/// (crop; otherwise equal to `corners`).
 #[allow(clippy::too_many_arguments)]
 fn draw_fx(content: &egui::Painter, base: egui::TextureId, fx: egui::TextureId, corners: [egui::Pos2; 4], shown: [egui::Pos2; 4], mask: &Option<Mask>, alpha: f32, canvas: Rect) {
     let Some(mk) = mask else {
@@ -243,7 +243,7 @@ fn draw_fx(content: &egui::Painter, base: egui::TextureId, fx: egui::TextureId, 
     let (polys, inverted) = crate::fx_mask::polygons(mk, canvas);
     let polys = polys.iter().map(|p| crate::fx_mask::clip_convex(p, &shown));
     if inverted {
-        // alles außer der Form: Effekt ganz, Original in der Form darüber
+        // everything except the shape: effect fully, original in the shape on top
         crate::fx_mask::draw_textured(content, fx, corners, &shown, alpha);
         for poly in polys {
             crate::fx_mask::draw_textured(content, base, corners, &poly, alpha);
@@ -255,8 +255,8 @@ fn draw_fx(content: &egui::Painter, base: egui::TextureId, fx: egui::TextureId, 
     }
 }
 
-/// Fortschritt eines Übergangs der Länge `d` um den Schnitt `cut` (wie im Export:
-/// Fenster `cut − d/2 … cut + d/2`), `None` außerhalb.
+/// Progress of a transition of length `d` around the cut `cut` (as in the export:
+/// window `cut − d/2 … cut + d/2`), `None` outside.
 pub(crate) fn transition_progress(ts: f64, cut: f64, d: f64) -> Option<f32> {
     if d <= 0.0 || ts < cut - d / 2.0 || ts >= cut + d / 2.0 {
         return None;
@@ -264,11 +264,11 @@ pub(crate) fn transition_progress(ts: f64, cut: f64, d: f64) -> Option<f32> {
     Some(((ts - (cut - d / 2.0)) / d).clamp(0.0, 1.0) as f32)
 }
 
-/// Fertige Ebene für die Übergangs-Vorschau: das Clipbild (Effekte, Filter und Maske schon
-/// eingerechnet) mit Lage, Größe, Drehung und Deckkraft aus `ev` auf eine leere Fläche
-/// `cw`×`ch` (Projekt `pw`×`ph`) gesetzt – wie im Export, der Übergänge auch zwischen fertigen
-/// Vollbild-Ebenen mischt. Gleiche Geometrie wie `draw_layers`.
-// shortcut: nächstes Pixel statt Filterung; reicht, weil das Clipbild schon in Anzeigegröße kommt
+/// Finished layer for the transition preview: the clip frame (effects, filters and mask already
+/// included) with position, size, rotation and opacity from `ev` placed on an empty area
+/// `cw`×`ch` (project `pw`×`ph`) – like the export, which also blends transitions between finished
+/// full-frame layers. Same geometry as `draw_layers`.
+// shortcut: nearest pixel instead of filtering; enough because the clip frame already comes at display size
 pub(crate) fn place_on_canvas(src: &cl_media::RgbaFrame, ev: &Evaluated, cw: u32, ch: u32, pw: f32, ph: f32) -> Vec<u8> {
     let mut out = vec![0u8; (cw * ch * 4) as usize];
     let (sw, sh) = (src.width as f32, src.height as f32);
@@ -280,18 +280,18 @@ pub(crate) fn place_on_canvas(src: &cl_media::RgbaFrame, ev: &Evaluated, cw: u32
     let (cx, cy) = (cw as f32 / 2.0 + ev.x * kx, ch as f32 / 2.0 + ev.y * ky);
     let (s, c) = (-ev.rotation_deg.to_radians()).sin_cos();
     let alpha = ev.opacity.clamp(0.0, 1.0);
-    // Zuschnitt: nur dieser Teil des Clipbilds, an seiner Stelle
+    // crop: only this part of the clip frame, at its place
     let k = ev.crop;
     let (u0, u1, v0, v1) = (k.left * sw, (1.0 - k.right) * sw, k.top * sh, (1.0 - k.bottom) * sh);
-    // Zeilen auf mehrere Kerne verteilt: beim Abspielen zählt jede Millisekunde
+    // rows spread over several cores: during playback every millisecond counts
     cl_fx::xfade::rows(&mut out, cw as i32, &|y, line| {
         let (dx, dy) = (0.5 - cx, y as f32 + 0.5 - cy);
         let (mut u, mut v) = ((dx * c - dy * s) / fit + sw / 2.0, (dx * s + dy * c) / fit + sh / 2.0);
         for o in line.chunks_exact_mut(4) {
             if u >= u0 && v >= v0 && u < u1 && v < v1 {
                 let i = ((v as u32 * src.width + u as u32) * 4) as usize;
-                // wie das Overlay auf die durchsichtige Fläche im Export: Farbe außerhalb der Maske
-                // (und bei Deckkraft < 1) geht in Schwarz über, statt beim Mischen durchzuscheinen
+                // like the overlay on the transparent area in the export: colour outside the mask
+                // (and at opacity < 1) turns to black instead of showing through when blending
                 let a = (src.data[i + 3] as f32 * alpha).round() as u32;
                 for k in 0..3 {
                     o[k] = ((src.data[i + k] as u32 * a + 127) / 255) as u8;
@@ -305,16 +305,16 @@ pub(crate) fn place_on_canvas(src: &cl_media::RgbaFrame, ev: &Evaluated, cw: u32
     out
 }
 
-/// Mischt die Vorschau den Übergang selbst? Sonst überblendet sie (`fade` ist genau das; andere
-/// `xfade`-Sorten ohne Nachbildung in `cl_fx::xfade` auch).
+/// Does the preview blend the transition itself? Otherwise it cross-fades (`fade` is exactly that; other
+/// `xfade` kinds without a replica in `cl_fx::xfade` too).
 pub(crate) fn mixes(plan: &cl_fx::catalog::TransitionPlan) -> bool {
     plan.shader.is_some() || (plan.xfade != "fade" && cl_fx::xfade::supported(plan.xfade))
 }
 
-/// Übergang wie im Export zwischen fertigen Ebenen mischen: Clipbilder `fa`/`fb` (Effekte und
-/// Maske eingerechnet) mit Lage `ea`/`eb` auf eine Fläche `cw`×`ch` (Projekt `pw`×`ph`) setzen,
-/// dann Shader (cl-gpu) bzw. `cl_fx::xfade` beim Fortschritt `p`. RGBA, Alpha bleibt Alpha.
-/// Ohne GPU (oder bei einem Shader-Fehler) wie der Export mit dem `xfade`-Rückfall des Pakets.
+/// Blend a transition as in the export between finished layers: place clip frames `fa`/`fb` (effects and
+/// mask included) with position `ea`/`eb` on an area `cw`×`ch` (project `pw`×`ph`),
+/// then shader (cl-gpu) or `cl_fx::xfade` at progress `p`. RGBA, alpha stays alpha.
+/// Without GPU (or on a shader error) like the export with the package's `xfade` fallback.
 pub(crate) fn mix_layers(
     plan: &cl_fx::catalog::TransitionPlan,
     (fa, ea): (&cl_media::RgbaFrame, &Evaluated),
@@ -339,8 +339,8 @@ pub(crate) fn mix_layers(
     shader.or_else(|| cl_fx::xfade::mix(plan.xfade, &a, &b, cw, ch, p))
 }
 
-/// Längen der Übergänge am Anfang und Ende von `c` (Clip `i` der Spur, ggf. in Bearbeitung
-/// verändert): nur zu direkt anschließenden, aktiven Nachbarn, Länge wie im Export.
+/// Lengths of the transitions at the start and end of `c` (clip `i` of the track, possibly changed
+/// while editing): only to directly adjoining, active neighbours, length as in the export.
 pub(crate) fn transition_spans(clips: &[Clip], i: usize, c: &Clip) -> (Option<f64>, Option<f64>) {
     let next = clips.get(i + 1).filter(|n| (n.start.0 - c.end().0).abs() < 2000 && !n.disabled);
     let tr_out = next.filter(|_| c.transition_out.is_some()).map(|n| cl_fx::transition_secs(c, n));
@@ -351,10 +351,10 @@ pub(crate) fn transition_spans(clips: &[Clip], i: usize, c: &Clip) -> (Option<f6
     (tr_in, tr_out)
 }
 
-/// Dekodiergröße eines Clips für die Vorschau (`canvas_px` = Anzeigefläche in Pixeln).
+/// Decode size of a clip for the preview (`canvas_px` = display area in pixels).
 fn decode_size(c: &Clip, m: &MediaRef, canvas_px: egui::Vec2, div: f32) -> (u32, u32) {
-    // Vergrößerte Clips (z. B. Querformat-Gameplay im Hochformat auf 200 %) brauchen
-    // entsprechend mehr Pixel, sonst wird ein kleines Bild hochgezogen und unscharf.
+    // Enlarged clips (e.g. landscape gameplay in portrait at 200 %) need
+    // correspondingly more pixels, otherwise a small frame is scaled up and blurry.
     let zoom = c
         .keyframes
         .get(Prop::Scale)
@@ -368,11 +368,11 @@ fn decode_size(c: &Clip, m: &MediaRef, canvas_px: egui::Vec2, div: f32) -> (u32,
     cl_media::fit_size(m.width, m.height, max_w, max_h)
 }
 
-/// Quellzeit des Einzelbilds eines Clips bei Clipzeit `t_rel`.
+/// Source time of a clip's single frame at clip time `t_rel`.
 fn still_src(c: &Clip, m: &MediaRef, t_rel: Time, fps: Rational) -> Time {
     let ClipContent::Media { kind: MediaKind::Video, .. } = &c.content else {
-        // Bewegtes Bild: dasselbe Einzelbild wie im Export (Schleife bzw. letztes Bild halten)
-        // shortcut: beim Abspielen ein Einzelbild-Auftrag je Bild statt Strom, ausbauen falls es ruckelt
+        // Animated image: the same single frame as in the export (loop or hold last frame)
+        // shortcut: during playback one single-frame job per frame instead of a stream, extend if it stutters
         return cl_media::animation(&m.path).map_or(Time::ZERO, |a| a.seek_time(t_rel));
     };
     let mut end = c.source_in + c.source_span();
@@ -382,16 +382,16 @@ fn still_src(c: &Clip, m: &MediaRef, t_rel: Time, fps: Rational) -> Time {
     still_seek(c.source_time(c.start + t_rel), c.source_in, end, m.fps.unwrap_or(fps))
 }
 
-/// Quellzeit für ein Einzelbild der Vorschau: aufs Bildraster gerundet, höchstens anderthalb
-/// Bilder vor dem Ende von Clip bzw. Datei. FFmpeg liefert das erste Bild ab `-ss`; eine Zeit im
-/// letzten Bild (oder aufs Ende gerundet) ergab gar keins – „Datei kann nicht gelesen werden: “.
+/// Source time for a single preview frame: rounded to the frame grid, at most one and a half
+/// frames before the end of the clip or file. FFmpeg delivers the first frame from `-ss`; a time in the
+/// last frame (or rounded to the end) gave none at all – „Datei kann nicht gelesen werden: “.
 fn still_seek(t: Time, source_in: Time, end: Time, fps: Rational) -> Time {
     let last = end - Time::from_secs_f64(1.5 / fps.as_f64().max(1.0));
     Time(t.snap_to_frame(fps).0.min(last.0).max(source_in.0))
 }
 
-/// Alle sichtbaren Ebenen von unten nach oben (inkl. Übergängen); `live` ersetzt den Clip
-/// gleicher ID (laufende Bearbeitung).
+/// All visible layers from bottom to top (incl. transitions); `live` replaces the clip
+/// with the same ID (edit in progress).
 fn layers_in(project: &Project, live: Option<&Clip>, t: Time) -> Vec<Layer> {
     let mut out = Vec::new();
     for tr in project
@@ -401,7 +401,7 @@ fn layers_in(project: &Project, live: Option<&Clip>, t: Time) -> Vec<Layer> {
         .filter(|tr| !tr.hidden && tr.kind != TrackKind::Audio)
     {
         for (i, c0) in tr.clips.iter().enumerate() {
-            // erst das Zeitfenster prüfen, dann klonen
+            // check the time window first, then clone
             let c = live.filter(|l| l.id == c0.id).unwrap_or(c0);
             if c.disabled {
                 continue;
@@ -418,7 +418,7 @@ fn layers_in(project: &Project, live: Option<&Clip>, t: Time) -> Vec<Layer> {
             let mut alpha = 1.0;
             let mut from = None;
             if let Some(d) = tr_in {
-                // Einblenden über dem Vorgänger
+                // fade in over the predecessor
                 let p = transition_progress(ts, s, d).unwrap_or(1.0);
                 alpha = p;
                 from = prev.map(|pc| (pc.id, p));
@@ -435,9 +435,9 @@ fn layers_in(project: &Project, live: Option<&Clip>, t: Time) -> Vec<Layer> {
     out
 }
 
-/// Eine Ebene, für die die Vorschau ein Bild braucht: Clip (bzw. seine Fassung mit einem
-/// Effekt-Element), Medium, Lage in der Zeit, ggf. Startstelle (vorab öffnen) und – bei Fassungen
-/// mit Element – (Basis-Clip, Maske, Stärke).
+/// A layer for which the preview needs a frame: clip (or its version with an
+/// effect element), medium, position in time, possibly start place (open ahead) and – for versions
+/// with element – (base clip, mask, strength).
 pub(crate) struct Need {
     pub id: ClipId,
     pub clip: Clip,
@@ -447,10 +447,10 @@ pub(crate) struct Need {
     pub overlay: Option<(ClipId, Option<Mask>, f32)>,
 }
 
-/// Was die Vorschau zu `now` braucht (gemeinsam für App und Mess-Test): alle sichtbaren Medien-
-/// Ebenen, aktive bzw. gleich beginnende Effekt-Elemente als eigene Fassungen und beim Abspielen
-/// Clips, die in höchstens 1,5 s beginnen (Ströme vorab öffnen, damit an Schnitten nichts hakt).
-/// `adjust` ändert den Clip vor der Anfrage (Pipette: ohne Chroma-Key).
+/// What the preview needs at `now` (shared by app and measurement test): all visible media
+/// layers, active or about-to-start effect elements as their own versions and during playback
+/// clips that begin within 1.5 s (open streams ahead so nothing hitches at cuts).
+/// `adjust` changes the clip before the request (eyedropper: without chroma key).
 pub(crate) fn needs(project: &Project, layers: &[Layer], now: Time, playing: bool, adjust: impl Fn(&mut Clip)) -> Vec<Need> {
     const AHEAD: f64 = 1.5;
     let mut out = Vec::new();
@@ -502,19 +502,19 @@ pub(crate) fn needs(project: &Project, layers: &[Layer], now: Time, playing: boo
     out
 }
 
-/// Kann der Clip als Strom laufen? (Rückwärts und Tempo-Kurven: nur Einzelbilder)
+/// Can the clip run as a stream? (Reverse and speed curves: only single frames)
 pub(crate) fn streamable(c: &Clip) -> bool {
     matches!(&c.content, ClipContent::Media { kind: MediaKind::Video, .. }) && !c.fx.reverse && c.fx.speed_curve.is_none()
 }
 
-/// Vorlauf im Stand: so lange muss der Playhead auf einer schweren Ebene ruhen, bevor ihr Strom
-/// schon geöffnet wird (Play zeigt dann gleich Bilder; Klicken und Scrubben öffnet nichts)
+/// Preroll when stopped: the playhead must rest on a heavy layer this long before its stream
+/// is already opened (Play then shows frames at once; clicking and scrubbing open nothing)
 const PREROLL_REST: f64 = 0.3;
-/// Generation eines Vorlauf-Auftrags am Starter (die des Kerns zählt von 0)
+/// Generation of a preroll job at the starter (the core's counts from 0)
 const PREROLL_GEN: u64 = u64::MAX;
 
-/// Was Play für eine Ebene anfordern wird: Ebene, Stromschlüssel (Größe, Qualität, Effekte,
-/// Quelle), Quell-Fingerabdruck, Stelle und Bearbeitungsstand
+/// What Play will request for a layer: layer, stream key (size, quality, effects,
+/// source), source fingerprint, place and edit state
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PrerollSpec {
     pub id: u128,
@@ -524,50 +524,50 @@ pub(crate) struct PrerollSpec {
     pub revision: u64,
 }
 
-/// Im Stand vorab geöffneter Strom (siehe [`App::update_preroll`])
+/// Stream opened ahead while stopped (see [`App::update_preroll`])
 pub(crate) struct Preroll {
     spec: PrerollSpec,
-    /// seit wann der Playhead hier ruht (Kern-Zeit)
+    /// since when the playhead rests here (core time)
     since: f64,
     sent: bool,
-    /// geöffnet: Bildrate und Strom
+    /// opened: frame rate and stream
     stream: Option<(f64, cl_media::FrameStream)>,
 }
 
-/// Darf der vorab geöffnete Strom `p` die Anfrage `o` des Kerns nach Play beantworten? Nur für
-/// genau dieselbe Ebene mit demselben Schlüssel und Fingerabdruck, an derselben Stelle und im
-/// selben Bearbeitungsstand – sonst öffnet Play wie bisher.
+/// May the stream `p` opened ahead answer the core's request `o` after Play? Only for
+/// exactly the same layer with the same key and fingerprint, at the same place and in the
+/// same edit state – otherwise Play opens as before.
 pub(crate) fn preroll_fits(p: &PrerollSpec, o: &crate::playcore::Open, alias: u64, revision: u64) -> bool {
     p.id == o.id && p.key == o.key && p.alias == alias && p.at == o.at && p.revision == revision
 }
 
-/// Quellbildrate für das Rückwärts-Fenster des Decoders (`preview::Job::Frame::window`): nur beim
-/// Abspielen vorwärts eines rückwärts laufenden Videos aus dem Original ohne Effektgraph (der
-/// Graph hängt von der Clipzeit ab), höchstens 1080p. Stand, Pause, Schrittweise und Scrubben:
-/// `None` wie bisher. Über 1080p decodiert FFmpeg kaum schneller als Echtzeit (gemessen 4K:
-/// ~35 Bilder/s Wandzeit): das Fenster käme nie vor die Uhr und wäre langsamer als Einzelbilder.
+/// Source frame rate for the decoder's reverse window (`preview::Job::Frame::window`): only when
+/// playing forwards a video running in reverse from the original without effect graph (the
+/// graph depends on the clip time), at most 1080p. Stopped, paused, stepping and scrubbing:
+/// `None` as before. Above 1080p FFmpeg decodes hardly faster than real time (measured 4K:
+/// ~35 frames/s wall time): the window would never get ahead of the clock and be slower than single frames.
 pub(crate) fn reverse_window(c: &Clip, m: &MediaRef, original: bool, no_graph: bool, playing_forward: bool, fps: Rational) -> Option<Rational> {
     let video = matches!(&c.content, ClipContent::Media { kind: MediaKind::Video, .. });
     let hd = m.width.max(m.height) <= 1920 && m.width.min(m.height) <= 1080;
     (video && hd && c.fx.reverse && original && no_graph && playing_forward).then(|| m.fps.unwrap_or(fps))
 }
 
-/// Fingerabdruck der Effekte eines Clips (Teil der Bild- und Stromschlüssel)
+/// Fingerprint of a clip's effects (part of the frame and stream keys)
 pub(crate) fn fx_hash_of(c: &Clip) -> u64 {
     let mut hs = std::collections::hash_map::DefaultHasher::new();
     serde_json::to_string(&c.fx).unwrap_or_default().hash(&mut hs);
     hs.finish()
 }
 
-/// Strom einer Ebene: Schlüssel und Decodiergröße
+/// Stream of a layer: key and decode size
 pub(crate) fn stream_spec(id: ClipId, c: &Clip, m: &MediaRef, canvas_px: egui::Vec2, div: f32, fps: Rational, fxh: u64) -> (u64, u32, u32) {
     let (w, h) = decode_size(c, m, canvas_px, div);
     (App::frame_key(id, c, Time::ZERO, w, h, Time::ZERO, false, fxh, fps), w, h)
 }
 
-/// Auftrag, den Strom ab der Zeitleistenstelle `o.at` zu öffnen (Quellzeit und Effekt-Graph dazu)
-/// Quell-Fingerabdruck eines Stroms: Datei, Quellzeit je Zeitleistenstelle (bleibt beim Teilen
-/// gleich), Tempo, Effekte, Größe, Bildrate – ohne Clip-ID (siehe `playcore::Want::alias`)
+/// Job to open the stream from timeline place `o.at` (source time and effect graph with it)
+/// Source fingerprint of a stream: file, source time per timeline place (stays the same when
+/// splitting), speed, effects, size, frame rate – without clip ID (see `playcore::Want::alias`)
 pub(crate) fn stream_alias(c: &Clip, m: &MediaRef, (w, h): (u32, u32), fps: Rational, fxh: u64) -> u64 {
     let offset = ((c.source_in.0 as f64 - c.start.0 as f64 * c.speed.max(0.01) as f64) / 1000.0).round() as i64;
     let mut hs = std::collections::hash_map::DefaultHasher::new();
@@ -592,8 +592,8 @@ pub(crate) fn open_job(o: crate::playcore::Open, c: &Clip, m: &MediaRef, path: s
     }
 }
 
-/// Effekt-/Filter-Elemente auf Spuren über dem Clip `clip` (eingeschaltet, sichtbar). Ohne Klone:
-/// die Aufrufer filtern nach Zeit (sonst kopierte jedes UI-Bild alle Elemente des Projekts).
+/// Effect/filter elements on tracks above the clip `clip` (enabled, visible). Without clones:
+/// the callers filter by time (otherwise each UI frame copied all elements of the project).
 fn fx_elements_over(project: &Project, clip: ClipId) -> Vec<&Clip> {
     let tracks = &project.timeline.tracks;
     let Some(idx) = tracks
@@ -610,8 +610,8 @@ fn fx_elements_over(project: &Project, clip: ClipId) -> Vec<&Clip> {
         .collect()
 }
 
-/// Fassung von `c` mit dem Effekt-/Filter-Element `e` (zum Zeitpunkt `now`) und dessen Stärke.
-/// Die Vorschau legt sie über das Clipbild (der Export wendet das Element auf alles darunter an).
+/// Version of `c` with the effect/filter element `e` (at time `now`) and its strength.
+/// The preview lays it over the clip frame (the export applies the element to everything below).
 fn fx_version(c: &Clip, e: &Clip, now: Time) -> Option<(Clip, f32)> {
     let (mut r, filter) = match &e.content {
         ClipContent::Effect(r) => (r.clone(), false),
@@ -631,10 +631,10 @@ fn fx_version(c: &Clip, e: &Clip, now: Time) -> Option<(Clip, f32)> {
     Some((x, if animated { e.strength_at(now - e.start) } else { 1.0 }))
 }
 
-/// Übergänge, die die Vorschau zur Zeit `t` mischt: (Ebene A, Ebene B, Plan, Fortschritt), unten
-/// zuerst. Alle anderen überblendet sie (B mit wachsender Deckkraft über A). Liegt ein Effekt-
-/// oder Filter-Element darüber, wird auch Überblenden gemischt: der Export wendet das Element auf
-/// den fertigen Übergang an, die Vorschau legt seine Fassung von A und B gemischt darüber.
+/// Transitions the preview blends at time `t`: (layer A, layer B, plan, progress), bottom
+/// first. All others it cross-fades (B with growing opacity over A). If an effect
+/// or filter element lies on top, cross-fades are blended too: the export applies the element to
+/// the finished transition, the preview lays its version of A and B blended on top.
 fn mix_pairs(project: &Project, layers: &[Layer], t: Time) -> Vec<(usize, usize, cl_fx::catalog::TransitionPlan, f32)> {
     layers
         .iter()
@@ -656,11 +656,11 @@ mod play_measure;
 mod presence_tests {
     use super::*;
 
-    /// Nachtest K7: 4K-Clip mit Tempo 2 über einem zweiten 4K-Clip blieb beim Abspielen ein
-    /// Standbild, solange sein Proxy in Stücken gebaut wurde. Hier mit der echten App (Quellwahl,
-    /// Starter, Kern) ohne Fenster: die obere Ebene muss fortlaufend Bilder holen.
-    /// `CUTLINE_QA_TEMPO` (2, 0.5, rev, kurve, scale), `CUTLINE_QA_PARTS`: so viele Proxy-Stücke der
-    /// oberen Quelle vorher bauen (der Rest fehlt, wie während des Baus).
+    /// Follow-up test K7: a 4K clip at speed 2 over a second 4K clip stayed a still image
+    /// during playback while its proxy was built in parts. Here with the real app (source choice,
+    /// starter, core) without a window: the upper layer must fetch frames continuously.
+    /// `CUTLINE_QA_TEMPO` (2, 0.5, rev, kurve, scale), `CUTLINE_QA_PARTS`: build this many proxy parts of the
+    /// upper source beforehand (the rest is missing, as during the build).
     /// `cargo test --release -p cl-app --bin cutline tempo_in_app -- --ignored --nocapture`
     #[test]
     #[ignore]
@@ -703,7 +703,7 @@ mod presence_tests {
         p.timeline.tracks = vec![v1, v2];
         p.media = vec![ma, mb.clone()];
         app.project = p;
-        // Proxy in Stücken (wie im laufenden Bau): `CUTLINE_QA_PARTS` Stücke à 10 s fertig
+        // proxy in parts (as in a running build): `CUTLINE_QA_PARTS` parts of 10 s finished
         if let Some(n) = std::env::var("CUTLINE_QA_PARTS").ok().and_then(|s| s.parse().ok()) {
             let want = (app.settings.proxy_h, app.project.settings.fps);
             let t = std::time::Instant::now();
@@ -715,9 +715,9 @@ mod presence_tests {
             app.core.stop();
             app.core.play(app.playhead, app.revision, app.core_now());
             let t0 = std::time::Instant::now();
-            // Strombilder der oberen Ebene (über Stromwechsel hinweg) und ab wann
+            // stream frames of the upper layer (across stream changes) and from when
             let (mut total, mut last_taken, mut first) = (0u64, 0u64, None);
-            // Einzelbilder (Rückwärts, Tempo-Kurve): jedes neue Bild hat einen neuen Schlüssel
+            // single frames (reverse, speed curve): each new frame has a new key
             let (mut stills, mut last_key) = (0u32, None);
             while t0.elapsed().as_secs_f64() < 8.0 {
                 app.receive_decoded(&ctx);
@@ -749,19 +749,19 @@ mod presence_tests {
             let n = total;
             eprintln!("Tempo {mode} ab {at}: obere Ebene {n} Strombilder (erstes {first:?}), {stills} Einzelbilder, Ströme {:?}", app.core.streams());
             if streamable(app.project.find_clip(top).unwrap().1) {
-                let (t1, n1) = first.expect("obere Ebene ohne Bild");
-                assert!((n - n1) as f64 >= (8.0 - t1 - 1.0) * 20.0, "obere Ebene steht: {n1} → {n}");
+                let (t1, n1) = first.expect("upper layer without frame");
+                assert!((n - n1) as f64 >= (8.0 - t1 - 1.0) * 20.0, "upper layer stands still: {n1} → {n}");
             } else {
-                assert!(stills >= 4, "obere Ebene steht: {stills} Einzelbilder in 8 s");
+                assert!(stills >= 4, "upper layer stands still: {stills} single frames in 8 s");
             }
         }
     }
 
-    /// Befund aus dem Review: beim Abspielen prüfte jedes UI-Bild je Ebene die Datei
-    /// (`is_local`, auf dem NAS blockierend). Jetzt entscheidet der Hintergrund-Zustand
-    /// `presence` – hier „vorhanden" für eine Datei, die es nicht gibt: Strom und Einzelbild
-    /// werden trotzdem angefordert, also fragt niemand das Dateisystem. Fehlt sie laut
-    /// Hintergrund-Prüfung, wird nichts angefordert (keine offenen Aufträge).
+    /// Review finding: during playback each UI frame checked the file per layer
+    /// (`is_local`, blocking on the NAS). Now the background state `presence`
+    /// decides – here "present" for a file that does not exist: stream and single frame
+    /// are requested anyway, so nobody asks the file system. If it is missing per
+    /// background check, nothing is requested (no open jobs).
     #[test]
     fn requests_follow_the_background_presence_check() {
         let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -789,26 +789,26 @@ mod presence_tests {
         let l = Layer { clip: c.clone(), t_rel: Time::ZERO, alpha: 1.0, from: None };
         let canvas = egui::vec2(64.0, 36.0);
         let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, canvas, None);
-        // Stand: Einzelbild nur, wenn vorhanden
+        // stopped: single frame only if present
         app.presence.set_all([(path.clone(), false)].into(), 1);
         ask(&mut app);
-        assert!(!app.core.has_requests(), "fehlende Datei: kein Auftrag");
+        assert!(!app.core.has_requests(), "missing file: no job");
         app.presence.set_all([(path.clone(), true)].into(), 1);
         ask(&mut app);
-        assert!(app.core.has_requests(), "laut Prüfung vorhanden: angefordert");
-        // Abspielen: Strom wird beauftragt (der Starter meldet sich, auch wenn das Öffnen scheitert)
+        assert!(app.core.has_requests(), "present per check: requested");
+        // playback: stream is requested (the starter reports even if opening fails)
         app.core.play(Time::ZERO, 0, 0.0);
         ask(&mut app);
-        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_secs(20)).is_ok(), "Strom beauftragt");
+        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_secs(20)).is_ok(), "stream requested");
         app.core.invalidate();
         app.presence.set_all([(path, false)].into(), 1);
         ask(&mut app);
-        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_millis(500)).is_err(), "fehlt: kein Strom");
+        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_millis(500)).is_err(), "missing: no stream");
     }
 
-    /// Strom aus Proxy-Stücken: der Auftrag zeigt auf die Stück-Liste, und die Zeit darin ist um
-    /// den Anfang des ersten Stücks verschoben. Die Quellenwahl steckt im Stromschlüssel und im
-    /// Quell-Fingerabdruck (ein Wechsel öffnet neu, ein Spender-Strom anderer Wahl wird nicht übernommen).
+    /// Stream from proxy parts: the job points to the part list, and the time in it is shifted by
+    /// the start of the first part. The source choice is in the stream key and in the
+    /// source fingerprint (a change reopens, a donor stream of another choice is not taken over).
     #[test]
     fn stream_from_parts_opens_the_list_at_the_shifted_time() {
         let (mut app, home, _g) = crate::saving::tests::test_app();
@@ -834,27 +834,27 @@ mod presence_tests {
         let l = Layer { clip: c.clone(), t_rel: Time::from_secs_f64(12.0), alpha: 1.0, from: None };
         let want = (app.settings.proxy_h, app.project.settings.fps);
         let out = home.path().join("q-540.mp4");
-        // Stücke 1–3 (10–40 s) fertig
+        // parts 1–3 (10–40 s) finished
         let ready: Vec<bool> = (0..10).map(|k| (1..4).contains(&k)).collect();
         crate::proxy::set_test_entry(&m.path, out.clone(), want, ready.clone(), false);
         app.playhead = Time::from_secs_f64(12.0);
         app.core.play(app.playhead, 0, 0.0);
         let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None);
         ask(&mut app);
-        let parts = jobs.try_recv().expect("Strom aus Stücken beauftragt");
+        let parts = jobs.try_recv().expect("stream from parts requested");
         assert_eq!(parts.path, home.path().join("q-540.teile").join("0001-0004.ffconcat"));
-        assert!((parts.source_at.as_secs_f64() - 2.0).abs() < 1e-3, "Quellzeit 12 s − Anfang Stück 1 (10 s): {:?}", parts.source_at);
+        assert!((parts.source_at.as_secs_f64() - 2.0).abs() < 1e-3, "source time 12 s − start of part 1 (10 s): {:?}", parts.source_at);
         ask(&mut app);
-        assert!(jobs.try_recv().is_err(), "gleiche Wahl: kein neuer Strom");
-        // fertig zusammengefügt: andere Wahl → anderer Schlüssel, neuer Strom aus der ganzen Datei
+        assert!(jobs.try_recv().is_err(), "same choice: no new stream");
+        // fully joined: other choice → other key, new stream from the whole file
         crate::proxy::set_test_entry(&m.path, out.clone(), want, ready, true);
         ask(&mut app);
-        let full = jobs.try_recv().expect("Wechsel öffnet einen Ersatzstrom");
-        // Datei aus dem Bestand, ohne auf der Platte nachzusehen (dort liegt sie im Test gar nicht)
+        let full = jobs.try_recv().expect("change opens a replacement stream");
+        // file from the inventory, without looking on disk (in the test it is not there at all)
         assert_eq!(full.path, out);
         assert!((full.source_at.as_secs_f64() - 12.0).abs() < 1e-3, "{:?}", full.source_at);
         assert_ne!(full.open.key, parts.open.key);
-        assert_ne!(full.alias, parts.alias, "Quellenwahl im Fingerabdruck");
+        assert_ne!(full.alias, parts.alias, "source choice in the fingerprint");
     }
 }
 
@@ -864,7 +864,7 @@ mod shader_tests {
 
     #[test]
     fn short_clip_between_two_long_transitions_matches_export() {
-        // 0,2-s-Clip mit zwei 0,5-s-Übergängen: beide auf 0,2 s begrenzt, auch beim Nachbarn
+        // 0.2 s clip with two 0.5 s transitions: both limited to 0.2 s, at the neighbour too
         let tr = |s: f64, d: f64| {
             let mut c = Clip::new(ClipContent::Text(Default::default()), Time::from_secs_f64(s), Time::from_secs_f64(d));
             c.transition_out = Some(cl_core::TransitionRef { id: "fade".into(), duration: Time::from_secs_f64(0.5) });
@@ -875,13 +875,13 @@ mod shader_tests {
         assert_eq!(span(0), (None, Some(0.2)));
         assert_eq!(span(1), (Some(0.2), Some(0.2)));
         assert_eq!(span(2), (Some(0.2), None));
-        // halbe Übergänge ragen zusammen höchstens über die ganze Länge des kurzen Clips
+        // half transitions together reach at most across the whole length of the short clip
         let (a, b) = span(1);
         assert!(a.unwrap() / 2.0 + b.unwrap() / 2.0 <= 0.2 + 1e-9);
     }
 
-    /// Rückwärts-Fenster nur beim Abspielen vorwärts eines rückwärts laufenden Videos aus dem
-    /// Original ohne Effektgraph; Pause/Schrittweise/Scrubben, Proxy und Effekte wie bisher.
+    /// Reverse window only when playing forwards a video running in reverse from the
+    /// original without effect graph; pause/stepping/scrubbing, proxy and effects as before.
     #[test]
     fn reverse_window_only_while_playing_a_plain_reversed_original() {
         let m = MediaRef {
@@ -899,43 +899,43 @@ mod shader_tests {
         };
         let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
         let p = Rational::new(60, 1);
-        assert_eq!(reverse_window(&c, &m, true, true, true, p), None, "vorwärts laufender Clip");
+        assert_eq!(reverse_window(&c, &m, true, true, true, p), None, "clip running forwards");
         c.fx.reverse = true;
-        assert_eq!(reverse_window(&c, &m, true, true, true, p), Some(Rational::new(30, 1)), "Quellrate");
-        assert_eq!(reverse_window(&c, &m, true, true, false, p), None, "Stand, Pause, Scrubben");
+        assert_eq!(reverse_window(&c, &m, true, true, true, p), Some(Rational::new(30, 1)), "source rate");
+        assert_eq!(reverse_window(&c, &m, true, true, false, p), None, "stopped, paused, scrubbing");
         assert_eq!(reverse_window(&c, &m, false, true, true, p), None, "Proxy");
-        assert_eq!(reverse_window(&c, &m, true, false, true, p), None, "Effektgraph");
+        assert_eq!(reverse_window(&c, &m, true, false, true, p), None, "effect graph");
         let m2 = MediaRef { fps: None, ..m.clone() };
-        assert_eq!(reverse_window(&c, &m2, true, true, true, p), Some(p), "ohne Quellrate: Projektrate");
+        assert_eq!(reverse_window(&c, &m2, true, true, true, p), Some(p), "without source rate: project rate");
         let uhd = MediaRef { width: 3840, height: 2160, ..m.clone() };
-        assert_eq!(reverse_window(&c, &uhd, true, true, true, p), None, "über 1080p: Einzelbilder");
+        assert_eq!(reverse_window(&c, &uhd, true, true, true, p), None, "above 1080p: single frames");
         let img = Clip { content: ClipContent::Media { media: m.id, kind: MediaKind::Image }, ..c };
-        assert_eq!(reverse_window(&img, &m, true, true, true, p), None, "Bild");
+        assert_eq!(reverse_window(&img, &m, true, true, true, p), None, "image");
     }
 
-    /// Vorlauf: Play nimmt den vorab geöffneten Strom nur für genau dieselbe Anfrage
+    /// Preroll: Play takes the stream opened ahead only for exactly the same request
     #[test]
     fn preroll_only_fits_the_same_request() {
         let spec = PrerollSpec { id: 7, key: 42, alias: 9, at: Time::from_secs_f64(5.0), revision: 3 };
         let o = crate::playcore::Open { id: 7, key: 42, at: Time::from_secs_f64(5.0), gen: 0, seq: 1 };
         assert!(preroll_fits(&spec, &o, 9, 3));
-        assert!(!preroll_fits(&spec, &crate::playcore::Open { at: Time::from_secs_f64(5.5), ..o }, 9, 3), "andere Stelle");
-        assert!(!preroll_fits(&spec, &o, 9, 4), "bearbeitet");
-        assert!(!preroll_fits(&spec, &crate::playcore::Open { key: 43, ..o }, 9, 3), "Qualität, Größe, Effekte, Quelle");
-        assert!(!preroll_fits(&spec, &crate::playcore::Open { id: 8, ..o }, 9, 3), "andere Ebene");
-        assert!(!preroll_fits(&spec, &o, 10, 3), "andere Quelle");
+        assert!(!preroll_fits(&spec, &crate::playcore::Open { at: Time::from_secs_f64(5.5), ..o }, 9, 3), "other place");
+        assert!(!preroll_fits(&spec, &o, 9, 4), "edited");
+        assert!(!preroll_fits(&spec, &crate::playcore::Open { key: 43, ..o }, 9, 3), "quality, size, effects, source");
+        assert!(!preroll_fits(&spec, &crate::playcore::Open { id: 8, ..o }, 9, 3), "other layer");
+        assert!(!preroll_fits(&spec, &o, 10, 3), "other source");
     }
 
     #[test]
     fn still_seek_never_lands_behind_the_last_frame() {
         let fps = Rational { num: 25, den: 1 };
         let end = Time::from_millis(6400);
-        // vorher: 6,38 s (Ende − 20 ms) aufs Raster gerundet = 6,40 s → kein Bild
+        // before: 6.38 s (end − 20 ms) rounded to the grid = 6.40 s → no frame
         let t = still_seek(Time::from_millis(6390), Time::ZERO, end, fps);
         assert!(t > Time::from_millis(6320) && t <= Time::from_millis(6360), "{t:?}");
-        // mitten im Clip unverändert aufs Raster
+        // in the middle of the clip unchanged on the grid
         assert_eq!(still_seek(Time::from_millis(1013), Time::ZERO, end, fps), Time::from_millis(1000));
-        // nie vor den Quell-Anfang
+        // never before the source start
         assert_eq!(still_seek(Time::ZERO, Time::from_millis(6390), end, fps), Time::from_millis(6390));
     }
 
@@ -953,36 +953,36 @@ mod shader_tests {
         let id = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         let frame = |w: u32, h: u32, a: u8| cl_media::RgbaFrame { width: w, height: h, data: [255, 0, 0, a].repeat((w * h) as usize) };
         let alpha = |img: &[u8], cw: u32, x: u32, y: u32| img[((y * cw + x) * 4 + 3) as usize];
-        // unverändert: füllt die Fläche
+        // unchanged: fills the area
         let full = place_on_canvas(&frame(16, 9, 255), &id, 32, 18, 1920.0, 1080.0);
         assert!(full.chunks_exact(4).all(|p| p == [255, 0, 0, 255]));
-        // Querformat im Hochformat-Projekt, auf Bildhöhe vergrößert (K2_short): füllt ebenfalls
+        // landscape in a portrait project, enlarged to frame height (K2_short): fills too
         let cover = place_on_canvas(&frame(16, 9, 255), &Evaluated { scale: 3.1605, ..id }, 18, 32, 1080.0, 1920.0);
         assert!(cover.chunks_exact(4).all(|p| p[3] == 255));
-        // ohne Vergrößerung: nur ein Streifen in der Mitte, oben und unten leer
+        // without enlargement: only a strip in the middle, empty above and below
         let strip = place_on_canvas(&frame(16, 9, 255), &id, 18, 32, 1080.0, 1920.0);
         assert_eq!((alpha(&strip, 18, 9, 16), alpha(&strip, 18, 9, 1)), (255, 0));
-        // verkleinert und nach rechts verschoben: links leer, rechts Bild
+        // shrunk and moved right: empty on the left, picture on the right
         let moved = place_on_canvas(&frame(16, 9, 255), &Evaluated { scale: 0.5, x: 480.0, ..id }, 32, 18, 1920.0, 1080.0);
         assert_eq!((alpha(&moved, 32, 4, 9), alpha(&moved, 32, 24, 9)), (0, 255));
-        // Deckkraft und Maske (Alpha im Clipbild) bleiben erhalten
+        // opacity and mask (alpha in the clip frame) are kept
         let faded = place_on_canvas(&frame(16, 9, 255), &Evaluated { opacity: 0.5, ..id }, 32, 18, 1920.0, 1080.0);
         assert_eq!(alpha(&faded, 32, 16, 9), 128);
-        // außerhalb der Maske auch die Farbe schwarz (wie im Export): sonst schien beim Mischen
-        // (Verpixeln in N_tr) das Bild ohne Maske durch
+        // outside the mask the colour is black too (as in the export): otherwise when blending
+        // (pixelate in N_tr) the picture showed through without mask
         let masked = place_on_canvas(&frame(16, 9, 0), &id, 32, 18, 1920.0, 1080.0);
         assert!(masked.iter().all(|&v| v == 0));
         let half = place_on_canvas(&frame(16, 9, 128), &id, 32, 18, 1920.0, 1080.0);
         assert_eq!(&half[..4], &[128, 0, 0, 128]);
-        // 90° gedreht: das Querformat steht hochkant, links und rechts leer
+        // rotated 90°: the landscape stands upright, empty left and right
         let turned = place_on_canvas(&frame(16, 9, 255), &Evaluated { rotation_deg: 90.0, ..id }, 32, 18, 1920.0, 1080.0);
         assert_eq!((alpha(&turned, 32, 16, 1), alpha(&turned, 32, 2, 9)), (255, 0));
     }
 }
 
-/// Vorschau-Standbild ohne Fenster: dieselben Schritte wie der Player im Stand (Ebenen,
-/// Dekodiergröße, Einzelbild mit Effektkette, Effekt-Elemente, Mischen der Übergänge), nur
-/// das Zusammensetzen der Ebenen auf der CPU statt in egui. Text bleibt weg.
+/// Preview still without a window: the same steps as the player when stopped (layers,
+/// decode size, single frame with effect chain, effect elements, blending of transitions), only
+/// the composing of the layers on the CPU instead of in egui. Text is left out.
 #[cfg(test)]
 pub(crate) mod still {
     use super::*;
@@ -1006,7 +1006,7 @@ pub(crate) mod still {
         cl_media::decode_frame_fx(&m.path, src, w, h, graph.as_deref()).ok()
     }
 
-    /// RGBA `cw`×`ch` des Projekts zur Zeit `t` auf Schwarz.
+    /// RGBA `cw`×`ch` of the project at time `t` on black.
     pub(crate) fn render(project: &Project, t: Time, cw: u32, ch: u32) -> Vec<u8> {
         let (pw, ph) = (project.settings.width.max(2) as f32, project.settings.height.max(2) as f32);
         let layers = layers_in(project, None, t);
@@ -1017,12 +1017,12 @@ pub(crate) mod still {
                 continue;
             }
             let pair = pairs.iter().find(|p| p.0 == i);
-            // Clip selbst, dann die Fassungen mit den Effekt-Elementen darüber (mit ihrer Stärke)
+            // the clip itself, then the versions with the effect elements on top (with their strength)
             let mut versions = vec![(None, 1.0)];
             for e in fx_elements_over(project, l.clip.id).into_iter().filter(|e| e.contains(t)) {
                 versions.push((Some(e.clone()), 0.0));
             }
-            // Mischbild mit den unmaskierten Elementen eingerechnet (wie im Player); sonst darüber
+            // blended frame with the unmasked elements included (as in the player); otherwise on top
             let mut base: Option<Vec<u8>> = None;
             for (e, _) in versions {
                 let with = |c: &Clip| match &e {
@@ -1046,7 +1046,7 @@ pub(crate) mod still {
                 match (&mut base, pair, e.as_ref().map(|e| e.fx.mask.is_none())) {
                     (None, Some(_), None) => base = Some(img),
                     (Some(b), Some(_), Some(true)) => fold_fx(b, &img, k),
-                    // shortcut: maskierte Elemente ohne Maske darübergelegt (der Player zeichnet die Form)
+                    // shortcut: masked elements laid on top without mask (the player draws the shape)
                     _ => over(&mut out, &img, k),
                 }
             }
@@ -1057,7 +1057,7 @@ pub(crate) mod still {
         out
     }
 
-    /// Nachstellen von Hand: `CUTLINE_STILL="<projekt>;<sek>[,<sek>…];<ausgabeordner>"`.
+    /// Reproduce by hand: `CUTLINE_STILL="<project>;<sec>[,<sec>…];<output folder>"`.
     #[test]
     fn still_from_env() {
         let Ok(v) = std::env::var("CUTLINE_STILL") else { return };
@@ -1074,7 +1074,7 @@ pub(crate) mod still {
     }
 }
 
-/// Übergänge der Vorschau gegen den Export (N_tr: Würfel, Verpixeln mit Maske, Kreis öffnen).
+/// Preview transitions against the export (N_tr: cube, pixelate with mask, circle open).
 #[cfg(test)]
 mod transition_tests {
     use super::*;
@@ -1099,8 +1099,8 @@ mod transition_tests {
         cl_media::probe(&path).unwrap()
     }
 
-    /// 320×180, 30 Bilder/s: A (0–1,5 s) → B (1,5–3 s), Übergang `tr` über 0,6 s (Fenster 1,2–1,8 s);
-    /// `mask_b`: B mit Kreismaske; `filter`: Filter-Element über beiden.
+    /// 320×180, 30 fps: A (0–1.5 s) → B (1.5–3 s), transition `tr` over 0.6 s (window 1.2–1.8 s);
+    /// `mask_b`: B with circle mask; `filter`: filter element over both.
     fn project(dir: &Path, tr: &str, mask_b: bool, filter: Option<&str>) -> Project {
         let a = media(dir, "a.mp4", "testsrc2");
         let b = media(dir, "b.mp4", "smptebars");
@@ -1131,7 +1131,7 @@ mod transition_tests {
         p
     }
 
-    /// Bild `n` des Exports (bildgenau)
+    /// Frame `n` of the export (frame-exact)
     fn export_frame(p: &Project, dir: &Path, n: usize) -> Vec<u8> {
         let out = dir.join("out.mp4");
         let job = cl_export::build(p, &cl_export::ExportSettings::from_project(p), &|_| None, &out).unwrap();
@@ -1147,8 +1147,8 @@ mod transition_tests {
         o.stdout
     }
 
-    /// Mittlere Abweichung der Farben in 16×16-Blöcken (Kodierung und verschobene Pixelblöcke
-    /// mitteln sich heraus, Form und Helligkeit nicht)
+    /// Mean deviation of the colours in 16×16 blocks (encoding and shifted pixel blocks
+    /// average out, shape and brightness do not)
     fn block_diff(a: &[u8], b: &[u8]) -> f64 {
         let (w, h, s) = (320usize, 180usize, 16usize);
         let mean = |img: &[u8], bx: usize, by: usize, c: usize| {
@@ -1187,19 +1187,19 @@ mod transition_tests {
         d
     }
 
-    /// Verpixeln mit maskiertem Clip B (N_tr 32:13): außerhalb der Maske geht A wie im Export in
-    /// Schwarz über, statt dass B ohne Maske durchscheint.
+    /// Pixelate with masked clip B (N_tr 32:13): outside the mask A turns to black as in the export,
+    /// instead of B showing through without mask.
     #[test]
     fn masked_clip_pixelize_matches_export() {
         if !cl_media::ffmpeg_available() {
             return;
         }
         let d = still_vs_export("pixelize", true, None, 1.6);
-        assert!(d < 8.0, "Vorschau weicht vom Export ab: {d:.1}");
+        assert!(d < 8.0, "preview differs from the export: {d:.1}");
     }
 
-    /// Zuschnitt (verschoben, verkleinert, gedreht) allein und in einem gemischten Übergang mit
-    /// anderem Zuschnitt bei B: Vorschau wie Export.
+    /// Crop (moved, shrunk, rotated) alone and in a blended transition with
+    /// a different crop on B: preview like export.
     #[test]
     fn crop_matches_export() {
         if !cl_media::ffmpeg_available() {
@@ -1215,16 +1215,16 @@ mod transition_tests {
             let ex = export_frame(&p, dir.path(), (t * 30.0).round() as usize);
             let pv = still::render(&p, Time::from_secs_f64(t), 320, 180);
             let d = block_diff(&pv, &ex);
-            assert!(d < 8.0, "Zuschnitt bei {t} s: Vorschau weicht vom Export ab: {d:.1}");
-            // ohne Zuschnitt in der Vorschau wäre es deutlich anders (prüft, dass der Test greift)
+            assert!(d < 8.0, "crop at {t} s: preview differs from the export: {d:.1}");
+            // without crop in the preview it would be clearly different (checks that the test bites)
             let mut q = p.clone();
             q.timeline.tracks[0].clips.iter_mut().for_each(|c| c.crop = Crop::default());
             let d0 = block_diff(&still::render(&q, Time::from_secs_f64(t), 320, 180), &ex);
-            assert!(d0 > 2.0 * d.max(2.0), "bei {t} s: ohne Zuschnitt {d0:.1}, mit {d:.1}");
+            assert!(d0 > 2.0 * d.max(2.0), "at {t} s: without crop {d0:.1}, with {d:.1}");
         }
     }
 
-    /// Splitscreen aus der Layout-Aktion (Zuschnitt + Transform zweier Spuren): Vorschau wie Export.
+    /// Split screen from the layout action (crop + transform of two tracks): preview like export.
     #[test]
     fn splitscreen_matches_export() {
         if !cl_media::ffmpeg_available() {
@@ -1232,7 +1232,7 @@ mod transition_tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let mut p = project(dir.path(), "fade", false, None);
-        // B auf eine eigene Spur über A, beide ab 0
+        // B on its own track above A, both from 0
         let mut b = p.timeline.tracks[0].clips.pop().unwrap();
         p.timeline.tracks[0].clips[0].transition_out = None;
         b.start = Time::ZERO;
@@ -1248,23 +1248,23 @@ mod transition_tests {
         let ex = export_frame(&p, dir.path(), 15);
         let at = Time::from_secs_f64(0.5);
         let d = block_diff(&still::render(&p, at, 320, 180), &ex);
-        assert!(d < 8.0, "Splitscreen: Vorschau weicht vom Export ab: {d:.1}");
+        assert!(d < 8.0, "split screen: preview differs from the export: {d:.1}");
         let d0 = block_diff(&still::render(&before, at, 320, 180), &ex);
-        assert!(d0 > 2.0 * d.max(2.0), "ohne Layout {d0:.1}, mit {d:.1}");
+        assert!(d0 > 2.0 * d.max(2.0), "without layout {d0:.1}, with {d:.1}");
     }
 
-    /// Kreis öffnen unter einem Filter-Element (N_tr 26:50): gemischt wie der Export (Element auf
-    /// dem fertigen Übergang), nicht übergeblendet.
+    /// Circle open under a filter element (N_tr 26:50): blended like the export (element on
+    /// the finished transition), not cross-faded.
     #[test]
     fn circleopen_under_filter_matches_export() {
         if !cl_media::ffmpeg_available() {
             return;
         }
         let d = still_vs_export("circleopen", false, Some("noir"), 1.5);
-        assert!(d < 8.0, "Vorschau weicht vom Export ab: {d:.1}");
+        assert!(d < 8.0, "preview differs from the export: {d:.1}");
     }
 
-    /// Würfel (Paket-Shader) nach maskiertem Clip unter einem Filter-Element (N_tr 37:90).
+    /// Cube (package shader) after a masked clip under a filter element (N_tr 37:90).
     #[test]
     fn shader_transition_under_filter_matches_export() {
         if !cl_media::ffmpeg_available() || cl_gpu::gpu().is_none() {
@@ -1273,11 +1273,11 @@ mod transition_tests {
         }
         load_shipped_packs();
         let d = still_vs_export("cutline.uebergaenge/wuerfel", false, Some("noir"), 1.5);
-        assert!(d < 8.0, "Vorschau weicht vom Export ab: {d:.1}");
+        assert!(d < 8.0, "preview differs from the export: {d:.1}");
     }
 
-    /// Entscheidung „mischen oder überblenden“: ein Effekt-/Filter-Element über dem Übergang ist
-    /// kein Grund mehr zum Überblenden (vorher: Würfel und Kreis öffnen fehlten in N_tr).
+    /// Decision "blend or cross-fade": an effect/filter element over the transition is
+    /// no longer a reason to cross-fade (before: cube and circle open were missing in N_tr).
     #[test]
     fn elements_above_do_not_force_a_crossfade() {
         let clip = |s: f64, tr: Option<&str>| {
@@ -1304,19 +1304,19 @@ mod transition_tests {
         let at = Time::from_secs_f64(1.5);
         let pairs = |p: &Project| mix_pairs(p, &layers_in(p, None, at), at).into_iter().map(|x| (x.0, x.1, x.3)).collect::<Vec<_>>();
         for tr in ["circleopen", "pixelize", "fade"] {
-            assert_eq!(pairs(&make(tr, true)), vec![(0, 1, 0.5)], "{tr} mit Filter darüber");
+            assert_eq!(pairs(&make(tr, true)), vec![(0, 1, 0.5)], "{tr} with filter on top");
         }
         assert_eq!(pairs(&make("circleopen", false)), vec![(0, 1, 0.5)]);
-        // reines Überblenden ohne Element: bleibt die (genaue) Überblendung der Anzeige
+        // plain cross-fade without element: stays the (exact) cross-fade of the display
         assert!(pairs(&make("fade", false)).is_empty());
-        // außerhalb des Fensters nichts
+        // nothing outside the window
         let p = make("circleopen", true);
         assert!(mix_pairs(&p, &layers_in(&p, None, Time::from_secs_f64(1.1)), Time::from_secs_f64(1.1)).is_empty());
     }
 
-    /// Fehlt beim Weiterschalten ein Bild, bleibt das letzte Mischbild desselben Übergangs stehen;
-    /// zu langsam beim Abspielen gilt je Übergang bis zum Anhalten, ein schnelles Bild schaltet
-    /// nicht zurück.
+    /// If a frame is missing when advancing, the last blended frame of the same transition stays;
+    /// too slow during playback holds per transition until paused, a fast frame does
+    /// not switch back.
     #[test]
     fn missing_frames_hold_and_slow_sticks_per_transition() {
         let ctx = egui::Context::default();
@@ -1327,25 +1327,25 @@ mod transition_tests {
         sp.tex = Some(ctx.load_texture("t", egui::ColorImage::new([1, 1], Color32::BLACK), Default::default()));
         sp.shown = Some((a, b));
         assert_eq!(sp.step((a, b), false), Step::Hold);
-        assert_eq!(sp.step((b, c), false), Step::Skip, "anderer Übergang: nicht das alte Bild");
+        assert_eq!(sp.step((b, c), false), Step::Skip, "other transition: not the old frame");
         let iv = 1.0 / 30.0;
-        // erstes langsames Bild (z. B. Pipeline) allein schaltet nicht um
+        // a first slow frame (e.g. pipeline) alone does not switch
         sp.note_time((a, b), 0.2, iv);
         assert_eq!(sp.step((a, b), true), Step::Mix);
         sp.note_time((a, b), 0.01, iv);
         sp.note_time((a, b), 0.2, iv);
         assert_eq!(sp.step((a, b), true), Step::Skip);
         sp.note_time((a, b), 0.01, iv);
-        assert_eq!(sp.step((a, b), true), Step::Skip, "bleibt bis zum Anhalten");
-        // der nächste Übergang beginnt neu
+        assert_eq!(sp.step((a, b), true), Step::Skip, "stays until paused");
+        // the next transition starts afresh
         sp.note_time((b, c), 0.2, iv);
         assert_eq!(sp.step((b, c), true), Step::Mix);
     }
 
     #[test]
     fn background_mix_matches_direct_mix_with_elements() {
-        // gleiche Rechnung wie vorher im Oberflächen-Thread: Mischbild, unmaskiertes Element
-        // eingerechnet, maskiertes als eigenes Bild
+        // same computation as before in the UI thread: blended frame, unmasked element
+        // included, masked one as its own frame
         let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         let f = |v: u8| std::sync::Arc::new(cl_media::RgbaFrame { width: 32, height: 18, data: [v, 255 - v, 90, 255].repeat(32 * 18) });
         let plan = cl_fx::catalog::transition_plan("circleopen");
@@ -1379,7 +1379,7 @@ mod transition_tests {
         assert_eq!(mix_size(1080.0, 1920.0, egui::vec2(400.0, 700.0), true), (394, 700));
     }
 
-    /// Zeit je Mischbild (1080p-Projekt): `cargo test --release -p cl-app mix_time -- --ignored --nocapture`
+    /// Time per blended frame (1080p project): `cargo test --release -p cl-app mix_time -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn mix_time() {
@@ -1407,8 +1407,8 @@ mod transition_tests {
         }
     }
 
-    /// Lage des gelben Bereichs (Mitte, linker und rechter Rand) im Verhältnis zur Textbreite in
-    /// der Vorschau: dieselbe Zeichnung wie im Player, ausgewertet an den Glyphen
+    /// Position of the yellow area (middle, left and right edge) relative to the text width in
+    /// the preview: the same drawing as in the player, evaluated on the glyphs
     fn karaoke_preview(app: &App, st: &TextStyle, dur: Time, t: f64) -> (f32, f32, f32) {
         let ctx = egui::Context::default();
         ctx.begin_pass(egui::RawInput::default());
@@ -1432,7 +1432,7 @@ mod transition_tests {
         (fr((lit.0 + lit.1) / 2.0), fr(lit.0), fr(lit.1))
     }
 
-    /// Dasselbe im Exportbild: gelbe Spalten gegen alle Textspalten
+    /// The same in the export frame: yellow columns against all text columns
     fn karaoke_export(img: &[u8]) -> (f32, f32, f32) {
         let (mut all, mut lit) = ((usize::MAX, 0), (usize::MAX, 0));
         for (i, c) in img.chunks_exact(4).enumerate() {
@@ -1445,12 +1445,12 @@ mod transition_tests {
                 lit = (lit.0.min(x), lit.1.max(x + 1));
             }
         }
-        assert!(lit.0 < lit.1, "kein gelbes Wort im Export");
+        assert!(lit.0 < lit.1, "no yellow word in the export");
         let fr = |x: usize| (x as f32 - all.0 as f32) / (all.1 - all.0) as f32;
         ((fr(lit.0) + fr(lit.1)) / 2.0, fr(lit.0), fr(lit.1))
     }
 
-    /// Mitte jeder Zeile (y, Projektpixel) in der Vorschau: Zeilen der Galley des Haupttexts
+    /// Middle of each line (y, project pixels) in the preview: rows of the main text's galley
     fn preview_lines(app: &App, st: &TextStyle) -> Vec<f32> {
         let ctx = egui::Context::default();
         ctx.begin_pass(egui::RawInput::default());
@@ -1465,8 +1465,8 @@ mod transition_tests {
         ts.galley.rows.iter().filter(|r| !r.glyphs.is_empty()).map(|r| ts.pos.y + r.rect.center().y).collect()
     }
 
-    /// Mitte jeder Zeile im Exportbild: Bänder heller Pixel (Großbuchstaben ohne Unterlängen,
-    /// deshalb wird die Mitte der Versalhöhe gemessen, nicht die der Zeilenbox)
+    /// Middle of each line in the export frame: bands of bright pixels (capitals without descenders,
+    /// so the middle of the cap height is measured, not that of the line box)
     fn export_lines(img: &[u8]) -> Vec<f32> {
         let ink: Vec<bool> = (0..360).map(|y| (0..640).any(|x| img[(y * 640 + x) * 4..][..3].iter().all(|&v| v > 160))).collect();
         let mut v = Vec::new();
@@ -1484,9 +1484,9 @@ mod transition_tests {
         v
     }
 
-    /// Zeilenlage und -abstand: zwei-, dreizeilig und automatisch umbrochen. Die Vorschau setzt
-    /// mit egui (eigene Schrift), der Export mit `drawtext`; verglichen werden Zeilenzahl, Abstand
-    /// der Zeilen und die Mitte des Blocks.
+    /// Line position and spacing: two-line, three-line and automatically wrapped. The preview sets
+    /// with egui (own font), the export with `drawtext`; compared are line count, spacing
+    /// of the lines and the middle of the block.
     #[test]
     fn text_lines_match_export() {
         if !cl_media::ffmpeg_available() {
@@ -1516,17 +1516,17 @@ mod transition_tests {
             let pitch = |v: &[f32]| (v[v.len() - 1] - v[0]) / (v.len() - 1) as f32;
             let mid = |v: &[f32]| (v[0] + v[v.len() - 1]) / 2.0;
             eprintln!("{text:?}: Vorschau {pv:.1?}, Export {ex:.1?}");
-            assert_eq!(pv.len(), ex.len(), "{text:?}: Zeilenzahl");
+            assert_eq!(pv.len(), ex.len(), "{text:?}: line count");
             assert!(pv.len() >= 2, "{text:?}");
             let (dp, dm) = ((pitch(&pv) - pitch(&ex)).abs(), (mid(&pv) - mid(&ex)).abs());
             eprintln!("{text:?}: Abweichung Zeilenabstand {dp:.1} px, Blockmitte {dm:.1} px (Größe 44)");
-            assert!(dp < 2.0 && dm < 5.0, "{text:?}: Abstand {dp:.1}, Mitte {dm:.1}");
+            assert!(dp < 2.0 && dm < 5.0, "{text:?}: spacing {dp:.1}, middle {dm:.1}");
         }
     }
 
-    /// Karaoke an drei Zeitpunkten (und „Füllen“): in Vorschau und Export ist dasselbe Wort gelb.
-    /// Die Vorschau nutzt die Schrift von egui, deshalb wird die Lage im Verhältnis zur Textbreite
-    /// verglichen.
+    /// Karaoke at three points in time (and „Füllen“): in preview and export the same word is yellow.
+    /// The preview uses egui's font, so the position relative to the text width is
+    /// compared.
     #[test]
     fn karaoke_word_matches_export() {
         if !cl_media::ffmpeg_available() {
@@ -1553,12 +1553,12 @@ mod transition_tests {
             let pv = karaoke_preview(&app, &st, dur, t);
             let ex = karaoke_export(&export_frame(&p, dir.path(), (t * 30.0).round() as usize));
             eprintln!("Karaoke bei {t} s: Vorschau {pv:.2?}, Export {ex:.2?}");
-            assert_eq!(((pv.0 * 3.0) as usize, (ex.0 * 3.0) as usize), (word, word), "bei {t} s");
-            assert!((pv.0 - ex.0).abs() < 0.06, "bei {t} s: Vorschau {pv:?}, Export {ex:?}");
-            // nur das eine Wort: nichts färbt in die Nachbarn
-            assert!(ex.2 - ex.1 < 0.36 && pv.2 - pv.1 < 0.36, "bei {t} s: {pv:?} {ex:?}");
+            assert_eq!(((pv.0 * 3.0) as usize, (ex.0 * 3.0) as usize), (word, word), "at {t} s");
+            assert!((pv.0 - ex.0).abs() < 0.06, "at {t} s: preview {pv:?}, export {ex:?}");
+            // only the one word: nothing colours into the neighbours
+            assert!(ex.2 - ex.1 < 0.36 && pv.2 - pv.1 < 0.36, "at {t} s: {pv:?} {ex:?}");
         }
-        // Füllen: bei 1,5 s sind die ersten beiden Wörter gelb
+        // „Füllen“: at 1.5 s the first two words are yellow
         st.karaoke.as_mut().unwrap().fill = true;
         p.timeline.tracks[0].clips[0].content = ClipContent::Text(st.clone());
         let pv = karaoke_preview(&app, &st, dur, 1.5);
@@ -1566,7 +1566,7 @@ mod transition_tests {
         assert!(pv.1 < 0.05 && ex.1 < 0.05 && (0.55..0.72).contains(&pv.2) && (0.55..0.72).contains(&ex.2), "{pv:?} {ex:?}");
     }
 
-    /// Feines Schachbrett (2 px) über 2 s, verlustfrei kodiert
+    /// Fine checkerboard (2 px) over 2 s, losslessly encoded
     fn checker(dir: &Path) -> MediaRef {
         let path = dir.join("muster.mp4");
         let st = cl_media::ffmpeg_command()
@@ -1580,7 +1580,7 @@ mod transition_tests {
         cl_media::probe(&path).unwrap()
     }
 
-    /// Ein Clip (0–2 s) mit dem Schachbrett; Zensur wandert von links (x 0,3) nach rechts (0,7)
+    /// One clip (0–2 s) with the checkerboard; censoring moves from left (x 0.3) to right (0.7)
     fn censor_project(dir: &Path, blur: bool) -> Project {
         let m = checker(dir);
         let mut p = Project::new("Zensur");
@@ -1596,7 +1596,7 @@ mod transition_tests {
         p
     }
 
-    /// Mittlerer Unterschied benachbarter Pixel (Rot) im Bereich – hoch beim feinen Muster
+    /// Mean difference of neighbouring pixels (red) in the area – high for the fine pattern
     fn detail(img: &[u8], x0: usize, x1: usize, y0: usize, y1: usize) -> f64 {
         let at = |x: usize, y: usize| img[(y * 320 + x) * 4] as f64;
         let (mut d, mut n) = (0.0, 0.0);
@@ -1609,7 +1609,7 @@ mod transition_tests {
         d / n
     }
 
-    /// Feinheit je 16×16-Block: mittlere Abweichung zweier Bilder
+    /// Fineness per 16×16 block: mean deviation of two frames
     fn detail_diff(a: &[u8], b: &[u8]) -> f64 {
         let (mut d, mut n) = (0.0, 0.0);
         for by in 0..11 {
@@ -1622,8 +1622,8 @@ mod transition_tests {
         d / n
     }
 
-    /// Export: unter der Fläche ist das feine Muster weg (Verpixeln und Weichzeichnen, schwächste
-    /// Stufe), daneben ist das Bild unverändert, und die Fläche liegt bei 0,2 s links, bei 1,8 s rechts.
+    /// Export: under the area the fine pattern is gone (pixelate and blur, weakest
+    /// level), next to it the picture is unchanged, and the area lies left at 0.2 s, right at 1.8 s.
     #[test]
     fn censor_destroys_the_pattern_only_inside_and_moves() {
         if !cl_media::ffmpeg_available() {
@@ -1633,27 +1633,27 @@ mod transition_tests {
         let mut plain = censor_project(dir.path(), false);
         plain.timeline.tracks[0].clips[0].fx.censor.clear();
         let orig = [export_frame(&plain, dir.path(), 6), export_frame(&plain, dir.path(), 54)];
-        // Fläche bei Bild 6: x 61–157, bei Bild 54: x 163–259; y 45–135
+        // area at frame 6: x 61–157, at frame 54: x 163–259; y 45–135
         let (left, right) = ((66, 152), (168, 254));
-        assert!(detail(&orig[0], left.0, left.1, 50, 130) > 60.0, "Muster kommt im Export an");
+        assert!(detail(&orig[0], left.0, left.1, 50, 130) > 60.0, "pattern arrives in the export");
         for blur in [false, true] {
             let p = censor_project(dir.path(), blur);
             for (n, inside, outside, o) in [(6, left, right, &orig[0]), (54, right, left, &orig[1])] {
                 let f = export_frame(&p, dir.path(), n);
                 let (di, dout) = (detail(&f, inside.0, inside.1, 50, 130), detail(&f, outside.0, outside.1, 50, 130));
                 eprintln!("blur={blur} Bild {n}: Feinheit innen {di:.1}, an der anderen Stelle {dout:.1}");
-                assert!(di < 6.0, "blur={blur} Bild {n}: Muster unter der Fläche noch da ({di:.1})");
-                assert!(dout > 60.0, "blur={blur} Bild {n}: Muster neben der Fläche fehlt ({dout:.1})");
-                // weit genug weg von der Fläche: wie ohne Zensur
+                assert!(di < 6.0, "blur={blur} frame {n}: pattern still there under the area ({di:.1})");
+                assert!(dout > 60.0, "blur={blur} frame {n}: pattern next to the area missing ({dout:.1})");
+                // far enough from the area: as without censoring
                 let far = if n == 6 { 175..319 } else { 0..145 };
                 let diff: f64 = (0..180).flat_map(|y| far.clone().map(move |x| (x, y))).map(|(x, y)| (f[(y * 320 + x) * 4] as f64 - o[(y * 320 + x) * 4] as f64).abs()).sum::<f64>()
                     / (180 * far.len()) as f64;
-                assert!(diff < 3.0, "blur={blur} Bild {n}: außerhalb verändert ({diff:.1})");
+                assert!(diff < 3.0, "blur={blur} frame {n}: changed outside ({diff:.1})");
             }
         }
     }
 
-    /// Vorschau gegen Export an zwei Zeitpunkten (die Fläche wandert dazwischen).
+    /// Preview against export at two points in time (the area moves in between).
     #[test]
     fn censor_preview_matches_export() {
         if !cl_media::ffmpeg_available() {
@@ -1669,13 +1669,13 @@ mod transition_tests {
             let (d, c) = (detail_diff(&pv, &ex), block_diff(&pv, &ex));
             let d0 = detail_diff(&still::render(&q, Time::from_secs_f64(t), 320, 180), &ex);
             eprintln!("Zensur bei {t} s: Feinheit Vorschau/Export {d:.2} (ohne Zensur {d0:.2}), Farbe {c:.2}");
-            assert!(d < 6.0 && c < 8.0, "bei {t} s: Vorschau weicht vom Export ab ({d:.1}, {c:.1})");
-            assert!(d0 > 3.0 * d.max(2.0), "bei {t} s: Test greift nicht ({d0:.1} / {d:.1})");
+            assert!(d < 6.0 && c < 8.0, "at {t} s: preview differs from the export ({d:.1}, {c:.1})");
+            assert!(d0 > 3.0 * d.max(2.0), "at {t} s: test does not bite ({d0:.1} / {d:.1})");
         }
     }
 
-    /// Mit Zuschnitt, Skalierung und Verschiebung des Clips liegt die Fläche weiter auf derselben
-    /// Stelle des Quellbilds – in Vorschau und Export.
+    /// With crop, scaling and shift of the clip the area stays on the same
+    /// place of the source frame – in preview and export.
     #[test]
     fn censor_follows_crop_scale_and_position() {
         if !cl_media::ffmpeg_available() {
@@ -1686,23 +1686,23 @@ mod transition_tests {
         let c = &mut p.timeline.tracks[0].clips[0];
         c.crop = Crop { left: 0.05, right: 0.05, top: 0.1, bottom: 0.0 };
         c.transform = Transform { x: 40.0, y: 0.0, scale: 0.6, rotation_deg: 0.0 };
-        // Bild 6: Fläche u 0,19–0,49, v 0,25–0,75 → x 160+40+(u−0,5)·192 = 144–201, y 90+(v−0,5)·108 = 63–117
+        // frame 6: area u 0.19–0.49, v 0.25–0.75 → x 160+40+(u−0.5)·192 = 144–201, y 90+(v−0.5)·108 = 63–117
         let ex = export_frame(&p, dir.path(), 6);
         let pv = still::render(&p, Time::from_secs_f64(0.2), 320, 180);
         for (what, img) in [("Export", &ex), ("Vorschau", &pv)] {
             let (di, dout) = (detail(img, 148, 197, 67, 113), detail(img, 212, 250, 67, 113));
             eprintln!("{what}: Feinheit auf der Fläche {di:.1}, daneben {dout:.1}");
-            assert!(di < 6.0, "{what}: Fläche nicht auf dem Motiv ({di:.1})");
-            assert!(dout > 15.0, "{what}: daneben zensiert ({dout:.1})");
+            assert!(di < 6.0, "{what}: area not on the subject ({di:.1})");
+            assert!(dout > 15.0, "{what}: censored next to it ({dout:.1})");
         }
-        // Feinheit daneben unterscheidet sich (Skalierung des Musters), die Farben nicht
+        // fineness next to it differs (scaling of the pattern), the colours do not
         let d = block_diff(&pv, &ex);
-        assert!(d < 8.0, "Vorschau weicht vom Export ab ({d:.1})");
+        assert!(d < 8.0, "preview differs from the export ({d:.1})");
     }
 }
 
 impl App {
-    /// Fertige Decoder-Ergebnisse übernehmen.
+    /// Take over finished decoder results.
     pub fn receive_decoded(&mut self, ctx: &egui::Context) {
         while let Ok(d) = self.decoder.rx.try_recv() {
             match d {
@@ -1781,8 +1781,8 @@ impl App {
         }
     }
 
-    /// Hat der Clip einen Shader- oder gemischten `xfade`-Übergang (nicht bloß Überblenden) am
-    /// Anfang oder Ende? (Nur dann CPU-Bilder behalten.)
+    /// Does the clip have a shader or blended `xfade` transition (not just a cross-fade) at the
+    /// start or end? (Only then keep CPU frames.)
     fn in_shader_transition(&self, clip: ClipId) -> bool {
         let shader = |c: &Clip| {
             c.transition_out.as_ref().is_some_and(|t| {
@@ -1796,11 +1796,11 @@ impl App {
         })
     }
 
-    /// Steht der Playhead in einem Übergang, den die Vorschau mischt (`mix_pairs`), A und B wie
-    /// der Export mischen (`mix_layers`), dazu je Effekt-Element darüber dessen Fassungen von A
-    /// und B. Fehlt ein Bild, bleibt das letzte Mischbild dieses Übergangs stehen (das fehlende
-    /// fordert beim Eintreffen ein Neuzeichnen an); gab es noch keins oder ist der Übergang beim
-    /// Abspielen zu langsam: Überblendung.
+    /// If the playhead is in a transition the preview blends (`mix_pairs`), blend A and B like
+    /// the export (`mix_layers`), plus per effect element on top its versions of A
+    /// and B. If a frame is missing, the last blended frame of this transition stays (the missing
+    /// one requests a redraw when it arrives); if there was none yet or the transition is
+    /// too slow during playback: cross-fade.
     fn shader_mix(&mut self, ctx: &egui::Context, layers: &[Layer], canvas_px: egui::Vec2) {
         let sp = &mut self.shader_preview;
         sp.current = None;
@@ -1825,7 +1825,7 @@ impl App {
         for (ai, bi, plan, p) in mix_pairs(&self.project, layers, t) {
             let (a, b) = (&layers[ai], &layers[bi]);
             let pair = (a.clip.id, b.clip.id);
-            // Bildpaare: die Clips selbst, dann ihre Fassungen mit den Effekt-Elementen darüber
+            // frame pairs: the clips themselves, then their versions with the effect elements on top
             let mut sets = vec![(pair.0, pair.1, None, 1.0)];
             for e in fx_elements_over(&self.project, pair.0).iter().filter(|e| e.contains(t)) {
                 let Some((_, k)) = fx_version(&a.clip, e, t) else { continue };
@@ -1846,7 +1846,7 @@ impl App {
             let frames = frames.unwrap_or_default();
             let (ea, eb) = (a.clip.eval_at(a.t_rel, pw, ph), b.clip.eval_at(b.t_rel, pw, ph));
             let (cw, ch) = mix_size(pw, ph, canvas_px / div, self.playing);
-            // andere Bilder, anderer Übergang, andere Lage oder Fläche: neu mischen
+            // other frames, other transition, other position or area: blend anew
             let id = {
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 (plan.xfade, &plan.shader.as_ref().map(|s| &s.0), p.to_bits(), cw, ch).hash(&mut h);
@@ -1859,7 +1859,7 @@ impl App {
                 }
                 h.finish()
             };
-            // fertige Mischung dieses Übergangs übernehmen
+            // take over the finished blend of this transition
             if let Some(d) = sp.ready.take_if(|d| d.pair == pair) {
                 let fps = self.project.settings.fps;
                 let interval = fps.den.max(1) as f64 / fps.num.max(1) as f64;
@@ -1871,7 +1871,7 @@ impl App {
                 }
                 sp.last = Some(d.id);
                 if !d.images.is_empty() {
-                    // vorhandene Texturen weiterverwenden: Mischbild, dann je Effekt-Element
+                    // reuse existing textures: blended frame, then per effect element
                     let mut old = sp.tex.take().into_iter().chain(sp.fx.drain(..).map(|f| f.0));
                     let mut texs: Vec<egui::TextureHandle> = d
                         .images
@@ -1892,7 +1892,7 @@ impl App {
                     sp.shown = Some(pair);
                 }
             }
-            // andere Bilder, anderer Übergang, andere Lage oder Fläche: neu mischen (im Hintergrund)
+            // other frames, other transition, other position or area: blend anew (in the background)
             if sp.last != Some(id) && sp.pending.is_none() {
                 let job = MixJob {
                     id,
@@ -1911,7 +1911,7 @@ impl App {
                     }
                 }
             }
-            // noch kein Mischbild dieses Übergangs: so lange überblenden
+            // no blended frame of this transition yet: cross-fade until then
             if sp.shown != Some(pair) || sp.tex.is_none() {
                 continue;
             }
@@ -1922,13 +1922,13 @@ impl App {
         self.shader_preview.wanted = wanted;
     }
 
-    /// Signal „wartet auf Bild“ für die Warte-Linie (siehe [`crate::playcore::PlayCore::waiting`]).
+    /// Signal "waiting for frame" for the wait line (see [`crate::playcore::PlayCore::waiting`]).
     pub(crate) fn waiting_for_frame(&self) -> bool {
         self.core.waiting()
     }
 
-    /// Vorschauqualität jetzt: (Teiler der Decodiergröße, halbe Bildrate). Beim Abspielen die
-    /// Stufe der automatischen Qualität, im Stand die gewählte.
+    /// Preview quality now: (divisor of the decode size, half frame rate). During playback the
+    /// level of the automatic quality, when stopped the chosen one.
     pub(crate) fn play_quality(&self) -> (u32, bool) {
         let steps = self.quality_steps();
         if self.core.playing() {
@@ -1938,9 +1938,9 @@ impl App {
         }
     }
 
-    /// Fingerabdruck der Effekte eines Clips: je Bearbeitungsstand einmal berechnet (vorher
-    /// serialisierte jedes UI-Bild die Effekte jeder Ebene zu JSON). `cacheable` = unverändert
-    /// aus dem Projekt (nicht gerade gezogen, keine Pipette).
+    /// Fingerprint of a clip's effects: computed once per edit state (before, each
+    /// UI frame serialized the effects of each layer to JSON). `cacheable` = unchanged
+    /// from the project (not being dragged, no eyedropper).
     fn fx_hash(&mut self, id: ClipId, c: &Clip, cacheable: bool) -> u64 {
         let calc = || fx_hash_of(c);
         if !cacheable {
@@ -1970,7 +1970,7 @@ impl App {
     ) -> u64 {
         let mut hs = std::collections::hash_map::DefaultHasher::new();
         (id, src, w, h, fps.num, fps.den, fx).hash(&mut hs);
-        // Timing gehört zum Schlüssel: verschobene/getrimmte Clips brauchen einen neuen Strom
+        // timing is part of the key: moved/trimmed clips need a new stream
         (c.start, c.duration, c.source_in, c.speed.to_bits()).hash(&mut hs);
         if animated_fx {
             t_rel.hash(&mut hs);
@@ -1978,26 +1978,26 @@ impl App {
         hs.finish() | 1
     }
 
-    /// Bilder für alle sichtbaren Medien-Ebenen anfordern bzw. aus Strömen holen.
+    /// Request frames for all visible media layers or fetch them from streams.
     ///
-    /// Flüssiges Abspielen: Der Strom eines Clips läuft ununterbrochen. Effekt-/Filter-Elemente
-    /// darüber laufen als eigene Fassung des Clips (eigener Strom), die beim Zeichnen mit ihrer
-    /// Stärke und ggf. nur innerhalb der Maske darübergelegt wird. Ströme für Clips und
-    /// Elemente, die gleich beginnen, werden vorab geöffnet, damit an Schnitten nichts hakt.
+    /// Smooth playback: a clip's stream runs without interruption. Effect/filter elements
+    /// on top run as their own version of the clip (own stream), which is laid on top when drawing with its
+    /// strength and possibly only inside the mask. Streams for clips and
+    /// elements about to begin are opened ahead so nothing hitches at cuts.
     fn update_layers(&mut self, ctx: &egui::Context, layers: &[Layer], canvas_px: egui::Vec2) {
-        // Beim Abspielen bleibt die Dekodiergröße fest (Umschalten auf den großen Player oder
-        // Fenstergröße ändern startet die Ströme nicht neu); im Stand folgt sie der Ansicht.
+        // During playback the decode size stays fixed (switching to the large player or
+        // resizing the window does not restart the streams); when stopped it follows the view.
         let canvas_px = if self.playing {
             *self.play_canvas_px.get_or_insert(canvas_px)
         } else {
             self.play_canvas_px = None;
             canvas_px
         };
-        // im Hintergrund geöffnete Ströme anhängen (veraltete verwirft der Kern)
+        // attach streams opened in the background (the core discards stale ones)
         let now = self.core_now();
         while let Ok((o, fps, alias, s)) = self.starter.rx.try_recv() {
             match s {
-                // Vorlauf: nur behalten, wenn er noch gewollt ist (sonst endet er beim Verwerfen)
+                // preroll: keep only if it is still wanted (otherwise it ends when discarded)
                 _ if o.gen == PREROLL_GEN => {
                     if let (Some(p), Some(s)) = (self.preroll.as_mut().filter(|p| p.spec.id == o.id && p.spec.key == o.key && p.spec.at == o.at), s) {
                         p.stream = Some((fps, s));
@@ -2009,7 +2009,7 @@ impl App {
                 None => self.core.open_failed(o, now),
             }
         }
-        // Pipette: Bild ohne Chroma-Key zeigen, damit die Farbe sichtbar bleibt
+        // eyedropper: show the frame without chroma key so the colour stays visible
         let pick = match self.pick {
             Some(crate::pro::Pick::Chroma(id)) => Some(id),
             _ => None,
@@ -2030,20 +2030,20 @@ impl App {
         }
         self.fx_overlays = overlays;
         self.update_preroll(ctx, &needs, canvas_px);
-        // Bilder von Clips, die nicht mehr unter dem Playhead liegen, verwirft `receive_decoded`
-        // (beim Scrubben über viele Spuren kamen sonst Dutzende auf einmal); kehrt der Playhead
-        // zurück, kommt das Bild erneut aus dem Zwischenspeicher des Decoders. Ebenso die
-        // Texturen: sonst hielt ein großes Projekt nach dem Scrubben eine je Clip (in Vorschaugröße je 1–8 MB).
+        // frames of clips no longer under the playhead are discarded by `receive_decoded`
+        // (when scrubbing across many tracks dozens came at once otherwise); if the playhead
+        // returns, the frame comes again from the decoder's cache. Likewise the
+        // textures: otherwise a large project held one per clip after scrubbing (1–8 MB each at preview size).
         self.core.visible(&visible.iter().map(|id| lid(*id)).collect::<Vec<_>>());
         self.frames.retain(|id, _| visible.contains(id));
     }
 
-    /// Vorlauf im Stand: ruht der Playhead [`PREROLL_REST`] auf einer schweren Ebene (Original über
-    /// 1080p bzw. hohe Bildrate, siehe `preview::stream_hw`) ohne Proxy, wird ihr Strom schon
-    /// geöffnet, genau so, wie Play ihn anfordern wird; Play hängt ihn an, statt ab dem Keyframe
-    /// neu zu suchen (4K: ~1 s). Höchstens einer (ein Hardware-Decoder); jede Änderung von Stelle,
-    /// Bearbeitung, Projekt, Qualität oder Vorschaugröße ändert den Wunsch und verwirft ihn, ebenso
-    /// Abspielen, Pause und ein laufender Export.
+    /// Preroll when stopped: if the playhead rests [`PREROLL_REST`] on a heavy layer (original above
+    /// 1080p or high frame rate, see `preview::stream_hw`) without proxy, its stream is already
+    /// opened, exactly as Play will request it; Play attaches it instead of seeking anew from the keyframe
+    /// (4K: ~1 s). At most one (one hardware decoder); every change of place,
+    /// edit, project, quality or preview size changes the wish and discards it, as do
+    /// playback, pause and a running export.
     fn update_preroll(&mut self, ctx: &egui::Context, needs: &[Need], canvas_px: egui::Vec2) {
         let wish = if self.core.mode() == Mode::Stand && !self.playing { self.preroll_wish(needs, canvas_px) } else { None };
         let Some((spec, i, (w, h), sfps)) = wish else {
@@ -2057,7 +2057,7 @@ impl App {
                     return;
                 }
                 if now - p.since < PREROLL_REST {
-                    // ruhige Oberfläche zeichnet nicht: nach der Ruhezeit noch einmal nachsehen
+                    // a quiet UI does not draw: check once more after the rest time
                     ctx.request_repaint_after(std::time::Duration::from_secs_f64(PREROLL_REST - (now - p.since) + 0.01));
                     return;
                 }
@@ -2076,8 +2076,8 @@ impl App {
         }
     }
 
-    /// Die Ebene für den Vorlauf und was Play für sie anfordern wird (wie in `request_frame`):
-    /// (Wunsch, Index in `needs`, Decodiergröße, Strom-Bildrate)
+    /// The layer for the preroll and what Play will request for it (as in `request_frame`):
+    /// (wish, index in `needs`, decode size, stream frame rate)
     fn preroll_wish(&mut self, needs: &[Need], canvas_px: egui::Vec2) -> Option<(PrerollSpec, usize, (u32, u32), Rational)> {
         let i = needs.iter().position(|n| {
             n.prefetch.is_none() && n.overlay.is_none() && streamable(&n.clip) && crate::preview::stream_hw(&n.media, &n.media.path) && self.presence.get(&n.media.path)
@@ -2085,11 +2085,11 @@ impl App {
         let (id, c, m) = (needs[i].id, &needs[i].clip, &needs[i].media);
         let fps = self.project.settings.fps;
         if self.settings.use_proxies {
-            // kein fertiger Proxy (laut Suche) und keine Stücke: Play nähme sonst die
+            // no finished proxy (per search) and no parts: Play would otherwise take the
             if self.proxies.cached(m.id, (self.settings.proxy_h, fps)) != Some(None) {
                 return None;
             }
-            // Wahl der Quelle wie bei Play, ohne die gemerkte Wahl zu verändern
+            // choice of source as on Play, without changing the remembered choice
             let prev = self.proxy_picks.get(&lid(id)).copied();
             let pick = self.stream_pick(lid(id), c, m, self.playhead);
             match prev {
@@ -2110,7 +2110,7 @@ impl App {
         Some((PrerollSpec { id: lid(id), key, alias, at: self.playhead, revision: self.revision }, i, (w, h), sfps))
     }
 
-    /// Ein Bild für die Ebene anfordern (Strom beim Abspielen, sonst Einzelbild).
+    /// Request a frame for the layer (stream during playback, otherwise single frame).
     #[allow(clippy::too_many_arguments)]
     fn request_frame(
         &mut self,
@@ -2125,7 +2125,7 @@ impl App {
         let (div, half) = self.play_quality();
         let div = div as f32;
         let fps = self.project.settings.fps;
-        // automatische Qualität, letzte Stufe: Vorschau mit halber Bildrate
+        // automatic quality, last level: preview with half frame rate
         let stream_fps = if half { Rational::new(fps.num, fps.den * 2) } else { fps };
         if !matches!(&c.content, ClipContent::Media { .. }) {
             return;
@@ -2134,13 +2134,13 @@ impl App {
             && !matches!(self.pick, Some(crate::pro::Pick::Chroma(p)) if p == l.clip.id);
         let fxh = self.fx_hash(id, c, cacheable);
         let now = self.core_now();
-        // Auch während Übergängen: der vorab geöffnete Strom beginnt genau am Clipanfang
+        // also during transitions: the stream opened ahead begins exactly at the clip start
         if self.core.streaming() && streamable(c) {
             let (key, w, h) = stream_spec(id, c, m, canvas_px, div, stream_fps, fxh);
-            // Quelle (Original/Proxy-Stücke) im Schlüssel: ein Wechsel öffnet einen Ersatzstrom
+            // source (original/proxy parts) in the key: a change opens a replacement stream
             let pick = self.stream_pick(lid(id), c, m, prefetch_at.unwrap_or(self.playhead));
             let key = key ^ pick.tag();
-            // auch im Fingerabdruck: nach dem Teilen kein Spender-Strom über andere Stücke
+            // in the fingerprint too: after splitting no donor stream over other parts
             let alias = stream_alias(c, m, (w, h), stream_fps, fxh) ^ pick.tag();
             let want = Want {
                 id: lid(id),
@@ -2150,11 +2150,11 @@ impl App {
                 prefetch: prefetch_at.is_some(),
                 alias,
             };
-            // vorhanden laut Hintergrund-Prüfung (kein Dateizugriff je Ebene und UI-Bild: auf
-            // einem schlafenden NAS blockierte der den UI-Thread)
+            // present per background check (no file access per layer and UI frame: on
+            // a sleeping NAS it blocked the UI thread)
             if self.presence.get(&m.path) {
-                // Der Kern sagt, ob und ab wo: erster Strom, Ersatz nach einer Änderung (der alte
-                // zeigt weiter, bis der neue liefert), Aufholen, hängender Strom
+                // The core says whether and from where: first stream, replacement after a change (the old one
+                // keeps showing until the new one delivers), catching up, stalled stream
                 if let Some(o) = self.core.want(&want, now) {
                     let rev = self.revision;
                     if let Some((sfps, s)) = self.preroll.take_if(|p| preroll_fits(&p.spec, &o, alias, rev)).and_then(|p| p.stream) {
@@ -2198,9 +2198,9 @@ impl App {
             )
         });
         let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx, fxh, fps);
-        // fehlende Datei (Hintergrund-Prüfung): gar nicht erst anfordern, sonst bliebe der Auftrag offen
+        // missing file (background check): do not request at all, otherwise the job would stay open
         if self.presence.get(&m.path) && self.core.still(lid(id), key, now) {
-            // LUT-Datei erst beim Anfordern prüfen, nicht je UI-Bild
+            // check the LUT file only when requesting, not per UI frame
             let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
             let (path, at) = self.still_source(m, h, src);
@@ -2239,8 +2239,8 @@ impl App {
         painter.rect_filled(canvas, 0.0, Color32::BLACK);
         let content = painter.with_clip_rect(canvas.intersect(area));
         let regions = self.draw_layers(&content, canvas, scale, &layers);
-        // Warten auf ein Bild: das letzte bleibt stehen, darunter eine dünne Lauflinie. Kommt nach
-        // 8 s nichts (Datei nicht lesbar, entferntes Medium), endet die Linie.
+        // waiting for a frame: the last one stays, below it a thin running line. If nothing comes after
+        // 8 s (file unreadable, removed medium), the line ends.
         let wait_id = egui::Id::new("player-wait");
         let waiting = self.waiting_for_frame();
         let now = ui.input(|i| i.time);
@@ -2258,7 +2258,7 @@ impl App {
             PERF_PLAYER_SUM_US.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
             PERF_PLAYER_MAX_US.fetch_max(us, std::sync::atomic::Ordering::Relaxed);
         }
-        // Ablegen aus dem Asset-Bereich direkt im Player
+        // drop from the asset area directly in the player
         if let Some(payload) = area_resp.dnd_release_payload::<DragAsset>() {
             let on = area_resp
                 .hover_pos()
@@ -2278,7 +2278,7 @@ impl App {
         if !self.player_pick(ui, &area_resp, &regions) && !self.censor_gizmo(ui, &area_resp, &regions) {
             self.player_interact(ui, &area_resp, canvas, scale, &regions);
         }
-        // Plattform-Bedienelemente (oben ~10 %, unten ~20 %, rechts ~12 %): nur Vorschau
+        // platform controls (top ~10 %, bottom ~20 %, right ~12 %): preview only
         if self.safe_area && ph > pw {
             let (w, h) = (canvas.width(), canvas.height());
             let zones = [
@@ -2289,7 +2289,7 @@ impl App {
             let line = egui::Stroke::new(1.0_f32, Color32::from_white_alpha(70));
             for z in zones {
                 content.rect_filled(z, 0.0, Color32::from_black_alpha(70));
-                // Schraffur
+                // hatching
                 let hatch = content.with_clip_rect(z.intersect(canvas.intersect(area)));
                 let mut x = z.left() - z.height();
                 while x < z.right() {
@@ -2315,7 +2315,7 @@ impl App {
                 canvas.center() - vec2(0.0, 10.0),
                 egui::Align2::CENTER_CENTER,
                 icon::FILM_SLATE,
-                egui::FontId::proportional(26.0), // Icon-Glyphe im leeren Zustand
+                egui::FontId::proportional(26.0), // icon glyph in the empty state
                 theme::TEXT_FAINT(),
             );
             painter.text(
@@ -2329,7 +2329,7 @@ impl App {
         self.player_controls(ui, controls_h);
     }
 
-    /// Alle Ebenen in `canvas` zeichnen (Player und externes Vorschaufenster).
+    /// Draw all layers in `canvas` (player and external preview window).
     fn draw_layers(
         &self,
         content: &egui::Painter,
@@ -2340,8 +2340,8 @@ impl App {
         let s = &self.project.settings;
         let (pw, ph) = (s.width.max(2) as f32, s.height.max(2) as f32);
         let mut regions: Vec<Region> = Vec::new();
-        // Unterstes gezeigtes Bild: steht weiter, solange der nächste Clip noch kein Bild hat
-        // (nur im selben Projekt: ein anderes zeigt nie das Bild des vorigen)
+        // lowest shown frame: stays while the next clip has no frame yet
+        // (only in the same project: another never shows the previous one's frame)
         let held_id = egui::Id::new("player-held-frame");
         let held_for = egui::Id::new(&self.project_path).value();
         let mut bottom = true;
@@ -2370,8 +2370,8 @@ impl App {
             let angle = ev.rotation_deg.to_radians();
             match &c.content {
                 ClipContent::Media { .. } => {
-                    // Shader-Übergang: das gemischte Bild (fertige Ebenen auf ganzer Fläche) statt A,
-                    // B entfällt
+                    // shader transition: the blended frame (finished layers on the whole area) instead of A,
+                    // B is dropped
                     let mixed = match (self.shader_preview.current, &self.shader_preview.tex) {
                         (Some((_, b)), _) if b == c.id => continue,
                         (Some((a, _)), Some(t)) if a == c.id => Some(t),
@@ -2380,8 +2380,8 @@ impl App {
                     if let Some(t) = mixed {
                         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
                         content.image(t.id(), canvas, uv, Color32::WHITE);
-                        // Effekt-Elemente darüber: ihre gemischte Fassung (wie der Export auf dem
-                        // fertigen Übergang)
+                        // effect elements on top: their blended version (as the export on the
+                        // finished transition)
                         let corners = [canvas.left_top(), canvas.right_top(), canvas.right_bottom(), canvas.left_bottom()];
                         for (fx_tex, mk, k) in &self.shader_preview.fx {
                             draw_fx(content, t.id(), fx_tex.id(), corners, corners, mk, *k, canvas);
@@ -2416,7 +2416,7 @@ impl App {
                         regions.push(region);
                         continue;
                     }
-                    // Zuschnitt als Ausschnitt der Textur; der Rest bleibt an seiner Stelle
+                    // crop as a section of the texture; the rest stays in its place
                     let k = ev.crop;
                     let uvs = [(k.left, k.top), (1.0 - k.right, k.top), (1.0 - k.right, 1.0 - k.bottom), (k.left, 1.0 - k.bottom)];
                     let shown = uvs.map(|(u, v)| region.corner(2.0 * u - 1.0, 2.0 * v - 1.0));
@@ -2427,7 +2427,7 @@ impl App {
                     }
                     mesh.indices.extend([0, 1, 2, 0, 2, 3]);
                     content.add(egui::Shape::mesh(mesh));
-                    // Maskierte Effekt-/Filter-Elemente darüber: zweite Fassung nur in der Maske
+                    // masked effect/filter elements on top: second version only inside the mask
                     let corners = [
                         region.corner(-1.0, -1.0),
                         region.corner(1.0, -1.0),
@@ -2446,7 +2446,7 @@ impl App {
                     regions.push(region);
                 }
                 ClipContent::Effect(_) | ClipContent::Filter(_) => {
-                    // Maske des ausgewählten Elements als Umriss zeigen
+                    // show the mask of the selected element as an outline
                     if self.selected == Some(c.id) {
                         if let Some(mk) = &c.fx.mask {
                             let (polys, _) = crate::fx_mask::polygons(mk, canvas);
@@ -2484,7 +2484,7 @@ impl App {
         regions
     }
 
-    /// Vorschau in eigenem Fenster (z. B. auf dem zweiten Bildschirm, F11 = Vollbild).
+    /// Preview in its own window (e.g. on the second screen, F11 = full screen).
     pub fn external_preview(&mut self, ctx: &egui::Context) {
         let init = egui::Id::new("ext-preview-init");
         if !self.ext_preview {
@@ -2492,8 +2492,8 @@ impl App {
             return;
         }
         let vid = egui::ViewportId::from_hash_of("cutline-preview");
-        // In den ersten Bildern nach dem Öffnen ausdrücklich nach vorn holen: eine Angabe im
-        // Builder wirkt unter Windows nicht, das Fenster läge hinter dem Hauptfenster
+        // in the first frames after opening explicitly bring it to the front: a setting in the
+        // builder has no effect on Windows, the window would lie behind the main window
         let n = ctx.data(|d| d.get_temp::<u8>(init)).unwrap_or(0);
         if n < 4 {
             ctx.data_mut(|d| d.insert_temp(init, n + 1));
@@ -2505,8 +2505,8 @@ impl App {
             .with_title(crate::tr("Cutline – Vorschau"))
             .with_inner_size([960.0, 540.0])
             .with_min_inner_size([320.0, 180.0]);
-        // Erst auf dem Bildschirm des Hauptfensters öffnen; von dort auf den zweiten ziehen
-        // nur beim Öffnen: eine dauerhaft gesetzte Position hält das Fenster fest
+        // open on the main window's screen first; drag it to the second from there
+        // only on opening: a permanently set position pins the window
         if let Some(r) = ctx.input(|i| i.viewport().outer_rect).filter(|_| n < 4) {
             builder = builder.with_position(r.min + vec2(80.0, 80.0));
         }
@@ -2533,8 +2533,8 @@ impl App {
             if ctx.input(|i| i.key_pressed(egui::Key::F11) || (ext_full && i.key_pressed(egui::Key::Escape))) {
                 toggle_full = true;
             }
-            // Vollbild als randloses, maximiertes Fenster: echtes Vollbild einer zweiten
-            // Ansicht lässt egui/winit unter Windows hängen.
+            // full screen as a borderless, maximized window: real full screen of a second
+            // viewport makes egui/winit hang on Windows.
             if toggle_full {
                 let full = !ext_full;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(!full));
@@ -2555,8 +2555,8 @@ impl App {
         }
     }
 
-    /// Text wie im Export: Fläche, Kontur, Schatten, Ausrichtung, Zeilenabstand; `lit`: Wörter
-    /// in der Karaoke-Farbe. Gibt die Größe des Textblocks (Bildschirm) zurück.
+    /// Text as in the export: box, outline, shadow, alignment, line spacing; `lit`: words
+    /// in the karaoke colour. Returns the size of the text block (screen).
     #[allow(clippy::too_many_arguments)]
     pub fn draw_text(
         &self,
@@ -2584,7 +2584,7 @@ impl App {
         let a = |c: [u8; 4]| {
             Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (c[3] as f32 * alpha) as u8)
         };
-        // Karaoke: Byte-Bereich der hervorgehobenen Wörter und ihre Farbe
+        // karaoke: byte range of the highlighted words and their colour
         let hi = st.karaoke.as_ref().zip(lit).and_then(|(kar, lit)| {
             let w = cl_core::word_ranges(&txt);
             Some((w.get(lit.start)?.start..w.get(lit.end - 1)?.end, a(kar.color)))
@@ -2620,8 +2620,8 @@ impl App {
             let (s, c) = angle.sin_cos();
             vec2(v.x * c - v.y * s, v.x * s + v.y * c)
         };
-        // Ankerpunkt für TextShape: links oben der Galley (bei Center-Ausrichtung liegt
-        // die Galley um x = 0 herum)
+        // anchor point for TextShape: top left of the galley (with centre alignment the
+        // galley lies around x = 0)
         let x_off = match st.align {
             x if x < 0 => -size.x / 2.0,
             x if x > 0 => size.x / 2.0,
@@ -2664,7 +2664,7 @@ impl App {
         }
         p.add(egui::epaint::TextShape::new(anchor, galley, a(st.color)).with_angle(angle));
         if st.bold {
-            // Fettdruck nachahmen, wenn die Schrift keinen eigenen Schnitt hat
+            // imitate bold when the font has no bold face of its own
             let g2 = p.layout_job(job(a(st.color), hi));
             p.add(
                 egui::epaint::TextShape::new(anchor + rot(vec2(px * 0.03, 0.0)), g2, a(st.color))
@@ -2674,8 +2674,8 @@ impl App {
         size
     }
 
-    /// Steuerleiste: Zeit links, Play mittig, Chips rechts.
-    /// Pegelanzeige (Spitze mit Abfall und Haltelinie), rot ab −1 dBFS
+    /// Control bar: time on the left, Play in the middle, chips on the right.
+    /// Level meter (peak with decay and hold line), red from −1 dBFS
     fn level_meter(&mut self, ui: &mut egui::Ui) {
         let (l, r) = self
             .audio
@@ -2742,7 +2742,7 @@ impl App {
         }
     }
 
-    /// Lautstärke der Wiedergabe setzen; `save` erst, wenn die Änderung abgeschlossen ist
+    /// Set the playback volume; `save` only once the change is complete
     pub fn set_volume(&mut self, v: crate::audio::Volume, save: bool) {
         self.volume = v;
         crate::audio::set_volume(v);
@@ -2755,8 +2755,8 @@ impl App {
         self.set_volume(self.volume.step(up), true);
     }
 
-    /// Lautsprecher neben der Pegelanzeige: Klick = stumm/an, Mausrad = 5-%-Schritte, beim
-    /// Überfahren ein Regler darüber (eigene Ebene, nimmt der Leiste keinen Platz).
+    /// Speaker next to the level meter: click = mute/unmute, mouse wheel = 5 % steps, on
+    /// hover a slider above it (own layer, takes no room from the bar).
     fn volume_button(&mut self, ui: &mut egui::Ui) {
         let v = self.volume;
         let glyph = if v.muted || v.percent <= 0.0 {
@@ -2777,7 +2777,7 @@ impl App {
         }
         let pop = r.id.with("volume");
         if r.hovered() {
-            // shortcut: je Rad-Ereignis ein Schritt (Touchpads liefern viele kleine), reicht für Mausräder
+            // shortcut: one step per wheel event (touchpads deliver many small ones), enough for mouse wheels
             let steps: Vec<bool> = ui.input(|i| {
                 i.events
                     .iter()
@@ -2791,7 +2791,7 @@ impl App {
                 self.step_volume(up);
             }
         }
-        // offen, solange die Maus auf dem Symbol oder dem Regler ist (oder ihn zieht)
+        // open while the mouse is on the icon or the slider (or drags it)
         let last: Option<Rect> = ui.data(|d| d.get_temp(pop));
         let keep = last.is_some_and(|rect| {
             let near = rect.expand(8.0);
@@ -2866,11 +2866,11 @@ impl App {
             Rect::from_center_size(bar.center(), vec2(36.0, 28.0)),
             egui::Button::new("").frame(false),
         );
-        // Symbol wechselt weich: Play blendet aus, Pause ein (und umgekehrt)
+        // icon changes smoothly: Play fades out, Pause in (and vice versa)
         let k = theme::fade(ui.ctx(), pr.id.with("glyph"), self.playing, theme::MOTION_FAST);
         for (glyph, a) in [(icon::PLAY, 1.0 - k), (icon::PAUSE, k)] {
             if a > 0.0 {
-                // Icon-Glyphe: großer Abspielknopf
+                // icon glyph: large play button
                 ui.painter().text(pr.rect.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(19.0), theme::TEXT().gamma_multiply(a));
             }
         }
@@ -2897,7 +2897,7 @@ impl App {
                 self.ext_preview = !self.ext_preview;
             }
             self.player_zoom_chip(ui, compact);
-            // Chip kurz (½, ¼), Tooltip mit denselben Wörtern wie überall: Voll, Halb, Viertel
+            // chip short (½, ¼), tooltip with the same words as everywhere: Voll, Halb, Viertel
             let (q, word) = match self.settings.preview_div {
                 1 => ("Voll", "Voll"),
                 2 => ("½", "Halb"),
@@ -2912,7 +2912,7 @@ impl App {
                 };
                 self.invalidate_preview();
             }
-            // automatische Qualität beim Abspielen: kleine Anzeige neben dem Chip, blendet ein und aus
+            // automatic quality during playback: small indicator next to the chip, fades in and out
             let auto_id = egui::Id::new("player-auto-quality");
             let k = theme::fade(ui.ctx(), auto_id, self.core.playing() && self.core.quality.level > 0, theme::MOTION);
             if self.core.quality.level > 0 {
@@ -2952,7 +2952,7 @@ impl App {
         });
     }
 
-    /// Rechtsklick in den Player: dieselben Befehle wie in der Player-Leiste und den Schnellaktionen.
+    /// Right click in the player: the same commands as in the player bar and the quick actions.
     fn player_menu(&mut self, ui: &mut egui::Ui) {
         use crate::timeline::menu_item;
         if menu_item(ui, icon::IMAGE, "Standbild speichern …", "") {
@@ -2998,7 +2998,7 @@ impl App {
             s.platform = None;
         }
         if s != self.project.settings {
-            // Format ändert sich und es gibt Bilder: erst fragen, wie sie neu ins Bild sollen
+            // format changes and there are frames: first ask how they should be fitted again
             if (s.width, s.height) != (self.project.settings.width, self.project.settings.height) && self.has_visual_clips() {
                 self.aspect_fit = Some(s);
             } else {

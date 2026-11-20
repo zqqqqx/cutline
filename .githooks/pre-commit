@@ -1,8 +1,8 @@
 #!/bin/sh
-# Vor jedem Commit: Testprojekte aus crates/cl-export/tests/projects exportieren und prüfen.
-# Einschalten: git config core.hooksPath .githooks   (überspringen: git commit --no-verify)
-echo "Export-Test mit den Testprojekten …"
+# Before each commit: export and check the test projects from crates/cl-export/tests/projects.
+# Enable: git config core.hooksPath .githooks   (skip: git commit --no-verify)
+echo "Export test with the test projects …"
 cargo test --release -q -p cl-export --test project_export || {
-    echo "Export-Test fehlgeschlagen – Commit abgebrochen."
+    echo "Export test failed – commit aborted."
     exit 1
 }

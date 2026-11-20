@@ -1,7 +1,7 @@
-//! Prüfbilder aller Shader-Übergänge der mitgelieferten Pakete:
-//! `cargo run --release -p cl-gpu --example sheet -- <a.rgba> <b.rgba> <breite> <höhe> <ausgabeordner> [Fortschritte…]`
-//! Schreibt je Übergang und Fortschritt `<id>_<p>.rgba` (RGBA, gleiche Größe wie die Eingaben),
-//! z. B. für eine Kontaktabzug-Kachel mit FFmpeg.
+//! Check images of all shader transitions of the bundled packages:
+//! `cargo run --release -p cl-gpu --example sheet -- <a.rgba> <b.rgba> <width> <height> <output-folder> [progress values…]`
+//! Writes per transition and progress `<id>_<p>.rgba` (RGBA, same size as the inputs),
+//! e.g. for a contact sheet tile with FFmpeg.
 
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();

@@ -1,9 +1,9 @@
-//! Plugin-System, Teil 1: Manifest-Format, Validierung und Registry.
+//! Plugin system, part 1: manifest format, validation and registry.
 //!
-//! Zwei Arten:
-//! 1. `asset-pack`: nur Daten (Effekte/Filter als FFmpeg-Ketten, Übergänge als WGSL, Sounds,
-//!    Sticker), kein Code
-//! 2. `integration`: eingebaute Anbindung an einen Dienst mit deklarierten Rechten
+//! Two kinds:
+//! 1. `asset-pack`: data only (effects/filters as FFmpeg chains, transitions as WGSL, sounds,
+//!    stickers), no code
+//! 2. `integration`: built-in connection to a service with declared permissions
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -23,7 +23,7 @@ pub enum PluginError {
 pub const MANIFEST_FILE: &str = "plugin.toml";
 pub const API_VERSION: u32 = 1;
 
-/// Rechte, die ein Plugin anfordern kann. Unbekannte Rechte machen das Manifest ungültig.
+/// Permissions a plugin can request. Unknown permissions make the manifest invalid.
 pub const KNOWN_PERMISSIONS: &[&str] = &[
     "project.read",
     "project.write",
@@ -40,8 +40,8 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
 #[serde(rename_all = "kebab-case")]
 pub enum PluginKind {
     AssetPack,
-    /// In Cutline eingebaute Anbindung an einen Dienst (`entry = "builtin:<name>"`),
-    /// standardmäßig aus und nur mit Zugangsdaten des Nutzers nutzbar.
+    /// Connection to a service built into Cutline (`entry = "builtin:<name>"`),
+    /// off by default and usable only with the user's credentials.
     Integration,
 }
 
@@ -102,7 +102,7 @@ impl ParamSpec {
     }
 }
 
-/// Lokalisierter Text: `{ de = "…", en = "…" }`.
+/// Localized text: `{ de = "…", en = "…" }`.
 pub type LocalizedText = BTreeMap<String, String>;
 
 pub fn localized<'a>(t: &'a LocalizedText, lang: &str) -> &'a str {
@@ -121,21 +121,21 @@ pub struct AssetEntry {
     pub name: LocalizedText,
     #[serde(default)]
     pub category: Vec<String>,
-    /// WGSL-Shader relativ zum Plugin-Ordner (nur Übergänge, dort Pflicht).
+    /// WGSL shader relative to the plugin folder (transitions only, required there).
     pub shader: Option<String>,
-    /// Übergang mit Shader: eingebauter `xfade`-Übergang, wenn keine GPU da ist oder das Paket fehlt
-    /// (Pflicht bei Shader-Übergängen).
+    /// Transition with shader: built-in `xfade` transition if there is no GPU or the package is missing
+    /// (required for shader transitions).
     pub fallback: Option<String>,
-    /// FFmpeg-Filterkette (Effekt/Filter) bzw. `xfade`-Name oder `custom:<Ausdruck>` (Übergang).
-    /// Platzhalter: `{intensity}` (0…1) und `{<param-id>}`.
+    /// FFmpeg filter chain (effect/filter) or `xfade` name or `custom:<expression>` (transition).
+    /// Placeholders: `{intensity}` (0…1) and `{<param-id>}`.
     pub ffmpeg: Option<String>,
-    /// Datei relativ zum Plugin-Ordner (Sound/Sticker: Pflicht, Endung siehe [`SOUND_EXT`]/[`STICKER_EXT`]).
+    /// File relative to the plugin folder (sound/sticker: required, extension see [`SOUND_EXT`]/[`STICKER_EXT`]).
     pub file: Option<String>,
-    /// Abweichende Angaben für dieses Asset (Standard: die des Pakets)
+    /// Differing details for this asset (default: those of the package)
     pub license: Option<String>,
     pub author: Option<String>,
     pub source: Option<String>,
-    /// Schlagworte: die Suche in den Tabs findet das Asset auch darüber.
+    /// Tags: the search in the tabs also finds the asset by them.
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
@@ -143,8 +143,8 @@ pub struct AssetEntry {
 }
 
 impl AssetEntry {
-    /// Standardwerte der Shader-Parameter in Reihenfolge (`params.p0` …): nur Zahl, Ganzzahl
-    /// und Schalter, höchstens [`MAX_SHADER_PARAMS`].
+    /// Default values of the shader parameters in order (`params.p0` …): only number, integer
+    /// and switch, at most [`MAX_SHADER_PARAMS`].
     pub fn shader_params(&self) -> Result<Vec<f32>, String> {
         if self.params.len() > MAX_SHADER_PARAMS {
             return Err(format!("höchstens {MAX_SHADER_PARAMS} Parameter"));
@@ -160,7 +160,7 @@ impl AssetEntry {
             .collect()
     }
 
-    /// FFmpeg-Kette mit eingesetzten Standardwerten; {intensity} bleibt für den Host.
+    /// FFmpeg chain with default values filled in; {intensity} stays for the host.
     pub fn ffmpeg_filled(&self) -> Option<String> {
         let mut c = self.ffmpeg.clone()?;
         for prm in &self.params {
@@ -178,18 +178,18 @@ impl AssetEntry {
     }
 }
 
-/// Parameter eines Shader-Übergangs (`params.p0` … `params.p7`).
+/// Parameters of a shader transition (`params.p0` … `params.p7`).
 pub const MAX_SHADER_PARAMS: usize = 8;
 
-/// Erlaubte Endungen für Paket-Sounds (wie die eigene Bibliothek).
+/// Allowed extensions for package sounds (like the own library).
 pub const SOUND_EXT: &[&str] = &["wav", "mp3", "ogg", "flac", "m4a", "aac", "opus"];
-/// Erlaubte Endungen für Paket-Sticker. Bewegte Sticker: GIF oder APNG mit Endung `.png`
-/// (erkannt am Inhalt, siehe `cl_media::animation`).
+/// Allowed extensions for package stickers. Animated stickers: GIF or APNG with extension `.png`
+/// (detected by content, see `cl_media::animation`).
 pub const STICKER_EXT: &[&str] = &["png", "webp", "svg", "jpg", "jpeg", "gif"];
 
-/// Relativer Pfad ohne `..`, Wurzel oder Laufwerk (bleibt im Plugin-Ordner). `:` und `\` sind auf
-/// jedem System verboten: ein Paket wird überall gleich geprüft (Laufwerkspfade gelten sonst nur
-/// unter Windows als absolut).
+/// Relative path without `..`, root or drive (stays in the plugin folder). `:` and `\` are forbidden on
+/// every system: a package is checked the same everywhere (drive paths otherwise only count
+/// as absolute on Windows).
 pub fn relative_inside(f: &str) -> bool {
     !f.is_empty()
         && !f.contains("..")
@@ -199,8 +199,8 @@ pub fn relative_inside(f: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-/// Filter, die Paket-Ketten nutzen dürfen: nur Bildberechnung, kein Datei-, Netz- oder
-/// Prozesszugriff. Neue Filter hier eintragen (Test: jede Kette der mitgelieferten Pakete).
+/// Filters package chains may use: image computation only, no file, network or
+/// process access. Add new filters here (test: every chain of the bundled packages).
 pub const ALLOWED_FILTERS: &[&str] = &[
     "avgblur", "boxblur", "cas", "chromashift", "colorbalance", "colorchannelmixer",
     "colorcontrast", "colorize", "colorlevels", "colortemperature", "convolution", "crop", "curves",
@@ -210,7 +210,7 @@ pub const ALLOWED_FILTERS: &[&str] = &[
     "smartblur", "split", "tmix", "unsharp", "vflip", "vibrance", "vignette",
 ];
 
-/// Teile von `s` an `sep` außerhalb von '…' (FFmpeg-Quoting). `None` bei offenem Anführungszeichen.
+/// Parts of `s` at `sep` outside of '…' (FFmpeg quoting). `None` for an unclosed quote.
 fn split_top(s: &str, sep: char) -> Option<Vec<&str>> {
     let (mut out, mut start, mut quoted) = (Vec::new(), 0, false);
     for (i, c) in s.char_indices() {
@@ -225,8 +225,8 @@ fn split_top(s: &str, sep: char) -> Option<Vec<&str>> {
     (!quoted).then_some(out)
 }
 
-/// Kette aus einem Paket: nur Filter aus [`ALLOWED_FILTERS`], keine eigenen Ein-/Ausgänge,
-/// Graph-Trenner, Instanznamen (`@`) oder Escapes, keine Option mit Dateibezug.
+/// Chain from a package: only filters from [`ALLOWED_FILTERS`], no own inputs/outputs,
+/// graph separators, instance names (`@`) or escapes, no option referring to a file.
 pub fn ffmpeg_chain_allowed(f: &str) -> bool {
     if f.contains([';', '[', ']', '@', '\\']) {
         return false;
@@ -240,16 +240,16 @@ pub fn ffmpeg_chain_allowed(f: &str) -> bool {
         if !ALLOWED_FILTERS.contains(&name) {
             return false;
         }
-        // FFmpeg entfernt '…' schon auf Graph-Ebene und trennt erst danach an `:` – also wie FFmpeg
-        // ohne Anführungszeichen prüfen (`curves='r=0/0 1/1:psfile=x'` setzt sonst `psfile`)
+        // FFmpeg removes '…' already at graph level and only then splits at `:` – so check like FFmpeg
+        // without quotes (`curves='r=0/0 1/1:psfile=x'` sets `psfile` otherwise)
         let args = args.replace('\'', "");
         args.split(':').enumerate().all(|(i, o)| match o.split_once('=') {
             Some((k, _)) => {
                 let k = k.trim().to_ascii_lowercase();
                 !(k.contains("file") || k == "result" || k == "url")
             }
-            // Optionen ohne Namen (`unsharp=5:5:0.6`): bei Filtern mit Datei-Option nur die erste,
-            // sonst fiele eine per Position auf sie (`curves`: 7. Option `psfile`)
+            // options without names (`unsharp=5:5:0.6`): for filters with a file option only the first,
+            // otherwise one would land on it by position (`curves`: 7th option `psfile`)
             None => i == 0 || name != "curves",
         })
     })
@@ -268,13 +268,13 @@ pub struct PluginMeta {
     #[serde(default)]
     pub authors: Vec<String>,
     pub license: String,
-    /// Herkunft (URL), für die Danksagung
+    /// Origin (URL), for the credits
     pub source: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
-    /// Bei Integrationen `builtin:<name>`.
+    /// For integrations `builtin:<name>`.
     pub entry: Option<String>,
-    /// Nach der Installation aktiv? (Integrationen: nein)
+    /// Active after installation? (integrations: no)
     #[serde(default = "yes")]
     pub default_enabled: bool,
 }
@@ -299,7 +299,7 @@ impl Manifest {
         })
     }
 
-    /// Prüft das Manifest. `dir` = Plugin-Ordner (für Dateiprüfungen), `None` = nur Syntax.
+    /// Checks the manifest. `dir` = plugin folder (for file checks), `None` = syntax only.
     pub fn validate(&self, dir: Option<&Path>) -> Result<(), PluginError> {
         let p = &self.plugin;
         let bad = |msg: String| {
@@ -367,7 +367,7 @@ impl Manifest {
             if !seen.insert(&a.id) {
                 return bad(format!("Asset-ID '{}' doppelt", a.id));
             }
-            // nur, was der Katalog darstellen kann (cl-app `contents::catalog_packs`)
+            // only what the catalog can show (cl-app `contents::catalog_packs`)
             let (fx, sh) = (a.ffmpeg.is_some(), a.shader.is_some());
             let unsupported = match a.kind {
                 AssetKind::VideoEffect | AssetKind::Filter => (!fx || sh).then_some("braucht eine FFmpeg-Kette (Shader nur bei Übergängen)"),
@@ -379,7 +379,7 @@ impl Manifest {
                 return bad(format!("Asset '{}' {why}", a.id));
             }
             if a.kind == AssetKind::Transition {
-                // welcher Name eingebaut ist, prüft der Katalog (unbekannt → Überblenden)
+                // which name is built in is checked by the catalog (unknown → cross-fade)
                 let ok = a.fallback.as_deref().is_some_and(|f| {
                     !f.is_empty() && f.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
                 });
@@ -394,7 +394,7 @@ impl Manifest {
                 }
             }
             if let Some(f) = &a.ffmpeg {
-                // roh und nach dem Einsetzen der Standardwerte prüfen (Werte könnten Trenner schmuggeln)
+                // check raw and after filling in the default values (values could smuggle separators)
                 if !ffmpeg_chain_allowed(f) || !a.ffmpeg_filled().is_some_and(|c| ffmpeg_chain_allowed(&c)) {
                     return bad(format!(
                         "FFmpeg-Kette von '{}' enthält nicht erlaubte Elemente",
@@ -460,7 +460,7 @@ impl Manifest {
                     if !dir.join(f).is_file() {
                         return bad(format!("Datei '{f}' fehlt"));
                     }
-                    // auch über Verknüpfungen nicht aus dem Ordner heraus
+                    // not out of the folder via links either
                     let inside = match (dir.join(f).canonicalize(), dir.canonicalize()) {
                         (Ok(a), Ok(d)) => a.starts_with(d),
                         _ => false,
@@ -496,7 +496,7 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// Ist die eingebaute Integration `builtin` (z. B. "epidemic-sound") geladen und aktiv?
+    /// Is the built-in integration `builtin` (e.g. "epidemic-sound") loaded and active?
     pub fn integration_enabled(&self, builtin: &str) -> bool {
         self.plugins.iter().any(|p| {
             p.enabled
@@ -505,7 +505,7 @@ impl Registry {
         })
     }
 
-    /// Gespeicherte Ein/Aus-Zustände anwenden (Plugin-ID → aktiv).
+    /// Apply stored on/off states (plugin ID → active).
     pub fn apply_states(&mut self, states: &std::collections::BTreeMap<String, bool>) {
         for p in &mut self.plugins {
             if let Some(on) = states.get(&p.manifest.plugin.id) {
@@ -514,7 +514,7 @@ impl Registry {
         }
     }
 
-    /// Lädt alle Unterordner mit `plugin.toml` aus den angegebenen Wurzeln.
+    /// Loads all subfolders with `plugin.toml` from the given roots.
     pub fn scan<'a>(roots: impl IntoIterator<Item = &'a Path>) -> Self {
         let mut reg = Registry::default();
         for root in roots {
@@ -524,7 +524,7 @@ impl Registry {
             let mut dirs: Vec<_> = rd
                 .flatten()
                 .map(|e| e.path())
-                // `.install-…`: Zwischenordner einer abgebrochenen Installation (Absturz)
+                // `.install-…`: intermediate folder of an aborted installation (crash)
                 .filter(|p| !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')))
                 .filter(|p| p.join(MANIFEST_FILE).is_file())
                 .collect();
@@ -577,22 +577,22 @@ impl Registry {
 
 }
 
-/// Ergebnis von [`install_zip`].
+/// Result of [`install_zip`].
 #[derive(Debug, PartialEq, Eq)]
 pub enum Installed {
-    /// Paket mit dieser ID liegt jetzt unter `root/<id>`
+    /// The package with this ID now lives under `root/<id>`
     Done(String),
-    /// Paket gleicher ID ist schon da (nichts geändert; mit `replace` erneut aufrufen)
+    /// A package with the same ID already exists (nothing changed; call again with `replace`)
     Exists(String),
 }
 
-/// Höchstens so viel wird aus einem Paket entpackt (die mitgelieferten haben unter 10 MB).
+/// At most this much is unpacked from a package (the bundled ones are below 10 MB).
 const MAX_UNPACKED: u64 = 2 << 30;
-/// Höchstens so viele Einträge je Paket.
+/// At most this many entries per package.
 const MAX_ENTRIES: usize = 10_000;
 
-/// Eintrag kopieren, ohne mehr als `left` Bytes zu schreiben: die Größenangaben im ZIP sind
-/// nicht vertrauenswürdig (gepackte „Bomben“ füllen sonst die Platte).
+/// Copy an entry without writing more than `left` bytes: the size fields in the ZIP are
+/// not trustworthy (packed "bombs" would otherwise fill the disk).
 fn copy_capped(r: impl std::io::Read, w: &mut impl std::io::Write, left: &mut u64) -> Result<(), String> {
     let n = std::io::copy(&mut r.take(*left + 1), w).map_err(|e| e.to_string())?;
     if n > *left {
@@ -602,15 +602,15 @@ fn copy_capped(r: impl std::io::Read, w: &mut impl std::io::Write, left: &mut u6
     Ok(())
 }
 
-/// Asset-Paket aus einer ZIP-Datei nach `root/<id>` entpacken. Das Manifest liegt im Stamm des
-/// Archivs oder in genau einem Unterordner. Unsichere Pfade, ein ungültiges Manifest oder eine
-/// andere Art als `asset-pack` brechen ab; dann bleibt `root` unverändert.
+/// Unpack an asset package from a ZIP file to `root/<id>`. The manifest lies in the root of the
+/// archive or in exactly one subfolder. Unsafe paths, an invalid manifest or a
+/// kind other than `asset-pack` abort; then `root` stays unchanged.
 pub fn install_zip(zip_path: &Path, root: &Path, replace: bool) -> Result<Installed, String> {
     install_zip_inner(zip_path, root, replace, None)
 }
 
-/// Wie [`install_zip`] für ein nachgeladenes Paket: die ID im Manifest muss `id` sein; eine
-/// vorhandene Fassung wird ersetzt.
+/// Like [`install_zip`] for a downloaded package: the ID in the manifest must be `id`; an
+/// existing version is replaced.
 pub fn install_zip_id(zip_path: &Path, root: &Path, id: &str) -> Result<(), String> {
     install_zip_inner(zip_path, root, true, Some(id)).map(drop)
 }
@@ -630,8 +630,8 @@ fn install_zip_inner(zip_path: &Path, root: &Path, replace: bool, expect: Option
 fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool, expect: Option<&str>) -> Result<Installed, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Keine gültige ZIP-Datei: {e}"))?;
-    // die mitgelieferten Pakete haben unter 200 Dateien; Millionen leerer Einträge legten sonst
-    // ebenso viele Dateien an
+    // the bundled packages have fewer than 200 files; millions of empty entries would otherwise
+    // create just as many files
     if zip.len() > MAX_ENTRIES {
         return Err(format!("Paket hat zu viele Dateien ({}, höchstens {MAX_ENTRIES})", zip.len()));
     }
@@ -687,8 +687,8 @@ fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool, e
     Ok(Installed::Done(id))
 }
 
-/// Setzt `new` an die Stelle von `target`, ohne dass ein Fehler ein halbes Paket hinterlässt: altes
-/// wegbenennen (`old`), neues hinbenennen, bei Fehler zurück; das alte zuletzt und ohne Prüfung löschen.
+/// Puts `new` in place of `target` without an error leaving a half package behind: rename the old
+/// away (`old`), rename the new into place, back on error; delete the old last and without checking.
 fn swap_dir(new: &Path, target: &Path, old: &Path) -> std::io::Result<()> {
     if !target.exists() {
         return std::fs::rename(new, target);
@@ -702,7 +702,7 @@ fn swap_dir(new: &Path, target: &Path, old: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Paketordner löschen – nur, wenn er unterhalb von `root` liegt (eigene Pakete).
+/// Delete a package folder – only if it lies below `root` (own packages).
 pub fn remove_pack(root: &Path, dir: &Path) -> Result<(), String> {
     let (r, d) = (
         root.canonicalize().map_err(|e| e.to_string())?,
@@ -730,7 +730,7 @@ mod tests {
         assert!(reg.assets(AssetKind::Transition).count() >= 1);
         assert!(reg.assets(AssetKind::VideoEffect).count() >= 1);
         assert!(reg.assets(AssetKind::Filter).count() >= 1);
-        // jede Kette aller mitgelieferten Pakete besteht die Liste erlaubter Filter
+        // every chain of all bundled packages passes the list of allowed filters
         let chains: Vec<String> = reg.plugins.iter().flat_map(|p| p.manifest.assets.iter()).filter_map(|a| a.ffmpeg_filled()).collect();
         assert!(chains.len() >= 30, "{}", chains.len());
         for c in &chains {
@@ -750,9 +750,9 @@ mod tests {
             license = "MIT"
         "#;
         let p = Path::new("x");
-        // Asset-Paket ohne Assets
+        // asset package without assets
         assert!(Manifest::parse(base, p).unwrap().validate(None).is_err());
-        // Standardwert außerhalb des Bereichs
+        // default value out of range
         let m = format!(
             "{base}\n[[asset]]\nid='a'\nkind='video-effect'\nname={{de='A'}}\nffmpeg='eq'\nparams=[{{type='float',id='x',min=0.0,max=1.0,default=2.0}}]"
         );
@@ -762,24 +762,24 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("außerhalb"), "{err}");
-        // Asset-Pakete dürfen keine Rechte fordern
+        // asset packages must not request permissions
         let m = base.replace(
             "license = \"MIT\"",
             "license = \"MIT\"\npermissions = [\"net\"]",
         ) + "\n[[asset]]\nid='f'\nkind='filter'\nname={de='F'}\nffmpeg='eq'";
         assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
-        // Unbekannte Felder werden abgelehnt (Tippfehler fallen auf)
+        // unknown fields are rejected (typos show up)
         assert!(Manifest::parse(&format!("{base}\nfoo = 1"), p).is_err());
-        // Was der Katalog nicht zeigen kann, besteht die Prüfung nicht (früher: Filter nur mit LUT)
+        // what the catalog cannot show fails the check (formerly: filters only with LUT)
         let asset = |kind: &str, extra: &str| format!("{base}\n[[asset]]\nid='a'\nkind='{kind}'\nname={{de='A'}}\n{extra}");
         assert!(Manifest::parse(&asset("filter", "lut='f.cube'"), p).is_err());
         for (kind, extra) in [("filter", "shader='f.wgsl'"), ("video-effect", "shader='f.wgsl'"), ("body-effect", "ffmpeg='eq'"), ("transition", "ffmpeg='fade'"), ("sound", "file='a.wav'\nffmpeg='eq'")] {
             assert!(Manifest::parse(&asset(kind, extra), p).unwrap().validate(None).is_err(), "{kind}");
         }
         Manifest::parse(&asset("filter", "ffmpeg='eq'\ntags=['warm']"), p).unwrap().validate(None).unwrap();
-        // Code-Plugins (WASM, CLAP) gibt es nicht
+        // code plugins (WASM, CLAP) don't exist
         assert!(Manifest::parse(&base.replace("asset-pack", "wasm"), p).is_err());
-        // FFmpeg-Ketten dürfen keine Dateien lesen
+        // FFmpeg chains must not read files
         let m = format!(
             "{base}
 [[asset]]
@@ -789,7 +789,7 @@ name={{de='E'}}
 ffmpeg='movie=x.mp4'"
         );
         assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
-        // Standardwert eines Parameters schmuggelt einen zweiten Graphen ein
+        // a parameter's default value smuggles in a second graph
         let m = format!(
             "{base}
 [[asset]]
@@ -805,7 +805,7 @@ params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=
             assert!(!ffmpeg_chain_allowed(bad), "{bad}");
         }
         assert!(ffmpeg_chain_allowed("gblur=sigma=2,eq=brightness=0.04*{intensity}"));
-        // Filter, die Dateien schreiben oder lesen, kamen an der alten Sperrliste vorbei
+        // filters that write or read files got past the old block list
         for bad in [
             r"signature=filename=C\:/Users/x/a.docx",
             "signature=filename='C:/Users/x/a.docx'",
@@ -816,7 +816,7 @@ params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=
             "eq=gamma='1",
             "eq=gamma=1\\,movie=x.mp4",
             "unbekannt=1",
-            // FFmpeg entfernt die Anführungszeichen, bevor es die Optionen trennt
+            // FFmpeg removes the quotes before it splits the options
             "curves='r=0/0 1/1:psfile=//host/share/x.acv'",
             "curves=r=0/0 1/1:'ps''file'=x.acv",
             "curves=r='0/0 1/1':'psfile=x.acv'",
@@ -828,7 +828,7 @@ params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=
             assert!(!ffmpeg_chain_allowed(bad), "{bad}");
         }
         assert!(ffmpeg_chain_allowed("format=rgba,split,overlay=x='W*sin(t)':y='max(1,H/2)'"));
-        // Shader-Übergänge brauchen einen Rückfall und Zahlen-Parameter
+        // shader transitions need a fallback and numeric parameters
         let tr = |extra: &str| format!("{base}
 [[asset]]
 id='t'
@@ -906,7 +906,7 @@ license = "CC-BY-4.0"
             let r = Manifest::parse(&t, Path::new("x")).unwrap().validate(None);
             assert_eq!(r.is_ok(), ok, "{f}: {r:?}");
         }
-        // Sticker brauchen eine Datei
+        // stickers need a file
         let t = PACK.replace("kind = \"sound\"", "kind = \"sticker\"").replace("file = \"ding.wav\"", "");
         assert!(Manifest::parse(&t, Path::new("x")).unwrap().validate(None).is_err());
         for (f, ok) in [("a.svg", true), ("a.gif", true), ("a.png", true), ("a.wav", false)] {
@@ -943,28 +943,28 @@ license = "CC-BY-4.0"
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("Plugins");
         let zp = dir.path().join("p.zip");
-        // Manifest in einem Unterordner
+        // manifest in a subfolder
         zip_with(&zp, &[("pack/plugin.toml", PACK.as_bytes()), ("pack/ding.wav", b"RIFF")]);
         assert_eq!(install_zip(&zp, &root, false).unwrap(), Installed::Done("test.sounds".into()));
         assert!(root.join("test.sounds/ding.wav").is_file());
-        // gleiche ID: erst fragen, dann ersetzen
+        // same ID: ask first, then replace
         zip_with(&zp, &[("plugin.toml", PACK.as_bytes()), ("ding.wav", b"RIFF2")]);
         assert_eq!(install_zip(&zp, &root, false).unwrap(), Installed::Exists("test.sounds".into()));
         assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF");
         assert_eq!(install_zip(&zp, &root, true).unwrap(), Installed::Done("test.sounds".into()));
         assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF2");
-        // nachgeladen: ID muss passen, sonst bleibt alles wie es war
+        // downloaded: the ID must match, otherwise everything stays as it was
         assert!(install_zip_id(&zp, &root, "test.andere").unwrap_err().contains("passt nicht"));
         assert!(!root.join("test.andere").exists());
         assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF2");
         install_zip_id(&zp, &root, "test.sounds").unwrap();
-        // bösartiger Pfad: nichts wird übernommen
+        // malicious path: nothing is adopted
         let evil = dir.path().join("evil.zip");
         zip_with(&evil, &[("plugin.toml", PACK.replace("test.sounds", "test.evil").as_bytes()), ("ding.wav", b"x"), ("../boese.txt", b"x")]);
         assert!(install_zip(&evil, &root, true).is_err());
         assert!(!dir.path().join("boese.txt").exists());
         assert!(!root.join("test.evil").exists());
-        // ungültiges Manifest (Datei fehlt) und Integrationen werden abgelehnt
+        // invalid manifest (file missing) and integrations are rejected
         zip_with(&evil, &[("plugin.toml", PACK.replace("test.sounds", "test.evil").as_bytes())]);
         assert!(install_zip(&evil, &root, true).is_err());
         let integ = "[plugin]
@@ -979,18 +979,18 @@ permissions=['net']
 ";
         zip_with(&evil, &[("plugin.toml", integ.as_bytes())]);
         assert!(install_zip(&evil, &root, true).is_err());
-        // nur Ordner mit test.sounds übrig, kein Zwischenordner
+        // only folders with test.sounds left, no intermediate folder
         let left: Vec<_> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.file_name()).collect();
         assert_eq!(left, vec![std::ffi::OsString::from("test.sounds")]);
-        // Entfernen nur unterhalb von root
+        // removal only below root
         assert!(remove_pack(&root, dir.path()).is_err());
         assert!(remove_pack(&root, &root).is_err());
         remove_pack(&root, &root.join("test.sounds")).unwrap();
         assert!(!root.join("test.sounds").exists());
     }
 
-    /// Zwei Ordner mit derselben Paket-ID: der erste gewinnt, der zweite wird als Fehler gemeldet.
-    /// Reste einer abgebrochenen Installation (`.install-…`) werden nicht geladen.
+    /// Two folders with the same package ID: the first wins, the second is reported as an error.
+    /// Leftovers of an aborted installation (`.install-…`) are not loaded.
     #[test]
     fn duplicate_ids_and_install_leftovers() {
         let dir = tempfile::tempdir().unwrap();
@@ -1005,19 +1005,19 @@ permissions=['net']
         assert!(reg.plugins[0].dir.ends_with("a"));
         assert_eq!(reg.errors.len(), 1, "{:?}", reg.errors);
         assert!(reg.errors[0].contains("bereits geladen"), "{:?}", reg.errors);
-        // dieselbe Wurzel zweimal (z. B. Datenordner = Programmordner): kein Absturz, nur Meldungen
+        // the same root twice (e.g. data folder = program folder): no crash, only messages
         let reg = Registry::scan([dir.path(), dir.path()]);
         assert_eq!(reg.plugins.len(), 1);
     }
 
-    /// Kaputte Manifeste aus fremder Hand: nie ein Absturz, immer ein Fehler.
+    /// Broken manifests from foreign hands: never a crash, always an error.
     #[test]
     fn garbage_manifests_are_errors() {
         let p = Path::new("x");
         let long = "a".repeat(1 << 20);
         for src in [
             "", "\u{feff}", "[plugin]", "[[asset]]\nid='x'", "\0\0\0\u{1}", &long,
-            "[plugin]\nid='a.b'\nversion='1.0.0'\napi=1\nkind='asset-pack'\nname={de='N'}", // ohne Lizenz
+            "[plugin]\nid='a.b'\nversion='1.0.0'\napi=1\nkind='asset-pack'\nname={de='N'}", // without license
         ] {
             assert!(Manifest::parse(src, p).is_err(), "{:?}", &src[..src.len().min(40)]);
         }
@@ -1031,7 +1031,7 @@ permissions=['net']
             assert!(m.is_err() || m.unwrap().validate(None).is_err(), "{k} = {v}");
         }
         assert!(Manifest::parse(&with("api", "99999999999999999999"), p).is_err());
-        // Pfad mit Unicode/Leerzeichen innerhalb ist erlaubt
+        // a path with Unicode/spaces inside is allowed
         let t = PACK.replace("ding.wav", "Glöckchen 🔔.wav");
         Manifest::parse(&t, p).unwrap().validate(None).unwrap();
     }
@@ -1052,7 +1052,7 @@ permissions=['net']
         let e = install_zip(&zp, &root, true).unwrap_err();
         assert!(e.contains("zu viele"), "{e}");
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "nichts entpackt");
-        // Verknüpfung im Archiv wird eine gewöhnliche Datei (zeigt nicht nach außen)
+        // a link in the archive becomes an ordinary file (does not point outside)
         let secret = dir.path().join("geheim.txt");
         std::fs::write(&secret, "geheim").unwrap();
         let lz = dir.path().join("link.zip");
@@ -1067,7 +1067,7 @@ permissions=['net']
             assert_ne!(std::fs::read_to_string(&f).unwrap(), "geheim");
         }
         assert_eq!(std::fs::read_to_string(&secret).unwrap(), "geheim");
-        // kein ZIP / leere Datei / abgeschnittenes ZIP: Fehler, root bleibt sauber
+        // no ZIP / empty file / truncated ZIP: error, root stays clean
         let bad = dir.path().join("kaputt.zip");
         for data in [&b""[..], b"PK\x03\x04kaputt", &std::fs::read(&zp).unwrap()[..1000]] {
             std::fs::write(&bad, data).unwrap();
@@ -1077,18 +1077,18 @@ permissions=['net']
         assert!(left.iter().all(|n| !n.to_string_lossy().starts_with(".install")), "{left:?}");
     }
 
-    /// Scheitert das Einsetzen des neuen Pakets, bleibt das alte vollständig erhalten.
+    /// If inserting the new package fails, the old one stays completely intact.
     #[test]
     fn a_failed_update_keeps_the_old_pack() {
         let t = tempfile::tempdir().unwrap();
         let (new, target, old) = (t.path().join("neu"), t.path().join("pack"), t.path().join(".alt"));
         std::fs::create_dir_all(target.join("sfx")).unwrap();
         std::fs::write(target.join("sfx/a.wav"), b"alt").unwrap();
-        // `new` fehlt: das Hinbenennen scheitert (gleich unter Windows und Linux)
+        // `new` missing: renaming into place fails (the same on Windows and Linux)
         assert!(swap_dir(&new, &target, &old).is_err());
         assert_eq!(std::fs::read(target.join("sfx/a.wav")).unwrap(), b"alt");
         assert!(!old.exists());
-        // Erfolg: neues Paket an der Stelle, altes weg
+        // success: new package in place, old one gone
         std::fs::create_dir_all(&new).unwrap();
         std::fs::write(new.join("b.wav"), b"neu").unwrap();
         swap_dir(&new, &target, &old).unwrap();
@@ -1096,7 +1096,7 @@ permissions=['net']
         assert!(!old.exists() && !new.exists());
     }
 
-    /// Jeder mitgelieferte Sound hat ein Rezept (selbst erzeugt) und eine CC0-Lizenz.
+    /// Every bundled sound has a recipe (self-generated) and a CC0 license.
     #[test]
     fn bundled_sounds_have_recipes() {
         let dir = bundled().join("cutline-sounds");
@@ -1106,7 +1106,7 @@ permissions=['net']
         assert_eq!(p.manifest.plugin.license, "CC0-1.0");
         let mut n = 0;
         for a in p.manifest.assets.iter().filter(|a| a.kind == AssetKind::Sound) {
-            assert!(recipes.contains(&format!("## {} (", a.id)), "kein Rezept für {}", a.id);
+            assert!(recipes.contains(&format!("## {} (", a.id)), "no recipe for {}", a.id);
             n += 1;
         }
         assert!(n >= 50, "{n}");

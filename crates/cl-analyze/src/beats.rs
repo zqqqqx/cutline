@@ -1,6 +1,6 @@
-//! Beat-Erkennung: Onset-Hüllkurve (Energiezuwachs auf hochpassgefiltertem Ton),
-//! Tempo per Autokorrelation (60–190 BPM), Beat-Raster mit bester Phase, jeder Schlag
-//! auf das nächste lokale Maximum verfeinert.
+//! Beat detection: onset envelope (energy increase on high-pass filtered audio),
+//! tempo via autocorrelation (60–190 BPM), beat grid with the best phase, every beat
+//! refined to the nearest local maximum.
 
 use std::path::Path;
 
@@ -9,12 +9,12 @@ const HOP: usize = 256;
 
 pub struct Beats {
     pub bpm: f64,
-    /// Zeiten (s, relativ zu `start`)
+    /// Times (s, relative to `start`)
     pub times: Vec<f64>,
 }
 
 fn onset_env(x: &[f32]) -> Vec<f32> {
-    // Hochpass (Vorverzerrung), Energie je Fenster, log, positive Differenz
+    // high-pass (pre-emphasis), energy per window, log, positive difference
     let mut prev = 0.0;
     let hp: Vec<f32> = x
         .iter()
@@ -30,7 +30,7 @@ fn onset_env(x: &[f32]) -> Vec<f32> {
         .collect();
     let mut o: Vec<f32> = e.windows(2).map(|w| (w[1] - w[0]).max(0.0)).collect();
     o.insert(0, 0.0);
-    // gleitenden Mittelwert abziehen (Dauerton unterdrücken)
+    // subtract the moving average (suppress sustained tones)
     let k = 16;
     let mean: Vec<f32> = (0..o.len())
         .map(|i| {
@@ -45,14 +45,14 @@ fn onset_env(x: &[f32]) -> Vec<f32> {
 
 pub fn detect_samples(x: &[f32]) -> Beats {
     let o = onset_env(x);
-    let fr = SR as f64 / HOP as f64; // Hüllkurvenwerte je Sekunde
+    let fr = SR as f64 / HOP as f64; // envelope values per second
     if o.len() < (fr * 2.0) as usize {
         return Beats {
             bpm: 0.0,
             times: Vec::new(),
         };
     }
-    // Tempo: Autokorrelation, leicht zu 120 BPM gewichtet
+    // tempo: autocorrelation, weighted slightly towards 120 BPM
     let (lo, hi) = ((fr * 60.0 / 190.0) as usize, (fr * 60.0 / 60.0) as usize);
     let mut best = (0usize, 0f64);
     for lag in lo..=hi.min(o.len() / 2) {
@@ -68,7 +68,7 @@ pub fn detect_samples(x: &[f32]) -> Beats {
             best = (lag, ac * w);
         }
     }
-    // Stille/Dauerton: kein Tempo gefunden. Fehler: lag = 1 ergab ~2600 BPM und einen Schlag je Fenster
+    // silence/sustained tone: no tempo found. Bug: lag = 1 gave ~2600 BPM and one beat per window
     if best.0 == 0 {
         return Beats {
             bpm: 0.0,
@@ -76,8 +76,8 @@ pub fn detect_samples(x: &[f32]) -> Beats {
         };
     }
     let lag = best.0;
-    // Vom stärksten Onset aus in beide Richtungen dem Raster folgen; jeder Schlag rastet
-    // auf das lokale Maximum ein (so driftet das Raster nicht weg)
+    // follow the grid in both directions from the strongest onset; every beat snaps
+    // to the local maximum (so the grid does not drift away)
     let r = (lag / 6).max(1);
     let refine = |i: usize| -> usize {
         let a = i.saturating_sub(r);
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn finds_120_bpm_clicks() {
-        // Klicks alle 0,5 s ab 0,25 s, dazu leiser Dauerton
+        // clicks every 0.5 s from 0.25 s, plus a quiet sustained tone
         let n = (SR as f64 * 8.0) as usize;
         let mut x: Vec<f32> = (0..n)
             .map(|i| 0.05 * (i as f32 * 220.0 * std::f32::consts::TAU / SR as f32).sin())
@@ -139,7 +139,7 @@ mod tests {
         assert!(b.times.len() >= 14, "{:?}", b.times);
         for t in &b.times {
             let off = ((t - 0.25) / 0.5 - ((t - 0.25) / 0.5).round()).abs() * 0.5;
-            assert!(off < 0.05, "{t} liegt nicht auf dem Raster");
+            assert!(off < 0.05, "{t} is not on the grid");
         }
     }
 
@@ -151,14 +151,14 @@ mod tests {
             ("Stille", vec![0.0f32; n]),
             ("Gleichspannung", vec![0.3f32; n]),
             ("Dauerton", tone),
-            ("leer", Vec::new()),
+            ("empty", Vec::new()),
             ("kurz", vec![0.9f32; 300]),
         ] {
             let b = detect_samples(&x);
-            assert!(b.times.len() < 20 && b.bpm < 300.0, "{name}: {} BPM, {} Schläge", b.bpm, b.times.len());
+            assert!(b.times.len() < 20 && b.bpm < 300.0, "{name}: {} BPM, {} beats", b.bpm, b.times.len());
             assert!(b.bpm.is_finite() && b.times.iter().all(|t| t.is_finite()));
         }
-        // ein einzelner Klick in Stille: kein absurdes Raster
+        // a single click in silence: no absurd grid
         let mut x = vec![0.0f32; n];
         for j in 0..400 {
             x[SR as usize + j] = 0.8 * (j as f32 * 0.9).sin();

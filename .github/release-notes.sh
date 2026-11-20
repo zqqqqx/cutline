@@ -1,7 +1,7 @@
 #!/bin/sh
-# Release-Text aus CHANGELOG.md: Abschnitt der Version, darunter eingeklappt bis zu drei ältere
-# (die App zeigt beim Überspringen von Versionen auch diese). Fehlt der Abschnitt: Fehler.
-# Aufruf: release-notes.sh <version> [CHANGELOG.md]   (Vorabversion 1.2.0-rc.1 nimmt sonst 1.2.0)
+# Release text from CHANGELOG.md: the version's section, below it up to three older ones collapsed
+# (the app shows these too when versions are skipped). Missing section: error.
+# Usage: release-notes.sh <version> [CHANGELOG.md]   (pre-release 1.2.0-rc.1 falls back to 1.2.0)
 set -eu
 ver="${1#v}"
 file="${2:-CHANGELOG.md}"
@@ -18,6 +18,6 @@ awk -v ver="$ver" -v base="${ver%%-*}" '
 }
 on { print }
 END {
-  if (!found) { print "CHANGELOG.md: kein Abschnitt \"## " ver "\" – erst die Änderungen eintragen" > "/dev/stderr"; exit 1 }
+  if (!found) { print "CHANGELOG.md: no section \"## " ver "\" – add the changes first" > "/dev/stderr"; exit 1 }
   if (older) printf "\n</details>\n"
 }' "$file"

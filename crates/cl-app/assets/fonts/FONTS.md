@@ -1,9 +1,9 @@
-# Eingebaute Schriften
+# Bundled fonts
 
-Alle Schriften stammen aus dem Google-Fonts-Archiv (https://github.com/google/fonts) und dürfen
-frei verwendet, eingebettet und weitergegeben werden.
+All fonts come from the Google Fonts archive (https://github.com/google/fonts) and may be
+freely used, embedded and redistributed.
 
-| Datei | Lizenz | Urheber |
+| File | License | Copyright holder |
 |---|---|---|
 | BebasNeue-Regular.ttf | SIL OFL 1.1 | Copyright © 2010 by Dharma Type |
 | Anton-Regular.ttf | SIL OFL 1.1 | Copyright 2020 The Anton Project Authors |
@@ -25,4 +25,4 @@ frei verwendet, eingebettet und weitergegeben werden.
 | VarelaRound-Regular.ttf | SIL OFL 1.1 | Copyright 2023 The Varela Round Project Authors, Reserved Font Names 'Varela' and 'Varela Round' |
 | PermanentMarker-Regular.ttf | Apache 2.0 | Copyright (c) 2010 by Font Diner, Inc. |
 
-Lizenztexte: `OFL-1.1.txt` und `LICENSE-Apache-2.0.txt`.
+License texts: `OFL-1.1.txt` and `LICENSE-Apache-2.0.txt`.

@@ -1,6 +1,6 @@
-// RGB-Glitch: Zeilenblöcke springen seitlich, die Farbkanäle laufen auseinander, Zeile für Zeile
-// wechselt das Bild. Eigenes Werk des Cutline-Projekts, CC0-1.0.
-// p0 = Stärke
+// RGB glitch: blocks of rows jump sideways, the color channels drift apart, row by row
+// the image changes. Original work of the Cutline project, CC0-1.0.
+// p0 = strength
 fn rg_hash(n: f32) -> f32 {
   return fract(sin(n * 91.3458) * 47453.5453);
 }
@@ -12,7 +12,7 @@ fn rg_pick(p: vec2f, b: bool) -> vec4f {
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   let t = clamp(progress, 0.0, 1.0);
   let env = params.p0 * pow(1.0 - abs(2.0 * t - 1.0), 1.5);
-  // Blöcke wechseln etwa 30-mal je Übergang
+  // blocks change about 30 times per transition
   let frame = floor(t * 30.0);
   let row = floor(uv.y * 14.0 + rg_hash(frame) * 3.0);
   let r = rg_hash(row * 7.13 + frame * 13.7);

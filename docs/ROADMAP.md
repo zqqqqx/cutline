@@ -15,7 +15,7 @@ to get from a raw recording to a finished clip fast. The current release is v0.1
 - **0.13.0 (released)** New tools: crop, command search (Ctrl+K), Brand Kit, export queue, karaoke captions, thumbnail tool, picture-in-picture and split-screen layouts, tracked censor areas.
 - **0.14.0 (released)** Export: split a video into numbered parts (by count, length or markers), target file size, and real 9:16 versions from a 16:9 project.
 - **0.15.0 (released)** Auto reframe in the export, sound and picture start together, smooth reversed clips and instant 4K start without proxies, FFmpeg inside the Linux package.
-- **Later – repository rework** Everything on GitHub in English (README, docs, comments, commit history stays as it is). The app then gets its own change list for both languages (shipped with the app or fetched as a separate file per release) instead of reading it from the GitHub release text, so release notes on GitHub can be English only while the update window keeps showing German and English.
+- **Repository rework (done)** Comments, scripts and docs are in English (commit history stays as it is). UI source texts stay German because they are the translation keys. The app reads its change list for both languages from `changes.json` per release; release notes keep both languages for older app versions.
 
 ## Phase 4 – Creator edition (done)
 

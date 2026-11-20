@@ -1,15 +1,15 @@
-//! Kreativ-Bibliothek von Cutline (Phase 2).
+//! Cutline's creative library (phase 2).
 //!
-//! Alles ist als FFmpeg-Filterkette beschrieben. Dieselbe Kette läuft in der Vorschau
-//! (Einzelbild und Wiedergabe-Strom) und im Export, dadurch sieht der Export genau so
-//! aus wie der Player. Jeder Katalog-Eintrag wird in den Tests gegen FFmpeg ausgeführt.
+//! Everything is described as an FFmpeg filter chain. The same chain runs in the preview
+//! (single frame and playback stream) and in the export, so the export looks exactly
+//! like the player. Every catalog entry is run against FFmpeg in the tests.
 //!
-//! - [`EFFECTS`]: Video-Effekte (Retro, Bewegung, Licht, Verzerrung, Stil)
-//! - [`FILTERS`]: Farb-Looks; Stärke über Überblendung mit dem Original
-//! - [`TRANSITIONS`]: Übergänge (FFmpeg `xfade`)
-//! - [`fx_graph`]: komplette Clip-Kette aus [`ClipFx`] (Spiegeln, Anpassen, HSL, Filter,
-//!   Effekte, LUT, Maske)
-//! - [`text`]: Textvorlagen und Texteffekte, [`stickers`]: SVG-Sticker, [`sfx`]: Soundeffekte
+//! - [`EFFECTS`]: video effects (retro, motion, light, distortion, style)
+//! - [`FILTERS`]: color looks; strength via cross-fade with the original
+//! - [`TRANSITIONS`]: transitions (FFmpeg `xfade`)
+//! - [`fx_graph`]: complete clip chain from [`ClipFx`] (flip, adjust, HSL, filters,
+//!   effects, LUT, mask)
+//! - [`text`]: text templates and text effects, [`stickers`]: SVG stickers, [`sfx`]: sound effects
 
 pub mod audio;
 pub mod catalog;
@@ -20,7 +20,7 @@ pub mod xfade;
 
 use cl_core::*;
 
-/// Eigenschaften des Bildes, das in die Kette läuft.
+/// Properties of the image that goes into the chain.
 #[derive(Debug, Clone, Copy)]
 pub struct Src {
     pub w: u32,
@@ -28,13 +28,13 @@ pub struct Src {
     pub has_alpha: bool,
 }
 
-/// Ein Katalog-Eintrag: `build(stärke 0…1, quelle)` liefert eine einfache Filterkette
-/// (mit Kommas verbunden, ohne Labels).
+/// A catalog entry: `build(strength 0…1, source)` returns a simple filter chain
+/// (joined with commas, without labels).
 pub struct FxDef {
     pub id: &'static str,
     pub name: &'static str,
     pub category: &'static str,
-    /// Die Kette kann ihre Stärke selbst abbilden; sonst wird mit dem Original überblendet.
+    /// The chain can map its strength itself; otherwise it is cross-faded with the original.
     pub native_intensity: bool,
     pub build: fn(f32, Src) -> String,
 }
@@ -52,7 +52,7 @@ fn ev(w: u32) -> u32 {
 pub const EFFECT_CATEGORIES: [&str; 5] = ["Basis", "Retro", "Bewegung", "Licht", "Stil"];
 
 pub static EFFECTS: &[FxDef] = &[
-    // Basis
+    // basic
     FxDef {
         id: "blur",
         name: "Unschärfe",
@@ -119,18 +119,18 @@ pub static EFFECTS: &[FxDef] = &[
         native_intensity: false,
         build: |_, _| "edgedetect=mode=colormix:high=0.2:low=0.05".into(),
     },
-    // Retro
+    // retro
     FxDef {
         id: "vhs",
         name: "VHS",
         category: "Retro",
         native_intensity: false,
-        // Pixelmaße auf 1080 Zeilen bezogen: die Vorschau rechnet die Kette auf ihrem kleineren
-        // Bild, sonst wären Farbversatz und Zeilen dort viel kräftiger als im Export
+        // pixel sizes relative to 1080 lines: the preview computes the chain on its smaller
+        // image, otherwise color shift and lines would be much stronger there than in the export
         build: |_, s| {
             let k = s.w.min(s.h).max(1) as f32 / 1080.0;
             let shift = (5.0 * k).round() as i32;
-            // Zeilen: ¹⁄₁₈ Abdunklung im Mittel; zu klein für 1-px-Linien → gleichmäßig
+            // lines: ¹⁄₁₈ darkening on average; too small for 1 px lines → even
             let lines = if 3.0 * k >= 2.0 {
                 let (t, h) = ((k.round() as i32).max(1), (3.0 * k).round() as i32);
                 format!("drawgrid=w=0:h={h}:t={t}:c=black@{:.3}", 0.06 * h as f32 / t as f32)
@@ -187,7 +187,7 @@ pub static EFFECTS: &[FxDef] = &[
             "lutrgb=r='trunc(val/64)*64':g='trunc(val/64)*64':b='trunc(val/64)*64',unsharp=7:7:2.5,eq=saturation=1.4".into()
         },
     },
-    // Bewegung
+    // motion
     FxDef {
         id: "shake",
         name: "Wackeln",
@@ -205,8 +205,8 @@ pub static EFFECTS: &[FxDef] = &[
         category: "Bewegung",
         native_intensity: true,
         build: |i, s| {
-            // nach der Zeit des Bildes skalieren und mittig zuschneiden: Bildzahl und Zeitstempel
-            // bleiben, wie sie sind (`zoompan` vergäbe eigene mit fester Bildrate)
+            // scale by the frame's time and crop centered: frame count and timestamps
+            // stay as they are (`zoompan` would assign its own with a fixed frame rate)
             let z = format!("(1+{:.3}*(0.5+0.5*sin(t*6.2832)))", 0.15 * i);
             format!("scale=w='2*ceil(iw*{z}/2)':h='2*ceil(ih*{z}/2)':eval=frame,crop={}:{},setsar=1", s.w, s.h)
         },
@@ -242,7 +242,7 @@ pub static EFFECTS: &[FxDef] = &[
         native_intensity: true,
         build: |i, _| format!("hue=h='t*{:.0}'", 60.0 + 240.0 * i),
     },
-    // Licht
+    // light
     FxDef {
         id: "strobe",
         name: "Stroboskop",
@@ -305,7 +305,7 @@ pub static EFFECTS: &[FxDef] = &[
             format!("rgbashift=rh=-{px}:bh={px}")
         },
     },
-    // Stil
+    // style
     FxDef {
         id: "heat",
         name: "Wärmebild",
@@ -525,7 +525,7 @@ pub static FILTERS: &[FxDef] = &[
 pub const FILTER_CATEGORIES: [&str; 5] =
     ["Porträt", "Landschaft", "Film", "Schwarzweiß", "Stimmung"];
 
-/// Anzeigename eines Effekts/Filters (eingebaut oder aus einem Paket).
+/// Display name of an effect/filter (built-in or from a package).
 pub fn fx_name(id: &str) -> String {
     effect(id)
         .or_else(|| filter(id))
@@ -541,7 +541,7 @@ pub fn filter(id: &str) -> Option<&'static FxDef> {
     FILTERS.iter().find(|e| e.id == id)
 }
 
-/// Übergänge: (id, Name, Kategorie). Die id ist der Name der `xfade`-Variante.
+/// Transitions: (id, name, category). The id is the name of the `xfade` variant.
 pub static TRANSITIONS: &[(&str, &str, &str)] = &[
     ("fade", "Überblenden", "Basis"),
     ("dissolve", "Auflösen", "Basis"),
@@ -604,7 +604,7 @@ pub static TRANSITIONS: &[(&str, &str, &str)] = &[
 
 pub const TRANSITION_CATEGORIES: [&str; 5] = ["Basis", "Wischen", "Bewegung", "Form", "Effekt"];
 
-/// Name eines eingebauten oder Paket-Übergangs (eingebaut: deutsch, die Oberfläche übersetzt).
+/// Name of a built-in or package transition (built-in: German, the UI translates).
 pub fn transition_name(id: &str) -> String {
     TRANSITIONS
         .iter()
@@ -614,9 +614,9 @@ pub fn transition_name(id: &str) -> String {
         .unwrap_or_else(|| "Übergang".into())
 }
 
-/// Wirksame Länge (s) des Übergangs am Ende von `a` zum Nachbarn `b`: höchstens so lang wie jeder
-/// der beiden Clips. Je die Hälfte ragt in die Clips hinein, so teilen sich zwei Übergänge an
-/// einem Clip dessen Länge. Vorschau und Export rechnen beide hiermit.
+/// Effective length (s) of the transition at the end of `a` to the neighbour `b`: at most as long as either
+/// of the two clips. Half of it reaches into each clip, so two transitions on
+/// one clip share its length. Preview and export both compute with this.
 pub fn transition_secs(a: &Clip, b: &Clip) -> f64 {
     a.transition_out
         .as_ref()
@@ -626,14 +626,14 @@ pub fn transition_secs(a: &Clip, b: &Clip) -> f64 {
         .max(0.0)
 }
 
-/// Strecke von (x, y) nach (x, y)
+/// Segment from (x, y) to (x, y)
 type Seg = ((f64, f64), (f64, f64));
 
-/// Stückweise lineare Funktion als FFmpeg-Ausdruck (Variable `var`), Punkte (x, y) sortiert.
+/// Piecewise linear function as an FFmpeg expression (variable `var`), points (x, y) sorted.
 ///
-/// Punkte auf einer Geraden werden zusammengefasst (lange konstante Abschnitte kosten nichts),
-/// und die Fallunterscheidung ist ein ausgeglichener Baum statt einer Kette: FFmpeg bricht bei
-/// zu tief verschachtelten Ausdrücken ab („Missing ')' or too many args“).
+/// Points on a straight line are merged (long constant sections cost nothing),
+/// and the case distinction is a balanced tree instead of a chain: FFmpeg aborts on
+/// too deeply nested expressions ("Missing ')' or too many args").
 pub fn piecewise_expr(points: &[(f64, f64)], var: &str) -> String {
     let slope = |a: (f64, f64), b: (f64, f64)| {
         if (b.0 - a.0).abs() < 1e-9 {
@@ -642,7 +642,7 @@ pub fn piecewise_expr(points: &[(f64, f64)], var: &str) -> String {
             (b.1 - a.1) / (b.0 - a.0)
         }
     };
-    // doppelte x-Werte entfernen, Punkte auf einer Geraden zusammenfassen
+    // remove duplicate x values, merge points on a straight line
     let mut pts: Vec<(f64, f64)> = Vec::with_capacity(points.len());
     for &p in points {
         if pts
@@ -701,7 +701,7 @@ pub fn piecewise_expr(points: &[(f64, f64)], var: &str) -> String {
     }
 }
 
-/// Wertet einen von [`piecewise_expr`] erzeugten Verlauf direkt aus (für Tests und Vorschau).
+/// Evaluates a curve produced by [`piecewise_expr`] directly (for tests and preview).
 #[cfg(test)]
 fn piecewise_eval(points: &[(f64, f64)], x: f64) -> f64 {
     if x < points[0].0 {
@@ -720,7 +720,7 @@ fn piecewise_eval(points: &[(f64, f64)], x: f64) -> f64 {
     points[points.len() - 1].1
 }
 
-/// Hilfsbau für Filtergraphen mit eindeutigen Labels.
+/// Helper for filter graphs with unique labels.
 pub struct GraphBuilder<'a> {
     pub lines: Vec<String>,
     cur: String,
@@ -759,7 +759,7 @@ impl<'a> GraphBuilder<'a> {
         }
         self.cur.clone()
     }
-    /// Kette mit Stärke `i` über das Original legen.
+    /// Lay the chain over the original with strength `i`.
     pub fn blended(&mut self, chain: &str, i: f32) {
         if i >= 0.999 {
             self.push(chain.to_string());
@@ -799,20 +799,20 @@ impl<'a> GraphBuilder<'a> {
     }
 }
 
-/// Ausgangslage für die Kette.
+/// Starting point for the chain.
 #[derive(Debug, Clone)]
 pub struct ChainOpts {
-    /// Zeitversatz (s): `t` in Effekten zählt ab Clipbeginn
+    /// Time offset (s): `t` in effects counts from the clip start
     pub t_offset: f64,
-    /// Rückwärts im Graphen ausführen (Export; die Vorschau mappt die Zeit selbst)
+    /// Run reverse in the graph (export; the preview maps the time itself)
     pub apply_reverse: bool,
-    /// LUT-Datei, schon für Filteroptionen escaped
+    /// LUT file, already escaped for filter options
     pub lut: Option<String>,
-    /// Label eines Masken-Stroms (Graustufen, gleiche Größe/Zeit) für „Hintergrund entfernen“
+    /// Label of a mask stream (grayscale, same size/time) for „Hintergrund entfernen“
     pub matte: Option<String>,
 }
 
-/// Anpassungen als Filterkette (leer bei Neutralstellung).
+/// Adjustments as a filter chain (empty when neutral).
 pub fn adjust_chain(a: &Adjust) -> Vec<String> {
     let mut v = Vec::new();
     if a.is_identity() {
@@ -879,11 +879,11 @@ pub fn adjust_chain(a: &Adjust) -> Vec<String> {
     v
 }
 
-/// Masken-Ausdruck (0…1) für `geq` in Pixelkoordinaten X/Y, Bildgröße W/H.
+/// Mask expression (0…1) for `geq` in pixel coordinates X/Y, image size W/H.
 pub fn mask_expr(m: &Mask) -> String {
     let (s, c) = m.rotation_deg.to_radians().sin_cos();
     let (cx, cy) = (format!("{:.4}*W", m.cx), format!("{:.4}*H", m.cy));
-    // gedrehte Koordinaten relativ zum Mittelpunkt
+    // rotated coordinates relative to the center
     let u = format!("((X-{cx})*{c:.5}+(Y-{cy})*{s:.5})");
     let v = format!("(-(X-{cx})*{s:.5}+(Y-{cy})*{c:.5})");
     let f = (m.feather.max(0.0005) * 2.0) as f64;
@@ -907,7 +907,7 @@ pub fn mask_expr(m: &Mask) -> String {
     }
 }
 
-/// Komplette Clip-Kette: Eingang `input` → Ausgang `output` (RGBA bei Maske, sonst offen).
+/// Complete clip chain: input `input` → output `output` (RGBA with a mask, otherwise open).
 pub fn fx_graph(
     fx: &ClipFx,
     src: Src,
@@ -920,9 +920,9 @@ pub fn fx_graph(
     if o.apply_reverse && fx.reverse {
         g.push("reverse");
     }
-    // gerundet: setpts schneidet sonst ab (29,97 fps: 5,5055 s → ein Bild zu früh)
+    // rounded: setpts truncates otherwise (29.97 fps: 5.5055 s → one frame too early)
     g.push(format!("setpts=PTS-STARTPTS+round({:.6}/TB)", o.t_offset));
-    // vor allem anderen: Lage im Quellbild (vor Spiegeln, Stabilisieren, Freistellen)
+    // before everything else: position in the source image (before flip, stabilization, keying)
     for cs in &fx.censor {
         censor_graph(&mut g, cs, src);
     }
@@ -946,7 +946,7 @@ pub fn fx_graph(
     }
     if person_done {
     } else if let Some(m) = &o.matte {
-        // Hintergrund entfernen: Maske als Alphakanal
+        // remove background: mask as alpha channel
         g.push("format=rgb24");
         let cur = g.current();
         let l = g.next_label("cm");
@@ -997,7 +997,7 @@ pub fn fx_graph(
         || fx.filter.is_some()
         || !fx.effects.is_empty()
         || o.lut.is_some();
-    // Alpha (Sticker, Freistellen, Greenscreen) über die Farbfilter retten
+    // rescue alpha (stickers, keying, green screen) across the color filters
     let mut alpha = None;
     if src.has_alpha && colour_work {
         g.push("format=rgba");
@@ -1050,11 +1050,11 @@ pub fn fx_graph(
     g.finish(output)
 }
 
-/// Zensur-Fläche (Bahn in Clipzeit, siehe `Clip::censor_in_clip_time`): Kopie verpixeln bzw.
-/// weichzeichnen und nur innerhalb der Fläche über das Bild legen. Blöcke, Unschärfe und Maske
-/// hängen nur von der Bildgröße ab: die kleinere Vorschau sieht aus wie der Export. Die Maske
-/// entsteht aus einer Zeile und einer Spalte (`geq` mit Zeitverlauf je Pixel wäre teuer): je
-/// Richtung 0 innen bis 255 außen, addiert und bei 128 geschnitten – Rechteck wie Ellipse.
+/// Censor area (path in clip time, see `Clip::censor_in_clip_time`): pixelate or blur a copy
+/// and overlay it only inside the area. Blocks, blur and mask
+/// depend only on the image size: the smaller preview looks like the export. The mask
+/// is built from one row and one column (`geq` with a time curve per pixel would be expensive): per
+/// direction 0 inside to 255 outside, added and cut at 128 – rectangle as well as ellipse.
 pub fn censor_graph(g: &mut GraphBuilder, cs: &Censor, src: Src) {
     let size = (CENSOR_MIN + cs.strength.clamp(0.0, 1.0) * (CENSOR_MAX - CENSOR_MIN))
         * src.w.min(src.h).max(2) as f32;
@@ -1074,7 +1074,7 @@ pub fn censor_graph(g: &mut GraphBuilder, cs: &Censor, src: Src) {
         let pts: Vec<(f64, f64)> = cs.path.iter().map(|k| (k.t.as_secs_f64(), f(k) as f64)).collect();
         piecewise_expr(&pts, "T")
     };
-    // Abstand zur Mitte relativ zur halben Größe: 1 = Rand
+    // distance to the center relative to half the size: 1 = edge
     let side = |pos: &str, full: &str, c: String, size: String| {
         let d = format!("2*abs(({pos}+0.5)/{full}-({c}))/({size})");
         if cs.ellipse {
@@ -1099,13 +1099,13 @@ pub fn censor_graph(g: &mut GraphBuilder, cs: &Censor, src: Src) {
     ));
     g.lines.push(format!("[{kx}][{ky}]blend=all_mode=addition,lut=c0='255*lte(val,128)'[{mk}]"));
     g.lines.push(format!("[{fx}][{mk}]alphamerge[{top}]"));
-    // shortcut: Bilder mit Alpha werden unter der Fläche deckend; reicht für Video und Fotos
+    // shortcut: images with alpha become opaque under the area; enough for video and photos
     g.lines.push(format!("[{a}][{top}]overlay=format=auto[{out}]"));
     g.set_current(out);
 }
 
-/// Personen-Effekte: Person (Maske `m`) bleibt scharf, der Hintergrund wird verändert.
-/// Das Ergebnis ist deckend.
+/// Person effects: the person (mask `m`) stays sharp, the background is changed.
+/// The result is opaque.
 fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src) {
     use cl_core::PersonFx;
     let hex = |c: [u8; 3]| format!("0x{:02x}{:02x}{:02x}", c[0], c[1], c[2]);
@@ -1139,7 +1139,7 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
             ));
         }
         PersonFx::Outline { color, width, transparent } => {
-            // Maske verbreitern und weich zeichnen → farbiger Saum hinter der Person
+            // widen and blur the mask → colored halo behind the person
             let px =
                 (2.0 + 22.0 * width.clamp(0.0, 1.0)) * (src.w.max(src.h) as f32 / 1920.0).max(0.25);
             let (m1, m2, ring, col, base, ringed) = (
@@ -1150,7 +1150,7 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
                 g.next_label("pbs"),
                 g.next_label("prd"),
             );
-            // ohne Hintergrund: der Umriss ist die Grundfläche, das Ergebnis behält Alpha
+            // without background: the outline is the base, the result keeps alpha
             if *transparent {
                 g.lines.push(format!("[{cur}]split[{fg_src}][{bg_src}]"));
             } else {
@@ -1184,9 +1184,9 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
     g.set_current(out);
 }
 
-/// Filtergraph für die Vorschau (`[0:v]` → `[out]`, `w`×`h` RGBA) oder `None`, wenn der
-/// schnelle Weg ohne Effekte reicht. `t_offset` = Clipzeit des ersten Bildes,
-/// `stream` = Wiedergabe (Bildrate und Geschwindigkeit), sonst Einzelbild.
+/// Filter graph for the preview (`[0:v]` → `[out]`, `w`×`h` RGBA), or `None` if the
+/// fast path without effects is enough. `t_offset` = clip time of the first frame,
+/// `stream` = playback (frame rate and speed), otherwise single frame.
 pub fn preview_graph(
     c: &Clip,
     w: u32,
@@ -1233,7 +1233,7 @@ pub fn preview_graph(
             pre.push(format!("setpts=(PTS-STARTPTS)/{speed:.5}"));
         }
         if fx.smooth_slowmo && speed < 0.999 {
-            // Vorschau: günstiges Überblenden statt voller Bewegungsschätzung
+            // preview: cheap cross-fade instead of full motion estimation
             pre.push(format!(
                 "minterpolate=fps={}/{}:mi_mode=blend",
                 fps.num, fps.den
@@ -1258,7 +1258,7 @@ pub fn preview_graph(
     let has_alpha = true;
     let mut fx2 = fx.clone();
     fx2.reverse = false;
-    // Einzelbild: nur die Lage zu dieser Zeit (kurzer Graph auf der Befehlszeile)
+    // single frame: only the position at this time (short graph on the command line)
     fx2.censor = c.censor_in_clip_time(stream.is_none().then(|| Time::from_secs_f64(t_offset)));
     let o = ChainOpts {
         t_offset,
@@ -1278,7 +1278,7 @@ pub fn preview_graph(
     Some(lines.join(";"))
 }
 
-/// `atempo`-Kette für eine Geschwindigkeit (jede Stufe 0,5…2).
+/// `atempo` chain for a speed (each stage 0.5…2).
 pub fn atempo_chain(speed: f32) -> String {
     let mut s = speed.clamp(0.01, 100.0) as f64;
     let mut v = Vec::new();
@@ -1296,12 +1296,12 @@ pub fn atempo_chain(speed: f32) -> String {
     v.join(",")
 }
 
-/// `setpts` für Geschwindigkeit bzw. Geschwindigkeitskurve. Eingang: Quellzeit ab 0
-/// (Länge `src_span` s), Ausgang: Clipzeit (Länge `dur` s).
+/// `setpts` for speed or speed curve. Input: source time from 0
+/// (length `src_span` s), output: clip time (length `dur` s).
 pub fn speed_setpts(speed: f32, curve: Option<&str>, src_span: f64, dur: f64) -> String {
     match curve {
         Some(id) => {
-            // Umkehrfunktion der Kurve abtasten: Quellzeit → Clipzeit
+            // sample the inverse of the curve: source time → clip time
             let pts: Vec<(f64, f64)> = (0..=48)
                 .map(|k| {
                     let u = k as f32 / 48.0;
@@ -1320,8 +1320,8 @@ mod tests {
     use super::*;
     use std::process::Stdio;
 
-    /// Jeder Effekt und Filter muss auch als Abspiel-Strom laufen (sonst bleibt beim
-    /// Abspielen ein Standbild stehen).
+    /// Every effect and filter must also run as a playback stream (otherwise a still
+    /// image stays during playback).
     #[test]
     fn every_effect_and_filter_streams_for_playback() {
         if !cl_media::ffmpeg_available() {
@@ -1366,17 +1366,17 @@ mod tests {
                 failed.push(format!("{id} ({n} Bilder)"));
             }
         }
-        assert!(failed.is_empty(), "laufen nicht als Strom: {failed:?}");
+        assert!(failed.is_empty(), "do not run as a stream: {failed:?}");
     }
 
-    /// VHS auf dem kleinen Vorschaubild sieht aus wie der Full-HD-Export, verkleinert auf dieselbe
-    /// Größe: Zeilenmuster und Farbversatz gleich stark (vorher in der Vorschau viel kräftiger).
+    /// VHS on the small preview image looks like the Full HD export scaled down to the same
+    /// size: line pattern and color shift equally strong (previously much stronger in the preview).
     #[test]
     fn vhs_preview_size_looks_like_the_export() {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        // Bild nach der Kette auf 480×270: (Zeilenmuster, Farbversatz Rot−Blau am senkrechten Rand)
+        // image after the chain at 480×270: (line pattern, red−blue color shift at the vertical edge)
         let look = |w: u32, h: u32| -> (f64, f64) {
             let vhs = (effect("vhs").unwrap().build)(1.0, Src { w, h, has_alpha: false });
             let out = cl_media::ffmpeg_command()
@@ -1392,11 +1392,11 @@ mod tests {
             let px = |x: usize, y: usize, c: usize| out.stdout[(y * 480 + x) * 3 + c] as f64;
             let rows: Vec<f64> = (0..270).map(|y| (0..200).map(|x| px(x, y, 1)).sum::<f64>() / 200.0).collect();
             let stripes = (1..269).map(|y| (rows[y] - (rows[y - 1] + rows[y + 1]) / 2.0).abs()).sum::<f64>() / 268.0;
-            // Rot läuft nach links, Blau nach rechts: Spalten neben der Kante bei x = 240
+            // red runs left, blue right: columns next to the edge at x = 240
             let shift = (0..270).map(|y| (230..250).map(|x| (px(x, y, 0) - px(x, y, 2)).abs()).sum::<f64>()).sum::<f64>() / (270.0 * 20.0);
             (stripes, shift)
         };
-        // alte Kette: Zeilen 14,6 statt 3,7, Farbversatz 76 statt 21
+        // old chain: lines 14.6 instead of 3.7, color shift 76 instead of 21
         let (export, preview) = (look(1920, 1080), look(480, 270));
         assert!((export.0 - preview.0).abs() < 4.0, "Zeilen: Export {export:?}, Vorschau {preview:?}");
         assert!((export.1 - preview.1).abs() < 4.0, "Farbversatz: Export {export:?}, Vorschau {preview:?}");
@@ -1486,7 +1486,7 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        // Apostroph, Komma und Klammern im Pfad (früher fehlte die LUT dann in der Vorschau)
+        // apostrophe, comma and brackets in the path (previously the LUT was then missing in the preview)
         let lut = dir.path().join("O'Brien, [x]").join("t.cube");
         std::fs::create_dir_all(lut.parent().unwrap()).unwrap();
         let mut cube = String::from("LUT_3D_SIZE 2\n");
@@ -1562,7 +1562,7 @@ mod tests {
             censor_graph(&mut g, &Censor { blur, ellipse: false, strength, track: false, path, ..Default::default() }, src);
             g.finish("o").join(";")
         };
-        // Blöcke ≥ 45 px (1080/24), Unschärfe σ ≥ 45 px – auch bei Stärke unter 0
+        // blocks ≥ 45 px (1080/24), blur σ ≥ 45 px – also at strength below 0
         assert!(graph(false, -1.0).contains("scale=43:24:flags=area"), "{}", graph(false, -1.0));
         assert!(graph(true, -1.0).contains("gblur=sigma=45.00"));
         assert!(graph(true, 1.0).contains("gblur=sigma=135.00"));
@@ -1610,7 +1610,7 @@ mod tests {
         assert_eq!(f.data.len(), 160 * 90 * 4);
         assert_eq!(
             f.data[3], 0,
-            "Ecke außerhalb der Kreismaske ist transparent"
+            "corner outside the circle mask is transparent"
         );
         let g = preview_graph(&c, 160, 90, 0.0, Some(Rational::new(30, 1)), None).unwrap();
         let s =
@@ -1622,7 +1622,7 @@ mod tests {
         }
         assert!(
             (28..=32).contains(&n),
-            "2 s bei Tempo 2 → ~30 Bilder, waren {n}"
+            "2 s at speed 2 → ~30 frames, were {n}"
         );
     }
 
@@ -1643,7 +1643,7 @@ mod tests {
         };
         let g = fx_graph(&fx, SRC, &o, "0:v", "out", "c").join(";\n");
         run_graph(&g, &[]).unwrap_or_else(|e| panic!("{e}\n{g}"));
-        // Maske als zweiter Eingang
+        // mask as the second input
         let mut lines = vec!["[1:v]format=gray[mt]".to_string()];
         let o = ChainOpts {
             t_offset: 0.0,
@@ -1728,19 +1728,19 @@ mod tests {
             run_graph(&g, &["color=red:s=160x90:r=15:d=0.6"])
                 .unwrap_or_else(|e| panic!("{id}: {e}"));
         }
-        // alle xfade-Varianten des mitgelieferten FFmpeg außer „custom“ und „squeezev“
-        // (stürzt in FFmpeg 9.0.2 bei jeder Größe ab)
+        // all xfade variants of the bundled FFmpeg except `custom` and `squeezev`
+        // (crashes in FFmpeg 9.0.2 at any size)
         assert_eq!(TRANSITIONS.len(), 57);
         assert!(!TRANSITIONS.iter().any(|t| t.0 == "squeezev"));
     }
 
     #[test]
     fn long_piecewise_stays_shallow_and_runs_in_ffmpeg() {
-        // 240 Stützpunkte: Animation am Anfang, danach konstant (wie ein langer Textclip)
+        // 240 keypoints: animation at the start, constant afterwards (like a long text clip)
         let mut pts: Vec<(f64, f64)> = (0..240)
             .map(|i| (i as f64 * 0.141, if i < 4 { i as f64 * 0.1 } else { 0.4 }))
             .collect();
-        // dazu eine echte Kurve mit vielen Knicken
+        // plus a real curve with many kinks
         pts.extend((240..400).map(|i| (i as f64 * 0.141, ((i as f64) * 0.3).sin())));
         let e = piecewise_expr(&pts, "t");
         let mut depth = 0i32;
@@ -1755,7 +1755,7 @@ mod tests {
                 _ => {}
             }
         }
-        assert!(max < 40, "zu tief verschachtelt: {max}");
+        assert!(max < 40, "nested too deeply: {max}");
         assert!(e.matches("if(").count() < pts.len());
         let _ = piecewise_eval(&pts, 1.0);
         if !cl_media::ffmpeg_available() {
@@ -1775,7 +1775,7 @@ mod tests {
         assert_eq!(atempo_chain(1.0), "");
         assert_eq!(atempo_chain(4.0), "atempo=2,atempo=2.00000");
         assert_eq!(atempo_chain(0.25), "atempo=0.5,atempo=0.50000");
-        // sehr langsame Stücke einer Tempo-Kurve (z. B. 0,5× mit „Kugel“) nicht kappen
+        // don't cap very slow pieces of a speed curve (e.g. 0.5× with „Kugel“)
         let prod: f64 = atempo_chain(0.05).split(',').map(|a| a[7..].parse::<f64>().unwrap()).product();
         assert!((prod - 0.05).abs() < 1e-4, "{prod}");
         if !cl_media::ffmpeg_available() {
@@ -1798,9 +1798,9 @@ mod tests {
         .unwrap();
     }
 
-    /// Paket „Effekte und Filter“ (`plugins/cutline-effekte`): jede Kette läuft in FFmpeg wie in
-    /// Vorschau (RGBA) und Export (YUV), behält die Bildgröße, und Effekte tun bei Stärke 0
-    /// praktisch nichts.
+    /// Package „Effekte und Filter“ (`plugins/cutline-effekte`): every chain runs in FFmpeg as in
+    /// preview (RGBA) and export (YUV), keeps the image size, and effects do practically nothing
+    /// at strength 0.
     #[test]
     fn effekte_pack_chains_run() {
         let src = std::fs::read_to_string(concat!(
@@ -1808,8 +1808,8 @@ mod tests {
             "/../../plugins/cutline-effekte/plugin.toml"
         ))
         .unwrap();
-        // shortcut: Zeilen lesen statt TOML parsen (cl-fx hängt nicht an toml); das Paket schreibt
-        // jede Kette in eine Zeile `ffmpeg = "…"` nach ihrer Zeile `kind = "…"`
+        // shortcut: read lines instead of parsing TOML (cl-fx does not depend on toml); the package writes
+        // every chain into one line `ffmpeg = "…"` after its line `kind = "…"`
         let mut assets = Vec::new();
         let mut kind = "";
         for l in src.lines() {
@@ -1826,7 +1826,7 @@ mod tests {
             return;
         }
         let (w, h, n) = (202usize, 114usize, 12usize);
-        // Bilder als RGBA-Bytes; `fx` = (Kette, Stärke, ist Filter)
+        // frames as RGBA bytes; `fx` = (chain, strength, is filter)
         let render = |fmt: &str, fx: Option<(&str, f32, bool)>| -> Vec<u8> {
             let mut g = GraphBuilder::new("0:v", "e");
             g.push(format!("format={fmt}"));
@@ -1846,7 +1846,7 @@ mod tests {
                 .output()
                 .unwrap();
             assert!(out.status.success(), "{graph}\n{}", String::from_utf8_lossy(&out.stderr));
-            assert_eq!(out.stdout.len(), w * h * 4 * n, "Bildgröße/Bildzahl: {graph}");
+            assert_eq!(out.stdout.len(), w * h * 4 * n, "image size/frame count: {graph}");
             out.stdout
         };
         let plain = render("yuv420p", None);
@@ -1860,31 +1860,31 @@ mod tests {
                 let diff = zero.iter().zip(&plain).map(|(a, b)| a.abs_diff(*b) as u64).sum::<u64>()
                     as f64
                     / plain.len() as f64;
-                assert!(diff < 2.0, "Stärke 0 verändert das Bild ({diff:.2}): {c}");
+                assert!(diff < 2.0, "strength 0 changes the image ({diff:.2}): {c}");
             }
         }
     }
 
-    /// Jede eingebaute und jede mitgelieferte Paket-Kette läuft bei Stärke 0, 0,5 und 1 auch bei
-    /// ungeraden Maßen und winzigen Bildern und behält die Bildgröße.
+    /// Every built-in and every bundled package chain runs at strength 0, 0.5 and 1, also with
+    /// odd dimensions and tiny images, and keeps the image size.
     #[test]
     fn every_chain_runs_at_odd_sizes_and_strengths() {
         chains_at_sizes(&[(161, 91, 2, &[0.0, 0.5, 1.0]), (64, 64, 1, &[1.0])]);
     }
 
-    /// Dasselbe in Hochkant-Full-HD (dauert ~1 min): `cargo test -p cl-fx -- --ignored portrait`
+    /// The same in portrait Full HD (takes ~1 min): `cargo test -p cl-fx -- --ignored portrait`
     #[test]
     #[ignore]
     fn every_chain_runs_in_portrait_full_hd() {
         chains_at_sizes(&[(1080, 1920, 1, &[0.0, 1.0])]);
     }
 
-    /// (Breite, Höhe, Bilder, Stärken)
+    /// (width, height, frames, strengths)
     fn chains_at_sizes(sizes: &[(u32, u32, usize, &[f32])]) {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        // Paket-Ketten aller mitgelieferten Pakete (Zeilen wie in `effekte_pack_chains_run`)
+        // package chains of all bundled packages (lines as in `effekte_pack_chains_run`)
         let mut packs = Vec::new();
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins");
         for d in std::fs::read_dir(root).unwrap().flatten() {
@@ -1895,7 +1895,7 @@ mod tests {
                     kind = k.trim_end_matches('"');
                 }
                 if let Some(c) = l.strip_prefix("ffmpeg = \"") {
-                    // weitere Parameter (`{radius}` …) mit 1 füllen, wie ein Standardwert
+                    // fill further parameters (`{radius}` …) with 1, like a default value
                     let mut c = c.trim_end_matches('"').replace("{intensity}", "\u{1}");
                     while let (Some(a), Some(b)) = (c.find('{'), c.find('}')) {
                         c.replace_range(a..=b.max(a), "1");
@@ -1907,7 +1907,7 @@ mod tests {
         assert!(!packs.is_empty());
         let o = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: None };
         let mut failed = Vec::new();
-        // (Breite, Höhe, Bilder, Stärken)
+        // (width, height, frames, strengths)
         for &(w, h, n, strengths) in sizes {
             let src = Src { w, h, has_alpha: false };
             let mut graphs: Vec<(String, String)> = Vec::new();
@@ -1937,7 +1937,7 @@ mod tests {
                 let out = cl_media::ffmpeg_command()
                     .unwrap()
                     .args(["-v", "error", "-nostdin", "-threads", "2", "-filter_complex_threads", "2", "-f", "lavfi", "-i"])
-                    // testsrc2 rundet auf gerade Maße: größer erzeugen, in RGBA zuschneiden
+                    // testsrc2 rounds to even dimensions: generate larger, crop in RGBA
                     .arg(format!("testsrc2=s={}x{}:r=10:d={},format=rgba,crop={w}:{h}:0:0", w + 1, h + 1, n as f64 / 10.0))
                     .args(["-filter_complex", &graph, "-map", "[out]", "-frames:v", &n.to_string(), "-f", "rawvideo", "-"])
                     .stdin(Stdio::null())
@@ -1946,15 +1946,15 @@ mod tests {
                 if !out.status.success() {
                     failed.push(format!("{w}x{h} {name}: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("")));
                 } else if out.stdout.len() != (w * h * 4) as usize * n {
-                    failed.push(format!("{w}x{h} {name}: {} statt {} Bytes", out.stdout.len(), (w * h * 4) as usize * n));
+                    failed.push(format!("{w}x{h} {name}: {} instead of {} bytes", out.stdout.len(), (w * h * 4) as usize * n));
                 }
             }
         }
         assert!(failed.is_empty(), "{} Ketten scheitern:\n{}", failed.len(), failed.join("\n"));
     }
 
-    /// Zoom-Puls ändert weder Bildzahl noch Dauer – auch nicht bei 60 Bildern/s (mit `zoompan`
-    /// wurden aus 1 s zwei).
+    /// Zoom pulse changes neither frame count nor duration – not even at 60 frames/s (with `zoompan`
+    /// 1 s became two).
     #[test]
     fn zoom_pulse_keeps_frames_and_duration_at_60_fps() {
         if !cl_media::ffmpeg_available() {
@@ -1972,9 +1972,9 @@ mod tests {
         let text = String::from_utf8_lossy(&out.stdout);
         let rows: Vec<&str> = text.lines().filter(|l| !l.starts_with('#')).collect();
         assert_eq!(rows.len(), 60);
-        // Spalte 2 = Zeitstempel des letzten Bildes in 1/60 s
+        // column 2 = timestamp of the last frame in 1/60 s
         let last: i64 = rows[59].split(',').nth(2).unwrap().trim().parse().unwrap();
         assert_eq!(last, 59);
-        assert!(rows.iter().all(|l| l.contains("86400")), "Bildgröße bleibt 320x180");
+        assert!(rows.iter().all(|l| l.contains("86400")), "image size stays 320x180");
     }
 }

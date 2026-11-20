@@ -1,6 +1,6 @@
 [package]
 name = "cl-fx"
-description = "Cutline: Kreativ-Bibliothek (Effekte, Filter, Übergänge, Masken, Textvorlagen, Sticker, Soundeffekte) als FFmpeg-Filterketten"
+description = "Cutline: creative library (effects, filters, transitions, masks, text templates, stickers, sound effects) as FFmpeg filter chains"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

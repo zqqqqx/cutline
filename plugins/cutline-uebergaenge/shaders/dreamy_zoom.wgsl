@@ -1,5 +1,5 @@
-// Nach „DreamyZoom“ von Zeh Fernando (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Drehung, p1 = Vergrößerung
+// Based on "DreamyZoom" by Zeh Fernando (GL Transitions, MIT license), ported to WGSL.
+// p0 = rotation, p1 = magnification
 const DZ_DEG = 0.03926990816987241548078304229099;
 
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
@@ -13,7 +13,7 @@ fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   p = vec2f(cos(angle) * dist / ratio + 0.5, sin(angle) * dist + 0.5);
   var c = to_color(p);
   if (first) { c = from_color(p); }
-  // der Blitz hellt das Bild auf, nicht die durchsichtigen Stellen
+  // the flash brightens the image, not the transparent areas
   let flash = select(mix(1.0, 0.0, phase), mix(0.0, 1.0, phase), first);
   return vec4f(c.rgb + flash, c.a);
 }

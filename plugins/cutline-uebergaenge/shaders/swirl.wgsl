@@ -1,5 +1,5 @@
-// Nach „Swirl“ von Sergey Kosarevsky (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Umdrehungen in der Mitte, p1 = Radius in Bildhöhen
+// Based on "Swirl" by Sergey Kosarevsky (GL Transitions, MIT license), ported to WGSL.
+// p0 = turns in the center, p1 = radius in image heights
 const SW_PI = 3.141592653589793;
 const SW_TAU = 6.283185307179586;
 

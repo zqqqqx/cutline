@@ -1,6 +1,6 @@
-//! Zufallsfolgen von Operationen (feste Seeds): nach jedem Schritt gelten die Invarianten,
-//! fehlgeschlagene Ops ändern nichts, gesperrte Spuren bleiben unverändert, Rückgängig bis
-//! zum Anfang ergibt das Ausgangsprojekt, Speichern+Laden ist verlustfrei.
+//! Random sequences of operations (fixed seeds): after every step the invariants hold,
+//! failed ops change nothing, locked tracks stay unchanged, undo back to
+//! the start gives the initial project, save+load is lossless.
 
 mod common;
 use cl_core::*;
@@ -57,7 +57,7 @@ fn random_op(p: &Project, media: &[MediaRef], r: &mut Lcg, depth: u32) -> EditOp
         8 | 9 => EditOp::MoveClip { clip, track: opt_track, start: time(r) },
         10 => EditOp::SetSpeed { clip, speed: r.range(0.05, 12.0) as f32 },
         11 => {
-            // Frei setzen: Überlappung muss abgewiesen werden
+            // set freely: overlap must be rejected
             let Some((_, c)) = p.find_clip(clip) else { return EditOp::RemoveClip { clip } };
             let start = if r.chance(50) { c.start } else { time(r) };
             let dur = Time((c.duration.0 as f64 * r.range(0.1, 3.0)) as i64);
@@ -89,7 +89,7 @@ fn random_op(p: &Project, media: &[MediaRef], r: &mut Lcg, depth: u32) -> EditOp
             let Some((_, c)) = p.find_clip(clip) else { return EditOp::SetOpacity { clip, opacity: 0.5 } };
             let mut c = c.clone();
             c.fx.reverse = !c.fx.reverse;
-            c.start = time(r); // wird ignoriert: Lage bleibt
+            c.start = time(r); // is ignored: position stays
             EditOp::ReplaceClip { clip: c }
         }
         23 => {
@@ -118,12 +118,12 @@ fn run(seed: u64, steps: usize) {
     let mut r = Lcg(seed);
     let rc = rich();
     let media = [rc.video.clone(), rc.audio.clone(), rc.image.clone()];
-    // eigener Verlauf ab dem fertigen Testprojekt: Rückgängig kann nicht in den Aufbau laufen
+    // own history from the finished test project: undo cannot run into the setup
     let mut d = Document::new(rc.doc.project().clone());
     d.max_history = usize::MAX;
     let start = d.project().clone();
     let (mut ok, mut err) = (0, 0);
-    // Verlauf wurde vorne gekürzt (große Projekte): Rückgängig erreicht den Anfang nicht mehr
+    // history was trimmed at the front (large projects): undo no longer reaches the start
     let mut trimmed = false;
     for step in 0..steps {
         let ctx = format!("Seed {seed}, Schritt {step}");
@@ -151,21 +151,21 @@ fn run(seed: u64, steps: usize) {
                 ok += 1;
                 let after = d.project();
                 check(after, &format!("{ctx}: {desc}"));
-                // ohne Änderung kein Verlaufsschritt; gewollte Grenze (Document::apply): höchstens
-                // 100 000 Clip-Kopien, mindestens 10 Schritte, älteste fallen weg
+                // no history step without change; intended limit (Document::apply): at most
+                // 100,000 clip copies, at least 10 steps, oldest drop out
                 let clips: usize = after.timeline.tracks.iter().map(|t| t.clips.len()).sum();
                 let cap = (100_000 / clips.max(1)).max(10);
                 let want = if after != &before { (hist + 1).min(cap) } else { hist };
-                assert_eq!(d.undo_entries().len(), want, "{ctx}: Verlaufslänge");
+                assert_eq!(d.undo_entries().len(), want, "{ctx}: history length");
                 trimmed |= after != &before && hist + 1 > cap;
-                // gesperrte Spuren: Clips unverändert, Spur bleibt bestehen
-                // (eine Op, die selbst Sperren ändert, z. B. Batch „entsperren + löschen“, ausgenommen)
+                // locked tracks: clips unchanged, track stays
+                // (except an op that changes locks itself, e.g. batch "unlock + delete")
                 let flags = op_dbg.contains("SetTrackFlags");
                 for t in before.timeline.tracks.iter().filter(|t| t.locked && !flags) {
                     let now = after.timeline.tracks.iter().find(|x| x.id == t.id);
                     let now = now.unwrap_or_else(|| panic!("{ctx}: gesperrte Spur verschwunden: {desc}"));
                     if now.locked {
-                        assert_eq!(now.clips, t.clips, "{ctx}: gesperrte Spur verändert: {desc}");
+                        assert_eq!(now.clips, t.clips, "{ctx}: locked track changed: {desc}");
                     }
                 }
                 if step % 50 == 0 {
@@ -174,18 +174,18 @@ fn run(seed: u64, steps: usize) {
             }
             Err(e) => {
                 err += 1;
-                assert_eq!(d.project(), &before, "{ctx}: {e} ließ Reste zurück: {desc}");
+                assert_eq!(d.project(), &before, "{ctx}: {e} left remnants: {desc}");
                 assert_eq!(d.undo_entries().len(), hist, "{ctx}");
             }
         }
     }
-    assert!(ok > steps / 4 && err > 0, "Seed {seed}: zu einseitig ({ok} ok, {err} Fehler)");
+    assert!(ok > steps / 4 && err > 0, "seed {seed}: too one-sided ({ok} ok, {err} errors)");
     let end = d.project().clone();
     assert_eq!(&roundtrip(&end), &end);
     let n = d.undo_entries().len();
     assert_eq!(d.step(-(n as isize)), n);
     if !trimmed {
-        assert_eq!(d.project(), &start, "Seed {seed}: Rückgängig bis zum Anfang");
+        assert_eq!(d.project(), &start, "seed {seed}: undo to the start");
     }
     assert_eq!(d.step(n as isize), n);
     assert_eq!(d.project(), &end, "Seed {seed}: alles wiederholen");
@@ -198,7 +198,7 @@ fn random_op_sequences_keep_invariants() {
     }
 }
 
-/// Langer Lauf: `cargo test --release -p cl-core -- --ignored long_random`
+/// Long run: `cargo test --release -p cl-core -- --ignored long_random`
 #[test]
 #[ignore]
 fn long_random_op_sequences() {

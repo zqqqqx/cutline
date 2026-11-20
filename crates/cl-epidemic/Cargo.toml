@@ -1,6 +1,6 @@
 [package]
 name = "cl-epidemic"
-description = "Cutline: Epidemic-Sound-Integration (Suche, Vorhören, Laden, Favoriten, Connect-Anmeldung, Nutzungsmeldung)"
+description = "Cutline: Epidemic Sound integration (search, preview, download, favorites, Connect sign-in, usage reporting)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

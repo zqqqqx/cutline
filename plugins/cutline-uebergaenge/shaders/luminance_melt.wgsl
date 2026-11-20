@@ -1,6 +1,6 @@
-// Nach „LuminanceMelt“ von 0gust1 (GL Transitions, MIT-Lizenz), nach WGSL portiert;
-// Simplex-Rauschen von Ian McEwan, Ashima Arts (MIT-Lizenz).
-// p0 = Richtung (1 = nach unten), p1 = Helligkeitsschwelle, p2 = helle statt dunkle Stellen schmelzen
+// Based on "LuminanceMelt" by 0gust1 (GL Transitions, MIT license), ported to WGSL;
+// Simplex noise by Ian McEwan, Ashima Arts (MIT license).
+// p0 = direction (1 = downwards), p1 = brightness threshold, p2 = melt bright instead of dark areas
 fn lm_mod289_3(x: vec3f) -> vec3f {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
 }

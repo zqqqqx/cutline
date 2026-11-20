@@ -1,6 +1,6 @@
-// Nach „RotateScaleFade“ von Fernando Kuteken (GL Transitions, MIT-Lizenz), nach WGSL portiert;
-// Drehung im Seitenverhältnis des Bilds (nicht verzerrt).
-// p0 = Umdrehungen, p1 = größte Verkleinerung
+// Based on "RotateScaleFade" by Fernando Kuteken (GL Transitions, MIT license), ported to WGSL;
+// rotation in the image's aspect ratio (not distorted).
+// p0 = turns, p1 = largest shrink
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   let aspect = vec2f(ratio, 1.0);
   let d = (uv - vec2f(0.5)) * aspect;
