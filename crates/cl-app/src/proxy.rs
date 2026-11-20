@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 use cl_core::{Clip, ClipContent, MediaId, MediaKind, MediaRef, Rational, Time};
-use cl_export::Encoder;
+use cl_export::{available_encoders, Encoder};
 use eframe::egui::{self, RichText};
 
 pub use parts::Pick;
@@ -173,7 +173,7 @@ pub fn found_encoders() -> Option<&'static [Encoder]> {
     STARTED.call_once(|| {
         std::thread::spawn(available_encoders);
     });
-    AVAILABLE.get().map(Vec::as_slice)
+    cl_export::encoders_known()
 }
 
 /// Encoders that failed during a proxy build in this session
@@ -181,13 +181,6 @@ fn broken_encoders() -> std::sync::MutexGuard<'static, Vec<Encoder>> {
     static B: Mutex<Vec<Encoder>> = Mutex::new(Vec::new());
     B.lock().unwrap_or_else(|e| e.into_inner())
 }
-
-/// Hardware encoders of this computer (the export's detection, once per session).
-fn available_encoders() -> &'static [Encoder] {
-    AVAILABLE.get_or_init(cl_export::available_encoders)
-}
-
-static AVAILABLE: OnceLock<Vec<Encoder>> = OnceLock::new();
 
 /// Hardware decoding of the source during the proxy build: only with NVENC and only for sources whose
 /// software decoding is slow (above 1080p, HEVC/AV1/VP9). Measured: 1080p H.264 is faster in software

@@ -1665,8 +1665,20 @@ fn encoder_probes() -> Vec<(Encoder, &'static [&'static str])> {
     v
 }
 
-/// Checks which hardware encoders really work on this computer (short test run).
-pub fn available_encoders() -> Vec<Encoder> {
+static ENCODERS: std::sync::OnceLock<Vec<Encoder>> = std::sync::OnceLock::new();
+
+/// Hardware encoders that really work on this computer: probed once per session (short test
+/// runs, 1–2 s), later calls return the cached list; a call during the probe waits for it.
+pub fn available_encoders() -> &'static [Encoder] {
+    ENCODERS.get_or_init(probe_encoders)
+}
+
+/// [`available_encoders`] without waiting: `None` until the probe has finished.
+pub fn encoders_known() -> Option<&'static [Encoder]> {
+    ENCODERS.get().map(Vec::as_slice)
+}
+
+fn probe_encoders() -> Vec<Encoder> {
     let mut v = vec![Encoder::Software];
     let mut old = false;
     for (enc, codec) in encoder_probes() {
