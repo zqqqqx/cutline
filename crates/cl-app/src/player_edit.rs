@@ -1,11 +1,11 @@
-//! Direkte Bearbeitung im Player:
-//! - Klick wählt das oberste Element unter dem Zeiger am Playhead (auch in der Zeitleiste)
-//! - Ziehen verschiebt, rastet an der Bildmitte ein (türkise Hilfslinien)
-//! - Eckgriffe skalieren gleichmäßig um den Mittelpunkt
-//! - Drehgriff unten dreht, rastet bei 0/90/180/270° ein, Winkel-Badge
-//! - ✕ oben links löscht
-//! - Balken in der Mitte der Kanten (Bild, Video, Element) schneiden zu
-//! - Während des Ziehens nur Vorschau; beim Loslassen genau ein Undo-Schritt
+//! Direct editing in the player:
+//! - click selects the topmost element under the pointer at the playhead (also in the timeline)
+//! - dragging moves, snaps to the frame center (turquoise guides)
+//! - corner handles scale uniformly around the center
+//! - the rotate handle at the bottom rotates, snaps at 0/90/180/270°, angle badge
+//! - ✕ at the top left deletes
+//! - bars in the middle of the edges (image, video, element) crop
+//! - only a preview while dragging; exactly one undo step on release
 
 use cl_core::{ClipContent, ClipId, Crop, EditOp, Transform};
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, Stroke, Vec2};
@@ -13,17 +13,17 @@ use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, Stroke, Vec2};
 use crate::app::App;
 use crate::theme::{self, icon};
 
-/// Trefferfläche eines sichtbaren Elements im Player (Bildschirmkoordinaten).
+/// Hit area of a visible element in the player (screen coordinates).
 #[derive(Clone, Copy)]
 pub struct Region {
     pub clip: ClipId,
     pub center: Pos2,
     pub size: Vec2,
-    /// Radiant, im Uhrzeigersinn
+    /// Radians, clockwise
     pub angle: f32,
-    /// Ausgewertete Transformation am Playhead (Startwert für Gesten)
+    /// Evaluated transform at the playhead (start value for gestures)
     pub tr: Transform,
-    /// Zuschnitt (`size` bleibt die volle Clipgröße)
+    /// Crop (`size` stays the full clip size)
     pub crop: Crop,
 }
 
@@ -35,14 +35,14 @@ impl Region {
     pub fn corner(&self, sx: f32, sy: f32) -> Pos2 {
         self.center + self.rot(vec2(sx * self.size.x / 2.0, sy * self.size.y / 2.0))
     }
-    /// Ecke des sichtbaren (zugeschnittenen) Bereichs, `sx`/`sy` = ±1
+    /// Corner of the visible (cropped) area, `sx`/`sy` = ±1
     pub fn vis_corner(&self, sx: f32, sy: f32) -> Pos2 {
         let k = self.crop;
         let u = if sx < 0.0 { k.left } else { 1.0 - k.right };
         let v = if sy < 0.0 { k.top } else { 1.0 - k.bottom };
         self.corner(2.0 * u - 1.0, 2.0 * v - 1.0)
     }
-    /// Liegt `p` im sichtbaren (zugeschnittenen) Bereich? 2 px Spielraum.
+    /// Does `p` lie in the visible (cropped) area? 2 px of slack.
     pub fn contains(&self, p: Pos2) -> bool {
         let d = p - self.center;
         let (s, c) = (-self.angle).sin_cos();
@@ -52,11 +52,11 @@ impl Region {
         let (y0, y1) = (k.top * self.size.y - 2.0, (1.0 - k.bottom) * self.size.y + 2.0);
         (x0..=x1).contains(&local.x) && (y0..=y1).contains(&local.y)
     }
-    /// Drehgriff: 22 px unter der Mitte der sichtbaren Unterkante
+    /// Rotate handle: 22 px below the center of the visible bottom edge
     pub fn rotate_handle(&self) -> Pos2 {
         self.crop_handle(3) + self.rot(vec2(0.0, 22.0))
     }
-    /// Griff der Zuschnitt-Kante `edge` (0 links, 1 rechts, 2 oben, 3 unten): Mitte der sichtbaren Kante.
+    /// Handle of the crop edge `edge` (0 left, 1 right, 2 top, 3 bottom): center of the visible edge.
     pub fn crop_handle(&self, edge: usize) -> Pos2 {
         let k = self.crop;
         let (u0, u1, v0, v1) = (k.left, 1.0 - k.right, k.top, 1.0 - k.bottom);
@@ -70,8 +70,8 @@ impl Region {
     }
 }
 
-/// Zuschnitt beim Ziehen der Kante `edge` von `start` an die Stelle `p` (Bildschirm): die Kante
-/// folgt dem Zeiger im (gedrehten) Clip, die Gegenseite lässt mindestens `Crop::MIN_REST` übrig.
+/// Crop when dragging edge `edge` from `start` to the spot `p` (screen): the edge
+/// follows the pointer in the (rotated) clip, the opposite side leaves at least `Crop::MIN_REST`.
 fn crop_drag(r: &Region, edge: usize, start: Crop, p: Pos2) -> Crop {
     let d = p - r.center;
     let (s, c) = r.angle.sin_cos();
@@ -88,9 +88,9 @@ fn crop_drag(r: &Region, edge: usize, start: Crop, p: Pos2) -> Crop {
     k
 }
 
-/// Griff des ausgewählten Elements unter `p`. Der nächste gewinnt: bei kleinem sichtbarem
-/// Ausschnitt liegen Eckgriffe, Zuschnitt-Balken und Drehgriff dicht beieinander.
-/// Skalieren rechnet um `r.center` (Mitte des ganzen Clips, um die die Skalierung wirkt).
+/// Handle of the selected element under `p`. The nearest wins: with a small visible
+/// cutout, corner handles, crop bars and rotate handle lie close together.
+/// Scaling computes around `r.center` (center of the whole clip, around which scaling acts).
 fn handle_at(r: &Region, croppable: bool, p: Pos2) -> Option<Mode> {
     let t = r.tr;
     let mut best: Option<(f32, Mode)> = None;
@@ -123,17 +123,17 @@ enum Mode {
 #[derive(Default)]
 pub struct Gizmo {
     drag: Option<(ClipId, Mode)>,
-    /// Laufende Änderung (nur Vorschau, noch nicht im Verlauf)
+    /// Running change (only a preview, not yet in the history)
     pub live: Option<(ClipId, Transform)>,
-    /// Laufender Zuschnitt (nur Vorschau)
+    /// Running crop (only a preview)
     pub live_crop: Option<(ClipId, Crop)>,
-    /// Aktive Hilfslinien (Projektpixel relativ zur Bildmitte): senkrecht bei x, waagrecht bei y
+    /// Active guides (project pixels relative to the frame center): vertical at x, horizontal at y
     guides_x: Vec<f32>,
     guides_y: Vec<f32>,
 }
 
-/// Achsparallele Hülle des sichtbaren (zugeschnittenen, gedrehten) Bereichs relativ zu
-/// `r.center` in Bildschirmpixeln: (min, max).
+/// Axis-aligned hull of the visible (cropped, rotated) area relative to
+/// `r.center` in screen pixels: (min, max).
 fn vis_bounds(r: &Region) -> (Vec2, Vec2) {
     let (mut lo, mut hi) = (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY));
     for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
@@ -144,16 +144,16 @@ fn vis_bounds(r: &Region) -> (Vec2, Vec2) {
     (lo, hi)
 }
 
-/// Merkmale fürs Einrasten in Projektpixeln, wenn die Clipmitte bei `at` liegt:
-/// Kanten und Mitte des sichtbaren Bereichs, je (x, y).
+/// Features for snapping in project pixels when the clip center lies at `at`:
+/// edges and center of the visible area, each (x, y).
 fn snap_feats(r: &Region, at: Vec2, px_per_unit: f32) -> ([f32; 3], [f32; 3]) {
     let (lo, hi) = vis_bounds(r);
     let (lo, hi) = (at + lo / px_per_unit, at + hi / px_per_unit);
     ([lo.x, (lo.x + hi.x) / 2.0, hi.x], [lo.y, (lo.y + hi.y) / 2.0, hi.y])
 }
 
-/// Bester Versatz, der eines der Merkmale `feats` an einen Kandidaten `cands` bringt
-/// (innerhalb `tol`). Gibt (Versatz, Linie) zurück.
+/// Best offset that brings one of the features `feats` to a candidate `cands`
+/// (within `tol`). Returns (offset, line).
 fn best_snap(feats: &[f32], cands: &[f32], tol: f32) -> Option<(f32, f32)> {
     let mut best: Option<(f32, f32)> = None;
     for f in feats {
@@ -171,8 +171,8 @@ const HANDLE: f32 = 9.0;
 const SNAP_PX: f32 = 10.0;
 
 impl App {
-    /// Verarbeitet Maus-Eingaben im Player und zeichnet den Bearbeitungsrahmen.
-    /// `regions` von unten nach oben; `px_per_unit` = Bildschirmpixel pro Projektpixel.
+    /// Handles mouse input in the player and draws the edit frame.
+    /// `regions` from bottom to top; `px_per_unit` = screen pixels per project pixel.
     pub fn player_interact(
         &mut self,
         ui: &egui::Ui,
@@ -187,7 +187,7 @@ impl App {
             .and_then(|s| regions.iter().find(|r| r.clip == s).copied());
         let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
 
-        // Was liegt unter dem Zeiger? (Griffe des ausgewählten Elements haben Vorrang)
+        // What lies under the pointer? (handles of the selected element take precedence)
         let croppable = sel.is_some_and(|r| {
             self.project.find_clip(r.clip).is_some_and(|(_, c)| matches!(c.content, ClipContent::Media { .. }))
         });
@@ -207,7 +207,7 @@ impl App {
             }
         }
 
-        // Klick: ✕ löscht, sonst oberstes Element wählen bzw. Auswahl aufheben
+        // Click: ✕ deletes, otherwise select the topmost element or clear the selection
         if resp.clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
                 if delete_btn.is_some_and(|d| p.distance(d) <= HANDLE + 2.0) {
@@ -272,7 +272,7 @@ impl App {
             self.gizmo.guides_x.clear();
             self.gizmo.guides_y.clear();
             let (pw, ph) = (canvas.width() / px_per_unit, canvas.height() / px_per_unit);
-            let free = ui.input(|i| i.modifiers.alt); // Alt = ohne Einrasten
+            let free = ui.input(|i| i.modifiers.alt); // Alt = without snapping
             let tol = SNAP_PX / px_per_unit;
             match mode {
                 Mode::Move { press, start } => {
@@ -280,7 +280,7 @@ impl App {
                     t.x = start.x + d.x;
                     t.y = start.y + d.y;
                     if let (Some(r), false) = (reg, free) {
-                        // Kanten und Mitte an Bildrand, Mitte, Dritteln und anderen Elementen
+                        // edges and center to the frame edge, center, thirds and other elements
                         let (fx, fy) = snap_feats(&r, vec2(t.x, t.y), px_per_unit);
                         let mut cx = vec![-pw / 2.0, -pw / 6.0, 0.0, pw / 6.0, pw / 2.0];
                         let mut cy = vec![-ph / 2.0, -ph / 6.0, 0.0, ph / 6.0, ph / 2.0];
@@ -304,7 +304,7 @@ impl App {
                         t.scale =
                             (start.scale * p.distance(r.center) / press_dist).clamp(0.02, 20.0);
                         if !free {
-                            // Kanten am Bildrand einrasten, außerdem bei 100 %
+                            // snap edges to the frame edge, also at 100 %
                             let cur = self.gizmo.live.map(|l| l.1.scale).unwrap_or(start.scale).max(0.001);
                             let (lo, hi) = vis_bounds(&r);
                             let (lo, hi) = (lo / px_per_unit / cur, hi / px_per_unit / cur);
@@ -384,7 +384,7 @@ impl App {
             self.gizmo.guides_y.clear();
         }
 
-        // Beim Verschieben/Skalieren: dezentes Raster (Drittel, Mitte) und aktive Hilfslinien
+        // When moving/scaling: subtle grid (thirds, center) and active guides
         if self.gizmo.drag.is_some_and(|(_, m)| !matches!(m, Mode::Rotate { .. })) {
             let grid = Stroke::new(1.0_f32, Color32::from_white_alpha(28));
             for k in [1.0 / 3.0, 0.5, 2.0 / 3.0] {
@@ -404,8 +404,8 @@ impl App {
             painter.line_segment([pos2(canvas.left() - 6.0, sy), pos2(canvas.right() + 6.0, sy)], guide);
         }
 
-        // Rahmen + Griffe des ausgewählten Elements: nur solange der Zeiger im Player ist
-        // (oder gezogen wird), sonst weich ausblenden – die Auswahl selbst bleibt bestehen
+        // Frame + handles of the selected element: only while the pointer is in the player
+        // (or dragging), otherwise fade out softly – the selection itself stays
         let show = theme::fade(
             ui.ctx(),
             egui::Id::new("gizmo-visible"),
@@ -415,7 +415,7 @@ impl App {
         let mut painter = painter;
         painter.multiply_opacity(show);
         if let Some(r) = sel.filter(|_| show > 0.01) {
-            // Rahmen und Griffe am sichtbaren (zugeschnittenen) Bereich
+            // frame and handles on the visible (cropped) area
             let pts = [
                 r.vis_corner(-1.0, -1.0),
                 r.vis_corner(1.0, -1.0),
@@ -434,7 +434,7 @@ impl App {
                     Stroke::new(1.0_f32, theme::ACCENT_INK()),
                 );
             }
-            // Zuschnitt: ganzer Clip dezent und Balken in der Mitte der sichtbaren Kanten
+            // Crop: the whole clip subtly and bars in the middle of the visible edges
             if croppable {
                 if !r.crop.is_none() {
                     let full = [r.corner(-1.0, -1.0), r.corner(1.0, -1.0), r.corner(1.0, 1.0), r.corner(-1.0, 1.0)];
@@ -448,7 +448,7 @@ impl App {
                     painter.line_segment([h - along, h + along], Stroke::new(4.0_f32, theme::ACCENT()));
                 }
             }
-            // ✕ löschen
+            // ✕ delete
             painter.circle(
                 pts[0],
                 7.5,
@@ -459,10 +459,10 @@ impl App {
                 pts[0],
                 egui::Align2::CENTER_CENTER,
                 icon::X,
-                egui::FontId::proportional(9.0), // Icon-Glyphe im kleinen Griffkreis
+                egui::FontId::proportional(9.0), // icon glyph in the small handle circle
                 Color32::WHITE,
             );
-            // Drehgriff
+            // Rotate handle
             let rh = r.rotate_handle();
             painter.line_segment(
                 [r.crop_handle(3), rh],
@@ -478,7 +478,7 @@ impl App {
                 rh,
                 egui::Align2::CENTER_CENTER,
                 icon::ARROWS_CLOCKWISE,
-                egui::FontId::proportional(10.0), // Icon-Glyphe im Drehgriff
+                egui::FontId::proportional(10.0), // icon glyph in the rotate handle
                 theme::ACCENT_INK(),
             );
             if let Some(b) = badge {
@@ -488,7 +488,7 @@ impl App {
                     pos2((pts[0].x + pts[2].x) / 2.0, top - 16.0),
                     g.size() + vec2(12.0, 6.0),
                 );
-                painter.rect_filled(br, 9.0, Color32::from_white_alpha(235)); // Pille: Radius = halbe Höhe
+                painter.rect_filled(br, 9.0, Color32::from_white_alpha(235)); // pill: radius = half the height
                 painter.galley(br.min + vec2(6.0, 3.0), g, Color32::BLACK);
             }
         }
@@ -510,7 +510,7 @@ mod tests {
             tr: Transform::default(),
             crop: Crop::default(),
         };
-        // um 90° gedreht: jetzt hoch und schmal
+        // rotated by 90°: now tall and narrow
         assert!(r.contains(pos2(100.0, 145.0)));
         assert!(!r.contains(pos2(145.0, 100.0)));
         let c = r.corner(1.0, 1.0);
@@ -524,8 +524,8 @@ mod tests {
         Region { clip: ClipId::new(), center, size, angle, tr: Transform::default(), crop }
     }
 
-    /// Splitscreen „Nebeneinander“: der rechte (obere) Clip reicht unsichtbar in die linke Hälfte.
-    /// Treffer nur im sichtbaren Teil, ✕ an der sichtbaren Ecke (in der Bühne).
+    /// Split screen „Nebeneinander“: the right (upper) clip reaches invisibly into the left half.
+    /// Hits only in the visible part, ✕ at the visible corner (on the stage).
     #[test]
     fn hits_and_handles_follow_the_crop() {
         let k = Crop { left: 0.25, right: 0.25, top: 0.0, bottom: 0.0 };
@@ -536,17 +536,17 @@ mod tests {
         let near = |a: Pos2, b: Pos2| a.distance(b) < 0.01;
         assert!(near(regions[0].vis_corner(-1.0, -1.0), pos2(0.0, 0.0)), "{:?}", regions[0].vis_corner(-1.0, -1.0));
         assert!(near(regions[1].vis_corner(1.0, 1.0), pos2(200.0, 100.0)));
-        // gedreht (90°) und doppelt so groß, links die Hälfte weg: sichtbar ist nur die untere Hälfte
+        // rotated (90°) and twice as large, the left half cut away: only the lower half is visible
         let r = region(pos2(100.0, 100.0), vec2(400.0, 200.0), std::f32::consts::FRAC_PI_2, Crop { left: 0.5, ..Default::default() });
         assert!(r.contains(pos2(100.0, 250.0)) && r.contains(pos2(0.0, 150.0)));
         assert!(!r.contains(pos2(100.0, 50.0)) && !r.contains(pos2(100.0, 310.0)));
-        // Drehgriff unter der sichtbaren Unterkante
+        // rotate handle below the visible bottom edge
         let r = region(pos2(100.0, 100.0), vec2(200.0, 100.0), 0.0, Crop { bottom: 0.5, ..Default::default() });
         assert!(near(r.rotate_handle(), pos2(100.0, 122.0)), "{:?}", r.rotate_handle());
     }
 
-    /// Schmaler sichtbarer Ausschnitt: jeder Griff bleibt an seiner Stelle greifbar; Skalieren
-    /// rechnet vom Mittelpunkt des ganzen Clips.
+    /// Narrow visible cutout: every handle stays grabbable at its spot; scaling
+    /// computes from the center of the whole clip.
     #[test]
     fn close_handles_pick_the_nearest() {
         let r = region(pos2(100.0, 100.0), vec2(200.0, 100.0), 0.0, Crop { left: 0.45, right: 0.45, top: 0.0, bottom: 0.0 });
@@ -563,26 +563,26 @@ mod tests {
         assert!(matches!(handle_at(&r, false, r.crop_handle(2)), Some(Mode::Scale { .. })));
     }
 
-    /// Einrasten nach dem sichtbaren Teil: links 50 % weg, sichtbare linke Kante an den Bildrand,
-    /// sichtbare Mitte an die Bildmitte; ohne Zuschnitt Kanten bei ±halber Breite. Auch gedreht.
+    /// Snapping by the visible part: left 50 % cut away, visible left edge to the frame edge,
+    /// visible center to the frame center; without a crop edges at ±half the width. Also rotated.
     #[test]
     fn move_snaps_to_the_visible_part() {
-        let cands = [-200.0, 0.0, 200.0]; // Bild 400 breit, 1 Bildschirmpixel = 1 Projektpixel
+        let cands = [-200.0, 0.0, 200.0]; // frame 400 wide, 1 screen pixel = 1 project pixel
         let half = Crop { left: 0.5, ..Default::default() };
         let r = region(pos2(0.0, 0.0), vec2(200.0, 100.0), 0.0, half);
-        // sichtbar: 0..100 rechts der Clipmitte
+        // visible: 0..100 right of the clip center
         let (fx, fy) = snap_feats(&r, vec2(-198.0, 0.0), 1.0);
         assert_eq!(fx, [-198.0, -148.0, -98.0]);
         assert_eq!(fy, [-50.0, 0.0, 50.0]);
         assert_eq!(best_snap(&fx, &cands, 10.0), Some((-2.0, -200.0)));
         let (fx, _) = snap_feats(&r, vec2(-48.0, 0.0), 1.0);
         assert_eq!(best_snap(&fx, &cands, 10.0), Some((-2.0, 0.0)));
-        // ohne Zuschnitt wie bisher
+        // without a crop as before
         let full = region(pos2(0.0, 0.0), vec2(200.0, 100.0), 0.0, Crop::default());
         let (fx, fy) = snap_feats(&full, vec2(-98.0, 3.0), 1.0);
         assert_eq!(fx, [-198.0, -98.0, 2.0]);
         assert_eq!(fy, [-47.0, 3.0, 53.0]);
-        // um 90° gedreht und doppelte Bildschirmgröße: sichtbar ist die untere Hälfte (y 0..200 px)
+        // rotated by 90° and double screen size: the lower half is visible (y 0..200 px)
         let rot = region(pos2(0.0, 0.0), vec2(400.0, 200.0), std::f32::consts::FRAC_PI_2, half);
         let (fx, fy) = snap_feats(&rot, vec2(0.0, 0.0), 2.0);
         let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-3);
@@ -594,8 +594,8 @@ mod tests {
         a.distance(b) < 0.01
     }
 
-    /// Zuschnitt-Griffe: liegen mitten auf den sichtbaren Kanten, Ziehen folgt dem Zeiger auch
-    /// gedreht, die Gegenseite lässt 2 % übrig.
+    /// Crop handles: lie in the middle of the visible edges, dragging follows the pointer even
+    /// when rotated, the opposite side leaves 2 %.
     #[test]
     fn crop_handles_follow_the_pointer() {
         let mut r = Region {
@@ -609,27 +609,27 @@ mod tests {
         let near = |a: Pos2, b: Pos2| a.distance(b) < 0.01;
         assert!(near(r.crop_handle(0), pos2(50.0, 100.0)), "{:?}", r.crop_handle(0));
         assert!(near(r.crop_handle(2), pos2(125.0, 50.0)), "{:?}", r.crop_handle(2));
-        // links auf 40 % ziehen, rechts über die linke Kante hinaus: 2 % bleiben
+        // drag the left to 40 %, the right beyond the left edge: 2 % remain
         let k = crop_drag(&r, 0, r.crop, pos2(80.0, 130.0));
         assert!((k.left - 0.4).abs() < 1e-5, "{k:?}");
         let k = crop_drag(&r, 1, k, pos2(0.0, 100.0));
         assert!((k.right - 0.58).abs() < 1e-5, "{k:?}");
-        // um 90° gedreht: die obere Kante liegt jetzt rechts
+        // rotated by 90°: the top edge now lies on the right
         r.angle = std::f32::consts::FRAC_PI_2;
         let k = crop_drag(&r, 2, Crop::default(), pos2(125.0, 100.0));
         assert!((k.top - 0.25).abs() < 1e-5, "{k:?}");
     }
 }
 
-// ---------------------------------------------------------------- Player-Zoom
+// ---------------------------------------------------------------- player zoom
 
-/// Zoomstufen relativ zu „Ganzes Bild“
+/// Zoom levels relative to „Ganzes Bild“
 const ZOOM_MIN: f32 = 0.1;
 const ZOOM_MAX: f32 = 16.0;
 
 impl App {
-    /// Strg+Mausrad: Zoom um den Mauszeiger; Mausrad/mittlere Taste: Ansicht verschieben;
-    /// Alt+Umschalt+Plus/Minus/Z.
+    /// Ctrl+mouse wheel: zoom around the mouse pointer; mouse wheel/middle button: pan the view;
+    /// Alt+Shift+Plus/Minus/Z.
     pub fn player_zoom_input(
         &mut self,
         ui: &egui::Ui,
@@ -678,7 +678,7 @@ impl App {
             self.player_zoom = 1.0;
             self.player_pan = egui::Vec2::ZERO;
         }
-        // Leinwand nie ganz aus dem Blick schieben
+        // never push the canvas fully out of view
         let half = vec2(pw, ph) * fit_scale * self.player_zoom / 2.0 + area.size() / 2.0
             - vec2(40.0, 40.0);
         self.player_pan = self
@@ -692,13 +692,13 @@ impl App {
     fn zoom_player_around(&mut self, anchor: Pos2, area: Rect, factor: f32) {
         let old = self.player_zoom;
         let new = (old * factor).clamp(ZOOM_MIN, ZOOM_MAX);
-        // Punkt unter dem Zeiger bleibt stehen
+        // the point under the pointer stays put
         let c = area.center() + self.player_pan;
         self.player_pan += (anchor - c) * (1.0 - new / old);
         self.player_zoom = new;
     }
 
-    /// Chip in der Player-Leiste mit Popover (−, Regler, +, Ganzes Bild, 1:1).
+    /// Chip in the player bar with a popover (−, slider, +, Ganzes Bild, 1:1).
     pub fn player_zoom_chip(&mut self, ui: &mut egui::Ui, compact: bool) {
         let pct = format!("{:.0} %", self.player_zoom * 100.0);
         let label = if compact {
