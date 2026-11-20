@@ -47,7 +47,7 @@
 
 ## Start in three steps
 
-1. **Install.** Windows: run the [installer](https://github.com/zqqqqx/cutline/releases/latest/download/cutline-windows-x64-setup.exe) – it needs no admin rights and brings everything along. Linux: unpack the [zip](https://github.com/zqqqqx/cutline/releases/latest/download/cutline-linux-x64.zip) and run `./cutline` (needs FFmpeg 7 or newer on your system).
+1. **Install.** Windows: run the [installer](https://github.com/zqqqqx/cutline/releases/latest/download/cutline-windows-x64-setup.exe) – it needs no admin rights and brings everything along. Linux: unpack the [zip](https://github.com/zqqqqx/cutline/releases/latest/download/cutline-linux-x64.zip) and run `./cutline` – FFmpeg is included as well.
 2. **Drag your files in.** Drop videos, images and audio from the file explorer straight onto the timeline.
 3. **Cut and export.** Split with <kbd>Ctrl</kbd>+<kbd>B</kbd>, delete with <kbd>Del</kbd>, then pick a platform in the export window.
 
@@ -135,7 +135,7 @@ Integrations ship with Cutline but stay **off** until you turn them on. Keys and
 | | |
 |---|---|
 | **Windows** | 64-bit Windows. FFmpeg and everything else is included. |
-| **Linux** | x86-64 with FFmpeg 7 or newer installed (8 for Whisper captions). The FFmpeg of Debian 13 works; Ubuntu 24.04 and older are too old, and Cutline says so at startup. |
+| **Linux** | x86-64. FFmpeg is included in the `ffmpeg/` folder. If you remove that folder, Cutline uses the FFmpeg on your system instead, which must be 7 or newer (8 for Whisper captions); the FFmpeg of Debian 13 works, Ubuntu 24.04 and older are too old, and Cutline says so at startup. |
 | **Graphics** | A graphics card helps with the preview, shader transitions and export, but is not required. |
 | **AI models** | Not bundled. Download the ones you need under **Settings → Models (local AI)**. |
 
