@@ -415,9 +415,6 @@ fn decode_once(
     Ok((RgbaFrame { width: w, height: h, data: f.remove(0).1 }, cpu))
 }
 
-/// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), keeping only
-/// those with `keep(k)`
-#[allow(clippy::too_many_arguments)]
 /// `scheme:…` such as `https://host/x.mp4` from a project file: FFmpeg would go online. Purely
 /// syntactic (no disk access, fine per frame); a drive letter `C:` has a one-letter scheme and passes.
 /// Preview, thumbnails, waveform and channel check refuse such paths (the export checks `is_local`).
@@ -435,6 +432,9 @@ fn not_url(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), keeping only
+/// those with `keep(k)`
+#[allow(clippy::too_many_arguments)]
 fn decode_raw(
     path: &Path,
     at: Time,
