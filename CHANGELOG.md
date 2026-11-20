@@ -31,10 +31,6 @@
 - **Playback volume.** The speaker next to the time in the player sets how loud Cutline plays – click to mute, hover for the slider, or use the mouse wheel. Your project and the export are not changed.
 - **Export in another aspect ratio.** The export window can turn a 16:9 project into a real 9:16, 1:1 or 4:5 file. "Fill" crops the sides, "Fit" keeps the whole picture and puts a blurred copy behind it. Titles and overlays stay in the picture. Picking a platform sets its ratio for you.
 
-**Improved**
-
-**Fixed**
-
 ### Deutsch
 
 **Neu**
@@ -42,10 +38,6 @@
 - **Dateigröße.** Wähle im Export-Fenster „Höchstens 10 MB“ (oder 25, 50, 100 oder eine eigene Zahl), und die Datei bleibt darunter. Reicht die Größe nicht für die Auflösung, exportiert Cutline ein kleineres Bild und sagt das an.
 - **Lautstärke der Wiedergabe.** Der Lautsprecher neben der Zeit im Player stellt ein, wie laut Cutline abspielt – Klick für stumm, drüberfahren für den Regler, oder das Mausrad. Projekt und Export bleiben unverändert.
 - **Export in anderem Seitenverhältnis.** Das Export-Fenster macht aus einem 16:9-Projekt eine echte 9:16-, 1:1- oder 4:5-Datei. „Füllen“ schneidet die Seiten ab, „Einpassen“ behält das ganze Bild und legt eine weichgezeichnete Kopie dahinter. Titel und Overlays bleiben im Bild. Die Wahl einer Plattform stellt ihr Verhältnis gleich mit ein.
-
-**Verbessert**
-
-**Behoben**
 
 ## 0.13.0 – 2026-11-19
 
