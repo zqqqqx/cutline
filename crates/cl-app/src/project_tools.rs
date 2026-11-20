@@ -121,11 +121,7 @@ pub fn unique_relinks(missing: &[(cl_core::MediaId, PathBuf)], found: &[(String,
 
 /// Archive a project: `<target>/<name>/` with `Medien/`, `Schriften/` and the adjusted project.
 pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathBuf, String> {
-    let safe: String = p
-        .name
-        .chars()
-        .map(|c| if "\/:*?\"<>|".contains(c) { '_' } else { c })
-        .collect();
+    let safe = paths::safe_name(&p.name);
     let dir = (1..)
         .map(|i| {
             if i == 1 {

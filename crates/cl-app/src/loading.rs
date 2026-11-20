@@ -150,12 +150,31 @@ pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
     // The message names the file (otherwise only „Pfad nicht gefunden“ shows)
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {} ({e})", crate::tr("Projekt konnte nicht geöffnet werden"), path.display()))?;
     progress.check()?;
-    let project = Project::from_json(&text).map_err(|e| e.to_string())?;
+    let mut project = Project::from_json(&text).map_err(|e| e.to_string())?;
     drop(text);
     progress.set(Step::Read, 1, 1, "");
     progress.check()?;
     let paths: Vec<PathBuf> = project.media.iter().map(|m| m.path.clone()).collect::<HashSet<_>>().into_iter().collect();
-    let present = check_files(&paths, progress, Step::Find).ok_or(cl_import::CANCELLED)?;
+    let mut present = check_files(&paths, progress, Step::Find).ok_or(cl_import::CANCELLED)?;
+    // a moved archive (`project_tools::archive`): missing files sit in `Medien/`/`Schriften/` next to
+    // the project. Only the loaded copy changes; the file on disk follows on the next save.
+    let beside = |sub: &str, p: &Path| Some(path.parent()?.join(sub).join(p.file_name()?)).filter(|c| c.is_file());
+    for m in &mut project.media {
+        if present.get(&m.path) == Some(&false) {
+            if let Some(c) = beside("Medien", &m.path) {
+                present.insert(c.clone(), true);
+                m.path = c;
+            }
+        }
+    }
+    present.retain(|p, _| project.media.iter().any(|m| &m.path == p));
+    for f in &mut project.project_fonts {
+        if !f.is_file() {
+            if let Some(c) = beside("Schriften", f) {
+                *f = c;
+            }
+        }
+    }
     // Prepare the timeline: image animations (thumbnail time), fonts, content
     let images: Vec<&cl_core::MediaRef> = project.media.iter().filter(|m| m.kind == MediaKind::Image && present.get(&m.path) == Some(&true)).collect();
     progress.set(Step::Timeline, 0, images.len() + 1, "");
@@ -483,6 +502,30 @@ mod tests {
         app.open_project(&f);
         assert!(app.new_project());
         assert!(app.load.is_none(), "new project cancels loading");
+    }
+
+    #[test]
+    fn moved_archive_finds_its_media_and_fonts() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("clip.mp4"), b"v").unwrap();
+        std::fs::write(src.join("font.ttf"), b"f").unwrap();
+        let mut p = Project::new("Film: Teil 1");
+        p.media.push(serde_json::from_value(serde_json::json!({
+            "id": cl_core::MediaId::new(), "path": src.join("clip.mp4"), "kind": "Video", "duration": 1000000,
+            "width": 2, "height": 2, "fps": null, "has_audio": false, "video_codec": null, "audio_codec": null
+        })).unwrap());
+        let out = crate::project_tools::archive(&p, &[src.join("font.ttf")], &dir.path().join("out")).unwrap();
+        let file = std::fs::read_dir(&out).unwrap().flatten().map(|e| e.path()).find(|f| f.extension().is_some_and(|x| x == "cutline")).unwrap();
+        // the archive goes to another place (stick, other computer)
+        let moved = dir.path().join("woanders");
+        std::fs::rename(&out, &moved).unwrap();
+        let l = load(&moved.join(file.file_name().unwrap()), &Progress::default()).unwrap();
+        assert_eq!(l.project.media[0].path, moved.join("Medien").join("clip.mp4"));
+        assert_eq!(l.present.len(), 1);
+        assert!(l.present.values().all(|ok| *ok));
+        assert_eq!(l.project.project_fonts, vec![moved.join("Schriften").join("font.ttf")]);
     }
 
     #[test]
