@@ -1,35 +1,35 @@
-//! Player-Kern: der Ablauf der Wiedergabe als reine Logik – ohne egui, ohne Prozesse und ohne
-//! eigene Uhr (die Zeit kommt als Eingabe `now` in Sekunden). Die App ist nur der Treiber: sie
-//! meldet Ereignisse (Play, Pause, Sprung, Bearbeitung, Ton-Zustand), fragt je Ebene, ob ein
-//! Bildstrom zu öffnen ist ([`PlayCore::want`]), hängt geöffnete Ströme an ([`PlayCore::attach_alias`]),
-//! holt fällige Bilder ([`PlayCore::pull`]) und führt die Ton-Aufträge aus ([`PlayCore::cmds`]).
+//! Player core: the playback flow as pure logic – without egui, without processes and without
+//! its own clock (time comes in as input `now` in seconds). The app is only the driver: it
+//! reports events (Play, Pause, jump, edit, audio state), asks per layer whether a
+//! frame stream should be opened ([`PlayCore::want`]), attaches opened streams ([`PlayCore::attach_alias`]),
+//! fetches due frames ([`PlayCore::pull`]) and carries out the audio commands ([`PlayCore::cmds`]).
 //!
-//! Zustände und Übergänge:
-//! - `Stand` --Play--> `Puffern` (Ströme öffnen, Ton vorbereiten, Uhr steht)
-//! - `Puffern` --alle Ströme am Playhead haben ein Bild, sonst nach 0,5 s, und der erste Ton liegt
-//!   bereit (höchstens 10 s)--> `Spielen` (Uhr läuft, Ton setzt an der Uhr ein)
-//! - `Spielen` --Pause (Ton läuft, Tempo 1)--> `Pause` (Ströme und Ton bleiben offen)
-//! - `Pause` --Play an derselben Stelle ohne Änderung--> `Spielen` (ohne neue Ströme)
-//! - `Pause` --Playhead verschoben oder Projekt geändert--> `Stand` (Ströme frei)
-//! - `Spielen`/`Puffern` --Sprung--> `Puffern` ab der neuen Stelle
-//! - J/K/L (`shuttle`) --> `Spielen` mit Tempo ≠ 1 (Einzelbilder, kein Ton)
-//! - Stopp, Projektende, Projektwechsel --> `Stand`
+//! States and transitions:
+//! - `Stand` --Play--> `Puffern` (open streams, prepare sound, clock stands)
+//! - `Puffern` --all streams at the playhead have a frame, otherwise after 0.5 s, and the first sound is
+//!   ready (at most 10 s)--> `Spielen` (clock runs, sound comes in at the clock)
+//! - `Spielen` --Pause (sound running, speed 1)--> `Pause` (streams and sound stay open)
+//! - `Pause` --Play at the same place without change--> `Spielen` (without new streams)
+//! - `Pause` --playhead moved or project changed--> `Stand` (streams freed)
+//! - `Spielen`/`Puffern` --jump--> `Puffern` from the new place
+//! - J/K/L (`shuttle`) --> `Spielen` with speed ≠ 1 (single frames, no sound)
+//! - Stop, project end, project change --> `Stand`
 //!
-//! Synchron statt hinterher: Liegt ein Strom länger als [`CATCH_UP_AFTER`] mehr als zwei
-//! Bildintervalle hinter der Uhr, wird er ab „Uhr + Anlaufzeit“ neu geöffnet (der alte zeigt bis
-//! dahin weiter); die automatische Qualität ([`AutoQuality`]) senkt dann die Decodiergröße.
+//! In sync instead of behind: if a stream lies more than two frame intervals behind the clock for
+//! longer than [`CATCH_UP_AFTER`], it is reopened from "clock + startup time" (the old one keeps
+//! showing until then); the automatic quality ([`AutoQuality`]) then lowers the decode size.
 
 use std::collections::HashMap;
 
 use cl_core::Time;
 
-/// Ebene: Clip oder abgeleitete Fassung (Effekt-Element) als Zahl, wie `ClipId`.
+/// Layer: clip or derived version (effect element) as a number, like `ClipId`.
 pub type Lid = u128;
 
-/// Bildquelle eines Stroms (FFmpeg in der App, simuliert in den Tests).
+/// Frame source of a stream (FFmpeg in the app, simulated in the tests).
 pub trait Source {
     type Frame;
-    /// Nächstes fertiges Bild, `Ok(None)` = noch keins, `Err` = Strom zu Ende (Quelle oder Fehler)
+    /// Next finished frame, `Ok(None)` = none yet, `Err` = stream ended (source or error)
     fn try_next(&mut self) -> Result<Option<Self::Frame>, ()>;
 }
 
@@ -42,112 +42,112 @@ impl Source for cl_media::FrameStream {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
-    /// steht; Bilder kommen als Einzelbilder
+    /// stopped; frames come as single frames
     Stand,
-    /// Play gedrückt: Ströme laufen an, die Uhr steht noch
+    /// Play pressed: streams start up, the clock still stands
     Puffern,
     Spielen,
-    /// angehalten mit offenen Strömen und Ton (Fortsetzen ohne neues Puffern)
+    /// paused with open streams and sound (resume without new buffering)
     Pause,
 }
 
-/// Ton aus Sicht des Kerns (Eingabe je Takt).
+/// Sound as seen by the core (input per tick).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AudioIn {
-    /// kein Ton (stumm, Tempo ≠ 1, nicht startbar)
+    /// no sound (muted, speed ≠ 1, cannot start)
     None,
-    /// vorbereitet, noch nicht hörbar
+    /// prepared, not yet audible
     Pending,
-    /// vorbereitet, aber noch kein Sample da (erstes Ton-Fenster läuft an)
+    /// prepared, but no sample there yet (first audio window starting up)
     Loading,
-    /// hörbar an dieser Stelle (Ton-Uhr)
+    /// audible at this place (audio clock)
     Running(Time),
-    /// Ausgabe ließ sich nicht öffnen
+    /// Output could not be opened
     Failed,
-    /// Ton zu Ende bzw. abgebrochen
+    /// Sound ended or aborted
     Finished,
 }
 
-/// Ton-Aufträge an den Treiber.
+/// Audio commands to the driver.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Cmd {
-    /// Ton ab `at` vorbereiten; `anchor`: sofort an der laufenden Uhr einsetzen, sonst erst mit
+    /// Prepare sound from `at`; `anchor`: come in at the running clock at once, otherwise only with
     /// [`Cmd::AnchorAudio`]
     StartAudio { at: Time, anchor: bool },
-    /// Uhr läuft jetzt: Ton setzt an der Stelle der Uhr ein
+    /// Clock runs now: sound comes in at the clock's place
     AnchorAudio,
     StopAudio,
     PauseAudio,
     ResumeAudio,
 }
 
-/// Eine Ebene, für die beim Abspielen ein Strom laufen soll.
+/// A layer for which a stream should run during playback.
 #[derive(Clone, Copy, Debug)]
 pub struct Want {
     pub id: Lid,
-    /// ändert sich mit allem, was das Bild ändert (Effekte, Timing, Größe, Bildrate)
+    /// changes with everything that changes the picture (effects, timing, size, frame rate)
     pub key: u64,
-    /// Zeitleistenstelle, ab der ein vorab geöffneter Strom beginnt (Clip-/Element-Anfang)
+    /// Timeline place where a stream opened ahead begins (clip/element start)
     pub start: Time,
-    /// Ende des Clips (ein Strom kurz vor dem Ende wird nicht mehr neu geöffnet)
+    /// End of the clip (a stream shortly before the end is not reopened)
     pub end: Time,
-    /// beginnt erst gleich: nur vorab öffnen, noch keine Bilder holen
+    /// begins only shortly: only open ahead, fetch no frames yet
     pub prefetch: bool,
-    /// gleiches Bild aus derselben Quelle (Datei, Quellzeit je Zeitleistenstelle, Effekte, Größe),
-    /// unabhängig von der Clip-ID: nach Teilen übernimmt der neue Clip den laufenden Strom
-    /// (0 = keiner)
+    /// same picture from the same source (file, source time per timeline place, effects, size),
+    /// independent of the clip ID: after splitting, the new clip takes over the running stream
+    /// (0 = none)
     pub alias: u64,
 }
 
-/// Auftrag „Strom ab `at` öffnen“ (Antwort auf [`PlayCore::want`]).
+/// Job "open stream from `at`" (answer to [`PlayCore::want`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Open {
     pub id: Lid,
     pub key: u64,
     pub at: Time,
     pub gen: u64,
-    /// laufende Nummer: nur der zuletzt beauftragte Strom einer Ebene wird angehängt
+    /// running number: only the most recently requested stream of a layer is attached
     pub seq: u64,
 }
 
-/// Eingabe je Takt.
+/// Input per tick.
 #[derive(Clone, Copy, Debug)]
 pub struct Tick {
     pub now: f64,
-    /// Playhead der Oberfläche (weicht er beim Abspielen vom Kern ab, wurde gesprungen)
+    /// Playhead of the UI (if it differs from the core during playback, there was a jump)
     pub playhead: Time,
-    /// Bearbeitungsstand des Projekts (Pause gilt nur bis zur nächsten Änderung)
+    /// Edit state of the project (pause holds only until the next change)
     pub revision: u64,
     pub audio: AudioIn,
-    /// Projektdauer
+    /// Project duration
     pub end: Time,
     pub fps: f64,
     pub loop_range: Option<(Time, Time)>,
-    /// Aufnahme läuft: am Projektende nicht anhalten
+    /// Recording runs: do not stop at the project end
     pub recording: bool,
-    /// höchste Stufe der automatischen Qualität (0 = aus)
+    /// highest level of the automatic quality (0 = off)
     pub max_quality_level: usize,
 }
 
-/// Messwerte seit dem letzten [`PlayCore::take_stats`].
+/// Measurements since the last [`PlayCore::take_stats`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Stats {
     pub opens: u32,
-    /// gezeigte Strombilder
+    /// shown stream frames
     pub frames: u32,
-    /// geholte, aber übersprungene Strombilder (Aufholen)
+    /// fetched but skipped stream frames (catching up)
     pub dropped: u32,
-    /// gezielt neu geöffnete Ströme (Rückstand) bzw. hängende Ströme
+    /// streams reopened on purpose (lag) or stalled streams
     pub catch_ups: u32,
     pub stalls: u32,
-    /// größte Lücke zwischen zwei Bildern der Hauptebene (s)
+    /// largest gap between two frames of the main layer (s)
     pub max_gap: f64,
-    /// größter Rückstand eines Stroms hinter der Uhr (s)
+    /// largest lag of a stream behind the clock (s)
     pub max_lag: f64,
 }
 
 impl Stats {
-    /// Messwerte zweier Abschnitte zusammen (Summen bzw. Größtwerte)
+    /// Measurements of two sections together (sums or maxima)
     pub fn add(&mut self, o: &Stats) {
         self.opens += o.opens;
         self.frames += o.frames;
@@ -159,42 +159,42 @@ impl Stats {
     }
 }
 
-/// Rückstand, ab dem gezielt aufgeholt wird: zwei Bildintervalle …
+/// Lag from which to catch up on purpose: two frame intervals …
 const LAG_FRAMES: f64 = 2.0;
-/// … länger als diese Zeit: dann eine Qualitätsstufe kleiner (Strom zu langsam)
+/// … longer than this time: then one quality level smaller (stream too slow)
 pub const CATCH_UP_AFTER: f64 = 0.2;
-/// Neu öffnen kostet die Suche ab dem Keyframe (bei langen GOPs Sekunden): nur wenn die
-/// Qualität schon unten ist und der Rückstand trotzdem diese Größe erreicht …
+/// Reopening costs the seek from the keyframe (seconds with long GOPs): only when the
+/// quality is already down and the lag still reaches this size …
 const REOPEN_LAG: f64 = 1.0;
-/// … und höchstens einmal in dieser Zeit je Ebene (auch bei hängenden Strömen: keine Schleife)
+/// … and at most once in this time per layer (also with stalled streams: no loop)
 const REOPEN_BLOCK: f64 = 5.0;
-/// Hängt ein Strom: so lange ganz ohne Bild (vor dem ersten Bild: Suche in der Quelle)
+/// A stream stalls: this long entirely without a frame (before the first frame: seek in the source)
 const STALL: f64 = 2.0;
 const STALL_FIRST: f64 = 6.0;
-/// Puffern endet spätestens nach dieser Zeit (dann läuft die Uhr, das Bild holt auf)
+/// Buffering ends after this time at the latest (then the clock runs, the picture catches up)
 const WARM_MAX: f64 = 0.5;
-/// Kommt der erste Ton noch (kalte Platte), wartet das Puffern bis zu dieser Sicherungsfrist auf ihn
+/// If the first sound is still coming (cold disk), buffering waits for it up to this safety limit
 const AUDIO_WAIT_MAX: f64 = 10.0;
-/// Hörbare Änderungen beim Abspielen: Ton erst so lange nach der letzten Änderung neu
+/// Audible changes during playback: renew the sound only this long after the last change
 pub const AUDIO_DEBOUNCE: f64 = 0.15;
-/// Öffnen schlug fehl: so lange nicht erneut versuchen
+/// Opening failed: do not retry for this long
 const RETRY_OPEN: f64 = 1.0;
-/// Ein Ersatzstrom mit Bild übernimmt spätestens so lange nach dem Anhängen (auch mit Rückstand)
+/// A replacement stream with a frame takes over at the latest this long after attaching (even with lag)
 const REPLACE_AFTER: f64 = 1.0;
-/// Geänderter Schlüssel beim Spielen (Regler ziehen: je UI-Bild ein neuer): Ersatz erst, wenn er
-/// so lange steht. Vorher startete je Bild ein FFmpeg ab dem Keyframe, verworfen, sobald der
-/// nächste Wert kam – das nahm dem laufenden Strom die Rechenzeit (Klicktest K5: Bild stand 1,8 s).
+/// Changed key during playback (dragging a slider: a new one per UI frame): replace only once it
+/// stays this long. Before, each frame started an FFmpeg from the keyframe, discarded as soon as the
+/// next value came – that took computing time from the running stream (click test K5: picture stood 1.8 s).
 const KEY_SETTLE: f64 = 0.15;
-/// Einzelbild beim Abspielen (Rückwärts, Tempo-Kurve, bewegte Bilder): ein laufender Auftrag wird
-/// nicht ersetzt, nur weil die Uhr weiter ist – sein Bild wird gezeigt, auch wenn es einige Bilder
-/// alt ist (sonst verhungert jeder Auftrag). Nur als Sicherung nach so langer Zeit neu.
+/// Single frame during playback (reverse, speed curve, animated images): a running job is
+/// not replaced just because the clock is further – its frame is shown even if it is a few frames
+/// old (otherwise every job starves). Only renewed after this long as a safeguard.
 const STILL_PATIENCE: f64 = 10.0;
 
 struct Slot<S> {
     src: S,
     key: u64,
     alias: u64,
-    /// Zeitleistenstelle des ersten Bildes
+    /// Timeline place of the first frame
     t0: Time,
     fps: f64,
     taken: u64,
@@ -203,7 +203,7 @@ struct Slot<S> {
     opened: f64,
     first: Option<f64>,
     behind_since: Option<f64>,
-    /// Bilder im laufenden Messfenster
+    /// Frames in the current measurement window
     win_frames: u64,
 }
 
@@ -212,12 +212,12 @@ impl<S: Source> Slot<S> {
         Self { src, key, alias: 0, t0, fps: fps.max(1.0), taken: 0, ended: false, waiting_since: None, opened: now, first: None, behind_since: None, win_frames: 0 }
     }
 
-    /// Alle fälligen Bilder holen, das neueste zurückgeben (Rest zählt als übersprungen).
-    /// `early`: vor dem Start schon das erste Bild holen (sichtbarer Clip im Übergang vor seinem
-    /// Anfang zeigt bis dahin sein erstes Bild); sonst ist vor `t0` nichts fällig.
+    /// Fetch all due frames, return the newest (the rest counts as skipped).
+    /// `early`: fetch the first frame before the start already (a visible clip in the transition before its
+    /// start shows its first frame until then); otherwise nothing is due before `t0`.
     fn drain(&mut self, pos: Time, now: f64, st: &mut Stats, early: bool) -> Option<S::Frame> {
         if pos < self.t0 && !(early && self.taken == 0) {
-            return None; // vorab geöffnet: noch nicht dran
+            return None; // opened ahead: not its turn yet
         }
         let target = ((pos - self.t0).as_secs_f64().max(0.0) * self.fps + 1e-6).floor() as u64;
         let (mut latest, mut n) = (None, 0u64);
@@ -248,19 +248,19 @@ impl<S: Source> Slot<S> {
         latest
     }
 
-    /// Rückstand des zuletzt geholten Bildes hinter der Uhr (s)
+    /// Lag of the last fetched frame behind the clock (s)
     fn lag(&self, pos: Time) -> Option<f64> {
         (self.taken > 0 && pos >= self.t0).then(|| pos.as_secs_f64() - (self.t0.as_secs_f64() + (self.taken - 1) as f64 / self.fps))
     }
 
-    /// Strom beendet oder seit [`STALL`] ganz ohne Bild (vor dem ersten Bild läuft noch die Suche
-    /// in der Quelle: großzügiger). Ein langsamer Strom, der noch liefert, hängt nicht.
+    /// Stream ended or entirely without a frame since [`STALL`] (before the first frame the seek in the
+    /// source is still running: more generous). A slow stream that still delivers does not stall.
     fn stalled(&self, now: f64) -> bool {
         let limit = if self.taken == 0 { STALL_FIRST } else { STALL };
         self.ended || self.waiting_since.is_some_and(|w| now - w > limit)
     }
 
-    /// Anlaufzeit dieses Stroms (Öffnen bis erstes Bild), für das Aufholen
+    /// Startup time of this stream (open to first frame), for catching up
     fn lead(&self) -> f64 {
         self.first.map_or(0.3, |f| f - self.opened).clamp(0.05, 3.0)
     }
@@ -270,41 +270,41 @@ pub struct PlayCore<S: Source> {
     mode: Mode,
     pos: Time,
     rate: f64,
-    /// (Wandzeit, Stelle): Systemuhr, solange kein Ton läuft
+    /// (wall time, place): system clock as long as no sound runs
     clock: Option<(f64, Time)>,
     warm_since: f64,
     paused: Option<(Time, u64)>,
     gen: u64,
     cur: HashMap<Lid, Slot<S>>,
-    /// Ersatz mit neuem Schlüssel (Bearbeitung, Qualität, Aufholen): zeigt erst, wenn er liefert
+    /// Replacement with a new key (edit, quality, catching up): shows only once it delivers
     next: HashMap<Lid, Slot<S>>,
-    /// Öffnen beauftragt: (Schlüssel, als Ersatz, laufende Nummer)
+    /// Opening requested: (key, as replacement, running number)
     opening: HashMap<Lid, (u64, bool, u64)>,
     seq: u64,
-    /// gezielt neu öffnen ab dieser Stelle
+    /// reopen on purpose from this place
     reopen: HashMap<Lid, Time>,
     failed: HashMap<Lid, (u64, f64)>,
-    /// zuletzt neu geöffnet (Hängen, Aufholen): Sperrfrist [`REOPEN_BLOCK`]
+    /// last reopened (stall, catching up): blocking period [`REOPEN_BLOCK`]
     reopened: HashMap<Lid, f64>,
-    /// neuer Schlüssel je Ebene seit (für [`KEY_SETTLE`])
+    /// new key per layer since (for [`KEY_SETTLE`])
     settle: HashMap<Lid, (u64, f64)>,
-    /// in diesem UI-Bild gewollte Ebenen (ein Strom wird nur von einer nicht mehr gewollten übernommen)
+    /// layers wanted in this UI frame (a stream is only taken over from a layer no longer wanted)
     wanted: Vec<Lid>,
-    /// höchste Stufe der automatischen Qualität (aus dem Takt)
+    /// highest level of the automatic quality (from the tick)
     max_level: usize,
-    /// Einzelbilder: angefordert (Schlüssel, seit) und erledigt (gezeigt oder gescheitert)
+    /// Single frames: requested (key, since) and done (shown or failed)
     requested: HashMap<Lid, (u64, f64)>,
     shown: HashMap<Lid, u64>,
-    /// zuletzt mit einem Bild versorgte Ebene (es gibt ein anzeigbares Bild)
+    /// layer last supplied with a frame (there is a displayable frame)
     held: Option<Lid>,
     audio_due: Option<f64>,
     last_primary: Option<f64>,
-    /// Sprünge (Play, Sprung, Schleife, Stopp): Uhr darf nur dabei zurückgehen
+    /// Jumps (Play, jump, loop, stop): the clock may only go back with these
     jumps: u64,
     win_start: f64,
     win_catch_up: bool,
     pub quality: AutoQuality,
-    /// gezielt aufholen (nur für Vergleichsmessungen abschaltbar)
+    /// catch up on purpose (can be turned off only for comparison measurements)
     pub catch_up: bool,
     stats: Stats,
     cmds: Vec<Cmd>,
@@ -346,7 +346,7 @@ impl<S: Source> Default for PlayCore<S> {
     }
 }
 
-/// Letztes Bild vor `end` (Projektende) bei `fps`
+/// Last frame before `end` (project end) at `fps`
 pub fn last_frame(end: Time, fps: f64) -> Time {
     Time((end - Time::from_secs_f64(1.0 / fps.max(1.0))).0.max(0))
 }
@@ -369,37 +369,37 @@ impl<S: Source> PlayCore<S> {
     pub fn jumps(&self) -> u64 {
         self.jumps
     }
-    /// Uhr läuft oder läuft gleich (Puffern)
+    /// Clock runs or is about to run (buffering)
     pub fn playing(&self) -> bool {
         matches!(self.mode, Mode::Puffern | Mode::Spielen)
     }
-    /// Bilder kommen aus Strömen (sonst Einzelbilder)
+    /// Frames come from streams (otherwise single frames)
     pub fn streaming(&self) -> bool {
         self.playing() && (self.rate - 1.0).abs() < 1e-6
     }
     #[cfg(test)]
-    /// Ebene mit dem zuletzt gelieferten Bild (`None`: es kam noch nie eins)
+    /// Layer with the last delivered frame (`None`: none ever came)
     pub fn held(&self) -> Option<Lid> {
         self.held
     }
-    /// Ton-Aufträge abholen
+    /// Collect audio commands
     pub fn cmds(&mut self) -> Vec<Cmd> {
         std::mem::take(&mut self.cmds)
     }
     pub fn take_stats(&mut self) -> Stats {
         std::mem::take(&mut self.stats)
     }
-    /// Messwerte seit dem letzten `take_stats`, ohne sie zurückzusetzen
+    /// Measurements since the last `take_stats`, without resetting them
     pub fn stats(&self) -> Stats {
         self.stats
     }
     #[cfg(test)]
-    /// Offene Ströme: (Ebene, Schlüssel, ist Ersatz)
+    /// Open streams: (layer, key, is replacement)
     pub fn streams(&self) -> Vec<(Lid, u64, bool)> {
         self.cur.iter().map(|(id, s)| (*id, s.key, false)).chain(self.next.iter().map(|(id, s)| (*id, s.key, true))).collect()
     }
 
-    /// Größe aller Listen des Kerns (Dauerlauf-Messung)
+    /// Size of all lists of the core (endurance measurement)
     #[cfg(test)]
     pub fn sizes(&self) -> String {
         format!(
@@ -417,20 +417,20 @@ impl<S: Source> PlayCore<S> {
         )
     }
 
-    /// Bisher geholte Bilder des laufenden Stroms der Ebene (Test: läuft das Bild weiter?)
+    /// Frames fetched so far from the layer's running stream (test: does the picture keep running?)
     #[cfg(test)]
     pub fn taken(&self, id: Lid) -> u64 {
         self.cur.get(&id).map_or(0, |s| s.taken)
     }
 
-    /// Offene Ströme (laufend und Ersatz)
+    /// Open streams (running and replacement)
     #[cfg(test)]
     pub fn stream_count(&self) -> usize {
         self.cur.len() + self.next.len()
     }
 
-    /// Wartet der Player auf ein Bild (Warte-Linie)? Beim Abspielen: nur während des Pufferns. Im
-    /// Stand: zu einem angeforderten Einzelbild ist noch kein passendes geliefert.
+    /// Is the player waiting for a frame (wait line)? During playback: only while buffering. When
+    /// stopped: no matching frame has been delivered for a requested single frame yet.
     pub fn waiting(&self) -> bool {
         match self.mode {
             Mode::Puffern => true,
@@ -439,13 +439,13 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// Bild-Ton-Versatz (ms): wie weit das gezeigte Strombild hinter der Uhr liegt (größter Wert)
+    /// Picture-sound offset (ms): how far the shown stream frame lies behind the clock (largest value)
     pub fn av_offset_ms(&self) -> Option<f64> {
         self.cur.values().filter_map(|s| s.lag(self.pos)).map(|l| l * 1000.0).reduce(f64::max)
     }
 
     fn clear_streams(&mut self) {
-        // Sprung: laufende Einzelbilder gehören zur alten Stelle
+        // jump: running single frames belong to the old place
         self.requested.clear();
         self.reopened.clear();
         self.settle.clear();
@@ -463,19 +463,19 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// Play: im Stand ab `at` puffern; in der Pause an derselben Stelle (`at`, `revision`)
-    /// ohne neue Ströme weiter.
+    /// Play: when stopped, buffer from `at`; when paused at the same place (`at`, `revision`)
+    /// continue without new streams.
     pub fn play(&mut self, at: Time, revision: u64, now: f64) {
         if self.mode == Mode::Pause && self.paused == Some((at, revision)) {
             self.paused = None;
-            // die Stelle steht in der Pause: Ströme laufen ohne Verschiebung weiter
+            // the place stands still in the pause: streams continue without a shift
             for s in self.cur.values_mut() {
                 s.waiting_since = None;
                 s.behind_since = None;
                 s.win_frames = 0;
             }
-            // Messfenster der automatischen Qualität neu: in der Pause zeichnet die Oberfläche
-            // kaum (kein Takt), sonst zählte die ganze Pause als Fenster ohne Bilder
+            // reset the measurement window of the automatic quality: in the pause the UI hardly
+            // draws (no tick), otherwise the whole pause would count as a window without frames
             self.win_start = now;
             self.win_catch_up = false;
             self.mode = Mode::Spielen;
@@ -491,7 +491,7 @@ impl<S: Source> PlayCore<S> {
         self.start_audio(at, false);
     }
 
-    /// Alles frei, Stand an `at`
+    /// Free everything, stand at `at`
     fn reset(&mut self, at: Time) {
         self.clear_streams();
         self.mode = Mode::Stand;
@@ -504,18 +504,18 @@ impl<S: Source> PlayCore<S> {
         self.jumps += 1;
     }
 
-    /// Ginge Play jetzt ohne neues Puffern weiter (Pause an derselben Stelle, nichts geändert)?
+    /// Would Play continue now without new buffering (paused at the same place, nothing changed)?
     pub fn can_resume(&self, at: Time, revision: u64) -> bool {
         self.mode == Mode::Pause && self.paused == Some((at, revision))
     }
 
-    /// Gibt es offene Einzelbild-Aufträge (Ladeanzeige beim Öffnen eines Projekts)?
+    /// Are there open single-frame jobs (loading indicator when opening a project)?
     pub fn has_requests(&self) -> bool {
         self.requested.iter().any(|(id, (k, _))| self.shown.get(id) != Some(k))
     }
 
-    /// Pause. Nur mit laufendem Ton bei Tempo 1 (`can_hold`, z. B. nicht bei Mehrkamera) bleiben
-    /// Ströme und Ton offen, sonst wird gestoppt.
+    /// Pause. Only with sound running at speed 1 (`can_hold`, e.g. not with multicam) do
+    /// streams and sound stay open, otherwise it stops.
     pub fn pause(&mut self, revision: u64, audio_running: bool, can_hold: bool) {
         if self.mode != Mode::Spielen || !audio_running || !can_hold || (self.rate - 1.0).abs() > 1e-6 {
             self.stop();
@@ -539,7 +539,7 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// J/K/L: mit Tempo `rate` ab `at`, ohne Puffern (Tempo ≠ 1: Einzelbilder, kein Ton)
+    /// J/K/L: at speed `rate` from `at`, without buffering (speed ≠ 1: single frames, no sound)
     pub fn shuttle(&mut self, rate: f64, at: Time, now: f64) {
         self.reset(at);
         self.rate = rate;
@@ -548,7 +548,7 @@ impl<S: Source> PlayCore<S> {
         self.start_audio(at, true);
     }
 
-    /// Sprung an `at` (beim Abspielen: ab dort neu puffern)
+    /// Jump to `at` (during playback: buffer again from there)
     pub fn seek(&mut self, at: Time, now: f64) {
         match self.mode {
             Mode::Stand => self.pos = at,
@@ -565,16 +565,16 @@ impl<S: Source> PlayCore<S> {
         self.pos = at;
     }
 
-    /// Bearbeitung beim Abspielen. Sichtbare Änderungen brauchen nichts (neue Schlüssel →
-    /// Ersatzströme); hörbare erneuern den Ton erst [`AUDIO_DEBOUNCE`] nach der letzten (Regler
-    /// ziehen startet ihn nicht bei jedem Schritt neu), das Bild läuft weiter.
+    /// Edit during playback. Visible changes need nothing (new keys →
+    /// replacement streams); audible ones renew the sound only [`AUDIO_DEBOUNCE`] after the last one (dragging
+    /// a slider does not restart it at every step), the picture keeps running.
     pub fn edit(&mut self, audible: bool, now: f64) {
         if audible && self.playing() {
             self.audio_due = Some(now + AUDIO_DEBOUNCE);
         }
     }
 
-    /// Ton sofort neu ab der aktuellen Stelle (Solo, Ausgabegerät)
+    /// Renew sound at once from the current place (solo, output device)
     pub fn restart_audio(&mut self, now: f64) {
         if !self.playing() {
             return;
@@ -587,7 +587,7 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// Projektwechsel: alles frei, Aufträge des alten Projekts verfallen
+    /// Project change: free everything, jobs of the old project expire
     pub fn new_project(&mut self) {
         self.stop();
         self.gen += 1;
@@ -597,18 +597,18 @@ impl<S: Source> PlayCore<S> {
         self.pos = Time::ZERO;
     }
 
-    /// Vorschau neu (Qualität, Proxy): Ströme und Einzelbild-Aufträge neu, gezeigte Bilder bleiben
+    /// Preview renewed (quality, proxy): streams and single-frame jobs anew, shown frames stay
     pub fn invalidate(&mut self) {
         self.clear_streams();
         self.requested.clear();
     }
 
-    /// Projekt geändert: Einzelbilder neu anfordern (Ströme wechseln über ihren Schlüssel)
+    /// Project changed: request single frames again (streams change via their key)
     pub fn forget_stills(&mut self) {
         self.requested.clear();
     }
 
-    /// Takt: Uhr fortschreiben, Puffern beenden, Ton-Zustand verarbeiten, Ende/Schleife.
+    /// Tick: advance the clock, end buffering, process audio state, end/loop.
     pub fn tick(&mut self, t: &Tick) -> Time {
         let now = t.now;
         match self.mode {
@@ -636,12 +636,12 @@ impl<S: Source> PlayCore<S> {
             ready &= s.taken > 0;
         }
         let waited = t.now - self.warm_since;
-        // erster Ton noch unterwegs: nicht nach Systemzeit loslaufen, der Ton jagte der Uhr sonst hinterher
+        // first sound still on its way: do not start on system time, or the sound would chase the clock
         let audio_late = t.audio == AudioIn::Loading && waited < AUDIO_WAIT_MAX;
         if !audio_late && ((ready && (any || waited > 0.05)) || waited > WARM_MAX) {
             self.mode = Mode::Spielen;
             for s in self.cur.values_mut().filter(|s| s.t0 <= pos) {
-                // erstes Bild = jetzt (nicht schon während des Pufferns fällige überspringen)
+                // first frame = now (do not skip frames that became due during buffering)
                 s.t0 = pos - Time::from_secs_f64(s.taken.saturating_sub(1) as f64 / s.fps);
             }
             self.clock = Some((t.now, pos));
@@ -662,11 +662,11 @@ impl<S: Source> PlayCore<S> {
         } else {
             match t.audio {
                 AudioIn::Failed | AudioIn::Finished => {
-                    // ohne Ton nach Systemzeit weiter
+                    // without sound continue on system time
                     self.cmds.push(Cmd::StopAudio);
                     self.clock = Some((now, self.pos));
                 }
-                // Ton-Uhr; nie zurück (Übergabe von der Systemzeit ist ohne Sprung)
+                // audio clock; never back (handover from system time is without a jump)
                 AudioIn::Running(p) => {
                     self.pos = p.max(self.pos);
                     self.clock = Some((now, self.pos));
@@ -683,7 +683,7 @@ impl<S: Source> PlayCore<S> {
                 return;
             }
             let next = Time::from_secs_f64(s.max(0.0));
-            // vorwärts nie zurück (Rundung bei der Übergabe Ton → Systemzeit)
+            // forward never back (rounding at the handover sound → system time)
             self.pos = if self.rate > 0.0 { next.max(self.pos) } else { next };
         }
         if self.rate > 0.0 {
@@ -705,9 +705,9 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// Messfenster (~1 s) für die automatische Qualität: Anteil gelieferter Bilder je Strom
-    /// Im Stand zurück auf volle Qualität; beim Puffern und in der Pause bleibt die Stufe (sonst
-    /// bräuchte das Fortsetzen neue Ströme), gemessen wird nur beim Spielen.
+    /// Measurement window (~1 s) for the automatic quality: share of delivered frames per stream
+    /// When stopped back to full quality; while buffering and paused the level stays (otherwise
+    /// resuming would need new streams), measured only while playing.
     fn measure(&mut self, now: f64, max: usize) {
         if self.mode != Mode::Spielen {
             if self.mode == Mode::Stand || max == 0 {
@@ -726,7 +726,7 @@ impl<S: Source> PlayCore<S> {
         let (pos, ws) = (self.pos, self.win_start);
         let mut ratio: Option<f64> = None;
         for s in self.cur.values_mut() {
-            // vorab geöffnete (noch nicht dran) und noch nicht angelaufene zählen nicht
+            // streams opened ahead (not their turn yet) and not yet started do not count
             let Some(first) = s.first.filter(|_| s.t0 <= pos) else {
                 s.win_frames = 0;
                 continue;
@@ -746,8 +746,8 @@ impl<S: Source> PlayCore<S> {
         self.win_catch_up = false;
     }
 
-    /// Soll für die Ebene `w` ein Strom geöffnet werden? `Some(open)`: ab `open.at` öffnen und mit
-    /// [`Self::attach_alias`] (oder [`Self::open_failed`]) zurückmelden. Nur beim Abspielen mit Tempo 1.
+    /// Should a stream be opened for layer `w`? `Some(open)`: open from `open.at` and report back with
+    /// [`Self::attach_alias`] (or [`Self::open_failed`]). Only during playback at speed 1.
     pub fn want(&mut self, w: &Want, now: f64) -> Option<Open> {
         if !self.streaming() {
             return None;
@@ -757,8 +757,8 @@ impl<S: Source> PlayCore<S> {
             return None;
         }
         self.wanted.push(id);
-        // hängender oder vorzeitig beendeter Strom: an der aktuellen Stelle neu (das letzte Bild
-        // bleibt stehen, bis der neue liefert), mit Sperrfrist gegen eine Neustart-Schleife
+        // stalled or prematurely ended stream: reopen at the current place (the last frame
+        // stays until the new one delivers), with a blocking period against a restart loop
         if !w.prefetch
             && self.mode == Mode::Spielen
             && (w.end - self.pos).as_secs_f64() > 0.25
@@ -770,7 +770,7 @@ impl<S: Source> PlayCore<S> {
             self.reopened.insert(id, now);
             self.stats.stalls += 1;
         }
-        // nach Teilen u. Ä.: laufenden Strom gleicher Quelle von einer nicht mehr gewollten Ebene übernehmen
+        // after splitting etc.: take over a running stream of the same source from a layer no longer wanted
         if w.alias != 0 && !w.prefetch && !self.cur.contains_key(&id) && !self.opening.contains_key(&id) {
             let donor = self.cur.iter().find(|(o, s)| s.alias == w.alias && !self.wanted.contains(o) && s.t0 <= self.pos).map(|(o, _)| *o);
             if let Some(o) = donor {
@@ -790,7 +790,7 @@ impl<S: Source> PlayCore<S> {
         if next || opening {
             return None;
         }
-        // Ersatz für einen laufenden Strom: erst, wenn der neue Schlüssel kurz steht
+        // replacement for a running stream: only once the new key stays for a moment
         if !cur && !w.prefetch && self.mode == Mode::Spielen && self.cur.contains_key(&id) {
             let since = match self.settle.get(&id) {
                 Some((k, t)) if *k == w.key => *t,
@@ -814,16 +814,16 @@ impl<S: Source> PlayCore<S> {
         self.opening.insert(id, (w.key, replace, self.seq));
         let at = match self.cur.get(&id) {
             _ if w.prefetch => w.start,
-            // Ersatz beim Spielen: dort öffnen, wo die Uhr steht, wenn er anläuft
+            // replacement during playback: open where the clock stands when it starts up
             Some(s) if self.mode == Mode::Spielen => self.pos + Time::from_secs_f64(s.lead()),
             _ => self.pos,
         };
         Some(Open { id, key: w.key, at, gen: self.gen, seq: self.seq })
     }
 
-    /// Geöffneten Strom anhängen. Veraltete (anderes Projekt, Schlüssel nicht mehr gewollt,
-    /// nicht mehr beim Abspielen) werden verworfen (beendet beim Fallenlassen).
-    /// `alias`: Quell-Fingerabdruck des Stroms (siehe [`Want::alias`]).
+    /// Attach an opened stream. Stale ones (other project, key no longer wanted,
+    /// no longer playing) are discarded (ended when dropped).
+    /// `alias`: source fingerprint of the stream (see [`Want::alias`]).
     pub fn attach_alias(&mut self, o: Open, fps: f64, src: S, now: f64, alias: u64) -> bool {
         if o.gen != self.gen || !self.streaming() {
             return false;
@@ -843,7 +843,7 @@ impl<S: Source> PlayCore<S> {
         true
     }
 
-    /// Öffnen schlug fehl: erst nach [`RETRY_OPEN`] erneut
+    /// Opening failed: retry only after [`RETRY_OPEN`]
     pub fn open_failed(&mut self, o: Open, now: f64) {
         if self.opening.get(&o.id).is_some_and(|(k, _, q)| *k == o.key && *q == o.seq) {
             self.opening.remove(&o.id);
@@ -851,17 +851,17 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// Fälliges Bild der Ebene (das neueste bis zur Uhr; ältere werden übersprungen). Ein Ersatz-
-    /// strom übernimmt mit seinem ersten fälligen Bild. `primary`: Hauptebene (Lücken-Messung).
+    /// Due frame of the layer (the newest up to the clock; older ones are skipped). A replacement
+    /// stream takes over with its first due frame. `primary`: main layer (gap measurement).
     pub fn pull(&mut self, id: Lid, now: f64, primary: bool) -> Option<S::Frame> {
         let pos = self.pos;
         let mut got = None;
         if let Some(n) = self.next.get_mut(&id) {
             if let Some(f) = n.drain(pos, now, &mut self.stats, false) {
-                // erst übernehmen, wenn der Ersatz nicht hinter dem bisherigen Strom liegt (nie ein
-                // älteres Bild zeigen); bis dahin holt er auf und seine Bilder verfallen. Ist er
-                // langsamer als Echtzeit (schwerer Effekt), holt er nie auf: nach REPLACE_AFTER
-                // übernimmt er trotzdem, danach greifen Aufholen und automatische Qualität.
+                // take over only when the replacement is not behind the previous stream (never show an
+                // older frame); until then it catches up and its frames expire. If it is
+                // slower than real time (heavy effect), it never catches up: after REPLACE_AFTER
+                // it takes over anyway, then catching up and automatic quality take effect.
                 let behind = |s: &Slot<S>| s.lag(pos).unwrap_or(f64::MAX);
                 let old = self.cur.get(&id).filter(|c| !c.stalled(now) && !c.ended);
                 if now - n.opened > REPLACE_AFTER || old.is_none_or(|c| behind(n) <= behind(c) + 1e-9) {
@@ -873,7 +873,7 @@ impl<S: Source> PlayCore<S> {
                     self.stats.dropped += 1;
                 }
             } else if n.stalled(now) {
-                // Ersatz endet bzw. hängt ohne Bild: verwerfen, nach RETRY_OPEN neu versuchen
+                // replacement ends or stalls without a frame: discard, retry after RETRY_OPEN
                 let key = n.key;
                 self.next.remove(&id);
                 self.failed.insert(id, (key, now));
@@ -883,10 +883,10 @@ impl<S: Source> PlayCore<S> {
         if got.is_none() {
             got = s.drain(pos, now, &mut self.stats, true);
         }
-        // Rückstand über zwei Bildintervalle länger als CATCH_UP_AFTER: Strom zu langsam → eine
-        // Qualitätsstufe kleiner (fällige Bilder werden ohnehin bis zur Uhr übersprungen). Neu ab
-        // Uhr + Anlaufzeit nur, wenn die Qualität schon unten ist und der Rückstand groß wird –
-        // ein Neustart sucht ab dem Keyframe und kostet selbst Zeit.
+        // lag over two frame intervals longer than CATCH_UP_AFTER: stream too slow → one
+        // quality level smaller (due frames are skipped up to the clock anyway). Reopen from
+        // clock + startup time only when the quality is already down and the lag grows –
+        // a restart seeks from the keyframe and costs time itself.
         if let Some(lag) = s.lag(pos).filter(|_| self.mode == Mode::Spielen) {
             self.stats.max_lag = self.stats.max_lag.max(lag);
             if lag > LAG_FRAMES / s.fps {
@@ -927,9 +927,9 @@ impl<S: Source> PlayCore<S> {
         got
     }
 
-    /// Einzelbild für die Ebene: `true` = jetzt anfordern. Beim Abspielen (Rückwärts, Tempo,
-    /// bewegte Bilder) wird ein laufender Auftrag nicht ersetzt, solange er jung ist – sonst
-    /// bricht jeder neue den vorigen ab und es kommt nie ein Bild (Stillstand).
+    /// Single frame for the layer: `true` = request now. During playback (reverse, speed,
+    /// animated images) a running job is not replaced while it is young – otherwise
+    /// each new one aborts the previous one and no frame ever comes (standstill).
     pub fn still(&mut self, id: Lid, key: u64, now: f64) -> bool {
         match self.requested.get(&id) {
             Some((k, _)) if *k == key => false,
@@ -941,7 +941,7 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// Einzelbild geliefert: zeigen, wenn es das angeforderte ist
+    /// Single frame delivered: show it if it is the requested one
     pub fn still_done(&mut self, id: Lid, key: u64) -> bool {
         if self.requested.get(&id).is_some_and(|(k, _)| *k == key) {
             self.shown.insert(id, key);
@@ -952,16 +952,16 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
-    /// Einzelbild ließ sich nicht decodieren: der Auftrag ist beendet (Ladeanzeige endet, beim
-    /// Abspielen wird gleich das nächste angefordert). Derselbe Schlüssel wird nicht sofort
-    /// wieder versucht (sonst ein FFmpeg je UI-Bild), erst nach einer Änderung.
+    /// Single frame could not be decoded: the job is finished (loading indicator ends, during
+    /// playback the next one is requested right away). The same key is not retried at once
+    /// (otherwise one FFmpeg per UI frame), only after a change.
     pub fn still_failed(&mut self, id: Lid, key: u64) {
         if self.requested.get(&id).is_some_and(|(k, _)| *k == key) {
             self.shown.insert(id, key);
         }
     }
 
-    /// Nur diese Ebenen sind noch sichtbar bzw. gleich dran: alles andere freigeben
+    /// Only these layers are still visible or about to come: free everything else
     pub fn visible(&mut self, ids: &[Lid]) {
         self.wanted.clear();
         self.reopened.retain(|id, _| ids.contains(id));
@@ -975,8 +975,8 @@ impl<S: Source> PlayCore<S> {
     }
 }
 
-/// Automatische Qualität beim Abspielen: Stufe 0 = gewählte Qualität; jede Stufe darüber halbiert
-/// die Decodiergröße bzw. halbiert zuletzt die Bildrate (siehe [`quality_steps`]).
+/// Automatic quality during playback: level 0 = chosen quality; each level above halves
+/// the decode size or, last, halves the frame rate (see [`quality_steps`]).
 #[derive(Clone, Debug)]
 pub struct AutoQuality {
     pub level: usize,
@@ -992,21 +992,21 @@ impl Default for AutoQuality {
     }
 }
 
-/// Unter diesem Anteil der Soll-Bildrate (über ~1 s) eine Stufe kleiner …
+/// Below this share of the target frame rate (over ~1 s) one level smaller …
 pub const TOO_SLOW: f64 = 0.9;
-/// … ab diesem Anteil so lange am Stück eine Stufe zurück
+/// … from this share on, one level back after this long in a row
 const GOOD: f64 = 0.98;
 const UP_WAIT: f64 = 4.0;
-/// Nach einem Wechsel: so lange nicht neu entscheiden (neue Ströme laufen an)
+/// After a change: do not decide again for this long (new streams are starting up)
 const SETTLE: f64 = 1.5;
 
 impl AutoQuality {
-    /// Ein Messfenster auswerten: `ratio` = gelieferte / fällige Bilder (schlechtester Strom),
-    /// `max` = höchste Stufe (0 = aus). Im Stand zurück auf 0. Scheitert ein Hochschalten innerhalb
-    /// von 3 s, wartet das nächste doppelt so lange (höchstens 30 s): kein Flattern.
+    /// Evaluate a measurement window: `ratio` = delivered / due frames (worst stream),
+    /// `max` = highest level (0 = off). When stopped back to 0. If stepping up fails within
+    /// 3 s, the next waits twice as long (at most 30 s): no flapping.
     pub fn decide(&mut self, now: f64, ratio: Option<f64>, max: usize, playing: bool) -> usize {
         if !playing || max == 0 {
-            // die gelernte Wartezeit bleibt (derselbe Rechner ist beim nächsten Play gleich schnell)
+            // the learned waiting time stays (the same computer is just as fast on the next Play)
             let up_wait = if max == 0 { UP_WAIT } else { self.up_wait };
             *self = Self { up_wait, ..Self::default() };
             return 0;
@@ -1043,9 +1043,9 @@ impl AutoQuality {
     }
 }
 
-/// Stufen der automatischen Qualität: (Teiler der Decodiergröße, halbe Bildrate). Die vom Nutzer
-/// gewählte Qualität `user_div` ist die Obergrenze; kleiner als ¼ wird nicht gerechnet, bei mehr
-/// als 31 fps ist die letzte Stufe ¼ mit halber Bildrate.
+/// Levels of the automatic quality: (divisor of the decode size, half frame rate). The quality
+/// chosen by the user `user_div` is the upper limit; nothing smaller than ¼ is computed; above
+/// 31 fps the last level is ¼ with half frame rate.
 pub fn quality_steps(user_div: u32, fps: f64) -> Vec<(u32, bool)> {
     let mut v = Vec::new();
     let mut d = user_div.clamp(1, 4);

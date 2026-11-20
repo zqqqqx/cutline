@@ -1,5 +1,5 @@
-//! Vorschau: Hintergrund-Decoder (Einzelbilder je Clip mit Effektkette, Thumbnails,
-//! Waveforms, Effekt-Vorschaubilder, Projekt-Titelbilder) und Start der Wiedergabe-Ströme.
+//! Preview: background decoder (single frames per clip with effect chain, thumbnails,
+//! waveforms, effect preview images, project title images) and start of playback streams.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -12,11 +12,11 @@ use cl_core::{ClipId, MediaId, Rational, Time};
 use cl_media::{FrameStream, KillSwitch, RgbaFrame};
 use eframe::egui;
 
-/// Auflösung der Waveforms (Werte pro Sekunde)
+/// Waveform resolution (values per second)
 pub const WAVE_PER_SEC: u32 = 50;
 
 pub enum Job {
-    /// Bild eines Clips (mit optionalem Filtergraphen `[0:v]` → `[out]`)
+    /// Frame of a clip (with optional filter graph `[0:v]` → `[out]`)
     Frame {
         clip: ClipId,
         key: u64,
@@ -25,8 +25,8 @@ pub enum Job {
         w: u32,
         h: u32,
         graph: Option<String>,
-        /// Quellbildrate, wenn das Bild aus einem Rückwärts-Fenster kommen soll (siehe
-        /// `player::reverse_window`); sonst ein FFmpeg je Bild
+        /// Source frame rate if the frame should come from a reverse window (see
+        /// `player::reverse_window`); otherwise one FFmpeg per frame
         window: Option<Rational>,
     },
     Thumb {
@@ -37,41 +37,41 @@ pub enum Job {
     Wave {
         media: MediaId,
         path: PathBuf,
-        /// Tonspur der Datei (0 = erste)
+        /// Audio track of the file (0 = first)
         stream: u32,
     },
-    /// Kleines Bild einer Datei bei `at` (Bibliothek, Hover-Vorschau); Ergebnis als `FxThumb`
+    /// Small image of a file at `at` (library, hover preview); result as `FxThumb`
     FileThumb {
         key: String,
         path: PathBuf,
         at: Time,
     },
-    /// `n` Bilder gleichmäßig über ein Video (Hover-Vorschau im Medien-Tab), als ein Streifen
+    /// `n` frames evenly across a video (hover preview in the media tab), as one strip
     MediaStrip {
         key: String,
         path: PathBuf,
         dur: Time,
         n: u32,
     },
-    /// Sound aus der Bibliothek vorbereiten: ggf. erzeugen (`sfx`), prüfen, Wellenform
+    /// Prepare a sound from the library: generate if needed (`sfx`), check, waveform
     SoundMeta {
         key: String,
         path: PathBuf,
         sfx: Option<&'static str>,
     },
-    /// Vorschaubild aus einem Graphen ohne Eingänge (Effekt-/Filter-/Übergangskacheln)
-    /// Kachel für Effekte/Filter/Übergänge. `frames` > 1: Filmstreifen (Bilder untereinander)
+    /// Preview image from a graph without inputs (effect/filter/transition tiles)
+    /// Tile for effects/filters/transitions. `frames` > 1: film strip (frames stacked)
     FxThumb {
         key: String,
         graph: String,
-        /// Shader-Übergang: Bilder mit cl-gpu mischen; ohne GPU oder bei Fehlern gilt `graph`
+        /// Shader transition: blend frames with cl-gpu; without GPU or on errors `graph` applies
         shader: Option<ShaderTile>,
         w: u32,
         h: u32,
         frames: u32,
         cache: PathBuf,
     },
-    /// Titelbild eines Projekts für die Startseite
+    /// Title image of a project for the start page
     ProjectThumb {
         out: PathBuf,
         path: PathBuf,
@@ -79,17 +79,17 @@ pub enum Job {
     },
 }
 
-/// Kachel eines Shader-Übergangs: `pair_graph` liefert A und B nebeneinander (Breite 2·w).
+/// Tile of a shader transition: `pair_graph` delivers A and B side by side (width 2·w).
 pub struct ShaderTile {
     pub file: PathBuf,
     pub params: Vec<f32>,
     pub pair_graph: String,
 }
 
-/// Balken der kleinen Sound-Wellenform (Zeilen und Kacheln)
+/// Bars of the small sound waveform (rows and tiles)
 pub const SOUND_BARS: usize = 24;
 
-/// `n` Balken über die ganze Länge (Spitzenwert je Abschnitt), auf den lautesten normiert, 0…1.
+/// `n` bars over the whole length (peak per section), normalized to the loudest, 0…1.
 pub fn sound_bars(peaks: &[f32], n: usize) -> Vec<f32> {
     let max = peaks.iter().copied().fold(1e-4, f32::max);
     (0..n)
@@ -111,8 +111,8 @@ mod sound_bar_tests {
         let b = sound_bars(&peaks, 24);
         assert_eq!(b.len(), 24);
         assert!(b.iter().all(|v| (0.0..=1.0).contains(v)));
-        assert!(b.iter().any(|v| *v == 1.0), "lautester Balken voll");
-        // Stille, leer und sehr kurz: feste Zahl, nichts außerhalb 0…1
+        assert!(b.iter().any(|v| *v == 1.0), "loudest bar full");
+        // silence, empty and very short: fixed count, nothing outside 0…1
         assert!(sound_bars(&[0.0; 100], 24).iter().all(|v| *v == 0.0));
         assert_eq!(sound_bars(&[], 24), vec![0.0; 24]);
         let short = sound_bars(&[0.2, 0.8, 2.0], 24);
@@ -121,8 +121,8 @@ mod sound_bar_tests {
     }
 }
 
-/// Filmstreifen eines Shader-Übergangs: `frames` Bilder bei Fortschritt k/frames (wie der
-/// `xfade`-Streifen), A und B aus dem Bildpaar `pair` (2·w × h).
+/// Film strip of a shader transition: `frames` frames at progress k/frames (like the
+/// `xfade` strip), A and B from the frame pair `pair` (2·w × h).
 pub fn shader_strip(s: &ShaderTile, pair: &[u8], w: u32, h: u32, frames: u32) -> Result<Vec<u8>, String> {
     let src = std::fs::read_to_string(&s.file).map_err(|e| e.to_string())?;
     let row = (w * 4) as usize;
@@ -144,7 +144,7 @@ pub fn shader_strip(s: &ShaderTile, pair: &[u8], w: u32, h: u32, frames: u32) ->
     Ok(out)
 }
 
-/// Parameter aus dem Katalog in das feste Feld von cl-gpu (Rest 0).
+/// Parameters from the catalog into the fixed array of cl-gpu (rest 0).
 pub fn shader_params(v: &[f32]) -> [f32; cl_gpu::PARAMS] {
     let mut prm = [0.0; cl_gpu::PARAMS];
     for (p, x) in prm.iter_mut().zip(v) {
@@ -159,7 +159,7 @@ pub enum Done {
         key: u64,
         frame: RgbaFrame,
     },
-    /// Player-Bild ließ sich nicht decodieren (der Auftrag ist damit beendet)
+    /// Player frame could not be decoded (the job is finished with that)
     FrameFailed {
         clip: ClipId,
         key: u64,
@@ -186,19 +186,19 @@ pub enum Done {
     ProjectThumb {
         out: PathBuf,
     },
-    /// Streifen-Auftrag übersprungen (Kachel nicht mehr sichtbar) → wieder anforderbar
+    /// Strip job skipped (tile no longer visible) → can be requested again
     Skipped(String),
     Error(String),
 }
 
-/// Zuletzt berechnete Player-Bilder (Schlüssel enthält Clip, Quellzeit, Größe und Effekte),
-/// damit erneutes Scrubben und Rückgängig ohne FFmpeg-Aufruf auskommen.
+/// Last computed player frames (key contains clip, source time, size and effects),
+/// so repeated scrubbing and undo need no FFmpeg call.
 struct FrameCache {
     map: std::collections::HashMap<u64, RgbaFrame>,
     order: std::collections::VecDeque<u64>,
     bytes: usize,
     budget: usize,
-    /// Projektgeneration der Bilder: nach einem Projektwechsel wird alles freigegeben
+    /// Project generation of the frames: everything is freed after a project change
     gen: u64,
 }
 
@@ -212,7 +212,7 @@ impl FrameCache {
             gen: 0,
         }
     }
-    /// Bilder eines verlassenen Projekts freigeben (sonst blieben bis zu `budget` Bytes belegt)
+    /// Free the frames of a left project (otherwise up to `budget` bytes stayed in use)
     fn set_generation(&mut self, gen: u64) {
         if gen != self.gen {
             *self = Self { gen, ..Self::new(self.budget) };
@@ -239,27 +239,27 @@ impl FrameCache {
     }
 }
 
-/// Drei Worker-Threads: einer verteilt die Bilder des Players (jeder Auftrag eigener Prozess,
-/// veraltete werden abgebrochen), einer für alles im Hintergrund (Thumbnails, Waveforms), einer
-/// für Kacheln. Hintergrund und Kacheln warten, solange Player-Bilder laufen.
+/// Three worker threads: one dispatches the player frames (each job its own process,
+/// stale ones are aborted), one for everything in the background (thumbnails, waveforms), one
+/// for tiles. Background and tiles wait while player frames are running.
 pub struct Decoder {
     tx: Sender<Msg>,
     tx_bg: Sender<(u64, Job)>,
-    /// Kacheln (Effekte, Filter, Übergänge): eigener Thread, bis zu vier FFmpeg parallel,
-    /// damit das Vorladen Thumbnails und Waveforms der Medien nicht aufhält
+    /// Tiles (effects, filters, transitions): own thread, up to four FFmpeg in parallel,
+    /// so preloading does not hold up thumbnails and waveforms of the media
     tx_fx: Sender<(u64, Job)>,
     pub rx: Receiver<Done>,
-    /// Streifen-Schlüssel, die gerade sichtbar/gehovert sind (Medien-Tab setzt sie je Frame)
+    /// Strip keys currently visible/hovered (the media tab sets them each frame)
     pub strips_wanted: Arc<Mutex<HashSet<String>>>,
-    /// Projektgeneration: Aufträge eines verlassenen Projekts verwirft der Worker
+    /// Project generation: the worker discards jobs of a left project
     pub generation: Arc<AtomicU64>,
-    /// Zwischenspeicher des Verteilers: Bilder (Anzahl, Bytes), Animationen (Anzahl, Bytes);
-    /// liest der Dauerlauf-Mess-Test
+    /// Dispatcher cache: frames (count, bytes), animations (count, bytes);
+    /// read by the endurance measurement test
     #[cfg_attr(not(test), allow(dead_code))]
     pub held: Arc<[AtomicUsize; 4]>,
 }
 
-/// Nachricht an den Verteiler der Player-Bilder: neuer Auftrag oder fertiges Ergebnis.
+/// Message to the player frame dispatcher: new job or finished result.
 enum Msg {
     Job(Job),
     Done {
@@ -269,7 +269,7 @@ enum Msg {
         ms: f64,
         proxy: bool,
     },
-    /// Rückwärts-Fenster decodiert (`seq`: Nummer des Auftrags, Bilder ab `start`)
+    /// Reverse window decoded (`seq`: job number, frames from `start`)
     Win {
         clip: ClipId,
         seq: u64,
@@ -277,16 +277,16 @@ enum Msg {
         res: cl_media::Result<Vec<(u32, RgbaFrame)>>,
         ms: f64,
     },
-    /// Bewegtes Bild ganz decodiert (`None`: zu groß oder nicht lesbar → Einzelbilder wie bisher)
+    /// Animated image fully decoded (`None`: too large or unreadable → single frames as before)
     Anim {
         key: (PathBuf, u32, u32),
         frames: Option<Arc<Vec<RgbaFrame>>>,
     },
 }
 
-/// Bewegte Bilder (GIF/APNG) der Vorschau im Speicher: je Datei und Größe alle Einzelbilder, damit
-/// ein animiertes Element beim Abspielen nicht je Bild ein FFmpeg braucht. Begrenzt: höchstens
-/// [`ANIM_ONE`] je Animation und [`ANIM_ALL`] zusammen (dann wird von vorn begonnen).
+/// Animated images (GIF/APNG) of the preview in memory: all frames per file and size, so
+/// an animated element does not need one FFmpeg per frame during playback. Limited: at most
+/// [`ANIM_ONE`] per animation and [`ANIM_ALL`] in total (then it starts over).
 #[derive(Default)]
 struct Anims {
     map: HashMap<(PathBuf, u32, u32), Option<Arc<Vec<RgbaFrame>>>>,
@@ -297,10 +297,10 @@ const ANIM_ONE: usize = 64 << 20;
 const ANIM_ALL: usize = 192 << 20;
 
 impl Anims {
-    /// Bild für `at` (Suchzeit aus `Animation::seek_time`), falls die Animation im Speicher liegt.
-    /// `Err(true)`: noch nie angefragt (jetzt decodieren), `Err(false)`: läuft schon oder geht nicht.
+    /// Frame for `at` (seek time from `Animation::seek_time`) if the animation is in memory.
+    /// `Err(true)`: never requested (decode now), `Err(false)`: already running or not possible.
     fn get(&mut self, path: &std::path::Path, w: u32, h: u32, at: Time) -> Result<RgbaFrame, bool> {
-        // nur Bilddateien ansehen (`animation` liest die ganze Datei)
+        // only look at image files (`animation` reads the whole file)
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
         if !["gif", "png", "apng"].contains(&ext.as_str()) {
             return Err(false);
@@ -327,13 +327,13 @@ impl Anims {
     }
 }
 
-/// Laufende Player-Bilder: höchstens ein Auftrag je Clip. Ein neuer Auftrag für denselben Clip
-/// macht den alten zum veralteten (sein FFmpeg wird beendet, sein Ergebnis nicht gezeigt).
+/// Running player frames: at most one job per clip. A new job for the same clip
+/// makes the old one stale (its FFmpeg is ended, its result not shown).
 #[derive(Default)]
 struct InFlight(HashMap<ClipId, (u64, Arc<KillSwitch>)>);
 
 impl InFlight {
-    /// `None` = derselbe Auftrag läuft schon; sonst der Schalter des neuen und ggf. des veralteten.
+    /// `None` = the same job is already running; otherwise the switch of the new one and maybe the stale one.
     fn start(&mut self, clip: ClipId, key: u64) -> Option<(Arc<KillSwitch>, Option<Arc<KillSwitch>>)> {
         if self.0.get(&clip).is_some_and(|(k, _)| *k == key) {
             return None;
@@ -342,11 +342,11 @@ impl InFlight {
         let old = self.0.insert(clip, (key, ks.clone())).map(|(_, k)| k);
         Some((ks, old))
     }
-    /// Bild kam aus dem Speicher: laufender Auftrag des Clips ist veraltet.
+    /// Frame came from memory: the clip's running job is stale.
     fn cancel(&mut self, clip: ClipId) -> Option<Arc<KillSwitch>> {
         self.0.remove(&clip).map(|(_, k)| k)
     }
-    /// Ergebnis da: noch der aktuelle Auftrag des Clips?
+    /// Result there: still the clip's current job?
     fn finish(&mut self, clip: ClipId, key: u64) -> bool {
         let cur = self.0.get(&clip).is_some_and(|(k, _)| *k == key);
         if cur {
@@ -359,8 +359,8 @@ impl InFlight {
     }
 }
 
-/// Darf ein Hintergrund-Auftrag starten? Erst wenn kein Player-Bild läuft – höchstens 1,5 s
-/// gewartet, damit Thumbnails beim Dauer-Scrubben nicht verhungern.
+/// May a background job start? Only when no player frame is running – waited at most 1.5 s
+/// so thumbnails do not starve during continuous scrubbing.
 fn bg_may_start(player_busy: usize, waited: std::time::Duration) -> bool {
     player_busy == 0 || waited >= std::time::Duration::from_millis(1500)
 }
@@ -372,23 +372,23 @@ fn yield_to_player(busy: &AtomicUsize) {
     }
 }
 
-/// Rückwärts-Fenster: alle gehaltenen Bilder eines Clips zusammen (laufendes und vorab
-/// geladenes Fenster) höchstens so groß – lieber ein kürzeres Fenster als mehr Speicher.
+/// Reverse window: all held frames of a clip together (running and preloaded
+/// window) at most this large – rather a shorter window than more memory.
 const WINDOW_BYTES: usize = 120 << 20;
 
-/// (Bilder je Fenster, höchstens gehaltene Bilder) für die Bildgröße `w`×`h` bei Quellrate `fps`:
-/// ein Fenster höchstens 1 s und die Hälfte der Obergrenze (Platz für das nächste vorab, das
-/// rechtzeitig beginnt, solange noch so viele Bilder übrig sind).
+/// (frames per window, max held frames) for frame size `w`×`h` at source rate `fps`:
+/// one window at most 1 s and half the limit (room for the next one ahead, which
+/// starts in time while that many frames are still left).
 fn window_plan(w: u32, h: u32, fps: f64) -> (i64, i64) {
     let cap = (WINDOW_BYTES / (w as usize * h as usize * 4).max(1)).max(2) as i64;
     ((cap / 2).clamp(1, (fps.round() as i64).max(1)), cap)
 }
 
-/// Welche Bilder als Nächstes decodieren: (erstes Bild, Anzahl); behalten werden davon nur die
-/// ersten `n` (und das fehlende `idx`). Fehlt Bild `idx`, reicht der Bereich bis `idx`; sonst
-/// vorab bis direkt vor die gehaltenen Bilder (ab `lowest`; rückwärts kommen sie als Nächstes
-/// dran), sobald `n` neben den `held` gehaltenen unter die Obergrenze passen. `lead`: so viele
-/// Bilder ist die Uhr weiter, wenn das Fenster fertig ist – die behaltenen liegen dort.
+/// Which frames to decode next: (first frame, count); only the first `n` of them
+/// are kept (and the missing `idx`). If frame `idx` is missing, the range reaches up to `idx`; otherwise
+/// ahead up to right before the held frames (from `lowest`; in reverse they come
+/// next), as soon as `n` fits under the limit beside the `held` ones. `lead`: the clock is this many
+/// frames further when the window is done – the kept ones lie there.
 fn next_window(idx: i64, has_idx: bool, lowest: i64, held: i64, lead: i64, (n, cap): (i64, i64)) -> Option<(i64, i64)> {
     let end = if has_idx { lowest - 1 } else { idx };
     if end < 0 || (has_idx && held + n > cap) {
@@ -398,20 +398,20 @@ fn next_window(idx: i64, has_idx: bool, lowest: i64, held: i64, lead: i64, (n, c
     Some((first, end - first + 1))
 }
 
-/// Rückwärts-Fenster eines Clips im Verteiler
+/// Reverse window of a clip in the dispatcher
 struct Win {
-    /// Datei, Größe, Quellrate: ändert sich eins, gilt nichts mehr
+    /// File, size, source rate: if one changes, nothing is valid any more
     spec: (PathBuf, u32, u32, Rational),
     frames: std::collections::BTreeMap<i64, RgbaFrame>,
-    /// laufende Decodierung: (Nummer, erstes Bild, so viele ab dort behalten, dazu das fehlende
-    /// Bild, Abbruch)
+    /// running decode: (number, first frame, keep this many from there, plus the missing
+    /// frame, abort)
     busy: Option<(u64, i64, i64, Option<i64>, Arc<KillSwitch>)>,
-    /// Dauer der letzten Decodierung (s) und Tempo der Anfragen (Quellbilder je s, geglättet),
-    /// letzte Anfrage: daraus der Vorlauf `next_window(lead)`
+    /// Duration of the last decode (s) and pace of requests (source frames per s, smoothed),
+    /// last request: from these the lead `next_window(lead)`
     took: f64,
     speed: f64,
     prev: Option<(i64, std::time::Instant)>,
-    /// wartender Auftrag: (Bildnummer, Schlüssel, Quellzeit, seit)
+    /// waiting job: (frame number, key, source time, since)
     want: Option<(i64, u64, Time, std::time::Instant)>,
     last: std::time::Instant,
 }
@@ -427,7 +427,7 @@ impl Win {
     }
 }
 
-/// Verteiler der Player-Bilder (läuft im Thread `cl-decoder`).
+/// Dispatcher of the player frames (runs in the `cl-decoder` thread).
 fn frame_dispatcher(
     rx: Receiver<Msg>,
     tx: Sender<Msg>,
@@ -443,17 +443,17 @@ fn frame_dispatcher(
     let proxies = crate::proxy::dir();
     let mut windows: HashMap<ClipId, Win> = HashMap::new();
     let mut win_seq = 0u64;
-    // Datei und Größe, deren Fenster das Bild nicht lieferte (für die Sitzung: Einzelbilder)
+    // file and size whose window did not deliver the frame (for the session: single frames)
     let mut win_failed: HashSet<(PathBuf, u32, u32)> = HashSet::new();
     loop {
-        // auch ohne neue Aufträge nachsehen, ob das Projekt gewechselt wurde
+        // check whether the project changed even without new jobs
         if cache.gen != gen.load(Ordering::Relaxed) {
             anims = Anims::default();
             windows.values_mut().for_each(Win::kill);
             windows.clear();
         }
-        // Fenster eines Clips, der nicht mehr rückwärts abgespielt wird (Pause, Stand): freigeben;
-        // ein laufendes (der Auftrag wartet darauf, langsame Quellen brauchen Sekunden) bleibt
+        // window of a clip no longer played in reverse (pause, stand): free it;
+        // a running one (the job waits for it, slow sources need seconds) stays
         windows.retain(|_, w| {
             let keep = w.busy.is_some() || w.last.elapsed() < std::time::Duration::from_secs(2);
             if !keep {
@@ -470,8 +470,8 @@ fn frame_dispatcher(
         let out = match msg {
             Msg::Job(Job::Frame { clip, key, path, at, w, h, graph, window }) => {
                 crate::proxy::note_activity();
-                // Rückwärts beim Abspielen (Original, ohne Effektgraph): Bilder fensterweise aus
-                // einem FFmpeg statt einem je Bild; alles andere wie bisher
+                // reverse during playback (original, without effect graph): frames window by window from
+                // one FFmpeg instead of one per frame; everything else as before
                 let spec = window
                     .filter(|_| graph.is_none() && !path.starts_with(&proxies) && !win_failed.contains(&(path.clone(), w, h)))
                     .map(|fps| (path.clone(), w, h, fps));
@@ -505,10 +505,10 @@ fn frame_dispatcher(
                     }
                     wn.prev = Some((idx, now));
                     let plan = window_plan(w, h, fps);
-                    // schon gezeigte (rückwärts: spätere) Bilder freigeben; nach einem Sprung alles
+                    // free frames already shown (reverse: later ones); after a jump everything
                     wn.frames.retain(|i, _| *i <= idx);
-                    // das Bild – oder, kam das Fenster früher als die Uhr, das nächste gehaltene
-                    // danach: es steht dann kurz, die Reihenfolge bleibt
+                    // the frame – or, if the window came earlier than the clock, the next held one
+                    // after it: it then stands briefly, the order stays
                     let near = wn.frames.range(idx - plan.0..=idx).next_back().map(|(i, _)| *i);
                     let has = near.is_some();
                     if !has {
@@ -525,14 +525,14 @@ fn frame_dispatcher(
                         wn.want = Some((idx, key, at, now));
                         None
                     };
-                    // läuft schon eins, das Bilder bis hierher oder weiter vorn behält, wartet der
-                    // Auftrag darauf; liegt es ganz hinter der Uhr, abbrechen und neu
+                    // if one is running that keeps frames up to here or further ahead, the job
+                    // waits for it; if it lies entirely behind the clock, abort and restart
                     if !has && !wn.busy.as_ref().is_some_and(|(_, s, _, e, _)| *s <= idx || *e == Some(idx)) {
                         wn.kill();
                     }
                     if wn.busy.is_none() {
                         let lowest = wn.frames.keys().next().copied().unwrap_or(idx);
-                        // Vorlauf mit Reserve: lieber früher da (Bild steht kurz) als zu spät (neu)
+                        // lead with reserve: rather there early (frame stands briefly) than too late (restart)
                         let lead = (1.3 * wn.took * wn.speed).min(4.0 * fps) as i64;
                         if let Some((start, n)) = next_window(idx, has, lowest, wn.frames.len() as i64, lead, plan) {
                             win_seq += 1;
@@ -552,7 +552,7 @@ fn frame_dispatcher(
                     }
                     out
                 } else {
-                    // bewegtes Bild ohne Effekte: aus dem Speicher (beim ersten Mal im Hintergrund ganz decodieren)
+                    // animated image without effects: from memory (fully decoded in the background the first time)
                     let anim = if graph.is_none() {
                         match anims.get(&path, w, h, at) {
                             Ok(f) => Some(f),
@@ -608,17 +608,17 @@ fn frame_dispatcher(
                     }
                     let (path, w, h, fps) = wn.spec.clone();
                     match wn.want.take() {
-                        // die Uhr lief weiter, während der Auftrag wartete: das Bild, wo sie jetzt etwa
-                        // steht, oder das nächste danach (es steht dann kurz)
+                        // the clock kept running while the job waited: the frame where it now roughly
+                        // stands, or the next one after (it then stands briefly)
                         Some((idx, key, at, since)) => match wn.frames.range(..=idx.min(idx - (since.elapsed().as_secs_f64() * wn.speed) as i64 + window_plan(w, h, fps.as_f64()).0)).next_back() {
                             Some((_, f)) => Some(Done::Frame { clip, key, frame: f.clone() }),
-                            // nichts gelesen (Datei mit schwankender Bildrate, Fehler): Einzelbilder wie bisher
+                            // nothing read (file with varying frame rate, errors): single frames as before
                             None if wn.frames.is_empty() => {
                                 win_failed.insert((path.clone(), w, h));
                                 let _ = tx.send(Msg::Job(Job::Frame { clip, key, path, at, w, h, graph: None, window: None }));
                                 None
                             }
-                            // alles schon hinter der Uhr: neu anfordern (neues Fenster)
+                            // everything already behind the clock: request again (new window)
                             None => {
                                 let _ = tx.send(Msg::Job(Job::Frame { clip, key, path, at, w, h, graph: None, window: Some(fps) }));
                                 None
@@ -675,7 +675,7 @@ fn perf_discarded() {
     }
 }
 
-/// Auftrag noch nötig? `None` = verwerfen, `Some(Some(d))` = statt Ausführung melden.
+/// Job still needed? `None` = discard, `Some(Some(d))` = report instead of running.
 fn check(job: &Job, g: u64, gen: &AtomicU64, wanted: &Mutex<HashSet<String>>) -> Option<Option<Done>> {
     let project = matches!(job, Job::Thumb { .. } | Job::Wave { .. } | Job::MediaStrip { .. } | Job::FileThumb { .. });
     if project && g != gen.load(Ordering::Relaxed) {
@@ -725,7 +725,7 @@ fn run(job: Job) -> Option<Done> {
             let mut last: Option<Vec<u8>> = None;
             for i in 0..n {
                 let at = Time::from_secs_f64(dur.as_secs_f64() * (i as f64 + 0.5) / n as f64);
-                // fehlt ein Bild (z. B. kurz vor dem Ende), das vorige wiederholen
+                // if a frame is missing (e.g. shortly before the end), repeat the previous one
                 let f = cl_media::decode_frame(&path, at, w, h)
                     .ok()
                     .filter(|f| f.data.len() == (w * h * 4) as usize)
@@ -765,7 +765,7 @@ fn run(job: Job) -> Option<Done> {
             cache,
         } => {
             let need = (w * h * 4 * frames) as usize;
-            // Zwischenspeicher: rohe RGBA-Bytes
+            // cache: raw RGBA bytes
             if let Ok(data) = std::fs::read(&cache) {
                 if data.len() == need {
                     return Some(Done::FxThumb {
@@ -781,7 +781,7 @@ fn run(job: Job) -> Option<Done> {
             let dir = cache.parent()?.to_path_buf();
             let _ = std::fs::create_dir_all(&dir);
             for (n, b) in SAMPLES {
-                // neu schreiben, wenn eine ältere App-Version ein anderes Beispielbild abgelegt hat
+                // rewrite if an older app version stored a different sample image
                 if std::fs::metadata(dir.join(n)).map(|m| m.len()).ok() != Some(b.len() as u64) {
                     let _ = std::fs::write(dir.join(n), b);
                 }
@@ -797,7 +797,7 @@ fn run(job: Job) -> Option<Done> {
                     .output()
                     .ok()
             };
-            // Shader-Übergang mit cl-gpu; ohne GPU oder bei Fehlern die Kachel des Rückfalls
+            // shader transition with cl-gpu; without GPU or on errors the fallback tile
             if let Some(s) = &shader {
                 let strip = ffmpeg(&s.pair_graph, 1)
                     .ok_or_else(|| "FFmpeg".to_string())
@@ -829,7 +829,7 @@ fn run(job: Job) -> Option<Done> {
             if let Some(d) = cache.parent() {
                 let _ = std::fs::create_dir_all(d);
             }
-            // Rückfall eines Shader-Übergangs nicht festschreiben: beim nächsten Start neu versuchen
+            // do not persist the fallback of a shader transition: try again on the next start
             if shader.is_none() {
                 let _ = std::fs::write(&cache, &data);
             }
@@ -870,7 +870,7 @@ fn run(job: Job) -> Option<Done> {
 impl Decoder {
     pub fn new(ctx: egui::Context) -> Self {
         let (done_tx, rx) = channel::<Done>();
-        // Player-Bilder
+        // player frames
         let (tx, jobs) = channel::<Msg>();
         let generation = Arc::new(AtomicU64::new(0));
         let busy = Arc::new(AtomicUsize::new(0));
@@ -921,7 +921,7 @@ impl Decoder {
                 })
                 .expect("Decoder-Thread");
         }
-        // Hintergrund
+        // background
         let (tx_bg, jobs_bg) = channel::<(u64, Job)>();
         let (gen, wanted) = (generation.clone(), strips_wanted.clone());
         std::thread::Builder::new()
@@ -969,16 +969,16 @@ impl Decoder {
         }
     }
 
-    /// Projektwechsel: noch wartende Aufträge des alten Projekts verfallen
+    /// Project change: still waiting jobs of the old project expire
     pub fn next_generation(&self) {
         self.generation.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-/// Auftrag an den [`Starter`]: Strom ab `source_at` öffnen (Antwort trägt `open` zurück).
+/// Job for the [`Starter`]: open a stream from `source_at` (the reply carries `open` back).
 pub struct OpenJob {
     pub open: crate::playcore::Open,
-    /// Quell-Fingerabdruck (siehe `playcore::Want::alias`), kommt mit dem Strom zurück
+    /// Source fingerprint (see `playcore::Want::alias`), comes back with the stream
     pub alias: u64,
     pub path: PathBuf,
     pub source_at: Time,
@@ -989,9 +989,9 @@ pub struct OpenJob {
     pub hw: cl_media::Hw,
 }
 
-/// Öffnet Wiedergabe-Ströme in einem eigenen, langlebigen Thread: der Prozessstart (5–20 ms unter
-/// Windows) hält die Oberfläche nicht auf. Langlebig auch wegen Linux: `PR_SET_PDEATHSIG` hängt am
-/// startenden Thread (siehe `cl_media::proc`) – ein Strom aus einem kurzlebigen Thread endete mit ihm.
+/// Opens playback streams in its own long-lived thread: the process start (5–20 ms on
+/// Windows) does not hold up the UI. Long-lived also because of Linux: `PR_SET_PDEATHSIG` is tied to the
+/// starting thread (see `cl_media::proc`) – a stream from a short-lived thread ended with it.
 pub struct Starter {
     tx: Sender<OpenJob>,
     pub rx: Receiver<(crate::playcore::Open, f64, u64, Option<FrameStream>)>,
@@ -1021,7 +1021,7 @@ impl Starter {
         let _ = self.tx.send(j);
     }
 
-    /// Test: Starter, der nichts öffnet – die Aufträge kommen beim zweiten Wert an
+    /// Test: starter that opens nothing – the jobs arrive at the second value
     #[cfg(test)]
     pub fn capture() -> (Self, Receiver<OpenJob>) {
         let (tx, jobs) = channel();
@@ -1030,9 +1030,9 @@ impl Starter {
     }
 }
 
-/// Wartende Aufträge: je Ebene nur der neueste (der Kern hängt ohnehin nur die zuletzt beauftragte
-/// Nummer an). Sonst startete der Starter beim Ziehen eines Reglers während Play jeden veralteten
-/// Strom nacheinander, und der richtige käme erst nach diesem Rückstau.
+/// Waiting jobs: only the newest per layer (the core only attaches the most recently requested
+/// number anyway). Otherwise, while dragging a slider during Play, the starter started every stale
+/// stream in turn, and the right one would only come after that backlog.
 fn newest_per_layer(jobs: Vec<OpenJob>) -> Vec<OpenJob> {
     let mut out: Vec<OpenJob> = Vec::with_capacity(jobs.len());
     for j in jobs {
@@ -1042,15 +1042,15 @@ fn newest_per_layer(jobs: Vec<OpenJob>) -> Vec<OpenJob> {
     out
 }
 
-/// Hardware-Decodierung für einen Abspiel-Strom? Nur für Originale, deren Software-Decodierung
-/// bremst: über 1080p, HEVC/AV1/VP9 ab 1080p und 1080p ab 50 Bildern/s (gemessen: 4K-HEVC-10-Bit
-/// 3,6 → 0,9 Kerne, 4K-H.264 2,3 → 0,6; 1080p60-H.264 unter Volllast 6,1 → 3,6 s CPU je 10 s Video –
-/// in Software kam ein einzelner 1080p60-Strom unter Fremdlast nicht mehr in Echtzeit mit). Proxys
-/// und 1080p30 sind in Software schnell genug, und das Öffnen eines Hardware-Decoders kostet
-/// 200–300 ms. Einzelbilder bleiben ganz in Software (Klick → Bild mit D3D11VA 0,2–0,4 s langsamer).
-/// Decodierung des Stroms: Hardware nach [`stream_hw`]; bis 1080p beginnt er in Software (erstes
-/// Bild 0,3–0,8 s früher, die Hardware übernimmt nach etwa 1 s). Größere Quellen gleich in
-/// Hardware: 4K in Software nebenher bremste beide (gemessen PL_gross: 38–53 statt 60 Bilder/s).
+/// Hardware decoding for a playback stream? Only for originals whose software decoding
+/// slows down: above 1080p, HEVC/AV1/VP9 from 1080p and 1080p from 50 fps (measured: 4K HEVC 10-bit
+/// 3.6 → 0.9 cores, 4K H.264 2.3 → 0.6; 1080p60 H.264 under full load 6.1 → 3.6 s CPU per 10 s video –
+/// in software a single 1080p60 stream under outside load no longer kept up in real time). Proxies
+/// and 1080p30 are fast enough in software, and opening a hardware decoder costs
+/// 200–300 ms. Single frames stay fully in software (click → frame 0.2–0.4 s slower with D3D11VA).
+/// Decoding of the stream: hardware per [`stream_hw`]; up to 1080p it starts in software (first
+/// frame 0.3–0.8 s sooner, the hardware takes over after about 1 s). Larger sources go straight to
+/// hardware: 4K in software alongside slowed both (measured PL_gross: 38–53 instead of 60 fps).
 pub fn stream_decode(m: &cl_core::MediaRef, path: &std::path::Path) -> cl_media::Hw {
     match stream_hw(m, path) {
         false => cl_media::Hw::Off,
@@ -1068,12 +1068,12 @@ pub fn stream_hw(m: &cl_core::MediaRef, path: &std::path::Path) -> bool {
             || (m.width.min(m.height) >= 1080 && (high_rate || ["hevc", "av1", "vp9"].iter().any(|c| codec.contains(c)))))
 }
 
-/// Bild für eine Textur. Videobilder sind fast immer deckend: dann ohne Umrechnung kopieren
-/// (deckend ist vormultipliert = unvormultipliert; gemessen 1280×720: 9 → ~1 ms je Bild im
-/// Oberflächen-Thread), sonst mit Vormultiplizieren.
+/// Frame for a texture. Video frames are almost always opaque: then copy without conversion
+/// (opaque is premultiplied = unpremultiplied; measured 1280×720: 9 → ~1 ms per frame in the
+/// UI thread), otherwise with premultiplying.
 pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
     let size = [f.width as usize, f.height as usize];
-    // Alpha wortweise prüfen (schnell); ungerade ausgerichteter Puffer: byteweise
+    // check alpha word by word (fast); oddly aligned buffer: byte by byte
     let opaque = match bytemuck::try_cast_slice::<u8, u32>(&f.data) {
         Ok(w) => w.iter().all(|x| x.to_le() >> 24 == 255),
         Err(_) => f.data.chunks_exact(4).all(|p| p[3] == 255),
@@ -1085,13 +1085,13 @@ pub fn to_color_image(f: &RgbaFrame) -> egui::ColorImage {
     }
 }
 
-/// Beispielbild für Effekt-/Übergangskacheln (CC0-Bilder von Wikimedia Commons:
-/// „Sunset timelapse on the beach in Libreville, Gabon“ und „Mavora Lake South“).
-/// Läuft im Ordner der Kachel-Zwischenspeicher, siehe `Job::FxThumb`.
+/// Sample image for effect/transition tiles (CC0 images from Wikimedia Commons:
+/// “Sunset timelapse on the beach in Libreville, Gabon” and “Mavora Lake South”).
+/// Runs in the folder of the tile cache, see `Job::FxThumb`.
 pub fn sample_source(w: u32, h: u32, warm: bool) -> String {
     let f = if warm { "fx-sample-a.jpg" } else { "fx-sample-b.jpg" };
-    // `fps=25` nennt dem Graphen die Bildrate: ohne sie lehnt `xfade` in FFmpeg 7 (Linux-Distributionen)
-    // die Quelle ab – alle Übergangs-Kacheln blieben dort leer
+    // `fps=25` tells the graph the frame rate: without it `xfade` in FFmpeg 7 (Linux distributions)
+    // rejects the source – all transition tiles stayed empty there
     format!("movie={f},loop=loop=-1:size=1:start=0,setpts=N/25/TB,fps=25,scale={w}:{h},setsar=1")
 }
 
@@ -1104,8 +1104,8 @@ const SAMPLES: [(&str, &[u8]); 2] = [
 mod tests {
     use super::*;
 
-    /// Die Beispielquelle der Kacheln nennt ihre Bildrate (FFmpeg 7 unter Linux verlangt sie für
-    /// `xfade`; nachgestellt mit Debian 13, FFmpeg 7.1: ohne `fps` „Error configuring filter graph").
+    /// The sample source of the tiles states its frame rate (FFmpeg 7 on Linux needs it for
+    /// `xfade`; reproduced with Debian 13, FFmpeg 7.1: without `fps` “Error configuring filter graph”).
     #[test]
     fn tile_source_declares_its_frame_rate() {
         assert!(sample_source(192, 108, true).contains(",setpts=N/25/TB,fps=25,"));
@@ -1127,19 +1127,19 @@ mod tests {
             audio_streams: 0,
         };
         let p = std::path::Path::new("a.mp4");
-        assert!(stream_hw(&m(1920, 1080, 60, "h264"), p), "1080p60: Hardware");
-        assert!(!stream_hw(&m(1920, 1080, 30, "h264"), p), "1080p30-H.264: Software reicht");
+        assert!(stream_hw(&m(1920, 1080, 60, "h264"), p), "1080p60: hardware");
+        assert!(!stream_hw(&m(1920, 1080, 30, "h264"), p), "1080p30 H.264: software is enough");
         assert!(stream_hw(&m(1920, 1080, 30, "hevc"), p));
         assert!(stream_hw(&m(3840, 2160, 30, "h264"), p));
         assert!(!stream_hw(&m(1280, 720, 60, "h264"), p));
-        assert!(!stream_hw(&m(1920, 1080, 60, "h264"), std::path::Path::new("proxy.mp4")), "Proxy: Software");
-        assert!(stream_hw(&m(1080, 1920, 30, "hevc"), p), "Hochkant");
+        assert!(!stream_hw(&m(1920, 1080, 60, "h264"), std::path::Path::new("proxy.mp4")), "proxy: software");
+        assert!(stream_hw(&m(1080, 1920, 30, "hevc"), p), "portrait");
         assert!(!stream_hw(&m(1280, 720, 60, "hevc"), p));
         assert!(!stream_hw(&m(3840, 2160, 60, "hevc"), std::path::Path::new("proxy.mp4")), "Proxy");
-        // bis 1080p beginnt der Strom in Software (erstes Bild früher), 4K gleich in Hardware
+        // up to 1080p the stream starts in software (first frame sooner), 4K straight in hardware
         use cl_media::Hw;
         assert_eq!(stream_decode(&m(1920, 1080, 60, "h264"), p), Hw::AfterSoftware);
-        assert_eq!(stream_decode(&m(1080, 1920, 30, "hevc"), p), Hw::AfterSoftware, "Hochkant");
+        assert_eq!(stream_decode(&m(1080, 1920, 30, "hevc"), p), Hw::AfterSoftware, "portrait");
         assert_eq!(stream_decode(&m(3840, 2160, 60, "hevc"), p), Hw::On);
         assert_eq!(stream_decode(&m(1920, 1080, 30, "h264"), p), Hw::Off);
     }
@@ -1154,8 +1154,8 @@ mod tests {
         }
     }
 
-    /// Bewegte Bilder: einmal im Hintergrund decodieren, danach jedes Bild aus dem Speicher;
-    /// Videos und Standbilder gehen den bisherigen Weg.
+    /// Animated images: decoded once in the background, then every frame from memory;
+    /// videos and still images go the old way.
     #[test]
     fn animations_are_served_from_memory_after_one_decode() {
         if !cl_media::ffmpeg_available() {
@@ -1174,19 +1174,19 @@ mod tests {
         let a = cl_media::animation(&f).unwrap();
         let mut an = Anims::default();
         let at = a.seek_time(a.starts[3]);
-        assert_eq!(an.get(&f, 16, 16, at).err(), Some(true), "erstes Mal: decodieren");
-        assert_eq!(an.get(&f, 16, 16, at).err(), Some(false), "läuft schon: nicht doppelt");
+        assert_eq!(an.get(&f, 16, 16, at).err(), Some(true), "first time: decode");
+        assert_eq!(an.get(&f, 16, 16, at).err(), Some(false), "already running: not twice");
         let frames = cl_media::decode_animation(&f, 16, 16, ANIM_ONE).map(Arc::new);
         assert!(frames.is_some());
         an.put((f.clone(), 16, 16), frames.clone());
         assert_eq!(an.get(&f, 16, 16, at).unwrap().data, frames.unwrap()[3].data);
-        // andere Größe: eigener Eintrag; Video: nie
+        // other size: own entry; video: never
         assert_eq!(an.get(&f, 8, 8, at).err(), Some(true));
         assert_eq!(an.get(std::path::Path::new("x.mp4"), 16, 16, at).err(), Some(false));
     }
 
-    /// Kachel eines Shader-Übergangs: Bildpaar wird richtig geteilt, Bild 0 = A, Streifen hat
-    /// `frames` Bilder; ohne GPU ein Fehler (dann gilt die Kachel des Rückfalls).
+    /// Tile of a shader transition: frame pair is split correctly, frame 0 = A, strip has
+    /// `frames` frames; without GPU an error (then the fallback tile applies).
     #[test]
     fn shader_strip_splits_pair_and_starts_with_a() {
         let dir = tempfile::tempdir().unwrap();
@@ -1198,7 +1198,7 @@ mod tests {
         .unwrap();
         let s = ShaderTile { file, params: vec![], pair_graph: String::new() };
         let (w, h) = (4u32, 2u32);
-        // links rot, rechts blau
+        // left red, right blue
         let pair: Vec<u8> = (0..h)
             .flat_map(|_| (0..w * 2).flat_map(|x| if x < w { [255, 0, 0, 255] } else { [0, 0, 255, 255] }))
             .collect();
@@ -1210,7 +1210,7 @@ mod tests {
         let r = r.unwrap();
         assert_eq!(r.len(), (w * h * 4 * 4) as usize);
         assert!(r[..(w * h * 4) as usize].chunks(4).all(|p| p == [255, 0, 0, 255]));
-        // Bild 2 von 4: halb gemischt
+        // frame 2 of 4: half blended
         let mid = &r[(w * h * 4 * 2) as usize..][..4];
         assert!(mid[0].abs_diff(128) <= 1 && mid[2].abs_diff(128) <= 1, "{mid:?}");
         assert!(shader_strip(&s, &pair[..8], w, h, 4).is_err());
@@ -1222,22 +1222,22 @@ mod tests {
         let mut f = InFlight::default();
         let (k1, old) = f.start(a, 1).unwrap();
         assert!(old.is_none());
-        assert!(f.start(a, 1).is_none(), "gleicher Auftrag läuft schon");
-        // Folgeklick: alter Auftrag wird abgebrochen, neuer startet sofort
+        assert!(f.start(a, 1).is_none(), "same job already running");
+        // follow-up click: old job is aborted, new one starts at once
         let (_, old) = f.start(a, 2).unwrap();
         assert!(Arc::ptr_eq(&old.unwrap(), &k1));
         f.start(b, 7).unwrap();
         assert_eq!(f.len(), 2);
-        assert!(!f.finish(a, 1), "veraltetes Ergebnis wird nicht gezeigt");
+        assert!(!f.finish(a, 1), "stale result is not shown");
         assert!(f.finish(a, 2));
         assert!(!f.finish(a, 2));
-        // Bild aus dem Speicher: laufender Auftrag des Clips verfällt
+        // frame from memory: the clip's running job expires
         assert!(f.cancel(b).is_some() && f.cancel(b).is_none());
         assert_eq!(f.len(), 0);
     }
 
-    /// Regler ziehen während Play: viele Aufträge derselben Ebene stauen sich – geöffnet wird nur
-    /// der neueste je Ebene, in der Reihenfolge ihres letzten Auftrags.
+    /// Dragging a slider during Play: many jobs of the same layer pile up – only the newest
+    /// per layer is opened, in the order of their last job.
     #[test]
     fn starter_opens_only_the_newest_job_per_layer() {
         let job = |id, seq| OpenJob {
@@ -1257,34 +1257,34 @@ mod tests {
         assert!(newest_per_layer(Vec::new()).is_empty());
     }
 
-    /// Rückwärts-Fenster: Größe unter der Speichergrenze, höchstens 1 s; fehlendes Bild = Fenster,
-    /// das mit ihm endet; vorab das direkt davor, erst wenn es neben die gehaltenen passt.
+    /// Reverse window: size under the memory limit, at most 1 s; missing frame = window
+    /// that ends with it; ahead the one right before, only once it fits beside the held ones.
     #[test]
     fn reverse_window_math() {
         let (n, cap) = window_plan(1280, 720, 60.0);
-        assert!(cap as usize * 1280 * 720 * 4 <= WINDOW_BYTES, "{cap} Bilder");
+        assert!(cap as usize * 1280 * 720 * 4 <= WINDOW_BYTES, "{cap} frames");
         assert_eq!((n, cap), (17, 34));
-        assert_eq!(window_plan(320, 180, 60.0).0, 60, "höchstens 1 s");
+        assert_eq!(window_plan(320, 180, 60.0).0, 60, "at most 1 s");
         assert_eq!(window_plan(320, 180, 23.976).0, 24);
-        assert_eq!(window_plan(7680, 4320, 60.0), (1, 2), "riesig: trotzdem ein Bild");
+        assert_eq!(window_plan(7680, 4320, 60.0), (1, 2), "huge: still one frame");
         let plan = (21, 32);
         assert_eq!(next_window(500, false, 500, 0, 0, plan), Some((480, 21)));
-        assert_eq!(next_window(10, false, 10, 0, 0, plan), Some((0, 11)), "nicht vor das erste Bild");
-        // 21 gehalten (480..=500): das nächste passt erst, wenn höchstens 11 übrig sind
+        assert_eq!(next_window(10, false, 10, 0, 0, plan), Some((0, 11)), "not before the first frame");
+        // 21 held (480..=500): the next fits only when at most 11 are left
         assert_eq!(next_window(500, true, 480, 21, 0, plan), None);
         assert_eq!(next_window(490, true, 480, 11, 0, plan), Some((459, 21)));
-        assert_eq!(next_window(5, true, 0, 6, 0, plan), None, "Dateianfang erreicht");
+        assert_eq!(next_window(5, true, 0, 6, 0, plan), None, "file start reached");
         assert_eq!(next_window(12, true, 4, 9, 0, plan), Some((0, 4)));
-        // langsame Quelle (Fenster dauert 60 Bilder): bis `idx` decodieren, die ersten 21 ab dort
-        // behalten, wo die Uhr dann steht – das fehlende Bild ist immer im Bereich
+        // slow source (window takes 60 frames): decode up to `idx`, keep the first 21 from where
+        // the clock will then be – the missing frame is always in the range
         assert_eq!(next_window(500, false, 500, 0, 60, plan), Some((420, 81)));
-        // vorab: hinter dem Vorlauf, nicht direkt vor den gehaltenen (die sind bis dahin gezeigt)
+        // ahead: behind the lead, not right before the held ones (they are shown by then)
         assert_eq!(next_window(490, true, 480, 11, 60, plan), Some((410, 70)));
-        assert_eq!(next_window(490, true, 480, 11, 5, plan), Some((459, 21)), "kleiner Vorlauf");
+        assert_eq!(next_window(490, true, 480, 11, 5, plan), Some((459, 21)), "small lead");
     }
 
-    /// Rückwärts abspielen: Aufträge mit Fenster, Bild für Bild rückwärts – jedes kommt, und jedes
-    /// ist bytegleich mit dem Einzelbild ohne Fenster.
+    /// Reverse playback: jobs with window, frame by frame backwards – each arrives, and each
+    /// is byte-identical to the single frame without window.
     #[test]
     fn reverse_window_delivers_the_same_frames() {
         if !cl_media::ffmpeg_available() {
@@ -1309,14 +1309,14 @@ mod tests {
             let key = 1000 + i as u64;
             d.send(Job::Frame { clip, key, path: src.clone(), at: at(i), w: 64, h: 36, graph: None, window: Some(fps) });
             let f = loop {
-                match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("kein Bild") {
+                match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("no frame") {
                     Done::Frame { key: k, frame, .. } if k == key => break frame,
                     Done::Error(e) | Done::FrameFailed { error: e, .. } => panic!("{e}"),
                     _ => other += 1,
                 }
             };
             let one = cl_media::decode_frame(&src, at(i), 64, 36).unwrap();
-            assert!(one.data == f.data, "Bild {i} weicht ab");
+            assert!(one.data == f.data, "frame {i} differs");
         }
         assert_eq!(other, 0);
     }
@@ -1326,13 +1326,13 @@ mod tests {
         let ms = std::time::Duration::from_millis;
         assert!(bg_may_start(0, ms(0)));
         assert!(!bg_may_start(2, ms(100)));
-        assert!(bg_may_start(2, ms(1500)), "kein Verhungern beim Dauer-Scrubben");
+        assert!(bg_may_start(2, ms(1500)), "no starving during continuous scrubbing");
     }
 
-    /// Wartet auf das Bild mit Schlüssel `key`; zählt andere gelieferte Player-Bilder.
+    /// Waits for the frame with key `key`; counts other delivered player frames.
     fn wait_frame(d: &Decoder, key: u64, other: &mut usize) -> std::time::Instant {
         loop {
-            match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("kein Bild") {
+            match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("no frame") {
                 Done::Frame { key: k, .. } if k == key => return std::time::Instant::now(),
                 Done::Frame { .. } => *other += 1,
                 Done::Error(e) | Done::FrameFailed { error: e, .. } => panic!("{e}"),
@@ -1358,8 +1358,8 @@ mod tests {
         Job::Frame { clip, key, path: path.to_path_buf(), at: Time::from_secs_f64(at), w: 696, h: 392, graph: None, window: None }
     }
 
-    /// Mess-Test (von Hand): Scrubben – 20 Aufträge im Abstand von 15 ms an verschiedenen
-    /// Stellen; gemessen wird die Zeit vom letzten Auftrag bis zu seinem Bild.
+    /// Measurement test (manual): scrubbing – 20 jobs 15 ms apart at different
+    /// places; measured is the time from the last job to its frame.
     /// `cargo test --release -p cl-app -- --ignored --nocapture measure_scrub`
     #[test]
     #[ignore]
@@ -1389,8 +1389,8 @@ mod tests {
         }
     }
 
-    /// Mess-Test (von Hand): Einzelbild ohne und während eines Proxy-Baus (der Bau hält an,
-    /// sobald der Player Bilder anfordert).
+    /// Measurement test (manual): single frame without and during a proxy build (the build pauses
+    /// as soon as the player requests frames).
     /// `cargo test --release -p cl-app -- --ignored --nocapture measure_still_during_proxy`
     #[test]
     #[ignore]
@@ -1407,7 +1407,7 @@ mod tests {
                 let t = std::time::Instant::now();
                 d.send(frame_job(clip, key, &path, 60.0 + i as f64 * 97.3 + key as f64 * 0.01));
                 ms.push(wait_frame(&d, key, &mut 0).duration_since(t).as_millis());
-                // Abstand wie beim Klicken
+                // spacing like clicking
                 std::thread::sleep(std::time::Duration::from_millis(1200));
             }
             ms.sort();
@@ -1437,11 +1437,11 @@ mod tests {
         for k in 0..5 {
             c.put(k, frame());
         }
-        // Obergrenze: älteste fallen heraus
+        // limit: oldest drop out
         assert!(c.bytes <= 1000 && c.get(0).is_none() && c.get(4).is_some());
         c.set_generation(0);
         assert!(c.get(4).is_some());
-        // Projektwechsel: alles frei
+        // project change: everything freed
         c.set_generation(1);
         assert_eq!((c.bytes, c.map.len(), c.order.len()), (0, 0, 0));
         assert_eq!(c.budget, 1000);
