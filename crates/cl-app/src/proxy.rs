@@ -601,8 +601,10 @@ pub struct ProxyState {
     /// Setting for which `known` holds: (height, project frame rate)
     key: Option<(u32, Rational)>,
     scan: Option<std::sync::mpsc::Receiver<Scan>>,
-    /// last search: time and number of media
-    scanned: Option<(Instant, usize)>,
+    /// last search: time, number of media, project revision
+    scanned: Option<(Instant, usize, u64)>,
+    /// last search found nothing to build
+    idle: bool,
     /// built / total in this round (display „Proxys 3 / 40“)
     pub done: usize,
     pub total: usize,
@@ -630,9 +632,13 @@ impl ProxyState {
     }
 }
 
-/// New search due? After 2 s or when the number of media changes.
-pub fn scan_due(scanned: Option<(Instant, usize)>, media: usize) -> bool {
-    scanned.is_none_or(|(t, n)| n != media || t.elapsed() >= Duration::from_secs(2))
+/// New search due? At once when the number of media changes; after 2 s while something is missing
+/// or the project changed (e.g. relinked file); otherwise (nothing to do) only every 30 s.
+pub fn scan_due(scanned: Option<(Instant, usize, u64)>, media: usize, rev: u64, idle: bool) -> bool {
+    scanned.is_none_or(|(t, n, r)| {
+        let every = if idle && r == rev { 30 } else { 2 };
+        n != media || t.elapsed() >= Duration::from_secs(every)
+    })
 }
 
 /// Start the next proxy job? Only if something is missing, none is running and it is not paused
@@ -1047,8 +1053,8 @@ impl App {
             },
             None => {
                 let n = self.project.media.len();
-                if scan_due(self.proxies.scanned, n) {
-                    self.proxies.scanned = Some((Instant::now(), n));
+                if scan_due(self.proxies.scanned, n, self.revision, self.proxies.idle) {
+                    self.proxies.scanned = Some((Instant::now(), n, self.revision));
                     // all videos (the player asks for proxies too), built only where it is worth it
                     let media: Vec<(MediaRef, bool)> = self
                         .project
@@ -1088,6 +1094,7 @@ impl App {
         self.proxies.scan = None;
         let (found, missing) = res;
         self.proxies.known.extend(found);
+        self.proxies.idle = missing.is_empty();
         (self.proxies.done, self.proxies.total) = round(self.proxies.done, missing.len());
         if !start_next(missing.len(), self.tasks.running("proxy").is_some(), ProxyState::paused()) {
             return;
@@ -1383,11 +1390,17 @@ mod tests {
 
     #[test]
     fn scan_runs_every_two_seconds_or_on_new_media_and_counts_the_round() {
-        assert!(scan_due(None, 0));
-        let now = Some((Instant::now(), 5));
-        assert!(!scan_due(now, 5));
-        assert!(scan_due(now, 6));
-        assert!(scan_due(Instant::now().checked_sub(Duration::from_secs(3)).map(|t| (t, 5)), 5));
+        assert!(scan_due(None, 0, 0, false));
+        let now = Some((Instant::now(), 5, 1));
+        assert!(!scan_due(now, 5, 1, false));
+        assert!(scan_due(now, 6, 1, false));
+        assert!(scan_due(now, 6, 1, true));
+        let ago = |s| Instant::now().checked_sub(Duration::from_secs(s)).map(|t| (t, 5, 1));
+        assert!(scan_due(ago(3), 5, 1, false));
+        // nothing to do: only every 30 s, unless the project changed (2 s) or media were added (at once)
+        assert!(!scan_due(ago(3), 5, 1, true));
+        assert!(scan_due(ago(3), 5, 2, true));
+        assert!(scan_due(ago(31), 5, 1, true));
         // 3 finished, 7 missing → „Proxys 4 / 10“; nothing missing → round over
         assert_eq!(round(3, 7), (3, 10));
         assert_eq!(round(10, 0), (0, 0));
