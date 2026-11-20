@@ -1,32 +1,32 @@
-//! Proxy in Stücken: Die Quelle wird in gleich lange Stücke ([`PART_SECS`]) zerlegt gebaut, jedes
-//! fertige Stück ist sofort für Einzelbilder und Ströme nutzbar. Ablage je Proxy in einem Ordner
-//! neben der fertigen Datei (`<Proxy-Name>.teile/`): `0007.mp4` (fertig), `0007.<pid>.part.mp4`
-//! (entsteht; erst fertig schreiben, dann umbenennen), `0003-0012.ffconcat` (Liste für einen Strom
-//! über die Stücke 3…11) und `quelle.txt` (Pfad der Quelle, zum Aufräumen nach einer Änderung).
-//! Sind alle Stücke da, werden sie verlustfrei zur gewohnten Ein-Datei-Proxy zusammengefügt.
+//! Proxy in parts: the source is built split into parts of equal length ([`PART_SECS`]); each
+//! finished part is usable at once for single frames and streams. Stored per proxy in a folder
+//! next to the finished file (`<proxy name>.teile/`): `0007.mp4` (finished), `0007.<pid>.part.mp4`
+//! (in progress; write fully first, then rename), `0003-0012.ffconcat` (list for a stream
+//! over parts 3…11) and `quelle.txt` (path of the source, for cleaning up after a change).
+//! Once all parts are there, they are joined losslessly into the usual single-file proxy.
 //!
-//! Bildgenau: Jedes Stück rechnet auf demselben Bildraster wie ein Bau in einem Zug (`-copyts`,
-//! `fps=…:start_time=<Start der Quelle + Stückanfang>`, genau `per` Bilder je Stück). Ein Stück
-//! ohne ein einziges Bild (Video endet vor der Dateilänge) ist eine leere Datei.
+//! Frame-exact: each part computes on the same frame grid as a build in one go (`-copyts`,
+//! `fps=…:start_time=<source start + part start>`, exactly `per` frames per part). A part
+//! without a single frame (video ends before the file length) is an empty file.
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use cl_core::Rational;
 
-/// Stücklänge: gemessen (1080p60 → 540p30, NVENC, Rechner ausgelastet) braucht das erste Stück
-/// bei 10 s 1,3 s (5 s: 0,9 s; 20 s: 2,4 s), der ganze Bau 10,2 s je Minute Quelle (5 s: 13,9 s;
-/// 20 s: 8,3 s; in einem Zug 9,5 s) – 10 s hält das Ziel „erstes Stück < 2 s“ bei wenig Aufwand je Start.
+/// Part length: measured (1080p60 → 540p30, NVENC, computer under load) the first part takes
+/// 1.3 s at 10 s (5 s: 0.9 s; 20 s: 2.4 s), the whole build 10.2 s per minute of source (5 s: 13.9 s;
+/// 20 s: 8.3 s; in one go 9.5 s) – 10 s meets the goal "first part < 2 s" with little cost per start.
 pub const PART_SECS: f64 = 10.0;
-/// So oft darf ein Stück scheitern, dann wird es übersprungen (dort bleibt das Original)
+/// A part may fail this often, then it is skipped (the original stays there)
 pub const MAX_FAILS: u8 = 2;
-/// Strom aus Stücken: so lange (Quellsekunden) vor dem Ende der vorhandenen Stücke wird auf das
-/// Original (bzw. weitere Stücke) umgeschaltet – der Ersatzstrom muss vorher anlaufen …
+/// Stream from parts: this long (source seconds) before the end of the available parts it switches to the
+/// original (or further parts) – the replacement stream must start up before …
 pub const SWITCH_MARGIN: f64 = 3.0;
-/// … und vom Original auf Stücke erst, wenn so viel am Stück vorliegt (kein Hin und Her)
+/// … and from the original to parts only when this much is available in one piece (no back and forth)
 pub const SWITCH_AHEAD: f64 = 6.0;
 
-/// Einteilung einer Quelle in Stücke: Bildrate des Proxys, Bilder je Stück, Anzahl.
+/// Division of a source into parts: proxy frame rate, frames per part, count.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Parting {
     pub fps: Rational,
@@ -35,7 +35,7 @@ pub struct Parting {
 }
 
 impl Parting {
-    /// `None`: Dauer oder Bildrate unbekannt (dann wird in einem Zug gebaut)
+    /// `None`: duration or frame rate unknown (then it is built in one go)
     pub fn new(dur: f64, fps: Rational, part_secs: f64) -> Option<Self> {
         let f = fps.as_f64();
         if !(dur.is_finite() && dur > 0.0 && fps.num > 0 && fps.den > 0 && f > 0.0 && part_secs > 0.0) {
@@ -50,22 +50,22 @@ impl Parting {
         frames as f64 * self.fps.den as f64 / self.fps.num as f64
     }
 
-    /// Anfang von Stück `k` (Quellsekunden ab Dateianfang)
+    /// Start of part `k` (source seconds from the file start)
     pub fn start(&self, k: u32) -> f64 {
         self.secs(k as u64 * self.per as u64)
     }
 
-    /// Bildnummer des Proxys bei `t` (abgerundet)
+    /// Proxy frame number at `t` (rounded down)
     fn frame_at(&self, t: f64) -> u64 {
         (t.max(0.0) * self.fps.num as f64 / self.fps.den as f64 + 1e-6).floor() as u64
     }
 
-    /// Stück, in dem `t` liegt (am Ende: das letzte)
+    /// Part in which `t` lies (at the end: the last)
     pub fn part_of(&self, t: f64) -> u32 {
         ((self.frame_at(t) / self.per as u64) as u32).min(self.count.saturating_sub(1))
     }
 
-    /// Stücke, die den Quellbereich `[a, b)` berühren
+    /// Parts touching the source range `[a, b)`
     pub fn parts_in(&self, a: f64, b: f64) -> Range<u32> {
         if b <= a || self.count == 0 {
             return 0..0;
@@ -74,33 +74,33 @@ impl Parting {
     }
 }
 
-/// Dateiname eines fertigen Stücks im Stück-Ordner
+/// File name of a finished part in the parts folder
 pub fn part_name(k: u32) -> String {
     format!("{k:04}.mp4")
 }
 
-/// Zwischendatei, in die FFmpeg schreibt, bevor sie zu `out` umbenannt wird. Mit Prozessnummer:
-/// zwei Cutline-Fenster mit derselben Quelle schreiben sonst in dieselbe Datei, und wer zuerst
-/// umbenennt, legt eine kaputte als fertig ab (`0007.mp4` → `0007.<pid>.part.mp4`).
+/// Temp file FFmpeg writes to before it is renamed to `out`. With process id:
+/// otherwise two Cutline windows with the same source write to the same file, and whoever renames
+/// first stores a broken one as finished (`0007.mp4` → `0007.<pid>.part.mp4`).
 pub fn tmp_of(out: &Path) -> PathBuf {
     out.with_extension(format!("{}.part.mp4", std::process::id()))
 }
 
-/// Stück-Ordner eines Proxys (`…/abc-540-30_1fps.mp4` → `…/abc-540-30_1fps.teile`)
+/// Parts folder of a proxy (`…/abc-540-30_1fps.mp4` → `…/abc-540-30_1fps.teile`)
 pub fn parts_dir(out: &Path) -> PathBuf {
     out.with_extension("teile")
 }
 
-/// Fertige Stücke im Ordner (je Stück: Datei vorhanden; leere Datei = Stück ohne Bild)
+/// Finished parts in the folder (per part: file present; empty file = part without a frame)
 pub fn scan_ready(dir: &Path, count: u32) -> Vec<bool> {
     (0..count).map(|k| dir.join(part_name(k)).is_file()).collect()
 }
 
-/// Reste vom letzten Lauf: unfertige Dateien (`.part.mp4`, auch nach hartem Beenden), Strom-Listen
-/// und Stück-Ordner, deren Proxy schon zusammengefügt ist. Fertige Stücke bleiben.
-/// `.part` eines zweiten, laufenden Fensters zu löschen ist unschädlich: unter Windows scheitert es
-/// (FFmpeg hält die Datei offen), unter Unix scheitert danach dessen Umbenennen – das Stück gilt
-/// dort als gescheitert, eine kaputte Datei entsteht nie.
+/// Leftovers of the last run: unfinished files (`.part.mp4`, also after a hard exit), stream lists
+/// and parts folders whose proxy is already joined. Finished parts stay.
+/// Deleting the `.part` of a second, running window is harmless: on Windows it fails
+/// (FFmpeg keeps the file open), on Unix that window's rename fails afterwards – the part counts
+/// as failed there, a broken file never comes about.
 pub fn cleanup(dir: &Path) {
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for e in rd.flatten() {
@@ -123,8 +123,8 @@ pub fn cleanup(dir: &Path) {
     }
 }
 
-/// Stück-Ordner derselben Quelle aus einer älteren Fassung der Datei (anderer Hash) entfernen;
-/// Ordner derselben Fassung in anderer Höhe/Bildrate bleiben (Einstellung kann zurückwechseln).
+/// Remove parts folders of the same source from an older version of the file (other hash);
+/// folders of the same version at another height/frame rate stay (the setting can switch back).
 pub fn remove_stale(dir: &Path, src: &Path, keep: &Path) {
     let want = src.to_string_lossy();
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
@@ -133,7 +133,7 @@ pub fn remove_stale(dir: &Path, src: &Path, keep: &Path) {
             continue;
         }
         let same_src = std::fs::read_to_string(p.join("quelle.txt")).is_ok_and(|s| s.trim() == want);
-        // derselbe Hash-Teil des Namens = dieselbe Dateifassung (nur andere Höhe/Bildrate): bleibt
+        // same hash part of the name = same file version (only other height/frame rate): stays
         let same_hash = |a: &Path, b: &Path| {
             let h = |p: &Path| p.file_name().map(|n| n.to_string_lossy().chars().take(16).collect::<String>());
             h(a) == h(b)
@@ -144,8 +144,8 @@ pub fn remove_stale(dir: &Path, src: &Path, keep: &Path) {
     }
 }
 
-/// Liste für den concat-Leser über die Stücke `first..end` (relative Namen: im selben Ordner,
-/// sicher ohne `-safe 0`). Leere Stücke (ohne Bild) fehlen. Wird nur einmal geschrieben.
+/// List for the concat reader over parts `first..end` (relative names: in the same folder,
+/// safe without `-safe 0`). Empty parts (without a frame) are left out. Written only once.
 pub fn concat_list(dir: &Path, first: u32, end: u32) -> std::io::Result<PathBuf> {
     let path = dir.join(format!("{first:04}-{end:04}.ffconcat"));
     if path.is_file() {
@@ -163,7 +163,7 @@ pub fn concat_list(dir: &Path, first: u32, end: u32) -> std::io::Result<PathBuf>
     if !any {
         return Err(std::io::Error::other("keine Bilder"));
     }
-    // erst fertig schreiben, dann umbenennen (ein zweiter Schreiber schreibt dasselbe)
+    // write fully first, then rename (a second writer writes the same)
     let tmp = dir.join(format!("{first:04}-{end:04}.{}.tmp", std::process::id()));
     std::fs::write(&tmp, s)?;
     if std::fs::rename(&tmp, &path).is_err() {
@@ -176,9 +176,9 @@ pub fn concat_list(dir: &Path, first: u32, end: u32) -> std::io::Result<PathBuf>
     }
 }
 
-/// Einzelbild an Quellzeit `t` aus einem Stück: FFmpeg liefert das erste Bild ab `-ss`, also das
-/// Proxybild `ceil(t·fps)`; Ergebnis (Stück, Zeit im Stück – ein halbes Bild davor, damit Rundung
-/// das Bild nicht verwirft). `None` hinter dem letzten Bild.
+/// Single frame at source time `t` from a part: FFmpeg delivers the first frame from `-ss`, i.e. the
+/// proxy frame `ceil(t·fps)`; result (part, time in the part – half a frame before, so rounding
+/// does not drop the frame). `None` past the last frame.
 pub fn still_part(pt: &Parting, t: f64) -> Option<(u32, f64)> {
     let j = (t.max(0.0) * pt.fps.num as f64 / pt.fps.den as f64 - 1e-6).ceil().max(0.0) as u64;
     let k = (j / pt.per as u64) as u32;
@@ -189,22 +189,22 @@ pub fn still_part(pt: &Parting, t: f64) -> Option<(u32, f64)> {
     Some((k, rel.max(0.0)))
 }
 
-/// Woher ein Strom kommt (Teil des Stromschlüssels: ein Wechsel öffnet über den Ersatzstrom-Weg
-/// des Player-Kerns einen neuen Strom, der erst übernimmt, wenn er nicht hinter dem alten liegt).
+/// Where a stream comes from (part of the stream key: a change opens a new stream via the replacement
+/// path of the player core, which only takes over when it is not behind the old one).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Pick {
-    /// wie bisher: fertiger Proxy, sonst Original (Medien ohne Stück-Bau)
+    /// as before: finished proxy, otherwise original (media without part build)
     Whole,
-    /// Original (Stücke fehlen), gewählt an Quellzeit `since_ms`
+    /// Original (parts missing), chosen at source time `since_ms`
     Original { since_ms: i64 },
-    /// fertiger, zusammengefügter Proxy
+    /// finished, joined proxy
     Full,
-    /// Stücke `first..end`
+    /// Parts `first..end`
     Parts { first: u32, end: u32 },
 }
 
 impl Pick {
-    /// Anteil am Stromschlüssel: „wie bisher“ und Original öffnen dieselbe Datei (0 = Schlüssel unverändert)
+    /// Share in the stream key: `Whole` and original open the same file (0 = key unchanged)
     pub fn tag(self) -> u64 {
         match self {
             Pick::Whole | Pick::Original { .. } => 0,
@@ -214,13 +214,13 @@ impl Pick {
     }
 }
 
-/// Quelle eines Stroms ab Quellzeit `p` (Ende des Clip-Ausschnitts `clip_end`), mit der bisherigen
-/// Wahl `prev` derselben Ebene. Regeln (kein Hin und Her):
-/// - Stücke laufen weiter, solange mehr als `margin` vor ihrem Ende liegt oder sie bis zum Clipende reichen;
-/// - kurz vor dem Ende: weiter mit den inzwischen fertigen Stücken, sonst Original;
-/// - vom Original auf Stücke frühestens [`SWITCH_AHEAD`] nach dem Wechsel aufs Original und nur,
-///   wenn mindestens so viel (bzw. 2 × `margin`) am Stück vorliegt;
-/// - neuer Strom: Stücke, wenn sie über `margin` hinaus reichen.
+/// Source of a stream from source time `p` (end of the clip section `clip_end`), with the previous
+/// choice `prev` of the same layer. Rules (no back and forth):
+/// - parts keep running while more than `margin` lies before their end or they reach the clip end;
+/// - shortly before the end: continue with the parts finished meanwhile, otherwise original;
+/// - from original to parts at the earliest [`SWITCH_AHEAD`] after the switch to the original and only
+///   when at least that much (or 2 × `margin`) is available in one piece;
+/// - new stream: parts, if they reach beyond `margin`.
 pub fn choose_stream(prev: Option<Pick>, ready: &[bool], pt: &Parting, p: f64, clip_end: f64, margin: f64) -> Pick {
     let k = pt.part_of(p);
     let is_ready = |i: u32| ready.get(i as usize).copied().unwrap_or(false);
@@ -246,7 +246,7 @@ pub fn choose_stream(prev: Option<Pick>, ready: &[bool], pt: &Parting, p: f64, c
         Some(Pick::Original { since_ms }) => {
             let since = since_ms as f64 / 1000.0;
             if p + 1e-3 < since {
-                fresh(margin) // zurückgesprungen: neu wählen
+                fresh(margin) // jumped back: choose anew
             } else if p - since >= SWITCH_AHEAD {
                 match fresh(SWITCH_AHEAD.max(2.0 * margin)) {
                     Pick::Parts { first, end } => Pick::Parts { first, end },
@@ -260,8 +260,8 @@ pub fn choose_stream(prev: Option<Pick>, ready: &[bool], pt: &Parting, p: f64, c
     }
 }
 
-/// Wo die Arbeit hin soll (Quellsekunden): Playhead-Stelle mit Ende des Clip-Ausschnitts (nur
-/// vorwärts abgespielte Clips), sichtbare und im Projekt benutzte Bereiche.
+/// Where the work should go (source seconds): playhead place with end of the clip section (only
+/// clips played forwards), visible and in the project used ranges.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Focus {
     pub at: Option<(f64, f64)>,
@@ -269,9 +269,9 @@ pub struct Focus {
     pub used: Vec<(f64, f64)>,
 }
 
-/// Nächstes Stück: das am Playhead, dann vorwärts bis zum Ende des Clip-Ausschnitts, dann
-/// sichtbare, dann im Projekt benutzte Bereiche, dann der Rest (ab dem Playhead). Wird nach jedem
-/// Stück neu gefragt – springt der Playhead, gilt die neue Stelle, das laufende Stück wird fertig.
+/// Next part: the one at the playhead, then forwards to the end of the clip section, then
+/// visible, then ranges used in the project, then the rest (from the playhead). Asked again after each
+/// part – if the playhead jumps, the new place applies, the running part is finished.
 pub fn next_part(pt: &Parting, skip: impl Fn(u32) -> bool, f: &Focus) -> Option<u32> {
     let free = |r: Range<u32>| r.into_iter().find(|i| *i < pt.count && !skip(*i));
     if let Some((t, end)) = f.at {
@@ -289,7 +289,7 @@ pub fn next_part(pt: &Parting, skip: impl Fn(u32) -> bool, f: &Focus) -> Option<
     free(k..pt.count).or_else(|| free(0..k))
 }
 
-/// Fertige Bereiche (Quellsekunden), benachbarte zusammengefasst
+/// Finished ranges (source seconds), neighbours merged
 pub fn ready_ranges(pt: &Parting, ready: &[bool], dur: f64) -> Vec<(f64, f64)> {
     let mut out: Vec<(f64, f64)> = Vec::new();
     for k in (0..pt.count).filter(|k| ready.get(*k as usize).copied().unwrap_or(false)) {
@@ -302,9 +302,9 @@ pub fn ready_ranges(pt: &Parting, ready: &[bool], dur: f64) -> Vec<(f64, f64)> {
     out
 }
 
-/// Anteile der Clipbreite (0…1), deren Quelle schon als Stück vorliegt. Der Clip zeigt die Quelle
-/// `[src_in, src_in + span)` (Tempo ist in `span` enthalten), rückwärts von rechts nach links.
-/// shortcut: Tempo-Kurven werden linear umgerechnet, genauer erst, wenn sie häufig vorkommen
+/// Shares of the clip width (0…1) whose source is already available as a part. The clip shows the source
+/// `[src_in, src_in + span)` (speed is included in `span`), reversed from right to left.
+/// shortcut: speed curves are converted linearly, more exactly only once they are common
 pub fn clip_coverage(ranges: &[(f64, f64)], src_in: f64, span: f64, reverse: bool) -> Vec<(f32, f32)> {
     if span <= 0.0 {
         return Vec::new();
@@ -333,23 +333,23 @@ mod tests {
         assert_eq!((p.per, p.count), (300, 3));
         assert_eq!((p.start(0), p.start(2), p.start(3)), (0.0, 20.0, 30.0));
         assert_eq!((p.part_of(0.0), p.part_of(9.99), p.part_of(10.0), p.part_of(24.9), p.part_of(99.0)), (0, 0, 1, 2, 2));
-        // genau aufgeteilt: kein leeres letztes Stück
+        // divided exactly: no empty last part
         assert_eq!(pt(20.0).count, 2);
-        // ein halbes Bild über dem Raster zählt nicht als eigenes Stück
+        // half a frame above the grid does not count as its own part
         assert_eq!(pt(20.0 + 0.4 / 30.0).count, 2);
         assert_eq!(pt(20.0 + 1.0 / 30.0).count, 3);
-        // NTSC: Stückgrenzen auf dem Bildraster
+        // NTSC: part boundaries on the frame grid
         let n = Parting::new(60.0, Rational::new(30000, 1001), 10.0).unwrap();
         assert_eq!(n.per, 300);
         assert!((n.start(1) - 10.01).abs() < 1e-9);
-        // sehr kurz: ein Stück
+        // very short: one part
         assert_eq!(pt(0.01).count, 1);
-        // unbekannt/kaputt: keine Einteilung
+        // unknown/broken: no division
         assert_eq!(Parting::new(0.0, Rational::new(30, 1), 10.0), None);
         assert_eq!(Parting::new(f64::NAN, Rational::new(30, 1), 10.0), None);
         assert_eq!(Parting::new(10.0, Rational::new(0, 1), 10.0), None);
         assert_eq!(Parting::new(10.0, Rational::new(30, 0), 10.0), None);
-        // Bereiche
+        // ranges
         assert_eq!(p.parts_in(5.0, 15.0), 0..2);
         assert_eq!(p.parts_in(10.0, 20.0), 1..2);
         assert_eq!(p.parts_in(3.0, 3.0), 0..0);
@@ -358,39 +358,39 @@ mod tests {
     #[test]
     fn still_comes_from_the_part_ffmpeg_would_pick() {
         let p = pt(25.0);
-        // mitten im Stück: Bild 30 (1,0 s) → Stück 0, ein halbes Bild davor
+        // in the middle of the part: frame 30 (1.0 s) → part 0, half a frame before
         let (k, rel) = still_part(&p, 1.0).unwrap();
         assert_eq!(k, 0);
         assert!((rel - (1.0 - 1.0 / 60.0)).abs() < 1e-9);
-        // knapp vor der Naht: das erste Bild ab t ist das erste des nächsten Stücks
+        // just before the seam: the first frame from t is the first of the next part
         let (k, rel) = still_part(&p, 9.99).unwrap();
         assert_eq!((k, rel), (1, 0.0));
-        // hinter dem letzten Stück: keins
+        // past the last part: none
         assert_eq!(still_part(&p, 30.0), None);
     }
 
     #[test]
     fn order_playhead_then_forward_then_visible_then_rest() {
-        let p = pt(100.0); // 10 Stücke
+        let p = pt(100.0); // 10 parts
         let none = |_| false;
         let f = |at: Option<(f64, f64)>, vis: &[(f64, f64)], used: &[(f64, f64)]| Focus { at, visible: vis.to_vec(), used: used.to_vec() };
-        // Playhead bei 42 s, Clip bis 65 s → 4, dann 5, 6
+        // playhead at 42 s, clip up to 65 s → 4, then 5, 6
         let focus = f(Some((42.0, 65.0)), &[(80.0, 90.0)], &[(10.0, 20.0)]);
         assert_eq!(next_part(&p, none, &focus), Some(4));
         assert_eq!(next_part(&p, |i| i <= 4, &focus), Some(5));
-        assert_eq!(next_part(&p, |i| (4..=6).contains(&i), &focus), Some(8), "dann sichtbar");
-        assert_eq!(next_part(&p, |i| (4..=6).contains(&i) || i == 8, &focus), Some(1), "dann benutzt");
-        // dann der Rest ab dem Playhead, zuletzt der Anfang
+        assert_eq!(next_part(&p, |i| (4..=6).contains(&i), &focus), Some(8), "then visible");
+        assert_eq!(next_part(&p, |i| (4..=6).contains(&i) || i == 8, &focus), Some(1), "then used");
+        // then the rest from the playhead, the start last
         let done = |i| [1, 4, 5, 6, 8].contains(&i);
         assert_eq!(next_part(&p, done, &focus), Some(7));
         assert_eq!(next_part(&p, |i| done(i) || i >= 7, &focus), Some(0));
         assert_eq!(next_part(&p, |_| true, &focus), None);
-        // Sprung: neu geplant ab der neuen Stelle
+        // jump: replanned from the new place
         assert_eq!(next_part(&p, |i| i == 4, &f(Some((95.0, 100.0)), &[], &[])), Some(9));
-        // ohne Playhead im Medium: sichtbare zuerst, sonst von vorn
+        // without playhead in the medium: visible ones first, otherwise from the start
         assert_eq!(next_part(&p, none, &f(None, &[(55.0, 58.0)], &[])), Some(5));
         assert_eq!(next_part(&p, none, &Focus::default()), Some(0));
-        // gescheiterte Stücke werden übersprungen
+        // failed parts are skipped
         assert_eq!(next_part(&p, |i| i == 0, &Focus::default()), Some(1));
     }
 
@@ -400,26 +400,26 @@ mod tests {
         let mut ready = vec![false; 10];
         let m = SWITCH_MARGIN;
         let orig = |s: f64| Pick::Original { since_ms: (s * 1000.0) as i64 };
-        // nichts da: Original
+        // nothing there: original
         assert_eq!(choose_stream(None, &ready, &p, 12.0, 100.0, m), orig(12.0));
-        // Stücke 1–3 fertig: neuer Strom bei 12 s läuft aus ihnen bis 40 s
+        // parts 1–3 finished: a new stream at 12 s runs from them up to 40 s
         ready[1..4].fill(true);
         let s = choose_stream(None, &ready, &p, 12.0, 100.0, m);
         assert_eq!(s, Pick::Parts { first: 1, end: 4 });
-        // weiter so, solange genug vor dem Ende liegt, auch wenn neue Stücke dazukommen
+        // keep going while enough lies before the end, even when new parts are added
         ready[4] = true;
         assert_eq!(choose_stream(Some(s), &ready, &p, 30.0, 100.0, m), s);
-        // kurz vor dem Ende: mit den inzwischen fertigen Stücken weiter
+        // shortly before the end: continue with the parts finished meanwhile
         let s2 = choose_stream(Some(s), &ready, &p, 37.5, 100.0, m);
         assert_eq!(s2, Pick::Parts { first: 3, end: 5 });
-        // kurz vor deren Ende und nichts dazu: Original …
+        // shortly before their end and nothing added: original …
         let o = choose_stream(Some(s2), &ready, &p, 47.5, 100.0, m);
         assert_eq!(o, orig(47.5));
-        // … und nicht gleich zurück, nur weil das nächste Stück knapp danach fertig wurde
+        // … and not straight back just because the next part finished right after
         ready[5] = true;
         assert_eq!(choose_stream(Some(o), &ready, &p, 48.0, 100.0, m), o);
         assert_eq!(choose_stream(Some(o), &ready, &p, 52.0, 100.0, m), o);
-        // nach SWITCH_AHEAD mit genug Vorrat: zurück auf Stücke
+        // after SWITCH_AHEAD with enough supply: back to parts
         assert_eq!(choose_stream(Some(o), &ready, &p, 53.5, 100.0, m), Pick::Parts { first: 5, end: 6 });
     }
 
@@ -429,23 +429,23 @@ mod tests {
         let mut ready = vec![false; 10];
         ready[5] = true;
         let m = SWITCH_MARGIN;
-        // vom Original zurück auf Stücke erst ab SWITCH_AHEAD Vorrat
+        // from the original back to parts only from SWITCH_AHEAD supply
         let long_ago = Pick::Original { since_ms: 40_000 };
         assert_eq!(choose_stream(Some(long_ago), &ready, &p, 55.0, 100.0, m), long_ago);
         assert_eq!(choose_stream(Some(long_ago), &ready, &p, 53.0, 100.0, m), Pick::Parts { first: 5, end: 6 });
-        // zurückgesprungen hinter den Wechsel: gleich neu wählen
+        // jumped back behind the switch: choose anew at once
         assert_eq!(choose_stream(Some(Pick::Original { since_ms: 70_000 }), &ready, &p, 51.0, 100.0, m), Pick::Parts { first: 5, end: 6 });
-        // Clip endet im vorhandenen Bereich: bis zum Schluss aus Stücken, kein Umschalten
+        // clip ends in the available range: from parts until the end, no switching
         let s = choose_stream(None, &ready, &p, 58.0, 59.5, m);
         assert_eq!(s, Pick::Parts { first: 5, end: 6 });
         assert_eq!(choose_stream(Some(s), &ready, &p, 59.4, 59.5, m), s);
-        // letztes Stück der Quelle: reicht immer bis zum Ende
+        // last part of the source: always reaches the end
         ready[9] = true;
         assert_eq!(choose_stream(None, &ready, &p, 99.0, 100.0, m), Pick::Parts { first: 9, end: 10 });
-        // Sprung aus dem Bereich heraus: neu wählen
+        // jump out of the range: choose anew
         let far = choose_stream(Some(s), &ready, &p, 20.0, 100.0, m);
         assert_eq!(far, Pick::Original { since_ms: 20_000 });
-        // Schlüssel: Original und „wie bisher“ gleich, alles andere verschieden
+        // key: original and `Whole` equal, everything else different
         assert_eq!(Pick::Original { since_ms: 5 }.tag(), Pick::Whole.tag());
         assert_ne!(Pick::Full.tag(), 0);
         assert_ne!(Pick::Parts { first: 1, end: 4 }.tag(), Pick::Parts { first: 1, end: 5 }.tag());
@@ -461,15 +461,15 @@ mod tests {
         ready[9] = true;
         let r = ready_ranges(&p, &ready, 95.0);
         assert_eq!(r, vec![(20.0, 40.0), (90.0, 95.0)]);
-        // Clip zeigt 10–50 s: 20–40 s ist die Mitte
+        // clip shows 10–50 s: 20–40 s is the middle
         assert_eq!(clip_coverage(&r, 10.0, 40.0, false), vec![(0.25, 0.75)]);
-        // getrimmt auf 30–35 s: ganz
+        // trimmed to 30–35 s: whole
         assert_eq!(clip_coverage(&r, 30.0, 5.0, false), vec![(0.0, 1.0)]);
-        // Tempo 2: 10 s Clip zeigen 20 s Quelle (span = 20)
+        // speed 2: a 10 s clip shows 20 s of source (span = 20)
         assert_eq!(clip_coverage(&r, 30.0, 20.0, false), vec![(0.0, 0.5)]);
-        // rückwärts: von rechts
+        // reverse: from the right
         assert_eq!(clip_coverage(&r, 30.0, 20.0, true), vec![(0.5, 1.0)]);
-        // nichts davon im Ausschnitt; leerer Clip
+        // none of it in the section; empty clip
         assert!(clip_coverage(&r, 50.0, 10.0, false).is_empty());
         assert!(clip_coverage(&r, 50.0, 0.0, false).is_empty());
     }
@@ -489,11 +489,11 @@ mod tests {
         touch(a.join("0000-0001.ffconcat"));
         touch(dir.join("aaaaaaaaaaaaaaaa-540.part.mp4"));
         touch(dir.join("cccccccccccccccc-540.mp4"));
-        // b ist zusammengefügt (fertige Datei da), Ordner blieb (Windows: Datei war offen)
+        // b is joined (finished file there), folder stayed (Windows: file was open)
         touch(dir.join("bbbbbbbbbbbbbbbb-540.mp4"));
         touch(b.join("0000.mp4"));
         cleanup(dir);
-        assert!(a.join("0000.mp4").is_file(), "fertige Stücke bleiben");
+        assert!(a.join("0000.mp4").is_file(), "finished parts stay");
         assert!(!tmp_of(&a.join(part_name(1))).exists() && !a.join("0002.12345.part.mp4").exists() && !a.join("0000-0001.ffconcat").exists());
         assert!(!dir.join("aaaaaaaaaaaaaaaa-540.part.mp4").exists());
         assert!(!b.exists());
@@ -501,7 +501,7 @@ mod tests {
         assert_eq!(scan_ready(&a, 3), vec![true, false, false]);
     }
 
-    /// Zwei Fenster mit derselben Quelle: verschiedene Zwischendateien je Prozess, dieselbe fertige
+    /// Two windows with the same source: different temp files per process, the same finished
     #[test]
     fn unfinished_file_names_differ_per_process() {
         let out = Path::new("t").join(part_name(7));
@@ -527,7 +527,7 @@ mod tests {
         let same_hash = mk("2222222222222222-540-30_1fps.teile", src);
         let foreign = mk("3333333333333333-540.teile", Path::new("y/anders.mp4"));
         remove_stale(dir, src, &dir.join("2222222222222222-720.teile"));
-        assert!(!old.exists(), "alter Hash weg");
+        assert!(!old.exists(), "old hash gone");
         assert!(other_h.exists() && same_hash.exists() && foreign.exists());
     }
 
@@ -540,7 +540,7 @@ mod tests {
         let l = concat_list(dir, 0, 2).unwrap();
         assert_eq!(std::fs::read_to_string(&l).unwrap(), "ffconcat version 1.0\nfile 0000.mp4\n");
         assert_eq!(concat_list(dir, 0, 2).unwrap(), l);
-        assert!(concat_list(dir, 1, 2).is_err(), "nur leere Stücke");
-        assert!(concat_list(dir, 2, 3).is_err(), "fehlendes Stück");
+        assert!(concat_list(dir, 1, 2).is_err(), "only empty parts");
+        assert!(concat_list(dir, 2, 3).is_err(), "missing part");
     }
 }
