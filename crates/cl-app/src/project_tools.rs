@@ -102,12 +102,29 @@ pub fn find_by_name(root: &Path, names: &[String], depth: usize) -> Vec<(String,
     found
 }
 
+/// Relink only unambiguous hits: the file name occurs once among the missing files and once in
+/// the searched folder. Everything else stays missing rather than pointing at the wrong footage.
+pub fn unique_relinks(missing: &[(cl_core::MediaId, PathBuf)], found: &[(String, PathBuf)]) -> Vec<(cl_core::MediaId, PathBuf)> {
+    let name = |p: &Path| p.file_name().map(|n| n.to_string_lossy().to_lowercase());
+    missing
+        .iter()
+        .filter_map(|(id, p)| {
+            let n = name(p)?;
+            let mut hits = found.iter().filter(|(_, f)| name(f).as_ref() == Some(&n));
+            let hit = hits.next()?;
+            // several media on the same path are one file and may share the hit
+            let twin = missing.iter().any(|(_, q)| q != p && name(q).as_ref() == Some(&n));
+            (hits.next().is_none() && !twin).then(|| (*id, hit.1.clone()))
+        })
+        .collect()
+}
+
 /// Archive a project: `<target>/<name>/` with `Medien/`, `Schriften/` and the adjusted project.
 pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathBuf, String> {
     let safe: String = p
         .name
         .chars()
-        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+        .map(|c| if "\/:*?\"<>|".contains(c) { '_' } else { c })
         .collect();
     let dir = (1..)
         .map(|i| {
@@ -328,18 +345,9 @@ impl App {
                     .filter_map(|(_, p)| p.file_name().map(|s| s.to_string_lossy().into_owned()))
                     .collect();
                 let found = find_by_name(&dir, &names, 6);
-                let ops: Vec<EditOp> = missing
-                    .iter()
-                    .filter_map(|(id, p)| {
-                        let n = p.file_name()?.to_string_lossy().into_owned();
-                        found
-                            .iter()
-                            .find(|(w, _)| *w == n)
-                            .map(|(_, f)| EditOp::RelinkMedia {
-                                media: *id,
-                                path: f.clone(),
-                            })
-                    })
+                let ops: Vec<EditOp> = unique_relinks(&missing, &found)
+                    .into_iter()
+                    .map(|(media, path)| EditOp::RelinkMedia { media, path })
                     .collect();
                 let n = ops.len();
                 if n > 0 {
@@ -497,5 +505,29 @@ mod tests {
         // Search by name
         let f = find_by_name(&media, &["CLIP.mp4".into()], 3);
         assert_eq!(f.len(), 2);
+    }
+
+    #[test]
+    fn relink_by_folder_skips_ambiguous_names() {
+        let id = |_| cl_core::MediaId::new();
+        let (a, b, c, d) = (id(0), id(1), id(2), id(3));
+        let missing = vec![
+            (a, PathBuf::from("/alt/1/GX010001.MP4")),
+            (b, PathBuf::from("/alt/1/solo.mp4")),
+            (c, PathBuf::from("/alt/1/twin.mp4")),
+            (d, PathBuf::from("/alt/2/twin.mp4")),
+        ];
+        let found: Vec<(String, PathBuf)> = vec![
+            ("GX010001.MP4".into(), "/neu/a/GX010001.MP4".into()),
+            ("GX010001.MP4".into(), "/neu/b/GX010001.MP4".into()),
+            ("solo.mp4".into(), "/neu/SOLO.mp4".into()),
+            ("twin.mp4".into(), "/neu/twin.mp4".into()),
+        ];
+        // two files with one name in the folder, or two missing media with one name: stays missing
+        assert_eq!(unique_relinks(&missing, &found), vec![(b, PathBuf::from("/neu/SOLO.mp4"))]);
+        // the same path used by two media is one file
+        let same = vec![(a, PathBuf::from("/alt/x.mp4")), (b, PathBuf::from("/alt/x.mp4"))];
+        let hit = vec![("x.mp4".to_string(), PathBuf::from("/neu/x.mp4"))];
+        assert_eq!(unique_relinks(&same, &hit).len(), 2);
     }
 }
