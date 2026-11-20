@@ -426,7 +426,7 @@ mod tests {
                 });
             });
         });
-        assert_eq!(h.0, h.1, "langer Name bricht um");
+        assert_eq!(h.0, h.1, "long name wraps");
     }
 
     fn text_track(starts: &[f64]) -> Track {

@@ -51,7 +51,7 @@ fn durations_only_from_the_three_constants() {
 #[test]
 fn no_standard_spinner_and_no_eased_overshoot() {
     for (name, src) in sources() {
-        assert!(!src.contains("Spinner::new"), "{name}: Kreisel statt busy_line/progress_line/skeleton");
+        assert!(!src.contains("Spinner::new"), "{name}: spinner instead of busy_line/progress_line/skeleton");
         assert!(!src.contains("animate_bool_with_time("), "{name}: use theme::fade (one curve)");
     }
 }

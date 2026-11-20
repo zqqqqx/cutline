@@ -1,6 +1,6 @@
 //! Drag files from Explorer directly into the timeline.
 //!
-//! winit 0.30 only reports „file hovers over the window“ and „file dropped“ when dragging
+//! winit 0.30 only reports "file hovers over the window" and "file dropped" when dragging
 //! from outside – without a mouse position. The position therefore comes from the OS (Windows:
 //! `GetCursorPos` relative to the window content); elsewhere there is none, then [`decide`] applies.
 //! Checking (ffprobe) happens in the background as one task; until then the timeline shows
@@ -658,7 +658,7 @@ mod tests {
 
         let p = &app.project;
         assert_eq!(p.media.len(), 3, "no duplicate media entry");
-        assert_eq!(p.timeline.tracks.len(), 2, "neue Tonspur");
+        assert_eq!(p.timeline.tracks.len(), 2, "new audio track");
         let main = &p.timeline.tracks[0];
         let starts: Vec<f64> = main.clips.iter().map(|c| c.start.as_secs_f64()).collect();
         assert_eq!(starts, [0.0, 4.0, 8.0], "video one after another from the drop spot");

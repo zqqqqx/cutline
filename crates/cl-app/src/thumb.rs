@@ -624,7 +624,7 @@ mod tests {
                 let ClipContent::Text(st) = &c.content else { panic!("text layer missing") };
                 let (tw, th) = rough(st);
                 let (x, y) = (c.transform.x, c.transform.y);
-                assert!(x.abs() + tw / 2.0 <= W as f32 / 2.0 - MARGIN + 0.5, "{text} {pos}: x {x}, Breite {tw}");
+                assert!(x.abs() + tw / 2.0 <= W as f32 / 2.0 - MARGIN + 0.5, "{text} {pos}: x {x}, width {tw}");
                 assert!(y.abs() + th / 2.0 <= H as f32 / 2.0 - MARGIN + 0.5, "{text} {pos}: y {y}, height {th}");
                 let side = |v: f32| if v.abs() < 0.5 { 0 } else { v.signum() as i32 };
                 let (col, row) = (pos as i32 % 3 - 1, pos as i32 / 3 - 1);
@@ -733,7 +733,7 @@ mod tests {
         w.rev = 2;
         render(&src, &w, &fonts, None, &work, &b, &stop).unwrap();
         let luma = |p: &Path| rgba(p).pixels().map(|q| q[0] as u64 + q[1] as u64 + q[2] as u64).sum::<u64>() / (W * H) as u64;
-        assert!(luma(&b) + 30 < luma(&a), "alter Stand gespeichert: {} / {}", luma(&a), luma(&b));
+        assert!(luma(&b) + 30 < luma(&a), "old state saved: {} / {}", luma(&a), luma(&b));
         let names: Vec<String> = std::fs::read_dir(&work).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         assert!(names.iter().all(|n| !n.starts_with("frame-1-")) && names.iter().any(|n| n.starts_with("frame-2-")), "{names:?}");
     }
@@ -750,7 +750,7 @@ mod tests {
         let before = (app.revision, app.saved_revision, app.doc.lock().unwrap().can_undo(), app.project.clone());
         let ctx = egui::Context::default();
         app.run_action(&ctx, "quick_thumbnail");
-        assert!(app.thumb.is_some(), "Fenster offen");
+        assert!(app.thumb.is_some(), "window open");
         app.thumb_opts.pos = 0;
         app.thumb_opts.outline = false;
         app.thumb.as_mut().unwrap().text = "Hallo".into();

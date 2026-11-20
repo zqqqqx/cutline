@@ -220,7 +220,7 @@ pub fn select(ctx: &egui::Context, id: &str) {
 }
 
 /// Accent presets: (id, name, color on dark themes, color on the light theme).
-/// Lighter/desaturated on dark areas (saturated colors „glow“ there), all ≥ 3:1 against
+/// Lighter/desaturated on dark areas (saturated colors "glow" there), all ≥ 3:1 against
 /// `bg_card`; „auto“ is the palette's neutral accent.
 pub const ACCENTS: [(&str, &str, Color32, Color32); 8] = [
     ("auto", "Weiß", PALETTES[0].accent, PALETTES[3].accent),
@@ -1272,7 +1272,7 @@ mod tests {
                 assert!(steps < 50);
             }
             for c in chips.iter().filter(|c| c.1 - c.0 <= view - 2.0 * arrow) {
-                assert!(seen.contains(&(c.0 as i32)), "{c:?} nie ganz sichtbar");
+                assert!(seen.contains(&(c.0 as i32)), "{c:?} never fully visible");
             }
             // back to the start, also from odd offsets (mouse wheel)
             for start in [off, 37.0, 111.5] {

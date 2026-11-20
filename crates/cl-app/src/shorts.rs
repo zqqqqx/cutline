@@ -914,14 +914,14 @@ mod tests {
                 assert_eq!((o.settings.width, o.settings.height, o.settings.aspect), (w2, h2, AspectPreset::Ratio(a, b)), "{case}");
                 // frame-filling: covers the area or lies fully within it
                 let r = shown(&o, clip(&o, s.base), Time::ZERO);
-                assert!(if fill { covers(&o, r) } else { inside(&o, r) }, "{case}: Hauptclip {r:?}");
+                assert!(if fill { covers(&o, r) } else { inside(&o, r) }, "{case}: main clip {r:?}");
                 // Zoom and pan: start like the main clip, keyframes in the same ratio
                 let kb = clip(&o, s.kb);
                 let r = shown(&o, kb, Time::ZERO);
-                assert!(if fill { covers(&o, r) } else { inside(&o, r) }, "{case}: Keyframes am Anfang {r:?}");
+                assert!(if fill { covers(&o, r) } else { inside(&o, r) }, "{case}: keyframes at the start {r:?}");
                 let sk = &kb.keyframes.0[&Prop::Scale];
-                assert!((sk[1].v / sk[0].v - 1.2).abs() < 1e-3, "{case}: Zoom {sk:?}");
-                assert!(covers(&o, shown(&o, kb, Time::from_secs_f64(5.0))) || !fill, "{case}: Keyframes am Ende");
+                assert!((sk[1].v / sk[0].v - 1.2).abs() < 1e-3, "{case}: zoom {sk:?}");
+                assert!(covers(&o, shown(&o, kb, Time::from_secs_f64(5.0))) || !fill, "{case}: keyframes at the end");
                 // censoring and crop in source coordinates: unchanged
                 assert_eq!(clip(&o, s.base).fx.censor, clip(&s.p, s.base).fx.censor, "{case}");
                 assert_eq!(clip(&o, s.crop).crop, clip(&s.p, s.crop).crop, "{case}");
@@ -936,26 +936,26 @@ mod tests {
                         assert!(inside(&o, new), "{case}: {name} {new:?}");
                         let (c0, c1) = (center(old), center(new));
                         let same = |a: f32, b: f32| a.abs() < 1.0 || a.signum() == b.signum();
-                        assert!(same(c0.0, c1.0) && same(c0.1, c1.1), "{case}: {name} Ecke {c0:?} → {c1:?}");
+                        assert!(same(c0.0, c1.0) && same(c0.1, c1.1), "{case}: {name} corner {c0:?} → {c1:?}");
                         assert!(((new[2] - new[0]) / (old[2] - old[0]) - ks).abs() < 1e-3, "{case}: {name} size");
                     }
                 }
                 // Split screen: stays side by side (left stays left), size relative to the shorter edge
                 let (l, r) = (shown(&o, clip(&o, s.side[0]), Time::ZERO), shown(&o, clip(&o, s.side[1]), Time::ZERO));
-                assert!(center(l).0 < center(r).0, "{case}: Splitscreen {l:?} {r:?}");
+                assert!(center(l).0 < center(r).0, "{case}: split screen {l:?} {r:?}");
                 assert!(l[2] <= r[0] + 1.0 && inside(&o, l) && inside(&o, r), "{case}: split screen overlaps {l:?} {r:?}");
                 // Text: does not stick out over the edge, top stays top, bottom stays bottom
                 for id in &s.texts {
                     let (c0, c1) = (clip(&s.p, *id), clip(&o, *id));
                     let r = text_rect(&o, c1);
-                    assert!(inside(&o, r), "{case}: Text {r:?} {:?}", c1.content);
+                    assert!(inside(&o, r), "{case}: text {r:?} {:?}", c1.content);
                     assert_eq!(c0.transform.y.signum(), c1.transform.y.signum(), "{case}");
                 }
                 // the filter mask follows the frame-filling content: the left edge moves with it
                 let (m0, m1) = (clip(&s.p, s.fx).fx.mask.unwrap(), clip(&o, s.fx).fx.mask.unwrap());
                 let k = if fill { (w2 as f32 / w as f32).max(h2 as f32 / h as f32) } else { (w2 as f32 / w as f32).min(h2 as f32 / h as f32) };
                 let edge = |m: &Mask, w: u32| (m.cx - m.w / 2.0 - 0.5) * w as f32;
-                assert!((edge(&m1, w2) - k * edge(&m0, w)).abs() < 0.5, "{case}: Maske {m0:?} → {m1:?}");
+                assert!((edge(&m1, w2) - k * edge(&m0, w)).abs() < 0.5, "{case}: mask {m0:?} → {m1:?}");
                 // Fit: muted, blurred, filling copy directly below the main track
                 if fill {
                     assert_eq!(o.timeline.tracks.len(), s.p.timeline.tracks.len(), "{case}");
@@ -969,7 +969,7 @@ mod tests {
                         assert_eq!(b.id, id.derived(BACK_SALT));
                         assert!(b.fx.effects.iter().any(|e| e.id == "blur"), "{case}");
                         assert_eq!((b.start, b.duration, b.speed, &b.fx.censor, b.crop), (c.start, c.duration, c.speed, &c.fx.censor, c.crop));
-                        assert!(covers(&o, shown(&o, b, Time::ZERO)), "{case}: Hintergrund");
+                        assert!(covers(&o, shown(&o, b, Time::ZERO)), "{case}: background");
                     }
                     assert_eq!(bt.clips[0].transition_out, clip(&s.p, s.base).transition_out, "{case}: transition as above");
                 }
@@ -1000,7 +1000,7 @@ mod tests {
         let c = clip(&o, a);
         for (t, fx, _) in &path {
             let r = shown(&o, c, Time::from_secs_f64(*t));
-            assert!(covers(&o, r), "{t}: Balken {r:?}");
+            assert!(covers(&o, r), "{t}: bars {r:?}");
             // point of the person in the new frame: centered
             let x = r[0] + fx * (r[2] - r[0]);
             assert!(x.abs() < 20.0, "{t}: person at {x}");

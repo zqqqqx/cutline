@@ -695,7 +695,7 @@ mod tests {
         assert_eq!(mb_text(0, true), "0,0 MB");
         let total = 100 << 20;
         assert_eq!(progress_text(25 << 20, total, true), "25 % · 25,0 / 100,0 MB");
-        assert_eq!(progress_text((25 << 20) - 1, total, true), "24 % · 25,0 / 100,0 MB", "Prozent abgerundet");
+        assert_eq!(progress_text((25 << 20) - 1, total, true), "24 % · 25,0 / 100,0 MB", "percent rounded down");
         assert_eq!(progress_text(0, total, false), "0 % · 0.0 / 100.0 MB");
         assert_eq!(progress_text(total, total, false), "100 % · 100.0 / 100.0 MB");
         assert_eq!(progress_text(total * 2, total, false), "100 % · 100.0 / 100.0 MB", "never above 100 %");
@@ -721,7 +721,7 @@ mod tests {
         let got: Vec<_> = release_notes(&rel, Version(0, 10, 0)).iter().filter_map(|n| n.version).collect();
         assert_eq!(got, [Version(0, 11, 1), Version(0, 11, 0)]);
         rel.notes = "**Full Changelog**: https://github.com/x/compare/v0.11.0...v0.11.1".into();
-        assert!(release_notes(&rel, Version(0, 11, 0)).is_empty(), "Rohtext statt Liste");
+        assert!(release_notes(&rel, Version(0, 11, 0)).is_empty(), "raw text instead of a list");
         // embedded list: only versions up to our own, newest at the top, without „Unreleased“
         let all = embedded_notes();
         assert!(!all.is_empty());

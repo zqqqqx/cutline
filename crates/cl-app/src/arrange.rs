@@ -219,7 +219,7 @@ mod tests {
                     assert_eq!(geo.len(), n);
                     for ((s, (t, k)), c) in sizes.iter().zip(&geo).zip(cells(a, pw, ph)) {
                         let (r, fx, fy) = shown(pw, ph, *s, t, k);
-                        assert!(near(r, [c[0], c[1], c[0] + c[2], c[1] + c[3]]), "{a:?} {pw}×{ph} Quelle {s:?}: {r:?} statt {c:?}");
+                        assert!(near(r, [c[0], c[1], c[0] + c[2], c[1] + c[3]]), "{a:?} {pw}×{ph} source {s:?}: {r:?} instead of {c:?}");
                         assert!((fx - fy).abs() < 1e-4, "verzerrt");
                         assert_eq!(t.rotation_deg, 0.0);
                         // the crop stays below the limit that `Crop::clamped` enforces
@@ -247,7 +247,7 @@ mod tests {
                         let m = 0.04 * pw.min(ph);
                         let (dx, dy) = if corner % 2 == 0 { (r[0], 0.0) } else { (pw - r[2], 0.0) };
                         let dy = dy + if corner < 2 { r[1] } else { ph - r[3] };
-                        assert!((dx - m).abs() < 0.5 && (dy - m).abs() < 0.5, "Ecke {corner} {pw}×{ph}: {r:?}");
+                        assert!((dx - m).abs() < 0.5 && (dy - m).abs() < 0.5, "corner {corner} {pw}×{ph}: {r:?}");
                     }
                 }
             }

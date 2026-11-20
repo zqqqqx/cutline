@@ -296,7 +296,7 @@ mod tests {
                 let m = 0.04 * f32::min(pw, ph);
                 let right = pw / 2.0 + t.x + w / 2.0;
                 let top = ph / 2.0 + t.y - h / 2.0;
-                assert!((w - 0.12 * pw).abs() < 0.01, "{pw}x{ph} {iw}x{ih}: Breite {w}");
+                assert!((w - 0.12 * pw).abs() < 0.01, "{pw}x{ph} {iw}x{ih}: width {w}");
                 assert!((right - (pw - m)).abs() < 0.01 && (top - m).abs() < 0.01, "{pw}x{ph} {iw}x{ih}");
                 assert_eq!(t.rotation_deg, 0.0);
             }
@@ -330,7 +330,7 @@ mod tests {
         kit.colors = vec![BrandColor { name: "A".into(), rgb: [1, 2, 3] }; 3];
         publish(&ctx, &kit);
         assert_eq!(colors(&ctx).len(), 3);
-        assert!(picker_width(&ctx) > plain + 3.0 * 14.0, "drei Felder daneben");
+        assert!(picker_width(&ctx) > plain + 3.0 * 14.0, "three fields next to it");
     }
 
     fn png(path: &Path, w: u32, h: u32) {
@@ -411,13 +411,13 @@ mod tests {
             }
             let want = |s: &str| brand.then(|| s.to_string());
             let id = app.add_text_at(Time::ZERO, None, None).unwrap();
-            assert_eq!(font(&app, id), want("Textschrift"), "Standardtext, Kit {brand}");
+            assert_eq!(font(&app, id), want("Textschrift"), "default text, kit {brand}");
             let id = app.add_text_at(Time::ZERO, Some(tpl.id), None).unwrap();
-            assert_eq!(font(&app, id), tpl.make().font_family, "Vorlage, Kit {brand}");
+            assert_eq!(font(&app, id), tpl.make().font_family, "template, kit {brand}");
             app.settings.caption_preset = "classic".into();
-            assert_eq!(cap(&app), want("Untertitelschrift"), "Klassisch, Kit {brand}");
+            assert_eq!(cap(&app), want("Untertitelschrift"), "Klassisch, kit {brand}");
             app.settings.caption_preset = other.id.into();
-            assert_eq!(cap(&app), (other.style)().font_family, "{}, Kit {brand}", other.id);
+            assert_eq!(cap(&app), (other.style)().font_family, "{}, kit {brand}", other.id);
         }
     }
 }

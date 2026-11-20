@@ -492,7 +492,7 @@ mod tests {
             .all(|m| m.path.starts_with(out.join("Medien")) && m.path.is_file()));
         assert_ne!(
             back.media[0].path, back.media[1].path,
-            "gleiche Namen bleiben getrennt"
+            "same names stay separate"
         );
         // Search by name
         let f = find_by_name(&media, &["CLIP.mp4".into()], 3);

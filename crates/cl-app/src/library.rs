@@ -1040,7 +1040,7 @@ mod tests {
         assert_eq!(v, keys(&["fx:c", "fx:a", "fx:b"]));
         let mut v = all.clone();
         lib.arrange("effect", "Favoriten", "x", &mut v, id);
-        assert_eq!(v, all, "Suche: normale Reihenfolge");
+        assert_eq!(v, all, "search: normal order");
         // a removed and re-added favorite goes to the end
         lib.toggle_favorite("fx:c");
         lib.toggle_favorite("fx:c");

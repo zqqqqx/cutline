@@ -1043,11 +1043,11 @@ mod tests {
         use super::SlotGlide;
         let g = SlotGlide { from: vec2(0.0, 0.0), to: vec2(100.0, 80.0), t0: 1.0 };
         if crate::theme::animations_on() {
-            assert_eq!(g.at(1.0), vec2(0.0, 0.0), "Anfang");
+            assert_eq!(g.at(1.0), vec2(0.0, 0.0), "start");
             let mid = g.at(1.0 + crate::theme::MOTION as f64 / 2.0);
-            assert!(mid.x > 50.0 && mid.x < 100.0 && mid.y > 40.0 && mid.y < 80.0, "Mitte (auslaufend): {mid:?}");
+            assert!(mid.x > 50.0 && mid.x < 100.0 && mid.y > 40.0 && mid.y < 80.0, "middle (easing out): {mid:?}");
         }
-        assert_eq!(g.at(1.0 + crate::theme::MOTION as f64), vec2(100.0, 80.0), "Ende");
+        assert_eq!(g.at(1.0 + crate::theme::MOTION as f64), vec2(100.0, 80.0), "end");
     }
 
     /// Edit mode in the grid: dragging „a“ over the third tile makes the others

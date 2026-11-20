@@ -558,7 +558,7 @@ mod tests {
         assert!(near_pos(c, pos2(110.0, 50.0)));
         match handle_at(&r, true, c) {
             Some(Mode::Scale { press_dist, .. }) => assert!((press_dist - c.distance(r.center)).abs() < 1e-3),
-            _ => panic!("Eckgriff"),
+            _ => panic!("corner handle"),
         }
         assert!(matches!(handle_at(&r, false, r.crop_handle(2)), Some(Mode::Scale { .. })));
     }

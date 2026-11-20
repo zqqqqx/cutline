@@ -319,7 +319,7 @@ mod room_tests {
         let id = app.text_clip(TextStyle::default(), 0.0, 0.0, 4.0).expect("inserted");
         app.sync_project();
         let (tr, c) = app.project.find_clip(id).unwrap();
-        assert_eq!(tr.clips.len(), 2, "gleiche Spur");
+        assert_eq!(tr.clips.len(), 2, "same track");
         assert_eq!((c.start, c.duration), (t(0.0), t(1.0)));
         // without a neighbor: full duration
         app.playhead = t(10.0);

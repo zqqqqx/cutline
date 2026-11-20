@@ -806,7 +806,7 @@ These are separate programs and libraries that Cutline starts or loads; they are
             std::fs::write(&file, &want).unwrap();
         }
         let have = std::fs::read_to_string(&file).unwrap_or_default().replace("\r\n", "\n");
-        assert_eq!(have, want, "THIRD_PARTY.md veraltet (siehe Kommentar am Test)");
+        assert_eq!(have, want, "THIRD_PARTY.md outdated (see the comment on the test)");
     }
 
     /// Small test pack with a sound (WAV) and a sticker (SVG): listed, gone when switched off,
@@ -872,7 +872,7 @@ license = "CC-BY-4.0"
         assert_eq!(st.category(), "Test pack", "without a category: folder with the pack name");
         assert_eq!(counts_text(&catalog::packs_in(&packs)[1].counts), "1 Sound · 1 Sticker");
         let dict: std::collections::HashMap<_, _> = cl_i18n::ui_entries().into_iter().collect();
-        assert_eq!((dict.get("1 Filter"), dict.get("1 Sticker")), (Some(&"1 filter"), Some(&"1 sticker")), "englische Einzahl");
+        assert_eq!((dict.get("1 Filter"), dict.get("1 Sticker")), (Some(&"1 filter"), Some(&"1 sticker")), "English singular");
         // switched off: gone
         reg.apply_states(&[("test.pack".to_string(), false)].into_iter().collect());
         let packs = catalog_packs(&reg, "en");

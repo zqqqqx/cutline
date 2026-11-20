@@ -53,7 +53,7 @@ pub fn check_files(paths: &[PathBuf], progress: &Progress, step: Step) -> Option
 
 // ------------------------------------------------------------------ media state
 
-/// Cache „file present?“ per media path.
+/// Cache "file present?" per media path.
 #[derive(Default)]
 pub struct Presence {
     known: HashMap<PathBuf, bool>,

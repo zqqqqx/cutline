@@ -135,7 +135,7 @@ fn file_day(name: &str) -> Option<i64> {
 
 // ---------- redaction ----------
 
-/// Keys whose value in JSON (`"schlüssel": "wert"`) never appears in the log
+/// Keys whose value in JSON (`"key": "value"`) never appears in the log
 const JSON_KEYS: &[&str] = &[
     "access_token", "refresh_token", "id_token", "client_secret", "api_key", "apikey", "password", "token", "secret",
     "authorization", "signature",
@@ -145,7 +145,7 @@ const QUERY_KEYS: &[&str] = &[
     "access_token", "refresh_token", "id_token", "client_secret", "api_key", "apikey", "password", "token", "secret",
     "signature", "key", "sig", "code",
 ];
-/// These only directly after `?`/`&` (otherwise „exit code=1“ would match)
+/// These only directly after `?`/`&` (otherwise "exit code=1" would match)
 const QUERY_ONLY: &[&str] = &["sig", "code"];
 
 fn is_word(c: u8) -> bool {
@@ -190,7 +190,7 @@ fn secret_at(b: &[u8], i: usize) -> Option<(usize, usize)> {
     if starts_ci(b, i, "bearer ") {
         let v = skip(b, i + 7, |c| c == b' ');
         let e = skip(b, v, token_char);
-        // real tokens are long; „Bearer of bad news“ stays
+        // real tokens are long; "Bearer of bad news" stays
         return (e >= v + 8).then_some((v, e));
     }
     for &key in JSON_KEYS.iter().chain(QUERY_KEYS) {
@@ -1110,7 +1110,7 @@ mod tests {
             }
         }
         assert_eq!(stamp(1_763_215_402_123, 3600), "2025-11-15 15:03:22.123 +01:00");
-        assert_eq!(file_name(1_763_247_600_000, 3600), "cutline-2025-11-16.log", "Mitternacht Ortszeit");
+        assert_eq!(file_name(1_763_247_600_000, 3600), "cutline-2025-11-16.log", "midnight local time");
         for bad in ["", "2026-11-15", "2026-13-15 10:00:00.000 +01:00 x", "2026-11-15 10:00:00.000 01:00 x", "xxxx-11-15 10:00:00.000 +01:00", "    at main.rs"] {
             assert_eq!(parse_stamp(bad), None, "{bad:?}");
         }

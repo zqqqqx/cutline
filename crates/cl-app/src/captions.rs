@@ -822,7 +822,7 @@ mod tests {
         let ids: std::collections::HashSet<_> = PRESETS.iter().map(|p| p.id).collect();
         assert_eq!(ids.len(), PRESETS.len());
         for (i, id) in ["classic", "box", "punchy", "word", "soft", "cinema"].iter().enumerate() {
-            assert_eq!(PRESETS[i].id, *id, "vorhandene Stile bleiben");
+            assert_eq!(PRESETS[i].id, *id, "existing styles stay");
         }
         // readable on light and dark images: outline or area
         for p in PRESETS {

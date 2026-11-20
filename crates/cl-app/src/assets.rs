@@ -2297,8 +2297,8 @@ mod tests {
             include_str!("../../../plugins/cutline-elemente/plugin.toml"),
         ];
         for (i, n) in en.iter().enumerate() {
-            assert!(!en[..i].contains(n), "doppelt: {n}");
-            assert!(!["Split", "Cut"].contains(n), "Schnitt-Wort: {n}");
+            assert!(!en[..i].contains(n), "duplicate: {n}");
+            assert!(!["Split", "Cut"].contains(n), "edit word: {n}");
             let tag = format!("en = \"{n}\" }}");
             assert!(packs.iter().all(|p| !p.contains(&tag)), "same as a pack element: {n}");
         }
@@ -2342,7 +2342,7 @@ mod tests {
         assert_eq!(srt.len(), 3);
         assert_eq!(srt[0], (s(0.0), s(1.5), "Erste Zeile\nzweite".to_string()));
         assert_eq!(srt[2], (s(4.0), s(5.5), "Ümläut 🎬".to_string()));
-        assert_eq!(parse_subtitles(cl_export::to_vtt(&p).as_bytes()).len(), 3, "eigenes VTT");
+        assert_eq!(parse_subtitles(cl_export::to_vtt(&p).as_bytes()).len(), 3, "own VTT");
         let vtt = "WEBVTT\n\n01:02.500 --> 01:04.000 align:start position:10%\nKurz\n";
         assert_eq!(parse_subtitles(vtt.as_bytes()), vec![(s(62.5), s(64.0), "Kurz".to_string())]);
         // BOM, CRLF, Latin-1

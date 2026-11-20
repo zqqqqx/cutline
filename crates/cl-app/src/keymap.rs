@@ -569,11 +569,11 @@ mod tests {
     fn presets_have_no_conflicts() {
         let ids: Vec<&str> = ACTIONS.iter().map(|a| a.0).collect();
         let mut seen = std::collections::HashSet::new();
-        assert!(ids.iter().all(|i| seen.insert(*i)), "doppelte Aktions-Id");
+        assert!(ids.iter().all(|i| seen.insert(*i)), "duplicate action id");
         for (name, diff) in PRESETS {
             let custom: BTreeMap<String, String> = diff.iter().map(|(a, k)| (a.to_string(), k.to_string())).collect();
             for (a, k) in *diff {
-                assert!(ids.contains(a), "{name}: unbekannte Aktion {a}");
+                assert!(ids.contains(a), "{name}: unknown action {a}");
                 let c = Chord::parse(k).unwrap_or_else(|| panic!("{name}: {k}"));
                 assert_eq!(Chord::parse(&c.store()), Some(c), "{name}: {k}");
             }

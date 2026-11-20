@@ -7,7 +7,7 @@ use cl_core::{Mask, MaskShape};
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect};
 
 /// Convex parts of the mask on screen. `true` = inverted for circle/rectangle:
-/// then „everything except these areas“ applies.
+/// then "everything except these areas" applies.
 pub fn polygons(m: &Mask, canvas: Rect) -> (Vec<Vec<Pos2>>, bool) {
     let (cw, ch) = (canvas.width(), canvas.height());
     let c = canvas.min + vec2(m.cx * cw, m.cy * ch);
