@@ -1,6 +1,6 @@
-# Release: Tag `vX.Y.Z` pushen → Pakete bauen → GitHub-Release mit
-#   cutline-<os>-<arch>.zip + .sha256, changes.json („Was ist neu“ für die App, beide Sprachen)
-# Die App (cl-update) findet das Paket über `releases/latest` und prüft die Prüfsumme.
+# Release: push tag `vX.Y.Z` → build packages → GitHub release with
+#   cutline-<os>-<arch>.zip + .sha256, changes.json ("What's new" for the app, both languages)
+# The app (cl-update) finds the package via `releases/latest` and verifies the checksum.
 name: Release
 
 on:
@@ -28,29 +28,29 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Version aus Tag prüfen
+      - name: Check version against tag
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME#v}"
           ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
-          if [ "$tag" != "$ver" ]; then echo "Tag $tag passt nicht zu Cargo.toml $ver"; exit 1; fi
-          # kein Release ohne Abschnitt in CHANGELOG.md (früh scheitern, nicht erst nach dem Bauen)
+          if [ "$tag" != "$ver" ]; then echo "Tag $tag does not match Cargo.toml $ver"; exit 1; fi
+          # no release without a section in CHANGELOG.md (fail early, not after the build)
           sh .github/release-notes.sh "$tag" > /dev/null
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable # bei SHA-Pin Pflicht
+          toolchain: stable # required with a SHA pin
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          # Cache nur lesen: das Hochladen hing beim Testlauf stundenlang
+          # read the cache only: uploading hung for hours in a test run
           save-if: false
 
-      - name: Linux-Abhängigkeiten
+      - name: Linux dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libgtk-3-dev libxkbcommon-dev libwayland-dev
 
-      - name: FFmpeg 8.1.3 (fest, statisch; Kopie im Release ci-tools)
+      - name: FFmpeg 8.1.3 (pinned, static; copy in the ci-tools release)
         if: runner.os == 'Linux'
         run: |
           curl -sL -o ffmpeg.tar.xz https://github.com/zqqqqx/cutline/releases/download/ci-tools/ffmpeg-n8.1.3-36-ge22a4510c9-linux64-gpl-8.1.tar.xz
@@ -59,14 +59,14 @@ jobs:
           echo "$PWD/ffmpeg-n8.1.3-36-ge22a4510c9-linux64-gpl-8.1/bin" >> $GITHUB_PATH
           echo "FFBIN=$PWD/ffmpeg-n8.1.3-36-ge22a4510c9-linux64-gpl-8.1/bin" >> $GITHUB_ENV
 
-      - name: FFmpeg für Tests (Windows)
+      - name: FFmpeg for tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           # pinned build with checksum. 8.1, not 9: NVENC in 9 needs driver 610+, which older cards (GTX 10) never get.
           # full shared build: has the whisper filter (subtitles) and is smaller than the static essentials build
           Invoke-WebRequest https://github.com/GyanD/codexffmpeg/releases/download/8.1/ffmpeg-8.1-full_build-shared.zip -OutFile ffmpeg.zip
-          if ((Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash -ne 'E184E012CA9A3527ED45D61F8E250C50B07B8661D90849820EA754239049EFB4') { throw 'FFmpeg: Prüfsumme stimmt nicht' }
+          if ((Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash -ne 'E184E012CA9A3527ED45D61F8E250C50B07B8661D90849820EA754239049EFB4') { throw 'FFmpeg: checksum mismatch' }
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
           $bin = (Get-ChildItem ffmpeg-dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1).Directory.FullName
           echo "FFBIN=$bin" >> $env:GITHUB_ENV
@@ -75,10 +75,10 @@ jobs:
       - name: Tests
         run: cargo test --workspace --release
 
-      - name: Bauen
+      - name: Build
         run: cargo build --release -p cl-app
 
-      - name: ONNX Runtime (für Untertitel und Freistellen)
+      - name: ONNX Runtime (for subtitles and background removal)
         shell: bash
         run: |
           mkdir -p pkg
@@ -92,7 +92,7 @@ jobs:
             echo "a96f132e5eb5ca04e23a7d2fc1078fb95aa591e8d71d0f237702ece3a1e0f4ea  pkg/libonnxruntime.so" | sha256sum -c -
           fi
 
-      - name: Paket schnüren
+      - name: Package
         shell: bash
         run: |
           mkdir -p pkg
@@ -113,7 +113,7 @@ jobs:
           fi
           cat "${{ matrix.asset }}.sha256"
 
-      - name: Windows-Installer (Inno Setup)
+      - name: Windows installer (Inno Setup)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -141,15 +141,15 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      # Release-Text = Abschnitt der Version aus CHANGELOG.md; GitHub hängt den „Full Changelog“-Link an
-      - name: Release-Text aus CHANGELOG.md
+      # release text = the version's section from CHANGELOG.md; GitHub appends the "Full Changelog" link
+      - name: Release text from CHANGELOG.md
         run: sh .github/release-notes.sh "$GITHUB_REF_NAME" > release-notes.md
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
           merge-multiple: true
-      # Änderungen dieser und früherer Versionen für „Was ist neu“ (die App liest sie statt des Release-Texts)
-      - name: changes.json aus CHANGELOG.md
+      # changes of this and earlier versions for "What's new" (the app reads them instead of the release text)
+      - name: changes.json from CHANGELOG.md
         run: sh .github/changes-json.sh "$GITHUB_REF_NAME" > dist/changes.json
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
