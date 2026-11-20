@@ -393,6 +393,15 @@ pub fn decode_frame_opts(
     decode_once(path, at, w, h, graph, None, kill).map(|(f, cpu)| (f, DecodeInfo { hw: false, cpu }))
 }
 
+/// `n` aufeinanderfolgende Bilder ab Quellzeit `from` in einem FFmpeg (Software), skaliert auf
+/// `w`×`h`: Fenster für das Rückwärts-Abspielen. Bild `k` ist dasselbe wie [`decode_frame`] beim
+/// `k`-ten Bild nach `from`; nur die mit `keep(k)` bleiben im Speicher (Nummer, Bild). Am
+/// Dateiende weniger, kein einziges = Fehler.
+pub fn decode_frames(path: &Path, from: Time, n: u32, w: u32, h: u32, keep: &dyn Fn(u32) -> bool, kill: Option<&KillSwitch>) -> Result<Vec<(u32, RgbaFrame)>> {
+    let (frames, _) = decode_raw(path, from, n.max(1), w, h, None, None, keep, kill)?;
+    Ok(frames.into_iter().map(|(k, data)| (k, RgbaFrame { width: w, height: h, data })).collect())
+}
+
 fn decode_once(
     path: &Path,
     at: Time,
@@ -402,6 +411,24 @@ fn decode_once(
     accel: Option<&str>,
     kill: Option<&KillSwitch>,
 ) -> Result<(RgbaFrame, Option<Duration>)> {
+    let (mut f, cpu) = decode_raw(path, at, 1, w, h, graph, accel, &|_| true, kill)?;
+    Ok((RgbaFrame { width: w, height: h, data: f.remove(0).1 }, cpu))
+}
+
+/// Rohe RGBA-Bytes von bis zu `n` Bildern ab `at` (mindestens eins gelesen, sonst Fehler), nur die
+/// mit `keep(k)` behalten
+#[allow(clippy::too_many_arguments)]
+fn decode_raw(
+    path: &Path,
+    at: Time,
+    n: u32,
+    w: u32,
+    h: u32,
+    graph: Option<&str>,
+    accel: Option<&str>,
+    keep: &dyn Fn(u32) -> bool,
+    kill: Option<&KillSwitch>,
+) -> Result<(Vec<(u32, Vec<u8>)>, Option<Duration>)> {
     let mut cmd = command_with("ffmpeg", kill.is_none())?;
     cmd.args(["-v", "error", "-nostdin"]);
     if kill.is_some() {
@@ -418,7 +445,7 @@ fn decode_once(
         None => cmd.args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba")]),
     };
     let mut child = cmd
-        .args(["-frames:v", "1", "-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .args(["-frames:v", &n.to_string(), "-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -439,8 +466,13 @@ fn decode_once(
     let ks = kill.unwrap_or(&local);
     ks.hold(child)?;
     let need = (w * h * 4) as usize;
-    let mut data = Vec::with_capacity(need);
-    let _ = out.read_to_end(&mut data);
+    let (mut frames, mut read, mut buf) = (Vec::new(), 0u32, vec![0u8; need]);
+    while read < n && out.read_exact(&mut buf).is_ok() {
+        if keep(read) {
+            frames.push((read, std::mem::replace(&mut buf, vec![0u8; need])));
+        }
+        read += 1;
+    }
     let mut child = ks.release();
     if let Some(c) = child.as_mut() {
         let _ = c.wait();
@@ -450,7 +482,7 @@ fn decode_once(
     if ks.is_killed() {
         return Err(MediaError::Cancelled);
     }
-    if data.len() < need {
+    if read == 0 {
         let err = err.trim().to_string();
         // ohne Fehlertext: an dieser Stelle gibt es kein Bild (z. B. hinter dem letzten)
         return Err(MediaError::Unreadable(if err.is_empty() {
@@ -459,8 +491,7 @@ fn decode_once(
             err
         }));
     }
-    data.truncate(need);
-    Ok((RgbaFrame { width: w, height: h, data }, cpu))
+    Ok((frames, cpu))
 }
 
 /// Höchstzahl gleichzeitiger Hardware-Decoder (NVDEC-Sitzungen u. Ä. sind begrenzt); jeder
@@ -1142,6 +1173,31 @@ mod tests {
         assert_eq!(frames.len(), 20);
         let distinct = frames.iter().collect::<HashSet<_>>().len();
         assert!(distinct >= 15, "{distinct} verschiedene von 20 Bildern");
+    }
+
+    /// Rückwärts-Fenster: jedes Bild des Fensters ist bytegleich mit dem Einzelbild an seiner
+    /// Rasterzeit (so wie der Player sie rundet); am Dateiende kommen weniger Bilder.
+    #[test]
+    fn window_frames_equal_single_frames() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = gen(dir.path(), "fenster.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=60:d=3", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "60"]);
+        let at = |i: i64| Time::from_secs_f64(i as f64 / 60.0);
+        let win = decode_frames(&src, at(97), 16, 32, 18, &|_| true, None).unwrap();
+        assert_eq!(win.len(), 16);
+        for (k, f) in &win {
+            let one = decode_frame(&src, at(97 + *k as i64), 32, 18).unwrap();
+            assert!(one.data == f.data, "Bild {} weicht ab", 97 + k);
+        }
+        assert_ne!(win[0].1.data, win[1].1.data, "aufeinanderfolgende Bilder");
+        // nur ausgewählte behalten: dieselben Bilder an denselben Nummern
+        let some = decode_frames(&src, at(97), 16, 32, 18, &|k| k < 3 || k == 15, None).unwrap();
+        assert_eq!(some.iter().map(|x| x.0).collect::<Vec<_>>(), vec![0, 1, 2, 15]);
+        assert!(some[3].1.data == win[15].1.data);
+        let tail = decode_frames(&src, at(172), 16, 32, 18, &|_| true, None).unwrap();
+        assert!((1..=8).contains(&tail.len()), "{} Bilder am Ende", tail.len());
     }
 
     /// Graphen über 32 767 Zeichen (lange Zensur-Bahnen) gehen über eine Datei statt die

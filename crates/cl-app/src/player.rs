@@ -507,6 +507,17 @@ pub(crate) fn streamable(c: &Clip) -> bool {
     matches!(&c.content, ClipContent::Media { kind: MediaKind::Video, .. }) && !c.fx.reverse && c.fx.speed_curve.is_none()
 }
 
+/// Quellbildrate für das Rückwärts-Fenster des Decoders (`preview::Job::Frame::window`): nur beim
+/// Abspielen vorwärts eines rückwärts laufenden Videos aus dem Original ohne Effektgraph (der
+/// Graph hängt von der Clipzeit ab), höchstens 1080p. Stand, Pause, Schrittweise und Scrubben:
+/// `None` wie bisher. Über 1080p decodiert FFmpeg kaum schneller als Echtzeit (gemessen 4K:
+/// ~35 Bilder/s Wandzeit): das Fenster käme nie vor die Uhr und wäre langsamer als Einzelbilder.
+pub(crate) fn reverse_window(c: &Clip, m: &MediaRef, original: bool, no_graph: bool, playing_forward: bool, fps: Rational) -> Option<Rational> {
+    let video = matches!(&c.content, ClipContent::Media { kind: MediaKind::Video, .. });
+    let hd = m.width.max(m.height) <= 1920 && m.width.min(m.height) <= 1080;
+    (video && hd && c.fx.reverse && original && no_graph && playing_forward).then(|| m.fps.unwrap_or(fps))
+}
+
 /// Fingerabdruck der Effekte eines Clips (Teil der Bild- und Stromschlüssel)
 pub(crate) fn fx_hash_of(c: &Clip) -> u64 {
     let mut hs = std::collections::hash_map::DefaultHasher::new();
@@ -833,6 +844,39 @@ mod shader_tests {
         // halbe Übergänge ragen zusammen höchstens über die ganze Länge des kurzen Clips
         let (a, b) = span(1);
         assert!(a.unwrap() / 2.0 + b.unwrap() / 2.0 <= 0.2 + 1e-9);
+    }
+
+    /// Rückwärts-Fenster nur beim Abspielen vorwärts eines rückwärts laufenden Videos aus dem
+    /// Original ohne Effektgraph; Pause/Schrittweise/Scrubben, Proxy und Effekte wie bisher.
+    #[test]
+    fn reverse_window_only_while_playing_a_plain_reversed_original() {
+        let m = MediaRef {
+            id: cl_core::MediaId::new(),
+            path: "a.mp4".into(),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(10.0),
+            width: 64,
+            height: 36,
+            fps: Some(Rational::new(30, 1)),
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: None,
+            audio_codec: None,
+        };
+        let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
+        let p = Rational::new(60, 1);
+        assert_eq!(reverse_window(&c, &m, true, true, true, p), None, "vorwärts laufender Clip");
+        c.fx.reverse = true;
+        assert_eq!(reverse_window(&c, &m, true, true, true, p), Some(Rational::new(30, 1)), "Quellrate");
+        assert_eq!(reverse_window(&c, &m, true, true, false, p), None, "Stand, Pause, Scrubben");
+        assert_eq!(reverse_window(&c, &m, false, true, true, p), None, "Proxy");
+        assert_eq!(reverse_window(&c, &m, true, false, true, p), None, "Effektgraph");
+        let m2 = MediaRef { fps: None, ..m.clone() };
+        assert_eq!(reverse_window(&c, &m2, true, true, true, p), Some(p), "ohne Quellrate: Projektrate");
+        let uhd = MediaRef { width: 3840, height: 2160, ..m.clone() };
+        assert_eq!(reverse_window(&c, &uhd, true, true, true, p), None, "über 1080p: Einzelbilder");
+        let img = Clip { content: ClipContent::Media { media: m.id, kind: MediaKind::Image }, ..c };
+        assert_eq!(reverse_window(&img, &m, true, true, true, p), None, "Bild");
     }
 
     #[test]
@@ -2029,6 +2073,7 @@ impl App {
             let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
             let (path, at) = self.still_source(m, h, src);
+            let window = reverse_window(c, m, path == m.path, graph.is_none(), self.core.playing() && self.core.rate() > 0.0, fps);
             self.decoder.send(Job::Frame {
                 clip: id,
                 key,
@@ -2037,6 +2082,7 @@ impl App {
                 w,
                 h,
                 graph,
+                window,
             });
         }
     }
