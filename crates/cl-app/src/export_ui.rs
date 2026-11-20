@@ -1471,7 +1471,7 @@ impl ExportDialog {
 /// Audible sound in the export range? (target size: otherwise nothing is planned for sound)
 fn audible(p: &Project, s: &ExportSettings) -> bool {
     let (a, b) = s.range.unwrap_or((Time::ZERO, p.duration()));
-    !cl_export::audio_clips_in(p, a, b).is_empty()
+    cl_export::audible_clips(p, a, b).next().is_some()
 }
 
 /// Name for files and folders: characters Windows forbids become `_`; length and

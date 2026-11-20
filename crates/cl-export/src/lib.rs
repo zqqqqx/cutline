@@ -20,6 +20,7 @@ use std::sync::Arc;
 use cl_core::*;
 
 mod graph;
+pub use graph::audible_clips;
 mod sections;
 use serde::{Deserialize, Serialize};
 
@@ -309,7 +310,7 @@ impl ExportSettings {
     /// encoder, video bitrate from size minus audio (with a tight size at most a quarter, at least
     /// 64 kbit/s), with too few bits per pixel a smaller standard resolution. Unchanged without a target size.
     /// `audible`: the range has audible sound (otherwise only a silent track of a few kbit/s remains,
-    /// for which nothing is deducted; see [`audio_clips_in`]).
+    /// for which nothing is deducted; see [`audible_clips`]).
     pub fn for_target(&self, secs: f64, audible: bool) -> ExportSettings {
         let mut s = self.clone();
         let Some(mb) = self.target_mb.filter(|_| self.target_possible()) else {
@@ -1698,11 +1699,6 @@ pub fn spawn_audio_preview(
     spawn_audio_window(p, from, p.duration(), rate)
 }
 
-/// Ids of the audible clips touching the range `start..end` (= inputs of the audio mix).
-pub fn audio_clips_in(p: &Project, start: Time, end: Time) -> Vec<ClipId> {
-    graph::audible_clips(p, start, end).map(|(c, _)| c.id).collect()
-}
-
 /// Timeline audio in the range `from..to` (at most up to the project end) as f32le stereo at
 /// `rate` Hz on stdout (preview playback in windows). Only the clips touching the
 /// range are mixed; every clip is computed from its start, so a section sounds
@@ -1948,9 +1944,10 @@ mod tests {
         muted.muted = true;
         muted.clips.push(clip(&snd, 10.0, 20.0));
         p.timeline.tracks.extend([t, v, muted]);
-        assert_eq!(audio_clips_in(&p, s(10.0), s(30.0)), vec![across_start.id, inside.id, fading_in.id, across_end.id]);
-        assert_eq!(audio_clips_in(&p, s(0.0), s(5.0)), vec![before.id]);
-        assert!(audio_clips_in(&p, s(41.0), s(60.0)).is_empty());
+        let ids = |a, b| audible_clips(&p, s(a), s(b)).map(|(c, _)| c.id).collect::<Vec<_>>();
+        assert_eq!(ids(10.0, 30.0), vec![across_start.id, inside.id, fading_in.id, across_end.id]);
+        assert_eq!(ids(0.0, 5.0), vec![before.id]);
+        assert!(ids(41.0, 60.0).is_empty());
     }
 
     #[test]

@@ -1118,7 +1118,7 @@ fn curve_pieces(id: &str, src: f64, dur: f64) -> Vec<(f64, f64, f32)> {
 
 /// Audible clips (with media) touching the range `start..end` – in track and
 /// clip order (the order of the inputs in the mix).
-pub(crate) fn audible_clips(p: &Project, start: Time, end: Time) -> impl Iterator<Item = (&Clip, &MediaRef)> {
+pub fn audible_clips(p: &Project, start: Time, end: Time) -> impl Iterator<Item = (&Clip, &MediaRef)> {
     p.timeline
         .tracks
         .iter()
@@ -1128,7 +1128,8 @@ pub(crate) fn audible_clips(p: &Project, start: Time, end: Time) -> impl Iterato
         .filter(|c| c.volume_db > -59.9 || !c.keyframes.get(Prop::Volume).is_empty())
         .filter_map(|c| match &c.content {
             ClipContent::Media { media, kind } if *kind != MediaKind::Image => {
-                p.media(*media).filter(|m| m.is_local() && m.has_audio).map(|m| (c, m))
+                // flag first: `is_local` asks the disk, and the export dialog calls this every frame
+                p.media(*media).filter(|m| m.has_audio && m.is_local()).map(|m| (c, m))
             }
             _ => None,
         })
