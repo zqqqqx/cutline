@@ -68,9 +68,10 @@ Abweichende Angaben:
 - Sanft hineinzoomen: Lizenz MIT · Autor 0gust1 · Quelle https://github.com/gl-transitions/gl-transitions/blob/master/transitions/SimpleZoom.glsl
 - Drehen und zoomen: Lizenz MIT · Autor Fernando Kuteken · Quelle https://github.com/gl-transitions/gl-transitions/blob/master/transitions/RotateScaleFade.glsl
 
-## Bundled programs (Windows package)
+## Bundled programs
 
 These are separate programs and libraries that Cutline starts or loads; they are not part of Cutline's source and keep their own licenses.
 
-- **FFmpeg 8.1** (`ffmpeg/`), "full shared" build by gyan.dev, licensed under the GNU General Public License v3. Unmodified binaries from <https://github.com/GyanD/codexffmpeg/releases/tag/8.1>; source code: <https://ffmpeg.org/download.html> (release 8.1) and the build's own notes at <https://www.gyan.dev/ffmpeg/builds/>.
+- **FFmpeg 8.1** (`ffmpeg/` in the Windows package), "full shared" build by gyan.dev, licensed under the GNU General Public License v3. Unmodified binaries from <https://github.com/GyanD/codexffmpeg/releases/tag/8.1>; source code: <https://ffmpeg.org/download.html> (release 8.1) and the build's own notes at <https://www.gyan.dev/ffmpeg/builds/>.
+- **FFmpeg 8.1.3** (`ffmpeg/` in the Linux package), static "linux64-gpl" build `ffmpeg-n8.1.3-36-ge22a4510c9-linux64-gpl-8.1` by BtbN, licensed under the GNU General Public License v3. Unmodified binaries from <https://github.com/BtbN/FFmpeg-Builds/releases> (a copy is kept in this repository's `ci-tools` release); source code: FFmpeg commit `e22a4510c9` on the `release/8.1` branch at <https://git.ffmpeg.org/ffmpeg.git> (also <https://github.com/FFmpeg/FFmpeg>), build scripts at <https://github.com/BtbN/FFmpeg-Builds>.
 - **ONNX Runtime 1.31.1** (`onnxruntime.dll` / `libonnxruntime.so`), MIT License, <https://github.com/microsoft/onnxruntime>.
