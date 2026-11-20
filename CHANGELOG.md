@@ -10,6 +10,22 @@
 **New**
 
 **Improved**
+
+**Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.15.2 – 2026-11-20
+
+### English
+
+**Improved**
 - **Large projects open and export more smoothly.** Thumbnails and waveforms appear sooner, long recordings need far less memory, the export window no longer slows down with many clips, and Cutline checks your files less often in the background.
 - **Archives can be moved.** An archived project finds its media and fonts again after you move or copy the folder.
 - **Leftovers of a crashed export are removed at the next start**, so they no longer block the next export.
@@ -27,8 +43,6 @@
 - **Saving** reports a failure every time you press Save, not just once a minute.
 
 ### Deutsch
-
-**Neu**
 
 **Verbessert**
 - **Große Projekte öffnen und exportieren flüssiger.** Vorschaubilder und Wellenformen erscheinen früher, lange Aufnahmen brauchen viel weniger Speicher, das Export-Fenster wird bei vielen Clips nicht mehr zäh, und Cutline prüft deine Dateien im Hintergrund seltener.
