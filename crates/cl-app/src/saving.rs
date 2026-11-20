@@ -309,6 +309,23 @@ pub(crate) mod tests {
         assert_eq!(Project::from_json(&std::fs::read_to_string(&good).unwrap()).unwrap().name, "Verlassen");
     }
 
+    /// An explicit save shows its failure even right after an earlier one (no 60 s throttle).
+    #[test]
+    fn explicit_save_reports_its_own_failure() {
+        let (mut app, home, _g) = test_app();
+        app.set_doc(Project::new("Fehler"));
+        let bad = home.path().join("ordner.cutline");
+        std::fs::create_dir_all(&bad).unwrap();
+        app.project_path = Some(bad);
+        let errors = |app: &crate::app::App| app.toasts.iter().filter(|t| t.2 && t.0.contains("nicht gespeichert")).count();
+        for want in 1..=2 {
+            app.save(false);
+            assert!(app.saver.wait_idle(Duration::from_secs(10)));
+            app.poll_saves();
+            assert_eq!(errors(&app), want);
+        }
+    }
+
     /// A second window on a project that another running window has open keeps its hands off
     /// the file and the lock; its edits go to the backups, „Speichern unter“ elsewhere works.
     #[test]

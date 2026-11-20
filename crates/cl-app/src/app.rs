@@ -305,7 +305,7 @@ pub struct App {
     pub voiceover: Voiceover,
     pub anim_slot: usize,
     pub focus_text: bool,
-    toasts: Vec<(String, Instant, bool)>,
+    pub(crate) toasts: Vec<(String, Instant, bool)>,
     pub decoder: Decoder,
     /// Preview textures per clip (+ key of the displayed frame)
     pub frames: HashMap<ClipId, (u64, egui::TextureHandle)>,
@@ -2094,6 +2094,8 @@ impl App {
     pub fn save(&mut self, save_as: bool) {
         let t0 = Instant::now();
         self.commit_live();
+        // an explicit save always reports its own failure (the throttle is for autosave)
+        self.saver.last_err = None;
         let path = match (&self.project_path, save_as) {
             (Some(p), false) => Some(p.clone()),
             (None, false) => Some(self.default_project_path()),
