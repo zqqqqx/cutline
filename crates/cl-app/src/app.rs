@@ -805,6 +805,7 @@ impl App {
                     media: m.id,
                     path: m.path.clone(),
                     at,
+                    size: (m.width, m.height),
                 });
             }
         }
