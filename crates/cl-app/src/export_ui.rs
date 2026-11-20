@@ -409,7 +409,7 @@ pub struct ExportDialog {
     /// „Bild“ bei anderem Seitenverhältnis: 0 Füllen, 1 Einpassen
     fit: usize,
     /// umgebautes Abbild (Projektstand, Format, Bild) für Vorschau und Export
-    framed: Option<((u64, (u32, u32), usize), Arc<Project>)>,
+    pub(crate) framed: Option<((u64, (u32, u32), usize), Arc<Project>)>,
     /// Gewählte Plattform (wird im Projekt gemerkt, wenn das Format passt)
     platform: Option<&'static str>,
     picked_platform: Option<&'static str>,
