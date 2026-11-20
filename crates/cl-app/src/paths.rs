@@ -1,9 +1,9 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-/// Datei ersetzen ohne Zwischenzustand: erst `*.tmp` schreiben und auf die Platte bringen,
-/// dann umbenennen. Ein Absturz mitten im Schreiben lässt so die alte Datei stehen.
-/// Die PID im Namen hält zwei gleichzeitig laufende Cutline-Fenster auseinander.
+/// Replace a file without an intermediate state: first write `*.tmp` and flush it to disk,
+/// then rename. A crash in the middle of writing thus leaves the old file in place.
+/// The PID in the name keeps two Cutline windows running at the same time apart.
 pub fn write_atomic(p: &Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
     let mut tmp = p.as_os_str().to_owned();
     tmp.push(format!(".{}.tmp", std::process::id()));
@@ -24,8 +24,8 @@ fn write_atomic_replaces_and_leaves_no_tmp() {
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
 
-/// JSON-Einstellungsdatei lesen. Fehlt sie: Standard. Ist sie kaputt oder unlesbar, wird sie
-/// zu `<name>.bad-<Sekunden>` umbenannt, damit das nächste Speichern sie nicht überschreibt.
+/// Read a JSON settings file. If missing: default. If broken or unreadable, it is
+/// renamed to `<name>.bad-<seconds>` so the next save does not overwrite it.
 pub fn read_json_or_quarantine<T: serde::de::DeserializeOwned + Default>(p: &Path) -> T {
     let r = std::fs::read_to_string(p).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()));
     match r {
@@ -59,8 +59,8 @@ fn broken_json_is_kept_aside() {
     assert_eq!(read_json_or_quarantine::<Vec<u32>>(&p), vec![1, 2]);
 }
 
-/// Pfad zum Anzeigen, durchgehend mit dem Trenner des Systems (Einstellungen und Entwürfe liefern
-/// unter Windows auch `/`, angehängte Teile `\` – sonst stünde beides gemischt da).
+/// Path for display, consistently with the system's separator (settings and drafts also
+/// return `/` on Windows, appended parts `\` – otherwise both would appear mixed).
 pub fn shown(p: &Path) -> String {
     let s = p.display().to_string();
     if cfg!(windows) {
@@ -81,9 +81,9 @@ fn shown_paths_use_one_separator() {
     }
 }
 
-/// Dateiname aus einem Projektnamen: nur Buchstaben, Ziffern, Leerzeichen und `-`
-/// Höchstens 100 Zeichen (Windows: 255 je Name, dazu kommen Endung und „ (Kopie 2)“), nie leer,
-/// keine reservierten Gerätenamen (`CON`, `NUL` …).
+/// File name from a project name: only letters, digits, spaces and `-`
+/// At most 100 characters (Windows: 255 per name, plus extension and „ (Kopie 2)“), never empty,
+/// no reserved device names (`CON`, `NUL` …).
 pub fn safe_name(name: &str) -> String {
     let s: String = name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
     match fit_name(&s) {
@@ -92,8 +92,8 @@ pub fn safe_name(name: &str) -> String {
     }
 }
 
-/// Grenzen jedes Dateinamens: höchstens 100 Zeichen, ohne Rand-Leerzeichen, keine reservierten
-/// Gerätenamen (`CON`, `NUL` …). Erlaubte Zeichen regelt der Aufrufer.
+/// Limits of every file name: at most 100 characters, no leading/trailing spaces, no reserved
+/// device names (`CON`, `NUL` …). The caller decides the allowed characters.
 pub fn fit_name(s: &str) -> String {
     let s: String = s.chars().take(100).collect();
     let s = s.trim();
@@ -121,8 +121,8 @@ fn safe_name_is_a_writable_file_name() {
     assert_eq!(safe_name("Urlaub 2026"), "Urlaub 2026");
 }
 
-/// Läuft der Prozess mit dieser PID noch? (Sperrdatei eines abgestürzten Fensters erkennen)
-/// shortcut: eine inzwischen neu vergebene PID gilt als laufend (nur eine Warnung zu viel), Programmname prüfen, wenn das stört.
+/// Is the process with this PID still running? (detect the lock file of a crashed window)
+/// shortcut: a PID reassigned in the meantime counts as running (only one warning too many), check the program name if that bothers.
 pub fn pid_alive(pid: u32) -> bool {
     #[cfg(windows)]
     {
@@ -133,7 +133,7 @@ pub fn pid_alive(pid: u32) -> bool {
         }
         const QUERY_LIMITED: u32 = 0x1000;
         const STILL_ACTIVE: u32 = 259;
-        // SAFETY: nur Abfragen auf einem eigenen Handle, das danach geschlossen wird
+        // SAFETY: only queries on our own handle, which is closed afterward
         unsafe {
             let h = OpenProcess(QUERY_LIMITED, 0, pid);
             if h == 0 {
@@ -155,8 +155,8 @@ pub fn pid_alive(pid: u32) -> bool {
     }
 }
 
-/// Gehört die Sperrdatei einem anderen, noch laufenden Cutline-Fenster? Liegengebliebene
-/// Sperren (Absturz, hartes Beenden) und Sperren älter als 12 h zählen nicht.
+/// Does the lock file belong to another Cutline window that is still running? Leftover
+/// locks (crash, hard kill) and locks older than 12 h do not count.
 pub fn lock_held_by_other(lock: &Path, me: u32) -> bool {
     let fresh = std::fs::metadata(lock)
         .and_then(|m| m.modified())
@@ -176,11 +176,11 @@ fn stale_lock_of_dead_process_is_taken_over() {
     let lock = d.path().join("a.cutline.lock");
     let me = std::process::id();
     assert!(!lock_held_by_other(&lock, me), "keine Sperre");
-    // fremdes, laufendes Fenster: dieser Testprozess aus Sicht einer anderen PID
+    // another running window: this test process as seen from another PID
     std::fs::write(&lock, me.to_string()).unwrap();
     assert!(lock_held_by_other(&lock, me + 1));
     assert!(!lock_held_by_other(&lock, me), "eigene Sperre");
-    // Prozess ist beendet (hartes Beenden): Sperre gilt nicht mehr
+    // process has ended (hard kill): the lock no longer applies
     let mut c = if cfg!(windows) {
         std::process::Command::new("cmd").args(["/c", "exit"]).spawn().unwrap()
     } else {
@@ -197,16 +197,16 @@ fn stale_lock_of_dead_process_is_taken_over() {
     }
 }
 
-/// Ordner für erzeugte Dateien, auf die Projekte zeigen (Freistell-Masken, SVG-Bilder).
-/// Liegt bewusst nicht im Cache, den „Cache leeren“ löscht.
+/// Folder for generated files that projects point to (cutout masks, SVG images).
+/// Deliberately not in the cache that „Cache leeren“ deletes.
 pub fn generated_dir() -> PathBuf {
     data_dir().join("Generated")
 }
 
-/// Unterordner von `cache`, auf die ältere Projekte noch zeigen – Aufräumen lässt sie stehen
+/// Subfolders of `cache` that older projects still point to – cleanup leaves them in place
 pub const CACHE_KEEP: &[&str] = &["matte", "svg"];
 
-/// Inhalt von `dir` löschen, außer den Einträgen in `skip`
+/// Delete the contents of `dir`, except the entries in `skip`
 pub fn clear_dir(dir: &Path, skip: &[&str]) {
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         if skip.iter().any(|s| e.file_name() == *s) {
@@ -216,20 +216,20 @@ pub fn clear_dir(dir: &Path, skip: &[&str]) {
     }
 }
 
-/// Tests, die CUTLINE_HOME setzen (prozessweit), laufen nacheinander
+/// Tests that set CUTLINE_HOME (process-wide) run one after another
 #[cfg(test)]
 pub static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 static PROJECTS_DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
 
-/// Eigener Projektordner aus den Einstellungen (`None` = Standard im Datenordner)
+/// Own project folder from the settings (`None` = default in the data folder)
 pub fn set_projects_dir(p: Option<PathBuf>) {
     if let Ok(mut d) = PROJECTS_DIR.write() {
         *d = p;
     }
 }
 
-/// Ordner, in dem neue Projekte landen und den die Projektübersicht zeigt
+/// Folder where new projects go and which the project overview shows
 pub fn projects_dir() -> PathBuf {
     PROJECTS_DIR
         .read()
@@ -238,9 +238,9 @@ pub fn projects_dir() -> PathBuf {
         .unwrap_or_else(|| data_dir().join("Projects"))
 }
 
-/// Größe eines Ordners samt Unterordnern in Bytes
-/// Dateien unter `dir` löschen, die länger als `age` nicht geändert wurden. Gibt die Anzahl zurück.
-/// Einträge in `skip` (nur direkt unter `dir`) bleiben; Verknüpfungen auf Ordner werden nicht verfolgt.
+/// Size of a folder including subfolders in bytes
+/// Delete files under `dir` not modified for longer than `age`. Returns the count.
+/// Entries in `skip` (only directly under `dir`) stay; links to folders are not followed.
 pub fn remove_older(dir: &Path, age: std::time::Duration, skip: &[&str]) -> usize {
     let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
     let mut n = 0;
@@ -303,7 +303,7 @@ pub fn move_path(a: &Path, b: &Path) -> std::io::Result<()> {
     if std::fs::rename(a, b).is_ok() {
         return Ok(());
     }
-    // anderes Laufwerk: kopieren, dann löschen
+    // other drive: copy, then delete
     if a.is_dir() {
         std::fs::create_dir_all(b)?;
         for e in std::fs::read_dir(a)? {
@@ -317,9 +317,9 @@ pub fn move_path(a: &Path, b: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Alle Projekte (`*.cutline`) und ihre `…-media`-Ordner von `old` nach `new` verschieben.
-/// Medienpfade, die in den alten Ordner zeigen, werden angepasst. Ein Fehler hält den Rest nicht
-/// auf: zurück kommen die umgezogenen Projekte (alt, neu) und die Fehlermeldungen.
+/// Move all projects (`*.cutline`) and their `…-media` folders from `old` to `new`.
+/// Media paths pointing into the old folder are adjusted. An error does not stop the
+/// rest: returned are the moved projects (old, new) and the error messages.
 pub fn move_projects(old: &Path, new: &Path) -> (Vec<(PathBuf, PathBuf)>, Vec<String>) {
     let mut moved = Vec::new();
     let mut errs = Vec::new();
@@ -332,8 +332,8 @@ pub fn move_projects(old: &Path, new: &Path) -> (Vec<(PathBuf, PathBuf)>, Vec<St
     let Ok(rd) = std::fs::read_dir(old) else { return (moved, errs) };
     let entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
     let is_media = |p: &Path| p.is_dir() && p.to_string_lossy().ends_with("-media");
-    // erst die Medienordner, dann die Projekte (deren Pfade auf die neuen Ordner zeigen).
-    // Schon bei einem früheren Versuch umgezogene Ordner zählen mit, sonst blieben ihre Pfade alt.
+    // first the media folders, then the projects (whose paths point to the new folders).
+    // Folders already moved in an earlier attempt count too, otherwise their paths would stay old.
     let mut moved_dirs: Vec<PathBuf> = std::fs::read_dir(new)
         .into_iter()
         .flatten()
@@ -368,8 +368,8 @@ pub fn move_projects(old: &Path, new: &Path) -> (Vec<(PathBuf, PathBuf)>, Vec<St
         };
         let text = match cl_core::Project::from_json(&text) {
             Ok(mut proj) => {
-                // nur Pfade in wirklich umgezogenen Medienordnern umschreiben; anderes
-                // Material im alten Ordner bleibt, wo es ist
+                // only rewrite paths in media folders that were really moved; other
+                // material in the old folder stays where it is
                 for m in &mut proj.media {
                     if moved_dirs.iter().any(|d| m.path.starts_with(d)) {
                         if let Ok(rest) = m.path.strip_prefix(old) {
@@ -386,7 +386,7 @@ pub fn move_projects(old: &Path, new: &Path) -> (Vec<(PathBuf, PathBuf)>, Vec<St
             continue;
         }
         if let Err(e) = std::fs::remove_file(p) {
-            // alte Datei bleibt maßgeblich, die Kopie wieder weg
+            // the old file stays authoritative, the copy goes away again
             let _ = std::fs::remove_file(&to);
             errs.push(format!("{}: {e}", p.display()));
             continue;
@@ -430,9 +430,9 @@ fn moves_projects_and_media_folders() {
     assert_eq!(back.media[0].path, m.path);
     assert!(m.path.is_file());
     assert_eq!(moved[0].1, new.join("Clip.cutline"));
-    // in sich selbst verschieben ist verboten
+    // moving into itself is forbidden
     assert!(!move_projects(&new, &new.join("sub")).1.is_empty());
-    // Wiederholung nach Abbruch: Medienordner ist schon drüben, das Projekt noch im alten Ordner
+    // Retry after an abort: the media folder is already over there, the project still in the old folder
     let c = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(c.path().join("Neu-media")).unwrap();
     m.path = a.path().join("Neu-media").join("y.mp3");
@@ -446,7 +446,7 @@ fn moves_projects_and_media_folders() {
     assert_eq!(back.media[0].path, new.join("Neu-media").join("y.mp3"));
 }
 
-/// Mitgelieferte Schriften (OFL/Apache, siehe `assets/fonts/FONTS.md`) für die Textvorlagen
+/// Bundled fonts (OFL/Apache, see `assets/fonts/FONTS.md`) for the text templates
 const BUNDLED_FONTS: &[(&str, &[u8])] = &[
     ("Anton-Regular.ttf", include_bytes!("../assets/fonts/Anton-Regular.ttf")),
     ("Bangers-Regular.ttf", include_bytes!("../assets/fonts/Bangers-Regular.ttf")),
@@ -469,7 +469,7 @@ const BUNDLED_FONTS: &[(&str, &[u8])] = &[
     ("VarelaRound-Regular.ttf", include_bytes!("../assets/fonts/VarelaRound-Regular.ttf")),
 ];
 
-/// Mitgelieferte Schriften in den Schriftordner legen (fehlende werden ergänzt)
+/// Put the bundled fonts into the font folder (missing ones are added)
 pub fn install_bundled_fonts() {
     let d = font_dir();
     let _ = std::fs::create_dir_all(&d);
@@ -481,7 +481,7 @@ pub fn install_bundled_fonts() {
     }
 }
 
-/// Benutzerdaten-Ordner: %APPDATA%\Cutline bzw. ~/.local/share/cutline
+/// User data folder: %APPDATA%\Cutline or ~/.local/share/cutline
 pub fn data_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("CUTLINE_HOME") {
         return PathBuf::from(d);
@@ -497,7 +497,7 @@ pub fn data_dir() -> PathBuf {
     PathBuf::from(".cutline")
 }
 
-/// Protokolldateien (`applog`)
+/// Log files (`applog`)
 pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
 }
@@ -506,7 +506,7 @@ pub fn font_dir() -> PathBuf {
     data_dir().join("Fonts")
 }
 
-/// Mitgelieferte Plugins (neben der EXE oder im Repo) + Benutzer-Plugins.
+/// Bundled plugins (next to the EXE or in the repo) + user plugins.
 pub fn plugin_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
@@ -519,7 +519,7 @@ pub fn plugin_dirs() -> Vec<PathBuf> {
     v
 }
 
-/// Ordner für lokale KI-Modelle (Spracherkennung, Freistellen) und ONNX Runtime.
+/// Folder for local AI models (speech recognition, cutout) and ONNX Runtime.
 pub fn models_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("CUTLINE_MODELS") {
         return PathBuf::from(d);
@@ -536,16 +536,16 @@ fn bundled_fonts_cover_all_template_fonts() {
     }
     let lib = cl_fonts::FontLibrary::open(d.path()).unwrap();
     let fams = lib.families();
-    // Systemschriften (Windows) sind nicht mitgeliefert
+    // System fonts (Windows) are not bundled
     let system = ["Georgia", "Impact", "Arial", "Segoe UI", "Courier New", "Times New Roman"];
     for t in cl_fx::text::TEMPLATES {
         if let Some(f) = t.make().font_family {
-            assert!(system.contains(&f.as_str()) || fams.contains_key(&f), "{}: Schrift {f} fehlt", t.id);
+            assert!(system.contains(&f.as_str()) || fams.contains_key(&f), "{}: font {f} missing", t.id);
         }
     }
     for p in crate::captions::PRESETS {
         if let Some(f) = (p.style)().font_family {
-            assert!(system.contains(&f.as_str()) || fams.contains_key(&f), "{}: Schrift {f} fehlt", p.id);
+            assert!(system.contains(&f.as_str()) || fams.contains_key(&f), "{}: font {f} missing", p.id);
         }
     }
 }

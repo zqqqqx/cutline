@@ -1,5 +1,5 @@
-//! Startseite: alle Projekte als Kacheln oder Liste, neu anlegen, öffnen, umbenennen,
-//! duplizieren, im Explorer zeigen und löschen (in den Cutline-Papierkorb).
+//! Start page: all projects as tiles or a list, create new, open, rename,
+//! duplicate, show in Explorer and delete (into the Cutline trash).
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -27,7 +27,7 @@ pub struct Entry {
 pub struct HomeState {
     pub entries: Vec<Entry>,
     scanned: bool,
-    /// laufendes Neulesen der Projektliste (Hintergrund)
+    /// running re-read of the project list (background)
     scan_rx: Option<std::sync::mpsc::Receiver<Vec<Entry>>>,
     cache: ScanCache,
     pub search: String,
@@ -41,7 +41,7 @@ pub struct HomeState {
 pub const THUMB_W: u32 = 384;
 pub const THUMB_H: u32 = 216;
 
-/// Titelbild eines Projekts (rohe RGBA-Daten 384×216 im Datenordner).
+/// Cover image of a project (raw RGBA data 384×216 in the data folder).
 pub fn thumb_path(project: &Path) -> PathBuf {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     project.hash(&mut h);
@@ -50,8 +50,8 @@ pub fn thumb_path(project: &Path) -> PathBuf {
         .join(format!("{:016x}.rgba", h.finish()))
 }
 
-/// Freier Dateiname für ein dupliziertes Projekt: `<Name> (Kopie).cutline`, dann `(Kopie 2)` …
-/// Sonderzeichen im Namen (`/`, `:`, `?` …) werden ersetzt.
+/// Free file name for a duplicated project: `<name> (Kopie).cutline`, then `(Kopie 2)` …
+/// Special characters in the name (`/`, `:`, `?` …) are replaced.
 fn copy_path(dir: &Path, name: &str) -> PathBuf {
     let base = paths::safe_name(name);
     let mut out = dir.join(format!("{base} (Kopie).cutline"));
@@ -75,14 +75,14 @@ fn copy_name_survives_special_characters() {
     std::fs::write(&q, "{}").unwrap();
 }
 
-/// Datei/Ordner im Explorer zeigen (Datei wird markiert).
+/// Show a file/folder in Explorer (the file is selected).
 ///
-/// Der Explorer versteht `/select,"C:\pfad mit leerzeichen\datei"` nur in genau dieser Form:
-/// mit Backslashes und Anführungszeichen nur um den Pfad. Die übliche Argument-Quotierung
-/// (`"/select,C:\…"`) führt dazu, dass er stattdessen „Dokumente“ öffnet.
+/// Explorer only understands `/select,"C:\path with spaces\file"` in exactly this form:
+/// with backslashes and quotes only around the path. The usual argument quoting
+/// (`"/select,C:\…"`) makes it open „Dokumente“ instead.
 pub fn reveal(p: &Path) {
     let p = std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
-    // fehlende Datei: nächsten vorhandenen Ordner zeigen
+    // missing file: show the nearest existing folder
     let target = if p.exists() {
         p.clone()
     } else {
@@ -119,7 +119,7 @@ pub fn reveal(p: &Path) {
     }
 }
 
-/// Freier Name „Projekt N“.
+/// Free name „Projekt N“.
 pub fn next_project_name() -> String {
     let dir = paths::projects_dir();
     (1..)
@@ -154,8 +154,8 @@ impl HomeState {
         }
     }
 
-    /// Projektliste im Hintergrund neu lesen (Startseite bleibt bedienbar; die alte Liste steht,
-    /// bis die neue da ist). Unveränderte Dateien kommen aus dem Zwischenspeicher.
+    /// Re-read the project list in the background (the start page stays usable; the old list stays
+    /// until the new one is there). Unchanged files come from the cache.
     fn start_scan(&mut self, recent: Vec<PathBuf>, ctx: &egui::Context) {
         self.scanned = true;
         let (tx, rx) = std::sync::mpsc::channel();
@@ -200,11 +200,11 @@ impl HomeState {
     }
 }
 
-/// Zwischenspeicher der Projektliste: Datei → (Änderungszeit, Größe, Eintrag)
+/// Cache of the project list: file → (modification time, size, entry)
 type ScanCache = std::sync::Arc<std::sync::Mutex<HashMap<PathBuf, (SystemTime, u64, Entry)>>>;
 
-/// Projekte im Projektordner und zuletzt geöffnete: Name, Länge, Clips, Format. Gelesen wird
-/// nur, was sich seit dem letzten Mal geändert hat (große Projekte kosten sonst Sekunden).
+/// Projects in the project folder and recently opened ones: name, length, clips, format. Only
+/// what changed since last time is read (large projects otherwise cost seconds).
 pub fn scan_projects(dir: &Path, recent: &[PathBuf], cache: &ScanCache) -> Vec<Entry> {
     let mut paths_: Vec<PathBuf> = std::fs::read_dir(dir)
         .map(|rd| {
@@ -270,7 +270,7 @@ impl App {
         ui.painter()
             .rect_filled(main, theme::RADIUS, theme::BG_CARD());
 
-        // Seitenleiste
+        // Sidebar
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(side.shrink(16.0)), |ui| {
             ui.horizontal(|ui| theme::wordmark(ui, 30.0));
             ui.add_space(22.0);
@@ -325,11 +325,11 @@ impl App {
                     r.left_center() + vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     crate::tr(g),
-                    // Icon-Glyphe
+                    // icon glyph
                     egui::FontId::proportional(14.0),
                     col,
                 );
-                // Akzent nur am Icon, der Text bleibt neutral
+                // accent only on the icon, the text stays neutral
                 ui.painter().text(
                     r.left_center() + vec2(34.0, 0.0),
                     egui::Align2::LEFT_CENTER,
@@ -360,7 +360,7 @@ impl App {
             });
         });
 
-        // Hauptbereich
+        // Main area
         ui.allocate_new_ui(
             egui::UiBuilder::new().max_rect(main.shrink2(vec2(24.0, 18.0))),
             |ui| {
@@ -394,7 +394,7 @@ impl App {
                                     "{}  Projekte suchen",
                                     icon::MAGNIFYING_GLASS
                                 )))
-                                // Text und Platzhalter gleich groß
+                                // text and placeholder the same size
                                 .font(egui::FontId::proportional(theme::FS_TEXT))
                                 .desired_width(220.0),
                         );
@@ -470,7 +470,7 @@ impl App {
                                 resp.context_menu(|ui| project_menu(ui, &path, &mut action));
                             }
                         } else {
-                            // Kachel „Neues Projekt“ + Projekte
+                            // „Neues Projekt“ tile + projects
                             let n = idx.len() + 1;
                             let gap = 16.0;
                             let avail = ui.available_width();
@@ -512,7 +512,7 @@ impl App {
                                             theme::R_CARD,
                                             Stroke::new(
                                                 1.0_f32,
-                                                // kein Ruhe-Rahmen (Fläche hebt sich schon ab)
+                                                // no idle frame (the area already stands out)
                                                 if hov {
                                                     Color32::from_white_alpha(120)
                                                 } else {
@@ -530,7 +530,7 @@ impl App {
                                             thumb_r.center() - vec2(0.0, 10.0),
                                             egui::Align2::CENTER_CENTER,
                                             icon::PLUS,
-                                            // Icon-Glyphe
+                                            // icon glyph
                                             egui::FontId::proportional(18.0),
                                             theme::ACCENT_INK(),
                                         );
@@ -611,7 +611,7 @@ impl App {
                                         egui::FontId::proportional(theme::FS_HINT),
                                         theme::TEXT_DIM(),
                                     );
-                                    // ⋯-Menü
+                                    // ⋯ menu
                                     let mr = Rect::from_center_size(
                                         pos2(r.right() - 12.0, thumb_r.bottom() + 16.0),
                                         vec2(22.0, 22.0),
@@ -626,7 +626,7 @@ impl App {
                                             mr.center(),
                                             egui::Align2::CENTER_CENTER,
                                             icon::DOTS_THREE,
-                                            // Icon-Glyphe
+                                            // icon glyph
                                             egui::FontId::proportional(16.0),
                                             theme::TEXT(),
                                         );
@@ -687,7 +687,7 @@ impl App {
         self.home_dialogs(ui.ctx());
     }
 
-    /// Vorschaubild eines Projekts; ein nachträglich erzeugtes blendet ein.
+    /// Thumbnail of a project; one created later fades in.
     fn paint_thumb(&self, p: &egui::Painter, r: Rect, tex: Option<egui::TextureId>, path: &Path) {
         p.rect_filled(r, theme::R_CARD, theme::BG_RAISED());
         let k = crate::widgets::reveal(p.ctx(), egui::Id::new(("home-thumb", path)), tex.is_some());
@@ -770,7 +770,7 @@ impl App {
                         self.toast_err(e.to_string());
                     } else {
                         let mut now = path.clone();
-                        // Datei im Projektordner mit umbenennen
+                        // rename the file in the project folder too
                         if path.starts_with(paths::projects_dir()) {
                             let np = path.with_file_name(format!("{}.cutline", paths::safe_name(&proj.name)));
                             if !np.exists() && std::fs::rename(&path, &np).is_ok() {
@@ -860,10 +860,10 @@ mod scan_tests {
         std::fs::write(&f, Project::new("Erst").to_json()).unwrap();
         let cache = ScanCache::default();
         assert_eq!(scan_projects(dir.path(), &[], &cache)[0].name, "Erst");
-        // Eintrag im Zwischenspeicher verfälschen: unveränderte Datei → kommt von dort
+        // Tamper with the cache entry: unchanged file → comes from there
         cache.lock().unwrap().get_mut(&f).unwrap().2.name = "Zwischenspeicher".into();
         assert_eq!(scan_projects(dir.path(), &[], &cache)[0].name, "Zwischenspeicher");
-        // geänderte Datei (andere Größe) wird neu gelesen; kaputte fehlt einfach
+        // a changed file (different size) is re-read; a broken one is simply missing
         std::fs::write(&f, Project::new("Zweiter Stand").to_json()).unwrap();
         std::fs::write(dir.path().join("b.cutline"), "{").unwrap();
         let e = scan_projects(dir.path(), &[], &cache);
