@@ -299,7 +299,7 @@ impl EditOp {
                 c.duration = duration;
                 c.source_in = source_in;
                 clamp_to_source(c, len);
-                clamp_fades(c);
+                c.clamp_fades();
                 let (start, duration) = (c.start, c.duration);
                 let magnet = p.settings.main_track_magnet;
                 // without magnet not into the neighbour (like trimming; rolling shortens first)
@@ -370,7 +370,7 @@ impl EditOp {
                     // forward: left [s0, s_at), right [s_at, s1); reversed the other way round
                     let (l_src, r_src) = if c.fx.reverse { ((s_at, s1), (s0, s_at)) } else { ((s0, s_at), (s_at, s1)) };
                     let tempo = |src: (Time, Time), d: Time| {
-                        ((src.1 - src.0).0 as f64 / d.0.max(1) as f64).clamp(0.1, 100.0) as f32
+                        ((src.1 - src.0).0 as f64 / d.0.max(1) as f64).clamp(MIN_SPEED as f64, MAX_SPEED as f64) as f32
                     };
                     c.fx.speed_curve = None;
                     right.fx.speed_curve = None;
@@ -489,7 +489,7 @@ impl EditOp {
                         }
                     }
                 }
-                clamp_fades(c);
+                c.clamp_fades();
                 after_change(p, ti);
                 Ok(OpOutput::None)
             }
@@ -522,7 +522,7 @@ impl EditOp {
                     .iter_mut()
                     .find(|c| c.id == clip)
                     .expect("geprüft");
-                let speed = speed.clamp(0.1, 100.0);
+                let speed = speed.clamp(MIN_SPEED, MAX_SPEED);
                 let span = c.source_span();
                 let old = c.duration;
                 c.speed = speed;
@@ -536,7 +536,7 @@ impl EditOp {
                         k.t = Time((k.t.0 as f64 * f).round() as i64);
                     }
                 }
-                clamp_fades(c);
+                c.clamp_fades();
                 after_change(p, ti);
                 resolve_overlaps(p, ti);
                 Ok(OpOutput::None)
@@ -573,7 +573,7 @@ impl EditOp {
                 let c = clip_mut(p, clip)?;
                 c.fade_in = fade_in;
                 c.fade_out = fade_out;
-                clamp_fades(c);
+                c.clamp_fades();
                 Ok(OpOutput::None)
             }
             EditOp::ReplaceClip { clip } => {
@@ -862,13 +862,6 @@ fn source_length(p: &Project, c: &Clip) -> Option<Time> {
             .filter(|d| *d > Time::ZERO),
         _ => None,
     }
-}
-
-/// Fades at most half the clip length each (when set and when the clip gets shorter).
-fn clamp_fades(c: &mut Clip) {
-    let half = c.duration.0 / 2;
-    c.fade_in = Time(c.fade_in.0.clamp(0, half));
-    c.fade_out = Time(c.fade_out.0.clamp(0, half));
 }
 
 /// Video/audio: duration at most up to the source end from `source_in` (speed respected).

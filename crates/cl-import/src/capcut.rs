@@ -447,7 +447,7 @@ impl Build<'_> {
                 };
                 // shared properties
                 let speed = s.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
-                clip.speed = speed.clamp(0.1, 10.0) as f32;
+                clip.speed = (speed as f32).clamp(cl_core::MIN_SPEED, cl_core::MAX_SPEED);
                 let mut vol = s.get("volume").and_then(|v| v.as_f64()).unwrap_or(1.0);
                 if vol <= 0.0001 && track.muted {
                     vol = s.get("last_nonzero_volume").and_then(|v| v.as_f64()).unwrap_or(vol);
@@ -526,6 +526,7 @@ impl Build<'_> {
                     }
                     clip.transform.scale = 1.0;
                 }
+                clip.clamp_fades();
                 track.clips.push(clip);
             }
             track.clips.sort_by_key(|c| c.start);
@@ -876,6 +877,25 @@ mod tests {
         assert_eq!(back, p);
     }
 
+    /// Same limits as the editor: speed up to `MAX_SPEED` (was cut at 10), each fade at most half the clip.
+    #[test]
+    fn speed_and_fades_use_the_editor_limits() {
+        let draft = serde_json::json!({
+            "materials": {
+                "audios": [{"id": "A", "type": "music", "path": "C:/gibt/es/nicht.wav", "duration": 900_000_000}],
+                "audio_fades": [{"id": "F", "fade_in_duration": 900_000, "fade_out_duration": 900_000}]
+            },
+            "tracks": [{"type": "audio", "segments": [
+                {"material_id": "A", "speed": 50.0, "target_timerange": {"start": 0, "duration": 1_000_000}, "extra_material_refs": ["F"]},
+                {"material_id": "A", "speed": 500.0, "target_timerange": {"start": 1_000_000, "duration": 1_000_000}}
+            ]}]
+        });
+        let (p, _) = convert(&draft, Path::new("."), "T").unwrap();
+        let c = &p.timeline.tracks[0].clips;
+        assert_eq!((c[0].speed, c[1].speed), (50.0, cl_core::MAX_SPEED));
+        assert_eq!((c[0].fade_in, c[0].fade_out), (Time(500_000), Time(500_000)));
+    }
+
     #[test]
     fn layers_follow_render_index_and_fonts_are_taken_over() {
         if !cl_media::ffmpeg_available() {
@@ -1148,7 +1168,7 @@ mod tests {
         let audio: Vec<&Track> = tr.iter().filter(|t| t.kind == TrackKind::Audio).collect();
         let loud = audio.iter().find(|t| !t.muted && t.clips.len() == 4).unwrap();
         let c = &loud.clips;
-        assert_eq!((c[0].audio_stream, c[0].fade_in, c[0].fade_out), (Some(1), Time::ZERO, Time(600_000)));
+        assert_eq!((c[0].audio_stream, c[0].fade_in, c[0].fade_out), (Some(1), Time::ZERO, Time(500_000)), "fade out at most half the clip, as in the editor");
         assert_eq!(vol(&c[1]), -60.0, "clip volume 0 on an audible track stays 0");
         assert_eq!((vol(&c[2]), c[2].audio_stream), (-6.0, None), "Index 1 = erste Spur");
         assert_eq!(vol(&c[3]), -60.0);

@@ -68,7 +68,7 @@ fn capcut_odd_values_are_tamed() {
     let c = &p.timeline.tracks[0].clips[0];
     assert_eq!(c.start, Time::ZERO);
     assert!(c.duration > Time::ZERO);
-    assert_eq!((c.speed, c.volume_db), (10.0, -60.0));
+    assert_eq!((c.speed, c.volume_db), (cl_core::MAX_SPEED, -60.0));
     let ClipContent::Text(st) = &c.content else { panic!() };
     assert_eq!(st.text, "Hallo 🎬 مرحبا");
     assert!((8.0..=600.0).contains(&st.size));

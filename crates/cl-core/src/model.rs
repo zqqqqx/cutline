@@ -468,7 +468,18 @@ fn yes() -> bool {
     true
 }
 
+/// Speed limits of a clip (editor and imports)
+pub const MIN_SPEED: f32 = 0.1;
+pub const MAX_SPEED: f32 = 100.0;
+
 impl Clip {
+    /// Fades at most half the clip length each (when set and when the clip gets shorter).
+    pub fn clamp_fades(&mut self) {
+        let half = self.duration.0 / 2;
+        self.fade_in = Time(self.fade_in.0.clamp(0, half));
+        self.fade_out = Time(self.fade_out.0.clamp(0, half));
+    }
+
     /// Times from outside (files, MCP, plugins): nothing before 0. `false` if the clip cannot
     /// exist (duration not above 0). `Time::LIMIT` is only checked for new clips (`AddClip`):
     /// edits can push later clips past it, and loading must not change such a timeline.
