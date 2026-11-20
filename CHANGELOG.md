@@ -8,8 +8,11 @@
 ### English
 
 **New**
+- **Auto reframe in the export.** When you export in another aspect ratio, "Image" has a third choice next to Fill and Fit: Auto reframe moves the crop along with the action in the picture. Your project stays as it is.
 
 **Improved**
+- **Reversed clips play smoothly.** Reversed video without a proxy now plays at full speed up to 1080p instead of a few pictures per second.
+- **4K starts at once.** A 4K clip without a proxy shows its first picture right when you press Play, once the playhead has rested on it for a moment.
 - **Linux: FFmpeg included.** The Linux package now brings its own FFmpeg, so nothing has to be installed first.
 
 **Fixed**
@@ -19,8 +22,11 @@
 ### Deutsch
 
 **Neu**
+- **Auto-Reframe im Export.** Beim Export in einem anderen Seitenverhältnis hat „Bild“ eine dritte Wahl neben Füllen und Einpassen: Auto-Reframe führt den Ausschnitt mit dem Geschehen im Bild mit. Dein Projekt bleibt, wie es ist.
 
 **Verbessert**
+- **Rückwärts-Clips laufen flüssig.** Rückwärts laufendes Video ohne Proxy spielt bis 1080p jetzt in voller Geschwindigkeit statt mit wenigen Bildern pro Sekunde.
+- **4K startet sofort.** Ein 4K-Clip ohne Proxy zeigt sein erstes Bild direkt beim Druck auf Play, sobald der Abspielkopf kurz darauf geruht hat.
 - **Linux: FFmpeg ist dabei.** Das Linux-Paket bringt sein eigenes FFmpeg mit, vorher muss nichts mehr installiert werden.
 
 **Behoben**
