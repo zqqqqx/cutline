@@ -173,6 +173,8 @@ pub fn reframe(p: &Project, (w2, h2): (u32, u32), fill: bool, measure: Measure) 
                     let d = c.transform.scale * fit(w, h);
                     let (ox, oy) = (mw * (cr.left - cr.right) / 2.0, mh * (cr.top - cr.bottom) / 2.0);
                     let (hw, hh) = (d * mw * (1.0 - cr.left - cr.right) / 2.0, d * mh * (1.0 - cr.top - cr.bottom) / 2.0);
+                    // zugeschnittene Clips (Layout-Zellen): das ganze Layout passt ins neue Bild, sonst überlappen sie
+                    let ks = if cr.is_none() { ks } else { ks.min(nw / w).min(nh / h) };
                     let (f, d2) = (ks * fit(w, h) / fit(nw, nh), d * ks);
                     let px = |v: f32| place(v + d * ox, hw, w, hw * ks, nw) - d2 * ox;
                     let py = |v: f32| place(v + d * oy, hh, h, hh * ks, nh) - d2 * oy;
@@ -836,7 +838,9 @@ mod tests {
                 assert_eq!(clip(&o, s.crop).crop, clip(&s.p, s.crop).crop, "{case}");
                 // Overlays: ganz im Bild, in derselben Ecke, Größe zur kürzeren Kante
                 let ks = w2.min(h2) as f32 / w.min(h) as f32;
-                for (id, name) in [(s.pip, "Bild-in-Bild"), (s.logo, "Logo"), (s.crop, "Zuschnitt")] {
+                // Zugeschnittene Clips (Layout-Zellen): das ganze Layout passt ins neue Bild
+                let kl = ks.min(w2 as f32 / w as f32).min(h2 as f32 / h as f32);
+                for (id, name, ks) in [(s.pip, "Bild-in-Bild", ks), (s.logo, "Logo", ks), (s.crop, "Zuschnitt", kl)] {
                     for t in [0.0, 5.0] {
                         let t = Time::from_secs_f64(t);
                         let (old, new) = (shown(&s.p, clip(&s.p, id), t), shown(&o, clip(&o, id), t));
@@ -850,6 +854,7 @@ mod tests {
                 // Splitscreen: bleibt nebeneinander (links bleibt links), Größe zur kürzeren Kante
                 let (l, r) = (shown(&o, clip(&o, s.side[0]), Time::ZERO), shown(&o, clip(&o, s.side[1]), Time::ZERO));
                 assert!(center(l).0 < center(r).0, "{case}: Splitscreen {l:?} {r:?}");
+                assert!(l[2] <= r[0] + 1.0 && inside(&o, l) && inside(&o, r), "{case}: Splitscreen überlappt {l:?} {r:?}");
                 // Text: ragt nicht über den Rand, oben bleibt oben, unten bleibt unten
                 for id in &s.texts {
                     let (c0, c1) = (clip(&s.p, *id), clip(&o, *id));
