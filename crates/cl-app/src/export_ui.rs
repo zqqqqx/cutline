@@ -701,7 +701,7 @@ impl ExportDialog {
             }
             self.focus.extend(found);
             self.focus_gen += 1;
-            toast = err.map(|e| format!("{}: {e}", crate::tr("Person folgen")));
+            toast = err.map(|e| format!("{}: {e}", crate::tr("Auto-Reframe")));
         }
         // nur nach einer Änderung (Projekt, Format, Wahl, Ergebnis) nach fehlenden Spuren suchen
         let Some(c) = self.canvas(p).filter(|_| self.fit == 1) else { return toast };
@@ -1129,7 +1129,7 @@ impl ExportDialog {
                                 let canvas = self.canvas(p);
                                 if canvas.is_some() {
                                     theme::row(ui, "Bild", |ui| {
-                                        ui.allocate_ui(vec2(300.0, 24.0), |ui| crate::widgets::segmented(ui, &["Füllen", "Person folgen", "Einpassen"], &mut self.fit));
+                                        ui.allocate_ui(vec2(300.0, 24.0), |ui| crate::widgets::segmented(ui, &["Füllen", "Auto-Reframe", "Einpassen"], &mut self.fit));
                                     });
                                     if let Some(j) = &self.focus_job {
                                         ui.horizontal(|ui| {
