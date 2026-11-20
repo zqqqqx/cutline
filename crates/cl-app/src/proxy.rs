@@ -448,6 +448,9 @@ fn run_encode(
         }
         progress((done_us.load(Ordering::Relaxed) as f64 / 1e6 / dur).clamp(0.0, 1.0) as f32);
         match child.try_wait() {
+            // cancelled in this very round (e.g. from `progress`): the cancel wins, also when
+            // FFmpeg has just finished – the check at the top of the loop handles it
+            Ok(Some(_)) if cancel.load(Ordering::Relaxed) => continue,
             Ok(Some(st)) => break st,
             Ok(None) => std::thread::sleep(Duration::from_millis(40)),
             Err(e) => {
