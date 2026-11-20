@@ -10,16 +10,42 @@
 **New**
 
 **Improved**
+- **Large projects open and export more smoothly.** Thumbnails and waveforms appear sooner, long recordings need far less memory, the export window no longer slows down with many clips, and Cutline checks your files less often in the background.
+- **Archives can be moved.** An archived project finds its media and fonts again after you move or copy the folder.
+- **Leftovers of a crashed export are removed at the next start**, so they no longer block the next export.
 
 **Fixed**
+- **Two windows, one project.** A second window on the same project no longer saves over the first one. It keeps its own changes in a backup instead.
+- **Projects from a newer Cutline** are no longer opened by an older version, which could silently drop newer edits. Cutline asks you to update.
+- **Automation mode (MCP)** no longer writes an old state over a project you edited in the meantime.
+- **Relink by folder** only links a file when its name is unambiguous. Before, it could pick the wrong clip with the same name.
+- **Renaming or moving something in the library** no longer breaks the open project.
+- **Importing a second recordings ZIP** with the same name no longer overwrites the first.
+- **CapCut import** keeps speeds above 10× and fades the way the editor does.
+- **The exported log** no longer shows parts of file names that contain spaces.
+- **The first export after starting** waits a moment for your graphics card instead of quietly using the slower software encoder.
+- **Saving** reports a failure every time you press Save, not just once a minute.
 
 ### Deutsch
 
 **Neu**
 
 **Verbessert**
+- **Große Projekte öffnen und exportieren flüssiger.** Vorschaubilder und Wellenformen erscheinen früher, lange Aufnahmen brauchen viel weniger Speicher, das Export-Fenster wird bei vielen Clips nicht mehr zäh, und Cutline prüft deine Dateien im Hintergrund seltener.
+- **Archive lassen sich verschieben.** Ein archiviertes Projekt findet Medien und Schriften wieder, nachdem du den Ordner verschoben oder kopiert hast.
+- **Reste eines abgestürzten Exports verschwinden beim nächsten Start** und blockieren den nächsten Export nicht mehr.
 
 **Behoben**
+- **Zwei Fenster, ein Projekt.** Ein zweites Fenster am selben Projekt speichert nicht mehr über das erste. Es sichert seine Änderungen stattdessen in einer Sicherung.
+- **Projekte aus einer neueren Cutline-Version** öffnet eine ältere Version nicht mehr – dabei konnten neuere Änderungen still verloren gehen. Cutline bittet um ein Update.
+- **Automations-Modus (MCP)** schreibt keinen alten Stand mehr über ein Projekt, das du inzwischen bearbeitet hast.
+- **Neu verknüpfen per Ordner** verknüpft nur noch, wenn der Dateiname eindeutig ist. Vorher konnte der falsche Clip mit gleichem Namen landen.
+- **Umbenennen oder Verschieben in der Bibliothek** bricht das offene Projekt nicht mehr.
+- **Import einer zweiten Aufnahmen-ZIP** mit gleichem Namen überschreibt die erste nicht mehr.
+- **CapCut-Import** behält Tempo über 10× und Blenden so, wie der Editor sie kennt.
+- **Das exportierte Protokoll** zeigt keine Teile von Dateinamen mit Leerzeichen mehr.
+- **Der erste Export nach dem Start** wartet kurz auf die Grafikkarte, statt still den langsameren Software-Encoder zu nehmen.
+- **Speichern** meldet einen Fehler bei jedem Druck auf Speichern, nicht nur einmal pro Minute.
 
 ## 0.15.1 – 2026-11-20
 
