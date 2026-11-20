@@ -1,4 +1,4 @@
-//! Soundeffekte, lokal mit FFmpeg synthetisiert (keine Lizenzfragen, keine Downloads).
+//! Sound effects, synthesized locally with FFmpeg (no license questions, no downloads).
 
 use std::path::Path;
 use std::process::Stdio;
@@ -7,7 +7,7 @@ pub struct Sfx {
     pub id: &'static str,
     pub name: &'static str,
     pub category: &'static str,
-    /// lavfi-Quelle inkl. Filterkette
+    /// lavfi source including filter chain
     pub source: &'static str,
 }
 
@@ -59,7 +59,7 @@ pub fn sfx(id: &str) -> Option<&'static Sfx> {
     SFX.iter().find(|s| s.id == id)
 }
 
-/// Erzeugt die WAV-Datei (48 kHz Stereo). Vorhandene Dateien werden wiederverwendet.
+/// Generates the WAV file (48 kHz stereo). Existing files are reused.
 pub fn render(s: &Sfx, out: &Path) -> Result<(), String> {
     if out.is_file() {
         return Ok(());
@@ -116,10 +116,10 @@ mod tests {
                 .unwrap()
                 .into_iter()
                 .fold(0.0, f32::max);
-            assert!(peak > 0.05, "{} ist stumm ({peak})", s.id);
+            assert!(peak > 0.05, "{} is silent ({peak})", s.id);
         }
         assert!(SFX.len() >= 39);
-        // Kategorien vollständig und eindeutige IDs
+        // categories complete and IDs unique
         assert!(SFX.iter().all(|s| SFX_CATEGORIES.contains(&s.category)));
         let mut ids: Vec<&str> = SFX.iter().map(|s| s.id).collect();
         ids.sort();

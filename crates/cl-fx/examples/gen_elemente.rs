@@ -1,11 +1,11 @@
-//! Erzeugt das Paket `plugins/cutline-elemente` (eigene bewegte Elemente, CC0-1.0).
+//! Generates the package `plugins/cutline-elemente` (own animated elements, CC0-1.0).
 //!
-//! Jedes Element ist eine Funktion „Zeit → SVG“; die Einzelbilder rendert der SVG-Renderer der
-//! App (resvg mit der Schrift Anton), FFmpeg baut daraus ein APNG (Endung `.png`). Endlosschleifen
-//! werden mit `-plays 0` gespeichert, einmalige Animationen mit `-plays 1` – daran erkennt die App,
-//! ob sie wiederholt oder auf dem letzten Bild stehen bleibt. Deterministisch (kein Zufall).
+//! Every element is a function "time → SVG"; the app's SVG renderer renders the frames
+//! (resvg with the font Anton), FFmpeg builds an APNG from them (extension `.png`). Endless loops
+//! are stored with `-plays 0`, one-off animations with `-plays 1` – that is how the app tells
+//! whether to repeat or to stop on the last frame. Deterministic (no randomness).
 //!
-//! Aufruf: `cargo run --release -p cl-fx --example gen_elemente [-- <id-teil>]`
+//! Usage: `cargo run --release -p cl-fx --example gen_elemente [-- <id-part>]`
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -22,7 +22,7 @@ const PINK: &str = "#FF5FA2";
 const GREY: &str = "#3A3A44";
 const CONFETTI: [&str; 6] = ["#FF2E43", "#FFD21F", "#2F7BFF", "#2BD46A", "#B15CFF", "#FF8A1F"];
 
-/// Farbvariante: Hauptfarbe, Farbe darauf (Text/Symbol)
+/// Color variant: main color, color on top (text/symbol)
 #[derive(Clone, Copy)]
 struct Pal {
     main: &'static str,
@@ -34,31 +34,31 @@ struct El {
     de: &'static str,
     en: &'static str,
     cat: &'static str,
-    /// Bildgröße in Pixeln; die Zeichnung nutzt eine viewBox mit 100 Einheiten Höhe
+    /// Image size in pixels; the drawing uses a viewBox 100 units high
     w: u32,
     h: u32,
     secs: f32,
     looping: bool,
-    /// (Kennung, deutscher Zusatz, englischer Zusatz, Farben)
+    /// (id, German suffix, English suffix, colors)
     variants: Vec<(&'static str, &'static str, &'static str, Pal)>,
     draw: fn(f32, Pal) -> String,
 }
 
-// ------------------------------------------------------------------ Bewegung
+// ------------------------------------------------------------------ Motion
 
 fn clamp01(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
-/// Anteil von `t` im Abschnitt `a..b` (0…1)
+/// Fraction of `t` within the section `a..b` (0…1)
 fn seg(t: f32, a: f32, b: f32) -> f32 {
     clamp01((t - a) / (b - a))
 }
-/// Überschwingen am Ende
+/// Overshoot at the end
 fn back(x: f32) -> f32 {
     let (x, s) = (clamp01(x) - 1.0, 2.2);
     1.0 + (s + 1.0) * x * x * x + s * x * x
 }
-/// Weiches Abbremsen
+/// Soft ease-out
 fn out3(x: f32) -> f32 {
     1.0 - (1.0 - clamp01(x)).powi(3)
 }
@@ -66,7 +66,7 @@ fn inout(x: f32) -> f32 {
     let x = clamp01(x);
     if x < 0.5 { 4.0 * x * x * x } else { 1.0 - (-2.0 * x + 2.0).powi(3) / 2.0 }
 }
-/// Gedämpfte Feder: 1 mit Nachschwingen
+/// Damped spring: 1 with oscillation
 fn spring(x: f32) -> f32 {
     let x = x.max(0.0);
     1.0 - (-6.0 * x).exp() * (x * 14.0).cos()
@@ -78,9 +78,9 @@ fn tau() -> f32 {
     std::f32::consts::TAU
 }
 
-// ------------------------------------------------------------------ Zeichnen
+// ------------------------------------------------------------------ Drawing
 
-/// Skalieren und drehen um (cx, cy)
+/// Scale and rotate around (cx, cy)
 fn tf(cx: f32, cy: f32, s: f32, rot: f32) -> String {
     format!(r##"transform="translate({cx:.2} {cy:.2}) rotate({rot:.2}) scale({:.4}) translate({:.2} {:.2})""##, s.max(0.0001), -cx, -cy)
 }
@@ -98,7 +98,7 @@ fn bezier(p: [(f32, f32); 4], n: usize) -> Pts {
         .collect()
 }
 
-/// Anfang eines Linienzugs bis Anteil `p` der Länge (Stift-Effekt)
+/// Start of a polyline up to fraction `p` of the length (pen effect)
 fn prefix(pts: &[(f32, f32)], p: f32) -> Pts {
     let lens: Vec<f32> = pts.windows(2).map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1)).collect();
     let mut left = lens.iter().sum::<f32>() * clamp01(p);
@@ -124,7 +124,7 @@ fn d(pts: &[(f32, f32)]) -> String {
     s
 }
 
-/// Linie mit dunkler Kontur (auf jedem Video lesbar)
+/// Line with a dark outline (readable on any video)
 fn stroke(pts: &[(f32, f32)], color: &str, w: f32) -> String {
     if pts.len() < 2 || pts.windows(2).all(|p| p[0] == p[1]) {
         return String::new();
@@ -136,7 +136,7 @@ fn stroke(pts: &[(f32, f32)], color: &str, w: f32) -> String {
     )
 }
 
-/// Mehrere Linien als Einheit: erst alle Konturen, dann alle Farben
+/// Several lines as a unit: first all outlines, then all colors
 fn strokes(lines: &[(Pts, &str, f32)]) -> String {
     let mut out = String::new();
     let mut top = String::new();
@@ -150,7 +150,7 @@ fn strokes(lines: &[(Pts, &str, f32)]) -> String {
     out + &top
 }
 
-/// Text in Anton mit dunkler Kontur
+/// Text in Anton with a dark outline
 fn text(x: f32, y: f32, size: f32, fill: &str, outline: f32, s: &str) -> String {
     format!(
         r##"<text x="{x:.2}" y="{y:.2}" font-family="Anton" font-size="{size:.2}" text-anchor="middle" fill="{fill}" stroke="{INK}" stroke-width="{outline:.2}" stroke-linejoin="round" paint-order="stroke">{s}</text>"##
@@ -167,7 +167,7 @@ fn star_points(cx: f32, cy: f32, n: usize, r_out: f32, r_in: f32, rot: f32) -> S
     s
 }
 
-/// Vierzackiger Glitzerstern
+/// Four-pointed sparkle star
 fn sparkle(cx: f32, cy: f32, r: f32, fill: &str) -> String {
     let k = r * 0.22;
     format!(
@@ -183,7 +183,7 @@ fn sparkle(cx: f32, cy: f32, r: f32, fill: &str) -> String {
 const HEART: &str = "M50 88 C20 66 6 50 6 32 C6 18 17 8 30 8 C39 8 46 13 50 20 C54 13 61 8 70 8 C83 8 94 18 94 32 C94 50 80 66 50 88Z";
 
 fn heart(cx: f32, cy: f32, s: f32, rot: f32, fill: &str, opacity: f32) -> String {
-    // Herzpfad hat seine Mitte bei (50, 48)
+    // the heart path has its center at (50, 48)
     format!(
         r##"<g transform="translate({cx:.2} {cy:.2}) rotate({rot:.2}) scale({:.4}) translate(-50 -48)" opacity="{opacity:.3}"><path d="{HEART}" fill="{fill}" stroke="{INK}" stroke-width="{:.2}" stroke-linejoin="round"/></g>"##,
         s.max(0.0001),
@@ -191,9 +191,9 @@ fn heart(cx: f32, cy: f32, s: f32, rot: f32, fill: &str, opacity: f32) -> String
     )
 }
 
-// ------------------------------------------------------------------ Aufrufe
+// ------------------------------------------------------------------ Calls to action
 
-/// Knopf federt herein, Mauszeiger klickt (Welle), danach „abonniert“
+/// Button springs in, mouse pointer clicks (ripple), then „abonniert“
 fn sub_button(t: f32, p: Pal, label: &str, done: &str) -> String {
     let (cx, cy) = (150.0, 50.0);
     let pop = back(seg(t, 0.0, 0.45));
@@ -205,7 +205,7 @@ fn sub_button(t: f32, p: Pal, label: &str, done: &str) -> String {
     let mut s = format!("<g {}>", tf(cx, cy, pop * press, wob));
     let _ = write!(s, r##"<defs><clipPath id="pill"><rect x="30" y="22" width="240" height="56" rx="28"/></clipPath></defs>"##);
     let _ = write!(s, r##"<rect x="30" y="22" width="240" height="56" rx="28" fill="{fill}" stroke="{INK}" stroke-width="3"/>"##);
-    // Klick-Welle im Knopf
+    // click ripple in the button
     let w = seg(t, click, click + 0.55);
     if w > 0.0 && w < 1.0 {
         let _ = write!(
@@ -220,7 +220,7 @@ fn sub_button(t: f32, p: Pal, label: &str, done: &str) -> String {
     }
     let _ = write!(s, r##"<text x="{}" y="62" font-family="Anton" font-size="28" text-anchor="middle" fill="{on}">{label}</text>"##, if clicked { 166 } else { 150 });
     s.push_str("</g>");
-    // Mauszeiger kommt von rechts unten, klickt und geht wieder
+    // the mouse pointer comes from the bottom right, clicks and leaves again
     let come = out3(seg(t, 0.4, 0.8));
     let go = inout(seg(t, 1.3, 1.6));
     if come > 0.0 && go < 1.0 {
@@ -235,12 +235,12 @@ fn sub_button(t: f32, p: Pal, label: &str, done: &str) -> String {
 }
 
 fn bell(t: f32, p: Pal) -> String {
-    // Läuten 0…0,8 s, dann Ruhe bis 1,4 s (Schleife)
+    // ringing 0…0.8 s, then rest until 1.4 s (loop)
     let env = (1.0 - seg(t, 0.55, 0.8)) * seg(t, 0.0, 0.08);
     let a = 24.0 * (-2.2 * t).exp() * (t * tau() / 0.32).sin() * env;
     let clap = -a * 0.6;
     let mut s = String::new();
-    // Schallbögen
+    // sound arcs
     let wave = seg(t, 0.02, 0.7);
     if wave > 0.0 && wave < 1.0 {
         let o = (1.0 - wave) * 0.9;
@@ -270,7 +270,7 @@ fn thumbs_up(t: f32, p: Pal) -> String {
     let thumb = back(seg(t, 0.12, 0.5));
     let rot = (1.0 - spring(seg(t, 0.12, 0.9))) * -35.0;
     let mut s = String::new();
-    // Strahlen
+    // rays
     let r = seg(t, 0.3, 0.75);
     if r > 0.0 && r < 1.0 {
         for i in 0..8 {
@@ -309,7 +309,7 @@ fn share(t: f32, p: Pal) -> String {
 }
 
 fn link_below(t: f32, p: Pal, line1: &str, line2: &str) -> String {
-    // viewBox 200×100: Text oben, Pfeil wippt (Schleife 1 s)
+    // viewBox 200×100: text on top, arrow bobs (loop 1 s)
     let bob = (t * tau()).sin() * 5.0;
     let mut s = text(100.0, 26.0, 21.0, WHITE, 5.0, line1);
     s.push_str(&text(100.0, 48.0, 21.0, WHITE, 5.0, line2));
@@ -335,7 +335,7 @@ fn badge(t: f32, p: Pal, word: &str) -> String {
     )
 }
 
-// ------------------------------------------------------------------ Zeigen
+// ------------------------------------------------------------------ Pointing
 
 fn drawn_arrow(t: f32, p: Pal, pts: Pts) -> String {
     let line = inout(seg(t, 0.0, 0.5));
@@ -355,7 +355,7 @@ fn drawn_arrow(t: f32, p: Pal, pts: Pts) -> String {
 }
 
 fn arrow_straight(t: f32, p: Pal) -> String {
-    // leicht gebogen wie von Hand
+    // slightly curved as if by hand
     drawn_arrow(t, p, bezier([(16.0, 84.0), (34.0, 66.0), (56.0, 44.0), (80.0, 22.0)], 40))
 }
 
@@ -376,7 +376,7 @@ fn circle_mark(t: f32, p: Pal) -> String {
 }
 
 fn underline(t: f32, p: Pal) -> String {
-    // viewBox 300×100: Strich hin, kürzerer zurück
+    // viewBox 300×100: stroke there, shorter one back
     let a: Pts = (0..=40).map(|i| {
         let k = i as f32 / 40.0;
         (lerp(16.0, 284.0, k), 46.0 + 5.0 * (k * 3.0).sin() - 4.0 * k)
@@ -436,7 +436,7 @@ fn target(t: f32, p: Pal) -> String {
     )
 }
 
-// ------------------------------------------------------------------ Zeit
+// ------------------------------------------------------------------ Time
 
 fn arc(cx: f32, cy: f32, r: f32, from: f32, to: f32) -> Pts {
     let n = (((to - from).abs() / 6.0).ceil() as usize).max(2);
@@ -466,7 +466,7 @@ fn countdown(t: f32, p: Pal, from: u32) -> String {
 }
 
 fn progress(t: f32, p: Pal, secs: f32) -> String {
-    // viewBox 800×100 (Balken über die ganze Breite), linear: zeigt die Zeit
+    // viewBox 800×100 (bar across the whole width), linear: shows the time
     let k = clamp01(t / secs);
     let w = 768.0 * k;
     format!(
@@ -480,7 +480,7 @@ fn progress(t: f32, p: Pal, secs: f32) -> String {
 }
 
 fn rec(t: f32, _p: Pal) -> String {
-    // viewBox 200×100, Punkt blinkt weich (Schleife 1 s)
+    // viewBox 200×100, dot blinks softly (loop 1 s)
     let on = 0.5 + 0.5 * (t * tau()).cos();
     let on = on.powf(0.6);
     format!(
@@ -503,9 +503,9 @@ fn spinner(t: f32, p: Pal) -> String {
     )
 }
 
-// ------------------------------------------------------------------ Partikel
+// ------------------------------------------------------------------ Particles
 
-/// Fester Pseudozufall (deterministisch)
+/// Fixed pseudo-random (deterministic)
 fn rnd(i: u32, k: u32) -> f32 {
     let mut x = i.wrapping_mul(747_796_405).wrapping_add(k.wrapping_mul(2_891_336_453)).wrapping_add(12345);
     x ^= x >> 13;
@@ -526,7 +526,7 @@ fn piece(x: f32, y: f32, rot: f32, flip: f32, color: &str, o: f32, round: bool) 
 }
 
 fn confetti_rain(t: f32, _p: Pal) -> String {
-    // Schleife 2 s: jedes Teil fällt in 2 s eine oder zwei ganze Höhen
+    // loop 2 s: every piece falls one or two full heights in 2 s
     let mut s = String::new();
     for i in 0..30 {
         let laps = 1.0 + (rnd(i, 1) * 2.0).floor();
@@ -544,7 +544,7 @@ fn confetti_pop(t: f32, _p: Pal) -> String {
     for i in 0..46 {
         let a = lerp(-150.0, -30.0, rnd(i, 1)).to_radians();
         let v = 190.0 + 140.0 * rnd(i, 2);
-        // Luftwiderstand bremst den Schuss, danach sinkt jedes Teil gleichmäßig
+        // air drag slows the shot, then every piece sinks evenly
         let drag = (1.0 - (-3.0 * t).exp()) / 3.0;
         let x = 50.0 + a.cos() * v * drag * 0.8;
         let y = 98.0 + a.sin() * v * drag + 38.0 * t;
@@ -601,7 +601,7 @@ fn hearts_rise(t: f32, _p: Pal) -> String {
     s
 }
 
-// ------------------------------------------------------------------ Sprechblasen, Rahmen
+// ------------------------------------------------------------------ Speech bubbles, frames
 
 fn bubble(t: f32, p: Pal) -> String {
     let sc = back(seg(t, 0.0, 0.45));
@@ -656,12 +656,12 @@ fn frame_corners(t: f32, p: Pal) -> String {
 }
 
 fn frame_full(t: f32, p: Pal) -> String {
-    // umläuft den Rand von oben links aus
+    // runs around the border starting from the top left
     let r = [(7.0, 7.0), (93.0, 7.0), (93.0, 93.0), (7.0, 93.0), (7.0, 7.0)];
     stroke(&prefix(&r, inout(seg(t, 0.0, 0.8))), p.main, 4.5)
 }
 
-// ------------------------------------------------------------------ Liste
+// ------------------------------------------------------------------ List
 
 fn elements() -> Vec<El> {
     let pal = |main, on| Pal { main, on };
@@ -673,7 +673,7 @@ fn elements() -> Vec<El> {
     let one = |p: Pal| vec![("", "", "", p)];
     let sq = |id, de, en, cat, secs, looping, variants, draw| El { id, de, en, cat, w: 360, h: 360, secs, looping, variants, draw };
     vec![
-        // Aufrufe
+        // calls to action
         El { id: "abonnieren", de: "Abonnieren", en: "Subscribe, German", cat: "Aufrufe", w: 480, h: 160, secs: 1.7, looping: false,
             variants: vec![red, white], draw: |t, p| sub_button(t, p, "ABONNIEREN", "ABONNIERT") },
         El { id: "subscribe", de: "Subscribe", en: "Subscribe", cat: "Aufrufe", w: 480, h: 160, secs: 1.7, looping: false,
@@ -688,7 +688,7 @@ fn elements() -> Vec<El> {
             variants: one(yellow.3), draw: |t, p| link_below(t, p, "LINK IN THE", "DESCRIPTION") },
         sq("neu", "Neu", "New, German", "Aufrufe", 1.0, false, vec![yellow, red], |t, p| badge(t, p, "NEU")),
         sq("new", "New", "New", "Aufrufe", 1.0, false, vec![yellow, red], |t, p| badge(t, p, "NEW")),
-        // Zeigen
+        // pointing
         sq("pfeil-gerade", "Pfeil zeichnet sich", "Drawn arrow", "Zeigen", 0.9, false, vec![red, yellow, white], arrow_straight),
         sq("pfeil-geschwungen", "Pfeil geschwungen", "Curved arrow", "Zeigen", 0.9, false, vec![red, yellow, white], arrow_curved),
         sq("kreis-markierung", "Einkreisen", "Circle it", "Zeigen", 0.8, false, vec![red, yellow], circle_mark),
@@ -698,7 +698,7 @@ fn elements() -> Vec<El> {
         sq("fragezeichen", "Fragezeichen", "Question mark", "Zeigen", 1.0, false, vec![red, yellow], |t, p| pop_glyph(t, p, "?")),
         sq("fokus", "Fokus-Ecken", "Focus corners", "Zeigen", 0.8, false, vec![white, yellow], focus_corners),
         sq("zielkreuz", "Zielkreuz", "Crosshair", "Zeigen", 0.9, false, vec![red, white], target),
-        // Zeit
+        // time
         sq("countdown-3", "Countdown 3-2-1", "Countdown 3-2-1", "Zeit", 3.0, false, vec![red], |t, p| countdown(t, p, 3)),
         sq("countdown-5", "Countdown 5-4-3-2-1", "Countdown 5-4-3-2-1", "Zeit", 5.0, false, vec![red], |t, p| countdown(t, p, 5)),
         El { id: "fortschritt-5", de: "Fortschritt 5 s", en: "Progress 5 s", cat: "Zeit", w: 640, h: 80, secs: 5.0, looping: false,
@@ -707,13 +707,13 @@ fn elements() -> Vec<El> {
             variants: vec![red, white], draw: |t, p| progress(t, p, 10.0) },
         El { id: "rec", de: "REC", en: "REC", cat: "Zeit", w: 400, h: 200, secs: 1.0, looping: true, variants: one(red.3), draw: rec },
         sq("laden", "Lade-Kreis", "Loading circle", "Zeit", 1.0, true, vec![white, blue], spinner),
-        // Partikel
+        // particles
         sq("konfetti-regen", "Konfetti-Regen", "Confetti rain", "Partikel", 2.0, true, one(red.3), confetti_rain),
         sq("konfetti-knall", "Konfetti-Knall", "Confetti pop", "Partikel", 1.6, false, one(red.3), confetti_pop),
         sq("funken", "Funken", "Sparks", "Partikel", 0.9, false, vec![yellow, blue], sparks),
         sq("glitzer", "Sterne-Glitzer", "Twinkling stars", "Partikel", 1.5, true, vec![yellow, white], glitter),
         sq("herzen", "Herzen steigen auf", "Rising hearts", "Partikel", 2.0, true, one(red.3), hearts_rise),
-        // Sprechblasen, Rahmen
+        // speech bubbles, frames
         sq("sprechblase", "Sprechblase", "Speech bubble", "Sprechblasen", 0.8, false, vec![white, yellow], bubble),
         sq("denkblase", "Denkblase", "Thought bubble", "Sprechblasen", 0.9, false, vec![white], thought),
         El { id: "bauchbinde", de: "Bauchbinde", en: "Lower third", cat: "Rahmen", w: 800, h: 200, secs: 1.0, looping: false,
@@ -730,7 +730,7 @@ fn render(e: &El, p: Pal, t: f32) -> Vec<u8> {
         (e.draw)(t, p)
     );
     let mut px = cl_fx::stickers::render_svg_wh(&svg, e.w, e.h).unwrap_or_else(|| panic!("{}: SVG", e.id));
-    // vormultipliziert → gerade
+    // premultiplied → straight
     for c in px.chunks_mut(4) {
         let a = c[3] as u32;
         if a > 0 && a < 255 {
@@ -742,9 +742,9 @@ fn render(e: &El, p: Pal, t: f32) -> Vec<u8> {
     px
 }
 
-/// Gemeinsame Palette (≤ 256 Farben mit Alpha) für alle Bilder eines Elements: die häufigsten
-/// Farben fest, der Rest per k-Mittel über vormultipliziertes RGBA. Halbiert die Dateigröße
-/// gegenüber RGBA, weiche Kanten und Ausblendungen bleiben (volles Alpha je Palettenfarbe).
+/// Shared palette (≤ 256 colors with alpha) for all frames of an element: the most frequent
+/// colors fixed, the rest via k-means over premultiplied RGBA. Halves the file size
+/// compared with RGBA, soft edges and fades stay (full alpha per palette color).
 fn palette(frames: &[Vec<u8>]) -> (Vec<[u8; 4]>, std::collections::HashMap<u32, u8>) {
     use std::collections::HashMap;
     let key = |c: &[u8]| if c[3] == 0 { 0 } else { u32::from_le_bytes([c[0], c[1], c[2], c[3]]) };
@@ -756,7 +756,7 @@ fn palette(frames: &[Vec<u8>]) -> (Vec<[u8; 4]>, std::collections::HashMap<u32, 
     }
     hist.insert(0, u64::MAX / 2);
     let mut colors: Vec<(u32, u64)> = hist.into_iter().collect();
-    // feste Reihenfolge (deterministisch): nach Häufigkeit, dann Wert
+    // fixed order (deterministic): by frequency, then value
     colors.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     let pm = |k: u32| {
         let [r, g, b, a] = k.to_le_bytes();
@@ -814,13 +814,13 @@ fn palette(frames: &[Vec<u8>]) -> (Vec<[u8; 4]>, std::collections::HashMap<u32, 
 
 fn encode(e: &El, p: Pal, out: &Path) {
     let n = (e.secs * FPS as f32).round() as u32;
-    // Schleife: Bild n wäre wieder Bild 0; einmalig: Endstand als letztes Bild
+    // loop: frame n would be frame 0 again; one-off: final state as the last frame
     let count = if e.looping { n } else { n + 1 };
     let frames: Vec<Vec<u8>> = (0..count).map(|k| render(e, p, k as f32 / FPS as f32)).collect();
     let (pal, map) = palette(&frames);
     let mut pal_bytes = vec![0u8; 1024];
     for (i, c) in pal.iter().enumerate() {
-        // FFmpeg PAL8: je Eintrag ARGB als u32 (Little Endian: B, G, R, A)
+        // FFmpeg PAL8: ARGB per entry as u32 (little endian: B, G, R, A)
         pal_bytes[i * 4..i * 4 + 4].copy_from_slice(&[c[2], c[1], c[0], c[3]]);
     }
     let mut child = cl_media::ffmpeg_command()

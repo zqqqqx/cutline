@@ -1,11 +1,11 @@
-//! Eingebaute Übergänge für die Vorschau: dieselben Formeln wie FFmpegs `xfade` (Export rechnet
-//! in RGB, `format=gbrap`), damit Vorschau und Export dasselbe Bild zeigen. Bilder sind RGBA,
-//! A und B gleich groß; `t` ist der Fortschritt 0 (nur A) … 1 (nur B).
+//! Built-in transitions for the preview: the same formulas as FFmpeg's `xfade` (the export computes
+//! in RGB, `format=gbrap`) so preview and export show the same image. Images are RGBA,
+//! A and B the same size; `t` is the progress 0 (A only) … 1 (B only).
 //!
-//! `xfade` zählt rückwärts (`progress` 1 → 0) und mischt mit `mix(a, b, m) = a·m + b·(1 − m)`;
-//! beides ist hier übernommen, damit die Formeln eins zu eins vergleichbar bleiben.
+//! `xfade` counts backwards (`progress` 1 → 0) and mixes with `mix(a, b, m) = a·m + b·(1 − m)`;
+//! both are adopted here so the formulas stay comparable one to one.
 
-/// Sorten, die [`mix`] nachbildet; alle übrigen überblendet die Vorschau.
+/// Kinds that [`mix`] reproduces; the preview cross-fades all others.
 pub const SUPPORTED: &[&str] = &[
     "fade", "fadefast", "fadeslow", "fadeblack", "fadewhite", "fadegrays", "distance", "dissolve", "wipeleft", "wiperight",
     "wipeup", "wipedown", "wipetl", "wipetr", "wipebl", "wipebr", "smoothleft", "smoothright", "smoothup", "smoothdown",
@@ -36,7 +36,7 @@ fn frand(x: f32, y: f32) -> f32 {
     fract((x * 12.9898 + y * 78.233).sin() * 43758.545)
 }
 
-/// Zeilen von `out` (Breite `w` Pixel) auf mehrere Kerne verteilt füllen: `f(y, zeile)`.
+/// Fill the rows of `out` (width `w` pixels) spread over several cores: `f(y, row)`.
 pub fn rows(out: &mut [u8], w: i32, f: &(dyn Fn(i32, &mut [u8]) + Sync)) {
     let line = w.max(1) as usize * 4;
     let h = out.len() / line;
@@ -53,8 +53,8 @@ pub fn rows(out: &mut [u8], w: i32, f: &(dyn Fn(i32, &mut [u8]) + Sync)) {
     });
 }
 
-/// Mischt A und B wie `xfade=transition=kind` beim Fortschritt `t`. `None`: Sorte unbekannt
-/// oder Bilder passen nicht zusammen.
+/// Mixes A and B like `xfade=transition=kind` at progress `t`. `None`: kind unknown
+/// or images don't match.
 pub fn mix(kind: &str, a: &[u8], b: &[u8], w: u32, h: u32, t: f32) -> Option<Vec<u8>> {
     let (wi, hi) = (w as i32, h as i32);
     let n = (w * h * 4) as usize;
@@ -68,7 +68,7 @@ pub fn mix(kind: &str, a: &[u8], b: &[u8], w: u32, h: u32, t: f32) -> Option<Vec
         [img[i], img[i + 1], img[i + 2], img[i + 3]]
     };
     let mut out = vec![0u8; n];
-    // Gewicht von A je Pixel (A·g + B·(1 − g))
+    // weight of A per pixel (A·g + B·(1 − g))
     let weighted = |out: &mut [u8], g: &(dyn Fn(f32, f32) -> f32 + Sync)| {
         rows(out, wi, &|y, line| {
             for x in 0..wi {
@@ -80,7 +80,7 @@ pub fn mix(kind: &str, a: &[u8], b: &[u8], w: u32, h: u32, t: f32) -> Option<Vec
             }
         })
     };
-    // Pixel aus A oder B an verschobener Stelle
+    // pixel from A or B at a shifted position
     let pick = |out: &mut [u8], f: &(dyn Fn(i32, i32) -> [u8; 4] + Sync)| {
         rows(out, wi, &|y, line| {
             for x in 0..wi {
@@ -301,7 +301,7 @@ pub fn mix(kind: &str, a: &[u8], b: &[u8], w: u32, h: u32, t: f32) -> Option<Vec
                 }
             }
         }
-        // Zeilen von A zur Mitte gestaucht, oben und unten B
+        // rows of A squeezed to the middle, B above and below
         "squeezeh" => pick(&mut out, &|x, y| {
             let z = 0.5 + (y as f32 / hf - 0.5) / p;
             if !(0.0..=1.0).contains(&z) {
@@ -317,7 +317,7 @@ pub fn mix(kind: &str, a: &[u8], b: &[u8], w: u32, h: u32, t: f32) -> Option<Vec
                 "vuwind" => (y / hf, frand(x, 0.0)),
                 _ => ((hf - 1.0 - y) / hf, frand(x, 0.0)),
             };
-            // B weht von der Gegenseite herein, je Zeile/Spalte zufällig versetzt
+            // B blows in from the opposite side, randomly offset per row/column
             smoothstep(0.0, -0.2, f * (1.0 - 0.2) + 0.2 * (1.0 - r) - p * (1.0 + 0.2))
         }),
         _ => return None,
@@ -343,8 +343,8 @@ mod tests {
         out.stdout
     }
 
-    /// Vorschau-Formel gegen FFmpegs `xfade` (wie im Export in RGB) bei Fortschritt 0,3 und 0,5:
-    /// mittlere Abweichung je Kanal.
+    /// Preview formula against FFmpeg's `xfade` (as in the export in RGB) at progress 0.3 and 0.5:
+    /// mean deviation per channel.
     #[test]
     fn preview_matches_ffmpeg_xfade() {
         let dir = tempfile::tempdir().unwrap();
@@ -357,7 +357,7 @@ mod tests {
         let (a, b) = (raw(&pa), raw(&pb));
         let mut bad = Vec::new();
         for kind in SUPPORTED {
-            // 10 Bilder/s, Übergang über 1 s ab 0: Bild 3 → Fortschritt 0,3, Bild 5 → 0,5
+            // 10 frames/s, transition over 1 s from 0: frame 3 → progress 0.3, frame 5 → 0.5
             let got = ffmpeg(&[
                 "-loop", "1", "-framerate", "10", "-t", "1", "-i", pa.to_str().unwrap(),
                 "-loop", "1", "-framerate", "10", "-t", "1", "-i", pb.to_str().unwrap(),
