@@ -576,12 +576,16 @@ fn wants_audio(s: &ExportSettings) -> bool {
     s.format.audio_only() || (s.include_audio && s.format != Format::Gif)
 }
 
+/// Work folder `cutline-export-<pid>-…`: the process id lets the next start remove the
+/// folder of a crashed export at once (it can hold GBs), see `update::cleanup_temp` in the app.
+fn export_workdir() -> std::io::Result<tempfile::TempDir> {
+    tempfile::Builder::new().prefix(&format!("cutline-export-{}-", std::process::id())).tempdir()
+}
+
 /// A single pass (small and medium projects).
 fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, start: Time, end: Time) -> Result<Job> {
     let dur = end - start;
-    let workdir = tempfile::Builder::new()
-        .prefix("cutline-export-")
-        .tempdir()?;
+    let workdir = export_workdir()?;
     let (w, h) = (s.width & !1, s.height & !1);
     let mut ctx = graph::Ctx {
         w,
@@ -797,7 +801,7 @@ fn build_sections(
 ) -> Result<Job> {
     let plan = sections::plan(units, start, end, sections::grid_step(s.fps), base, lim)
         .map_err(|t| ExportError::TooManyClips(sections::clock(t)))?;
-    let workdir = tempfile::Builder::new().prefix("cutline-export-").tempdir()?;
+    let workdir = export_workdir()?;
     let dur = end - start;
     for (dir, need) in space_needs(scratch_bytes(s, dur.as_secs_f64()), workdir.path(), out) {
         if let Some(free) = sections::free_space(&dir) {
