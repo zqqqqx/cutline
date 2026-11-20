@@ -1,5 +1,5 @@
-// Nach „HeartWipe“ von gre (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Weichheit der Kante, p1 = Herzschlag, p2 = Leuchten am Rand
+// Based on "HeartWipe" by gre (GL Transitions, MIT license), ported to WGSL.
+// p0 = edge softness, p1 = heartbeat, p2 = glow at the edge
 const HW_O = vec2f(0.0, 0.55);
 const HW_LOBE = vec2f(0.25, 0.75);
 const HW_R = 0.35355339;
@@ -8,14 +8,14 @@ fn hw_dot2(v: vec2f) -> f32 {
   return dot(v, v);
 }
 
-// genauer Abstand zum Herz (Spitze bei (0, 0), Kerbe bei (0, 1))
+// exact distance to the heart (tip at (0, 0), notch at (0, 1))
 fn hw_sd(p0: vec2f) -> f32 {
   let p = vec2f(abs(p0.x), p0.y);
   if (p.x + p.y > 1.0) { return sqrt(hw_dot2(p - HW_LOBE)) - HW_R; }
   return sqrt(min(hw_dot2(p - vec2f(0.0, 1.0)), hw_dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
 }
 
-// Größe des kleinsten Herzens um HW_O, das p enthält
+// size of the smallest heart around HW_O that contains p
 fn hw_scale(p: vec2f) -> f32 {
   let l = length(p);
   if (l < 1e-6) { return 0.0; }

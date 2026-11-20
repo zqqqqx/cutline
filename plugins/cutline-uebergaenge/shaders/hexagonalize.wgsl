@@ -1,5 +1,5 @@
-// Nach „Hexagonalize“ von Fernando Kuteken (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Stufen, p1 = Waben über die Breite
+// Based on "Hexagonalize" by Fernando Kuteken (GL Transitions, MIT license), ported to WGSL.
+// p0 = steps, p1 = hexagons across the width
 fn hx_round(q: f32, r: f32) -> vec2f {
   let s = -q - r;
   var rq = floor(q + 0.5);

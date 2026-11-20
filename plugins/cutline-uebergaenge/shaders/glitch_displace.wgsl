@@ -1,4 +1,4 @@
-// Nach „GlitchDisplace“ von Matt DesLauriers (GL Transitions, MIT-Lizenz), nach WGSL portiert.
+// Based on "GlitchDisplace" by Matt DesLauriers (GL Transitions, MIT license), ported to WGSL.
 fn gd_displace(tex: vec4f, tc: vec2f, dot_depth: f32, tex_depth: f32, strength: f32) -> vec2f {
   let dis = tex * dot_depth + 1.0 - tex * tex_depth;
   let dx = (dis.x - 1.0 + tex_depth * dot_depth) * strength;

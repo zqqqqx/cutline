@@ -1,8 +1,8 @@
-// Nach „Doorway“ von gre (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Spiegelung am Boden, p1 = Perspektive der Türflügel, p2 = Tiefe, aus der Bild B kommt
+// Based on "Doorway" by gre (GL Transitions, MIT license), ported to WGSL.
+// p0 = floor reflection, p1 = perspective of the door wings, p2 = depth image B comes from
 const DW_PI = 3.141592653589793;
 
-// Strahl durch Bildpunkt x auf den links angeschlagenen Flügel (Breite w/2, gedreht um a): (t, Abstand)
+// ray through pixel x onto the left-hinged wing (width w/2, rotated by a): (t, distance)
 fn dw_leaf(x: f32, w: f32, eye: f32, a: f32) -> vec2f {
   let c = cos(a);
   let s = sin(a);
@@ -21,7 +21,7 @@ fn dw_ease(t: f32) -> f32 {
   return 1.0 - 4.0 * u * u * u;
 }
 
-// Der Raum dahinter: Bild B kommt nach vorn, mit Spiegelung am Boden
+// the room behind: image B comes forward, with a floor reflection
 fn dw_room(uv: vec2f, x: f32, edge_l: f32, edge_r: f32, close: f32, dolly: f32) -> vec4f {
   let size = mix(max(params.p2, 1.0), 1.0, dolly);
   let p = (uv - 0.5) * size + 0.5;

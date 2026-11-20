@@ -1,5 +1,5 @@
-// Nach „FilmBurn“ von Anastasia Dunbar (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Zufallswert (Form der Lichtflecken)
+// Based on "FilmBurn" by Anastasia Dunbar (GL Transitions, MIT license), ported to WGSL.
+// p0 = random seed (shape of the light spots)
 const FB_PI = 3.14159265358979323;
 
 fn fb_sigmoid(x: f32, a: f32) -> f32 {

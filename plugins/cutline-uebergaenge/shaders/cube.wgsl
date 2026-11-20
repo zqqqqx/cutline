@@ -1,9 +1,9 @@
-// Nach „Cube“ von gre (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Perspektive, p1 = Herauszoomen, p2 = Spiegelung, p3 = Abstand zum Boden (%), p4 = Schattierung
+// Based on "Cube" by gre (GL Transitions, MIT license), ported to WGSL.
+// p0 = perspective, p1 = zoom out, p2 = reflection, p3 = distance to the floor (%), p4 = shading
 const CB_PI = 3.141592653589793;
 const CB_EDGE = 0.002;
 
-// Strahl (eye, dir) gegen den um (c, s) gedrehten Würfel: (Abstand, x auf der Fläche, Höhe, Fläche)
+// ray (eye, dir) against the cube rotated by (c, s): (distance, x on the face, height, face)
 fn cb_hit(eye: vec3f, dir: vec3f, w: f32, c: f32, s: f32) -> vec4f {
   let pivot = vec2f(0.5 * w);
   let e = eye.xz - pivot;
@@ -70,7 +70,7 @@ fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
     front = vec4f(img.rgb * shade * img.a, img.a) * m;
   }
 
-  // Boden mit Spiegelung und Schatten, blendet mit der Bewegung ein und aus
+  // floor with reflection and shadow, fades in and out with the motion
   var ground = vec4f(0.0);
   let h = 0.005 * max(params.p3, 0.0);
   if (dir.y < 0.0 && motion > 0.0) {

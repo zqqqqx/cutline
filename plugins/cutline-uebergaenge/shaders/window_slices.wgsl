@@ -1,5 +1,5 @@
-// Nach „WindowSlices“ von gre (GL Transitions, MIT-Lizenz), nach WGSL portiert.
-// p0 = Anzahl der Streifen, p1 = Weichheit
+// Based on "WindowSlices" by gre (GL Transitions, MIT license), ported to WGSL.
+// p0 = number of slices, p1 = softness
 fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f {
   let sm = params.p1;
   let pr = smoothstep(-sm, 0.0, uv.x - progress * (1.0 + sm));
