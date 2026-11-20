@@ -1,6 +1,6 @@
 [package]
 name = "cl-app"
-description = "Cutline – das offene Schnittprogramm für Creator (Desktop-App)"
+description = "Cutline – the open video editor for creators (desktop app)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -36,12 +36,12 @@ egui-phosphor = "0.9"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 cpal = "0.15"
 hound = "3.5"
-# schon über eframe/wgpu im Build: Bildpuffer ohne Umrechnung als Textur übernehmen
+# already in the build via eframe/wgpu: take image buffers as textures without conversion
 bytemuck = "1"
 
 [dev-dependencies]
 tempfile.workspace = true
-# Testpakete bauen (wie cl-plugin)
+# build test packages (like cl-plugin)
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [build-dependencies]

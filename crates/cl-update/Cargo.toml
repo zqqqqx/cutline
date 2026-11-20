@@ -1,6 +1,6 @@
 [package]
 name = "cl-update"
-description = "Cutline: automatische Updates über GitHub Releases (prüfen, laden, SHA-256 prüfen, austauschen)"
+description = "Cutline: automatic updates via GitHub Releases (check, download, verify SHA-256, replace)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

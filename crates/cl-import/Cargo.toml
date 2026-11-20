@@ -1,6 +1,6 @@
 [package]
 name = "cl-import"
-description = "Cutline: Projekte anderer Schnittprogramme importieren (CapCut-Entwürfe, FCPXML)"
+description = "Cutline: import projects from other video editors (CapCut drafts, FCPXML)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

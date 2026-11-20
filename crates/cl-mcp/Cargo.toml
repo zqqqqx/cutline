@@ -1,6 +1,6 @@
 [package]
 name = "cl-mcp"
-description = "Cutline: MCP-Server (stdio + lokales HTTP), Tools werden zu EditOps"
+description = "Cutline: MCP server (stdio + local HTTP), tools become EditOps"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

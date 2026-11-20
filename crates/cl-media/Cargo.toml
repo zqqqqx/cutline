@@ -1,6 +1,6 @@
 [package]
 name = "cl-media"
-description = "Cutline: Medien-Probe, Frame-Decode und Streaming (Phase 0: FFmpeg-Prozess, später libav-Bindings + HW-Decode)"
+description = "Cutline: media probing, frame decoding and streaming (phase 0: FFmpeg process, later libav bindings + HW decode)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

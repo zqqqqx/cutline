@@ -1,6 +1,6 @@
 [package]
 name = "cl-fonts"
-description = "Cutline: echter Schriftarten-Import (TTF/OTF/TTC/WOFF), Bibliothek, Variable- und Farb-Fonts"
+description = "Cutline: real font import (TTF/OTF/TTC/WOFF), library, variable and color fonts"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

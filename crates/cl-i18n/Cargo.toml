@@ -1,6 +1,6 @@
 [package]
 name = "cl-i18n"
-description = "Cutline: Übersetzungen mit Project Fluent, Glossar-Prüfung und Pseudo-Lokalisierung"
+description = "Cutline: translations with Project Fluent, glossary check and pseudo-localization"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
