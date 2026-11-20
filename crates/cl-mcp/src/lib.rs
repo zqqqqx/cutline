@@ -1,10 +1,10 @@
-//! MCP-Endpunkt (Model Context Protocol) für Cutline.
+//! MCP endpoint (Model Context Protocol) for Cutline.
 //!
-//! - Transport `stdio`: `cutline --mcp <projekt.json>` (headless)
-//! - Transport HTTP: `127.0.0.1:<port>/mcp`, nur lokal und nur mit Bearer-Token, für die laufende App
+//! - Transport `stdio`: `cutline --mcp <project.json>` (headless)
+//! - Transport HTTP: `127.0.0.1:<port>/mcp`, local only and only with a bearer token, for the running app
 //!
-//! Jeder schreibende Tool-Aufruf wird zu [`EditOp`]s und läuft über [`Document::apply`].
-//! Er ist damit rückgängig machbar und im Verlauf als „MCP: <Client>“ sichtbar.
+//! Every writing tool call becomes [`EditOp`]s and goes through [`Document::apply`].
+//! It is thus undoable and visible in the history as „MCP: <Client>“.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -21,7 +21,7 @@ pub const SUPPORTED_PROTOCOLS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-
 pub struct McpServer {
     pub doc: Arc<Mutex<Document>>,
     pub fonts: Option<Arc<Mutex<cl_fonts::FontLibrary>>>,
-    /// Nur lesende Tools erlauben (Schalter in der App).
+    /// Allow read-only tools only (switch in the app).
     pub read_only: bool,
     client: Arc<Mutex<String>>,
 }
@@ -159,7 +159,7 @@ impl McpServer {
         self.client.lock().unwrap().clone()
     }
 
-    /// Verarbeitet eine JSON-RPC-Nachricht (oder ein Batch). `None` bei reinen Notifications.
+    /// Processes a JSON-RPC message (or a batch). `None` for pure notifications.
     pub fn handle(&self, msg: Value) -> Option<Value> {
         if let Value::Array(batch) = msg {
             let out: Vec<Value> = batch.into_iter().filter_map(|m| self.handle(m)).collect();
@@ -168,7 +168,7 @@ impl McpServer {
         let id = msg.get("id").cloned();
         let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
         let params = msg.get("params").cloned().unwrap_or(Value::Null);
-        let id = id?; // Notification (z. B. notifications/initialized): keine Antwort
+        let id = id?; // notification (e.g. notifications/initialized): no response
 
         let result = match method {
             "initialize" => {
@@ -358,7 +358,7 @@ impl McpServer {
                     .and_then(Value::as_str)
                     .map(str::to_string);
                 if let Some(s) = a.get("size").and_then(Value::as_f64) {
-                    // wie Inspektor/Import: 0, negative oder riesige Größen bringen das Rendern durcheinander
+                    // like inspector/import: 0, negative or huge sizes mess up rendering
                     style.size = (s as f32).clamp(8.0, 600.0);
                 }
                 style.uppercase = a.get("uppercase").and_then(Value::as_bool).unwrap_or(false);
@@ -451,8 +451,8 @@ impl McpServer {
         }
     }
 
-    /// Zeilenbasiertes JSON-RPC über stdin/stdout (MCP-Transport „stdio“).
-    /// `after` läuft nach jeder Nachricht (Headless-Modus speichert dort).
+    /// Line-based JSON-RPC over stdin/stdout (MCP transport `stdio`).
+    /// `after` runs after every message (headless mode saves there).
     pub fn serve_stdio(&self, mut after: impl FnMut()) -> std::io::Result<()> {
         self.serve(std::io::stdin().lock(), std::io::stdout().lock(), &mut after)
     }
@@ -469,7 +469,7 @@ impl McpServer {
                     json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": e.to_string() } }),
                 ),
             };
-            after(); // vor dem Antworten: auch bei geschlossener Ausgabe gespeichert
+            after(); // before responding: saved even if the output is closed
             if let Some(r) = resp {
                 writeln!(stdout, "{r}")?;
                 stdout.flush()?;
@@ -478,8 +478,8 @@ impl McpServer {
         Ok(())
     }
 
-    /// Startet den lokalen HTTP-Endpunkt (POST /mcp, JSON-Antworten) in einem Hintergrund-Thread.
-    /// Bindet ausschließlich an 127.0.0.1 und verlangt `Authorization: Bearer <token>`.
+    /// Starts the local HTTP endpoint (POST /mcp, JSON responses) in a background thread.
+    /// Binds exclusively to 127.0.0.1 and requires `Authorization: Bearer <token>`.
     pub fn serve_http(
         self,
         port: u16,
@@ -492,8 +492,8 @@ impl McpServer {
         )
     }
 
-    /// Wie [`serve_http`](Self::serve_http), endet aber, sobald `stop` gesetzt wird
-    /// (der Port wird dann sofort frei).
+    /// Like [`serve_http`](Self::serve_http), but ends as soon as `stop` is set
+    /// (the port is then free immediately).
     pub fn serve_http_until(
         self,
         port: u16,
@@ -515,9 +515,9 @@ impl McpServer {
                             std::thread::spawn(move || {
                                 let end = stream.try_clone();
                                 let _ = srv.http_connection(stream, &token);
-                                // geordnet schließen: erst FIN, dann (begrenzt) warten, bis der
-                                // Client schließt – sofort geschlossen kam unter Last ab und zu RST
-                                // statt der schon gesendeten Antwort an
+                                // close in order: first FIN, then wait (bounded) until the
+                                // client closes – closing immediately occasionally delivered RST under load
+                                // instead of the already sent response
                                 if let Ok(s) = end {
                                     let _ = s.shutdown(std::net::Shutdown::Write);
                                     let _ = std::io::copy(&mut (&s).take(64 * 1024), &mut std::io::sink());
@@ -538,7 +538,7 @@ impl McpServer {
         stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
         let mut reader = BufReader::new(stream.try_clone()?);
         let mut out = stream;
-        // Kopfzeilen vor der Anmeldung höchstens 64 KiB lesen (sonst unbegrenzter Speicher)
+        // read at most 64 KiB of headers before authentication (otherwise unbounded memory)
         let mut head = (&mut reader).take(64 * 1024);
         let mut request_line = String::new();
         head.read_line(&mut request_line)?;
@@ -572,14 +572,14 @@ impl McpServer {
         if !complete {
             return reply(&mut out, "431 Request Header Fields Too Large", "{}");
         }
-        // Vor einer Fehlerantwort den angekündigten Körper (höchstens 8 MiB) lesen und verwerfen:
-        // schließt der Server mit ungelesenen Daten, schickt das System RST statt FIN, und ein
-        // Client, der Kopf und Körper getrennt sendet, sieht statt 401/403 einen Verbindungsabbruch.
+        // before an error response read and discard the announced body (at most 8 MiB):
+        // if the server closes with unread data, the system sends RST instead of FIN, and a
+        // client that sends header and body separately sees a connection reset instead of 401/403.
         let mut fail = |out: &mut TcpStream, status: &str, body: &str| -> std::io::Result<()> {
             let _ = std::io::copy(&mut (&mut reader).take(len.min(8 * 1024 * 1024) as u64), &mut std::io::sink());
             reply(out, status, body)
         };
-        // Schutz gegen DNS-Rebinding: Host und Origin müssen genau localhost sein.
+        // protection against DNS rebinding: Host and Origin must be exactly localhost.
         if !local_authority(&host) {
             return fail(&mut out, "403 Forbidden", r#"{"error":"host"}"#);
         }
@@ -624,7 +624,7 @@ impl McpServer {
     }
 }
 
-/// `127.0.0.1` oder `localhost`, optional mit `:<Port>` – sonst nichts (kein Präfixvergleich).
+/// `127.0.0.1` or `localhost`, optionally with `:<port>` – nothing else (no prefix match).
 fn local_authority(a: &str) -> bool {
     let (host, port) = match a.split_once(':') {
         Some((h, p)) => (h, Some(p)),
@@ -657,7 +657,7 @@ fn timeline_json(p: &Project) -> Value {
         .collect::<Vec<_>>())
 }
 
-/// Zufälliges Token für den HTTP-Transport.
+/// Random token for the HTTP transport.
 pub fn new_token() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
@@ -686,12 +686,12 @@ mod tests {
             json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_text","arguments":{"text":"Hallo","start":0.0,"duration":2.0}}})
         )
         .into_bytes();
-        input.extend(b"\xff\xfe\n"); // ungültiges UTF-8 beendet die Schleife mit Fehler
+        input.extend(b"\xff\xfe\n"); // invalid UTF-8 ends the loop with an error
         let mut seen = Vec::new();
         let r = s.serve(&input[..], Vec::new(), &mut || seen.push(s.doc.lock().unwrap().revision()));
         assert!(r.is_err());
         assert_eq!(seen.len(), 1);
-        assert_ne!(seen[0], 0, "Änderung war beim Rückruf schon da");
+        assert_ne!(seen[0], 0, "the change was already there at the callback");
     }
 
     #[test]
@@ -754,10 +754,10 @@ mod tests {
         let r = call(&s, "set_format", json!({"aspect":"9:16","fps":"60"}));
         assert_eq!(r["structuredContent"]["width"], 1080);
         assert_eq!(r["structuredContent"]["height"], 1920);
-        // Fehler kommen als isError zurück, nicht als Protokollfehler
+        // errors come back as isError, not as protocol errors
         let r = call(&s, "split_clip", json!({"clip_id": clip, "at": 99.0}));
         assert_eq!(r["isError"], true);
-        // Rohe EditOps
+        // raw EditOps
         let r = call(
             &s,
             "apply_ops",
@@ -789,7 +789,7 @@ mod tests {
     fn http_transport_requires_token() {
         let s = server();
         let (addr, _h) = s.serve_http(0, "geheim".into()).unwrap();
-        // in einem Stück senden (`write!` auf den Strom schrieb in vielen kleinen Teilen)
+        // send in one piece (`write!` on the stream wrote in many small parts)
         let post = |auth: &str, body: &str| -> String {
             let req = format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: {auth}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", addr.port(), body.len());
             http(addr, req.as_bytes())
@@ -809,14 +809,14 @@ mod tests {
         let req = |host: &str, origin: &str| {
             format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\n{origin}Authorization: Bearer geheim\r\nContent-Length: {}\r\n\r\n{body}", body.len())
         };
-        // DNS-Rebinding: fremder Host
+        // DNS rebinding: foreign host
         assert!(raw(req("evil.com", "").as_bytes()).starts_with("HTTP/1.1 403"));
-        // Origin nur exakt, kein Präfix
+        // Origin only exact, no prefix
         assert!(raw(req("localhost", "Origin: http://localhost.evil.com\r\n").as_bytes()).starts_with("HTTP/1.1 403"));
         assert!(raw(req("localhost:9", "Origin: http://localhost:9\r\n").as_bytes()).starts_with("HTTP/1.1 200"));
-        // Kopfbereich ohne Ende nach 64 KiB wird nicht weiter gelesen
+        // a header section without end is not read beyond 64 KiB
         let mut big = b"POST /mcp HTTP/1.1\r\nX: ".to_vec();
-        big.resize(64 * 1024, b'a'); // genau die Grenze: Server liest alles, kein RST
+        big.resize(64 * 1024, b'a'); // exactly the limit: the server reads everything, no RST
         assert!(raw(&big).starts_with("HTTP/1.1 431"));
     }
 
@@ -841,8 +841,8 @@ mod tests {
         s
     }
 
-    /// Client sendet Kopf und Körper getrennt, Token falsch: die 401 kommt an (der Server liest den
-    /// Körper vorher, sonst bricht die Verbindung mit RST ab und die Antwort geht verloren).
+    /// Client sends header and body separately, wrong token: the 401 arrives (the server reads the
+    /// body first, otherwise the connection breaks with RST and the response is lost).
     #[test]
     fn error_reply_arrives_when_body_follows_the_head() {
         let (addr, _h) = server().serve_http(0, "geheim".into()).unwrap();
@@ -870,22 +870,22 @@ mod tests {
             assert!(http(addr, req(bad).as_bytes()).starts_with("HTTP/1.1 401"), "{bad:?}");
         }
         assert!(http(addr, req(Some("Bearer geheim")).as_bytes()).starts_with("HTTP/1.1 200"));
-        // falsche Methode/Pfad
+        // wrong method/path
         let get = "GET /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\n\r\n";
         assert!(http(addr, get.as_bytes()).starts_with("HTTP/1.1 405"));
         let other = format!("POST /mcp/x HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: {}\r\n\r\n{body}", body.len());
         assert!(http(addr, other.as_bytes()).starts_with("HTTP/1.1 404"));
-        // übergroße Anfrage wird abgelehnt, ohne den Körper zu lesen
+        // an oversized request is rejected without reading the body
         let huge = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: 999999999999\r\n\r\n";
         assert!(http(addr, huge.as_bytes()).starts_with("HTTP/1.1 413"));
-        // kaputtes JSON → 400 mit Parse-Fehler
+        // broken JSON → 400 with parse error
         let junk = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: 5\r\n\r\n{\"a\":";
         let r = http(addr, junk.as_bytes());
         assert!(r.starts_with("HTTP/1.1 400") && r.contains("-32700"), "{r}");
-        // Müll statt HTTP
+        // garbage instead of HTTP
         assert!(!http(addr, b"\x00\xff\xfe garbage\r\n\r\n").starts_with("HTTP/1.1 200"));
         assert!(http(addr, b"").is_empty() || !http(addr, b"").starts_with("HTTP/1.1 200"));
-        // Server lebt noch
+        // the server is still alive
         assert!(http(addr, req(Some("Bearer geheim")).as_bytes()).starts_with("HTTP/1.1 200"));
     }
 
@@ -910,13 +910,13 @@ mod tests {
     #[test]
     fn broken_json_rpc_messages() {
         let s = server();
-        // ohne Methode, mit ID
+        // without method, with ID
         assert_eq!(s.handle(json!({"jsonrpc":"2.0","id":1})).unwrap()["error"]["code"], -32600);
-        // keine Antwort auf Notifications, auch nicht im Batch
+        // no response to notifications, not even in a batch
         assert!(s.handle(json!([{"jsonrpc":"2.0","method":"ping"}])).is_none());
         let b = s.handle(json!([{"jsonrpc":"2.0","id":1,"method":"ping"}, {"jsonrpc":"2.0","method":"x"}, {"jsonrpc":"2.0","id":2,"method":"nope"}])).unwrap();
         assert_eq!(b.as_array().unwrap().len(), 2);
-        // falsche Typen: keine Panik
+        // wrong types: no panic
         for m in [json!(5), json!("x"), json!(null), json!([]), json!({"id":{"a":1},"method":5}), json!({"id":1,"method":"tools/call","params":5}), json!({"id":1,"method":"tools/call","params":{"name":7,"arguments":"x"}})] {
             let _ = s.handle(m);
         }
@@ -925,13 +925,13 @@ mod tests {
         assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("Unbekanntes Tool"));
         assert_eq!(rpc(&s, "resources/read", json!({"uri":"project://geheim"}))["error"]["code"], -32002);
         assert!(rpc(&s, "resources/read", json!({"uri":"project://current"}))["result"]["contents"][0]["text"].as_str().is_some());
-        // tiefe Verschachtelung im Batch
+        // deep nesting in the batch
         let mut deep = json!({"jsonrpc":"2.0","id":1,"method":"ping"});
         for _ in 0..50 {
             deep = json!([deep]);
         }
         assert!(s.handle(deep).is_some());
-        // unbekannte Protokollversion → neueste unterstützte
+        // unknown protocol version → newest supported
         assert_eq!(rpc(&s, "initialize", json!({"protocolVersion":"1999-01-01"}))["result"]["protocolVersion"], SUPPORTED_PROTOCOLS[0]);
     }
 
@@ -949,7 +949,7 @@ mod tests {
             assert_eq!(call(&s, "add_text", args.clone())["isError"], true, "{args}");
         }
         assert_eq!(s.doc.lock().unwrap().undo_entries().len(), 0);
-        // negativer Start → 0; Fehler: Schriftgröße 0/negativ/riesig wurde übernommen
+        // negative start → 0; bug: font size 0/negative/huge was accepted
         for (size, want) in [(-5.0, 8.0), (0.0, 8.0), (1e9, 600.0), (72.0, 72.0)] {
             let r = call(&s, "add_text", json!({"text":"🎬 שלום","start":-3,"duration":1,"size":size}));
             assert_eq!(r["isError"], false, "{r}");
@@ -966,13 +966,13 @@ mod tests {
         let r = call(&s, "set_format", json!({"width":1001,"height":721,"fps":"23.976"}));
         assert_eq!((r["structuredContent"]["width"].as_u64(), r["structuredContent"]["height"].as_u64()), (Some(1000), Some(720)));
         assert_eq!(s.doc.lock().unwrap().project().settings.fps, Rational::new(24000, 1001));
-        // Rohe Ops mit unendlichen Zahlen (f32-Überlauf) ändern nichts
+        // raw ops with infinite numbers (f32 overflow) change nothing
         let clip = s.doc.lock().unwrap().project().timeline.tracks[0].clips[0].id;
         let r = call(&s, "apply_ops", json!({"ops":[{"op":"set_transform","clip":clip.to_string(),"transform":{"x":1e300,"y":0,"scale":1,"rotation_deg":0}}]}));
         assert_eq!(r["isError"], true, "{r}");
         let json = s.doc.lock().unwrap().project().to_json();
         assert!(Project::from_json(&json).is_ok());
-        // kaputte Op mitten in der Liste: davor Angewandtes bleibt, Fehler nennt die Nummer
+        // a broken op in the middle of the list: what was applied before stays, the error names the number
         let r = call(&s, "apply_ops", json!({"ops":[{"op":"rename","name":"A"},{"op":"zaubern"}]}));
         assert!(r["content"][0]["text"].as_str().unwrap().starts_with("Op 1"));
         assert_eq!(call(&s, "apply_ops", json!({"ops":"x"}))["isError"], true);
