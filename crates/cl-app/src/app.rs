@@ -3600,7 +3600,7 @@ impl eframe::App for App {
     }
 }
 
-fn lock_path(p: &Path) -> PathBuf {
+pub(crate) fn lock_path(p: &Path) -> PathBuf {
     let mut l = p.as_os_str().to_owned();
     l.push(".lock");
     PathBuf::from(l)

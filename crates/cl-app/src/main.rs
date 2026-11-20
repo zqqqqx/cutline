@@ -120,7 +120,7 @@ fn empty_argument_opens_no_project() {
     assert_eq!(open_arg(&a(&["cutline"])), None);
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     app::perf_mark("main");
     let args: Vec<String> = std::env::args().collect();
 
@@ -178,11 +178,47 @@ fn main() -> anyhow::Result<()> {
     .map_err(|e| {
         log::error!("Fenster: {e}");
         applog::flush();
-        anyhow::anyhow!("{e}")
+        e.to_string().into()
     })
 }
 
-fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+/// MCP mode: write the project only if it changed since the last save and no other running
+/// Cutline window holds its lock (otherwise a stale copy would overwrite the user's edits).
+fn mcp_save(p: &std::path::Path, d: &cl_core::Document, saved: &mut u64, me: u32) {
+    if d.revision() == *saved {
+        return;
+    }
+    if paths::lock_held_by_other(&app::lock_path(p), me) {
+        eprintln!("Nicht gespeichert: {} ist in einem anderen Cutline-Fenster geöffnet", p.display());
+        return;
+    }
+    match paths::write_atomic(p, d.project().to_json()) {
+        Ok(()) => *saved = d.revision(),
+        Err(e) => eprintln!("Speichern fehlgeschlagen: {e}"),
+    }
+}
+
+#[test]
+fn mcp_save_skips_unchanged_and_locked_projects() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("a.cutline");
+    let mut d = cl_core::Document::new(cl_core::Project::new("A"));
+    let mut saved = d.revision();
+    let me = std::process::id();
+    // unchanged: nothing is written (the exit used to write unconditionally)
+    mcp_save(&p, &d, &mut saved, me + 1);
+    assert!(!p.exists());
+    d.apply(cl_core::EditOp::AddTrack { kind: cl_core::TrackKind::Audio }, cl_core::OpSource::Ui).unwrap();
+    // another running window (this test process, seen from another PID) holds the lock
+    std::fs::write(app::lock_path(&p), me.to_string()).unwrap();
+    mcp_save(&p, &d, &mut saved, me + 1);
+    assert!(!p.exists());
+    std::fs::remove_file(app::lock_path(&p)).unwrap();
+    mcp_save(&p, &d, &mut saved, me + 1);
+    assert!(p.exists() && saved == d.revision());
+}
+
+fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     use cl_core::{Document, Project};
     let proj = match &project {
         Some(p) if p.is_file() => Project::from_json(&std::fs::read_to_string(p)?)?,
@@ -200,19 +236,15 @@ fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> anyhow::Result<()> {
     let server = cl_mcp::McpServer::new(doc.clone(), fonts);
     // save after every change: an abort by the client or a broken line loses nothing
     let mut saved = doc.lock().unwrap().revision();
+    let me = std::process::id();
     let r = server.serve_stdio(|| {
-        let Some(p) = &project else { return };
-        let d = doc.lock().unwrap();
-        if d.revision() != saved {
-            match paths::write_atomic(p, d.project().to_json()) {
-                Ok(()) => saved = d.revision(),
-                Err(e) => eprintln!("Speichern fehlgeschlagen: {e}"),
-            }
+        if let Some(p) = &project {
+            mcp_save(p, &doc.lock().unwrap_or_else(|e| e.into_inner()), &mut saved, me);
         }
     });
-    if let Some(p) = project {
-        paths::write_atomic(&p, doc.lock().unwrap().project().to_json())?;
-        eprintln!("Projekt gespeichert: {}", p.display());
+    // last chance for a change the callback could not write; unchanged state is not rewritten
+    if let Some(p) = &project {
+        mcp_save(p, &doc.lock().unwrap_or_else(|e| e.into_inner()), &mut saved, me);
     }
     r?;
     Ok(())
