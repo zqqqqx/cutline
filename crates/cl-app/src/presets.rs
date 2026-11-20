@@ -1,6 +1,6 @@
-//! Presets: den Look eines Clips speichern (Anpassen, Filter, Effekte, LUT, Animationen,
-//! Deckkraft, Ton-Bearbeitung, bei Text der Textstil ohne Inhalt) und mit einem Klick auf
-//! einen oder mehrere Clips anwenden. Ablage: `<Daten>/Library/presets.json`.
+//! Presets: save a clip's look (adjust, filters, effects, LUT, animations,
+//! opacity, audio edits, for text the text style without content) and apply it with one click to
+//! one or more clips. Storage: `<Daten>/Library/presets.json`.
 
 use cl_core::{Animations, AudioFx, Clip, ClipContent, ClipFx, TextStyle};
 use eframe::egui::{self, RichText};
@@ -19,7 +19,7 @@ pub struct Preset {
     pub opacity: f32,
     #[serde(default)]
     pub audio: AudioFx,
-    /// Textstil (ohne Inhalt), nur bei Text-Presets
+    /// Text style (without content), only for text presets
     #[serde(default)]
     pub text: Option<TextStyle>,
 }
@@ -29,8 +29,8 @@ fn one() -> f32 {
 }
 
 impl Preset {
-    /// Look eines Clips übernehmen. Clip-gebundene Dinge (Maske aus „Hintergrund entfernen“,
-    /// Geschwindigkeitskurve, Rückwärts, Zensur-Flächen) bleiben außen vor.
+    /// Take over a clip's look. Clip-bound things (mask from „Hintergrund entfernen“,
+    /// speed curve, reverse, censor areas) are left out.
     pub fn from_clip(name: &str, c: &Clip) -> Self {
         let mut fx = c.fx.clone();
         fx.cutout = None;
@@ -55,7 +55,7 @@ impl Preset {
         }
     }
 
-    /// Auf einen Clip anwenden (Inhalt, Position, Zeit und Maske bleiben).
+    /// Apply to a clip (content, position, time and mask stay).
     pub fn apply(&self, c: &mut Clip) {
         let keep = (
             c.fx.cutout.clone(),
@@ -98,7 +98,7 @@ pub fn save(list: &[Preset]) {
     let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(list).unwrap_or_default());
 }
 
-/// Offener Preset-Dialog
+/// Open preset dialog
 #[derive(Clone)]
 pub enum PresetDialog {
     Save { name: String },
@@ -106,7 +106,7 @@ pub enum PresetDialog {
 }
 
 impl App {
-    /// Preset-Leiste über den Inspektor-Tabs: speichern und anwenden.
+    /// Preset bar above the inspector tabs: save and apply.
     pub fn preset_bar(&mut self, ui: &mut egui::Ui, c: &Clip) {
         let is_text = matches!(c.content, ClipContent::Text(_));
         ui.horizontal(|ui| {
@@ -141,7 +141,7 @@ impl App {
                 } else {
                     crate::tr(format!("Looks ({})", matching.len()))
                 };
-                // Aufklappbare Liste statt Popup (ein offenes Popup blieb beim Clipwechsel stehen)
+                // Expandable list instead of a popup (an open popup stayed up on clip change)
                 let caret = if self.preset_list_open {
                     icon::CARET_UP
                 } else {
@@ -239,13 +239,13 @@ impl App {
         }
     }
 
-    /// Preset `i` auf die Auswahl anwenden (Inspektor-Leiste und Clip-Menü „Look anwenden“).
+    /// Apply preset `i` to the selection (inspector bar and clip menu „Look anwenden“).
     pub fn apply_preset(&mut self, i: usize) {
         let Some(p) = self.presets.get(i).cloned() else {
             return;
         };
         self.modify_selection(|x| {
-            // Text-Presets nur auf Text, Look-Presets nur auf Medien
+            // Text presets only on text, look presets only on media
             if matches!(x.content, ClipContent::Text(_)) == p.is_text() {
                 p.apply(x);
             }
@@ -253,7 +253,7 @@ impl App {
         self.toast(format!("Look „{}“ angewendet", p.name));
     }
 
-    /// Dialog „Preset speichern/umbenennen“ (jeden Frame aufrufen).
+    /// Dialog „Preset speichern/umbenennen“ (call every frame).
     pub fn preset_dialogs(&mut self, ctx: &egui::Context) {
         let Some(d) = &mut self.preset_dialog else {
             self.preset_dialog_since = 0;
@@ -305,7 +305,7 @@ impl App {
                 Some(PresetDialog::Save { name }) if !name.trim().is_empty() => {
                     if let Some(c) = self.selected.and_then(|s| self.clip_view(s)) {
                         let p = Preset::from_clip(&name, &c);
-                        // gleicher Name ersetzt das alte Preset
+                        // the same name replaces the old preset
                         self.presets.retain(|x| x.name != p.name);
                         self.presets.push(p);
                         save(&self.presets);
@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(
             b.fx.cutout.as_deref(),
             Some("eigene.mkv"),
-            "Maske des Ziel-Clips bleibt"
+            "target clip's mask stays"
         );
         let json = serde_json::to_string(&p).unwrap();
         assert_eq!(serde_json::from_str::<Preset>(&json).unwrap(), p);

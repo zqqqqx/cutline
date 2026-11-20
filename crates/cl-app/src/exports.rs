@@ -1,5 +1,5 @@
-//! Merkt sich, wohin Projekte exportiert wurden (`exports.json` im Datenordner), damit sich
-//! fertige Dateien später je Projekt wiederfinden und mit dem Projektordner umziehen lassen.
+//! Remembers where projects were exported to (`exports.json` in the data folder), so that
+//! finished files can later be found per project and moved along with the project folder.
 
 use std::path::{Path, PathBuf};
 
@@ -9,17 +9,17 @@ use crate::paths;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Export {
-    /// Projektname zum Zeitpunkt des Exports
+    /// Project name at the time of export
     pub project: String,
     pub path: PathBuf,
-    /// Sekunden seit 1970
+    /// Seconds since 1970
     pub at: u64,
-    /// Projektdatei; unterscheidet gleichnamige Projekte (ältere Einträge haben keine)
+    /// Project file; tells same-named projects apart (older entries have none)
     #[serde(default)]
     pub project_path: Option<PathBuf>,
 }
 
-/// Zählt fertige Exporte, damit ein offenes Exporte-Fenster nachlädt
+/// Counts finished exports so that an open exports window reloads
 static RECORDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn file() -> PathBuf {
@@ -34,7 +34,7 @@ fn save(v: &[Export]) {
     let _ = paths::write_atomic(&file(), serde_json::to_string_pretty(v).unwrap_or_default());
 }
 
-/// Fertigen Export eintragen (derselbe Pfad ersetzt den alten Eintrag)
+/// Record a finished export (the same path replaces the old entry)
 pub fn record(project: &str, project_path: Option<&Path>, path: &Path) {
     let mut v = load();
     v.retain(|e| e.path != path);
@@ -47,7 +47,7 @@ pub fn record(project: &str, project_path: Option<&Path>, path: &Path) {
     RECORDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Noch vorhandene Exporte eines Projekts, neueste zuerst
+/// Still existing exports of a project, newest first
 pub fn for_project(project: &str, project_path: Option<&Path>) -> Vec<Export> {
     let mut v: Vec<Export> = load()
         .into_iter()
@@ -65,7 +65,7 @@ fn belongs(e: &Export, name: &str, path: &Path) -> bool {
     e.project_path.as_ref().map_or(e.project == name, |p| p == path)
 }
 
-/// Projekt umbenannt (und Datei ggf. von `from` nach `to`): Einträge folgen Name und Datei
+/// Project renamed (and file possibly from `from` to `to`): entries follow name and file
 pub fn rename_project(from: &Path, to: &Path, old: &str, new: &str) {
     let mut v = load();
     if v.iter().any(|e| belongs(e, old, from)) {
@@ -77,7 +77,7 @@ pub fn rename_project(from: &Path, to: &Path, old: &str, new: &str) {
     }
 }
 
-/// Projektdateien umgezogen: Einträge zeigen auf die neuen Dateien
+/// Project files moved: entries point to the new files
 pub fn move_projects(moved: &[(PathBuf, PathBuf)]) {
     let mut v = load();
     let mut n = 0;
@@ -92,7 +92,7 @@ pub fn move_projects(moved: &[(PathBuf, PathBuf)]) {
     }
 }
 
-/// Offenes Exporte-Fenster: Liste einmal geladen, Größen schon formatiert
+/// Open exports window: list loaded once, sizes already formatted
 pub struct ExportsList {
     pub name: String,
     path: Option<PathBuf>,
@@ -113,14 +113,14 @@ impl ExportsList {
     }
 }
 
-/// Exporte, die direkt im alten Projektordner liegen, in den neuen verschieben
+/// Move exports that sit directly in the old project folder into the new one
 pub fn move_dir(old: &Path, new: &Path) -> usize {
     let mut v = load();
     let mut n = 0;
     for e in v.iter_mut().filter(|e| e.path.parent() == Some(old) && e.path.is_file()) {
         let to = new.join(e.path.file_name().unwrap_or_default());
         if !to.exists() && paths::move_path(&e.path, &to).is_ok() {
-            // Untertitel- und Kapiteldateien daneben mitnehmen
+            // Take subtitle and chapter files next to it along
             for ext in ["srt", "vtt", "chapters.txt"] {
                 let side = e.path.with_extension(ext);
                 if side.is_file() {
@@ -138,7 +138,7 @@ pub fn move_dir(old: &Path, new: &Path) -> usize {
 }
 
 impl crate::app::App {
-    /// Liste der fertigen Exporte eines Projekts, jeweils mit „Zur Datei“
+    /// List of a project's finished exports, each with „Zur Datei“
     pub fn exports_window(&mut self, ctx: &eframe::egui::Context) {
         use crate::theme::{self, icon};
         use eframe::egui::{self, RichText};
@@ -147,7 +147,7 @@ impl crate::app::App {
             *l = ExportsList::new(&l.name, l.path.as_deref());
         }
         let (name, list) = (&l.name, &l.items);
-        // Warteschlange (alle Projekte): laufender Export mit Fortschritt, darunter die wartenden
+        // Queue (all projects): running export with progress, the waiting ones below
         let file = |f: &Path| f.file_name().unwrap_or_default().to_string_lossy().to_string();
         let current = self.export.current();
         let waiting: Vec<(String, String)> = self
@@ -265,7 +265,7 @@ fn exports_are_listed_per_project_and_move_with_the_folder() {
     record("Film", Some(&pa), &a.join("weg.mp4"));
     assert_eq!(for_project("Film", Some(&pa)).len(), 1);
     assert!(for_project("Anderes", None).is_empty());
-    // gleichnamiges Projekt an anderer Stelle sieht die Exporte nicht, alter Eintrag ohne Pfad zählt nach Name
+    // a same-named project elsewhere does not see the exports, an old entry without a path counts by name
     assert!(for_project("Film", Some(&home.path().join("x/Film.cutline"))).is_empty());
     assert_eq!(for_project("Film", None).len(), 1);
     assert_eq!(move_dir(&a, &b), 1);

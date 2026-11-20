@@ -1,7 +1,7 @@
-//! Plugins „Freesound“ (Soundeffekte, CC-Lizenzen) und „Pexels“ (Stock-Videos und -Fotos).
-//! Beide eingebaut und standardmäßig aus; sie brauchen einen eigenen API-Schlüssel.
-//! Freesound erscheint im Audio-Tab, Pexels im Medien-Tab. Geladene Dateien landen in der
-//! eigenen Bibliothek (Sounds) bzw. im Medienordner des Projekts.
+//! Plugins „Freesound“ (sound effects, CC licenses) and „Pexels“ (stock videos and photos).
+//! Both built in and off by default; they need their own API key.
+//! Freesound appears in the Audio tab, Pexels in the Media tab. Downloaded files go to the
+//! own library (sounds) or the project's media folder.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -44,14 +44,14 @@ fn save_keys(k: &Keys) {
     let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(k).unwrap_or_default());
 }
 
-/// Ein Suchtreffer (Freesound oder Pexels)
+/// A search hit (Freesound or Pexels)
 #[derive(Debug, Clone)]
 pub struct Hit {
     pub title: String,
-    /// ID beim Dienst: macht den Dateinamen eindeutig (Titel wiederholen sich oft)
+    /// ID at the service: makes the file name unique (titles often repeat)
     pub id: String,
     pub info: String,
-    /// Datei zum Laden (MP3-Vorschau bzw. Video/Foto)
+    /// File to download (MP3 preview or video/photo)
     pub url: String,
     pub ext: &'static str,
     pub license: String,
@@ -67,7 +67,7 @@ pub struct StockState {
     pub query: [String; 2],
     pub results: [Vec<Hit>; 2],
     pub busy: bool,
-    /// Die laufende Anfrage begann in einem inzwischen verlassenen Projekt: nichts mehr einfügen
+    /// The running request started in a project that has since been left: insert nothing more
     pub stray: bool,
     pub photos: bool,
     tx: Sender<Msg>,
@@ -76,7 +76,7 @@ pub struct StockState {
 
 #[cfg(test)]
 impl StockState {
-    /// Testhilfe: ein fertiger Download trifft ein (Datei gibt es nicht – sie darf nie angefasst werden)
+    /// Test helper: a finished download arrives (the file does not exist – it must never be touched)
     pub fn test_downloaded(&self, title: &str) {
         let _ = self.tx.send(Msg::Downloaded(FREESOUND, Ok((std::path::PathBuf::from("gibt-es-nicht.wav"), title.into()))));
     }
@@ -115,7 +115,7 @@ fn http_err(e: ureq::Error) -> String {
     }
 }
 
-/// Freesound-Textsuche (APIv2, Token-Authentifizierung; Vorschauen ohne OAuth ladbar)
+/// Freesound text search (APIv2, token auth; previews loadable without OAuth)
 pub fn freesound_search(key: &str, q: &str) -> Result<Vec<Hit>, String> {
     let v: serde_json::Value = agent()
         .get("https://freesound.org/apiv2/search/text/")
@@ -156,7 +156,7 @@ pub fn freesound_search(key: &str, q: &str) -> Result<Vec<Hit>, String> {
         .collect())
 }
 
-/// Pexels-Suche nach Videos oder Fotos
+/// Pexels search for videos or photos
 pub fn pexels_search(key: &str, q: &str, photos: bool) -> Result<Vec<Hit>, String> {
     let url = if photos {
         "https://api.pexels.com/v1/search"
@@ -203,7 +203,7 @@ pub fn pexels_search(key: &str, q: &str, photos: bool) -> Result<Vec<Hit>, Strin
         .into_iter()
         .flatten()
         .filter_map(|vd| {
-            // beste Datei bis 1080p
+            // best file up to 1080p
             let files = vd["video_files"].as_array()?;
             let f = files
                 .iter()
@@ -276,7 +276,7 @@ impl App {
         }
     }
 
-    /// Suchliste (Freesound im Audio-Tab, Pexels im Medien-Tab)
+    /// Search list (Freesound in the Audio tab, Pexels in the Media tab)
     pub fn stock_panel(&mut self, ui: &mut egui::Ui, which: &'static str) {
         let ctx = ui.ctx().clone();
         let i = if which == FREESOUND { 0 } else { 1 };
@@ -406,7 +406,7 @@ impl App {
                 let r = if dest.is_file() {
                     Ok(())
                 } else {
-                    // schreibt erst *.part: ein abgebrochener Download wird nie wiederverwendet
+                    // writes *.part first: an aborted download is never reused
                     cl_update::download_to(&h.url, &dest, |_, _| {}, &Default::default())
                 };
                 let _ = tx.send(Msg::Downloaded(which, r.map(|_| (dest, h.title.clone()))));
@@ -415,7 +415,7 @@ impl App {
         }
     }
 
-    /// Abschnitte in Einstellungen → Plugins und Konten
+    /// Sections in Settings → Plugins and accounts
     pub fn stock_settings(&mut self, ui: &mut egui::Ui) {
         for (which, title, url) in [
             (FREESOUND, "Freesound", "https://freesound.org/apiv2/apply/"),

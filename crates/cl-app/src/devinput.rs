@@ -1,12 +1,12 @@
-//! Entwicklerhilfe für Klicktests: Mit `CUTLINE_SHOTS=<Ordner>` liest Cutline Eingaben aus der Datei
-//! `<Ordner>/input` (eine Zeile je Schritt) und speist sie als egui-Ereignisse ein – ohne echten
-//! Mauszeiger, also auch bei verdecktem Fenster oder ausgeschaltetem Monitor. Ist alles abgespielt,
-//! entsteht `<Ordner>/input.done`. Ohne die Variable passiert nichts.
+//! Developer aid for click tests: with `CUTLINE_SHOTS=<folder>` Cutline reads input from the file
+//! `<folder>/input` (one line per step) and feeds it in as egui events – without a real
+//! mouse pointer, so also with a covered window or a switched-off monitor. Once everything has played,
+//! `<folder>/input.done` is created. Without the variable nothing happens.
 //!
-//! Zeilen (Koordinaten = Pixel im Fensterbild, wie in den Bildern aus `CUTLINE_SHOTS`):
+//! Lines (coordinates = pixels in the window image, as in the images from `CUTLINE_SHOTS`):
 //! `move X Y` · `click X Y [mods]` · `rclick X Y` · `dclick X Y` · `drag X1 Y1 X2 Y2 [mods]` ·
-//! `wheel X Y DX DY [mods]` · `key NAME [mods]` · `text …` — `mods` z. B. `ctrl+shift`.
-//! `drop X Y PFAD[|PFAD…]`: Dateien wie aus dem Explorer über die Stelle ziehen und dort ablegen.
+//! `wheel X Y DX DY [mods]` · `key NAME [mods]` · `text …` — `mods` e.g. `ctrl+shift`.
+//! `drop X Y PATH[|PATH…]`: drag files over the spot as from Explorer and drop them there.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -14,9 +14,9 @@ use std::sync::Mutex;
 
 use eframe::egui::{self, pos2, Event, Key, Modifiers, PointerButton, Pos2};
 
-/// Ein Bild lang gültig: Ereignisse und gehaltene Zusatztasten
+/// Valid for one frame: events and held modifier keys
 type Ev = (Vec<Event>, Modifiers);
-/// … dazu Dateien, die von außen über dem Fenster schweben bzw. abgelegt werden
+/// … plus files hovering over or dropped on the window from outside
 type Step = (Vec<Event>, Modifiers, Option<Files>);
 
 #[derive(Clone, Debug, PartialEq)]
@@ -73,11 +73,11 @@ fn key(name: &str) -> Option<Key> {
     if !alias.is_empty() {
         return Key::from_name(alias);
     }
-    // Buchstaben, Ziffern, F-Tasten: egui kennt sie groß geschrieben
+    // Letters, digits, F keys: egui knows them in upper case
     Key::from_name(name).or_else(|| Key::from_name(&name.to_ascii_uppercase()))
 }
 
-/// Eine Zeile in Schritte (je Bild einer) übersetzen. `ppp` = Pixel je egui-Punkt. Unbekanntes: leer.
+/// Translate a line into steps (one per frame). `ppp` = pixels per egui point. Unknown: empty.
 fn parse(line: &str, ppp: f32) -> Vec<Step> {
     if let Some(rest) = line.trim_start().strip_prefix("drop ") {
         let mut it = rest.trim_start().splitn(3, ' ');
@@ -85,7 +85,7 @@ fn parse(line: &str, ppp: f32) -> Vec<Step> {
         let files: Vec<PathBuf> = it.next().unwrap_or("").split('|').map(str::trim).filter(|f| !f.is_empty()).map(PathBuf::from).collect();
         let (Some(x), Some(y), false) = (x, y, files.is_empty()) else { return Vec::new() };
         let p = pos2(x / ppp, y / ppp);
-        // einige Bilder schweben (Vorschau), dann ablegen, dann ist der Zeiger wieder frei
+        // hover for a few frames (preview), then drop, then the pointer is free again
         let mut v: Vec<Step> = (0..4).map(|_| (Vec::new(), Modifiers::NONE, Some(Files::Hover(files.clone(), p)))).collect();
         v.push((Vec::new(), Modifiers::NONE, Some(Files::Drop(files, p))));
         v.push((Vec::new(), Modifiers::NONE, Some(Files::Done)));
@@ -123,7 +123,7 @@ fn parse_events(line: &str, ppp: f32) -> Vec<Ev> {
             for i in 1..=12 {
                 v.push((vec![Event::PointerMoved(a + (b - a) * (i as f32 / 12.0))], m));
             }
-            // ein Bild am Ziel stehen, damit Ablege-Ziele den Zeiger sehen
+            // stay at the target for one frame so drop targets see the pointer
             v.push((vec![Event::PointerMoved(b)], m));
             v.push((vec![btn(b, PointerButton::Primary, false, m)], m));
             v
@@ -143,10 +143,10 @@ fn parse_events(line: &str, ppp: f32) -> Vec<Ev> {
     out.unwrap_or_default()
 }
 
-/// Aus `App::raw_input_hook`: wartende Schritte einspeisen, einen je Bild.
+/// From `App::raw_input_hook`: feed in waiting steps, one per frame.
 pub fn feed(ctx: &egui::Context, raw: &mut egui::RawInput) {
     let Some(dir) = dir() else { return };
-    // das Testfenster hat oft keinen Fokus: Textfelder würden die Eingabe sonst verlieren
+    // the test window often has no focus: text fields would otherwise lose the input
     raw.focused = true;
     let mut q = QUEUE.lock().unwrap_or_else(|e| e.into_inner());
     let file = dir.join("input");
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn lines_become_events_in_points() {
-        // Klick: bewegen, drücken, loslassen – Koordinaten durch die Skalierung geteilt
+        // Click: move, press, release – coordinates divided by the scale
         let c = parse("click 200 100 ctrl+shift", 2.0);
         assert_eq!(c.len(), 3);
         assert!(matches!(c[0].0[0], Event::PointerMoved(p) if p == pos2(100.0, 50.0)));
@@ -199,25 +199,25 @@ mod tests {
         assert!(c[1].1.ctrl && c[1].1.shift && !c[1].1.alt);
         assert!(matches!(parse("rclick 1 1", 1.0)[1].0[0], Event::PointerButton { button: PointerButton::Secondary, .. }));
         assert_eq!(parse("dclick 5 5", 1.0).len(), 5);
-        // Ziehen endet am Ziel und lässt dort los
+        // A drag ends at the target and releases there
         let d = parse("drag 0 0 120 60", 1.0);
         assert!(matches!(d.last().unwrap().0[0], Event::PointerButton { pos, pressed: false, .. } if pos == pos2(120.0, 60.0)));
         assert!(d.len() > 10);
-        // Tasten mit Aliasnamen und Zusatztasten
+        // Keys with alias names and modifiers
         let k = parse("key z strg", 1.0);
         assert!(matches!(k[0].0[0], Event::Key { key: Key::Z, pressed: true, modifiers, .. } if modifiers.ctrl && modifiers.command));
         assert!(matches!(parse("key escape", 1.0)[0].0[0], Event::Key { key: Key::Escape, .. }));
         assert!(matches!(parse("key left", 1.0)[0].0[0], Event::Key { key: Key::ArrowLeft, .. }));
         assert!(matches!(&parse("text  Hallo Welt", 1.0)[0].0[0], Event::Text(t) if t == "Hallo Welt"));
         assert!(matches!(parse("wheel 10 10 0 -120", 1.0)[1].0[0], Event::MouseWheel { delta, .. } if delta.y == -120.0));
-        // Dateien ablegen: erst schweben, dann ablegen (Pfade mit Leerzeichen, durch | getrennt)
+        // Drop files: hover first, then drop (paths with spaces, separated by |)
         let f = parse("drop 200 100 C:/a b/x.mp4|y.wav", 2.0);
         let want = vec![PathBuf::from("C:/a b/x.mp4"), PathBuf::from("y.wav")];
         assert_eq!(f.len(), 6);
         assert_eq!(f[0].2, Some(Files::Hover(want.clone(), pos2(100.0, 50.0))));
         assert_eq!(f[4].2, Some(Files::Drop(want, pos2(100.0, 50.0))));
         assert_eq!(f[5].2, Some(Files::Done));
-        // Unbekanntes und Unvollständiges wird übersprungen statt abzustürzen
+        // Unknown and incomplete lines are skipped instead of crashing
         for bad in ["", "click", "click a b", "key nix", "tanzen 1 2", "drag 1 2 3", "drop 1 2", "drop a b c.mp4"] {
             assert!(parse(bad, 1.0).is_empty(), "{bad}");
         }

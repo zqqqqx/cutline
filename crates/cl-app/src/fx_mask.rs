@@ -1,13 +1,13 @@
-//! Maske eines Effekt-/Filter-Elements in der Vorschau: Form als konvexe Polygone im
-//! Bildschirm, zugeschnitten auf das Clip-Rechteck, und als Textur-Fläche gezeichnet.
-//! Gleiche Geometrie wie `cl_fx::mask_expr` (Mitte und Größe als Anteil der Bildgröße,
-//! Drehung um die Mitte). Weiche Kanten zeigt nur der Export.
+//! Mask of an effect/filter element in the preview: shape as convex polygons on
+//! screen, cropped to the clip rect, and drawn as a textured area.
+//! Same geometry as `cl_fx::mask_expr` (center and size as a fraction of the frame size,
+//! rotation around the center). Only the export shows soft edges.
 
 use cl_core::{Mask, MaskShape};
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect};
 
-/// Konvexe Teilflächen der Maske im Bildschirm. `true` = umgekehrt für Kreis/Rechteck:
-/// dann gilt „alles außer diesen Flächen“.
+/// Convex parts of the mask on screen. `true` = inverted for circle/rectangle:
+/// then „everything except these areas“ applies.
 pub fn polygons(m: &Mask, canvas: Rect) -> (Vec<Vec<Pos2>>, bool) {
     let (cw, ch) = (canvas.width(), canvas.height());
     let c = canvas.min + vec2(m.cx * cw, m.cy * ch);
@@ -63,12 +63,12 @@ fn cross(a: Pos2, b: Pos2, p: Pos2) -> f32 {
     (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
 }
 
-/// Konvexes Polygon `poly` auf das konvexe Polygon `clip` zuschneiden (Sutherland–Hodgman).
+/// Clip the convex polygon `poly` to the convex polygon `clip` (Sutherland–Hodgman).
 pub fn clip_convex(poly: &[Pos2], clip: &[Pos2]) -> Vec<Pos2> {
     if clip.len() < 3 {
         return Vec::new();
     }
-    // Umlaufsinn des Zuschnitts bestimmen
+    // Determine the winding of the clip polygon
     let area: f32 = (0..clip.len())
         .map(|i| {
             let (a, b) = (clip[i], clip[(i + 1) % clip.len()]);
@@ -100,8 +100,8 @@ pub fn clip_convex(poly: &[Pos2], clip: &[Pos2]) -> Vec<Pos2> {
     out
 }
 
-/// Textur `tex` (auf dem Clip-Viereck `corners`: oben links, oben rechts, unten rechts,
-/// unten links) nur innerhalb der Fläche `poly` zeichnen.
+/// Draw texture `tex` (on the clip quad `corners`: top left, top right, bottom right,
+/// bottom left) only inside the area `poly`.
 pub fn draw_textured(
     painter: &egui::Painter,
     tex: egui::TextureId,
@@ -113,7 +113,7 @@ pub fn draw_textured(
     if part.len() < 3 {
         return;
     }
-    // Bildschirm → UV über die Kanten des (gedrehten) Clip-Rechtecks
+    // Screen → UV via the edges of the (rotated) clip rect
     let o = corners[0];
     let ex = corners[1] - o;
     let ey = corners[3] - o;
@@ -160,7 +160,7 @@ mod tests {
         };
         let (polys, inv) = polygons(&m, canvas);
         assert!(!inv);
-        // Clip deckt nur die rechte Hälfte ab 30 px
+        // Clip covers only the right half from 30 px
         let clip = [
             pos2(30.0, 0.0),
             pos2(100.0, 0.0),

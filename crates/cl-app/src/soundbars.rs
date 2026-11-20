@@ -1,5 +1,5 @@
-//! Wellenformen der Bibliotheks-Sounds: einmal im Hintergrund berechnet, auf Platte gemerkt und beim
-//! Start geladen – die Kacheln zeigen sie ohne Wartezeit.
+//! Waveforms of the library sounds: computed once in the background, remembered on disk and
+//! loaded at startup – the tiles show them without waiting.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::preview::{sound_bars, SOUND_BARS};
 
-/// Wellenform und Länge eines Sounds.
+/// Waveform and length of a sound.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Bars {
-    /// Größe und Änderungszeit der Datei: ändert sie sich, wird neu gerechnet
+    /// Size and modification time of the file: if they change, it is recomputed
     stamp: u64,
     pub secs: f32,
-    /// Balkenhöhen 0…255
+    /// Bar heights 0…255
     pub bars: Vec<u8>,
 }
 
@@ -30,14 +30,14 @@ struct Shared {
     map: Mutex<HashMap<String, Bars>>,
     queue: Mutex<VecDeque<Job>>,
     wake: Condvar,
-    /// Speichern nacheinander: mehrere Rechner teilen sich eine Datei (und `write_atomic` eine
-    /// Zwischendatei je Prozess); der Stand wird erst unter der Sperre genommen, der letzte gewinnt
+    /// Save one after another: several workers share one file (and `write_atomic` one
+    /// temp file per process); the state is only taken under the lock, the last one wins
     save: Mutex<()>,
 }
 
 pub struct SoundBars {
     shared: Arc<Shared>,
-    /// schon eingereiht (einmal je Sitzung und Schlüssel)
+    /// already queued (once per session and key)
     asked: HashSet<String>,
 }
 
@@ -47,7 +47,7 @@ fn stamp(p: &Path) -> Option<u64> {
     Some(m.len() ^ (t << 20))
 }
 
-/// Muss gerechnet werden? Nur ohne Eintrag oder wenn sich die Datei geändert hat.
+/// Needs computing? Only without an entry or if the file has changed.
 fn stale(cached: Option<&Bars>, now: Option<u64>) -> bool {
     match (cached, now) {
         (Some(b), Some(s)) => b.stamp != s,
@@ -73,7 +73,7 @@ fn store(file: &Path, map: &HashMap<String, Bars>) {
     }
 }
 
-/// Aktuellen Stand sichern (von jedem Rechner aus aufrufbar).
+/// Save the current state (callable from any worker).
 fn save(sh: &Shared, file: &Path) {
     let _one = sh.save.lock().unwrap_or_else(|e| e.into_inner());
     let snap = sh.map.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -81,11 +81,11 @@ fn save(sh: &Shared, file: &Path) {
 }
 
 const PER_SEC: u32 = 40;
-/// Vorab höchstens so viel einer Datei decodieren (stundenlange Dateien: Zeit und Speicher)
+/// Decode at most this much of a file up front (hours-long files: time and memory)
 const HEAD_SECS: f64 = 600.0;
 
-/// Wellenform der ersten `limit` Sekunden; die Länge stimmt auch darüber hinaus (ffprobe).
-// shortcut: bei längeren Dateien zeigt die Kachel nur den Anfang als Wellenform, für Sound-Kacheln genügt das
+/// Waveform of the first `limit` seconds; the length is right beyond that too (ffprobe).
+// shortcut: for longer files the tile only shows the start as a waveform, which is enough for sound tiles
 fn bars_for(path: &Path, st: u64, limit: f64) -> Option<Bars> {
     let peaks = cl_media::waveform_head(path, PER_SEC, Some(limit)).ok()?;
     let mut b = quantize(&peaks, PER_SEC, st);
@@ -106,7 +106,7 @@ fn work(sh: &Shared, file: &Path) {
                 if let Some(j) = q.pop_front() {
                     break j;
                 }
-                // Warteschlange leer: Ergebnis sichern, dann schlafen
+                // Queue empty: save the result, then sleep
                 if std::mem::take(&mut changed) {
                     drop(q);
                     save(sh, file);
@@ -116,7 +116,7 @@ fn work(sh: &Shared, file: &Path) {
                 q = sh.wake.wait(q).unwrap_or_else(|e| e.into_inner());
             }
         };
-        // Datei erst prüfen, dann sperren: die Oberfläche liest dieselbe Tabelle
+        // Check the file first, then lock: the UI reads the same table
         let fresh = |sh: &Shared| {
             let now = stamp(&job.path);
             !stale(sh.map.lock().unwrap_or_else(|e| e.into_inner()).get(&job.key), now)
@@ -124,7 +124,7 @@ fn work(sh: &Shared, file: &Path) {
         if fresh(sh) {
             continue;
         }
-        // eingebaute Sounds werden erst erzeugt
+        // built-in sounds are created first
         if let Some(s) = job.sfx.and_then(cl_fx::sfx::sfx) {
             if cl_fx::sfx::render(s, &job.path).is_err() {
                 continue;
@@ -142,7 +142,7 @@ fn work(sh: &Shared, file: &Path) {
 }
 
 impl SoundBars {
-    /// Lädt die gemerkten Werte und startet die Rechner (höchstens 4, halbe Kernzahl).
+    /// Loads the remembered values and starts the workers (at most 4, half the core count).
     pub fn load(file: PathBuf) -> Self {
         let shared = Arc::new(Shared { map: Mutex::new(read(&file)), ..Default::default() });
         let n = std::thread::available_parallelism().map_or(2, |n| n.get() / 2).clamp(1, 4);
@@ -157,7 +157,7 @@ impl SoundBars {
         self.shared.map.lock().unwrap_or_else(|e| e.into_inner()).get(key).cloned()
     }
 
-    /// Einmal je Sitzung prüfen bzw. rechnen lassen (im Hintergrund; gemerkte Werte bleiben sichtbar).
+    /// Check or compute once per session (in the background; remembered values stay visible).
     pub fn ensure(&mut self, key: &str, path: &Path, sfx: Option<&'static str>) {
         if self.asked.contains(key) {
             return;
@@ -184,14 +184,14 @@ mod tests {
         assert_eq!((b.bars.len(), b.secs), (SOUND_BARS, 2.0));
         assert!(b.bars.contains(&255));
         store(&file, &HashMap::from([("sfx:a".to_string(), b.clone())]));
-        // nach dem Laden sofort da, ohne zu rechnen
+        // available right after loading, without computing
         let sb = SoundBars::load(file.clone());
         assert_eq!(sb.get("sfx:a"), Some(b.clone()));
         assert_eq!(sb.get("sfx:b"), None);
-        // unveränderte Datei: nichts zu tun; geänderte oder fehlende: neu rechnen
+        // unchanged file: nothing to do; changed or missing: recompute
         assert!(!stale(Some(&b), Some(st)));
         assert!(stale(Some(&b), Some(st + 1)) && stale(None, Some(st)) && stale(Some(&b), None));
-        // kaputte Datei: leer statt Fehler
+        // broken file: empty instead of an error
         std::fs::write(&file, b"{kaputt").unwrap();
         assert!(read(&file).is_empty());
     }
@@ -213,7 +213,7 @@ mod tests {
                 });
             }
         });
-        // der zuletzt gesicherte Stand enthält alles
+        // the last saved state contains everything
         assert_eq!(read(&file).len(), 200);
     }
 
@@ -233,7 +233,7 @@ mod tests {
         assert!(st.success());
         let b = bars_for(&snd, 1, 4.0).unwrap();
         assert!((b.secs - 12.0).abs() < 0.2, "{}", b.secs);
-        // kurze Datei: ganz gelesen, Länge aus den Werten
+        // short file: read fully, length from the values
         let b = bars_for(&snd, 1, 60.0).unwrap();
         assert!((b.secs - 12.0).abs() < 0.2, "{}", b.secs);
         assert!(cl_media::waveform_head(&snd, PER_SEC, Some(4.0)).unwrap().len() <= 4 * PER_SEC as usize + 1);

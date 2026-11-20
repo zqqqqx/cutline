@@ -1,10 +1,10 @@
-//! Mehrere Clips gleichzeitig bearbeiten: Änderungen am angezeigten Clip werden Feld für Feld
-//! auf die übrigen ausgewählten Clips übertragen (nur die geänderten Felder, nur wo es sie gibt).
+//! Edit several clips at once: changes to the shown clip are carried over field by field
+//! to the other selected clips (only the changed fields, only where they exist).
 
 use cl_core::*;
 use serde_json::Value;
 
-/// Felder, die je Clip eigen bleiben (Lage, Länge, Quelle, Zugehörigkeit).
+/// Fields that stay per clip (position, length, source, membership).
 const OWN: &[&str] = &[
     "id",
     "start",
@@ -16,7 +16,7 @@ const OWN: &[&str] = &[
     "keyframes",
 ];
 
-/// Geänderte Blätter von `a` nach `b` (Objekte werden durchlaufen, Listen und Werte als Ganzes).
+/// Changed leaves from `a` to `b` (objects are walked, lists and values as a whole).
 fn diff(a: &Value, b: &Value, path: &mut Vec<String>, out: &mut Vec<(Vec<String>, Value)>) {
     match (a, b) {
         (Value::Object(x), Value::Object(y)) => {
@@ -34,7 +34,7 @@ fn diff(a: &Value, b: &Value, path: &mut Vec<String>, out: &mut Vec<(Vec<String>
     }
 }
 
-/// Wert an `path` setzen, wenn der Elternknoten existiert (legt nichts Neues an).
+/// Set the value at `path` if the parent node exists (creates nothing new).
 fn set_path(v: &mut Value, path: &[String], val: Value) -> bool {
     let Some((last, parents)) = path.split_last() else {
         return false;
@@ -55,8 +55,8 @@ fn set_path(v: &mut Value, path: &[String], val: Value) -> bool {
     }
 }
 
-/// Clip als JSON, auch mit leerem Zuschnitt (fehlt sonst in der Datei und ließe sich weder
-/// vergleichen noch übertragen).
+/// Clip as JSON, also with an empty crop (otherwise missing from the file, so it could neither
+/// be compared nor carried over).
 fn to_value(c: &Clip) -> serde_json::Result<Value> {
     let mut v = serde_json::to_value(c)?;
     if let Some(o) = v.as_object_mut() {
@@ -65,7 +65,7 @@ fn to_value(c: &Clip) -> serde_json::Result<Value> {
     Ok(v)
 }
 
-/// Ersetzungen für die übrigen Clips in `selection`, die `orig → edited` am Haupt-Clip entsprechen.
+/// Replacements for the other clips in `selection` that correspond to `orig → edited` on the main clip.
 pub fn propagate(p: &Project, orig: &Clip, edited: &Clip, selection: &[ClipId]) -> Vec<EditOp> {
     let others: Vec<&Clip> = selection
         .iter()
@@ -80,7 +80,7 @@ pub fn propagate(p: &Project, orig: &Clip, edited: &Clip, selection: &[ClipId]) 
     };
     let mut changes = Vec::new();
     diff(&a, &b, &mut Vec::new(), &mut changes);
-    // Quelle eines Medienclips nie übertragen
+    // Never carry over the source of a media clip
     changes.retain(|(path, _)| {
         !path.first().is_some_and(|k| OWN.contains(&k.as_str()))
             && !(path.first().map(String::as_str) == Some("content")
@@ -152,16 +152,16 @@ mod tests {
         assert_eq!(clip.id, b.id);
         assert_eq!(clip.transform.scale, 2.0);
         assert_eq!(clip.fx.effects.len(), 1);
-        assert_eq!(clip.duration, b.duration, "Länge bleibt");
-        assert_eq!(clip.start, b.start, "Lage bleibt");
+        assert_eq!(clip.duration, b.duration, "length stays");
+        assert_eq!(clip.start, b.start, "position stays");
         let ClipContent::Text(s) = &clip.content else {
             panic!()
         };
-        assert_eq!(s.text, "b", "Text bleibt, wenn er nicht geändert wurde");
+        assert_eq!(s.text, "b", "text stays if it was not changed");
     }
 
-    /// Zuschnitt fehlt im JSON, wenn er leer ist: Setzen, Ändern und Zurücksetzen gehen trotzdem
-    /// auf die anderen ausgewählten Clips über.
+    /// The crop is missing from the JSON when empty: setting, changing and resetting still
+    /// carry over to the other selected clips.
     #[test]
     fn crop_goes_to_all_selected_clips() {
         let mut p = Project::new("t");
@@ -176,11 +176,11 @@ mod tests {
             [EditOp::ReplaceClip { clip }] => clip.crop,
             o => panic!("{o:?}"),
         };
-        // Ändern: b hat noch keinen Zuschnitt
+        // Change: b has no crop yet
         let mut e = a.clone();
         e.crop.top = 0.3;
         assert_eq!(other(&a, &e, &p), Crop { top: 0.3, ..Default::default() });
-        // Zurücksetzen (Feld fällt aus dem JSON)
+        // Reset (the field drops out of the JSON)
         b.crop = Crop { left: 0.5, ..Default::default() };
         p.timeline.tracks[0].clips[1] = b.clone();
         let mut e = a.clone();
