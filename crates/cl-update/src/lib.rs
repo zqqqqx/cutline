@@ -1,15 +1,15 @@
-//! Automatische Updates über GitHub Releases.
+//! Automatic updates via GitHub Releases.
 //!
-//! Ablauf:
-//! 1. [`check`] fragt `releases/latest` des Repositorys ab und vergleicht die Version
-//!    (SemVer, `v`-Präfix erlaubt) mit der laufenden.
-//! 2. [`download`] lädt das passende Paket (`cutline-<os>-<arch>.zip`) und prüft es gegen
-//!    die mitveröffentlichte `.sha256`-Datei. Ohne Prüfsumme wird nicht installiert.
-//! 3. [`install`] entpackt in den Programmordner. Laufende Dateien (die EXE selbst) werden
-//!    vorher in `*.old` umbenannt, das erlaubt Windows auch für laufende Programme.
-//!    Beim nächsten Start räumt [`cleanup_old`] diese Reste weg.
+//! Flow:
+//! 1. [`check`] queries `releases/latest` of the repository and compares the version
+//!    (SemVer, `v` prefix allowed) with the running one.
+//! 2. [`download`] downloads the matching package (`cutline-<os>-<arch>.zip`) and checks it against
+//!    the `.sha256` file published with it. Without a checksum nothing is installed.
+//! 3. [`install`] unpacks into the program folder. Running files (the EXE itself) are
+//!    renamed to `*.old` first, which Windows allows even for running programs.
+//!    On the next start [`cleanup_old`] removes these leftovers.
 //!
-//! Es werden keine Daten übertragen außer der normalen HTTP-Anfrage an api.github.com.
+//! No data is transmitted except the normal HTTP request to api.github.com.
 
 pub mod changelog;
 pub mod packs;
@@ -21,8 +21,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-/// Kurze, verständliche Meldung zu einem rohen Fehlertext (Netzbibliothek, Dateisystem, Prüfung).
-/// Der Rohtext gehört ins Protokoll, nicht in die Oberfläche; „Abgebrochen“ bleibt unverändert.
+/// Short, understandable message for a raw error text (network library, file system, check).
+/// The raw text belongs in the log, not in the UI; „Abgebrochen“ stays unchanged.
 pub fn friendly(raw: &str) -> String {
     let l = raw.to_lowercase();
     let has = |k: &[&str]| k.iter().any(|k| l.contains(k));
@@ -33,7 +33,7 @@ pub fn friendly(raw: &str) -> String {
     } else if has(&["ohne prüfsumme"]) {
         "Version ohne Prüfsumme"
     } else if has(&["prüfsumme", "beschädigt", "unvollständig", "zu groß", "ist leer", "unsicher"]) {
-        // vor „404“: die Hex-Zeichen im Prüfsummen-Fehler können „404“ enthalten
+        // before "404": the hex characters in the checksum error can contain "404"
         "Datei beschädigt (Prüfsumme)"
     } else if has(&["404", "not found", "gefunden"]) {
         "Nicht gefunden"
@@ -47,14 +47,14 @@ pub fn friendly(raw: &str) -> String {
     m.to_string()
 }
 
-/// GitHub-Repository mit den Releases.
+/// GitHub repository with the releases.
 pub const REPO: &str = "zqqqqx/cutline";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version(pub u64, pub u64, pub u64);
 
 impl Version {
-    /// `v1.2.3`, `1.2.3`, `1.2.3-beta.1` (Vorabversionen zählen wie die Basisversion).
+    /// `v1.2.3`, `1.2.3`, `1.2.3-beta.1` (pre-releases count like the base version).
     pub fn parse(s: &str) -> Option<Self> {
         let s = s.trim().trim_start_matches(['v', 'V']);
         let core = s.split(['-', '+']).next()?;
@@ -84,9 +84,9 @@ pub struct Release {
     pub asset_url: String,
     pub asset_size: u64,
     pub sha_url: Option<String>,
-    /// Anhang `changes.json` (ältere Releases haben ihn nicht)
+    /// Asset `changes.json` (older releases don't have it)
     pub changes_url: Option<String>,
-    /// „Was ist neu“ aus `changes.json`; `None` = aus dem Release-Text (`notes`) lesen
+    /// „Was ist neu“ from `changes.json`; `None` = read from the release text (`notes`)
     pub changes: Option<Vec<changelog::Notes>>,
 }
 
@@ -114,7 +114,7 @@ struct GhRelease {
     assets: Vec<GhAsset>,
 }
 
-/// Name des Pakets für dieses System.
+/// Name of the package for this system.
 pub fn asset_name() -> String {
     let os = match std::env::consts::OS {
         "windows" => "windows",
@@ -135,7 +135,7 @@ fn agent() -> ureq::Agent {
         .build()
 }
 
-/// Release-JSON auswerten (eigene Funktion, damit sie ohne Netz testbar ist).
+/// Evaluate the release JSON (own function so it is testable without network).
 pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, String> {
     let r: GhRelease =
         serde_json::from_str(json).map_err(|e| format!("Antwort nicht lesbar: {e}"))?;
@@ -154,7 +154,7 @@ pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, St
             "Version {version} hat kein Paket für dieses System ({want})"
         ));
     };
-    // ohne Prüfsumme wird nie installiert: dann gar nicht erst anbieten
+    // never installed without a checksum: then don't offer it at all
     let Some(sha) = r.assets.iter().find(|a| a.name == format!("{want}.sha256")) else {
         return Err(format!("Version {version} ohne Prüfsumme"));
     };
@@ -175,10 +175,10 @@ pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, St
     }))
 }
 
-/// Höchstgröße von `changes.json` (alle Versionen beider Sprachen: heute etwa 60 KB)
+/// Maximum size of `changes.json` (all versions of both languages: about 60 KB today)
 const MAX_CHANGES: u64 = 2 << 20;
 
-/// `changes.json` laden; `None` = nicht erreichbar, zu groß oder unlesbar (dann gilt der Release-Text).
+/// Load `changes.json`; `None` = unreachable, too large or unreadable (then the release text applies).
 pub fn fetch_changes(url: &str) -> Option<Vec<changelog::Notes>> {
     let resp = agent().get(url).set("User-Agent", "cutline-updater").call().ok()?;
     let mut text = String::new();
@@ -189,7 +189,7 @@ pub fn fetch_changes(url: &str) -> Option<Vec<changelog::Notes>> {
     changelog::parse_json(&text)
 }
 
-/// Neueste Version abfragen. `Ok(None)` = schon aktuell.
+/// Query the newest version. `Ok(None)` = already up to date.
 pub fn check(current: &str) -> Result<Option<Release>, String> {
     let cur = Version::parse(current).ok_or("Eigene Version unlesbar")?;
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
@@ -213,19 +213,19 @@ pub fn check(current: &str) -> Result<Option<Release>, String> {
     }
 }
 
-/// SHA-256 als Hex.
+/// SHA-256 as hex.
 pub fn sha256_hex(data: &[u8]) -> String {
     let d = Sha256::digest(data);
     d.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Erwartete Prüfsumme aus einer `.sha256`-Datei (`<hex>  <datei>` oder nur `<hex>`).
+/// Expected checksum from a `.sha256` file (`<hex>  <file>` or just `<hex>`).
 pub fn parse_sha_file(s: &str) -> Option<String> {
     let h = s.split_whitespace().next()?.to_ascii_lowercase();
     (h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit())).then_some(h)
 }
 
-/// Paket laden und prüfen. Gibt den Pfad der geprüften ZIP-Datei zurück.
+/// Download and check the package. Returns the path of the checked ZIP file.
 pub fn download(
     rel: &Release,
     dir: &Path,
@@ -255,7 +255,7 @@ pub fn download(
         .unwrap_or(rel.asset_size)
         .max(1);
     let mut reader = resp.into_reader();
-    // Content-Length kommt vom Server: nicht blind vorab reservieren (Absturz bei Riesenwerten)
+    // Content-Length comes from the server: don't reserve blindly up front (crash with huge values)
     let mut data = Vec::with_capacity(total.min(256 << 20) as usize);
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -283,14 +283,14 @@ pub fn download(
     Ok(out)
 }
 
-/// Paket in `target` entpacken. Vorhandene Dateien werden zu `*.old` umbenannt
-/// (funktioniert auch für die laufende EXE). Gibt die Zahl der Dateien zurück.
+/// Unpack the package into `target`. Existing files are renamed to `*.old`
+/// (works for the running EXE too). Returns the number of files.
 pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Paket beschädigt: {e}"))?;
     let mut left = MAX_UNPACKED;
-    // Erst alles prüfen und in einen Zwischenordner entpacken, dann austauschen:
-    // so bleibt bei einem Fehler die alte Installation unangetastet.
+    // first check everything and unpack into an intermediate folder, then swap:
+    // so on an error the old installation stays untouched.
     let staging = target.join(".update-staging");
     let _ = std::fs::remove_dir_all(&staging);
     let mut files = Vec::new();
@@ -320,13 +320,13 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
     if files.is_empty() {
         return Err("Paket ist leer".into());
     }
-    // Liste der umbenannten Dateien: cleanup_old löscht nur diese, nie fremde `*.old`.
+    // list of renamed files: cleanup_old deletes only these, never foreign `*.old`.
     let mut list = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(target.join(OLD_LIST))
         .map_err(|e| e.to_string())?;
-    // getauschte Dateien (Ziel, gab es eine alte Fassung?): bei einem Fehler zurückdrehen
+    // swapped files (target, was there an old version?): roll back on an error
     let mut done: Vec<(PathBuf, bool)> = Vec::new();
     let mut swap = |rel: &PathBuf, done: &mut Vec<(PathBuf, bool)>| -> Result<(), String> {
         let dst = target.join(rel);
@@ -366,8 +366,8 @@ fn old_name(p: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Datei laden (für Modelle). Schreibt erst `*.part` und benennt am Ende um.
-/// Endet die URL auf `#sha256=<hex>`, wird die Datei vorher gegen diese Prüfsumme geprüft.
+/// Download a file (for models). Writes `*.part` first and renames at the end.
+/// If the URL ends in `#sha256=<hex>`, the file is checked against this checksum first.
 pub fn download_to(
     url: &str,
     dest: &Path,
@@ -410,7 +410,7 @@ pub fn download_to(
         f.flush().map_err(|e| e.to_string())
     })();
     drop(f);
-    // Abbruch, Lese- oder Schreibfehler: keine halbe `.part`-Datei liegen lassen
+    // abort, read or write error: don't leave a half `.part` file behind
     if let Err(e) = copied {
         let _ = std::fs::remove_file(&part);
         return Err(e);
@@ -429,7 +429,7 @@ pub fn download_to(
     std::fs::rename(&part, dest).map_err(|e| e.to_string())
 }
 
-/// `url#sha256=<hex>` → (url, Some(hex)); sonst (url, None).
+/// `url#sha256=<hex>` → (url, Some(hex)); otherwise (url, None).
 fn split_sha(url: &str) -> (&str, Option<&str>) {
     match url.split_once("#sha256=") {
         Some((u, h)) => (u, Some(h)),
@@ -437,11 +437,11 @@ fn split_sha(url: &str) -> (&str, Option<&str>) {
     }
 }
 
-/// Höchstens so viel wird aus einem Archiv entpackt (Update, Laufzeiten für Modelle).
+/// At most this much is unpacked from an archive (update, runtimes for models).
 const MAX_UNPACKED: u64 = 4 << 30;
 
-/// Eintrag kopieren, ohne mehr als `left` Bytes zu schreiben: die Größenangaben im ZIP sind
-/// nicht vertrauenswürdig (gepackte „Bomben“ füllen sonst die Platte).
+/// Copy an entry without writing more than `left` bytes: the size fields in the ZIP are
+/// not trustworthy (packed "bombs" would otherwise fill the disk).
 fn copy_capped(r: impl Read, w: &mut impl Write, left: &mut u64) -> Result<(), String> {
     let n = std::io::copy(&mut r.take(*left + 1), w).map_err(|e| e.to_string())?;
     if n > *left {
@@ -451,7 +451,7 @@ fn copy_capped(r: impl Read, w: &mut impl Write, left: &mut u64) -> Result<(), S
     Ok(())
 }
 
-/// ZIP-Archiv in einen Ordner entpacken (unsichere Pfade werden abgelehnt).
+/// Unpack a ZIP archive into a folder (unsafe paths are rejected).
 pub fn extract_zip(zip_path: &Path, dir: &Path) -> Result<usize, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(f).map_err(|e| e.to_string())?;
@@ -477,15 +477,15 @@ pub fn extract_zip(zip_path: &Path, dir: &Path) -> Result<usize, String> {
     Ok(n)
 }
 
-/// Datei im Programmordner mit den von [`install`] umbenannten `*.old`-Dateien.
+/// File in the program folder with the `*.old` files renamed by [`install`].
 const OLD_LIST: &str = ".update-old.txt";
 
-/// Reste eines früheren Updates entfernen: nur die in [`OLD_LIST`] verzeichneten Dateien.
+/// Remove leftovers of an earlier update: only the files listed in [`OLD_LIST`].
 pub fn cleanup_old(dir: &Path) {
     if let Ok(list) = std::fs::read_to_string(dir.join(OLD_LIST)) {
         for line in list.lines().map(str::trim).filter(|l| !l.is_empty()) {
             let rel = Path::new(line);
-            // Nur relative Pfade ohne `..` – nichts außerhalb des Programmordners löschen.
+            // only relative paths without `..` – delete nothing outside the program folder.
             if rel
                 .components()
                 .all(|c| matches!(c, std::path::Component::Normal(_)))
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(f("Es ist nicht genug Speicherplatz vorhanden. (os error 112)"), "Nicht genug Speicherplatz");
         assert_eq!(f("GitHub antwortet mit 404"), "Nicht gefunden");
         assert_eq!(f("Abgebrochen"), "Abgebrochen");
-        // Hex-Zeichen mit „404“ im Prüfsummen-Fehler: bleibt ein Prüfsummen-Fehler
+        // hex characters with "404" in the checksum error: stays a checksum error
         assert_eq!(f("Prüfsumme stimmt nicht (erwartet 4041ab…, erhalten cd…)"), "Datei beschädigt (Prüfsumme)");
         assert_eq!(f("Release ohne Prüfsumme – Installation aus Sicherheitsgründen abgebrochen"), "Version ohne Prüfsumme");
         assert_eq!(f("irgendwas"), "Unerwarteter Fehler");
@@ -558,13 +558,13 @@ mod tests {
         j["prerelease"] = true.into();
         assert!(
             parse_release(&j.to_string(), cur).unwrap().is_none(),
-            "Vorabversionen werden ignoriert"
+            "pre-releases are ignored"
         );
         j["prerelease"] = false.into();
         j["assets"] = serde_json::json!([]);
         assert!(
             parse_release(&j.to_string(), cur).is_err(),
-            "kein Paket für dieses System"
+            "no package for this system"
         );
     }
 
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn download_verifies_sha_from_url() {
-        // kleiner lokaler HTTP-Server, liefert immer „hallo“
+        // small local HTTP server, always delivers "hallo"
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
         std::thread::spawn(move || {
@@ -611,7 +611,7 @@ mod tests {
         std::fs::create_dir_all(app.join("plugins/basis")).unwrap();
         std::fs::write(app.join("cutline.exe"), b"alt").unwrap();
         std::fs::write(app.join("plugins/basis/plugin.toml"), b"alt").unwrap();
-        // Paket bauen
+        // build the package
         let zp = dir.path().join("pkg.zip");
         {
             let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
@@ -631,7 +631,7 @@ mod tests {
         assert!(!app.join(".update-staging").exists());
         std::fs::write(app.join("fremd.old"), b"x").unwrap();
         std::fs::write(dir.path().join("x.old"), b"x").unwrap();
-        // Manipulierte Liste: Pfad außerhalb des Ordners wird ignoriert.
+        // manipulated list: a path outside the folder is ignored.
         let mut l = std::fs::OpenOptions::new().append(true).open(app.join(OLD_LIST)).unwrap();
         writeln!(l, "../x.old").unwrap();
         drop(l);
@@ -650,7 +650,7 @@ mod tests {
         let app = dir.path().join("app");
         std::fs::create_dir_all(&app).unwrap();
         std::fs::write(app.join("cutline.exe"), b"alt").unwrap();
-        // „b“ ist eine Datei: der Ordner für b/c.txt lässt sich nicht anlegen
+        // "b" is a file: the folder for b/c.txt cannot be created
         std::fs::write(app.join("b"), b"x").unwrap();
         let zp = dir.path().join("pkg.zip");
         {
@@ -683,7 +683,7 @@ mod tests {
         let mut out = Vec::new();
         let mut left = 1000;
         assert!(copy_capped(&mut zip.by_index(0).unwrap(), &mut out, &mut left).is_err());
-        assert!(out.len() <= 1001, "schreibt nicht weiter als die Grenze");
+        assert!(out.len() <= 1001, "does not write past the limit");
         let (mut out, mut left) = (Vec::new(), 2 << 20);
         copy_capped(&mut zip.by_index(0).unwrap(), &mut out, &mut left).unwrap();
         assert_eq!((out.len(), left), (1 << 20, 1 << 20));
@@ -706,7 +706,7 @@ mod tests {
         assert!(!dir.path().join("boese.exe").exists());
     }
 
-    /// Kleiner HTTP-Server: beantwortet der Reihe nach je eine Verbindung mit der Rohantwort.
+    /// Small HTTP server: answers one connection after another with the raw response.
     fn serve(answers: Vec<Vec<u8>>) -> String {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
@@ -745,7 +745,7 @@ mod tests {
         for bad in ["", "v", "1..2", "-1.0.0", "1.2.x", "99999999999999999999.0.0", "١.٢.٣", "🎬"] {
             assert_eq!(Version::parse(bad), None, "{bad}");
         }
-        // Vorabversion zählt wie die Basisversion: kein „Update“ von 1.0.0-beta auf 1.0.0
+        // a pre-release counts like the base version: no "update" from 1.0.0-beta to 1.0.0
         assert_eq!(Version::parse("1.0.0-beta"), Version::parse("1.0.0"));
         assert!(Version(0, 9, 10) < Version(0, 10, 0));
         assert_eq!(Version(1, 2, 3).to_string(), "1.2.3");
@@ -798,7 +798,7 @@ mod tests {
     #[test]
     fn changes_json_is_found_and_fetched() {
         let mut j: serde_json::Value = serde_json::from_str(&release_json("v0.3.0", true)).unwrap();
-        assert_eq!(parse_release(&j.to_string(), Version(0, 2, 0)).unwrap().unwrap().changes_url, None, "älteres Release");
+        assert_eq!(parse_release(&j.to_string(), Version(0, 2, 0)).unwrap().unwrap().changes_url, None, "older release");
         j["assets"].as_array_mut().unwrap().push(serde_json::json!({ "name": "changes.json", "browser_download_url": "https://x/changes.json" }));
         let r = parse_release(&j.to_string(), Version(0, 2, 0)).unwrap().unwrap();
         assert_eq!(r.changes_url.as_deref(), Some("https://x/changes.json"));
@@ -813,35 +813,35 @@ mod tests {
         let got = fetch_changes(&format!("{base}/c")).expect("gelesen");
         assert_eq!(got[0].version, Some(Version(0, 3, 0)));
         assert!(fetch_changes(&format!("{base}/c")).is_none(), "unbekanntes Format");
-        assert!(fetch_changes(&format!("{base}/c")).is_none(), "zu groß");
-        assert!(fetch_changes(&format!("{base}/c")).is_none(), "fehlt");
+        assert!(fetch_changes(&format!("{base}/c")).is_none(), "too large");
+        assert!(fetch_changes(&format!("{base}/c")).is_none(), "missing");
     }
 
     #[test]
     fn download_checks_sha_and_writes_nothing_on_failure() {
         let no = AtomicBool::new(false);
         let dir = tempfile::tempdir().unwrap();
-        // falsche Prüfsumme
+        // wrong checksum
         let base = serve(vec![ok(sha256_hex(b"anders").as_bytes(), None), ok(b"hallo", None)]);
         assert!(download(&release(&base), dir.path(), |_, _| {}, &no).unwrap_err().contains("Prüfsumme"));
-        // ohne Prüfsumme gar nicht erst laden
+        // without checksum don't even download
         let mut r = release(&base);
         r.sha_url = None;
         assert!(download(&r, dir.path(), |_, _| {}, &no).is_err());
-        // abgebrochen
+        // cancelled
         let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
         assert_eq!(download(&release(&base), dir.path(), |_, _| {}, &AtomicBool::new(true)).unwrap_err(), "Abgebrochen");
-        // kaputte Prüfsummendatei
+        // broken checksum file
         let base = serve(vec![ok(b"<html>404</html>", None)]);
         assert!(download(&release(&base), dir.path(), |_, _| {}, &no).is_err());
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "nichts geschrieben");
-        // richtig
+        // correct
         let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
         let p = download(&release(&base), dir.path(), |_, _| {}, &no).unwrap();
         assert_eq!(std::fs::read(p).unwrap(), b"hallo");
     }
 
-    /// Fehler: eine riesige Content-Length reservierte vorab so viel Speicher (Absturz).
+    /// Bug: a huge Content-Length reserved that much memory up front (crash).
     #[test]
     fn download_survives_absurd_content_length() {
         let dir = tempfile::tempdir().unwrap();
@@ -851,7 +851,7 @@ mod tests {
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 
-    /// Fehler: ein abgebrochener Modell-Download ließ eine halbe `.part`-Datei liegen.
+    /// Bug: a cancelled model download left a half `.part` file behind.
     #[test]
     fn truncated_model_download_leaves_nothing() {
         let dir = tempfile::tempdir().unwrap();
@@ -859,16 +859,16 @@ mod tests {
         let base = serve(vec![ok(b"hallo", Some(100))]);
         let r = download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(false));
         assert!(r.is_err());
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "keine Reste");
-        // Lesefehler mitten im Strom (kaputte Chunk-Kodierung)
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "no leftovers");
+        // read error in the middle of the stream (broken chunk encoding)
         let base = serve(vec![b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nhallo\r\nZZ\r\n".to_vec()]);
         assert!(download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(false)).is_err());
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "keine Reste nach Lesefehler");
-        // abgebrochen
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "no leftovers after read error");
+        // cancelled
         let base = serve(vec![ok(b"hallo", None)]);
         assert!(download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(true)).is_err());
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
-        // Server antwortet 404
+        // server answers 404
         let base = serve(vec![b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()]);
         assert!(download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(false)).is_err());
         assert!(!dest.exists());
@@ -902,20 +902,20 @@ mod tests {
             assert!(extract_zip(&zp, &dir.path().join("x")).is_err(), "{evil}");
         }
         assert!(!dir.path().join("x.exe").exists() && !dir.path().join("abs.exe").exists());
-        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"alt", "alte Installation unberührt");
+        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"alt", "old installation untouched");
         assert!(!app.join("ok.txt").exists());
-        // absolute Pfade landen höchstens im Zielordner, nie daneben
+        // absolute paths land at most in the target folder, never next to it
         for abs in ["/abs.exe", "C:/abs.exe", r"\\server\share\abs.exe"] {
             let zp = zip_with(dir.path(), &[(abs, b"x")]);
             let _ = install(&zp, &app);
             let _ = extract_zip(&zp, &dir.path().join("z"));
             assert!(!dir.path().join("abs.exe").exists() && !std::path::Path::new("C:/abs.exe").exists(), "{abs}");
         }
-        // Umlaute und Unterordner werden korrekt entpackt
+        // umlauts and subfolders are unpacked correctly
         let zp = zip_with(dir.path(), &[("Schrift/Ä ö 🎬.ttf", b"f")]);
         assert_eq!(extract_zip(&zp, &dir.path().join("y")).unwrap(), 1);
         assert!(dir.path().join("y/Schrift/Ä ö 🎬.ttf").exists());
-        // Aufräumen ohne Liste und mit absolutem Pfad in der Liste
+        // cleanup without a list and with an absolute path in the list
         cleanup_old(&dir.path().join("gibtsnicht"));
         let victim = dir.path().join("opfer.txt");
         std::fs::write(&victim, b"x").unwrap();

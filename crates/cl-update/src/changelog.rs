@@ -1,23 +1,23 @@
-//! Änderungsliste („Was ist neu“) aus `CHANGELOG.md` oder dem Text einer GitHub-Release-Notiz.
+//! Change list („Was ist neu“) from `CHANGELOG.md` or the text of a GitHub release note.
 //!
-//! Aufbau: je Version `## 0.11.1 – 2026-11-15` (oder `## Unreleased`), darin `### English` und
-//! `### Deutsch`, Gruppen als Zeile `**New**`, Einträge `- **Titel.** Satz.` oder `- Satz.`.
-//! Alles andere (Kopf, `<details>`, „Full Changelog“-Link) wird übergangen.
+//! Structure: per version `## 0.11.1 – 2026-11-15` (or `## Unreleased`), in it `### English` and
+//! `### Deutsch`, groups as a line `**New**`, entries `- **Title.** Sentence.` or `- Sentence.`.
+//! Everything else (header, `<details>`, "Full Changelog" link) is skipped.
 //!
-//! Neuere Releases tragen dieselben Daten zusätzlich als Anhang `changes.json`
-//! (`.github/changes-json.sh`, gelesen von [`parse_json`]); dann braucht es den Release-Text nicht.
+//! Newer releases carry the same data additionally as the asset `changes.json`
+//! (`.github/changes-json.sh`, read by [`parse_json`]); then the release text is not needed.
 
 use serde::Deserialize;
 
 use crate::Version;
 
-/// Die Änderungsliste dieses Builds.
+/// The change list of this build.
 pub const CHANGELOG: &str = include_str!("../../../CHANGELOG.md");
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Entry {
-    /// Fetter Titel (leer bei Einträgen ohne Titel)
+    /// Bold title (empty for entries without a title)
     pub title: String,
     pub text: String,
 }
@@ -34,17 +34,17 @@ pub struct Group {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Notes {
-    /// `None` bei `## Unreleased`
+    /// `None` for `## Unreleased`
     #[serde(deserialize_with = "version_text")]
     pub version: Option<Version>,
-    /// Datum wie im Text (`JJJJ-MM-TT`), sonst leer
+    /// Date as in the text (`YYYY-MM-DD`), otherwise empty
     pub date: String,
     pub en: Vec<Group>,
     pub de: Vec<Group>,
 }
 
 impl Notes {
-    /// Gruppen in der gewünschten Sprache; fehlt sie, die andere.
+    /// Groups in the requested language; if it is missing, the other one.
     pub fn groups(&self, de: bool) -> &[Group] {
         let (want, other) = if de { (&self.de, &self.en) } else { (&self.en, &self.de) };
         if has_entries(want) { want } else { other }
@@ -58,13 +58,13 @@ fn has_entries(g: &[Group]) -> bool {
     g.iter().any(|g| !g.entries.is_empty())
 }
 
-/// `"0.12.1"` → Version (unlesbar: `None`, die Version fällt dann bei [`between`] heraus)
+/// `"0.12.1"` → version (unreadable: `None`, the version then drops out of [`between`])
 fn version_text<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Version>, D::Error> {
     Ok(Version::parse(&String::deserialize(d)?))
 }
 
-/// `changes.json` eines Releases (Format 1, Aufbau siehe `.github/changes-json.sh`).
-/// `None` bei kaputtem JSON oder unbekanntem `format`: dann gilt der Release-Text.
+/// `changes.json` of a release (format 1, structure see `.github/changes-json.sh`).
+/// `None` for broken JSON or an unknown `format`: then the release text applies.
 pub fn parse_json(text: &str) -> Option<Vec<Notes>> {
     #[derive(Deserialize)]
     struct File {
@@ -75,10 +75,10 @@ pub fn parse_json(text: &str) -> Option<Vec<Notes>> {
     (f.format == 1).then_some(f.versions)
 }
 
-/// Liest alle Versionen in Textreihenfolge. Leere Gruppen bleiben erhalten (Vorlage in `Unreleased`).
+/// Reads all versions in text order. Empty groups are kept (template in `Unreleased`).
 pub fn parse(text: &str) -> Vec<Notes> {
     let mut out: Vec<Notes> = Vec::new();
-    let mut open = false; // innerhalb eines Versionsabschnitts
+    let mut open = false; // inside a version section
     let mut de = false;
     for raw in text.lines() {
         let t = raw.trim();
@@ -105,7 +105,7 @@ pub fn parse(text: &str) -> Vec<Notes> {
             }
             groups.last_mut().unwrap().entries.push(entry(item.trim()));
         } else if !t.is_empty() && raw.starts_with([' ', '\t']) {
-            // eingerückte Fortsetzung des letzten Eintrags
+            // indented continuation of the last entry
             if let Some(e) = groups.last_mut().and_then(|g| g.entries.last_mut()) {
                 e.text = format!("{} {t}", e.text).trim().to_string();
             }
@@ -114,13 +114,13 @@ pub fn parse(text: &str) -> Vec<Notes> {
     out
 }
 
-/// `0.11.1 – 2026-11-15`, `[0.11.1] - 2026-11-15`, `v0.11.1`, `Unreleased` → (Version, Datum, unveröffentlicht)
+/// `0.11.1 – 2026-11-15`, `[0.11.1] - 2026-11-15`, `v0.11.1`, `Unreleased` → (version, date, unreleased)
 fn heading(h: &str) -> (Option<Version>, String, bool) {
     let mut words = h.split_whitespace();
     let first = words.next().unwrap_or("").trim_matches(['[', ']']);
     let unreleased = first.eq_ignore_ascii_case("unreleased");
     let num = first.trim_start_matches(['v', 'V']);
-    // nur „Zahl.Zahl…“ gilt als Version (sonst wäre „## 2026 …“ eine)
+    // only "number.number…" counts as a version (otherwise "## 2026 …" would be one)
     let version = (num.starts_with(|c: char| c.is_ascii_digit()) && num.contains('.'))
         .then(|| Version::parse(num))
         .flatten();
@@ -140,7 +140,7 @@ fn is_date(w: &str) -> bool {
         && b.iter().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
 }
 
-/// `**New**` oder `#### New` → „New“
+/// `**New**` or `#### New` → "New"
 fn group_title(t: &str) -> Option<&str> {
     let inner = t
         .strip_prefix("**")
@@ -151,7 +151,7 @@ fn group_title(t: &str) -> Option<&str> {
     (!inner.is_empty()).then_some(inner)
 }
 
-/// `**Titel.** Satz.` → (Titel., Satz.); sonst nur Text
+/// `**Title.** Sentence.` → (Title., Sentence.); otherwise text only
 fn entry(item: &str) -> Entry {
     if let Some(rest) = item.strip_prefix("**") {
         if let Some(end) = rest.find("**") {
@@ -164,7 +164,7 @@ fn entry(item: &str) -> Entry {
     Entry { title: String::new(), text: item.to_string() }
 }
 
-/// Versionen nach `installed` bis einschließlich `target`, mit Inhalt, neueste zuerst, jede einmal.
+/// Versions after `installed` up to and including `target`, with content, newest first, each once.
 pub fn between(all: &[Notes], installed: Version, target: Version) -> Vec<&Notes> {
     let mut v: Vec<&Notes> = all
         .iter()
@@ -175,15 +175,15 @@ pub fn between(all: &[Notes], installed: Version, target: Version) -> Vec<&Notes
     v
 }
 
-/// Was nach dem Start einmal als „Was ist neu“ angeboten wird. `last`: zuletzt gestartete Version
-/// (`None` = noch nie gemerkt), `known_user`: keine frische Installation.
+/// What is offered once as „Was ist neu“ after the start. `last`: last started version
+/// (`None` = never remembered), `known_user`: not a fresh installation.
 pub fn news_after_update(all: &[Notes], last: Option<Version>, current: Version, known_user: bool) -> Vec<&Notes> {
     if !known_user {
         return Vec::new();
     }
     match last {
         Some(l) => between(all, l, current),
-        // Update von einer Version, die sich das noch nicht merkte: nur die aktuelle zeigen
+        // update from a version that did not remember this yet: show only the current one
         None => all.iter().filter(|n| n.version == Some(current) && !n.is_empty()).take(1).collect(),
     }
 }
@@ -199,12 +199,12 @@ mod tests {
         assert_eq!(all[0].version, None, "oben steht Unreleased");
         for n in &all {
             let name = n.version.map(|v| v.to_string()).unwrap_or("Unreleased".into());
-            assert!(!n.en.is_empty() && !n.de.is_empty(), "{name}: en und de");
+            assert!(!n.en.is_empty() && !n.de.is_empty(), "{name}: en and de");
             assert_eq!(n.en.len(), n.de.len(), "{name}: gleiche Gruppen in beiden Sprachen");
             if n.version.is_some() {
                 assert!(n.date.len() == 10, "{name}: Datum");
                 for g in n.en.iter().chain(&n.de) {
-                    assert!(!g.title.is_empty(), "{name}: Gruppe ohne Titel");
+                    assert!(!g.title.is_empty(), "{name}: group without title");
                     assert!(!g.entries.is_empty(), "{name}: leere Gruppe {}", g.title);
                     for e in &g.entries {
                         assert!(!e.text.is_empty() || !e.title.is_empty(), "{name}: leerer Eintrag");
@@ -212,7 +212,7 @@ mod tests {
                 }
             }
         }
-        // Versionen absteigend, keine doppelt
+        // versions descending, none twice
         let vs: Vec<Version> = all.iter().filter_map(|n| n.version).collect();
         assert!(vs.windows(2).all(|w| w[0] > w[1]), "{vs:?}");
         let n = all.iter().find(|n| n.version == Some(Version(0, 11, 1))).unwrap();
@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(n.de[0].entries[0].title, "Pakete ausblenden.");
         assert!(n.de[0].entries[0].text.starts_with("Unter Einstellungen"));
         assert_eq!(n.en[1].title, "Improved");
-        assert_eq!(n.en[1].entries[0].title, "", "Eintrag ohne fetten Titel");
+        assert_eq!(n.en[1].entries[0].title, "", "entry without bold title");
     }
 
     #[test]
@@ -228,8 +228,8 @@ mod tests {
         let n = &parse("## 1.0.0\n### English\n**New**\n- **A.** b\n")[0];
         assert_eq!(n.groups(true)[0].entries[0].title, "A.");
         let n = &parse("## 1.0.0\n### Deutsch\n**Neu**\n- x\n### English\n**New**\n")[0];
-        assert_eq!(n.groups(false)[0].title, "Neu", "leere Sprache zählt als fehlend");
-        // ohne Sprachüberschrift: Englisch
+        assert_eq!(n.groups(false)[0].title, "Neu", "an empty language counts as missing");
+        // without a language heading: English
         let n = &parse("## v2.1 - 2026-01-02\n- nur Text\n")[0];
         assert_eq!((n.version, n.date.as_str()), (Some(Version(2, 1, 0)), "2026-01-02"));
         assert_eq!(n.groups(true)[0].entries[0].text, "nur Text");
@@ -241,15 +241,15 @@ mod tests {
             let all = parse(s);
             assert!(all.iter().all(|n| n.is_empty() || n.version.is_some()), "{s:?}");
         }
-        assert!(parse("## 2026 Pläne\n- x").is_empty(), "Jahreszahl ist keine Version");
+        assert!(parse("## 2026 Pläne\n- x").is_empty(), "a year is not a version");
         let n = &parse("## [1.2.3] - 2026-02-03\n### English\n#### Fixed:\n- **Kein Ende\n  zweite Zeile\n")[0];
         assert_eq!(n.en[0].title, "Fixed");
         assert_eq!(n.en[0].entries[0], Entry { title: String::new(), text: "**Kein Ende zweite Zeile".into() });
-        // Release-Notiz mit Kopf, eingeklappten älteren Versionen und GitHub-Anhang
+        // release note with header, collapsed older versions and GitHub asset
         let body = "## 1.1.0 – 2026-03-01\r\n### English\r\n**New**\r\n- **N.** x\r\n\r\n<details><summary>Earlier</summary>\r\n\r\n## 1.0.1\r\n**Fixed**\r\n- y\r\n</details>\r\n\r\n**Full Changelog**: https://github.com/x/compare/v1.0.0...v1.1.0\r\n";
         let all = parse(body);
         assert_eq!(all.len(), 2);
-        assert_eq!(all[1].en.len(), 1, "„Full Changelog“ ist keine Gruppe");
+        assert_eq!(all[1].en.len(), 1, "\"Full Changelog\" is not a group");
         assert_eq!(all[1].en[0].entries.len(), 1);
     }
 
@@ -260,10 +260,10 @@ mod tests {
         let got: Vec<Version> = between(&all, v("0.9.1"), v("0.11.1")).iter().filter_map(|n| n.version).collect();
         assert_eq!(got, [v("0.11.1"), v("0.11.0"), v("0.10.0")]);
         assert!(between(&all, v("0.11.1"), v("0.11.1")).is_empty());
-        assert!(between(&all, v("0.11.1"), v("0.10.0")).is_empty(), "Rückschritt");
+        assert!(between(&all, v("0.11.1"), v("0.10.0")).is_empty(), "downgrade");
         let all = parse("## 1.0.0\n- a\n## 1.0.0\n- b\n## 0.9.0\n## 0.8.0\n- c\n");
         let got = between(&all, v("0.1"), v("1.0"));
-        assert_eq!(got.len(), 2, "doppelte Version einmal, leere 0.9.0 nicht");
+        assert_eq!(got.len(), 2, "duplicate version once, empty 0.9.0 not at all");
         assert_eq!(got[0].en[0].entries[0].text, "a");
     }
 
@@ -274,13 +274,13 @@ mod tests {
         let cur = v("0.11.1");
         assert!(news_after_update(&all, None, cur, false).is_empty(), "frische Installation");
         assert!(news_after_update(&all, Some(cur), cur, true).is_empty(), "gleiche Version");
-        assert!(news_after_update(&all, Some(v("0.12.0")), cur, true).is_empty(), "ältere Version gestartet");
+        assert!(news_after_update(&all, Some(v("0.12.0")), cur, true).is_empty(), "older version started");
         let got: Vec<_> = news_after_update(&all, Some(v("0.10.0")), cur, true).iter().filter_map(|n| n.version).collect();
-        assert_eq!(got, [v("0.11.1"), v("0.11.0")], "höhere Version: alles seit der letzten");
+        assert_eq!(got, [v("0.11.1"), v("0.11.0")], "higher version: everything since the last one");
         let got: Vec<_> = news_after_update(&all, None, cur, true).iter().filter_map(|n| n.version).collect();
-        assert_eq!(got, [cur], "Update von einer Version ohne Merker");
+        assert_eq!(got, [cur], "update from a version without the marker");
         assert!(news_after_update(&all, Some(v("0.11.0")), v("9.0.0"), true).len() >= 1);
-        assert!(news_after_update(&all, None, v("9.0.0"), true).is_empty(), "keine Notiz für diese Version");
+        assert!(news_after_update(&all, None, v("9.0.0"), true).is_empty(), "no note for this version");
     }
 
     #[test]
@@ -296,12 +296,12 @@ mod tests {
         assert_eq!((all[0].version, all[0].date.as_str()), (Some(Version(1, 2, 0)), "2026-03-01"));
         assert_eq!(all[0].en[0].entries[1], Entry { title: String::new(), text: "nur Satz".into() });
         assert_eq!(all[0].groups(true)[0].entries[0].text, "b \"zitiert\"");
-        // fehlende Sprache: die andere
+        // missing language: the other one
         assert_eq!(all[1].groups(true)[0].title, "Fixed");
         assert_eq!(all[1].date, "");
         let got: Vec<_> = between(&all, Version(1, 0, 0), Version(1, 2, 0)).iter().filter_map(|n| n.version).collect();
         assert_eq!(got, [Version(1, 2, 0), Version(1, 1, 0)]);
-        // unbekanntes Format, kaputtes JSON, falsche Form: Rückfall auf den Release-Text
+        // unknown format, broken JSON, wrong shape: fall back to the release text
         assert!(parse_json(&ok.replace(r#""format": 1"#, r#""format": 2"#)).is_none());
         assert!(parse_json(&ok[..ok.len() - 3]).is_none());
         for bad in ["", "null", "[]", "{}", r#"{"format": 1}"#, r#"{"format": "1", "versions": []}"#, r#"{"format": 1, "versions": [{"en": "x"}]}"#] {
@@ -310,8 +310,8 @@ mod tests {
         assert_eq!(parse_json(r#"{"format": 1, "versions": []}"#), Some(Vec::new()));
     }
 
-    /// `changes-json.sh` aus dem Release-Workflow ergibt dieselben Daten wie `parse` aus
-    /// `CHANGELOG.md` – für die Version und alle früheren. Läuft nur, wo `sh` und `awk` da sind.
+    /// `changes-json.sh` from the release workflow yields the same data as `parse` from
+    /// `CHANGELOG.md` – for the version and all earlier ones. Runs only where `sh` and `awk` exist.
     #[test]
     fn changes_json_script_matches_the_changelog() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -322,31 +322,31 @@ mod tests {
                 .output()
         };
         let Ok(out) = run("v0.11.0", &root.join("CHANGELOG.md")) else {
-            eprintln!("kein sh – übersprungen");
+            eprintln!("no sh – skipped");
             return;
         };
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-        let got = parse_json(&String::from_utf8(out.stdout).unwrap()).expect("gültiges changes.json");
+        let got = parse_json(&String::from_utf8(out.stdout).unwrap()).expect("valid changes.json");
         let want: Vec<Notes> = parse(CHANGELOG).into_iter().filter(|n| n.version.is_some_and(|v| v <= Version(0, 11, 0))).collect();
         assert!(want.len() >= 4);
         assert_eq!(got, want);
-        // kleines Beispiel: Sonderzeichen, Fortsetzungszeilen, Eintrag ohne Gruppe, Vorabversion
+        // small example: special characters, continuation lines, entry without group, pre-release
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("CHANGELOG.md");
         let text = "# Changelog\r\n\r\n## Unreleased\r\n### English\r\n**New**\r\n- offen\r\n\r\n## [1.1.0] - 2026-02-03\r\n### English\r\n- ohne Gruppe\r\n#### Fixed:\r\n- **Pfad \"C:\\x\".**\tTab\r\n  zweite Zeile\r\n### Deutsch\r\n**Behoben**\r\n* Ä ö 🎬\r\n\r\n## 1.0.0\r\n**New**\r\n- alt\r\n";
         std::fs::write(&f, text).unwrap();
         let out = run("1.1.0-rc.1", &f).unwrap();
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-        let got = parse_json(&String::from_utf8(out.stdout).unwrap()).expect("gültig");
+        let got = parse_json(&String::from_utf8(out.stdout).unwrap()).expect("valid");
         assert_eq!(got, parse(text)[1..]);
         assert_eq!(got[0].en[1].entries[0], Entry { title: "Pfad \"C:\\x\".".into(), text: "Tab zweite Zeile".into() });
-        // fehlender Abschnitt bricht ohne Ausgabe ab
+        // a missing section aborts without output
         let out = run("9.9.9", &f).unwrap();
         assert!(!out.status.success() && out.stdout.is_empty());
     }
 
-    /// Das Skript aus dem Release-Workflow schneidet genau den Abschnitt der Version aus, und die
-    /// App liest das Ergebnis wieder. Läuft nur, wo `sh` und `awk` da sind (CI, Git Bash).
+    /// The script from the release workflow cuts out exactly the version's section, and the
+    /// app reads the result back. Runs only where `sh` and `awk` exist (CI, Git Bash).
     #[test]
     fn release_notes_script_cuts_the_version() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -357,7 +357,7 @@ mod tests {
                 .output()
         };
         let Ok(out) = run("v0.11.0") else {
-            eprintln!("kein sh – übersprungen");
+            eprintln!("no sh – skipped");
             return;
         };
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -366,9 +366,9 @@ mod tests {
         let vs: Vec<_> = notes.iter().filter_map(|n| n.version).collect();
         assert_eq!(vs, [Version(0, 11, 0), Version(0, 10, 0), Version(0, 9, 1), Version(0, 9, 0)]);
         let all = parse(CHANGELOG);
-        assert_eq!(notes[0], *all.iter().find(|n| n.version == Some(vs[0])).unwrap(), "unverändert übernommen");
+        assert_eq!(notes[0], *all.iter().find(|n| n.version == Some(vs[0])).unwrap(), "adopted unchanged");
         assert!(text.contains("<details>") && !text.contains("Unreleased"));
-        // Vorabversion nimmt den Abschnitt der Basisversion; fehlender Abschnitt bricht ab
+        // a pre-release takes the section of the base version; a missing section aborts
         assert!(run("0.11.0-rc.1").unwrap().status.success());
         let out = run("9.9.9").unwrap();
         assert!(!out.status.success() && out.stdout.is_empty());
