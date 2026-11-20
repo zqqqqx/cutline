@@ -62,6 +62,8 @@ struct Run {
     layer_frames: std::collections::BTreeMap<String, u32>,
     /// Zwischenspeicher nach dem Anlauf und am Ende (Dauerlauf, `CUTLINE_QA_JUMP`)
     mem: Vec<String>,
+    /// Bilder/s im ruhigen Teil, nur Einzelbilder mit neuem Inhalt (ein stehendes Bild zählt nicht)
+    fps_new: f64,
 }
 
 /// Privater Speicher des Prozesses (MB), soweit ermittelbar
@@ -144,6 +146,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let mut edit_key: Option<(ClipId, u64)> = None;
     // Bildfolge der untersten Video-Ebene: (Wandzeit)
     let mut prim_frames: Vec<f64> = Vec::new();
+    let (mut prim_new, mut last_data): (Vec<f64>, Vec<u8>) = (Vec::new(), Vec::new());
     let mut lags: Vec<f64> = Vec::new();
     let mut dropped = 0u32;
     let mut first_any: Option<f64> = None;
@@ -163,6 +166,25 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let mut paused_since: Option<f64> = None;
     let mut resumed: Option<f64> = None;
     let mut dragging = false;
+    // `CUTLINE_QA_PREROLL`: Vorlauf wie im Stand der App (`App::update_preroll`) – Strom der
+    // untersten Ebene vorab öffnen, ruhen lassen, bei Play anhängen
+    let mut preroll: Option<(PrerollSpec, f64, cl_media::FrameStream)> = None;
+    if std::env::var_os("CUTLINE_QA_PREROLL").is_some() {
+        let ns = needs(&project, &layers_in(&project, None, start), start, false, |_| {});
+        if let Some(n) = ns.iter().find(|n| n.prefetch.is_none() && n.overlay.is_none() && streamable(&n.clip)) {
+            let (div, half) = steps[0];
+            let sfps = if half { Rational::new(fps.num, fps.den * 2) } else { fps };
+            let fxh = fx_hash_of(&n.clip);
+            let (key, w, h) = stream_spec(n.id, &n.clip, &n.media, canvas, div as f32, sfps, fxh);
+            let alias = stream_alias(&n.clip, &n.media, (w, h), sfps, fxh);
+            let spec = PrerollSpec { id: lid(n.id), key, alias, at: start, revision };
+            let o = crate::playcore::Open { id: spec.id, key, at: start, gen: u64::MAX, seq: 0 };
+            starter.send(open_job(o, &n.clip, &n.media, n.media.path.clone(), (w, h), sfps, alias));
+            let (_, f, _, s) = starter.rx.recv().expect("Starter");
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            preroll = s.map(|s| (spec, f, s));
+        }
+    }
     core.play(start, revision, now());
     let t_play = now();
     while now() - t_play < secs {
@@ -324,7 +346,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
         }
         while let Ok(d) = decoder.rx.try_recv() {
             match d {
-                Done::Frame { clip, key, .. } => {
+                Done::Frame { clip, key, frame } => {
                     if let Some((ta, src)) = still_asked.remove(&key) {
                         let ms = (t - ta) * 1000.0;
                         if debug && ms > 700.0 {
@@ -334,6 +356,10 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                     }
                     if core.still_done(lid(clip), key) {
                         run.stills_shown += 1;
+                        if Some(clip) == prim && frame.data != last_data {
+                            prim_new.push(t);
+                            last_data = frame.data;
+                        }
                         any_frame = t;
                         got!(clip, key);
                     }
@@ -358,7 +384,11 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 }
                 let alias = stream_alias(c, m, (w, h), sfps, fx_hash_of(c));
                 let want = Want { id: lid(n.id), key, start: n.prefetch.unwrap_or(playhead), end: c.end(), prefetch: n.prefetch.is_some(), alias };
-                if let Some(o) = core.want(&want, t) {
+                let o = core.want(&want, t);
+                let pre = o.and_then(|o| preroll.take_if(|p| preroll_fits(&p.0, &o, alias, revision)));
+                if let (Some(o), Some((_, f, s))) = (o, pre) {
+                    core.attach_alias(o, f, s, t, alias);
+                } else if let Some(o) = o {
                     let p = path();
                     run.proxy |= p != m.path;
                     let j = open_job(o, c, m, p, (w, h), sfps, alias);
@@ -384,7 +414,9 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                     run.stills_req += 1;
                     still_asked.insert(key, (t, src.as_secs_f64()));
                     let graph = cl_fx::preview_graph(c, w, h, n.layer.t_rel.as_secs_f64(), None, None);
-                    decoder.send(Job::Frame { clip: n.id, key, path: path(), at: src, w, h, graph });
+                    let p = path();
+                    let window = reverse_window(c, m, p == m.path, graph.is_none(), core.playing() && core.rate() > 0.0, fps);
+                    decoder.send(Job::Frame { clip: n.id, key, path: p, at: src, w, h, graph, window });
                 }
             }
         }
@@ -426,6 +458,10 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let ruhig: Vec<f64> = prim_frames.iter().copied().filter(|f| *f - t_play >= 2.0 && *f - t_play < edit_at).collect();
     if ruhig.len() > 1 {
         run.fps = (ruhig.len() - 1) as f64 / (ruhig[ruhig.len() - 1] - ruhig[0]);
+    }
+    let neu: Vec<f64> = prim_new.iter().copied().filter(|f| *f - t_play >= 2.0 && *f - t_play < edit_at).collect();
+    if neu.len() > 1 {
+        run.fps_new = (neu.len() - 1) as f64 / (neu[neu.len() - 1] - neu[0]);
     }
     let click_t = clicked.map_or(f64::MAX, |c| c.0);
     let after_click = click_t + run.click_ms / 1000.0;
@@ -645,4 +681,37 @@ fn player_cost() {
         std::hint::black_box(crate::preview::to_color_image(&f));
     }
     eprintln!("Strombild 1280×720 → Textur-Bild: {:.2} ms", t0.elapsed().as_secs_f64() * 1e3 / 50.0);
+}
+
+/// Ein Clip ohne Proxy (`CUTLINE_HOME` auf einen leeren Ordner): rückwärts (Bilder/s, `neu` =
+/// Bilder mit neuem Inhalt) bzw. vorwärts (Play → erstes Bild). `CUTLINE_H4_FILES=a;b`,
+/// `CUTLINE_H4_MODE=rev|fwd`, `CUTLINE_QA_AT`, `CUTLINE_QA_SECS` (für Bilder/s ≥ 25: ruhiger Teil 2–10 s)
+/// `cargo test --release -p cl-app --bin cutline h4_measure -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn h4_measure() {
+    let files = std::env::var("CUTLINE_H4_FILES").unwrap_or_default();
+    let rev = std::env::var("CUTLINE_H4_MODE").as_deref() == Ok("rev");
+    let secs: f64 = std::env::var("CUTLINE_QA_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(8.0);
+    let at: f64 = std::env::var("CUTLINE_QA_AT").ok().and_then(|s| s.parse().ok()).unwrap_or(5.0);
+    for f in files.split(';').filter(|s| !s.is_empty()) {
+        let m = cl_media::probe(std::path::Path::new(f)).unwrap();
+        let mut p = Project::new("h4");
+        p.settings.fps = Rational::new(60, 1);
+        p.settings.width = 1920;
+        p.settings.height = 1080;
+        let mut v1 = cl_core::Track::new(TrackKind::Video);
+        v1.main = true;
+        let d = m.duration.as_secs_f64().min(60.0);
+        let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(d));
+        c.fx.reverse = rev;
+        v1.clips.push(c);
+        p.timeline.tracks = vec![v1];
+        p.media = vec![m];
+        let r = drive(p, &format!("{} {f}", if rev { "rev" } else { "fwd" }), Time::from_secs_f64(at), secs);
+        eprintln!(
+            "H4 | {} | proxy {} | Play→Bild {:.0} ms | Play→bewegt {:.0} ms | fps {:.1} neu {:.1} | Lücke {:.0} ms | Einzelbilder {}/{} | Einzelbild max {:.0} ms | Stufe {} | Klick→Bild {:.0} ms",
+            r.label, r.proxy, r.first_ms, r.moving_ms, r.fps, r.fps_new, r.gap_ms, r.stills_req, r.stills_shown, r.still_max_ms, r.level_max, r.click_ms
+        );
+    }
 }

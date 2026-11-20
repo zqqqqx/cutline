@@ -25,6 +25,9 @@ pub enum Job {
         w: u32,
         h: u32,
         graph: Option<String>,
+        /// Quellbildrate, wenn das Bild aus einem Rückwärts-Fenster kommen soll (siehe
+        /// `player::reverse_window`); sonst ein FFmpeg je Bild
+        window: Option<Rational>,
     },
     Thumb {
         media: MediaId,
@@ -266,6 +269,14 @@ enum Msg {
         ms: f64,
         proxy: bool,
     },
+    /// Rückwärts-Fenster decodiert (`seq`: Nummer des Auftrags, Bilder ab `start`)
+    Win {
+        clip: ClipId,
+        seq: u64,
+        start: i64,
+        res: cl_media::Result<Vec<(u32, RgbaFrame)>>,
+        ms: f64,
+    },
     /// Bewegtes Bild ganz decodiert (`None`: zu groß oder nicht lesbar → Einzelbilder wie bisher)
     Anim {
         key: (PathBuf, u32, u32),
@@ -361,6 +372,61 @@ fn yield_to_player(busy: &AtomicUsize) {
     }
 }
 
+/// Rückwärts-Fenster: alle gehaltenen Bilder eines Clips zusammen (laufendes und vorab
+/// geladenes Fenster) höchstens so groß – lieber ein kürzeres Fenster als mehr Speicher.
+const WINDOW_BYTES: usize = 120 << 20;
+
+/// (Bilder je Fenster, höchstens gehaltene Bilder) für die Bildgröße `w`×`h` bei Quellrate `fps`:
+/// ein Fenster höchstens 1 s und die Hälfte der Obergrenze (Platz für das nächste vorab, das
+/// rechtzeitig beginnt, solange noch so viele Bilder übrig sind).
+fn window_plan(w: u32, h: u32, fps: f64) -> (i64, i64) {
+    let cap = (WINDOW_BYTES / (w as usize * h as usize * 4).max(1)).max(2) as i64;
+    ((cap / 2).clamp(1, (fps.round() as i64).max(1)), cap)
+}
+
+/// Welche Bilder als Nächstes decodieren: (erstes Bild, Anzahl); behalten werden davon nur die
+/// ersten `n` (und das fehlende `idx`). Fehlt Bild `idx`, reicht der Bereich bis `idx`; sonst
+/// vorab bis direkt vor die gehaltenen Bilder (ab `lowest`; rückwärts kommen sie als Nächstes
+/// dran), sobald `n` neben den `held` gehaltenen unter die Obergrenze passen. `lead`: so viele
+/// Bilder ist die Uhr weiter, wenn das Fenster fertig ist – die behaltenen liegen dort.
+fn next_window(idx: i64, has_idx: bool, lowest: i64, held: i64, lead: i64, (n, cap): (i64, i64)) -> Option<(i64, i64)> {
+    let end = if has_idx { lowest - 1 } else { idx };
+    if end < 0 || (has_idx && held + n > cap) {
+        return None;
+    }
+    let first = (end.min(idx - lead.max(0)) - n + 1).max(0);
+    Some((first, end - first + 1))
+}
+
+/// Rückwärts-Fenster eines Clips im Verteiler
+struct Win {
+    /// Datei, Größe, Quellrate: ändert sich eins, gilt nichts mehr
+    spec: (PathBuf, u32, u32, Rational),
+    frames: std::collections::BTreeMap<i64, RgbaFrame>,
+    /// laufende Decodierung: (Nummer, erstes Bild, so viele ab dort behalten, dazu das fehlende
+    /// Bild, Abbruch)
+    busy: Option<(u64, i64, i64, Option<i64>, Arc<KillSwitch>)>,
+    /// Dauer der letzten Decodierung (s) und Tempo der Anfragen (Quellbilder je s, geglättet),
+    /// letzte Anfrage: daraus der Vorlauf `next_window(lead)`
+    took: f64,
+    speed: f64,
+    prev: Option<(i64, std::time::Instant)>,
+    /// wartender Auftrag: (Bildnummer, Schlüssel, Quellzeit, seit)
+    want: Option<(i64, u64, Time, std::time::Instant)>,
+    last: std::time::Instant,
+}
+
+impl Win {
+    fn kill(&mut self) {
+        if let Some((.., k)) = self.busy.take() {
+            k.kill();
+        }
+    }
+    fn bytes(&self) -> usize {
+        self.frames.values().map(|f| f.data.len()).sum()
+    }
+}
+
 /// Verteiler der Player-Bilder (läuft im Thread `cl-decoder`).
 fn frame_dispatcher(
     rx: Receiver<Msg>,
@@ -375,11 +441,26 @@ fn frame_dispatcher(
     let mut anims = Anims::default();
     let mut inflight = InFlight::default();
     let proxies = crate::proxy::dir();
+    let mut windows: HashMap<ClipId, Win> = HashMap::new();
+    let mut win_seq = 0u64;
+    // Datei und Größe, deren Fenster das Bild nicht lieferte (für die Sitzung: Einzelbilder)
+    let mut win_failed: HashSet<(PathBuf, u32, u32)> = HashSet::new();
     loop {
         // auch ohne neue Aufträge nachsehen, ob das Projekt gewechselt wurde
         if cache.gen != gen.load(Ordering::Relaxed) {
             anims = Anims::default();
+            windows.values_mut().for_each(Win::kill);
+            windows.clear();
         }
+        // Fenster eines Clips, der nicht mehr rückwärts abgespielt wird (Pause, Stand): freigeben;
+        // ein laufendes (der Auftrag wartet darauf, langsame Quellen brauchen Sekunden) bleibt
+        windows.retain(|_, w| {
+            let keep = w.busy.is_some() || w.last.elapsed() < std::time::Duration::from_secs(2);
+            if !keep {
+                w.kill();
+            }
+            keep
+        });
         cache.set_generation(gen.load(Ordering::Relaxed));
         let msg = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
             Ok(m) => m,
@@ -387,50 +468,167 @@ fn frame_dispatcher(
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
         };
         let out = match msg {
-            Msg::Job(Job::Frame { clip, key, path, at, w, h, graph }) => {
+            Msg::Job(Job::Frame { clip, key, path, at, w, h, graph, window }) => {
                 crate::proxy::note_activity();
-                // bewegtes Bild ohne Effekte: aus dem Speicher (beim ersten Mal im Hintergrund ganz decodieren)
-                let anim = if graph.is_none() {
-                    match anims.get(&path, w, h, at) {
-                        Ok(f) => Some(f),
-                        Err(true) => {
-                            let (tx, path) = (tx.clone(), path.clone());
-                            std::thread::spawn(move || {
-                                let frames = cl_media::decode_animation(&path, w, h, ANIM_ONE).map(Arc::new);
-                                let _ = tx.send(Msg::Anim { key: (path, w, h), frames });
-                            });
-                            None
+                // Rückwärts beim Abspielen (Original, ohne Effektgraph): Bilder fensterweise aus
+                // einem FFmpeg statt einem je Bild; alles andere wie bisher
+                let spec = window
+                    .filter(|_| graph.is_none() && !path.starts_with(&proxies) && !win_failed.contains(&(path.clone(), w, h)))
+                    .map(|fps| (path.clone(), w, h, fps));
+                let win = match spec {
+                    Some(spec) => {
+                        let fresh = |spec: (PathBuf, u32, u32, Rational)| Win { speed: spec.3.as_f64(), spec, frames: Default::default(), busy: None, want: None, took: 0.0, prev: None, last: std::time::Instant::now() };
+                        let wn = windows.entry(clip).or_insert_with(|| fresh(spec.clone()));
+                        if wn.spec != spec {
+                            wn.kill();
+                            *wn = fresh(spec);
                         }
-                        Err(false) => None,
+                        wn.last = std::time::Instant::now();
+                        Some(wn)
                     }
-                } else {
-                    None
-                };
-                if let Some(frame) = anim.or_else(|| cache.get(key).cloned()) {
-                    if let Some(k) = inflight.cancel(clip) {
-                        k.kill();
-                        perf_discarded();
-                    }
-                    Some(Done::Frame { clip, key, frame })
-                } else {
-                    if let Some((ks, old)) = inflight.start(clip, key) {
-                        if let Some(o) = old {
+                    None => {
+                        if let Some(mut o) = windows.remove(&clip) {
                             o.kill();
+                        }
+                        None
+                    }
+                };
+                if let Some(wn) = win {
+                    let fps = wn.spec.3.as_f64();
+                    let idx = (at.as_secs_f64() * fps).round() as i64;
+                    let now = std::time::Instant::now();
+                    if let Some((pi, pt)) = wn.prev {
+                        let dt = now.duration_since(pt).as_secs_f64();
+                        if dt > 1e-3 && pi > idx {
+                            wn.speed = 0.5 * wn.speed + 0.5 * ((pi - idx) as f64 / dt).min(8.0 * fps);
+                        }
+                    }
+                    wn.prev = Some((idx, now));
+                    let plan = window_plan(w, h, fps);
+                    // schon gezeigte (rückwärts: spätere) Bilder freigeben; nach einem Sprung alles
+                    wn.frames.retain(|i, _| *i <= idx);
+                    // das Bild – oder, kam das Fenster früher als die Uhr, das nächste gehaltene
+                    // danach: es steht dann kurz, die Reihenfolge bleibt
+                    let near = wn.frames.range(idx - plan.0..=idx).next_back().map(|(i, _)| *i);
+                    let has = near.is_some();
+                    if !has {
+                        wn.frames.clear();
+                    }
+                    let out = if let Some(i) = near {
+                        if let Some(k) = inflight.cancel(clip) {
+                            k.kill();
                             perf_discarded();
                         }
-                        let tx = tx.clone();
-                        let proxy = path.starts_with(&proxies);
-                        std::thread::spawn(move || {
-                            let t = std::time::Instant::now();
-                            let res = cl_media::decode_frame_opts(&path, at, w, h, graph.as_deref(), false, Some(&ks));
-                            let ms = t.elapsed().as_secs_f64() * 1e3;
-                            let _ = tx.send(Msg::Done { clip, key, res, ms, proxy });
-                        });
+                        wn.want = None;
+                        Some(Done::Frame { clip, key, frame: wn.frames[&i].clone() })
+                    } else {
+                        wn.want = Some((idx, key, at, now));
+                        None
+                    };
+                    // läuft schon eins, das Bilder bis hierher oder weiter vorn behält, wartet der
+                    // Auftrag darauf; liegt es ganz hinter der Uhr, abbrechen und neu
+                    if !has && !wn.busy.as_ref().is_some_and(|(_, s, _, e, _)| *s <= idx || *e == Some(idx)) {
+                        wn.kill();
                     }
-                    None
+                    if wn.busy.is_none() {
+                        let lowest = wn.frames.keys().next().copied().unwrap_or(idx);
+                        // Vorlauf mit Reserve: lieber früher da (Bild steht kurz) als zu spät (neu)
+                        let lead = (1.3 * wn.took * wn.speed).min(4.0 * fps) as i64;
+                        if let Some((start, n)) = next_window(idx, has, lowest, wn.frames.len() as i64, lead, plan) {
+                            win_seq += 1;
+                            let ks = Arc::new(KillSwitch::default());
+                            let (keep, end) = (plan.0, (!has).then_some(idx));
+                            wn.busy = Some((win_seq, start, keep, end, ks.clone()));
+                            let (tx, path, seq) = (tx.clone(), path.clone(), win_seq);
+                            let from = Time::from_secs_f64(start as f64 / fps);
+                            std::thread::spawn(move || {
+                                let t = std::time::Instant::now();
+                                let keep = |k: u32| (k as i64) < keep || end == Some(start + k as i64);
+                                let res = cl_media::decode_frames(&path, from, n as u32, w, h, &keep, Some(&ks));
+                                let ms = t.elapsed().as_secs_f64() * 1e3;
+                                let _ = tx.send(Msg::Win { clip, seq, start, res, ms });
+                            });
+                        }
+                    }
+                    out
+                } else {
+                    // bewegtes Bild ohne Effekte: aus dem Speicher (beim ersten Mal im Hintergrund ganz decodieren)
+                    let anim = if graph.is_none() {
+                        match anims.get(&path, w, h, at) {
+                            Ok(f) => Some(f),
+                            Err(true) => {
+                                let (tx, path) = (tx.clone(), path.clone());
+                                std::thread::spawn(move || {
+                                    let frames = cl_media::decode_animation(&path, w, h, ANIM_ONE).map(Arc::new);
+                                    let _ = tx.send(Msg::Anim { key: (path, w, h), frames });
+                                });
+                                None
+                            }
+                            Err(false) => None,
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(frame) = anim.or_else(|| cache.get(key).cloned()) {
+                        if let Some(k) = inflight.cancel(clip) {
+                            k.kill();
+                            perf_discarded();
+                        }
+                        Some(Done::Frame { clip, key, frame })
+                    } else {
+                        if let Some((ks, old)) = inflight.start(clip, key) {
+                            if let Some(o) = old {
+                                o.kill();
+                                perf_discarded();
+                            }
+                            let tx = tx.clone();
+                            let proxy = path.starts_with(&proxies);
+                            std::thread::spawn(move || {
+                                let t = std::time::Instant::now();
+                                let res = cl_media::decode_frame_opts(&path, at, w, h, graph.as_deref(), false, Some(&ks));
+                                let ms = t.elapsed().as_secs_f64() * 1e3;
+                                let _ = tx.send(Msg::Done { clip, key, res, ms, proxy });
+                            });
+                        }
+                        None
+                    }
                 }
             }
             Msg::Job(j) => run(j),
+            Msg::Win { clip, seq, start, res, ms } => match windows.get_mut(&clip) {
+                Some(wn) if wn.busy.as_ref().is_some_and(|b| b.0 == seq) => {
+                    wn.busy = None;
+                    wn.took = ms / 1e3;
+                    if crate::app::perf() {
+                        let n = res.as_ref().map_or(0, Vec::len);
+                        crate::applog::perf_line!("perf: rückwärts-fenster {n} Bilder {ms:.0} ms");
+                    }
+                    for (k, f) in res.into_iter().flatten() {
+                        wn.frames.insert(start + k as i64, f);
+                    }
+                    let (path, w, h, fps) = wn.spec.clone();
+                    match wn.want.take() {
+                        // die Uhr lief weiter, während der Auftrag wartete: das Bild, wo sie jetzt etwa
+                        // steht, oder das nächste danach (es steht dann kurz)
+                        Some((idx, key, at, since)) => match wn.frames.range(..=idx.min(idx - (since.elapsed().as_secs_f64() * wn.speed) as i64 + window_plan(w, h, fps.as_f64()).0)).next_back() {
+                            Some((_, f)) => Some(Done::Frame { clip, key, frame: f.clone() }),
+                            // nichts gelesen (Datei mit schwankender Bildrate, Fehler): Einzelbilder wie bisher
+                            None if wn.frames.is_empty() => {
+                                win_failed.insert((path.clone(), w, h));
+                                let _ = tx.send(Msg::Job(Job::Frame { clip, key, path, at, w, h, graph: None, window: None }));
+                                None
+                            }
+                            // alles schon hinter der Uhr: neu anfordern (neues Fenster)
+                            None => {
+                                let _ = tx.send(Msg::Job(Job::Frame { clip, key, path, at, w, h, graph: None, window: Some(fps) }));
+                                None
+                            }
+                        },
+                        None => None,
+                    }
+                }
+                _ => None,
+            },
             Msg::Anim { key, frames } => {
                 anims.put(key, frames);
                 None
@@ -457,8 +655,9 @@ fn frame_dispatcher(
                 }
             }
         };
-        busy.store(inflight.len(), Ordering::Relaxed);
-        for (a, v) in held.iter().zip([cache.map.len(), cache.bytes, anims.map.len(), anims.bytes]) {
+        busy.store(inflight.len() + windows.values().filter(|w| w.busy.is_some()).count(), Ordering::Relaxed);
+        let win_bytes: usize = windows.values().map(Win::bytes).sum();
+        for (a, v) in held.iter().zip([cache.map.len(), cache.bytes + win_bytes, anims.map.len(), anims.bytes]) {
             a.store(v, Ordering::Relaxed);
         }
         if let Some(d) = out {
@@ -500,6 +699,7 @@ fn run(job: Job) -> Option<Done> {
             w,
             h,
             graph,
+            ..
         } => cl_media::decode_frame_fx(&path, at, w, h, graph.as_deref())
             .map(|frame| Done::Frame { clip, key, frame }),
         Job::Thumb { media, path, at } => {
@@ -1057,6 +1257,70 @@ mod tests {
         assert!(newest_per_layer(Vec::new()).is_empty());
     }
 
+    /// Rückwärts-Fenster: Größe unter der Speichergrenze, höchstens 1 s; fehlendes Bild = Fenster,
+    /// das mit ihm endet; vorab das direkt davor, erst wenn es neben die gehaltenen passt.
+    #[test]
+    fn reverse_window_math() {
+        let (n, cap) = window_plan(1280, 720, 60.0);
+        assert!(cap as usize * 1280 * 720 * 4 <= WINDOW_BYTES, "{cap} Bilder");
+        assert_eq!((n, cap), (17, 34));
+        assert_eq!(window_plan(320, 180, 60.0).0, 60, "höchstens 1 s");
+        assert_eq!(window_plan(320, 180, 23.976).0, 24);
+        assert_eq!(window_plan(7680, 4320, 60.0), (1, 2), "riesig: trotzdem ein Bild");
+        let plan = (21, 32);
+        assert_eq!(next_window(500, false, 500, 0, 0, plan), Some((480, 21)));
+        assert_eq!(next_window(10, false, 10, 0, 0, plan), Some((0, 11)), "nicht vor das erste Bild");
+        // 21 gehalten (480..=500): das nächste passt erst, wenn höchstens 11 übrig sind
+        assert_eq!(next_window(500, true, 480, 21, 0, plan), None);
+        assert_eq!(next_window(490, true, 480, 11, 0, plan), Some((459, 21)));
+        assert_eq!(next_window(5, true, 0, 6, 0, plan), None, "Dateianfang erreicht");
+        assert_eq!(next_window(12, true, 4, 9, 0, plan), Some((0, 4)));
+        // langsame Quelle (Fenster dauert 60 Bilder): bis `idx` decodieren, die ersten 21 ab dort
+        // behalten, wo die Uhr dann steht – das fehlende Bild ist immer im Bereich
+        assert_eq!(next_window(500, false, 500, 0, 60, plan), Some((420, 81)));
+        // vorab: hinter dem Vorlauf, nicht direkt vor den gehaltenen (die sind bis dahin gezeigt)
+        assert_eq!(next_window(490, true, 480, 11, 60, plan), Some((410, 70)));
+        assert_eq!(next_window(490, true, 480, 11, 5, plan), Some((459, 21)), "kleiner Vorlauf");
+    }
+
+    /// Rückwärts abspielen: Aufträge mit Fenster, Bild für Bild rückwärts – jedes kommt, und jedes
+    /// ist bytegleich mit dem Einzelbild ohne Fenster.
+    #[test]
+    fn reverse_window_delivers_the_same_frames() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("r.mp4");
+        let ok = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=128x72:r=30:d=4", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "30"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let d = Decoder::new(egui::Context::default());
+        let fps = Rational::new(30, 1);
+        let clip = ClipId::new();
+        let at = |i: i64| Time::from_secs_f64(i as f64 / 30.0);
+        let mut other = 0;
+        for i in (40..100).rev() {
+            let key = 1000 + i as u64;
+            d.send(Job::Frame { clip, key, path: src.clone(), at: at(i), w: 64, h: 36, graph: None, window: Some(fps) });
+            let f = loop {
+                match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("kein Bild") {
+                    Done::Frame { key: k, frame, .. } if k == key => break frame,
+                    Done::Error(e) | Done::FrameFailed { error: e, .. } => panic!("{e}"),
+                    _ => other += 1,
+                }
+            };
+            let one = cl_media::decode_frame(&src, at(i), 64, 36).unwrap();
+            assert!(one.data == f.data, "Bild {i} weicht ab");
+        }
+        assert_eq!(other, 0);
+    }
+
     #[test]
     fn background_waits_for_player_frames_but_not_forever() {
         let ms = std::time::Duration::from_millis;
@@ -1091,7 +1355,7 @@ mod tests {
     }
 
     fn frame_job(clip: ClipId, key: u64, path: &std::path::Path, at: f64) -> Job {
-        Job::Frame { clip, key, path: path.to_path_buf(), at: Time::from_secs_f64(at), w: 696, h: 392, graph: None }
+        Job::Frame { clip, key, path: path.to_path_buf(), at: Time::from_secs_f64(at), w: 696, h: 392, graph: None, window: None }
     }
 
     /// Mess-Test (von Hand): Scrubben – 20 Aufträge im Abstand von 15 ms an verschiedenen

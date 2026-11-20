@@ -507,6 +507,51 @@ pub(crate) fn streamable(c: &Clip) -> bool {
     matches!(&c.content, ClipContent::Media { kind: MediaKind::Video, .. }) && !c.fx.reverse && c.fx.speed_curve.is_none()
 }
 
+/// Vorlauf im Stand: so lange muss der Playhead auf einer schweren Ebene ruhen, bevor ihr Strom
+/// schon geöffnet wird (Play zeigt dann gleich Bilder; Klicken und Scrubben öffnet nichts)
+const PREROLL_REST: f64 = 0.3;
+/// Generation eines Vorlauf-Auftrags am Starter (die des Kerns zählt von 0)
+const PREROLL_GEN: u64 = u64::MAX;
+
+/// Was Play für eine Ebene anfordern wird: Ebene, Stromschlüssel (Größe, Qualität, Effekte,
+/// Quelle), Quell-Fingerabdruck, Stelle und Bearbeitungsstand
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PrerollSpec {
+    pub id: u128,
+    pub key: u64,
+    pub alias: u64,
+    pub at: Time,
+    pub revision: u64,
+}
+
+/// Im Stand vorab geöffneter Strom (siehe [`App::update_preroll`])
+pub(crate) struct Preroll {
+    spec: PrerollSpec,
+    /// seit wann der Playhead hier ruht (Kern-Zeit)
+    since: f64,
+    sent: bool,
+    /// geöffnet: Bildrate und Strom
+    stream: Option<(f64, cl_media::FrameStream)>,
+}
+
+/// Darf der vorab geöffnete Strom `p` die Anfrage `o` des Kerns nach Play beantworten? Nur für
+/// genau dieselbe Ebene mit demselben Schlüssel und Fingerabdruck, an derselben Stelle und im
+/// selben Bearbeitungsstand – sonst öffnet Play wie bisher.
+pub(crate) fn preroll_fits(p: &PrerollSpec, o: &crate::playcore::Open, alias: u64, revision: u64) -> bool {
+    p.id == o.id && p.key == o.key && p.alias == alias && p.at == o.at && p.revision == revision
+}
+
+/// Quellbildrate für das Rückwärts-Fenster des Decoders (`preview::Job::Frame::window`): nur beim
+/// Abspielen vorwärts eines rückwärts laufenden Videos aus dem Original ohne Effektgraph (der
+/// Graph hängt von der Clipzeit ab), höchstens 1080p. Stand, Pause, Schrittweise und Scrubben:
+/// `None` wie bisher. Über 1080p decodiert FFmpeg kaum schneller als Echtzeit (gemessen 4K:
+/// ~35 Bilder/s Wandzeit): das Fenster käme nie vor die Uhr und wäre langsamer als Einzelbilder.
+pub(crate) fn reverse_window(c: &Clip, m: &MediaRef, original: bool, no_graph: bool, playing_forward: bool, fps: Rational) -> Option<Rational> {
+    let video = matches!(&c.content, ClipContent::Media { kind: MediaKind::Video, .. });
+    let hd = m.width.max(m.height) <= 1920 && m.width.min(m.height) <= 1080;
+    (video && hd && c.fx.reverse && original && no_graph && playing_forward).then(|| m.fps.unwrap_or(fps))
+}
+
 /// Fingerabdruck der Effekte eines Clips (Teil der Bild- und Stromschlüssel)
 pub(crate) fn fx_hash_of(c: &Clip) -> u64 {
     let mut hs = std::collections::hash_map::DefaultHasher::new();
@@ -833,6 +878,52 @@ mod shader_tests {
         // halbe Übergänge ragen zusammen höchstens über die ganze Länge des kurzen Clips
         let (a, b) = span(1);
         assert!(a.unwrap() / 2.0 + b.unwrap() / 2.0 <= 0.2 + 1e-9);
+    }
+
+    /// Rückwärts-Fenster nur beim Abspielen vorwärts eines rückwärts laufenden Videos aus dem
+    /// Original ohne Effektgraph; Pause/Schrittweise/Scrubben, Proxy und Effekte wie bisher.
+    #[test]
+    fn reverse_window_only_while_playing_a_plain_reversed_original() {
+        let m = MediaRef {
+            id: cl_core::MediaId::new(),
+            path: "a.mp4".into(),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(10.0),
+            width: 64,
+            height: 36,
+            fps: Some(Rational::new(30, 1)),
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: None,
+            audio_codec: None,
+        };
+        let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
+        let p = Rational::new(60, 1);
+        assert_eq!(reverse_window(&c, &m, true, true, true, p), None, "vorwärts laufender Clip");
+        c.fx.reverse = true;
+        assert_eq!(reverse_window(&c, &m, true, true, true, p), Some(Rational::new(30, 1)), "Quellrate");
+        assert_eq!(reverse_window(&c, &m, true, true, false, p), None, "Stand, Pause, Scrubben");
+        assert_eq!(reverse_window(&c, &m, false, true, true, p), None, "Proxy");
+        assert_eq!(reverse_window(&c, &m, true, false, true, p), None, "Effektgraph");
+        let m2 = MediaRef { fps: None, ..m.clone() };
+        assert_eq!(reverse_window(&c, &m2, true, true, true, p), Some(p), "ohne Quellrate: Projektrate");
+        let uhd = MediaRef { width: 3840, height: 2160, ..m.clone() };
+        assert_eq!(reverse_window(&c, &uhd, true, true, true, p), None, "über 1080p: Einzelbilder");
+        let img = Clip { content: ClipContent::Media { media: m.id, kind: MediaKind::Image }, ..c };
+        assert_eq!(reverse_window(&img, &m, true, true, true, p), None, "Bild");
+    }
+
+    /// Vorlauf: Play nimmt den vorab geöffneten Strom nur für genau dieselbe Anfrage
+    #[test]
+    fn preroll_only_fits_the_same_request() {
+        let spec = PrerollSpec { id: 7, key: 42, alias: 9, at: Time::from_secs_f64(5.0), revision: 3 };
+        let o = crate::playcore::Open { id: 7, key: 42, at: Time::from_secs_f64(5.0), gen: 0, seq: 1 };
+        assert!(preroll_fits(&spec, &o, 9, 3));
+        assert!(!preroll_fits(&spec, &crate::playcore::Open { at: Time::from_secs_f64(5.5), ..o }, 9, 3), "andere Stelle");
+        assert!(!preroll_fits(&spec, &o, 9, 4), "bearbeitet");
+        assert!(!preroll_fits(&spec, &crate::playcore::Open { key: 43, ..o }, 9, 3), "Qualität, Größe, Effekte, Quelle");
+        assert!(!preroll_fits(&spec, &crate::playcore::Open { id: 8, ..o }, 9, 3), "andere Ebene");
+        assert!(!preroll_fits(&spec, &o, 10, 3), "andere Quelle");
     }
 
     #[test]
@@ -1906,6 +1997,12 @@ impl App {
         let now = self.core_now();
         while let Ok((o, fps, alias, s)) = self.starter.rx.try_recv() {
             match s {
+                // Vorlauf: nur behalten, wenn er noch gewollt ist (sonst endet er beim Verwerfen)
+                _ if o.gen == PREROLL_GEN => {
+                    if let (Some(p), Some(s)) = (self.preroll.as_mut().filter(|p| p.spec.id == o.id && p.spec.key == o.key && p.spec.at == o.at), s) {
+                        p.stream = Some((fps, s));
+                    }
+                }
                 Some(s) => {
                     self.core.attach_alias(o, fps, s, now, alias);
                 }
@@ -1932,12 +2029,85 @@ impl App {
             self.request_frame(ctx, n.id, &n.clip, &n.media, &n.layer, canvas_px, n.prefetch);
         }
         self.fx_overlays = overlays;
+        self.update_preroll(ctx, &needs, canvas_px);
         // Bilder von Clips, die nicht mehr unter dem Playhead liegen, verwirft `receive_decoded`
         // (beim Scrubben über viele Spuren kamen sonst Dutzende auf einmal); kehrt der Playhead
         // zurück, kommt das Bild erneut aus dem Zwischenspeicher des Decoders. Ebenso die
         // Texturen: sonst hielt ein großes Projekt nach dem Scrubben eine je Clip (in Vorschaugröße je 1–8 MB).
         self.core.visible(&visible.iter().map(|id| lid(*id)).collect::<Vec<_>>());
         self.frames.retain(|id, _| visible.contains(id));
+    }
+
+    /// Vorlauf im Stand: ruht der Playhead [`PREROLL_REST`] auf einer schweren Ebene (Original über
+    /// 1080p bzw. hohe Bildrate, siehe `preview::stream_hw`) ohne Proxy, wird ihr Strom schon
+    /// geöffnet, genau so, wie Play ihn anfordern wird; Play hängt ihn an, statt ab dem Keyframe
+    /// neu zu suchen (4K: ~1 s). Höchstens einer (ein Hardware-Decoder); jede Änderung von Stelle,
+    /// Bearbeitung, Projekt, Qualität oder Vorschaugröße ändert den Wunsch und verwirft ihn, ebenso
+    /// Abspielen, Pause und ein laufender Export.
+    fn update_preroll(&mut self, ctx: &egui::Context, needs: &[Need], canvas_px: egui::Vec2) {
+        let wish = if self.core.mode() == Mode::Stand && !self.playing { self.preroll_wish(needs, canvas_px) } else { None };
+        let Some((spec, i, (w, h), sfps)) = wish else {
+            self.preroll = None;
+            return;
+        };
+        let now = self.core_now();
+        match &mut self.preroll {
+            Some(p) if p.spec == spec => {
+                if p.sent {
+                    return;
+                }
+                if now - p.since < PREROLL_REST {
+                    // ruhige Oberfläche zeichnet nicht: nach der Ruhezeit noch einmal nachsehen
+                    ctx.request_repaint_after(std::time::Duration::from_secs_f64(PREROLL_REST - (now - p.since) + 0.01));
+                    return;
+                }
+                if self.export.current().is_some() {
+                    return;
+                }
+                p.sent = true;
+                let n = &needs[i];
+                let o = crate::playcore::Open { id: spec.id, key: spec.key, at: spec.at, gen: PREROLL_GEN, seq: 0 };
+                self.starter.send(open_job(o, &n.clip, &n.media, n.media.path.clone(), (w, h), sfps, spec.alias));
+            }
+            _ => {
+                self.preroll = Some(Preroll { spec, since: now, sent: false, stream: None });
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(PREROLL_REST + 0.01));
+            }
+        }
+    }
+
+    /// Die Ebene für den Vorlauf und was Play für sie anfordern wird (wie in `request_frame`):
+    /// (Wunsch, Index in `needs`, Decodiergröße, Strom-Bildrate)
+    fn preroll_wish(&mut self, needs: &[Need], canvas_px: egui::Vec2) -> Option<(PrerollSpec, usize, (u32, u32), Rational)> {
+        let i = needs.iter().position(|n| {
+            n.prefetch.is_none() && n.overlay.is_none() && streamable(&n.clip) && crate::preview::stream_hw(&n.media, &n.media.path) && self.presence.get(&n.media.path)
+        })?;
+        let (id, c, m) = (needs[i].id, &needs[i].clip, &needs[i].media);
+        let fps = self.project.settings.fps;
+        if self.settings.use_proxies {
+            // kein fertiger Proxy (laut Suche) und keine Stücke: Play nähme sonst die
+            if self.proxies.cached(m.id, (self.settings.proxy_h, fps)) != Some(None) {
+                return None;
+            }
+            // Wahl der Quelle wie bei Play, ohne die gemerkte Wahl zu verändern
+            let prev = self.proxy_picks.get(&lid(id)).copied();
+            let pick = self.stream_pick(lid(id), c, m, self.playhead);
+            match prev {
+                Some(p) => self.proxy_picks.insert(lid(id), p),
+                None => self.proxy_picks.remove(&lid(id)),
+            };
+            if pick != crate::proxy::Pick::Whole {
+                return None;
+            }
+        }
+        let (div, half) = self.play_quality();
+        let sfps = if half { Rational::new(fps.num, fps.den * 2) } else { fps };
+        let cacheable = self.live.as_ref().is_none_or(|lv| lv.id != needs[i].layer.clip.id)
+            && !matches!(self.pick, Some(crate::pro::Pick::Chroma(p)) if p == needs[i].layer.clip.id);
+        let fxh = self.fx_hash(id, c, cacheable);
+        let (key, w, h) = stream_spec(id, c, m, canvas_px, div as f32, sfps, fxh);
+        let alias = stream_alias(c, m, (w, h), sfps, fxh);
+        Some((PrerollSpec { id: lid(id), key, alias, at: self.playhead, revision: self.revision }, i, (w, h), sfps))
     }
 
     /// Ein Bild für die Ebene anfordern (Strom beim Abspielen, sonst Einzelbild).
@@ -1986,10 +2156,15 @@ impl App {
                 // Der Kern sagt, ob und ab wo: erster Strom, Ersatz nach einer Änderung (der alte
                 // zeigt weiter, bis der neue liefert), Aufholen, hängender Strom
                 if let Some(o) = self.core.want(&want, now) {
-                    let (path, offset) = self.stream_source(m, h, pick);
-                    let mut job = open_job(o, c, m, path, (w, h), stream_fps, alias);
-                    job.source_at = Time((job.source_at - offset).0.max(0));
-                    self.starter.send(job);
+                    let rev = self.revision;
+                    if let Some((sfps, s)) = self.preroll.take_if(|p| preroll_fits(&p.spec, &o, alias, rev)).and_then(|p| p.stream) {
+                        self.core.attach_alias(o, sfps, s, now, alias);
+                    } else {
+                        let (path, offset) = self.stream_source(m, h, pick);
+                        let mut job = open_job(o, c, m, path, (w, h), stream_fps, alias);
+                        job.source_at = Time((job.source_at - offset).0.max(0));
+                        self.starter.send(job);
+                    }
                 }
             }
             if prefetch_at.is_some() {
@@ -2029,6 +2204,7 @@ impl App {
             let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
             let (path, at) = self.still_source(m, h, src);
+            let window = reverse_window(c, m, path == m.path, graph.is_none(), self.core.playing() && self.core.rate() > 0.0, fps);
             self.decoder.send(Job::Frame {
                 clip: id,
                 key,
@@ -2037,6 +2213,7 @@ impl App {
                 w,
                 h,
                 graph,
+                window,
             });
         }
     }
