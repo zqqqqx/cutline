@@ -382,7 +382,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
         }
         while let Ok(d) = decoder.rx.try_recv() {
             match d {
-                Done::Frame { clip, key, frame } => {
+                Done::Frame { clip, key, frame, exact } => {
                     if let Some((ta, src)) = still_asked.remove(&key) {
                         let ms = (t - ta) * 1000.0;
                         if debug && ms > 700.0 {
@@ -390,7 +390,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
                         }
                         run.still_max_ms = run.still_max_ms.max(ms);
                     }
-                    if core.still_done(lid(clip), key) {
+                    if if exact { core.still_done(lid(clip), key) } else { core.still_near(lid(clip), key) } {
                         run.stills_shown += 1;
                         if Some(clip) == prim && frame.data != last_data {
                             prim_new.push(t);

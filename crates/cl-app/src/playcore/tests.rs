@@ -926,6 +926,30 @@ fn failed_still_ends_the_request_and_the_next_is_requested() {
     assert!(!core.has_requests());
 }
 
+/// CI finding: the reverse window answers a job with a held neighbour while playing. Shown, but
+/// in the pause the same key is asked again (now without window: the exact frame) – before,
+/// the neighbour stayed as the paused picture.
+#[test]
+fn neighbour_frame_is_asked_again_when_playback_ends() {
+    let mut core: PlayCore<Sim> = PlayCore::default();
+    core.shuttle(1.0, Time::ZERO, 0.0);
+    assert!(core.still(1, 10, 0.0));
+    assert!(core.still_near(1, 10), "shown during playback");
+    assert!(!core.has_requests());
+    assert!(!core.still(1, 10, 0.1), "not asked again while playing");
+    core.pause(0, true, true);
+    assert_eq!(core.mode(), Mode::Pause);
+    assert!(core.still(1, 10, 0.2), "asked again in the pause");
+    assert!(core.still_done(1, 10));
+    assert!(!core.still(1, 10, 0.3), "the exact frame stays");
+    // an exact frame from playback stays in the pause
+    core.shuttle(1.0, Time::ZERO, 1.0);
+    assert!(core.still(1, 11, 1.0));
+    assert!(core.still_done(1, 11));
+    core.pause(0, true, true);
+    assert!(!core.still(1, 11, 1.1));
+}
+
 #[test]
 fn play_during_buffering_seek_and_stop_from_every_state() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);

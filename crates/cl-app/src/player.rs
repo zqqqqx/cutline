@@ -1746,8 +1746,8 @@ impl App {
     pub fn receive_decoded(&mut self, ctx: &egui::Context) {
         while let Ok(d) = self.decoder.rx.try_recv() {
             match d {
-                Done::Frame { clip, key, frame } => {
-                    if self.core.still_done(lid(clip), key) {
+                Done::Frame { clip, key, frame, exact } => {
+                    if if exact { self.core.still_done(lid(clip), key) } else { self.core.still_near(lid(clip), key) } {
                         self.set_frame(ctx, clip, key, &frame);
                     }
                 }

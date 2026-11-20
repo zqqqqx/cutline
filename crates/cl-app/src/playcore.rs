@@ -19,7 +19,7 @@
 //! longer than [`CATCH_UP_AFTER`], it is reopened from "clock + startup time" (the old one keeps
 //! showing until then); the automatic quality ([`AutoQuality`]) then lowers the decode size.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cl_core::Time;
 
@@ -306,6 +306,9 @@ pub struct PlayCore<S: Source> {
     /// Single frames: requested (key, since) and done (shown or failed)
     requested: HashMap<Lid, (u64, f64)>,
     shown: HashMap<Lid, u64>,
+    /// layers showing a neighbour instead of their requested frame: asked again in the pause
+    /// (stop and jumps ask everything again anyway)
+    near: HashSet<Lid>,
     /// layer last supplied with a frame (there is a displayable frame)
     held: Option<Lid>,
     audio_due: Option<f64>,
@@ -343,6 +346,7 @@ impl<S: Source> Default for PlayCore<S> {
             max_level: 0,
             requested: HashMap::new(),
             shown: HashMap::new(),
+            near: HashSet::new(),
             held: None,
             audio_due: None,
             last_primary: None,
@@ -458,6 +462,7 @@ impl<S: Source> PlayCore<S> {
     fn clear_streams(&mut self) {
         // jump: running single frames belong to the old place
         self.requested.clear();
+        self.near.clear();
         self.reopened.clear();
         self.settle.clear();
         self.cur.clear();
@@ -533,6 +538,7 @@ impl<S: Source> PlayCore<S> {
             return;
         }
         self.mode = Mode::Pause;
+        self.ask_near_again();
         self.paused = Some((self.pos, revision));
         self.next.clear();
         self.opening.clear();
@@ -953,9 +959,26 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
+    /// Neighbour instead of the requested frame (reverse window during playback): shown like it,
+    /// but in the pause the job is asked again, so the exact frame replaces it.
+    pub fn still_near(&mut self, id: Lid, key: u64) -> bool {
+        let ok = self.still_done(id, key);
+        if ok {
+            self.near.insert(id);
+        }
+        ok
+    }
+
+    fn ask_near_again(&mut self) {
+        for id in self.near.drain() {
+            self.requested.remove(&id);
+        }
+    }
+
     /// Single frame delivered: show it if it is the requested one
     pub fn still_done(&mut self, id: Lid, key: u64) -> bool {
         if self.requested.get(&id).is_some_and(|(k, _)| *k == key) {
+            self.near.remove(&id);
             self.shown.insert(id, key);
             self.held = Some(id);
             true

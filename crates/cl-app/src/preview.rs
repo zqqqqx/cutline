@@ -162,6 +162,9 @@ pub enum Done {
         clip: ClipId,
         key: u64,
         frame: RgbaFrame,
+        /// `false`: a held neighbour of the requested frame (reverse window during playback),
+        /// not the frame of `key` itself
+        exact: bool,
     },
     /// Player frame could not be decoded (the job is finished with that)
     FrameFailed {
@@ -402,6 +405,12 @@ fn next_window(idx: i64, has_idx: bool, lowest: i64, held: i64, lead: i64, (n, c
     Some((first, end - first + 1))
 }
 
+/// Answer from the held window frames: the highest one in `range` (which ends at `idx` or
+/// before); any other than `idx` is only a neighbour for playback and is marked as such.
+fn window_answer(frames: &std::collections::BTreeMap<i64, RgbaFrame>, range: std::ops::RangeInclusive<i64>, clip: ClipId, key: u64, idx: i64) -> Option<Done> {
+    frames.range(range).next_back().map(|(&i, f)| Done::Frame { clip, key, frame: f.clone(), exact: i == idx })
+}
+
 /// Reverse window of a clip in the dispatcher
 struct Win {
     /// File, size, source rate: if one changes, nothing is valid any more
@@ -513,18 +522,18 @@ fn frame_dispatcher(
                     wn.frames.retain(|i, _| *i <= idx);
                     // the frame – or, if the window came earlier than the clock, the next held one
                     // after it: it then stands briefly, the order stays
-                    let near = wn.frames.range(idx - plan.0..=idx).next_back().map(|(i, _)| *i);
+                    let near = window_answer(&wn.frames, idx - plan.0..=idx, clip, key, idx);
                     let has = near.is_some();
                     if !has {
                         wn.frames.clear();
                     }
-                    let out = if let Some(i) = near {
+                    let out = if has {
                         if let Some(k) = inflight.cancel(clip) {
                             k.kill();
                             perf_discarded();
                         }
                         wn.want = None;
-                        Some(Done::Frame { clip, key, frame: wn.frames[&i].clone() })
+                        near
                     } else {
                         wn.want = Some((idx, key, at, now));
                         None
@@ -578,7 +587,7 @@ fn frame_dispatcher(
                             k.kill();
                             perf_discarded();
                         }
-                        Some(Done::Frame { clip, key, frame })
+                        Some(Done::Frame { clip, key, frame, exact: true })
                     } else {
                         if let Some((ks, old)) = inflight.start(clip, key) {
                             if let Some(o) = old {
@@ -614,8 +623,8 @@ fn frame_dispatcher(
                     match wn.want.take() {
                         // the clock kept running while the job waited: the frame where it now roughly
                         // stands, or the next one after (it then stands briefly)
-                        Some((idx, key, at, since)) => match wn.frames.range(..=idx.min(idx - (since.elapsed().as_secs_f64() * wn.speed) as i64 + window_plan(w, h, fps.as_f64()).0)).next_back() {
-                            Some((_, f)) => Some(Done::Frame { clip, key, frame: f.clone() }),
+                        Some((idx, key, at, since)) => match window_answer(&wn.frames, i64::MIN..=idx.min(idx - (since.elapsed().as_secs_f64() * wn.speed) as i64 + window_plan(w, h, fps.as_f64()).0), clip, key, idx) {
+                            Some(d) => Some(d),
                             // nothing read (file with varying frame rate, errors): single frames as before
                             None if wn.frames.is_empty() => {
                                 win_failed.insert((path.clone(), w, h));
@@ -652,7 +661,7 @@ fn frame_dispatcher(
                             );
                         }
                         cache.put(key, frame.clone());
-                        current.then_some(Done::Frame { clip, key, frame })
+                        current.then_some(Done::Frame { clip, key, frame, exact: true })
                     }
                     Err(cl_media::MediaError::Cancelled) => None,
                     Err(e) => current.then(|| Done::FrameFailed { clip, key, error: e.to_string() }),
@@ -705,7 +714,7 @@ fn run(job: Job) -> Option<Done> {
             graph,
             ..
         } => cl_media::decode_frame_fx(&path, at, w, h, graph.as_deref())
-            .map(|frame| Done::Frame { clip, key, frame }),
+            .map(|frame| Done::Frame { clip, key, frame, exact: true }),
         Job::Thumb { media, path, at, size } => {
             let (w, h) = cl_media::fit_size(size.0, size.1, 192, 108);
             cl_media::decode_frame(&path, at, w, h).map(|frame| Done::Thumb { media, frame })
@@ -1334,7 +1343,12 @@ mod tests {
             d.send(Job::Frame { clip, key, path: src.clone(), at: at(i), w: 64, h: 36, graph: None, window: Some(fps) });
             let f = loop {
                 match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("no frame") {
-                    Done::Frame { key: k, frame, .. } if k == key => break frame,
+                    Done::Frame { key: k, frame, exact: true, .. } if k == key => break frame,
+                    // slow machine: the job waited longer than the window lasts, a neighbour came
+                    // (playback); asked again without window as the player does in the pause
+                    Done::Frame { key: k, exact: false, .. } if k == key => {
+                        d.send(Job::Frame { clip, key, path: src.clone(), at: at(i), w: 64, h: 36, graph: None, window: None })
+                    }
                     Done::Error(e) | Done::FrameFailed { error: e, .. } => panic!("{e}"),
                     _ => other += 1,
                 }
@@ -1343,6 +1357,22 @@ mod tests {
             assert!(one.data == f.data, "frame {i} differs");
         }
         assert_eq!(other, 0);
+    }
+
+    /// CI finding: a job is answered from the window with a held neighbour (window came early,
+    /// or the job waited longer than the clock allows) – that must never pass as the frame itself.
+    #[test]
+    fn window_neighbour_is_not_the_requested_frame() {
+        let clip = ClipId::new();
+        let frames: std::collections::BTreeMap<i64, RgbaFrame> = (60..70).map(|i| (i, RgbaFrame { width: 1, height: 1, data: vec![i as u8; 4] })).collect();
+        let answer = |range, idx| match window_answer(&frames, range, clip, 7, idx) {
+            Some(Done::Frame { key: 7, frame, exact, .. }) => Some((frame.data[0] as i64, exact)),
+            _ => None,
+        };
+        assert_eq!(answer(65..=65, 65), Some((65, true)));
+        assert_eq!(answer(45..=75, 75), Some((69, false)), "gap above the window");
+        assert_eq!(answer(i64::MIN..=62, 70), Some((62, false)), "job waited: where the clock now is");
+        assert_eq!(answer(70..=75, 75), None);
     }
 
     #[test]
