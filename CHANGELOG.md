@@ -8,6 +8,24 @@
 ### English
 
 **New**
+
+**Improved**
+
+**Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.14.0 – 2026-11-20
+
+### English
+
+**New**
 - **Split into parts.** The export window can cut a video into several files in one go – by count, by length or at your markers. The parts land in their own folder, numbered in order, ready to upload one by one.
 - **File size.** Choose "At most 10 MB" (or 25, 50, 100, or your own number) in the export window and the file stays under it. If the size is too small for the resolution, Cutline exports a smaller picture and says so.
 - **Playback volume.** The speaker next to the time in the player sets how loud Cutline plays – click to mute, hover for the slider, or use the mouse wheel. Your project and the export are not changed.
