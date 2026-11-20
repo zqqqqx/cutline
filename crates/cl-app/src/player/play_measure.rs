@@ -1,13 +1,13 @@
-//! Mess-Test ohne Fenster: Player-Kern mit echten FFmpeg-Strömen (Starter-Thread), echtem
-//! Einzelbild-Decoder und Ton ohne Gerät (dieselben Ton-Fenster wie in der App, nur nicht hörbar).
-//! Je Projekt fünf Stellen, je Stelle `CUTLINE_QA_SECS` (Standard 30) Sekunden abspielen, nach 10 s
-//! eine Bearbeitung (Effekt + Lautstärke), nach 20 s ein Klick an eine andere Stelle.
+//! Measurement test without a window: player core with real FFmpeg streams (starter thread), real
+//! single-frame decoder and sound without device (the same audio windows as in the app, just not audible).
+//! Five places per project, `CUTLINE_QA_SECS` (default 30) seconds of playback per place, after 10 s
+//! an edit (effect + volume), after 20 s a click at another place.
 //!
-//! Von Hand ausführen (Projekte `PL_einfach/PL_schnitt/PL_gross.cutline` im Ordner):
-//! `CUTLINE_QA_DIR=<Ordner> cargo test --release -p cl-app --bin cutline play_measure -- --ignored --nocapture`
-//! Proxys werden genutzt, wenn sie im Datenordner (`CUTLINE_HOME`) liegen – wie in der App.
-//! Dauerlauf (Speicher): `CUTLINE_QA_SECS=150 CUTLINE_QA_JUMP=8` springt nach dem Klick alle 8 s
-//! und gibt die Größe aller Zwischenspeicher nach dem Anlauf und am Ende aus (`mem`).
+//! Run by hand (projects `PL_einfach/PL_schnitt/PL_gross.cutline` in the folder):
+//! `CUTLINE_QA_DIR=<folder> cargo test --release -p cl-app --bin cutline play_measure -- --ignored --nocapture`
+//! Proxies are used if they lie in the data folder (`CUTLINE_HOME`) – as in the app.
+//! Endurance run (memory): `CUTLINE_QA_SECS=150 CUTLINE_QA_JUMP=8` jumps every 8 s after the click
+//! and prints the size of all caches after the startup and at the end (`mem`).
 
 use std::time::Instant;
 
@@ -18,55 +18,55 @@ use crate::audio::AudioPlayer;
 use crate::playcore::{quality_steps, AudioIn, Cmd, Mode, PlayCore, Tick, Want};
 use crate::preview::{Decoder, Done, Job, Starter};
 
-/// Messwerte eines Laufs
+/// Measurements of one run
 #[derive(Debug, Default)]
 struct Run {
     label: String,
     proxy: bool,
-    /// Play → erstes Bild, Play → erstes weitergeschaltetes Bild (ms)
+    /// Play → first frame, Play → first advanced frame (ms)
     first_ms: f64,
     moving_ms: f64,
-    /// Bilder/s der untersten Video-Ebene im ruhigen Teil (2 s … Bearbeitung)
+    /// Frames/s of the lowest video layer in the quiet part (2 s … edit)
     fps: f64,
     target_fps: f64,
-    /// größte Lücke zwischen zwei Bildern der untersten Video-Ebene nach dem Anlauf (ms)
+    /// largest gap between two frames of the lowest video layer after the startup (ms)
     gap_ms: f64,
     dropped_per_s: f64,
-    /// größter / mittlerer Rückstand des gezeigten Strombilds hinter der Uhr (= Bild-Ton-Versatz)
+    /// largest / mean lag of the shown stream frame behind the clock (= picture-sound offset)
     lag_max_ms: f64,
     lag_avg_ms: f64,
     underruns: u64,
     underrun_ms: f64,
     catch_ups: u32,
     level_max: usize,
-    /// Bearbeitung beim Abspielen: größte Lücke danach, bis das geänderte Bild zu sehen ist (ms)
+    /// Edit during playback: largest gap afterwards, until the changed frame is visible (ms)
     edit_gap_ms: f64,
-    /// Regler ziehen beim Abspielen: größte Lücke der untersten Ebene (ms)
+    /// Dragging a slider during playback: largest gap of the lowest layer (ms)
     drag_gap_ms: f64,
     edit_visible_ms: f64,
-    /// Klick beim Abspielen → erstes Bild an der neuen Stelle (ms)
+    /// Click during playback → first frame at the new place (ms)
     click_ms: f64,
     clock_audio: bool,
-    /// Einzelbilder beim Abspielen: angefordert / gezeigt
+    /// Single frames during playback: requested / shown
     stills_req: u32,
     stills_shown: u32,
-    /// größte Zeit ohne neues Bild irgendeiner Ebene bei laufender Uhr (ms)
+    /// longest time without a new frame on any layer while the clock runs (ms)
     freeze_ms: f64,
-    /// längste Zeit Auftrag → Einzelbild (ms)
+    /// longest time job → single frame (ms)
     still_max_ms: f64,
-    /// in den 3 s nach Pause → Play an derselben Stelle: geöffnete Ströme, höchste Qualitätsstufe, Aufholen
+    /// in the 3 s after Pause → Play at the same place: opened streams, highest quality level, catch-ups
     resume_opens: u32,
     resume_level: usize,
     resume_catch_up: u32,
-    /// gezeigte Bilder je Ebene (Strom oder Einzelbild), Reihenfolge der Ebenen im Projekt
+    /// shown frames per layer (stream or single frame), order of the layers in the project
     layer_frames: std::collections::BTreeMap<String, u32>,
-    /// Zwischenspeicher nach dem Anlauf und am Ende (Dauerlauf, `CUTLINE_QA_JUMP`)
+    /// Caches after the startup and at the end (endurance run, `CUTLINE_QA_JUMP`)
     mem: Vec<String>,
-    /// Bilder/s im ruhigen Teil, nur Einzelbilder mit neuem Inhalt (ein stehendes Bild zählt nicht)
+    /// Frames/s in the quiet part, only single frames with new content (a still frame does not count)
     fps_new: f64,
 }
 
-/// Privater Speicher des Prozesses (MB), soweit ermittelbar
+/// Private memory of the process (MB), where available
 fn private_mb() -> f64 {
     #[cfg(windows)]
     {
@@ -87,7 +87,7 @@ fn private_mb() -> f64 {
             fn K32GetProcessMemoryInfo(p: *mut std::ffi::c_void, c: *mut Counters, cb: u32) -> i32;
         }
         let mut c = Counters { cb: std::mem::size_of::<Counters>() as u32, ..Default::default() };
-        // SAFETY: Struktur in der Größe von PROCESS_MEMORY_COUNTERS_EX
+        // SAFETY: struct of the size of PROCESS_MEMORY_COUNTERS_EX
         if unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb) } != 0 {
             return c.private as f64 / 1048576.0;
         }
@@ -95,7 +95,7 @@ fn private_mb() -> f64 {
     f64::NAN
 }
 
-/// Alle Zwischenspeicher des Players (Kern, Verteiler, Starter-Warteschlange) und Prozess-Speicher
+/// All caches of the player (core, dispatcher, starter queue) and process memory
 fn sizes(core: &PlayCore<cl_media::FrameStream>, decoder: &Decoder, starter_queue: i64, t: f64) -> String {
     use std::sync::atomic::Ordering::Relaxed;
     let h = &decoder.held;
@@ -110,7 +110,7 @@ fn sizes(core: &PlayCore<cl_media::FrameStream>, decoder: &Decoder, starter_queu
     )
 }
 
-/// Unterste Video-Ebene am Playhead (nicht vorab, keine Element-Fassung)
+/// Lowest video layer at the playhead (not ahead, no element version)
 fn primary(needs: &[Need]) -> Option<ClipId> {
     needs
         .iter()
@@ -128,7 +128,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let decoder = Decoder::new(ctx.clone());
     let starter = Starter::new(ctx);
     let mut core: PlayCore<cl_media::FrameStream> = PlayCore::default();
-    // Vergleich „vorher“: ohne gezieltes Aufholen und ohne automatische Qualität
+    // comparison "before": without targeted catching up and without automatic quality
     let baseline = std::env::var_os("CUTLINE_QA_BASELINE").is_some();
     core.catch_up = !baseline;
     let t0 = Instant::now();
@@ -144,30 +144,30 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let (edit_at, click_at) = (10.0f64.min(secs * 0.4), 20.0f64.min(secs * 0.7));
     let (mut edited, mut clicked) = (None::<(f64, ClipId)>, None::<(f64, Time)>);
     let mut edit_key: Option<(ClipId, u64)> = None;
-    // Bildfolge der untersten Video-Ebene: (Wandzeit)
+    // frame sequence of the lowest video layer: (wall time)
     let mut prim_frames: Vec<f64> = Vec::new();
     let (mut prim_new, mut last_data): (Vec<f64>, Vec<u8>) = (Vec::new(), Vec::new());
     let mut lags: Vec<f64> = Vec::new();
     let mut dropped = 0u32;
     let mut first_any: Option<f64> = None;
     let mut moving: Option<f64> = None;
-    let mut warm_until = f64::MAX; // Lücken erst nach dem Anlauf zählen
+    let mut warm_until = f64::MAX; // count gaps only after the startup
     let mut any_frame = f64::NAN;
-    // Dauerlauf: alle so viele Sekunden ein Sprung (zusätzlich zum Klick)
+    // endurance run: a jump every this many seconds (in addition to the click)
     let jump_every: Option<f64> = std::env::var("CUTLINE_QA_JUMP").ok().and_then(|s| s.parse().ok());
     let mut last_jump = 0.0;
     let mut starter_queue = 0i64;
     let debug = std::env::var_os("CUTLINE_QA_DEBUG").is_some();
     let mut still_asked: std::collections::HashMap<u64, (f64, f64)> = Default::default();
     let drag_at = (edit_at + click_at) / 2.0;
-    // `CUTLINE_QA_PAUSE`: Pause und Play an derselben Stelle (vor der Bearbeitung); danach dürfen
-    // weder Ströme neu aufgehen noch die Qualität sinken (verfälscht die Bilder/s des ruhigen Teils)
+    // `CUTLINE_QA_PAUSE`: Pause and Play at the same place (before the edit); afterwards
+    // no streams may open anew nor the quality drop (would falsify the frames/s of the quiet part)
     let pause_at = if std::env::var_os("CUTLINE_QA_PAUSE").is_some() { edit_at * 0.5 } else { f64::MAX };
     let mut paused_since: Option<f64> = None;
     let mut resumed: Option<f64> = None;
     let mut dragging = false;
-    // `CUTLINE_QA_PREROLL`: Vorlauf wie im Stand der App (`App::update_preroll`) – Strom der
-    // untersten Ebene vorab öffnen, ruhen lassen, bei Play anhängen
+    // `CUTLINE_QA_PREROLL`: preroll as when the app is stopped (`App::update_preroll`) – open the stream of the
+    // lowest layer ahead, let it rest, attach on Play
     let mut preroll: Option<(PrerollSpec, f64, cl_media::FrameStream)> = None;
     if std::env::var_os("CUTLINE_QA_PREROLL").is_some() {
         let ns = needs(&project, &layers_in(&project, None, start), start, false, |_| {});
@@ -190,7 +190,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     while now() - t_play < secs {
         let t = now();
         let rel = t - t_play;
-        // Bearbeitung: Helligkeit der untersten Ebene + Lautstärke (sichtbar und hörbar)
+        // edit: brightness of the lowest layer + volume (visible and audible)
         if edited.is_none() && rel >= edit_at {
             let layers = layers_in(&project, None, playhead);
             if let Some(id) = primary(&needs(&project, &layers, playhead, true, |_| {})) {
@@ -204,8 +204,8 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 edited = Some((t, id));
             }
         }
-        // Regler ziehen (Inspektor): 1,5 s lang je UI-Bild ein neuer Effektwert und eine neue
-        // Größe der untersten Ebene, erst danach ein Schritt im Verlauf
+        // dragging a slider (inspector): for 1.5 s a new effect value and a new
+        // size of the lowest layer per UI frame, only then one step in the history
         if paused_since.is_none() && resumed.is_none() && rel >= pause_at && core.mode() == Mode::Spielen {
             let running = audio.as_ref().is_some_and(|a| a.started());
             core.pause(revision, running, true);
@@ -235,7 +235,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
             revision += 1;
             core.edit(false, t);
         }
-        // Klick an eine andere Stelle
+        // click at another place
         if clicked.is_none() && rel >= click_at {
             let d = project.duration().as_secs_f64();
             let to = Time::from_secs_f64((playhead.as_secs_f64() + 37.0) % (d - 5.0).max(1.0));
@@ -304,7 +304,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
             }
         }
         if core.mode() == Mode::Stand {
-            break; // Projektende
+            break; // project end
         }
         run.clock_audio |= matches!(ain, AudioIn::Running(_));
         run.level_max = run.level_max.max(core.quality.level);
@@ -421,7 +421,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
             }
         }
         core.visible(&ids);
-        // Stillstand: Uhr läuft, aber keine Ebene bekommt ein neues Bild (nicht während Anlauf/Klick)
+        // standstill: clock runs, but no layer gets a new frame (not during startup/click)
         let in_click = clicked.is_some_and(|c| c.0 <= t && run.click_ms == 0.0);
         if core.mode() == Mode::Spielen && t >= warm_until && any_frame.is_finite() && !in_click {
             run.freeze_ms = run.freeze_ms.max((t - any_frame) * 1000.0);
@@ -431,7 +431,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 lags.push(l);
             }
         }
-        // Klick → erstes Bild an der neuen Stelle
+        // click → first frame at the new place
         if let Some((tc, to)) = clicked {
             if run.click_ms == 0.0 && core.mode() == Mode::Spielen && playhead >= to && prim_frames.last().is_some_and(|f| *f >= tc) {
                 run.click_ms = (t - tc) * 1000.0;
@@ -491,10 +491,10 @@ fn play_measure() {
     if !cl_media::ffmpeg_available() {
         return;
     }
-    // Effekte und Übergänge der mitgelieferten Pakete (wie beim Start der App)
+    // effects and transitions of the bundled packages (as at app start)
     let reg = cl_plugin::Registry::scan([std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins"))]);
     cl_fx::catalog::load_packs(crate::contents::catalog_packs(&reg, "de"));
-    // künstliche Volllast: so viele rechnende Threads (wie andere Programme auf dem Rechner)
+    // artificial full load: this many computing threads (like other programs on the computer)
     let stress: usize = std::env::var("CUTLINE_QA_STRESS").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let workers: Vec<_> = (0..stress)
@@ -526,8 +526,8 @@ fn play_measure() {
             eprintln!("{name}: fehlt – übersprungen");
             continue;
         };
-        let project = Project::from_json(&json).expect("Projekt lesbar");
-        // Messung mit Proxys: fehlende fertig bauen (in `CUTLINE_HOME`, nicht im Datenordner der App)
+        let project = Project::from_json(&json).expect("project readable");
+        // measurement with proxies: finish building missing ones (in `CUTLINE_HOME`, not in the app's data folder)
         if std::env::var_os("CUTLINE_QA_PROXY").is_some() && std::env::var_os("CUTLINE_HOME").is_some() {
             let (h, fps) = (crate::settings::AppSettings::default().proxy_h, project.settings.fps);
             for m in project.media.iter().filter(|m| crate::proxy::wants_proxy(m) && m.path.is_file()) {
@@ -585,24 +585,24 @@ fn play_measure() {
             r.stills_shown
         );
     }
-    // großzügige Grenzwerte (Fremdlast auf dem Rechner darf nicht stören); im Dauerlauf mit
-    // Sprüngen zählt jeder Anlauf als Rückstand – dort nur die Zwischenspeicher ansehen
+    // generous limits (outside load on the computer must not interfere); in the endurance run with
+    // jumps every startup counts as lag – there only look at the caches
     if std::env::var_os("CUTLINE_QA_JUMP").is_some() {
         return;
     }
     for r in &rows {
-        assert!(r.first_ms < 3000.0, "{}: Play → Bild {:.0} ms", r.label, r.first_ms);
-        assert!(r.lag_max_ms < 1500.0, "{}: Rückstand {:.0} ms", r.label, r.lag_max_ms);
-        assert!(r.fps >= 0.5 * r.target_fps.min(30.0), "{}: {:.1} Bilder/s", r.label, r.fps);
-        assert!(r.click_ms > 0.0 && r.click_ms < 3000.0, "{}: Klick → Bild {:.0} ms", r.label, r.click_ms);
+        assert!(r.first_ms < 3000.0, "{}: Play → frame {:.0} ms", r.label, r.first_ms);
+        assert!(r.lag_max_ms < 1500.0, "{}: lag {:.0} ms", r.label, r.lag_max_ms);
+        assert!(r.fps >= 0.5 * r.target_fps.min(30.0), "{}: {:.1} frames/s", r.label, r.fps);
+        assert!(r.click_ms > 0.0 && r.click_ms < 3000.0, "{}: click → frame {:.0} ms", r.label, r.click_ms);
     }
 }
 
-/// Kosten der Player-Logik je UI-Bild ohne Zeichnen (Ebenen, Bedarf, Schlüssel) und je Strombild
-/// (Umwandlung für die Textur), an vielen Stellen der Testprojekte.
-/// Zwei 4K-Ebenen, die obere mit Tempo `CUTLINE_QA_TEMPO` (Standard 2; `rev` = rückwärts,
-/// `kurve` = Tempo-Kurve, `scale` = Größen-Keyframes): beide Ebenen müssen fortlaufend Bilder
-/// zeigen (Nachtest K7: die Tempo-2-Ebene blieb ein Standbild).
+/// Cost of the player logic per UI frame without drawing (layers, demand, keys) and per stream frame
+/// (conversion for the texture), at many places of the test projects.
+/// Two 4K layers, the upper one with speed `CUTLINE_QA_TEMPO` (default 2; `rev` = reverse,
+/// `kurve` = speed curve, `scale` = size keyframes): both layers must show frames continuously
+/// (follow-up test K7: the speed-2 layer stayed a still image).
 /// `cargo test --release -p cl-app --bin cutline tempo_layers -- --ignored --nocapture`
 #[test]
 #[ignore]
@@ -683,9 +683,9 @@ fn player_cost() {
     eprintln!("Strombild 1280×720 → Textur-Bild: {:.2} ms", t0.elapsed().as_secs_f64() * 1e3 / 50.0);
 }
 
-/// Ein Clip ohne Proxy (`CUTLINE_HOME` auf einen leeren Ordner): rückwärts (Bilder/s, `neu` =
-/// Bilder mit neuem Inhalt) bzw. vorwärts (Play → erstes Bild). `CUTLINE_H4_FILES=a;b`,
-/// `CUTLINE_H4_MODE=rev|fwd`, `CUTLINE_QA_AT`, `CUTLINE_QA_SECS` (für Bilder/s ≥ 25: ruhiger Teil 2–10 s)
+/// One clip without proxy (`CUTLINE_HOME` on an empty folder): reverse (frames/s, `neu` =
+/// frames with new content) or forwards (Play → first frame). `CUTLINE_H4_FILES=a;b`,
+/// `CUTLINE_H4_MODE=rev|fwd`, `CUTLINE_QA_AT`, `CUTLINE_QA_SECS` (for frames/s ≥ 25: quiet part 2–10 s)
 /// `cargo test --release -p cl-app --bin cutline h4_measure -- --ignored --nocapture`
 #[test]
 #[ignore]
