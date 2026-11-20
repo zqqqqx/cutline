@@ -1,2 +1,2 @@
-# Skripte laufen auch unter Windows (Git Bash) nur mit LF
+# Scripts need LF even on Windows (Git Bash)
 *.sh text eol=lf
