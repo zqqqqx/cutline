@@ -10,16 +10,22 @@
 **New**
 
 **Improved**
+- **Linux: FFmpeg included.** The Linux package now brings its own FFmpeg, so nothing has to be installed first.
 
 **Fixed**
+- **Picture and sound start together.** When the sound needed longer to load than the picture, playback started without it and the sound came in late or out of step. Playback now waits a moment for the sound.
+- **Split at markers** stops at 50 parts, like the other ways to split.
 
 ### Deutsch
 
 **Neu**
 
 **Verbessert**
+- **Linux: FFmpeg ist dabei.** Das Linux-Paket bringt sein eigenes FFmpeg mit, vorher muss nichts mehr installiert werden.
 
 **Behoben**
+- **Bild und Ton starten zusammen.** Brauchte der Ton länger zum Laden als das Bild, lief die Wiedergabe ohne ihn los und der Ton kam verspätet oder versetzt. Die Wiedergabe wartet jetzt kurz auf den Ton.
+- **Aufteilen an Markern** hört bei 50 Teilen auf, wie die anderen Arten.
 
 ## 0.14.0 – 2026-11-20
 
