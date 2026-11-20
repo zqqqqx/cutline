@@ -1,12 +1,12 @@
-//! Projekte anderer Schnittprogramme übernehmen.
+//! Adopt projects from other editing programs.
 //!
-//! - **CapCut** (Desktop-Entwürfe, `draft_content.json`): Video-, Bild-, Audio- und Textclips mit
-//!   Zeiten, Tempo, Lautstärke, Position, Größe, Drehung, Deckkraft, Spiegeln; Textinhalt,
-//!   Farbe und Größe.
-//! - **FCPXML** (Final Cut Pro, DaVinci Resolve): Clips, Zeiten, Spuren.
+//! - **CapCut** (desktop drafts, `draft_content.json`): video, image, audio and text clips with
+//!   times, speed, volume, position, size, rotation, opacity, flip; text content,
+//!   color and size.
+//! - **FCPXML** (Final Cut Pro, DaVinci Resolve): clips, times, tracks.
 //!
-//! Eigene Effekte, Filter, Sticker und Vorlagen anderer Programme lassen sich nicht übertragen;
-//! der Bericht nennt, was übersprungen wurde.
+//! Custom effects, filters, stickers and templates of other programs cannot be transferred;
+//! the report names what was skipped.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -18,20 +18,20 @@ use cl_core::Project;
 pub mod capcut;
 pub mod fcpxml;
 
-/// Ergebnis eines Imports.
+/// Result of an import.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Report {
     pub clips: usize,
     pub texts: usize,
-    /// Übersprungene Elemente: (Art, Anzahl)
+    /// Skipped elements: (kind, count)
     pub skipped: Vec<(String, usize)>,
-    /// Fehlende Mediendateien
+    /// Missing media files
     pub missing: Vec<PathBuf>,
-    /// Schriftdateien der Texte (werden in Cutline übernommen, damit die Texte gleich aussehen)
+    /// Font files of the texts (adopted into Cutline so the texts look the same)
     pub fonts: Vec<PathBuf>,
-    /// Vorhandene Dateien, die sich nicht lesen ließen
+    /// Existing files that could not be read
     pub failed: Vec<PathBuf>,
-    /// Aufgelöste zusammengesetzte Clips (verschachtelte Entwürfe)
+    /// Resolved compound clips (nested drafts)
     pub nested: usize,
 }
 
@@ -46,10 +46,10 @@ impl Report {
 
 pub type Result<T> = std::result::Result<T, String>;
 
-/// Fehlertext eines abgebrochenen Imports
+/// Error text of a cancelled import
 pub const CANCELLED: &str = "Abgebrochen";
 
-/// Schritte eines Imports in ihrer Reihenfolge. `Save` übernimmt die App (Projekt anlegen).
+/// Steps of an import in their order. The app takes care of `Save` (creating the project).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Step {
     #[default]
@@ -65,19 +65,19 @@ impl Step {
     pub const ALL: [Step; 6] = [Step::Read, Step::Find, Step::Probe, Step::Fonts, Step::Timeline, Step::Save];
 }
 
-/// Stand eines laufenden Imports.
+/// State of a running import.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Status {
     pub step: Step,
-    /// erledigte Einheiten des Schritts (Dateien, Spuren) von `total`
+    /// units of the step done (files, tracks) out of `total`
     pub done: usize,
     pub total: usize,
-    /// gerade bearbeitete Datei/Spur
+    /// file/track currently being processed
     pub current: String,
 }
 
 impl Status {
-    /// Fortschritt des ganzen Imports (0…1): jeder Schritt zählt gleich.
+    /// Progress of the whole import (0…1): every step counts the same.
     pub fn fraction(&self) -> f32 {
         let i = Step::ALL.iter().position(|s| *s == self.step).unwrap_or(0) as f32;
         let part = if self.total == 0 { 0.0 } else { self.done.min(self.total) as f32 / self.total as f32 };
@@ -85,12 +85,12 @@ impl Status {
     }
 }
 
-/// Fortschritt und Abbruch eines Imports, zwischen Import-Thread und Oberfläche geteilt.
+/// Progress and cancel of an import, shared between the import thread and the UI.
 #[derive(Default)]
 pub struct Progress {
     status: Mutex<Status>,
     cancel: AtomicBool,
-    /// Oberfläche wecken (Neuzeichnen), höchstens etwa alle 30 ms
+    /// Wake the UI (repaint), at most about every 30 ms
     wake: Option<Box<dyn Fn() + Send + Sync>>,
     last_wake: Mutex<Option<Instant>>,
 }
@@ -104,7 +104,7 @@ impl Progress {
         self.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// Neuer Stand; `current` leer lässt den bisherigen Namen stehen.
+    /// New state; an empty `current` keeps the previous name.
     pub fn set(&self, step: Step, done: usize, total: usize, current: &str) {
         let new_step = {
             let mut s = self.status.lock().unwrap_or_else(|e| e.into_inner());
@@ -120,11 +120,11 @@ impl Progress {
             }
             new_step
         };
-        // Schrittwechsel und Schrittende immer melden
+        // always report step changes and step ends
         self.wake(new_step || done >= total);
     }
 
-    /// Eine Einheit des aktuellen Schritts erledigt.
+    /// One unit of the current step done.
     pub fn tick(&self, current: &str) {
         let last = {
             let mut s = self.status.lock().unwrap_or_else(|e| e.into_inner());
@@ -155,7 +155,7 @@ impl Progress {
         self.cancel.load(Ordering::Relaxed)
     }
 
-    /// `Err(CANCELLED)`, sobald abgebrochen wurde (zwischen zwei Einheiten aufrufen).
+    /// `Err(CANCELLED)` as soon as cancelled (call between two units).
     pub fn check(&self) -> Result<()> {
         if self.cancelled() {
             Err(CANCELLED.into())
@@ -165,8 +165,8 @@ impl Progress {
     }
 }
 
-/// Dateien parallel prüfen (ffprobe), höchstens `workers` Prozesse gleichzeitig. Ergebnis in
-/// der Reihenfolge von `paths`; abgebrochen → `Err(CANCELLED)`.
+/// Probe files in parallel (ffprobe), at most `workers` processes at once. Result in
+/// the order of `paths`; cancelled → `Err(CANCELLED)`.
 pub fn probe_all(
     paths: &[PathBuf],
     workers: usize,
@@ -197,8 +197,8 @@ pub fn probe_all(
         .collect())
 }
 
-/// Medium für eine beim Import fehlende Datei: der Clip bleibt erhalten, „Medien neu verknüpfen“
-/// setzt die Datei später ein (Angaben aus dem Fremdprojekt, nicht aus der Datei).
+/// Media for a file missing at import: the clip is kept, „Medien neu verknüpfen“
+/// inserts the file later (details from the foreign project, not from the file).
 pub(crate) fn placeholder(path: PathBuf, kind: cl_core::MediaKind, duration: cl_core::Time, width: u32, height: u32) -> cl_core::MediaRef {
     let sound = kind != cl_core::MediaKind::Image;
     cl_core::MediaRef {
@@ -216,30 +216,30 @@ pub(crate) fn placeholder(path: PathBuf, kind: cl_core::MediaKind, duration: cl_
     }
 }
 
-/// Gleichzeitige ffprobe-Prozesse beim Import
+/// Simultaneous ffprobe processes during import
 pub fn probe_workers() -> usize {
     std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(2, 8)
 }
 
-/// Bildrate aus einer Fremddatei; 0, negative, unendliche oder absurde Werte → `None`.
+/// Frame rate from a foreign file; 0, negative, infinite or absurd values → `None`.
 pub(crate) fn fps_from(fps: f64) -> Option<cl_core::Rational> {
     cl_core::Rational::parse(&fps.to_string()).filter(|r| r.as_f64() <= 1000.0)
 }
 
-/// Format anhand der Datei erkennen und importieren.
+/// Detect the format from the file and import.
 pub fn import(path: &Path) -> Result<(Project, Report)> {
     import_with(path, &Progress::default())
 }
 
-/// Wie [`import`], mit Fortschritt und Abbruch (für den Hintergrund-Thread).
+/// Like [`import`], with progress and cancel (for the background thread).
 pub fn import_with(path: &Path, progress: &Progress) -> Result<(Project, Report)> {
     let (mut p, rep) = import_any(path, progress)?;
     keep_gaps(&mut p);
     Ok((p, rep))
 }
 
-/// Übernommene Lücken der Hauptspur behalten: der Magnet schöbe sie bei der ersten Änderung
-/// zusammen, die Nebenspuren blieben stehen – Bild und Ton liefen auseinander.
+/// Keep adopted gaps of the main track: the magnet would push them together on the first change,
+/// the secondary tracks would stay put – picture and audio would drift apart.
 fn keep_gaps(p: &mut Project) {
     if let Some(t) = p.timeline.tracks.iter().find(|t| t.main) {
         let mut cursor = cl_core::Time::ZERO;

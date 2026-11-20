@@ -1,6 +1,6 @@
-//! Der Import in Schritten (Hintergrund, Fortschritt, paralleles Prüfen) liefert dasselbe Projekt
-//! wie der frühere Weg in einem Stück: Vergleich mit gespeicherten Ergebnissen
-//! (`tests/snapshots`, neu schreiben mit `CUTLINE_SNAPSHOT_WRITE=1`).
+//! The import in steps (background, progress, parallel probing) yields the same project
+//! as the earlier one-piece path: comparison with stored results
+//! (`tests/snapshots`, rewrite with `CUTLINE_SNAPSHOT_WRITE=1`).
 
 use std::path::{Path, PathBuf};
 
@@ -17,7 +17,7 @@ fn ffmpeg(args: &[&str], out: &Path) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// Winzige Medien: Video mit Ton, Bild, Ton (im Entwurfsordner und daneben)
+/// Tiny media: video with audio, image, audio (in the draft folder and next to it)
 fn media(dir: &Path) -> Option<[PathBuf; 3]> {
     if !cl_media::ffmpeg_available() {
         return None;
@@ -41,9 +41,9 @@ fn seg(mid: &str, start: i64, dur: i64, extra: Value) -> Value {
     s
 }
 
-/// Entwurf mit allem, was der Importer kennt: Spuren aller Arten, Ebenen, Texte mit Schrift,
-/// Kontur und Ausrichtung, Animationen, Sticker, Effekte, Filter, Online-Material, fehlende
-/// Dateien, doppelt genutzte Medien, überlappende Tonspuren.
+/// Draft with everything the importer knows: tracks of all kinds, layers, texts with font,
+/// outline and alignment, animations, stickers, effects, filters, online material, missing
+/// files, media used twice, overlapping audio tracks.
 fn fixture(dir: &Path, [v, b, _]: &[PathBuf; 3]) -> Value {
     let font = dir.join("Poppins-ExtraBold.ttf");
     std::fs::write(&font, include_bytes!("../../cl-app/assets/fonts/Poppins-ExtraBold.ttf")).unwrap();
@@ -58,7 +58,7 @@ fn fixture(dir: &Path, [v, b, _]: &[PathBuf; 3]) -> Value {
     for i in 0..12 {
         let m = ["V1", "B1", "V1", "VX"][i % 4];
         let extra = if i % 3 == 0 { json!({"extra_material_refs": ["AN"], "speed": 1.5, "volume": 0.25}) } else { clip.clone() };
-        // Lücke nach Clip 5 (Magnet aus)
+        // gap after clip 5 (magnet off)
         main.push(seg(m, i as i64 * s + if i > 5 { s / 2 } else { 0 }, s, extra));
     }
     json!({
@@ -104,7 +104,7 @@ fn fixture(dir: &Path, [v, b, _]: &[PathBuf; 3]) -> Value {
     })
 }
 
-/// Kennungen (zufällig je Lauf) durch ihre Reihenfolge ersetzen, Testordner durch `<dir>`.
+/// Replace ids (random per run) by their order, the test folder by `<dir>`.
 fn normalize(v: &mut Value, dir: &str, ids: &mut Vec<String>) {
     match v {
         Value::String(s) => {
@@ -131,7 +131,7 @@ fn snapshot(name: &str, dir: &Path, p: &cl_core::Project, rep: &cl_import::Repor
         "report": {"clips": rep.clips, "texts": rep.texts, "skipped": rep.skipped, "missing": rep.missing, "fonts": rep.fonts}
     });
     normalize(&mut v, &dir.to_string_lossy(), &mut Vec::new());
-    // Pfade in Kurzform (Windows: `\\?\`-freie Pfade, `/`), damit die Datei überall gleich ist
+    // paths in short form (Windows: paths without `\\?\`, `/`) so the file is the same everywhere
     let got = serde_json::to_string_pretty(&v).unwrap();
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots").join(format!("{name}.json"));
     if std::env::var_os("CUTLINE_SNAPSHOT_WRITE").is_some() {
@@ -150,7 +150,7 @@ fn staged_import_gives_the_same_project() {
     let d = fixture(dir.path(), &m);
     let (p, rep) = capcut::convert(&d, dir.path(), "Fixture").unwrap();
     snapshot("capcut_fixture", dir.path(), &p, &rep);
-    // über Datei und Ordner (Name aus draft_meta_info.json)
+    // via file and folder (name from draft_meta_info.json)
     std::fs::write(dir.path().join("draft_content.json"), d.to_string()).unwrap();
     std::fs::write(dir.path().join("draft_meta_info.json"), json!({"draft_name": "Aus Datei"}).to_string()).unwrap();
     let (p, rep) = cl_import::import(dir.path()).unwrap();

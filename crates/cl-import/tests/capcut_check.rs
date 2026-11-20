@@ -1,10 +1,10 @@
-//! Prüfprogramm (von Hand): CapCut-Entwürfe importieren und je Clip mit Ton prüfen, ob der
-//! Vorschau-Ton (derselbe Weg wie der Player: `spawn_audio_window`) hörbar ist, die richtige
-//! Tonspur der Datei spielt und kein Ton doppelt läuft. Ausgabe nur als Zahlen (keine Namen/Pfade).
+//! Check program (manual): import CapCut drafts and check per clip with audio whether the
+//! preview audio (the same path as the player: `spawn_audio_window`) is audible, the right
+//! audio stream of the file plays and no audio runs twice. Output only as numbers (no names/paths).
 //!
-//! Entwürfe: alle Unterordner von `CUTLINE_CAPCUT_DIRS` mit `draft_content.json`, sonst die lokalen
-//! CapCut-Entwürfe. Liegt neben einem Entwurfsordner `frequenzen.json` (Datei → Frequenz je Tonspur,
-//! von den Testkopie-Skripten), wird die Tonspur an der Frequenz erkannt.
+//! Drafts: all subfolders of `CUTLINE_CAPCUT_DIRS` with `draft_content.json`, otherwise the local
+//! CapCut drafts. If `frequenzen.json` lies next to a draft folder (file → frequency per audio stream,
+//! from the test copy scripts), the audio stream is recognized by its frequency.
 //!
 //! `cargo test --release -p cl-import --test capcut_check -- --ignored --nocapture`
 
@@ -26,7 +26,7 @@ fn drafts() -> Vec<PathBuf> {
     }
 }
 
-/// Vorschau-Ton 48 kHz Stereo (nur links zurück); Err = FFmpeg scheitert.
+/// Preview audio 48 kHz stereo (only the left returned); Err = FFmpeg fails.
 fn mix(p: &Project, a: Time, b: Time) -> std::result::Result<Vec<f32>, String> {
     let (mut child, _wd) = cl_export::spawn_audio_window(p, a, b, 48000).map_err(|e| e.to_string())?;
     let mut raw = Vec::new();
@@ -38,7 +38,7 @@ fn mix(p: &Project, a: Time, b: Time) -> std::result::Result<Vec<f32>, String> {
     Ok(raw.chunks_exact(8).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
 }
 
-/// Amplitude der Frequenz `hz` (Goertzel).
+/// Amplitude of frequency `hz` (Goertzel).
 fn amp(x: &[f32], hz: f64) -> f64 {
     let w = 2.0 * std::f64::consts::PI * hz / 48000.0;
     let (mut s1, mut s2) = (0.0, 0.0);
@@ -54,7 +54,7 @@ fn amp(x: &[f32], hz: f64) -> f64 {
 #[ignore]
 fn capcut_drafts_audio() {
     let max_checks: usize = std::env::var("CUTLINE_CHECK_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(150);
-    // hörbar, stumm, Mix scheitert, falsche Spur, doppelt, gewollt nicht hörbar
+    // audible, silent, mix fails, wrong stream, doubled, intentionally not audible
     let mut sum = [0usize; 6];
     for (k, dir) in drafts().iter().enumerate() {
         let freqs: HashMap<PathBuf, Vec<f64>> = dir
@@ -73,7 +73,7 @@ fn capcut_drafts_audio() {
         };
         let muted = p.timeline.tracks.iter().filter(|t| t.muted).count();
         println!(
-            "Entwurf {k}: Import {:.1} s, {} Clips, {} Medien, {} fehlend, {} Spuren ({muted} stumm), übersprungen {:?}",
+            "draft {k}: import {:.1} s, {} clips, {} media, {} missing, {} tracks ({muted} muted), skipped {:?}",
             t0.elapsed().as_secs_f64(),
             rep.clips,
             p.media.len(),
@@ -81,7 +81,7 @@ fn capcut_drafts_audio() {
             p.timeline.tracks.len(),
             rep.skipped
         );
-        // hörbare Clips: (Clip, Medium, Tonspur der Datei)
+        // audible clips: (clip, media, audio stream of the file)
         let mut audible = Vec::new();
         for tr in &p.timeline.tracks {
             for c in &tr.clips {
@@ -94,8 +94,8 @@ fn capcut_drafts_audio() {
                 audible.push((c, m, c.audio_stream.unwrap_or(0).min(m.audio_streams.saturating_sub(1))));
             }
         }
-        // doppelt: dieselbe Datei und Tonspur an derselben Quellstelle zweimal gleichzeitig hörbar
-        // (getrennter Originalton zusätzlich zum Ton des Videos)
+        // doubled: the same file and audio stream audible twice at the same source position at once
+        // (split original audio in addition to the video's audio)
         let mut dup = 0;
         for (i, (a, ma, sa)) in audible.iter().enumerate() {
             if audible[i + 1..]
@@ -131,18 +131,18 @@ fn capcut_drafts_audio() {
                         let (want, other) = (amp(&x, f[s]), amp(&x, f[1 - s]));
                         if want < 4.0 * other {
                             wrong += 1;
-                            println!("  falsche Tonspur: soll {} ({want:.3}), andere ({other:.3})", s + 1);
+                            println!("  wrong audio stream: expected {} ({want:.3}), other ({other:.3})", s + 1);
                         }
                     }
                 }
             }
         }
         println!(
-            "  geprüft {} von {} hörbaren Clips: hörbar {ok}, stumm {silent}, Mix scheitert {failed}, falsche Tonspur {wrong}; doppelt hörbar {dup}",
+            "  checked {} of {} audible clips: audible {ok}, silent {silent}, mix fails {failed}, wrong audio stream {wrong}; audible twice {dup}",
             ok + silent + failed,
             audible.len()
         );
-        // ganzes Projekt an Stichproben mischen (wie der Player: alle Clips im Fenster)
+        // mix the whole project at samples (like the player: all clips in the window)
         let total = p.duration();
         let fails = (0..10)
             .filter(|s| {
@@ -157,7 +157,7 @@ fn capcut_drafts_audio() {
         sum[3] += wrong;
     }
     println!(
-        "Summe: hörbar {} stumm {} gescheitert {} falsche Spur {} doppelt {} gewollt nicht hörbar (stumm/−60 dB/aus) {}",
+        "total: audible {} silent {} failed {} wrong stream {} doubled {} intentionally not audible (muted/−60 dB/off) {}",
         sum[0], sum[1], sum[2], sum[3], sum[4], sum[5]
     );
 }
