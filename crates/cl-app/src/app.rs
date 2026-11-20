@@ -2174,6 +2174,8 @@ impl App {
         self.aspect_fit = None;
         self.quick.open = None;
         self.quick.hits = None;
+        // Umbau-Abbild gemerkt nach Projektstand, der je Projekt wieder bei 0 beginnt
+        self.export.framed = None;
     }
 
     /// Beim Beenden: laufende Hintergrundaufgaben abbrechen, damit ihre FFmpeg-Prozesse enden
@@ -4331,6 +4333,16 @@ fn download_running_at_a_project_change_is_not_inserted() {
     app.poll_stock();
     assert!(app.project.media.is_empty() && app.project.timeline.tracks.iter().all(|t| t.clips.is_empty()));
     assert!(!app.stock.stray && app.toasts.iter().any(|t| t.0.contains("Klang")));
+}
+
+/// Projektwechsel: das Umbau-Abbild des Exports gehört zum alten Projekt (gleicher Stand 0,
+/// gleiches Format träfe sonst denselben Schlüssel)
+#[test]
+fn export_reframe_snapshot_is_dropped_with_the_project() {
+    let (mut app, _home, _g) = crate::saving::tests::test_app();
+    app.export.framed = Some(((0, (1080, 1920), 0), std::sync::Arc::new(Project::new("Alt"))));
+    app.reset_editor();
+    assert!(app.export.framed.is_none());
 }
 
 /// Befehlssuche im Ablauf eines Bildes: Strg+K öffnet, das Feld hat den Fokus, die Leertaste tippt
