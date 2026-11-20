@@ -135,7 +135,7 @@ Integrations ship with Cutline but stay **off** until you turn them on. Keys and
 | | |
 |---|---|
 | **Windows** | 64-bit Windows. FFmpeg and everything else is included. |
-| **Linux** | x86-64. FFmpeg is included in the `ffmpeg/` folder. If you remove that folder, Cutline uses the FFmpeg on your system instead, which must be 7 or newer (8 for Whisper captions); the FFmpeg of Debian 13 works, Ubuntu 24.04 and older are too old, and Cutline says so at startup. |
+| **Linux** | x86-64. FFmpeg is included in the `ffmpeg/` folder. If you remove that folder, Cutline uses the FFmpeg on your system instead, which must be 7 or newer. The included FFmpeg has no Whisper filter, so captions use Parakeet; the Whisper fallback needs a system FFmpeg 8 built with it; the FFmpeg of Debian 13 works, Ubuntu 24.04 and older are too old, and Cutline says so at startup. |
 | **Graphics** | A graphics card helps with the preview, shader transitions and export, but is not required. |
 | **AI models** | Not bundled. Download the ones you need under **Settings → Models (local AI)**. |
 
