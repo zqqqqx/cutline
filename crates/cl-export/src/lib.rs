@@ -2522,10 +2522,12 @@ mod tests {
         let p = project(dir.path());
         let mut s = ExportSettings::from_project(&p);
         s.range = Some((Time::ZERO, Time::from_secs_f64(2.0)));
-        for loudness in [None, Some(-14.0)] {
-            s.loudness = loudness;
+        // mit Zielgröße: fällt der erste Durchgang auf „ohne Vorschau“ zurück, muss auch der zweite ohne Vorschau durchlaufen
+        for (loudness, target) in [(None, None), (Some(-14.0), None), (None, Some(1))] {
+            (s.loudness, s.target_mb) = (loudness, target);
             let out = dir.path().join("blocked.mp4");
             let job = build(&p, &s, &no_fonts, &out).unwrap();
+            assert_eq!(job.two_pass, target.is_some());
             // ein Ordner unter dem Namen der Vorschau: FFmpeg kann die Datei nicht anlegen
             std::fs::create_dir(job.preview_path().unwrap()).unwrap();
             let mut seen = Vec::new();

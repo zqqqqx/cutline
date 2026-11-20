@@ -1434,7 +1434,7 @@ enum Split {
     Markers,
 }
 
-/// Höchstzahl der Teile bei „Anzahl“ und „Länge“
+/// Höchstzahl der Teile (Anzahl, Länge, Marker)
 const SPLIT_MAX: u32 = 50;
 /// Ein kürzerer Rest bei „Länge“ wird dem vorletzten Teil zugeschlagen
 const SPLIT_MIN_REST: Time = Time(3_000_000);
@@ -1468,6 +1468,8 @@ fn split_parts(how: Split, (a, b): (Time, Time), fps: cl_core::Rational, markers
     // Rand nicht auf dem Bildraster: kein Splitterteil zwischen Rand und gerundetem Schnitt
     cuts.retain(|c| c.0 > a.max(snap(a)) && c.0 < b.min(snap(b)));
     cuts.dedup_by_key(|c| c.0);
+    // höchstens SPLIT_MAX Teile (Marker): spätere Schnitte fallen weg, der letzte Teil läuft bis zum Ende
+    cuts.truncate(SPLIT_MAX as usize - 1);
     let starts: Vec<(Time, &str)> = std::iter::once((a, first)).chain(cuts).collect();
     let n = starts.len();
     let digits = n.to_string().len().max(2);
@@ -2513,9 +2515,6 @@ fn split_parts_are_gapless_on_frames_with_names() {
     assert_eq!(split_summary(&v), "40 Teile · je 0:03");
     // 2 Stunden in 1-s-Teilen: nicht 7199 Teile
     assert!(parts(Split::Length(1), 0.0, 7200.0, &[]).len() <= SPLIT_MAX as usize);
-    // dreistellige Nummern gibt es nur noch bei Markern
-    let ms: Vec<cl_core::Marker> = (1..=120).map(|i| cl_core::Marker { id: i, at: s(i as f64), duration: Time::ZERO, name: String::new(), note: String::new(), color: 0 }).collect();
-    assert_eq!(parts(Split::Markers, 0.0, 130.0, &ms)[0].1, "Film – 001.mp4");
     // Länge: Rest ab 3 s bleibt eigener Teil, darunter geht er an den vorletzten
     let v = parts(Split::Length(60), 0.0, 363.0, &[]);
     check(&v, 0.0, 363.0);
@@ -2550,6 +2549,22 @@ fn split_parts_are_gapless_on_frames_with_names() {
         assert_eq!(w[0].0 .1, w[1].0 .0);
         assert_eq!(w[0].0 .1, w[0].0 .1.snap_to_frame(ntsc));
     }
+}
+
+#[test]
+fn split_markers_capped_at_split_max() {
+    let fps = cl_core::Rational::new(30, 1);
+    let s = Time::from_secs_f64;
+    // 200 Marker → 50 Teile; Marker nach dem 49. Schnitt zählen nicht, der letzte Teil läuft bis zum Ende
+    let ms: Vec<cl_core::Marker> = (1..=200).map(|i| cl_core::Marker { id: i, at: s(i as f64), duration: Time::ZERO, name: String::new(), note: String::new(), color: 0 }).collect();
+    let v = split_parts(Split::Markers, (s(0.0), s(210.0)), fps, &ms, "Film", "Teil", "mp4");
+    assert_eq!(v.len(), SPLIT_MAX as usize);
+    assert_eq!((v[0].0 .0, v[48].0, v[49].0 .1), (s(0.0), (s(48.0), s(49.0)), s(210.0)));
+    for w in v.windows(2) {
+        assert_eq!(w[0].0 .1, w[1].0 .0);
+    }
+    assert_eq!((v[0].1.as_str(), v[49].1.as_str()), ("Film – 01.mp4", "Film – 50.mp4"));
+    assert_eq!(split_summary(&v), "50 Teile · 0:01 bis 2:41");
 }
 
 /// Testbild 320×180: roter Kreis (Radius 30) in der Mitte auf grauem 4-px-Schachbrett, 2 s mit Ton
@@ -2783,6 +2798,57 @@ fn censor_stays_on_its_subject_after_reframing() {
     eprintln!("Zensur: innen {inside:?}, daneben {beside:?}");
     assert!(inside.1 < 8.0, "Muster unter der Fläche noch da: {inside:?}");
     assert!(beside.1 > 20.0, "Muster neben der Fläche fehlt: {beside:?}");
+    std::env::remove_var("CUTLINE_HOME");
+}
+
+/// Nahtstellen: 4 s mit Bildzähler in 4 Teile – jedes Bild genau einmal, keins doppelt oder verloren
+#[test]
+fn split_parts_have_every_frame_exactly_once() {
+    use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    // Bildnummer binär als 8 Streifen à 40 px (weiß = 1, niederwertigstes Bit links)
+    let src = dir.path().join("zaehler.mp4");
+    let st = cl_media::ffmpeg_command()
+        .unwrap()
+        .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=4"])
+        .args(["-vf", "format=gray,geq=lum='if(mod(floor(N/pow(2\\,floor(X/40)))\\,2)\\,255\\,0)'", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv444p"])
+        .arg(&src)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    let m = cl_media::probe(&src).unwrap();
+    let mut p = Project::new("Zaehler");
+    (p.settings.width, p.settings.height, p.settings.fps) = (320, 180, cl_core::Rational::new(30, 1));
+    let mut t = Track::new(TrackKind::Video);
+    t.main = true;
+    t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0)));
+    p.media.push(m);
+    p.timeline.tracks.push(t);
+    let ctx = egui::Context::default();
+    let mut d = split_dialog(&p, dir.path(), 4);
+    frame(&mut d, &ctx, &p, true);
+    drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
+    let mut seen = Vec::new();
+    for n in 1..=4 {
+        let f = dir.path().join("Zaehler").join(format!("Zaehler – Teil {n:02}.mp4"));
+        let o = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-threads", "2", "-i"])
+            .arg(&f)
+            .args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "gray", "-"])
+            .output()
+            .unwrap();
+        let part: Vec<usize> = o.stdout.chunks_exact(320 * 180).map(|px| (0..8).filter(|b| px[90 * 320 + b * 40 + 20] > 128).map(|b| 1 << b).sum()).collect();
+        eprintln!("Teil {n}: {part:?}");
+        seen.extend(part);
+    }
+    assert_eq!(seen, (0..120).collect::<Vec<_>>());
     std::env::remove_var("CUTLINE_HOME");
 }
 
