@@ -1,6 +1,6 @@
-//! Rechte Karte: Eigenschaften des ausgewählten Clips (Reiter je nach Clip-Art),
-//! Übergang, Mehrfachauswahl oder – ohne Auswahl – Projekt und Verlauf.
-//! Änderungen laufen live über `App::live` und landen beim Loslassen als ein Undo-Schritt.
+//! Right card: properties of the selected clip (tabs depending on the clip kind),
+//! transition, multi-selection or – without a selection – project and history.
+//! Changes run live via `App::live` and land as one undo step on release.
 
 use cl_core::*;
 use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText, Sense, Stroke};
@@ -33,7 +33,7 @@ fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
             (ClipTab::Smart, "Smart"),
             (ClipTab::Animation, "Animation"),
         ],
-        // Lautstärke gehört zu den häufigsten Einstellungen: „Audio“ gleich nach „Basis“
+        // Volume is among the most frequent settings: „Audio“ right after „Basis“
         ClipContent::Media { .. } => vec![
             (ClipTab::Basic, "Basis"),
             (ClipTab::Audio, "Audio"),
@@ -46,7 +46,7 @@ fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
     }
 }
 
-/// Zuschnitt: vier Ränder; je Richtung bleiben mindestens `Crop::MIN_REST` übrig.
+/// Crop: four edges; per direction at least `Crop::MIN_REST` remains.
 fn crop_ui(ui: &mut egui::Ui, k: &mut Crop) -> Edit {
     theme::section(ui, "Zuschnitt");
     let mut e = Edit::default();
@@ -68,7 +68,7 @@ fn crop_ui(ui: &mut egui::Ui, k: &mut Crop) -> Edit {
     e
 }
 
-/// Masken-Auswahl und -Regler (Clip oder Effekt-Element).
+/// Mask picker and sliders (clip or effect element).
 fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
     let mut e = Edit::default();
     let shapes = [
@@ -145,10 +145,10 @@ fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
     e
 }
 
-/// Breite der Pfeil-Knöpfe an einer überlaufenden Leiste
+/// Width of the arrow buttons on an overflowing bar
 const STRIP_ARROW: f32 = 24.0;
 
-/// Anfang jedes Eintrags einer Leiste (Summe der Breiten davor)
+/// Start of each entry of a bar (sum of the widths before it)
 fn strip_starts(widths: &[f32]) -> Vec<f32> {
     widths
         .iter()
@@ -160,8 +160,8 @@ fn strip_starts(widths: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-/// Versatz, bei dem Eintrag `i` ganz sichtbar ist (neben den Pfeil-Knöpfen), auf den
-/// gültigen Bereich begrenzt.
+/// Offset at which entry `i` is fully visible (next to the arrow buttons), clamped to the
+/// valid range.
 fn strip_into_view(widths: &[f32], i: usize, off: f32, view: f32) -> f32 {
     let total: f32 = widths.iter().sum();
     let a = strip_starts(widths)[i];
@@ -176,11 +176,11 @@ fn strip_into_view(widths: &[f32], i: usize, off: f32, view: f32) -> f32 {
     off.clamp(0.0, (total - view).max(0.0))
 }
 
-/// Um einen Eintrag nach links (`dir` < 0) bzw. rechts weiterschieben
+/// Shift by one entry to the left (`dir` < 0) or right
 fn strip_step(widths: &[f32], off: f32, view: f32, dir: f32) -> f32 {
     let starts = strip_starts(widths);
     let i = if dir < 0.0 {
-        // letzter Eintrag, der links (teilweise) verdeckt ist
+        // last entry that is (partly) hidden on the left
         starts.iter().rposition(|s| *s < off + STRIP_ARROW - 0.5)
     } else {
         (0..widths.len()).find(|&i| starts[i] + widths[i] > off + view - STRIP_ARROW + 0.5)
@@ -188,10 +188,10 @@ fn strip_step(widths: &[f32], off: f32, view: f32, dir: f32) -> f32 {
     i.map_or(off, |i| strip_into_view(widths, i, off, view))
 }
 
-/// Waagrechte Leiste in `rect` mit Einträgen der Breiten `widths`. Passt nicht alles hinein,
-/// scrollt sie per Mausrad; Eintrag `keep` wird beim Wechsel (oder anderer Breite) ganz in
-/// die Sicht geholt. Gibt den Versatz zurück; der Aufrufer zeichnet die Einträge (beschnitten
-/// auf `rect`) und ruft danach `strip_end` für die Pfeil-Knöpfe auf.
+/// Horizontal bar in `rect` with entries of widths `widths`. If not everything fits,
+/// it scrolls by mouse wheel; entry `keep` is brought fully into view on change (or a different
+/// width). Returns the offset; the caller draws the entries (clipped
+/// to `rect`) and then calls `strip_end` for the arrow buttons.
 pub fn strip_begin(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], keep: Option<usize>) -> f32 {
     let id = ui.id().with(("strip", salt));
     let total: f32 = widths.iter().sum();
@@ -204,7 +204,7 @@ pub fn strip_begin(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], ke
         let d = ui.input(|i| i.smooth_scroll_delta);
         if d != egui::Vec2::ZERO {
             off -= d.x + d.y;
-            // das Rad gehört der Leiste, nicht der Seite dahinter
+            // the wheel belongs to the bar, not to the page behind it
             ui.input_mut(|i| i.smooth_scroll_delta = egui::Vec2::ZERO);
         }
     }
@@ -216,8 +216,8 @@ pub fn strip_begin(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], ke
     off
 }
 
-/// Pfeil-Knöpfe an den Enden, wenn dort noch Einträge liegen (Klick: einen Eintrag weiter).
-/// `bg` = Grund der Leiste, damit der Knopf nicht über einem halben Eintrag schwebt.
+/// Arrow buttons at the ends when entries still lie there (click: one entry further).
+/// `bg` = background of the bar, so the button does not float above half an entry.
 pub fn strip_end(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], off: f32, bg: Color32) {
     let id = ui.id().with(("strip", salt));
     let total: f32 = widths.iter().sum();
@@ -236,7 +236,7 @@ pub fn strip_end(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], off:
         ui.painter().rect_filled(r, 0.0, bg);
         let resp = ui.interact(r, id.with(glyph), Sense::click());
         let col = if resp.hovered() { theme::TEXT() } else { theme::TEXT_DIM() };
-        // Icon-Glyphe: 14 px wie in `icon_button`
+        // icon glyph: 14 px as in `icon_button`
         ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(14.0), col);
         if resp.clicked() {
             let n = strip_step(widths, off, view, dir);
@@ -247,13 +247,13 @@ pub fn strip_end(ui: &mut egui::Ui, rect: Rect, salt: &str, widths: &[f32], off:
     }
 }
 
-/// Reiterleiste mit Unterstrich. Freier Platz wird gleichmäßig verteilt; reicht die Breite
-/// nicht (7 Reiter auf Englisch), scrollt die Leiste waagrecht (Mausrad, Pfeil-Knöpfe), und
-/// der aktive Reiter bleibt ganz sichtbar.
+/// Tab bar with underline. Free space is spread evenly; if the width is not
+/// enough (7 tabs in English), the bar scrolls horizontally (mouse wheel, arrow buttons), and
+/// the active tab stays fully visible.
 fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut T) {
     let w = ui.available_width();
     let font = egui::FontId::proportional(theme::FS_UI);
-    // gemessen wird der übersetzte Text (so wie er gezeichnet wird)
+    // the translated text is measured (as it is drawn)
     let labels: Vec<String> = tabs.iter().map(|(_, l)| crate::tr(*l)).collect();
     let text: Vec<f32> = labels
         .iter()
@@ -276,7 +276,7 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
                 Rect::from_min_size(pos2(x - w, bar.top()), vec2(*w, bar.height()))
             })
             .collect();
-        // Unterstrich gleitet zum gewählten Reiter
+        // the underline glides to the chosen tab
         if let Some(k) = keep {
             let at = theme::glide(ui.ctx(), ui.id().with(("itab-mark", tabs.len())), k as f32, theme::MOTION)
                 .clamp(0.0, (rects.len() - 1) as f32);
@@ -293,7 +293,7 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
             }
             let resp = ui.interact(hit, ui.id().with(("itab", *l)), Sense::click());
             let active = *cur == *t;
-            // aktiver Reiter: Text neutral, nur der Unterstrich im Akzent
+            // active tab: text neutral, only the underline in the accent
             let col = if active || resp.hovered() { theme::TEXT() } else { theme::TEXT_DIM() };
             painter.text(r.center(), egui::Align2::CENTER_CENTER, &labels[i], font.clone(), col);
             if resp.clicked() {
@@ -309,7 +309,7 @@ fn tab_bar<T: Copy + PartialEq>(ui: &mut egui::Ui, tabs: &[(T, &str)], cur: &mut
         Stroke::new(1.0_f32, theme::BORDER()),
     );
     ui.add_space(8.0);
-    // Inhalt des neuen Reiters blendet kurz ein
+    // content of the new tab fades in briefly
     let k = tabs.iter().position(|(t, _)| *t == *cur).unwrap_or(0);
     ui.multiply_opacity(theme::fade_on_change(ui.ctx(), ui.id().with(("itab-fade", tabs.len())), k as u64));
 }
@@ -402,7 +402,7 @@ impl App {
         theme::row(ui, "Art", |ui| {
             ui.label(RichText::new(crate::tr(cl_fx::transition_name(&tr.id))).strong())
         });
-        // Paket-Übergang ohne eingeschaltetes Paket: gerechnet wird der Ersatz
+        // Pack transition without the pack switched on: the substitute is rendered
         let plan = cl_fx::catalog::transition_plan(&tr.id);
         if plan.shader.is_none() && !cl_fx::TRANSITIONS.iter().any(|t| t.0 == tr.id) {
             let alt = crate::tr(cl_fx::transition_name(plan.xfade));
@@ -459,7 +459,7 @@ impl App {
         }
     }
 
-    /// Regler für eine keyframefähige Eigenschaft.
+    /// Slider for a keyframeable property.
     #[allow(clippy::too_many_arguments)]
     fn prop_slider(
         &self,
@@ -550,7 +550,7 @@ impl App {
                     }
                     ClipTab::Basic => {
                         self.basic_tab(ui, &mut c, &mut e, &mut kf);
-                        // Bilder und Texte haben keinen Tempo-Reiter: Zeit hier
+                        // images and texts have no speed tab: time here
                         if !matches!(
                             c.content,
                             ClipContent::Media {
@@ -615,7 +615,7 @@ impl App {
         }
     }
 
-    /// Effekt- oder Filter-Element auf einer eigenen Spur: Art und Stärke.
+    /// Effect or filter element on its own track: kind and strength.
     fn fx_clip_props(
         &mut self,
         ui: &mut egui::Ui,
@@ -743,12 +743,12 @@ impl App {
             theme::section(ui, "Maske");
             *e |= mask_ui(ui, &mut c.fx.mask);
         } else {
-            // Text: nur „Bewegung verfolgen“; Video/Bild haben dafür den Reiter „Smart“
+            // Text: only „Bewegung verfolgen“; video/image have the „Smart“ tab for that
             self.pro_visual(ui, c, e);
         }
     }
 
-    /// Namen aller Schriften, sortiert. Nicht in jedem Bild neu aufbauen: höchstens alle 2 s
+    /// Names of all fonts, sorted. Do not rebuild every frame: at most every 2 s
     pub fn font_name_list(&mut self) -> std::sync::Arc<Vec<String>> {
         match &self.font_names {
             Some((t, v)) if t.elapsed() < std::time::Duration::from_secs(2) => v.clone(),
@@ -764,7 +764,7 @@ impl App {
 
     fn text_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let fonts = self.font_name_list();
-        // Brand-Schriften oben, soweit vorhanden
+        // brand fonts at the top, where present
         let brand: Vec<String> = self.brand.font_list().into_iter().filter(|f| fonts.contains(f)).collect();
         let ClipContent::Text(st) = &mut c.content else {
             return;
@@ -811,7 +811,7 @@ impl App {
                         st.font_family = None;
                         e.commit = true;
                     }
-                    // Favoriten zuerst (mit Stern)
+                    // favorites first (with a star)
                     let mut fonts: Vec<String> = fonts.to_vec();
                     fonts.sort_by_key(|f| !self.library.is_favorite(&format!("font:{f}")));
                     for f in &fonts {
@@ -1211,7 +1211,7 @@ impl App {
         let time = ui.input(|i| i.time);
         let mut chosen: Option<String> = None;
         widgets::grid(ui, &items, 66.0, 1.0, 16.0, |ui, r, (id, name)| {
-            // ohne Animationen bleibt die Ruhe-Darstellung stehen
+            // without animations the idle display stays
             let hovered = theme::animations_on() && ui.rect_contains_pointer(r);
             let resp = widgets::tile(
                 ui,
@@ -1225,13 +1225,13 @@ impl App {
                             a.center(),
                             egui::Align2::CENTER_CENTER,
                             icon::PROHIBIT,
-                            // Icon-Glyphe in der Kachel
+                            // icon glyph in the tile
                             egui::FontId::proportional(18.0),
                             theme::TEXT_FAINT(),
                         );
                         return;
                     }
-                    // Mini-Vorschau: Quadrat, animiert beim Überfahren
+                    // Mini preview: square, animated on hover
                     let phase = if hovered {
                         ((time * 0.8).fract()) as f32
                     } else {
@@ -1316,7 +1316,7 @@ impl App {
     }
 
     fn speed_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
-        // Gewählte Seite „Kurve“ gilt schon vor der Wahl einer Kurve (sonst bleibt „Normal“ hell)
+        // The chosen „Kurve“ page applies even before a curve is chosen (otherwise „Normal“ stays highlighted)
         let mut mode = if c.fx.speed_curve.is_some() {
             1
         } else {
@@ -1434,7 +1434,7 @@ impl App {
                 ..
             }
         ) {
-            // Zeitlupe und Richtung gehören zum Tempo – kein eigener Abschnitt für je einen Schalter
+            // Slow motion and direction belong to speed – no separate section for one toggle each
             ui.add_space(8.0);
             if c.speed < 0.999 || c.fx.speed_curve.is_some() {
                 if widgets::toggle_row(ui, "Flüssige Zeitlupe", &mut c.fx.smooth_slowmo) {
@@ -1466,7 +1466,7 @@ impl App {
             (" dB", 1, 1.0),
             kf,
         );
-        // gleiche Grenze wie die Griffe in der Zeitleiste: Cliplänge minus die andere Blende
+        // same limit as the handles in the timeline: clip length minus the other fade
         let dur = c.duration.as_secs_f64();
         let mut fi = c.fade_in.as_secs_f64() as f32;
         let mut fo = c.fade_out.as_secs_f64() as f32;
@@ -1490,7 +1490,7 @@ impl App {
         c.fade_out = Time::from_secs_f64(fo as f64);
         *e |= r1;
         *e |= r2;
-        // Datei mit mehreren Tonspuren (z. B. Spiel und Mikrofon): welche dieser Clip spielt
+        // File with several audio tracks (e.g. game and microphone): which one this clip plays
         let streams = match &c.content {
             ClipContent::Media { media, .. } => self.project.media(*media).map_or(0, |m| m.audio_streams),
             _ => 0,
@@ -1560,14 +1560,14 @@ impl App {
     fn project_inspector(&mut self, ui: &mut egui::Ui) {
         let mut settings = self.project.settings.clone();
         let mut changed = false;
-        // Solange das Feld den Fokus hat, lebt die Eingabe in einem Zwischenstand (sonst setzte jedes Bild
-        // den Projektnamen zurück und Getipptes ging verloren); übernommen wird beim Verlassen.
+        // While the field has focus, the input lives in an intermediate state (otherwise every frame would reset
+        // the project name and typed text would be lost); it is taken over on leaving.
         let name_id = ui.make_persistent_id("project-name");
         let mut name = ui
             .data(|d| d.get_temp::<String>(name_id))
             .unwrap_or_else(|| self.project.name.clone());
         let r = theme::row(ui, &self.t("project-name"), |ui| {
-            // ohne Fokus lange Namen mit „…“ im Feld kürzen statt mitten im Zeichen abzuschneiden
+            // without focus shorten long names with „…“ in the field instead of cutting mid-character
             let id = name_id;
             let focused = ui.memory(|m| m.has_focus(id));
             let mut layouter = |ui: &egui::Ui, s: &str, w: f32| {
@@ -1619,7 +1619,7 @@ impl App {
             egui::ComboBox::from_id_salt("proj-platform")
                 .selected_text(crate::tr(cur.map(|p| p.name).unwrap_or("Keine")))
                 .width((ui.available_width() - 12.0).max(60.0))
-                // lange Namen kürzen statt die Spalte breiter zu machen
+                // shorten long names instead of making the column wider
                 .truncate()
                 .show_ui(ui, |ui| {
                     if ui
@@ -1712,7 +1712,7 @@ impl App {
                     }
                 });
         });
-        // Kanäle des Projekts (der Standard für neue Projekte steht in Einstellungen → Audio)
+        // Channels of the project (the default for new projects is in Settings → Audio)
         theme::row(ui, "Kanäle", |ui| {
             egui::ComboBox::from_id_salt("proj-channels")
                 .selected_text(crate::tr(settings.channels.name()))
@@ -1723,7 +1723,7 @@ impl App {
                     }
                 });
         });
-        // Magnet und Einrasten: nur Zeitleisten-Leiste und Tasten (P / N)
+        // Magnet and snapping: only the timeline bar and keys (P / N)
         if changed && settings != self.project.settings {
             self.apply(EditOp::SetSettings { settings });
         }
@@ -1736,7 +1736,7 @@ impl App {
             .map(|t| t.clips.len())
             .sum();
         theme::row(ui, "Inhalt", |ui| {
-            // bei großer Oberfläche umbrechen statt aus dem Panel zu laufen
+            // wrap with a large UI instead of running out of the panel
             ui.add(
                 egui::Label::new(
                     RichText::new(format!(
@@ -1761,8 +1761,8 @@ impl App {
         });
     }
 
-    /// Verlauf: oben die rückgängig gemachten Schritte (blass), dann „Jetzt“, darunter die
-    /// bisherigen Änderungen. Klick auf einen Eintrag springt zu dem Stand nach diesem Schritt.
+    /// History: undone steps at the top (faded), then „Jetzt“, below that the
+    /// changes so far. Clicking an entry jumps to the state after that step.
     fn history_inspector(&mut self, ui: &mut egui::Ui) {
         type Row = (String, OpSource, std::time::SystemTime);
         let (done, undone): (Vec<Row>, Vec<Row>) = {
@@ -1771,7 +1771,7 @@ impl App {
 
             (d.undo_entries().iter().map(map).collect(), d.redo_entries().iter().map(map).collect())
         };
-        // Kopf: Rückgängig/Wiederholen und Anzahl
+        // Header: undo/redo and count
         ui.horizontal(|ui| {
             if theme::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, crate::keymap::with_key(&self.t("undo"), &self.key_of("undo")), !done.is_empty(), false).clicked() {
                 self.history_step(-1);
@@ -1805,18 +1805,18 @@ impl App {
         let matches = |l: &str| ql.is_empty() || crate::tr(l).to_lowercase().contains(&ql);
         let mut jump: Option<isize> = None;
         egui::ScrollArea::vertical().id_salt("history").auto_shrink([false, false]).show(ui, |ui| {
-            // Zukunft (rückgängig gemacht): der weiteste Schritt oben
+            // Future (undone): the furthest step at the top
             for (i, (label, src, at)) in undone.iter().enumerate() {
                 if !matches(label) {
                     continue;
                 }
-                // Abstand vom jetzigen Stand: der nächste Wiederholen-Schritt ist der letzte
+                // distance from the current state: the next redo step is the last
                 let dist = (undone.len() - i) as isize;
                 if history_row(ui, label, src, *at, false).on_hover_text(crate::tr("Bis hier wiederholen")).clicked() {
                     jump = Some(dist);
                 }
             }
-            // Jetzt
+            // Now
             ui.horizontal(|ui| {
                 ui.label(RichText::new(icon::CARET_RIGHT).color(theme::ACCENT()));
                 ui.label(RichText::new(crate::tr("Jetzt")).strong().color(theme::TEXT()));
@@ -1835,7 +1835,7 @@ impl App {
                     history_row(ui, label, src, *at, true);
                 }
             }
-            // Ursprung
+            // Origin
             if !done.is_empty()
                 && ui
                     .add(theme::menu_row(crate::tr(format!("{}   Projektbeginn", icon::FLAG))))
@@ -1851,7 +1851,7 @@ impl App {
     }
 }
 
-/// Symbol je Art der Änderung
+/// Icon per kind of change
 fn history_icon(label: &str) -> &'static str {
     let l = label.to_lowercase();
     let has = |w: &str| l.contains(w);
@@ -1888,7 +1888,7 @@ fn history_icon(label: &str) -> &'static str {
     }
 }
 
-/// Eine Zeile des Verlaufs; `done = false` → rückgängig gemacht (blass)
+/// One row of the history; `done = false` → undone (faded)
 fn history_row(
     ui: &mut egui::Ui,
     label: &str,
@@ -1905,13 +1905,13 @@ fn history_row(
     let text = format!("{}   {}{who}", history_icon(label), crate::tr(label));
     let r = ui.add(theme::menu_row(text).hint(&when).min_width(ui.available_width()));
     if !done {
-        // rückgängig gemachte Schritte blass überdecken
+        // cover undone steps faded
         ui.painter().rect_filled(r.rect, theme::R_CTRL, theme::BG_CARD().linear_multiply(0.55));
     }
     r
 }
 
-/// „Deaktiviert  (Taste)“ – im Abschnitt „Mischen“ (Bild) bzw. „Lautstärke“ (Audio).
+/// „Deaktiviert  (Taste)“ – in the „Mischen“ (image) or „Lautstärke“ (audio) section.
 fn disabled_toggle(ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit, key: &str) {
     let mut dis = c.disabled;
     if widgets::toggle_row(ui, &crate::keymap::with_key("Deaktiviert", key), &mut dis) {
@@ -1929,15 +1929,15 @@ mod tests {
     fn strip_keeps_entry_visible_and_steps() {
         let w = [60.0, 60.0, 60.0, 60.0, 60.0];
         let view = 150.0;
-        // Eintrag 3 (180..240) rechts außerhalb: ganz sichtbar, links vom Pfeil-Knopf
+        // Entry 3 (180..240) outside on the right: fully visible, left of the arrow button
         let off = strip_into_view(&w, 3, 0.0, view);
         assert!(180.0 - STRIP_ARROW >= off && 240.0 + STRIP_ARROW <= off + view + 0.01, "{off}");
-        // schon sichtbar: bleibt
+        // already visible: stays
         assert_eq!(strip_into_view(&w, 1, 30.0, view), 30.0);
-        // Rand: nie über die Enden hinaus
+        // Edge: never beyond the ends
         assert_eq!(strip_into_view(&w, 0, 100.0, view), 0.0);
         assert_eq!(strip_into_view(&w, 4, 0.0, view), 300.0 - view);
-        // Pfeile: einen Eintrag weiter, am Ende nichts mehr
+        // Arrows: one entry further, nothing more at the end
         let r = strip_step(&w, 0.0, view, 1.0);
         assert!(r > 0.0);
         assert!(strip_step(&w, r, view, -1.0) < r);
@@ -1953,7 +1953,7 @@ mod tests {
     }
 }
 
-/// Neuer Projektname aus dem Eingabefeld: nur wenn er sich geändert hat und nicht leer ist.
+/// New project name from the input field: only if it changed and is not empty.
 fn renamed(typed: &str, current: &str) -> Option<String> {
     let t = typed.trim();
     (!t.is_empty() && t != current).then(|| t.to_string())
