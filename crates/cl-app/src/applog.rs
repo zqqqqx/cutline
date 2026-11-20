@@ -1070,6 +1070,16 @@ mod tests {
         );
     }
 
+    /// File names with spaces: only names in „…“ are redacted whole, so messages quote them.
+    #[test]
+    fn multi_word_file_names_are_redacted_whole() {
+        let name = "Bewerbung Firma Müller.mp4";
+        for msg in [crate::file_drop::probe_error(name), format!("„{name}“: Invalid data"), format!("„{name}“ fertig in 12 ms")] {
+            let out = anon(&msg);
+            assert!(!out.contains("Bewerbung") && !out.contains("Firma"), "{out}");
+        }
+    }
+
     /// Lines from an exported log (click test): paths with `~/` and mixed separators,
     /// file names in messages – in the export only the extension remains.
     #[test]

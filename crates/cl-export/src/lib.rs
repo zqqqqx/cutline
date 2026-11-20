@@ -1800,7 +1800,7 @@ pub(crate) fn audio_readable(path: &Path, wait: bool) -> bool {
             AUDIO_WARNINGS
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .push(format!("Ton von {name} kann nicht gelesen werden – Wiedergabe ohne diese Datei"));
+                .push(format!("Ton von „{name}“ kann nicht gelesen werden – Wiedergabe ohne diese Datei"));
         }
         READABLE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(key, Some(ok));
         ok

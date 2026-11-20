@@ -1794,7 +1794,7 @@ Unerwarteter Fehler	Unexpected error
 Abschnitt {}–{}: {}	Section {}–{}: {}
 Zu viele gleichzeitige Clips bei {} – FFmpeg kann sie nicht auf einmal öffnen	Too many simultaneous clips at {} – FFmpeg cannot open them all at once
 Zu wenig Speicherplatz für die Zwischendateien: {} nötig, {} frei	Not enough disk space for the intermediate files: {} needed, {} free
-Ton von {} kann nicht gelesen werden – Wiedergabe ohne diese Datei	Cannot read the audio of {} – playing without this file
+Ton von „{}“ kann nicht gelesen werden – Wiedergabe ohne diese Datei	Cannot read the audio of “{}” – playing without this file
 Version ohne Prüfsumme	Version without checksum
 Speichern dauert zu lange	Saving is taking too long
 Entwurf zu groß	Draft too large
@@ -1891,3 +1891,4 @@ Wiedergabe leiser	Playback quieter
 Lautstärke der Wiedergabe: {} %	Playback volume: {} %
 Lautstärke der Wiedergabe: stumm	Playback volume: muted
 Beim Überschreiben werden {} ältere Teile entfernt	{} older parts will be removed when overwriting
+Datei kann nicht gelesen werden: „{}“	Cannot read file: “{}”

@@ -836,7 +836,7 @@ fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progres
             }
             Err(e) if e == "Abgebrochen" => return Err(e),
             Err(e) => {
-                log::warn!(target: "proxy", "Stück {k} von {name} gescheitert: {e}");
+                log::warn!(target: "proxy", "Stück {k} von „{name}“ gescheitert: {e}");
                 with_mine(&m.path, out, |en| en.fails[k as usize] += 1);
             }
         }
@@ -1109,7 +1109,8 @@ impl App {
         let label = format!("Proxys {} / {}", self.proxies.done + 1, self.proxies.total);
         self.tasks.spawn(ctx, "proxy", label, move |p, cancel| {
             let t0 = std::time::Instant::now();
-            let name = m.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            // in „…“: the log export redacts names with spaces only there
+            let name = format!("„{}“", m.path.file_name().unwrap_or_default().to_string_lossy());
             let r = match target {
                 Some((out, Some(pt))) => build_parts(&m, &out, &spec, &pt, p, cancel),
                 Some((out, None)) => build(&m, &out, &spec, p, cancel).map(|_| true),
