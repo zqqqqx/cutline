@@ -219,7 +219,7 @@ impl Running {
         // noch im Oberflächen-Faden: ein abgebrochener Vorgänger, dessen Faden noch läuft, sieht
         // den Ordner ab jetzt als belegt und löscht ihn nicht mehr
         if let Some(d) = &folder {
-            folder_use(d, true);
+            folder_use(d, true, false);
         }
         let resolver = move |fam: Option<&str>| fam.and_then(|f| fonts.get(f).cloned());
         // Bau des Auftrags (bei großen Projekten Sekunden: Tonprüfung je Datei) nicht im Oberflächen-Faden
@@ -228,6 +228,8 @@ impl Running {
             let len = |r: &Option<(Time, Time)>| r.map_or(p.duration(), |(a, b)| b - a).as_secs_f64().max(1e-3);
             let total: f64 = parts.iter().map(|x| len(&x.0)).sum();
             let (mut at, mut first_err) = (0.0, None);
+            // nach einem Abbruch nur einen selbst angelegten Ordner wieder entfernen
+            let created = folder.as_ref().is_some_and(|d| !d.exists());
             if let Some(d) = &folder {
                 let _ = std::fs::create_dir_all(d);
             }
@@ -274,7 +276,7 @@ impl Running {
             // abgebrochen, bevor ein Teil fertig war: kein leerer Ordner (nicht leer oder von einem
             // neueren Export belegt: bleibt)
             if let Some(d) = &folder {
-                folder_use(d, false);
+                folder_use(d, false, created);
             }
             *rs.lock().unwrap() = Some(first_err.map_or(Ok(()), Err));
             c2.request_repaint();
@@ -293,14 +295,15 @@ impl Running {
 /// ein neuer Export in denselben Ordner, darf dieses Aufräumen ihn nicht löschen.
 static FOLDERS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
-/// Ordner belegen (`true`) bzw. freigeben; beim letzten Freigeben wird er gelöscht, wenn er leer ist.
-fn folder_use(dir: &Path, take: bool) {
+/// Ordner belegen (`true`) bzw. freigeben; beim letzten Freigeben wird er gelöscht, wenn er leer
+/// ist und der Freigebende ihn angelegt hat (`created`; nie ein schon vorhandener Ordner).
+fn folder_use(dir: &Path, take: bool, created: bool) {
     let mut v = FOLDERS.lock().unwrap_or_else(|e| e.into_inner());
     if take {
         v.push(dir.to_path_buf());
     } else if let Some(i) = v.iter().position(|d| d == dir) {
         v.swap_remove(i);
-        if !v.iter().any(|d| d == dir) {
+        if created && !v.iter().any(|d| d == dir) {
             let _ = std::fs::remove_dir(dir);
         }
     }
@@ -673,7 +676,9 @@ impl ExportDialog {
             let out = self.output_path(s.format);
             return (out.clone(), vec![(s.range, out)]);
         };
-        let name = file_safe(&self.name);
+        // leerer Name, „.“ oder „..“ (Windows streicht Punkte am Ende): sonst wäre der Teile-Ordner
+        // der gewählte Ordner selbst oder sein übergeordneter
+        let name = Some(file_safe(&self.name)).filter(|n| !n.trim_end_matches(['.', ' ']).is_empty()).unwrap_or_else(|| "Export".into());
         let dir = self.folder.join(&name);
         let range = s.range.unwrap_or((Time::ZERO, p.duration()));
         let parts = split_parts(how, range, p.settings.fps, &p.timeline.markers, &name, &crate::tr("Teil"), s.format.extension());
@@ -2391,18 +2396,46 @@ fn cleanup_of_a_cancelled_group_spares_a_newer_export_in_the_same_folder() {
     let f = dir.path().join("Film");
     std::fs::create_dir(&f).unwrap();
     // alter Export belegt, neuer belegt, der alte räumt danach auf: Ordner bleibt (noch leer)
-    folder_use(&f, true);
-    folder_use(&f, true);
-    folder_use(&f, false);
+    folder_use(&f, true, false);
+    folder_use(&f, true, false);
+    folder_use(&f, false, true);
     assert!(f.is_dir());
     // der letzte gibt frei: leerer Ordner weg; nicht leer: bleibt
-    folder_use(&f, false);
+    folder_use(&f, false, true);
     assert!(!f.exists());
     std::fs::create_dir(&f).unwrap();
     std::fs::write(f.join("x.mp4"), b"x").unwrap();
-    folder_use(&f, true);
-    folder_use(&f, false);
+    folder_use(&f, true, false);
+    folder_use(&f, false, true);
     assert!(f.join("x.mp4").is_file());
+}
+
+/// Teile-Ordner ist nie der gewählte Ordner selbst, und ein Abbruch entfernt nur einen Ordner,
+/// den der Export angelegt hat.
+#[test]
+fn split_folder_is_never_the_chosen_folder_and_survives_cancel() {
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    let p = text_project("Film", "eins", 8.0);
+    let chosen = dir.path().join("Ziel");
+    std::fs::create_dir(&chosen).unwrap();
+    let mut d = split_dialog(&p, &chosen, 8);
+    for n in ["", "  ", ".", "..", "..."] {
+        d.name = n.into();
+        let (out, parts) = d.targets(&p, d.settings.as_ref().unwrap());
+        assert_eq!(out, chosen.join("Export"), "{n:?}");
+        assert!(parts.iter().all(|f| f.1.parent() == Some(out.as_path())), "{n:?}");
+    }
+    // vorhandener leerer Ordner mit dem Exportnamen: nach sofortigem Abbruch noch da
+    d.name = "Film".into();
+    std::fs::create_dir(chosen.join("Film")).unwrap();
+    frame(&mut d, &ctx, &p, true);
+    d.cancel_current();
+    drain(&mut d, &ctx, &p);
+    assert!(chosen.join("Film").is_dir());
+    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// Zielgröße gilt je Teil: Bitrate aus der Länge des Teils.
