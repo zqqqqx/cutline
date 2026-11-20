@@ -482,6 +482,9 @@ pub struct ExportDialog {
     /// Question opened only in this frame: do not evaluate Enter/Esc yet
     /// (the Enter that triggered „Exportieren“ is still pressed in the same frame)
     confirm_fresh: bool,
+    /// Overwrite prompt: any target exists, number of older parts to remove; computed once
+    /// when the prompt opens (disk and exports.json, not every frame)
+    overwrite_facts: Option<(bool, usize)>,
     /// Window should close while an export is running: question open
     quit_ask: bool,
     /// Quitting despite a running export confirmed
@@ -621,13 +624,12 @@ impl ExportDialog {
         if self.split_count == 0 {
             (self.split_count, self.split_secs, self.custom_mb) = (2, 60, 200);
         }
-        // check hardware encoders once in the background
+        // hardware encoders in the background (probed once per session, shared with the proxies);
+        // `None` until then: a start waits for the list (see `show`)
         if self.encoders.lock().unwrap().is_none() {
             let slot = self.encoders.clone();
-            *slot.lock().unwrap() = Some(vec![Encoder::Software]);
             std::thread::spawn(move || {
-                let found = cl_export::available_encoders();
-                *slot.lock().unwrap() = Some(found);
+                *slot.lock().unwrap() = Some(cl_export::available_encoders().to_vec());
             });
         }
     }
@@ -909,10 +911,12 @@ impl ExportDialog {
                 // write side files, assigned to the project the export comes from (not
                 // the currently open one), under the project name, not the (changeable) file name
                 let mut failed = Vec::new();
+                let mut outs = Vec::new();
                 for x in done.iter().filter_map(|&i| src.parts.get(i)) {
                     failed.extend(x.sidecars.iter().filter_map(|(f, txt)| std::fs::write(f, txt).err().map(|e| format!("{} ({e})", f.display()))));
-                    crate::exports::record(&src.project.name, src.project_path.as_deref(), &x.out);
+                    outs.push(x.out.as_path());
                 }
+                crate::exports::record_all(&src.project.name, src.project_path.as_deref(), &outs);
                 let group = src.group().then_some(src.parts.len());
                 match res {
                     Ok(()) => {
@@ -1212,7 +1216,7 @@ impl ExportDialog {
                                             }
                                         });
                                     });
-                                    let encs = self.encoders.lock().unwrap().clone().unwrap_or_default();
+                                    let encs = self.encoders.lock().unwrap().clone().unwrap_or_else(|| vec![Encoder::Software]);
                                     // with a target size always software (two passes); the choice stays for afterwards
                                     let target = s.target_mb.is_some();
                                     ui.add_enabled_ui(!target, |ui| theme::row(ui, "Encoder", |ui| {
@@ -1373,16 +1377,19 @@ impl ExportDialog {
             // 0 = overwrite, 1 = other name, 2 = cancel
             let mut choice = None;
             let file = out.clone();
-            let exists = parts.iter().any(|f| f.1.exists());
-            // parts of an earlier run that no longer exist this time (e.g. „Teil 06“ of 6, now 4)
-            let keep: Vec<PathBuf> = parts.iter().map(|f| f.1.clone()).collect();
-            let stale = if self.split(&s).is_some() {
-                let recorded: Vec<PathBuf> = crate::exports::for_project(&p.name, self.project_path.as_deref()).into_iter().map(|e| e.path).collect();
-                stale_parts(&out, s.format.extension(), &keep, &recorded)
-            } else {
-                Vec::new()
-            };
-            let old = stale.iter().filter(|f| f.extension().is_some_and(|e| e == s.format.extension())).count();
+            let split = self.split(&s).is_some();
+            let (exists, old) = *self.overwrite_facts.get_or_insert_with(|| {
+                let exists = parts.iter().any(|f| f.1.exists());
+                // parts of an earlier run that no longer exist this time (e.g. „Teil 06“ of 6, now 4)
+                let keep: Vec<PathBuf> = parts.iter().map(|f| f.1.clone()).collect();
+                let stale = if split {
+                    let recorded: Vec<PathBuf> = crate::exports::for_project(&p.name, self.project_path.as_deref()).into_iter().map(|e| e.path).collect();
+                    stale_parts(&out, s.format.extension(), &keep, &recorded)
+                } else {
+                    Vec::new()
+                };
+                (exists, stale.iter().filter(|f| f.extension().is_some_and(|e| e == s.format.extension())).count())
+            });
             let m = crate::dialog::modal(ctx, "export-overwrite").show(ctx, |ui| {
                 ui.set_width(380.0);
                 let t = match (exists, parts.len() > 1) {
@@ -1440,11 +1447,19 @@ impl ExportDialog {
             }
             if choice.is_some() {
                 self.confirm_overwrite = false;
+                self.overwrite_facts = None;
             }
         }
         if start && self.queue.len() < QUEUE_MAX {
             self.error = None;
             self.done = None;
+            // encoder list still being probed and none picked: wait for it (1–2 s, only right after
+            // the start of a session), otherwise the export would silently use the software encoder
+            if !self.encoder_picked && self.encoders.lock().unwrap().is_none() {
+                let found = cl_export::available_encoders().to_vec();
+                s.encoder = cl_export::export_default(&found, &crate::proxy::encoder_pref());
+                *self.encoders.lock().unwrap() = Some(found);
+            }
             // anew after „Anderen Namen“
             let (out, parts) = self.targets(p, &s);
             let parts = parts
@@ -1471,7 +1486,7 @@ impl ExportDialog {
 /// Audible sound in the export range? (target size: otherwise nothing is planned for sound)
 fn audible(p: &Project, s: &ExportSettings) -> bool {
     let (a, b) = s.range.unwrap_or((Time::ZERO, p.duration()));
-    !cl_export::audio_clips_in(p, a, b).is_empty()
+    cl_export::audible_clips(p, a, b).next().is_some()
 }
 
 /// Name for files and folders: characters Windows forbids become `_`; length and
@@ -2460,7 +2475,7 @@ fn overwrite_removes_old_parts_when_its_export_starts() {
         std::fs::write(folder.join(f), b"x").unwrap();
     }
     let pp = dir.path().join("p.cutline");
-    crate::exports::record("Film", Some(&pp), &folder.join("Film – Teil 03.mp4"));
+    crate::exports::record_all("Film", Some(&pp), &[&folder.join("Film – Teil 03.mp4")]);
     // another export is running: the overwriting one waits, nothing removed yet
     d.running = Some(running(None));
     let (out, parts) = d.targets(&p, d.settings.as_ref().unwrap());
@@ -2473,6 +2488,64 @@ fn overwrite_removes_old_parts_when_its_export_starts() {
     let mut names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
     names.sort();
     assert_eq!(names, ["Film – 2023 Sommer.mp4", "Film – Teil 01.mp4", "Film – Teil 02.mp4"]);
+    std::env::remove_var("CUTLINE_HOME");
+}
+
+/// First export of a session while the encoder probe still runs: the start waits for the list
+/// and preselects from it instead of silently using the software encoder.
+#[test]
+fn export_started_during_encoder_probe_uses_the_probed_list() {
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    let p = text_project("Probe", "eins", 1.0);
+    let mut d = ExportDialog::default();
+    d.open_for(&p, Some(&dir.path().join("p.cutline")), 0, None);
+    d.folder = dir.path().to_path_buf();
+    // let the background thread of `open_for` finish, then pretend the list is not there yet
+    while d.encoders.lock().unwrap().is_none() {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    *d.encoders.lock().unwrap() = None;
+    d.running = Some(running(None));
+    frame(&mut d, &ctx, &p, true);
+    let found = cl_export::available_encoders();
+    assert_eq!(d.encoders.lock().unwrap().as_deref(), Some(found));
+    assert_eq!(d.queue.back().map(|q| q.settings.encoder), Some(cl_export::export_default(found, &crate::proxy::encoder_pref())));
+    d.queue.clear();
+    d.cancel_current();
+    drain(&mut d, &ctx, &p);
+    std::env::remove_var("CUTLINE_HOME");
+}
+
+/// The overwrite prompt looks at the disk and exports.json once when it opens, not every frame.
+#[test]
+fn overwrite_prompt_checks_the_disk_once() {
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    let p = text_project("Film", "eins", 2.0);
+    let mut d = split_dialog(&p, dir.path(), 2);
+    let folder = dir.path().join("Film");
+    std::fs::create_dir(&folder).unwrap();
+    for f in ["Film – Teil 01.mp4", "Film – Teil 03.mp4"] {
+        std::fs::write(folder.join(f), b"x").unwrap();
+    }
+    crate::exports::record_all("Film", Some(&dir.path().join("p.cutline")), &[&folder.join("Film – Teil 03.mp4")]);
+    frame(&mut d, &ctx, &p, true);
+    assert!(d.confirm_overwrite);
+    assert_eq!(d.overwrite_facts, Some((true, 1)));
+    // changes on disk while the prompt is open are not looked up again
+    std::fs::remove_file(folder.join("Film – Teil 03.mp4")).unwrap();
+    frame(&mut d, &ctx, &p, false);
+    assert_eq!(d.overwrite_facts, Some((true, 1)));
+    // closed („Anderen Namen“): facts forgotten for the next prompt
+    frame(&mut d, &ctx, &p, true);
+    assert!(!d.confirm_overwrite && d.overwrite_facts.is_none());
+    d.cancel_current();
+    drain(&mut d, &ctx, &p);
     std::env::remove_var("CUTLINE_HOME");
 }
 

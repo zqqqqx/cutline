@@ -697,7 +697,7 @@ fn sections_hardware_encoders_concat() {
     if !cl_media::ffmpeg_available() {
         return;
     }
-    let hw: Vec<_> = cl_export::available_encoders().into_iter().filter(|e| *e != cl_export::Encoder::Software).collect();
+    let hw: Vec<_> = cl_export::available_encoders().iter().copied().filter(|e| *e != cl_export::Encoder::Software).collect();
     if hw.is_empty() {
         return;
     }

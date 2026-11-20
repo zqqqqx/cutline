@@ -1149,8 +1149,8 @@ mod tests {
             for secs in [3.0, 37.0, 128.0, 335.0, 571.0] {
                 let from = Time::from_secs_f64(secs);
                 let plan = window_plan(from, p.duration(), rate, 0).unwrap();
-                let n_old = cl_export::audio_clips_in(&p, from, p.duration()).len();
-                let n_new = cl_export::audio_clips_in(&p, plan.mix_from, plan.mix_to).len();
+                let n_old = cl_export::audible_clips(&p, from, p.duration()).count();
+                let n_new = cl_export::audible_clips(&p, plan.mix_from, plan.mix_to).count();
                 // twice each, the second value counts (files in cache as in the app)
                 let mut old = 0.0;
                 let mut new = 0.0;

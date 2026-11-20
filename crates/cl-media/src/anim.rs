@@ -75,6 +75,9 @@ pub fn decode_all(path: &Path, w: u32, h: u32, max_bytes: usize) -> Option<Vec<c
 /// FFmpeg for [`decode_all`]: at most `frames` frames – if FFmpeg counts more than our own reader
 /// (unusual file), the output would otherwise grow past the checked memory limit.
 fn decode_all_cmd(path: &Path, w: u32, h: u32, frames: usize) -> Option<std::process::Command> {
+    if crate::is_url(path) {
+        return None;
+    }
     let mut cmd = crate::ffmpeg_command().ok()?;
     cmd.args(["-v", "error", "-nostdin", "-i"])
         .arg(path)

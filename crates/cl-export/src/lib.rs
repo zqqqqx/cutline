@@ -20,6 +20,7 @@ use std::sync::Arc;
 use cl_core::*;
 
 mod graph;
+pub use graph::audible_clips;
 mod sections;
 use serde::{Deserialize, Serialize};
 
@@ -309,7 +310,7 @@ impl ExportSettings {
     /// encoder, video bitrate from size minus audio (with a tight size at most a quarter, at least
     /// 64 kbit/s), with too few bits per pixel a smaller standard resolution. Unchanged without a target size.
     /// `audible`: the range has audible sound (otherwise only a silent track of a few kbit/s remains,
-    /// for which nothing is deducted; see [`audio_clips_in`]).
+    /// for which nothing is deducted; see [`audible_clips`]).
     pub fn for_target(&self, secs: f64, audible: bool) -> ExportSettings {
         let mut s = self.clone();
         let Some(mb) = self.target_mb.filter(|_| self.target_possible()) else {
@@ -575,12 +576,16 @@ fn wants_audio(s: &ExportSettings) -> bool {
     s.format.audio_only() || (s.include_audio && s.format != Format::Gif)
 }
 
+/// Work folder `cutline-export-<pid>-…`: the process id lets the next start remove the
+/// folder of a crashed export at once (it can hold GBs), see `update::cleanup_temp` in the app.
+fn export_workdir() -> std::io::Result<tempfile::TempDir> {
+    tempfile::Builder::new().prefix(&format!("cutline-export-{}-", std::process::id())).tempdir()
+}
+
 /// A single pass (small and medium projects).
 fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, start: Time, end: Time) -> Result<Job> {
     let dur = end - start;
-    let workdir = tempfile::Builder::new()
-        .prefix("cutline-export-")
-        .tempdir()?;
+    let workdir = export_workdir()?;
     let (w, h) = (s.width & !1, s.height & !1);
     let mut ctx = graph::Ctx {
         w,
@@ -796,7 +801,7 @@ fn build_sections(
 ) -> Result<Job> {
     let plan = sections::plan(units, start, end, sections::grid_step(s.fps), base, lim)
         .map_err(|t| ExportError::TooManyClips(sections::clock(t)))?;
-    let workdir = tempfile::Builder::new().prefix("cutline-export-").tempdir()?;
+    let workdir = export_workdir()?;
     let dur = end - start;
     for (dir, need) in space_needs(scratch_bytes(s, dur.as_secs_f64()), workdir.path(), out) {
         if let Some(free) = sections::free_space(&dir) {
@@ -1660,8 +1665,20 @@ fn encoder_probes() -> Vec<(Encoder, &'static [&'static str])> {
     v
 }
 
-/// Checks which hardware encoders really work on this computer (short test run).
-pub fn available_encoders() -> Vec<Encoder> {
+static ENCODERS: std::sync::OnceLock<Vec<Encoder>> = std::sync::OnceLock::new();
+
+/// Hardware encoders that really work on this computer: probed once per session (short test
+/// runs, 1–2 s), later calls return the cached list; a call during the probe waits for it.
+pub fn available_encoders() -> &'static [Encoder] {
+    ENCODERS.get_or_init(probe_encoders)
+}
+
+/// [`available_encoders`] without waiting: `None` until the probe has finished.
+pub fn encoders_known() -> Option<&'static [Encoder]> {
+    ENCODERS.get().map(Vec::as_slice)
+}
+
+fn probe_encoders() -> Vec<Encoder> {
     let mut v = vec![Encoder::Software];
     let mut old = false;
     for (enc, codec) in encoder_probes() {
@@ -1696,11 +1713,6 @@ pub fn spawn_audio_preview(
     rate: u32,
 ) -> Result<(Child, tempfile::TempDir)> {
     spawn_audio_window(p, from, p.duration(), rate)
-}
-
-/// Ids of the audible clips touching the range `start..end` (= inputs of the audio mix).
-pub fn audio_clips_in(p: &Project, start: Time, end: Time) -> Vec<ClipId> {
-    graph::audible_clips(p, start, end).map(|(c, _)| c.id).collect()
 }
 
 /// Timeline audio in the range `from..to` (at most up to the project end) as f32le stereo at
@@ -1800,7 +1812,7 @@ pub(crate) fn audio_readable(path: &Path, wait: bool) -> bool {
             AUDIO_WARNINGS
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .push(format!("Ton von {name} kann nicht gelesen werden – Wiedergabe ohne diese Datei"));
+                .push(format!("Ton von „{name}“ kann nicht gelesen werden – Wiedergabe ohne diese Datei"));
         }
         READABLE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(key, Some(ok));
         ok
@@ -1948,9 +1960,10 @@ mod tests {
         muted.muted = true;
         muted.clips.push(clip(&snd, 10.0, 20.0));
         p.timeline.tracks.extend([t, v, muted]);
-        assert_eq!(audio_clips_in(&p, s(10.0), s(30.0)), vec![across_start.id, inside.id, fading_in.id, across_end.id]);
-        assert_eq!(audio_clips_in(&p, s(0.0), s(5.0)), vec![before.id]);
-        assert!(audio_clips_in(&p, s(41.0), s(60.0)).is_empty());
+        let ids = |a, b| audible_clips(&p, s(a), s(b)).map(|(c, _)| c.id).collect::<Vec<_>>();
+        assert_eq!(ids(10.0, 30.0), vec![across_start.id, inside.id, fading_in.id, across_end.id]);
+        assert_eq!(ids(0.0, 5.0), vec![before.id]);
+        assert!(ids(41.0, 60.0).is_empty());
     }
 
     #[test]

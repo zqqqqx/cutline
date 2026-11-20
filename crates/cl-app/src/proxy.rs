@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 use cl_core::{Clip, ClipContent, MediaId, MediaKind, MediaRef, Rational, Time};
-use cl_export::Encoder;
+use cl_export::{available_encoders, Encoder};
 use eframe::egui::{self, RichText};
 
 pub use parts::Pick;
@@ -173,7 +173,7 @@ pub fn found_encoders() -> Option<&'static [Encoder]> {
     STARTED.call_once(|| {
         std::thread::spawn(available_encoders);
     });
-    AVAILABLE.get().map(Vec::as_slice)
+    cl_export::encoders_known()
 }
 
 /// Encoders that failed during a proxy build in this session
@@ -181,13 +181,6 @@ fn broken_encoders() -> std::sync::MutexGuard<'static, Vec<Encoder>> {
     static B: Mutex<Vec<Encoder>> = Mutex::new(Vec::new());
     B.lock().unwrap_or_else(|e| e.into_inner())
 }
-
-/// Hardware encoders of this computer (the export's detection, once per session).
-fn available_encoders() -> &'static [Encoder] {
-    AVAILABLE.get_or_init(cl_export::available_encoders)
-}
-
-static AVAILABLE: OnceLock<Vec<Encoder>> = OnceLock::new();
 
 /// Hardware decoding of the source during the proxy build: only with NVENC and only for sources whose
 /// software decoding is slow (above 1080p, HEVC/AV1/VP9). Measured: 1080p H.264 is faster in software
@@ -601,8 +594,10 @@ pub struct ProxyState {
     /// Setting for which `known` holds: (height, project frame rate)
     key: Option<(u32, Rational)>,
     scan: Option<std::sync::mpsc::Receiver<Scan>>,
-    /// last search: time and number of media
-    scanned: Option<(Instant, usize)>,
+    /// last search: time, number of media, project revision
+    scanned: Option<(Instant, usize, u64)>,
+    /// last search found nothing to build
+    idle: bool,
     /// built / total in this round (display „Proxys 3 / 40“)
     pub done: usize,
     pub total: usize,
@@ -630,9 +625,13 @@ impl ProxyState {
     }
 }
 
-/// New search due? After 2 s or when the number of media changes.
-pub fn scan_due(scanned: Option<(Instant, usize)>, media: usize) -> bool {
-    scanned.is_none_or(|(t, n)| n != media || t.elapsed() >= Duration::from_secs(2))
+/// New search due? At once when the number of media changes; after 2 s while something is missing
+/// or the project changed (e.g. relinked file); otherwise (nothing to do) only every 30 s.
+pub fn scan_due(scanned: Option<(Instant, usize, u64)>, media: usize, rev: u64, idle: bool) -> bool {
+    scanned.is_none_or(|(t, n, r)| {
+        let every = if idle && r == rev { 30 } else { 2 };
+        n != media || t.elapsed() >= Duration::from_secs(every)
+    })
 }
 
 /// Start the next proxy job? Only if something is missing, none is running and it is not paused
@@ -830,7 +829,7 @@ fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progres
             }
             Err(e) if e == "Abgebrochen" => return Err(e),
             Err(e) => {
-                log::warn!(target: "proxy", "Stück {k} von {name} gescheitert: {e}");
+                log::warn!(target: "proxy", "Stück {k} von „{name}“ gescheitert: {e}");
                 with_mine(&m.path, out, |en| en.fails[k as usize] += 1);
             }
         }
@@ -1047,14 +1046,15 @@ impl App {
             },
             None => {
                 let n = self.project.media.len();
-                if scan_due(self.proxies.scanned, n) {
-                    self.proxies.scanned = Some((Instant::now(), n));
+                if scan_due(self.proxies.scanned, n, self.revision, self.proxies.idle) {
+                    self.proxies.scanned = Some((Instant::now(), n, self.revision));
                     // all videos (the player asks for proxies too), built only where it is worth it
                     let media: Vec<(MediaRef, bool)> = self
                         .project
                         .media
                         .iter()
-                        .filter(|m| m.kind == MediaKind::Video && self.presence.get(&m.path))
+                        // presence counts unchecked paths as present: never hand a URL to FFmpeg
+                        .filter(|m| m.kind == MediaKind::Video && self.presence.get(&m.path) && !cl_media::is_url(&m.path))
                         .map(|m| (m.clone(), wants_proxy(m) && !self.proxy_failed.contains(&m.id)))
                         .collect();
                     let (tx, rx) = std::sync::mpsc::channel();
@@ -1088,6 +1088,7 @@ impl App {
         self.proxies.scan = None;
         let (found, missing) = res;
         self.proxies.known.extend(found);
+        self.proxies.idle = missing.is_empty();
         (self.proxies.done, self.proxies.total) = round(self.proxies.done, missing.len());
         if !start_next(missing.len(), self.tasks.running("proxy").is_some(), ProxyState::paused()) {
             return;
@@ -1102,7 +1103,8 @@ impl App {
         let label = format!("Proxys {} / {}", self.proxies.done + 1, self.proxies.total);
         self.tasks.spawn(ctx, "proxy", label, move |p, cancel| {
             let t0 = std::time::Instant::now();
-            let name = m.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            // in „…“: the log export redacts names with spaces only there
+            let name = format!("„{}“", m.path.file_name().unwrap_or_default().to_string_lossy());
             let r = match target {
                 Some((out, Some(pt))) => build_parts(&m, &out, &spec, &pt, p, cancel),
                 Some((out, None)) => build(&m, &out, &spec, p, cancel).map(|_| true),
@@ -1383,11 +1385,17 @@ mod tests {
 
     #[test]
     fn scan_runs_every_two_seconds_or_on_new_media_and_counts_the_round() {
-        assert!(scan_due(None, 0));
-        let now = Some((Instant::now(), 5));
-        assert!(!scan_due(now, 5));
-        assert!(scan_due(now, 6));
-        assert!(scan_due(Instant::now().checked_sub(Duration::from_secs(3)).map(|t| (t, 5)), 5));
+        assert!(scan_due(None, 0, 0, false));
+        let now = Some((Instant::now(), 5, 1));
+        assert!(!scan_due(now, 5, 1, false));
+        assert!(scan_due(now, 6, 1, false));
+        assert!(scan_due(now, 6, 1, true));
+        let ago = |s| Instant::now().checked_sub(Duration::from_secs(s)).map(|t| (t, 5, 1));
+        assert!(scan_due(ago(3), 5, 1, false));
+        // nothing to do: only every 30 s, unless the project changed (2 s) or media were added (at once)
+        assert!(!scan_due(ago(3), 5, 1, true));
+        assert!(scan_due(ago(3), 5, 2, true));
+        assert!(scan_due(ago(31), 5, 1, true));
         // 3 finished, 7 missing → „Proxys 4 / 10“; nothing missing → round over
         assert_eq!(round(3, 7), (3, 10));
         assert_eq!(round(10, 0), (0, 0));

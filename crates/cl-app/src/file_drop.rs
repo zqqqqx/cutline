@@ -373,8 +373,8 @@ impl App {
 
     /// File unreadable: short message with the name; FFmpeg's raw text only into the log
     pub(crate) fn probe_failed(&mut self, file: &str, error: &str) {
-        log::warn!(target: "import", "{file}: {error}");
-        self.toast_err(self.i18n.t_args("media-probe-error", &[("file", file.into())]));
+        log::warn!(target: "import", "„{file}“: {error}");
+        self.toast_err(probe_error(file));
     }
 
     /// Take over checked files (media + clips) – all one history step.
@@ -482,6 +482,12 @@ fn probe_all(
             report((n + 1) as f32 / todo.len() as f32);
         }
     });
+}
+
+/// Toast for an unreadable file. German with the name in „…“: the log gets the text before
+/// translation, and the log export redacts names with spaces only there.
+pub(crate) fn probe_error(file: &str) -> String {
+    format!("Datei kann nicht gelesen werden: „{file}“")
 }
 
 #[cfg(test)]

@@ -528,6 +528,7 @@ impl App {
                             path: self.preview_path(m, 90),
                             dur: m.duration,
                             n: SCRUB_N,
+                            size: (m.width, m.height),
                         });
                     }
                     if let (Some(f), Some(t)) = (scrub, self.fx_thumbs.get(&strip_key)) {

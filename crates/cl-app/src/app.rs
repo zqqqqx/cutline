@@ -808,6 +808,7 @@ impl App {
                     media: m.id,
                     path: m.path.clone(),
                     at,
+                    size: (m.width, m.height),
                 });
             }
         }
@@ -4343,7 +4344,7 @@ fn unreadable_file_gives_a_short_message() {
     std::fs::write(&f, b"kein Video").unwrap();
     assert!(app.import_media(vec![f]).is_empty());
     let msgs: Vec<&str> = app.toasts.iter().map(|t| t.0.as_str()).collect();
-    assert_eq!(msgs, ["Datei kann nicht gelesen werden: kaputt.mp4"]);
+    assert_eq!(msgs, ["Datei kann nicht gelesen werden: „kaputt.mp4“"]);
 }
 
 /// A message with a very long name stays in the window (shortened) instead of being cut off left and right

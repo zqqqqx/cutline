@@ -289,12 +289,21 @@ pub fn startup_cleanup() {
 }
 
 /// Work folders of audio preview, export, Whisper and thumbnail are only left behind after a crash or a
-/// forced quit (exports up to a few MB). Only own folders unchanged for longer than `age`
-/// are removed – running instances do not use their folders that long.
+/// forced quit. Only own folders unchanged for longer than `age` are removed – running instances do
+/// not use their folders that long. Export folders carry the process id (`cutline-export-<pid>-…`,
+/// can be GBs): removed at once when that process is gone, never while it runs.
 fn cleanup_temp(dir: &std::path::Path, age: std::time::Duration) {
     const OWN: [&str; 4] = ["cutline-audio-", "cutline-export-", "cutline-whisper-", "cutline-thumb"];
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let own = OWN.iter().any(|p| e.file_name().to_string_lossy().starts_with(p));
+        let name = e.file_name().to_string_lossy().into_owned();
+        let own = OWN.iter().any(|p| name.starts_with(p));
+        let pid = name.strip_prefix("cutline-export-").and_then(|r| r.split_once('-')).and_then(|(n, _)| n.parse::<u32>().ok());
+        if let Some(pid) = pid {
+            if !crate::paths::pid_alive(pid) && e.path().is_dir() {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+            continue;
+        }
         let old = e
             .metadata()
             .ok()
@@ -324,6 +333,24 @@ mod temp_tests {
         let mut left: Vec<String> = std::fs::read_dir(t.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         left.sort();
         assert_eq!(left, ["cutline-export-datei", "cutline-models", "fremd"]);
+    }
+
+    #[test]
+    fn cleanup_temp_removes_export_dirs_of_ended_processes_at_once() {
+        let t = tempfile::tempdir().unwrap();
+        let mut child = if cfg!(windows) { std::process::Command::new("cmd").args(["/C", "exit"]).spawn() } else { std::process::Command::new("true").spawn() }.unwrap();
+        let dead = child.id();
+        child.wait().unwrap();
+        let (mine, gone) = (format!("cutline-export-{}-AbC123", std::process::id()), format!("cutline-export-{dead}-XyZ789"));
+        for d in [&mine, &gone, "cutline-export-x2"] {
+            std::fs::create_dir(t.path().join(d)).unwrap();
+        }
+        // fresh, but its process has ended: removed; a running export (here: this process) stays at any age
+        super::cleanup_temp(t.path(), std::time::Duration::from_secs(3600));
+        assert!(!t.path().join(&gone).exists());
+        assert!(t.path().join(&mine).exists() && t.path().join("cutline-export-x2").exists());
+        super::cleanup_temp(t.path(), std::time::Duration::ZERO);
+        assert!(t.path().join(&mine).exists() && !t.path().join("cutline-export-x2").exists());
     }
 }
 

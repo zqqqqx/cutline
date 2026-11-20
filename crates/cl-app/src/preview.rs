@@ -33,6 +33,8 @@ pub enum Job {
         media: MediaId,
         path: PathBuf,
         at: Time,
+        /// Display size of the medium (`MediaRef`, rotation applied); saves a probe per image
+        size: (u32, u32),
     },
     Wave {
         media: MediaId,
@@ -52,6 +54,8 @@ pub enum Job {
         path: PathBuf,
         dur: Time,
         n: u32,
+        /// Display size of the medium (`MediaRef`, rotation applied)
+        size: (u32, u32),
     },
     /// Prepare a sound from the library: generate if needed (`sfx`), check, waveform
     SoundMeta {
@@ -702,10 +706,8 @@ fn run(job: Job) -> Option<Done> {
             ..
         } => cl_media::decode_frame_fx(&path, at, w, h, graph.as_deref())
             .map(|frame| Done::Frame { clip, key, frame }),
-        Job::Thumb { media, path, at } => {
-            let (w, h) = cl_media::probe(&path)
-                .map(|m| cl_media::fit_size(m.width, m.height, 192, 108))
-                .unwrap_or((192, 108));
+        Job::Thumb { media, path, at, size } => {
+            let (w, h) = cl_media::fit_size(size.0, size.1, 192, 108);
             cl_media::decode_frame(&path, at, w, h).map(|frame| Done::Thumb { media, frame })
         }
         Job::Wave { media, path, stream } => {
@@ -717,10 +719,8 @@ fn run(job: Job) -> Option<Done> {
                 .unwrap_or((192, 108));
             cl_media::decode_frame(&path, at, w, h).map(|frame| Done::FxThumb { key, frame })
         }
-        Job::MediaStrip { key, path, dur, n } => {
-            let (w, h) = cl_media::probe(&path)
-                .map(|m| cl_media::fit_size(m.width.max(1), m.height.max(1), 160, 90))
-                .unwrap_or((160, 90));
+        Job::MediaStrip { key, path, dur, n, size } => {
+            let (w, h) = cl_media::fit_size(size.0, size.1, 160, 90);
             let mut data = Vec::with_capacity((w * h * 4 * n) as usize);
             let mut last: Option<Vec<u8>> = None;
             for i in 0..n {
@@ -1281,6 +1281,30 @@ mod tests {
         // ahead: behind the lead, not right before the held ones (they are shown by then)
         assert_eq!(next_window(490, true, 480, 11, 60, plan), Some((410, 70)));
         assert_eq!(next_window(490, true, 480, 11, 5, plan), Some((459, 21)), "small lead");
+    }
+
+    /// Timeline thumbnails take the size from the job (`MediaRef`, rotation applied) instead of
+    /// probing the file once more: a stored portrait size gives a portrait image.
+    #[test]
+    fn thumb_uses_the_size_from_the_job() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("t.mp4");
+        let ok = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=128x72:r=10:d=1", "-pix_fmt", "yuv420p"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let media = MediaId::new();
+        match run(Job::Thumb { media, path: src, at: Time::ZERO, size: (72, 128) }) {
+            Some(Done::Thumb { frame, .. }) => assert_eq!((frame.width, frame.height), (60, 108)),
+            _ => panic!("no thumbnail"),
+        }
     }
 
     /// Reverse playback: jobs with window, frame by frame backwards – each arrives, and each
