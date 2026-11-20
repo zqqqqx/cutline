@@ -359,6 +359,19 @@ fn insert_mark(p: &egui::Painter, r: egui::Rect, after: bool) {
 }
 
 impl App {
+    /// Media of the open project follow a renamed or moved library file/folder (undoable, one step).
+    fn follow_moved(&mut self, old: Option<&std::path::Path>, new: &std::path::Path) {
+        let Some(old) = old else { return };
+        let ops: Vec<cl_core::EditOp> = crate::library::moved_media(&self.project.media, old, new)
+            .into_iter()
+            .map(|(media, path)| cl_core::EditOp::RelinkMedia { media, path })
+            .collect();
+        if !ops.is_empty() {
+            self.apply_batch(ops);
+            self.invalidate_preview();
+        }
+    }
+
     /// Copy a file as an element or sound into the folder (`None`: ask for a name, create the folder).
     pub fn save_as(&mut self, kind: Kind, folder: Option<String>, file: PathBuf) {
         let Some(f) = folder else {
@@ -829,8 +842,9 @@ impl App {
         }
         if let (Some(f), Some(item)) = (move_to, own) {
             if let Some(k) = area_kind(area) {
-                if let Err(e) = self.library.move_to(item, k, &f) {
-                    self.toast_err(e);
+                match self.library.move_to(item, k, &f) {
+                    Ok(dest) => self.follow_moved(item.path.as_deref(), &dest),
+                    Err(e) => self.toast_err(e),
                 }
             }
         }
@@ -950,13 +964,16 @@ impl App {
                         }),
                     }
                 }
-                Some(LibDialog::Rename { item, name }) => self.library.rename(&item, &name),
+                Some(LibDialog::Rename { item, name }) => self.library.rename(&item, &name).map(|dest| self.follow_moved(item.path.as_deref(), &dest)),
                 Some(LibDialog::RenameCat { area, key, name }) => {
                     let ckey: &'static str = intern(format!("{area}-cat"));
                     let was = self.asset_cat.get(ckey).cloned();
                     self.library
                         .rename_cat(area, &key, &name, area_kind(area))
-                        .map(|_| {
+                        .map(|moved| {
+                            if let Some((a, b)) = moved {
+                                self.follow_moved(Some(&a), &b);
+                            }
                             // the chosen category follows the new name
                             if was.as_deref() == Some(key.as_str()) && !key.starts_with("b:") {
                                 let pre = &key[..2];

@@ -472,14 +472,16 @@ impl Library {
     }
 
     /// Rename: built in = display name, file folder = on disk, collection folder = name.
+    /// A renamed file folder returns (old, new) so the open project can follow it.
     pub fn rename_cat(
         &mut self,
         area: &str,
         key: &str,
         new: &str,
         phys: Option<Kind>,
-    ) -> Result<(), String> {
+    ) -> Result<Option<(PathBuf, PathBuf)>, String> {
         let new = sanitize(new);
+        let mut moved = None;
         if new.is_empty() {
             return Err("Ungültiger Name".into());
         }
@@ -511,6 +513,7 @@ impl Library {
                 );
                 self.remap(|k| file_under(k, &a).then(|| Some(k.replacen(&ap, &bp, 1))));
                 self.invalidate();
+                moved = Some((a, b));
                 format!("p:{new}")
             }
             _ => return Err("Unbekannte Kategorie".into()),
@@ -526,7 +529,7 @@ impl Library {
             l.seq.insert(new_key, s);
         }
         self.save();
-        Ok(())
+        Ok(moved)
     }
 
     /// Remove an own folder (the file folder goes to the trash). `used`: files of the open project.
@@ -825,8 +828,8 @@ impl Library {
         n
     }
 
-    /// Move an own entry to another folder.
-    pub fn move_to(&mut self, item: &Item, k: Kind, folder: &str) -> Result<(), String> {
+    /// Move an own entry to another folder; returns the new path.
+    pub fn move_to(&mut self, item: &Item, k: Kind, folder: &str) -> Result<PathBuf, String> {
         let Some(p) = &item.path else {
             return Err("Eingebaute Einträge lassen sich nicht verschieben".into());
         };
@@ -847,11 +850,11 @@ impl Library {
         }
         self.rekey(&item.key, &format!("file:{}", dest.display()));
         self.invalidate();
-        Ok(())
+        Ok(dest)
     }
 
-    /// Rename an own entry (file name, the extension stays).
-    pub fn rename(&mut self, item: &Item, new_name: &str) -> Result<(), String> {
+    /// Rename an own entry (file name, the extension stays); returns the new path.
+    pub fn rename(&mut self, item: &Item, new_name: &str) -> Result<PathBuf, String> {
         let Some(p) = &item.path else {
             return Err("Eingebaute Einträge lassen sich nicht umbenennen".into());
         };
@@ -867,7 +870,7 @@ impl Library {
         std::fs::rename(p, &dest).map_err(|e| e.to_string())?;
         self.rekey(&item.key, &format!("file:{}", dest.display()));
         self.invalidate();
-        Ok(())
+        Ok(dest)
     }
 
     /// Remove: own file to the trash, hide a built-in entry.
@@ -934,6 +937,17 @@ fn to_trash(p: &Path) -> Result<(), String> {
             .unwrap_or_default(),
     );
     std::fs::rename(p, dest).map_err(|e| e.to_string())
+}
+
+/// Media of a project that sat at `old` (a file, or anything under a folder) after it moved to `new`.
+pub fn moved_media(media: &[cl_core::MediaRef], old: &Path, new: &Path) -> Vec<(cl_core::MediaId, PathBuf)> {
+    media
+        .iter()
+        .filter_map(|m| {
+            let rest = m.path.strip_prefix(old).ok()?;
+            Some((m.id, if rest.as_os_str().is_empty() { new.to_path_buf() } else { new.join(rest) }))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1173,14 +1187,35 @@ mod tests {
         let it = lib.own_items(Kind::Sound).remove(0);
         lib.toggle_favorite(&it.key);
         assert!(lib.visible("sfx", "Favoriten", "", &it.key, &it.name, &it.folder));
-        lib.move_to(&it, Kind::Sound, "Memes").unwrap();
+        // the open project follows renames and moves (instead of losing its files)
+        let medium = |p: &Path| -> cl_core::MediaRef {
+            serde_json::from_value(serde_json::json!({
+                "id": cl_core::MediaId::new(), "path": p, "kind": "Audio", "duration": 1000000,
+                "width": 0, "height": 0, "fps": null, "has_audio": true, "video_codec": null, "audio_codec": null
+            }))
+            .unwrap()
+        };
+        let follow = |m: &mut cl_core::MediaRef, old: &Path, new: &Path| {
+            for (id, p) in moved_media(std::slice::from_ref(m), old, new) {
+                assert_eq!(id, m.id);
+                m.path = p;
+            }
+            assert!(m.path.is_file(), "{}", m.path.display());
+        };
+        let old = it.path.clone().unwrap();
+        let mut m = medium(&old);
+        let other = medium(Path::new("/elsewhere/boom.wav"));
+        let dest = lib.move_to(&it, Kind::Sound, "Memes").unwrap();
+        assert!(moved_media(std::slice::from_ref(&other), &old, &dest).is_empty());
+        follow(&mut m, &old, &dest);
         let moved = lib.own_items(Kind::Sound).remove(0);
         assert_eq!(moved.folder, "Memes");
         assert!(
             lib.is_favorite(&moved.key),
             "favorite stays when moving"
         );
-        lib.rename(&moved, "Explosion").unwrap();
+        let dest = lib.rename(&moved, "Explosion").unwrap();
+        follow(&mut m, moved.path.as_ref().unwrap(), &dest);
         let renamed = lib.own_items(Kind::Sound).remove(0);
         assert_eq!(renamed.name, "Explosion");
         assert!(lib.visible(
@@ -1243,8 +1278,10 @@ mod tests {
         assert!(lib.in_cat("sfx", &v, "builtin:sfx:pop", "Oberfläche"));
         lib.rename_cat("sfx", &v, "Intros", None).unwrap();
         assert!(lib.in_cat("sfx", "v:Intros", "builtin:sfx:pop", ""));
-        lib.rename_cat("sfx", "p:Gaming", "Games", Some(Kind::Sound))
-            .unwrap();
+        std::fs::write(Kind::Sound.dir().join("Gaming/y.wav"), b"y").unwrap();
+        let mut m = medium(&Kind::Sound.dir().join("Gaming/y.wav"));
+        let (a, b) = lib.rename_cat("sfx", "p:Gaming", "Games", Some(Kind::Sound)).unwrap().unwrap();
+        follow(&mut m, &a, &b);
         assert!(Kind::Sound.dir().join("Games").is_dir());
         // a folder with files of the open project stays
         let used = Kind::Sound.dir().join("Games/x.wav");
