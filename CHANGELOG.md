@@ -8,6 +8,24 @@
 ### English
 
 **New**
+
+**Improved**
+
+**Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.15.0 – 2026-11-20
+
+### English
+
+**New**
 - **Auto reframe in the export.** When you export in another aspect ratio, "Image" has a third choice next to Fill and Fit: Auto reframe moves the crop along with the action in the picture. Your project stays as it is.
 
 **Improved**
