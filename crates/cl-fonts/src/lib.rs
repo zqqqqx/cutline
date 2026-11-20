@@ -1,12 +1,12 @@
-//! Schriftarten-Import und -Bibliothek.
+//! Font import and library.
 //!
-//! Cutline importiert Schriftdateien direkt, statt nur systemweit installierte Schriften
-//! anzubieten: per Dialog, Drag & Drop oder überwachtem Ordner.
-//! Das geht global oder nur für ein Projekt.
+//! Cutline imports font files directly instead of only offering fonts installed system-wide:
+//! via dialog, drag & drop or a watched folder.
+//! This works globally or for one project only.
 //!
-//! Unterstützt: TTF, OTF, TTC/OTC (Collections), WOFF (wird beim Import nach TTF/OTF
-//! entpackt), Variable Fonts (Achsen werden ausgelesen) und Farb-Fonts (COLR/sbix/CBDT/SVG).
-//! WOFF2 wird erkannt und mit klarer Meldung abgelehnt. Die Unterstützung folgt in Phase 1.
+//! Supported: TTF, OTF, TTC/OTC (collections), WOFF (unpacked to TTF/OTF on
+//! import), variable fonts (axes are read) and color fonts (COLR/sbix/CBDT/SVG).
+//! WOFF2 is detected and rejected with a clear message. Support follows in phase 1.
 
 use std::collections::{BTreeMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -60,7 +60,7 @@ impl FontFormat {
     }
 }
 
-/// Dateiendungen für den Import-Dialog.
+/// File extensions for the import dialog.
 pub const FONT_EXTENSIONS: &[&str] = &["ttf", "otf", "ttc", "otc", "woff", "woff2"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -76,7 +76,7 @@ pub enum Embedding {
     Installable,
     Editable,
     PreviewAndPrint,
-    /// Lizenz verbietet Einbettung (Hinweis in der UI, Export nur als gerenderte Pixel).
+    /// License forbids embedding (hint in the UI, export only as rendered pixels).
     Restricted,
 }
 
@@ -101,7 +101,7 @@ impl FaceInfo {
     }
 }
 
-/// Liest alle Schriftschnitte einer Datei (auch Collections und WOFF).
+/// Reads all faces of a file (also collections and WOFF).
 pub fn inspect(data: &[u8]) -> Result<Vec<FaceInfo>> {
     let owned;
     let sfnt: &[u8] = match FontFormat::detect(data).ok_or(FontError::UnknownFormat)? {
@@ -194,19 +194,19 @@ fn be_u32(d: &[u8], o: usize) -> Result<u32> {
         .ok_or_else(|| FontError::Corrupt("WOFF zu kurz".into()))
 }
 
-/// Entpackt WOFF 1.0 in eine normale SFNT-Datei (TTF/OTF).
+/// Unpacks WOFF 1.0 into a normal SFNT file (TTF/OTF).
 pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
     if d.get(0..4) != Some(b"wOFF") {
         return Err(FontError::UnknownFormat);
     }
     let flavor = be_u32(d, 4)?;
     let num = be_u16(d, 12)? as usize;
-    // 0 oder mehr Tabellen, als die 16-Bit-Kopffelder fassen: keine gültige Schrift
+    // 0 or more tables than the 16-bit header fields hold: not a valid font
     if num == 0 || num > 4095 {
         return Err(FontError::Corrupt("WOFF-Tabellenzahl".into()));
     }
-    // Längen stammen aus der Datei: ohne Grenze für die SUMME reichen viele Einträge auf denselben
-    // kleinen zlib-Block für Hunderte GB Speicher
+    // lengths come from the file: without a limit on the SUM many entries pointing to the same
+    // small zlib block reach hundreds of GB of memory
     let mut total = 0u64;
     for i in 0..num {
         total += be_u32(d, 44 + i * 20 + 12)? as u64;
@@ -227,7 +227,7 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
             .ok_or_else(|| FontError::Corrupt("WOFF-Tabelle außerhalb".into()))?;
         let data = if comp < orig {
             let mut out = Vec::with_capacity(orig);
-            // höchstens orig + 1 Bytes entpacken (Zip-Bombe); zu lang fällt unten auf
+            // unpack at most orig + 1 bytes (zip bomb); too long shows up below
             flate2::read::ZlibDecoder::new(src)
                 .take(orig as u64 + 1)
                 .read_to_end(&mut out)
@@ -283,18 +283,18 @@ pub struct ImportReport {
     pub duplicate: bool,
 }
 
-/// Verzeichnis mit importierten Schriften (global oder projektbezogen).
+/// Directory with imported fonts (global or per project).
 #[derive(Debug, Default)]
 pub struct FontLibrary {
     root: PathBuf,
     faces: Vec<LibraryFace>,
     hashes: HashSet<u64>,
-    /// Dateien, die beim Scannen nicht gelesen werden konnten (Pfad, Grund).
+    /// Files that could not be read while scanning (path, reason).
     pub errors: Vec<(PathBuf, String)>,
 }
 
-/// Inhaltliche Identität einer Schriftdatei: gleiche Schnitte = Duplikat,
-/// auch wenn die Datei anders verpackt ist (z. B. WOFF statt TTF).
+/// Content identity of a font file: same faces = duplicate,
+/// even if the file is packed differently (e.g. WOFF instead of TTF).
 fn identity(infos: &[FaceInfo]) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for i in infos {
@@ -331,7 +331,7 @@ fn sanitize(s: &str) -> String {
 }
 
 impl FontLibrary {
-    /// Öffnet (und legt bei Bedarf an) eine Bibliothek und liest alle Schriften darin.
+    /// Opens (and creates if needed) a library and reads all fonts in it.
     pub fn open(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
         std::fs::create_dir_all(&root)?;
@@ -347,7 +347,7 @@ impl FontLibrary {
         &self.root
     }
 
-    /// Ordner neu einlesen (für Hot-Reload, wenn Dateien von außen hineinkopiert wurden).
+    /// Re-read the folder (for hot reload when files were copied in from outside).
     pub fn rescan(&mut self) -> Result<()> {
         self.faces.clear();
         self.hashes.clear();
@@ -373,14 +373,14 @@ impl FontLibrary {
                         info,
                     }));
                 }
-                Err(FontError::UnknownFormat) => {} // fremde Dateien ignorieren
+                Err(FontError::UnknownFormat) => {} // ignore foreign files
                 Err(e) => self.errors.push((path, e.to_string())),
             }
         }
         Ok(())
     }
 
-    /// Importiert eine Schriftdatei: prüfen, WOFF entpacken, Duplikate erkennen, ablegen.
+    /// Imports a font file: check, unpack WOFF, detect duplicates, store.
     pub fn import_file(&mut self, src: &Path) -> Result<ImportReport> {
         let data = std::fs::read(src)?;
         let stem = src
@@ -446,7 +446,7 @@ impl FontLibrary {
         &self.faces
     }
 
-    /// Familien → Schnitte, alphabetisch.
+    /// Families → faces, alphabetical.
     pub fn families(&self) -> BTreeMap<String, Vec<&LibraryFace>> {
         let mut m: BTreeMap<String, Vec<&LibraryFace>> = BTreeMap::new();
         for f in &self.faces {
@@ -458,7 +458,7 @@ impl FontLibrary {
         m
     }
 
-    /// Bevorzugter Schnitt einer Familie (Regular/400, nicht kursiv).
+    /// Preferred face of a family (Regular/400, not italic).
     pub fn regular_face(&self, family: &str) -> Option<&LibraryFace> {
         self.faces
             .iter()
@@ -466,7 +466,7 @@ impl FontLibrary {
             .min_by_key(|f| (f.info.italic, (f.info.weight as i32 - 400).abs()))
     }
 
-    /// Entfernt alle Dateien einer Familie aus der Bibliothek.
+    /// Removes all files of a family from the library.
     pub fn remove_family(&mut self, family: &str) -> Result<usize> {
         let paths: HashSet<PathBuf> = self
             .faces
@@ -481,7 +481,7 @@ impl FontLibrary {
         Ok(paths.len())
     }
 
-    /// Welche der benötigten Familien fehlen (für den Dialog „Fehlende Schriften“)?
+    /// Which of the required families are missing (for the „Fehlende Schriften“ dialog)?
     pub fn missing<'a>(
         &self,
         needed: impl IntoIterator<Item = &'a str>,
@@ -499,14 +499,14 @@ impl FontLibrary {
     }
 }
 
-/// Ober- und Unterlänge der Schrift in Pixeln (beide positiv), für die Lage der Grundlinie.
+/// Ascent and descent of the font in pixels (both positive), for the baseline position.
 pub fn v_metrics(data: &[u8], index: u32, size: f32) -> Option<(f32, f32)> {
     let face = ttf_parser::Face::parse(data, index).ok()?;
     let k = size / face.units_per_em() as f32;
     Some((face.ascender() as f32 * k, -(face.descender() as f32) * k))
 }
 
-/// Misst Textbreite in Pixeln (Advance-Breiten, ohne Kerning) – für Zeilenumbruch beim Export.
+/// Measures text width in pixels (advance widths, without kerning) – for line wrapping on export.
 pub fn text_width(data: &[u8], index: u32, size: f32, text: &str) -> Option<f32> {
     let face = ttf_parser::Face::parse(data, index).ok()?;
     let upem = face.units_per_em() as f32;
@@ -527,12 +527,12 @@ pub fn text_width(data: &[u8], index: u32, size: f32, text: &str) -> Option<f32>
     )
 }
 
-/// Bricht Text wortweise auf `max_width` um (bestehende Zeilenumbrüche bleiben erhalten).
+/// Wraps text word by word at `max_width` (existing line breaks are kept).
 pub fn wrap_text(data: &[u8], index: u32, size: f32, text: &str, max_width: f32) -> String {
     let mut lines = Vec::new();
     for para in text.split('\n') {
         let mut line = String::new();
-        // An einzelnen Leerzeichen trennen: Mehrfach-Leerzeichen (z. B. „D E R  F I L M“) bleiben
+        // split at single spaces: multiple spaces (e.g. "D E R  F I L M") stay
         for word in para.split(' ') {
             let candidate = if line.is_empty() {
                 word.to_string()
@@ -553,7 +553,7 @@ pub fn wrap_text(data: &[u8], index: u32, size: f32, text: &str, max_width: f32)
     lines.join("\n")
 }
 
-/// Typische System-Schriftordner (nur zum Auflisten, nicht zum Kopieren).
+/// Typical system font folders (only for listing, not for copying).
 pub fn system_font_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     if cfg!(windows) {
@@ -582,7 +582,7 @@ pub fn system_font_dirs() -> Vec<PathBuf> {
     v
 }
 
-/// Familiennamen aller Systemschriften (rekursiv, Fehler werden übersprungen).
+/// Family names of all system fonts (recursive, errors are skipped).
 pub fn system_families() -> HashSet<String> {
     fn walk(dir: &Path, out: &mut HashSet<String>, depth: u8) {
         let Ok(rd) = std::fs::read_dir(dir) else {
@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn woff_rejects_huge_table() {
-        // ein Tabelleneintrag mit Originallänge 4 GiB
+        // a table entry with an original length of 4 GiB
         let mut d = vec![0u8; 64];
         d[0..4].copy_from_slice(b"wOFF");
         d[12..14].copy_from_slice(&1u16.to_be_bytes());
@@ -631,7 +631,7 @@ mod tests {
     #[test]
     fn woff_limits_the_sum_of_all_tables() {
         use std::io::Write;
-        // 100 Einträge auf denselben kleinen Block, der auf je 1 MB aufgeht: zusammen über der Grenze
+        // 100 entries on the same small block that inflates to 1 MB each: together above the limit
         let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
         z.write_all(&vec![0u8; 1 << 20]).unwrap();
         let block = z.finish().unwrap();
@@ -652,7 +652,7 @@ mod tests {
         assert!(e.to_string().contains("zu groß"), "{e}");
     }
 
-    /// Eine echte Systemschrift für Tests (Windows: Arial/Impact, Linux: DejaVu).
+    /// A real system font for tests (Windows: Arial/Impact, Linux: DejaVu).
     fn sample_font() -> Option<PathBuf> {
         let candidates = [
             "C:/Windows/Fonts/impact.ttf",
@@ -663,7 +663,7 @@ mod tests {
         candidates.iter().map(PathBuf::from).find(|p| p.is_file())
     }
 
-    /// Baut aus einer SFNT-Datei ein WOFF 1.0 (zum Testen des Entpackens).
+    /// Builds a WOFF 1.0 from an SFNT file (to test unpacking).
     fn sfnt_to_woff(s: &[u8]) -> Vec<u8> {
         use std::io::Write;
         let num = u16::from_be_bytes([s[4], s[5]]) as usize;
@@ -709,7 +709,7 @@ mod tests {
     #[test]
     fn import_ttf_dedupe_woff_and_remove() {
         let Some(src) = sample_font() else {
-            eprintln!("Keine Testschrift gefunden, übersprungen");
+            eprintln!("No test font found, skipped");
             return;
         };
         let dir = tempfile::tempdir().unwrap();
@@ -722,16 +722,16 @@ mod tests {
         assert!(lib.families().contains_key(&family));
         assert!(rep.added[0].glyph_count > 100);
 
-        // Zweiter Import derselben Datei: Duplikat, nichts kopiert.
+        // second import of the same file: duplicate, nothing copied.
         assert!(lib.import_file(&src).unwrap().duplicate);
 
-        // Als WOFF verpackt → wird erkannt, entpackt und ist wieder ein Duplikat.
+        // packed as WOFF → detected, unpacked and again a duplicate.
         let woff = sfnt_to_woff(&std::fs::read(&src).unwrap());
         assert_eq!(FontFormat::detect(&woff), Some(FontFormat::Woff));
         assert_eq!(inspect(&woff).unwrap()[0].family, family);
         assert!(lib.import_bytes(&woff, "x").unwrap().duplicate);
 
-        // Neu öffnen (Hot-Reload) findet die Schrift wieder.
+        // reopening (hot reload) finds the font again.
         let lib2 = FontLibrary::open(dir.path()).unwrap();
         assert!(lib2.regular_face(&family).is_some());
 
@@ -776,7 +776,7 @@ mod tests {
         for d in [&b""[..], b"tr", b"true", b"OTTO\0\0", b"ttcf", b"wOFF", b"\0\x01\0\0garbage-garbage"] {
             assert!(inspect(d).is_err(), "{d:?}");
         }
-        // WOFF: Tabelle außerhalb, kaputtes zlib, falsche Länge, 0 Tabellen
+        // WOFF: table outside, broken zlib, wrong length, 0 tables
         let woff = |num: u16, off: u32, comp: u32, orig: u32, tail: &[u8]| {
             let mut d = vec![0u8; 64];
             d[0..4].copy_from_slice(b"wOFF");
@@ -799,7 +799,7 @@ mod tests {
             let _ = woff_to_sfnt(&d);
             assert!(inspect(&d).is_err());
         }
-        // abgeschnittene echte Schrift
+        // truncated real font
         let Some(src) = sample_font() else { return };
         let data = std::fs::read(src).unwrap();
         for cut in [12, 100, 1000, data.len() / 2] {
@@ -807,7 +807,7 @@ mod tests {
             let _ = text_width(&data[..cut], 0, 20.0, "Hallo");
         }
         assert!(inspect(&data).is_ok());
-        assert_eq!(text_width(&data, 99, 20.0, "x"), None, "Index außerhalb");
+        assert_eq!(text_width(&data, 99, 20.0, "x"), None, "index out of range");
         assert_eq!(text_width(b"kaputt", 0, 20.0, "x"), None);
     }
 
@@ -818,7 +818,7 @@ mod tests {
         assert_eq!(wrap_text(&d, 0, 40.0, "", 100.0), "");
         assert_eq!(wrap_text(&d, 0, 40.0, "a\n\nb", 1000.0), "a\n\nb");
         assert_eq!(wrap_text(&d, 0, 40.0, "D E R  F I L M", 10_000.0), "D E R  F I L M");
-        // Breite 0: jedes Wort eine Zeile, kein Wort verschwindet
+        // width 0: every word one line, no word disappears
         let w = wrap_text(&d, 0, 40.0, "eins zwei drei", 0.0);
         assert_eq!(w, "eins\nzwei\ndrei");
         let long = "Donaudampfschifffahrtsgesellschaft";
@@ -837,7 +837,7 @@ mod tests {
         assert_eq!(sanitize("Ä b-c"), "Ä_b-c");
         assert!(!sanitize(&"a/".repeat(100)).contains('/'));
         let dir = tempfile::tempdir().unwrap();
-        // fremde Dateien werden ignoriert, kaputte Schriften gemeldet, Unterordner übersprungen
+        // foreign files are ignored, broken fonts reported, subfolders skipped
         std::fs::write(dir.path().join("liesmich.txt"), b"hallo").unwrap();
         std::fs::write(dir.path().join("kaputt.ttf"), b"\0\x01\0\0 kaputt").unwrap();
         std::fs::create_dir(dir.path().join("ordner.ttf")).unwrap();
