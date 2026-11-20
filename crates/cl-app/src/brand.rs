@@ -374,7 +374,7 @@ mod tests {
         assert!(copy_logo(&home.path().join("x.txt")).is_err());
         app.brand.logo = Some(logo.clone());
         assert!(app.action_enabled("brand_logo"));
-        let id = app.insert_logo().expect("Logo-Clip");
+        let id = app.insert_logo().expect("logo clip");
         let (t, c) = app.project.find_clip(id).unwrap();
         assert!(t.kind == TrackKind::Video && !t.main);
         assert_eq!((c.start, c.duration), (Time::ZERO, Time::from_secs_f64(10.0)));

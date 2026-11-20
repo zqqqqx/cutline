@@ -1081,7 +1081,7 @@ mod tests {
         let home = placed.clone();
         assert!(ctx.data(|d| d.get_temp::<GridDrop>(grid_drop_id())).is_none());
         frame(true, &mut placed);
-        let drop = ctx.data(|d| d.get_temp::<GridDrop>(grid_drop_id())).expect("Ziel");
+        let drop = ctx.data(|d| d.get_temp::<GridDrop>(grid_drop_id())).expect("target");
         assert_eq!(drop.0, "k0");
         let target = home.iter().position(|(_, p)| p.x <= 300.0 && p.x + 100.0 >= 300.0 && p.y <= 40.0).expect("place under the pointer");
         assert_eq!(drop.1, keys.get(target + 1).cloned(), "lands before the successor");

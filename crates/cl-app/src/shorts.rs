@@ -864,7 +864,7 @@ mod tests {
     }
 
     fn clip(p: &Project, id: ClipId) -> &Clip {
-        p.find_clip(id).expect("Clip da").1
+        p.find_clip(id).expect("clip present").1
     }
 
     /// Visible rect of an image clip at clip time `t` (x0, y0, x1, y1 from the frame center)

@@ -1327,7 +1327,7 @@ mod tests {
         }
         let (a, b) = channel();
         tx.send(Msg::Sync(a, true)).unwrap();
-        b.recv_timeout(Duration::from_secs(10)).expect("Schreib-Thread lebt");
+        b.recv_timeout(Duration::from_secs(10)).expect("writer thread alive");
     }
 
     #[test]
