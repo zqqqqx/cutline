@@ -1,5 +1,5 @@
-//! Eigene, minimalistische Steuerelemente: Regler (2-px-Schiene, kleiner Knopf, Wert
-//! rechts direkt editierbar), Schalter, Keyframe-Raute, Segment-Umschalter und Kacheln.
+//! Own minimalist controls: slider (2 px track, small knob, value
+//! directly editable on the right), toggle, keyframe diamond, segmented control and tiles.
 
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -8,8 +8,8 @@ use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText, Sense, Stroke};
 
 use crate::theme::{self, icon};
 
-/// Ergebnis eines Reglers: `changed` = Wert hat sich bewegt (Vorschau),
-/// `commit` = Geste abgeschlossen (in den Verlauf schreiben).
+/// Result of a slider: `changed` = the value moved (preview),
+/// `commit` = gesture finished (write to the history).
 #[derive(Default, Clone, Copy)]
 pub struct Edit {
     pub changed: bool,
@@ -30,7 +30,7 @@ pub struct Slider<'a> {
     log: bool,
     suffix: &'a str,
     decimals: usize,
-    /// Anzeige-Faktor (z. B. 100 für Prozent)
+    /// Display factor (e.g. 100 for percent)
     display: f32,
 }
 
@@ -88,8 +88,8 @@ impl<'a> Slider<'a> {
 
     pub fn show(self, ui: &mut egui::Ui) -> Edit {
         let mut out = Edit::default();
-        // Wertfeld so breit wie der längste Wert („-60.0 dB“); sonst wächst es und schiebt die
-        // Keyframe-Raute rechts aus dem Inspektor (sah aus wie ein „<“)
+        // Value field as wide as the longest value („-60.0 dB“); otherwise it grows and pushes the
+        // keyframe diamond out of the inspector on the right (looked like a „<“)
         let font = egui::TextStyle::Button.resolve(ui.style());
         let text_w = |v: f32| {
             let t = format!("{:.*}{}", self.decimals, v * self.display, self.suffix);
@@ -112,9 +112,9 @@ impl<'a> Slider<'a> {
         if resp.drag_stopped() || resp.clicked() {
             out.commit = true;
         }
-        // Gehaltener Griff: ändert sich beim Ziehen der Aufbau darüber (z. B. erscheint ein
-        // Zurücksetzen-Knopf), bekommt der Regler eine neue ID und egui verliert das Ziehen.
-        // Deshalb merkt sich der Regler den Druckpunkt und folgt der Maus, bis sie loslässt.
+        // Held knob: if the layout above changes while dragging (e.g. a reset button
+        // appears), the slider gets a new ID and egui loses the drag.
+        // So the slider remembers the press point and follows the mouse until it is released.
         let grab = egui::Id::new("slider-grab");
         let origin = ui.input(|i| i.pointer.press_origin());
         if resp.drag_started() || resp.is_pointer_button_down_on() {
@@ -123,8 +123,8 @@ impl<'a> Slider<'a> {
             }
         }
         let held = ui.data(|d| d.get_temp::<(egui::Pos2, egui::LayerId)>(grab));
-        // nur der Regler unter dem Druckpunkt, in derselben Ebene (kein verdeckter Regler
-        // dahinter) und nur für genau diesen Mausdruck
+        // only the slider under the press point, in the same layer (no hidden slider
+        // behind it) and only for exactly this mouse press
         let down = ui.input(|i| i.pointer.primary_down());
         if held.is_some_and(|(o, l)| rect.contains(o) && l == ui.layer_id() && (!down || origin == Some(o))) {
             if down {
@@ -140,7 +140,7 @@ impl<'a> Slider<'a> {
                 out.commit = true;
             }
         } else if held.is_some() && !down {
-            // losgelassen, ohne dass der Regler noch unter dem Druckpunkt liegt
+            // released without the slider still lying under the press point
             ui.data_mut(|d| d.remove::<(egui::Pos2, egui::LayerId)>(grab));
         }
         if resp.double_clicked() {
@@ -153,13 +153,13 @@ impl<'a> Slider<'a> {
         let p = ui.painter();
         let (a, b) = (*self.range.start(), *self.range.end());
         p.rect_filled(track, 1.0, theme::BG_HOVER());
-        // Füllung ab 0 (bipolar) bzw. ab Anfang
+        // Fill from 0 (bipolar) or from the start
         let zero_n = if a < 0.0 && b > 0.0 {
             self.to_norm(0.0)
         } else {
             0.0
         };
-        // Werte außerhalb des Bereichs (z. B. alte +20 dB) bleiben stehen, bis man sie ändert
+        // values outside the range (e.g. old +20 dB) stay until they are changed
         let n = self.to_norm(*self.value).clamp(0.0, 1.0);
         let (fa, fb) = (zero_n.min(n), zero_n.max(n));
         let fill = Rect::from_min_max(
@@ -185,7 +185,7 @@ impl<'a> Slider<'a> {
         if hot {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        // Wert: direkt editierbar
+        // Value: directly editable
         let mut shown = *self.value * self.display;
         let before = shown;
         let decimals = self.decimals;
@@ -210,9 +210,9 @@ impl<'a> Slider<'a> {
             ui.data_mut(|d| d.insert_temp(dv.id, shown));
         }
         if dv.drag_stopped() || dv.lost_focus() {
-            // Enter meldet nur den Fokusverlust, die Zahl kam schon beim Tippen: Sie gilt auch für
-            // Aufrufer, die ihren Wert erst hier übernehmen (sonst verwarf Enter die Eingabe).
-            // Esc verwirft: der Wert vom Beginn des Tippens kommt zurück.
+            // Enter only reports the focus loss, the number already came while typing: it also applies to
+            // callers that only take their value here (otherwise Enter discarded the input).
+            // Esc discards: the value from the start of typing comes back.
             let (typed, began) = ui.data_mut(|d| (d.remove_temp::<f32>(dv.id), d.remove_temp::<f32>(start)));
             let undo = began.filter(|_| field_esc(ui.ctx()));
             if let Some(v) = last_typed(typed, dv.changed(), undo) {
@@ -225,16 +225,16 @@ impl<'a> Slider<'a> {
     }
 }
 
-/// Wert eines Wertfelds beim Verlassen: bei Esc der Wert vom Beginn des Tippens (`undo`), sonst die
-/// zuletzt getippte Zahl, wenn sie in diesem Bild nicht ohnehin gemeldet wurde.
+/// Value of a value field on leaving: on Esc the value from the start of typing (`undo`), otherwise the
+/// last typed number if it was not reported in this frame anyway.
 fn last_typed(typed: Option<f32>, changed_now: bool, undo: Option<f32>) -> Option<f32> {
     undo.or(typed.filter(|_| !changed_now))
 }
 
-/// Die App hat Esc in diesem Bild einem Feld zugesprochen und die Taste dafür verbraucht (damit das
-/// Kürzel „Auswahl aufheben" nicht greift) – das Feld selbst sähe sie sonst nicht mehr.
+/// The app assigned Esc to a field in this frame and consumed the key for it (so that the
+/// „Auswahl aufheben" shortcut does not fire) – otherwise the field itself would no longer see it.
 pub fn mark_field_esc(ctx: &egui::Context) {
-    let now = ctx.cumulative_pass_nr(); // vor data_mut: beides sperrt den Kontext
+    let now = ctx.cumulative_pass_nr(); // before data_mut: both lock the context
     ctx.data_mut(|d| d.insert_temp(egui::Id::new("field_esc"), now));
 }
 
@@ -243,7 +243,7 @@ fn field_esc(ctx: &egui::Context) -> bool {
         || ctx.data(|d| d.get_temp::<u64>(egui::Id::new("field_esc"))) == Some(ctx.cumulative_pass_nr())
 }
 
-/// Schalter (Pill). Gibt `true` zurück, wenn umgeschaltet wurde.
+/// Toggle (pill). Returns `true` if it was toggled.
 pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> bool {
     let (rect, resp) = ui.allocate_exact_size(vec2(28.0, 16.0), Sense::click());
     if resp.clicked() {
@@ -252,7 +252,7 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> bool {
     let t = theme::fade(ui.ctx(), resp.id, *on, theme::MOTION);
     let p = ui.painter();
     let bg = if *on { theme::ACCENT() } else { theme::BG_HOVER() };
-    // Pille: Radius = halbe Höhe (16 px), bewusst ganz rund
+    // pill: radius = half the height (16 px), fully round on purpose
     p.rect_filled(rect, 8.0, bg);
     let x = egui::lerp(rect.left() + 8.0..=rect.right() - 8.0, t);
     p.circle_filled(
@@ -267,8 +267,8 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> bool {
     resp.clicked()
 }
 
-/// Schalter mit Text rechts daneben, statt Checkbox (deren leeres Kästchen ist auf den
-/// Karten kaum zu sehen). Der Text schaltet mit; `changed()` wie bei `ui.checkbox`.
+/// Toggle with text to its right, instead of a checkbox (whose empty box is hardly visible
+/// on the cards). The text toggles too; `changed()` as with `ui.checkbox`.
 pub fn check(ui: &mut egui::Ui, on: &mut bool, text: impl Into<egui::WidgetText>) -> egui::Response {
     ui.horizontal(|ui| {
         let flipped = toggle(ui, on);
@@ -284,7 +284,7 @@ pub fn check(ui: &mut egui::Ui, on: &mut bool, text: impl Into<egui::WidgetText>
     .inner
 }
 
-/// Zeile: Label links, Schalter rechts.
+/// Row: label on the left, toggle on the right.
 pub fn toggle_row(ui: &mut egui::Ui, label: &str, on: &mut bool) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -303,15 +303,15 @@ pub fn toggle_row(ui: &mut egui::Ui, label: &str, on: &mut bool) -> bool {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kf {
-    /// Eigenschaft hat keine Keyframes
+    /// The property has no keyframes
     None,
-    /// Keyframes vorhanden, aber nicht am Playhead
+    /// Keyframes present, but not at the playhead
     Elsewhere,
-    /// Keyframe genau am Playhead
+    /// Keyframe exactly at the playhead
     Here,
 }
 
-/// Keyframe-Raute; Klick setzt bzw. entfernt den Keyframe am Playhead.
+/// Keyframe diamond; a click sets or removes the keyframe at the playhead.
 pub fn kf_button(ui: &mut egui::Ui, state: Kf) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
     let c = rect.center();
@@ -343,19 +343,19 @@ pub fn kf_button(ui: &mut egui::Ui, state: Kf) -> egui::Response {
     }))
 }
 
-/// Segment-Umschalter (gleich breite Felder). Gibt `true` bei Änderung zurück.
+/// Segmented control (equally wide fields). Returns `true` on change.
 pub fn segmented(ui: &mut egui::Ui, items: &[&str], sel: &mut usize) -> bool {
     segmented_some(ui, items, sel, &[])
 }
 
-/// Wie [`segmented`]; Felder mit `false` in `enabled` sind ausgegraut und nicht wählbar.
+/// Like [`segmented`]; fields with `false` in `enabled` are grayed out and not selectable.
 pub fn segmented_some(ui: &mut egui::Ui, items: &[&str], sel: &mut usize, enabled: &[bool]) -> bool {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 24.0), Sense::hover());
     ui.painter().rect_filled(rect, theme::R_CARD, theme::BG_INPUT());
     let font = egui::FontId::proportional(theme::FS_UI);
     let texts: Vec<String> = items.iter().map(|it| crate::tr(*it)).collect();
-    // Breite je Segment nach Textlänge; Restplatz gleichmäßig verteilt
+    // Width per segment by text length; the remaining room spread evenly
     let need: Vec<f32> = texts
         .iter()
         .map(|t| ui.fonts(|f| f.layout_no_wrap(t.clone(), font.clone(), Color32::WHITE).size().x) + 14.0)
@@ -372,7 +372,7 @@ pub fn segmented_some(ui: &mut egui::Ui, items: &[&str], sel: &mut usize, enable
             Rect::from_min_size(pos2(x - cw, rect.top()), vec2(cw, rect.height())).shrink(2.0)
         })
         .collect();
-    // Markierung gleitet zum gewählten Feld (Stand als Feldnummer: Größenänderungen gleiten nicht)
+    // The marker glides to the chosen field (state as field number: size changes do not glide)
     let at = theme::glide(ui.ctx(), ui.id().with(("seg-mark", items.len())), *sel as f32, theme::MOTION);
     if let (Some(a), Some(b)) = (rects.get(at.floor() as usize), rects.get((at.ceil() as usize).min(rects.len().saturating_sub(1)))) {
         let f = at.fract();
@@ -393,7 +393,7 @@ pub fn segmented_some(ui: &mut egui::Ui, items: &[&str], sel: &mut usize, enable
             egui::Align2::CENTER_CENTER,
             t,
             font.clone(),
-            // aktiv: neutrale Fläche + heller Text (kein Akzent-Text)
+            // active: neutral area + light text (no accent text)
             if active { theme::TEXT() } else if on { theme::TEXT_DIM() } else { theme::TEXT_FAINT() },
         );
         if extra < 0.0 {
@@ -407,9 +407,9 @@ pub fn segmented_some(ui: &mut egui::Ui, items: &[&str], sel: &mut usize, enable
     changed
 }
 
-/// Spalten und Kachelbreite eines Rasters: so viele Spalten, dass jede Kachel mindestens `min_w` breit ist;
-/// würde eine Kachel dabei breiter als 1,5 × `min_w` (schmale Leiste, eine Riesenkachel), eine Spalte mehr,
-/// solange die Kacheln noch 0,8 × `min_w` breit bleiben.
+/// Columns and tile width of a grid: so many columns that each tile is at least `min_w` wide;
+/// if a tile would then be wider than 1.5 × `min_w` (narrow bar, one giant tile), one more column,
+/// as long as the tiles stay 0.8 × `min_w` wide.
 pub fn grid_cols(avail: f32, min_w: f32, gap: f32) -> (usize, f32) {
     let width = |cols: usize| ((avail - gap * (cols as f32 - 1.0)) / cols as f32).floor();
     let cols = ((avail + gap) / (min_w + gap)).floor().max(1.0) as usize;
@@ -420,15 +420,15 @@ pub fn grid_cols(avail: f32, min_w: f32, gap: f32) -> (usize, f32) {
     }
 }
 
-/// Wirklich nutzbare Breite eines Rasters: höchstens bis zum sichtbaren rechten Rand (`clip_right`).
-/// Eine zu breite Zeile davor (Suchleiste, Ordner-Chips) dehnt `available_width` über den Rand,
-/// dann würde die letzte Spalte abgeschnitten.
+/// Really usable width of a grid: at most up to the visible right edge (`clip_right`).
+/// A too wide row before it (search bar, folder chips) stretches `available_width` beyond the edge,
+/// then the last column would be cut off.
 pub fn grid_avail(available: f32, left: f32, clip_right: f32) -> f32 {
     available.min(clip_right - left).max(1.0)
 }
 
-/// Kachel-Raster: berechnet Spalten und ruft `tile` für jedes sichtbare Element mit seinem Rechteck.
-/// Zeilen außerhalb des sichtbaren Bereichs belegen nur ihren Platz (Pakete mit hunderten Kacheln).
+/// Tile grid: computes the columns and calls `tile` for each visible element with its rect.
+/// Rows outside the visible area only take up their space (packs with hundreds of tiles).
 pub fn grid<T>(
     ui: &mut egui::Ui,
     items: &[T],
@@ -438,7 +438,7 @@ pub fn grid<T>(
     mut tile: impl FnMut(&mut egui::Ui, Rect, &T),
 ) {
     let gap = 8.0;
-    // Kacheln zeichnen 2 px über ihren Rand (Hover/Auswahl): so viel vom sichtbaren Rand abziehen
+    // tiles draw 2 px beyond their edge (hover/selection): subtract that much from the visible edge
     let avail = grid_avail(ui.available_width(), ui.cursor().left(), ui.clip_rect().right() - 2.0);
     let (cols, w) = grid_cols(avail, min_w, gap);
     let h = (w / aspect).round();
@@ -460,7 +460,7 @@ pub fn grid<T>(
         }
         return;
     };
-    // Mit Reihenfolge: erst alle Zeilen belegen, dann jede Kachel an ihren Platz (gleitend)
+    // With an order: first allocate all rows, then each tile at its place (gliding)
     let rows: Vec<Rect> = items
         .chunks(cols)
         .map(|_| {
@@ -474,7 +474,7 @@ pub fn grid<T>(
     };
     let cell = vec2(w + gap, rows.get(1).map_or(h + label_h + gap, |r| r.top() - first.top()));
     let slot_pos = |s: usize| vec2((s % cols) as f32 * cell.x, (s / cols) as f32 * cell.y);
-    // Ziehen im Bearbeiten-Modus: die übrigen rücken zur Seite, der gezogene liegt blass in der Lücke
+    // Dragging in edit mode: the others move aside, the dragged one lies faded in the gap
     let held = egui::DragAndDrop::payload::<ReorderPayload>(ui.ctx());
     let from = held.and_then(|p| order.keys[..order.movable].iter().position(|k| *k == p.0)).filter(|_| order.editing);
     let area = Rect::from_min_max(first.min, rows.last().map_or(first.max, |r| r.max));
@@ -491,7 +491,7 @@ pub fn grid<T>(
     let now = ui.input(|i| i.time);
     let store = ui.id().with("grid-glide");
     let mut glides = ui.data_mut(|d| d.get_temp::<GridGlides>(store)).unwrap_or_default();
-    // andere Spaltenzahl (Breite geändert): sofort neu umbrechen, nicht gleiten
+    // another column count (width changed): rewrap at once, do not glide
     let fresh = glides.cols != cols;
     let mut next = GridGlides { cols, at: HashMap::with_capacity(items.len()) };
     let mut moving = false;
@@ -516,9 +516,9 @@ pub fn grid<T>(
     ui.data_mut(|d| d.insert_temp(store, next));
 }
 
-/// Für das nächste [`grid`]: Schlüssel je Eintrag (in Anzeigereihenfolge), davon die ersten
-/// `movable` verschiebbar; `editing` = Bearbeiten-Modus (Ziehen macht Platz). Mit Schlüsseln
-/// gleiten Kacheln an ihren neuen Platz, wenn sich die Reihenfolge ändert (Ablegen, Anpinnen).
+/// For the next [`grid`]: key per entry (in display order), of which the first
+/// `movable` can be moved; `editing` = edit mode (dragging makes room). With keys,
+/// tiles glide to their new place when the order changes (drop, pin).
 #[derive(Clone, Default)]
 pub struct GridOrder {
     pub keys: std::sync::Arc<Vec<String>>,
@@ -530,10 +530,10 @@ pub fn grid_order_id() -> egui::Id {
     egui::Id::new("grid-order")
 }
 
-/// Nutzlast beim Umsortieren (Schlüssel des Eintrags); die Zeitleiste nimmt sie nicht an.
+/// Payload when reordering (key of the entry); the timeline does not accept it.
 pub struct ReorderPayload(pub String);
 
-/// Ziel beim Ziehen, von [`grid`] gesetzt: gezogener Schlüssel, landet vor diesem (bzw. am Ende)
+/// Target when dragging, set by [`grid`]: the dragged key lands before this one (or at the end)
 #[derive(Clone, Default)]
 pub struct GridDrop(pub String, pub Option<String>);
 
@@ -541,7 +541,7 @@ pub fn grid_drop_id() -> egui::Id {
     egui::Id::new("grid-drop")
 }
 
-/// Gleiten einer Kachel zwischen zwei Plätzen (relativ zur ersten Kachel)
+/// Gliding of a tile between two places (relative to the first tile)
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct SlotGlide {
     from: egui::Vec2,
@@ -563,8 +563,8 @@ struct GridGlides {
     at: HashMap<String, SlotGlide>,
 }
 
-/// Anzeigeplatz je Eintrag, während Eintrag `from` an Platz `to` gezogen wird: die übrigen rücken
-/// zusammen und lassen dort die Lücke (in der der gezogene Eintrag liegt).
+/// Display place per entry while entry `from` is dragged to place `to`: the others move
+/// together and leave the gap there (in which the dragged entry lies).
 pub fn gap_slots(n: usize, from: usize, to: usize) -> Vec<usize> {
     (0..n)
         .map(|i| {
@@ -581,14 +581,14 @@ pub fn gap_slots(n: usize, from: usize, to: usize) -> Vec<usize> {
         .collect()
 }
 
-/// Platz im Raster unter dem Zeiger (`p` relativ zur ersten Kachel), begrenzt auf `0..n`
+/// Place in the grid under the pointer (`p` relative to the first tile), clamped to `0..n`
 pub fn slot_at(p: egui::Vec2, cols: usize, cell: egui::Vec2, n: usize) -> usize {
     let col = ((p.x / cell.x).floor().max(0.0) as usize).min(cols.max(1) - 1);
     let row = (p.y / cell.y).floor().max(0.0) as usize;
     (row * cols + col).min(n.saturating_sub(1))
 }
 
-/// Ablegen: vor welchem Schlüssel landet `keys[from]` auf Platz `to` (`None` = ans Ende)?
+/// Drop: before which key does `keys[from]` land at place `to` (`None` = at the end)?
 pub fn gap_before(keys: &[String], from: usize, to: usize) -> Option<String> {
     let mut v: Vec<&String> = keys.iter().collect();
     let k = v.remove(from);
@@ -596,19 +596,19 @@ pub fn gap_before(keys: &[String], from: usize, to: usize) -> Option<String> {
     v.get(to + 1).map(|s| s.to_string())
 }
 
-/// Fügt dieses Klick-Ereignis einer Kachel ein? `clicks`: 0 = kein Klick, sonst 1/2/3 (Doppel-/
-/// Dreifachklick). `plus_only`: Klick auf die Fläche fügt nicht ein (z. B. Sounds: spielt ab), nur
-/// „+“ oder Doppelklick. Ein Doppelklick fügt nur EINMAL ein: sein erster Klick wirkt schon.
+/// Does this click event of a tile insert? `clicks`: 0 = no click, otherwise 1/2/3 (double/
+/// triple click). `plus_only`: a click on the area does not insert (e.g. sounds: plays), only
+/// „+“ or a double-click. A double-click inserts only ONCE: its first click already acts.
 pub fn adds(clicks: u8, on_plus: bool, plus_only: bool) -> bool {
     match clicks {
         1 => !plus_only || on_plus,
-        // zweiter Klick: nur einfügen, wenn der erste es noch nicht tat
+        // second click: only insert if the first did not already
         2 => plus_only && !on_plus,
         _ => false,
     }
 }
 
-/// [`adds`] für eine Antwort.
+/// [`adds`] for a response.
 pub fn tile_adds(resp: &egui::Response, on_plus: bool, plus_only: bool) -> bool {
     let clicks = if resp.triple_clicked() {
         3
@@ -620,7 +620,7 @@ pub fn tile_adds(resp: &egui::Response, on_plus: bool, plus_only: bool) -> bool 
     adds(clicks, on_plus, plus_only)
 }
 
-/// Standard-Kachel: Fläche + Name darunter; zeichnet Hover/Auswahl. `draw` malt den Inhalt.
+/// Default tile: area + name below; draws hover/selection. `draw` paints the content.
 pub fn tile(
     ui: &mut egui::Ui,
     id: egui::Id,
@@ -632,8 +632,8 @@ pub fn tile(
     tile_tip(ui, id, r, label, "", selected, draw)
 }
 
-/// Wie [`tile`], mit einer zweiten, gedimmten Tooltip-Zeile `sub` (z. B. Ordner) unter dem Namen –
-/// beides in EINEM Tooltip.
+/// Like [`tile`], with a second, dimmed tooltip line `sub` (e.g. folder) below the name –
+/// both in ONE tooltip.
 pub fn tile_tip(
     ui: &mut egui::Ui,
     id: egui::Id,
@@ -665,14 +665,14 @@ pub fn tile_tip(
         );
     }
     if resp.hovered() && !ui.data(|d| d.get_temp::<bool>(no_plus_id()).unwrap_or(false)) {
-        // „+“ zum direkten Hinzufügen (nicht beim Umsortieren)
+        // „+“ for adding directly (not while reordering)
         let plus = Rect::from_min_size(area.right_bottom() - vec2(22.0, 22.0), vec2(18.0, 18.0));
         p.circle_filled(plus.center(), 9.0, theme::ACCENT());
         p.text(
             plus.center(),
             egui::Align2::CENTER_CENTER,
             icon::PLUS,
-            // Icon-Glyphe im 18-px-Kreis
+            // icon glyph in the 18 px circle
             egui::FontId::proportional(11.0),
             theme::ACCENT_INK(),
         );
@@ -694,11 +694,11 @@ pub fn tile_tip(
     if label.is_empty() {
         resp = tip(resp, None);
     } else {
-        // eine Zeile, zu lange Namen mit „…“ gekürzt; voller Name im Tooltip
+        // one line, too long names shortened with „…“; full name in the tooltip
         let full = theme::icon_arrows(&crate::tr(label));
         let font = egui::FontId::proportional(theme::FS_HINT);
         let shown = theme::elide(&full, r.width(), |t| theme::text_width(ui.ctx(), t, font.clone()));
-        // Name oben (gekürzt oder mit Zusatzzeile), Zusatz gedimmt darunter: ein Tooltip
+        // name on top (shortened or with an extra line), extra dimmed below: one tooltip
         resp = tip(resp, (shown != full || !sub.is_empty()).then_some(full.as_str()));
         let g = p.layout_no_wrap(
             shown,
@@ -719,20 +719,20 @@ pub fn tile_tip(
     resp
 }
 
-/// Merker „Kacheln ohne „+“ zeichnen“ (Umsortieren in `library_ui`)
+/// Flag: draw tiles without „+“ (reordering in `library_ui`)
 pub fn no_plus_id() -> egui::Id {
     egui::Id::new("tile-no-plus")
 }
 
-/// Kachel-Klick traf das „+“ unten rechts?
+/// Did the tile click hit the „+“ at the bottom right?
 pub fn hit_plus(resp: &egui::Response, r: Rect, label_h: f32) -> bool {
     let area_br = pos2(r.right(), r.bottom() - label_h);
     resp.interact_pointer_pos()
         .is_some_and(|p| p.x > area_br.x - 26.0 && p.y > area_br.y - 26.0 && p.y <= area_br.y)
 }
 
-/// Farbfeld mit Popup-Wähler; hat das Brand Kit Farben, stehen sie als Reihe daneben (ein Klick
-/// übernimmt die Farbe, die Deckkraft bleibt).
+/// Color field with a popup picker; if the Brand Kit has colors, they stand next to it as a row (a click
+/// takes over the color, the opacity stays).
 pub fn color_button(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
     let brand = crate::brand::colors(ui.ctx());
     if brand.is_empty() {
@@ -778,29 +778,29 @@ fn color_picker(ui: &mut egui::Ui, rgba: &mut [u8; 4]) -> bool {
     false
 }
 
-// ------------------------------------------------------------ Ladezustände
+// ------------------------------------------------------------ loading states
 
-/// Lauflinie: Lage des wandernden Stücks (Anfang, Ende als Anteil 0…1) zur Zeit `t`.
-/// Ohne Animationen steht die ganze Linie still.
+/// Running line: position of the moving piece (start, end as fraction 0…1) at time `t`.
+/// Without animations the whole line stands still.
 pub fn busy_segment(t: f64, moving: bool) -> (f32, f32) {
     if !moving {
         return (0.0, 1.0);
     }
     const LEN: f32 = 0.3;
-    // 1,4 s je Durchlauf, ruhig und gleichmäßig
+    // 1.4 s per pass, calm and even
     let x = (t / 1.4).fract() as f32 * (1.0 + LEN) - LEN;
     (x.max(0.0), (x + LEN).min(1.0))
 }
 
-/// Schimmer auf einem Platzhalter: Mitte des hellen Bandes (Anteil, darf über die Ränder laufen)
-/// `age` Sekunden nach dem Erscheinen; `None` = ruhige Fläche (noch zu früh, zu lange oder ohne
-/// Animationen – ein Bild, das nie kommt, lässt die Oberfläche nicht ewig neu zeichnen).
+/// Shimmer on a placeholder: center of the light band (fraction, may run over the edges)
+/// `age` seconds after appearing; `None` = calm area (still too early, too long or without
+/// animations – an image that never comes does not make the UI repaint forever).
 pub fn shimmer_at(age: f64, moving: bool) -> Option<f32> {
     (moving && (theme::LOAD_DELAY..6.0).contains(&age))
         .then(|| (((age - theme::LOAD_DELAY) / 1.6).fract() as f32) * 1.6 - 0.3)
 }
 
-/// Fortschrittslinie (bekannte Dauer): dünn, Akzentfarbe, folgt dem Wert weich.
+/// Progress line (known duration): thin, accent color, follows the value smoothly.
 pub fn progress_line(p: &egui::Painter, id: egui::Id, rect: Rect, frac: f32) {
     let shown = theme::glide(p.ctx(), id.with("progress"), frac.clamp(0.0, 1.0), theme::MOTION_SLOW);
     let r = rect.height() / 2.0;
@@ -809,8 +809,8 @@ pub fn progress_line(p: &egui::Painter, id: egui::Id, rect: Rect, frac: f32) {
     p.rect_filled(fill, r, theme::ACCENT());
 }
 
-/// Lauflinie (unbekannte Dauer): ein ruhig wanderndes Stück in Akzentfarbe; ohne Animationen
-/// eine stehende, gedämpfte Linie.
+/// Running line (unknown duration): a calmly moving piece in accent color; without animations
+/// a still, muted line.
 pub fn busy_line(p: &egui::Painter, rect: Rect) {
     let moving = theme::animations_on();
     let r = rect.height() / 2.0;
@@ -824,21 +824,21 @@ pub fn busy_line(p: &egui::Painter, rect: Rect) {
     }
 }
 
-/// Abstand bis zum nächsten Bild für eine laufende Aufgabe: Lauflinie flüssig (nur solange sie
-/// sichtbar ist und animiert), Fortschritt ändert sich langsam (~10 Bilder/s genügen).
+/// Time until the next frame for a running task: running line smooth (only while it is
+/// visible and animated), progress changes slowly (~10 frames/s are enough).
 pub fn line_repaint_gap(busy: bool, animating: bool) -> Option<std::time::Duration> {
     animating.then(|| std::time::Duration::from_millis(if busy { 16 } else { 100 }))
 }
 
-/// Platzhalter in Zielgröße, solange Inhalt (Bild, Wellenform …) fehlt: ruhige Fläche mit sehr
-/// dezentem Schimmer. `false` = wartet schon lange (Inhalt kommt wohl nicht; Aufrufer zeigt dann
-/// sein Ersatz-Symbol).
+/// Placeholder at target size while content (image, waveform …) is missing: calm area with a very
+/// subtle shimmer. `false` = has been waiting long (content probably will not come; the caller then shows
+/// its substitute icon).
 pub fn skeleton(p: &egui::Painter, id: egui::Id, rect: Rect, radius: f32) -> bool {
     let ctx = p.ctx();
     let id = id.with("skeleton");
     let (now, pass) = (ctx.input(|i| i.time), ctx.cumulative_pass_nr());
     let (since, last) = ctx.data(|d| d.get_temp::<(f64, u64)>(id)).unwrap_or((now, pass));
-    // länger nicht gezeichnet: neu beginnen
+    // not drawn for a while: start over
     let since = if last + 1 < pass { now } else { since };
     ctx.data_mut(|d| d.insert_temp(id, (since, pass)));
     let age = now - since;
@@ -846,7 +846,7 @@ pub fn skeleton(p: &egui::Painter, id: egui::Id, rect: Rect, radius: f32) -> boo
     if let Some(x) = shimmer_at(age, theme::animations_on()) {
         let cx = rect.left() + x * rect.width();
         let band = Rect::from_center_size(egui::pos2(cx, rect.center().y), vec2(rect.width() * 0.35, rect.height()));
-        // weiche Kanten: drei gestaffelte Streifen
+        // soft edges: three staggered stripes
         for (k, a) in [(1.0, 5u8), (0.6, 5), (0.3, 6)] {
             p.with_clip_rect(rect.intersect(p.clip_rect())).rect_filled(
                 Rect::from_center_size(band.center(), vec2(band.width() * k, band.height())),
@@ -861,20 +861,20 @@ pub fn skeleton(p: &egui::Painter, id: egui::Id, rect: Rect, radius: f32) -> boo
     age < 6.0
 }
 
-/// Inhalt einer Kachel, der gerade eintrifft: Deckkraft 0…1. Was schon beim Öffnen da ist, steht
-/// sofort; was nachkommt, blendet einmal ein (Zustand je `id`).
+/// Content of a tile that is just arriving: opacity 0…1. What is already there on opening shows
+/// at once; what comes later fades in once (state per `id`).
 pub fn reveal(ctx: &egui::Context, id: egui::Id, ready: bool) -> f32 {
     theme::fade(ctx, id.with("reveal"), ready, theme::MOTION_FAST)
 }
 
-/// Bild einer Kachel: fehlt es noch, ein Platzhalter (nach langer Wartezeit `glyph`); trifft es
-/// ein, blendet es über dem Platzhalter ein. `tex`: (Textur, Bildgröße, uv-Ausschnitt) – das Bild
-/// füllt die Fläche (Ränder abgeschnitten).
+/// Image of a tile: if still missing, a placeholder (after a long wait `glyph`); when it
+/// arrives, it fades in above the placeholder. `tex`: (texture, image size, uv cutout) – the image
+/// fills the area (edges cut off).
 pub fn tile_image(p: &egui::Painter, id: egui::Id, a: Rect, tex: Option<(egui::TextureId, egui::Vec2, Rect)>, glyph: &str) {
     let k = reveal(p.ctx(), id, tex.is_some());
     let Some((tid, ts, src)) = tex else {
         if !skeleton(p, id, a, theme::R_CARD) && !glyph.is_empty() {
-            // Icon-Glyphe als Platzhalter
+            // icon glyph as a placeholder
             p.text(a.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(22.0), theme::TEXT_DIM());
         }
         return;
@@ -894,7 +894,7 @@ pub fn tile_image(p: &egui::Painter, id: egui::Id, a: Rect, tex: Option<(egui::T
     p.add(egui::epaint::RectShape::filled(a, theme::R_CARD, Color32::WHITE.gamma_multiply(k)).with_texture(tid, uv));
 }
 
-/// Linie einer laufenden Aufgabe in `rect`: Fortschritt, sobald einer gemeldet wird, sonst Lauflinie.
+/// Line of a running task in `rect`: progress as soon as one is reported, otherwise a running line.
 pub fn task_line(p: &egui::Painter, id: egui::Id, rect: Rect, progress: f32) {
     if progress > 0.0 {
         progress_line(p, id, rect, progress);
@@ -903,8 +903,8 @@ pub fn task_line(p: &egui::Painter, id: egui::Id, rect: Rect, progress: f32) {
     }
 }
 
-/// Zeile mit Lauflinie unter einem Element (Suchfeld, Liste): belegt ihre Höhe immer (kein
-/// Springen), zeigt die Linie erst nach 150 ms Wartezeit und mindestens 300 ms lang.
+/// Row with a running line below an element (search field, list): always takes its height (no
+/// jumping), shows the line only after 150 ms of waiting and for at least 300 ms.
 pub fn busy_row(ui: &mut egui::Ui, id: egui::Id, busy: bool) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 2.0), Sense::hover());
     if theme::loading(ui.ctx(), id, busy) {
@@ -928,21 +928,21 @@ mod tests {
     #[test]
     fn a_double_click_inserts_only_once() {
         use super::adds;
-        // Ereignisse eines Doppelklicks: erst ein Klick, dann der zweite (Doppel-)Klick
+        // events of a double-click: first a click, then the second (double) click
         let count = |on_plus, plus_only| [1u8, 2].iter().filter(|&&c| adds(c, on_plus, plus_only)).count();
-        // Klick fügt ein (Effekte, Filter, Übergänge, Texte, Elemente)
+        // a click inserts (effects, filters, transitions, texts, elements)
         assert_eq!(count(false, false), 1);
         assert_eq!(count(true, false), 1);
-        // nur „+“ oder Doppelklick (Sounds, Medien): auf „+“ und auf der Fläche je einmal
+        // only „+“ or double-click (sounds, media): once each on „+“ and on the area
         assert_eq!(count(true, true), 1);
         assert_eq!(count(false, true), 1);
-        // Einzelklick auf die Fläche fügt dort nicht ein, Dreifachklick nicht noch einmal
+        // a single click on the area does not insert there, a triple click does not insert again
         assert!(!adds(1, false, true) && !adds(3, false, false) && !adds(0, true, false));
     }
 
     #[test]
     fn grid_stays_inside_visible_width() {
-        // Raster beginnt bei x = 100, sichtbar bis 400: 300 px, auch wenn die Zeile 320 meldet
+        // grid starts at x = 100, visible up to 400: 300 px, even if the row reports 320
         assert_eq!(grid_avail(320.0, 100.0, 400.0), 300.0);
         assert_eq!(grid_avail(250.0, 100.0, 400.0), 250.0);
         for min_w in [70.0, 84.0, 120.0] {
@@ -956,14 +956,14 @@ mod tests {
 
     #[test]
     fn grid_never_makes_giant_tiles() {
-        // schmale Leiste (Text-Vorlagen, ~232 px): zwei Spalten statt einer 232er-Kachel
+        // narrow bar (text templates, ~232 px): two columns instead of one 232 px tile
         let (c, w) = grid_cols(232.0, 120.0, 8.0);
         assert_eq!(c, 2);
         assert!(w >= 0.8 * 120.0 && 2.0 * w + 8.0 <= 232.0);
-        // normale Breiten bleiben wie bisher
+        // normal widths stay as before
         assert_eq!(grid_cols(400.0, 120.0, 8.0).0, 3);
         assert_eq!(grid_cols(300.0, 70.0, 8.0).0, 3);
-        // nichts passt: eine Spalte in voller Breite
+        // nothing fits: one column at full width
         assert_eq!(grid_cols(80.0, 120.0, 8.0), (1, 80.0));
         for avail in (60..900).step_by(7).map(|a| a as f32) {
             let (c, w) = grid_cols(avail, 100.0, 8.0);
@@ -971,8 +971,8 @@ mod tests {
         }
     }
 
-    /// Messung (von Hand): Bildzeit der Oberfläche mit 300 Platzhalter-Kacheln (Schimmer läuft)
-    /// und Lauflinie, inkl. Tessellieren. `cargo test --release -p cl-app -- --ignored placeholder_frame_time --nocapture`
+    /// Measurement (by hand): UI frame time with 300 placeholder tiles (shimmer running)
+    /// and a running line, incl. tessellation. `cargo test --release -p cl-app -- --ignored placeholder_frame_time --nocapture`
     #[test]
     #[ignore]
     fn placeholder_frame_time() {
@@ -1010,32 +1010,32 @@ mod tests {
     #[test]
     fn dragging_makes_room_at_the_target() {
         use super::{gap_before, gap_slots, slot_at};
-        // ohne Bewegung (an den eigenen Platz): alles bleibt
+        // without movement (to its own place): everything stays
         assert_eq!(gap_slots(5, 2, 2), vec![0, 1, 2, 3, 4]);
-        // Eintrag 0 nach Platz 3: 1..3 rücken nach vorn, der gezogene liegt in der Lücke
+        // entry 0 to place 3: 1..3 move forward, the dragged one lies in the gap
         assert_eq!(gap_slots(5, 0, 3), vec![3, 0, 1, 2, 4]);
-        // Eintrag 4 nach vorn: alle davor rücken einen Platz weiter
+        // entry 4 to the front: all before it move one place on
         assert_eq!(gap_slots(5, 4, 0), vec![1, 2, 3, 4, 0]);
-        // jeder Platz genau einmal belegt
+        // every place taken exactly once
         for (from, to) in [(0, 4), (3, 1), (2, 0), (1, 1)] {
             let mut s = gap_slots(5, from, to);
             assert_eq!(s[from], to);
             s.sort();
             assert_eq!(s, vec![0, 1, 2, 3, 4]);
         }
-        // Ablegen landet vor dem Nachfolger in der neuen Reihenfolge, am Ende ohne Nachfolger
+        // dropping lands before the successor in the new order, at the end without a successor
         let k: Vec<String> = ["a", "b", "c", "d"].iter().map(|s| s.to_string()).collect();
         assert_eq!(gap_before(&k, 0, 2).as_deref(), Some("d"));
         assert_eq!(gap_before(&k, 3, 0).as_deref(), Some("a"));
         assert_eq!(gap_before(&k, 1, 3), None);
-        assert_eq!(gap_before(&k, 2, 2).as_deref(), Some("d"), "an den eigenen Platz");
-        // Zeiger → Platz: Spalten, Zeilen, Ränder und Ende begrenzt
+        assert_eq!(gap_before(&k, 2, 2).as_deref(), Some("d"), "to its own place");
+        // pointer → place: columns, rows, edges and end clamped
         let cell = vec2(100.0, 80.0);
         assert_eq!(slot_at(vec2(150.0, 10.0), 3, cell, 10), 1);
         assert_eq!(slot_at(vec2(250.0, 90.0), 3, cell, 10), 5);
         assert_eq!(slot_at(vec2(-30.0, -5.0), 3, cell, 10), 0);
-        assert_eq!(slot_at(vec2(900.0, 10.0), 3, cell, 10), 2, "rechts neben der letzten Spalte");
-        assert_eq!(slot_at(vec2(50.0, 900.0), 3, cell, 4), 3, "hinter dem letzten Eintrag");
+        assert_eq!(slot_at(vec2(900.0, 10.0), 3, cell, 10), 2, "right of the last column");
+        assert_eq!(slot_at(vec2(50.0, 900.0), 3, cell, 4), 3, "after the last entry");
     }
 
     #[test]
@@ -1050,8 +1050,8 @@ mod tests {
         assert_eq!(g.at(1.0 + crate::theme::MOTION as f64), vec2(100.0, 80.0), "Ende");
     }
 
-    /// Bearbeiten-Modus im Raster: Ziehen von „a“ über die dritte Kachel lässt die anderen
-    /// aufrücken (Ziel kommt vom Raster), ohne Ziehen stehen alle an ihrem Platz.
+    /// Edit mode in the grid: dragging „a“ over the third tile makes the others
+    /// move up (target comes from the grid), without dragging all stay in place.
     #[test]
     fn grid_with_order_places_tiles_by_drag_target() {
         use super::{grid, grid_drop_id, grid_order_id, GridDrop, GridOrder, ReorderPayload};
@@ -1062,7 +1062,7 @@ mod tests {
             placed.clear();
             let input = eframe::egui::RawInput {
                 screen_rect: Some(eframe::egui::Rect::from_min_size(Default::default(), vec2(400.0, 600.0))),
-                // Zeiger über der dritten Kachel der ersten Zeile
+                // pointer over the third tile of the first row
                 events: vec![eframe::egui::Event::PointerMoved(eframe::egui::pos2(300.0, 40.0))],
                 ..Default::default()
             };
@@ -1083,8 +1083,8 @@ mod tests {
         frame(true, &mut placed);
         let drop = ctx.data(|d| d.get_temp::<GridDrop>(grid_drop_id())).expect("Ziel");
         assert_eq!(drop.0, "k0");
-        let target = home.iter().position(|(_, p)| p.x <= 300.0 && p.x + 100.0 >= 300.0 && p.y <= 40.0).expect("Platz unter dem Zeiger");
-        assert_eq!(drop.1, keys.get(target + 1).cloned(), "landet vor dem Nachfolger");
+        let target = home.iter().position(|(_, p)| p.x <= 300.0 && p.x + 100.0 >= 300.0 && p.y <= 40.0).expect("place under the pointer");
+        assert_eq!(drop.1, keys.get(target + 1).cloned(), "lands before the successor");
     }
 
     #[test]
@@ -1096,7 +1096,7 @@ mod tests {
             screen_rect: Some(eframe::egui::Rect::from_min_size(Default::default(), vec2(400.0, 600.0))),
             ..Default::default()
         };
-        // erstes Bild ist der Mess-Durchgang von egui, gezählt wird das zweite
+        // the first frame is egui's measuring pass, the second one counts
         let _ = ctx.run(input(), |ctx| {
             eframe::egui::CentralPanel::default().show(ctx, |ui| {
                 eframe::egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| super::grid(ui, &items, 70.0, 1.0, 16.0, |_, _, _| {}));
@@ -1111,13 +1111,13 @@ mod tests {
                 height = out.content_size.y;
             });
         });
-        // 300 px hoch, Zeilen ~88 px: nur die paar sichtbaren Zeilen, der Rest belegt nur Platz
+        // 300 px high, rows ~88 px: only the few visible rows, the rest only takes space
         assert!(!built.is_empty() && built.len() <= 30, "{}", built.len());
         assert_eq!(built[0], 0);
-        assert!(height > 300.0 / 6.0 * 80.0, "Inhalt muss so hoch bleiben wie alle Zeilen: {height}");
+        assert!(height > 300.0 / 6.0 * 80.0, "content must stay as high as all rows: {height}");
     }
 
-    /// Enter im Wertfeld: Die getippte Zahl gilt beim Verlassen, außer sie kam im selben Bild schon.
+    /// Enter in a value field: the typed number applies on leaving, unless it already came in the same frame.
     #[test]
     fn enter_keeps_the_typed_number() {
         assert_eq!(super::last_typed(Some(1.5), false, None), Some(1.5));
@@ -1125,8 +1125,8 @@ mod tests {
         assert_eq!(super::last_typed(None, false, None), None);
     }
 
-    /// Esc im Wertfeld: Der Wert vom Beginn des Tippens kommt zurück – auch wenn die App die Taste
-    /// schon verbraucht hat (dann sieht das Feld sie nur über die Markierung).
+    /// Esc in a value field: the value from the start of typing comes back – even if the app already
+    /// consumed the key (then the field only sees it via the marker).
     #[test]
     fn esc_discards_the_typed_number() {
         assert_eq!(super::last_typed(Some(7.0), false, Some(100.0)), Some(100.0));
@@ -1136,6 +1136,6 @@ mod tests {
         super::mark_field_esc(&ctx);
         assert!(super::field_esc(&ctx));
         let _ = ctx.run(Default::default(), |_| {});
-        let _ = ctx.run(Default::default(), |ctx| assert!(!super::field_esc(ctx), "gilt nur für ein Bild"));
+        let _ = ctx.run(Default::default(), |ctx| assert!(!super::field_esc(ctx), "applies to one frame only"));
     }
 }
