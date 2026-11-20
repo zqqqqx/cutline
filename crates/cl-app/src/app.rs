@@ -342,6 +342,8 @@ pub struct App {
     pub exports_for: Option<crate::exports::ExportsList>,
     /// Lock file of the open project (see `take_lock`)
     lock_file: Option<PathBuf>,
+    /// Project file whose lock another running window held when this one opened it: never written
+    pub(crate) locked_out: Option<PathBuf>,
     /// Sound while dragging: (last place, time, stop signal of the running snippet)
     pub scrub: Option<(Time, Instant, Option<Arc<std::sync::atomic::AtomicBool>>)>,
     /// Subtitle whose text field gets the focus in the next frame
@@ -578,6 +580,7 @@ impl App {
             props: None,
             exports_for: None,
             lock_file: None,
+            locked_out: None,
             scrub: None,
             caption_focus: None,
             dialog_error: None,
@@ -2038,7 +2041,11 @@ impl App {
 
     /// Save the project: snapshot to the save thread (serializes and writes
     /// atomically in the background). An error comes later via [`App::poll_saves`].
-    pub fn write_project(&mut self, p: &Path) {
+    /// `false`: refused, another window owns the file (see [`paths::may_write`]).
+    pub fn write_project(&mut self, p: &Path) -> bool {
+        if !paths::may_write(p, self.locked_out.as_deref(), std::process::id()) {
+            return false;
+        }
         self.saver.send(crate::saving::Job {
             kind: crate::saving::Kind::Project,
             path: p.to_path_buf(),
@@ -2048,12 +2055,13 @@ impl App {
         self.saved_revision = self.revision;
         self.last_saved = Some(Instant::now());
         // new project or „Speichern unter“: the lock moves to the new file
-        if self.lock_file.as_deref() != Some(lock_path(p).as_path()) {
+        if self.lock_file.as_deref() != Some(paths::lock_path(p).as_path()) {
             self.release_lock();
             self.take_lock(p);
         }
         self.settings.add_recent(p);
         self.send_project_thumb(p);
+        true
     }
 
     /// Request the cover image for the start page (first frame of the picture tracks).
@@ -2095,7 +2103,10 @@ impl App {
                 .save_file(),
         };
         if let Some(p) = path {
-            self.write_project(&p);
+            if !self.write_project(&p) {
+                self.toast_err("Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet");
+                return;
+            }
             crate::applog::project("gespeichert", &self.project, Some(t0));
             self.toast(format!("{} Gespeichert", icon::CHECK));
             self.project_path = Some(p);
@@ -2115,6 +2126,9 @@ impl App {
         if self.doc.lock().unwrap().revision() != self.revision || self.saver.autosave_paused() {
             return;
         }
+        if self.locked_out.is_some() && self.locked_out == self.project_path {
+            return;
+        }
         static LAST_CHANGE: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
         let mut lc = LAST_CHANGE.lock().unwrap();
         match *lc {
@@ -2125,9 +2139,10 @@ impl App {
                         .project_path
                         .clone()
                         .unwrap_or_else(|| self.default_project_path());
-                    self.write_project(&p);
-                    self.project_path = Some(p);
-                    self.settings.save();
+                    if self.write_project(&p) {
+                        self.project_path = Some(p);
+                        self.settings.save();
+                    }
                 }
             }
             _ => *lc = Some((self.revision, Instant::now())),
@@ -2319,8 +2334,16 @@ impl App {
                 .project_path
                 .clone()
                 .unwrap_or_else(|| self.default_project_path());
-            self.write_project(&p);
-            self.project_path = Some(p);
+            if self.write_project(&p) {
+                self.project_path = Some(p);
+            } else {
+                // another window owns the file: this window's edits go to the backups instead
+                let job = crate::saving::Job { kind: crate::saving::Kind::Project, path: p, project: self.project.clone(), revision: self.revision };
+                if let Some(r) = crate::saving::rescue(&job) {
+                    self.toast_err(format!("Stand gesichert in {}", r.display()));
+                    self.saved_revision = self.revision;
+                }
+            }
         }
         // wait for the save thread: only once the state is on disk may the project close
         // (lock free, editor empty, file moved/renamed)
@@ -2341,11 +2364,15 @@ impl App {
     /// Lock file `<project>.lock` (content: PID): warns when a second window opens the same
     /// project – both would otherwise silently overwrite each other.
     pub(crate) fn take_lock(&mut self, p: &Path) {
-        let lock = lock_path(p);
+        let lock = paths::lock_path(p);
         let me = std::process::id();
         if paths::lock_held_by_other(&lock, me) {
+            // the other window keeps its lock; this one does not write the file (see `write_project`)
             self.toast_err("Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet");
+            self.locked_out = Some(p.to_path_buf());
+            return;
         }
+        self.locked_out = None;
         let _ = std::fs::write(&lock, me.to_string());
         self.lock_file = Some(lock);
     }
@@ -3598,12 +3625,6 @@ impl eframe::App for App {
         }
         crate::applog::session_end();
     }
-}
-
-pub(crate) fn lock_path(p: &Path) -> PathBuf {
-    let mut l = p.as_os_str().to_owned();
-    l.push(".lock");
-    PathBuf::from(l)
 }
 
 /// Fingerprint of all audible properties (tracks, audio clips, volume, speed, audio effects).

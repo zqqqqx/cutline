@@ -188,7 +188,7 @@ fn mcp_save(p: &std::path::Path, d: &cl_core::Document, saved: &mut u64, me: u32
     if d.revision() == *saved {
         return;
     }
-    if paths::lock_held_by_other(&app::lock_path(p), me) {
+    if paths::lock_held_by_other(&paths::lock_path(p), me) {
         eprintln!("Nicht gespeichert: {} ist in einem anderen Cutline-Fenster geöffnet", p.display());
         return;
     }
@@ -210,10 +210,10 @@ fn mcp_save_skips_unchanged_and_locked_projects() {
     assert!(!p.exists());
     d.apply(cl_core::EditOp::AddTrack { kind: cl_core::TrackKind::Audio }, cl_core::OpSource::Ui).unwrap();
     // another running window (this test process, seen from another PID) holds the lock
-    std::fs::write(app::lock_path(&p), me.to_string()).unwrap();
+    std::fs::write(paths::lock_path(&p), me.to_string()).unwrap();
     mcp_save(&p, &d, &mut saved, me + 1);
     assert!(!p.exists());
-    std::fs::remove_file(app::lock_path(&p)).unwrap();
+    std::fs::remove_file(paths::lock_path(&p)).unwrap();
     mcp_save(&p, &d, &mut saved, me + 1);
     assert!(p.exists() && saved == d.revision());
 }

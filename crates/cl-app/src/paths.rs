@@ -155,6 +155,18 @@ pub fn pid_alive(pid: u32) -> bool {
     }
 }
 
+pub fn lock_path(p: &Path) -> PathBuf {
+    let mut l = p.as_os_str().to_owned();
+    l.push(".lock");
+    PathBuf::from(l)
+}
+
+/// May this window write the project file `target`? Not while another running window holds its
+/// lock, and never the file it was locked out of when opening (its state would be stale).
+pub fn may_write(target: &Path, locked_out: Option<&Path>, me: u32) -> bool {
+    locked_out != Some(target) && !lock_held_by_other(&lock_path(target), me)
+}
+
 /// Does the lock file belong to another Cutline window that is still running? Leftover
 /// locks (crash, hard kill) and locks older than 12 h do not count.
 pub fn lock_held_by_other(lock: &Path, me: u32) -> bool {

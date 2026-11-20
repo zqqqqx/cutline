@@ -54,14 +54,21 @@ fn write(job: &Job) -> Result<(), String> {
             if let Some(d) = job.path.parent() {
                 std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
             }
-            crate::paths::write_atomic(&job.path, json).map_err(|e| e.to_string())
+            crate::paths::write_atomic(&job.path, json).map_err(|e| e.to_string())?;
+            // touch our own lock so its 12 h rule means "last saved", not "opened"
+            let lock = crate::paths::lock_path(&job.path);
+            let me = std::process::id().to_string();
+            if std::fs::read_to_string(&lock).is_ok_and(|s| s.trim() == me) {
+                let _ = std::fs::write(&lock, me);
+            }
+            Ok(())
         }
         Kind::Backup { keep } => crate::project_tools::write_backup(&job.path, &json, keep).map(|_| ()).map_err(|e| e.to_string()),
     }
 }
 
 /// Failed project file: rescue the state into the backups
-fn rescue(job: &Job) -> Option<PathBuf> {
+pub(crate) fn rescue(job: &Job) -> Option<PathBuf> {
     let dir = crate::project_tools::backup_dir(&job.path);
     std::fs::create_dir_all(&dir).ok()?;
     let p = dir.join(format!("unsaved-{}.cutline", crate::paths::unix_secs()));
@@ -300,5 +307,46 @@ pub(crate) mod tests {
         app.project_path = Some(good.clone());
         assert!(app.flush_before_leaving());
         assert_eq!(Project::from_json(&std::fs::read_to_string(&good).unwrap()).unwrap().name, "Verlassen");
+    }
+
+    /// A second window on a project that another running window has open keeps its hands off
+    /// the file and the lock; its edits go to the backups, „Speichern unter“ elsewhere works.
+    #[test]
+    fn second_window_never_writes_a_project_open_elsewhere() {
+        let (mut app, home, _g) = test_app();
+        // another running Cutline: a child process that waits on its stdin
+        let mut other = if cfg!(windows) { std::process::Command::new("cmd") } else { std::process::Command::new("cat") };
+        if cfg!(windows) {
+            other.args(["/c", "pause"]);
+        }
+        let mut other = other.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).spawn().unwrap();
+        let p = home.path().join("a.cutline");
+        std::fs::write(&p, Project::new("A").to_json()).unwrap();
+        let lock = crate::paths::lock_path(&p);
+        std::fs::write(&lock, other.id().to_string()).unwrap();
+        app.set_doc(Project::new("B"));
+        app.project_path = Some(p.clone());
+        app.take_lock(&p);
+        assert_eq!(std::fs::read_to_string(&lock).unwrap(), other.id().to_string(), "lock stays with the other window");
+        app.save(false);
+        assert!(app.flush_before_leaving(), "leaving must not get stuck");
+        let _ = other.kill();
+        let _ = other.wait();
+        // even once the other window is gone, the stale state is not written back
+        assert!(!app.write_project(&p));
+        assert_eq!(Project::from_json(&std::fs::read_to_string(&p).unwrap()).unwrap().name, "A");
+        let rescued = std::fs::read_dir(crate::project_tools::backup_dir(&p)).unwrap().flatten().next().unwrap().path();
+        assert_eq!(Project::from_json(&std::fs::read_to_string(rescued).unwrap()).unwrap().name, "B");
+        // another path is written normally and its lock taken; every save refreshes the lock
+        let q = home.path().join("b.cutline");
+        assert!(app.write_project(&q));
+        assert!(app.saver.wait_idle(Duration::from_secs(10)));
+        let ql = crate::paths::lock_path(&q);
+        assert_eq!(std::fs::read_to_string(&ql).unwrap(), std::process::id().to_string());
+        let old = std::time::SystemTime::now() - Duration::from_secs(13 * 3600);
+        std::fs::File::options().write(true).open(&ql).unwrap().set_modified(old).unwrap();
+        assert!(app.write_project(&q));
+        assert!(app.saver.wait_idle(Duration::from_secs(10)));
+        assert!(std::fs::metadata(&ql).unwrap().modified().unwrap().elapsed().unwrap() < Duration::from_secs(3600));
     }
 }
