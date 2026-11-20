@@ -2801,6 +2801,57 @@ fn censor_stays_on_its_subject_after_reframing() {
     std::env::remove_var("CUTLINE_HOME");
 }
 
+/// Nahtstellen: 4 s mit Bildzähler in 4 Teile – jedes Bild genau einmal, keins doppelt oder verloren
+#[test]
+fn split_parts_have_every_frame_exactly_once() {
+    use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    // Bildnummer binär als 8 Streifen à 40 px (weiß = 1, niederwertigstes Bit links)
+    let src = dir.path().join("zaehler.mp4");
+    let st = cl_media::ffmpeg_command()
+        .unwrap()
+        .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=4"])
+        .args(["-vf", "format=gray,geq=lum='if(mod(floor(N/pow(2\\,floor(X/40)))\\,2)\\,255\\,0)'", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv444p"])
+        .arg(&src)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    let m = cl_media::probe(&src).unwrap();
+    let mut p = Project::new("Zaehler");
+    (p.settings.width, p.settings.height, p.settings.fps) = (320, 180, cl_core::Rational::new(30, 1));
+    let mut t = Track::new(TrackKind::Video);
+    t.main = true;
+    t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0)));
+    p.media.push(m);
+    p.timeline.tracks.push(t);
+    let ctx = egui::Context::default();
+    let mut d = split_dialog(&p, dir.path(), 4);
+    frame(&mut d, &ctx, &p, true);
+    drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
+    let mut seen = Vec::new();
+    for n in 1..=4 {
+        let f = dir.path().join("Zaehler").join(format!("Zaehler – Teil {n:02}.mp4"));
+        let o = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-threads", "2", "-i"])
+            .arg(&f)
+            .args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "gray", "-"])
+            .output()
+            .unwrap();
+        let part: Vec<usize> = o.stdout.chunks_exact(320 * 180).map(|px| (0..8).filter(|b| px[90 * 320 + b * 40 + 20] > 128).map(|b| 1 << b).sum()).collect();
+        eprintln!("Teil {n}: {part:?}");
+        seen.extend(part);
+    }
+    assert_eq!(seen, (0..120).collect::<Vec<_>>());
+    std::env::remove_var("CUTLINE_HOME");
+}
+
 /// Hochkant, in 2 Teile, Zielgröße: alles in einem Export
 #[test]
 fn vertical_split_with_target_size() {
