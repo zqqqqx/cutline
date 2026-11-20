@@ -1434,7 +1434,7 @@ enum Split {
     Markers,
 }
 
-/// Höchstzahl der Teile bei „Anzahl“ und „Länge“
+/// Höchstzahl der Teile (Anzahl, Länge, Marker)
 const SPLIT_MAX: u32 = 50;
 /// Ein kürzerer Rest bei „Länge“ wird dem vorletzten Teil zugeschlagen
 const SPLIT_MIN_REST: Time = Time(3_000_000);
@@ -1468,6 +1468,8 @@ fn split_parts(how: Split, (a, b): (Time, Time), fps: cl_core::Rational, markers
     // Rand nicht auf dem Bildraster: kein Splitterteil zwischen Rand und gerundetem Schnitt
     cuts.retain(|c| c.0 > a.max(snap(a)) && c.0 < b.min(snap(b)));
     cuts.dedup_by_key(|c| c.0);
+    // höchstens SPLIT_MAX Teile (Marker): spätere Schnitte fallen weg, der letzte Teil läuft bis zum Ende
+    cuts.truncate(SPLIT_MAX as usize - 1);
     let starts: Vec<(Time, &str)> = std::iter::once((a, first)).chain(cuts).collect();
     let n = starts.len();
     let digits = n.to_string().len().max(2);
@@ -2513,9 +2515,6 @@ fn split_parts_are_gapless_on_frames_with_names() {
     assert_eq!(split_summary(&v), "40 Teile · je 0:03");
     // 2 Stunden in 1-s-Teilen: nicht 7199 Teile
     assert!(parts(Split::Length(1), 0.0, 7200.0, &[]).len() <= SPLIT_MAX as usize);
-    // dreistellige Nummern gibt es nur noch bei Markern
-    let ms: Vec<cl_core::Marker> = (1..=120).map(|i| cl_core::Marker { id: i, at: s(i as f64), duration: Time::ZERO, name: String::new(), note: String::new(), color: 0 }).collect();
-    assert_eq!(parts(Split::Markers, 0.0, 130.0, &ms)[0].1, "Film – 001.mp4");
     // Länge: Rest ab 3 s bleibt eigener Teil, darunter geht er an den vorletzten
     let v = parts(Split::Length(60), 0.0, 363.0, &[]);
     check(&v, 0.0, 363.0);
@@ -2550,6 +2549,22 @@ fn split_parts_are_gapless_on_frames_with_names() {
         assert_eq!(w[0].0 .1, w[1].0 .0);
         assert_eq!(w[0].0 .1, w[0].0 .1.snap_to_frame(ntsc));
     }
+}
+
+#[test]
+fn split_markers_capped_at_split_max() {
+    let fps = cl_core::Rational::new(30, 1);
+    let s = Time::from_secs_f64;
+    // 200 Marker → 50 Teile; Marker nach dem 49. Schnitt zählen nicht, der letzte Teil läuft bis zum Ende
+    let ms: Vec<cl_core::Marker> = (1..=200).map(|i| cl_core::Marker { id: i, at: s(i as f64), duration: Time::ZERO, name: String::new(), note: String::new(), color: 0 }).collect();
+    let v = split_parts(Split::Markers, (s(0.0), s(210.0)), fps, &ms, "Film", "Teil", "mp4");
+    assert_eq!(v.len(), SPLIT_MAX as usize);
+    assert_eq!((v[0].0 .0, v[48].0, v[49].0 .1), (s(0.0), (s(48.0), s(49.0)), s(210.0)));
+    for w in v.windows(2) {
+        assert_eq!(w[0].0 .1, w[1].0 .0);
+    }
+    assert_eq!((v[0].1.as_str(), v[49].1.as_str()), ("Film – 01.mp4", "Film – 50.mp4"));
+    assert_eq!(split_summary(&v), "50 Teile · 0:01 bis 2:41");
 }
 
 /// Testbild 320×180: roter Kreis (Radius 30) in der Mitte auf grauem 4-px-Schachbrett, 2 s mit Ton
