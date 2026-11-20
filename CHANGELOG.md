@@ -12,13 +12,23 @@
 **Improved**
 
 **Fixed**
-- **No more stutter while proxies are still being made.** When playback ran out of the finished part of a proxy, the picture could fall more than a second behind the sound and the quality dropped. The switch to the original file now happens at the right moment.
 
 ### Deutsch
 
 **Neu**
 
 **Verbessert**
+
+**Behoben**
+
+## 0.15.1 – 2026-11-20
+
+### English
+
+**Fixed**
+- **No more stutter while proxies are still being made.** When playback ran out of the finished part of a proxy, the picture could fall more than a second behind the sound and the quality dropped. The switch to the original file now happens at the right moment.
+
+### Deutsch
 
 **Behoben**
 - **Kein Haken mehr, während Proxys noch entstehen.** Lief die Wiedergabe aus dem fertigen Teil eines Proxys heraus, konnte das Bild über eine Sekunde hinter den Ton fallen und die Qualität sank. Der Wechsel zur Originaldatei kommt jetzt im richtigen Moment.
