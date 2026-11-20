@@ -934,7 +934,9 @@ impl ExportDialog {
                     // Links: Cover/Vorschau
                     ui.vertical(|ui| {
                         ui.set_width(250.0);
-                        let size = vec2(250.0, 250.0 * s.height as f32 / s.width.max(1) as f32).min(vec2(250.0, 300.0));
+                        // im Kasten 250×300 bleiben, ohne das Seitenverhältnis zu verfälschen (9:16 wird schmaler)
+                        let ar = s.height as f32 / s.width.max(1) as f32;
+                        let size = if ar > 1.2 { vec2(300.0 / ar, 300.0) } else { vec2(250.0, 250.0 * ar) };
                         let audio_only = s.format.audio_only();
                         let (rect, _) = ui.allocate_exact_size(if audio_only { vec2(250.0, 0.0) } else { size }, egui::Sense::hover());
                         if !audio_only {
