@@ -34,15 +34,19 @@ fn save(v: &[Export]) {
     let _ = paths::write_atomic(&file(), serde_json::to_string_pretty(v).unwrap_or_default());
 }
 
-/// Record a finished export (the same path replaces the old entry)
-pub fn record(project: &str, project_path: Option<&Path>, path: &Path) {
+/// Record finished exports, e.g. all parts of a group with one load and one save
+/// (the same path replaces the old entry)
+pub fn record_all(project: &str, project_path: Option<&Path>, paths: &[&Path]) {
+    if paths.is_empty() {
+        return;
+    }
     let mut v = load();
-    v.retain(|e| e.path != path);
+    v.retain(|e| !paths.contains(&e.path.as_path()));
     let at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    v.push(Export { project: project.to_string(), path: path.to_path_buf(), at, project_path: project_path.map(Path::to_path_buf) });
+    v.extend(paths.iter().map(|path| Export { project: project.to_string(), path: path.to_path_buf(), at, project_path: project_path.map(Path::to_path_buf) }));
     save(&v);
     RECORDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
@@ -260,9 +264,9 @@ fn exports_are_listed_per_project_and_move_with_the_folder() {
     std::fs::write(a.join("Film.srt"), b"x").unwrap();
     std::fs::write(a.join("fremd.mp4"), b"x").unwrap();
     let (pa, pb) = (a.join("Film.cutline"), b.join("Film.cutline"));
-    record("Film", Some(&pa), &a.join("Film.mp4"));
-    record("Film", Some(&pa), &a.join("Film.mp4"));
-    record("Film", Some(&pa), &a.join("weg.mp4"));
+    record_all("Film", Some(&pa), &[&a.join("Film.mp4")]);
+    record_all("Film", Some(&pa), &[&a.join("Film.mp4")]);
+    record_all("Film", Some(&pa), &[&a.join("weg.mp4")]);
     assert_eq!(for_project("Film", Some(&pa)).len(), 1);
     assert!(for_project("Anderes", None).is_empty());
     // a same-named project elsewhere does not see the exports, an old entry without a path counts by name
