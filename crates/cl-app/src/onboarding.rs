@@ -1,8 +1,8 @@
-//! Einführung beim ersten Start (jederzeit überspringbar) und Rundgang durch den Editor.
+//! Introduction on first start (skippable at any time) and a tour of the editor.
 //!
-//! Einführung: Willkommen → „Wofür nutzt du Cutline?“ → passende Plugins, Modelle und Tipps.
-//! Rundgang: hebt nacheinander die Bereiche des Editors hervor und erklärt sie.
-//! Beides lässt sich über Menü → „Rundgang“ / „Einführung wiederholen“ erneut starten.
+//! Introduction: welcome → „Wofür nutzt du Cutline?“ → matching plugins, models and tips.
+//! Tour: highlights the editor's panels one after another and explains them.
+//! Both can be started again via menu → „Rundgang“ / „Einführung wiederholen“.
 
 use std::collections::BTreeSet;
 
@@ -23,9 +23,9 @@ pub enum Step {
 pub struct Onboard {
     pub step: Step,
     pub uses: BTreeSet<&'static str>,
-    /// Tastenkürzel-Vorlage (Index in `keymap::PRESETS`)
+    /// Shortcut preset (index into `keymap::PRESETS`)
     pub keys: usize,
-    /// Angehakte Empfehlungen (Plugins, Modelle)
+    /// Checked recommendations (plugins, models)
     pub picked: BTreeSet<&'static str>,
     picks_for: Option<BTreeSet<&'static str>>,
 }
@@ -47,7 +47,7 @@ impl Onboard {
     }
 }
 
-/// (ID, Icon, Titel, Beschreibung)
+/// (ID, icon, title, description)
 pub const USES: &[(&str, &str, &str, &str)] = &[
     (
         "gaming",
@@ -95,11 +95,11 @@ pub const USES: &[(&str, &str, &str, &str)] = &[
 
 #[derive(Clone, Copy)]
 enum Act {
-    /// Plugin einschalten
+    /// Switch a plugin on
     Plugin(&'static str),
-    /// Modelle laden
+    /// Download models
     Models(&'static [&'static str]),
-    /// Nur ein Hinweis, wo die Funktion zu finden ist
+    /// Only a hint where to find the feature
     Tip,
 }
 
@@ -256,19 +256,19 @@ fn suggestions(uses: &BTreeSet<&'static str>) -> Vec<&'static Sug> {
         .collect()
 }
 
-/// Rundgang: (Bereich, Titel, Text)
+/// Tour: (panel, title, text)
 pub const TOUR: &[(&str, &str, &str)] = &[
     ("assets", "Medien", "Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Elemente, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an."),
     ("player", "Vorschau", "Zeigt das Bild am Playhead. Clips verschiebst, skalierst und drehst du direkt hier. Leertaste spielt ab, J/K/L spult."),
     ("inspector", "Inspektor", "Alles zum ausgewählten Clip: Bild, Ton, Tempo, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker."),
-    // die Tastenkürzel hängt `tour_overlay` mit der wirklichen Belegung an
+    // `tour_overlay` appends the shortcuts with the real bindings
     ("timeline", "Zeitleiste", "Hier entsteht dein Video. Der Magnet hält die Hauptspur lückenlos."),
     ("tools", "Schnellaktionen", "Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Layout und Thumbnail mit einem Klick."),
     ("export", "Exportieren", "Vorlagen für YouTube, Shorts, TikTok, Instagram und Twitch. Ohne Wasserzeichen, bis 4K."),
     ("menu", "Menü", "Projekte, Vorlagen, Sicherungen, Einstellungen und Tastenkürzel. Den Rundgang findest du hier jederzeit wieder."),
 ];
 
-/// Tastenkürzel im Rundgang-Text zur Zeitleiste: (Aktion, Satzteil)
+/// Shortcuts in the tour text for the timeline: (action, phrase)
 const TOUR_KEYS: &[(&str, &str)] = &[
     ("split", "{} teilt"),
     ("del_left", "{} löscht links vom Playhead"),
@@ -276,16 +276,16 @@ const TOUR_KEYS: &[(&str, &str)] = &[
     ("marker", "{} setzt einen Marker"),
 ];
 
-/// Breite des Rahmens um den gezeigten Bereich im Rundgang
+/// Width of the frame around the shown panel in the tour
 const TOUR_STROKE: f32 = 2.0;
 
-/// Ausschnitt des Rundgangs: etwas Luft um den Bereich, aber nur so weit, dass der Rahmen
-/// (außen herum gezeichnet) ganz in der Fensterfläche bleibt – auch an den Fensterkanten.
+/// Cutout of the tour: some air around the panel, but only so much that the frame
+/// (drawn around the outside) stays fully inside the window area – also at the window edges.
 fn tour_hole(r: Rect, screen: Rect) -> Rect {
     r.expand(4.0).intersect(screen.shrink(TOUR_STROKE))
 }
 
-/// Kachel zum Auswählen (Icon, Titel, kleine Zeile); `on` = ausgewählt.
+/// Tile for selection (icon, title, small line); `on` = selected.
 fn choice_tile(
     ui: &mut egui::Ui,
     size: egui::Vec2,
@@ -307,7 +307,7 @@ fn choice_tile(
         r,
         theme::R_WIN,
         fill,
-        // Fläche hebt sich schon ab: Rand nur noch für die Auswahl
+        // The area already stands out: border only for the selection
         if on { Stroke::new(1.5_f32, theme::ACCENT()) } else { Stroke::NONE },
         egui::StrokeKind::Inside,
     );
@@ -315,7 +315,7 @@ fn choice_tile(
         pos2(r.left() + 22.0, r.center().y),
         Align2::CENTER_CENTER,
         glyph,
-        FontId::proportional(20.0), // Icon-Glyphe der Kachel
+        FontId::proportional(20.0), // icon glyph of the tile
         if on { theme::ACCENT() } else { theme::TEXT_DIM() },
     );
     p.text(
@@ -337,7 +337,7 @@ fn choice_tile(
             pos2(r.right() - 16.0, r.center().y),
             Align2::CENTER_CENTER,
             icon::CHECK_CIRCLE,
-            FontId::proportional(15.0), // Icon-Glyphe (Häkchen)
+            FontId::proportional(15.0), // icon glyph (check mark)
             theme::ACCENT(),
         );
     }
@@ -408,14 +408,14 @@ impl App {
         }
     }
 
-    /// Einführung als Vollbild-Dialog (über allem, blockiert die Oberfläche dahinter).
+    /// Introduction as a fullscreen dialog (above everything, blocks the UI behind it).
     pub fn onboarding(&mut self, ctx: &egui::Context) {
         let Some(mut ob) = self.onboard.take() else {
             return;
         };
         let screen = ctx.screen_rect();
-        // Titelleiste frei lassen: Fenster verschieben, minimieren, maximieren und schließen
-        // bleiben während der Einführung möglich
+        // Leave the title bar free: moving, minimizing, maximizing and closing the window
+        // stay possible during the introduction
         let below_title = Rect::from_min_max(screen.min + vec2(0.0, theme::TITLE_H), screen.max);
         egui::Area::new(Id::new("ob-dim"))
             .order(Order::Foreground)
@@ -427,14 +427,14 @@ impl App {
             });
         let w = (screen.width() - 40.0).min(700.0);
         let h = (screen.height() - 40.0).min(540.0);
-        // 0 = nichts, 1 = überspringen, 2 = fertig, 3 = fertig + Rundgang
+        // 0 = nothing, 1 = skip, 2 = done, 3 = done + tour
         let mut end = 0u8;
         egui::Area::new(Id::new("ob-card")).order(Order::Tooltip).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
             egui::Frame::default()
                 .fill(theme::BG_CARD())
                 .stroke(Stroke::new(1.0_f32, theme::BORDER()))
                 .corner_radius(theme::R_WIN)
-                .inner_margin(28) // Hero-Abstand der Einführung
+                .inner_margin(28) // hero spacing of the introduction
                 .shadow(egui::Shadow { offset: [0, 12], blur: 40, spread: 0, color: Color32::from_black_alpha(160) })
                 .show(ui, |ui| {
                     ui.set_width(w - 56.0);
@@ -454,7 +454,7 @@ impl App {
                         Step::Uses => 1,
                         Step::Suggest => 2,
                     };
-                    // Fortschrittspunkte mittig unter dem Inhalt
+                    // Progress dots centered below the content
                     let row = ui.available_rect_before_wrap();
                     let c = pos2(row.center().x, row.top() + 15.0);
                     for i in 0..3 {
@@ -514,7 +514,7 @@ impl App {
 
     fn suggest_page(&mut self, ui: &mut egui::Ui, ob: &mut Onboard) {
         let list = suggestions(&ob.uses);
-        // Vorauswahl neu setzen, wenn sich die Nutzung geändert hat
+        // Reset the preselection if the usage has changed
         if ob.picks_for.as_ref() != Some(&ob.uses) {
             let m = self.models();
             ob.picked = list
@@ -528,7 +528,7 @@ impl App {
                     Act::Models(ids) => !ids.iter().all(|i| m.installed(i)),
                     Act::Tip => false,
                 })
-                // Downloads und Konten nur vorschlagen, nicht vorab ankreuzen – außer bei klarer Passung
+                // only suggest downloads and accounts, do not pre-check them – except for a clear fit
                 .filter(|s| {
                     !matches!(s.act, Act::Plugin(_))
                         || s.id == "story"
@@ -587,7 +587,7 @@ impl App {
                             pos2(r.left() + 22.0, r.center().y),
                             Align2::CENTER_CENTER,
                             s.icon,
-                            FontId::proportional(18.0), // Icon-Glyphe der Zeile
+                            FontId::proportional(18.0), // icon glyph of the row
                             theme::TEXT_DIM(),
                         );
                         let title = if s.note.is_empty() {
@@ -639,7 +639,7 @@ impl App {
                                     c,
                                     Align2::CENTER_CENTER,
                                     icon::CHECK,
-                                    FontId::proportional(12.0), // Icon-Glyphe im Ankreuzfeld
+                                    FontId::proportional(12.0), // icon glyph in the checkbox
                                     theme::ACCENT_INK(),
                                 );
                             }
@@ -669,7 +669,7 @@ impl App {
                             ui.add_sized(
                                 [28.0, 20.0],
                                 egui::Label::new(
-                                    RichText::new(s.icon).size(15.0) /* Icon-Glyphe */.color(theme::TEXT_DIM()),
+                                    RichText::new(s.icon).size(15.0) /* icon glyph */.color(theme::TEXT_DIM()),
                                 ),
                             );
                             ui.label(RichText::new(crate::tr(s.title)).strong());
@@ -685,7 +685,7 @@ impl App {
             });
     }
 
-    /// Rundgang: Bereich hervorheben, Erklärung daneben.
+    /// Tour: highlight a panel, explanation next to it.
     pub fn tour_overlay(&mut self, ctx: &egui::Context) {
         let Some(i) = self.tour else {
             return;
@@ -697,7 +697,7 @@ impl App {
         let (key, title, text) = TOUR[i];
         let mut body = crate::tr(text);
         if key == "timeline" {
-            // wirkliche Belegung; nicht belegte Aktionen fallen weg
+            // real bindings; unbound actions are dropped
             let keys: Vec<String> = TOUR_KEYS
                 .iter()
                 .map(|(a, s)| (self.key_of(a), s))
@@ -711,8 +711,8 @@ impl App {
 
         let screen = ctx.screen_rect();
         let hole = self.tour_rects.get(key).map(|r| tour_hole(*r, screen));
-        // Titelleiste frei lassen: Fenster verschieben, minimieren, maximieren und schließen
-        // bleiben während der Einführung möglich
+        // Leave the title bar free: moving, minimizing, maximizing and closing the window
+        // stay possible during the introduction
         let below_title = Rect::from_min_max(screen.min + vec2(0.0, theme::TITLE_H), screen.max);
         egui::Area::new(Id::new("tour-dim"))
             .order(Order::Foreground)
@@ -758,7 +758,7 @@ impl App {
                     }
                 }
             });
-        // Erklärung: rechts, links, unten oder oben vom Bereich – wo Platz ist
+        // Explanation: right, left, below or above the panel – wherever there is room
         let size = vec2(330.0, 170.0);
         let pos = hole
             .and_then(|h| {
@@ -895,7 +895,7 @@ fn welcome(ui: &mut egui::Ui) {
                 ui.set_width(cw - 2.0 * theme::PAD_CARD_L as f32);
                 ui.set_min_height(104.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(g).size(22.0) /* Icon-Glyphe der Kachel */.color(theme::TEXT()));
+                    ui.label(RichText::new(g).size(22.0) /* icon glyph of the tile */.color(theme::TEXT()));
                     ui.add_space(4.0);
                     ui.label(RichText::new(crate::tr(t)).strong());
                     ui.label(RichText::new(crate::tr(d)).small().color(theme::TEXT_DIM()));
@@ -977,16 +977,16 @@ mod tests {
     #[test]
     fn tour_frame_stays_inside_the_window() {
         let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(1600.0, 900.0));
-        // Medien-Menü an der linken/oberen/unteren Kante, Inspektor an der rechten
+        // Media menu on the left/top/bottom edge, inspector on the right
         for r in [
             Rect::from_min_max(pos2(0.0, 40.0), pos2(400.0, 900.0)),
             Rect::from_min_max(pos2(1300.0, 0.0), pos2(1600.0, 600.0)),
         ] {
             let h = tour_hole(r, screen);
-            // der ganze Rahmen (außen, TOUR_STROKE breit) liegt im Fenster
+            // the whole frame (outside, TOUR_STROKE wide) lies inside the window
             assert!(screen.contains_rect(h.expand(TOUR_STROKE)), "{h:?}");
         }
-        // Bereich in der Mitte: wie bisher 4 px Luft
+        // Panel in the middle: 4 px of air as before
         let mid = Rect::from_min_max(pos2(400.0, 100.0), pos2(1200.0, 600.0));
         assert_eq!(tour_hole(mid, screen), mid.expand(4.0));
     }

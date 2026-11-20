@@ -1,5 +1,5 @@
-//! Tastenkürzel: Aktionen mit Standardbelegung, eigene Belegungen aus den Einstellungen,
-//! Vorlagen (Cutline, Premiere-ähnlich, Resolve-ähnlich) und die Einstellungsseite zum Ändern.
+//! Shortcuts: actions with default bindings, own bindings from the settings,
+//! presets (Cutline, Premiere-like, Resolve-like) and the settings page for changing them.
 
 use std::collections::BTreeMap;
 
@@ -8,7 +8,7 @@ use eframe::egui::{self, Key, Modifiers, RichText};
 use crate::app::App;
 use crate::theme;
 
-/// Eine Tastenkombination.
+/// A key combination.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Chord {
     pub mods: Modifiers,
@@ -27,14 +27,14 @@ impl Chord {
                 _ => key = Key::from_name(part),
             }
         }
-        // „Ctrl++“ = Plus
+        // „Ctrl++“ = plus
         if key.is_none() && s.ends_with("++") {
             key = Some(Key::Plus);
         }
         Some(Self { mods, key: key? })
     }
 
-    /// Anzeige, z. B. „Strg+Umschalt+Z“ (wird von `tr()` übersetzt)
+    /// Display, e.g. „Strg+Umschalt+Z“ (translated by `tr()`)
     pub fn label(&self) -> String {
         let mut v = Vec::new();
         if self.mods.command {
@@ -64,7 +64,7 @@ impl Chord {
         v.join("+")
     }
 
-    /// Speicherform, z. B. „Ctrl+Shift+Z“
+    /// Storage form, e.g. „Ctrl+Shift+Z“
     pub fn store(&self) -> String {
         let mut v = Vec::new();
         if self.mods.command {
@@ -81,7 +81,7 @@ impl Chord {
     }
 }
 
-/// (Aktion, Beschreibung, Standardbelegungen)
+/// (action, description, default bindings)
 pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("play", "Abspielen / Pause", &["Space"]),
     (
@@ -127,7 +127,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
         "Clip 10 Bilder nach rechts",
         &["Alt+Shift+ArrowRight"],
     ),
-    // kommen meist als Kopier-/Einfügeereignis, nicht als Taste (siehe `App::shortcuts`)
+    // mostly arrive as a copy/paste event, not as a key (see `App::shortcuts`)
     ("copy", "Kopieren", &["Ctrl+C"]),
     ("cut", "Ausschneiden", &["Ctrl+X"]),
     ("paste", "Einfügen", &["Ctrl+V"]),
@@ -151,7 +151,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("snap", "Einrasten", &["N"]),
     ("voiceover", "Einsprechen", &["R"]),
     ("max", "Großer Player", &["F"]),
-    // Lautstärke der Wiedergabe (ohne Standardtaste: M ist „Marker setzen“)
+    // Playback volume (no default key: M is „Marker setzen“)
     ("playback_mute", "Wiedergabe stumm", &[]),
     ("playback_louder", "Wiedergabe lauter", &[]),
     ("playback_quieter", "Wiedergabe leiser", &[]),
@@ -170,7 +170,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("zoom_out", "Oberfläche kleiner", &["Ctrl+Minus"]),
     ("zoom_reset", "Oberfläche 100 %", &["Ctrl+0"]),
     ("escape", "Auswahl aufheben", &["Escape"]),
-    // Menü oben links (Namen wie im Menü)
+    // Menu top left (names as in the menu)
     ("new_project", "Neues Projekt", &[]),
     ("import_project", "Projekt aus anderem Programm importieren …", &[]),
     ("import_fonts", "Schrift importieren …", &[]),
@@ -185,7 +185,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("go_home", "Projektübersicht", &[]),
     ("tour", "Rundgang", &[]),
     ("onboarding", "Einführung wiederholen", &[]),
-    // Schnellaktionen (Menü in der Zeitleiste)
+    // Quick actions (menu in the timeline)
     ("quick_pauses", "Pausen entfernen (Jump Cuts)", &[]),
     ("quick_fillers", "Füllwörter entfernen (äh, ähm, uh, um)", &[]),
     ("quick_ducking", "Musik unter Sprache absenken (Auto-Ducking)", &[]),
@@ -195,7 +195,7 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("quick_speakers", "Sprecher-Aufnahmen importieren …", &[]),
     ("quick_punch", "Zoom-Punch-in am Playhead", &[]),
     ("quick_vertical", "Hochkant-Layout (9:16, Facecam oben)", &[]),
-    // Untermenü „Layout“ (`arrange.rs`); im Menü ohne „Layout: “
+    // „Layout“ submenu (`arrange.rs`); in the menu without „Layout: “
     ("quick_layout_side", "Layout: Nebeneinander", &[]),
     ("quick_layout_stack", "Layout: Übereinander", &[]),
     ("quick_layout_big_left", "Layout: Einer groß, zwei rechts", &[]),
@@ -209,16 +209,16 @@ pub const ACTIONS: &[(&str, &str, &[&str])] = &[
     ("quick_thumbnail", "Thumbnail …", &[]),
     ("quick_recap", "Rückblick aus Markern erstellen", &[]),
     ("censor", "Zensieren …", &[]),
-    // Brand Kit (Einstellungen → Brand Kit)
+    // Brand Kit (Settings → Brand Kit)
     ("brand_logo", "Logo einfügen", &[]),
 ];
 
-/// Name einer Aktion (deutsch, `tr()` übersetzt), leer für unbekannte
+/// Name of an action (German, `tr()` translates), empty for unknown ones
 pub fn name(id: &str) -> &'static str {
     ACTIONS.iter().find(|a| a.0 == id).map_or("", |a| a.1)
 }
 
-/// Symbol einer Aktion (wie in Menüs und Werkzeugleiste), leer ohne
+/// Icon of an action (as in menus and toolbar), empty without one
 pub fn icon(id: &str) -> &'static str {
     use crate::theme::icon as i;
     match id {
@@ -287,10 +287,10 @@ pub fn icon(id: &str) -> &'static str {
     }
 }
 
-/// Befehlssuche: Reihenfolge der Treffer. `items` = (Aktion, Namen, nach denen gesucht wird).
-/// Jedes Wort der Eingabe muss in einem Namen vorkommen (Groß/Klein egal); Aktionen, deren Wörter
-/// alle an einem Wortanfang stehen, kommen zuerst, sonst bleibt die Reihenfolge der Liste.
-/// Leere Eingabe: zuletzt benutzte (`recent`) zuerst, darunter alle übrigen.
+/// Command search: order of the hits. `items` = (action, names to search in).
+/// Each word of the input must occur in a name (case-insensitive); actions whose words
+/// all stand at a word start come first, otherwise the list order stays.
+/// Empty input: recently used (`recent`) first, all others below.
 pub fn search(query: &str, items: &[(&'static str, Vec<String>)], recent: &[&str]) -> Vec<&'static str> {
     let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     if words.is_empty() {
@@ -299,7 +299,7 @@ pub fn search(query: &str, items: &[(&'static str, Vec<String>)], recent: &[&str
         out.extend(rest);
         return out;
     }
-    // 0 = Wortanfang, 1 = Wortmitte, None = fehlt
+    // 0 = word start, 1 = mid-word, None = missing
     let hit = |name: &str, w: &str| -> Option<u8> {
         let n = name.to_lowercase();
         let mut best = None;
@@ -325,7 +325,7 @@ pub fn search(query: &str, items: &[(&'static str, Vec<String>)], recent: &[&str
     ranked.into_iter().map(|r| r.1).collect()
 }
 
-/// Vorlagen: (Name, Abweichungen von der Standardbelegung)
+/// Presets: (name, differences from the default bindings)
 pub const PRESETS: &[(&str, &[(&str, &str)])] = &[
     ("Cutline", &[]),
     (
@@ -350,8 +350,8 @@ pub const PRESETS: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
-/// Wirksame Belegung: eigene Einträge ersetzen die Standardbelegung der Aktion. Eine Standardtaste,
-/// die schon eine eigene Belegung benutzt, entfällt (eine neue Aktion nimmt niemandem seine Taste).
+/// Effective bindings: own entries replace the action's default bindings. A default key
+/// already used by an own binding is dropped (a new action takes nobody's key).
 pub fn bindings(custom: &BTreeMap<String, String>) -> Vec<(Chord, &'static str)> {
     let taken: Vec<Chord> = custom.values().filter_map(|c| Chord::parse(c)).collect();
     let mut v: Vec<(Chord, &'static str)> = Vec::new();
@@ -368,15 +368,15 @@ pub fn bindings(custom: &BTreeMap<String, String>) -> Vec<(Chord, &'static str)>
             ),
         }
     }
-    // Kombinationen mit mehr Modifikatoren zuerst prüfen (Strg+Umschalt+Z vor Strg+Z)
+    // Check combinations with more modifiers first (Ctrl+Shift+Z before Ctrl+Z)
     v.sort_by_key(|(c, _)| {
         std::cmp::Reverse(c.mods.command as u8 + c.mods.shift as u8 + c.mods.alt as u8)
     });
     v
 }
 
-/// Tooltip „Text  (Kürzel)“; ohne belegte Taste nur der Text. Das Wörterbuch übersetzt beide
-/// Teile einzeln, `theme::tip_with_keys` zeigt das Kürzel als Tastenkappe.
+/// Tooltip „Text  (Kürzel)“; without a bound key only the text. The dictionary translates both
+/// parts separately, `theme::tip_with_keys` shows the shortcut as a keycap.
 pub fn with_key(text: &str, key: &str) -> String {
     if key.is_empty() {
         text.to_string()
@@ -387,7 +387,7 @@ pub fn with_key(text: &str, key: &str) -> String {
 
 impl App {
 
-    /// Einstellungsseite „Tastenkürzel“: Belegung ändern (Klick, dann Tasten drücken).
+    /// „Tastenkürzel“ settings page: change a binding (click, then press keys).
     pub fn shortcuts_settings(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label(RichText::new(crate::tr("Vorlage")).color(theme::TEXT_DIM()));
@@ -403,7 +403,7 @@ impl App {
             }
         });
         ui.add_space(6.0);
-        // Aufnahme einer neuen Belegung
+        // Recording a new binding
         if let Some(id) = self.capture_key {
             let got = ui.ctx().input_mut(|i| {
                 let mut r = None;
@@ -441,7 +441,7 @@ impl App {
                             },
                             key,
                         };
-                        // Doppelte Belegung: bei der anderen Aktion entfernen
+                        // Duplicate binding: remove it from the other action
                         let taken: Vec<&str> = bindings(&self.settings.shortcuts)
                             .into_iter()
                             .filter(|(c, a)| *c == ch && *a != id)
@@ -470,7 +470,7 @@ impl App {
                         .map(|(c, _)| c.label())
                         .collect();
                     let capturing = self.capture_key == Some(*id);
-                    // Belegung als Tastenkappen; die ganze Fläche ist der Knopf
+                    // Binding as keycaps; the whole area is the button
                     let r = ui
                         .scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
                             egui::Frame::default()
@@ -531,7 +531,7 @@ mod tests {
     fn tooltip_with_and_without_key() {
         assert_eq!(with_key("Teilen", "Strg+K"), "Teilen  (Strg+K)");
         assert_eq!(with_key("Teilen", ""), "Teilen");
-        // so zerlegt es die Tooltip-Anzeige wieder in Text und Tastenkappe
+        // this is how the tooltip display splits it back into text and keycap
         assert_eq!(with_key("Teilen", "Q").rsplit_once("  ("), Some(("Teilen", "Q)")));
     }
 
@@ -549,7 +549,7 @@ mod tests {
         assert!(b.iter().any(|(c, a)| *a == "split" && c.key == Key::K));
         assert!(!b.iter().any(|(c, a)| *a == "split" && c.key == Key::B));
         assert!(!b.iter().any(|(_, a)| *a == "disable"));
-        // Strg+Umschalt+Z kommt vor Strg+Z
+        // Ctrl+Shift+Z comes before Ctrl+Z
         let redo = b
             .iter()
             .position(|(c, a)| *a == "redo" && c.mods.shift)
@@ -563,8 +563,8 @@ mod tests {
         }
     }
 
-    /// Standard und jede Vorlage: keine Taste für zwei Aktionen, nur bekannte Aktionen,
-    /// jede Belegung lesbar und verlustfrei speicherbar.
+    /// Default and every preset: no key for two actions, only known actions,
+    /// every binding readable and storable without loss.
     #[test]
     fn presets_have_no_conflicts() {
         let ids: Vec<&str> = ACTIONS.iter().map(|a| a.0).collect();
@@ -580,14 +580,14 @@ mod tests {
             let b = bindings(&custom);
             for (i, (c, a)) in b.iter().enumerate() {
                 for (c2, a2) in &b[i + 1..] {
-                    assert!(!(c == c2 && a != a2), "{name}: {} für {a} und {a2}", c.store());
+                    assert!(!(c == c2 && a != a2), "{name}: {} for {a} and {a2}", c.store());
                 }
             }
         }
     }
 
-    /// Befehlssuche: Standard Strg+K, im Premiere-Preset Strg+Umschalt+K (dort teilt Strg+K);
-    /// wer Strg+K schon selbst belegt hat, behält die Taste.
+    /// Command search: default Ctrl+K, in the Premiere preset Ctrl+Shift+K (Ctrl+K splits there);
+    /// whoever already bound Ctrl+K themselves keeps the key.
     #[test]
     fn command_search_keys() {
         let of = |custom: &BTreeMap<String, String>, id: &str| -> Vec<String> {
@@ -598,13 +598,13 @@ mod tests {
             PRESETS[1].1.iter().map(|(a, k)| (a.to_string(), k.to_string())).collect();
         assert_eq!(of(&premiere, "command_search"), ["Ctrl+Shift+K"]);
         assert_eq!(of(&premiere, "split"), ["Ctrl+K"]);
-        // eigene Belegung (z. B. aus dem Premiere-Preset vor 0.13, ohne Eintrag für die Suche)
+        // own binding (e.g. from the Premiere preset before 0.13, without an entry for the search)
         for id in ["split", "marker"] {
             let custom = BTreeMap::from([(id.to_string(), "Ctrl+K".to_string())]);
             assert_eq!(of(&custom, id), ["Ctrl+K"], "{id}");
             assert!(of(&custom, "command_search").is_empty(), "{id}");
         }
-        // eigene Belegung der Suche selbst gilt
+        // an own binding of the search itself applies
         let custom = BTreeMap::from([("command_search".to_string(), "Ctrl+P".to_string())]);
         assert_eq!(of(&custom, "command_search"), ["Ctrl+P"]);
     }
@@ -614,7 +614,7 @@ mod tests {
         let en: std::collections::HashSet<&str> = cl_i18n::ui_entries().into_iter().map(|e| e.0).collect();
         for (id, what, _) in ACTIONS {
             assert_eq!(name(id), *what);
-            assert!(en.contains(what.trim()), "{id}: „{what}“ fehlt in ui.en.tsv");
+            assert!(en.contains(what.trim()), "{id}: „{what}“ missing in ui.en.tsv");
         }
         assert_eq!(name("gibt-es-nicht"), "");
     }
@@ -631,24 +631,24 @@ mod tests {
         .into_iter()
         .map(|(id, n)| (id, vec![n.to_string()]))
         .collect();
-        // Wortanfang vor Wortmitte, sonst Reihenfolge der Liste
+        // word start before mid-word, otherwise list order
         assert_eq!(search("port", &items, &[]), ["a", "b"]);
         assert_eq!(search("EXP", &items, &[]), ["a", "b"]);
-        assert_eq!(search("tieren", &items, &[]), ["a", "b"], "Wortmitte zählt auch");
+        assert_eq!(search("tieren", &items, &[]), ["a", "b"], "mid-word counts too");
         assert_eq!(search("ren", &items, &[]), ["a", "b", "d"]);
         assert_eq!(search("arch", &items, &[]), ["d"]);
-        assert_eq!(search("hiv proj", &items, &[]), ["d"], "mehrere Wörter, beliebige Reihenfolge");
+        assert_eq!(search("hiv proj", &items, &[]), ["d"], "several words, any order");
         assert_eq!(search("bild export", &items, &[]), ["b"]);
         assert_eq!(search("teilen x", &items, &[]), Vec::<&str>::new());
-        // Umlaute wie geschrieben, Groß/Klein egal
+        // Umlauts as written, case-insensitive
         assert_eq!(search("über", &items, &[]), ["e"]);
         assert_eq!(search("ÜBER", &items, &[]), ["e"]);
         assert!(search("xyz", &items, &[]).is_empty());
-        // Wortanfang auch innerhalb des Namens („teilen“) vor Treffern in der Wortmitte
+        // Word start also inside the name („teilen“) before mid-word hits
         let more: Vec<(&'static str, Vec<String>)> =
             vec![("m", vec!["Verteilen".into()]), ("s", vec!["Am Playhead teilen".into()])];
         assert_eq!(search("teil", &more, &[]), ["s", "m"]);
-        // zweiter Name (deutsch bei englischer Oberfläche) zählt auch
+        // the second name (German with an English UI) counts too
         let en: Vec<(&'static str, Vec<String>)> = vec![("x", vec!["Split at playhead".into(), "Am Playhead teilen".into()])];
         assert_eq!(search("teilen", &en, &[]), ["x"]);
         assert_eq!(search("split", &en, &[]), ["x"]);
@@ -660,7 +660,7 @@ mod tests {
             ["a", "b", "c", "d"].into_iter().map(|id| (id, vec![id.to_string()])).collect();
         assert_eq!(search("", &items, &[]), ["a", "b", "c", "d"]);
         assert_eq!(search("  ", &items, &["c", "a"]), ["c", "a", "b", "d"]);
-        // Unbekanntes aus dem Verlauf fällt weg
+        // Unknown entries from the history are dropped
         assert_eq!(search("", &items, &["weg", "d"]), ["d", "a", "b", "c"]);
     }
 

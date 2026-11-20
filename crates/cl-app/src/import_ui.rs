@@ -1,10 +1,10 @@
-//! Projekte anderer Schnittprogramme importieren: Dialog auf der Startseite (lokale
-//! CapCut-Entwürfe und Datei-Auswahl), Einstellungsseite „Import“ zum Ein-/Ausschalten.
+//! Import projects from other editors: dialog on the start page (local
+//! CapCut drafts and file picker), settings page „Import“ for switching on/off.
 //!
-//! Der Import läuft vollständig im Hintergrund, in Schritten (Entwurf lesen → Medien finden →
-//! Medien prüfen → Schriften → Zeitleiste → Projekt anlegen) mit Fortschritt und Abbrechen. Der
-//! Dialog führt durch die Schritte und zeigt danach eine Zusammenfassung; mehrere Entwürfe
-//! laufen nacheinander. Abgebrochen oder gescheitert bleibt nichts zurück.
+//! The import runs fully in the background, in steps (read draft → find media →
+//! check media → fonts → timeline → create project) with progress and cancel. The
+//! dialog guides through the steps and shows a summary afterward; several drafts
+//! run one after another. Cancelled or failed, nothing is left behind.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ use crate::app::App;
 use crate::theme::{self, icon};
 use crate::widgets;
 
-/// Ein fertig importiertes Projekt (schon als `.cutline` gespeichert)
+/// A finished imported project (already saved as `.cutline`)
 pub struct Imported {
     pub name: String,
     pub path: PathBuf,
@@ -39,19 +39,19 @@ pub struct ImportState {
     pub open: bool,
     since: u64,
     drafts: Option<Vec<cl_import::capcut::Draft>>,
-    /// Entwurfsliste wird im Hintergrund gelesen (Ordner und Dateien, nicht im UI-Thread)
+    /// The draft list is read in the background (folders and files, not in the UI thread)
     drafts_rx: Option<Receiver<Vec<cl_import::capcut::Draft>>>,
     job: Option<Job>,
-    /// wartende Entwürfe; Zähler für „Projekt 2 von 5“
+    /// waiting drafts; counter for „Projekt 2 von 5“
     queue: VecDeque<PathBuf>,
     batch_total: usize,
-    /// fertige Importe dieser Runde (Zusammenfassung)
+    /// finished imports of this round (summary)
     results: Vec<Imported>,
-    /// Fehler dieser Runde: (Entwurf, Meldung)
+    /// Errors of this round: (draft, message)
     errors: Vec<(String, String)>,
 }
 
-/// Schritte des Imports (Anzeige)
+/// Steps of the import (display)
 const STEPS: [(Step, &str); 6] = [
     (Step::Read, "Entwurf lesen"),
     (Step::Find, "Medien finden"),
@@ -61,7 +61,7 @@ const STEPS: [(Step, &str); 6] = [
     (Step::Save, "Projekt anlegen"),
 ];
 
-/// Freier Dateiname im Projektordner (`Name.cutline`, `Name (2).cutline` …)
+/// Free file name in the project folder (`Name.cutline`, `Name (2).cutline` …)
 pub fn free_project_path(dir: &Path, name: &str) -> PathBuf {
     let name = crate::paths::safe_name(name);
     let mut p = dir.join(format!("{}.cutline", name.trim()));
@@ -73,8 +73,8 @@ pub fn free_project_path(dir: &Path, name: &str) -> PathBuf {
     p
 }
 
-/// Ganzer Import im Hintergrund: umwandeln, Bilder vorlesen, Projekt speichern, Schriften
-/// übernehmen. Abbruch → nichts bleibt liegen (auch keine schon geschriebene Projektdatei).
+/// The whole import in the background: convert, pre-read images, save the project, take over
+/// fonts. Cancel → nothing is left behind (not even an already written project file).
 pub fn run_import(
     src: &Path,
     dir: &Path,
@@ -86,7 +86,7 @@ pub fn run_import(
     report.missing.sort_by(|a, b| natural_cmp(&a.to_string_lossy(), &b.to_string_lossy()));
     progress.check()?;
     progress.set(Step::Save, 0, 2, &project.name);
-    // Animationen der Bilder (Zeit des Vorschaubilds) hier lesen, nicht beim ersten Bild
+    // Read image animations (thumbnail time) here, not on the first frame
     for m in project.media.iter().filter(|m| m.kind == MediaKind::Image) {
         let _ = cl_media::animation(&m.path);
     }
@@ -99,12 +99,12 @@ pub fn run_import(
         return Err(cl_import::CANCELLED.into());
     }
     progress.tick("");
-    // Schriften der Texte übernehmen (schon vorhandene werden übersprungen)
+    // Take over the fonts of the texts (existing ones are skipped)
     for f in &report.fonts {
         let _ = fonts.lock().unwrap_or_else(|e| e.into_inner()).import_file(f);
     }
     progress.tick("");
-    // während der Schriften abgebrochen: auch dann bleibt kein Projekt liegen
+    // cancelled during the fonts: no project is left behind then either
     if progress.cancelled() {
         let _ = std::fs::remove_file(&path);
         return Err(cl_import::CANCELLED.into());
@@ -122,7 +122,7 @@ pub fn run_import(
     Ok(Imported { name: project.name.clone(), path, project, report })
 }
 
-/// Natürliche Reihenfolge: Zahlen im Namen nach ihrem Wert („fehlt_2“ vor „fehlt_10“).
+/// Natural order: numbers in the name by their value („fehlt_2“ before „fehlt_10“).
 fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     let (mut a, mut b) = (a.chars().peekable(), b.chars().peekable());
     loop {
@@ -139,7 +139,7 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
                     s.trim_start_matches('0').to_string()
                 };
                 let (n, m) = (num(&mut a), num(&mut b));
-                // ohne führende Nullen: erst die Länge, dann die Ziffern (keine Überläufe)
+                // without leading zeros: first the length, then the digits (no overflows)
                 let o = n.len().cmp(&m.len()).then_with(|| n.cmp(&m));
                 if o.is_ne() {
                     return o;
@@ -162,12 +162,12 @@ impl App {
         self.settings.import_capcut || self.settings.import_fcpxml
     }
 
-    /// Läuft gerade ein Import (oder wartet einer)?
+    /// Is an import running (or one waiting)?
     pub fn import_busy(&self) -> bool {
         self.import.job.is_some() || !self.import.queue.is_empty()
     }
 
-    /// Import starten (Entwurfsordner oder Datei); läuft schon einer, wird er eingereiht.
+    /// Start an import (draft folder or file); if one is already running, it is queued.
     pub fn start_import(&mut self, path: PathBuf, ctx: &egui::Context) {
         if !self.import_busy() {
             self.import.batch_total = 0;
@@ -206,7 +206,7 @@ impl App {
         self.import.job = Some(Job { label, progress, rx });
     }
 
-    /// Alle Importe dieser Runde abbrechen (wirkt sofort; der Thread räumt hinter sich auf).
+    /// Cancel all imports of this round (takes effect at once; the thread cleans up after itself).
     pub(crate) fn cancel_import(&mut self) {
         if let Some(j) = self.import.job.take() {
             j.progress.cancel();
@@ -214,13 +214,13 @@ impl App {
         self.import.queue.clear();
     }
 
-    /// Fertigen Import übernehmen (jedes Bild).
+    /// Take over a finished import (every frame).
     pub fn poll_import(&mut self, ctx: &egui::Context) {
         let Some(job) = &self.import.job else { return };
         let res = match job.rx.try_recv() {
             Ok(r) => r,
             Err(TryRecvError::Empty) => return,
-            // Import-Thread abgestürzt: sonst dreht sich die Anzeige ewig
+            // import thread crashed: otherwise the display spins forever
             Err(TryRecvError::Disconnected) => Err("Import fehlgeschlagen (interner Fehler)".into()),
         };
         let Some(job) = self.import.job.take() else { return };
@@ -246,13 +246,13 @@ impl App {
         self.next_import(ctx);
     }
 
-    /// Importiertes Projekt öffnen (aus dem Speicher, ohne es neu zu lesen).
+    /// Open the imported project (from memory, without reading it again).
     pub fn open_imported(&mut self, i: usize) {
         if i >= self.import.results.len() {
             return;
         }
         let imp = self.import.results.remove(i);
-        // fehlende Dateien (Platzhalter): „Medien neu verknüpfen“ geht gleich auf
+        // missing files (placeholders): „Medien neu verknüpfen“ opens right away
         let present: HashMap<PathBuf, bool> = imp.project.media.iter().map(|m| (m.path.clone(), !imp.report.missing.contains(&m.path))).collect();
         let fonts = imp
             .project
@@ -266,14 +266,14 @@ impl App {
             })
             .collect();
         self.apply_loaded(&imp.path, crate::loading::Loaded { project: imp.project, present, fonts, gone: Vec::new() }, None);
-        // Titelbild für die Startseite (das Projekt selbst liegt schon auf der Platte)
+        // Cover image for the start page (the project itself is already on disk)
         self.send_project_thumb(&imp.path);
         self.import.open = false;
         self.import.results.clear();
         self.import.errors.clear();
     }
 
-    /// Dialog „Projekt importieren“: Auswahl, geführter Fortschritt, Zusammenfassung.
+    /// „Projekt importieren“ dialog: selection, guided progress, summary.
     pub fn import_dialogs(&mut self, ctx: &egui::Context) {
         let _s = crate::app::section("Import");
         self.poll_import(ctx);
@@ -314,7 +314,7 @@ impl App {
         let m = crate::dialog::modal(ctx, "import").show(ctx, |ui| {
             ui.set_width(520.0);
             if let Some(job) = &self.import.job {
-                // geführter Fortschritt
+                // guided progress
                 close |= crate::dialog::title(ui, &crate::tr(format!("„{}“ wird importiert", job.label)));
                 let n = self.import.batch_total;
                 if n > 1 {
@@ -386,7 +386,7 @@ impl App {
                 }
             });
         });
-        // Schließen während des Imports bricht ab (sofort, nichts bleibt zurück)
+        // Closing during the import cancels it (at once, nothing is left behind)
         if cancel || (busy && (close || (m.should_close() && !fresh))) {
             self.cancel_import();
         } else if (m.should_close() && !fresh) || close {
@@ -404,7 +404,7 @@ impl App {
         }
     }
 
-    /// Zusammenfassung: je Projekt übernommen, nicht übernommen (mit Gründen), fehlende Dateien.
+    /// Summary: per project taken over, not taken over (with reasons), missing files.
     fn import_summary(&self, ui: &mut egui::Ui) -> Option<usize> {
         let mut open = None;
         let dim = |t: String| RichText::new(t).color(theme::TEXT_DIM());
@@ -475,7 +475,7 @@ impl App {
         open
     }
 
-    /// Einstellungsseite „Import“.
+    /// Settings page „Import“.
     pub fn import_settings(&mut self, ui: &mut egui::Ui) {
         ui.add_space(6.0);
         let mut changed =
@@ -494,7 +494,7 @@ impl App {
             ui.add_space(4.0);
             ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_DIM()));
         }
-        // Importieren selbst: Hauptmenü → „Projekt aus anderem Programm importieren …“
+        // Importing itself: main menu → „Projekt aus anderem Programm importieren …“
     }
 }
 
@@ -515,8 +515,8 @@ mod tests {
         d
     }
 
-    /// Import-Dialog: die CapCut-Entwürfe werden im Hintergrund gelesen, nicht im ersten Bild
-    /// (Ordner und Dateien im UI-Thread gaben ein langes Bild beim Import).
+    /// Import dialog: the CapCut drafts are read in the background, not in the first frame
+    /// (folders and files in the UI thread caused a long frame on import).
     #[test]
     fn draft_list_is_read_off_the_ui_thread() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -524,7 +524,7 @@ mod tests {
         app.settings.import_capcut = true;
         app.import.open = true;
         let _ = ctx.run(Default::default(), |ctx| app.import_dialogs(ctx));
-        assert!(app.import.drafts.is_none(), "Entwurfsliste im UI-Thread gelesen");
+        assert!(app.import.drafts.is_none(), "draft list read in the UI thread");
         let t = Instant::now();
         while app.import.drafts.is_none() && t.elapsed().as_secs() < 30 {
             std::thread::yield_now();
@@ -533,8 +533,8 @@ mod tests {
         assert!(app.import.drafts.is_some());
     }
 
-    /// Fehlende Datei beim Import: Clip bleibt, beim Öffnen gilt sie als fehlend und
-    /// „Medien neu verknüpfen“ geht auf.
+    /// Missing file on import: the clip stays, on opening it counts as missing and
+    /// „Medien neu verknüpfen“ opens.
     #[test]
     fn opened_import_marks_missing_media_for_relinking() {
         let (mut app, home, _g) = crate::saving::tests::test_app();
@@ -575,7 +575,7 @@ mod tests {
         assert!(natural_cmp("a007", "a7").is_eq() && natural_cmp("a99999999999999999999999", "a100000000000000000000000").is_lt());
     }
 
-    /// Abbrechen während „Schriften übernehmen“ (nach dem Schreiben): kein Projekt bleibt liegen.
+    /// Cancel during „Schriften übernehmen“ (after writing): no project is left behind.
     #[test]
     fn cancel_during_fonts_leaves_nothing() {
         let root = tempfile::tempdir().unwrap();
@@ -593,10 +593,10 @@ mod tests {
         }));
         slot.set(Arc::downgrade(&p)).unwrap();
         assert_eq!(run_import(&src, &out, &fonts, &p).err().as_deref(), Some(cl_import::CANCELLED));
-        assert_eq!(std::fs::read_dir(&out).map_or(0, |d| d.count()), 0, "kein halbes Projekt");
+        assert_eq!(std::fs::read_dir(&out).map_or(0, |d| d.count()), 0, "no half project");
     }
 
-    /// Beenden bricht einen laufenden Import ab (sonst laufen seine Prüfungen weiter).
+    /// Quitting cancels a running import (otherwise its checks keep running).
     #[test]
     fn exit_cancels_running_import() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -633,6 +633,6 @@ mod tests {
         assert_eq!(run_import(&src, &out, &fonts, &p).err().as_deref(), Some(cl_import::CANCELLED));
         std::fs::write(src.join("draft_content.json"), "{kaputt").unwrap();
         assert!(run_import(&src, &out, &fonts, &Progress::default()).is_err());
-        assert_eq!(std::fs::read_dir(&out).map_or(0, |d| d.count()), 0, "kein halbes Projekt");
+        assert_eq!(std::fs::read_dir(&out).map_or(0, |d| d.count()), 0, "no half project");
     }
 }

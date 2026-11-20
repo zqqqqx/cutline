@@ -1,9 +1,9 @@
-//! Schnellaktionen (Menü in der Zeitleiste):
-//! Pausen entfernen (Jump Cuts), Füllwörter entfernen, Highlights als Marker, Auto-Ducking,
-//! Zoom-Punch-in, Aufnahmen per Ton synchronisieren, Multicam-Schnitt, Rückblick erstellen,
-//! Hochkant-Layout, Thumbnail exportieren, Sprecher-Aufnahmen importieren.
-//! Analysen laufen im Hintergrund; das Ergebnis wird als ein Undo-Schritt angewendet.
-//! Pausen, Füllwörter, Ducking und Punch-in öffnen erst das Einstellungsfenster (`quick.rs`).
+//! Quick actions (menu in the timeline):
+//! remove pauses (jump cuts), remove filler words, highlights as markers, auto ducking,
+//! zoom punch-in, sync recordings by audio, multicam editing, create a recap,
+//! vertical layout, export thumbnail, import speaker recordings.
+//! Analyses run in the background; the result is applied as one undo step.
+//! Pauses, filler words, ducking and punch-in first open the settings window (`quick.rs`).
 
 use std::path::PathBuf;
 
@@ -13,8 +13,8 @@ use eframe::egui;
 use crate::app::App;
 use crate::tasks::TaskDone;
 
-/// Ergebnisse einer Hintergrund-Analyse beziehen sich auf die Clip-Lagen bei ihrem Start: hat sich
-/// das Projekt seitdem geändert, nicht übernehmen.
+/// Results of a background analysis refer to the clip positions at its start: if the
+/// project has changed since, do not take them over.
 fn still_current(app: &mut App, rev: u64) -> bool {
     let ok = app.revision == rev;
     if !ok {
@@ -23,7 +23,7 @@ fn still_current(app: &mut App, rev: u64) -> bool {
     ok
 }
 
-/// Ton eines Clips: (Datei, Quellbeginn, Quelllänge, Tempo)
+/// Audio of a clip: (file, source start, source length, speed)
 pub fn clip_audio(app: &App, c: &Clip) -> Option<(PathBuf, f64, f64, f64)> {
     let ClipContent::Media { media, kind } = &c.content else {
         return None;
@@ -41,19 +41,19 @@ pub fn clip_audio(app: &App, c: &Clip) -> Option<(PathBuf, f64, f64, f64)> {
     ))
 }
 
-/// Zeit im Quellbereich (ab Quellbeginn, s) → Clipzeit; rückwärts liegt der Quellanfang am Clipende
+/// Time in the source range (from source start, s) → clip time; reversed, the source start is at the clip end
 pub fn src_to_clip(t: f64, span: f64, sp: f64, reverse: bool) -> f64 {
     if reverse { (span - t) / sp } else { t / sp }
 }
 
-/// Quellbereich (a, b) → Clipbereich (von, bis); rückwärts tauschen Anfang und Ende
+/// Source range (a, b) → clip range (from, to); reversed, start and end swap
 pub fn src_range_to_clip(a: f64, b: f64, span: f64, sp: f64, reverse: bool) -> (f64, f64) {
     let (x, y) = (src_to_clip(a, span, sp, reverse), src_to_clip(b, span, sp, reverse));
     (x.min(y), x.max(y))
 }
 
-/// Sprechbereiche sortieren und zusammenfassen, wenn die Lücke kürzer ist als zwei Rampen
-/// (sonst würde die Musik mitten in der Sprache wieder laut)
+/// Sort speech ranges and merge them if the gap is shorter than two ramps
+/// (otherwise the music would get loud again in the middle of speech)
 pub fn merge_speech(mut speech: Vec<(f64, f64)>, ramp: f64) -> Vec<(f64, f64)> {
     let gap = 0.5f64.max(2.0 * ramp);
     speech.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -67,8 +67,8 @@ pub fn merge_speech(mut speech: Vec<(f64, f64)>, ramp: f64) -> Vec<(f64, f64)> {
     merged
 }
 
-/// Multicam-Stück [a, b) eines Clips: Einblenden/Intro nur am ersten, Ausblenden/Outro/Übergang
-/// nur am letzten Stück, damit der durchlaufende Ton an den Wechseln nicht aus- und einblendet.
+/// Multicam piece [a, b) of a clip: fade-in/intro only on the first, fade-out/outro/transition
+/// only on the last piece, so the continuous audio does not fade out and in at the switches.
 pub fn multicam_piece(c: &Clip, a: Time, b: Time) -> Clip {
     let mut n = c.clone();
     n.id = ClipId::new();
@@ -76,7 +76,7 @@ pub fn multicam_piece(c: &Clip, a: Time, b: Time) -> Clip {
     n.duration = Time(b.0 - a.0);
     let off = |t: Time| ((t.0 - c.start.0) as f64 * c.speed as f64) as i64;
     n.source_in = if c.fx.reverse {
-        // rückwärts: das Stück endet (in der Quelle) dort, wo es auf der Zeitleiste beginnt
+        // reversed: the piece ends (in the source) where it starts on the timeline
         Time(c.source_in.0 + c.source_span().0 - off(b))
     } else {
         Time(c.source_in.0 + off(a))
@@ -99,7 +99,7 @@ impl App {
             .and_then(|s| self.project.find_clip(s).map(|(_, c)| c.clone()))
     }
 
-    /// Ist die Schnellaktion `id` (Kennung aus `keymap::ACTIONS`) gerade möglich? Sonst mit Grund.
+    /// Is quick action `id` (ID from `keymap::ACTIONS`) possible right now? Otherwise with a reason.
     pub fn quick_check(&self, id: &str) -> (bool, &'static str) {
         let sel = || self.selected_clip();
         match id {
@@ -119,8 +119,8 @@ impl App {
         }
     }
 
-    /// Menü „Schnellaktionen“ (in der Werkzeugleiste der Zeitleiste). Einträge sind Aktionen aus
-    /// `keymap::ACTIONS` (Name, Symbol) und laufen über `run_action` wie in der Befehlssuche.
+    /// „Schnellaktionen“ menu (in the timeline toolbar). Entries are actions from
+    /// `keymap::ACTIONS` (name, icon) and run via `run_action` as in the command search.
     pub fn tools_menu(&mut self, ui: &mut egui::Ui) {
         const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             (
@@ -156,13 +156,13 @@ impl App {
             if i > 0 {
                 ui.separator();
             }
-            // Abschnittstitel auf der Symbolkante (Einzug wie `theme::menu_row`)
+            // Section title on the icon edge (indent like `theme::menu_row`)
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new(crate::tr(title)).small().color(crate::theme::TEXT_DIM()));
             });
             for (id, tip) in *items {
-                // `why`: Grund im Tooltip, solange der Eintrag ausgegraut ist
+                // `why`: reason in the tooltip while the entry is grayed out
                 let (enabled, why) = self.quick_check(id);
                 let text = format!("{}   {}", crate::keymap::icon(id), crate::keymap::name(id));
                 if ui
@@ -176,7 +176,7 @@ impl App {
                 if *id == "quick_vertical" {
                     crate::theme::submenu(ui, crate::theme::icon::GRID_FOUR, "Layout", |ui| {
                         for (i, id) in crate::arrange::IDS.iter().enumerate() {
-                            // Gruppen: 2 Clips, 3 Clips, 4 Clips, Bild-in-Bild, Zurücksetzen
+                            // Groups: 2 clips, 3 clips, 4 clips, picture-in-picture, reset
                             if matches!(i, 2 | 4 | 5 | 9) {
                                 ui.separator();
                             }
@@ -200,12 +200,12 @@ impl App {
         }
     }
 
-    /// Musik absenken: `drop_db` unter dem Grundpegel, `ramp` Sekunden Übergang
+    /// Lower the music: `drop_db` below the base level, `ramp` seconds of transition
     pub fn tool_ducking(&mut self, ctx: &egui::Context, drop_db: f32, ramp: f32) {
         let Some(music) = self.selected_clip() else {
             return;
         };
-        // Sprache = alle anderen Clips mit Ton, die den Musik-Clip überlappen
+        // Speech = all other clips with audio that overlap the music clip
         let voices: Vec<(PathBuf, f64, f64, f64, f64)> = self
             .project
             .timeline
@@ -233,7 +233,7 @@ impl App {
         let rev = self.revision;
         self.tasks
             .spawn(ctx, "tool", "Sprache wird erkannt …", move |p, _| {
-                // Sprechbereiche in Projektzeit sammeln
+                // collect speech ranges in project time
                 let mut speech: Vec<(f64, f64)> = Vec::new();
                 for (i, (path, src, span, sp, start)) in voices.iter().enumerate() {
                     p(i as f32 / voices.len() as f32);
@@ -300,7 +300,7 @@ impl App {
                 match cl_analyze::audio::envelope(&path, src, Some(span)) {
                     Ok(env) => {
                         let n = ((span / 60.0).ceil() as usize * 3).clamp(3, 40);
-                        // Zeit in der Quelle → Projektzeit, Stärke aus der Hüllkurve
+                        // time in the source → project time, strength from the envelope
                         let hits: Vec<crate::shorts::Hit> = cl_analyze::audio::loud_moments(&env, n, 8.0)
                             .into_iter()
                             .map(|t| crate::shorts::Hit {
@@ -372,7 +372,7 @@ impl App {
         );
     }
 
-    /// Multicam: ausgewählte Clips als Blickwinkel; 1–9 während der Wiedergabe wählt.
+    /// Multicam: selected clips as camera angles; 1–9 during playback picks one.
     pub fn tool_multicam_start(&mut self) {
         let mut angles: Vec<(usize, ClipId)> = self
             .selection()
@@ -391,10 +391,10 @@ impl App {
             return;
         }
         self.multicam = Some((angles.into_iter().map(|a| a.1).collect(), Vec::new()));
-        self.multicam_audio = 0; // Hinweisfenster (templates.rs) zeigt Erklärung und Tonquelle
+        self.multicam_audio = 0; // hint window (templates.rs) shows explanation and audio source
     }
 
-    /// Taste 1–9 im Multicam-Modus
+    /// Key 1–9 in multicam mode
     pub fn multicam_switch(&mut self, n: usize) {
         if let Some((angles, cuts)) = &mut self.multicam {
             if n < angles.len() {
@@ -404,7 +404,7 @@ impl App {
         }
     }
 
-    /// Beim Anhalten: Schnitte anwenden (nicht gewählte Blickwinkel werden je Abschnitt deaktiviert).
+    /// On stop: apply cuts (angles not chosen are disabled per segment).
     pub fn multicam_finish(&mut self) {
         let Some((angles, mut cuts)) = self.multicam.take() else {
             return;
@@ -418,7 +418,7 @@ impl App {
             let Some((t, c)) = self.project.find_clip(*id).map(|(t, c)| (t.id, c.clone())) else {
                 continue;
             };
-            // Abschnitte dieses Clips an allen Umschaltpunkten
+            // segments of this clip at all switch points
             let mut bounds: Vec<Time> = cuts
                 .iter()
                 .map(|c| c.0)
@@ -433,7 +433,7 @@ impl App {
             }
             ops.push(EditOp::RemoveClip { clip: c.id });
             for (a, b) in pieces {
-                // aktiver Blickwinkel zum Abschnittsbeginn
+                // active angle at the segment start
                 let active = cuts
                     .iter()
                     .rev()
@@ -441,7 +441,7 @@ impl App {
                     .map(|x| x.1)
                     .unwrap_or(0);
                 let mut n = multicam_piece(&c, a, b);
-                // Ton nur von der Hauptquelle, das Bild wechselt
+                // audio only from the main source, the picture switches
                 let (off, op, mute) = crate::templates::cam_piece(ai, self.multicam_audio, active == ai);
                 n.disabled = off;
                 n.opacity = c.opacity * op;
@@ -472,7 +472,7 @@ impl App {
         else {
             return;
         };
-        // ZIP (z. B. Call-Aufnahme mit einer Datei pro Person) entpacken
+        // Unpack a ZIP (e.g. a call recording with one file per person)
         let mut extra = Vec::new();
         for f in files
             .iter()
@@ -498,7 +498,7 @@ impl App {
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            // Craig & Co.: „1-Name.flac“ → „Name“
+            // Craig & co.: „1-Name.flac“ → „Name“
             let name = name
                 .split_once('-')
                 .filter(|(a, _)| a.chars().all(|c| c.is_ascii_digit()))
@@ -525,7 +525,7 @@ impl App {
         }
     }
 
-    /// Zoom auf `zoom` (1.25 = 125 %) für `dur` Sekunden ab dem Playhead
+    /// Zoom to `zoom` (1.25 = 125 %) for `dur` seconds from the playhead
     pub fn tool_punch_in(&mut self, zoom: f32, dur: f32) {
         let Some(mut c) = self.selected_clip() else {
             return;
@@ -559,7 +559,7 @@ impl App {
         s.height = 1920;
         s.aspect = AspectPreset::Ratio(9, 16);
         let mut ops = vec![EditOp::SetSettings { settings: s }];
-        // Gameplay unten (füllt die Breite), Facecam-Kopie oben, stark vergrößert
+        // Gameplay at the bottom (fills the width), facecam copy at the top, strongly enlarged
         let mut game = c.clone();
         game.transform = Transform {
             x: 0.0,
@@ -602,7 +602,7 @@ impl App {
             label: "Hochkant-Layout".into(),
             ops,
         });
-        // Spur wurde eben angelegt: Facecam darauf
+        // the track was just created: facecam on it
         if let Some(t) = self.project.timeline.tracks.get(above).map(|t| t.id) {
             self.apply(EditOp::AddClip {
                 track: Some(t),
@@ -631,7 +631,7 @@ impl App {
         let fonts = self.font_files();
         self.tasks
             .spawn(ctx, "tool", "Thumbnail wird erstellt …", move |_, _| {
-                // 16:9 → 1280×720, sonst Projektgröße
+                // 16:9 → 1280×720, otherwise project size
                 let size = if p.settings.width * 9 == p.settings.height * 16 {
                     (1280, 720)
                 } else {
@@ -652,7 +652,7 @@ impl App {
             });
     }
 
-    /// Neues Projekt mit je 3 s um jeden Marker (Ton und Bild aller Spuren).
+    /// New project with 3 s around each marker (audio and video of all tracks).
     pub fn tool_recap(&mut self) {
         let src = self.project.clone();
         let mut ms = src.timeline.markers.clone();
@@ -723,7 +723,7 @@ fn walk_audio(dir: &std::path::Path) -> Vec<PathBuf> {
     out
 }
 
-/// Ergebnis von „Synchronisieren“: Startzeiten relativ zum Referenz-Clip beim Analysestart.
+/// Result of „Synchronisieren“: start times relative to the reference clip at analysis start.
 fn apply_sync(app: &mut App, rev: u64, moves: &[(ClipId, f64)]) {
     if !still_current(app, rev) {
         return;
@@ -771,13 +771,13 @@ mod tests {
         p.timeline.tracks.push(t);
         app.set_doc(p);
         let start = |app: &App| app.project.find_clip(id).unwrap().1.start;
-        // Analyse beginnt, danach schiebt der Nutzer den Clip
+        // analysis starts, then the user moves the clip
         let rev = app.revision;
         let track = app.project.timeline.tracks[0].id;
         app.apply(EditOp::MoveClip { clip: id, track: Some(track), start: s(5.0) });
         apply_sync(&mut app, rev, &[(id, 1.0)]);
-        assert_eq!(start(&app), s(5.0), "veraltetes Ergebnis übernommen");
-        // aktuelles Ergebnis wird angewendet
+        assert_eq!(start(&app), s(5.0), "outdated result taken over");
+        // the current result is applied
         let rev = app.revision;
         apply_sync(&mut app, rev, &[(id, 1.0)]);
         assert_eq!(start(&app), s(1.0));
@@ -785,7 +785,7 @@ mod tests {
 
     #[test]
     fn source_times_map_into_reversed_clips() {
-        // 10 s rückwärts, Pause bei Quelle 1–2 s liegt im Clip bei 8–9 s
+        // 10 s reversed, the pause at source 1–2 s lies at 8–9 s in the clip
         assert_eq!(src_range_to_clip(1.0, 2.0, 10.0, 1.0, true), (8.0, 9.0));
         assert_eq!(src_range_to_clip(1.0, 2.0, 10.0, 2.0, false), (0.5, 1.0));
         assert_eq!(src_to_clip(3.0, 10.0, 2.0, true), 3.5);
