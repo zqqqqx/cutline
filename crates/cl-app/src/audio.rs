@@ -1,15 +1,15 @@
-//! Ton-Wiedergabe: FFmpeg mischt die Zeitleiste in Fenstern ab dem Playhead, cpal spielt sie ab.
-//! Die abgespielten Samples sind die Uhr (Audio-Clock), nach der sich das Bild richtet.
+//! Audio playback: FFmpeg mixes the timeline in windows from the playhead, cpal plays them.
+//! The played samples are the clock (audio clock) the picture follows.
 //!
-//! Gemischt wird nie das ganze Projekt, sondern ein Fenster von [`WINDOW_SECS`] (nur die Clips
-//! darin, also wenige FFmpeg-Eingänge; das erste ist kürzer, damit der Ton schnell einsetzt). Bevor ein Fenster zu Ende geht, rechnet ein zweiter
-//! Prozess das nächste; beide werden am Sample aneinandergehängt (jedes Fenster liefert genau
-//! seine Zahl Sample-Frames, Einschwingen von Resampler/Begrenzer liegt vor dem Fensteranfang
-//! und wird verworfen).
+//! The whole project is never mixed, only a window of [`WINDOW_SECS`] (only the clips
+//! in it, so few FFmpeg inputs; the first is shorter so sound starts quickly). Before a window ends, a second
+//! process computes the next one; both are joined at the sample (each window delivers exactly
+//! its number of sample frames; settling of resampler/limiter lies before the window start
+//! and is discarded).
 //!
-//! Beim Abspielen startet das Bild sofort nach Systemzeit ([`AudioPlayer::start_synced`] +
-//! [`AudioPlayer::anchor`]): kommt der Ton, überspringt die Ausgabe die schon vergangenen Samples
-//! und setzt mit kurzer Einblendung genau an der Stelle ein, an der das Bild gerade ist.
+//! On playback the picture starts at once on system time ([`AudioPlayer::start_synced`] +
+//! [`AudioPlayer::anchor`]): when sound arrives, the output skips the samples already past
+//! and comes in with a short fade exactly where the picture is.
 
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -22,51 +22,51 @@ use std::time::{Duration, Instant};
 use cl_core::{Project, Time};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-/// Länge eines Ton-Fensters (Sekunden)
+/// Length of an audio window (seconds)
 pub const WINDOW_SECS: u64 = 20;
-/// Länge des ersten Fensters: weniger Eingänge → erster Ton schneller (je Eingang ~25–80 ms)
+/// Length of the first window: fewer inputs → first sound sooner (~25–80 ms per input)
 pub const FIRST_SECS: u64 = 6;
-/// So viele Sekunden vor dem Fensterende wird das nächste Fenster gestartet
+/// The next window is started this many seconds before the window end
 pub const LEAD_SECS: u64 = 5;
-/// Einschwingzeit vor dem Fensteranfang (wird gerechnet und verworfen)
+/// Settling time before the window start (computed and discarded)
 pub const PRE_MS: u64 = 200;
-/// Ein-/Ausblenden beim Einsetzen und Abbrechen des Tons (gegen Knacken)
+/// Fade in/out when sound starts and stops (against clicks)
 pub const FADE_MS: u64 = 15;
 
 pub struct AudioPlayer {
-    /// Steuerung des Ausgabe-Threads (true = abspielen, false = anhalten); fallen lassen beendet ihn
+    /// Control of the output thread (true = play, false = pause); dropping it ends the thread
     ctl: std::sync::mpsc::Sender<bool>,
-    /// Ausgabe ließ sich nicht öffnen (dann kommt nie Ton, das Bild läuft nach Systemzeit)
+    /// Output could not be opened (then sound never comes, the picture runs on system time)
     failed: Arc<AtomicBool>,
     shared: Arc<Shared>,
-    /// Spitzenpegel links/rechts seit der letzten Abfrage (f32-Bits)
+    /// Peak level left/right since the last query (f32 bits)
     peaks: Arc<[AtomicU32; 2]>,
     rate: u32,
     pub start: Time,
 }
 
-/// Zustand zwischen Ausgabe (cpal), Zuführung (Fenster) und Oberfläche
+/// State shared by output (cpal), feed (windows) and UI
 struct Shared {
     out: Mutex<Out>,
-    /// verbrauchte Frames (auch übersprungene) = Uhr
+    /// consumed frames (skipped ones too) = clock
     played: AtomicU64,
-    /// Zeitpunkt (ns seit `base`) und Frames des letzten Ausgabe-Rückrufs (für eine gleichmäßige Uhr)
+    /// Time (ns since `base`) and frames of the last output callback (for a smooth clock)
     cb_ns: AtomicU64,
     cb_frames: AtomicU64,
     running: AtomicBool,
     paused: AtomicBool,
     base: Instant,
     stop: AtomicBool,
-    /// Alle gestarteten FFmpeg-Prozesse (beim Beenden töten, damit blockierte Leser freikommen)
+    /// All started FFmpeg processes (killed on stop so blocked readers get free)
     kids: Mutex<Vec<Arc<Mutex<Child>>>>,
     first_sound: OnceLock<Instant>,
 }
 
-/// Gewähltes Ausgabegerät (Name); `None` = Systemstandard
+/// Chosen output device (name); `None` = system default
 static DEVICE: Mutex<Option<String>> = Mutex::new(None);
 
-/// Lautstärke der Wiedergabe (Regler im Player): nur wie laut Cutline abspielt – nicht Projekt,
-/// Export oder Pegelanzeige. Überlebt den Neustart in `last-used.json`.
+/// Playback volume (slider in the player): only how loud Cutline plays – not project,
+/// export or level meter. Survives a restart in `last-used.json`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Volume {
@@ -82,25 +82,25 @@ impl Default for Volume {
 }
 
 impl Volume {
-    /// Verstärkung zum Regler: kubisch (fühlt sich gleichmäßig an), 100 % = unverändert, nie lauter
+    /// Gain for the slider: cubic (feels even), 100 % = unchanged, never louder
     pub fn gain(self) -> f32 {
         if self.muted {
             return 0.0;
         }
-        // max/min statt clamp: NaN aus einer kaputten Datei wird 0
+        // max/min instead of clamp: NaN from a broken file becomes 0
         (self.percent / 100.0).max(0.0).min(1.0).powi(3)
     }
 
-    /// Ein 5-%-Schritt (Mausrad, Aktionen) auf dem 5er-Raster; lauter hebt „stumm“ auf
+    /// One 5 % step (mouse wheel, actions) on the grid of 5; louder lifts „stumm“
     pub fn step(self, up: bool) -> Self {
         let p = ((self.percent / 5.0).round() + if up { 1.0 } else { -1.0 }) * 5.0;
         Self { percent: p.clamp(0.0, 100.0), muted: self.muted && !up }
     }
 }
 
-/// Ziel-Verstärkung der Ausgabe (f32-Bits, 1.0); die Ausgabe gleitet in [`GAIN_RAMP_MS`] dorthin
+/// Target gain of the output (f32 bits, 1.0); the output glides there in [`GAIN_RAMP_MS`]
 static GAIN: AtomicU32 = AtomicU32::new(0x3F80_0000);
-/// Rampe beim Ändern der Lautstärke (gegen Knacken)
+/// Ramp when the volume changes (against clicks)
 const GAIN_RAMP_MS: f32 = 5.0;
 
 pub fn set_volume(v: Volume) {
@@ -116,13 +116,13 @@ pub fn set_output_device(name: Option<String>) {
     *OUTPUT.lock().unwrap() = None;
 }
 
-/// Zuletzt genutztes Ausgabegerät mit Format (Name, Gerät, Format): Aufzählen der Geräte und
-/// `default_output_config` kosten je Ton-Start spürbar Zeit im UI-Thread. Vergessen bei
-/// Gerätewahl und wenn sich die Ausgabe nicht öffnen ließ (Gerät abgezogen).
+/// Last used output device with format (name, device, format): enumerating devices and
+/// `default_output_config` cost noticeable UI-thread time per sound start. Forgotten on
+/// device choice and when the output could not be opened (device unplugged).
 type Output = (String, (cpal::Device, cpal::SupportedStreamConfig));
 static OUTPUT: Mutex<Option<Output>> = Mutex::new(None);
 
-/// Wert für `name` aus `slot`, sonst mit `fetch` holen und merken.
+/// Value for `name` from `slot`, otherwise fetched with `fetch` and remembered.
 fn remembered<T: Clone, E>(slot: &mut Option<(String, T)>, name: &str, fetch: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
     if let Some((_, v)) = slot.as_ref().filter(|(n, _)| n == name) {
         return Ok(v.clone());
@@ -132,7 +132,7 @@ fn remembered<T: Clone, E>(slot: &mut Option<(String, T)>, name: &str, fetch: im
     Ok(v)
 }
 
-/// Namen aller Ausgabegeräte (für die Einstellungen)
+/// Names of all output devices (for the settings)
 pub fn output_devices() -> Vec<String> {
     cpal::default_host()
         .output_devices()
@@ -140,39 +140,39 @@ pub fn output_devices() -> Vec<String> {
         .unwrap_or_default()
 }
 
-// ---------- Fenster-Plan (reine Rechnung) ----------
+// ---------- Window plan (pure computation) ----------
 
-/// Ein Ton-Fenster: FFmpeg mischt `mix_from..mix_to`, davon werden `skip` Frames verworfen und
-/// genau `frames` Frames übernommen (fehlt etwas, wird mit Stille aufgefüllt).
+/// One audio window: FFmpeg mixes `mix_from..mix_to`, of which `skip` frames are discarded and
+/// exactly `frames` frames kept (anything missing is filled with silence).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowPlan {
     pub mix_from: Time,
     pub mix_to: Time,
     pub skip: u64,
-    /// erster Frame des Fensters, gezählt ab dem Start der Wiedergabe
+    /// first frame of the window, counted from the start of playback
     pub first: u64,
     pub frames: u64,
 }
 
-/// Sample-Frames von `from` bis `end` (aufgerundet: die Uhr erreicht das Ende sicher)
+/// Sample frames from `from` to `end` (rounded up: the clock surely reaches the end)
 pub fn total_frames(from: Time, end: Time, rate: u32) -> u64 {
     let us = (end - from).0.max(0) as u128;
     (us * rate as u128).div_ceil(1_000_000) as u64
 }
 
-/// Fenster `k` einer Wiedergabe ab `from` bis `end`; `None` hinter dem Ende.
-/// Fensteranfänge liegen auf ganzen Sekunden nach `from`, das Einschwingen auf ganzen Frames davor:
-/// so rechnet jedes Fenster auf demselben Sample-Raster wie ein durchgehender Mix.
+/// Window `k` of a playback from `from` to `end`; `None` past the end.
+/// Window starts lie on whole seconds after `from`, the settling on whole frames before:
+/// so each window computes on the same sample grid as a continuous mix.
 pub fn window_plan(from: Time, end: Time, rate: u32, k: u64) -> Option<WindowPlan> {
     let total = total_frames(from, end, rate);
-    // Anfang (Sekunden ab `from`) und Länge: erst FIRST_SECS, dann je WINDOW_SECS
+    // Start (seconds from `from`) and length: first FIRST_SECS, then WINDOW_SECS each
     let (start_s, len_s) = match k {
         0 => (0, FIRST_SECS),
         _ => ((k - 1).checked_mul(WINDOW_SECS)?.checked_add(FIRST_SECS)?, WINDOW_SECS),
     };
     let first = start_s.checked_mul(rate as u64).filter(|f| *f < total)?;
     let frames = (len_s * rate as u64).min(total - first);
-    // `first < total`: der Anfang liegt im Projekt, kein Überlauf
+    // `first < total`: the start lies in the project, no overflow
     let start_us = from.0 + start_s as i64 * 1_000_000;
     let pre = rate as u64 * PRE_MS / 1000;
     let pre_us = (pre as u128 * 1_000_000 / rate.max(1) as u128) as i64;
@@ -191,20 +191,20 @@ pub fn window_plan(from: Time, end: Time, rate: u32, k: u64) -> Option<WindowPla
     })
 }
 
-/// Nächstes Fenster vorbereiten? (`moved` = schon übernommene Frames des laufenden Fensters)
+/// Prepare the next window? (`moved` = frames of the running window already taken)
 pub fn prepare_next(moved: u64, frames: u64, rate: u32) -> bool {
     moved + LEAD_SECS * rate as u64 >= frames
 }
 
-// ---------- Ausgabe (reine Zustandsmaschine, vom cpal-Rückruf benutzt) ----------
+// ---------- Output (pure state machine, used by the cpal callback) ----------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
-    /// Ton noch nicht freigegeben (Bild puffert): Stille, nichts verbrauchen
+    /// Sound not yet released (picture buffering): silence, consume nothing
     Waiting,
-    /// Uhr läuft seit dem Anker: vergangene Samples überspringen, dann einsetzen
+    /// Clock runs since the anchor: skip past samples, then come in
     Anchored(Instant),
-    /// sofort spielen, sobald Ton da ist (Scrubben, Vorhören)
+    /// play at once as soon as sound is there (scrubbing, preview)
     Free,
     Running,
 }
@@ -215,14 +215,14 @@ struct Out {
     played: u64,
     fade_len: u32,
     fade_in: u32,
-    /// verbleibende Ausblend-Frames beim Abbrechen (danach Stille)
+    /// remaining fade-out frames on abort (silence afterwards)
     closing: Option<u32>,
-    /// Zuführung fertig (kein Ton mehr zu erwarten)
+    /// Feed finished (no more sound to expect)
     finished: bool,
     in_underrun: bool,
     underruns: u64,
     underrun_frames: u64,
-    /// aktuelle Verstärkung der Wiedergabe (gleitet zu [`GAIN`])
+    /// current playback gain (glides to [`GAIN`])
     gain: f32,
 }
 
@@ -243,8 +243,8 @@ impl Out {
         }
     }
 
-    /// `n` Stereo-Frames ausgeben; `target` = Soll-Frames seit dem Anker (nur `Anchored`).
-    /// Gibt die Zahl der ausgegebenen echten Ton-Frames zurück.
+    /// Output `n` stereo frames; `target` = target frames since the anchor (only `Anchored`).
+    /// Returns the number of real sound frames output.
     fn render(&mut self, n: usize, target: u64, mut put: impl FnMut(f32, f32)) -> u64 {
         match self.phase {
             Phase::Waiting => {
@@ -303,16 +303,16 @@ impl Out {
     }
 }
 
-/// Uhr in Frames: Stand vor dem letzten Rückruf plus die seither vergangene Zeit, höchstens so viele
-/// Frames, wie der Rückruf ausgegeben hat (sonst liefe die Uhr in einem Aussetzer weiter).
-/// `played` zählt den letzten Rückruf schon mit; ohne Abzug liefe die Uhr ihm um einen Puffer voraus.
+/// Clock in frames: state before the last callback plus the time since, at most as many
+/// frames as the callback output (otherwise the clock would run on during a dropout).
+/// `played` already counts the last callback; without subtracting, the clock would lead it by one buffer.
 pub fn clock_frames(played: u64, since_cb: Duration, cb_frames: u64, rate: u32) -> u64 {
     played.saturating_sub(cb_frames) + ((since_cb.as_secs_f64() * rate as f64) as u64).min(cb_frames)
 }
 
-// ---------- Zuführung: Fenster für Fenster ----------
+// ---------- Feed: window by window ----------
 
-/// Ein laufendes Fenster: FFmpeg + Lese-Thread, der genau `frames` Frames in `q` legt.
+/// A running window: FFmpeg + reader thread that puts exactly `frames` frames into `q`.
 struct Win {
     child: Arc<Mutex<Child>>,
     q: Arc<Mutex<VecDeque<f32>>>,
@@ -330,10 +330,10 @@ impl Drop for Win {
     }
 }
 
-/// Startet das FFmpeg eines Fensters. Aufgerufen aus dem Thread, der den Ton startet (Oberfläche
-/// bzw. der Scrub-Thread, der den Ton bis zum Ende hält), und aus `cl-audio-feed`, der bis zum
-/// Ende des Tons lebt – wichtig unter Linux: `PR_SET_PDEATHSIG` beendet das Kind mit dem
-/// *startenden Thread* (siehe `cl_media::proc`), nicht erst mit dem Prozess.
+/// Starts the FFmpeg of a window. Called from the thread that starts the sound (UI
+/// or the scrub thread that keeps the sound until the end), and from `cl-audio-feed`, which lives
+/// until the sound ends – important on Linux: `PR_SET_PDEATHSIG` ends the child with the
+/// *starting thread* (see `cl_media::proc`), not only with the process.
 fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shared>) -> Result<Win, String> {
     let (mut child, workdir) = cl_export::spawn_audio_window(project, plan.mix_from, plan.mix_to, rate)
         .map_err(|e| e.to_string())?;
@@ -348,12 +348,12 @@ fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shar
     let q = Arc::new(Mutex::new(VecDeque::with_capacity(rate as usize * 2)));
     let done = Arc::new(AtomicBool::new(false));
     let ready = Arc::new(OnceLock::new());
-    let cap = rate as usize * 2; // 1 s Stereo je Fenster im Voraus
+    let cap = rate as usize * 2; // 1 s stereo per window ahead
     let (q2, done2, ready2, sh) = (q.clone(), done.clone(), ready.clone(), shared.clone());
     std::thread::Builder::new()
         .name("cl-audio-window".into())
         .spawn(move || {
-            let _workdir = workdir; // Graph-Datei lebt, bis FFmpeg fertig ist
+            let _workdir = workdir; // graph file lives until FFmpeg is done
             let mut skip = plan.skip * 8; // Bytes
             let mut want = plan.frames * 2; // Samples
             let mut raw = vec![0u8; 16 * 1024];
@@ -381,8 +381,8 @@ fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shar
                     want -= whole as u64;
                 }
             }
-            // FFmpeg lieferte zu wenig (Rundung am Projektende, Fehler): mit Stille auffüllen,
-            // damit das nächste Fenster an der richtigen Stelle anschließt
+            // FFmpeg delivered too little (rounding at the project end, errors): fill with silence
+            // so the next window joins at the right place
             if want > 0 && !sh.stop.load(Ordering::Relaxed) {
                 if crate::app::perf() {
                     crate::applog::perf_line!("perf: Ton-Fenster ab Frame {} mit {} Frames Stille aufgefüllt", plan.first, want / 2);
@@ -396,10 +396,10 @@ fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shar
     Ok(Win { child, q, done, ready, plan, spawned: Instant::now() })
 }
 
-/// Holt Fenster für Fenster in den Ausgabepuffer (höchstens `max_buffered` Samples voraus).
+/// Fetches window after window into the output buffer (at most `max_buffered` samples ahead).
 fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: Win) {
     let end = project.duration();
-    let max_buffered = rate as usize * 2; // 1 s Stereo
+    let max_buffered = rate as usize * 2; // 1 s stereo
     let mut next: Option<Win> = None;
     let mut moved = 0u64;
     let mut k = 0u64;
@@ -430,8 +430,8 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
         if exhausted && moved >= cur.plan.frames {
             let Some(n) = next.take() else { break };
             if crate::app::perf() {
-                // Vorlauf: wie lange das nächste Fenster schon Ton bereithielt; Versatz: Abweichung
-                // des Fensteranfangs vom durchgehenden Sample-Zähler (muss 0 sein)
+                // Lead: how long the next window already held sound; offset: deviation
+                // of the window start from the continuous sample counter (must be 0)
                 let lead = n.ready.get().map(|r| r.elapsed().as_secs_f64() * 1000.0);
                 crate::applog::perf_line!(
                     "perf: Ton-Fensterwechsel bei Frame {}: Vorlauf {} ms (Start nach {:.0} ms), Versatz {} Samples",
@@ -453,9 +453,9 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
     shared.out.lock().unwrap().finished = true;
 }
 
-/// Ein Ausgabe-Block von `n` Frames zur Zeit `now`: Uhr fortschreiben, Ton (oder Stille) an `put`
-/// geben, Pegel und ersten Ton merken. Gemeinsam für das Gerät und die Ausgabe ohne Gerät.
-/// `gain` = Lautstärke der Wiedergabe; erst nach den Pegeln angewandt (die zeigen den Projektpegel).
+/// One output block of `n` frames at time `now`: advance the clock, pass sound (or silence) to `put`,
+/// remember levels and first sound. Shared by the device and the output without device.
+/// `gain` = playback volume; applied only after the levels (they show the project level).
 fn render_block(sh: &Shared, pk: &[AtomicU32; 2], rate: u32, n: usize, now: Instant, gain: f32, mut put: impl FnMut(f32, f32)) {
     let mut o = sh.out.lock().unwrap();
     let target = match o.phase {
@@ -486,20 +486,20 @@ fn render_block(sh: &Shared, pk: &[AtomicU32; 2], rate: u32, n: usize, now: Inst
 }
 
 impl AudioPlayer {
-    /// Spielt ab `from`, sobald Ton da ist (Scrubben, Vorhören).
+    /// Plays from `from` as soon as sound is there (scrubbing, preview).
     pub fn start(project: &Project, from: Time) -> Result<Self, String> {
         Self::open(Cow::Borrowed(project), from, false, false)
     }
 
-    /// Für die Wiedergabe mit Bild: Ton wird vorbereitet, setzt aber erst nach [`Self::anchor`] ein –
-    /// dann an der Stelle, an der die Uhr seit dem Anker steht. Ein eigener Klon (z. B. mit Solo)
-    /// geht ohne weitere Kopie an die Zuführung.
+    /// For playback with picture: sound is prepared but only comes in after [`Self::anchor`] –
+    /// then at the place where the clock stands since the anchor. An own clone (e.g. with solo)
+    /// goes to the feed without another copy.
     pub fn start_synced(project: Cow<'_, Project>, from: Time) -> Result<Self, String> {
         Self::open(project, from, true, false)
     }
 
-    /// Wie [`Self::start_synced`], aber ohne Gerät: ein Thread verbraucht die Samples im Takt der
-    /// Systemzeit (Mess-Test ohne Fenster und ohne hörbaren Ton; Uhr, Aussetzer und Fenster wie echt).
+    /// Like [`Self::start_synced`], but without device: a thread consumes the samples at the pace of
+    /// system time (measurement test without window or audible sound; clock, dropouts and windows as real).
     #[cfg(test)]
     pub fn start_null(project: &Project, from: Time) -> Result<Self, String> {
         Self::open(Cow::Borrowed(project), from, true, true)
@@ -510,7 +510,7 @@ impl AudioPlayer {
             (None, None)
         } else {
             let host = cpal::default_host();
-            // gewähltes Gerät (aus dem Speicher, sonst aufzählen); ist es nicht (mehr) da, der Systemstandard
+            // chosen device (from memory, otherwise enumerate); if it is not there (any more), the system default
             let wanted = DEVICE.lock().unwrap().clone();
             let mut out = OUTPUT.lock().unwrap();
             let hit = wanted.as_ref().and_then(|w| out.as_ref().filter(|(n, _)| n == w).map(|(_, v)| v.clone()));
@@ -554,14 +554,14 @@ impl AudioPlayer {
         }
 
         let peaks: Arc<[AtomicU32; 2]> = Arc::new([AtomicU32::new(0), AtomicU32::new(0)]);
-        // Das Öffnen der Ausgabe (WASAPI) dauert mehrere hundert Millisekunden: im eigenen Thread,
-        // damit die Oberfläche beim Abspielen nicht steht. Der cpal-Strom ist nicht Send und lebt
-        // deshalb ganz dort; er endet, sobald `ctl` fallen gelassen wird.
+        // Opening the output (WASAPI) takes several hundred milliseconds: in its own thread
+        // so the UI does not freeze on play. The cpal stream is not Send and therefore
+        // lives entirely there; it ends as soon as `ctl` is dropped.
         let (ctl, ctl_rx) = std::sync::mpsc::channel::<bool>();
         let failed = Arc::new(AtomicBool::new(false));
         let (sh, pk, fail) = (shared.clone(), peaks.clone(), failed.clone());
         let (Some(device), Some(config)) = (device, config) else {
-            // ohne Gerät: alle 10 ms die seither fälligen Frames verbrauchen
+            // without device: every 10 ms consume the frames due since
             std::thread::Builder::new()
                 .name("cl-audio-null".into())
                 .spawn(move || {
@@ -627,7 +627,7 @@ impl AudioPlayer {
             while let Ok(play) = ctl_rx.recv() {
                 let _ = if play { stream.play().is_ok() } else { stream.pause().is_ok() };
             }
-            // Abbruch: kurz ausblenden statt hart abzuschneiden (kein Knacken)
+            // Abort: fade out briefly instead of cutting hard (no click)
             {
                 let mut o = sh.out.lock().unwrap();
                 if o.phase == Phase::Running && !sh.paused.load(Ordering::Relaxed) {
@@ -645,7 +645,7 @@ impl AudioPlayer {
                 if let Err(e) = out() {
                     log::warn!("Ton: {e}");
                     fail.store(true, Ordering::Relaxed);
-                    // Gerät abgezogen o. Ä.: beim nächsten Start neu suchen
+                    // Device unplugged or similar: search again on the next start
                     *OUTPUT.lock().unwrap() = None;
                 }
             })
@@ -653,7 +653,7 @@ impl AudioPlayer {
         Ok(Self { ctl, failed, shared, peaks, rate, start: from })
     }
 
-    /// Uhr freigeben: ab `at` läuft die Zeit; der Ton setzt an der dann aktuellen Stelle ein.
+    /// Release the clock: time runs from `at`; sound comes in at the then current place.
     pub fn anchor(&self, at: Instant) {
         let mut o = self.shared.out.lock().unwrap();
         if o.phase == Phase::Waiting {
@@ -661,7 +661,7 @@ impl AudioPlayer {
         }
     }
 
-    /// Ausgabe anhalten bzw. fortsetzen (Puffer und Uhr bleiben erhalten → sofort weiter)
+    /// Pause or resume output (buffer and clock are kept → continue at once)
     pub fn pause(&self) -> bool {
         self.shared.paused.store(true, Ordering::Relaxed);
         !self.failed() && self.ctl.send(false).is_ok()
@@ -671,12 +671,12 @@ impl AudioPlayer {
         !self.failed() && self.ctl.send(true).is_ok()
     }
 
-    /// Ausgabe ließ sich nicht öffnen (es kommt kein Ton mehr)
+    /// Output could not be opened (no more sound will come)
     pub fn failed(&self) -> bool {
         self.failed.load(Ordering::Relaxed)
     }
 
-    /// Aktuelle Wiedergabeposition nach Audio-Clock (gleichmäßig zwischen den Ausgabe-Rückrufen).
+    /// Current playback position by audio clock (smooth between output callbacks).
     pub fn position(&self) -> Time {
         let sh = &self.shared;
         let played = sh.played.load(Ordering::Relaxed);
@@ -689,7 +689,7 @@ impl AudioPlayer {
         self.start + Time::from_secs_f64(frames as f64 / self.rate as f64)
     }
 
-    /// Spitzenpegel (0…1+) links/rechts seit dem letzten Aufruf
+    /// Peak level (0…1+) left/right since the last call
     pub fn take_peaks(&self) -> (f32, f32) {
         (
             f32::from_bits(self.peaks[0].swap(0, Ordering::Relaxed)),
@@ -697,29 +697,29 @@ impl AudioPlayer {
         )
     }
 
-    /// Gibt schon Ton aus (vorher läuft das Bild nach Systemzeit bzw. steht beim Vorhören).
+    /// Already outputs sound (before that the picture runs on system time or stands still in preview).
     pub fn started(&self) -> bool {
         self.shared.running.load(Ordering::Acquire)
     }
 
-    /// Ton ist zu Ende (Projektende oder FFmpeg brach ab): die Uhr bleibt stehen.
+    /// Sound has ended (project end or FFmpeg aborted): the clock stops.
     pub fn finished(&self) -> bool {
         let o = self.shared.out.lock().unwrap();
         o.finished && o.buf.is_empty()
     }
 
-    /// Ton liegt bereit (erstes Fenster lieferte Samples oder die Zuführung ist fertig)
+    /// Sound is ready (first window delivered samples or the feed is finished)
     pub fn ready(&self) -> bool {
         let o = self.shared.out.lock().unwrap();
         o.buf.len() >= 2 || o.finished
     }
 
-    /// Zeitpunkt des ersten hörbaren Samples
+    /// Time of the first audible sample
     pub fn first_sound(&self) -> Option<Instant> {
         self.shared.first_sound.get().copied()
     }
 
-    /// Aussetzer (Puffer leer, obwohl noch Ton kommt) seit dem letzten Aufruf: (Anzahl, Dauer)
+    /// Dropouts (buffer empty while sound is still coming) since the last call: (count, duration)
     pub fn take_underruns(&self) -> (u64, Duration) {
         let mut o = self.shared.out.lock().unwrap();
         let r = (o.underruns, Duration::from_secs_f64(o.underrun_frames as f64 / self.rate as f64));
@@ -737,7 +737,7 @@ impl Drop for AudioPlayer {
                 let _ = c.kill();
             }
         }
-        // Ausgabe-Thread endet mit `ctl` (nach dem Ausblenden), Lese-Threads nach dem Töten
+        // Output thread ends with `ctl` (after the fade-out), reader threads after the kill
     }
 }
 
@@ -747,8 +747,8 @@ mod tests {
 
     const S: i64 = 1_000_000;
 
-    /// Befund aus dem Review: jeder Ton-Start zählte die Geräte auf und holte das Format neu.
-    /// Jetzt nur beim ersten Mal je Gerät (und nach Wechsel bzw. Vergessen).
+    /// Review finding: every sound start enumerated the devices and fetched the format again.
+    /// Now only the first time per device (and after a change or forgetting).
     #[test]
     fn output_format_is_fetched_once_per_device() {
         let mut slot = None;
@@ -760,12 +760,12 @@ mod tests {
             })
         };
         assert_eq!(get(&mut slot, "A", 48_000), Ok(48_000));
-        assert_eq!(get(&mut slot, "A", 1), Ok(48_000), "aus dem Speicher");
-        assert_eq!(get(&mut slot, "B", 44_100), Ok(44_100), "anderes Gerät: neu");
-        slot = None; // Gerät gewechselt oder Ausgabe scheiterte
+        assert_eq!(get(&mut slot, "A", 1), Ok(48_000), "from memory");
+        assert_eq!(get(&mut slot, "B", 44_100), Ok(44_100), "other device: new");
+        slot = None; // device changed or output failed
         assert_eq!(get(&mut slot, "B", 96_000), Ok(96_000));
         assert_eq!(calls, 3);
-        // Fehler werden nicht gemerkt
+        // errors are not remembered
         let mut s2: Option<(String, u32)> = None;
         assert_eq!(remembered(&mut s2, "C", || Err::<u32, _>("weg")), Err("weg"));
         assert!(s2.is_none());
@@ -779,22 +779,22 @@ mod tests {
                 let mut next = 0;
                 let mut k = 0;
                 while let Some(w) = window_plan(from, end, rate, k) {
-                    assert_eq!(w.first, next, "lückenlos: {rate} {k}");
+                    assert_eq!(w.first, next, "gapless: {rate} {k}");
                     assert!(w.frames > 0 && w.frames <= WINDOW_SECS * rate as u64);
-                    assert!(k > 0 || w.frames <= FIRST_SECS * rate as u64, "erstes Fenster kurz");
-                    // Fensteranfang liegt auf dem Raster der Wiedergabe: Frame `first` ab `from`
+                    assert!(k > 0 || w.frames <= FIRST_SECS * rate as u64, "first window short");
+                    // window start lies on the playback grid: frame `first` from `from`
                     let start = w.mix_from.0 as i128 * rate as i128 + w.skip as i128 * 1_000_000;
                     let want = from.0 as i128 * rate as i128 + w.first as i128 * 1_000_000;
-                    assert!((start - want).abs() <= 1_000_000, "Raster {rate} {k}: {start} {want}");
+                    assert!((start - want).abs() <= 1_000_000, "grid {rate} {k}: {start} {want}");
                     if from.0 > PRE_MS as i64 * 1000 || k > 0 {
-                        assert_eq!(start, want, "genau auf dem Raster");
-                        assert_eq!(w.skip, rate as u64 * PRE_MS / 1000, "Einschwingen");
+                        assert_eq!(start, want, "exactly on the grid");
+                        assert_eq!(w.skip, rate as u64 * PRE_MS / 1000, "settling");
                     }
                     assert!(w.mix_to >= from + Time((w.first + w.frames) as i64 * S / rate as i64));
                     next += w.frames;
                     k += 1;
                 }
-                assert_eq!(next, total_frames(from, end, rate), "alles abgedeckt");
+                assert_eq!(next, total_frames(from, end, rate), "all covered");
             }
         }
         assert_eq!(window_plan(Time(5), Time(5), 48_000, 0), None);
@@ -811,7 +811,7 @@ mod tests {
         assert_eq!(w.skip, 9600);
         assert_eq!(w.frames, 20 * 48_000);
         assert_eq!(w.mix_to, Time(116 * S));
-        // letztes Fenster endet am Projektende: 90+6+5×20 = 196 … 200
+        // last window ends at the project end: 90+6+5×20 = 196 … 200
         let last = window_plan(Time(90 * S), Time(200 * S), 48_000, 6).unwrap();
         assert_eq!(last.frames, 4 * 48_000);
         assert_eq!(last.mix_to, Time(200 * S));
@@ -826,7 +826,7 @@ mod tests {
         assert!(!prepare_next(0, f, r));
         assert!(!prepare_next(f - LEAD_SECS * r as u64 - 1, f, r));
         assert!(prepare_next(f - LEAD_SECS * r as u64, f, r));
-        // kurzes (erstes oder letztes) Fenster: sofort
+        // short (first or last) window: at once
         assert!(prepare_next(0, 3 * r as u64, r));
     }
 
@@ -844,19 +844,19 @@ mod tests {
 
     #[test]
     fn anchored_output_skips_to_the_clock_and_fades_in() {
-        let mut o = Out::new(Phase::Waiting, 1000); // 1000 Hz: 15 Frames Einblenden
+        let mut o = Out::new(Phase::Waiting, 1000); // 1000 Hz: 15 frames fade-in
         feed_ramp(&mut o, 0, 100);
-        // vor dem Anker: Stille, nichts verbraucht (Bild puffert noch)
+        // before the anchor: silence, nothing consumed (picture still buffering)
         assert!(take(&mut o, 10, 0).iter().all(|s| *s == (0.0, 0.0)));
         assert_eq!(o.played, 0);
         o.phase = Phase::Anchored(Instant::now());
-        // Uhr steht schon bei 40 Frames: die ersten 40 werden übersprungen, Ton setzt bei 40 ein
+        // clock already at 40 frames: the first 40 are skipped, sound comes in at 40
         let v = take(&mut o, 30, 40);
         assert_eq!(o.phase, Phase::Running);
-        assert_eq!(o.played, 70, "Uhr = übersprungene + gespielte Frames, kein Sprung");
-        assert_eq!(v[0], (0.0, -0.0), "Einblenden beginnt bei 0");
-        assert!((v[1].0 - 41.0 / 15.0).abs() < 1e-4, "Rampe: {:?}", v[1]);
-        assert_eq!(v[20], (60.0, -60.0), "nach dem Einblenden unverändert");
+        assert_eq!(o.played, 70, "clock = skipped + played frames, no jump");
+        assert_eq!(v[0], (0.0, -0.0), "fade-in starts at 0");
+        assert!((v[1].0 - 41.0 / 15.0).abs() < 1e-4, "ramp: {:?}", v[1]);
+        assert_eq!(v[20], (60.0, -60.0), "unchanged after the fade-in");
     }
 
     #[test]
@@ -864,15 +864,15 @@ mod tests {
         let mut o = Out::new(Phase::Waiting, 1000);
         o.phase = Phase::Anchored(Instant::now());
         feed_ramp(&mut o, 0, 20);
-        // Uhr bei 50, erst 20 Frames da: alle verwerfen, weiter Stille
+        // clock at 50, only 20 frames there: discard all, keep silence
         assert!(take(&mut o, 10, 50).iter().all(|s| *s == (0.0, 0.0)));
         assert_eq!(o.played, 20);
         assert!(matches!(o.phase, Phase::Anchored(_)));
         feed_ramp(&mut o, 20, 100);
         let v = take(&mut o, 40, 60);
         assert_eq!(o.played, 100);
-        assert_eq!(v[30], (90.0, -90.0), "setzt bei Frame 60 ein");
-        assert_eq!(o.underruns, 0, "kein Aussetzer vor dem Einsetzen");
+        assert_eq!(v[30], (90.0, -90.0), "comes in at frame 60");
+        assert_eq!(o.underruns, 0, "no dropout before coming in");
     }
 
     #[test]
@@ -888,7 +888,7 @@ mod tests {
         assert_eq!(o.underruns, 2);
         o.finished = true;
         take(&mut o, 10, 0);
-        assert_eq!(o.underruns, 2, "Ende ist kein Aussetzer");
+        assert_eq!(o.underruns, 2, "the end is no dropout");
     }
 
     #[test]
@@ -905,13 +905,13 @@ mod tests {
     #[test]
     fn clock_is_smooth_between_callbacks_and_stops_in_a_gap() {
         let r = 48_000;
-        // `played` = 1480 nach einem Rückruf über 480 Frames
+        // `played` = 1480 after a callback of 480 frames
         assert_eq!(clock_frames(1480, Duration::ZERO, 480, r), 1000);
         assert_eq!(clock_frames(1480, Duration::from_millis(5), 480, r), 1240);
-        // höchstens bis zum Ende dessen, was ausgegeben wurde (auch in der Pause)
+        // at most up to the end of what was output (also while paused)
         assert_eq!(clock_frames(1480, Duration::from_millis(50), 480, r), 1480);
         assert_eq!(clock_frames(1000, Duration::from_millis(50), 0, r), 1000);
-        // nächster Rückruf schließt nahtlos an
+        // next callback joins seamlessly
         assert_eq!(clock_frames(1960, Duration::ZERO, 480, r), 1480);
     }
 
@@ -935,13 +935,13 @@ mod tests {
         let g = |p: f32| Volume { percent: p, muted: false }.gain();
         assert_eq!(g(0.0), 0.0);
         assert_eq!(g(100.0), 1.0);
-        assert!((g(50.0) - 0.125).abs() < 1e-6, "kubisch");
+        assert!((g(50.0) - 0.125).abs() < 1e-6, "cubic");
         let mut last = -1.0;
         for p in (0..=100).step_by(5) {
-            assert!(g(p as f32) > last, "monoton bei {p}");
+            assert!(g(p as f32) > last, "monotonic at {p}");
             last = g(p as f32);
         }
-        // nie lauter als das Projekt, auch mit kaputten Werten
+        // never louder than the project, even with broken values
         for p in [150.0, f32::INFINITY, -20.0, f32::NAN] {
             assert!((0.0..=1.0).contains(&g(p)), "{p}");
         }
@@ -953,11 +953,11 @@ mod tests {
         assert_eq!(v(0.0, false).step(false), v(0.0, false));
     }
 
-    /// Lautstärke der Wiedergabe wirkt an der Ausgabe (Gerät und ohne Gerät teilen `render_block`),
-    /// gleitet ohne Sprung und lässt die Pegelanzeige unberührt.
+    /// Playback volume acts at the output (device and no device share `render_block`),
+    /// glides without a jump and leaves the level meter untouched.
     #[test]
     fn playback_volume_reaches_the_output_but_not_the_meter() {
-        let rate = 1000; // 5 Frames Rampe
+        let rate = 1000; // 5 frames ramp
         let run = |start: f32, gain: f32| {
             let sh = test_shared(rate);
             let pk = [AtomicU32::new(0), AtomicU32::new(0)];
@@ -971,23 +971,23 @@ mod tests {
             render_block(&sh, &pk, rate, 100, Instant::now(), gain, |l, r| v.push((l, r)));
             (v, f32::from_bits(pk[0].load(Ordering::Relaxed)))
         };
-        // 100 %: Samples unverändert
+        // 100 %: samples unchanged
         let (v, peak) = run(1.0, 1.0);
         assert!(v.iter().all(|s| *s == (0.5, 0.5)));
         assert_eq!(peak, 0.5);
-        // stumm/0 %: nach der Rampe Stille, Rampe ohne Sprung, Pegel weiter vom Projekt
+        // muted/0 %: silence after the ramp, ramp without a jump, levels still from the project
         let (v, peak) = run(1.0, Volume { percent: 100.0, muted: true }.gain());
         assert!(v[10..].iter().all(|s| *s == (0.0, 0.0)));
-        assert!(v[0].0 > 0.3 && v[0].0 < 0.5, "gleitet: {:?}", v[0]);
-        assert!(v.windows(2).all(|w| w[0].0 - w[1].0 <= 0.1 + 1e-6), "kein Sprung");
-        assert_eq!(peak, 0.5, "Pegel vor dem Regler");
-        // wieder an: gleitet hoch
+        assert!(v[0].0 > 0.3 && v[0].0 < 0.5, "glides: {:?}", v[0]);
+        assert!(v.windows(2).all(|w| w[0].0 - w[1].0 <= 0.1 + 1e-6), "no jump");
+        assert_eq!(peak, 0.5, "level before the slider");
+        // on again: glides up
         let (v, _) = run(0.0, 1.0);
         assert!(v[0].0 > 0.0 && v[0].0 < 0.2);
         assert!(v[10..].iter().all(|s| *s == (0.5, 0.5)));
     }
 
-    /// Wiedergabe-Ton wie in der App (Fenster für Fenster über die Zuführung, ohne Ausgabegerät)
+    /// Playback sound as in the app (window by window through the feed, without output device)
     fn windowed(p: &Project, from: Time, rate: u32) -> Vec<f32> {
         let shared = test_shared(rate);
         let first = open_window(p, window_plan(from, p.duration(), rate, 0).unwrap(), rate, &shared).unwrap();
@@ -1008,7 +1008,7 @@ mod tests {
         all
     }
 
-    /// Bisheriger Weg: ein Mix vom Startpunkt bis zum Projektende
+    /// Old way: one mix from the start point to the project end
     fn whole(p: &Project, from: Time, rate: u32) -> Vec<f32> {
         let (mut child, _wd) = cl_export::spawn_audio_preview(p, from, rate).unwrap();
         let mut buf = Vec::new();
@@ -1017,7 +1017,7 @@ mod tests {
         buf.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
     }
 
-    /// Ganze Kette mit echtem FFmpeg (ohne Ausgabegerät): Fenster für Fenster in den Puffer.
+    /// Whole chain with real FFmpeg (without output device): window by window into the buffer.
     #[test]
     fn feeder_delivers_exact_frame_count_across_windows() {
         if !cl_media::ffmpeg_available() {
@@ -1029,8 +1029,8 @@ mod tests {
         assert_eq!(windowed(&p, from, rate).len() as u64, 2 * total_frames(from, p.duration(), rate));
     }
 
-    /// Projekt mit allem, was den Ton formt: Schnitte derselben Datei, Blenden, Lautstärke-Keyframes,
-    /// Tempo ≠ 1, rückwärts, ein Clip über die Fenstergrenze (bei Start 1,5 s liegt sie bei 21,5 s).
+    /// Project with everything that shapes the sound: cuts of the same file, fades, volume keyframes,
+    /// speed ≠ 1, reverse, a clip across the window boundary (with start 1.5 s it lies at 21.5 s).
     fn rich_project(dir: &std::path::Path) -> Project {
         use cl_core::*;
         let tone = |name: &str, src: &str| {
@@ -1044,7 +1044,7 @@ mod tests {
                 .success());
             cl_media::probe(&path).unwrap()
         };
-        // Tonhöhe ändert sich laufend: jeder Versatz um ein Sample fiele auf
+        // pitch changes constantly: any offset by one sample would show
         let a = tone("a.wav", "aevalsrc=0.5*sin(2*PI*(200+20*t)*t):s=48000:d=40");
         let b = tone("b.wav", "sine=f=523:d=40:sample_rate=44100");
         let mut p = Project::new("fenster");
@@ -1062,7 +1062,7 @@ mod tests {
         let mut c = clip(&a, 6.0, 9.0, 20.0);
         c.speed = 1.5;
         t1.clips.push(c);
-        // über beide Fenstergrenzen, mit Lautstärke-Keyframes und Ausblenden
+        // across both window boundaries, with volume keyframes and fade-out
         let mut c = clip(&a, 15.0, 15.0, 3.0);
         c.keyframes.set(Prop::Volume, Time::ZERO, -12.0);
         c.keyframes.set(Prop::Volume, Time::from_secs_f64(8.0), 3.0);
@@ -1081,7 +1081,7 @@ mod tests {
         p
     }
 
-    /// Fenster-Mix über zwei Fenster = bisheriger Gesamt-Mix desselben Abschnitts.
+    /// Window mix over two windows = old full mix of the same section.
     #[test]
     fn windowed_mix_matches_whole_mix() {
         if !cl_media::ffmpeg_available() {
@@ -1089,29 +1089,29 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let p = rich_project(dir.path());
-        assert!(p.duration() > Time((FIRST_SECS + WINDOW_SECS + 2) as i64 * S), "drei Fenster");
+        assert!(p.duration() > Time((FIRST_SECS + WINDOW_SECS + 2) as i64 * S), "three windows");
         for (rate, from, tol) in [(48_000, Time(1_500_000), 1e-6f32), (44_100, Time(1_500_000), 2e-3), (48_000, Time(100_000), 1e-6)] {
             let w = windowed(&p, from, rate);
             let full = whole(&p, from, rate);
             let n = total_frames(from, p.duration(), rate) as usize * 2;
-            assert_eq!(w.len(), n, "{rate}: genaue Länge");
+            assert_eq!(w.len(), n, "{rate}: exact length");
             assert!(full.len() + 2 * rate as usize / 100 >= n, "{rate}: {} {n}", full.len());
             let cmp = full.len().min(n);
             let (i, d) = (0..cmp).map(|i| (i, (w[i] - full[i]).abs())).fold((0, 0.0f32), |a, b| if b.1 > a.1 { b } else { a });
             let shifted = (0..cmp - 2).map(|i| (w[i] - full[i + 2]).abs()).fold(0.0f32, f32::max);
-            assert!(shifted > 0.1, "Test erkennt einen Versatz um ein Sample: {shifted}");
-            assert!(d <= tol, "{rate} ab {from:?}: größte Abweichung {d} bei {:.4} s", i as f64 / 2.0 / rate as f64);
-            // an den Nähten kein Sprung: der Schritt dort ist nicht größer als sonst
+            assert!(shifted > 0.1, "test detects a one-sample offset: {shifted}");
+            assert!(d <= tol, "{rate} from {from:?}: largest deviation {d} at {:.4} s", i as f64 / 2.0 / rate as f64);
+            // no jump at the seams: the step there is no larger than elsewhere
             for s in [FIRST_SECS, FIRST_SECS + WINDOW_SECS] {
                 let seam = s as usize * rate as usize * 2;
                 let step = |i: usize| (w[i] - w[i - 2]).abs();
                 let usual = (seam - 200..seam - 2).map(step).fold(0.0f32, f32::max);
-                assert!(step(seam) <= usual * 1.5 + 1e-4, "{rate}: Naht {} / sonst {usual}", step(seam));
+                assert!(step(seam) <= usual * 1.5 + 1e-4, "{rate}: seam {} / elsewhere {usual}", step(seam));
             }
         }
     }
 
-    /// Zeit bis zum ersten Ton-Sample an der Startstelle (Aufruf + FFmpeg + Einschwingen)
+    /// Time to the first audio sample at the start point (call + FFmpeg + settling)
     fn first_sample_ms(spawn: impl FnOnce() -> (Child, tempfile::TempDir), skip_frames: u64) -> f64 {
         let t0 = Instant::now();
         let (mut child, _wd) = spawn();
@@ -1130,8 +1130,8 @@ mod tests {
         ms
     }
 
-    /// Messung von Hand: `CUTLINE_QA_DIR=<Ordner mit PL_schnitt.cutline> cargo test --release -p cl-app
-    /// -- --ignored first_audio_sample --nocapture`. Bisher (ganzer Mix bis Projektende) gegen Fenster.
+    /// Manual measurement: `CUTLINE_QA_DIR=<folder with PL_schnitt.cutline> cargo test --release -p cl-app
+    /// -- --ignored first_audio_sample --nocapture`. Old way (full mix to project end) against windows.
     #[test]
     #[ignore]
     fn first_audio_sample_pl_schnitt() {
@@ -1151,7 +1151,7 @@ mod tests {
                 let plan = window_plan(from, p.duration(), rate, 0).unwrap();
                 let n_old = cl_export::audio_clips_in(&p, from, p.duration()).len();
                 let n_new = cl_export::audio_clips_in(&p, plan.mix_from, plan.mix_to).len();
-                // je zweimal, der zweite Wert zählt (Dateien im Cache wie in der App)
+                // twice each, the second value counts (files in cache as in the app)
                 let mut old = 0.0;
                 let mut new = 0.0;
                 for _ in 0..2 {
@@ -1166,8 +1166,8 @@ mod tests {
         }
     }
 
-    /// Messung von Hand mit dem echten Ausgabegerät (spielt nur Stille): Start → erstes Sample am
-    /// Gerät (Öffnen der Ausgabe + FFmpeg + Zuführung), synchron gestartet wie beim Abspielen.
+    /// Manual measurement with the real output device (plays only silence): start → first sample at the
+    /// device (opening the output + FFmpeg + feed), started synchronized as on playback.
     /// `cargo test --release -p cl-app -- --ignored output_start_latency --nocapture`
     #[test]
     #[ignore]
@@ -1177,7 +1177,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let mut p = test_project(dir.path(), 30.0);
-        p.timeline.tracks[0].muted = true; // Stille aus eigener Quelle
+        p.timeline.tracks[0].muted = true; // silence from own source
         for i in 0..5 {
             let t0 = Instant::now();
             let a = AudioPlayer::start_synced(Cow::Borrowed(&p), Time(S)).unwrap();
@@ -1187,14 +1187,14 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(1));
             }
             let first = a.first_sound().map(|t| t.duration_since(t0));
-            // Uhr nach der Übergabe = Zeit seit dem Anker (kein Sprung)
+            // clock after the handover = time since the anchor (no jump)
             let diff = a.position().as_secs_f64() - 1.0 - t0.elapsed().as_secs_f64();
             eprintln!("Lauf {i}: Aufruf {:.0} ms, erstes Sample {:?} ms, Uhr − Systemzeit {:+.1} ms", opened.as_secs_f64() * 1e3, first.map(|d| (d.as_secs_f64() * 1e3).round()), diff * 1e3);
-            assert!(diff.abs() < 0.005, "Übergabe ohne Sprung: {diff}");
+            assert!(diff.abs() < 0.005, "handover without a jump: {diff}");
         }
     }
 
-    /// Vor dem Anker: bereit, sobald das erste Fenster Samples liefert (darauf wartet die Uhr)
+    /// Before the anchor: ready as soon as the first window delivers samples (the clock waits for that)
     #[test]
     fn ready_once_first_window_delivers() {
         if !cl_media::ffmpeg_available() {
@@ -1208,7 +1208,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(2));
         }
         assert!(a.ready());
-        assert!(!a.started(), "ohne Anker kein Ton");
+        assert!(!a.started(), "no sound without anchor");
     }
 
     fn test_project(dir: &std::path::Path, secs: f64) -> Project {
