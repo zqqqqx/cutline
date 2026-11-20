@@ -1,9 +1,9 @@
-//! Medienzugriff für Cutline.
+//! Media access for Cutline.
 //!
-//! Phase 0 nutzt die FFmpeg-/FFprobe-Programme als Unterprozess. Das ist robust,
-//! unterstützt sofort alle FFmpeg-Formate und braucht keine C-Header zum Bauen.
-//! Phase 1 ersetzt das durch libav-Bindings mit Hardware-Decode und Zero-Copy nach wgpu.
-//! Die öffentliche API (probe / decode_frame / FrameStream) bleibt dabei gleich.
+//! Phase 0 uses the FFmpeg/FFprobe programs as subprocesses. That is robust,
+//! supports all FFmpeg formats at once and needs no C headers to build.
+//! Phase 1 replaces it with libav bindings with hardware decode and zero-copy to wgpu.
+//! The public API (probe / decode_frame / FrameStream) stays the same.
 
 use std::collections::HashSet;
 use std::io::Read;
@@ -40,8 +40,8 @@ pub enum MediaError {
 
 pub type Result<T> = std::result::Result<T, MediaError>;
 
-/// Dateiendungen für den Import-Dialog. Erkannt wird später aber per Inhalt (FFprobe),
-/// nicht per Endung. Falsch benannte Dateien funktionieren also auch.
+/// File extensions for the import dialog. Detection later is by content (FFprobe) though,
+/// not by extension. So misnamed files work too.
 pub const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "m4v", "mov", "qt", "mkv", "webm", "avi", "mxf", "mts", "m2ts", "m2t", "ts", "mpg",
     "mpeg", "mpe", "m2v", "vob", "flv", "f4v", "wmv", "asf", "3gp", "3g2", "ogv", "rm", "rmvb",
@@ -78,7 +78,7 @@ fn tool(name: &str) -> Result<PathBuf> {
             return Ok(p);
         }
     }
-    // Mitgeliefertes FFmpeg im Release-Paket: <exe-Ordner>/ffmpeg/
+    // bundled FFmpeg in the release package: <exe folder>/ffmpeg/
     if let Some(p) = std::env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(|d| d.join("ffmpeg").join(&exe)))
@@ -93,22 +93,22 @@ fn tool(name: &str) -> Result<PathBuf> {
         .ok_or(MediaError::FfmpegMissing)
 }
 
-/// FFmpeg-Befehl (ohne Konsolenfenster) für andere Crates, z. B. den Export. Der gestartete
-/// Prozess endet mit der App, auch wenn sie hart beendet wird (Windows: Job-Objekt; Linux: endet
-/// mit dem startenden Thread, siehe `proc::prepare`).
+/// FFmpeg command (without console window) for other crates, e.g. the export. The started
+/// process ends with the app, even if it is killed (Windows: job object; Linux: ends
+/// with the starting thread, see `proc::prepare`).
 pub fn ffmpeg_command() -> Result<Command> {
     command("ffmpeg")
 }
 
-/// FFmpeg-Befehl eines Wiedergabe-Prozesses ohne Hardware-Decodierung (Ton-Fenster): Threads
-/// begrenzt. Nach dem Start unbedingt [`raise_priority`] aufrufen: erst das ordnet ihn dem Job zu.
+/// FFmpeg command of a playback process without hardware decoding (audio window): threads
+/// limited. Be sure to call [`raise_priority`] after the start: only that assigns it to the job.
 pub fn playback_command() -> Result<Command> {
     let mut cmd = command_with("ffmpeg", false)?;
     limit_threads(&mut cmd, false);
     Ok(cmd)
 }
 
-/// FFprobe-Befehl (ohne Konsolenfenster).
+/// FFprobe command (without console window).
 pub fn ffprobe_command() -> Result<Command> {
     command("ffprobe")
 }
@@ -121,8 +121,8 @@ fn command(name: &str) -> Result<Command> {
     command_with(name, true)
 }
 
-/// `adopt`: der Wächter sucht das gestartete Kind und ordnet es dem Job zu (Windows); `false` nur,
-/// wenn danach [`raise_priority`] es direkt zuordnet (Wiedergabe: keine Prozess-Suche je Start).
+/// `adopt`: the watcher looks for the started child and assigns it to the job (Windows); `false` only
+/// if [`raise_priority`] assigns it directly afterwards (playback: no process search per start).
 fn command_with(name: &str, adopt: bool) -> Result<Command> {
     let mut cmd = Command::new(tool(name)?);
     proc::prepare(&mut cmd, adopt);
@@ -175,7 +175,7 @@ const IMAGE_CODECS: &[&str] = &[
     "jpeg2000", "qoi", "hdr", "jpegxl", "svg",
 ];
 
-/// Liest Metadaten einer Mediendatei.
+/// Reads metadata of a media file.
 pub fn probe(path: &Path) -> Result<MediaRef> {
     let out = command("ffprobe")?
         .args([
@@ -232,7 +232,7 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
                 && duration <= Time::from_millis(100)
                 && audio.is_none())
     }) || fmt_name.contains("gif")
-        // bewegte Bilder laufen als Bild-Clip (siehe [`animation`]), nicht als Video
+        // animated images run as an image clip (see [`animation`]), not as video
         || fmt_name == "apng";
 
     let kind = match (video, is_image) {
@@ -248,7 +248,7 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
             .find(|r| r.num > 0)
     });
 
-    // Hochkant-Handyvideos: gespeichert quer mit ±90°-Drehung, FFmpeg dreht beim Dekodieren
+    // portrait phone videos: stored landscape with ±90° rotation, FFmpeg rotates when decoding
     let rotation = video
         .and_then(|v| {
             v.side_data_list
@@ -284,7 +284,7 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
     })
 }
 
-/// RGBA8-Bild (unpremultiplied).
+/// RGBA8 image (unpremultiplied).
 #[derive(Clone)]
 pub struct RgbaFrame {
     pub width: u32,
@@ -298,7 +298,7 @@ impl std::fmt::Debug for RgbaFrame {
     }
 }
 
-/// Zielgröße, die in `max_w`×`max_h` passt und das Seitenverhältnis hält (gerade Werte).
+/// Target size that fits in `max_w`×`max_h` and keeps the aspect ratio (even values).
 pub fn fit_size(src_w: u32, src_h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     if src_w == 0 || src_h == 0 {
         return (max_w.max(2) & !1, max_h.max(2) & !1);
@@ -309,12 +309,12 @@ pub fn fit_size(src_w: u32, src_h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     (w, h)
 }
 
-/// Dekodiert ein einzelnes Bild an Quellzeit `at`, skaliert auf `w`×`h`.
+/// Decodes a single frame at source time `at`, scaled to `w`×`h`.
 pub fn decode_frame(path: &Path, at: Time, w: u32, h: u32) -> Result<RgbaFrame> {
     decode_frame_fx(path, at, w, h, None)
 }
 
-/// Wie [`decode_frame`], optional mit Filtergraph (`[0:v]` → `[out]`, liefert `w`×`h` RGBA).
+/// Like [`decode_frame`], optionally with a filter graph (`[0:v]` → `[out]`, delivers `w`×`h` RGBA).
 pub fn decode_frame_fx(
     path: &Path,
     at: Time,
@@ -325,17 +325,17 @@ pub fn decode_frame_fx(
     decode_frame_opts(path, at, w, h, graph, false, None).map(|(f, _)| f)
 }
 
-/// Wie ein Einzelbild entstand (für Messpunkte).
+/// How a single frame was produced (for measurements).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DecodeInfo {
-    /// mit Hardware-Decodierung
+    /// with hardware decoding
     pub hw: bool,
-    /// CPU-Zeit des FFmpeg-Prozesses (nicht auf jedem System ermittelbar)
+    /// CPU time of the FFmpeg process (not obtainable on every system)
     pub cpu: Option<Duration>,
 }
 
-/// Abbruch eines laufenden Einzelbild-Auftrags von einem anderen Thread aus: beendet den
-/// FFmpeg sofort, der Auftrag endet mit [`MediaError::Cancelled`].
+/// Cancels a running single-frame job from another thread: kills the
+/// FFmpeg at once, the job ends with [`MediaError::Cancelled`].
 #[derive(Default)]
 pub struct KillSwitch(Mutex<(bool, Option<Child>)>);
 
@@ -365,9 +365,9 @@ impl KillSwitch {
     }
 }
 
-/// Einzelbild mit Optionen. `hw`: Hardware-Decodierung versuchen; scheitert sie, kommt das Bild
-/// aus der Software, und die Datei wird für den Rest der Sitzung nur noch in Software gelesen.
-/// `kill`: Auftrag von außen abbrechen.
+/// Single frame with options. `hw`: try hardware decoding; if it fails, the frame comes
+/// from software, and the file is read only in software for the rest of the session.
+/// `kill`: cancel the job from outside.
 pub fn decode_frame_opts(
     path: &Path,
     at: Time,
@@ -384,7 +384,7 @@ pub fn decode_frame_opts(
             Err(_) => {
                 drop(slot);
                 let (f, cpu) = decode_once(path, at, w, h, graph, None, kill)?;
-                // nur merken, wenn Software an derselben Stelle ein Bild hat
+                // only remember if software has a frame at the same position
                 hw_failed(path);
                 return Ok((f, DecodeInfo { hw: false, cpu }));
             }
@@ -393,10 +393,10 @@ pub fn decode_frame_opts(
     decode_once(path, at, w, h, graph, None, kill).map(|(f, cpu)| (f, DecodeInfo { hw: false, cpu }))
 }
 
-/// `n` aufeinanderfolgende Bilder ab Quellzeit `from` in einem FFmpeg (Software), skaliert auf
-/// `w`×`h`: Fenster für das Rückwärts-Abspielen. Bild `k` ist dasselbe wie [`decode_frame`] beim
-/// `k`-ten Bild nach `from`; nur die mit `keep(k)` bleiben im Speicher (Nummer, Bild). Am
-/// Dateiende weniger, kein einziges = Fehler.
+/// `n` consecutive frames from source time `from` in one FFmpeg (software), scaled to
+/// `w`×`h`: window for reverse playback. Frame `k` is the same as [`decode_frame`] at the
+/// `k`-th frame after `from`; only those with `keep(k)` stay in memory (number, frame). At the
+/// end of the file fewer, none at all = error.
 pub fn decode_frames(path: &Path, from: Time, n: u32, w: u32, h: u32, keep: &dyn Fn(u32) -> bool, kill: Option<&KillSwitch>) -> Result<Vec<(u32, RgbaFrame)>> {
     let (frames, _) = decode_raw(path, from, n.max(1), w, h, None, None, keep, kill)?;
     Ok(frames.into_iter().map(|(k, data)| (k, RgbaFrame { width: w, height: h, data })).collect())
@@ -415,8 +415,8 @@ fn decode_once(
     Ok((RgbaFrame { width: w, height: h, data: f.remove(0).1 }, cpu))
 }
 
-/// Rohe RGBA-Bytes von bis zu `n` Bildern ab `at` (mindestens eins gelesen, sonst Fehler), nur die
-/// mit `keep(k)` behalten
+/// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), keeping only
+/// those with `keep(k)`
 #[allow(clippy::too_many_arguments)]
 fn decode_raw(
     path: &Path,
@@ -450,13 +450,13 @@ fn decode_raw(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    // Einzelbild des Players (mit Abbruch-Schalter): vor anderer Last wie die Ströme
+    // single frame of the player (with cancel switch): ahead of other load like the streams
     if kill.is_some() {
         raise_priority(&child);
     }
     let mut out = child.stdout.take().expect("piped");
     let mut err = child.stderr.take().expect("piped");
-    // stderr nebenher lesen: ein voller Puffer würde FFmpeg anhalten
+    // read stderr alongside: a full buffer would stall FFmpeg
     let err = std::thread::spawn(move || {
         let mut s = String::new();
         let _ = err.read_to_string(&mut s);
@@ -484,7 +484,7 @@ fn decode_raw(
     }
     if read == 0 {
         let err = err.trim().to_string();
-        // ohne Fehlertext: an dieser Stelle gibt es kein Bild (z. B. hinter dem letzten)
+        // without error text: there is no frame at this position (e.g. after the last one)
         return Err(MediaError::Unreadable(if err.is_empty() {
             format!("kein Bild bei {:.3} s in {}", at.as_secs_f64(), path.display())
         } else {
@@ -494,13 +494,13 @@ fn decode_raw(
     Ok((frames, cpu))
 }
 
-/// Höchstzahl gleichzeitiger Hardware-Decoder (NVDEC-Sitzungen u. Ä. sind begrenzt); jeder
-/// weitere Auftrag läuft in Software.
+/// Maximum number of simultaneous hardware decoders (NVDEC sessions etc. are limited); every
+/// further job runs in software.
 pub const MAX_HW_DECODERS: usize = 3;
 static HW_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
-/// `-hwaccel` dieses Systems: Windows D3D11VA, macOS VideoToolbox, sonst keiner (ungeprüft).
-/// `CUTLINE_NO_HWDEC` schaltet die Hardware-Decodierung der Vorschau ab.
+/// `-hwaccel` of this system: Windows D3D11VA, macOS VideoToolbox, otherwise none (untested).
+/// `CUTLINE_NO_HWDEC` turns off hardware decoding for the preview.
 pub fn hwaccel() -> Option<&'static str> {
     if std::env::var_os("CUTLINE_NO_HWDEC").is_some() {
         return None;
@@ -523,12 +523,12 @@ fn hw_failed(path: &Path) {
     hw_broken().insert(path.to_path_buf());
 }
 
-/// Ist der Hardware-Weg für diese Datei in dieser Sitzung gescheitert?
+/// Did the hardware path fail for this file in this session?
 pub fn hw_decode_failed(path: &Path) -> bool {
     hw_broken().contains(path)
 }
 
-/// Einen Platz unter `max` belegen (zählt hoch, wenn frei).
+/// Take a slot below `max` (counts up if free).
 fn take_slot(n: &AtomicUsize, max: usize) -> bool {
     let mut v = n.load(Ordering::Acquire);
     while v < max {
@@ -540,7 +540,7 @@ fn take_slot(n: &AtomicUsize, max: usize) -> bool {
     false
 }
 
-/// Belegter Hardware-Decoder; gibt den Platz beim Verwerfen frei.
+/// Occupied hardware decoder; frees the slot when dropped.
 struct HwSlot {
     accel: &'static str,
 }
@@ -561,17 +561,17 @@ impl Drop for HwSlot {
     }
 }
 
-/// Spitzenpegel (0..1) für die Waveform-Anzeige, `per_sec` Werte pro Sekunde.
+/// Peak levels (0..1) for the waveform display, `per_sec` values per second.
 pub fn waveform(path: &Path, per_sec: u32) -> Result<Vec<f32>> {
     waveform_head(path, per_sec, None)
 }
 
-/// Wie [`waveform`], aber nur die ersten `max_secs` Sekunden (stundenlange Dateien: Zeit und Speicher).
+/// Like [`waveform`], but only the first `max_secs` seconds (hour-long files: time and memory).
 pub fn waveform_head(path: &Path, per_sec: u32, max_secs: Option<f64>) -> Result<Vec<f32>> {
     waveform_of(path, per_sec, max_secs, 0)
 }
 
-/// Wie [`waveform`] für die Tonspur `stream` der Datei (0 = erste).
+/// Like [`waveform`] for audio stream `stream` of the file (0 = first).
 pub fn waveform_stream(path: &Path, per_sec: u32, stream: u32) -> Result<Vec<f32>> {
     waveform_of(path, per_sec, None, stream)
 }
@@ -615,15 +615,15 @@ fn waveform_of(path: &Path, per_sec: u32, max_secs: Option<f64>, stream: u32) ->
         .collect())
 }
 
-/// Ist bei einer Stereo-Datei nur ein Kanal belegt? Gibt den Index des stummen Kanals zurück
-/// (0 = links, 1 = rechts). Prüft die ersten 90 s, Ergebnis wird je Datei zwischengespeichert.
+/// Is only one channel used in a stereo file? Returns the index of the silent channel
+/// (0 = left, 1 = right). Checks the first 90 s, the result is cached per file.
 pub fn silent_channel(path: &Path) -> Option<u8> {
     silent_channel_opt(path, true)
 }
 
-/// Wie [`silent_channel`]; mit `wait = false` wird nie auf FFmpeg gewartet (für die
-/// Wiedergabe): Ist das Ergebnis noch nicht bekannt, wird es im Hintergrund ermittelt und
-/// dieses Mal `None` geliefert.
+/// Like [`silent_channel`]; with `wait = false` it never waits for FFmpeg (for
+/// playback): if the result is not known yet, it is determined in the background and
+/// `None` is returned this time.
 pub fn silent_channel_opt(path: &Path, wait: bool) -> Option<u8> {
     use std::collections::{HashMap, HashSet};
     use std::sync::Mutex;
@@ -676,8 +676,8 @@ pub fn silent_channel_opt(path: &Path, wait: bool) -> Option<u8> {
     r
 }
 
-/// Fortlaufender Frame-Strom für die Wiedergabe (eigener Thread, begrenzter Puffer).
-/// Verwerfen blockiert nicht: Der Prozess wird nur beendet, abgeholt wird er im Lese-Thread.
+/// Continuous frame stream for playback (own thread, bounded buffer).
+/// Dropping does not block: the process is only killed, it is reaped in the reader thread.
 pub struct FrameStream {
     shared: Arc<StreamShared>,
     rx: Receiver<RgbaFrame>,
@@ -688,16 +688,16 @@ pub struct FrameStream {
 }
 
 struct StreamShared {
-    /// laufende Prozesse: Software und ggf. Hardware (siehe [`FrameStream::open_opts`])
+    /// running processes: software and possibly hardware (see [`FrameStream::open_opts`])
     children: Mutex<Vec<Child>>,
     stop: AtomicBool,
-    /// Bild, ab dem die Hardware lieferte (`u64::MAX`: nie)
+    /// Frame from which the hardware delivered (`u64::MAX`: never)
     hw_from: AtomicU64,
 }
 
-/// Filtergraph als Argument. Lange Graphen (Bahnen von Zensur-Flächen) gehen über eine Datei:
-/// die Windows-Befehlszeile fasst nur 32 767 Zeichen. Die Datei heißt nach dem Inhalt; dabei
-/// werden solche Dateien, die älter als eine Stunde sind, aufgeräumt (FFmpeg liest sie beim Start).
+/// Filter graph as argument. Long graphs (paths of censor areas) go through a file:
+/// the Windows command line holds only 32,767 characters. The file is named after its content;
+/// files older than an hour are cleaned up along the way (FFmpeg reads them at start).
 fn graph_arg<'a>(cmd: &'a mut Command, g: &str) -> Result<&'a mut Command> {
     if g.len() < 16_000 {
         return Ok(cmd.args(["-filter_complex", g]));
@@ -707,10 +707,10 @@ fn graph_arg<'a>(cmd: &'a mut Command, g: &str) -> Result<&'a mut Command> {
     Ok(cmd.arg("-/filter_complex").arg(file))
 }
 
-/// Datei für den Graphen `g` in `dir`. Gleicher Name = gleicher Inhalt: Eine vorhandene Datei
-/// wird nicht neu geschrieben (ein anderer Dekoder liest sie vielleicht gerade), nur ihre Zeit
-/// erneuert, damit das Aufräumen sie nicht erwischt. Neu entsteht sie über eine temporäre Datei
-/// mit Umbenennen – nie halb geschrieben sichtbar.
+/// File for graph `g` in `dir`. Same name = same content: an existing file
+/// is not rewritten (another decoder may be reading it right now), only its time
+/// renewed so the cleanup does not catch it. A new one is created via a temporary file
+/// and rename – never visible half-written.
 fn graph_file(dir: &Path, g: &str) -> Result<PathBuf> {
     use std::hash::{Hash, Hasher};
     static N: AtomicU64 = AtomicU64::new(0);
@@ -723,7 +723,7 @@ fn graph_file(dir: &Path, g: &str) -> Result<PathBuf> {
     }
     let tmp = dir.join(format!("cutline-graph-{}-{}.tmp", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
     std::fs::write(&tmp, g)?;
-    // scheitert unter Windows, wenn ein gleichzeitiger Aufruf sie schon angelegt hat und FFmpeg liest
+    // fails on Windows if a concurrent call has already created it and FFmpeg is reading
     if let Err(e) = std::fs::rename(&tmp, &file) {
         let _ = std::fs::remove_file(&tmp);
         if !file.exists() {
@@ -733,7 +733,7 @@ fn graph_file(dir: &Path, g: &str) -> Result<PathBuf> {
     Ok(file)
 }
 
-/// Graph-Dateien (und Reste davon) im Temp-Ordner entfernen, die älter als eine Stunde sind.
+/// Remove graph files (and leftovers of them) in the temp folder that are older than an hour.
 pub fn cleanup_graphs() {
     for e in std::fs::read_dir(std::env::temp_dir()).into_iter().flatten().flatten() {
         let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok());
@@ -768,10 +768,10 @@ fn spawn_stream(
             &format!("fps={}/{},scale={w}:{h}:flags=bilinear,format=rgba", fps.num, fps.den),
         ]),
     };
-    // Bilder unverändert weitergeben (das `fps` im Graphen liefert schon das Raster). Nicht `-r`:
-    // FFmpeg 7 vergaß zwar sonst die Bildrate nach `setpts` (25 Bilder/s), aber mit `-r` füllt
-    // FFmpeg 8 bei einem Graphen, dessen Zeit mitten im Clip beginnt (`setpts=…+t`, Effekte und
-    // Tempo), die Zeit davor mit Kopien des ersten Bildes – das Bild stand so viele Sekunden.
+    // pass frames through unchanged (the `fps` in the graph already delivers the grid). Not `-r`:
+    // without it FFmpeg 7 did forget the frame rate after `setpts` (25 frames/s), but with `-r`
+    // FFmpeg 8 fills the time before with copies of the first frame for a graph whose time starts
+    // mid-clip (`setpts=…+t`, effects and speed) – the picture stood still for that many seconds.
     Ok(cmd
         .args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .stdin(Stdio::null())
@@ -780,21 +780,21 @@ fn spawn_stream(
         .spawn()?)
 }
 
-/// Decodierung eines Wiedergabe-Stroms.
+/// Decoding of a playback stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hw {
     Off,
-    /// Hardware von Anfang an (ohne ein Bild: Software)
+    /// Hardware from the start (without a frame: software)
     On,
-    /// Software zuerst (erstes Bild schneller), die Hardware übernimmt nahtlos; nur für Quellen,
-    /// die die Software kurz mitdecodieren kann (sonst bremst sie die Hardware aus)
+    /// Software first (first frame faster), the hardware takes over seamlessly; only for sources
+    /// that software can briefly decode alongside (otherwise it slows the hardware down)
     AfterSoftware,
 }
 
-/// Hardware-Strom, der so lange nicht aufholt: aufgeben, nur noch Software
+/// Hardware stream that does not catch up within this long: give up, software only
 const HW_TAKEOVER_MAX: Duration = Duration::from_secs(4);
 
-/// Liest Bilder (`len` Bytes) aus `out` in einen Kanal (`ahead` voraus); endet mit dem Prozess.
+/// Reads frames (`len` bytes) from `out` into a channel (`ahead` in advance); ends with the process.
 fn read_frames(mut out: std::process::ChildStdout, len: usize, ahead: usize) -> Receiver<Vec<u8>> {
     let (tx, rx) = sync_channel(ahead);
     let _ = std::thread::Builder::new().name("cl-frame-read".into()).spawn(move || loop {
@@ -807,13 +807,13 @@ fn read_frames(mut out: std::process::ChildStdout, len: usize, ahead: usize) -> 
 }
 
 enum HwCatch {
-    /// Bild Nummer `n` (das nächste fällige): ab hier liefert die Hardware
+    /// Frame number `n` (the next one due): from here the hardware delivers
     Frame(Vec<u8>),
     Wait,
     Gone,
 }
 
-/// Bilder der Hardware vor Nummer `n` verwerfen (Software hat sie schon geliefert).
+/// Drop hardware frames before number `n` (software has already delivered them).
 fn hw_catch_up(rx: &Receiver<Vec<u8>>, read: &mut u64, n: u64) -> HwCatch {
     loop {
         match rx.try_recv() {
@@ -829,7 +829,7 @@ fn hw_catch_up(rx: &Receiver<Vec<u8>>, read: &mut u64, n: u64) -> HwCatch {
     }
 }
 
-/// Nächstes Bild der Hardware ab Nummer `n` (blockierend), `None` am Ende.
+/// Next hardware frame from number `n` (blocking), `None` at the end.
 fn hw_next(rx: &Receiver<Vec<u8>>, read: &mut u64, n: u64) -> Option<Vec<u8>> {
     loop {
         let b = rx.recv().ok()?;
@@ -845,7 +845,7 @@ impl FrameStream {
         Self::open_fx(path, start, w, h, fps, None)
     }
 
-    /// Strom mit eigenem Filtergraph (`[0:v]` → `[out]`, muss `fps`, Größe und RGBA selbst setzen).
+    /// Stream with its own filter graph (`[0:v]` → `[out]`, must set `fps`, size and RGBA itself).
     pub fn open_fx(
         path: &Path,
         start: Time,
@@ -857,12 +857,12 @@ impl FrameStream {
         Self::open_opts(path, start, w, h, fps, graph, Hw::Off)
     }
 
-    /// Wie [`FrameStream::open_fx`]; `hw`: Hardware-Decodierung (höchstens [`MAX_HW_DECODERS`]
-    /// gleichzeitig), siehe [`Hw`]. Ein Hardware-Decoder braucht bis zum ersten Bild 0,3–0,8 s
-    /// länger (gemessen FFmpeg 8.1/D3D11VA, Suche ab dem Keyframe); mit [`Hw::AfterSoftware`]
-    /// laufen beide ab derselben Stelle, und sobald die Hardware das nächste fällige Bild hat,
-    /// übernimmt sie und die Software endet. Liefert die Hardware gar nichts, bleibt es bei
-    /// Software (für den Rest der Sitzung, siehe `hw_failed`).
+    /// Like [`FrameStream::open_fx`]; `hw`: hardware decoding (at most [`MAX_HW_DECODERS`]
+    /// at once), see [`Hw`]. A hardware decoder needs 0.3–0.8 s longer until the first frame
+    /// (measured FFmpeg 8.1/D3D11VA, seek from the keyframe); with [`Hw::AfterSoftware`]
+    /// both run from the same position, and as soon as the hardware has the next frame due,
+    /// it takes over and the software ends. If the hardware delivers nothing at all, it stays with
+    /// software (for the rest of the session, see `hw_failed`).
     pub fn open_opts(
         path: &Path,
         start: Time,
@@ -877,7 +877,7 @@ impl FrameStream {
             let (path, graph) = (path.to_path_buf(), graph.map(str::to_string));
             move |accel: Option<&str>| -> Result<Child> {
                 let c = spawn_stream(&path, start, (w, h), fps, graph.as_deref(), accel)?;
-                // Wiedergabe: vor anderer Last (siehe `raise_priority`)
+                // playback: ahead of other load (see `raise_priority`)
                 raise_priority(&c);
                 Ok(c)
             }
@@ -892,7 +892,7 @@ impl FrameStream {
         };
         let sw = if slot.is_none() || hw == Hw::AfterSoftware { Some(start_one(None, 1)?) } else { None };
         let hw_proc = match &slot {
-            // ohne Software-Strom muss die Hardware starten, sonst nur versuchen
+            // without a software stream the hardware must start, otherwise only try
             Some(s) if sw.is_none() => Some(start_one(Some(s.accel), 2)?),
             Some(s) => start_one(Some(s.accel), 2).ok(),
             None => None,
@@ -920,7 +920,7 @@ impl FrameStream {
                     }
                 };
                 let (mut sw, mut hw) = (sw, hw);
-                // gesendete Bilder, von der Hardware gelesene Bilder
+                // frames sent, frames read from the hardware
                 let (mut n, mut hw_n) = (0u64, 0u64);
                 let opened = std::time::Instant::now();
                 let mut fallback = false;
@@ -942,7 +942,7 @@ impl FrameStream {
                             continue;
                         }
                         Some(HwCatch::Wait) if n == 0 || opened.elapsed() < HW_TAKEOVER_MAX => {}
-                        // ohne ein einziges Bild zu Ende bzw. holt nicht auf: nur noch Software
+                        // ended without a single frame or does not catch up: software only
                         Some(c) => {
                             if matches!(c, HwCatch::Gone) && hw_n == 0 && n > 0 {
                                 hw_failed(&path);
@@ -958,7 +958,7 @@ impl FrameStream {
                         (Some((_, s)), Some(_)) => match s.recv_timeout(Duration::from_millis(5)) {
                             Ok(b) => Some(b),
                             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                            // Software zu Ende: weiter mit der Hardware (ab dem nächsten Bild)
+                            // software finished: continue with the hardware (from the next frame)
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                                 sw = None;
                                 continue;
@@ -968,7 +968,7 @@ impl FrameStream {
                         (None, Some((_, h))) => hw_next(h, &mut hw_n, n),
                         (None, None) => None,
                     };
-                    // nur Hardware und kein einziges Bild: in Software noch einmal
+                    // hardware only and not a single frame: once more in software
                     if next.is_none() && n == 0 && hw.is_some() && sw.is_none() && !fallback && !sh.stop.load(Ordering::Acquire) {
                         fallback = true;
                         if let Some((pid, _)) = hw.take() {
@@ -994,7 +994,7 @@ impl FrameStream {
                     n += 1;
                 }
                 drop(slot);
-                // Aufräumen hier statt im UI-Thread
+                // clean up here instead of in the UI thread
                 let cs = std::mem::take(&mut *sh.children.lock().unwrap_or_else(|e| e.into_inner()));
                 for mut c in cs {
                     let _ = c.kill();
@@ -1011,12 +1011,12 @@ impl FrameStream {
         })
     }
 
-    /// Bild, ab dem die Hardware lieferte (`None`: bisher nur Software)
+    /// Frame from which the hardware delivered (`None`: so far software only)
     pub fn hw_from(&self) -> Option<u64> {
         Some(self.shared.hw_from.load(Ordering::Acquire)).filter(|n| *n != u64::MAX)
     }
 
-    /// Nächstes Bild, falls schon dekodiert. `Ok(None)` = noch nicht bereit, `Err` = Ende.
+    /// Next frame if already decoded. `Ok(None)` = not ready yet, `Err` = end.
     pub fn try_next(&self) -> std::result::Result<Option<RgbaFrame>, ()> {
         match self.rx.try_recv() {
             Ok(f) => Ok(Some(f)),
@@ -1025,7 +1025,7 @@ impl FrameStream {
         }
     }
 
-    /// Blockierend (für Tests und Export).
+    /// Blocking (for tests and export).
     pub fn next_blocking(&self) -> Option<RgbaFrame> {
         self.rx.recv().ok()
     }
@@ -1033,8 +1033,8 @@ impl FrameStream {
 
 impl Drop for FrameStream {
     fn drop(&mut self) {
-        // Nur beenden, nicht warten: Der Lese-Thread bekommt einen Lese- bzw. Sendefehler
-        // (der Empfänger wird gleich danach verworfen) und holt den Prozess selbst ab.
+        // only kill, don't wait: the reader thread gets a read or send error
+        // (the receiver is dropped right after) and reaps the process itself.
         self.shared.stop.store(true, Ordering::Release);
         for c in self.shared.children.lock().unwrap_or_else(|e| e.into_inner()).iter_mut() {
             let _ = c.kill();
@@ -1042,9 +1042,9 @@ impl Drop for FrameStream {
     }
 }
 
-/// Pfad als Wert einer Filteroption im Filtergraphen escapen (`C:/x.cube` → `C\\:/x.cube`).
-/// Zwei Ebenen: erst für die Option (`:` und `'`), dann für den Graphen (`\ ' [ ] , ;`) –
-/// so übersteht auch ein Apostroph im Pfad beide.
+/// Escape a path as the value of a filter option in the filter graph (`C:/x.cube` → `C\\:/x.cube`).
+/// Two levels: first for the option (`:` and `'`), then for the graph (`\ ' [ ] , ;`) –
+/// so even an apostrophe in the path survives both.
 pub fn escape_path(p: &str) -> String {
     let opt = p.replace('\\', "/").replace(':', "\\:").replace('\'', "\\'");
     let mut out = String::with_capacity(opt.len() + 8);
@@ -1061,15 +1061,15 @@ pub fn escape_path(p: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Lange Graphen: Eine vorhandene Datei wird nicht neu geschrieben (ein anderer Dekoder liest
-    /// sie vielleicht gerade); gleichzeitige Aufrufe sehen nie eine halbe Datei, nichts bleibt liegen.
+    /// Long graphs: an existing file is not rewritten (another decoder may be reading
+    /// it right now); concurrent calls never see a half file, nothing is left behind.
     #[test]
     fn graph_file_is_written_once_and_never_partially() {
         let dir = tempfile::tempdir().unwrap();
         let g = "null,".repeat(20_000);
         let f = graph_file(dir.path(), &g).unwrap();
         assert_eq!(std::fs::read_to_string(&f).unwrap(), g);
-        // Stellvertreter für „wird gerade gelesen“: der Inhalt darf nicht angefasst werden
+        // stand-in for "being read right now": the content must not be touched
         std::fs::write(&f, "gelesen").unwrap();
         assert_eq!(graph_file(dir.path(), &g).unwrap(), f);
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "gelesen");
@@ -1086,7 +1086,7 @@ mod tests {
 
     #[test]
     fn escape_path_keeps_every_character() {
-        // je Ebene (Graph, Option) fällt ein Backslash weg; nichts wird gelöscht
+        // one backslash drops per level (graph, option); nothing is deleted
         assert_eq!(escape_path(r"C:\a'b[1],c;d"), r"C\\:/a\\\'b\[1\]\,c\;d");
     }
 
@@ -1139,8 +1139,8 @@ mod tests {
         out
     }
 
-    /// Ein Strom mit eigenem Graphen liefert jedes Bild des Graphen auf dem Raster der Strom-Bildrate,
-    /// auch wenn der Graph eine andere Bildrate meldet (FFmpeg 7: nach `setpts` gar keine, dann 25).
+    /// A stream with its own graph delivers every frame of the graph on the grid of the stream frame rate,
+    /// even if the graph reports another frame rate (FFmpeg 7: none at all after `setpts`, then 25).
     #[test]
     fn graph_stream_keeps_every_frame_at_the_stream_rate() {
         if !ffmpeg_available() {
@@ -1148,18 +1148,18 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let src = make_clip(dir.path());
-        // 20 Bilder (2 s bei 10/s), Zeitstempel im 30er-Raster; der Graph meldet weiter 10/s
+        // 20 frames (2 s at 10/s), timestamps on the 30 grid; the graph still reports 10/s
         let g = "[0:v]fps=10,setpts=N/(30*TB),scale=32:18,format=rgba[out]";
         let s = FrameStream::open_fx(&src, Time::ZERO, 32, 18, Rational::new(30, 1), Some(g)).unwrap();
-        // FFmpeg 8: + 2 für die Dauer des letzten Bildes (1/10 s), FFmpeg 7 kennt sie nicht (−1);
-        // ohne Bildrate am Ausgang 9 (FFmpeg 8) bzw. 16 (FFmpeg 7)
+        // FFmpeg 8: + 2 for the duration of the last frame (1/10 s), FFmpeg 7 does not know it (−1);
+        // without frame rate at the output 9 (FFmpeg 8) or 16 (FFmpeg 7)
         let n = std::iter::from_fn(|| s.next_blocking()).count();
         assert!((19..=22).contains(&n), "{n}");
     }
 
-    /// Nachtest K7: Strom mit Graph, dessen Zeit mitten im Clip beginnt (Tempo 2 ab Clipzeit 20 s:
-    /// `setpts=…+20 s`). Mit `-r` lieferte FFmpeg 8 erst 20 s lang Kopien des ersten Bildes – die
-    /// Ebene blieb ein Standbild. Jetzt bewegt sich das Bild sofort.
+    /// Retest K7: stream with a graph whose time starts mid-clip (speed 2 from clip time 20 s:
+    /// `setpts=…+20 s`). With `-r` FFmpeg 8 first delivered 20 s of copies of the first frame – the
+    /// layer stayed a still. Now the picture moves at once.
     #[test]
     fn graph_stream_with_a_late_clip_time_moves_at_once() {
         if !ffmpeg_available() {
@@ -1175,8 +1175,8 @@ mod tests {
         assert!(distinct >= 15, "{distinct} verschiedene von 20 Bildern");
     }
 
-    /// Rückwärts-Fenster: jedes Bild des Fensters ist bytegleich mit dem Einzelbild an seiner
-    /// Rasterzeit (so wie der Player sie rundet); am Dateiende kommen weniger Bilder.
+    /// Reverse window: every frame of the window is byte-identical to the single frame at its
+    /// grid time (as the player rounds it); at the end of the file fewer frames come.
     #[test]
     fn window_frames_equal_single_frames() {
         if !ffmpeg_available() {
@@ -1192,7 +1192,7 @@ mod tests {
             assert!(one.data == f.data, "Bild {} weicht ab", 97 + k);
         }
         assert_ne!(win[0].1.data, win[1].1.data, "aufeinanderfolgende Bilder");
-        // nur ausgewählte behalten: dieselben Bilder an denselben Nummern
+        // keep only selected ones: the same frames at the same numbers
         let some = decode_frames(&src, at(97), 16, 32, 18, &|k| k < 3 || k == 15, None).unwrap();
         assert_eq!(some.iter().map(|x| x.0).collect::<Vec<_>>(), vec![0, 1, 2, 15]);
         assert!(some[3].1.data == win[15].1.data);
@@ -1200,8 +1200,8 @@ mod tests {
         assert!((1..=8).contains(&tail.len()), "{} Bilder am Ende", tail.len());
     }
 
-    /// Graphen über 32 767 Zeichen (lange Zensur-Bahnen) gehen über eine Datei statt die
-    /// Befehlszeile zu sprengen – Einzelbild und Strom.
+    /// Graphs over 32,767 characters (long censor paths) go through a file instead of
+    /// blowing up the command line – single frame and stream.
     #[test]
     fn long_graph_goes_through_a_file() {
         if !ffmpeg_available() {
@@ -1224,7 +1224,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = make_clip(dir.path());
         let rot = dir.path().join("rot.mp4");
-        // Hochkant-Handyvideo nachbilden: quer gespeichert, Drehung als Seitendaten
+        // mimic a portrait phone video: stored landscape, rotation as side data
         let st = command("ffmpeg")
             .unwrap()
             .args(["-v", "error", "-y", "-display_rotation", "90", "-i"])
@@ -1246,7 +1246,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let clip = make_clip(dir.path());
-        // hinter dem letzten Bild: FFmpeg liefert nichts und meldet auch nichts
+        // after the last frame: FFmpeg delivers nothing and reports nothing either
         let e = decode_frame(&clip, Time::from_millis(2500), 32, 18).unwrap_err().to_string();
         assert!(e.contains("kein Bild bei 2.500 s") && e.contains("t.mp4"), "{e}");
         assert!(decode_frame(&clip, Time::from_millis(1900), 32, 18).is_ok());
@@ -1255,7 +1255,7 @@ mod tests {
     #[test]
     fn probe_decode_and_stream() {
         if !ffmpeg_available() {
-            eprintln!("FFmpeg fehlt, Test übersprungen");
+            eprintln!("FFmpeg missing, test skipped");
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1278,7 +1278,7 @@ mod tests {
         while s.next_blocking().is_some() {
             n += 1;
         }
-        assert!((23..=27).contains(&n), "{n} Frames ab 1 s erwartet ~25");
+        assert!((23..=27).contains(&n), "{n} frames from 1 s, expected ~25");
     }
 
     #[test]
@@ -1292,7 +1292,7 @@ mod tests {
         assert!((95..=105).contains(&w.len()), "{}", w.len());
         assert!(
             w.iter().any(|v| *v > 0.1),
-            "Sinus (Amplitude 1/8) sollte ausschlagen"
+            "sine (amplitude 1/8) should show a peak"
         );
     }
 
@@ -1304,10 +1304,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let clip = make_clip(dir.path());
         let s = FrameStream::open(&clip, Time::ZERO, 64, 36, Rational::new(25, 1)).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(500)); // Kanal läuft voll
+        std::thread::sleep(std::time::Duration::from_millis(500)); // channel fills up
         let t = std::time::Instant::now();
         drop(s);
-        // nur beenden, nicht warten (der UI-Thread darf hier nicht hängen)
+        // only kill, don't wait (the UI thread must not hang here)
         assert!(
             t.elapsed() < std::time::Duration::from_millis(250),
             "Drop hat blockiert: {:?}",
@@ -1345,8 +1345,8 @@ mod tests {
         a.iter().zip(b).map(|(x, y)| x.abs_diff(*y) as f64).sum::<f64>() / a.len().max(1) as f64
     }
 
-    /// Hardware- und Software-Decodierung liefern an derselben Stelle dasselbe Bild (Toleranz
-    /// für Rundung der Farbumrechnung). Ohne Hardware-Decoder übersprungen.
+    /// Hardware and software decoding deliver the same frame at the same position (tolerance
+    /// for rounding in color conversion). Skipped without a hardware decoder.
     #[test]
     fn hw_and_sw_frames_match() {
         if !ffmpeg_available() || hwaccel().is_none() {
@@ -1362,12 +1362,12 @@ mod tests {
         let (sw, _) = decode_frame_opts(&clip, at, 480, 270, None, false, None).unwrap();
         let (hw, info) = decode_frame_opts(&clip, at, 480, 270, None, true, None).unwrap();
         if !info.hw {
-            eprintln!("kein Hardware-Decoder: Vergleich übersprungen");
+            eprintln!("no hardware decoder: comparison skipped");
             return;
         }
         let d = mean_diff(&sw.data, &hw.data);
         assert!(d < 2.0, "mittlere Abweichung HW/SW {d:.2}");
-        // Strom: gleiche Bildzahl und gleiches erstes Bild
+        // stream: same frame count and same first frame
         let count = |hw: bool| {
             let s = FrameStream::open_opts(&clip, Time::from_secs_f64(1.0), 480, 270, Rational::new(30, 1), None, if hw { Hw::On } else { Hw::Off }).unwrap();
             let first = s.next_blocking().unwrap();
@@ -1379,8 +1379,8 @@ mod tests {
         assert!(mean_diff(&f_sw, &f_hw) < 2.0);
     }
 
-    /// Hardware-Strom beginnt in Software (erstes Bild schneller) und die Hardware übernimmt
-    /// ohne Sprung: jedes Bild gleicht dem des reinen Software-Stroms, keins fehlt oder doppelt.
+    /// Hardware stream starts in software (first frame faster) and the hardware takes over
+    /// without a jump: every frame equals that of the pure software stream, none missing or doubled.
     #[test]
     fn hw_stream_starts_in_software_and_takes_over_seamlessly() {
         if !ffmpeg_available() || hwaccel().is_none() {
@@ -1393,7 +1393,7 @@ mod tests {
             &["-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=8", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "120"],
         );
         let works = decode_frame_opts(&clip, Time::from_secs_f64(3.0), 320, 180, None, true, None).is_ok_and(|(_, i)| i.hw);
-        // im Takt der Wiedergabe abholen (sonst ist die Software fertig, bevor die Hardware anläuft)
+        // fetch at playback pace (otherwise software is done before the hardware starts)
         let frames = |hw: bool| {
             let s = FrameStream::open_opts(&clip, Time::from_secs_f64(3.0), 320, 180, Rational::new(30, 1), None, if hw { Hw::AfterSoftware } else { Hw::Off }).unwrap();
             let v: Vec<Vec<u8>> = std::iter::from_fn(|| {
@@ -1407,18 +1407,18 @@ mod tests {
         assert_eq!(none, None);
         let (hw, from) = frames(true);
         eprintln!("Hardware ab Bild {from:?} von {}", hw.len());
-        assert_ne!(from, Some(0), "erstes Bild aus der Software");
+        assert_ne!(from, Some(0), "first frame from software");
         if works {
-            assert!(from.is_some(), "Hardware übernimmt");
+            assert!(from.is_some(), "hardware takes over");
         }
-        assert_eq!(sw.len(), hw.len(), "kein Bild fehlt oder doppelt");
+        assert_eq!(sw.len(), hw.len(), "no frame missing or doubled");
         for (i, (a, b)) in sw.iter().zip(&hw).enumerate() {
             assert!(mean_diff(a, b) < 2.0, "Bild {i} weicht ab");
         }
     }
 
-    /// Scheitert der Hardware-Weg (hier: Datei ohne Bild am Ende), kommt kein falsches
-    /// „kaputt“-Merken zustande, solange auch Software kein Bild hat.
+    /// If the hardware path fails (here: file without a frame at the end), no false
+    /// "broken" mark results as long as software has no frame either.
     #[test]
     fn hw_failure_is_only_remembered_when_software_works() {
         if !ffmpeg_available() || hwaccel().is_none() {
@@ -1430,8 +1430,8 @@ mod tests {
         assert!(!hw_decode_failed(&clip));
     }
 
-    /// Mess-Test (von Hand): Einzelbild aus dem Original an 10 Stellen, Software gegen
-    /// Hardware, Wanduhr und CPU-Zeit des FFmpeg.
+    /// Measurement test (manual): single frame from the original at 10 positions, software against
+    /// hardware, wall clock and CPU time of the FFmpeg.
     /// `cargo test --release -p cl-media -- --ignored --nocapture measure_still_frames`
     #[test]
     #[ignore]
@@ -1444,7 +1444,7 @@ mod tests {
         for f in files.iter().map(Path::new).filter(|p| p.is_file()) {
             let m = probe(f).unwrap();
             let (w, h) = fit_size(m.width, m.height, 696, 392);
-            // abwechselnd SW und HW an derselben Stelle: gleiche Last für beide
+            // alternating SW and HW at the same position: same load for both
             let mut wall = [Vec::new(), Vec::new()];
             let mut cpu = [Duration::ZERO; 2];
             let mut used_hw = 0;
@@ -1468,7 +1468,7 @@ mod tests {
                     cpu[i].as_millis() / 10
                 );
             }
-            assert_eq!(used_hw, 10, "Hardware-Weg nicht benutzt");
+            assert_eq!(used_hw, 10, "hardware path not used");
         }
     }
 
@@ -1541,16 +1541,16 @@ mod tests {
         assert!(probe(&empty).is_err());
         assert!(probe(&dir.path().join("fehlt.mp4")).is_err());
         assert!(probe(dir.path()).is_err(), "Ordner");
-        // nur Ton
+        // audio only
         let a = gen(dir.path(), "ton ä.m4a", &["-f", "lavfi", "-i", "sine=d=1", "-c:a", "aac"]);
         let m = probe(&a).unwrap();
         assert_eq!((m.kind, m.fps, m.width, m.has_audio), (MediaKind::Audio, None, 0, true));
-        // nur Bild, 23,976 fps, Umlaut/Emoji im Namen
+        // image only, 23.976 fps, umlaut/emoji in the name
         let v = gen(dir.path(), "Bild ö 🎬.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=24000/1001:d=1", "-pix_fmt", "yuv420p"]);
         let m = probe(&v).unwrap();
         assert_eq!((m.kind, m.has_audio), (MediaKind::Video, false));
         assert_eq!(m.fps, Some(cl_core::Rational::new(24000, 1001)));
-        // ein einziges Bild als Video, Drehung 270°
+        // a single frame as video, rotation 270°
         let one = gen(dir.path(), "eins.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=25:d=0.04", "-pix_fmt", "yuv420p"]);
         let m = probe(&one).unwrap();
         assert_eq!(m.kind, MediaKind::Video);
@@ -1558,22 +1558,22 @@ mod tests {
         assert!(command("ffmpeg").unwrap().args(["-v", "error", "-y", "-display_rotation", "270", "-i"]).arg(&one)
             .args(["-c", "copy"]).arg(&rot).status().unwrap().success());
         assert_eq!((probe(&rot).unwrap().width, probe(&rot).unwrap().height), (36, 64));
-        // abgeschnittene Datei: Fehler oder Video mit Dauer, aber kein Absturz
+        // truncated file: error or video with duration, but no crash
         let data = std::fs::read(&v).unwrap();
         let cut = dir.path().join("halb.mp4");
         std::fs::write(&cut, &data[..data.len() / 2]).unwrap();
         let _ = probe(&cut);
-        // Bild nach dem Ende, Bild aus Müll, Strom aus Müll: Fehler statt Absturz/Hänger
+        // frame after the end, frame from garbage, stream from garbage: error instead of crash/hang
         assert!(decode_frame(&v, Time::from_secs_f64(50.0), 32, 18).is_err());
         assert!(decode_frame(&empty, Time::ZERO, 32, 18).is_err());
-        assert!(decode_frame(&a, Time::ZERO, 32, 18).is_err(), "kein Bild im Ton");
+        assert!(decode_frame(&a, Time::ZERO, 32, 18).is_err(), "no frame in audio");
         let s = FrameStream::open(&empty, Time::ZERO, 32, 18, cl_core::Rational::new(25, 1)).unwrap();
         assert!(s.next_blocking().is_none());
         assert!(waveform(&empty, 50).is_err());
-        assert!(waveform(&v, 50).map(|w| w.is_empty()).unwrap_or(true), "Video ohne Ton");
+        assert!(waveform(&v, 50).map(|w| w.is_empty()).unwrap_or(true), "video without audio");
         let w = waveform(&a, 0).unwrap();
         assert!(!w.is_empty());
         assert_eq!(silent_channel(&a), None, "Mono");
-        assert_eq!(silent_channel(&v), None, "ohne Ton");
+        assert_eq!(silent_channel(&v), None, "without audio");
     }
 }
