@@ -1,12 +1,12 @@
-//! Epidemic-Sound-Integration (Partner API v0).
+//! Epidemic Sound integration (Partner API v0).
 //!
-//! Zwei Anmeldewege, beide mit Zugangsdaten des Nutzers:
-//! - **Connect** (OAuth 2.0 mit PKCE im Systembrowser, Rückruf auf 127.0.0.1): eigenes
-//!   Epidemic-Konto, volle Bibliothek je Abo, „Gefällt mir“-Liste.
-//! - **API-Schlüssel** aus dem Developer Portal (`epidemic_live_…`), z. B. für Partner.
+//! Two sign-in paths, both with the user's credentials:
+//! - **Connect** (OAuth 2.0 with PKCE in the system browser, callback on 127.0.0.1): own
+//!   Epidemic account, full library per subscription, „Gefällt mir“ list.
+//! - **API key** from the Developer Portal (`epidemic_live_…`), e.g. for partners.
 //!
-//! Gemeldet wird nur, was die Nutzungsbedingungen verlangen: ein Export mit Epidemic-Musik
-//! (`POST /v0/usage`). Vorhören und Laden zählt die API selbst.
+//! Only what the terms of use require is reported: an export with Epidemic music
+//! (`POST /v0/usage`). The API counts previews and downloads itself.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -23,7 +23,7 @@ pub const TOKEN_URL: &str =
     "https://login.epidemicsound.com/auth/realms/accounts/protocol/openid-connect/token";
 pub const LOGOUT_URL: &str =
     "https://login.epidemicsound.com/auth/realms/accounts/protocol/openid-connect/logout";
-/// Fester Rückruf-Port, damit die Adresse im Developer Portal eingetragen werden kann.
+/// Fixed callback port so the address can be entered in the Developer Portal.
 pub const REDIRECT_PORT: u16 = 53682;
 
 pub fn redirect_uri() -> String {
@@ -32,15 +32,15 @@ pub fn redirect_uri() -> String {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Fehler der Schnittstelle. Anmeldung abgelaufen, Limit und „zu schnell“ sind eigene Fälle,
-/// damit die App sie behandelt, statt Meldungstexte zu vergleichen.
+/// Errors of the interface. Expired sign-in, limit and "too fast" are separate cases
+/// so the app handles them instead of comparing message texts.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
-    /// Refresh-Token abgelaufen bzw. 401 im Modus Connect: neu verbinden
+    /// Refresh token expired or 401 in Connect mode: reconnect
     LoginExpired,
-    /// 429; Wartezeit in Sekunden aus `Retry-After`, falls genannt
+    /// 429; wait time in seconds from `Retry-After`, if given
     RateLimited(Option<u64>),
-    /// 406: zu schnell hintereinander geladen
+    /// 406: downloaded too quickly in a row
     TooFast,
     Other(String),
 }
@@ -69,17 +69,17 @@ impl From<&str> for Error {
     }
 }
 
-/// Wartezeit aus dem `Retry-After`-Kopf (nur Sekunden; Datumsform oder Unsinn = unbekannt).
+/// Wait time from the `Retry-After` header (seconds only; date form or nonsense = unknown).
 pub fn retry_after(header: Option<&str>) -> Option<u64> {
     header?.trim().parse::<u64>().ok()
 }
 
-/// So lange keine neuen Anfragen derselben Art: genannte Wartezeit (1 s … 1 h), sonst 30 s.
+/// No new requests of the same kind for this long: the given wait time (1 s … 1 h), otherwise 30 s.
 pub fn limit_wait(secs: Option<u64>) -> Duration {
     Duration::from_secs(secs.map_or(30, |s| s.clamp(1, 3600)))
 }
 
-/// Eine Wiederholung nach „zu schnell“ (406): `wait` (≥ 2 s) und noch ein Versuch, erst dann Fehler.
+/// One retry after "too fast" (406): `wait` (≥ 2 s) and one more attempt, only then an error.
 pub fn retry_once_if_too_fast<T>(mut f: impl FnMut() -> Result<T>, wait: impl FnOnce()) -> Result<T> {
     match f() {
         Err(Error::TooFast) => {
@@ -90,7 +90,7 @@ pub fn retry_once_if_too_fast<T>(mut f: impl FnMut() -> Result<T>, wait: impl Fn
     }
 }
 
-// ------------------------------------------------------------------ Einstellungen
+// ------------------------------------------------------------------ Settings
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AuthMode {
@@ -99,22 +99,22 @@ pub enum AuthMode {
     ApiKey,
 }
 
-/// Gespeicherte Konfiguration (liegt lokal im Datenordner der App).
+/// Stored configuration (lives locally in the app's data folder).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub mode: AuthMode,
-    /// Client-ID der eigenen App im Epidemic Developer Portal (für Connect)
+    /// Client ID of the own app in the Epidemic Developer Portal (for Connect)
     pub client_id: String,
-    /// API-Schlüssel (`epidemic_live_…`)
+    /// API key (`epidemic_live_…`)
     pub api_key: String,
-    /// Connect-Tokens nach der Anmeldung
+    /// Connect tokens after sign-in
     pub tokens: Option<Tokens>,
-    /// Lokale Favoriten (Titel bleiben auch ohne Netz sichtbar)
+    /// Local favorites (titles stay visible even without network)
     pub favorites: Vec<Track>,
-    /// Anonyme, stabile Nutzerkennung für `x-partner-user-id`
+    /// Anonymous, stable user id for `x-partner-user-id`
     pub user_id: String,
-    /// Abweichende API-Adresse (Tests)
+    /// Different API address (tests)
     pub base_url: Option<String>,
 }
 
@@ -122,7 +122,7 @@ impl Config {
     pub fn base(&self) -> &str {
         self.base_url.as_deref().unwrap_or(DEFAULT_BASE)
     }
-    /// Sind Zugangsdaten vorhanden?
+    /// Are credentials present?
     pub fn ready(&self) -> bool {
         match self.mode {
             AuthMode::ApiKey => !self.api_key.trim().is_empty(),
@@ -150,11 +150,11 @@ impl Config {
 pub struct Tokens {
     pub access_token: String,
     pub refresh_token: String,
-    /// Unix-Sekunden
+    /// Unix seconds
     pub expires_at: u64,
 }
 
-// ------------------------------------------------------------------ Datentypen
+// ------------------------------------------------------------------ Data types
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,7 +163,7 @@ pub struct Named {
     pub name: String,
 }
 
-/// Die API liefert Namen mal als Objekt `{id, name}`, mal als bloßen Text (z. B. `mainArtists`).
+/// The API delivers names sometimes as an object `{id, name}`, sometimes as plain text (e.g. `mainArtists`).
 impl<'de> Deserialize<'de> for Named {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
         #[derive(Deserialize)]
@@ -184,7 +184,7 @@ impl<'de> Deserialize<'de> for Named {
     }
 }
 
-/// Liste lesen, in der einzelne Einträge kaputt sein dürfen (die übrigen bleiben).
+/// Read a list in which individual entries may be broken (the rest stay).
 fn lenient<'de, D: serde::Deserializer<'de>, T: serde::de::DeserializeOwned>(d: D) -> std::result::Result<Vec<T>, D::Error> {
     let raw: Vec<serde_json::Value> = Vec::deserialize(d)?;
     Ok(raw.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect())
@@ -205,7 +205,7 @@ pub struct Track {
     pub title: String,
     pub main_artists: Vec<Named>,
     pub bpm: Option<f32>,
-    /// Länge in Sekunden (die API liefert Sekunden oder Millisekunden, siehe `seconds()`)
+    /// Length in seconds (the API delivers seconds or milliseconds, see `seconds()`)
     pub length: Option<f64>,
     pub moods: Vec<Named>,
     pub genres: Vec<Named>,
@@ -223,7 +223,7 @@ impl Track {
             .collect::<Vec<_>>()
             .join(", ")
     }
-    /// Länge in Sekunden; Werte über 3600 werden als Millisekunden gedeutet.
+    /// Length in seconds; values above 3600 are interpreted as milliseconds.
     pub fn seconds(&self) -> Option<f64> {
         self.length.map(|l| if l > 3600.0 { l / 1000.0 } else { l })
     }
@@ -244,14 +244,14 @@ pub struct Pagination {
     pub offset: u32,
 }
 
-/// Suchanfrage. Leerer Begriff = Stöbern nach Filtern.
+/// Search query. Empty term = browsing by filters.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Query {
     pub term: String,
     pub moods: Vec<String>,
     pub genres: Vec<String>,
     pub bpm: Option<(u32, u32)>,
-    /// Nur Instrumentals
+    /// Instrumentals only
     pub no_vocals: bool,
     pub offset: u32,
 }
@@ -294,7 +294,7 @@ fn err(e: ureq::Error, mode: AuthMode) -> Error {
 }
 
 impl Client {
-    /// Client aus der Konfiguration; Connect-Tokens werden bei Bedarf erneuert (`cfg` wird dann aktualisiert).
+    /// Client from the configuration; Connect tokens are renewed when needed (`cfg` is then updated).
     pub fn from_config(cfg: &mut Config) -> Result<Self> {
         cfg.ensure_user_id();
         let bearer = match cfg.mode {
@@ -341,7 +341,7 @@ impl Client {
             .map_err(|e| e.to_string().into())
     }
 
-    /// Suche (`/v0/tracks/search`) bzw. Stöbern nach Filtern (`/v0/tracks`).
+    /// Search (`/v0/tracks/search`) or browsing by filters (`/v0/tracks`).
     pub fn search(&self, q: &Query) -> Result<Page> {
         let mut params: Vec<(&str, String)> =
             vec![("limit", "40".into()), ("offset", q.offset.to_string())];
@@ -374,17 +374,17 @@ impl Client {
         serde_json::from_value(v.get(key).cloned().unwrap_or_default()).map_err(|e| e.to_string().into())
     }
 
-    /// Hervorgehobene Stimmungen
+    /// Featured moods
     pub fn moods(&self) -> Result<Vec<Named>> {
         self.list("/v0/moods", "moods")
     }
 
-    /// Hervorgehobene Genres
+    /// Featured genres
     pub fn genres(&self) -> Result<Vec<Named>> {
         self.list("/v0/genres", "genres")
     }
 
-    /// HLS-Adresse zum Vorhören (FFmpeg kann sie direkt abspielen).
+    /// HLS address for previewing (FFmpeg can play it directly).
     pub fn stream_url(&self, id: &str) -> Result<String> {
         let v = self.get(&format!("/v0/tracks/{id}/stream"), &[])?;
         v.get("url")
@@ -393,7 +393,7 @@ impl Client {
             .ok_or_else(|| "Keine Vorhör-Adresse".into())
     }
 
-    /// Signierte MP3-Adresse (320 kbit/s bei `high`).
+    /// Signed MP3 address (320 kbit/s with `high`).
     pub fn download_url(&self, id: &str, high: bool) -> Result<String> {
         let v = self.get(
             &format!("/v0/tracks/{id}/download"),
@@ -408,9 +408,9 @@ impl Client {
             .ok_or_else(|| "Keine Download-Adresse".into())
     }
 
-    /// Lädt den Titel als MP3 nach `dest`.
+    /// Downloads the track as MP3 to `dest`.
     pub fn download(&self, id: &str, dest: &std::path::Path) -> Result<()> {
-        // 406: zu schnell hintereinander geladen – einmal nach 2 s noch einmal
+        // 406: downloaded too quickly in a row – once more after 2 s
         let resp = retry_once_if_too_fast(
             || {
                 let url = self.download_url(id, true)?;
@@ -421,7 +421,7 @@ impl Client {
         save_whole(resp.into_reader(), dest)
     }
 
-    /// Schläge eines Titels in Sekunden (Beta-Endpunkt; leer, wenn nicht verfügbar).
+    /// Beats of a track in seconds (beta endpoint; empty if not available).
     pub fn beats(&self, id: &str) -> Vec<f64> {
         let Ok(v) = self.get(&format!("/v0/tracks/{id}/beats"), &[]) else {
             return Vec::new();
@@ -437,7 +437,7 @@ impl Client {
             .unwrap_or_default()
     }
 
-    /// „Gefällt mir“-Titel des verbundenen Kontos (nur Connect).
+    /// „Gefällt mir“ tracks of the connected account (Connect only).
     pub fn liked(&self, offset: u32) -> Result<Page> {
         serde_json::from_value(self.get(
             "/v0/users/me/liked/tracks",
@@ -446,7 +446,7 @@ impl Client {
         .map_err(|e| e.to_string().into())
     }
 
-    /// Angemeldeter Nutzer (Name für die Anzeige).
+    /// Signed-in user (name for display).
     pub fn me(&self) -> Result<String> {
         let v = self.get("/v0/users/me", &[])?;
         Ok(["firstName", "name", "email"]
@@ -455,7 +455,7 @@ impl Client {
             .unwrap_or_else(|| "Epidemic Sound".into()))
     }
 
-    /// Meldet einen Export mit diesen Titeln (Pflicht laut Nutzungsbedingungen).
+    /// Reports an export with these tracks (required by the terms of use).
     pub fn report_export(&self, track_ids: &[String], platform: &str) -> Result<()> {
         if track_ids.is_empty() {
             return Ok(());
@@ -471,7 +471,7 @@ impl Client {
     }
 }
 
-// ------------------------------------------------------------------ Connect (OAuth mit PKCE)
+// ------------------------------------------------------------------ Connect (OAuth with PKCE)
 
 fn now() -> u64 {
     SystemTime::now()
@@ -494,7 +494,7 @@ pub fn pkce() -> (String, String) {
     (verifier, challenge)
 }
 
-/// Laufende Anmeldung: Browser öffnen mit `url`, dann `finish` (blockiert bis zum Rückruf).
+/// Running sign-in: open the browser with `url`, then `finish` (blocks until the callback).
 pub struct Login {
     pub url: String,
     verifier: String,
@@ -537,7 +537,7 @@ pub fn start_login(client_id: &str) -> Result<Login> {
 }
 
 impl Login {
-    /// Wartet bis zu `timeout` auf den Rückruf des Browsers und tauscht den Code gegen Tokens.
+    /// Waits up to `timeout` for the browser's callback and exchanges the code for tokens.
     pub fn finish(self, timeout: Duration) -> Result<Tokens> {
         let until = std::time::Instant::now() + timeout;
         let code = wait_for_callback(&self.listener, &self.state, until)?;
@@ -545,9 +545,9 @@ impl Login {
     }
 }
 
-/// Nimmt Verbindungen an, bis der echte Rückruf (`/callback` mit passendem `state`) kommt, und liefert den
-/// Code. Alles andere (vorab geöffnete Browser-Sockets, `/favicon.ico`, Scanner) bekommt 404 und wird
-/// übergangen; eine stumme Verbindung blockiert höchstens 5 s.
+/// Accepts connections until the real callback (`/callback` with matching `state`) arrives, and returns the
+/// code. Everything else (browser sockets opened in advance, `/favicon.ico`, scanners) gets 404 and is
+/// skipped; a silent connection blocks for at most 5 s.
 fn wait_for_callback(listener: &TcpListener, state: &str, until: std::time::Instant) -> Result<String> {
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     loop {
@@ -591,7 +591,7 @@ fn wait_for_callback(listener: &TcpListener, state: &str, until: std::time::Inst
     }
 }
 
-/// Schreibt über `<dest>.part` und benennt erst am Ende um; bei einem Fehler bleibt nichts liegen.
+/// Writes via `<dest>.part` and renames only at the end; on an error nothing is left behind.
 fn save_whole(mut r: impl std::io::Read, dest: &std::path::Path) -> Result<()> {
     if let Some(d) = dest.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
@@ -616,7 +616,7 @@ fn parse_query(q: &str) -> Vec<(String, String)> {
             match b[i] {
                 b'+' => out.push(b' '),
                 b'%' if i + 2 < b.len() => {
-                    // auf Bytes dekodieren: ein &str-Schnitt mitten in „€“ würde abstürzen
+                    // decode to bytes: a &str slice in the middle of "€" would crash
                     let h = std::str::from_utf8(&b[i + 1..i + 3]).ok();
                     out.push(h.and_then(|h| u8::from_str_radix(h, 16).ok()).unwrap_or(b'?'));
                     i += 2;
@@ -640,7 +640,7 @@ struct TokenResponse {
     expires_in: u64,
 }
 
-/// Fehler der Token-Anfrage; beim Refresh heißt 400/401 (`invalid_grant`): Refresh-Token abgelaufen.
+/// Error of the token request; on refresh 400/401 (`invalid_grant`) means: refresh token expired.
 fn token_err(e: ureq::Error, refreshing: bool) -> Error {
     match e {
         ureq::Error::Status(400 | 401, _) if refreshing => Error::LoginExpired,
@@ -680,7 +680,7 @@ pub fn refresh(client_id: &str, refresh_token: &str) -> Result<Tokens> {
     ], true)
 }
 
-/// Abmelden (Refresh-Token beim Anbieter ungültig machen).
+/// Sign out (invalidate the refresh token at the provider).
 pub fn logout(client_id: &str, refresh_token: &str) {
     let _ = agent()
         .post(LOGOUT_URL)
@@ -692,7 +692,7 @@ mod tests {
     use super::*;
     use std::io::Read;
 
-    /// Ein abgebrochener Download hinterlässt weder `<id>.part` noch eine halbe Datei.
+    /// An aborted download leaves neither `<id>.part` nor a half file.
     #[test]
     fn a_broken_download_leaves_no_part_file() {
         let t = std::env::temp_dir().join(format!("cl-epidemic-test-{}-{}", std::process::id(), random_token(6)));
@@ -712,8 +712,8 @@ mod tests {
         }
     }
 
-    /// Fremde Verbindungen vor dem Rückruf (leerer Socket, `/favicon.ico`, falscher `state`) werden
-    /// übergangen; der echte Rückruf danach liefert den Code.
+    /// Foreign connections before the callback (empty socket, `/favicon.ico`, wrong `state`) are
+    /// skipped; the real callback afterwards delivers the code.
     #[test]
     fn the_callback_waits_past_foreign_connections() {
         let l = TcpListener::bind(("127.0.0.1", 0)).unwrap();
@@ -743,7 +743,7 @@ mod tests {
 
     #[test]
     fn statuses_become_typed_errors() {
-        // Connect: 401 heißt neu anmelden, mit API-Schlüssel „ungültig“
+        // Connect: 401 means sign in again, with API key "invalid"
         assert_eq!(err(status(401), AuthMode::Connect), Error::LoginExpired);
         assert_eq!(err(status(401), AuthMode::ApiKey), Error::Other("Schlüssel ungültig".into()));
         assert_eq!(err(status(406), AuthMode::Connect), Error::TooFast);
@@ -759,7 +759,7 @@ Retry-After: 17
     fn an_expired_refresh_token_is_its_own_error() {
         assert_eq!(token_err(status(400), true), Error::LoginExpired);
         assert_eq!(token_err(status(401), true), Error::LoginExpired);
-        // beim ersten Anmelden (Code-Tausch) ist 400 ein gewöhnlicher Fehler
+        // at the first sign-in (code exchange) 400 is an ordinary error
         assert!(matches!(token_err(status(400), false), Error::Other(_)));
     }
 
@@ -796,7 +796,7 @@ Retry-After: 17
         assert_eq!((run(2), calls.get(), waits.get()), (Err(Error::TooFast), 2, 1));
     }
 
-    /// Mini-HTTP-Server, der auf jede Anfrage mit `body` antwortet und die Anfragezeile zurückgibt.
+    /// Mini HTTP server that answers every request with `body` and returns the request line.
     fn serve(body: &'static str, n: usize) -> (String, std::sync::mpsc::Receiver<String>) {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = format!("http://{}", l.local_addr().unwrap());
@@ -935,7 +935,7 @@ Retry-After: 17
                 ("state".into(), "x y".into())
             ]
         );
-        // `%` vor einem Mehrbyte-Zeichen darf nicht abstürzen
+        // `%` before a multibyte character must not crash
         assert_eq!(parse_query("a=%1€").len(), 1);
     }
 
@@ -953,17 +953,17 @@ Retry-After: 17
         for junk in ["%%%%", "=&=&=", "a=%€€", "🎬=🎬"] {
             let _ = q(junk);
         }
-        // Länge: Sekunden oder Millisekunden
+        // length: seconds or milliseconds
         let t = |l: Option<f64>| Track { length: l, ..Default::default() }.seconds();
         assert_eq!((t(None), t(Some(180.0)), t(Some(180_000.0)), t(Some(3600.0))), (None, Some(180.0), Some(180.0), Some(3600.0)));
         let a = Track { main_artists: vec![Named { id: "1".into(), name: "A".into() }, Named { id: "2".into(), name: "B 🎬".into() }], ..Default::default() };
         assert_eq!(a.artists(), "A, B 🎬");
         assert_eq!(Track::default().artists(), "");
-        // Konfiguration: leer, unbekannte Felder, Nutzerkennung stabil
+        // configuration: empty, unknown fields, user id stable
         let c: Config = serde_json::from_str("{}").unwrap();
         assert_eq!(c, Config::default());
         let c: Config = serde_json::from_str(r#"{"api_key":"  ","mode":"ApiKey","neu":1}"#).unwrap();
-        assert!(!c.ready(), "nur Leerzeichen sind kein Schlüssel");
+        assert!(!c.ready(), "spaces only are not a key");
         assert!(serde_json::from_str::<Config>(r#"{"mode":"Zauber"}"#).is_err());
         let mut c = Config::default();
         c.ensure_user_id();
@@ -973,7 +973,7 @@ Retry-After: 17
         assert_eq!(c.base(), DEFAULT_BASE);
         assert!(redirect_uri().starts_with("http://127.0.0.1:"));
         assert!(start_login("   ").is_err());
-        // Zufallswerte unterscheiden sich
+        // random values differ
         assert_ne!(pkce().0, pkce().0);
     }
 
