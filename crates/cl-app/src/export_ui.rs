@@ -1432,7 +1432,7 @@ enum Split {
     Markers,
 }
 
-/// Höchstzahl der Teile bei „Anzahl“
+/// Höchstzahl der Teile bei „Anzahl“ und „Länge“
 const SPLIT_MAX: u32 = 50;
 /// Ein kürzerer Rest bei „Länge“ wird dem vorletzten Teil zugeschlagen
 const SPLIT_MIN_REST: Time = Time(3_000_000);
@@ -1449,7 +1449,9 @@ fn split_parts(how: Split, (a, b): (Time, Time), fps: cl_core::Rational, markers
             (1..n).map(|k| (snap(a + Time((b - a).0 * k / n)), "")).collect()
         }
         Split::Length(secs) => {
-            let step = Time(secs.max(1) as i64 * 1_000_000);
+            // höchstens SPLIT_MAX Teile: Länge notfalls auf ganze Sekunden angehoben
+            let min = ((b - a).0.max(0) as u64).div_ceil(SPLIT_MAX as u64 * 1_000_000) as i64;
+            let step = Time((secs as i64).max(min).max(1) * 1_000_000);
             let mut v: Vec<(Time, &str)> = (1..).map(|k| a + Time(step.0 * k)).take_while(|t| *t < b).map(|t| (snap(t), "")).collect();
             if v.last().is_some_and(|(t, _)| b - *t < SPLIT_MIN_REST) {
                 v.pop();
@@ -2502,9 +2504,16 @@ fn split_parts_are_gapless_on_frames_with_names() {
     // höchstens 50, mindestens 2 Teile; Stellen wachsen mit der Zahl (mindestens zwei)
     assert_eq!(parts(Split::Count(80), 0.0, 100.0, &[]).len(), 50);
     assert_eq!(parts(Split::Count(1), 0.0, 100.0, &[]).len(), 2);
-    // 1 s je Teil über 120 s: der Rest von 1 s geht an den vorletzten → 119 Teile, dreistellig
+    // 1 s je Teil über 120 s: höchstens 50 Teile, Länge auf 3 s angehoben → 40 Teile
     let v = parts(Split::Length(1), 0.0, 120.0, &[]);
-    assert_eq!((v.len(), v[0].1.as_str(), v[118].1.as_str()), (119, "Film – Teil 001.mp4", "Film – Teil 119.mp4"));
+    check(&v, 0.0, 120.0);
+    assert_eq!((v.len(), v[0].1.as_str(), v[39].1.as_str()), (40, "Film – Teil 01.mp4", "Film – Teil 40.mp4"));
+    assert_eq!(split_summary(&v), "40 Teile · je 0:03");
+    // 2 Stunden in 1-s-Teilen: nicht 7199 Teile
+    assert!(parts(Split::Length(1), 0.0, 7200.0, &[]).len() <= SPLIT_MAX as usize);
+    // dreistellige Nummern gibt es nur noch bei Markern
+    let ms: Vec<cl_core::Marker> = (1..=120).map(|i| cl_core::Marker { id: i, at: s(i as f64), duration: Time::ZERO, name: String::new(), note: String::new(), color: 0 }).collect();
+    assert_eq!(parts(Split::Markers, 0.0, 130.0, &ms)[0].1, "Film – 001.mp4");
     // Länge: Rest ab 3 s bleibt eigener Teil, darunter geht er an den vorletzten
     let v = parts(Split::Length(60), 0.0, 363.0, &[]);
     check(&v, 0.0, 363.0);
