@@ -307,10 +307,10 @@ pub fn credits(packs: &[Pack], tr: &dyn Fn(&str) -> String) -> String {
     let mut out = format!("# {}\n", tr("Quellen und Lizenzen"));
     for p in std::iter::once(&std).chain(packs) {
         let i = &p.info;
-        out += &format!("\n## {} ({})\n\n", i.name, i.id);
+        out += &format!("\n## {} ({})\n\n", tr(&i.name), i.id);
         out += &format!("- {}: {}\n", tr("Lizenz"), i.license);
         if !i.author.is_empty() {
-            out += &format!("- {}: {}\n", tr("Autor"), i.author);
+            out += &format!("- {}: {}\n", tr("Autor"), tr(&i.author));
         }
         if let Some(s) = &i.source {
             out += &format!("- {}: {s}\n", tr("Quelle"));
@@ -333,7 +333,7 @@ pub fn credits(packs: &[Pack], tr: &dyn Fn(&str) -> String) -> String {
         for ((lic, author, src), names) in groups {
             let mut parts = vec![format!("{} {lic}", tr("Lizenz"))];
             if !author.is_empty() {
-                parts.push(format!("{} {author}", tr("Autor")));
+                parts.push(format!("{} {}", tr("Autor"), tr(author)));
             }
             if let Some(s) = src {
                 parts.push(format!("{} {s}", tr("Quelle")));

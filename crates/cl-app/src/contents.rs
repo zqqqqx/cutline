@@ -785,7 +785,7 @@ mod tests {
     #[test]
     fn third_party_file_is_current() {
         let reg = cl_plugin::Registry::scan([bundled().as_path()]);
-        let packs = catalog_packs(&reg, "de");
+        let packs = catalog_packs(&reg, "en");
         for p in &packs {
             assert!(!p.info.license.trim().is_empty(), "{} without a license", p.info.id);
             assert!(p.entries.iter().all(|e| !e.license.trim().is_empty()), "{}", p.info.id);
@@ -800,7 +800,9 @@ These are separate programs and libraries that Cutline starts or loads; they are
 - **FFmpeg 8.1.3** (`ffmpeg/` in the Linux package), static \"linux64-gpl\" build `ffmpeg-n8.1.3-36-ge22a4510c9-linux64-gpl-8.1` by BtbN, licensed under the GNU General Public License v3. Unmodified binaries from <https://github.com/BtbN/FFmpeg-Builds/releases> (a copy is kept in this repository's `ci-tools` release); source code: FFmpeg commit `e22a4510c9` on the `release/8.1` branch at <https://git.ffmpeg.org/ffmpeg.git> (also <https://github.com/FFmpeg/FFmpeg>), build scripts at <https://github.com/BtbN/FFmpeg-Builds>.
 - **ONNX Runtime 1.31.1** (`onnxruntime.dll` / `libonnxruntime.so`), MIT License, <https://github.com/microsoft/onnxruntime>.
 ";
-        let want = catalog::credits(&packs, &|s| s.to_string()) + bundled;
+        // the file in the repo is English: English pack names and the English UI texts
+        let en: std::collections::HashMap<&str, &str> = cl_i18n::ui_entries().into_iter().collect();
+        let want = catalog::credits(&packs, &|s| en.get(s).copied().unwrap_or(s).to_string()) + bundled;
         let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../THIRD_PARTY.md");
         if std::env::var_os("CUTLINE_WRITE_THIRD_PARTY").is_some() {
             std::fs::write(&file, &want).unwrap();
