@@ -1,6 +1,6 @@
-# Eingebaute Integration: Musik von Epidemic Sound direkt im Audio-Tab.
-# Standardmäßig aus. Zum Nutzen in Plugins einschalten und unter
-# Einstellungen → Integrationen mit dem eigenen Epidemic-Konto verbinden.
+# Built-in integration: music from Epidemic Sound right in the Audio tab.
+# Off by default. To use it, turn it on in Plugins and connect your own Epidemic account under
+# Settings → Integrations.
 [plugin]
 id = "cutline.epidemic-sound"
 version = "0.1.0"

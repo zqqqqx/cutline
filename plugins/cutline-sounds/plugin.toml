@@ -1,4 +1,4 @@
-# Sounds für Creator: selbst erzeugt mit FFmpeg (Rezepte in RECIPES.md), gemeinfrei (CC0).
+# Sounds for creators: generated with FFmpeg (recipes in RECIPES.md), public domain (CC0).
 [plugin]
 id = "cutline.sounds"
 version = "0.1.0"

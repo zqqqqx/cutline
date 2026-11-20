@@ -1,8 +1,8 @@
-# Effekte und Farbfilter für Creator, alles eigene FFmpeg-Ketten (CC0).
-# Effekte bilden ihre Stärke selbst ab ({intensity} 0…1, bei 0 praktisch keine Änderung);
-# Filter werden vom Programm mit dem Original überblendet.
-# Jede Kette steht in EINER Zeile `ffmpeg = "…"` (der Test in crates/cl-fx liest sie zeilenweise).
-# Ohne `geq`, ohne feste Pixelmaße für Bildgröße oder Ränder; nur Filter des mitgelieferten FFmpeg.
+# Effects and color filters for creators, all own FFmpeg chains (CC0).
+# Effects map their strength themselves ({intensity} 0…1, at 0 practically no change);
+# filters are blended with the original by the program.
+# Each chain is on ONE line `ffmpeg = "…"` (the test in crates/cl-fx reads them line by line).
+# No `geq`, no fixed pixel sizes for image size or borders; only filters of the bundled FFmpeg.
 [plugin]
 id = "cutline.effekte"
 version = "1.0.0"
@@ -14,9 +14,9 @@ authors = ["Cutline-Projekt"]
 license = "CC0-1.0"
 source = "https://github.com/zqqqqx/cutline"
 
-# ---------- Effekte: Basis ----------
+# ---------- Effects: basic ----------
 
-# Lokaler Kontrast: Helligkeit minus weichgezeichnete Helligkeit (im Alphakanal gerechnet)
+# Local contrast: brightness minus blurred brightness (computed in the alpha channel)
 [[asset]]
 id = "hdr-look"
 kind = "video-effect"
@@ -25,7 +25,7 @@ category = ["Basis"]
 tags = ["klarheit", "details", "clarity"]
 ffmpeg = "format=yuva420p,shuffleplanes=map3=0,lutyuv=a='clip((val-16)*255/219,0,255)',boxblur=luma_radius=0:chroma_radius=0:alpha_radius='min(w,h)/30':alpha_power=2,format=rgba,colorchannelmixer=rr='1+0.36*{intensity}':rg='0.708*{intensity}':rb='0.132*{intensity}':ra='-1.2*{intensity}':gr='0.36*{intensity}':gg='1+0.708*{intensity}':gb='0.132*{intensity}':ga='-1.2*{intensity}':br='0.36*{intensity}':bg='0.708*{intensity}':bb='1+0.132*{intensity}':ba='-1.2*{intensity}',format=rgb24"
 
-# ---------- Effekte: Retro ----------
+# ---------- Effects: retro ----------
 
 [[asset]]
 id = "super8"
@@ -51,9 +51,9 @@ category = ["Retro"]
 tags = ["cctv", "kamera"]
 ffmpeg = "hue=s='1-0.85*{intensity}',lutyuv=u='val-4*{intensity}':v='val-3*{intensity}',eq=contrast='1+0.2*{intensity}':brightness='0.03*{intensity}',noise=alls=14*{intensity}:allf=t,gblur=sigma=0.6*{intensity},drawgrid=w=0:h='max(2,ih/240)':t=1:c=0x00000026:enable='gt({intensity},0.05)',vignette=angle=0.45*{intensity}"
 
-# ---------- Effekte: Bewegung ----------
-# Wackeln ohne schwarze Ränder: etwas vergrößern (scale), dann auf die Ausgangsgröße zurück
-# zuschneiden (crop). Die Breite stimmt exakt: aus S = W + 2*floor(W*c) folgt
+# ---------- Effects: motion ----------
+# Shake without black borders: enlarge a little (scale), then crop back to the original size
+# (crop). The width is exact: from S = W + 2*floor(W*c) follows
 # floor(S*c/(1+2c)) = floor(W*c).
 
 [[asset]]
@@ -64,7 +64,7 @@ category = ["Bewegung"]
 tags = ["wackeln", "shake"]
 ffmpeg = "scale=w='iw+2*trunc(iw*0.035*{intensity})':h='ih+2*trunc(ih*0.035*{intensity})',crop=w='iw-2*trunc(iw*0.035*{intensity}/(1+0.07*{intensity})+1e-6)':h='ih-2*trunc(ih*0.035*{intensity}/(1+0.07*{intensity})+1e-6)':x='(iw-ow)/2*(1+0.5*sin(t*1.3)+0.3*sin(t*2.9+1)+0.15*sin(t*6.1+2))':y='(ih-oh)/2*(1+0.5*sin(t*1.1+2)+0.3*sin(t*3.3)+0.15*sin(t*5.3+4))'"
 
-# Treffer am Clipanfang (wie „Blitz“): Stoß, der abklingt, mit kurzem Aufhellen
+# Hit at the clip start (like "Blitz"): a punch that decays, with a short brightening
 [[asset]]
 id = "einschlag"
 kind = "video-effect"
@@ -73,7 +73,7 @@ category = ["Bewegung"]
 tags = ["treffer", "erdbeben", "shake"]
 ffmpeg = "scale=w='iw+2*trunc(iw*0.03*{intensity})':h='ih+2*trunc(ih*0.03*{intensity})',crop=w='iw-2*trunc(iw*0.03*{intensity}/(1+0.06*{intensity})+1e-6)':h='ih-2*trunc(ih*0.03*{intensity}/(1+0.06*{intensity})+1e-6)':x='(iw-ow)/2*(1+exp(-3.5*t)*sin(t*55))':y='(ih-oh)/2*(1+exp(-3.5*t)*cos(t*47))',eq=brightness='{intensity}*0.3*exp(-t*9)':contrast='1+{intensity}*0.2*exp(-t*6)':eval=frame"
 
-# Stoß im Takt (120 BPM)
+# Punch on the beat (120 BPM)
 [[asset]]
 id = "bass-wackeln"
 kind = "video-effect"
@@ -82,7 +82,7 @@ category = ["Bewegung"]
 tags = ["beat", "musik", "takt"]
 ffmpeg = "scale=w='iw+2*trunc(iw*0.02*{intensity})':h='ih+2*trunc(ih*0.02*{intensity})',crop=w='iw-2*trunc(iw*0.02*{intensity}/(1+0.04*{intensity})+1e-6)':h='ih-2*trunc(ih*0.02*{intensity}/(1+0.04*{intensity})+1e-6)':x='(iw-ow)/2*(1+exp(-mod(t,0.5)*12)*sin(t*70))':y='(ih-oh)/2*(1+exp(-mod(t,0.5)*12)*cos(t*61))'"
 
-# Halbdurchsichtige Kopie, die hin und her schwankt
+# Semi-transparent copy swaying back and forth
 [[asset]]
 id = "doppelbild"
 kind = "video-effect"
@@ -91,8 +91,8 @@ category = ["Bewegung"]
 tags = ["schwindel", "betrunken", "dizzy"]
 ffmpeg = "format=rgba,colorchannelmixer=aa=0.5*{intensity},split,overlay=x='W*0.035*sin(t*2.3)':y='H*0.02*sin(t*1.7)':eval=frame,format=rgb24"
 
-# ---------- Effekte: Licht ----------
-# Leuchten: Helligkeit in den Alphakanal kopieren, nur dort weichzeichnen, dann aufaddieren
+# ---------- Effects: light ----------
+# Glow: copy brightness into the alpha channel, blur only there, then add it on top
 
 [[asset]]
 id = "ueberstrahlen"
@@ -102,7 +102,7 @@ category = ["Licht"]
 tags = ["leuchten", "glow"]
 ffmpeg = "format=yuva420p,shuffleplanes=map3=0,lutyuv=a='clip((val-70)*1.5,0,255)',boxblur=luma_radius=0:chroma_radius=0:alpha_radius='min(w,h)/24':alpha_power=2,format=rgba,colorchannelmixer=ra=1.0*{intensity}:ga=0.9*{intensity}:ba=0.75*{intensity},format=rgb24"
 
-# Helligkeit zum Teil durch die weichgezeichnete Helligkeit ersetzen, Farben bleiben
+# Partly replace brightness with blurred brightness, colors stay
 [[asset]]
 id = "weichzeichner"
 kind = "video-effect"
@@ -127,7 +127,7 @@ category = ["Licht"]
 tags = ["belichtung", "licht"]
 ffmpeg = "eq=brightness='{intensity}*0.13*(sin(t*23)*sin(t*7.1)+0.5*sin(t*53))':contrast='1+{intensity}*0.06*sin(t*31)':eval=frame"
 
-# Helligkeits-, Kontrast- und Farbstoß im Takt (120 BPM)
+# Brightness, contrast and color punch on the beat (120 BPM)
 [[asset]]
 id = "takt-puls"
 kind = "video-effect"
@@ -136,7 +136,7 @@ category = ["Licht"]
 tags = ["beat", "musik", "takt"]
 ffmpeg = "eq=brightness='0.14*{intensity}*exp(-mod(t,0.5)*9)':contrast='1+0.2*{intensity}*exp(-mod(t,0.5)*9)':saturation='1+0.7*{intensity}*exp(-mod(t,0.5)*9)':eval=frame"
 
-# Helle Stellen ziehen Spuren (nachts, Lichter, Feuerwerk)
+# Bright areas leave trails (night, lights, fireworks)
 [[asset]]
 id = "lichtspuren"
 kind = "video-effect"
@@ -145,7 +145,7 @@ category = ["Licht"]
 tags = ["nacht", "spur", "trails"]
 ffmpeg = "lagfun=decay=0.95*{intensity}"
 
-# ---------- Effekte: Stil ----------
+# ---------- Effects: style ----------
 
 [[asset]]
 id = "rueckblende"
@@ -179,7 +179,7 @@ category = ["Stil"]
 tags = ["psychedelisch", "kunst"]
 ffmpeg = "lutrgb=r='val+{intensity}*(if(lt(val,128),2*val,2*(255-val))-val)':g='val+{intensity}*(if(lt(val,128),2*val,2*(255-val))-val)':b='val+{intensity}*(if(lt(val,128),2*val,2*(255-val))-val)'"
 
-# ---------- Filter (Farblooks; Stärke = Überblenden mit dem Original) ----------
+# ---------- Filters (color looks; strength = blend with the original) ----------
 
 [[asset]]
 id = "kino-warm"

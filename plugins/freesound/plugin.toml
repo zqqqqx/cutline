@@ -1,4 +1,4 @@
-# Eingebaute Integration, standardmäßig aus.
+# Built-in integration, off by default.
 [plugin]
 id = "cutline.freesound"
 version = "0.1.0"

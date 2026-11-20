@@ -1,4 +1,4 @@
-# Mitgeliefertes Basis-Paket: Referenz für das Asset-Paket-Format (docs/ARCHITECTURE.md).
+# Bundled base package: reference for the asset package format (docs/ARCHITECTURE.md).
 [plugin]
 id = "cutline.basis"
 version = "0.1.0"
