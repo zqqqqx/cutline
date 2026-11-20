@@ -1060,7 +1060,8 @@ impl App {
                         .project
                         .media
                         .iter()
-                        .filter(|m| m.kind == MediaKind::Video && self.presence.get(&m.path))
+                        // presence counts unchecked paths as present: never hand a URL to FFmpeg
+                        .filter(|m| m.kind == MediaKind::Video && self.presence.get(&m.path) && !cl_media::is_url(&m.path))
                         .map(|m| (m.clone(), wants_proxy(m) && !self.proxy_failed.contains(&m.id)))
                         .collect();
                     let (tx, rx) = std::sync::mpsc::channel();

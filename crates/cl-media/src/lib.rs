@@ -418,6 +418,23 @@ fn decode_once(
 /// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), keeping only
 /// those with `keep(k)`
 #[allow(clippy::too_many_arguments)]
+/// `scheme:…` such as `https://host/x.mp4` from a project file: FFmpeg would go online. Purely
+/// syntactic (no disk access, fine per frame); a drive letter `C:` has a one-letter scheme and passes.
+/// Preview, thumbnails, waveform and channel check refuse such paths (the export checks `is_local`).
+pub fn is_url(path: &Path) -> bool {
+    let s = path.as_os_str().to_string_lossy();
+    s.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.len() >= 2 && scheme.starts_with(|c: char| c.is_ascii_alphabetic()) && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+    })
+}
+
+fn not_url(path: &Path) -> Result<()> {
+    if is_url(path) {
+        return Err(MediaError::Unreadable("keine lokale Datei".into()));
+    }
+    Ok(())
+}
+
 fn decode_raw(
     path: &Path,
     at: Time,
@@ -429,6 +446,7 @@ fn decode_raw(
     keep: &dyn Fn(u32) -> bool,
     kill: Option<&KillSwitch>,
 ) -> Result<(Vec<(u32, Vec<u8>)>, Option<Duration>)> {
+    not_url(path)?;
     let mut cmd = command_with("ffmpeg", kill.is_none())?;
     cmd.args(["-v", "error", "-nostdin"]);
     if kill.is_some() {
@@ -578,6 +596,7 @@ pub fn waveform_stream(path: &Path, per_sec: u32, stream: u32) -> Result<Vec<f32
 
 fn waveform_of(path: &Path, per_sec: u32, max_secs: Option<f64>, stream: u32) -> Result<Vec<f32>> {
     const RATE: u32 = 8000;
+    not_url(path)?;
     let mut cmd = command("ffmpeg")?;
     cmd.args(["-v", "error", "-nostdin", "-i"]).arg(path);
     if stream > 0 {
@@ -660,6 +679,7 @@ pub fn silent_channel_opt(path: &Path, wait: bool) -> Option<u8> {
         return None;
     }
     let r = (|| {
+        not_url(path).ok()?;
         let out = command("ffmpeg")
             .ok()?
             .args(["-v", "info", "-nostdin", "-t", "90", "-i"])
@@ -769,6 +789,7 @@ fn spawn_stream(
     graph: Option<&str>,
     accel: Option<&str>,
 ) -> Result<Child> {
+    not_url(path)?;
     let mut cmd = command_with("ffmpeg", false)?;
     cmd.args(["-v", "error", "-nostdin"]);
     limit_threads(&mut cmd, accel.is_some());
@@ -1232,6 +1253,25 @@ mod tests {
         assert!(decode_frame_fx(&src, Time::ZERO, 32, 18, Some(&g)).is_ok());
         let s = FrameStream::open_fx(&src, Time::ZERO, 32, 18, Rational::new(30, 1), Some(&g)).unwrap();
         assert!(s.next_blocking().is_some());
+    }
+
+    /// A URL from a project file never reaches FFmpeg (preview, thumbnail, waveform); local paths pass.
+    #[test]
+    fn urls_are_refused_before_ffmpeg() {
+        for p in ["https://127.0.0.1:9/x.mp4", "rtmp://h/live", "concat:a.mp4|b.mp4", "file:x.mp4"] {
+            assert!(is_url(Path::new(p)), "{p}");
+        }
+        for p in [r"C:\Videos\a.mp4", "C:/Videos/a.mp4", r"\\?\C:\a.mp4", r"\\nas\share\a b.mp4", "/home/u/a:b.mp4", "clip 1.mp4"] {
+            assert!(!is_url(Path::new(p)), "{p}");
+        }
+        if !ffmpeg_available() {
+            return;
+        }
+        let url = Path::new("https://127.0.0.1:9/x.mp4");
+        let no = |r: Result<()>| assert!(matches!(&r, Err(MediaError::Unreadable(e)) if e == "keine lokale Datei"), "{r:?}");
+        no(waveform(url, 10).map(|_| ()));
+        no(decode_frame(url, Time::ZERO, 16, 16).map(|_| ()));
+        assert_eq!(silent_channel(url), None);
     }
 
     /// Streaming peaks match the peaks computed directly from known samples (lossless WAV at the
