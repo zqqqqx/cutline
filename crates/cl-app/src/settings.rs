@@ -1,5 +1,5 @@
-//! App-Einstellungen (dauerhaft in `settings.json`) und der Einstellungsdialog.
-//! Der MCP-Server lebt nur hier: aktivieren, Port, Zugriff, Token, Client-Konfiguration.
+//! App settings (persisted in `settings.json`) and the settings dialog.
+//! The MCP server lives only here: enable, port, access, token, client configuration.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,12 +13,12 @@ use crate::paths;
 use crate::theme::{self, icon};
 use crate::widgets::{self, Slider};
 
-/// Bildraten zur Auswahl – gleiche Liste für neue Projekte (Einstellungen) und den Projekt-Reiter.
+/// Frame rates to choose from – the same list for new projects (settings) and the project tab.
 pub const FPS_CHOICES: [&str; 9] = [
     "23.976", "24", "25", "29.97", "30", "50", "59.94", "60", "120",
 ];
 
-/// Ältere Einstellungen speichern die Bildrate als ganze Zahl (z. B. 30)
+/// Older settings store the frame rate as an integer (e.g. 30)
 fn fps_compat<'de, D: serde::Deserializer<'de>>(d: D) -> Result<cl_core::Rational, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
@@ -37,95 +37,95 @@ fn fps_compat<'de, D: serde::Deserializer<'de>>(d: D) -> Result<cl_core::Rationa
 pub struct AppSettings {
     pub lang: String,
     pub ui_scale: f32,
-    /// Startseite beim Programmstart zeigen
+    /// Show the start page at program start
     pub start_on_home: bool,
     pub image_duration: f32,
     pub text_duration: f32,
     pub transition_duration: f32,
     pub anim_duration: f32,
-    /// Vorschauauflösung: 1 = voll, 2 = halb, 4 = viertel
+    /// Preview resolution: 1 = full, 2 = half, 4 = quarter
     pub preview_div: u32,
     pub autosave: bool,
-    /// Marker beim Export als Kapitel schreiben (Datei und Kapitelliste)
+    /// Write markers as chapters on export (file and chapter list)
     pub export_chapters: bool,
-    /// Hinweis auf Kapitel unter 10 s (lässt sich wegklicken)
+    /// Hint about chapters under 10 s (can be dismissed)
     pub chapter_hint: bool,
-    /// Der Hinweis „Grafiktreiber veraltet" kam schon (er erscheint nur einmal)
+    /// The „Grafiktreiber veraltet" hint was already shown (it appears only once)
     pub driver_hint_shown: bool,
     pub mcp_enabled: bool,
     pub mcp_port: u16,
     pub mcp_read_only: bool,
-    /// Zuletzt geöffnete Projekte (auch außerhalb des Projektordners)
+    /// Recently opened projects (also outside the project folder)
     pub recent: Vec<PathBuf>,
-    /// Beim Start auf GitHub nach Updates suchen
+    /// Check GitHub for updates at startup
     pub auto_update: bool,
-    /// Vom Benutzer übersprungene Version
+    /// Version skipped by the user
     pub skipped_version: Option<String>,
-    /// Zuletzt gestartete Version (für „Was ist neu“ nach einem Update)
+    /// Last started version (for „Was ist neu“ after an update)
     pub last_version: Option<String>,
-    /// Plugin-ID → aktiv (überschreibt `default_enabled` des Manifests)
+    /// Plugin ID → active (overrides the manifest's `default_enabled`)
     pub plugin_states: std::collections::BTreeMap<String, bool>,
-    /// Pakete, deren Einträge in den Tabs nicht erscheinen (bleiben eingeschaltet)
+    /// Packs whose entries do not appear in the tabs (they stay switched on)
     pub hidden_packs: Vec<String>,
-    /// Import aus anderen Schnittprogrammen
+    /// Import from other editors
     pub import_capcut: bool,
     pub import_fcpxml: bool,
-    /// Eigene Tastenkürzel: Aktion → Kombination (leer = keine)
+    /// Own shortcuts: action → combination (empty = none)
     pub shortcuts: std::collections::BTreeMap<String, String>,
-    /// Proxys für große Videos in der Vorschau
+    /// Proxies for large videos in the preview
     pub use_proxies: bool,
-    /// Vorschauqualität beim Abspielen automatisch senken, wenn die Bildrate nicht reicht
+    /// Lower the preview quality automatically during playback if the frame rate is not enough
     pub auto_quality: bool,
-    /// Einführung abgeschlossen oder übersprungen
+    /// Introduction finished or skipped
     pub onboarding_done: bool,
-    /// Antworten auf „Wofür nutzt du Cutline?“
+    /// Answers to „Wofür nutzt du Cutline?“
     pub use_cases: Vec<String>,
     /// Design: „system“, „dark“, „darkgray“, „gray“, „light“
     pub theme: String,
-    /// Akzentfarbe: „auto“ (neutral), Vorgabe-id aus `theme::ACCENTS` oder „#RRGGBB“
+    /// Accent color: „auto“ (neutral), preset id from `theme::ACCENTS` or „#RRGGBB“
     pub accent: String,
-    /// Kleine Animationen (Hover, Einblenden, Export)
+    /// Small animations (hover, fade-in, export)
     pub animations: bool,
-    /// Eigener Projektordner (`None` = im Datenordner)
+    /// Own project folder (`None` = in the data folder)
     pub projects_dir: Option<PathBuf>,
-    /// Automatische Sicherung: alle n Minuten, höchstens m Stück je Projekt
+    /// Automatic backup: every n minutes, at most m per project
     pub backup_minutes: u32,
     pub backup_keep: usize,
-    /// Neue Projekte: Bildrate und Umgang mit Tonkanälen
-    /// Gespeichert als `new_rate`: 0.7 erwartet `new_fps` als Zahl und legte sonst die ganze Datei beiseite
+    /// New projects: frame rate and handling of audio channels
+    /// Saved as `new_rate`: 0.7 expects `new_fps` as a number and otherwise set the whole file aside
     #[serde(rename = "new_rate", alias = "new_fps", deserialize_with = "fps_compat")]
     pub new_fps: cl_core::Rational,
     pub new_channels: cl_core::Channels,
-    /// Höhe der Proxys (540, 720, 1080)
+    /// Height of the proxies (540, 720, 1080)
     pub proxy_h: u32,
-    /// Hardware-Kodierung für Export und Proxys: „auto“ oder [`cl_export::Encoder::id`]
+    /// Hardware encoding for export and proxies: „auto“ or [`cl_export::Encoder::id`]
     pub hw_encoder: String,
-    /// Spracherkennung für Untertitel: „auto“, „parakeet“ oder „whisper“
+    /// Speech recognition for captions: „auto“, „parakeet“ or „whisper“
     pub asr_engine: String,
-    /// Downloads aus Plugins (Epidemic Sound, Pexels) auch in die Bibliothek legen
+    /// Also put downloads from plugins (Epidemic Sound, Pexels) into the library
     pub lib_downloads: bool,
-    /// Gewählter Untertitel-Stil (`captions::PRESETS`)
+    /// Chosen caption style (`captions::PRESETS`)
     pub caption_preset: String,
-    /// Hinweiston, wenn ein Export fertig ist
+    /// Notification sound when an export is done
     pub export_sound: bool,
-    /// Cache-Dateien, die älter sind als so viele Tage, beim Start löschen (0 = nie)
+    /// Delete cache files older than this many days at startup (0 = never)
     pub cache_days: u32,
-    /// Beim Ziehen des Playheads kurz den Ton an der Stelle abspielen
+    /// Briefly play the audio at the spot while dragging the playhead
     pub scrub_audio: bool,
-    /// Ausgabegerät für die Wiedergabe (`None` = Systemstandard)
+    /// Output device for playback (`None` = system default)
     pub audio_device: Option<String>,
-    /// Aktuelles Layout und eigene Layout-Profile
+    /// Current layout and own layout profiles
     pub layout: crate::layout::LayoutProfile,
     pub layouts: Vec<crate::layout::LayoutProfile>,
-    /// Layout sperren: Bereiche lassen sich nicht mehr mit der Maus in der Größe ziehen
+    /// Lock the layout: panels can no longer be resized with the mouse
     pub layout_locked: bool,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            // Tests prüfen deutsche Texte: die Systemsprache (Linux: LANG=en_US…) darf die globale
-            // Sprache von `tr` nicht nebenbei auf Englisch stellen
+            // Tests check German texts: the system language (Linux: LANG=en_US…) must not quietly switch
+            // the global language of `tr` to English
             lang: cl_i18n::Lang::from_locale(&if cfg!(test) {
                 "de".into()
             } else {
@@ -190,7 +190,7 @@ impl AppSettings {
     }
     pub fn load() -> Self {
         let mut s: AppSettings = paths::read_json_or_quarantine(&Self::path());
-        // Übernahme aus Phase 1 (eigene Datei für die Oberflächengröße)
+        // Migration from phase 1 (separate file for the UI scale)
         if !Self::path().is_file() {
             s.ui_scale = crate::chrome::load_ui_scale();
         }
@@ -216,8 +216,8 @@ impl AppSettings {
         }
         s
     }
-    /// Werte von Hand bearbeiteter oder fremder Dateien in die Bereiche der Regler holen
-    /// (sonst z. B. Bildrate 0 im neuen Projekt oder Clips mit 10^30 s Länge).
+    /// Bring values of hand-edited or foreign files into the ranges of the sliders
+    /// (otherwise e.g. frame rate 0 in a new project or clips 10^30 s long).
     fn sanitize(&mut self) {
         let c = |v: f32, lo: f32, hi: f32, d: f32| if v.is_finite() { v.clamp(lo, hi) } else { d };
         let d = Self::default();
@@ -232,7 +232,7 @@ impl AppSettings {
         if self.new_fps.den == 0 || !(f > 0.0 && f <= 240.0) {
             self.new_fps = d.new_fps;
         }
-        // Proxy-Höhe 0 ergäbe Proxys ohne Bild
+        // proxy height 0 would give proxies without a picture
         if !crate::proxy::PROXY_HEIGHTS.iter().any(|p| p.0 == self.proxy_h) {
             self.proxy_h = d.proxy_h;
         }
@@ -251,8 +251,8 @@ impl AppSettings {
             .find(|l| l.code() == self.lang)
             .unwrap_or(cl_i18n::Lang::De)
     }
-    /// Setzt die Einstellungen eines Bereichs auf den Standard. Sprache und Projektordner bleiben, weil
-    /// ein Klick sie nicht zurückbringt. `false`: Bereich hat kein Zurücksetzen (`Section::resettable`).
+    /// Resets the settings of a section to the default. Language and project folder stay, because
+    /// a click does not bring them back. `false`: the section has no reset (`Section::resettable`).
     pub fn reset(&mut self, s: Section) -> bool {
         let d = Self::default();
         match s {
@@ -286,7 +286,7 @@ impl AppSettings {
                 self.anim_duration = d.anim_duration;
             }
             Section::Shortcuts => self.shortcuts.clear(),
-            // eigene Datei (`brand.json`): leert `App::reset_settings_section`
+            // own file (`brand.json`): cleared by `App::reset_settings_section`
             Section::Brand => {}
             _ => return false,
         }
@@ -299,7 +299,7 @@ impl AppSettings {
     }
 }
 
-/// Laufender MCP-Server.
+/// Running MCP server.
 pub struct McpRunning {
     pub port: u16,
     pub token: String,
@@ -311,7 +311,7 @@ pub struct McpRunning {
 impl Drop for McpRunning {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        // warten, bis der Port frei ist – sonst scheitert ein sofortiger Neustart auf demselben Port
+        // wait until the port is free – otherwise an immediate restart on the same port fails
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
@@ -339,7 +339,7 @@ pub enum Section {
 }
 
 impl Section {
-    /// Zurücksetzen gibt es nur, wo mehrere Werte verstellt sein können (nicht bei zwei, drei Schaltern)
+    /// Reset only exists where several values can be changed (not for two or three toggles)
     pub fn resettable(self) -> bool {
         matches!(self, Section::General | Section::Projects | Section::Audio | Section::Editing | Section::Shortcuts | Section::Brand)
     }
@@ -403,7 +403,7 @@ impl App {
         if !self.settings_open {
             return;
         }
-        // Seitenleiste reicht bis an den Rand: gemeinsamer Rahmen ohne Innenabstand
+        // The sidebar reaches the edge: a shared frame without inner margin
         let modal = crate::dialog::modal(ctx, "settings")
             .frame(crate::dialog::frame(ctx).inner_margin(0))
             .show(ctx, |ui| {
@@ -430,7 +430,7 @@ impl App {
                                         .size(theme::FS_TITLE),
                                 );
                                 ui.add_space(12.0);
-                                // alle Einträge zusammen so hoch wie früher 14 mit 28 px: das Fenster bleibt gleich groß
+                                // all entries together as tall as 14 with 28 px used to be: the window keeps its size
                                 let sp = ui.spacing().item_spacing.y;
                                 let row_h = 14.0 * (28.0 + sp) / SECTIONS.len() as f32 - sp;
                                 for (s, g, label) in SECTIONS {
@@ -453,10 +453,10 @@ impl App {
                                         r.left_center() + vec2(10.0, 0.0),
                                         egui::Align2::LEFT_CENTER,
                                         crate::tr(g),
-                                        egui::FontId::proportional(14.0), // Icon-Glyphe im Bedienelement
+                                        egui::FontId::proportional(14.0), // icon glyph in the control
                                         col,
                                     );
-                                    // Akzent nur am Icon, der Text bleibt neutral
+                                    // accent only on the icon, the text stays neutral
                                     ui.painter().text(
                                         r.left_center() + vec2(32.0, 0.0),
                                         egui::Align2::LEFT_CENTER,
@@ -470,9 +470,9 @@ impl App {
                                 }
                             })
                         });
-                    // Inhalt
+                    // Content
                     ui.vertical(|ui| {
-                        // feste Breite, sonst springt das Fenster beim Bereichswechsel
+                        // fixed width, otherwise the window jumps when switching sections
                         ui.set_width(514.0);
                         ui.add_space(14.0);
                         ui.horizontal(|ui| {
@@ -514,8 +514,8 @@ impl App {
                             );
                         });
                         ui.add_space(8.0);
-                        // Feste Fläche in einem eigenen Ui: breiter oder kurzer Inhalt ändert
-                        // die Fenstergröße nicht mehr
+                        // A fixed area in its own Ui: wide or short content no longer changes
+                        // the window size
                         let area = egui::Rect::from_min_size(ui.cursor().min, vec2(514.0, 410.0));
                         ui.allocate_rect(area, egui::Sense::hover());
                         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(area));
@@ -551,7 +551,7 @@ impl App {
         }
     }
 
-    /// Integrationen mit Schalter; ausgeschaltete sind ausgegraut. Inhaltspakete stehen unter „Inhalte“.
+    /// Integrations with a toggle; switched-off ones are grayed out. Content packs are under „Inhalte“.
     pub fn plugins_settings(&mut self, ui: &mut egui::Ui) {
         let lang = self.i18n.lang().code().to_string();
         let mut toggled = None;
@@ -591,7 +591,7 @@ impl App {
         }
     }
 
-    /// Aktuellen Bereich auf Standard setzen und alles neu anwenden, was sonst erst beim Start greift.
+    /// Reset the current section to the default and re-apply everything that otherwise only takes effect at startup.
     fn reset_settings_section(&mut self, ctx: &egui::Context) {
         let s = self.settings_section;
         if !self.settings.reset(s) {
@@ -642,7 +642,7 @@ impl App {
                     egui::ComboBox::from_id_salt("set-lang")
                         .selected_text(crate::tr(self.i18n.lang().native_name()))
                         .show_ui(ui, |ui| {
-                            // Pseudo-Sprache nur in Entwickler-Builds (Debug oder CUTLINE_SHOTS)
+                            // pseudo-language only in developer builds (debug or CUTLINE_SHOTS)
                             let dev = cfg!(debug_assertions) || std::env::var_os("CUTLINE_SHOTS").is_some();
                             for l in cl_i18n::Lang::ALL.into_iter().filter(|l| dev || *l != cl_i18n::Lang::Pseudo) {
                                 if ui
@@ -654,7 +654,7 @@ impl App {
                                 {
                                     self.i18n.set_lang(l);
                                     self.settings.lang = l.code().into();
-                                    // Paketnamen in der neuen Sprache
+                                    // pack names in the new language
                                     self.refresh_catalog();
                                 }
                             }
@@ -682,7 +682,7 @@ impl App {
                                     pnt.rect_filled(sw, theme::R_CARD, b.bg_app);
                                     let left = egui::Rect::from_min_max(sw.min, egui::pos2(sw.center().x, sw.bottom()));
                                     pnt.with_clip_rect(left).rect_filled(sw, theme::R_CARD, a.bg_app);
-                                    pnt.text(sw.center(), egui::Align2::CENTER_CENTER, icon::CIRCLE_HALF, egui::FontId::proportional(15.0), egui::Color32::from_gray(140)); // Icon-Glyphe in der Mini-Vorschau
+                                    pnt.text(sw.center(), egui::Align2::CENTER_CENTER, icon::CIRCLE_HALF, egui::FontId::proportional(15.0), egui::Color32::from_gray(140)); // icon glyph in the mini preview
                                 }
                             }
                             let stroke = if on {
@@ -728,7 +728,7 @@ impl App {
                                 pick = Some(id.to_string());
                             }
                         }
-                        // Eigene Farbe: Farbwähler, gespeichert als „#RRGGBB“
+                        // Own color: color picker, saved as „#RRGGBB“
                         let custom = self.settings.accent.starts_with('#');
                         let [r, g, b, _] = theme::ACCENT().to_array();
                         let mut rgb = egui::Color32::from_hex(&self.settings.accent).map_or([r, g, b], |c| [c.r(), c.g(), c.b()]);
@@ -742,13 +742,13 @@ impl App {
                         if let Some(spec) = pick {
                             theme::set_accent(&spec);
                             self.settings.accent = spec;
-                            // shortcut: speichert beim Ziehen im Farbwähler jedes Frame, ggf. erst beim Schließen speichern
+                            // shortcut: saves every frame while dragging in the color picker, possibly save only on close
                             self.settings.save();
                             theme::apply(ui.ctx());
                         }
                     });
                 });
-                // Anordnung der großen Bereiche (Kacheln mit Mini-Skizze), siehe layout.rs
+                // Arrangement of the large panels (tiles with a mini sketch), see layout.rs
                 self.arrangement_settings(ui);
                 if widgets::toggle_row(ui, "Animationen", &mut self.settings.animations) {
 
@@ -772,7 +772,7 @@ impl App {
                     "Beim Start die Projektübersicht zeigen",
                     &mut self.settings.start_on_home,
                 );
-                // Rundgang und Einführung stehen im Hauptmenü
+                // Tour and introduction are in the main menu
             }
             Section::Projects => {
                 theme::row(ui, "Projektordner", |ui| {
@@ -858,7 +858,7 @@ impl App {
                 widgets::toggle_row(ui, "Downloads in die Bibliothek übernehmen", &mut self.settings.lib_downloads);
             }
             Section::Audio => {
-                // Geräteliste einmal je Öffnen abfragen (die Abfrage ist nicht billig)
+                // Query the device list once per opening (the query is not cheap)
                 let list_id = egui::Id::new("audio-devices");
                 let devices: Vec<String> = ui.data(|d| d.get_temp(list_id)).unwrap_or_else(|| {
                     let v = crate::audio::output_devices();
@@ -895,7 +895,7 @@ impl App {
                             }
                         });
                 });
-                // Kanäle des offenen Projekts: Projekt-Reiter → Format
+                // Channels of the open project: project tab → format
             }
             Section::Editing => {
                 theme::row(ui, "Bilddauer", |ui| {
@@ -926,10 +926,10 @@ impl App {
                         .default(0.5)
                         .show(ui)
                 });
-                // Magnet und Einrasten: Zeitleisten-Leiste (P / N)
+                // Magnet and snapping: timeline bar (P / N)
             }
             Section::Performance => {
-                // Vorschauqualität selbst nur am Player-Chip (eine Stelle)
+                // the preview quality itself only on the player chip (one place)
                 theme::section(ui, "Vorschau");
                 if widgets::toggle_row(ui, "Vorschauqualität beim Abspielen automatisch anpassen", &mut self.settings.auto_quality) {
                     self.settings.save();
@@ -938,7 +938,7 @@ impl App {
                 theme::section(ui, "Hardware-Kodierung");
                 theme::row(ui, "Encoder", |ui| {
                     use cl_export::Encoder;
-                    // nur die Wege, deren Testlauf hier geklappt hat (Erkennung im Hintergrund)
+                    // only the paths whose test run worked here (detection in the background)
                     let found = crate::proxy::found_encoders();
                     if found.is_none() {
                         ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
@@ -951,7 +951,7 @@ impl App {
                             .filter(|e| *e == Encoder::Software || found.contains(e))
                             .map(|e| (e.id(), crate::export_ui::encoder_name(e))),
                     );
-                    // gewählter Weg hier nicht (mehr) gefunden: gilt als automatisch
+                    // chosen path not found here (anymore): counts as automatic
                     let cur = choices.iter().find(|c| c.0 == self.settings.hw_encoder).unwrap_or(&choices[0]).0;
                     let name = |id: &str| choices.iter().find(|c| c.0 == id).map_or("", |c| c.1);
                     egui::ComboBox::from_id_salt("set-hw-enc").selected_text(crate::tr(name(cur))).show_ui(ui, |ui| {
@@ -968,7 +968,7 @@ impl App {
                 self.proxy_settings(ui);
                 ui.add_space(8.0);
                 theme::section(ui, "Cache");
-                // Größe höchstens alle 2 s neu zählen
+                // recount the size at most every 2 s
                 if self.cache_size.is_none_or(|(t, _)| t.elapsed().as_secs_f32() > 2.0) {
                     let n = paths::dir_size(&paths::data_dir().join("cache"))
                         + paths::dir_size(&paths::data_dir().join("thumbs"));
@@ -982,7 +982,7 @@ impl App {
                         .on_hover_text(crate::tr("Proxys, Vorschaubilder und Projektbilder. Werden bei Bedarf neu erzeugt."))
                         .clicked()
                     {
-                        // Masken und SVG-Bilder älterer Projekte liegen auch im Cache: stehen lassen
+                        // masks and SVG images of older projects are in the cache too: leave them
                         paths::clear_dir(&paths::data_dir().join("cache"), paths::CACHE_KEEP);
                         paths::clear_dir(&paths::data_dir().join("thumbs"), &[]);
                         self.fx_thumbs.clear();
@@ -1165,15 +1165,15 @@ mod tests {
             let (addr, t) = cl_mcp::McpServer::new(doc, None).serve_http_until(port, "x".into(), stop.clone())?;
             Ok::<_, std::io::Error>(McpRunning { port: addr.port(), token: "x".into(), read_only: false, stop, thread: Some(t) })
         };
-        // Der Port kommt vom System: Parallel laufende Tests können ihn zwischen Beenden und Neustart
-        // zufällig bekommen. Hielte der alte Server ihn noch, scheiterte dagegen JEDER Versuch.
+        // The port comes from the system: tests running in parallel can get it by chance between
+        // stop and restart. If the old server still held it, on the other hand, EVERY attempt would fail.
         let ok = (0..5).any(|_| {
             let first = start(0).unwrap();
             let port = first.port;
             drop(first);
             start(port).is_ok_and(|again| again.port == port)
         });
-        assert!(ok, "Port nach dem Beenden sofort frei");
+        assert!(ok, "port free right after stopping");
     }
 
     #[test]
@@ -1184,7 +1184,7 @@ mod tests {
         s.new_fps = cl_core::Rational::parse("29.97").unwrap();
         let back: AppSettings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back.new_fps, s.new_fps);
-        // 0.8/0.9 schrieben den Bruch unter dem alten Namen; geschrieben wird nur noch `new_rate`
+        // 0.8/0.9 wrote the fraction under the old name; only `new_rate` is written now
         let v089: AppSettings = serde_json::from_str(r#"{"new_fps":{"num":25,"den":1}}"#).unwrap();
         assert_eq!(v089.new_fps, cl_core::Rational::new(25, 1));
         let json = serde_json::to_string(&s).unwrap();
@@ -1202,8 +1202,8 @@ mod tests {
         assert_eq!(back.hidden_packs, s.hidden_packs);
     }
 
-    /// Von Hand bearbeitete, fremde oder alte Dateien: fremde Felder stören nicht, fehlende kommen
-    /// vom Standard, Unsinnswerte landen im erlaubten Bereich.
+    /// Hand-edited, foreign or old files: foreign fields do no harm, missing ones come
+    /// from the default, nonsense values land in the allowed range.
     #[test]
     fn odd_settings_files_are_sanitized() {
         let mut s: AppSettings = serde_json::from_str(
@@ -1217,9 +1217,9 @@ mod tests {
         assert_eq!((s.ui_scale, s.image_duration, s.text_duration), (2.0, 0.5, 30.0));
         assert_eq!((s.transition_duration, s.anim_duration), (0.1, 0.1));
         assert_eq!((s.backup_minutes, s.backup_keep), (1, 500));
-        assert_eq!(s.new_fps, cl_core::Rational::new(30, 1), "Bildrate mit Nenner 0");
+        assert_eq!(s.new_fps, cl_core::Rational::new(30, 1), "frame rate with denominator 0");
         assert_eq!(s.proxy_h, 540);
-        // gespeicherte Wahl bleibt, neue Einstellungen starten mit 540p
+        // the saved choice stays, new settings start with 540p
         let kept: AppSettings = serde_json::from_str(r#"{"proxy_h":720}"#).unwrap();
         assert_eq!((kept.proxy_h, AppSettings::default().proxy_h), (720, 540));
         for bad in [r#"{"num":0,"den":1}"#, r#"{"num":100000,"den":1}"#, "0", "100000"] {
@@ -1232,12 +1232,12 @@ mod tests {
         ok.sanitize();
         assert_eq!(ok.new_fps, cl_core::Rational::new(24000, 1001));
         assert!(serde_json::from_str::<AppSettings>("{}").is_ok());
-        // falscher Typ: Fehler, die Datei wird beiseitegelegt (paths::read_json_or_quarantine)
+        // wrong type: error, the file is set aside (paths::read_json_or_quarantine)
         assert!(serde_json::from_str::<AppSettings>(r#"{"ui_scale":"groß"}"#).is_err());
     }
 
-    /// Jeder Bereich setzt genau seine Werte zurück; Verlauf, Sprache, Projektordner und Bereiche mit
-    /// nur zwei, drei Schaltern bleiben unberührt.
+    /// Each section resets exactly its own values; history, language, project folder and sections with
+    /// only two or three toggles stay untouched.
     #[test]
     fn reset_restores_only_its_section() {
         let changed = || {
@@ -1275,12 +1275,12 @@ mod tests {
             let now = json(&s);
             for (k, v) in now.as_object().unwrap() {
                 if *v != base[k] {
-                    assert_eq!(*v, def[k], "{sec:?} setzt {k} nicht auf Standard");
-                    assert!(seen.insert(k.clone()), "{k} gehört zu zwei Bereichen");
+                    assert_eq!(*v, def[k], "{sec:?} does not reset {k} to the default");
+                    assert!(seen.insert(k.clone()), "{k} belongs to two sections");
                 }
             }
         }
-        // alles Geänderte ist über irgendeinen Bereich zurücksetzbar – außer dem, was bewusst bleibt
+        // everything changed can be reset via some section – except what stays on purpose
         let keep = [
             "lang", "recent", "projects_dir", "onboarding_done", "lib_downloads", "proxy_h", "mcp_enabled",
             "mcp_port", "auto_update", "plugin_states", "import_capcut",
@@ -1292,8 +1292,8 @@ mod tests {
         }
     }
 
-    /// Zurücksetzen im Bereich „Brand Kit“ leert das Kit samt `brand.json`, die Einstellungen
-    /// bleiben (die Logo-Kopie bleibt, Projekte können darauf zeigen)
+    /// Reset in the „Brand Kit“ section clears the kit including `brand.json`, the settings
+    /// stay (the logo copy stays, projects may point to it)
     #[test]
     fn brand_reset_empties_the_kit() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
