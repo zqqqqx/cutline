@@ -1,5 +1,5 @@
-//! Bewegung zwischen zwei Keyframes formen: fertige Kurven als Kacheln (ein Klick) und
-//! darunter „Eigene Kurve“ mit zwei ziehbaren Griffen für alle, die es genau wollen.
+//! Shape the motion between two keyframes: ready-made curves as tiles (one click) and
+//! below them „Eigene Kurve“ with two draggable handles for anyone who wants it exact.
 
 use cl_core::{Clip, Ease, Keyframe, Time};
 use eframe::egui::{self, pos2, vec2, Pos2, Rect, RichText, Sense, Stroke};
@@ -8,7 +8,7 @@ use crate::app::App;
 use crate::theme;
 use crate::widgets::Edit;
 
-/// Fertige Kurven: (Name, Hinweis, Kurve)
+/// Ready-made curves: (name, hint, curve)
 const PRESETS: [(&str, &str, Ease); 8] = [
     ("Linear", "Gleiches Tempo von Anfang bis Ende", Ease::Linear),
     ("Sanft", "Langsam anfahren und abbremsen", Ease::EaseInOut),
@@ -20,7 +20,7 @@ const PRESETS: [(&str, &str, Ease); 8] = [
     ("Halten", "Bleibt stehen und springt am nächsten Keyframe", Ease::Hold),
 ];
 
-/// Index des Keyframes, dessen Abschnitt `t` enthält (braucht einen Keyframe danach)
+/// Index of the keyframe whose segment contains `t` (needs a keyframe after it)
 fn segment(list: &[Keyframe], t: Time) -> Option<usize> {
     if list.len() < 2 {
         return None;
@@ -28,12 +28,12 @@ fn segment(list: &[Keyframe], t: Time) -> Option<usize> {
     Some(list[..list.len() - 1].iter().rposition(|k| k.t <= t).unwrap_or(0))
 }
 
-/// Kurve in ein Rechteck zeichnen (Zeit nach rechts, Wert nach oben)
+/// Draw a curve into a rect (time to the right, value upward)
 fn draw_curve(p: &egui::Painter, r: Rect, e: Ease, stroke: Stroke) {
     let pts: Vec<Pos2> = (0..=24)
         .map(|i| {
             let x = i as f32 / 24.0;
-            // „Halten“ springt erst am Ende
+            // „Halten“ only jumps at the end
             let y = if e == Ease::Hold && i == 24 { 1.0 } else { e.apply(x) };
             pos2(r.left() + x * r.width(), r.bottom() - y * r.height())
         })
@@ -41,7 +41,7 @@ fn draw_curve(p: &egui::Painter, r: Rect, e: Ease, stroke: Stroke) {
     p.add(egui::Shape::line(pts, stroke));
 }
 
-/// Gleiche Kurvenform? Vergleicht die Steuerpunkte statt der Variante (EaseIn = Bezier(0.42, 0, 1, 1))
+/// Same curve shape? Compares the control points instead of the variant (EaseIn = Bezier(0.42, 0, 1, 1))
 fn same_curve(a: Ease, b: Ease) -> bool {
     match (a.bezier(), b.bezier()) {
         (Some(x), Some(y)) => [x.0 - y.0, x.1 - y.1, x.2 - y.2, x.3 - y.3].iter().all(|d| d.abs() < 1e-3),
@@ -51,8 +51,8 @@ fn same_curve(a: Ease, b: Ease) -> bool {
 }
 
 impl App {
-    /// Kurven-Auswahl für den Abschnitt am Playhead; gilt für alle animierten Eigenschaften
-    /// des Clips in diesem Abschnitt.
+    /// Curve picker for the segment at the playhead; applies to all animated properties
+    /// of the clip in this segment.
     pub fn curve_ui(&self, ui: &mut egui::Ui, c: &mut Clip) -> Edit {
         let mut out = Edit::default();
         if c.keyframes.is_empty() {
@@ -81,7 +81,7 @@ impl App {
             .color(theme::TEXT_DIM()),
         );
         let mut pick: Option<Ease> = None;
-        // Einsteiger: Kacheln
+        // Beginners: tiles
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(5.0, 5.0);
             for (name, tip, e) in PRESETS {
@@ -89,7 +89,7 @@ impl App {
                 let on = same_curve(a.ease, e);
                 let hov = theme::fade(ui.ctx(), resp.id.with("hover"), resp.hovered(), theme::MOTION_FAST);
                 let p = ui.painter();
-                // Hover nur als leicht hellere Fläche unter dem Inhalt; Auswahl = Akzent-Rahmen
+                // Hover only as a slightly lighter area under the content; selection = accent frame
                 p.rect_filled(r, theme::R_CARD, theme::BG_RAISED().lerp_to_gamma(theme::BG_HOVER(), hov));
                 if on {
                     p.rect_stroke(r, theme::R_CARD, Stroke::new(1.5_f32, theme::ACCENT()), egui::StrokeKind::Inside);
@@ -110,7 +110,7 @@ impl App {
                 }
             }
         });
-        // Fortgeschrittene: Griffe ziehen (Aufklappen in `MOTION`; egui liest die Dauer aus dem Stil)
+        // Advanced: drag handles (expanding in `MOTION`; egui reads the duration from the style)
         ui.ctx().style_mut(|s| s.animation_time = theme::anim(theme::MOTION));
         egui::CollapsingHeader::new(RichText::new(crate::tr("Eigene Kurve")).size(theme::FS_UI).color(theme::TEXT_DIM()))
             .id_salt("curve-adv")
@@ -121,7 +121,7 @@ impl App {
                 };
                 let w = ui.available_width().min(230.0);
                 let (r, _) = ui.allocate_exact_size(vec2(w, 150.0), Sense::hover());
-                // Wertebereich −0,5 … 1,5, damit Überschwingen Platz hat
+                // Value range −0.5 … 1.5, so overshoot has room
                 let plot = Rect::from_min_max(r.min + vec2(8.0, 8.0), r.max - vec2(8.0, 8.0));
                 let to = |x: f32, y: f32| pos2(plot.left() + x * plot.width(), plot.bottom() - (y + 0.5) / 2.0 * plot.height());
                 let p = ui.painter().with_clip_rect(r);

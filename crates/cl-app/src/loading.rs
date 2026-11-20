@@ -1,13 +1,13 @@
-//! Projekte im Hintergrund öffnen und Medien im Hintergrund prüfen.
+//! Open projects in the background and check media in the background.
 //!
-//! Öffnen: Projektdatei lesen und parsen, Medien prüfen (existieren sie? parallel), Zeitleiste
-//! vorbereiten (benötigte Schriften, fehlende Inhalte, Animationen der Bilder vorlesen) – alles in
-//! einem eigenen Thread. Die Oberfläche zeigt nach 0,3 s einen geführten Ladezustand mit
-//! Schritten, Fortschritt und Abbrechen; übernommen wird erst das fertige Ergebnis.
+//! Opening: read and parse the project file, check media (do they exist? in parallel), prepare
+//! the timeline (needed fonts, missing content, pre-reading image animations) – all in
+//! a thread of its own. After 0.3 s the UI shows a guided loading state with
+//! steps, progress and cancel; only the finished result is taken over.
 //!
-//! Medien-Zustand: ob eine Datei da ist, steht in einem Zwischenspeicher, den ein Hintergrund-
-//! Thread alle paar Sekunden (und wenn sich die Medienliste ändert) auffrischt. Die Oberfläche
-//! fragt das Dateisystem nie je Bild und je Medium.
+//! Media state: whether a file is there is kept in a cache that a background
+//! thread refreshes every few seconds (and when the media list changes). The UI
+//! never asks the file system per frame and per medium.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -23,13 +23,13 @@ use crate::app::{App, Screen};
 use crate::theme::{self, icon};
 use crate::widgets;
 
-/// Ab dieser Ladezeit erscheint der Ladezustand (kürzeres Öffnen blitzt nicht auf)
+/// From this load time on the loading state appears (shorter opening does not flash)
 pub const SHOW_AFTER: Duration = Duration::from_millis(300);
 
-/// Gleichzeitige Prüfungen beim Öffnen (Dateisystem, keine Prozesse)
+/// Concurrent checks when opening (file system, no processes)
 const CHECK_WORKERS: usize = 8;
 
-/// Dateien parallel prüfen: vorhanden? Abbrechbar, Fortschritt je Datei.
+/// Check files in parallel: present? Cancelable, progress per file.
 pub fn check_files(paths: &[PathBuf], progress: &Progress, step: Step) -> Option<HashMap<PathBuf, bool>> {
     progress.set(step, 0, paths.len(), "");
     let out = std::sync::Mutex::new(HashMap::with_capacity(paths.len()));
@@ -51,40 +51,40 @@ pub fn check_files(paths: &[PathBuf], progress: &Progress, step: Step) -> Option
     (!progress.cancelled()).then(|| out.into_inner().unwrap_or_else(|e| e.into_inner()))
 }
 
-// ------------------------------------------------------------------ Medien-Zustand
+// ------------------------------------------------------------------ media state
 
-/// Zwischenspeicher „Datei vorhanden?“ je Medienpfad.
+/// Cache "file present?" per media path.
 #[derive(Default)]
 pub struct Presence {
     known: HashMap<PathBuf, bool>,
-    /// letzte Prüfung: Zeitpunkt und Anzahl der Medien
+    /// last check: time and number of media
     checked: Option<(Instant, usize)>,
     pending: Option<Receiver<HashMap<PathBuf, bool>>>,
 }
 
-/// Wie oft im Stand nachgesehen wird (Dateien können außerhalb verschwinden oder auftauchen)
+/// How often to look while idle (files can vanish or appear outside)
 const RECHECK: Duration = Duration::from_secs(3);
 
 impl Presence {
-    /// Vorhanden? Noch nie geprüfte Pfade gelten als vorhanden, bis die Prüfung anderes sagt.
+    /// Present? Never checked paths count as present until the check says otherwise.
     pub fn get(&self, p: &Path) -> bool {
         self.known.get(p).copied().unwrap_or(true)
     }
 
-    /// Ergebnis einer Prüfung übernehmen (Öffnen, Import, Neu verknüpfen).
+    /// Take over the result of a check (open, import, relink).
     pub fn set_all(&mut self, m: HashMap<PathBuf, bool>, media: usize) {
         self.known = m;
         self.checked = Some((Instant::now(), media));
-        // laufende Prüfung gehört zum alten Stand (anderes Projekt): ihr Ergebnis verwerfen
+        // a running check belongs to the old state (other project): discard its result
         self.pending = None;
     }
 
-    /// Neue Prüfung fällig? Bei geänderter Medienzahl sofort, sonst alle `RECHECK`.
+    /// New check due? Immediately when the media count changed, otherwise every `RECHECK`.
     pub fn due(checked: Option<(Instant, usize)>, media: usize, pending: bool) -> bool {
         !pending && checked.is_none_or(|(t, n)| n != media || t.elapsed() >= RECHECK)
     }
 
-    /// Je Bild: fertige Prüfung übernehmen, fällige im Hintergrund starten. `true` = geändert.
+    /// Per frame: take over a finished check, start due ones in the background. `true` = changed.
     pub fn tick(&mut self, project: &Project, ctx: &egui::Context) -> bool {
         let mut changed = false;
         if let Some(rx) = &self.pending {
@@ -115,23 +115,23 @@ impl Presence {
     }
 }
 
-// ------------------------------------------------------------------ Öffnen
+// ------------------------------------------------------------------ opening
 
-/// Ergebnis des Ladens
+/// Result of loading
 pub struct Loaded {
     pub project: Project,
     pub present: HashMap<PathBuf, bool>,
-    /// Schriften der Texte (Familien)
+    /// Fonts of the texts (families)
     pub fonts: HashSet<String>,
-    /// fehlende Inhalte (Effekte, Filter …) mit Namen
+    /// missing content (effects, filters …) with names
     pub gone: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadMode {
-    /// Projekt öffnen
+    /// Open a project
     Open,
-    /// Sicherung in das offene Projekt zurückholen (Pfad bleibt)
+    /// Restore a backup into the open project (path stays)
     Restore,
 }
 
@@ -144,10 +144,10 @@ pub struct Load {
     rx: Receiver<Result<Loaded, String>>,
 }
 
-/// Projekt lesen und vorbereiten (Hintergrund-Thread).
+/// Read and prepare a project (background thread).
 pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
     progress.set(Step::Read, 0, 1, &path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-    // Meldung nennt die Datei (sonst steht nur „Pfad nicht gefunden“ da)
+    // The message names the file (otherwise only „Pfad nicht gefunden“ shows)
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {} ({e})", crate::tr("Projekt konnte nicht geöffnet werden"), path.display()))?;
     progress.check()?;
     let project = Project::from_json(&text).map_err(|e| e.to_string())?;
@@ -156,7 +156,7 @@ pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
     progress.check()?;
     let paths: Vec<PathBuf> = project.media.iter().map(|m| m.path.clone()).collect::<HashSet<_>>().into_iter().collect();
     let present = check_files(&paths, progress, Step::Find).ok_or(cl_import::CANCELLED)?;
-    // Zeitleiste vorbereiten: Animationen der Bilder (Vorschaubild-Zeit), Schriften, Inhalte
+    // Prepare the timeline: image animations (thumbnail time), fonts, content
     let images: Vec<&cl_core::MediaRef> = project.media.iter().filter(|m| m.kind == MediaKind::Image && present.get(&m.path) == Some(&true)).collect();
     progress.set(Step::Timeline, 0, images.len() + 1, "");
     for m in images {
@@ -211,11 +211,11 @@ impl Load {
     }
 }
 
-/// Schritte des Öffnens (Anzeige)
+/// Steps of opening (display)
 const LOAD_STEPS: [(Step, &str); 3] = [(Step::Read, "Projekt lesen"), (Step::Find, "Medien prüfen"), (Step::Timeline, "Zeitleiste aufbauen")];
 
-/// Liste der Schritte: erledigte mit Häkchen, der aktuelle hervorgehoben mit Fortschrittslinie
-/// und Zähler, darunter klein die aktuelle Datei.
+/// List of steps: done ones with a check mark, the current one highlighted with a progress line
+/// and counter, below it the current file in small text.
 pub fn steps_view(ui: &mut egui::Ui, id: egui::Id, steps: &[(Step, &str)], st: &Status) {
     for (i, (step, name)) in steps.iter().enumerate() {
         let done = *step < st.step;
@@ -255,7 +255,7 @@ pub fn steps_view(ui: &mut egui::Ui, id: egui::Id, steps: &[(Step, &str)], st: &
 }
 
 impl App {
-    /// Projekt öffnen (im Hintergrund; übernommen wird es in [`App::poll_load`]).
+    /// Open a project (in the background; taken over in [`App::poll_load`]).
     pub fn start_load(&mut self, p: &Path, mode: LoadMode, ctx: &egui::Context) {
         if let Some(l) = &self.load {
             l.progress.cancel();
@@ -263,7 +263,7 @@ impl App {
         self.load = Some(Load::start(p, mode, ctx));
     }
 
-    /// Fertiges Laden übernehmen und den Ladezustand zeigen (jedes Bild).
+    /// Take over finished loading and show the loading state (every frame).
     pub fn poll_load(&mut self, ctx: &egui::Context) {
         let _s = crate::app::section("Projekt laden");
         let Some(l) = &self.load else { return };
@@ -280,7 +280,7 @@ impl App {
             Ok(done) => match l.mode {
                 LoadMode::Open => self.apply_loaded(&l.path, done, Some(l.since)),
                 LoadMode::Restore => {
-                    // aktuellen Stand vorher sichern, dann ersetzen (Pfad bleibt)
+                    // save the current state first, then replace (path stays)
                     if let Some(path) = self.project_path.clone() {
                         self.backup_now(&path);
                     }
@@ -315,14 +315,14 @@ impl App {
         }
     }
 
-    /// Laufendes Laden abbrechen (sein Ergebnis würde sonst später übernommen).
+    /// Cancel a running load (its result would otherwise be taken over later).
     pub fn cancel_load(&mut self) {
         if let Some(l) = self.load.take() {
             l.progress.cancel();
         }
     }
 
-    /// Geladenes Projekt in den Editor setzen.
+    /// Put a loaded project into the editor.
     pub fn apply_loaded(&mut self, p: &Path, done: Loaded, t0: Option<Instant>) {
         let s = crate::app::section("Laden: altes Projekt verlassen");
         if !self.flush_before_leaving() {
@@ -387,7 +387,7 @@ mod tests {
         f
     }
 
-    /// Fehlende Projektdatei: die Meldung sagt, welche (nicht nur „Pfad nicht gefunden“)
+    /// Missing project file: the message says which one (not just „Pfad nicht gefunden“)
     #[test]
     fn missing_project_file_is_named() {
         let dir = tempfile::tempdir().unwrap();
@@ -417,7 +417,7 @@ mod tests {
         }
         let f: Vec<f32> = log.iter().map(|s| s.fraction()).collect();
         assert!(f.windows(2).all(|w| w[0] <= w[1] + 1e-6), "{f:?}");
-        // kaputte Datei: Fehler, kein Absturz
+        // broken file: error, no crash
         std::fs::write(dir.path().join("kaputt.cutline"), "{").unwrap();
         assert!(load(&dir.path().join("kaputt.cutline"), &Progress::default()).is_err());
     }
@@ -434,10 +434,10 @@ mod tests {
     #[test]
     fn presence_is_cached_and_rechecked_on_change() {
         let mut pr = Presence::default();
-        assert!(pr.get(Path::new("nie/geprüft.mp4")), "unbekannt gilt als vorhanden");
+        assert!(pr.get(Path::new("nie/geprüft.mp4")), "unknown counts as present");
         pr.set_all(HashMap::from([(PathBuf::from("a"), false)]), 1);
         assert!(!pr.get(Path::new("a")));
-        // frisch geprüft: nicht fällig; andere Medienzahl oder laufende Prüfung
+        // freshly checked: not due; other media count or running check
         assert!(!Presence::due(pr.checked, 1, false));
         assert!(Presence::due(pr.checked, 2, false));
         assert!(!Presence::due(pr.checked, 2, true));
@@ -446,8 +446,8 @@ mod tests {
         assert!(Presence::due(old, 1, false));
     }
 
-    /// Prüfung des alten Projekts läuft noch, das neue setzt seinen Stand: das alte Ergebnis
-    /// darf ihn nicht überschreiben (sonst gelten fehlende Dateien als vorhanden).
+    /// The old project's check is still running, the new one sets its state: the old result
+    /// must not overwrite it (otherwise missing files would count as present).
     #[test]
     fn old_check_does_not_overwrite_new_project() {
         let mut pr = Presence::default();
@@ -464,8 +464,8 @@ mod tests {
         assert!(!pr.get(Path::new("neu")));
     }
 
-    /// Dasselbe Projekt noch einmal öffnen: der offene Stand liegt schon auf der Platte, bevor
-    /// das Laden die Datei liest. Neues Projekt und Startseite brechen ein laufendes Laden ab.
+    /// Opening the same project again: the open state is already on disk before
+    /// loading reads the file. New project and start page cancel a running load.
     #[test]
     fn reopen_writes_first_and_leaving_cancels_load() {
         let (mut app, home, _g) = crate::saving::tests::test_app();
@@ -479,10 +479,10 @@ mod tests {
         assert_eq!(Project::from_json(&std::fs::read_to_string(&f).unwrap()).unwrap().name, "A neu");
         assert!(app.load.is_some());
         app.go_home();
-        assert!(app.load.is_none(), "Startseite bricht das Laden ab");
+        assert!(app.load.is_none(), "start page cancels loading");
         app.open_project(&f);
         assert!(app.new_project());
-        assert!(app.load.is_none(), "neues Projekt bricht das Laden ab");
+        assert!(app.load.is_none(), "new project cancels loading");
     }
 
     #[test]

@@ -1,7 +1,7 @@
-//! Protokoll der App: eine Datei je Tag unter `<Datenordner>/logs/` (`cutline-JJJJ-MM-TT.log`),
-//! Export der letzten 24 Stunden als eine Textdatei. Geschrieben wird über einen Kanal von einem
-//! eigenen Thread, der Oberflächen-Thread wartet nie auf die Platte. Angeschlossen an die
-//! `log`-Fassade, damit auch Warnungen von Grafik und Fenster hier landen.
+//! App log: one file per day under `<data folder>/logs/` (`cutline-YYYY-MM-DD.log`),
+//! export of the last 24 hours as one text file. Writing goes through a channel to a
+//! thread of its own; the UI thread never waits for the disk. Hooked into the
+//! `log` facade, so warnings from graphics and windowing land here too.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -15,9 +15,9 @@ use log::Level;
 
 use crate::theme::{self, icon};
 
-/// Dateien älter als so viele Tage löscht der Start
+/// Startup deletes files older than this many days
 pub const KEEP_DAYS: i64 = 7;
-/// Ab dieser Größe nimmt eine Tagesdatei nur noch Warnungen und Fehler auf (beim Doppelten nichts mehr)
+/// From this size on a daily file only takes warnings and errors (at double the size nothing more)
 pub const FILE_LIMIT: u64 = 20 * 1024 * 1024;
 
 const START: &str = "beginnt";
@@ -25,7 +25,7 @@ const END: &str = "endet sauber";
 const PANIC: &str = "Absturz";
 const LIMIT_NOTE: &str = "Obergrenze der Datei erreicht – ab hier nur noch Warnungen und Fehler";
 const DAY_MS: i64 = 86_400_000;
-/// Bereiche, die Cutline selbst mit `target:` benutzt (alles mit `cutline::…` gehört ohnehin dazu)
+/// Targets Cutline itself uses with `target:` (everything with `cutline::…` belongs anyway)
 const OWN: &[&str] = &["sitzung", "system", "perf", "projekt", "export", "proxy", "update", "paket", "import", "meldung", "wiedergabe"];
 
 pub struct Rec {
@@ -37,19 +37,19 @@ pub struct Rec {
 
 pub enum Msg {
     Rec(Rec),
-    /// Antwort, sobald alles davor verarbeitet ist; `true` = auch auf die Platte bringen
+    /// Reply once everything before it is processed; `true` = also flush to disk
     Sync(Sender<()>, bool),
 }
 
 static TX: OnceLock<Sender<Msg>> = OnceLock::new();
 static DIR: OnceLock<PathBuf> = OnceLock::new();
-/// Der letzte Lauf endete ohne „endet sauber“ oder mit einer Panic
+/// The last run ended without „endet sauber“ or with a panic
 static CRASHED: AtomicBool = AtomicBool::new(false);
 static LAST_EXPORT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static UI_INFO: OnceLock<String> = OnceLock::new();
 const THREAD: &str = "cl-log";
 
-// ---------- Zeit ----------
+// ---------- time ----------
 
 fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
@@ -59,7 +59,7 @@ fn offset() -> i64 {
     crate::project_tools::local_offset_secs()
 }
 
-/// Tage seit 1970 → (Jahr, Monat, Tag), proleptischer Gregorianischer Kalender
+/// Days since 1970 → (year, month, day), proleptic Gregorian calendar
 fn civil(days: i64) -> (i64, i64, i64) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
@@ -82,7 +82,7 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-/// `2026-11-15 14:03:22.123 +01:00` (Ortszeit mit Versatz zu UTC)
+/// `2026-11-15 14:03:22.123 +01:00` (local time with offset from UTC)
 pub fn stamp(ms: i64, off: i64) -> String {
     let l = ms + off * 1000;
     let (y, mo, d) = civil(l.div_euclid(DAY_MS));
@@ -99,7 +99,7 @@ pub fn stamp(ms: i64, off: i64) -> String {
     )
 }
 
-/// Zeitstempel am Zeilenanfang → ms seit 1970 (UTC). Kaputte Zeilen: `None`.
+/// Timestamp at the line start → ms since 1970 (UTC). Broken lines: `None`.
 pub fn parse_stamp(line: &str) -> Option<i64> {
     let s = line.get(..30)?;
     let b = s.as_bytes();
@@ -121,31 +121,31 @@ pub fn parse_stamp(line: &str) -> Option<i64> {
     Some(local - off * 1000)
 }
 
-/// Tagesdatei für diesen Zeitpunkt (Ortszeit)
+/// Daily file for this point in time (local time)
 pub fn file_name(ms: i64, off: i64) -> String {
     format!("cutline-{}.log", &stamp(ms, off)[..10])
 }
 
-/// Tag (seit 1970) aus `cutline-JJJJ-MM-TT.log`
+/// Day (since 1970) from `cutline-YYYY-MM-DD.log`
 fn file_day(name: &str) -> Option<i64> {
     let d = name.strip_prefix("cutline-")?.strip_suffix(".log")?;
     let p: Vec<i64> = d.split('-').map(|x| x.parse().ok()).collect::<Option<_>>()?;
     (p.len() == 3 && d.len() == 10).then(|| days_from_civil(p[0], p[1], p[2]))
 }
 
-// ---------- Unkenntlich machen ----------
+// ---------- redaction ----------
 
-/// Schlüssel, deren Wert in JSON (`"schlüssel": "wert"`) nie im Protokoll steht
+/// Keys whose value in JSON (`"key": "value"`) never appears in the log
 const JSON_KEYS: &[&str] = &[
     "access_token", "refresh_token", "id_token", "client_secret", "api_key", "apikey", "password", "token", "secret",
     "authorization", "signature",
 ];
-/// Parameter in Adressen und Befehlszeilen (`?token=…`, `key=…`)
+/// Parameters in URLs and command lines (`?token=…`, `key=…`)
 const QUERY_KEYS: &[&str] = &[
     "access_token", "refresh_token", "id_token", "client_secret", "api_key", "apikey", "password", "token", "secret",
     "signature", "key", "sig", "code",
 ];
-/// Diese nur direkt hinter `?`/`&` (sonst träfe „exit code=1“)
+/// These only directly after `?`/`&` (otherwise "exit code=1" would match)
 const QUERY_ONLY: &[&str] = &["sig", "code"];
 
 fn is_word(c: u8) -> bool {
@@ -167,7 +167,7 @@ fn token_char(c: u8) -> bool {
     c.is_ascii_alphanumeric() || b"-_.~+/=".contains(&c)
 }
 
-/// Geheimnis ab Byte `i`: (Ende des sichtbaren Teils, Ende des Werts)
+/// Secret from byte `i`: (end of the visible part, end of the value)
 fn secret_at(b: &[u8], i: usize) -> Option<(usize, usize)> {
     let boundary = i == 0 || !is_word(b[i - 1]);
     if starts_ci(b, i, "epidemic_live_") {
@@ -178,7 +178,7 @@ fn secret_at(b: &[u8], i: usize) -> Option<(usize, usize)> {
     if !boundary {
         return None;
     }
-    // Adressen: der ganze Abfrageteil (signierte Links: `jwt=`, `X-Amz-…`, Anbieter-Parameter)
+    // URLs: the whole query part (signed links: `jwt=`, `X-Amz-…`, provider parameters)
     if starts_ci(b, i, "http://") || starts_ci(b, i, "https://") {
         let mut e = skip(b, i, |c| !c.is_ascii_whitespace() && !b"\"'<>".contains(&c));
         if b[e - 1] == b':' {
@@ -190,7 +190,7 @@ fn secret_at(b: &[u8], i: usize) -> Option<(usize, usize)> {
     if starts_ci(b, i, "bearer ") {
         let v = skip(b, i + 7, |c| c == b' ');
         let e = skip(b, v, token_char);
-        // echte Tokens sind lang; „Bearer of bad news“ bleibt
+        // real tokens are long; "Bearer of bad news" stays
         return (e >= v + 8).then_some((v, e));
     }
     for &key in JSON_KEYS.iter().chain(QUERY_KEYS) {
@@ -236,14 +236,14 @@ fn secret_at(b: &[u8], i: usize) -> Option<(usize, usize)> {
     None
 }
 
-/// Zugangsdaten, Schlüssel und Tokens unkenntlich machen (die einzige Stelle dafür):
-/// `epidemic_live_…`, `Bearer …`, `Authorization: …`, Token-Felder in JSON, Adress-Parameter.
+/// Redact credentials, keys and tokens (the only place for it):
+/// `epidemic_live_…`, `Bearer …`, `Authorization: …`, token fields in JSON, URL parameters.
 pub fn redact(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = String::with_capacity(s.len());
     let (mut i, mut copied) = (0, 0);
     while i < b.len() {
-        // Treffer beginnen immer mit einem ASCII-Zeichen, liegen also auf Zeichengrenzen
+        // Matches always start with an ASCII character, so they lie on char boundaries
         if let Some((v, e)) = secret_at(b, i) {
             out.push_str(&s[copied..v]);
             out.push_str("***");
@@ -257,14 +257,14 @@ pub fn redact(s: &str) -> String {
     out
 }
 
-/// Benutzerordner durch `~` ersetzen (Groß-/Kleinschreibung und `/` oder `\` egal)
+/// Replace the user folder with `~` (case and `/` or `\` do not matter)
 pub fn tilde(text: &str, home: &str) -> String {
     let home = home.trim_end_matches(['/', '\\']);
     if home.len() < 3 {
         return text.to_string();
     }
     let norm = |s: &str| s.to_ascii_lowercase().replace('\\', "/");
-    // gleiche Länge wie `text`: Treffer liegen an denselben Bytes
+    // same length as `text`: matches lie at the same bytes
     let (low, pat) = (norm(text), norm(home));
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
@@ -279,16 +279,16 @@ pub fn tilde(text: &str, home: &str) -> String {
     out
 }
 
-/// Endungen, an denen ein einzelner Dateiname (ohne Ordner) in einer Meldung erkannt wird
+/// Extensions by which a single file name (without folder) is recognized in a message
 const NAME_EXTS: &[&str] = &[
     "mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts", "wmv", "flv", "3gp", "mxf", "mpg", "mpeg", "ts", "mp3", "wav",
     "m4a", "aac", "flac", "ogg", "opus", "wma", "aif", "aiff", "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff",
     "heic", "svg", "cutline", "srt", "vtt", "ass", "ttf", "otf", "zip", "lut", "cube",
 ];
 
-/// Einzelne Dateinamen (`kaputt_text.mp4`) werden `<datei>` mit Endung; schon ersetzte (`<pfad>.mp4`)
-/// bleiben. shortcut: ein Name mit Leerzeichen verliert nur sein letztes Wort – Meldungen setzen
-/// Namen deshalb in „…“.
+/// Single file names (`kaputt_text.mp4`) become `<datei>` with extension; already replaced ones (`<pfad>.mp4`)
+/// stay. shortcut: a name with spaces only loses its last word – messages therefore put
+/// names in „…“.
 fn anon_names(s: &str) -> String {
     let sep = |c: char| c.is_whitespace() || "\"'()[]„“,;=".contains(c);
     let mut out = String::with_capacity(s.len());
@@ -298,7 +298,7 @@ fn anon_names(s: &str) -> String {
             continue;
         }
         let w = &s[start..i];
-        // „name.mp4: Fehler“ – der Doppelpunkt gehört nicht zum Namen
+        // „name.mp4: Fehler“ – the colon does not belong to the name
         let core = w.trim_end_matches([':', '.']);
         match core.rsplit_once('.') {
             Some((stem, ext)) if !stem.is_empty() && !core.starts_with('<') && NAME_EXTS.contains(&ext.to_ascii_lowercase().as_str()) => {
@@ -316,10 +316,10 @@ fn anon_names(s: &str) -> String {
     out
 }
 
-/// Inhalte unkenntlich machen (für Meldungen, Export-Fehler und das exportierte Protokoll; Protokolle
-/// landen in öffentlichen Issues): Namen in „…“ werden `***`, Pfade (`C:\`, `C:/`, `\\`, `~/`, `~\` oder
-/// `/` am Wortanfang, bis Zeilenende oder `: `, ` · `, `"`, `'`, `)`, `“`) werden `<pfad>` mit Endung,
-/// einzelne Dateinamen `<datei>` mit Endung.
+/// Redact content (for messages, export errors and the exported log; logs
+/// end up in public issues): names in „…“ become `***`, paths (`C:\`, `C:/`, `\\`, `~/`, `~\` or
+/// `/` at a word start, up to the line end or `: `, ` · `, `"`, `'`, `)`, `“`) become `<pfad>` with extension,
+/// single file names `<datei>` with extension.
 pub fn anon(s: &str) -> String {
     anon_names(&anon_paths(s))
 }
@@ -381,9 +381,9 @@ fn home() -> String {
     std::env::var(var).unwrap_or_default()
 }
 
-// ---------- Schreiben ----------
+// ---------- writing ----------
 
-/// Was mit einer Zeile bei dieser Dateigröße passiert: (Hinweis davor schreiben, Zeile schreiben)
+/// What happens to a line at this file size: (write a notice before it, write the line)
 pub fn admit(size: u64, limit: u64, level: Level, noted: bool) -> (bool, bool) {
     if size < limit {
         (false, true)
@@ -411,7 +411,7 @@ struct Writer {
     off: i64,
     limit: u64,
     open: Option<Open>,
-    /// letzte Zeile und wie oft sie seitdem gleich wiederkam
+    /// last line and how often it came again unchanged since
     last: Option<(Rec, u32)>,
 }
 
@@ -433,7 +433,7 @@ impl Writer {
         self.last = Some((r, 0));
     }
 
-    /// „… 37× wiederholt“ für die zuletzt zusammengefasste Zeile
+    /// „… 37× wiederholt“ for the last merged line
     fn repeats(&mut self) {
         if let Some((l, n)) = &mut self.last {
             if *n > 0 {
@@ -454,7 +454,7 @@ impl Writer {
                 Open { name, file: std::io::BufWriter::with_capacity(64 * 1024, f), size, noted: size >= self.limit }
             });
         }
-        // Schreibfehler (Platte voll, kein Recht): Zeile fällt weg, die App läuft weiter
+        // Write error (disk full, no permission): the line is dropped, the app keeps running
         let Some(o) = &mut self.open else { return };
         let (note, line) = admit(o.size, self.limit, r.level, o.noted);
         let mut text = String::new();
@@ -477,7 +477,7 @@ impl Writer {
     }
 }
 
-/// Beim Start: alte Dateien löschen (nach dem Datum im Namen)
+/// At startup: delete old files (by the date in the name)
 pub fn prune(dir: &Path, today: i64) -> usize {
     std::fs::read_dir(dir)
         .into_iter()
@@ -488,7 +488,7 @@ pub fn prune(dir: &Path, today: i64) -> usize {
         .count()
 }
 
-/// Protokolldateien im Ordner, nach Datum sortiert
+/// Log files in the folder, sorted by date
 fn log_files(dir: &Path) -> Vec<(i64, PathBuf)> {
     let mut v: Vec<(i64, PathBuf)> = std::fs::read_dir(dir)
         .into_iter()
@@ -505,8 +505,8 @@ fn marker_pid(line: &str, area: &str, what: &str) -> Option<u32> {
     rest[..rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len())].parse().ok()
 }
 
-/// Endete der letzte Lauf unerwartet? (kein „endet sauber“ nach seinem Start oder eine Panic;
-/// ein noch laufendes zweites Fenster zählt nicht)
+/// Did the last run end unexpectedly? (no „endet sauber“ after its start or a panic;
+/// a second window still running does not count)
 pub fn unclean_exit(text: &str, alive: impl Fn(u32) -> bool) -> bool {
     let mut last: Option<(u32, bool, bool)> = None;
     for line in text.lines() {
@@ -523,7 +523,7 @@ pub fn unclean_exit(text: &str, alive: impl Fn(u32) -> bool) -> bool {
     last.is_some_and(|(pid, clean, panic)| (panic || !clean) && !alive(pid))
 }
 
-/// Schreib-Thread starten. `check`: vorher den letzten Lauf prüfen und alte Dateien löschen.
+/// Start the writer thread. `check`: first check the last run and delete old files.
 pub fn spawn(dir: PathBuf, limit: u64, check: bool) -> Sender<Msg> {
     let (tx, rx) = channel();
     let off = offset();
@@ -569,7 +569,7 @@ fn sync(tx: &Sender<Msg>, flush: bool, wait: Duration) {
     }
 }
 
-/// Alles bisher Gemeldete auf die Platte bringen (wartet höchstens 2 s)
+/// Flush everything reported so far to disk (waits at most 2 s)
 pub fn flush() {
     if let Some(tx) = TX.get() {
         if std::thread::current().name() != Some(THREAD) {
@@ -594,7 +594,7 @@ impl log::Log for Logger {
         }
         let area = r.target().strip_prefix("cutline::").unwrap_or(r.target());
         let msg = r.args().to_string();
-        // bisherige Fehlerausgaben bleiben in der Konsole sichtbar
+        // previous error output stays visible in the console
         if r.level() <= Level::Warn && own(r.target()) {
             eprintln!("{area}: {msg}");
         }
@@ -609,7 +609,7 @@ impl log::Log for Logger {
 
 static LOGGER: Logger = Logger;
 
-/// Protokoll für das Programm einrichten (Schreib-Thread, `log`-Fassade, Panic-Haken)
+/// Set up the log for the program (writer thread, `log` facade, panic hook)
 pub fn init() {
     init_at(crate::paths::logs_dir(), true);
     log::info!(target: "sitzung", "{START} pid={} · Cutline {} ({})", std::process::id(), env!("CARGO_PKG_VERSION"), build());
@@ -630,7 +630,7 @@ fn init_at(dir: PathBuf, check: bool) {
     }));
 }
 
-/// Panic ins Protokoll: Meldung, Ort, Rückverfolgung; danach das bisherige Verhalten
+/// Panic into the log: message, location, backtrace; then the previous behavior
 fn panic_hook(info: &str) {
     let th = std::thread::current();
     let msg = format!(
@@ -641,7 +641,7 @@ fn panic_hook(info: &str) {
     );
     let r = Rec { ms: now_ms(), level: Level::Error, area: "absturz".into(), msg: redact(&msg) };
     if th.name() == Some(THREAD) {
-        // der Schreib-Thread selbst: direkt anhängen
+        // the writer thread itself: append directly
         if let Some(dir) = DIR.get() {
             let line = format_line(&r, offset());
             let f = std::fs::OpenOptions::new().create(true).append(true).open(dir.join(file_name(r.ms, offset())));
@@ -661,13 +661,13 @@ fn build() -> &'static str {
     }
 }
 
-/// Sauberes Ende (vor dem Schließen des Fensters)
+/// Clean exit (before closing the window)
 pub fn session_end() {
     log::info!(target: "sitzung", "{END} pid={}", std::process::id());
     flush();
 }
 
-/// Messzeile (`CUTLINE_PERF`): wie bisher nach stderr, zusätzlich ins Protokoll
+/// Measurement line (`CUTLINE_PERF`): to stderr as before, additionally into the log
 macro_rules! perf_line {
     ($($t:tt)*) => {{
         let s = format!($($t)*);
@@ -679,7 +679,7 @@ macro_rules! perf_line {
 }
 pub(crate) use perf_line;
 
-/// Ergebnis eines Vorgangs protokollieren und unverändert zurückgeben
+/// Log the result of an operation and return it unchanged
 pub fn outcome<T, E: std::fmt::Display>(area: &str, what: &str, t0: std::time::Instant, r: Result<T, E>) -> Result<T, E> {
     let ms = t0.elapsed().as_millis();
     match &r {
@@ -689,13 +689,13 @@ pub fn outcome<T, E: std::fmt::Display>(area: &str, what: &str, t0: std::time::I
     r
 }
 
-/// Meldung als Warnung protokollieren und zurückgeben (für Fehler, die in einem Feld landen)
+/// Log a message as a warning and return it (for errors that end up in a field)
 pub fn warned(area: &str, msg: String) -> String {
     log::warn!(target: area, "{msg}");
     msg
 }
 
-/// Kennzahlen eines Projekts ohne Inhalte
+/// Key figures of a project without content
 pub fn counts(p: &cl_core::Project) -> String {
     let tracks = &p.timeline.tracks;
     format!(
@@ -707,21 +707,21 @@ pub fn counts(p: &cl_core::Project) -> String {
     )
 }
 
-/// Projekt geöffnet/gespeichert/geschlossen – nur Kennzahlen, kein Name und kein Pfad
+/// Project opened/saved/closed – only key figures, no name and no path
 pub fn project(what: &str, p: &cl_core::Project, t0: Option<std::time::Instant>) {
     let ms = t0.map(|t| format!(" in {} ms", t.elapsed().as_millis())).unwrap_or_default();
     log::info!(target: "projekt", "{what}{ms}: {}", counts(p));
 }
 
-/// FFmpeg-Befehlszeile fürs Protokoll: Aufbau bleibt, Pfade werden unkenntlich (Texte stehen in Dateien)
+/// FFmpeg command line for the log: the structure stays, paths are redacted (texts are in files)
 pub fn ffmpeg_cmd(args: &[String]) -> String {
     let a: Vec<String> = args.iter().map(|x| anon(x)).collect();
     format!("ffmpeg {}", a.join(" "))
 }
 
-// ---------- System ----------
+// ---------- system ----------
 
-/// Encoder für Hardware aus `ffmpeg -encoders`
+/// Hardware encoders from `ffmpeg -encoders`
 pub fn hw_encoders(list: &str) -> Vec<&str> {
     list.lines()
         .filter_map(|l| l.split_whitespace().nth(1))
@@ -740,7 +740,7 @@ fn os_version() -> String {
     let c = {
         use std::os::windows::process::CommandExt;
         let mut c = std::process::Command::new("cmd");
-        c.args(["/c", "ver"]).creation_flags(0x0800_0000); // ohne Konsolenfenster
+        c.args(["/c", "ver"]).creation_flags(0x0800_0000); // without a console window
         c
     };
     #[cfg(not(windows))]
@@ -769,7 +769,7 @@ fn ram_gb() -> Option<f64> {
             fn GlobalMemoryStatusEx(m: *mut MemStatus) -> i32;
         }
         let mut m = MemStatus { len: std::mem::size_of::<MemStatus>() as u32, load: 0, total: 0, rest: [0; 6] };
-        // SAFETY: Struktur mit gesetzter Länge, nur gelesen
+        // SAFETY: struct with its length set, only read
         (unsafe { GlobalMemoryStatusEx(&mut m) } != 0).then(|| m.total as f64 / (1u64 << 30) as f64)
     }
     #[cfg(not(windows))]
@@ -780,24 +780,24 @@ fn ram_gb() -> Option<f64> {
     }
 }
 
-/// Älteste FFmpeg-Hauptversion, mit der Cutline läuft (wie im README)
+/// Oldest FFmpeg major version Cutline runs with (as in the README)
 pub const MIN_FFMPEG: u32 = 7;
 static OLD_FFMPEG: Mutex<Option<String>> = Mutex::new(None);
 
-/// Version aus der ersten Zeile von `ffmpeg -version`, wenn sie unter [`MIN_FFMPEG`] liegt.
-/// Entwicklungsstände („N-12345-g…“, „git-…“) und Unlesbares gelten als neu genug.
+/// Version from the first line of `ffmpeg -version` if it is below [`MIN_FFMPEG`].
+/// Development builds („N-12345-g…“, „git-…“) and unreadable ones count as new enough.
 pub fn ffmpeg_too_old(line: &str) -> Option<String> {
     let v = line.strip_prefix("ffmpeg version ")?.split_whitespace().next()?;
     let major: u32 = v.trim_start_matches('n').split(['.', '-']).next()?.parse().ok()?;
     (major < MIN_FFMPEG).then(|| v.to_string())
 }
 
-/// Einmal je Sitzung: zu altes FFmpeg (gefundene Version), sobald `system_info` gelaufen ist
+/// Once per session: FFmpeg too old (found version), as soon as `system_info` has run
 pub fn take_old_ffmpeg() -> Option<String> {
     OLD_FFMPEG.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
-/// System, Kerne, Speicher, FFmpeg (einmal ermittelt, im Hintergrund)
+/// System, cores, memory, FFmpeg (determined once, in the background)
 pub fn system_info() -> &'static str {
     static S: OnceLock<String> = OnceLock::new();
     S.get_or_init(|| {
@@ -831,7 +831,7 @@ pub fn system_info() -> &'static str {
     })
 }
 
-/// Start: Grafik, Skalierung, Sprache, Design (vom UI-Thread), System im Hintergrund
+/// Start: graphics, scaling, language, design (from the UI thread), system in the background
 pub fn startup(cc: &eframe::CreationContext<'_>, s: &crate::settings::AppSettings) {
     let gpu = cc.wgpu_render_state.as_ref().map(|r| {
         let i = r.adapter.get_info();
@@ -850,10 +850,10 @@ pub fn startup(cc: &eframe::CreationContext<'_>, s: &crate::settings::AppSetting
     let _ = std::thread::Builder::new().name("cl-sysinfo".into()).spawn(|| log::info!(target: "system", "{}", system_info()));
 }
 
-// ---------- Export ----------
+// ---------- export ----------
 
-/// Einträge der letzten 24 Stunden aus den Dateien (in Dateireihenfolge), zeitlich sortiert.
-/// Zeilen ohne Zeitstempel gehören zum Eintrag davor; ohne Eintrag davor fallen sie weg.
+/// Entries of the last 24 hours from the files (in file order), sorted by time.
+/// Lines without a timestamp belong to the entry before; without an entry before they are dropped.
 pub fn last_24h(texts: &[String], now: i64) -> String {
     let mut entries: Vec<(i64, String)> = Vec::new();
     for t in texts {
@@ -881,7 +881,7 @@ pub fn last_24h(texts: &[String], now: i64) -> String {
     out
 }
 
-/// Einstellungen ohne Geheimnisse und ohne persönliche Pfadlisten
+/// Settings without secrets and without personal path lists
 pub fn scrub_settings(v: &mut serde_json::Value) {
     if let Some(m) = v.as_object_mut() {
         for k in ["recent", "projects_dir", "layout", "layouts"] {
@@ -904,7 +904,7 @@ pub fn scrub_settings(v: &mut serde_json::Value) {
     walk(v);
 }
 
-/// Kopf des Exports
+/// Header of the export
 pub fn header(system: &str, ui: &str, mut settings: serde_json::Value, packages: &[(String, String, bool)], project: Option<String>, now: i64) -> String {
     scrub_settings(&mut settings);
     let packs: Vec<String> = packages.iter().map(|(id, v, on)| format!("{id} {v}{}", if *on { "" } else { " (aus)" })).collect();
@@ -918,8 +918,8 @@ pub fn header(system: &str, ui: &str, mut settings: serde_json::Value, packages:
     redact(&text)
 }
 
-/// Ganze Exportdatei: Kopf + Zeilen der letzten 24 Stunden ohne Pfade und Dateinamen ([`anon`]),
-/// Benutzerordner als `~`
+/// Whole export file: header + lines of the last 24 hours without paths and file names ([`anon`]),
+/// user folder as `~`
 pub fn export_text(dir: &Path, head: &str, now: i64, home: &str) -> String {
     let today = (now + offset() * 1000).div_euclid(DAY_MS);
     let texts: Vec<String> = log_files(dir)
@@ -933,17 +933,17 @@ pub fn export_text(dir: &Path, head: &str, now: i64, home: &str) -> String {
     tilde(&text.concat(), home)
 }
 
-/// Vorschlag für den Dateinamen: `cutline-protokoll-JJJJ-MM-TT-HHMM.txt`
+/// Suggested file name: `cutline-protokoll-YYYY-MM-DD-HHMM.txt`
 pub fn export_name(now: i64) -> String {
     let s = stamp(now, offset());
     format!("cutline-protokoll-{}-{}{}.txt", &s[..10], &s[11..13], &s[14..16])
 }
 
 impl crate::app::App {
-    /// Einstellungen → Über Cutline: „Protokoll exportieren“
+    /// Settings → About Cutline: „Protokoll exportieren“
     pub fn export_log(&mut self, ctx: &egui::Context) {
         let now = now_ms();
-        // Klicktest ohne Datei-Dialog: Ziel aus der Umgebung (nur mit CUTLINE_SHOTS)
+        // Click test without a file dialog: target from the environment (only with CUTLINE_SHOTS)
         let target = match std::env::var_os("CUTLINE_LOG_EXPORT").filter(|_| std::env::var_os("CUTLINE_SHOTS").is_some()) {
             Some(p) => Some(PathBuf::from(p)),
             None => crate::dialog().add_filter(crate::tr("Textdatei"), &["txt"]).set_file_name(export_name(now)).save_file(),
@@ -975,7 +975,7 @@ impl crate::app::App {
     }
 }
 
-/// Knöpfe in Einstellungen → Über Cutline
+/// Buttons in Settings → About Cutline
 pub fn about_buttons(app: &mut crate::app::App, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         let busy = app.tasks.running("log-export").is_some();
@@ -1000,7 +1000,7 @@ pub fn about_buttons(app: &mut crate::app::App, ui: &mut egui::Ui) {
     });
 }
 
-/// Nach einem Absturz beim nächsten Start: dezente Meldung mit „Protokoll exportieren“ (einmal)
+/// After a crash, on the next start: a subtle message with „Protokoll exportieren“ (once)
 pub fn crash_notice(ctx: &egui::Context, app: &mut crate::app::App) {
     if !CRASHED.load(Ordering::Relaxed) {
         return;
@@ -1056,7 +1056,7 @@ mod tests {
             anon("Error opening input C:/Firma X/b.mp4: No such file\n~/x/y.wav: denied"),
             "Error opening input <pfad>.mp4: No such file\n<pfad>.wav: denied"
         );
-        // keine Pfade: bleibt
+        // no paths: stays
         for s in ["10 MB/s", "-/filter_complex", "https://a.b/c", "und/oder", "1/2", "Paket entfernt"] {
             assert_eq!(anon(s), s);
         }
@@ -1070,8 +1070,8 @@ mod tests {
         );
     }
 
-    /// Zeilen aus einem exportierten Protokoll (Klicktest): Pfade mit `~/` und gemischten Trennern,
-    /// Dateinamen in Meldungen – im Export bleibt nur die Endung.
+    /// Lines from an exported log (click test): paths with `~/` and mixed separators,
+    /// file names in messages – in the export only the extension remains.
     #[test]
     fn exported_log_has_no_file_or_project_names() {
         let lines = [
@@ -1091,7 +1091,7 @@ mod tests {
         }
         assert!(out.contains("fertig nach 245.4 s: <pfad>.mp4 · Some((852, 480, Rational { num: 60, den: 1 }"), "{out}");
         assert!(out.contains("<pfad>.gif · ") && out.contains("proxy: <datei>.mp4 fertig") && out.contains("meldung: <datei>.mp4 konnte"), "{out}");
-        // Versionen, Zeiten und Zahlen bleiben
+        // Versions, times and numbers stay
         for s in ["Cutline 0.11.1 (Release)", "18:44:12.469", "graph.txt", "10.0.26300.9974", "245.4 s"] {
             assert_eq!(anon(s), s);
         }
@@ -1110,7 +1110,7 @@ mod tests {
             }
         }
         assert_eq!(stamp(1_763_215_402_123, 3600), "2025-11-15 15:03:22.123 +01:00");
-        assert_eq!(file_name(1_763_247_600_000, 3600), "cutline-2025-11-16.log", "Mitternacht Ortszeit");
+        assert_eq!(file_name(1_763_247_600_000, 3600), "cutline-2025-11-16.log", "midnight local time");
         for bad in ["", "2026-11-15", "2026-13-15 10:00:00.000 +01:00 x", "2026-11-15 10:00:00.000 01:00 x", "xxxx-11-15 10:00:00.000 +01:00", "    at main.rs"] {
             assert_eq!(parse_stamp(bad), None, "{bad:?}");
         }
@@ -1132,7 +1132,7 @@ mod tests {
             ("GET https://x.example/a?token=abc123&page=2 HTTP", "GET https://x.example/a?*** HTTP"),
             ("https://cdn.example/f.mp3?key=K1&signature=S%2F2#frag", "https://cdn.example/f.mp3?***"),
             ("https://login.example/cb?code=xyz&state=1", "https://login.example/cb?***"),
-            // ureq-Fehler nach der GitHub-Umleitung: signierte Asset-Adresse mit `jwt=`
+            // ureq error after the GitHub redirect: signed asset URL with `jwt=`
             ("https://objects.example/a.zip?sp=r&jwt=eyJ0eXAi.x.y: Connection Failed", "https://objects.example/a.zip?***: Connection Failed"),
             ("(\"http://127.0.0.1:9/x?a=1\")", "(\"http://127.0.0.1:9/x?***\")"),
             ("X-Amz-Signature=deadbeef", "X-Amz-Signature=***"),
@@ -1170,7 +1170,7 @@ mod tests {
     #[test]
     fn last_24h_merges_files_in_time_order() {
         let off = 3600;
-        let now = 1_763_251_200_000; // Sonntag 01:00 Ortszeit
+        let now = 1_763_251_200_000; // Sunday 01:00 local time
         let line = |ms: i64, m: &str| format_line(&rec(ms, Level::Info, m), off);
         let yesterday = format!(
             "{}{}kaputt ohne Zeit\n{}{}",
@@ -1182,10 +1182,10 @@ mod tests {
         let today = format!("Müll am Anfang\n{}{}", line(now - 1_800_000, "nach Mitternacht"), format_line(&rec(now - 60_000, Level::Error, "Panic\nZeile 2"), off));
         let out = last_24h(&[yesterday, today], now);
         let order: Vec<&str> = ["noch früher", "gestern spät", "nach Mitternacht", "Panic", "    Zeile 2"].to_vec();
-        let pos: Vec<usize> = order.iter().map(|m| out.find(m).unwrap_or_else(|| panic!("{m} fehlt:\n{out}"))).collect();
+        let pos: Vec<usize> = order.iter().map(|m| out.find(m).unwrap_or_else(|| panic!("{m} missing:\n{out}"))).collect();
         assert!(pos.windows(2).all(|w| w[0] < w[1]), "{out}");
         assert!(!out.contains("zu alt") && !out.contains("Müll"), "{out}");
-        assert!(out.contains("kaputt ohne Zeit"), "gehört zum Eintrag davor");
+        assert!(out.contains("kaputt ohne Zeit"), "belongs to the entry before");
     }
 
     #[test]
@@ -1263,12 +1263,12 @@ mod tests {
         let end = |p: u32| l(&format!("sitzung: {END} pid={p}"));
         let panic = |p: u32| l(&format!("absturz: {PANIC} pid={p} im Thread „main“: panicked at x.rs:1:1:"));
         let dead = |_| false;
-        assert!(!unclean_exit("", dead), "kein Protokoll");
+        assert!(!unclean_exit("", dead), "no log");
         assert!(!unclean_exit(&format!("{}{}", start(1), end(1)), dead));
-        assert!(unclean_exit(&start(1), dead), "kein Ende");
+        assert!(unclean_exit(&start(1), dead), "no end");
         assert!(unclean_exit(&format!("{}{}{}", start(1), panic(1), end(1)), dead), "Panic");
-        assert!(!unclean_exit(&start(1), |p| p == 1), "läuft noch (zweites Fenster)");
-        assert!(!unclean_exit(&format!("{}{}{}{}", start(1), start(2), end(2), end(1)), dead), "zählt der letzte Start");
+        assert!(!unclean_exit(&start(1), |p| p == 1), "still running (second window)");
+        assert!(!unclean_exit(&format!("{}{}{}{}", start(1), start(2), end(2), end(1)), dead), "the last start counts");
         assert!(unclean_exit(&format!("{}{}{}", start(1), end(1), start(2)), dead));
         assert!(!unclean_exit(&format!("{}{}{}", start(2), end(9), end(2)), dead));
     }
@@ -1310,7 +1310,7 @@ mod tests {
         let tx = spawn(d.path().into(), FILE_LIMIT, false);
         tx.send(Msg::Rec(rec(now_ms(), Level::Info, "davor"))).unwrap();
         tx.send(Msg::Rec(rec(now_ms(), Level::Error, "Fehler XYZ"))).unwrap();
-        // nur warten, bis verarbeitet – ohne Flush
+        // only wait until processed – without a flush
         sync(&tx, false, Duration::from_secs(10));
         let t = read_all(d.path());
         assert!(t.contains("davor") && t.contains("ERROR test: Fehler XYZ"), "{t:?}");
@@ -1327,7 +1327,7 @@ mod tests {
         }
         let (a, b) = channel();
         tx.send(Msg::Sync(a, true)).unwrap();
-        b.recv_timeout(Duration::from_secs(10)).expect("Schreib-Thread lebt");
+        b.recv_timeout(Duration::from_secs(10)).expect("writer thread alive");
     }
 
     #[test]
@@ -1336,7 +1336,7 @@ mod tests {
         assert_eq!(hw_encoders(list), ["h264_nvenc", "hevc_qsv", "h264_mf"]);
     }
 
-    /// Kindprozess für [`panic_hook_logs_message_and_place`]
+    /// Child process for [`panic_hook_logs_message_and_place`]
     #[test]
     #[ignore]
     fn panic_child() {
@@ -1357,12 +1357,12 @@ mod tests {
             .env("RUST_BACKTRACE", "0")
             .output()
             .unwrap();
-        assert!(!out.status.success(), "Kind soll abstürzen");
+        assert!(!out.status.success(), "child should crash");
         let t = read_all(d.path());
         assert!(t.contains("ERROR absturz: Absturz pid=") && t.contains("Testabsturz 4711") && t.contains("applog.rs"), "{t}\n{}", String::from_utf8_lossy(&out.stderr));
         assert!(t.contains("INFO  projekt: über die Fassade") && t.contains("WARN  wgpu_core::device: fremde Warnung") && !t.contains("fremde Info"), "{t}");
         assert!(unclean_exit(&format!("2026-11-15 10:00:00.000 +01:00 INFO  sitzung: {START} pid={}\n{t}", out_pid(&t)), |_| false));
-        // bisheriges Verhalten bleibt: die Standardmeldung kommt danach trotzdem
+        // previous behavior stays: the default message still comes afterward
         assert!(String::from_utf8_lossy(&out.stderr).contains("Testabsturz 4711"));
     }
 

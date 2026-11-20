@@ -1,5 +1,5 @@
-//! Einsprechen: kleines Fenster mit Aufnahmeknopf, Pegel, Live-Waveform, Mikrofonwahl.
-//! Während der Aufnahme wächst zusätzlich ein roter Clip mit Waveform in der Zeitleiste.
+//! Voiceover: small window with record button, level, live waveform, microphone choice.
+//! While recording, a red clip with waveform also grows in the timeline.
 
 use eframe::egui::{self, pos2, vec2, Rect, RichText, Stroke};
 
@@ -46,7 +46,7 @@ impl App {
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         icon::X,
-                        egui::FontId::proportional(20.0), // Icon-Glyphe im runden Aufnahmeknopf
+                        egui::FontId::proportional(20.0), // icon glyph in the round record button
                         theme::TEXT(),
                     );
                 } else {
@@ -96,7 +96,7 @@ impl App {
                 });
             });
             ui.add_space(6.0);
-            // Live-Waveform der letzten Sekunden
+            // Live waveform of the last seconds
             let (bar, _) =
                 ui.allocate_exact_size(vec2(ui.available_width(), 34.0), egui::Sense::hover());
             ui.painter().rect_filled(bar, theme::R_CTRL, theme::BG_INPUT());

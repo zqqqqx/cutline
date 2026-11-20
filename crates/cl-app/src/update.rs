@@ -1,4 +1,4 @@
-//! Update-Prüfung im Hintergrund (GitHub Releases), Installation per Knopfdruck und „Was ist neu“.
+//! Update check in the background (GitHub Releases), install at the push of a button, and „Was ist neu“.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,29 +18,29 @@ pub enum UpdateState {
     Checking,
     UpToDate,
     Available(Box<Release>),
-    /// Release, geladene Bytes, Gesamtgröße
+    /// Release, downloaded bytes, total size
     Downloading(Box<Release>, u64, u64),
-    /// Installiert, Neustart nötig
+    /// Installed, restart needed
     Installed(Version),
-    /// Meldung; beim Laden gescheitert: das Release für „Erneut versuchen“
+    /// Message; failed while downloading: the release for „Erneut versuchen“
     Error(String, Option<Box<Release>>),
 }
 
-/// Inhalt des Fensters „Update“ / „Was ist neu“
+/// Content of the „Update“ / „Was ist neu“ window
 pub enum View {
-    /// Neue Version: Änderungen aus der Release-Notiz (leer = Rohtext zeigen)
+    /// New version: changes from the release notes (empty = show the raw text)
     Update(Vec<Notes>),
-    /// Eingebettete Änderungsliste
+    /// Embedded change list
     News(Vec<Notes>),
 }
 
 pub struct Updater {
     pub state: Arc<Mutex<UpdateState>>,
     cancel: Arc<AtomicBool>,
-    /// Ende der letzten Suche
+    /// End of the last check
     checked: Arc<Mutex<Option<SystemTime>>>,
     pub view: Option<View>,
-    /// Nach einem Update einmal in der Titelleiste angeboten
+    /// Offered once in the title bar after an update
     pub news: Vec<Notes>,
 }
 
@@ -60,9 +60,9 @@ pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-/// Klicktest ohne echtes Update, nur in Entwickler-Builds (Debug oder `CUTLINE_SHOTS`):
-/// `CUTLINE_FAKE_UPDATE=0.9.0` gibt diese Version als installiert aus; die Suche liefert dann ohne
-/// Netz die eigene Version mit der eingebetteten Änderungsliste (Laden scheitert sofort).
+/// Click test without a real update, only in developer builds (debug or `CUTLINE_SHOTS`):
+/// `CUTLINE_FAKE_UPDATE=0.9.0` reports this version as installed; the check then returns, without
+/// network, the own version with the embedded change list (downloading fails at once).
 fn fake_installed() -> Option<Version> {
     let dev = cfg!(debug_assertions) || std::env::var_os("CUTLINE_SHOTS").is_some();
     dev.then(|| std::env::var("CUTLINE_FAKE_UPDATE").ok())
@@ -74,7 +74,7 @@ fn own_version() -> Version {
     Version::parse(current_version()).unwrap_or(Version(0, 0, 0))
 }
 
-/// Version, von der aus aktualisiert wird
+/// Version being updated from
 pub fn installed_version() -> Version {
     fake_installed().unwrap_or_else(own_version)
 }
@@ -87,7 +87,7 @@ fn fake_release() -> Release {
         name: format!("v{v}"),
         notes: changelog::CHANGELOG.into(),
         page: format!("https://github.com/{}/releases", cl_update::REPO),
-        // Port 9 auf dem eigenen Rechner: Verbindung wird sofort abgelehnt
+        // Port 9 on the local machine: the connection is refused at once
         asset_url: "http://127.0.0.1:9/cutline.zip".into(),
         asset_size: 48_300_000,
         sha_url: Some("http://127.0.0.1:9/cutline.zip.sha256".into()),
@@ -96,7 +96,7 @@ fn fake_release() -> Release {
     }
 }
 
-/// Entwicklungs-Builds (cargo run) werden nicht überschrieben.
+/// Development builds (cargo run) are not overwritten.
 pub fn can_install() -> bool {
     !cfg!(debug_assertions)
 }
@@ -108,8 +108,8 @@ fn exe_dir() -> Option<std::path::PathBuf> {
         .map(|p| p.to_path_buf())
 }
 
-/// Änderungen der neuen Version(en): aus dem Anhang `changes.json` (alle Versionen), bei älteren
-/// Releases aus der Release-Notiz (bis zu drei ältere eingeklappt angehängt). Leer = nicht lesbar.
+/// Changes of the new version(s): from the `changes.json` attachment (all versions), for older
+/// releases from the release notes (up to three older ones appended collapsed). Empty = not readable.
 pub fn release_notes(rel: &Release, installed: Version) -> Vec<Notes> {
     let all = rel.changes.clone().unwrap_or_else(|| changelog::parse(&rel.notes));
     changelog::between(&all, installed, rel.version)
@@ -118,7 +118,7 @@ pub fn release_notes(rel: &Release, installed: Version) -> Vec<Notes> {
         .collect()
 }
 
-/// Alle Versionen dieses Builds, neueste oben
+/// All versions of this build, newest at the top
 pub fn embedded_notes() -> Vec<Notes> {
     changelog::between(&changelog::parse(changelog::CHANGELOG), Version(0, 0, 0), own_version())
         .into_iter()
@@ -126,13 +126,13 @@ pub fn embedded_notes() -> Vec<Notes> {
         .collect()
 }
 
-/// „42,3 MB“ (deutsch) bzw. „42.3 MB“
+/// „42,3 MB“ (German) or „42.3 MB“
 pub(crate) fn mb_text(bytes: u64, comma: bool) -> String {
     let s = format!("{:.1} MB", bytes as f64 / 1_048_576.0);
     if comma { s.replace('.', ",") } else { s }
 }
 
-/// „42 % · 17,8 / 42,3 MB“; ohne bekannte Größe nur die geladene Menge
+/// „42 % · 17,8 / 42,3 MB“; without a known size only the downloaded amount
 pub(crate) fn progress_text(done: u64, total: u64, comma: bool) -> String {
     if total <= 1 {
         return mb_text(done, comma);
@@ -143,13 +143,13 @@ pub(crate) fn progress_text(done: u64, total: u64, comma: bool) -> String {
     format!("{pct:.0} % · {} / {total_mb}", done_mb.trim_end_matches(" MB"))
 }
 
-/// Zwischenordner für das geprüfte Update-Paket: im eigenen Datenordner, nicht im geteilten Temp-Ordner
-/// (unter Linux könnte dort ein anderer Nutzer die ZIP zwischen Prüfen und Entpacken tauschen)
+/// Temp folder for the checked update package: in the own data folder, not in the shared temp folder
+/// (on Linux another user could swap the ZIP there between checking and unpacking)
 fn update_dir() -> std::path::PathBuf {
     crate::paths::data_dir().join("update")
 }
 
-/// Ergebnis der Suche → Zustand (kurze Meldung) und Protokollzeile (mit Rohtext, etwa TLS-/Proxy-/DNS-Fehler)
+/// Check result → state (short message) and log line (with raw text, e.g. TLS/proxy/DNS errors)
 fn check_outcome(r: Result<Option<Release>, String>) -> (UpdateState, String) {
     match r {
         Ok(Some(rel)) => {
@@ -166,7 +166,7 @@ fn fraction(done: u64, total: u64) -> Option<f32> {
     (total > 1).then(|| (done.min(total) as f64 / total as f64) as f32)
 }
 
-/// `2026-11-15` → „15.11.2026“ (deutsch), sonst unverändert
+/// `2026-11-15` → „15.11.2026“ (German), otherwise unchanged
 fn date_text(iso: &str, de: bool) -> String {
     let p: Vec<&str> = iso.split('-').collect();
     match p.as_slice() {
@@ -242,7 +242,7 @@ impl Updater {
             log::info!(target: "update", "Installation {}: {}", rel.version, res.as_ref().map_or_else(|e| format!("Fehler {e}"), |_| "fertig".into()));
             *state.lock().unwrap() = match res {
                 Ok(_) => UpdateState::Installed(rel.version),
-                // Abbrechen führt zurück zum Angebot
+                // Cancel leads back to the offer
                 Err(_) if cancel.load(Ordering::Relaxed) => UpdateState::Available(Box::new(rel)),
                 Err(e) => UpdateState::Error(cl_update::friendly(&e), Some(Box::new(rel))),
             };
@@ -254,7 +254,7 @@ impl Updater {
         self.cancel.store(true, Ordering::Relaxed);
     }
 
-    /// Fenster für das verfügbare Update öffnen
+    /// Open the window for the available update
     pub fn open_update(&mut self) {
         let notes = match self.get() {
             UpdateState::Available(rel) | UpdateState::Downloading(rel, ..) | UpdateState::Error(_, Some(rel)) => {
@@ -266,7 +266,7 @@ impl Updater {
     }
 }
 
-/// Programm neu starten (nach der Installation).
+/// Restart the program (after installation).
 pub fn restart(ctx: &egui::Context) {
     if let Ok(exe) = std::env::current_exe() {
         let args: Vec<String> = std::env::args().skip(1).collect();
@@ -276,7 +276,7 @@ pub fn restart(ctx: &egui::Context) {
     }
 }
 
-/// Beim Start: Reste alter Updates entfernen, dazu Arbeitsordner abgebrochener Läufe in %TEMP%.
+/// At startup: remove leftovers of old updates, plus work folders of aborted runs in %TEMP%.
 pub fn startup_cleanup() {
     if let Some(d) = exe_dir() {
         cl_update::cleanup_old(&d);
@@ -288,9 +288,9 @@ pub fn startup_cleanup() {
     });
 }
 
-/// Arbeitsordner von Ton-Vorschau, Export, Whisper und Thumbnail bleiben nur nach einem Absturz oder einem
-/// erzwungenen Beenden liegen (Exporte bis zu einigen MB). Entfernt werden nur eigene Ordner, die
-/// länger als `age` unverändert sind – laufende Instanzen benutzen ihre Ordner nicht so lange.
+/// Work folders of audio preview, export, Whisper and thumbnail are only left behind after a crash or a
+/// forced quit (exports up to a few MB). Only own folders unchanged for longer than `age`
+/// are removed – running instances do not use their folders that long.
 fn cleanup_temp(dir: &std::path::Path, age: std::time::Duration) {
     const OWN: [&str; 4] = ["cutline-audio-", "cutline-export-", "cutline-whisper-", "cutline-thumb"];
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
@@ -317,7 +317,7 @@ mod temp_tests {
             std::fs::create_dir(t.path().join(d)).unwrap();
         }
         std::fs::write(t.path().join("cutline-export-datei"), "x").unwrap();
-        // frisch angelegt: bleibt (könnte einer laufenden Instanz gehören)
+        // freshly created: stays (could belong to a running instance)
         super::cleanup_temp(t.path(), std::time::Duration::from_secs(3600));
         assert!(t.path().join("cutline-audio-x1").exists());
         super::cleanup_temp(t.path(), std::time::Duration::ZERO);
@@ -327,7 +327,7 @@ mod temp_tests {
     }
 }
 
-/// Fortschritts- bzw. Lauflinie des Update-Fensters (4 px); `None` = Dauer unbekannt.
+/// Progress or running line of the update window (4 px); `None` = duration unknown.
 fn progress_line(ui: &mut egui::Ui, frac: Option<f32>) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), egui::Sense::hover());
     match frac {
@@ -336,7 +336,7 @@ fn progress_line(ui: &mut egui::Ui, frac: Option<f32>) {
     }
 }
 
-/// Ein Eintrag: heller Titel, gedämpfter Satz, im Fluss umbrochen
+/// One entry: light title, muted sentence, wrapped in the flow
 fn entry(ui: &mut egui::Ui, e: &changelog::Entry) {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -357,7 +357,7 @@ fn entry(ui: &mut egui::Ui, e: &changelog::Entry) {
     });
 }
 
-/// Änderungen einer oder mehrerer Versionen; `headings`: Versionszeile über jedem Abschnitt
+/// Changes of one or more versions; `headings`: version line above each section
 fn notes_list(ui: &mut egui::Ui, notes: &[Notes], headings: bool) {
     let de = de();
     for (i, n) in notes.iter().enumerate() {
@@ -388,8 +388,8 @@ fn notes_list(ui: &mut egui::Ui, notes: &[Notes], headings: bool) {
 }
 
 impl App {
-    /// Beim Start: nach einem Update einmal „Was ist neu“ anbieten (nie bei frischer Installation),
-    /// dann die gestartete Version merken.
+    /// At startup: offer „Was ist neu“ once after an update (never on a fresh install),
+    /// then remember the started version.
     pub fn note_started_version(&mut self) {
         let last = self.settings.last_version.as_deref().and_then(Version::parse);
         let all = changelog::parse(changelog::CHANGELOG);
@@ -403,7 +403,7 @@ impl App {
         }
     }
 
-    /// Kleiner Hinweis in der Titelleiste (nur wenn es etwas zu tun gibt).
+    /// Small hint in the title bar (only when there is something to do).
     pub fn update_badge(&mut self, ui: &mut egui::Ui) {
         if let Some(v) = self.updater.news.first().and_then(|n| n.version) {
             let b = theme::secondary(format!("{}  Was ist neu in {v}", icon::SPARKLE)).min_size(vec2(0.0, 22.0));
@@ -462,7 +462,7 @@ impl App {
         restart(ctx);
     }
 
-    /// Fenster „Update verfügbar“ bzw. „Was ist neu“ (über allem, auch über den Einstellungen)
+    /// „Update verfügbar“ or „Was ist neu“ window (above everything, also above the settings)
     pub fn update_dialog(&mut self, ctx: &egui::Context) {
         let Some(view) = self.updater.view.take() else { return };
         let state = self.updater.get();
@@ -486,13 +486,13 @@ impl App {
         if modal.should_close() {
             close = true;
         }
-        // Knöpfe im Fenster können eine neue Ansicht gesetzt haben
+        // Buttons in the window may have set a new view
         if !close && self.updater.view.is_none() {
             self.updater.view = Some(view);
         }
     }
 
-    /// Inhalt bei verfügbarem Update. `true` = schließen.
+    /// Content for an available update. `true` = close.
     fn update_view(&mut self, ui: &mut egui::Ui, state: &UpdateState, notes: &[Notes]) -> bool {
         let rel = match state {
             UpdateState::Available(r) | UpdateState::Downloading(r, ..) | UpdateState::Error(_, Some(r)) => Some(r.as_ref()),
@@ -503,7 +503,7 @@ impl App {
             if matches!(state, UpdateState::Installed(_)) { "Update installiert" } else { "Update verfügbar" },
         );
         let de = de();
-        // Kopf: „0.11.0 → 0.11.1“, darunter Datum und Größe
+        // Header: „0.11.0 → 0.11.1“, below it date and size
         if let Some(rel) = rel {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(installed_version().to_string()).size(theme::FS_PAGE).color(theme::TEXT_DIM()));
@@ -531,7 +531,7 @@ impl App {
                     egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         if notes.is_empty() {
-                            // Release-Notiz nicht im erwarteten Aufbau: schlicht zeigen
+                            // release notes not in the expected structure: show them plainly
                             ui.label(RichText::new(rel.notes.trim()).size(theme::FS_TEXT).color(theme::TEXT_DIM()));
                         } else {
                             notes_list(ui, notes, notes.len() > 1);
@@ -598,14 +598,14 @@ impl App {
                     });
                 });
             }
-            // Suche läuft erneut oder Cutline ist inzwischen aktuell
+            // the check runs again or Cutline is up to date by now
             UpdateState::Checking => progress_line(ui, None),
             UpdateState::Idle | UpdateState::UpToDate => close = true,
         }
         close
     }
 
-    /// Abschnitt „Updates“ im Einstellungsdialog.
+    /// „Updates“ section in the settings dialog.
     pub fn updates_settings(&mut self, ui: &mut egui::Ui) {
         theme::row(ui, "Version", |ui| {
             ui.label(RichText::new(current_version()).monospace());
@@ -695,11 +695,11 @@ mod tests {
         assert_eq!(mb_text(0, true), "0,0 MB");
         let total = 100 << 20;
         assert_eq!(progress_text(25 << 20, total, true), "25 % · 25,0 / 100,0 MB");
-        assert_eq!(progress_text((25 << 20) - 1, total, true), "24 % · 25,0 / 100,0 MB", "Prozent abgerundet");
+        assert_eq!(progress_text((25 << 20) - 1, total, true), "24 % · 25,0 / 100,0 MB", "percent rounded down");
         assert_eq!(progress_text(0, total, false), "0 % · 0.0 / 100.0 MB");
         assert_eq!(progress_text(total, total, false), "100 % · 100.0 / 100.0 MB");
-        assert_eq!(progress_text(total * 2, total, false), "100 % · 100.0 / 100.0 MB", "nie über 100 %");
-        assert_eq!(progress_text(3 << 20, 1, true), "3,0 MB", "Größe unbekannt");
+        assert_eq!(progress_text(total * 2, total, false), "100 % · 100.0 / 100.0 MB", "never above 100 %");
+        assert_eq!(progress_text(3 << 20, 1, true), "3,0 MB", "size unknown");
         assert_eq!(fraction(5, 10), Some(0.5));
         assert_eq!(fraction(20, 10), Some(1.0));
         assert_eq!(fraction(5, 1), None);
@@ -721,16 +721,16 @@ mod tests {
         let got: Vec<_> = release_notes(&rel, Version(0, 10, 0)).iter().filter_map(|n| n.version).collect();
         assert_eq!(got, [Version(0, 11, 1), Version(0, 11, 0)]);
         rel.notes = "**Full Changelog**: https://github.com/x/compare/v0.11.0...v0.11.1".into();
-        assert!(release_notes(&rel, Version(0, 11, 0)).is_empty(), "Rohtext statt Liste");
-        // eingebettete Liste: nur Versionen bis zur eigenen, neueste oben, ohne „Unreleased“
+        assert!(release_notes(&rel, Version(0, 11, 0)).is_empty(), "raw text instead of a list");
+        // embedded list: only versions up to our own, newest at the top, without „Unreleased“
         let all = embedded_notes();
         assert!(!all.is_empty());
         assert!(all.iter().all(|n| n.version.is_some_and(|v| v <= own_version())));
         assert!(all.windows(2).all(|w| w[0].version > w[1].version));
     }
 
-    /// Mit `changes.json` kommt „Was ist neu“ daraus (auch ältere übersprungene Versionen),
-    /// ohne aus dem Release-Text; fehlt der Anhang, gilt der Text.
+    /// With `changes.json`, „Was ist neu“ comes from it (also older skipped versions),
+    /// not from the release text; if the attachment is missing, the text applies.
     #[test]
     fn update_prefers_changes_json() {
         let mut rel = fake_release();

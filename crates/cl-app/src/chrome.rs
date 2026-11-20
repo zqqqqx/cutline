@@ -1,6 +1,6 @@
-//! Fensterrahmen ohne Windows-Titelleiste: eigene Leiste mit Menü, Status,
-//! Projektname, Export und den Fensterknöpfen (Minimieren, Maximieren, Schließen),
-//! Verschieben per Ziehen, Doppelklick maximiert, Größe über die Fensterränder.
+//! Window frame without the Windows title bar: own bar with menu, status,
+//! project name, export and the window buttons (minimize, maximize, close),
+//! move by dragging, double-click maximizes, resize via the window edges.
 
 use eframe::egui::{
     self, pos2, vec2, Color32, CursorIcon, Rect, ResizeDirection, RichText, Sense, ViewportCommand,
@@ -12,13 +12,13 @@ use crate::theme::{self, icon};
 
 const RESIZE_PX: f32 = 5.0;
 
-/// Kleinste Fläche in Punkten, auf die Hauptfenster und Dialoge (Export ~760×690,
-/// Einstellungen ~720×520) passen.
+/// Smallest area in points that the main window and dialogs (export ~760×690,
+/// settings ~720×520) fit into.
 const MIN_UI: egui::Vec2 = vec2(900.0, 720.0);
 
-/// Wirksame Oberflächengröße: die Einstellung, aber nur so groß, dass das Fenster (`base` =
-/// Größe in Punkten bei 100 %) noch `MIN_UI` Punkte bietet. Nie kleiner als 100 % bzw. die
-/// Einstellung selbst, wenn die darunter liegt.
+/// Effective UI scale: the setting, but only so large that the window (`base` =
+/// size in points at 100 %) still offers `MIN_UI` points. Never below 100 % or the
+/// setting itself if that is lower.
 pub fn effective_ui_scale(setting: f32, base: egui::Vec2) -> f32 {
     let fit = (base.x / MIN_UI.x).min(base.y / MIN_UI.y);
     setting.min(fit.max(setting.min(1.0)))
@@ -38,8 +38,8 @@ pub fn load_ui_scale() -> f32 {
         .unwrap_or(1.0)
 }
 
-/// Anzeige laufender Hintergrundaufgaben in der Statuszeile: Name (bei mehreren ein Zähler) und
-/// Fortschritt (`None` = unbekannt → Lauflinie; bei mehreren nur, wenn alle einen melden: Mittel).
+/// Display of running background tasks in the status bar: name (with several a counter) and
+/// progress (`None` = unknown → running line; with several only if all report one: the mean).
 #[derive(Clone, Debug, PartialEq)]
 pub struct TaskSummary {
     pub label: String,
@@ -47,7 +47,7 @@ pub struct TaskSummary {
     pub count: usize,
 }
 
-/// Fasst laufende Aufgaben (Name, gemeldeter Fortschritt 0…1; 0 = noch keiner) zusammen.
+/// Summarizes running tasks (name, reported progress 0…1; 0 = none yet).
 pub fn task_summary(tasks: &[(&str, f32)]) -> Option<TaskSummary> {
     let (first, _) = tasks.first()?;
     let known = tasks.iter().all(|t| t.1 > 0.0);
@@ -63,12 +63,12 @@ pub fn task_summary(tasks: &[(&str, f32)]) -> Option<TaskSummary> {
 }
 
 impl App {
-    /// Laufende Hintergrundaufgaben (Proxy, Analyse, Untertitel, Import …) in der Statuszeile:
-    /// Name, Fortschritts- bzw. Lauflinie, Abbrechen; mehrere = Zähler mit aufklappbarer Liste.
-    /// Erscheint erst nach 150 ms (kurze Aufgaben blitzen nicht auf).
-    /// Zeilen der Aufgaben-Anzeige: gleichartige Aufgaben als eine Zeile („Freistellen ×3“), Proxys
-    /// mit Gesamtfortschritt. Zwischen zwei Proxy-Aufträgen (und solange pausiert) steht die Runde
-    /// als Zeile ohne Aufgabe (leere Gruppe), damit Pausieren/Fortsetzen nicht verschwindet.
+    /// Running background tasks (proxy, analysis, captions, import …) in the status bar:
+    /// name, progress or running line, cancel; several = counter with an expandable list.
+    /// Appears only after 150 ms (short tasks do not flash).
+    /// Rows of the task display: tasks of the same kind as one row („Freistellen ×3“), proxies
+    /// with overall progress. Between two proxy jobs (and while paused) the round stays
+    /// as a row without a task (empty group), so pause/resume does not disappear.
     fn task_rows(&self) -> Vec<(String, f32, Vec<usize>)> {
         let keys: Vec<&str> = self.tasks.list.iter().map(|t| t.key.as_str()).collect();
         let groups = crate::tasks::groups(&keys);
@@ -102,7 +102,7 @@ impl App {
         if !theme::loading(ui.ctx(), id, now.is_some()) {
             return;
         }
-        // gerade fertig: die letzte Anzeige steht noch kurz, mit voller Linie
+        // just finished: the last display stays briefly, with a full line
         let s = match now {
             Some(s) => {
                 ui.data_mut(|d| d.insert_temp(id, s.clone()));
@@ -152,10 +152,10 @@ impl App {
         });
     }
 
-    /// Abbrechen (alle der Gruppe) und bei Proxys Pausieren/Fortsetzen; Abbrechen der Proxys
-    /// beendet den Proxy-Bau für dieses Projekt.
+    /// Cancel (all of the group) and for proxies pause/resume; cancelling the proxies
+    /// ends proxy building for this project.
     fn task_buttons(&mut self, ui: &mut egui::Ui, group: &[usize]) {
-        // leere Gruppe: Proxy-Runde zwischen zwei Aufträgen (siehe `task_rows`)
+        // empty group: proxy round between two jobs (see `task_rows`)
         let proxy = group.is_empty() || group.iter().any(|i| self.tasks.list.get(*i).is_some_and(|t| t.key == "proxy"));
         if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
             if proxy {
@@ -188,7 +188,7 @@ impl App {
         ));
     }
 
-    /// Unsichtbare Ränder zum Ändern der Fenstergröße (nur wenn nicht maximiert).
+    /// Invisible edges for resizing the window (only when not maximized).
     pub fn window_frame(&mut self, ctx: &egui::Context) {
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         if maximized {
@@ -228,8 +228,8 @@ impl App {
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         let bar = ui.max_rect();
 
-        // Ganze Leiste ist Zieh-Fläche; Widgets darüber haben Vorrang.
-        // ohne Tastaturfokus: Tab soll nicht die ganze Leiste umrahmen
+        // The whole bar is a drag area; widgets on top take precedence.
+        // without keyboard focus: Tab should not outline the whole bar
         let drag = ui.interact(bar, ui.id().with("title-drag"), Sense::CLICK | Sense::DRAG);
         if drag.drag_started_by(egui::PointerButton::Primary) {
             ctx.send_viewport_cmd(ViewportCommand::StartDrag);
@@ -238,7 +238,7 @@ impl App {
             ctx.send_viewport_cmd(ViewportCommand::Maximized(!maximized));
         }
 
-        // Rechts: Fensterknöpfe (feste Breite), Export
+        // Right: window buttons (fixed width), export
         let ctrl_w = 46.0 * 3.0;
         let ctrl_rect = Rect::from_min_max(pos2(bar.right() - ctrl_w, bar.top()), bar.max);
         let btn = |ui: &mut egui::Ui, r: Rect, glyph: &str, danger: bool, id: &str| -> bool {
@@ -263,7 +263,7 @@ impl App {
                 r.center(),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(glyph),
-                // Icon-Glyphe der Fensterknöpfe
+                // icon glyph of the window buttons
                 egui::FontId::proportional(13.0),
                 col,
             );
@@ -295,7 +295,7 @@ impl App {
             ctx.send_viewport_cmd(ViewportCommand::Close);
         }
 
-        // Inhalt links/rechts (ohne die Fensterknöpfe)
+        // Content left/right (without the window buttons)
         let content = Rect::from_min_max(bar.min, pos2(ctrl_rect.left() - 8.0, bar.bottom()));
         let home = self.screen == crate::app::Screen::Home;
         ui.allocate_new_ui(
@@ -306,7 +306,7 @@ impl App {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 let (lr, lresp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
                 theme::logo(ui.painter(), lr);
-                // Startseite: Name steht schon als Wortmarke links, hier nur das Logo
+                // Start page: the name already stands as a word mark on the left, only the logo here
                 if home {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if theme::icon_button(
@@ -404,7 +404,7 @@ impl App {
                     self.tasks_badge(ui);
                     if self.mcp.is_some() {
                         ui.label(
-                            // Icon-Glyphe als dezente Statusanzeige
+                            // icon glyph as a subtle status indicator
                             RichText::new(icon::PLUGS_CONNECTED)
                                 .size(12.0)
                                 .color(theme::TEXT_DIM()),
@@ -416,18 +416,18 @@ impl App {
                 });
             },
         );
-        // Projekt lädt (Oberfläche steht schon, das erste Bild kommt noch): Lauflinie unter dem Titel
+        // Project is loading (UI is already there, the first frame is still coming): running line under the title
         let key = egui::Id::new("project-loading");
         let proj = egui::Id::new(&self.project_path).value();
         let (last, pending, n) = ctx.data(|d| d.get_temp::<(u64, bool, u32)>(key)).unwrap_or((!proj, true, 0));
         let (pending, n) = if last != proj || home { (true, 0) } else { (pending, n.saturating_add(1)) };
-        // fertig mit dem ersten Bild – oder es wird keins gebraucht (nach zwei Bildern ohne Anforderung)
+        // done with the first frame – or none is needed (after two frames without a request)
         let pending = pending && self.frames.is_empty() && !(n > 2 && !self.core.has_requests());
         ctx.data_mut(|d| d.insert_temp(key, (proj, pending, n)));
         if theme::loading(&ctx, key, pending && !home) {
             crate::widgets::busy_line(ui.painter(), Rect::from_min_max(pos2(bar.left(), bar.bottom() - 2.0), bar.max));
         }
-        // Projektname mittig
+        // Project name centered
         if !home {
             let name = self.project.name.clone();
             let galley =
@@ -451,8 +451,8 @@ impl App {
             |ui| {
                 ui.set_min_width(230.0);
                 let ctx = ui.ctx().clone();
-                // Einträge sind Aktionen aus `keymap::ACTIONS` und laufen über `run_action` (wie die
-                // Befehlssuche); Text wie bisher im Menü, Kürzel aus der aktuellen Belegung
+                // Entries are actions from `keymap::ACTIONS` and run via `run_action` (like the
+                // command search); text as before in the menu, shortcut from the current bindings
                 let mut act: Option<&str> = None;
                 let mut item = |app: &Self, ui: &mut egui::Ui, id: &'static str, t: &str| {
                     let g = crate::keymap::icon(id);
@@ -471,7 +471,7 @@ impl App {
                 item(self, ui, "save_as", "Speichern unter …");
                 ui.separator();
                 item(self, ui, "import", &self.t("import-media"));
-                // gleicher Dialog wie auf der Startseite; aus, wenn alle Formate abgeschaltet sind
+                // same dialog as on the start page; off when all formats are switched off
                 item(self, ui, "import_project", "Projekt aus anderem Programm importieren …")
                     .on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve"));
                 item(self, ui, "import_fonts", &self.t("import-fonts"));
@@ -536,11 +536,11 @@ mod scale_tests {
     #[test]
     fn tasks_are_summarized_for_the_status_bar() {
         assert_eq!(task_summary(&[]), None);
-        // eine Aufgabe: ihr Name ohne „…“, Fortschritt erst, sobald einer gemeldet wird
+        // one task: its name without „…“, progress only once one is reported
         let one = task_summary(&[("Proxy wird erstellt: a.mp4 …", 0.0)]).unwrap();
         assert_eq!((one.label.as_str(), one.progress, one.count), ("Proxy wird erstellt: a.mp4", None, 1));
         assert_eq!(task_summary(&[("Analyse", 0.4)]).unwrap().progress, Some(0.4));
-        // mehrere: Zähler; Mittel nur, wenn alle einen Fortschritt melden, sonst Lauflinie
+        // several: counter; mean only if all report progress, otherwise running line
         let two = task_summary(&[("A", 0.2), ("B", 0.6)]).unwrap();
         assert_eq!(two.label, "2 Aufgaben");
         assert!((two.progress.unwrap() - 0.4).abs() < 1e-6);
@@ -548,8 +548,8 @@ mod scale_tests {
         assert_eq!(task_summary(&[("A", 0.2), ("B", 0.0), ("C", 1.0)]).unwrap().count, 3);
     }
 
-    /// Pausieren der Proxys: zwischen zwei Aufträgen verschwand der Knopf (Klick ins Leere), und
-    /// trotz Pause begann der nächste Auftrag.
+    /// Pausing proxies: between two jobs the button disappeared (click into nothing), and
+    /// despite the pause the next job started.
     #[test]
     fn proxy_pause_stays_between_builds_and_holds_the_next() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -559,9 +559,9 @@ mod scale_tests {
         assert_eq!(rows.len(), 1);
         assert!(rows[0].2.is_empty() && rows[0].0.contains("4 / 10"), "{rows:?}");
         app.proxies.stopped = true;
-        assert!(app.task_rows().is_empty(), "abgebrochen: keine Zeile");
+        assert!(app.task_rows().is_empty(), "cancelled: no row");
         assert!(crate::proxy::start_next(5, false, false));
-        assert!(!crate::proxy::start_next(5, false, true), "pausiert: kein neuer Auftrag");
+        assert!(!crate::proxy::start_next(5, false, true), "paused: no new job");
         assert!(!crate::proxy::start_next(5, true, false) && !crate::proxy::start_next(0, false, false));
     }
 
@@ -584,18 +584,18 @@ mod scale_tests {
             });
         }
         let focused = ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id));
-        assert!(focused.is_none_or(|r| r.rect != bar), "Fokus auf der Zieh-Fläche");
+        assert!(focused.is_none_or(|r| r.rect != bar), "focus on the drag area");
     }
 
     #[test]
     fn ui_scale_keeps_minimum_area() {
-        // 1440×900 bei 200 %: nur so groß, dass 900×720 Punkte bleiben
+        // 1440×900 at 200 %: only so large that 900×720 points remain
         let s = effective_ui_scale(2.0, vec2(1440.0, 900.0));
         assert!((s - 1.25).abs() < 1e-4, "{s}");
         assert!(1440.0 / s >= MIN_UI.x - 0.01 && 900.0 / s >= MIN_UI.y - 0.01);
-        // großes Fenster: Einstellung wirkt voll
+        // large window: the setting applies fully
         assert_eq!(effective_ui_scale(2.0, vec2(3840.0, 2160.0)), 2.0);
-        // kleines Fenster: nie unter 100 % bzw. die kleinere Einstellung
+        // small window: never below 100 % or the smaller setting
         assert_eq!(effective_ui_scale(1.5, vec2(800.0, 500.0)), 1.0);
         assert_eq!(effective_ui_scale(0.6, vec2(800.0, 500.0)), 0.6);
     }

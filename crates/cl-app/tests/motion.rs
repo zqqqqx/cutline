@@ -1,5 +1,5 @@
-//! Ein Bewegungssystem: Dauern nur aus den drei Konstanten in `theme.rs`, kein Standard-Kreisel,
-//! kein Neuzeichnen ohne Bedingung.
+//! One motion system: durations only from the three constants in `theme.rs`, no default spinner,
+//! no unconditional repaint.
 
 fn sources() -> Vec<(String, String)> {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -10,14 +10,14 @@ fn sources() -> Vec<(String, String)> {
         .filter(|f| f.extension().is_some_and(|e| e == "rs"))
         .map(|f| {
             let src = std::fs::read_to_string(&f).unwrap();
-            // Tests am Dateiende zählen nicht
+            // Tests at the end of the file do not count
             let src = src.split("mod tests {").next().unwrap_or(&src).to_string();
             (f.file_name().unwrap().to_string_lossy().into_owned(), src)
         })
         .collect()
 }
 
-/// Argumente aller Aufrufe `anim(…)` (nicht `xanim(`)
+/// Arguments of all `anim(…)` calls (not `xanim(`)
 fn anim_args(src: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = src;
@@ -39,27 +39,27 @@ fn durations_only_from_the_three_constants() {
     for (name, src) in sources() {
         for a in anim_args(&src) {
             let a = a.trim_start_matches("theme::").trim_start_matches("crate::theme::");
-            // `theme.rs` selbst: Definition und die Helfer, die eine Konstante weiterreichen
+            // `theme.rs` itself: the definition and the helpers that pass a constant on
             if !ok.contains(&a) && !(name == "theme.rs" && (a == "secs" || a == "secs: f32")) {
                 bad.push(format!("{name}: anim({a})"));
             }
         }
     }
-    assert!(bad.is_empty(), "Dauern außerhalb von MOTION_FAST/MOTION/MOTION_SLOW:\n{}", bad.join("\n"));
+    assert!(bad.is_empty(), "Durations outside MOTION_FAST/MOTION/MOTION_SLOW:\n{}", bad.join("\n"));
 }
 
 #[test]
 fn no_standard_spinner_and_no_eased_overshoot() {
     for (name, src) in sources() {
-        assert!(!src.contains("Spinner::new"), "{name}: Kreisel statt busy_line/progress_line/skeleton");
-        assert!(!src.contains("animate_bool_with_time("), "{name}: theme::fade nutzen (eine Kurve)");
+        assert!(!src.contains("Spinner::new"), "{name}: spinner instead of busy_line/progress_line/skeleton");
+        assert!(!src.contains("animate_bool_with_time("), "{name}: use theme::fade (one curve)");
     }
 }
 
 #[test]
 fn repaint_never_requested_unconditionally_in_a_frame() {
-    // `request_repaint()` direkt im Rumpf einer Funktion (nächster umschließender Block ist die
-    // Funktion selbst, kein `if`/`match`/Thread) liefe in jedem Bild: Dauerlast im Stand.
+    // `request_repaint()` directly in a function body (the nearest enclosing block is the
+    // function itself, no `if`/`match`/thread) would run every frame: constant load while idle.
     let mut bad = Vec::new();
     for (name, src) in sources() {
         let lines: Vec<&str> = src.lines().collect();
@@ -81,5 +81,5 @@ fn repaint_never_requested_unconditionally_in_a_frame() {
             }
         }
     }
-    assert!(bad.is_empty(), "Neuzeichnen ohne Bedingung:\n{}", bad.join("\n"));
+    assert!(bad.is_empty(), "Unconditional repaint:\n{}", bad.join("\n"));
 }

@@ -1,6 +1,6 @@
-//! Epidemic-Sound-Integration in der Oberfläche: Musik im Audio-Tab (Entdecken, Favoriten,
-//! „Gefällt mir“), Anmeldung unter Einstellungen → Plugins und Konten, Nutzungsmeldung beim Export.
-//! Alles Netzwerk läuft in Hintergrund-Threads; Ergebnisse kommen über einen Kanal zurück.
+//! Epidemic Sound integration in the UI: music in the Audio tab (discover, favorites,
+//! „Gefällt mir“), sign-in under Settings → Plugins and accounts, usage report on export.
+//! All networking runs in background threads; results come back through a channel.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -40,18 +40,18 @@ enum Msg {
         track: Track,
         res: Result<PathBuf, Error>,
         beats: Vec<f64>,
-        /// wirklich geladen (nicht aus dem Vorrat)
+        /// really downloaded (not from the store)
         fresh: bool,
     },
     LoggedIn(Result<cl_epidemic::Tokens, Error>),
     Reported(Result<usize, Error>),
-    /// Aktualisierte Tokens nach einem Refresh im Hintergrund
+    /// Updated tokens after a refresh in the background
     Tokens(Option<cl_epidemic::Tokens>),
 }
 
 pub struct EsState {
     pub cfg: Config,
-    /// Heruntergeladene Dateien → Track-ID (für die Nutzungsmeldung beim Export)
+    /// Downloaded files → track ID (for the usage report on export)
     pub downloads: BTreeMap<PathBuf, String>,
     pub view: View,
     pub query: Query,
@@ -62,12 +62,12 @@ pub struct EsState {
     pub user: Option<String>,
     pub busy: bool,
     pub loading_track: Option<String>,
-    /// Der laufende Download begann in einem inzwischen verlassenen Projekt: nicht mehr einfügen
+    /// The running download started in a project that has since been left: do not insert anymore
     pub stray: bool,
-    /// Titel, die schon im Vorrat liegen (Dateinamen ohne Endung)
+    /// Tracks already in the store (file names without extension)
     have: HashSet<String>,
     pub error: Option<String>,
-    /// Nach 429: bis dahin keine Suche/Nachladen (Vorhören und Vorrat laufen weiter)
+    /// After 429: no search/loading more until then (preview and store keep running)
     limited_until: Option<std::time::Instant>,
     pub login_running: bool,
     loaded: bool,
@@ -82,13 +82,13 @@ struct Stored {
     downloads: BTreeMap<PathBuf, String>,
 }
 
-/// API-Adresse: nur in Entwickler-Builds (Debug oder `CUTLINE_SHOTS`) aus `CUTLINE_EPIDEMIC_BASE`, nie aus
-/// der gespeicherten Datei – sonst gingen Token und Schlüssel an eine fremde Adresse.
+/// API URL: only in developer builds (debug or `CUTLINE_SHOTS`) from `CUTLINE_EPIDEMIC_BASE`, never from
+/// the saved file – otherwise token and key would go to a foreign address.
 fn dev_base(dev: bool, var: Option<String>) -> Option<String> {
     var.filter(|b| dev && !b.is_empty())
 }
 
-/// Datei mit Tokens und Schlüssel: unter Unix nur für den Besitzer lesbar (Windows: Profil-ACL)
+/// File with tokens and key: on Unix readable only by the owner (Windows: profile ACL)
 fn write_private(p: &Path, data: String) -> std::io::Result<()> {
     paths::write_atomic(p, data)?;
     #[cfg(unix)]
@@ -113,7 +113,7 @@ impl Default for EsState {
             .unwrap_or_default();
         let (tx, rx) = channel();
         let mut cfg = s.cfg;
-        // feste, anonyme Kennung für x-partner-user-id (einmal erzeugt, dann gespeichert)
+        // fixed, anonymous ID for x-partner-user-id (created once, then saved)
         let fresh = cfg.user_id.is_empty();
         cfg.ensure_user_id();
         let dev = cfg!(debug_assertions) || std::env::var_os("CUTLINE_SHOTS").is_some();
@@ -162,7 +162,7 @@ impl EsState {
         let _ = write_private(&p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
 
-    /// Hintergrund-Aufgabe mit eigenem Client (Token-Refresh wird zurückgemeldet).
+    /// Background task with its own client (token refresh is reported back).
     fn spawn(&self, ctx: &egui::Context, f: impl FnOnce(&Client) -> Msg + Send + 'static) {
         let mut cfg = self.cfg.clone();
         let tx = self.tx.clone();
@@ -185,12 +185,12 @@ impl EsState {
         });
     }
 
-    /// Sekunden bis wieder Anfragen für Suche/Liste erlaubt sind (nach 429).
+    /// Seconds until requests for search/list are allowed again (after 429).
     fn limit_left(&self) -> Option<u64> {
         limit_remaining(self.limited_until, std::time::Instant::now())
     }
 
-    /// Steht ein Limit an, meldet es das (statt anzufragen) und `true`.
+    /// If a limit is pending, reports it (instead of requesting) and returns `true`.
     fn blocked_by_limit(&mut self) -> bool {
         let Some(n) = self.limit_left() else { return false };
         self.busy = false;
@@ -244,7 +244,7 @@ impl EsState {
         self.search(ctx, false);
     }
 
-    /// Nach Änderung der Zugangsdaten neu laden.
+    /// Reload after the credentials change.
     pub fn reset(&mut self) {
         self.loaded = false;
         self.results.clear();
@@ -255,7 +255,7 @@ impl EsState {
     }
 }
 
-/// Browser mit einer Adresse öffnen.
+/// Open the browser with a URL.
 pub fn open_url(url: &str) {
     #[cfg(windows)]
     let _ = std::process::Command::new("rundll32")
@@ -276,7 +276,7 @@ impl App {
         self.plugins.integration_enabled(BUILTIN)
     }
 
-    /// Ergebnisse der Hintergrund-Aufgaben übernehmen (jeden Frame).
+    /// Take over results of the background tasks (every frame).
     pub fn poll_epidemic(&mut self, ctx: &egui::Context) {
         while let Ok(m) = self.es.rx.try_recv() {
             match m {
@@ -318,12 +318,12 @@ impl App {
                             self.es.downloads.insert(path.clone(), track.id.clone());
                             self.es.have.insert(store_name(&track.id));
                             self.es.save();
-                            // in die Bibliothek nur beim ersten Laden (sonst entstünden Doppel)
+                            // into the library only on the first download (otherwise duplicates would arise)
                             if fresh && self.settings.lib_downloads {
                                 self.library.import(crate::library::Kind::Sound, "Epidemic Sound", std::slice::from_ref(&path));
                             }
                             if stray {
-                                // der Titel bleibt im Vorrat, gehört aber nicht ins jetzt offene Projekt
+                                // the track stays in the store but does not belong to the project open now
                                 self.toast(format!("„{}“ geladen", track.title));
                             } else if let Some(id) = self.add_file_at(path, self.playhead, None) {
                                 if !beats.is_empty() {
@@ -372,13 +372,13 @@ impl App {
         }
     }
 
-    /// Fehler einer Hintergrundaufgabe auswerten. `true` = schon gemeldet (Anmeldung abgelaufen).
-    /// Abgelaufene Anmeldung: Tokens verwerfen, Zustand „nicht verbunden“, genau eine Meldung.
-    /// Limit (429): merken, bis wann keine Suche/Nachladen abgeschickt wird.
+    /// Evaluate a background task's error. `true` = already reported (sign-in expired).
+    /// Expired sign-in: discard tokens, state „nicht verbunden“, exactly one message.
+    /// Limit (429): remember until when no search/loading is sent.
     fn es_note(&mut self, e: &Error) -> bool {
         match e {
             Error::LoginExpired if self.es.cfg.mode == AuthMode::Connect => {
-                // mehrere gleichzeitige Anfragen scheitern zusammen: nur die erste meldet
+                // several concurrent requests fail together: only the first reports
                 if self.es.cfg.tokens.take().is_some() {
                     self.es.busy = false;
                     self.es.reset();
@@ -394,7 +394,7 @@ impl App {
         }
     }
 
-    /// Nach einem erfolgreichen Export: verwendete Epidemic-Titel melden.
+    /// After a successful export: report the Epidemic tracks used.
     pub fn report_epidemic_export(&mut self, ctx: &egui::Context, p: &cl_core::Project) {
         if !self.epidemic_enabled() || !self.es.cfg.ready() {
             return;
@@ -427,7 +427,7 @@ impl App {
             .join("Epidemic Sound")
     }
 
-    /// Bereich „Epidemic Sound“ im Audio-Tab.
+    /// „Epidemic Sound“ section in the Audio tab.
     pub fn epidemic_panel(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         if !self.es.cfg.ready() {
@@ -446,7 +446,7 @@ impl App {
             return;
         }
         self.es.first_load(&ctx);
-        // Ansicht
+        // View
         let mut v = match self.es.view {
             View::Discover => 0,
             View::Favorites => 1,
@@ -484,7 +484,7 @@ impl App {
                     self.es.search(&ctx, false);
                 }
             });
-            // Filter: Stimmungen und Genres als Chips, Instrumental
+            // Filter: moods and genres as chips, instrumental
             let mut changed = false;
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
@@ -537,7 +537,7 @@ impl App {
         };
         if list.is_empty() {
             if self.es.busy {
-                // Platzhalter in Zeilengröße, bis die ersten Titel da sind
+                // Placeholders at row size until the first tracks are there
                 for i in 0..6 {
                     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), egui::Sense::hover());
                     widgets::skeleton(ui.painter(), egui::Id::new(("es-skel", i)), r.shrink2(vec2(0.0, 2.0)), theme::R_CARD);
@@ -635,7 +635,7 @@ impl App {
             }
             let fav = self.es.cfg.is_favorite(&t.id);
             ui.vertical(|ui| {
-                // Platz für Stern und Plus rechts lassen, sonst wächst die Leiste jeden Frame
+                // leave room for star and plus on the right, otherwise the bar grows every frame
                 let sp = ui.spacing().item_spacing.x;
                 ui.set_width((ui.available_width() - 2.0 * 24.0 - 3.0 * sp - 6.0).max(60.0));
                 ui.add(egui::Label::new(RichText::new(&t.title).size(theme::FS_TEXT)).truncate());
@@ -651,8 +651,8 @@ impl App {
                         .on_hover_text(crate::tr("Lokal vorrätig"));
                 }
                 if add {
-                    // `isPreviewOnly` ist laut Epidemic kein verlässliches Zeichen: immer versuchen – ist der
-                    // Titel im Plan nicht enthalten, lehnt der Dienst ab (403) und das steht dann in der Meldung
+                    // According to Epidemic, `isPreviewOnly` is not a reliable sign: always try – if the
+                    // track is not in the plan, the service refuses (403) and that then shows in the message
                     {
                         self.es.stray = false; self.es.loading_track = Some(t.id.clone());
                         let track = t.clone();
@@ -663,7 +663,7 @@ impl App {
                             &self.es.downloads,
                         );
                         let store = es_store(&es_store_dir(), &t.id);
-                        // früher geladene Datei desselben Titels (anderes Projekt) als Quelle für den Vorrat
+                        // an earlier downloaded file of the same track (other project) as the source for the store
                         let known = self
                             .es
                             .downloads
@@ -707,7 +707,7 @@ impl App {
         let _ = DragAsset::Sfx;
     }
 
-    /// Abschnitt „Plugins und Konten“ in den Einstellungen.
+    /// „Plugins und Konten“ section in the settings.
     pub fn integrations_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.plugins_settings(ui);
@@ -829,7 +829,7 @@ impl App {
         ui.label(RichText::new(crate::tr("Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs).")).small().color(theme::TEXT_DIM()));
     }
 
-    /// Plugin ein-/ausschalten und dauerhaft merken.
+    /// Switch a plugin on/off and remember it permanently.
     pub fn set_plugin_enabled(&mut self, id: &str, on: bool) {
         if let Some(p) = self
             .plugins
@@ -845,8 +845,8 @@ impl App {
     }
 }
 
-/// Zentraler Vorrat geladener Titel (eine Datei je Titel): Ein Titel wird nur einmal geladen und in
-/// jedes weitere Projekt kopiert. Liegt nicht im Cache, damit „Cache leeren" ihn nicht entfernt.
+/// Central store of downloaded tracks (one file per track): a track is downloaded only once and
+/// copied into every further project. Not in the cache, so that „Cache leeren" does not remove it.
 fn es_store_dir() -> PathBuf {
     paths::data_dir().join("Epidemic Sound").join("Vorrat")
 }
@@ -870,9 +870,9 @@ fn stored_ids(dir: &Path) -> HashSet<String> {
         .collect()
 }
 
-/// Zieldatei im Projektordner und ob sie nachweislich (fertig geladen) zu `id` gehört. Der alte Name
-/// „Künstler - Titel.mp3“ bleibt nur für Dateien, die schon zu dieser ID gehören (ältere Projekte); sonst
-/// kommt die Titel-ID in den Namen, damit zwei Titel mit gleichem Namen nicht dieselbe Datei teilen.
+/// Target file in the project folder and whether it provably (fully downloaded) belongs to `id`. The old name
+/// „Künstler - Titel.mp3“ only stays for files that already belong to this ID (older projects); otherwise
+/// the track ID goes into the name, so that two tracks with the same name do not share a file.
 fn track_dest(dir: &Path, name: &str, id: &str, downloads: &BTreeMap<PathBuf, String>) -> (PathBuf, bool) {
     let safe: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
     let old = dir.join(format!("{safe}.mp3"));
@@ -884,7 +884,7 @@ fn track_dest(dir: &Path, name: &str, id: &str, downloads: &BTreeMap<PathBuf, St
     (new, ours)
 }
 
-/// Kopiert über `<ziel>.part` + Umbenennen: ein abgebrochenes Kopieren hinterlässt keine halbe Datei.
+/// Copies via `<target>.part` + rename: an aborted copy leaves no half file behind.
 fn copy_whole(from: &Path, to: &Path) -> Result<(), Error> {
     let io = |e: std::io::Error| Error::from(e.to_string());
     if let Some(d) = to.parent() {
@@ -898,9 +898,9 @@ fn copy_whole(from: &Path, to: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Legt den Titel nach `dest`. Reihenfolge: liegt schon dort und gehört zu diesem Titel (`ours`) →
-/// nichts; Vorrat → kopieren; früher geladene Datei (`known`) → in den Vorrat übernehmen und kopieren;
-/// sonst laden. `true` = geladen.
+/// Puts the track at `dest`. Order: already there and belongs to this track (`ours`) →
+/// nothing; store → copy; earlier downloaded file (`known`) → take it into the store and copy;
+/// otherwise download. `true` = downloaded.
 fn fetch_track(
     dest: &Path,
     ours: bool,
@@ -909,7 +909,7 @@ fn fetch_track(
     download: impl FnOnce(&Path) -> Result<(), Error>,
 ) -> Result<bool, Error> {
     let len = |p: &Path| std::fs::metadata(p).ok().filter(|m| m.is_file()).map(|m| m.len());
-    // eine Projektdatei zählt nur, wenn sie zu dieser ID gehört und (falls vorrätig) gleich groß ist
+    // a project file only counts if it belongs to this ID and (if in the store) has the same size
     if ours && len(dest).is_some() && (len(store).is_none() || len(store) == len(dest)) {
         if len(store).is_none() {
             let _ = copy_whole(dest, store);
@@ -930,7 +930,7 @@ fn fetch_track(
     Ok(fresh)
 }
 
-/// Verbleibende Sekunden (aufgerundet) bis `until`; `None` = kein Limit (mehr).
+/// Remaining seconds (rounded up) until `until`; `None` = no limit (anymore).
 fn limit_remaining(until: Option<std::time::Instant>, now: std::time::Instant) -> Option<u64> {
     let left = until?.checked_duration_since(now)?;
     if left.is_zero() {
@@ -939,7 +939,7 @@ fn limit_remaining(until: Option<std::time::Instant>, now: std::time::Instant) -
     Some(left.as_secs() + u64::from(left.subsec_nanos() > 0))
 }
 
-/// Schläge eines Titels: einmal geholt und neben der Vorratsdatei gemerkt (leere Antworten nicht).
+/// Beats of a track: fetched once and remembered next to the store file (empty replies are not).
 fn cached_beats(store: &Path, fetch: impl FnOnce() -> Vec<f64>) -> Vec<f64> {
     let f = store.with_extension("beats.json");
     if let Some(b) = std::fs::read(&f).ok().and_then(|d| serde_json::from_slice::<Vec<f64>>(&d).ok()) {
@@ -970,23 +970,23 @@ mod store_tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, b"mp3").map_err(|e| Error::from(e.to_string()))
         };
-        // erstes Projekt: wird geladen
+        // first project: gets downloaded
         let a = t.path().join("A-media/x.mp3");
         assert_eq!(fetch_track(&a, false, &store, None, dl), Ok(true));
-        // zweites Projekt: kommt aus dem Vorrat, kein zweiter Abruf
+        // second project: comes from the store, no second fetch
         let b = t.path().join("B-media/x.mp3");
         assert_eq!(fetch_track(&b, true, &store, None, dl), Ok(false));
         assert_eq!((n.get(), std::fs::read(&b).unwrap()), (1, b"mp3".to_vec()));
-        // schon im Projekt: nichts zu tun
+        // already in the project: nothing to do
         assert_eq!(fetch_track(&b, true, &store, None, dl), Ok(false));
         assert_eq!(n.get(), 1);
         assert_eq!(stored_ids(store.parent().unwrap()), HashSet::from(["abc_123".to_string()]));
-        // Titel aus einer älteren Version (nur im Projekt A): füllt den Vorrat ohne Abruf
+        // track from an older version (only in project A): fills the store without a fetch
         let store2 = es_store(&t.path().join("Vorrat"), "alt");
         let c = t.path().join("C-media/y.mp3");
         assert_eq!(fetch_track(&c, false, &store2, Some(&a), dl), Ok(false));
         assert!(store2.is_file() && n.get() == 1);
-        // gescheiterter Abruf hinterlässt nichts
+        // a failed fetch leaves nothing behind
         let store3 = es_store(&t.path().join("Vorrat"), "kaputt");
         let d = t.path().join("D-media/z.mp3");
         assert!(fetch_track(&d, false, &store3, None, |_| Err("offline".into())).is_err());
@@ -1000,7 +1000,7 @@ mod store_tests {
         let vorrat = t.path().join("Vorrat");
         let dl = |b: &'static [u8]| move |p: &Path| std::fs::write(p, b).map_err(|e| Error::from(e.to_string()));
         let _ = std::fs::create_dir_all(&vorrat);
-        // zwei Fassungen mit gleichem „Künstler - Titel“ bekommen verschiedene Dateien
+        // two versions with the same „Künstler - Titel“ get different files
         let mut downloads = BTreeMap::new();
         let (d1, ours1) = track_dest(&dir, "A - Song", "id-1", &downloads);
         assert!(!ours1);
@@ -1012,16 +1012,16 @@ mod store_tests {
         assert_eq!(std::fs::read(&d2).unwrap(), b"zwei");
         assert_eq!(std::fs::read(es_store(&vorrat, "id-2")).unwrap(), b"zwei");
         assert_eq!(track_dest(&dir, "A - Song", "id-1", &downloads), (d1.clone(), true));
-        // alte Projekte: der frühere Name gilt weiter, wenn er zu dieser ID gehört
+        // old projects: the former name still applies if it belongs to this ID
         let old = dir.join("A - Song.mp3");
         downloads.insert(old.clone(), "id-1".to_string());
         assert_eq!(track_dest(&dir, "A - Song", "id-1", &downloads), (old.clone(), true));
         assert_eq!(track_dest(&dir, "A - Song", "id-2", &downloads).0, d2);
-        // eine halbe Datei (anderes Projekt, abgebrochene Kopie) wird ersetzt, nicht übernommen
+        // a half file (other project, aborted copy) is replaced, not taken over
         std::fs::write(&old, b"ei").unwrap();
         assert_eq!(fetch_track(&old, true, &es_store(&vorrat, "id-1"), None, dl(b"x")), Ok(false));
         assert_eq!(std::fs::read(&old).unwrap(), b"eins");
-        // eine fremde Datei unter dem Zielnamen füllt nie den Vorrat
+        // a foreign file under the target name never fills the store
         let d3 = dir.join("B - Song [id-3].mp3");
         std::fs::write(&d3, b"fremd").unwrap();
         assert_eq!(fetch_track(&d3, false, &es_store(&vorrat, "id-3"), None, dl(b"drei")), Ok(true));

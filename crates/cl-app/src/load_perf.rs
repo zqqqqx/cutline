@@ -1,11 +1,11 @@
-//! Mess-Tests (von Hand, ohne Fenster): Bildzeiten der Oberfläche beim Import eines großen
-//! CapCut-Entwurfs, beim Öffnen eines Projekts mit 500 Medien / 3000 Clips und danach, während
-//! Proxys, Vorschaubilder und Wellenformen entstehen.
+//! Measurement tests (by hand, without a window): UI frame times when importing a large
+//! CapCut draft, when opening a project with 500 media / 3000 clips and afterward, while
+//! proxies, thumbnails and waveforms are being created.
 //!
 //! `cargo test --release -p cl-app -- --ignored --nocapture --test-threads 1 load_perf`
 //!
-//! Testmaterial: `F:/cutline-testmedien/import` (oder `CUTLINE_IMPORT_MEDIA`), erzeugt mit
-//! `gen.sh` und `mkdraft.py` aus diesem Ordner; fehlt es, überspringen sich die Tests.
+//! Test material: `F:/cutline-testmedien/import` (or `CUTLINE_IMPORT_MEDIA`), created with
+//! `gen.sh` and `mkdraft.py` from that folder; if it is missing, the tests skip themselves.
 
 use super::*;
 
@@ -71,7 +71,7 @@ struct Headless {
 
 fn headless() -> Headless {
     let home = tempfile::tempdir().unwrap();
-    // CUTLINE_HOME gilt prozessweit: Sperre für die ganze Messung halten
+    // CUTLINE_HOME is process-wide: hold the lock for the whole measurement
     std::mem::forget(crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
     std::env::set_var("CUTLINE_HOME", home.path());
     std::env::set_var("CUTLINE_NO_UPDATE", "1");
@@ -84,9 +84,9 @@ fn headless() -> Headless {
 }
 
 impl Headless {
-    /// Ein UI-Bild; Rückgabe: Dauer und teuerster Abschnitt.
+    /// One UI frame; returns: duration and the most expensive section.
     fn frame(&mut self) -> (Duration, &'static str, Vec<(&'static str, Duration)>) {
-        // Bildratenbremse aus der Messung halten
+        // Keep the frame rate limiter out of the measurement
         std::thread::sleep(Duration::from_millis(17));
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1600.0, 900.0))),
@@ -123,7 +123,7 @@ fn load_perf_import_big_draft() {
         assert!(t.elapsed() < Duration::from_secs(600), "Import hängt");
     }
     println!("Import fertig: {:.1} s", t.elapsed().as_secs_f64());
-    // Zusammenfassung zeigen, dann „Projekt öffnen“
+    // Show the summary, then „Projekt öffnen“
     for _ in 0..5 {
         st.add(h.frame());
     }
@@ -141,7 +141,7 @@ fn load_perf_import_big_draft() {
     h.frames_for(20.0, "20 s nach Import (Proxys/Vorschaubilder laufen)");
 }
 
-/// Projekt mit 500 Medien und 3000 Clips aus dem Testmaterial (parallel geprüft).
+/// Project with 500 media and 3000 clips from the test material (checked in parallel).
 fn big_project(dir: &Path) -> Project {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .unwrap()
@@ -185,7 +185,7 @@ fn big_project(dir: &Path) -> Project {
 #[test]
 #[ignore]
 fn load_perf_open_big_project() {
-    // eigenes Projekt (Kopie, das Original bleibt unberührt): CUTLINE_OPEN_FILE=<.cutline>
+    // own project (copy, the original stays untouched): CUTLINE_OPEN_FILE=<.cutline>
     let own = std::env::var_os("CUTLINE_OPEN_FILE").filter(|s| !s.is_empty()).map(PathBuf::from);
     let Some(dir) = material().or_else(|| own.clone()) else { return };
     let mut h = headless();
@@ -223,7 +223,7 @@ fn load_perf_open_big_project() {
     println!("erstes Bild im Editor: {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
     let secs = std::env::var("CUTLINE_PERF_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(20.0);
     h.frames_for(secs, "nach dem Öffnen (Proxys/Vorschaubilder laufen)");
-    // Speichern eines großen Projekts
+    // Saving a large project
     let mut s = h.app.project.settings.clone();
     s.main_track_magnet = !s.main_track_magnet;
     h.app.apply(EditOp::SetSettings { settings: s });

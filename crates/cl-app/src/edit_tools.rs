@@ -1,5 +1,5 @@
-//! Feinschnitt: Zeit per Zahleneingabe (Start, Dauer, Quellbeginn), Verschieben um Bilder
-//! (Alt+←/→), Rollen und Slippen per Alt-Ziehen, Attribute einfügen (Strg+Alt+V) und Gruppen.
+//! Fine cutting: time by number input (start, duration, source start), nudging by frames
+//! (Alt+←/→), roll and slip by Alt-dragging, paste attributes (Ctrl+Alt+V) and groups.
 
 use cl_core::{Clip, ClipContent, ClipId, EditOp, MediaKind, Time};
 use eframe::egui::{self, RichText};
@@ -7,7 +7,7 @@ use eframe::egui::{self, RichText};
 use crate::app::App;
 use crate::theme;
 
-/// Was „Attribute einfügen“ übernimmt
+/// What „Attribute einfügen“ takes over
 #[derive(Debug, Clone, Copy)]
 pub struct PasteAttrs {
     pub look: bool,
@@ -82,7 +82,7 @@ impl PasteAttrs {
     }
 }
 
-/// Grenzen für den Quellbeginn eines Clips (Video/Audio: Länge der Quelle)
+/// Limits for a clip's source start (video/audio: length of the source)
 pub fn source_limit(app: &App, c: &Clip) -> Option<f64> {
     match &c.content {
         ClipContent::Media {
@@ -96,8 +96,8 @@ pub fn source_limit(app: &App, c: &Clip) -> Option<f64> {
     }
 }
 
-/// Eingabe im Abschnitt „Zeit“ → neue Werte, auf Bilder gerundet. `None`, wenn sich nichts
-/// ändert oder die Dauer unter ein Bild fällt (0, negativ: Eingabe wird verworfen).
+/// Input in the „Zeit“ section → new values, rounded to frames. `None` if nothing
+/// changes or the duration drops below one frame (0, negative: input is discarded).
 fn timing_edit(c: &Clip, start: f64, dur: f64, src: f64, fps: f64) -> Option<(Time, Time, Time)> {
     let snap = |v: f64| Time::from_secs_f64((v.max(0.0) * fps).round() / fps);
     let new = (snap(start), snap(dur), snap(src));
@@ -105,7 +105,7 @@ fn timing_edit(c: &Clip, start: f64, dur: f64, src: f64, fps: f64) -> Option<(Ti
 }
 
 impl App {
-    /// Abschnitt „Zeit“ im Inspektor: Start, Dauer und (bei Medien) Quellbeginn als Zahlen.
+    /// „Zeit“ section in the inspector: start, duration and (for media) source start as numbers.
     pub fn timing_section(&mut self, ui: &mut egui::Ui, c: &Clip) {
         theme::section(ui, "Zeit");
         let fps = self.project.settings.fps.as_f64();
@@ -114,7 +114,7 @@ impl App {
         let mut src = c.source_in.as_secs_f64();
         let limit = source_limit(self, c);
         let fps_r = self.project.settings.fps;
-        // dieselbe Rundung wie der Zeitcode („ab 00:00:03:19“)
+        // the same rounding as the timecode („ab 00:00:03:19“)
         let fmt = move |v: f64, _: std::ops::RangeInclusive<usize>| {
             let (s, f) = Time::from_secs_f64(v).secs_frames(fps_r);
             format!("{}:{:02}.{:02}", s / 60, s % 60, f)
@@ -159,7 +159,7 @@ impl App {
         }
     }
 
-    /// Alt+←/→: ausgewählte Clips um Bilder verschieben.
+    /// Alt+←/→: nudge selected clips by frames.
     pub fn nudge(&mut self, frames: i64) {
         self.commit_live();
         let fps = self.project.settings.fps.as_f64();
@@ -180,7 +180,7 @@ impl App {
         }
     }
 
-    /// Rollen: Schnitt zwischen zwei angrenzenden Clips verschieben (beide passen sich an).
+    /// Roll: move the cut between two adjacent clips (both adapt).
     pub fn roll_edit(&mut self, left: ClipId, right: ClipId, to: f64) {
         let (Some((_, l)), Some((_, r))) =
             (self.project.find_clip(left), self.project.find_clip(right))
@@ -194,8 +194,8 @@ impl App {
         let max = r.end().as_secs_f64() - 1.0 / fps;
         let to = to.clamp(min, max);
         let delta = to - r.start.as_secs_f64();
-        // Quellgrenzen beachten: rechts braucht Material davor, links danach. Nur Video/Ton
-        // haben eine zeitgebundene Quelle (wie TrimClip im Kern); Text, Bild, Effekt nicht
+        // Respect source limits: the right one needs material before, the left one after. Only video/audio
+        // have a time-bound source (like TrimClip in the core); text, image, effect do not
         let timed = matches!(r.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Audio, .. });
         let r_src = r.source_in.as_secs_f64() + if timed { delta * r.speed as f64 } else { 0.0 };
         if r_src < 0.0 {
@@ -226,14 +226,14 @@ impl App {
                 source_in: t(r_src),
             },
         ];
-        // Der kürzer werdende Clip zuerst, sonst überlappen beide kurz (wird abgewiesen)
+        // The clip that gets shorter first, otherwise both overlap briefly (rejected)
         if cut > r.start {
             ops.reverse();
         }
         self.apply_batch(ops);
     }
 
-    /// Slippen: Quellbeginn verschieben, Lage und Länge bleiben.
+    /// Slip: move the source start, position and length stay.
     pub fn slip_edit(&mut self, clip: ClipId, src_secs: f64) {
         let Some((_, c)) = self.project.find_clip(clip).map(|(t, c)| (t.id, c.clone())) else {
             return;
@@ -251,7 +251,7 @@ impl App {
         });
     }
 
-    /// Dialog „Attribute einfügen“ (Strg+Alt+V).
+    /// „Attribute einfügen“ dialog (Ctrl+Alt+V).
     pub fn paste_attrs_dialog(&mut self, ctx: &egui::Context) {
         if !self.paste_attrs_open {
             return;
@@ -262,7 +262,7 @@ impl App {
             return;
         };
         let mut a = self.paste_attrs;
-        // Esc schließt, Enter bestätigt wie „Einfügen“
+        // Esc closes, Enter confirms like „Einfügen“
         let (mut close, mut ok) = crate::dialog::keys(ctx);
         crate::dialog::window(ctx, crate::tr("Attribute einfügen"), "paste-attrs")
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0))
@@ -309,7 +309,7 @@ impl App {
         }
     }
 
-    /// Strg+G: Auswahl gruppieren (bewegen und auswählen sich gemeinsam), Strg+Umschalt+G löst.
+    /// Ctrl+G: group the selection (move and select together), Ctrl+Shift+G ungroups.
     pub fn group_selection(&mut self, on: bool) {
         let sel = self.selection();
         if on && sel.len() < 2 {
@@ -326,7 +326,7 @@ impl App {
         } else {
             None
         };
-        // Bei „lösen“ auch die übrigen Mitglieder der Gruppe
+        // When ungrouping, also the other members of the group
         let groups: Vec<u64> = sel
             .iter()
             .filter_map(|id| self.project.find_clip(*id).and_then(|(_, c)| c.group))
@@ -360,7 +360,7 @@ impl App {
         });
     }
 
-    /// Alle Clips derselben Gruppe(n) zur Auswahl hinzufügen.
+    /// Add all clips of the same group(s) to the selection.
     pub fn expand_groups(&mut self) {
         let groups: Vec<u64> = self
             .selection()
@@ -391,7 +391,7 @@ impl App {
 mod tests {
     use super::*;
 
-    /// Der Zuschnitt geht mit den Transform-Attributen mit, nicht mit dem Look.
+    /// The crop goes with the transform attributes, not with the look.
     #[test]
     fn paste_attrs_carries_crop_with_transform() {
         let m = ClipContent::Media { media: cl_core::MediaId::new(), kind: MediaKind::Video };
@@ -411,20 +411,20 @@ mod tests {
         let mut c = Clip::new(m, Time::ZERO, Time::from_secs_f64(1.0 / 30.0));
         c.source_in = Time::from_secs_f64(2.0);
         let (s, d, src) = (0.0, c.duration.as_secs_f64(), 2.0);
-        // derselbe Wert (auch nach Rundung auf Bilder) schreibt nichts
+        // the same value (also after rounding to frames) writes nothing
         assert_eq!(timing_edit(&c, s, d, src, 30.0), None);
         assert_eq!(timing_edit(&c, s, d - 1e-9, src, 30.0), None);
-        // 0 und negativ: verworfen
+        // 0 and negative: discarded
         assert_eq!(timing_edit(&c, s, 0.0, src, 30.0), None);
         assert_eq!(timing_edit(&c, s, -3.0, src, 30.0), None);
-        // echte Änderung: ein Wert
+        // real change: one value
         let t = Time::from_secs_f64;
         assert_eq!(timing_edit(&c, s, 2.0, src, 30.0), Some((Time::ZERO, t(2.0), t(2.0))));
     }
 
-    /// Rollen in beide Richtungen: der Schnitt wandert, nichts überlappt (der Kern weist
-    /// Überlappung ab, darum muss der kürzer werdende Clip zuerst gesetzt werden). Text hat
-    /// keine Quelle: nach links rollen geht auch ohne Material vor dem rechten Clip.
+    /// Roll in both directions: the cut moves, nothing overlaps (the core rejects
+    /// overlap, so the clip that gets shorter must be set first). Text has
+    /// no source: rolling left works even without material before the right clip.
     #[test]
     fn roll_edit_moves_the_cut_both_ways() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -441,7 +441,7 @@ mod tests {
             app.roll_edit(ia, ib, to);
             app.sync_project();
             let (l, r) = (app.project.find_clip(ia).unwrap().1, app.project.find_clip(ib).unwrap().1);
-            assert_eq!((l.end(), r.start, r.end()), (t(to), t(to), t(4.0)), "Schnitt nach {to}");
+            assert_eq!((l.end(), r.start, r.end()), (t(to), t(to), t(4.0)), "cut to {to}");
         }
     }
 }

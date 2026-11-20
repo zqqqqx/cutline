@@ -67,12 +67,12 @@ use raw_window_handle::{
     RawWindowHandle, WindowHandle,
 };
 
-/// Hauptfenster als Elternfenster für Dateidialoge (sonst öffnen sie auf einem anderen Monitor).
+/// Main window as parent window for file dialogs (otherwise they open on another monitor).
 struct Parent {
     w: RawWindowHandle,
     d: RawDisplayHandle,
 }
-// Die Handles werden nur an den Dialog weitergereicht, der auf dem UI-Thread läuft.
+// The handles are only passed to the dialog, which runs on the UI thread.
 unsafe impl Send for Parent {}
 unsafe impl Sync for Parent {}
 impl HasWindowHandle for Parent {
@@ -96,7 +96,7 @@ pub fn set_dialog_parent(cc: &eframe::CreationContext<'_>) {
     }
 }
 
-/// Dateidialog, der über dem Cutline-Fenster erscheint.
+/// File dialog that appears above the Cutline window.
 pub fn dialog() -> rfd::FileDialog {
     let d = rfd::FileDialog::new();
     match PARENT.get() {
@@ -105,9 +105,9 @@ pub fn dialog() -> rfd::FileDialog {
     }
 }
 
-/// Zu öffnendes Projekt aus der Befehlszeile: das erste Argument, das keine Option ist. Ein leeres
-/// Argument (Startskript mit `"$1"` ohne Projekt) ist keins – Windows meldete sonst „Pfad nicht
-/// gefunden (os error 3)“ beim Start.
+/// Project to open from the command line: the first argument that is not an option. An empty
+/// argument (start script with `"$1"` without a project) is none – otherwise Windows reported „Pfad nicht
+/// gefunden (os error 3)“ at startup.
 fn open_arg(args: &[String]) -> Option<std::path::PathBuf> {
     args.iter().skip(1).find(|a| !a.starts_with("--") && !a.trim().is_empty()).map(std::path::PathBuf::from)
 }
@@ -124,7 +124,7 @@ fn main() -> anyhow::Result<()> {
     app::perf_mark("main");
     let args: Vec<String> = std::env::args().collect();
 
-    // Headless-MCP über stdio: `cutline --mcp projekt.cutline`
+    // Headless MCP over stdio: `cutline --mcp projekt.cutline`
     if let Some(i) = args.iter().position(|a| a == "--mcp") {
         return run_mcp_stdio(args.get(i + 1).map(std::path::PathBuf::from));
     }
@@ -135,13 +135,13 @@ fn main() -> anyhow::Result<()> {
         .with_title("Cutline")
         .with_inner_size([1440.0, 900.0])
         .with_min_inner_size([900.0, 560.0])
-        .with_decorations(false) // eigene Titelleiste (chrome.rs)
+        .with_decorations(false) // own title bar (chrome.rs)
         .with_resizable(true)
         .with_drag_and_drop(true);
     if let Some(icon) = theme::window_icon() {
         viewport = viewport.with_icon(std::sync::Arc::new(icon));
     }
-    // Optionale Startposition, z. B. CUTLINE_WINDOW_POS="-1900,40" (Entwicklung/Tests auf Zweitmonitor)
+    // Optional start position, e.g. CUTLINE_WINDOW_POS="-1900,40" (development/tests on a second monitor)
     if let Some((x, y)) = std::env::var("CUTLINE_WINDOW_POS").ok().and_then(|s| {
         let (x, y) = s.split_once(',')?;
         Some((x.trim().parse::<f32>().ok()?, y.trim().parse::<f32>().ok()?))
@@ -160,9 +160,9 @@ fn main() -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport,
         renderer: eframe::Renderer::Wgpu,
-        // Nicht blockierend präsentieren: Mit festem VSync hängt Windows das Zeichnen auf, sobald
-        // das Hauptfenster verdeckt ist (z. B. vom Vollbild-Vorschaufenster). Die Bildrate
-        // begrenzt die App beim Abspielen selbst (~120/s).
+        // Present without blocking: with fixed VSync, Windows stalls drawing as soon as
+        // the main window is covered (e.g. by the fullscreen preview window). The app limits
+        // the frame rate itself during playback (~120/s).
         wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
             present_mode: eframe::wgpu::PresentMode::AutoNoVsync,
             ..Default::default()
@@ -198,7 +198,7 @@ fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> anyhow::Result<()> {
         .ok()
         .map(|f| Arc::new(Mutex::new(f)));
     let server = cl_mcp::McpServer::new(doc.clone(), fonts);
-    // nach jeder Änderung speichern: Abbruch durch den Client oder eine kaputte Zeile verliert nichts
+    // save after every change: an abort by the client or a broken line loses nothing
     let mut saved = doc.lock().unwrap().revision();
     let r = server.serve_stdio(|| {
         let Some(p) = &project else { return };

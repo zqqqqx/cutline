@@ -1,6 +1,6 @@
-//! Plugin „Story-Werkzeuge“ (eingebaut, standardmäßig aus): Figuren mit Name, Farbe und
-//! Porträt; Dialogbox und Namensschild für eine Figur am Playhead einfügen.
-//! Einstellungen unter Einstellungen → Plugins und Konten, Werkzeuge im Menü „Schnellaktionen“.
+//! Plugin „Story-Werkzeuge“ (built in, off by default): characters with name, color and
+//! portrait; insert a dialog box and name tag for a character at the playhead.
+//! Settings under Settings → Plugins and accounts, tools in the „Schnellaktionen“ menu.
 
 use std::path::PathBuf;
 
@@ -48,7 +48,7 @@ pub fn enabled(app: &App) -> bool {
 }
 
 impl App {
-    /// Einträge im Menü „Werkzeuge“
+    /// Entries in the „Werkzeuge“ menu
     pub fn story_menu(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.add_space(8.0);
@@ -70,7 +70,7 @@ impl App {
             return;
         }
         let mut act: Option<(bool, usize)> = None;
-        // direkte Einträge statt Untermenüs (bleiben zuverlässig offen)
+        // direct entries instead of submenus (stay open reliably)
         for (i, c) in chars.iter().enumerate() {
             if ui
                 .add(
@@ -123,7 +123,7 @@ impl App {
             scale: 1.0,
             rotation_deg: 0.0,
         };
-        // ReplaceClip behält Lage und Länge; die Dauer setzt erst SetClipTiming
+        // ReplaceClip keeps position and length; the duration is only set by SetClipTiming
         self.apply(EditOp::ReplaceClip { clip: c.clone() });
         self.apply(EditOp::SetClipTiming {
             clip: id,
@@ -134,8 +134,8 @@ impl App {
         Some(id)
     }
 
-    /// Gewünschte Dauer, höchstens bis zum nächsten Clip derselben Spur (mindestens ein Bild,
-    /// soweit Platz ist): Überlappen würde der Kern abweisen.
+    /// Desired duration, at most up to the next clip on the same track (at least one frame,
+    /// as far as there is room): the core would reject an overlap.
     fn room_until_next(&self, id: ClipId, want: Time) -> Time {
         let Some((t, c)) = self.project.find_clip(id) else { return want };
         let frame = Time::from_secs_f64(1.0 / self.project.settings.fps.as_f64());
@@ -145,7 +145,7 @@ impl App {
         }
     }
 
-    /// Dialogbox unten: Fläche in Figurfarbe, „Name: …“, Porträt links daneben.
+    /// Dialog box at the bottom: area in the character color, „Name: …“, portrait next to it on the left.
     pub fn insert_dialog(&mut self, ch: &Character) {
         let (w, h) = (
             self.project.settings.width as f32,
@@ -198,7 +198,7 @@ impl App {
         ));
     }
 
-    /// Namensschild (Bauchbinde) unten links in Figurfarbe.
+    /// Name tag (lower third) bottom left in the character color.
     pub fn insert_name_tag(&mut self, ch: &Character) {
         let (w, h) = (
             self.project.settings.width as f32,
@@ -227,7 +227,7 @@ impl App {
         self.toast(format!("Namensschild für {} eingefügt", ch.name));
     }
 
-    /// Abschnitt in Einstellungen → Plugins und Konten
+    /// Section in Settings → Plugins and accounts
     pub fn story_settings(&mut self, ui: &mut egui::Ui) {
         if !enabled(self) {
             return;
@@ -304,8 +304,8 @@ impl App {
 mod room_tests {
     use super::*;
 
-    /// Fehler: Lag auf der Textspur dahinter ein Clip, wies der Kern die 4 s ab (Fehlermeldung,
-    /// Dialogbox blieb bei der Standarddauer). Jetzt bis an den Nachbarn heran.
+    /// Bug: if a clip was on the text track behind it, the core rejected the 4 s (error message,
+    /// the dialog box stayed at the default duration). Now up to the neighbor.
     #[test]
     fn dialog_text_stops_at_the_next_clip() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -316,12 +316,12 @@ mod room_tests {
         p.timeline.tracks.push(tr);
         app.set_doc(p);
         app.settings.text_duration = 0.5;
-        let id = app.text_clip(TextStyle::default(), 0.0, 0.0, 4.0).expect("eingefügt");
+        let id = app.text_clip(TextStyle::default(), 0.0, 0.0, 4.0).expect("inserted");
         app.sync_project();
         let (tr, c) = app.project.find_clip(id).unwrap();
-        assert_eq!(tr.clips.len(), 2, "gleiche Spur");
+        assert_eq!(tr.clips.len(), 2, "same track");
         assert_eq!((c.start, c.duration), (t(0.0), t(1.0)));
-        // ohne Nachbarn: volle Dauer
+        // without a neighbor: full duration
         app.playhead = t(10.0);
         let id = app.text_clip(TextStyle::default(), 0.0, 0.0, 4.0).unwrap();
         app.sync_project();

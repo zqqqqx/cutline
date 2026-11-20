@@ -1,5 +1,5 @@
-//! Projekt-Werkzeuge: automatische Sicherungen mit Wiederherstellen, fehlende Medien neu
-//! verknüpfen (Ordner durchsuchen) und Projekt archivieren (Projekt + Medien + Schriften).
+//! Project tools: automatic backups with restore, relinking missing media
+//! (search a folder) and archiving a project (project + media + fonts).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -11,12 +11,12 @@ use crate::app::App;
 use crate::paths;
 use crate::theme::{self, icon};
 
-/// Abstand der automatischen Sicherungen
-/// So viele Sicherungen je Projekt bleiben erhalten
+/// Interval of the automatic backups
+/// This many backups are kept per project
 #[cfg(test)]
 const BACKUP_KEEP: usize = 30;
 
-/// Alter Ordner `Backups/<Dateiname>`: teilten sich gleichnamige Projekte. Wird nur noch gelesen.
+/// Old folder `Backups/<file name>`: shared by same-named projects. Only read now.
 fn legacy_backup_dir(project: &Path) -> PathBuf {
     let stem = project
         .file_stem()
@@ -25,9 +25,9 @@ fn legacy_backup_dir(project: &Path) -> PathBuf {
     paths::data_dir().join("Backups").join(stem)
 }
 
-/// `Backups/<Dateiname>-<Hash des vollen Pfads>`: gleichnamige Projekte bleiben getrennt.
+/// `Backups/<file name>-<hash of the full path>`: same-named projects stay separate.
 pub fn backup_dir(project: &Path) -> PathBuf {
-    // FNV-1a: über Programmversionen stabil (anders als `DefaultHasher`)
+    // FNV-1a: stable across program versions (unlike `DefaultHasher`)
     let key = project.to_string_lossy().replace('\\', "/").to_lowercase();
     let h = key.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
     let mut d = legacy_backup_dir(project).into_os_string();
@@ -48,7 +48,7 @@ fn backups_in(dir: &Path) -> Vec<(PathBuf, SystemTime)> {
     v
 }
 
-/// Sicherungen eines Projekts (auch aus dem alten Ordner), neueste zuerst.
+/// Backups of a project (also from the old folder), newest first.
 pub fn list_backups(project: &Path) -> Vec<(PathBuf, SystemTime)> {
     let mut v = backups_in(&backup_dir(project));
     v.extend(backups_in(&legacy_backup_dir(project)));
@@ -56,7 +56,7 @@ pub fn list_backups(project: &Path) -> Vec<(PathBuf, SystemTime)> {
     v
 }
 
-/// Projektdatei umbenannt oder verschoben: Sicherungen mitnehmen.
+/// Project file renamed or moved: take the backups along.
 pub fn move_backups(old: &Path, new: &Path) {
     let (a, b) = (backup_dir(old), backup_dir(new));
     if a.is_dir() && !b.exists() {
@@ -64,7 +64,7 @@ pub fn move_backups(old: &Path, new: &Path) {
     }
 }
 
-/// Sicherung schreiben und alte entfernen.
+/// Write a backup and remove old ones.
 pub fn write_backup(project: &Path, json: &str, keep: usize) -> std::io::Result<PathBuf> {
     let dir = backup_dir(project);
     std::fs::create_dir_all(&dir)?;
@@ -74,14 +74,14 @@ pub fn write_backup(project: &Path, json: &str, keep: usize) -> std::io::Result<
         .unwrap_or(0);
     let p = dir.join(format!("{stamp}.cutline"));
     paths::write_atomic(&p, json)?;
-    // nur im eigenen Ordner rotieren: der alte kann fremde Sicherungen enthalten
+    // only rotate in our own folder: the old one can contain other projects' backups
     for (old, _) in backups_in(&dir).into_iter().skip(keep.max(1)) {
         let _ = std::fs::remove_file(old);
     }
     Ok(p)
 }
 
-/// Dateien rekursiv nach Namen suchen (für fehlende Medien).
+/// Search files recursively by name (for missing media).
 pub fn find_by_name(root: &Path, names: &[String], depth: usize) -> Vec<(String, PathBuf)> {
     let mut found = Vec::new();
     let Ok(rd) = std::fs::read_dir(root) else {
@@ -102,7 +102,7 @@ pub fn find_by_name(root: &Path, names: &[String], depth: usize) -> Vec<(String,
     found
 }
 
-/// Projekt archivieren: `<ziel>/<Name>/` mit `Medien/`, `Schriften/` und angepasstem Projekt.
+/// Archive a project: `<target>/<name>/` with `Medien/`, `Schriften/` and the adjusted project.
 pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathBuf, String> {
     let safe: String = p
         .name
@@ -132,7 +132,7 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
-        // gleiche Dateinamen aus verschiedenen Ordnern nicht überschreiben
+        // do not overwrite identical file names from different folders
         let mut target = media_dir.join(&name);
         let mut i = 2;
         while used.contains(&target) {
@@ -159,10 +159,10 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
 }
 
 impl App {
-    /// Jeden Frame: Sicherung fällig? Dialoge zeichnen.
+    /// Every frame: backup due? Draw dialogs.
     pub fn project_tools(&mut self, ctx: &egui::Context) {
         let _s = crate::app::section("Projekt-Werkzeuge");
-        // Automatische Sicherung (nur bei gespeicherten Projekten mit Änderungen seit der letzten)
+        // Automatic backup (only for saved projects with changes since the last one)
         if let Some(path) = self.project_path.clone() {
             let every = Duration::from_secs(self.settings.backup_minutes.max(1) as u64 * 60);
             let due = self.last_backup.is_none_or(|t| t.elapsed() >= every);
@@ -252,7 +252,7 @@ impl App {
         if !open {
             self.backups_open = false;
         }
-        // Lesen im Hintergrund; übernommen (mit Sicherung des aktuellen Stands) in `poll_load`
+        // Read in the background; taken over (with a backup of the current state) in `poll_load`
         if let Some(p) = restore {
             self.start_load(&p, crate::loading::LoadMode::Restore, ctx);
         }
@@ -284,7 +284,7 @@ impl App {
             ui.add_space(4.0);
             egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                 for (id, p) in &missing {
-                    // Knopf zuerst (rechts), feste Zeilenhöhe; Dateiname voll, Ordner in der Mitte gekürzt
+                    // Button first (right), fixed row height; file name in full, folder shortened in the middle
                     let row = egui::vec2(ui.available_width(), 24.0);
                     ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.add(theme::ghost("Datei wählen …")).clicked() {
@@ -352,8 +352,8 @@ impl App {
     }
 }
 
-/// Datum/Uhrzeit in Ortszeit ohne zusätzliche Abhängigkeit (Windows: über die Zeitzone des Systems
-/// nicht exakt; wir zeigen UTC-Offset-frei die Systemzeit über `ago` daneben).
+/// Date/time in local time without an extra dependency (Windows: not exact via the system
+/// time zone; we show the system time free of UTC offset via `ago` next to it).
 fn chrono_like(t: SystemTime) -> String {
     let secs = t
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -363,7 +363,7 @@ fn chrono_like(t: SystemTime) -> String {
     let s = secs + off;
     let days = s.div_euclid(86400);
     let rem = s.rem_euclid(86400);
-    // Tage → Datum (proleptischer Gregorianischer Kalender)
+    // Days → date (proleptic Gregorian calendar)
     let z = days + 719468;
     let era = z.div_euclid(146097);
     let doe = z - era * 146097;
@@ -377,12 +377,12 @@ fn chrono_like(t: SystemTime) -> String {
     format!("{d:02}.{m:02}.{y} {:02}:{:02}", rem / 3600, rem / 60 % 60)
 }
 
-/// Abstand der Ortszeit zu UTC in Sekunden (aus der Umgebung; Standard Mitteleuropa).
+/// Offset of local time from UTC in seconds (from the environment; default Central Europe).
 pub(crate) fn local_offset_secs() -> i64 {
     static OFF: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| {
-        // PowerShell/`date` wären teuer; wir lesen die Abweichung einmal über die Windows-API-freie
-        // Variante: Vergleich der Datei-Zeitstempel ist nicht möglich, daher TZ-Variable oder +1 h.
+        // PowerShell/`date` would be expensive; we read the offset once via the Windows-API-free
+        // variant: comparing file timestamps is not possible, hence the TZ variable or +1 h.
         if let Ok(tz) = std::env::var("CUTLINE_TZ_OFFSET") {
             return tz.parse::<i64>().unwrap_or(0) * 60;
         }
@@ -414,7 +414,7 @@ fn local_offset_windows() -> i64 {
     }
     let mut tz: TzInfo = unsafe { std::mem::zeroed() };
     let r = unsafe { GetTimeZoneInformation(&mut tz) };
-    // 2 = Sommerzeit aktiv
+    // 2 = daylight saving time active
     let bias = tz.bias
         + if r == 2 {
             tz.daylight_bias
@@ -440,16 +440,16 @@ mod tests {
         std::env::set_var("CUTLINE_HOME", home.path());
         let a = home.path().join("x/Film.cutline");
         let b = home.path().join("y/Film.cutline");
-        // Sicherung alter Art bleibt sichtbar
+        // An old-style backup stays visible
         let legacy = legacy_backup_dir(&a);
         std::fs::create_dir_all(&legacy).unwrap();
         std::fs::write(legacy.join("1.cutline"), "{}").unwrap();
         write_backup(&a, "{}", 1).unwrap();
         write_backup(&b, "{}", 1).unwrap();
-        assert!(legacy.join("1.cutline").is_file(), "Rotation lässt fremde Sicherungen stehen");
+        assert!(legacy.join("1.cutline").is_file(), "rotation leaves other backups in place");
         assert_eq!(list_backups(&a).len(), 2);
         assert_ne!(backup_dir(&a), backup_dir(&b));
-        // Umbenennen nimmt die Sicherungen mit
+        // Renaming takes the backups along
         let c = home.path().join("x/Neu.cutline");
         move_backups(&a, &c);
         assert_eq!(backups_in(&backup_dir(&c)).len(), 1);
@@ -463,12 +463,12 @@ mod tests {
         let proj = home.path().join("Film.cutline");
         for i in 0..(BACKUP_KEEP + 3) {
             let p = write_backup(&proj, &format!("{{\"n\":{i}}}"), BACKUP_KEEP).unwrap();
-            // eindeutige Zeitstempel erzwingen
+            // force unique timestamps
             let _ = std::fs::rename(&p, p.with_file_name(format!("{}.cutline", 1000 + i)));
         }
         let _ = write_backup(&proj, "{}", BACKUP_KEEP);
         assert!(list_backups(&proj).len() <= BACKUP_KEEP + 1);
-        // Archiv
+        // Archive
         let media = home.path().join("src");
         std::fs::create_dir_all(media.join("a")).unwrap();
         std::fs::create_dir_all(media.join("b")).unwrap();
@@ -492,9 +492,9 @@ mod tests {
             .all(|m| m.path.starts_with(out.join("Medien")) && m.path.is_file()));
         assert_ne!(
             back.media[0].path, back.media[1].path,
-            "gleiche Namen bleiben getrennt"
+            "same names stay separate"
         );
-        // Suche nach Namen
+        // Search by name
         let f = find_by_name(&media, &["CLIP.mp4".into()], 3);
         assert_eq!(f.len(), 2);
     }

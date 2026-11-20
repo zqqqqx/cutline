@@ -1,6 +1,6 @@
-//! Layout-Profile: Anordnung der großen Bereiche (Medien, Inspektor, Zeitleiste) und ihre
-//! Größen. „Layout bearbeiten“ zeigt über jedem Bereich Knöpfe zum Umsetzen; Profile lassen
-//! sich speichern und wechseln.
+//! Layout profiles: arrangement of the large panels (media, inspector, timeline) and their
+//! sizes. „Layout bearbeiten“ shows buttons above each panel to move it; profiles can
+//! be saved and switched.
 
 use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText};
 use serde::{Deserialize, Serialize};
@@ -12,15 +12,15 @@ use crate::theme::{self, icon};
 #[serde(default)]
 pub struct LayoutProfile {
     pub name: String,
-    /// Medien rechts, Inspektor links
+    /// Media on the right, inspector on the left
     pub assets_right: bool,
-    /// Zeitleiste oben statt unten
+    /// Timeline at the top instead of the bottom
     pub timeline_top: bool,
-    /// Zeitleiste über die ganze Breite (sonst nur unter dem Player)
+    /// Timeline across the full width (otherwise only below the player)
     pub timeline_full: bool,
-    /// Symbolleiste des Medien-Menüs oben (waagrecht) statt seitlich an der äußeren Kante
+    /// Toolbar of the media menu at the top (horizontal) instead of at the side on the outer edge
     pub rail_top: bool,
-    /// Anteile: Medienbreite, Inspektorbreite, Zeitleistenhöhe
+    /// Shares: media width, inspector width, timeline height
     pub frac: (f32, f32, f32),
 }
 
@@ -37,7 +37,7 @@ impl Default for LayoutProfile {
     }
 }
 
-/// Mitgelieferte Profile
+/// Bundled profiles
 pub fn builtin() -> Vec<LayoutProfile> {
     let d = LayoutProfile::default();
     vec![
@@ -61,7 +61,7 @@ pub fn builtin() -> Vec<LayoutProfile> {
     ]
 }
 
-/// Kacheln der Anordnung in den Einstellungen: (Beschriftung, Erklärung, Medien rechts, Zeitleiste oben)
+/// Arrangement tiles in the settings: (label, explanation, media on the right, timeline at the top)
 pub const ARRANGEMENTS: [(&str, &str, bool, bool); 4] = [
     ("Standard", "Medien links, Inspektor rechts, Zeitleiste unten", false, false),
     ("Getauscht", "Medien rechts, Inspektor links, Zeitleiste unten", true, false),
@@ -69,13 +69,13 @@ pub const ARRANGEMENTS: [(&str, &str, bool, bool); 4] = [
     ("Beides", "Medien rechts, Inspektor links, Zeitleiste oben", true, true),
 ];
 
-/// Mini-Skizze einer Anordnung in `r`: Rechtecke für Medien, Player, Inspektor, Zeitleiste
-/// und den Streifen der Symbolleiste (liegt im Medien-Rechteck).
+/// Mini sketch of an arrangement in `r`: rects for media, player, inspector, timeline
+/// and the toolbar strip (lies within the media rect).
 pub fn sketch(r: Rect, l: &LayoutProfile) -> ([Rect; 4], Rect) {
     let (g, inner) = (2.0, r.shrink(3.0));
     let (aw, iw) = (inner.width() * 0.27, inner.width() * 0.22);
     let th = inner.height() * 0.4;
-    // Zeile oder Spalte, die die Zeitleiste mit dem Rest teilt
+    // Row or column that the timeline shares with the rest
     let split = |b: Rect| {
         if l.timeline_top {
             (Rect::from_min_max(b.min, pos2(b.right(), b.top() + th)), Rect::from_min_max(pos2(b.left(), b.top() + th + g), b.max))
@@ -101,8 +101,8 @@ pub fn sketch(r: Rect, l: &LayoutProfile) -> ([Rect; 4], Rect) {
 }
 
 impl App {
-    /// Einstellungen → Allgemein: Anordnung der großen Bereiche als Kacheln mit Mini-Skizze,
-    /// dazu volle Breite der Zeitleiste und Lage der Symbolleiste. Größen und Profilname bleiben.
+    /// Settings → General: arrangement of the large panels as tiles with a mini sketch,
+    /// plus full timeline width and toolbar position. Sizes and profile name stay.
     pub fn arrangement_settings(&mut self, ui: &mut egui::Ui) {
         let cur = self.settings.layout.clone();
         let mut pick: Option<LayoutProfile> = None;
@@ -110,7 +110,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 for (name, tip, ar, tt) in ARRANGEMENTS {
                     let on = cur.assets_right == ar && cur.timeline_top == tt;
-                    // gleicher Aufbau und gleiche Maße wie die Design-Kacheln
+                    // same structure and same sizes as the design tiles
                     let (r, resp) = ui.allocate_exact_size(vec2(66.0, 50.0), egui::Sense::click());
                     let sw = Rect::from_min_size(r.min, vec2(66.0, 34.0));
                     let l = LayoutProfile { assets_right: ar, timeline_top: tt, ..cur.clone() };
@@ -118,7 +118,7 @@ impl App {
                     pnt.rect_filled(sw, theme::R_CARD, theme::BG_INPUT());
                     let (areas, rail) = sketch(sw, &l);
                     for (i, a) in areas.into_iter().enumerate() {
-                        // Player etwas heller als die übrigen Bereiche
+                        // Player slightly lighter than the other panels
                         pnt.rect_filled(a, 1.5, if i == 1 { theme::BG_HOVER() } else { theme::BG_RAISED() });
                     }
                     pnt.rect_filled(rail, 1.0, theme::TEXT_FAINT());
@@ -162,16 +162,16 @@ impl App {
         }
     }
 
-    /// Profil übernehmen (Größen werden im nächsten Bild gesetzt)
+    /// Apply a profile (sizes are set in the next frame)
     pub fn apply_layout(&mut self, p: LayoutProfile) {
         self.layout_frac = p.frac;
         self.settings.layout = p;
-        // erzwingt das Setzen der Panelgrößen aus den Anteilen
+        // forces setting the panel sizes from the shares
         self.layout_screen = Some(Rect::NOTHING);
         self.settings.save();
     }
 
-    /// Bearbeitungsmodus: Knöpfe über den Bereichen und eine Leiste zum Speichern
+    /// Edit mode: buttons above the panels and a bar for saving
     pub fn layout_editor(&mut self, ctx: &egui::Context) {
         if !self.layout_edit {
             return;
@@ -231,7 +231,7 @@ impl App {
             self.settings.layout = l;
             self.layout_screen = Some(Rect::NOTHING);
         }
-        // Leiste oben: Profile wählen, speichern, fertig
+        // Bar at the top: choose profiles, save, done
         egui::Area::new(egui::Id::new("lay-bar"))
             .order(egui::Order::Tooltip)
             .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -16.0))
@@ -309,9 +309,9 @@ mod tests {
             assert_eq!(&serde_json::from_str::<LayoutProfile>(&s).unwrap(), p);
             assert!(p.frac.0 > 0.1 && p.frac.1 > 0.1 && p.frac.2 > 0.2);
         }
-        // ältere Einstellungen ohne Feld → Standard
+        // older settings without the field → default
         assert_eq!(serde_json::from_str::<LayoutProfile>("{}").unwrap(), LayoutProfile::default());
-        // Profil aus der Zeit vor `rail_top`: lädt, Symbolleiste seitlich
+        // Profile from before `rail_top`: loads, toolbar at the side
         let old = r#"{"name":"Mein","assets_right":true,"timeline_top":true,"timeline_full":false,"frac":[0.3,0.2,0.4]}"#;
         let p = serde_json::from_str::<LayoutProfile>(old).unwrap();
         assert!(p.assets_right && p.timeline_top && !p.timeline_full && !p.rail_top && p.name == "Mein");
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn arrangement_tiles_and_sketch() {
-        // vier verschiedene Kacheln, die erste ist der Standard
+        // four different tiles, the first is the default
         let mut flags: Vec<(bool, bool)> = ARRANGEMENTS.iter().map(|a| (a.2, a.3)).collect();
         let d = LayoutProfile::default();
         assert_eq!(flags[0], (d.assets_right, d.timeline_top));
@@ -328,7 +328,7 @@ mod tests {
         flags.sort();
         flags.dedup();
         assert_eq!(flags.len(), 4);
-        // Skizzen: Bereiche liegen in der Kachel, überlappen nicht, Symbolleiste im Medien-Bereich
+        // Sketches: panels lie within the tile, do not overlap, toolbar in the media panel
         let tile = Rect::from_min_size(pos2(10.0, 20.0), vec2(66.0, 34.0));
         for (_, _, ar, tt) in ARRANGEMENTS {
             for full in [true, false] {
@@ -342,12 +342,12 @@ mod tests {
                         }
                     }
                     assert!(areas[0].contains_rect(rail));
-                    // Symbolleiste seitlich: an der äußeren Kante des Medien-Bereichs
+                    // Toolbar at the side: on the outer edge of the media panel
                     if !rail_top {
                         let outer = if ar { areas[0].right() == rail.right() } else { areas[0].left() == rail.left() };
                         assert!(outer);
                     }
-                    // Medien auf der richtigen Seite, Zeitleiste oben/unten
+                    // Media on the right side, timeline at top/bottom
                     assert_eq!(areas[0].center().x > areas[2].center().x, ar);
                     assert_eq!(areas[3].center().y < areas[1].center().y, tt);
                 }

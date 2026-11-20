@@ -1,20 +1,20 @@
-//! Ein Muster für alle Dialoge: Rand `PAD_DIALOG`, Ecken `R_WIN`, Titel links mit Schließen-Kreuz,
-//! Fußzeile rechtsbündig `[Abbrechen] [Hauptaktion]`.
-//! „Frage“ = [`modal`] (dunkelt ab), „Werkzeugfenster“ = [`window`] (bleibt neben der Arbeit offen).
+//! One pattern for all dialogs: margin `PAD_DIALOG`, corners `R_WIN`, title on the left with a close cross,
+//! footer right-aligned `[Abbrechen] [main action]`.
+//! Question = [`modal`] (dims), tool window = [`window`] (stays open next to the work).
 
 use eframe::egui::{self, RichText};
 
 use crate::theme::{self, icon};
 
-/// Gemeinsamer Rahmen für Fenster und Modals
+/// Shared frame for windows and modals
 pub fn frame(ctx: &egui::Context) -> egui::Frame {
     egui::Frame::window(&ctx.style())
         .inner_margin(theme::PAD_DIALOG)
         .corner_radius(theme::R_WIN)
 }
 
-/// Stand des Öffnens (0…1, eine Kurve, `MOTION`) für das Fenster `id`: beginnt mit dem ersten Bild,
-/// in dem es (wieder) gezeichnet wird.
+/// Opening progress (0…1, one curve, `MOTION`) for window `id`: starts with the first frame
+/// in which it is drawn (again).
 fn opening(ctx: &egui::Context, id: egui::Id) -> f32 {
     let key = id.with("dialog-open");
     let (now, pass) = (ctx.input(|i| i.time), ctx.cumulative_pass_nr());
@@ -35,9 +35,9 @@ fn opened(ctx: &egui::Context, since: f64) -> f32 {
     }
 }
 
-/// Werkzeugfenster ohne eguis Titelleiste (Titel und Kreuz kommen aus [`title`]).
-/// `id` bleibt die Fenster-ID (app.rs sucht darüber das oberste Fenster für Esc).
-/// Öffnet weich: blendet ein und hebt sich um 4 px.
+/// Tool window without egui's title bar (title and cross come from [`title`]).
+/// `id` stays the window ID (app.rs uses it to find the topmost window for Esc).
+/// Opens softly: fades in and rises by 4 px.
 pub fn window(ctx: &egui::Context, title: impl Into<egui::WidgetText>, id: &str) -> egui::Window<'static> {
     let wid = egui::Id::new(id);
     let t = opening(ctx, wid);
@@ -54,7 +54,7 @@ pub fn window(ctx: &egui::Context, title: impl Into<egui::WidgetText>, id: &str)
         .frame(frame(ctx).multiply_with_opacity(t))
 }
 
-/// Frage (modal, mit Abdunkelung); öffnet wie [`window`], die Abdunkelung blendet mit.
+/// Question (modal, with dimming); opens like [`window`], the dimming fades along.
 pub fn modal(ctx: &egui::Context, id: &str) -> egui::Modal {
     let mid = egui::Id::new(id);
     let t = opening(ctx, mid);
@@ -68,9 +68,9 @@ pub fn modal(ctx: &egui::Context, id: &str) -> egui::Modal {
         .frame(frame(ctx).multiply_with_opacity(t))
 }
 
-/// Titelzeile: Titel links in `FS_TITLE`, Kreuz rechts. `true` = Kreuz geklickt.
+/// Title row: title on the left in `FS_TITLE`, cross on the right. `true` = cross clicked.
 pub fn title(ui: &mut egui::Ui, text: &str) -> bool {
-    // Inhalt blendet mit dem Rahmen ein (siehe `window`/`modal`)
+    // Content fades in with the frame (see `window`/`modal`)
     let key = ui.layer_id().id.with("dialog-open");
     if let Some((since, _)) = ui.data(|d| d.get_temp::<(f64, u64)>(key)) {
         ui.multiply_opacity(opened(ui.ctx(), since));
@@ -86,14 +86,14 @@ pub fn title(ui: &mut egui::Ui, text: &str) -> bool {
     close
 }
 
-/// Fußzeile, rechtsbündig. Knöpfe von rechts nach links hinzufügen (Hauptaktion zuerst).
+/// Footer, right-aligned. Add buttons from right to left (main action first).
 pub fn footer<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     ui.add_space(12.0);
     ui.horizontal(|ui| ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add).inner)
         .inner
 }
 
-/// Standard-Fußzeile `[Abbrechen] [main]`. Gibt (Hauptaktion, Abbrechen) zurück.
+/// Standard footer `[Abbrechen] [main]`. Returns (main action, cancel).
 pub fn buttons(ui: &mut egui::Ui, main: theme::Btn, enabled: bool) -> (bool, bool) {
     footer(ui, |ui| {
         let m = ui.add_enabled(enabled, main).clicked();
@@ -101,8 +101,8 @@ pub fn buttons(ui: &mut egui::Ui, main: theme::Btn, enabled: bool) -> (bool, boo
     })
 }
 
-/// Esc und Enter, vor dem Zeichnen gelesen. Enter zählt nicht, solange ein Textfeld den Fokus hat.
-/// Enter nie für eine zerstörende Hauptaktion verwenden.
+/// Esc and Enter, read before drawing. Enter does not count while a text field has focus.
+/// Never use Enter for a destructive main action.
 pub fn keys(ctx: &egui::Context) -> (bool, bool) {
     let typing = ctx.wants_keyboard_input();
     let (esc, enter) = ctx.input(|i| (i.key_pressed(egui::Key::Escape), i.key_pressed(egui::Key::Enter)));

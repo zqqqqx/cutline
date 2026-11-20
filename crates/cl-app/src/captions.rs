@@ -1,5 +1,5 @@
-//! Untertitel: Stil-Vorlagen (Zeilenlänge, Schrift, Position, Animation), manuelles Anlegen und
-//! Bearbeiten (Text, Dauer, Zusammenführen), Suchen & Ersetzen, Stil/Aufteilung für alle.
+//! Captions: style presets (line length, font, position, animation), manual creation and
+//! editing (text, duration, merge), find & replace, style/splitting for all.
 
 use cl_core::*;
 use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText};
@@ -7,11 +7,11 @@ use eframe::egui::{self, pos2, vec2, Color32, Rect, RichText};
 use crate::app::{App, ClipTab};
 use crate::theme::{self, icon};
 
-/// Name der Spur, auf der Untertitel landen
+/// Name of the track captions go to
 pub const TRACK_NAME: &str = "Untertitel";
 
-/// Spurname zum Anzeigen: der Standardname der Untertitelspur in der Oberflächensprache
-/// (gespeichert bleibt er deutsch, daran wird die Spur erkannt), eigene Namen wie getippt.
+/// Track name for display: the default name of the caption track in the UI language
+/// (it stays saved in German, the track is recognized by it), custom names as typed.
 pub fn shown_track_name(name: &str) -> String {
     if name == TRACK_NAME { crate::tr(name) } else { name.to_string() }
 }
@@ -22,7 +22,7 @@ pub struct CapPreset {
     pub tip: &'static str,
     pub max_chars: usize,
     pub max_dur: f64,
-    /// Abstand unter der Bildmitte, Anteil der Bildhöhe
+    /// Distance below the frame center, fraction of the frame height
     pub y: f32,
     pub intro: Option<&'static str>,
     pub style: fn() -> TextStyle,
@@ -313,7 +313,7 @@ pub static PRESETS: &[CapPreset] = &[
     },
 ];
 
-/// Hervorhebung wie beim Stil „Gelb auf Schwarz“
+/// Highlight like the „Gelb auf Schwarz“ style
 pub const KARAOKE_YELLOW: [u8; 4] = [255, 221, 0, 255];
 
 fn karaoke_style(fill: bool) -> TextStyle {
@@ -327,7 +327,7 @@ fn karaoke_style(fill: bool) -> TextStyle {
     })
 }
 
-/// Längere Zeilen auf zwei möglichst gleich lange Zeilen verteilen (Stil „Podcast“)
+/// Spread longer lines over two lines of about equal length („Podcast“ style)
 fn two_lines(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     let flat = words.join(" ");
@@ -356,7 +356,7 @@ impl App {
         preset(&self.settings.caption_preset)
     }
 
-    /// Spuren mit Untertiteln: nur die Untertitel-Spuren (normale Textclips sind keine Untertitel)
+    /// Tracks with captions: only the caption tracks (normal text clips are not captions)
     pub fn caption_tracks(&self) -> Vec<TrackId> {
         self.project.timeline.tracks.iter().filter(|t| is_caption_track(t)).map(|t| t.id).collect()
     }
@@ -365,7 +365,7 @@ impl App {
         bulk_targets(&self.project)
     }
 
-    /// Neue Untertitel-Spur anlegen
+    /// Create a new caption track
     pub fn new_caption_track(&mut self) -> Option<TrackId> {
         let index = self.project.timeline.tracks.len();
         let Some(OpOutput::Track(t)) = self.apply(EditOp::InsertTrack {
@@ -381,12 +381,12 @@ impl App {
         Some(t)
     }
 
-    /// Untertitel-Clip im gewählten Stil; `words`: Beginn je Wort relativ zum Clipanfang (Karaoke)
+    /// Caption clip in the chosen style; `words`: start per word relative to the clip start (karaoke)
     pub fn caption_clip(&self, text: &str, start: Time, dur: Time, words: Vec<Time>) -> Clip {
         let p = self.caption_preset();
         let text = if p.id == "podcast" { two_lines(text) } else { text.to_string() };
         let mut st = TextStyle { text, ..(p.style)() };
-        // Brand-Schrift für Untertitel nur im Stil „Klassisch“ (die anderen haben eigene Schriften)
+        // Brand font for captions only in the „Klassisch“ style (the others have their own fonts)
         if p.id == "classic" {
             if let Some(f) = self.brand.font(crate::brand::CAPTION) {
                 st.font_family = Some(f.clone());
@@ -406,7 +406,7 @@ impl App {
         c
     }
 
-    /// Erkannte Zeilen als Untertitel einfügen (eigene Spur, gewählter Stil)
+    /// Insert recognized lines as captions (own track, chosen style)
     pub fn add_caption_segments(&mut self, segs: &[cl_analyze::asr::Segment], offset: Time) -> usize {
         let Some(t) = self.new_caption_track() else { return 0 };
         let ops: Vec<EditOp> = segs
@@ -427,7 +427,7 @@ impl App {
         n
     }
 
-    /// Stil-Auswahl als kleine Vorschaukacheln
+    /// Style picker as small preview tiles
     pub fn caption_preset_picker(&mut self, ui: &mut egui::Ui) {
         let cols = 2;
         let gap = 6.0;
@@ -446,17 +446,17 @@ impl App {
                     let sample = if p.id == "word" { crate::tr("Wort") } else if s.uppercase { crate::tr("So sieht es aus").to_uppercase() } else { crate::tr("So sieht es aus") };
                     let fam = self.font_family(s.font_family.as_deref());
                     let base = (s.size * 0.24).clamp(11.0, 22.0);
-                    // Platz in der Kachel: Rand je Seite, Hintergrundkasten (+8) bzw. Kontur (±1,2)
+                    // Room in the tile: margin per side, background box (+8) or outline (±1.2)
                     let room = r.width() - 12.0 - if s.background.is_some() { 8.0 } else { 0.0 } - if s.outline.is_some() { 2.4 } else { 0.0 };
                     let size = theme::fit_size(base, theme::text_width(ui.ctx(), &sample, egui::FontId::new(base, fam.clone())), room);
                     let col = Color32::from_rgba_unmultiplied(s.color[0], s.color[1], s.color[2], s.color[3]);
                     let c = pos2(r.center().x, r.top() + 18.0);
                     let font = egui::FontId::new(size, fam);
-                    // Glyphenbreiten wachsen nicht ganz linear: alles zusätzlich auf die Kachel begrenzen
+                    // Glyph widths do not grow quite linearly: additionally limit everything to the tile
                     let tp = pt.with_clip_rect(r.shrink(1.0));
                     if let Some(bg) = s.background {
                         let g = tp.layout_no_wrap(sample.clone(), font.clone(), col);
-                        // Vorschau des Untertitel-Stils (Hintergrundkasten), kein UI-Radius
+                        // Preview of the caption style (background box), no UI radius
                         tp.rect_filled(Rect::from_center_size(c, g.size() + vec2(8.0, 2.0)), 3.0, Color32::from_rgba_unmultiplied(bg[0], bg[1], bg[2], bg[3]));
                     }
                     if let Some((_, oc)) = s.outline {
@@ -466,7 +466,7 @@ impl App {
                         }
                     }
                     match &s.karaoke {
-                        // Karaoke: zweites Wort hervorgehoben (Füllen: die ersten beiden)
+                        // Karaoke: second word highlighted („Füllen“: the first two)
                         Some(k) => {
                             let hc = Color32::from_rgba_unmultiplied(k.color[0], k.color[1], k.color[2], k.color[3]);
                             let (a, b) = word_ranges(&sample).get(1).map(|r| (if k.fill { 0 } else { r.start }, r.end)).unwrap_or((0, 0));
@@ -488,7 +488,7 @@ impl App {
                     let stroke = if on {
                         egui::Stroke::new(2.0_f32, theme::ACCENT())
                     } else {
-                        // ohne Ruhe-Rahmen (Fläche hebt sich schon ab), nur Hover/Auswahl
+                        // without an idle frame (the area already stands out), only hover/selection
                         egui::Stroke::new(1.0_f32, theme::TEXT_DIM().gamma_multiply(hover))
                     };
                     pt.rect_stroke(r, theme::R_CARD, stroke, egui::StrokeKind::Inside);
@@ -503,14 +503,14 @@ impl App {
         }
     }
 
-    /// Liste zum Bearbeiten: hinzufügen, Text, Dauer, zusammenführen, löschen, suchen & ersetzen
+    /// List for editing: add, text, duration, merge, delete, find & replace
     pub fn captions_editor(&mut self, ui: &mut egui::Ui) {
         let items = self.caption_clips();
         let fps = self.project.settings.fps;
         ui.horizontal(|ui| {
             ui.label(RichText::new(crate::tr(format!("Untertitel ({})", items.len()))).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // zu schmal für die Beschriftung: nur das Symbol
+                // too narrow for the label: only the icon
                 let full = format!("{}  {}", icon::PLUS, crate::tr("Hinzufügen"));
                 let need = theme::text_width(ui.ctx(), &full, egui::FontId::proportional(theme::FS_UI)) + 2.0 * ui.spacing().button_padding.x;
                 let label = if need <= ui.available_width() { full } else { icon::PLUS.to_string() };
@@ -528,11 +528,11 @@ impl App {
             theme::empty_state(ui, icon::SUBTITLES, "Noch keine Untertitel", "");
             return;
         }
-        // Suchen & Ersetzen
+        // Find & replace
         let mut q = self.asset_cat.get("cap-q").cloned().unwrap_or_default();
         let mut rep = self.asset_cat.get("cap-r").cloned().unwrap_or_default();
         ui.horizontal(|ui| {
-            // Breite aus dem Platz: zwei Felder (Innenrand je 2 × 4) + Symbolknopf + zwei Abstände
+            // Width from the room: two fields (inner margin 2 × 4 each) + icon button + two gaps
             let sp = ui.spacing().item_spacing.x;
             let btn = (theme::text_width(ui.ctx(), icon::SWAP, egui::FontId::proportional(14.0)) + 2.0 * ui.spacing().button_padding.x).max(24.0);
             let w = ((ui.available_width() - btn - 2.0 * sp) / 2.0 - 8.0).max(30.0);
@@ -558,7 +558,7 @@ impl App {
         });
         self.asset_cat.insert("cap-q", q.clone());
         self.asset_cat.insert("cap-r", rep);
-        // Stil bzw. Aufteilung der gewählten Vorlage auf alle: nur echte Untertitel-Spuren
+        // Style or splitting of the chosen preset on all: only real caption tracks
         {
             let items = &items;
             ui.horizontal_wrapped(|ui| {
@@ -594,8 +594,8 @@ impl App {
         let mut ops: Vec<EditOp> = Vec::new();
         let focus = self.caption_focus;
         let mut focused = false;
-        // eigene Blätterfläche bis zum unteren Rand: ein neuer Eintrag blättert nur die Liste,
-        // Kopfzeile mit „Hinzufügen“ bleibt stehen
+        // own scroll area down to the bottom edge: a new entry only scrolls the list,
+        // the header with „Hinzufügen“ stays put
         let h = (ui.clip_rect().bottom() - ui.cursor().top() - 4.0).max(160.0);
         egui::ScrollArea::vertical().id_salt("cap-list").max_height(h).auto_shrink([false, true]).show(ui, |ui| {
             for (i, c) in items.iter().enumerate() {
@@ -620,9 +620,9 @@ impl App {
                             {
                                 jump = Some(c.id);
                             }
-                            // Knöpfe rechts zuerst, das Textfeld nimmt den Rest: nichts ragt über den Rand
+                            // Buttons on the right first, the text field takes the rest: nothing sticks out over the edge
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                // Textänderung vor Zusammenführen/Dauer anwenden (wie zuvor in Lesereihenfolge)
+                                // Apply the text change before merge/duration (as before, in reading order)
                                 let at = ops.len();
                                 if theme::icon_button(ui, icon::TRASH, "Löschen", true, false).clicked() {
                                     ops.push(EditOp::RemoveClip { clip: c.id });
@@ -630,7 +630,7 @@ impl App {
                                 if let Some(n) = next {
                                     if theme::icon_button(ui, icon::ARROWS_MERGE, "Mit dem nächsten zusammenführen", true, false).clicked() {
                                         let mut m = c.clone();
-                                        // Wortzeiten beider Teile zusammen (der zweite ab seinem Anfang)
+                                        // Word times of both parts together (the second from its start)
                                         let mut words = karaoke_words(c);
                                         words.extend(karaoke_words(n).into_iter().map(|w| w + (n.start - c.start)));
                                         if let ClipContent::Text(s) = &mut m.content {
@@ -644,7 +644,7 @@ impl App {
                                         ops.push(EditOp::ReplaceClip { clip: m });
                                     }
                                 }
-                                // Dauer (bis zum nächsten Untertitel)
+                                // Duration (up to the next caption)
                                 let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
                                 let mut d = c.duration.as_secs_f64();
                                 if ui
@@ -659,10 +659,10 @@ impl App {
                                 let r = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(f32::INFINITY).frame(false));
                                 if focus == Some(c.id) {
                                     focused = true;
-                                    // nur wenn nötig blättern: sonst wandert der Knopf „Hinzufügen“ bei jedem Klick
+                                    // only scroll if needed: otherwise the „Hinzufügen“ button moves with every click
                                     r.scroll_to_me(None);
                                     r.request_focus();
-                                    // ganzen Platzhaltertext markieren: Tippen ersetzt ihn
+                                    // select the whole placeholder text: typing replaces it
                                     if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
                                         let all = egui::text::CCursorRange::two(
                                             egui::text::CCursor::new(0),
@@ -707,7 +707,7 @@ impl App {
         }
     }
 
-    /// Neuer Untertitel am Playhead (bis zum nächsten, höchstens 2 s), Textfeld bekommt den Fokus
+    /// New caption at the playhead (up to the next one, at most 2 s), the text field gets focus
     pub fn add_caption_at_playhead(&mut self) {
         let items = self.caption_clips();
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
@@ -736,7 +736,7 @@ impl App {
         }
     }
 
-    /// Bestehende Untertitel in Zeilen der gewählten Länge neu aufteilen
+    /// Re-split existing captions into lines of the chosen length
     fn resegment_captions(&mut self, items: &[Clip]) {
         let segs: Vec<cl_analyze::asr::Segment> = items
             .iter()
@@ -756,7 +756,7 @@ impl App {
     }
 }
 
-/// Clips, die „Stil auf alle“ und „Neu aufteilen“ ändern: nur auf Spuren namens „Untertitel“.
+/// Clips that „Stil auf alle“ and „Neu aufteilen“ change: only on tracks named „Untertitel“.
 fn is_caption_track(t: &cl_core::Track) -> bool {
     t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME)
 }
@@ -773,7 +773,7 @@ fn bulk_targets(p: &Project) -> Vec<Clip> {
     v
 }
 
-/// Beginn je Wort eines Karaoke-Untertitels (gespeichert oder gleichmäßig verteilt), sonst leer
+/// Start per word of a karaoke caption (saved or spread evenly), otherwise empty
 fn karaoke_words(c: &Clip) -> Vec<Time> {
     match &c.content {
         ClipContent::Text(TextStyle { text, karaoke: Some(k), .. }) => k.starts(text, c.duration),
@@ -799,13 +799,13 @@ mod tests {
         let mut plain = Track::new(TrackKind::Text);
         plain.clips.push(text("DER FILM"));
         p.timeline.tracks.push(plain);
-        assert!(bulk_targets(&p).is_empty(), "normale Textspur ist kein Untertitel");
+        assert!(bulk_targets(&p).is_empty(), "a normal text track is not a caption track");
         let mut caps = Track::new(TrackKind::Text);
         caps.name = Some(TRACK_NAME.into());
         caps.clips.push(text("Hallo"));
         p.timeline.tracks.push(caps);
         assert_eq!(bulk_targets(&p).iter().map(text_of).collect::<Vec<_>>(), ["Hallo"]);
-        // die Liste im Untertitel-Tab nutzt dieselbe Auswahl: nur die Untertitelspur
+        // the list in the captions tab uses the same selection: only the caption track
         assert_eq!(p.timeline.tracks.iter().filter(|t| is_caption_track(t)).count(), 1);
     }
 
@@ -822,17 +822,17 @@ mod tests {
         let ids: std::collections::HashSet<_> = PRESETS.iter().map(|p| p.id).collect();
         assert_eq!(ids.len(), PRESETS.len());
         for (i, id) in ["classic", "box", "punchy", "word", "soft", "cinema"].iter().enumerate() {
-            assert_eq!(PRESETS[i].id, *id, "vorhandene Stile bleiben");
+            assert_eq!(PRESETS[i].id, *id, "existing styles stay");
         }
-        // lesbar auf hellem und dunklem Bild: Kontur oder Fläche
+        // readable on light and dark images: outline or area
         for p in PRESETS {
             let s = (p.style)();
             assert!(s.outline.is_some() || s.background.is_some() || p.id == "cinema", "{}", p.id);
         }
     }
 
-    /// Erkannte Wortzeiten landen relativ zum Clipanfang im Karaoke-Untertitel; andere Stile
-    /// speichern keine (die Datei bleibt ohne neues Feld).
+    /// Recognized word times land relative to the clip start in the karaoke caption; other styles
+    /// store none (the file stays without a new field).
     #[test]
     fn karaoke_captions_keep_the_word_times() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -850,7 +850,7 @@ mod tests {
         app.settings.caption_preset = "karaoke".into();
         assert_eq!(app.add_caption_segments(std::slice::from_ref(&seg), Time::from_secs_f64(10.0)), 1);
         assert_eq!(words(&app), [Some(vec![0, 1200])]);
-        // Stil auf alle (Karaoke füllen) behält die Zeiten
+        // Style on all (karaoke fill) keeps the times
         let c = app.caption_clips()[0].clone();
         app.settings.caption_preset = "karaoke-fill".into();
         let n = app.caption_clip(&text_of(&c), c.start, c.duration, karaoke_words(&c));

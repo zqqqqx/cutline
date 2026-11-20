@@ -1,10 +1,10 @@
-//! Einheitliche Verwaltung aller Asset-Bereiche (Sticker, Soundeffekte, Musik, Effekte, Filter,
-//! Übergänge, Textvorlagen, Texteffekte, Schriften):
-//! - Suche, „Alle“, „Favoriten“ und Kategorien bzw. Ordner als Chips
-//! - Kategorien/Ordner: verschieben, umbenennen, verbergen, eigene entfernen
-//! - eigene Sammelordner in jedem Bereich, Einträge hinzufügen/entfernen
-//! - Einträge: Favorit, in Ordner legen, verbergen (eingebaut) bzw. entfernen (eigene Datei)
-//! - Sticker und Sounds zusätzlich mit eigenen Dateien (Import per Knopf oder Ablegen)
+//! Uniform management of all asset areas (stickers, sound effects, music, effects, filters,
+//! transitions, text templates, text effects, fonts):
+//! - search, „Alle“, „Favoriten“ and categories or folders as chips
+//! - categories/folders: move, rename, hide, remove own ones
+//! - own collection folders in every area, add/remove entries
+//! - entries: favorite, put in a folder, hide (built in) or remove (own file)
+//! - stickers and sounds additionally with own files (import by button or drop)
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ use crate::library::{Item, Kind};
 use crate::theme::{self, icon};
 use crate::timeline::menu_item;
 
-/// Bereich mit eigenen Dateien?
+/// Area with own files?
 pub fn area_kind(area: &str) -> Option<Kind> {
     match area {
         "sticker" => Some(Kind::Sticker),
@@ -27,7 +27,7 @@ pub fn area_kind(area: &str) -> Option<Kind> {
     }
 }
 
-/// Symbol für eine eingebaute Kategorie (Filter-Chips wie in CapCut)
+/// Icon for a built-in category (filter chips like in CapCut)
 pub fn cat_icon(name: &str) -> Option<&'static str> {
     Some(match name {
         "Video" => icon::FILM_STRIP,
@@ -72,30 +72,30 @@ pub fn cat_icon(name: &str) -> Option<&'static str> {
     })
 }
 
-/// Offener Dialog der Bibliothek.
+/// Open dialog of the library.
 #[derive(Clone)]
 pub enum LibDialog {
-    /// Neuer Ordner (Dateiordner bei Sticker/Sounds, sonst Sammelordner); optional gleich mit Eintrag
+    /// New folder (file folder for stickers/sounds, otherwise collection folder); optionally with an entry right away
     NewFolder {
         area: &'static str,
         name: String,
         add: Option<String>,
     },
-    /// Eigene Datei umbenennen
+    /// Rename an own file
     Rename { item: Item, name: String },
-    /// Kategorie/Ordner umbenennen
+    /// Rename a category/folder
     RenameCat {
         area: &'static str,
         key: String,
         name: String,
     },
-    /// Eigenen Ordner entfernen
+    /// Remove an own folder
     DeleteCat {
         area: &'static str,
         key: String,
         label: String,
     },
-    /// Mediendatei in einen neuen Ordner der Elemente bzw. Sounds kopieren
+    /// Copy a media file into a new folder of the elements or sounds
     SaveAs {
         kind: Kind,
         file: PathBuf,
@@ -103,8 +103,8 @@ pub enum LibDialog {
     },
 }
 
-/// Untermenü „Als Element/Sound speichern ▸ eigene Ordner · Neuer Ordner …“ (nur für passende Dateien).
-/// Gewählt: `Some(Some(ordner))`, neuer Ordner: `Some(None)`.
+/// Submenu „Als Element/Sound speichern ▸ own folders · Neuer Ordner …“ (only for matching files).
+/// Chosen: `Some(Some(folder))`, new folder: `Some(None)`.
 pub fn save_as_menu(ui: &mut egui::Ui, kind: Option<Kind>, folders: &[String], pick: &mut Option<Option<String>>) {
     let Some(k) = kind else { return };
     let (g, label) = match k {
@@ -113,9 +113,9 @@ pub fn save_as_menu(ui: &mut egui::Ui, kind: Option<Kind>, folders: &[String], p
     };
     theme::submenu(ui, g, label, |ui| {
         ui.set_min_width(160.0);
-        // verknüpfte Ordner gehören nicht Cutline: dort nichts ablegen
+        // linked folders do not belong to Cutline: put nothing there
         for f in folders.iter().filter(|f| !f.starts_with(icon::LINK_SIMPLE)) {
-            // Ordnernamen sind Nutzertext: nicht übersetzen
+            // folder names are user text: do not translate
             if ui.add(theme::menu_row(format!("{}   {f}", icon::FOLDER_SIMPLE)).min_width(160.0)).clicked() {
                 *pick = Some(Some(f.clone()));
                 ui.close_menu();
@@ -127,7 +127,7 @@ pub fn save_as_menu(ui: &mut egui::Ui, kind: Option<Kind>, folders: &[String], p
     });
 }
 
-/// Lädt Vorschaubilder eigener Sticker im Hintergrund.
+/// Loads thumbnails of own stickers in the background.
 pub struct Thumbs {
     pub tex: HashMap<String, egui::TextureHandle>,
     requested: std::collections::HashSet<String>,
@@ -161,8 +161,8 @@ fn load_rgba(p: &std::path::Path, size: u32) -> Option<(u32, u32, Vec<u8>)> {
     Some((img.width(), img.height(), img.into_raw()))
 }
 
-/// Bewegtes Bild: das Einzelbild mit der größten deckenden Fläche (bei einem Auftritt wäre das
-/// erste Bild leer).
+/// Animated image: the single frame with the largest opaque area (with an entrance the
+/// first frame would be empty).
 fn anim_still(p: &std::path::Path) -> Option<image::RgbaImage> {
     use image::AnimationDecoder;
     cl_media::animation(p)?;
@@ -213,7 +213,7 @@ impl Thumbs {
     }
 }
 
-/// Dauerhafte `&'static str` für Schlüssel, die zur Laufzeit gebildet werden (einmal je Text).
+/// Permanent `&'static str` for keys built at runtime (once per text).
 pub fn intern(s: String) -> &'static str {
     static MAP: std::sync::OnceLock<
         std::sync::Mutex<std::collections::HashMap<String, &'static str>>,
@@ -227,46 +227,46 @@ pub fn intern(s: String) -> &'static str {
     v
 }
 
-/// Kleines Zeichen auf einer Kachel (Stern, Nadel) um `c`, auf runder dunkler Unterlage: auf hellen
-/// Bildern und Wellenformen sonst kaum zu sehen.
+/// Small mark on a tile (star, pin) around `c`, on a round dark backing: otherwise hardly
+/// visible on light images and waveforms.
 pub fn badge(p: &egui::Painter, c: egui::Pos2, glyph: &str) {
     p.circle_filled(c, 8.0, egui::Color32::from_black_alpha(120));
     p.text(
         c,
         egui::Align2::CENTER_CENTER,
         glyph,
-        egui::FontId::proportional(10.0), // Icon-Glyphe im 16-px-Kreis
+        egui::FontId::proportional(10.0), // icon glyph in the 16 px circle
         theme::ACCENT(),
     );
 }
 
-/// Stern oben links auf einer Kachel
+/// Star at the top left of a tile
 pub fn fav_badge(p: &egui::Painter, a: egui::Rect) {
     badge(p, a.left_top() + egui::vec2(11.0, 10.0), icon::STAR);
 }
 
-/// Nadel oben rechts auf einer Kachel (oben angepinnt)
+/// Pin at the top right of a tile (pinned to the top)
 pub fn pin_badge(p: &egui::Painter, a: egui::Rect) {
     badge(p, a.right_top() + egui::vec2(-11.0, 10.0), icon::PUSH_PIN);
 }
 
-/// Bearbeiten-Modus der Reihenfolge: (Bereich, Ordner, Durchgang der letzten Leiste). Einzige Stelle des Zustands.
+/// Edit mode of the order: (area, folder, pass of the last bar). The only place of this state.
 fn edit_id() -> egui::Id {
     egui::Id::new("order-edit")
 }
 
-/// Beendet Esc den Bearbeiten-Modus? Nur wenn er an ist (Leiste im letzten Bild gezeichnet, Durchgang
-/// `drawn`) und kein Textfeld die Taste will; dann gehört Esc allein ihm.
+/// Does Esc end the edit mode? Only if it is on (bar drawn in the last frame, pass
+/// `drawn`) and no text field wants the key; then Esc belongs to it alone.
 fn esc_ends_edit(drawn: Option<u64>, pass: u64, esc: bool, typing: bool) -> bool {
     esc && !typing && drawn.is_some_and(|p| p + 1 >= pass)
 }
 
-/// Vor den Tastenkürzeln aufrufen: Esc beendet den Bearbeiten-Modus der Reihenfolge und wird dabei
-/// verbraucht (hebt also nicht zusätzlich die Auswahl auf). `true` = so geschehen.
+/// Call before the shortcuts: Esc ends the edit mode of the order and is
+/// consumed (so it does not also clear the selection). `true` = it happened.
 pub fn esc_order_edit(ctx: &egui::Context) -> bool {
     let drawn = ctx.data(|d| d.get_temp::<(String, String, u64)>(edit_id())).map(|s| s.2);
     let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-    // offenes Kontextmenü: Esc schließt erst das Menü
+    // open context menu: Esc closes the menu first
     let busy = ctx.wants_keyboard_input() || ctx.is_context_menu_open();
     if !esc_ends_edit(drawn, ctx.cumulative_pass_nr(), esc, busy) {
         return false;
@@ -276,7 +276,7 @@ pub fn esc_order_edit(ctx: &egui::Context) -> bool {
     true
 }
 
-/// Ist der Bearbeiten-Modus für Bereich und Ordner an?
+/// Is the edit mode on for area and folder?
 fn editing(ctx: &egui::Context, area: &str, cat: &str) -> bool {
     ctx.data(|d| d.get_temp::<(String, String, u64)>(edit_id()))
         .is_some_and(|(a, c, _)| a == area && c == cat)
@@ -284,15 +284,15 @@ fn editing(ctx: &egui::Context, area: &str, cat: &str) -> bool {
 
 use crate::widgets::ReorderPayload as Reordering;
 
-/// Umsortieren eines Tabs: Pins zeichnen und im Bearbeiten-Modus Ziehen/Ablegen der Kacheln.
+/// Reordering a tab: draw pins and, in edit mode, drag/drop of the tiles.
 pub struct Reorder {
     on: bool,
     area: &'static str,
     cat: String,
-    /// eigene Reihenfolge: alles verschiebbar, sonst nur `pins`
+    /// own order: everything movable, otherwise only `pins`
     whole: bool,
     pins: Vec<String>,
-    /// angezeigte Schlüssel in Reihenfolge (nur im Modus)
+    /// shown keys in order (only in the mode)
     shown: Vec<String>,
     drop: std::cell::RefCell<Option<(String, Option<String>)>>,
     over: std::cell::Cell<bool>,
@@ -304,9 +304,9 @@ impl Reorder {
         self.pins.iter().any(|k| k == key)
     }
 
-    /// Nach `widgets::tile` (bzw. einer Zeile) aufrufen: zeichnet die Nadel angepinnter Einträge (`badge`)
-    /// und übernimmt im Bearbeiten-Modus das Ziehen. `true` = Modus an: dann keine Zeitleisten-Nutzlast
-    /// setzen und Klicks nicht auswerten.
+    /// Call after `widgets::tile` (or a row): draws the pin of pinned entries (`badge`)
+    /// and takes over dragging in edit mode. `true` = mode on: then set no timeline payload
+    /// and do not evaluate clicks.
     pub fn tile(&self, ui: &egui::Ui, resp: &egui::Response, key: &str, badge: bool) -> bool {
         let pinned = self.pinned(key);
         if badge && pinned {
@@ -316,7 +316,7 @@ impl Reorder {
             return false;
         }
         let p = ui.painter();
-        // zurückgenommen: Panel-Hintergrund halbdeckend darüber (samt Namen), wirkt in jedem Design
+        // dimmed: panel background half-opaque over it (including the name), works in every design
         let fade = theme::BG_CARD().gamma_multiply(0.7);
         if !(self.whole || pinned) {
             p.rect_filled(resp.rect, theme::R_CARD, fade);
@@ -331,7 +331,7 @@ impl Reorder {
         } else if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         }
-        // Raster mit Lücke: Ziel kommt vom Raster (`reorder_done`), keine Einfügelinie
+        // Grid with a gap: the target comes from the grid (`reorder_done`), no insert line
         let gap = ui.data(|d| d.get_temp::<crate::widgets::GridDrop>(crate::widgets::grid_drop_id())).is_some();
         if let Some(h) = resp.dnd_hover_payload::<Reordering>() {
             self.over.set(true);
@@ -346,7 +346,7 @@ impl Reorder {
     }
 }
 
-/// Einfügemarke vor (`after` = hinter) einer Kachel; bei breiten Zeilen waagrecht
+/// Insert mark before (`after` = behind) a tile; horizontal for wide rows
 fn insert_mark(p: &egui::Painter, r: egui::Rect, after: bool) {
     let s = egui::Stroke::new(2.0_f32, theme::ACCENT());
     if r.width() > 2.0 * r.height() {
@@ -359,7 +359,7 @@ fn insert_mark(p: &egui::Painter, r: egui::Rect, after: bool) {
 }
 
 impl App {
-    /// Datei als Element bzw. Sound in den Ordner kopieren (`None`: Namen erfragen, Ordner anlegen).
+    /// Copy a file as an element or sound into the folder (`None`: ask for a name, create the folder).
     pub fn save_as(&mut self, kind: Kind, folder: Option<String>, file: PathBuf) {
         let Some(f) = folder else {
             self.lib_dialog = Some(LibDialog::SaveAs { kind, file, name: String::new() });
@@ -372,7 +372,7 @@ impl App {
         }
     }
 
-    /// Liste ordnen (eigene Reihenfolge bzw. Pins zuerst, nicht bei Suche) und das Umsortieren holen.
+    /// Order the list (own order or pins first, not when searching) and get the reordering.
     pub fn lib_arrange<T>(
         &self,
         ui: &egui::Ui,
@@ -386,7 +386,7 @@ impl App {
         self.reorder(ui, area, cat, items, key)
     }
 
-    /// Umsortieren für eine schon geordnete Liste (siehe [`Self::lib_arrange`]).
+    /// Reordering for an already ordered list (see [`Self::lib_arrange`]).
     pub fn reorder<T>(&self, ui: &egui::Ui, area: &'static str, cat: &str, items: &[T], key: impl Fn(&T) -> String) -> Reorder {
         let on = editing(ui.ctx(), area, cat);
         if on {
@@ -394,7 +394,7 @@ impl App {
         }
         let kind = crate::library::order_kind(cat);
         let pins = if kind == crate::library::Order::Pins { self.library.order(area, cat).to_vec() } else { Vec::new() };
-        // Schlüssel fürs Raster: Kacheln gleiten an ihren neuen Platz (Ablegen, Anpinnen)
+        // Key for the grid: tiles glide to their new place (drop, pin)
         let shown: Vec<String> = if kind == crate::library::Order::Fixed { Vec::new() } else { items.iter().map(key).collect() };
         ui.data_mut(|d| d.remove::<crate::widgets::GridDrop>(crate::widgets::grid_drop_id()));
         if !shown.is_empty() {
@@ -416,7 +416,7 @@ impl App {
         }
     }
 
-    /// Nach dem Raster: Ablegen übernehmen. Abgelegt in `list` außerhalb einer verschiebbaren Kachel = ans Ende.
+    /// After the grid: take over the drop. Dropped in `list` outside a movable tile = at the end.
     pub fn reorder_done(&mut self, ui: &egui::Ui, ed: Reorder, list: egui::Rect) {
         ui.data_mut(|d| d.remove::<crate::widgets::GridOrder>(crate::widgets::grid_order_id()));
         let gap = ui.data_mut(|d| d.remove_temp::<crate::widgets::GridDrop>(crate::widgets::grid_drop_id()));
@@ -426,7 +426,7 @@ impl App {
         ui.data_mut(|d| d.remove::<bool>(crate::widgets::no_plus_id()));
         let inside = ui.input(|i| i.pointer.latest_pos()).is_some_and(|p| list.contains(p));
         if let Some(g) = gap {
-            // Raster mit Lücke: Ablegen irgendwo im Raster landet an der gezeigten Lücke
+            // Grid with a gap: dropping anywhere in the grid lands at the shown gap
             if ui.input(|i| i.pointer.any_released()) && egui::DragAndDrop::take_payload::<Reordering>(ui.ctx()).is_some() {
                 *ed.drop.borrow_mut() = Some((g.0, g.1));
             }
@@ -445,8 +445,8 @@ impl App {
         }
     }
 
-    /// Kopfbereich eines Asset-Bereichs: Suche, (Import), neuer Ordner, Chips mit Menüs.
-    /// Gibt (Kategorie-Schlüssel, Suchtext) zurück; Kategorie ist „Alle“, „Favoriten“ oder `b:/p:/v:…`.
+    /// Header of an asset area: search, (import), new folder, chips with menus.
+    /// Returns (category key, search text); the category is „Alle“, „Favoriten“ or `b:/p:/v:…`.
     pub fn asset_bar(
         &mut self,
         ui: &mut egui::Ui,
@@ -457,7 +457,7 @@ impl App {
         let qkey: &'static str = intern(format!("{area}-q"));
         let ckey: &'static str = intern(format!("{area}-cat"));
         let mut q = self.asset_cat.get(qkey).cloned().unwrap_or_default();
-        // Reihenfolge bearbeiten: eigene Reihenfolge immer, sonst nur mit Angepinnten; nie bei Suche
+        // Edit order: always with an own order, otherwise only with pinned entries; never when searching
         let sel = self.asset_cat.get(ckey).cloned().unwrap_or_else(|| "Alle".into());
         let can_edit = q.trim().is_empty()
             && match crate::library::order_kind(&sel) {
@@ -467,7 +467,7 @@ impl App {
             };
         let pass = ui.ctx().cumulative_pass_nr();
         let state = ui.data(|d| d.get_temp::<(String, String, u64)>(edit_id()));
-        // Modus endet bei Ordner-/Tab-Wechsel (auch wenn die Leiste ein Bild lang nicht gezeichnet wurde)
+        // The mode ends on a folder/tab change (even if the bar was not drawn for one frame)
         let mut edit = can_edit
             && state.as_ref().is_some_and(|(a, c, p)| a == area && *c == sel && p + 1 >= pass)
             && !ui.input(|i| i.key_pressed(egui::Key::Escape));
@@ -518,14 +518,14 @@ impl App {
             .get(ckey)
             .cloned()
             .unwrap_or_else(|| "Alle".into());
-        // Kategorie verschwunden (verborgen/gelöscht/umbenannt)? Zurück auf „Alle“
+        // Category gone (hidden/deleted/renamed)? Back to „Alle“
         if cur != "Alle" && cur != "Favoriten" && cur != "Zuletzt" && !cats.iter().any(|c| c.key == cur) {
             cur = "Alle".into();
             self.asset_cat.insert(ckey, cur.clone());
         }
         let mut act: Option<(u8, String)> = None;
         let n = cats.len();
-        // Eine Zeile, waagrecht scrollbar (Mausrad oder Ziehen) statt mehrzeiligem Umbruch
+        // One row, horizontally scrollable (mouse wheel or drag) instead of a multi-line wrap
         let mut chips: Vec<egui::Rect> = Vec::new();
         let mut row = egui::ScrollArea::horizontal()
             .id_salt(ckey)
@@ -607,7 +607,7 @@ impl App {
                 });
             }
             theme::chip_marks(ui, marks, egui::Id::new(("chips", ckey)), &chips, active);
-            // kleiner Rand, damit der letzte Eintrag nicht an der Kante klebt
+            // small margin so the last entry does not stick to the edge
             ui.add_space(2.0);
         }));
         theme::edge_arrows(ui, &mut row, &chips);
@@ -631,7 +631,7 @@ impl App {
                 _ => self.lib_dialog = Some(LibDialog::DeleteCat { area, key, label }),
             }
         }
-        // Verborgenes wieder anzeigen
+        // Show hidden entries again
         let hidden_cats = self.library.hidden_cats(area);
         let packs: Vec<String> = match area {
             "sfx" => Some(cl_fx::catalog::Kind::Sound),
@@ -662,8 +662,8 @@ impl App {
         (cat, q)
     }
 
-    /// Kontextmenü eines Eintrags (eingebaut oder eigene Datei).
-    /// `key` = eindeutiger Schlüssel des Eintrags, `cat` = aktuell gewählte Kategorie.
+    /// Context menu of an entry (built in or own file).
+    /// `key` = unique key of the entry, `cat` = currently chosen category.
     pub fn asset_menu(
         &mut self,
         resp: &egui::Response,
@@ -675,7 +675,7 @@ impl App {
         self.asset_menu_with(resp, area, key, own, cat, &mut |_| {});
     }
 
-    /// Wie `asset_menu`, mit eigenen Einträgen oben im Menü.
+    /// Like `asset_menu`, with own entries at the top of the menu.
     pub fn asset_menu_with(
         &mut self,
         resp: &egui::Response,
@@ -723,7 +723,7 @@ impl App {
                 |ui| {
                     ui.set_min_width(160.0);
                     for f in &virt {
-                        // Ordnernamen sind Nutzertext: nicht übersetzen
+                        // folder names are user text: do not translate
                         if ui.add(theme::menu_row(format!("{}   {f}", icon::FOLDER_SIMPLE)).min_width(160.0)).clicked() {
                             add_to = Some(f.clone());
                             ui.close_menu();
@@ -836,7 +836,7 @@ impl App {
         }
     }
 
-    /// Dateiauswahl für eigene Sticker/Sounds; Ziel ist der gewählte Ordner (sonst „Eigene“).
+    /// File picker for own stickers/sounds; the target is the chosen folder (otherwise „Eigene“).
     pub fn lib_pick(&mut self, kind: Kind) {
         let label = match kind {
             Kind::Sticker => "Bilder",
@@ -871,13 +871,13 @@ impl App {
         }
     }
 
-    /// Dialoge der Bibliothek (jeden Frame aufrufen).
+    /// Dialogs of the library (call every frame).
     pub fn lib_dialogs(&mut self, ctx: &egui::Context) {
         let Some(d) = &mut self.lib_dialog else {
             self.lib_dialog_since = 0;
             return;
         };
-        // Der Klick, der den Dialog öffnet, darf ihn nicht gleich als Klick daneben schließen
+        // The click that opens the dialog must not close it right away as a click outside
         let pass = ctx.cumulative_pass_nr();
         if self.lib_dialog_since == 0 {
             self.lib_dialog_since = pass;
@@ -936,7 +936,7 @@ impl App {
             let res = match self.lib_dialog.take() {
                 Some(LibDialog::NewFolder { area, name, add }) => {
                     let ckey: &'static str = intern(format!("{area}-cat"));
-                    // Sticker/Sounds ohne Eintrag: echter Dateiordner, sonst Sammelordner
+                    // Stickers/sounds without an entry: a real file folder, otherwise a collection folder
                     match (area_kind(area), &add) {
                         (Some(k), None) => self.library.create_folder(k, &name).map(|_| {
                             self.asset_cat.insert(ckey, format!("p:{}", name.trim()));
@@ -957,7 +957,7 @@ impl App {
                     self.library
                         .rename_cat(area, &key, &name, area_kind(area))
                         .map(|_| {
-                            // gewählte Kategorie folgt dem neuen Namen
+                            // the chosen category follows the new name
                             if was.as_deref() == Some(key.as_str()) && !key.starts_with("b:") {
                                 let pre = &key[..2];
                                 self.asset_cat.insert(ckey, format!("{pre}{}", name.trim()));
@@ -969,13 +969,13 @@ impl App {
                     self.library.delete_cat(area, &key, area_kind(area), &used)
                 }
                 Some(LibDialog::SaveAs { kind, file, name }) => {
-                    // Ordner anlegen und gleich hineinkopieren
+                    // create the folder and copy into it right away
                     self.library.create_folder(kind, &name).map(|_| self.save_as(kind, Some(name.trim().to_string()), file))
                 }
                 None => Ok(()),
             };
             match res {
-                // Dialog bleibt mit der Eingabe offen, der Fehler steht darin
+                // the dialog stays open with the input, the error is shown in it
                 Err(e) => {
                     self.lib_dialog = backup;
                     self.dialog_error = Some(e);
@@ -988,7 +988,7 @@ impl App {
         }
     }
 
-    /// Eigener Sticker/Bild: als Bild-Clip auf eine Overlay-Spur.
+    /// Own sticker/image: as an image clip on an overlay track.
     pub fn add_own_sticker_at(
         &mut self,
         path: &std::path::Path,
@@ -1001,13 +1001,13 @@ impl App {
     }
 }
 
-/// Datei für den Bild-Clip eines eigenen Stickers: SVG wird einmal als PNG gerendert.
+/// File for the image clip of an own sticker: SVG is rendered once as PNG.
 pub fn own_sticker_file(path: &std::path::Path) -> Option<std::path::PathBuf> {
     let file = if path
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
     {
-        // nicht im Cache (das Projekt zeigt darauf); Pfad-Kennung trennt gleichnamige SVGs
+        // not in the cache (the project points to it); the path ID separates same-named SVGs
         let mut h = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hash::hash(path, &mut h);
         let out = crate::paths::generated_dir().join("svg").join(format!(
@@ -1019,7 +1019,7 @@ pub fn own_sticker_file(path: &std::path::Path) -> Option<std::path::PathBuf> {
             let svg = std::fs::read_to_string(path).ok()?;
             let px = cl_fx::stickers::render_svg(&svg, 512)?;
             let _ = std::fs::create_dir_all(out.parent()?);
-            // vormultipliziert → gerade
+            // premultiplied → straight
             let mut px = px;
             for c in px.chunks_mut(4) {
                 let a = c[3] as f32 / 255.0;
@@ -1039,7 +1039,7 @@ pub fn own_sticker_file(path: &std::path::Path) -> Option<std::path::PathBuf> {
 }
 
 impl App {
-    /// Eingebaute und eigene Einträge eines Bereichs nach Kategorie und Suche gefiltert.
+    /// Built-in and own entries of an area filtered by category and search.
     pub fn lib_items(
         &mut self,
         area: &'static str,
@@ -1062,8 +1062,8 @@ impl App {
     }
 }
 
-/// Holt „wieder anzeigen“ im Bereich `area` diesen verborgenen Eintrag zurück?
-/// `packs`: IDs der Paket-Einträge dieses Bereichs (Schlüssel `pack:<id>`).
+/// Does „wieder anzeigen“ in area `area` bring back this hidden entry?
+/// `packs`: IDs of the pack entries of this area (key `pack:<id>`).
 fn restorable(area: &str, key: &str, packs: &[String]) -> bool {
     key.strip_prefix(area).is_some_and(|r| r.starts_with(':'))
         || match area {
@@ -1079,9 +1079,9 @@ mod tests {
     #[test]
     fn esc_ends_the_order_edit_mode_only_while_it_is_on() {
         use super::esc_ends_edit;
-        // Leiste im letzten Bild (Durchgang 9) gezeichnet, jetzt Durchgang 10
+        // bar drawn in the last frame (pass 9), now pass 10
         assert!(esc_ends_edit(Some(9), 10, true, false));
-        // ohne Esc, beim Tippen, ohne Modus oder mit verwaistem Zustand (Tab gewechselt): nichts
+        // without Esc, while typing, without the mode or with orphaned state (tab changed): nothing
         assert!(!esc_ends_edit(Some(9), 10, false, false));
         assert!(!esc_ends_edit(Some(9), 10, true, true));
         assert!(!esc_ends_edit(None, 10, true, false));
@@ -1107,7 +1107,7 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        // Auftritt: von links wachsender Balken, erstes Bild leer
+        // Entrance: bar growing from the left, first frame empty
         let grow = "color=red:size=64x64:rate=10:duration=1,format=rgba,geq=r=255:g=0:b=0:a='if(lt(X,T*64),255,0)'";
         for (name, extra) in [("a.png", vec!["-plays", "1", "-f", "apng"]), ("a.gif", vec!["-vf", "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse"])] {
             let f = dir.path().join(name);

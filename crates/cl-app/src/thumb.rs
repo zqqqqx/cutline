@@ -1,6 +1,6 @@
-//! Thumbnail-Werkzeug: Bild einer Stelle auf 1280×720 mit freigestellter Person, Umriss und Text.
-//! Aus den Einstellungen entsteht ein kleines Hilfsprojekt, das der Export als PNG rechnet –
-//! Vorschau und Datei kommen aus demselben Weg. Das offene Projekt bleibt unverändert.
+//! Thumbnail tool: frame of a position at 1280×720 with a cut-out person, outline and text.
+//! The settings produce a small helper project that the export renders as PNG –
+//! preview and file come from the same path. The open project stays unchanged.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,11 +18,11 @@ use crate::widgets::{self, Slider};
 
 pub const W: u32 = 1280;
 pub const H: u32 = 720;
-/// Abstand des Texts zum Bildrand
+/// Distance of the text from the frame edge
 pub const MARGIN: f32 = 48.0;
 const FPS: u32 = 30;
 
-/// Schriftfamilie → (Datei, Index), wie `App::font_files`
+/// Font family → (file, index), like `App::font_files`
 pub type Fonts = HashMap<String, (PathBuf, u32)>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -36,7 +36,7 @@ pub enum Bg {
 const BG_NAMES: [(Bg, &str); 4] =
     [(Bg::Original, "Original"), (Bg::Blur, "Weichgezeichnet"), (Bg::Dark, "Abgedunkelt"), (Bg::Color, "Farbe")];
 
-/// Einstellungen ohne Text und Stelle; bleiben als zuletzt benutzte Werte erhalten.
+/// Settings without text and position; kept as last used values.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Opts {
@@ -48,7 +48,7 @@ pub struct Opts {
     pub outline_width: f32,
     pub template: String,
     pub size: f32,
-    /// Rasterfeld 0…8, zeilenweise von oben links
+    /// Grid cell 0…8, row by row from top left
     pub pos: u8,
 }
 
@@ -68,7 +68,7 @@ impl Default for Opts {
     }
 }
 
-/// Was gerechnet wird: Stand des Projekts (`App::revision`), Stelle, Einstellungen, Text
+/// What is rendered: project state (`App::revision`), position, settings, text
 #[derive(Clone, PartialEq, Debug)]
 pub struct Want {
     pub rev: u64,
@@ -77,7 +77,7 @@ pub struct Want {
     pub text: String,
 }
 
-/// Textvorlagen, „Thumbnail“ zuerst
+/// Text templates, „Thumbnail“ first
 pub fn templates() -> Vec<&'static cl_fx::text::TextTemplate> {
     let mut v: Vec<_> = cl_fx::text::TEMPLATES.iter().collect();
     v.sort_by_key(|t| t.id != "thumbnail" && t.category != "Thumbnail");
@@ -89,17 +89,17 @@ fn template(id: &str) -> &'static cl_fx::text::TextTemplate {
     all.iter().find(|t| t.id == id).copied().unwrap_or(all[0])
 }
 
-/// Größe des Standbilds: eingepasst in 1280×720 (gerade Kanten)
+/// Size of the still: fitted into 1280×720 (even edges)
 fn contain(w: u32, h: u32) -> (u32, u32) {
     let k = (W as f64 / w.max(1) as f64).min(H as f64 / h.max(1) as f64);
     let even = |v: u32| ((v as f64 * k).round() as u32 + 1).max(2) & !1;
     (even(w), even(h))
 }
 
-/// Einstellungen → Hilfsprojekt 1280×720, zwei Bilder lang. Ebenen von unten: Füllung (anderes
-/// Seitenverhältnis) oder Farbfläche, Bild, Person, Text. `frame`: Standbild als Video, `matte`:
-/// Maske dazu (ohne keine Person), `color`: Farbfläche für den Hintergrund „Farbe“,
-/// `measure`: Breite und Höhe eines Texts in Pixeln.
+/// Settings → helper project 1280×720, two frames long. Layers from the bottom: fill (other
+/// aspect ratio) or color area, image, person, text. `frame`: still as video, `matte`:
+/// its mask (without one no person), `color`: color area for the „Farbe“ background,
+/// `measure`: width and height of a text in pixels.
 pub fn project(
     o: &Opts,
     text: &str,
@@ -128,7 +128,7 @@ pub fn project(
     match color.filter(|_| person.is_some() && o.bg == Bg::Color) {
         Some(c) => layers.push((TrackKind::Video, clip(c, true))),
         None => {
-            // anderes Seitenverhältnis: füllende, weichgezeichnete Kopie gegen Ränder
+            // other aspect ratio: filling, blurred copy against borders
             if (frame.width as f32 / frame.height.max(1) as f32 - W as f32 / H as f32).abs() > 0.01 {
                 let mut c = clip(frame, true);
                 c.fx = look.clone();
@@ -160,7 +160,7 @@ pub fn project(
         let (col, row) = ((o.pos % 3) as f32 - 1.0, (o.pos / 3).min(2) as f32 - 1.0);
         st.align = col as i8;
         let (tw, th) = measure(&st);
-        // zu groß für das Bild: kleiner statt abgeschnitten
+        // too large for the frame: smaller instead of cut off
         let k = ((W as f32 - 2.0 * MARGIN) / tw.max(1.0)).min((H as f32 - 2.0 * MARGIN) / th.max(1.0)).min(1.0);
         st.size *= k;
         let mut c = Clip::new(ClipContent::Text(st), Time::ZERO, len);
@@ -177,20 +177,20 @@ pub fn project(
     p
 }
 
-/// Breite und Höhe eines Texts wie im Export (Schrift über `fonts`, sonst Systemschrift)
+/// Width and height of a text as in the export (font via `fonts`, otherwise system font)
 fn measure(fonts: &Fonts, st: &TextStyle) -> (f32, f32) {
     let (data, idx) = font_data(fonts, st.font_family.as_deref());
     measure_in(&data, idx, st)
 }
 
-/// Schriftdatei (Inhalt, Index) einer Familie wie im Export, sonst die Systemschrift
+/// Font file (content, index) of a family as in the export, otherwise the system font
 pub fn font_data(fonts: &Fonts, family: Option<&str>) -> (Vec<u8>, u32) {
     let font = family.and_then(|f| fonts.get(f).cloned()).or_else(|| cl_export::default_font().map(|p| (p, 0)));
     let data = font.as_ref().and_then(|f| std::fs::read(&f.0).ok()).unwrap_or_default();
     (data, font.map_or(0, |f| f.1))
 }
 
-/// Wie [`measure`] mit schon gelesener Schrift
+/// Like [`measure`] with an already read font
 pub fn measure_in(data: &[u8], idx: u32, st: &TextStyle) -> (f32, f32) {
     let txt = if st.uppercase { st.text.to_uppercase() } else { st.text.clone() };
     let lines: Vec<&str> = txt.split('\n').collect();
@@ -202,7 +202,7 @@ pub fn measure_in(data: &[u8], idx: u32, st: &TextStyle) -> (f32, f32) {
     (tw + border, st.size * 1.3 * st.line_spacing.max(0.5) * lines.len() as f32 + border)
 }
 
-/// Bereich `t` … `t + 2 Bilder` von `p` ohne Ton als Video in `w`×`h`
+/// Range `t` … `t + 2 frames` of `p` without audio as video in `w`×`h`
 pub fn export_frames(p: &Project, t: Time, (w, h): (u32, u32), fonts: &Fonts, out: &Path) -> std::result::Result<(), String> {
     let mut s = cl_export::ExportSettings::from_project(p);
     (s.width, s.height) = (w, h);
@@ -216,7 +216,7 @@ pub fn export_frames(p: &Project, t: Time, (w, h): (u32, u32), fonts: &Fonts, ou
     cl_export::run(&job, Arc::new(AtomicBool::new(false)), |_| {}).map_err(|e| e.to_string())
 }
 
-/// Erstes Bild eines Videos als PNG
+/// First frame of a video as PNG
 pub fn first_png(video: &Path, out: &Path) -> std::result::Result<(), String> {
     let ok = cl_media::ffmpeg_command()
         .map_err(|e| e.to_string())?
@@ -229,9 +229,9 @@ pub fn first_png(video: &Path, out: &Path) -> std::result::Result<(), String> {
     ok.then_some(()).ok_or_else(|| "Thumbnail konnte nicht gespeichert werden".into())
 }
 
-/// Thumbnail für `w` aus `src` nach `out` (PNG). In `dir` bleiben Standbild und Maske je Stelle
-/// des aktuellen Projektstands liegen, damit Änderungen an Text oder Umriss nur noch das
-/// Hilfsprojekt rechnen; die älterer Stände werden entfernt.
+/// Thumbnail for `w` from `src` to `out` (PNG). Still and mask per position of the current
+/// project state stay in `dir`, so that changes to text or outline only render the
+/// helper project; those of older states are removed.
 pub fn render(
     src: &Project,
     w: &Want,
@@ -241,7 +241,7 @@ pub fn render(
     out: &Path,
     cancel: &AtomicBool,
 ) -> std::result::Result<(), String> {
-    // Vorschau und Speichern teilen sich die Dateien im Arbeitsordner: nacheinander
+    // Preview and saving share the files in the work folder: one after another
     static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
     let frame = dir.join(format!("frame-{}-{}.mp4", w.rev, w.at.0));
@@ -259,8 +259,8 @@ pub fn render(
     let matte = dir.join(format!("matte-{}-{}.mkv", w.rev, w.at.0));
     let matte = match models.filter(|_| w.opts.person) {
         Some(_) if matte.is_file() => Some(matte),
-        // shortcut: RVM sieht das Standbild nur zweimal (rekurrentes Modell ohne Anlauf); bei
-        // unsauberen Kanten das Bild öfter wiederholen
+        // shortcut: RVM sees the still only twice (recurrent model without warm-up); with
+        // unclean edges repeat the frame more often
         Some(m) => cl_analyze::matte::matte(m, &frame.path, &matte, &|_| {}, cancel).map(|_| Some(matte))?,
         None => None,
     };
@@ -280,17 +280,17 @@ pub fn render(
     r
 }
 
-/// Offenes Fenster „Thumbnail“
+/// Open „Thumbnail“ window
 pub struct ThumbWin {
-    /// Stelle in Sekunden
+    /// Position in seconds
     pub at: f32,
     pub text: String,
-    /// Arbeitsordner (Standbild, Maske, Vorschau); verschwindet mit der letzten Aufgabe
+    /// Work folder (still, mask, preview); disappears with the last task
     dir: Arc<tempfile::TempDir>,
     tex: Option<egui::TextureHandle>,
-    /// zuletzt in Auftrag gegeben
+    /// last requested
     asked: Option<Want>,
-    /// letzter gesehener Stand und seit wann (Entprellen)
+    /// last seen state and since when (debounce)
     seen: Option<(Want, f64)>,
 }
 
@@ -333,7 +333,7 @@ impl App {
         self.save_last_used();
     }
 
-    /// Thumbnail mit den aktuellen Einstellungen nach `out` rechnen (im Hintergrund)
+    /// Render the thumbnail with the current settings to `out` (in the background)
     pub fn thumb_save(&mut self, ctx: &egui::Context, out: PathBuf) {
         let (Some(want), Some(w)) = (self.thumb_want(), self.thumb.as_ref()) else { return };
         let (src, fonts, models, dir) = (self.project.clone(), self.font_files(), self.thumb_models(), w.dir.clone());
@@ -348,8 +348,8 @@ impl App {
         });
     }
 
-    /// Vorschau neu rechnen, wenn sich der Stand geändert hat und 0,25 s ruhig ist; das letzte
-    /// fertige Bild bleibt so lange stehen.
+    /// Re-render the preview when the state has changed and has been quiet for 0.25 s; the last
+    /// finished frame stays until then.
     fn thumb_preview(&mut self, ctx: &egui::Context) {
         let Some(want) = self.thumb_want() else { return };
         let now = ctx.input(|i| i.time);
@@ -518,7 +518,7 @@ fn color_row(ui: &mut egui::Ui, label: &str, c: &mut [u8; 3]) {
     });
 }
 
-/// 3×3-Raster für die Lage des Texts
+/// 3×3 grid for the text position
 fn grid(ui: &mut egui::Ui, pos: &mut u8) {
     let (cell, gap) = (vec2(22.0, 13.0), 3.0);
     let (r, resp) = ui.allocate_exact_size(vec2(3.0 * cell.x + 2.0 * gap, 3.0 * cell.y + 2.0 * gap), Sense::click());
@@ -553,7 +553,7 @@ mod tests {
         }
     }
 
-    /// grobe Textgröße wie der Export ohne Schriftdatei
+    /// rough text size like the export without a font file
     fn rough(st: &TextStyle) -> (f32, f32) {
         let lines: Vec<&str> = st.text.split('\n').collect();
         let w = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f32 * st.size * 0.6;
@@ -586,28 +586,28 @@ mod tests {
         let o = Opts::default();
         let p = project(&o, "", &wide, None, None, &rough);
         assert_eq!((p.settings.width, p.settings.height), (W, H));
-        assert_eq!(kinds(&p), ["bild"], "Text leer, Person aus → nur das Bild");
-        assert_eq!(kinds(&project(&o, "  \n", &wide, Some(matte), None, &rough)), ["bild"], "Person aus trotz Maske");
-        // anderes Seitenverhältnis: weichgezeichnete Füllung unter dem eingepassten Bild
+        assert_eq!(kinds(&p), ["bild"], "text empty, person off → only the image");
+        assert_eq!(kinds(&project(&o, "  \n", &wide, Some(matte), None, &rough)), ["bild"], "person off despite the mask");
+        // other aspect ratio: blurred fill under the fitted image
         let p = project(&o, "Hallo", &tall, None, None, &rough);
         assert_eq!(kinds(&p), ["fuellung", "bild", "text"]);
         assert!(p.timeline.tracks[0].clips[0].fx.effects.iter().any(|e| e.id == "blur"));
         assert!(p.media.iter().any(|m| m.id == tall.id));
-        // Person mit Umriss über weichgezeichnetem Bild
+        // Person with outline above the blurred image
         let on = Opts { person: true, ..o.clone() };
         let p = project(&on, "Hallo", &wide, Some(matte), Some(&color), &rough);
         assert_eq!(kinds(&p), ["bild", "person", "text"]);
         assert!(p.timeline.tracks[0].clips[0].fx.effects.iter().any(|e| e.id == "blur"));
         assert!(matches!(p.timeline.tracks[1].clips[0].fx.person, Some(PersonFx::Outline { transparent: true, .. })));
-        // ohne Umriss: Person ohne Personen-Effekt (durchsichtig)
+        // without outline: person without the person effect (transparent)
         let p = project(&Opts { outline: false, ..on.clone() }, "", &wide, Some(matte), None, &rough);
         assert!(p.timeline.tracks[1].clips[0].fx.person.is_none());
-        // Modell fehlt (keine Maske): keine Freistell-Ebene
+        // model missing (no mask): no cutout layer
         assert_eq!(kinds(&project(&on, "", &wide, None, None, &rough)), ["bild"]);
-        // Hintergrund „Farbe“: Farbfläche statt Bild, auch bei anderem Seitenverhältnis
+        // „Farbe“ background: color area instead of the image, also with another aspect ratio
         let c = Opts { bg: Bg::Color, ..on.clone() };
         assert_eq!(kinds(&project(&c, "", &tall, Some(matte), Some(&color), &rough)), ["farbe", "person"]);
-        // abgedunkelt: Bild dunkler, Person darüber unverändert
+        // darkened: image darker, the person above unchanged
         let p = project(&Opts { bg: Bg::Dark, ..on }, "", &wide, Some(matte), None, &rough);
         assert!(p.timeline.tracks[0].clips[0].fx.adjust.brightness < 0.0);
         assert!(p.timeline.tracks[1].clips[0].fx.adjust.is_identity());
@@ -621,14 +621,14 @@ mod tests {
                 let o = Opts { pos, size: 200.0, ..Default::default() };
                 let p = project(&o, text, &wide, None, None, &rough);
                 let c = &p.timeline.tracks.last().unwrap().clips[0];
-                let ClipContent::Text(st) = &c.content else { panic!("Textebene fehlt") };
+                let ClipContent::Text(st) = &c.content else { panic!("text layer missing") };
                 let (tw, th) = rough(st);
                 let (x, y) = (c.transform.x, c.transform.y);
-                assert!(x.abs() + tw / 2.0 <= W as f32 / 2.0 - MARGIN + 0.5, "{text} {pos}: x {x}, Breite {tw}");
-                assert!(y.abs() + th / 2.0 <= H as f32 / 2.0 - MARGIN + 0.5, "{text} {pos}: y {y}, Höhe {th}");
+                assert!(x.abs() + tw / 2.0 <= W as f32 / 2.0 - MARGIN + 0.5, "{text} {pos}: x {x}, width {tw}");
+                assert!(y.abs() + th / 2.0 <= H as f32 / 2.0 - MARGIN + 0.5, "{text} {pos}: y {y}, height {th}");
                 let side = |v: f32| if v.abs() < 0.5 { 0 } else { v.signum() as i32 };
                 let (col, row) = (pos as i32 % 3 - 1, pos as i32 / 3 - 1);
-                // füllt der Text die Breite oder Höhe ganz, liegt er dort mittig
+                // if the text fills the width or height fully, it is centered there
                 let room = |free: f32, d: i32| if free < 0.5 { 0 } else { d };
                 assert_eq!((side(x), side(y)), (room(W as f32 / 2.0 - MARGIN - tw / 2.0, col), room(H as f32 / 2.0 - MARGIN - th / 2.0, row)), "{text} {pos}");
                 assert_eq!(st.align as i32, col);
@@ -665,7 +665,7 @@ mod tests {
         image::open(png).unwrap().to_rgba8()
     }
 
-    /// Ohne Modell: Bild und Text, 1280×720; der Text ist zu sehen, 9:16 füllt ohne schwarze Ränder.
+    /// Without a model: image and text, 1280×720; the text is visible, 9:16 fills without black borders.
     #[test]
     fn renders_image_and_text_and_fills_other_aspect_ratios() {
         if !cl_media::ffmpeg_available() {
@@ -685,7 +685,7 @@ mod tests {
         eprintln!("Thumbnail 16:9, Standbild schon da: {} ms", t0.elapsed().as_millis());
         let (a, b) = (rgba(&plain), rgba(&with));
         assert_eq!(b.dimensions(), (W, H));
-        // Mitte (Textlage 4): deutlich anders als ohne Text; Ecke unverändert
+        // Center (text position 4): clearly different from without text; corner unchanged
         let diff = |x0: u32, y0: u32| {
             let mut d = 0u64;
             for y in y0..y0 + 60 {
@@ -696,9 +696,9 @@ mod tests {
             }
             d as f64 / (60.0 * 160.0 * 3.0)
         };
-        assert!(diff(560, 330) > 20.0, "Text in der Mitte nicht zu sehen: {:.1}", diff(560, 330));
-        assert!(diff(20, 20) < 4.0, "Ecke verändert: {:.1}", diff(20, 20));
-        // 9:16: weichgezeichnete Füllung bis an die Ränder
+        assert!(diff(560, 330) > 20.0, "text in the center not visible: {:.1}", diff(560, 330));
+        assert!(diff(20, 20) < 4.0, "corner changed: {:.1}", diff(20, 20));
+        // 9:16: blurred fill up to the borders
         let tall = source(dir.path(), 1080, 1920);
         let out = dir.path().join("hoch.png");
         let t0 = std::time::Instant::now();
@@ -709,13 +709,13 @@ mod tests {
         for y in (40..H - 40).step_by(40) {
             for x in [4, W - 5] {
                 let p = img.get_pixel(x, y);
-                assert!(p[0] as u32 + p[1] as u32 + p[2] as u32 > 30, "schwarzer Rand bei {x},{y}: {p:?}");
+                assert!(p[0] as u32 + p[1] as u32 + p[2] as u32 > 30, "black border at {x},{y}: {p:?}");
             }
         }
     }
 
-    /// Projekt bei offenem Fenster geändert (neuer Stand): Das Standbild wird neu gerechnet, die
-    /// Dateien des alten Stands verschwinden aus dem Arbeitsordner.
+    /// Project changed while the window is open (new state): the still is re-rendered, the
+    /// files of the old state disappear from the work folder.
     #[test]
     fn project_change_renders_a_new_frame() {
         if !cl_media::ffmpeg_available() {
@@ -733,12 +733,12 @@ mod tests {
         w.rev = 2;
         render(&src, &w, &fonts, None, &work, &b, &stop).unwrap();
         let luma = |p: &Path| rgba(p).pixels().map(|q| q[0] as u64 + q[1] as u64 + q[2] as u64).sum::<u64>() / (W * H) as u64;
-        assert!(luma(&b) + 30 < luma(&a), "alter Stand gespeichert: {} / {}", luma(&a), luma(&b));
+        assert!(luma(&b) + 30 < luma(&a), "old state saved: {} / {}", luma(&a), luma(&b));
         let names: Vec<String> = std::fs::read_dir(&work).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         assert!(names.iter().all(|n| !n.starts_with("frame-1-")) && names.iter().any(|n| n.starts_with("frame-2-")), "{names:?}");
     }
 
-    /// Öffnen, Ändern, Speichern: kein Verlaufsschritt, keine Revision, nichts ungespeichert.
+    /// Open, change, save: no history step, no revision, nothing unsaved.
     #[test]
     fn open_project_stays_untouched() {
         if !cl_media::ffmpeg_available() {
@@ -750,7 +750,7 @@ mod tests {
         let before = (app.revision, app.saved_revision, app.doc.lock().unwrap().can_undo(), app.project.clone());
         let ctx = egui::Context::default();
         app.run_action(&ctx, "quick_thumbnail");
-        assert!(app.thumb.is_some(), "Fenster offen");
+        assert!(app.thumb.is_some(), "window open");
         app.thumb_opts.pos = 0;
         app.thumb_opts.outline = false;
         app.thumb.as_mut().unwrap().text = "Hallo".into();
@@ -759,11 +759,11 @@ mod tests {
         }
         let out = home.path().join("t.png");
         app.thumb_save(&ctx, out.clone());
-        // Ergebnisse abholen, ohne sie anzuwenden (der Explorer ginge auf)
+        // collect results without applying them (Explorer would open)
         let t0 = std::time::Instant::now();
         let mut saved = false;
         while !saved {
-            assert!(t0.elapsed().as_secs() < 120, "Thumbnail nicht gespeichert");
+            assert!(t0.elapsed().as_secs() < 120, "thumbnail not saved");
             for (k, d) in app.tasks.poll() {
                 match d {
                     TaskDone::Failed(e) => panic!("{k}: {e}"),

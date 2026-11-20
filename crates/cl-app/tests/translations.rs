@@ -1,14 +1,14 @@
-//! Jeder feste Oberflächentext im Code hat eine englische Übersetzung.
+//! Every fixed UI text in the code has an English translation.
 //!
-//! Erfasst werden Textliterale direkt in `tr("…")`, `toast("…")`, `toast_err("…")` und den Knopf-/
-//! Abschnitts-Helfern aus `theme`/`widgets` (die alle selbst übersetzen; Liste unten). Ein Text
-//! gilt als übersetzt, wenn `tr()` auf Englisch etwas anderes liefert
-//! oder er wörtlich im Wörterbuch steht (gleich lautende Wörter wie „Alt“).
-//! Eigener Testprozess, weil die Sprache global umgestellt wird.
+//! Covered are text literals directly in `tr("…")`, `toast("…")`, `toast_err("…")` and the button/
+//! section helpers from `theme`/`widgets` (which all translate themselves; list below). A text
+//! counts as translated if `tr()` returns something different in English
+//! or it is literally in the dictionary (words spelled the same, like „Alt“).
+//! Separate test process, because the language is switched globally.
 
 use std::collections::HashSet;
 
-/// In jeder Sprache gleich (Abkürzungen, Schriftprobe, Befehlszeile)
+/// Same in every language (abbreviations, font sample, command line)
 const SAME: &[&str] = &["OK", "HSL", "LUT", "REC", "Cutline 0123 ÄÖÜ äöü ß", "cutline --mcp projekt.cutline"];
 
 fn literals(src: &str, call: &str) -> Vec<String> {
@@ -16,7 +16,7 @@ fn literals(src: &str, call: &str) -> Vec<String> {
     let pat = format!("{call}\"");
     let mut rest = src;
     while let Some(i) = rest.find(&pat) {
-        // `crate::tr(` und `self.toast(` zählen, `xtr(` nicht
+        // `crate::tr(` and `self.toast(` count, `xtr(` does not
         let prev = rest[..i].chars().next_back();
         rest = &rest[i + pat.len()..];
         if prev.is_some_and(|c| c.is_alphanumeric() || c == '_') {
@@ -52,12 +52,12 @@ fn every_fixed_ui_text_has_english() {
     files.sort();
     for f in files.iter().filter(|f| f.extension().is_some_and(|e| e == "rs")) {
         let src = std::fs::read_to_string(f).unwrap();
-        // Tests am Dateiende prüfen Texte, die nicht in der Oberfläche stehen
+        // Tests at the end of the file check texts that are not in the UI
         let src = src.split("mod tests {").next().unwrap_or(&src);
         for call in ["tr(", "toast(", "toast_err(", "primary(", "secondary(", "danger(", "ghost(", "card_header(ui, ", "section(ui, ", "chip(ui, ", "toggle_row(ui, "] {
             for lit in literals(src, call) {
                 if lit.contains('{') || !lit.chars().any(char::is_alphabetic) || SAME.contains(&lit.as_str()) {
-                    continue; // Vorlage mit format!-Platzhaltern, nur Zeichen/Zahlen, sprachneutral
+                    continue; // template with format! placeholders, only symbols/numbers, language-neutral
                 }
                 n += 1;
                 if cl_i18n::tr(&lit) == lit && !keys.contains(lit.trim()) {
@@ -68,6 +68,6 @@ fn every_fixed_ui_text_has_english() {
     }
     missing.sort();
     missing.dedup();
-    assert!(n > 250, "zu wenige Texte gefunden ({n}): Suchmuster prüfen");
-    assert!(missing.is_empty(), "{} Texte ohne englische Zeile in ui.en.tsv:\n{}", missing.len(), missing.join("\n"));
+    assert!(n > 250, "too few texts found ({n}): check the search patterns");
+    assert!(missing.is_empty(), "{} texts without an English line in ui.en.tsv:\n{}", missing.len(), missing.join("\n"));
 }

@@ -1,7 +1,7 @@
-//! Schnellaktionen mit Einstellungen: Pausen entfernen, Füllwörter, Ducking, Zoom-Punch-in.
-//! Ein gemeinsames Fenster: Werte einstellen, bei Pausen und Füllwörtern erst analysieren,
-//! Treffer prüfen (Klick springt hin, einzeln abwählbar), „Anwenden“ schneidet.
-//! Esc schließt, Enter löst die Hauptaktion aus.
+//! Quick actions with settings: remove pauses, filler words, ducking, zoom punch-in.
+//! One shared window: set values, analyze first for pauses and filler words,
+//! check hits (click jumps there, individually deselectable), „Anwenden“ cuts.
+//! Esc closes, Enter triggers the main action.
 
 use std::path::PathBuf;
 
@@ -21,7 +21,7 @@ pub enum QuickKind {
     Punch,
 }
 
-/// Ein gefundener Schnitt in Projektzeit
+/// A found cut in project time
 pub struct Hit {
     pub track: TrackId,
     pub from: Time,
@@ -30,8 +30,8 @@ pub struct Hit {
     pub on: bool,
 }
 
-/// Fensterzustand und zuletzt benutzte Werte (Standard = die früheren festen Werte). Die Werte
-/// überleben den Neustart (`last-used.json`), der Fensterzustand nicht.
+/// Window state and last used values (default = the former fixed values). The values
+/// survive a restart (`last-used.json`), the window state does not.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Quick {
@@ -49,18 +49,18 @@ pub struct Quick {
     pub whole_track: bool,
     #[serde(skip)]
     pub hits: Option<Vec<Hit>>,
-    /// Projektstand der Analyse: ändert sich das Projekt, ist die Liste veraltet
+    /// Project state of the analysis: if the project changes, the list is outdated
     #[serde(skip)]
     hits_rev: u64,
-    /// Analysierte Clipbereiche (Spur, von, bis): außerhalb gilt eine Spur als still
+    /// Analyzed clip ranges (track, from, to): outside them a track counts as silent
     #[serde(skip)]
     cover: Vec<(TrackId, Time, Time)>,
     #[serde(skip)]
     confirm_replace: bool,
 }
 
-/// Zuletzt benutzte Werte aus `text` (Inhalt von `last-used.json`): Schnellaktionen, Safe-Area,
-/// Thumbnail und Lautstärke der Wiedergabe. Fehlt etwas oder ist die Datei kaputt, gilt dafür der Standard.
+/// Last used values from `text` (content of `last-used.json`): quick actions, safe area,
+/// thumbnail and playback volume. If something is missing or the file is broken, the default applies to it.
 pub fn last_used(text: &str) -> (Quick, bool, crate::thumb::Opts, crate::audio::Volume) {
     let v: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
     (
@@ -94,7 +94,7 @@ impl App {
     }
 }
 
-/// Eingestellte Werte der Schnellaktionen und die Safe-Area gingen beim Neustart verloren
+/// Set values of the quick actions and the safe area were lost on restart
 #[test]
 fn last_used_values_survive_a_restart() {
     let q = Quick { thresh_db: -40.0, words: "also".into(), whole_track: true, open: Some(QuickKind::Pauses), ..Default::default() };
@@ -107,7 +107,7 @@ fn last_used_values_survive_a_restart() {
     assert_eq!(th_back, th);
     assert!(back.open.is_none(), "das Fenster geht nicht von selbst wieder auf");
     assert_eq!(back.min_pause, Quick::default().min_pause);
-    // kaputte oder leere Datei: Standard statt Absturz
+    // broken or empty file: default instead of a crash
     for bad in ["", "{", r#"{"quick": 7, "safe_area": "ja", "volume": "laut"}"#, r#"{"volume": {"percent": 500}}"#] {
         let (d, safe, _, vol) = last_used(bad);
         assert!(!safe && d.thresh_db == Quick::default().thresh_db, "{bad}");
@@ -137,8 +137,8 @@ impl Default for Quick {
     }
 }
 
-/// Schnittbereiche eines Clips (Clipzeit, s) in Projektzeit. Reste unter 40 ms an den
-/// Clipkanten werden mitgeschnitten, damit keine Splitter stehen bleiben.
+/// Cut ranges of a clip (clip time, s) in project time. Leftovers under 40 ms at the
+/// clip edges are cut along, so no slivers remain.
 pub fn clip_cuts(start: f64, dur: f64, cuts: &[(f64, f64)]) -> Vec<(Time, Time)> {
     cuts.iter()
         .map(|&(a, b)| (a.max(0.0), b.min(dur)))
@@ -152,18 +152,18 @@ fn norm(w: &str) -> String {
     w.chars().filter(|c| c.is_alphabetic()).collect::<String>().to_lowercase()
 }
 
-/// Wortliste: getrennt an Komma, Semikolon und jedem Leerraum (auch Zeilenumbruch)
+/// Word list: split at comma, semicolon and any whitespace (also line breaks)
 fn filler_words(s: &str) -> Vec<String> {
     s.split(|c: char| c == ',' || c == ';' || c.is_whitespace()).map(norm).filter(|w| !w.is_empty()).collect()
 }
 
-/// Bereiche `v` ohne den Bereich `cut`
+/// Ranges `v` without the range `cut`
 fn minus(v: Vec<(Time, Time)>, (c0, c1): (Time, Time)) -> Vec<(Time, Time)> {
     v.into_iter().flat_map(|(a, b)| [(a, b.min(c0)), (a.max(c1), b)]).filter(|(a, b)| b > a).collect()
 }
 
-/// Mehrere Spuren mit „Alles mitziehen“: nur dort schneiden, wo alle analysierten Spuren still
-/// sind. Eine Spur spricht innerhalb ihrer Clips (`cover`) überall, wo sie keinen Treffer hat.
+/// Several tracks with „Alles mitziehen“: only cut where all analyzed tracks are
+/// silent. A track speaks within its clips (`cover`) everywhere it has no hit.
 pub fn common_cuts(hits: &[(TrackId, Time, Time)], cover: &[(TrackId, Time, Time)]) -> Vec<(TrackId, Time, Time)> {
     let speaking: Vec<(TrackId, (Time, Time))> = cover
         .iter()
@@ -180,7 +180,7 @@ pub fn common_cuts(hits: &[(TrackId, Time, Time)], cover: &[(TrackId, Time, Time
         .collect()
 }
 
-/// Ton-Quelle eines Ziel-Clips für die Analyse
+/// Audio source of a target clip for the analysis
 struct Src {
     track: TrackId,
     start: f64,
@@ -205,7 +205,7 @@ impl App {
         self.quick.confirm_replace = false;
     }
 
-    /// Ziel-Clips mit Ton: Auswahl oder (Schalter) alle Clips ihrer Spuren
+    /// Target clips with audio: the selection or (toggle) all clips of their tracks
     fn quick_sources(&self) -> Vec<Src> {
         let sel = self.selection();
         let whole = self.quick.whole_track;
@@ -234,7 +234,7 @@ impl App {
     }
 
     fn quick_analyze(&mut self, ctx: &egui::Context, kind: QuickKind) {
-        // Tempo-Kurven lassen sich nicht linear umrechnen: solche Clips überspringen
+        // Speed curves cannot be converted linearly: skip such clips
         let (curved, srcs): (Vec<Src>, Vec<Src>) = self.quick_sources().into_iter().partition(|s| s.curve);
         if !curved.is_empty() {
             self.toast_err("Clips mit Tempo-Kurve werden übersprungen");
@@ -265,14 +265,14 @@ impl App {
             for (i, s) in srcs.iter().enumerate() {
                 let step = |f: f32| p((i as f32 + f) / n);
                 let clip = |a: f64, b: f64| crate::creator::src_range_to_clip(a, b, s.span, s.sp, s.rev);
-                // (von, bis) in Clipzeit und Bezeichnung
+                // (from, to) in clip time and label
                 let cuts: Vec<(f64, f64, String)> = if kind == QuickKind::Pauses {
                     step(0.3);
                     let env = match cl_analyze::audio::envelope(&s.path, s.src, Some(s.span)) {
                         Ok(e) => e,
                         Err(e) => return TaskDone::Failed(e),
                     };
-                    // Pause (a, b): Sprache endet bei a, setzt bei b wieder ein
+                    // Pause (a, b): speech ends at a, resumes at b
                     cl_analyze::audio::silences(&env, db, min)
                         .into_iter()
                         .map(|(a, b)| {
@@ -303,7 +303,7 @@ impl App {
             TaskDone::Run(Box::new(move |app: &mut App| {
                 if app.quick.open == Some(kind) {
                     app.quick.hits = Some(hits);
-                    // Stand vom Analysestart: wurde inzwischen geändert, verwirft der Dialog die Liste
+                    // State at analysis start: if it has changed since, the dialog discards the list
                     app.quick.hits_rev = rev;
                     app.quick.cover = cover;
                 }
@@ -353,7 +353,7 @@ impl App {
         }
     }
 
-    /// Das gemeinsame Quick-Action-Fenster
+    /// The shared quick action window
     pub fn quick_dialog(&mut self, ctx: &egui::Context) {
         let Some(kind) = self.quick.open else { return };
         if self.quick.hits.is_some() && self.quick.hits_rev != self.revision {
@@ -361,9 +361,9 @@ impl App {
         }
         let analyzes = matches!(kind, QuickKind::Pauses | QuickKind::Fillers);
         let busy = self.tasks.running("tool").is_some();
-        // Enter im Textfeld (Wortliste, Zahlenfeld) ist Eingabe, keine Hauptaktion
+        // Enter in a text field (word list, number field) is input, not the main action
         let (mut close, mut main) = crate::dialog::keys(ctx);
-        // Füllwörter ohne Spracherkennungsmodell: statt „Analysieren“ zum Modell-Download
+        // Filler words without a speech recognition model: model download instead of „Analysieren“
         let no_model = kind == QuickKind::Fillers && self.models().parakeet().is_none();
         let multi = self.project.settings.ripple_all_tracks
             && self.quick.cover.iter().any(|c| self.quick.cover.first().is_some_and(|f| f.0 != c.0));
@@ -482,7 +482,7 @@ impl App {
             self.quick.confirm_replace = false;
             self.close_quick();
         } else if main && no_model {
-            // wie bei den Untertiteln: Einstellungen → Modelle
+            // as with captions: Settings → Models
             self.close_quick();
             self.settings_section = crate::settings::Section::Models;
             self.settings_open = true;
@@ -529,15 +529,15 @@ mod tests {
     fn multi_track_cuts_only_where_all_are_silent() {
         let s = Time::from_secs_f64;
         let (a, b) = (TrackId::new(), TrackId::new());
-        // A: Clip 0–20, Pausen 2–4 und 10–12. B: Clip 0–15, Pause 3–5 (spricht bei 10–12)
+        // A: clip 0–20, pauses 2–4 and 10–12. B: clip 0–15, pause 3–5 (speaks at 10–12)
         let hits = [(a, s(2.0), s(4.0)), (a, s(10.0), s(12.0)), (b, s(3.0), s(5.0))];
         let cover = [(a, s(0.0), s(20.0)), (b, s(0.0), s(15.0))];
         let r = common_cuts(&hits, &cover);
         assert_eq!(r, vec![(a, s(3.0), s(4.0)), (b, s(3.0), s(4.0))]);
-        // B hat nach 15 s keinen Clip: dort gilt B als still
+        // B has no clip after 15 s: there B counts as silent
         let r = common_cuts(&[(a, s(16.0), s(18.0))], &cover);
         assert_eq!(r, vec![(a, s(16.0), s(18.0))]);
-        // eine Spur: unverändert
+        // one track: unchanged
         assert_eq!(common_cuts(&hits[..2], &cover[..1]), hits[..2].to_vec());
     }
 }

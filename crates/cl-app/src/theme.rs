@@ -1,17 +1,17 @@
-//! Design-System (Stand Phase 2):
-//! - Monochrom: fast schwarze Flächen, Weiß als einzige Akzentfarbe (aktive Zustände,
-//!   Primäraktion, Auswahl). Farbe kommt nur aus dem Inhalt (Clips, Vorschauen).
-//! - Schwebende Karten mit 6-px-Radius (R_CARD), 4 px Abstand, ein Icon-Stil (Phosphor, Linien)
-//! - 8-px-Raster, feste Label-Spalte im Inspektor, gedämpfte Sekundärtexte
-//! - Minimalistische Regler (2-px-Schiene, kleiner Knopf), Schalter statt Häkchen
+//! Design system (as of phase 2):
+//! - monochrome: almost black areas, white as the only accent color (active states,
+//!   primary action, selection). Color only comes from the content (clips, previews).
+//! - floating cards with a 6 px radius (R_CARD), 4 px gaps, one icon style (Phosphor, line)
+//! - 8 px grid, fixed label column in the inspector, muted secondary texts
+//! - minimalist sliders (2 px track, small knob), toggles instead of check marks
 
 use cl_core::TrackKind;
 use eframe::egui::{self, pos2, vec2, Color32, CornerRadius, Pos2, Rect, RichText, Stroke};
 
 pub use egui_phosphor::regular as icon;
 
-/// Farbpalette eines Themes. Die Oberfläche liest Farben zur Laufzeit (`theme::TEXT()` …),
-/// damit ein Wechsel sofort überall greift.
+/// Color palette of a theme. The UI reads colors at runtime (`theme::TEXT()` …),
+/// so that a change takes effect everywhere at once.
 pub struct Palette {
     pub name: &'static str,
     pub id: &'static str,
@@ -25,11 +25,11 @@ pub struct Palette {
     pub text: Color32,
     pub text_dim: Color32,
     pub text_faint: Color32,
-    /// Akzent (aktive Zustände, Primäraktion, Auswahl)
+    /// Accent (active states, primary action, selection)
     pub accent: Color32,
-    /// Schrift auf Akzentflächen
+    /// Text on accent areas
     pub accent_ink: Color32,
-    /// Warn-/Hinweistext (≥ 4,5:1 auf `bg_card` und `bg_raised`)
+    /// Warning/hint text (≥ 4.5:1 on `bg_card` and `bg_raised`)
     pub warn_text: Color32,
 }
 
@@ -51,17 +51,17 @@ pub fn set_animations(on: bool) {
     ANIMATIONS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Die drei Dauern aller Bewegungen: schnell (Hover, Drücken, Symbolwechsel, Menüs), normal (Wechsel,
-/// Ein/Aus, Verschieben, Aufklappen), ruhig (Fenster, große Flächen). Nichts dauert länger.
+/// The three durations of all motion: fast (hover, press, icon change, menus), normal (switch,
+/// on/off, move, expand), calm (windows, large areas). Nothing takes longer.
 pub const MOTION_FAST: f32 = 0.09;
 pub const MOTION: f32 = 0.16;
 pub const MOTION_SLOW: f32 = 0.24;
 
-/// Eine Ladeanzeige erscheint erst nach `LOAD_DELAY` und bleibt dann mindestens `LOAD_MIN` stehen.
+/// A loading indicator appears only after `LOAD_DELAY` and then stays for at least `LOAD_MIN`.
 pub const LOAD_DELAY: f64 = 0.15;
 pub const LOAD_MIN: f64 = 0.30;
 
-/// Dauer einer Bewegung (0, wenn Animationen ausgeschaltet sind). Nur mit den `MOTION`-Konstanten aufrufen.
+/// Duration of a motion (0 if animations are switched off). Only call with the `MOTION` constants.
 pub fn anim(secs: f32) -> f32 {
     anim_if(animations_on(), secs)
 }
@@ -78,22 +78,22 @@ pub fn animations_on() -> bool {
     ANIMATIONS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Die eine Kurve aller Bewegungen: sanft auslaufend (kubisch), ohne Überschwingen.
+/// The one curve of all motion: easing out smoothly (cubic), without overshoot.
 pub fn ease(t: f32) -> f32 {
     let u = 1.0 - t.clamp(0.0, 1.0);
     1.0 - u * u * u
 }
 
-/// Weich ein-/ausblenden (0…1). Beim ersten Aufruf steht der Wert sofort am Ziel.
+/// Fade in/out smoothly (0…1). On the first call the value is at the target at once.
 pub fn fade(ctx: &egui::Context, id: egui::Id, on: bool, secs: f32) -> f32 {
     ctx.animate_bool_with_time_and_easing(id, on, anim(secs), ease)
 }
 
-/// Zustand von [`glide`]: Start, Ziel, Startzeit
+/// State of [`glide`]: start, target, start time
 #[derive(Clone, Copy)]
 struct Glide(f32, f32, f64);
 
-/// Stand einer Gleitbewegung von `from` nach `to`, `age` Sekunden nach dem Start.
+/// Progress of a glide from `from` to `to`, `age` seconds after the start.
 pub fn glide_at(from: f32, to: f32, age: f32, secs: f32) -> f32 {
     if secs <= 0.0 {
         return to;
@@ -101,8 +101,8 @@ pub fn glide_at(from: f32, to: f32, age: f32, secs: f32) -> f32 {
     from + (to - from) * ease(age / secs)
 }
 
-/// Wert/Position weich zum Ziel gleiten lassen (eine Kurve, Dauer `secs`). Beim ersten Aufruf
-/// steht der Wert sofort am Ziel; ein neues Ziel mitten in der Bewegung startet vom aktuellen Stand.
+/// Let a value/position glide smoothly to the target (one curve, duration `secs`). On the first call
+/// the value is at the target at once; a new target in mid-motion starts from the current state.
 pub fn glide(ctx: &egui::Context, id: egui::Id, to: f32, secs: f32) -> f32 {
     let now = ctx.input(|i| i.time);
     let secs = anim(secs);
@@ -122,8 +122,8 @@ pub fn glide(ctx: &egui::Context, id: egui::Id, to: f32, secs: f32) -> f32 {
     glide_at(g.0, g.1, age, secs)
 }
 
-/// Inhalt nach einem Wechsel (Tab, Reiter) kurz einblenden: Deckkraft 0…1 seit dem letzten Wechsel
-/// von `key`. Der erste Aufruf blendet nicht.
+/// Fade content in briefly after a switch (tab): opacity 0…1 since the last change
+/// of `key`. The first call does not fade.
 pub fn fade_on_change(ctx: &egui::Context, id: egui::Id, key: u64) -> f32 {
     let now = ctx.input(|i| i.time);
     let old = ctx.data(|d| d.get_temp::<(u64, f64)>(id));
@@ -145,9 +145,9 @@ pub fn fade_on_change(ctx: &egui::Context, id: egui::Id, key: u64) -> f32 {
     }
 }
 
-/// Ladeanzeige zeigen? `busy_for`: Sekunden seit Beginn, solange noch beschäftigt (`None` = fertig);
-/// `shown_for`: Sekunden, seit die Anzeige sichtbar ist. Kurze Wartezeiten bleiben unsichtbar, eine
-/// einmal gezeigte Anzeige blitzt nicht nur kurz auf.
+/// Show a loading indicator? `busy_for`: seconds since the start while still busy (`None` = done);
+/// `shown_for`: seconds since the indicator became visible. Short waits stay invisible, an
+/// indicator once shown does not just flash briefly.
 pub fn loader_visible(busy_for: Option<f64>, shown_for: Option<f64>) -> bool {
     match (busy_for, shown_for) {
         (_, Some(s)) if s < LOAD_MIN => true,
@@ -156,19 +156,19 @@ pub fn loader_visible(busy_for: Option<f64>, shown_for: Option<f64>) -> bool {
     }
 }
 
-/// Zustand von [`loading`]: beschäftigt seit, sichtbar seit, zuletzt gefragt (Bildnummer)
+/// State of [`loading`]: busy since, visible since, last asked (frame number)
 #[derive(Clone, Copy, Default)]
 struct Loader(Option<f64>, Option<f64>, u64);
 
-/// [`loader_visible`] mit gemerktem Zustand je `id`. Fordert ein Neuzeichnen nur für den Moment an,
-/// in dem sich die Antwort ohne neues Ereignis ändert.
+/// [`loader_visible`] with remembered state per `id`. Requests a repaint only for the moment
+/// in which the answer changes without a new event.
 pub fn loading(ctx: &egui::Context, id: egui::Id, busy: bool) -> bool {
     let id = id.with("loading");
     let pass = ctx.cumulative_pass_nr();
     let Some(mut s) = ctx.data(|d| d.get_temp::<Loader>(id)).or(busy.then(Loader::default)) else {
         return false;
     };
-    // länger nicht gezeichnet (anderer Tab, Fenster zu): neu beginnen
+    // not drawn for a while (another tab, window closed): start over
     if s.2 + 1 < pass {
         s = Loader::default();
     }
@@ -197,8 +197,8 @@ pub fn pal() -> &'static Palette {
     &PALETTES[CURRENT.load(std::sync::atomic::Ordering::Relaxed).min(PALETTES.len() - 1)]
 }
 
-/// Theme aus den Einstellungen („system“, „dark“, „darkgray“, „gray“, „light“). „system“ folgt
-/// dem hellen/dunklen Modus des Betriebssystems.
+/// Theme from the settings („system“, „dark“, „darkgray“, „gray“, „light“). „system“ follows
+/// the light/dark mode of the operating system.
 pub fn select(ctx: &egui::Context, id: &str) {
     let id = if id == "system" {
         match ctx.system_theme() {
@@ -209,7 +209,7 @@ pub fn select(ctx: &egui::Context, id: &str) {
         id
     };
     let i = PALETTES.iter().position(|p| p.id == id).unwrap_or(0);
-    // Auswahlrahmen trägt den zuletzt angewandten Akzent → neuer Akzent wendet die Visuals neu an
+    // the selection stroke carries the last applied accent → a new accent re-applies the visuals
     let st = ctx.style();
     if CURRENT.swap(i, std::sync::atomic::Ordering::Relaxed) != i
         || st.visuals.panel_fill != pal().bg_app
@@ -219,9 +219,9 @@ pub fn select(ctx: &egui::Context, id: &str) {
     }
 }
 
-/// Akzent-Vorgaben: (id, Name, Farbe auf dunklen Themes, Farbe auf hellem Theme).
-/// Auf dunklen Flächen heller/entsättigt (satte Farben „glühen“ dort), alle ≥ 3:1 gegen
-/// `bg_card`; „auto“ ist der neutrale Akzent der Palette.
+/// Accent presets: (id, name, color on dark themes, color on the light theme).
+/// Lighter/desaturated on dark areas (saturated colors "glow" there), all ≥ 3:1 against
+/// `bg_card`; „auto“ is the palette's neutral accent.
 pub const ACCENTS: [(&str, &str, Color32, Color32); 8] = [
     ("auto", "Weiß", PALETTES[0].accent, PALETTES[3].accent),
     ("blue", "Blau", rgb(0x5B9DFF), rgb(0x2B63D9)),
@@ -230,15 +230,15 @@ pub const ACCENTS: [(&str, &str, Color32, Color32); 8] = [
     ("violet", "Violett", rgb(0xA98BFA), rgb(0x7445D6)),
     ("pink", "Pink", rgb(0xF27AB6), rgb(0xC2317A)),
     ("orange", "Orange", rgb(0xF59A55), rgb(0xB85A12)),
-    // Koralle statt Reinrot, damit der Akzent nicht wie `DANGER` aussieht
+    // coral instead of pure red, so the accent does not look like `DANGER`
     ("red", "Rot", rgb(0xFF7E6E), rgb(0xBF5039)),
 ];
 
-/// 0 = auto, 1.. = Vorgabe, CUSTOM|rgb = eigene Farbe
+/// 0 = auto, 1.. = preset, CUSTOM|rgb = own color
 static ACCENT_SPEC: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 const CUSTOM: u32 = 1 << 31;
 
-/// Akzent aus den Einstellungen: „auto“, Vorgabe-id oder „#RRGGBB“. Unbekanntes = auto.
+/// Accent from the settings: „auto“, preset id or „#RRGGBB“. Unknown = auto.
 pub fn set_accent(spec: &str) {
     let v = match ACCENTS.iter().position(|a| a.0 == spec) {
         Some(i) => i as u32,
@@ -247,7 +247,7 @@ pub fn set_accent(spec: &str) {
     ACCENT_SPEC.store(v, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Relative Leuchtdichte nach WCAG (0 = schwarz, 1 = weiß)
+/// Relative luminance per WCAG (0 = black, 1 = white)
 pub fn luminance(c: Color32) -> f32 {
     let l = |v: u8| {
         let v = v as f32 / 255.0;
@@ -256,14 +256,14 @@ pub fn luminance(c: Color32) -> f32 {
     0.2126 * l(c.r()) + 0.7152 * l(c.g()) + 0.0722 * l(c.b())
 }
 
-/// Kontrastverhältnis nach WCAG (1 … 21)
+/// Contrast ratio per WCAG (1 … 21)
 pub fn contrast(a: Color32, b: Color32) -> f32 {
     let (a, b) = (luminance(a), luminance(b));
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
-/// Gewählter Akzent für Palette `p` (Vorgaben und eigene Farben werden bis 3:1 gegen `bg_card` und `bg_raised` aufgehellt
-/// bzw. abgedunkelt, damit aktive Zustände sichtbar bleiben).
+/// Chosen accent for palette `p` (presets and own colors are lightened or darkened up to 3:1 against `bg_card` and `bg_raised`
+/// so that active states stay visible).
 pub fn accent_for(p: &Palette) -> Color32 {
     let mut c = match ACCENT_SPEC.load(std::sync::atomic::Ordering::Relaxed) {
         0 => return p.accent,
@@ -273,7 +273,7 @@ pub fn accent_for(p: &Palette) -> Color32 {
             if p.dark { a.2 } else { a.3 }
         }
     };
-    // Vorgaben passen meist schon; im Design „Grau“ werden Blau/Violett so leicht aufgehellt
+    // presets mostly fit already; in the „Grau“ design blue/violet get lightened slightly this way
     let to = if p.dark { Color32::WHITE } else { Color32::BLACK };
     for _ in 0..60 {
         if contrast(c, p.bg_card) >= 3.0 && contrast(c, p.bg_raised) >= 3.0 {
@@ -284,13 +284,13 @@ pub fn accent_for(p: &Palette) -> Color32 {
     c
 }
 
-/// Schrift auf `accent`: dunkle oder helle Tinte der Palette, je nachdem was stärker kontrastiert
+/// Text on `accent`: dark or light ink of the palette, whichever contrasts more
 fn ink_for(p: &Palette, accent: Color32) -> Color32 {
     let (dark, light) = if p.dark { (p.accent_ink, p.text) } else { (p.text, p.accent_ink) };
     if contrast(dark, accent) >= contrast(light, accent) { dark } else { light }
 }
 
-/// Leichte Überlagerung für Hover/Aktiv: hell auf dunklen Themes, dunkel auf hellem
+/// Slight overlay for hover/active: light on dark themes, dark on the light one
 pub fn overlay(alpha: u8) -> Color32 {
     if pal().dark {
         Color32::from_white_alpha(alpha)
@@ -299,7 +299,7 @@ pub fn overlay(alpha: u8) -> Color32 {
     }
 }
 
-/// Fläche hinter Textvorschauen: Texte sind für Video gemacht, deshalb in jedem Design dunkel
+/// Area behind text previews: texts are made for video, hence dark in every design
 pub const STAGE: Color32 = Color32::from_rgb(0x1E, 0x24, 0x2C);
 
 #[allow(non_snake_case)]
@@ -318,8 +318,8 @@ pub fn BORDER() -> Color32 { pal().border }
 pub fn TEXT() -> Color32 { pal().text }
 #[allow(non_snake_case)]
 pub fn TEXT_DIM() -> Color32 { pal().text_dim }
-/// Nur für Deaktiviertes, Platzhalter in leeren Feldern, Trenner und reine Dekoration
-/// (zu wenig Kontrast für Lesetext). Alles, was Information trägt, nimmt `TEXT_DIM()`.
+/// Only for disabled items, placeholders in empty fields, separators and pure decoration
+/// (too little contrast for reading text). Everything that carries information uses `TEXT_DIM()`.
 #[allow(non_snake_case)]
 pub fn TEXT_FAINT() -> Color32 { pal().text_faint }
 #[allow(non_snake_case)]
@@ -329,14 +329,14 @@ pub fn ACCENT_INK() -> Color32 { ink_for(pal(), ACCENT()) }
 
 pub const DANGER: Color32 = Color32::from_rgb(0xE5, 0x48, 0x4D);
 pub const SNAP: Color32 = Color32::from_rgb(0xFF, 0xD8, 0x4D);
-/// Warnung/Hinweis (fehlende Datei, Lizenz prüfen …)
+/// Warning/hint (missing file, check the license …)
 pub const WARN: Color32 = Color32::from_rgb(0xE0, 0x90, 0x50);
-/// Erfolg (Export fertig)
+/// Success (export done)
 pub const SUCCESS: Color32 = Color32::from_rgb(0x3D, 0xD6, 0x8C);
-/// Fläche hinter Erfolgsmeldungen
+/// Area behind success messages
 pub const SUCCESS_BG: Color32 = Color32::from_rgb(0x0B, 0x24, 0x18);
 
-/// Fehler-Toast: getönte Fläche und lesbare Schrift, auf hellem wie dunklem Theme
+/// Error toast: tinted area and readable text, on light as on dark themes
 #[allow(non_snake_case)]
 pub fn DANGER_BG() -> Color32 {
     BG_CARD().lerp_to_gamma(DANGER, if pal().dark { 0.18 } else { 0.12 })
@@ -346,39 +346,39 @@ pub fn DANGER_TEXT() -> Color32 { danger_text(pal()) }
 fn danger_text(p: &Palette) -> Color32 {
     p.text.lerp_to_gamma(DANGER, 0.35)
 }
-/// Warn-/Hinweistext; `WARN` selbst ist auf hellen Flächen zu schwach
+/// Warning/hint text; `WARN` itself is too weak on light areas
 #[allow(non_snake_case)]
 pub fn WARN_TEXT() -> Color32 { pal().warn_text }
-/// Füllung roter Knöpfe: weiße Schrift ≥ 4,5:1 (`DANGER` hat nur 3,9:1)
+/// Fill of red buttons: white text ≥ 4.5:1 (`DANGER` only has 3.9:1)
 pub const DANGER_FILL: Color32 = rgb(0xC9302C);
 
 pub const RADIUS: u8 = R_CARD as u8;
 pub const GAP: f32 = 4.0;
 
-/// Schriftgrößen-Stufen (für die Vereinheitlichung der Oberfläche):
-/// Hinweise, Fußnoten, Tastenkappen
+/// Font size steps (for unifying the UI):
+/// Hints, footnotes, keycaps
 pub const FS_HINT: f32 = 10.5;
-/// Bedienelemente, Knöpfe, Labels
+/// Controls, buttons, labels
 pub const FS_UI: f32 = 11.5;
-/// Fließtext
+/// Body text
 pub const FS_TEXT: f32 = 12.5;
-/// Karten- und Abschnittstitel
+/// Card and section titles
 pub const FS_TITLE: f32 = 14.0;
-/// Seitentitel (Einstellungen, Startseite)
+/// Page titles (settings, start page)
 pub const FS_PAGE: f32 = 18.0;
-/// Große Überschrift (Willkommen, leere Startseite)
+/// Large heading (welcome, empty start page)
 pub const FS_HERO: f32 = 26.0;
-/// Radius für Bedienelemente, Chips, Tastenkappen
+/// Radius for controls, chips, keycaps
 pub const R_CTRL: f32 = 4.0;
-/// Radius für Karten, Kacheln, Clips
+/// Radius for cards, tiles, clips
 pub const R_CARD: f32 = 6.0;
-/// Radius für Fenster, Menüs, Toasts
+/// Radius for windows, menus, toasts
 pub const R_WIN: f32 = 10.0;
-/// Innenabstand kleiner Karten
+/// Inner margin of small cards
 pub const PAD_CARD: i8 = 8;
-/// Innenabstand großer Karten
+/// Inner margin of large cards
 pub const PAD_CARD_L: i8 = 12;
-/// Innenabstand von Dialogen
+/// Inner margin of dialogs
 pub const PAD_DIALOG: i8 = 16;
 pub const LABEL_W: f32 = 84.0;
 pub const TITLE_H: f32 = 36.0;
@@ -415,7 +415,7 @@ pub fn apply(ctx: &egui::Context) {
     v.extreme_bg_color = BG_INPUT();
     v.faint_bg_color = BG_RAISED();
     v.override_text_color = Some(TEXT());
-    // Akzent-Schleier: färbt Fortschrittsbalken/Spinner, markierter Text bleibt lesbar (≥ ~4:1)
+    // Accent veil: tints progress bars/spinners, selected text stays readable (≥ ~4:1)
     v.selection.bg_fill = ACCENT().gamma_multiply(if pal().dark { 0.30 } else { 0.35 });
     v.selection.stroke = Stroke::new(1.0_f32, ACCENT());
     v.hyperlink_color = ACCENT();
@@ -444,7 +444,7 @@ pub fn apply(ctx: &egui::Context) {
     v.widgets.active.weak_bg_fill = overlay(40);
     v.widgets.active.bg_fill = overlay(40);
     v.widgets.active.bg_stroke = Stroke::NONE;
-    // nicht Akzent: egui färbt damit auch jeden `.strong()`-Text (Titel, Überschriften)
+    // not the accent: egui also colors every `.strong()` text with it (titles, headings)
     v.widgets.active.fg_stroke = Stroke::new(1.0_f32, TEXT());
     v.widgets.open.weak_bg_fill = BG_HOVER();
     v.window_shadow = egui::epaint::Shadow {
@@ -461,7 +461,7 @@ pub fn apply(ctx: &egui::Context) {
     };
     ctx.set_visuals(v);
     ctx.style_mut(|s| {
-        // egui-eigene Bewegungen (Menüs, Tooltips, Popups blenden damit ein)
+        // egui's own motion (menus, tooltips, popups fade in with it)
         s.animation_time = anim(MOTION_FAST);
         s.interaction.tooltip_delay = 0.4;
         s.spacing.item_spacing = vec2(6.0, 4.0);
@@ -473,7 +473,7 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.icon_width = 12.0;
         s.spacing.icon_width_inner = 6.0;
         s.spacing.menu_margin = egui::Margin::same(5);
-        // Dialogrand (auch für Fenster, die nicht über `dialog::frame` laufen)
+        // Dialog border (also for windows that do not go through `dialog::frame`)
         s.spacing.window_margin = egui::Margin::same(PAD_DIALOG);
         s.spacing.scroll = egui::style::ScrollStyle::thin();
         s.visuals.handle_shape = egui::style::HandleShape::Circle;
@@ -490,13 +490,13 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
-/// Tastaturbedienung an? Tab schaltet ein, ein Mausklick wieder aus (dann kein Rahmen um den
-/// zuletzt geklickten Knopf).
+/// Keyboard navigation on? Tab switches it on, a mouse click off again (then no frame around the
+/// last clicked button).
 fn keyboard_nav(was: bool, tab: bool, click: bool) -> bool {
     (was || tab) && !click
 }
 
-/// Sichtbarer Fokusrahmen (Akzent) um das Element mit Tastaturfokus, solange mit Tab bedient wird.
+/// Visible focus frame (accent) around the element with keyboard focus while navigating with Tab.
 pub fn focus_ring(ctx: &egui::Context) {
     let key = egui::Id::new("keyboard-nav");
     let (tab, click) = ctx.input(|i| (i.key_pressed(egui::Key::Tab), i.pointer.any_pressed()));
@@ -513,7 +513,7 @@ pub fn focus_ring(ctx: &egui::Context) {
     }
 }
 
-/// Karte (abgerundet, schwebend). `margin` = Innenabstand.
+/// Card (rounded, floating). `margin` = inner margin.
 pub fn card(margin: i8) -> egui::Frame {
     egui::Frame::default()
         .fill(BG_CARD())
@@ -522,7 +522,7 @@ pub fn card(margin: i8) -> egui::Frame {
         .outer_margin(egui::Margin::same((GAP / 2.0) as i8))
 }
 
-/// Kopfzeile einer Karte: Titel links, Aktionen rechts, dünne Linie darunter.
+/// Header of a card: title on the left, actions on the right, a thin line below.
 pub fn card_header(ui: &mut egui::Ui, title: &str, actions: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         ui.set_min_height(22.0);
@@ -538,11 +538,11 @@ pub fn card_header(ui: &mut egui::Ui, title: &str, actions: impl FnOnce(&mut egu
     ui.add_space(6.0);
 }
 
-/// Primärknopf (weiße Fläche, dunkle Schrift).
-/// Knopf mit weich eingeblendetem Hover (egui selbst schaltet hart um, und Knöpfe mit
-/// eigener Füllfarbe zeigen sonst gar kein Hover).
-/// Zweites Feld: Füllfarbe gefüllter Knöpfe (primär/Gefahr); deren Hover tönt die Fläche statt
-/// eines Schleiers über der Schrift (der Schleier wäscht die Beschriftung aus).
+/// Primary button (white area, dark text).
+/// Button with a smoothly faded-in hover (egui itself switches abruptly, and buttons with
+/// their own fill color otherwise show no hover at all).
+/// Second field: fill color of filled buttons (primary/danger); their hover tints the area instead
+/// of a veil over the text (the veil washes out the label).
 pub struct Btn(egui::Button<'static>, Option<Color32>);
 
 impl Btn {
@@ -551,7 +551,7 @@ impl Btn {
     }
 }
 
-/// Hover-Schleier über einem schon gezeichneten Knopf; beim Drücken etwas kräftiger.
+/// Hover veil over an already drawn button; a bit stronger when pressed.
 pub fn hover_glow(ui: &egui::Ui, r: &egui::Response, radius: f32) {
     let t = fade(ui.ctx(), r.id.with("hover"), r.enabled() && r.hovered(), MOTION_FAST);
     if t > 0.0 {
@@ -567,7 +567,7 @@ impl egui::Widget for Btn {
             hover_glow(ui, &r, R_CTRL);
             return r;
         };
-        // Hover-Zustand vom letzten Frame: die Füllung muss vor dem Zeichnen feststehen
+        // hover state from the last frame: the fill must be fixed before drawing
         let id = ui.next_auto_id();
         let last = ui.ctx().read_response(id);
         let hov = last.as_ref().is_some_and(|r| r.enabled() && r.hovered());
@@ -577,7 +577,7 @@ impl egui::Widget for Btn {
     }
 }
 
-/// Knopffüllung beim Überfahren/Drücken; rote Knöpfe dunkeln ab, damit die weiße Schrift lesbar bleibt
+/// Button fill on hover/press; red buttons darken so the white text stays readable
 fn hover_fill(fill: Color32, t: f32, down: bool) -> Color32 {
     let to = if luminance(fill) > 0.4 || fill == DANGER_FILL { Color32::BLACK } else { Color32::WHITE };
     fill.lerp_to_gamma(to, t * if down { 0.2 } else { 0.1 })
@@ -594,7 +594,7 @@ pub fn primary(text: impl Into<String>) -> Btn {
     .min_size(vec2(0.0, 24.0)), Some(ACCENT()))
 }
 
-/// Sekundärknopf (dezente Fläche).
+/// Secondary button (subtle area).
 pub fn secondary(text: impl Into<String>) -> Btn {
     Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI))
         .fill(BG_RAISED())
@@ -602,22 +602,22 @@ pub fn secondary(text: impl Into<String>) -> Btn {
         .min_size(vec2(0.0, 24.0)), None)
 }
 
-/// Gefährliche Aktion (Löschen): rote Fläche, weiße Schrift.
+/// Dangerous action (delete): red area, white text.
 pub fn danger(text: impl Into<String>) -> Btn {
     Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI).color(Color32::WHITE).strong())
         .corner_radius(R_CTRL)
         .min_size(vec2(0.0, 24.0)), Some(DANGER_FILL))
 }
 
-/// Flacher Knopf ohne Fläche (wird beim Überfahren hell).
+/// Flat button without an area (lights up on hover).
 pub fn ghost(text: impl Into<String>) -> Btn {
     Btn(egui::Button::new(RichText::new(crate::tr(text.into())).size(FS_UI))
         .frame(false)
         .min_size(vec2(0.0, 24.0)), None)
 }
 
-/// Tastenkürzel als gemalte Tastenkappen: einheitliche Höhe, Symbole für Sondertasten.
-/// `keys` z. B. „Strg+Umschalt+Z“ (wird übersetzt).
+/// Shortcuts as painted keycaps: uniform height, icons for special keys.
+/// `keys` e.g. „Strg+Umschalt+Z“ (gets translated).
 pub fn keycaps(ui: &mut egui::Ui, keys: &str) {
     let keys = crate::tr(keys);
     let parts: Vec<&str> = if let Some(k) = keys.strip_suffix("++") {
@@ -632,7 +632,7 @@ pub fn keycaps(ui: &mut egui::Ui, keys: &str) {
             let (text, is_icon) = key_symbol(k).map_or((k, false), |s| (s, true));
             let g = ui.painter().layout_no_wrap(
                 text.to_string(),
-                // Icon-Glyphe etwas größer als die Schrift, damit sie optisch gleich hoch wirkt
+                // icon glyph slightly larger than the text so it looks the same height
                 egui::FontId::proportional(if is_icon { 12.0 } else { FS_HINT }),
                 TEXT(),
             );
@@ -641,17 +641,17 @@ pub fn keycaps(ui: &mut egui::Ui, keys: &str) {
                 resp.on_hover_text(k);
             }
             let p = ui.painter();
-            // Kappe mit dunklerer Unterkante (wirkt wie eine Taste)
+            // cap with a darker bottom edge (looks like a key)
             p.rect_filled(r, R_CTRL, BORDER());
             let top = egui::Rect::from_min_max(r.min + vec2(1.0, 1.0), r.max - vec2(1.0, 2.5));
-            // innere Fläche 1 px eingerückt → Radius 1 px kleiner
+            // inner area inset by 1 px → radius 1 px smaller
             p.rect_filled(top, R_CTRL - 1.0, BG_HOVER());
             p.galley(top.center() - g.size() / 2.0, g, TEXT());
         }
     });
 }
 
-/// Symbol für Sondertasten (gemeinsam für [`keycaps`] und [`key_hint`])
+/// Icon for special keys (shared by [`keycaps`] and [`key_hint`])
 fn key_symbol(k: &str) -> Option<&'static str> {
     Some(match k {
         "Umschalt" | "Shift" => icon::ARROW_FAT_UP,
@@ -666,7 +666,7 @@ fn key_symbol(k: &str) -> Option<&'static str> {
     })
 }
 
-/// Icon-Knopf ohne Rahmen, mit Tooltip. `active` hebt ihn hervor.
+/// Icon button without a frame, with a tooltip. `active` highlights it.
 pub fn icon_button(
     ui: &mut egui::Ui,
     glyph: &str,
@@ -681,7 +681,7 @@ pub fn icon_button(
     } else {
         TEXT_DIM()
     };
-    // Icon-Glyphe: 14 px in Bedienelementen
+    // icon glyph: 14 px in controls
     let btn = egui::Button::new(RichText::new(glyph).size(14.0).color(color))
         .fill(if active {
             ACCENT().gamma_multiply(0.18)
@@ -700,8 +700,8 @@ pub fn icon_button(
     }
 }
 
-/// Menüeintrag mit weich eingeblendetem Hover-Hintergrund und Tastenkappen rechts.
-/// Text wird nicht übersetzt (Aufrufer übergeben ihn schon übersetzt).
+/// Menu entry with a smoothly faded-in hover background and keycaps on the right.
+/// The text is not translated (callers pass it already translated).
 pub struct MenuRow {
     text: String,
     keys: String,
@@ -723,7 +723,7 @@ impl MenuRow {
         self.keys = keys.to_string();
         self
     }
-    /// Schlichter Zusatz rechts (z. B. Uhrzeit), statt Tastenkappen
+    /// Plain extra on the right (e.g. time of day) instead of keycaps
     pub fn hint(mut self, hint: &str) -> Self {
         self.hint = hint.to_string();
         self
@@ -773,8 +773,8 @@ impl egui::Widget for MenuRow {
     }
 }
 
-/// Untermenü-Zeile, die wie [`menu_row`] aussieht (Höhe 24, FS_TEXT, Icon in derselben Spalte).
-/// egui zeichnet Untermenüs sonst kleiner und enger (Menüstil: Innenabstand 2 px).
+/// Submenu row that looks like [`menu_row`] (height 24, FS_TEXT, icon in the same column).
+/// egui otherwise draws submenus smaller and tighter (menu style: inner margin 2 px).
 pub fn submenu<R>(
     ui: &mut egui::Ui,
     glyph: &str,
@@ -789,7 +789,7 @@ pub fn submenu<R>(
     r
 }
 
-/// Fehler direkt unter einem Eingabefeld (statt Meldung am unteren Rand)
+/// Error directly below an input field (instead of a message at the bottom edge)
 pub fn field_error(ui: &mut egui::Ui, err: Option<&str>) {
     if let Some(e) = err {
         ui.add_space(4.0);
@@ -797,7 +797,7 @@ pub fn field_error(ui: &mut egui::Ui, err: Option<&str>) {
     }
 }
 
-/// Tastenkürzel als kleine Tastenkappen, z. B. „Strg+B“ → [Ctrl] + [B] (Text wird übersetzt).
+/// Shortcuts as small keycaps, e.g. „Strg+B“ → [Ctrl] + [B] (the text gets translated).
 pub fn key_hint(keys: &str) -> egui::text::LayoutJob {
     use egui::text::{LayoutJob, TextFormat};
     let mut job = LayoutJob::default();
@@ -816,7 +816,7 @@ pub fn key_hint(keys: &str) -> egui::text::LayoutJob {
         background: BG_HOVER(),
         ..Default::default()
     };
-    // „Strg++“ (Plus-Taste) nicht am Pluszeichen trennen
+    // do not split „Strg++“ (plus key) at the plus sign
     let parts: Vec<&str> = if let Some(k) = keys.strip_suffix("++") {
         k.split('+').chain(["+"]).collect()
     } else {
@@ -833,7 +833,7 @@ pub fn key_hint(keys: &str) -> egui::text::LayoutJob {
     job
 }
 
-/// Tooltip „Name  (Taste)“ mit Tastenkappen statt Klammertext.
+/// Tooltip „Name  (Taste)“ with keycaps instead of text in parentheses.
 pub fn tip_with_keys(r: egui::Response, tip: &str) -> egui::Response {
     match tip.rsplit_once("  (").filter(|(_, k)| k.ends_with(')')) {
         Some((name, keys)) => {
@@ -850,7 +850,7 @@ pub fn tip_with_keys(r: egui::Response, tip: &str) -> egui::Response {
     }
 }
 
-/// Kleiner umrandeter Chip (Player-Leiste).
+/// Small outlined chip (player bar).
 pub fn chip(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.add(
         egui::Button::new(RichText::new(crate::tr(text)).size(FS_HINT).color(TEXT_DIM()))
@@ -861,7 +861,7 @@ pub fn chip(ui: &mut egui::Ui, text: &str) -> egui::Response {
     )
 }
 
-/// Kategorie-Chip (aktiv = weiß gefüllt).
+/// Category chip (active = filled white).
 pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     let (fg, bg) = if active {
         (ACCENT_INK(), ACCENT())
@@ -876,8 +876,8 @@ pub fn cat_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     )
 }
 
-/// Chip einer Auswahlleiste mit gleitender Markierung ([`chip_marks`]): ohne eigene Fläche, die
-/// Schrift wechselt weich zur Farbe auf dem Akzent.
+/// Chip of a selection bar with a gliding marker ([`chip_marks`]): without its own area, the
+/// text changes smoothly to the color on the accent.
 pub fn strip_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     let t = fade(ui.ctx(), ui.id().with(("strip-chip", text)), active, MOTION);
     ui.add(
@@ -888,8 +888,8 @@ pub fn strip_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response
     )
 }
 
-/// Flächen der Chips einer Leiste und die Akzent-Markierung, die zum aktiven Chip gleitet; landet in
-/// `slot` (vor den Chips mit `painter().add(Shape::Noop)` reserviert, damit sie darunter liegt).
+/// Areas of the chips of a bar and the accent marker that glides to the active chip; lands in
+/// `slot` (reserved before the chips with `painter().add(Shape::Noop)` so it lies below them).
 pub fn chip_marks(ui: &egui::Ui, slot: egui::layers::ShapeIdx, id: egui::Id, chips: &[Rect], active: Option<usize>) {
     let mut shapes: Vec<egui::Shape> = chips.iter().map(|r| egui::Shape::rect_filled(*r, R_CTRL, BG_RAISED())).collect();
     if let Some(i) = active.filter(|i| *i < chips.len()) {
@@ -900,13 +900,13 @@ pub fn chip_marks(ui: &egui::Ui, slot: egui::layers::ShapeIdx, id: egui::Id, chi
     ui.painter().set(slot, egui::Shape::Vec(shapes));
 }
 
-/// Breite eines einzeiligen Textes in der Schrift `font`.
+/// Width of a single-line text in font `font`.
 pub fn text_width(ctx: &egui::Context, text: &str, font: egui::FontId) -> f32 {
     ctx.fonts(|f| f.layout_no_wrap(text.to_string(), font, Color32::WHITE).size().x)
 }
 
-/// Schräge Pfeile in Namen (↖ ↗ ↙ ↘) als Symbole der Icon-Schrift: die Grundschrift hat nicht
-/// alle, der Rückfall auf eine andere Schrift sieht dann ungleich aus.
+/// Diagonal arrows in names (↖ ↗ ↙ ↘) as icons of the icon font: the base font does not have
+/// all of them, and the fallback to another font then looks uneven.
 pub fn icon_arrows(s: &str) -> String {
     s.replace('↖', icon::ARROW_UP_LEFT)
         .replace('↗', icon::ARROW_UP_RIGHT)
@@ -914,17 +914,17 @@ pub fn icon_arrows(s: &str) -> String {
         .replace('↘', icon::ARROW_DOWN_RIGHT)
 }
 
-/// Dauer in Sekunden für die Oberfläche („6,40 s“ deutsch, „6.40 s“ englisch).
+/// Duration in seconds for the UI („6,40 s“ German, „6.40 s“ English).
 pub fn secs(v: f64, decimals: usize) -> String {
     format!("{} s", dec(v, decimals))
 }
 
-/// Dezimalzahl für die Oberfläche („1,79“ deutsch, „1.79“ englisch); die Einheit setzt der
-/// Aufrufer dahinter. Nicht für Protokoll, FFmpeg-Argumente oder Dateien.
+/// Decimal number for the UI („1,79“ German, „1.79“ English); the caller puts the unit
+/// after it. Not for the log, FFmpeg arguments or files.
 pub fn dec(v: f64, decimals: usize) -> String {
     local_num(format!("{v:.decimals$}"))
 }
-/// Schon formatierte Zahl („+1.5“, „05.20“) mit dem Dezimalzeichen der Oberfläche.
+/// Already formatted number („+1.5“, „05.20“) with the UI's decimal separator.
 pub fn local_num(s: String) -> String {
     dec_mark(s, cl_i18n::ui_lang() == cl_i18n::Lang::De)
 }
@@ -932,19 +932,19 @@ fn dec_mark(s: String, comma: bool) -> String {
     if comma { s.replace('.', ",") } else { s }
 }
 
-/// Getippte Dezimalzahl, mit Komma oder Punkt.
+/// Typed decimal number, with a comma or a point.
 pub fn parse_dec(s: &str) -> Option<f64> {
     s.trim().replace(',', ".").parse().ok()
 }
 
-/// Zählertext mit richtiger Einzahl: `one`/`many` sind deutsche Vorlagen mit `{}` für die Zahl
-/// (beide stehen im Wörterbuch, `tr` übersetzt das Ergebnis). Nur das erste `{}` wird gefüllt,
-/// weitere bleiben für den Aufrufer.
+/// Counter text with the correct singular: `one`/`many` are German templates with `{}` for the number
+/// (both are in the dictionary, `tr` translates the result). Only the first `{}` is filled,
+/// further ones stay for the caller.
 pub fn count_text(n: usize, one: &str, many: &str) -> String {
     (if n == 1 { one } else { many }).replacen("{}", &n.to_string(), 1)
 }
 
-/// Kürzt `text` am Ende mit „…“, bis er in `max_w` passt (`width` misst eine Zeichenkette).
+/// Shortens `text` at the end with „…“ until it fits into `max_w` (`width` measures a string).
 pub fn elide(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
     if width(text) <= max_w {
         return text.to_string();
@@ -957,7 +957,7 @@ pub fn elide(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
         .unwrap_or_default()
 }
 
-/// Kürzt `text` in der Mitte („C:/Users/…/Videos“), bis er in `max_w` passt.
+/// Shortens `text` in the middle („C:/Users/…/Videos“) until it fits into `max_w`.
 pub fn elide_middle(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> String {
     if width(text) <= max_w {
         return text.to_string();
@@ -973,7 +973,7 @@ pub fn elide_middle(text: &str, max_w: f32, width: impl Fn(&str) -> f32) -> Stri
         .unwrap_or_default()
 }
 
-/// Schriftgröße, mit der ein bei `size` `w` breiter Text in `max_w` passt (nie größer als `size`).
+/// Font size at which a text `w` wide at `size` fits into `max_w` (never larger than `size`).
 pub fn fit_size(size: f32, w: f32, max_w: f32) -> f32 {
     if w <= max_w || w <= 0.0 {
         size
@@ -982,35 +982,35 @@ pub fn fit_size(size: f32, w: f32, max_w: f32) -> f32 {
     }
 }
 
-/// Ränder einer blätterbaren Leiste. `chips` = (links, rechts) je Eintrag im Inhalt, `total` = Breite des
-/// Inhalts (mit Rand hinter dem letzten Eintrag), `view` = sichtbare Breite, `off` = Versatz, `arrow` = Breite
-/// des Pfeil-Knopfs. Je Seite: (Kante der Abdeckung im Inhalt,
-/// Versatz nach dem Klick). Die Abdeckung reicht bis an den nächsten ganz sichtbaren Eintrag, damit nie
-/// ein halber Eintrag neben dem Pfeil steht.
+/// Edges of a scrollable bar. `chips` = (left, right) per entry in the content, `total` = width of the
+/// content (with a margin after the last entry), `view` = visible width, `off` = offset, `arrow` = width
+/// of the arrow button. Per side: (edge of the cover in the content,
+/// offset after the click). The cover reaches to the next fully visible entry, so that there is never
+/// half an entry next to the arrow.
 pub struct StripEdges {
     pub left: Option<(f32, f32)>,
     pub right: Option<(f32, f32)>,
 }
 
 pub fn strip_edges(chips: &[(f32, f32)], total: f32, view: f32, off: f32, arrow: f32) -> StripEdges {
-    // nie kürzer als bis zum letzten Eintrag
+    // never shorter than up to the last entry
     let total = chips.last().map_or(total, |c| c.1.max(total));
     let max = (total - view).max(0.0);
     let right = (max - off > 0.5).then(|| {
         let limit = off + view - arrow;
-        // erster Eintrag, der nicht mehr ganz vor den Pfeil passt
+        // first entry that no longer fits fully before the arrow
         let c = chips.iter().find(|c| c.1 > limit).copied().unwrap_or((limit, limit));
         let next = (c.0 - arrow - 2.0).min(max);
-        // Eintrag breiter als die Leiste: trotzdem weiterkommen
+        // entry wider than the bar: still move on
         let next = if next > off + 1.0 { next } else { (off + view * 0.7).min(max) };
-        // fast am Ende: ganz ans Ende, sonst bleibt der letzte Eintrag ohne Pfeil angeschnitten
+        // almost at the end: go fully to the end, otherwise the last entry stays cut off without an arrow
         let next = if max - next <= 0.5 { max } else { next };
         ((c.0 - 2.0).clamp(off, limit), next)
     });
     let left = (off > 1.0).then(|| {
         let limit = off + arrow;
         let cover = chips.iter().find(|c| c.0 < limit && c.1 > limit).map_or(limit, |c| c.1 + 2.0);
-        // eine Seite zurück, ausgerichtet am Anfang eines Eintrags
+        // one page back, aligned to the start of an entry
         let start = off - (view - 2.0 * arrow);
         let prev = chips.iter().find(|c| c.0 >= start + arrow).map_or(0.0, |c| c.0 - arrow - 2.0);
         let prev = if prev < arrow + 6.0 || prev >= off - 1.0 { 0.0 } else { prev };
@@ -1019,16 +1019,16 @@ pub fn strip_edges(chips: &[(f32, f32)], total: f32, view: f32, off: f32, arrow:
     StripEdges { left, right }
 }
 
-/// Pfeil-Knöpfe an waagrecht scrollbaren Zeilen auf Kartengrund: zeigen, dass links bzw. rechts
-/// noch mehr kommt, und blättern per Klick weiter. `chips` = Flächen der Einträge (Bildschirm).
+/// Arrow buttons on horizontally scrollable rows on card background: show that more follows on the left
+/// or right, and scroll further on click. `chips` = areas of the entries (screen).
 pub fn edge_arrows<R>(ui: &mut egui::Ui, out: &mut egui::scroll_area::ScrollAreaOutput<R>, chips: &[Rect]) {
-    // `inner_rect` reicht bei `auto_shrink(false)` über die Zeile hinaus: Höhe aus dem Inhalt nehmen
+    // `inner_rect` reaches beyond the row with `auto_shrink(false)`: take the height from the content
     let (mut r, x) = (out.inner_rect, out.state.offset.x);
     r.set_height(out.content_size.y);
     let x0 = r.left() - x;
     let rel: Vec<(f32, f32)> = chips.iter().map(|c| (c.left() - x0, c.right() - x0)).collect();
     if out.content_size.x - r.width() <= 0.5 && x != 0.0 {
-        // alles passt wieder (Bereich breiter gezogen): Versatz verwerfen
+        // everything fits again (area dragged wider): discard the offset
         out.state.offset.x = 0.0;
         out.state.store(ui.ctx(), out.id);
         ui.ctx().request_repaint();
@@ -1037,7 +1037,7 @@ pub fn edge_arrows<R>(ui: &mut egui::Ui, out: &mut egui::scroll_area::ScrollArea
     let w = 20.0;
     let e = strip_edges(&rel, out.content_size.x, r.width(), x, w);
     let sides = [
-        // 4 px über die Leiste hinaus: dort schaut sonst der Rand eines Eintrags hervor
+        // 4 px beyond the bar: otherwise the edge of an entry peeks out there
         e.left.map(|(cover, to)| (Rect::from_min_max(r.min - vec2(4.0, 0.0), pos2(x0 + cover, r.bottom())), r.left() + w / 2.0, icon::CARET_LEFT, to)),
         e.right.map(|(cover, to)| (Rect::from_min_max(pos2(x0 + cover, r.top()), r.max + vec2(4.0, 0.0)), r.right() - w / 2.0, icon::CARET_RIGHT, to)),
     ];
@@ -1045,7 +1045,7 @@ pub fn edge_arrows<R>(ui: &mut egui::Ui, out: &mut egui::scroll_area::ScrollArea
         ui.painter().rect_filled(b, 0.0, BG_CARD());
         let resp = ui.interact(b, out.id.with(glyph), egui::Sense::click());
         let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
-        // Icon-Glyphe: 14 px wie in `icon_button`
+        // icon glyph: 14 px as in `icon_button`
         ui.painter().text(pos2(cx, b.center().y), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(14.0), col);
         if resp.clicked() {
             out.state.offset.x = to;
@@ -1054,11 +1054,11 @@ pub fn edge_arrows<R>(ui: &mut egui::Ui, out: &mut egui::scroll_area::ScrollArea
     }
 }
 
-/// Zeile mit fester Label-Spalte (Inspektor).
+/// Row with a fixed label column (inspector).
 pub fn row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     ui.horizontal(|ui| {
         ui.set_min_height(24.0);
-        // linksbündig in der Label-Spalte (add_sized zentriert, das wirkte wie im Feld daneben)
+        // left-aligned in the label column (add_sized centers, which looked like it belonged to the field next to it)
         ui.allocate_ui_with_layout(vec2(LABEL_W, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.set_min_width(LABEL_W);
             ui.add(egui::Label::new(RichText::new(crate::tr(label)).size(FS_UI).color(TEXT_DIM())).truncate());
@@ -1068,7 +1068,7 @@ pub fn row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) ->
     .inner
 }
 
-/// Abschnittstitel im Inspektor mit Trennlinie davor.
+/// Section title in the inspector with a separator line before it.
 pub fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(6.0);
     let r = ui.available_rect_before_wrap();
@@ -1086,11 +1086,11 @@ pub fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(3.0);
 }
 
-/// Leerer Zustand: Icon, Titel, Erklärung.
+/// Empty state: icon, title, explanation.
 pub fn empty_state(ui: &mut egui::Ui, glyph: &str, title: &str, hint: &str) {
     ui.vertical_centered(|ui| {
         ui.add_space(26.0);
-        // Icon-Glyphe: leere Zustände nutzen 26 px
+        // icon glyph: empty states use 26 px
         ui.label(RichText::new(glyph).size(26.0).color(TEXT_FAINT()));
         ui.add_space(6.0);
         ui.label(RichText::new(crate::tr(title)).strong());
@@ -1101,21 +1101,21 @@ pub fn empty_state(ui: &mut egui::Ui, glyph: &str, title: &str, hint: &str) {
     });
 }
 
-// ---------------------------------------------------------------- Logo
+// ---------------------------------------------------------------- logo
 
-/// Logo als SVG (für Fenster-Icon): weiße Kachel, drei Clip-Balken, ein Schnitt,
-/// rechts davon leicht versetzt.
+/// Logo as SVG (for the window icon): white tile, three clip bars, one cut,
+/// slightly offset to the right of it.
 pub const LOGO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#F4F4F6"/><g fill="#111113"><rect x="11" y="16" width="20" height="8" rx="4"/><rect x="11" y="28" width="13" height="8" rx="4"/><rect x="11" y="40" width="20" height="8" rx="4"/><rect x="37" y="13" width="16" height="8" rx="4"/><rect x="30" y="25" width="23" height="8" rx="4"/><rect x="37" y="37" width="12" height="8" rx="4"/></g><rect x="32.5" y="8" width="2" height="48" rx="1" fill="#111113"/></svg>"##;
 
-/// Logo direkt zeichnen (gleiche Geometrie wie [`LOGO_SVG`]).
+/// Draw the logo directly (same geometry as [`LOGO_SVG`]).
 pub fn logo(painter: &egui::Painter, rect: Rect) {
     let s = rect.width().min(rect.height()) / 64.0;
     let o = rect.center() - vec2(32.0 * s, 32.0 * s);
     let r = |x: f32, y: f32, w: f32, h: f32| {
         Rect::from_min_size(o + vec2(x * s, y * s), vec2(w * s, h * s))
     };
-    // Logo-Geometrie skaliert mit `s` (keine UI-Radien)
-    // Logo bleibt neutral: Palettenakzent statt gewählter Akzentfarbe
+    // logo geometry scales with `s` (no UI radii)
+    // the logo stays neutral: palette accent instead of the chosen accent color
     painter.rect_filled(r(0.0, 0.0, 64.0, 64.0), 15.0 * s, pal().accent);
     let ink = pal().accent_ink;
     for (x, y, w) in [
@@ -1131,7 +1131,7 @@ pub fn logo(painter: &egui::Painter, rect: Rect) {
     painter.rect_filled(r(32.5, 8.0, 2.0, 48.0), 1.0 * s, ink);
 }
 
-/// Logo + Wortmarke.
+/// Logo + word mark.
 pub fn wordmark(ui: &mut egui::Ui, size: f32) {
     let (r, _) = ui.allocate_exact_size(vec2(size, size), egui::Sense::hover());
     logo(ui.painter(), r);
@@ -1143,7 +1143,7 @@ pub fn wordmark(ui: &mut egui::Ui, size: f32) {
     );
 }
 
-/// Raute (Keyframe) zeichnen.
+/// Draw a diamond (keyframe).
 pub fn diamond(painter: &egui::Painter, c: Pos2, r: f32, fill: Option<Color32>, stroke: Stroke) {
     let pts = vec![
         pos2(c.x, c.y - r),
@@ -1158,7 +1158,7 @@ pub fn diamond(painter: &egui::Painter, c: Pos2, r: f32, fill: Option<Color32>, 
     ));
 }
 
-/// Fenster-Icon aus dem Logo.
+/// Window icon from the logo.
 pub fn window_icon() -> Option<egui::IconData> {
     let size = 64;
     let premul = cl_fx::stickers::render_svg(LOGO_SVG, size)?;
@@ -1215,7 +1215,7 @@ mod tests {
     fn focus_ring_only_while_using_keyboard() {
         assert!(!keyboard_nav(false, false, false));
         assert!(keyboard_nav(false, true, false));
-        assert!(keyboard_nav(true, false, false), "bleibt an bis zum Klick");
+        assert!(keyboard_nav(true, false, false), "stays on until the click");
         assert!(!keyboard_nav(true, false, true));
     }
 
@@ -1225,7 +1225,7 @@ mod tests {
         assert_eq!(elide("Daumen", 100.0, w), "Daumen");
         let e = elide("Subscribe, German (red)", 80.0, w);
         assert!(e.ends_with('…') && w(&e) <= 80.0 && e.starts_with("Subscribe"), "{e}");
-        // Leerzeichen vor „…“ entfällt
+        // the space before „…“ is dropped
         assert_eq!(elide("ab cdef", 28.0, w), "ab…");
         assert_eq!(elide("abc", 3.0, w), "");
         let m = elide_middle("C:/Users/zero/Videos/Urlaub", 70.0, w);
@@ -1236,7 +1236,7 @@ mod tests {
         assert!((s - 15.0).abs() < 1e-4 && 200.0 * s / 20.0 <= 150.0 + 1e-3);
     }
 
-    /// Blättern zeigt nie einen halben Eintrag neben dem Pfeil und erreicht jeden Eintrag.
+    /// Scrolling never shows half an entry next to the arrow and reaches every entry.
     #[test]
     fn strip_never_shows_half_entries() {
         let (view, arrow) = (200.0, 20.0);
@@ -1247,15 +1247,15 @@ mod tests {
                 chips.push((x, x + w));
                 x += w + 4.0;
             }
-            // Inhalt: 2 px Rand + Abstand hinter dem letzten Eintrag (wie in der Leiste)
+            // Content: 2 px margin + gap after the last entry (as in the bar)
             let total = chips.last().unwrap().1 + 6.0;
             let whole = |off: f32| {
                 let e = strip_edges(&chips, total, view, off, arrow);
                 let lo = e.left.map_or(off, |l| l.0);
                 let hi = e.right.map_or(off + view, |r| r.0);
-                // jeder Eintrag liegt ganz im freien Bereich oder ganz unter einer Abdeckung
+                // every entry lies fully in the free area or fully under a cover
                 for c in chips.iter().filter(|c| c.1 - c.0 <= view - 2.0 * arrow) {
-                    assert!((c.0 >= lo - 0.1 && c.1 <= hi + 0.1) || c.1 <= lo + 2.1 || c.0 >= hi - 0.1, "{c:?} bei {off} ({lo}..{hi})");
+                    assert!((c.0 >= lo - 0.1 && c.1 <= hi + 0.1) || c.1 <= lo + 2.1 || c.0 >= hi - 0.1, "{c:?} at {off} ({lo}..{hi})");
                 }
                 e
             };
@@ -1272,9 +1272,9 @@ mod tests {
                 assert!(steps < 50);
             }
             for c in chips.iter().filter(|c| c.1 - c.0 <= view - 2.0 * arrow) {
-                assert!(seen.contains(&(c.0 as i32)), "{c:?} nie ganz sichtbar");
+                assert!(seen.contains(&(c.0 as i32)), "{c:?} never fully visible");
             }
-            // zurück bis an den Anfang, auch von krummen Versätzen (Mausrad) aus
+            // back to the start, also from odd offsets (mouse wheel)
             for start in [off, 37.0, 111.5] {
                 let mut off = start.min(total - view).max(0.0);
                 while let Some((_, prev)) = whole(off).left {
@@ -1284,10 +1284,10 @@ mod tests {
                 assert_eq!(off, 0.0);
             }
         }
-        // alles passt: keine Pfeile
+        // everything fits: no arrows
         let e = strip_edges(&[(0.0, 50.0), (54.0, 104.0)], 110.0, 200.0, 0.0, 20.0);
         assert!(e.left.is_none() && e.right.is_none());
-        // am Ende (per Pfeil oder Mausrad bis knapp davor) liegt der letzte Eintrag ganz im freien Bereich
+        // at the end (by arrow or mouse wheel to just before it) the last entry lies fully in the free area
         let mut x: u32 = 0x9e37_79b9;
         let mut rnd = |lo: f32, hi: f32| {
             x ^= x << 13;
@@ -1319,13 +1319,13 @@ mod tests {
             for o in [off, total - view - 0.4, total - view] {
                 let e = strip_edges(&chips, total, view, o, 20.0);
                 let hi = e.right.map_or(o + view, |r| r.0);
-                assert!(last.1 <= hi + 0.01 || last.0 >= hi - 0.1, "letzter Eintrag {last:?} bei {o} angeschnitten (bis {hi})");
+                assert!(last.1 <= hi + 0.01 || last.0 >= hi - 0.1, "last entry {last:?} cut off at {o} (up to {hi})");
             }
         }
     }
 
-    // Ein Test, weil der Akzent global ist (parallele Tests würden sich überschreiben)
-    /// Vertrag des Design-Systems: 6 Schriftstufen, 3 Radien, 3 Abstände, jeweils aufsteigend
+    // One test, because the accent is global (parallel tests would overwrite each other)
+    /// Contract of the design system: 6 font steps, 3 radii, 3 spacings, each ascending
     #[test]
     fn tokens_match_brand_guide() {
         let fs = [FS_HINT, FS_UI, FS_TEXT, FS_TITLE, FS_PAGE, FS_HERO];
@@ -1348,9 +1348,9 @@ mod tests {
                 let (c, ci) = (contrast(a, p.bg_card), contrast(ink_for(p, a), a));
                 let cr = contrast(a, p.bg_raised);
                 println!("{id:7} {:10} {} card {c:.2} raised {cr:.2} ink {ci:.2}", p.id, a.to_hex());
-                assert!(c >= 3.0, "{id} auf {}: {c}", p.id);
-                assert!(cr >= 3.0, "{id} auf {} (raised): {cr}", p.id);
-                assert!(ci >= 4.5, "Tinte {id} auf {}: {ci}", p.id);
+                assert!(c >= 3.0, "{id} on {}: {c}", p.id);
+                assert!(cr >= 3.0, "{id} on {} (raised): {cr}", p.id);
+                assert!(ci >= 4.5, "ink {id} on {}: {ci}", p.id);
             }
         }
         set_accent("#101010");
@@ -1365,13 +1365,13 @@ mod tests {
         assert_eq!(ink_for(&PALETTES[3], PALETTES[3].accent), PALETTES[3].accent_ink);
     }
 
-    /// Lesetext (`text_dim`) und Statustexte erreichen WCAG AA (4,5:1) in allen Designs
+    /// Reading text (`text_dim`) and status texts reach WCAG AA (4.5:1) in all designs
     #[test]
     fn text_readable_on_all_palettes() {
         for p in &PALETTES {
             for (bg, name) in [(p.bg_app, "app"), (p.bg_card, "card"), (p.bg_input, "input"), (p.bg_raised, "raised")] {
                 let c = contrast(p.text_dim, bg);
-                assert!(c >= 4.5, "text_dim auf {name} in {}: {c:.2}", p.id);
+                assert!(c >= 4.5, "text_dim on {name} in {}: {c:.2}", p.id);
             }
             for (col, name) in [(danger_text(p), "danger"), (p.warn_text, "warn")] {
                 for bg in [p.bg_card, p.bg_raised] {
@@ -1382,7 +1382,7 @@ mod tests {
         }
     }
 
-    /// Roter Knopf: weiße Schrift ≥ 4,5:1 in Ruhe, beim Überfahren und Drücken
+    /// Red button: white text ≥ 4.5:1 at rest, on hover and on press
     #[test]
     fn danger_button_readable() {
         for (t, down) in [(0.0, false), (1.0, false), (1.0, true)] {
@@ -1403,9 +1403,9 @@ mod tests {
             assert!(v >= last && v <= 1.0, "{i}: {v}");
             last = v;
         }
-        // sanft auslaufend: die erste Hälfte legt mehr als die Hälfte des Wegs zurück
+        // easing out smoothly: the first half covers more than half of the way
         assert!(ease(0.5) > 0.8);
-        // Gleiten: Anfang, Ende, nichts über das Ziel hinaus (auch rückwärts)
+        // Glide: start, end, nothing beyond the target (also backward)
         assert_eq!(glide_at(10.0, 20.0, 0.0, MOTION), 10.0);
         assert_eq!(glide_at(10.0, 20.0, MOTION, MOTION), 20.0);
         assert_eq!(glide_at(10.0, 20.0, 5.0, MOTION), 20.0);
@@ -1418,10 +1418,10 @@ mod tests {
     #[test]
     fn three_durations_and_off_means_instant() {
         assert!(MOTION_FAST < MOTION && MOTION < MOTION_SLOW && MOTION_SLOW <= 0.24);
-        // ohne den globalen Schalter umzulegen (parallele Tests lesen ihn)
+        // without flipping the global switch (parallel tests read it)
         assert_eq!([MOTION_FAST, MOTION, MOTION_SLOW].map(|s| anim_if(false, s)), [0.0; 3]);
         assert_eq!(glide_at(0.0, 5.0, 0.0, anim_if(false, MOTION)), 5.0);
-        // ohne Animationen: Lauflinie steht, Platzhalter ohne Schimmer
+        // without animations: the running line stands still, placeholders without shimmer
         assert_eq!(crate::widgets::busy_segment(0.7, false), (0.0, 1.0));
         assert_eq!(crate::widgets::busy_segment(3.1, false), crate::widgets::busy_segment(0.2, false));
         assert_eq!(crate::widgets::shimmer_at(1.0, false), None);
@@ -1430,14 +1430,14 @@ mod tests {
 
     #[test]
     fn loader_waits_150_ms_then_stays_300_ms() {
-        // kurze Arbeit bleibt unsichtbar
+        // short work stays invisible
         assert!(!loader_visible(Some(0.0), None));
         assert!(!loader_visible(Some(0.149), None));
         assert!(!loader_visible(None, None));
-        // ab 150 ms sichtbar
+        // visible from 150 ms
         assert!(loader_visible(Some(0.15), None));
         assert!(loader_visible(Some(2.0), Some(1.85)));
-        // fertig kurz nach dem Erscheinen: steht noch bis 300 ms
+        // done shortly after appearing: stays until 300 ms
         assert!(loader_visible(None, Some(0.05)));
         assert!(loader_visible(None, Some(0.299)));
         assert!(!loader_visible(None, Some(0.3)));
@@ -1453,9 +1453,9 @@ mod tests {
             let _ = ctx.run(input, |ctx| vis = loading(ctx, id, busy));
             vis
         };
-        // 100 ms Arbeit: nie sichtbar
+        // 100 ms of work: never visible
         assert!(!at(0.0, true) && !at(0.05, true) && !at(0.1, false) && !at(0.2, false));
-        // lange Arbeit: ab 150 ms sichtbar, nach dem Ende noch bis 300 ms nach dem Erscheinen
+        // long work: visible from 150 ms, after the end still until 300 ms after appearing
         assert!(!at(1.0, true));
         assert!(at(1.16, true));
         assert!(at(1.2, false));
@@ -1470,9 +1470,9 @@ mod tests {
             let (a, b) = busy_segment(i as f64 * 0.013, true);
             assert!((0.0..=1.0).contains(&a) && (0.0..=1.0).contains(&b) && a <= b, "{i}: {a} {b}");
         }
-        // Stück wandert nach rechts
+        // the piece moves to the right
         assert!(busy_segment(0.5, true).0 > busy_segment(0.2, true).0);
-        // Schimmer erst nach 150 ms, nach einigen Sekunden ruhige Fläche
+        // shimmer only after 150 ms, after a few seconds a calm area
         assert_eq!(shimmer_at(0.1, true), None);
         assert!(shimmer_at(0.5, true).is_some());
         assert_eq!(shimmer_at(10.0, true), None);

@@ -1,5 +1,5 @@
-//! Einstellungen → Inhalte: alle Pakete an einer Stelle (Grundausstattung und Asset-Pakete),
-//! ein-/ausschalten, hinzufügen (ZIP), entfernen, Quellen und Lizenzen.
+//! Settings → Content: all packs in one place (base set and asset packs),
+//! switch on/off, add (ZIP), remove, sources and licenses.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -16,20 +16,20 @@ use crate::theme::{self, icon};
 use crate::timeline::menu_item;
 use crate::widgets;
 
-/// Rückfrage bzw. Fenster der Seite „Inhalte“.
+/// Confirmation or window of the „Inhalte“ page.
 #[derive(Debug, Clone)]
 pub enum ContentsDialog {
-    /// Paket gleicher ID ist schon installiert: ersetzen?
+    /// A pack with the same ID is already installed: replace?
     Replace { zip: PathBuf, id: String },
-    /// Eigenes Paket löschen?
+    /// Delete an own pack?
     Remove { dir: PathBuf, name: String },
-    /// Danksagung (Markdown)
+    /// Credits (Markdown)
     Credits(String),
 }
 
-/// Anzeigename eines Medienpfads, den Cutline selbst angelegt hat oder der aus einem Paket kommt:
-/// Standbild, eingebautes Element/Geräusch (Datei heißt nach der Kennung) oder Katalog-Eintrag.
-/// `None` für eigene Dateien (dann bleibt der Dateiname).
+/// Display name of a media path that Cutline created itself or that comes from a pack:
+/// still image, built-in element/sound (file named after the ID) or catalog entry.
+/// `None` for own files (then the file name stays).
 fn media_title(path: &Path, data: &Path, pack: impl Fn(&Path) -> Option<String>) -> Option<String> {
     let stem = path.file_stem()?.to_str()?;
     let dir = path.parent()?;
@@ -44,11 +44,11 @@ fn media_title(path: &Path, data: &Path, pack: impl Fn(&Path) -> Option<String>)
     }
 }
 
-/// Paketdateien → Name (wird bei `refresh_catalog` geleert)
+/// Pack files → name (cleared on `refresh_catalog`)
 static PACK_NAMES: std::sync::Mutex<Option<std::collections::HashMap<PathBuf, String>>> = std::sync::Mutex::new(None);
 
-/// Name eines Clips für Zeitleiste und Inspektor (übersetzt): Katalogname bzw. „Standbild“ statt
-/// technischer Dateinamen, sonst wie [`cl_core::Clip::label`].
+/// Name of a clip for the timeline and inspector (translated): catalog name or „Standbild“ instead of
+/// technical file names, otherwise like [`cl_core::Clip::label`].
 pub fn clip_title(c: &cl_core::Clip, p: &cl_core::Project) -> String {
     if let cl_core::ClipContent::Media { media, .. } = &c.content {
         if let Some(m) = p.media(*media) {
@@ -75,7 +75,7 @@ pub fn clip_title(c: &cl_core::Clip, p: &cl_core::Project) -> String {
     c.label(p)
 }
 
-/// Ordner für eigene Pakete
+/// Folder for own packs
 pub fn user_root() -> PathBuf {
     paths::data_dir().join("Plugins")
 }
@@ -88,8 +88,8 @@ fn localized_or_empty(t: &cl_plugin::LocalizedText, lang: &str) -> String {
     }
 }
 
-/// Katalog-Pakete aus den geladenen Asset-Paketen (auch ausgeschaltete, mit Schalterstand).
-/// IDs der Einträge: `<paket-id>/<asset-id>` (wie bisher bei Plugin-Effekten).
+/// Catalog packs from the loaded asset packs (also switched-off ones, with toggle state).
+/// IDs of the entries: `<pack-id>/<asset-id>` (as before for plugin effects).
 pub fn catalog_packs(reg: &cl_plugin::Registry, lang: &str) -> Vec<Pack> {
     use cl_plugin::AssetKind as A;
     reg.plugins
@@ -126,7 +126,7 @@ pub fn catalog_packs(reg: &cl_plugin::Registry, lang: &str) -> Vec<Pack> {
                             Kind::Transition,
                             Payload::Shader {
                                 file: p.dir.join(a.shader.as_ref()?),
-                                // unbekannter Rückfall: Überblenden (der Katalog prüft noch einmal)
+                                // unknown fallback: cross-fade (the catalog checks once more)
                                 fallback: a
                                     .fallback
                                     .clone()
@@ -135,14 +135,14 @@ pub fn catalog_packs(reg: &cl_plugin::Registry, lang: &str) -> Vec<Pack> {
                                 params: a.shader_params().ok()?,
                             },
                         ),
-                        // shortcut: Shader-Assets und weitere Arten erscheinen erst mit ihrer Render-Stufe
+                        // shortcut: shader assets and further kinds only appear with their render stage
                         _ => return None,
                     };
                     Some(Entry {
                         id: format!("{}/{}", m.id, a.id),
                         kind,
                         name: cl_plugin::localized(&a.name, lang).to_string(),
-                        // ohne Kategorie: eigener Ordner mit dem Paketnamen
+                        // without a category: own folder with the pack name
                         categories: if a.category.is_empty() {
                             vec![info.name.clone()]
                         } else {
@@ -176,7 +176,7 @@ pub fn counts_text(counts: &BTreeMap<Kind, usize>) -> String {
             crate::tr(match k {
                 Kind::Effect if one => format!("{n} Effekt"),
                 Kind::Effect => format!("{n} Effekte"),
-                // „1 Filter“/„1 Sticker“: eigene Wörterbuchzeilen (deutsch gleich, englisch Einzahl)
+                // „1 Filter“/„1 Sticker“: own dictionary lines (same in German, singular in English)
                 Kind::Filter => format!("{n} Filter"),
                 Kind::Transition if one => format!("{n} Übergang"),
                 Kind::Transition => format!("{n} Übergänge"),
@@ -189,7 +189,7 @@ pub fn counts_text(counts: &BTreeMap<Kind, usize>) -> String {
         .join(" · ")
 }
 
-/// Zähler der Liste (`"sound": 213`) → Arten des Katalogs; Unbekanntes fällt weg.
+/// Counters of the list (`"sound": 213`) → kinds of the catalog; unknown ones are dropped.
 fn index_counts(c: &BTreeMap<String, usize>) -> BTreeMap<Kind, usize> {
     c.iter()
         .filter_map(|(k, n)| {
@@ -206,7 +206,7 @@ fn index_counts(c: &BTreeMap<String, usize>) -> BTreeMap<Kind, usize> {
         .collect()
 }
 
-/// „22 KB“ bzw. „1,3 MB“
+/// „22 KB“ or „1,3 MB“
 fn size_text(bytes: u64, comma: bool) -> String {
     if bytes < 1 << 20 {
         format!("{} KB", bytes.div_ceil(1024))
@@ -215,7 +215,7 @@ fn size_text(bytes: u64, comma: bool) -> String {
     }
 }
 
-/// „42 % · 0,6 / 1,4 MB“ bzw. „50 % · 11 / 22 KB“
+/// „42 % · 0,6 / 1,4 MB“ or „50 % · 11 / 22 KB“
 fn progress_text(done: u64, total: u64, comma: bool) -> String {
     let total = total.max(1);
     let done = done.min(total);
@@ -226,8 +226,8 @@ fn progress_text(done: u64, total: u64, comma: bool) -> String {
     }
 }
 
-/// Quelle der Pakete: mit `CUTLINE_NO_UPDATE` keine; in Entwickler-Builds (Debug oder
-/// `CUTLINE_SHOTS`) ersetzt `CUTLINE_PACKS_DIR=<Ordner mit index.json und ZIPs>` die Adresse.
+/// Source of the packs: none with `CUTLINE_NO_UPDATE`; in developer builds (debug or
+/// `CUTLINE_SHOTS`) `CUTLINE_PACKS_DIR=<folder with index.json and ZIPs>` replaces the URL.
 fn source_from(dev: bool, dir: Option<std::ffi::OsString>, no_update: bool) -> Option<Source> {
     match dir.filter(|d| dev && !d.is_empty()) {
         Some(d) => Some(Source::Dir(d.into())),
@@ -240,12 +240,12 @@ fn source() -> Option<Source> {
     source_from(dev, std::env::var_os("CUTLINE_PACKS_DIR"), std::env::var_os("CUTLINE_NO_UPDATE").is_some())
 }
 
-/// Zwischendateien der Downloads (Reste beendeter Läufe räumt der Start weg)
+/// Temp files of the downloads (startup cleans up leftovers of ended runs)
 pub fn download_dir() -> PathBuf {
     paths::data_dir().join("cache").join("downloads")
 }
 
-/// Laden, prüfen, nach `root` einbauen. Die Zwischendatei verschwindet in jedem Fall.
+/// Download, check, install into `root`. The temp file disappears in any case.
 fn fetch_install(src: &Source, p: &IndexPack, tmp: &Path, root: &Path, progress: impl FnMut(u64, u64), cancel: &AtomicBool) -> Result<(), String> {
     let f = packs::download_pack(src, p, tmp, progress, cancel)?;
     let r = cl_plugin::install_zip_id(&f, root, &p.id);
@@ -253,16 +253,16 @@ fn fetch_install(src: &Source, p: &IndexPack, tmp: &Path, root: &Path, progress:
     r
 }
 
-/// Liste der nachladbaren Pakete
+/// List of downloadable packs
 #[derive(Debug, Clone, Default)]
 pub enum ListState {
     #[default]
     Idle,
     Loading,
-    /// Nachladen ausgeschaltet (`CUTLINE_NO_UPDATE`)
+    /// Downloading switched off (`CUTLINE_NO_UPDATE`)
     Off,
     Ready(Vec<IndexPack>),
-    /// Unbekanntes Listenformat
+    /// Unknown list format
     Newer,
     Failed(String),
 }
@@ -271,15 +271,15 @@ pub enum ListState {
 struct Shared {
     list: ListState,
     queue: VecDeque<IndexPack>,
-    /// laufender Download: ID, Bytes, Gesamt
+    /// running download: ID, bytes, total
     active: Option<(String, u64, u64)>,
-    /// eingebaut, Katalog noch nicht neu eingelesen
+    /// installed, catalog not yet re-read
     installed: Vec<IndexPack>,
     errors: BTreeMap<String, String>,
     worker: bool,
 }
 
-/// Liste und Download-Warteschlange (nacheinander, ein Hintergrund-Thread)
+/// List and download queue (one after another, one background thread)
 #[derive(Default)]
 pub struct PackDownloads {
     shared: Arc<Mutex<Shared>>,
@@ -373,13 +373,13 @@ impl PackDownloads {
     }
 }
 
-/// Knopf einer Karte: was geklickt wurde
+/// Button of a card: what was clicked
 enum PackAction {
     Load(IndexPack),
     Cancel(String),
 }
 
-/// Rechter Knopf: „Laden“/„Aktualisieren“, während Warteschlange oder Download „Abbrechen“.
+/// Right button: „Laden“/„Aktualisieren“, while queued or downloading „Abbrechen“.
 fn pack_button(ui: &mut egui::Ui, snap: &Shared, p: &IndexPack, label: String) -> Option<PackAction> {
     let busy = snap.queue.iter().any(|q| q.id == p.id) || snap.active.as_ref().is_some_and(|a| a.0 == p.id);
     if busy {
@@ -389,7 +389,7 @@ fn pack_button(ui: &mut egui::Ui, snap: &Shared, p: &IndexPack, label: String) -
     ui.add_enabled(ok, theme::secondary(label)).clicked().then(|| PackAction::Load(p.clone()))
 }
 
-/// Zeilen unter einer Karte: Fortschritt, Warten, Fehler
+/// Rows under a card: progress, waiting, error
 fn job_lines(ui: &mut egui::Ui, snap: &Shared, id: &str) {
     let comma = cl_i18n::ui_lang() == cl_i18n::Lang::De;
     if let Some((_, done, total)) = snap.active.as_ref().filter(|a| a.0 == id) {
@@ -405,7 +405,7 @@ fn job_lines(ui: &mut egui::Ui, snap: &Shared, id: &str) {
 }
 
 impl App {
-    /// Fertige Downloads übernehmen: Katalog neu einlesen, Meldung
+    /// Take over finished downloads: re-read the catalog, message
     pub fn poll_pack_downloads(&mut self) {
         let done = std::mem::take(&mut lock(&self.packs.shared).installed);
         if done.is_empty() {
@@ -419,7 +419,7 @@ impl App {
         }
     }
 
-    /// Abschnitt „Verfügbar“: Pakete der Liste, die nicht installiert sind
+    /// „Verfügbar“ section: packs of the list that are not installed
     fn available_packs(&mut self, ui: &mut egui::Ui, snap: &Shared, avail: &[&IndexPack]) {
         ui.add_space(6.0);
         let r = ui.available_rect_before_wrap();
@@ -509,7 +509,7 @@ impl App {
         }
     }
 
-    /// Katalog neu anmelden (nach Ein-/Ausschalten, Sprachwechsel, neuen Paketen).
+    /// Re-register the catalog (after switching on/off, language change, new packs).
     pub fn refresh_catalog(&mut self) {
         catalog::load_packs(catalog_packs(&self.plugins, self.i18n.lang().code()));
         catalog::set_hidden(self.settings.hidden_packs.clone());
@@ -518,7 +518,7 @@ impl App {
         self.prewarm_sounds();
     }
 
-    /// Plugin-Ordner neu einlesen (nach Hinzufügen oder Entfernen).
+    /// Re-read the plugin folder (after adding or removing).
     fn reload_plugins(&mut self) {
         let dirs = paths::plugin_dirs();
         self.plugins = cl_plugin::Registry::scan(dirs.iter().map(|p| p.as_path()));
@@ -536,7 +536,7 @@ impl App {
                 });
             }
             Ok(cl_plugin::Installed::Done(id)) => {
-                // ein mitgeliefertes Paket gleicher ID gewinnt beim Laden: dann nicht behalten
+                // a bundled pack with the same ID wins on loading: then do not keep it
                 let bundled = self
                     .plugins
                     .plugins
@@ -681,7 +681,7 @@ impl App {
         self.available_packs(ui, &snap, &avail);
     }
 
-    /// Rückfragen und Danksagung über den Einstellungen.
+    /// Confirmations and credits above the settings.
     pub fn contents_dialog(&mut self, ctx: &egui::Context) {
         let Some(d) = self.contents_dialog.clone() else {
             return;
@@ -756,7 +756,7 @@ mod tests {
         assert_eq!(media_title(&data.join("Sfx").join("riser-0a1b2c3d.wav"), data, none).as_deref(), Some("Anstieg"));
         let pack = |p: &Path| p.ends_with("abonnieren-rot.png").then(|| "Abonnieren (rot)".to_string());
         assert_eq!(media_title(Path::new("D:/p/elemente/abonnieren-rot.png"), data, pack).as_deref(), Some("Abonnieren (rot)"));
-        // eigene Datei: Dateiname bleibt
+        // own file: the file name stays
         assert_eq!(media_title(Path::new("D:/Videos/urlaub.mp4"), data, none), None);
     }
 
@@ -780,17 +780,17 @@ mod tests {
         }
     }
 
-    /// Danksagung im Repo ist aktuell; jedes mitgelieferte Paket nennt eine Lizenz.
-    /// Neu erzeugen: `CUTLINE_WRITE_THIRD_PARTY=1 cargo test -p cl-app third_party`
+    /// The credits in the repo are current; every bundled pack names a license.
+    /// Regenerate: `CUTLINE_WRITE_THIRD_PARTY=1 cargo test -p cl-app third_party`
     #[test]
     fn third_party_file_is_current() {
         let reg = cl_plugin::Registry::scan([bundled().as_path()]);
         let packs = catalog_packs(&reg, "de");
         for p in &packs {
-            assert!(!p.info.license.trim().is_empty(), "{} ohne Lizenz", p.info.id);
+            assert!(!p.info.license.trim().is_empty(), "{} without a license", p.info.id);
             assert!(p.entries.iter().all(|e| !e.license.trim().is_empty()), "{}", p.info.id);
         }
-        // dahinter fest: die Programme, die die Pakete mitbringen (FFmpeg steht unter der GPL)
+        // fixed after that: the programs the packs bring along (FFmpeg is under the GPL)
         let bundled = "
 ## Bundled programs
 
@@ -806,11 +806,11 @@ These are separate programs and libraries that Cutline starts or loads; they are
             std::fs::write(&file, &want).unwrap();
         }
         let have = std::fs::read_to_string(&file).unwrap_or_default().replace("\r\n", "\n");
-        assert_eq!(have, want, "THIRD_PARTY.md veraltet (siehe Kommentar am Test)");
+        assert_eq!(have, want, "THIRD_PARTY.md outdated (see the comment on the test)");
     }
 
-    /// Kleines Testpaket mit Sound (WAV) und Sticker (SVG): gelistet, ausgeschaltet weg,
-    /// Pfad-Ausbruch abgelehnt.
+    /// Small test pack with a sound (WAV) and a sticker (SVG): listed, gone when switched off,
+    /// path escape rejected.
     #[test]
     fn pack_sounds_and_stickers_are_listed() {
         let dir = tempfile::tempdir().unwrap();
@@ -866,19 +866,19 @@ license = "CC-BY-4.0"
         assert_eq!(e.id, "test.pack/ding");
         assert_eq!(e.category(), "Oberfläche");
         assert_eq!(e.payload, Payload::File(pack.join("ding.wav")));
-        assert_eq!(e.tags, ["Klingel"], "Schlagworte kommen in der Suche an");
+        assert_eq!(e.tags, ["Klingel"], "tags reach the search");
         let st = catalog::get_in(&packs, Kind::Sticker, "test.pack/star").unwrap();
         assert_eq!((st.license.as_str(), st.author.as_str()), ("CC-BY-4.0", "Jemand"));
-        assert_eq!(st.category(), "Test pack", "ohne Kategorie: Ordner mit dem Paketnamen");
+        assert_eq!(st.category(), "Test pack", "without a category: folder with the pack name");
         assert_eq!(counts_text(&catalog::packs_in(&packs)[1].counts), "1 Sound · 1 Sticker");
         let dict: std::collections::HashMap<_, _> = cl_i18n::ui_entries().into_iter().collect();
-        assert_eq!((dict.get("1 Filter"), dict.get("1 Sticker")), (Some(&"1 filter"), Some(&"1 sticker")), "englische Einzahl");
-        // ausgeschaltet: verschwunden
+        assert_eq!((dict.get("1 Filter"), dict.get("1 Sticker")), (Some(&"1 filter"), Some(&"1 sticker")), "English singular");
+        // switched off: gone
         reg.apply_states(&[("test.pack".to_string(), false)].into_iter().collect());
         let packs = catalog_packs(&reg, "en");
         assert_eq!(catalog::list_in(&packs, Kind::Sound).len(), cl_fx::sfx::SFX.len());
         assert!(catalog::get_in(&packs, Kind::Sticker, "test.pack/star").is_none());
-        // Pfad-Ausbruch: Paket wird nicht geladen
+        // path escape: the pack is not loaded
         std::fs::write(dir.path().join("x.wav"), b"RIFF").unwrap();
         std::fs::write(pack.join("plugin.toml"), manifest.replace("file = \"ding.wav\"", "file = \"../x.wav\"")).unwrap();
         let reg = cl_plugin::Registry::scan([dir.path()]);
@@ -886,7 +886,7 @@ license = "CC-BY-4.0"
         assert!(reg.errors[0].contains("innerhalb"), "{:?}", reg.errors);
     }
 
-    /// Die Endungen der Pakete sind eine Teilmenge dessen, was die eigene Bibliothek kann.
+    /// The extensions of the packs are a subset of what the own library can handle.
     #[test]
     fn pack_file_types_match_library() {
         for e in cl_plugin::SOUND_EXT {
@@ -907,7 +907,7 @@ license = "CC-BY-4.0"
         assert_eq!(size_text(1_351_277, false), "1.3 MB");
         assert_eq!(size_text(0, true), "0 KB");
         assert_eq!(progress_text(11_000, 22_000, true), "50 % · 11 / 22 KB");
-        assert_eq!(progress_text(30_000, 22_000, true), "100 % · 22 / 22 KB", "nie über 100 %");
+        assert_eq!(progress_text(30_000, 22_000, true), "100 % · 22 / 22 KB", "never above 100 %");
         assert_eq!(progress_text(0, 0, true), "0 % · 0 / 1 KB");
         assert_eq!(progress_text(629_146, 1_468_006, true), "42 % · 0,6 / 1,4 MB");
     }
@@ -917,12 +917,12 @@ license = "CC-BY-4.0"
         let d = || Some(std::ffi::OsString::from("D:/pakete"));
         assert_eq!(source_from(false, None, false), Some(Source::Github));
         assert_eq!(source_from(false, None, true), None, "CUTLINE_NO_UPDATE");
-        assert_eq!(source_from(false, d(), false), Some(Source::Github), "Ordner nur in Entwickler-Builds");
+        assert_eq!(source_from(false, d(), false), Some(Source::Github), "folder only in developer builds");
         assert_eq!(source_from(true, d(), true), Some(Source::Dir("D:/pakete".into())));
         assert_eq!(source_from(true, Some("".into()), false), Some(Source::Github));
     }
 
-    /// Kleines Paket als ZIP in `dir` und sein Eintrag in der Liste
+    /// Small pack as a ZIP in `dir` and its entry in the list
     fn test_pack(dir: &Path, id: &str, file: &str) -> IndexPack {
         use std::io::Write;
         let manifest = r#"
@@ -947,7 +947,7 @@ file = "star.svg"
         w.write_all(manifest.as_bytes()).unwrap();
         w.start_file("star.svg", o).unwrap();
         w.write_all(br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>"#).unwrap();
-        // größer als die Toleranz der Größenprüfung
+        // larger than the tolerance of the size check
         w.start_file("lizenz.txt", o.compression_method(zip::CompressionMethod::Stored)).unwrap();
         w.write_all(&(0..20_000u32).map(|i| (i % 251) as u8).collect::<Vec<_>>()).unwrap();
         w.finish().unwrap();
@@ -970,8 +970,8 @@ file = "star.svg"
         std::fs::read_dir(d).map(|r| r.count()).unwrap_or(0)
     }
 
-    /// Laden und Einbauen über einen lokalen Ordner statt GitHub: Erfolg, falsche Prüfsumme,
-    /// zu groß, falsche ID, Abbruch – die Zwischendatei bleibt nie liegen.
+    /// Download and install via a local folder instead of GitHub: success, wrong checksum,
+    /// too large, wrong ID, cancel – the temp file is never left behind.
     #[test]
     fn packs_download_and_install() {
         let t = tempfile::tempdir().unwrap();
@@ -980,30 +980,30 @@ file = "star.svg"
         let src = Source::Dir(srcd.clone());
         let p = test_pack(&srcd, "test.laden", "laden.zip");
         let no = AtomicBool::new(false);
-        // falsche Prüfsumme: nichts eingebaut
+        // wrong checksum: nothing installed
         let mut bad = p.clone();
         bad.sha256 = cl_update::sha256_hex(b"anders");
         assert!(fetch_install(&src, &bad, &tmp, &root, |_, _| {}, &no).unwrap_err().contains("Prüfsumme"));
         assert!(!root.join("test.laden").exists());
         assert_eq!(files_in(&tmp), 0);
-        // größer als in der Liste
+        // larger than in the list
         let mut small = p.clone();
         small.size = 10;
         assert!(fetch_install(&src, &small, &tmp, &root, |_, _| {}, &no).is_err());
         assert!(!root.join("test.laden").exists());
         assert_eq!(files_in(&tmp), 0);
-        // ID im Paket passt nicht zur Liste
+        // the ID in the pack does not match the list
         let other = IndexPack { id: "test.anders".into(), ..p.clone() };
         assert!(fetch_install(&src, &other, &tmp, &root, |_, _| {}, &no).unwrap_err().contains("passt nicht"));
         assert_eq!(files_in(&root), 0);
         assert_eq!(files_in(&tmp), 0);
-        // abgebrochen
+        // cancelled
         let cancel = AtomicBool::new(true);
         assert_eq!(fetch_install(&src, &p, &tmp, &root, |_, _| {}, &cancel).unwrap_err(), "Abgebrochen");
         assert_eq!(files_in(&tmp), 0);
-        // Liste nicht erreichbar
+        // list not reachable
         assert!(matches!(packs::fetch_index(&src), Err(IndexError::Unreachable(_))));
-        // richtig: eingebaut, im Katalog, nicht mehr „verfügbar“
+        // correct: installed, in the catalog, no longer „verfügbar“
         let mut seen = 0;
         fetch_install(&src, &p, &tmp, &root, |d, _| seen = d, &no).unwrap();
         assert_eq!(seen, p.size);
@@ -1017,12 +1017,12 @@ file = "star.svg"
         assert!(reg.errors.is_empty(), "{:?}", reg.errors);
         assert!(catalog::get_in(&catalog_packs(&reg, "de"), Kind::Sticker, "test.laden/star").is_some());
         assert_eq!(avail(&reg), 0);
-        // Entfernen über den Weg der Karte: wieder verfügbar
+        // Remove via the card's path: available again
         cl_plugin::remove_pack(&root, &root.join("test.laden")).unwrap();
         assert_eq!(avail(&cl_plugin::Registry::scan([root.as_path()])), 1);
     }
 
-    /// Jede ZIP der lokalen Testkopie passt zur Liste und lässt sich einbauen.
+    /// Every ZIP of the local test copy matches the list and can be installed.
     #[test]
     fn real_packs_install() {
         let dir = Path::new("F:/cutline-pakete/fertig");
@@ -1046,7 +1046,7 @@ file = "star.svg"
         }
     }
 
-    /// Shader-Übergänge der mitgelieferten Pakete erscheinen im Katalog, mit Rückfall.
+    /// Shader transitions of the bundled packs appear in the catalog, with a fallback.
     #[test]
     fn pack_transitions_are_listed_with_fallback() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
@@ -1059,7 +1059,7 @@ file = "star.svg"
         let plan = catalog::transition_plan_in(&packs, "cutline.uebergaenge/wuerfel");
         assert_eq!(plan.xfade, "slideright");
         assert!(plan.shader.is_some_and(|(f, _)| f.is_file()));
-        // Paket aus: nur noch der Rückfall
+        // pack off: only the fallback remains
         reg.apply_states(&[("cutline.uebergaenge".to_string(), false)].into_iter().collect());
         let packs = catalog_packs(&reg, "de");
         let plan = catalog::transition_plan_in(&packs, "cutline.uebergaenge/wuerfel");

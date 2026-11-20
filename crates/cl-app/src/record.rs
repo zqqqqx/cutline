@@ -1,4 +1,4 @@
-//! Voiceover-Aufnahme: Mikrofon → WAV (32-bit float, Gerätesamplerate), mit Pegelanzeige.
+//! Voiceover recording: microphone → WAV (32-bit float, device sample rate), with level meter.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -9,7 +9,7 @@ use std::thread::JoinHandle;
 use cl_core::Time;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-/// Schreibt Samples in eine WAV-Datei (verlustfrei, float).
+/// Writes samples to a WAV file (lossless, float).
 pub struct WavSink {
     writer: hound::WavWriter<std::io::BufWriter<std::fs::File>>,
 }
@@ -45,8 +45,8 @@ pub fn input_devices() -> Vec<String> {
 }
 
 pub fn default_input() -> Option<String> {
-    // Tests fragen die Tonhardware nicht ab: Jeder Test läuft in einem eigenen kurzlebigen Thread, und
-    // der Geräte-Lister von WASAPI überlebt das Ende seines ersten Threads nicht (Absturz in der CI)
+    // Tests do not query the audio hardware: each test runs in its own short-lived thread, and
+    // the WASAPI device lister does not survive the end of its first thread (crash in CI)
     if cfg!(test) {
         return None;
     }
@@ -60,10 +60,10 @@ pub struct Recorder {
     tx: Option<Sender<Vec<f32>>>,
     writer: Option<JoinHandle<Result<(), String>>>,
     level: Arc<AtomicU32>,
-    /// Spitzenpegel, 50 Werte pro Sekunde (für die Live-Waveform in der Zeitleiste)
+    /// Peak level, 50 values per second (for the live waveform in the timeline)
     pub peaks: Arc<Mutex<Vec<f32>>>,
     pub path: PathBuf,
-    /// Position auf der Zeitleiste, an der die Aufnahme beginnt
+    /// Position on the timeline where the recording starts
     pub start_at: Time,
     pub started: std::time::Instant,
 }
@@ -109,7 +109,7 @@ impl Recorder {
                             .collect();
                         let peak = buf.iter().fold(0.0f32, |m, s| m.max(s.abs()));
                         level.store(peak.to_bits(), Ordering::Relaxed);
-                        // Waveform-Werte im Raster der Zeitleiste sammeln
+                        // Collect waveform values in the timeline grid
                         let mut new = Vec::new();
                         for s in &buf {
                             acc_max = acc_max.max(s.abs());
@@ -152,12 +152,12 @@ impl Recorder {
         })
     }
 
-    /// Spitzenpegel der letzten Puffer (0..1).
+    /// Peak level of the last buffers (0..1).
     pub fn level(&self) -> f32 {
         f32::from_bits(self.level.load(Ordering::Relaxed))
     }
 
-    /// Kopie der bisher gesammelten Waveform-Werte.
+    /// Copy of the waveform values collected so far.
     pub fn peaks(&self) -> Vec<f32> {
         self.peaks.lock().map(|p| p.clone()).unwrap_or_default()
     }
@@ -166,9 +166,9 @@ impl Recorder {
         self.started.elapsed()
     }
 
-    /// Stoppt und schließt die Datei sauber ab.
+    /// Stops and closes the file cleanly.
     pub fn stop(mut self) -> Result<PathBuf, String> {
-        drop(self.stream.take()); // Callback endet, Sender im Callback wird verworfen
+        drop(self.stream.take()); // callback ends, the sender in the callback is dropped
         drop(self.tx.take());
         if let Some(w) = self.writer.take() {
             w.join()
@@ -178,8 +178,8 @@ impl Recorder {
     }
 }
 
-/// Schreib-Thread für die Aufnahme. Der Kanal ist unbegrenzt: hakt die Platte, wächst kurz der
-/// Speicher, statt dass Puffer verworfen werden (die Datei liefe sonst aus dem Takt).
+/// Writer thread for the recording. The channel is unbounded: if the disk stalls, memory grows
+/// briefly instead of buffers being dropped (the file would otherwise drift out of sync).
 fn spawn_writer(mut sink: WavSink) -> Result<(Sender<Vec<f32>>, JoinHandle<Result<(), String>>), String> {
     let (tx, rx) = channel::<Vec<f32>>();
     let writer = std::thread::Builder::new()
@@ -203,7 +203,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("vo.wav");
         let (tx, w) = spawn_writer(WavSink::create(&p, 48000, 1).unwrap()).unwrap();
-        // viel schneller geliefert, als geschrieben wird (früher: 64 Plätze, der Rest verworfen)
+        // delivered much faster than written (before: 64 slots, the rest dropped)
         for i in 0..1000 {
             tx.send(vec![i as f32 / 1000.0; 480]).unwrap();
         }

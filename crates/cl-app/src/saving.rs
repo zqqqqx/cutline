@@ -1,7 +1,7 @@
-//! Speichern im Hintergrund: Projekt, Autosave und Sicherungen werden als Momentaufnahme an
-//! einen eigenen Thread gegeben, der serialisiert und atomisch schreibt. Die Oberfläche wartet
-//! nie auf die Platte. Mehrere wartende Speicherungen derselben Datei: nur die neueste zählt.
-//! Schlägt das Schreiben fehl, landet der Stand in den Sicherungen (kein Datenverlust).
+//! Saving in the background: project, autosave and backups are handed as a snapshot to
+//! a thread of their own that serializes and writes atomically. The UI never waits
+//! for the disk. Several waiting saves of the same file: only the newest counts.
+//! If writing fails, the state ends up in the backups (no data loss).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -15,15 +15,15 @@ use eframe::egui;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    /// Projektdatei (Speichern, Autosave)
+    /// Project file (save, autosave)
     Project,
-    /// Sicherung im Sicherungsordner des Projekts, höchstens `keep` behalten
+    /// Backup in the project's backup folder, keep at most `keep`
     Backup { keep: usize },
 }
 
 pub struct Job {
     pub kind: Kind,
-    /// Projektdatei (bei Sicherungen: das Projekt, zu dem sie gehört)
+    /// Project file (for backups: the project they belong to)
     pub path: PathBuf,
     pub project: Project,
     pub revision: u64,
@@ -32,12 +32,12 @@ pub struct Job {
 #[derive(Debug)]
 pub enum Done {
     Saved,
-    /// `rescued`: wohin der Stand stattdessen geschrieben wurde
+    /// `rescued`: where the state was written instead
     Failed { kind: Kind, revision: u64, err: String, rescued: Option<PathBuf> },
 }
 
-/// Wartende Aufträge zusammenfassen: von mehreren Speicherungen derselben Projektdatei bleibt
-/// nur die letzte (an deren Stelle); Sicherungen bleiben alle.
+/// Merge waiting jobs: of several saves of the same project file only the last
+/// remains (in its place); backups all remain.
 pub fn coalesce(jobs: Vec<Job>) -> Vec<Job> {
     let last: Vec<bool> = jobs
         .iter()
@@ -60,7 +60,7 @@ fn write(job: &Job) -> Result<(), String> {
     }
 }
 
-/// Fehlgeschlagene Projektdatei: Stand in die Sicherungen retten
+/// Failed project file: rescue the state into the backups
 fn rescue(job: &Job) -> Option<PathBuf> {
     let dir = crate::project_tools::backup_dir(&job.path);
     std::fs::create_dir_all(&dir).ok()?;
@@ -68,8 +68,8 @@ fn rescue(job: &Job) -> Option<PathBuf> {
     crate::paths::write_atomic(&p, job.project.to_json()).ok().map(|_| p)
 }
 
-/// `rescued`: schon gerettete Stände (Pfad, Revision) – je Stand nur eine Rettungsdatei, auch
-/// wenn das Schreiben immer wieder scheitert
+/// `rescued`: already rescued states (path, revision) – only one rescue file per state, even
+/// if writing fails again and again
 fn run(job: Job, rescued: &mut HashSet<(PathBuf, u64)>) -> Done {
     let t = Instant::now();
     let r = write(&job);
@@ -78,7 +78,7 @@ fn run(job: Job, rescued: &mut HashSet<(PathBuf, u64)>) -> Done {
     }
     match r {
         Ok(()) => {
-            // Revisionen beginnen je geöffnetem Projekt neu
+            // Revisions restart for each opened project
             rescued.retain(|(p, _)| *p != job.path);
             Done::Saved
         }
@@ -93,11 +93,11 @@ fn run(job: Job, rescued: &mut HashSet<(PathBuf, u64)>) -> Done {
 pub struct Saver {
     tx: Sender<Job>,
     rx: Receiver<Done>,
-    /// noch nicht geschriebene Aufträge
+    /// jobs not yet written
     pending: Arc<AtomicUsize>,
-    /// letzte Fehlermeldung (höchstens eine je Minute)
+    /// last error message (at most one per minute)
     pub(crate) last_err: Option<Instant>,
-    /// letztes Scheitern einer Projektdatei (Autosave setzt dann aus)
+    /// last failure of a project file (autosave pauses then)
     failed: Option<Instant>,
 }
 
@@ -129,14 +129,14 @@ impl Saver {
     pub fn send(&self, job: Job) {
         self.pending.fetch_add(1, Ordering::SeqCst);
         if let Err(e) = self.tx.send(job) {
-            // Thread weg (sollte nie passieren): dann eben hier schreiben
+            // thread gone (should never happen): then write here
             self.pending.fetch_sub(1, Ordering::SeqCst);
             let _ = run(e.0, &mut HashSet::new());
         }
     }
 
-    /// Nach einem Schreibfehler setzt der Autosave eine Minute aus (sonst schriebe er jedes Bild
-    /// neu, z. B. bei abgezogenem Stick); Speichern von Hand und Verlassen versuchen es sofort.
+    /// After a write error autosave pauses for a minute (otherwise it would rewrite every frame,
+    /// e.g. with an unplugged stick); manual save and quitting try immediately.
     pub fn autosave_paused(&self) -> bool {
         self.failed.is_some_and(|t| t.elapsed() < Duration::from_secs(60))
     }
@@ -145,12 +145,12 @@ impl Saver {
         self.pending.load(Ordering::SeqCst) > 0
     }
 
-    /// Fertige Speicherungen abholen.
+    /// Collect finished saves.
     pub fn poll(&self) -> Vec<Done> {
         self.rx.try_iter().collect()
     }
 
-    /// Beim Beenden: warten, bis alles geschrieben ist (höchstens `max`).
+    /// On exit: wait until everything is written (at most `max`).
     pub fn wait_idle(&self, max: Duration) -> bool {
         let t = Instant::now();
         while self.busy() {
@@ -164,8 +164,8 @@ impl Saver {
 }
 
 impl crate::app::App {
-    /// Fertige Speicherungen abholen (jedes Bild): Fehler melden (höchstens einmal je Minute),
-    /// das Projekt gilt dann wieder als ungespeichert.
+    /// Collect finished saves (every frame): report errors (at most once per minute),
+    /// the project then counts as unsaved again.
     pub fn poll_saves(&mut self) {
         for d in self.saver.poll() {
             let Done::Failed { kind, revision, err, rescued, .. } = d else { continue };
@@ -185,7 +185,7 @@ impl crate::app::App {
         }
     }
 
-    /// Sicherung des aktuellen Stands (im Hintergrund).
+    /// Backup of the current state (in the background).
     pub fn backup_now(&mut self, path: &Path) {
         self.saver.send(Job {
             kind: Kind::Backup { keep: self.settings.backup_keep },
@@ -235,7 +235,7 @@ pub(crate) mod tests {
         let done = s.poll();
         assert!(matches!(done.last(), Some(Done::Saved)), "{done:?}");
         assert_eq!(Project::from_json(&std::fs::read_to_string(&p).unwrap()).unwrap().name, "r5");
-        // Ziel ist ein Ordner: Schreiben scheitert, der Stand landet in den Sicherungen
+        // Target is a folder: writing fails, the state ends up in the backups
         let bad = dir.path().join("ordner.cutline");
         std::fs::create_dir_all(&bad).unwrap();
         s.send(job(Kind::Project, &bad, 7));
@@ -248,8 +248,8 @@ pub(crate) mod tests {
         }
     }
 
-    /// Scheitert derselbe Stand immer wieder (Autosave, abgezogener Stick), entsteht nur eine
-    /// Rettungsdatei – nicht eine je Versuch.
+    /// If the same state fails again and again (autosave, unplugged stick), only one
+    /// rescue file is created – not one per attempt.
     #[test]
     fn repeated_failure_of_one_state_rescues_once() {
         let dir = tempfile::tempdir().unwrap();
@@ -269,7 +269,7 @@ pub(crate) mod tests {
             }
         }
         assert_eq!(rescued, [true, false, false]);
-        // neuer Stand: wieder gerettet
+        // new state: rescued again
         s.send(job(Kind::Project, &bad, 5));
         assert!(s.wait_idle(Duration::from_secs(10)));
         assert!(matches!(s.poll().pop(), Some(Done::Failed { rescued: Some(_), .. })));
@@ -285,8 +285,8 @@ pub(crate) mod tests {
         (app, home, g)
     }
 
-    /// Verlassen erst, wenn der Stand wirklich auf der Platte ist; scheitert das Schreiben,
-    /// bleibt das Projekt offen (sonst wären die Änderungen nach dem Zurücksetzen weg).
+    /// Quit only once the state is really on disk; if writing fails,
+    /// the project stays open (otherwise the changes would be gone after the reset).
     #[test]
     fn leaving_waits_for_the_write_and_stays_open_on_failure() {
         let (mut app, home, _g) = test_app();
@@ -295,7 +295,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&bad).unwrap();
         app.project_path = Some(bad);
         assert!(!app.flush_before_leaving());
-        assert!(app.saver.autosave_paused(), "nach dem Fehler setzt der Autosave aus");
+        assert!(app.saver.autosave_paused(), "after the error autosave pauses");
         let good = home.path().join("gut.cutline");
         app.project_path = Some(good.clone());
         assert!(app.flush_before_leaving());

@@ -1,5 +1,5 @@
-//! Hintergrundaufgaben (Spracherkennung, Freistellen, Analysen, Modell-Downloads) mit
-//! Fortschritt und Abbrechen. Ergebnisse kommen über einen Kanal zurück in die App.
+//! Background tasks (speech recognition, cutout, analyses, model downloads) with
+//! progress and cancel. Results come back to the app through a channel.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -41,9 +41,9 @@ pub enum TaskDone {
     Model {
         id: &'static str,
     },
-    /// Ergebnis direkt auf dem Haupt-Thread anwenden
+    /// Apply the result directly on the main thread
     Run(Box<dyn FnOnce(&mut crate::app::App) + Send>),
-    /// Proxy fertig (oder fehlgeschlagen)
+    /// Proxy done (or failed)
     Proxy {
         media: cl_core::MediaId,
         ok: bool,
@@ -54,11 +54,11 @@ pub enum TaskDone {
 pub struct Task {
     pub id: u64,
     pub label: String,
-    /// Art (verhindert doppelte Aufträge), z. B. „matte:<clip>“
+    /// Kind (prevents duplicate jobs), e.g. „matte:<clip>“
     pub key: String,
     progress: Arc<AtomicU32>,
     cancel: Arc<AtomicBool>,
-    /// Projekt beim Start (siehe [`Tasks::next_generation`])
+    /// Project at start (see [`Tasks::next_generation`])
     generation: u64,
 }
 
@@ -92,13 +92,13 @@ impl Default for Tasks {
     }
 }
 
-/// Art einer Aufgabe: Schlüssel bis zum ersten `:` („matte:<clip>“ → „matte“)
+/// Kind of a task: key up to the first `:` („matte:<clip>“ → „matte“)
 pub fn kind(key: &str) -> &str {
     key.split(':').next().unwrap_or(key)
 }
 
-/// Gleichartige Aufgaben zusammenfassen: je Art eine Zeile mit allen Mitgliedern (Indizes in
-/// der Reihenfolge der Liste), in der Reihenfolge des ersten Auftretens.
+/// Group tasks of the same kind: one row per kind with all members (indices in
+/// list order), in order of first appearance.
 pub fn groups(keys: &[&str]) -> Vec<Vec<usize>> {
     let mut out: Vec<(&str, Vec<usize>)> = Vec::new();
     for (i, k) in keys.iter().enumerate() {
@@ -116,7 +116,7 @@ impl Tasks {
         self.list.iter().find(|t| t.key == key)
     }
 
-    /// Aufgabe starten; `f` bekommt eine Fortschrittsfunktion (0…1) und das Abbruch-Flag.
+    /// Start a task; `f` gets a progress function (0…1) and the cancel flag.
     pub fn spawn(
         &mut self,
         ctx: &egui::Context,
@@ -149,7 +149,7 @@ impl Tasks {
                 let c2 = ctx.clone();
                 let report = move |v: f32| {
                     p.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
-                    // Fortschritt ändert sich langsam: höchstens ~10 Bilder/s
+                    // Progress changes slowly: at most ~10 frames/s
                     if let Some(gap) = crate::widgets::line_repaint_gap(false, true) {
                         c2.request_repaint_after(gap);
                     }
@@ -161,13 +161,13 @@ impl Tasks {
             .expect("Task-Thread");
     }
 
-    /// Anderes Projekt im Editor: Ergebnisse älterer Aufgaben gehören nicht mehr dazu.
+    /// Another project in the editor: results of older tasks no longer belong to it.
     pub fn next_generation(&mut self) {
         self.generation += 1;
     }
 
-    /// Fertige Aufgaben abholen. Projektbezogene Ergebnisse aus einem anderen Projekt werden
-    /// zur Meldung statt ins offene Projekt eingefügt.
+    /// Collect finished tasks. Project-bound results from another project become
+    /// a message instead of being inserted into the open project.
     pub fn poll(&mut self) -> Vec<(String, TaskDone)> {
         let mut out = Vec::new();
         while let Ok((id, done)) = self.rx.try_recv() {

@@ -1,5 +1,5 @@
-//! Navigation und Bereich: J/K/L-Shuttle, In/Out-Punkte, Marker (setzen, springen,
-//! bearbeiten, Liste, YouTube-Kapitel), Ripple-Löschen und Sprung zum nächsten Schnitt.
+//! Navigation and range: J/K/L shuttle, in/out points, markers (set, jump,
+//! edit, list, YouTube chapters), ripple delete and jump to the next cut.
 
 use cl_core::{EditOp, Marker, Time, Track, TrackId, MARKER_COLORS};
 use eframe::egui::{self, Color32, RichText};
@@ -12,13 +12,13 @@ pub fn marker_color(i: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
-/// Entf auf der Magnet-Hauptspur mit „Alles mitziehen“: die Lücke schließt sich auf allen
-/// Spuren (wie Umschalt+Entf), sonst blieben Overlays und Marker versetzt stehen.
+/// Del on the magnet main track with „Alles mitziehen“: the gap closes on all
+/// tracks (like Shift+Del), otherwise overlays and markers would stay shifted.
 pub fn delete_ripples_all(magnet: bool, all_tracks: bool, sel_on_main: &[bool]) -> bool {
     magnet && all_tracks && !sel_on_main.is_empty() && sel_on_main.iter().all(|m| *m)
 }
 
-/// „1:23“ bzw. „1:02:03“ wie in YouTube-Kapiteln
+/// „1:23“ or „1:02:03“ as in YouTube chapters
 pub fn chapter_time(t: Time) -> String {
     let s = t.as_secs_f64().max(0.0) as u64;
     if s >= 3600 {
@@ -28,12 +28,12 @@ pub fn chapter_time(t: Time) -> String {
     }
 }
 
-/// Kapitel (Start, Titel) wie im Export eingebettet.
+/// Chapters (start, title) as embedded in the export.
 fn chapter_list(markers: &[Marker]) -> Vec<(Time, String)> {
     cl_export::chapter_list(markers, Time::ZERO, Time(i64::MAX), &crate::tr("Kapitel"))
 }
 
-/// Kapitelliste für die Videobeschreibung.
+/// Chapter list for the video description.
 pub fn chapters(markers: &[Marker]) -> String {
     chapter_list(markers)
         .iter()
@@ -42,7 +42,7 @@ pub fn chapters(markers: &[Marker]) -> String {
         .join("\n")
 }
 
-/// Verstößt die Liste gegen YouTubes Regeln (mind. 3 Kapitel, je mind. 10 s)?
+/// Does the list break YouTube's rules (at least 3 chapters, each at least 10 s)?
 pub fn chapter_issue(markers: &[Marker], start: Time, end: Time) -> Option<String> {
     let v = cl_export::chapter_list(markers, start, end, &crate::tr("Kapitel"));
     v.iter().enumerate().find_map(|(i, (t, name))| {
@@ -52,11 +52,11 @@ pub fn chapter_issue(markers: &[Marker], start: Time, end: Time) -> Option<Strin
     })
 }
 
-/// Warnzeile aus [`chapter_issue`] mit „Nicht mehr anzeigen“; `true`, wenn darauf geklickt wurde.
+/// Warning line from [`chapter_issue`] with „Nicht mehr anzeigen“; `true` if it was clicked.
 pub fn chapter_warning(ui: &mut egui::Ui, w: &str) -> bool {
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w))).small().color(theme::WARN_TEXT()));
-        // kleiner, gedimmter Link: Hover hebt hervor und unterstreicht
+        // small, dimmed link: hover highlights and underlines
         let g = ui.painter().layout_no_wrap(
             crate::tr("Nicht mehr anzeigen"),
             egui::TextStyle::Small.resolve(ui.style()),
@@ -74,7 +74,7 @@ pub fn chapter_warning(ui: &mut egui::Ui, w: &str) -> bool {
 }
 
 impl App {
-    /// J/L: abspielen in Richtung `dir`; nochmal drücken verdoppelt das Tempo (bis 8×).
+    /// J/L: play in direction `dir`; pressing again doubles the speed (up to 8×).
     pub fn shuttle(&mut self, dir: f64) {
         self.commit_live();
         let same = self.playing && self.core.rate().signum() == dir.signum();
@@ -118,7 +118,7 @@ impl App {
             + 1
     }
 
-    /// M: Marker am Playhead setzen; liegt dort schon einer, wird er bearbeitet.
+    /// M: set a marker at the playhead; if there already is one, it is edited.
     pub fn add_marker(&mut self) {
         let fps = self.project.settings.fps;
         let frame = Time::from_secs_f64(1.0 / fps.as_f64());
@@ -144,7 +144,7 @@ impl App {
             color: 0,
         });
         self.apply(EditOp::SetMarkers { markers: ms });
-        // gleich benennen; bleibt der Name leer, heißt er „Kapitel“ (Liste und Export)
+        // name it right away; if the name stays empty, it is called „Kapitel“ (list and export)
         self.marker_draft = None;
         self.marker_edit = Some(id);
     }
@@ -175,7 +175,7 @@ impl App {
         }
     }
 
-    /// ↑/↓: zum vorherigen/nächsten Schnitt (Clipanfang oder -ende auf irgendeiner Spur).
+    /// ↑/↓: to the previous/next cut (clip start or end on any track).
     pub fn jump_edit(&mut self, forward: bool) {
         let ph = self.playhead.0;
         let eps = 1000;
@@ -197,8 +197,8 @@ impl App {
         }
     }
 
-    /// Umschalt+Entf: Auswahl löschen und die Lücke schließen (je nach „Alles mitziehen“
-    /// nur auf derselben Spur oder auf allen Spuren).
+    /// Shift+Del: delete the selection and close the gap (depending on „Alles mitziehen“
+    /// only on the same track or on all tracks).
     pub fn ripple_delete(&mut self) {
         self.live = None;
         let sel = self.selection();
@@ -210,7 +210,7 @@ impl App {
             .timeline
             .tracks
             .iter()
-            .filter(|t| !t.locked) // gesperrte Spuren bleiben unberührt, statt den Batch scheitern zu lassen
+            .filter(|t| !t.locked) // locked tracks stay untouched instead of failing the batch
             .flat_map(|t| {
                 t.clips
                     .iter()
@@ -231,12 +231,12 @@ impl App {
         }
     }
 
-    /// Bereiche (Spur, von, bis) als ein Undo-Schritt entfernen und alles dahinter nachziehen.
-    /// Gemeinsamer Weg für Ripple-Löschen, Lücken schließen, Pausen und Füllwörter.
-    /// `label`: Name im Verlauf (leer = aus den Schritten geraten).
+    /// Remove ranges (track, from, to) as one undo step and pull everything behind them up.
+    /// Shared path for ripple delete, closing gaps, pauses and filler words.
+    /// `label`: name in the history (empty = guessed from the steps).
     pub fn ripple_ranges(&mut self, ranges: Vec<(TrackId, Time, Time)>, label: &str) -> bool {
         let all = self.project.settings.ripple_all_tracks;
-        // „Alles mitziehen“ nimmt Clips anderer Spuren mit, die ganz im Bereich liegen: das sagen wir
+        // „Alles mitziehen“ takes along clips of other tracks that lie fully in the range: we say so
         let inside = |tid: TrackId, c: &cl_core::Clip, own: bool| {
             ranges.iter().any(|r| (r.0 == tid) == own && r.1 <= c.start && c.end() <= r.2)
         };
@@ -262,8 +262,8 @@ impl App {
         ok
     }
 
-    /// Lücken einer Spur oder (None) aller Spuren schließen. Mit „Alles mitziehen“ und
-    /// allen Spuren nur Stellen, an denen keine Spur etwas zeigt.
+    /// Close gaps of one track or (None) of all tracks. With „Alles mitziehen“ and
+    /// all tracks only spots where no track shows anything.
     pub fn close_gaps(&mut self, track: Option<TrackId>) {
         let tracks: Vec<&Track> = self
             .project
@@ -287,13 +287,13 @@ impl App {
         if ranges.is_empty() {
             self.toast("Keine Lücken");
         } else {
-            // eine einzelne Spur: nur sie rückt zusammen (sonst fiele Inhalt anderer Spuren weg)
+            // a single track: only it closes up (otherwise content of other tracks would be lost)
             let all = track.is_none() && self.project.settings.ripple_all_tracks;
             self.apply_batch(cl_core::ripple_ops(ranges, all));
         }
     }
 
-    /// Marker-Editor (Fenster) und Marker-Liste im Projekt-Inspektor.
+    /// Marker editor (window) and marker list in the project inspector.
     pub fn marker_dialog(&mut self, ctx: &egui::Context) {
         let Some(id) = self.marker_edit else { return };
         let Some(orig) = self
@@ -307,7 +307,7 @@ impl App {
             self.marker_edit = None;
             return;
         };
-        // Entwurf, damit Tippen nicht für jeden Buchstaben einen Undo-Schritt erzeugt
+        // Draft, so that typing does not create an undo step for every letter
         let mut m = self
             .marker_draft
             .clone()
@@ -319,7 +319,7 @@ impl App {
         let modal = crate::dialog::modal(ctx, "marker-edit")
             .show(ctx, |ui| {
                 ui.set_width(300.0);
-                // Kreuz wie Esc: übernimmt den Entwurf
+                // Cross like Esc: takes over the draft
                 close |= crate::dialog::title(ui, "Marker");
                 theme::row(ui, "Name", |ui| {
                     let r = ui.add(
@@ -415,7 +415,7 @@ impl App {
         }
     }
 
-    /// Kleines Fenster zum Umbenennen einer Spur.
+    /// Small window for renaming a track.
     pub fn track_rename_dialog(&mut self, ctx: &egui::Context) {
         let Some((id, name)) = &mut self.track_rename else {
             return;
@@ -433,7 +433,7 @@ impl App {
                         .desired_width(260.0),
                 );
                 r.request_focus();
-                // Namensfeld hat immer den Fokus: Enter bestätigt die Eingabe
+                // the name field always has focus: Enter confirms the input
                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     done = Some(true);
                 }
@@ -457,13 +457,13 @@ impl App {
         }
     }
 
-    /// YouTube-Kapitel aus den Markern in die Zwischenablage (Marker-Reiter, Lineal-Menü).
+    /// YouTube chapters from the markers to the clipboard (markers tab, ruler menu).
     pub fn copy_chapters(&mut self, ctx: &egui::Context) {
         ctx.copy_text(chapters(&self.project.timeline.markers));
         self.toast("Kapitel in die Zwischenablage kopiert");
     }
 
-    /// Marker-Liste (Inspektor-Reiter „Marker“).
+    /// Marker list (inspector tab „Marker“).
     pub fn marker_list(&mut self, ui: &mut egui::Ui) {
         let ms = self.project.timeline.markers.clone();
         if ms.is_empty() {
@@ -487,7 +487,7 @@ impl App {
                     self.playhead = m.at;
                 }
                 let name = if m.name.is_empty() {
-                    crate::tr("Kapitel") // wie im Export (cl_export::chapter_list)
+                    crate::tr("Kapitel") // as in the export (cl_export::chapter_list)
                 } else {
                     m.name.clone()
                 };
@@ -537,7 +537,7 @@ mod tests {
         assert!(delete_ripples_all(true, true, &[true, true]));
         assert!(!delete_ripples_all(true, false, &[true]));
         assert!(!delete_ripples_all(false, true, &[true]));
-        // Overlay in der Auswahl: normales Löschen
+        // Overlay in the selection: normal delete
         assert!(!delete_ripples_all(true, true, &[true, false]));
         assert!(!delete_ripples_all(true, true, &[]));
     }
@@ -557,7 +557,7 @@ mod tests {
             "0:00 Intro\n1:15 Boss\n1:02:05 Ende"
         );
         assert_eq!(chapters(&[m(0.0, "Start")]), "0:00 Start");
-        // Marker knapp nach 0:00 (ein Bild) wird das erste Kapitel, kein extra „Intro“
+        // A marker just after 0:00 (one frame) becomes the first chapter, no extra „Intro“
         assert_eq!(chapters(&[m(0.033, "Start"), m(20.0, "B")]), "0:00 Start\n0:20 B");
     }
 
@@ -573,13 +573,13 @@ mod tests {
         };
         let total = Time::from_secs_f64(60.0);
         let issue = |ms: &[Marker]| chapter_issue(ms, Time::ZERO, total);
-        // nur Kapitel unter 10 s melden, mit Name und Länge; die Zahl der Kapitel spielt keine Rolle
+        // only report chapters under 10 s, with name and length; the number of chapters does not matter
         assert_eq!(issue(&[m(20.0)]), None);
         assert_eq!(issue(&[m(20.0), m(40.0)]), None);
         assert!(issue(&[m(20.0), m(25.0)]).unwrap().contains("„Kapitel“ ist nur 5 s"));
-        assert!(issue(&[m(20.0), m(55.0)]).unwrap().contains("nur 5 s")); // letztes bis zum Ende
+        assert!(issue(&[m(20.0), m(55.0)]).unwrap().contains("nur 5 s")); // last one up to the end
         assert!(issue(&[m(4.0), m(30.0)]).unwrap().contains("„Intro“ ist nur 4 s"));
-        // im Exportbereich zählt die Länge bis zum Bereichsende
+        // in the export range the length counts up to the end of the range
         let s = Time::from_secs_f64;
         assert!(chapter_issue(&[m(20.0)], s(0.0), s(26.0)).unwrap().contains("nur 6 s"));
     }

@@ -1,6 +1,6 @@
-//! Phase-3-Oberfläche: automatische Untertitel + Editor, Hintergrund entfernen,
-//! Chroma-Key mit Pipette, Stabilisieren, Bewegung verfolgen, Auto-Reframe,
-//! Szenen erkennen, Ton-Werkzeuge, Stimmfilter, Beats und die Modellverwaltung.
+//! Phase 3 UI: automatic captions + editor, background removal,
+//! chroma key with eyedropper, stabilization, motion tracking, auto reframe,
+//! scene detection, audio tools, voice filters, beats and model management.
 
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
@@ -14,18 +14,18 @@ use crate::tasks::TaskDone;
 use crate::theme::{self, icon};
 use crate::widgets::{self, Edit, Slider};
 
-/// Auswahl im Player für ein Werkzeug.
+/// Selection in the player for a tool.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Pick {
-    /// Farbe für den Chroma-Key aufnehmen
+    /// Pick a color for the chroma key
     Chroma(ClipId),
-    /// Rahmen um das zu verfolgende Objekt ziehen (Overlay, Video darunter)
+    /// Draw a frame around the object to track (overlay, video below)
     Track { clip: ClipId, target: ClipId },
-    /// Rahmen um das zu zensierende Motiv ziehen
+    /// Draw a frame around the subject to censor
     Censor(ClipId),
 }
 
-/// Laufendes Ziehen einer Zensur-Fläche im Player (Anzeige-Lage beim Drücken).
+/// Running drag of a censor area in the player (display position at press).
 #[derive(Clone, Copy)]
 pub struct CensorDrag {
     clip: ClipId,
@@ -39,8 +39,8 @@ fn is_video(c: &Clip) -> bool {
     matches!(c.content, ClipContent::Media { kind: MediaKind::Video, .. })
 }
 
-/// Quellbild ↔ Anzeige (gespiegelt wie im Player); in beide Richtungen dieselbe Rechnung.
-/// Aufgaben-Schlüssel der Verfolgung einer Fläche (über ihre Kennung, nicht die Listenstelle).
+/// Source frame ↔ display (mirrored as in the player); the same computation in both directions.
+/// Task key of tracking an area (via its ID, not the list position).
 fn censor_task(clip: ClipId, id: CensorId) -> String {
     format!("censor:{clip}:{}", id.0)
 }
@@ -87,15 +87,15 @@ fn matte_cache(path: &std::path::Path) -> PathBuf {
         m.len().hash(&mut h);
         m.modified().ok().hash(&mut h);
     }
-    // nicht im Cache: das Projekt zeigt dauerhaft auf die Maske
+    // not in the cache: the project points to the mask permanently
     crate::paths::generated_dir()
         .join("matte")
         .join(format!("{:016x}.mkv", h.finish()))
 }
 
-/// Wählbare Spracherkennungen (Kennung, Name) und die geltende Wahl: „auto“ und jede
-/// installierte Erkennung (Whisper nur mit FFmpeg-Filter); eine gemerkte Wahl, die es nicht
-/// mehr gibt, gilt als „auto“.
+/// Selectable speech recognizers (ID, name) and the valid choice: „auto“ and every
+/// installed recognizer (Whisper only with the FFmpeg filter); a remembered choice that no
+/// longer exists counts as „auto“.
 pub(crate) fn asr_offer(
     parakeet: bool,
     whisper: Option<String>,
@@ -113,7 +113,7 @@ pub(crate) fn asr_offer(
     (v, cur)
 }
 
-/// Gewählte Erkennung als Vorgabe für [`cl_analyze::asr::transcribe`] (`auto` = die beste).
+/// Chosen recognizer as the default for [`cl_analyze::asr::transcribe`] (`auto` = the best).
 pub(crate) fn asr_force(id: &str) -> Option<cl_analyze::asr::Engine> {
     match id {
         "parakeet" => Some(cl_analyze::asr::Engine::Parakeet),
@@ -127,7 +127,7 @@ impl App {
         cl_analyze::Models::new(crate::paths::models_dir())
     }
 
-    /// Angebot der Spracherkennung für diesen Rechner (siehe [`asr_offer`]).
+    /// Speech recognition offer for this machine (see [`asr_offer`]).
     fn asr_choices(&self, ctx: &egui::Context) -> (Vec<(&'static str, String)>, &'static str) {
         let m = self.models();
         let filter = cl_analyze::asr::whisper_filter_available();
@@ -166,15 +166,15 @@ impl App {
         false
     }
 
-    // ------------------------------------------------------------ Ergebnisse
+    // ------------------------------------------------------------ results
 
     pub fn poll_tasks(&mut self) {
         for (_, done) in self.tasks.poll() {
             match done {
                 TaskDone::Failed(e) => self.toast_err(e),
                 TaskDone::Run(f) => f(self),
-                // fertig: nichts neu – Ströme wechseln über ihren Schlüssel (siehe `stream_pick`),
-                // ohne das laufende Bild zu verwerfen
+                // done: nothing new – streams switch via their key (see `stream_pick`),
+                // without discarding the current frame
                 TaskDone::Proxy { media, ok } => {
                     self.proxy_finished(media, ok);
                     if !ok {
@@ -258,7 +258,7 @@ impl App {
             self.toast_err("Keine Sprache erkannt");
             return;
         }
-        // Whisper liefert fertige Zeilen: auf die Länge der Vorlage bringen
+        // Whisper returns finished lines: bring them to the preset's length
         let segs = if engine == "Whisper" {
             let p = self.caption_preset();
             cl_analyze::asr::resegment(segs, p.max_chars, p.max_dur)
@@ -329,7 +329,7 @@ impl App {
         self.apply_reframes(&[(clip, pts.to_vec())]);
     }
 
-    /// Ergebnisse mehrerer Reframe-Analysen als ein Undo-Schritt anwenden.
+    /// Apply the results of several reframe analyses as one undo step.
     pub fn apply_reframes(&mut self, list: &[(ClipId, Vec<(f64, f32, f32)>)]) {
         let ops: Vec<EditOp> = list
             .iter()
@@ -362,7 +362,7 @@ impl App {
         Some(c)
     }
 
-    // ------------------------------------------------------------ Starten
+    // ------------------------------------------------------------ starting
 
     pub fn start_captions(&mut self, ctx: &egui::Context, only_clip: Option<ClipId>) {
         if !self.models().installed("parakeet") && !self.models().installed("whisper") {
@@ -432,7 +432,7 @@ impl App {
                     "captions",
                     "Untertitel werden erkannt …",
                     move |p, cancel| {
-                        // Ton der ganzen Zeitleiste mischen
+                        // mix the audio of the whole timeline
                         let dir = std::env::temp_dir()
                             .join(format!("cutline-asr-{}", std::process::id()));
                         let _ = std::fs::create_dir_all(&dir);
@@ -559,7 +559,7 @@ impl App {
             });
     }
 
-    /// Videoclip unter einem Overlay am Playhead (für „Bewegung verfolgen“).
+    /// Video clip under an overlay at the playhead (for „Bewegung verfolgen“).
     fn video_below(&self, clip: ClipId) -> Option<ClipId> {
         let ti = self
             .project
@@ -585,9 +585,9 @@ impl App {
             .map(|c| c.id)
     }
 
-    // ------------------------------------------------------------ Inspektor
+    // ------------------------------------------------------------ inspector
 
-    /// Reiter „Smart“ (Video/Bild); bei Text nur „Bewegung verfolgen“ im Reiter „Basis“.
+    /// „Smart“ tab (video/image); for text only „Bewegung verfolgen“ in the „Basis“ tab.
     pub fn pro_visual(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let ctx = ui.ctx().clone();
         let is_video = matches!(
@@ -623,7 +623,7 @@ impl App {
                 }
                 task_bar(ui, self, &format!("matte:{}", c.id));
                 if c.fx.cutout.is_some() {
-                    // Personen-Effekte: was mit dem Hintergrund passiert
+                    // Person effects: what happens to the background
                     let mut sel = c.fx.person.as_ref().map(|p| p.index() + 1).unwrap_or(0);
                     let items = [
                         "Transparent",
@@ -811,11 +811,11 @@ impl App {
         }
     }
 
-    /// Zusätze im Reiter „Audio“ (Störgeräusche, Klang, Audiofilter, Stimmfilter, Beats).
+    /// Extras in the „Audio“ tab (noise, sound, audio filters, voice filters, beats).
     pub fn pro_audio(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let ctx = ui.ctx().clone();
         *e |= audio_fx_ui(ui, &mut c.audio);
-        // Beats: im letzten Abschnitt, kein eigener Abschnitt für einen Knopf
+        // Beats: in the last section, no separate section for one button
         ui.add_space(6.0);
         if !task_bar(ui, self, &format!("beats:{}", c.id)) {
             ui.horizontal(|ui| {
@@ -849,7 +849,7 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------ Untertitel
+    // ------------------------------------------------------------ captions
 
     pub fn captions_pro(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
@@ -1009,9 +1009,9 @@ impl App {
         self.captions_editor(ui);
     }
 
-    // ------------------------------------------------------------ Player-Auswahl
+    // ------------------------------------------------------------ player selection
 
-    /// Pipette bzw. Tracking-Rahmen im Player. Gibt `true` zurück, wenn die Eingabe verbraucht wurde.
+    /// Eyedropper or tracking frame in the player. Returns `true` if the input was consumed.
     pub fn player_pick(
         &mut self,
         ui: &egui::Ui,
@@ -1043,7 +1043,7 @@ impl App {
             resp.rect.center_top() + vec2(0.0, 22.0),
             g.size() + vec2(20.0, 10.0),
         );
-        painter.rect_filled(br, 12.0, theme::ACCENT()); // Pille: Radius = halbe Höhe
+        painter.rect_filled(br, 12.0, theme::ACCENT()); // pill: radius = half the height
         painter.galley(br.min + vec2(10.0, 5.0), g, theme::ACCENT_INK());
         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         let local = |r: &Region, p: egui::Pos2| -> (f32, f32) {
@@ -1182,11 +1182,11 @@ impl App {
         );
     }
 
-    // ------------------------------------------------------------ Zensieren
+    // ------------------------------------------------------------ censoring
 
-    /// Zensur-Fläche aus dem gezogenen Rahmen (`bx` in Anzeige-Lage, also gespiegelt wie im
-    /// Player) anlegen: Art, Form, Stärke und „Verfolgen“ wie die zuletzt angelegte Fläche.
-    /// Die Fläche ist `CENSOR_PAD` größer als der Rahmen; bei Videos wird das Motiv verfolgt.
+    /// Create a censor area from the drawn frame (`bx` in display position, i.e. mirrored as in the
+    /// player): kind, shape, strength and „Verfolgen“ like the last created area.
+    /// The area is `CENSOR_PAD` larger than the frame; for videos the subject is tracked.
     fn add_censor(&mut self, ctx: &egui::Context, clip: ClipId, bx: cl_analyze::track::BoxN) {
         let Some(mut c) = self.clip_view(clip) else { return };
         let t = c.source_time(self.playhead.clamp(c.start, c.end()));
@@ -1203,7 +1203,7 @@ impl App {
         }
     }
 
-    /// Motiv der Fläche `id` ab der Lage am Playhead über den ganzen Clip verfolgen.
+    /// Track the subject of area `id` from its position at the playhead over the whole clip.
     fn start_censor_tracking(&mut self, ctx: &egui::Context, clip: ClipId, id: CensorId) {
         let Some(c) = self.clip_view(clip) else { return };
         let ClipContent::Media { media, .. } = c.content else { return };
@@ -1232,10 +1232,10 @@ impl App {
         });
     }
 
-    /// Ergebnis der Verfolgung von Fläche `id` eintragen – in jedem Clip dieses Mediums, der sie
-    /// (noch) hat und sie verfolgt: Nach dem Teilen gehört sie beiden Hälften, die Bahn liegt in
-    /// Quellzeit. Gibt es die Fläche nicht mehr (entfernt, rückgängig, Clip gelöscht) oder ist
-    /// „Verfolgen“ aus, wird das Ergebnis verworfen.
+    /// Enter the tracking result of area `id` – in every clip of this medium that (still) has it
+    /// and tracks it: after a split it belongs to both halves, the path lies in
+    /// source time. If the area no longer exists (removed, undone, clip deleted) or
+    /// „Verfolgen“ is off, the result is discarded.
     fn censor_tracked(&mut self, media: MediaId, id: CensorId, path: Vec<CensorKey>) {
         if path.is_empty() {
             return;
@@ -1266,7 +1266,7 @@ impl App {
         self.toast(format!("Zensur verfolgt ({} Keyframes)", path.len()));
     }
 
-    /// Abschnitt „Zensur“ im Reiter „Smart“: Einstellungen je Fläche und „Zensieren …“.
+    /// „Zensur“ section in the „Smart“ tab: settings per area and „Zensieren …“.
     fn censor_ui(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         theme::section(ui, "Zensur");
         let video = is_video(c);
@@ -1325,7 +1325,7 @@ impl App {
             e.commit = true;
         }
         if let Some(id) = track {
-            // liest die Fläche aus dem Projekt; das Ergebnis gilt nur, wenn „Verfolgen“ dann an ist
+            // reads the area from the project; the result only applies if „Verfolgen“ is on then
             let ctx = ui.ctx().clone();
             self.start_censor_tracking(&ctx, c.id, id);
         }
@@ -1336,9 +1336,9 @@ impl App {
         }
     }
 
-    /// Flächen des ausgewählten Clips im Player verschieben (innen ziehen) oder skalieren (an
-    /// einer Ecke ziehen), solange der Reiter „Smart“ offen ist. Wirkt auf die ganze Bahn.
-    /// Gibt `true` zurück, wenn die Eingabe verbraucht wurde.
+    /// Move areas of the selected clip in the player (drag inside) or scale them (drag
+    /// a corner) while the „Smart“ tab is open. Affects the whole path.
+    /// Returns `true` if the input was consumed.
     pub fn censor_gizmo(&mut self, ui: &egui::Ui, resp: &egui::Response, regions: &[Region]) -> bool {
         if self.pick.is_some() || self.clip_tab != crate::app::ClipTab::Smart {
             self.censor_drag = None;
@@ -1353,7 +1353,7 @@ impl App {
             return false;
         };
         let now = c.source_time(self.playhead.clamp(c.start, c.end()));
-        // Anzeige-Lage (gespiegelt wie im Player) ↔ Bildschirm
+        // display position (mirrored as in the player) ↔ screen
         let screen = |u: f32, v: f32| reg.corner(2.0 * u - 1.0, 2.0 * v - 1.0);
         let local = |p: egui::Pos2| {
             let d = p - reg.center;
@@ -1363,7 +1363,7 @@ impl App {
         let shown = |i: usize| censor_flip(&c, c.fx.censor[i].at(now));
         let painter = ui.painter_at(resp.rect);
         let pointer = ui.input(|i| i.pointer.latest_pos());
-        // laufendes Ziehen: neue Lage der Fläche (Anzeige-Lage)
+        // running drag: new position of the area (display position)
         let dragged = |d: &CensorDrag, p: egui::Pos2| {
             let (u, v) = local(p);
             let (u0, v0) = local(d.press);
@@ -1432,7 +1432,7 @@ impl App {
             }
             return true;
         }
-        // ein anderswo begonnenes Ziehen (Clip verschieben) nicht unterbrechen
+        // do not interrupt a drag started elsewhere (moving a clip)
         if let Some(p) = resp.hover_pos().filter(|_| !resp.dragged() && !resp.drag_stopped()) {
             if let Some((_, corner)) = hit(p) {
                 ui.ctx().set_cursor_icon(if corner { egui::CursorIcon::ResizeNwSe } else { egui::CursorIcon::Move });
@@ -1442,7 +1442,7 @@ impl App {
         false
     }
 
-    // ------------------------------------------------------------ Modelle
+    // ------------------------------------------------------------ models
 
     pub fn models_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
@@ -1459,7 +1459,7 @@ impl App {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
-                            // Platz für Knopf/Status rechts lassen, sonst läuft der Text darunter
+                            // leave room for button/status on the right, otherwise the text runs underneath
                             ui.set_max_width(ui.available_width() - 150.0);
                             ui.label(RichText::new(crate::tr(info.name)).strong());
                             ui.label(
@@ -1559,7 +1559,7 @@ impl App {
     }
 }
 
-/// Ton-Werkzeuge für Clips und Einsprechen: Störgeräusche, Klang, Audiofilter, Stimmfilter.
+/// Audio tools for clips and voiceover: noise, sound, audio filters, voice filters.
 pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
     let mut e = Edit::default();
     theme::row(ui, "Kanäle", |ui| {
@@ -1650,22 +1650,22 @@ mod tests {
     #[test]
     fn asr_offer_lists_installed_engines_and_forces_the_choice() {
         let ids = |v: &[(&'static str, String)]| v.iter().map(|c| c.0).collect::<Vec<_>>();
-        // beide installiert, Filter da: Whisper wählbar und geht als Vorgabe in die Erkennung
+        // both installed, filter present: Whisper selectable and passed as the default to recognition
         let (v, cur) = asr_offer(true, Some("Whisper Base".into()), true, "whisper");
         assert_eq!(ids(&v), ["auto", "parakeet", "whisper"]);
         assert_eq!(v[2].1, "Whisper Base");
         assert_eq!(asr_force(cur), Some(Engine::Whisper));
-        // ohne FFmpeg-Filter kein Whisper; die gemerkte Wahl gilt still als automatisch
+        // no Whisper without the FFmpeg filter; the remembered choice silently counts as automatic
         let (v, cur) = asr_offer(true, Some("Whisper Base".into()), false, "whisper");
         assert_eq!(ids(&v), ["auto", "parakeet"]);
         assert_eq!((cur, asr_force(cur)), ("auto", None));
-        // Parakeet fehlt
+        // Parakeet missing
         let (v, cur) = asr_offer(false, Some("Whisper Base".into()), true, "parakeet");
         assert_eq!(ids(&v), ["auto", "whisper"]);
         assert_eq!(cur, "auto");
         let (_, cur) = asr_offer(true, None, true, "parakeet");
         assert_eq!(asr_force(cur), Some(Engine::Parakeet));
-        // unbekannter Wert
+        // unknown value
         assert_eq!(asr_offer(true, None, true, "gibts-nicht").1, "auto");
     }
 
@@ -1676,8 +1676,8 @@ mod tests {
         cl_media::probe(&path).unwrap()
     }
 
-    /// „Zensieren …“ nur mit ausgewähltem Video-/Bild-Clip; der Rahmen aus dem Player wird
-    /// (gespiegelt zurück ins Quellbild) um 15 % größer zur Fläche, weitere übernehmen die Art.
+    /// „Zensieren …“ only with a selected video/image clip; the frame from the player becomes
+    /// (mirrored back into the source frame) the area, 15 % larger; further ones take over the kind.
     #[test]
     fn censor_action_and_area_from_the_player_box() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -1722,7 +1722,7 @@ mod tests {
         assert!((k.cx - 0.8).abs() < 1e-6 && (k.cy - 0.4).abs() < 1e-6, "{k:?}");
         assert!((k.w - 0.23).abs() < 1e-6 && (k.h - 0.115).abs() < 1e-6, "{k:?}");
         assert!(cs[0].track && !cs[0].blur && cs[0].strength == 0.0);
-        // zweite Fläche übernimmt Art und Form der letzten
+        // the second area takes over kind and shape of the last one
         let mut c = app.clip_view(id).unwrap();
         (c.fx.censor[0].blur, c.fx.censor[0].ellipse) = (true, true);
         app.apply(EditOp::ReplaceClip { clip: c });
@@ -1730,7 +1730,7 @@ mod tests {
         let cs = &app.clip_view(id).unwrap().fx.censor;
         assert_eq!(cs.len(), 2);
         assert!(cs[1].blur && cs[1].ellipse && (cs[1].path[0].cx - 0.4).abs() < 1e-6);
-        // Look übernehmen/einfügen: Flächen gehören zum Clip
+        // Take over/paste the look: areas belong to the clip
         let look = crate::presets::Preset::from_clip("x", &app.clip_view(id).unwrap());
         assert!(look.fx.censor.is_empty());
         let mut other = app.clip_view(id).unwrap();
@@ -1738,8 +1738,8 @@ mod tests {
         assert_eq!(other.fx.censor.len(), 2);
     }
 
-    /// Das Ergebnis einer Verfolgung findet seine Fläche über die Kennung, nicht die Listenstelle:
-    /// Entfernen davor/dahinter, Rückgängig, Teilen und Löschen des Clips während der Verfolgung.
+    /// A tracking result finds its area via the ID, not the list position:
+    /// removing before/after, undo, splitting and deleting the clip during tracking.
     #[test]
     fn censor_tracking_result_goes_to_its_own_area() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -1783,44 +1783,44 @@ mod tests {
             c.fx.censor.remove(i);
             app.apply(EditOp::ReplaceClip { clip: c });
         };
-        // B wird verfolgt, A davor entfernt: B (jetzt Stelle 0) bekommt die Bahn, C bleibt
+        // B is tracked, A before it removed: B (now position 0) gets the path, C stays
         let ids = fresh(&mut app);
         remove(&mut app, 0);
         app.censor_tracked(media, ids[1], tracked.clone());
         assert_eq!(xs(&app, clip), vec![(2, 0.9), (1, 0.3)]);
-        // C dahinter entfernt
+        // C after it removed
         let ids = fresh(&mut app);
         remove(&mut app, 2);
         app.censor_tracked(media, ids[1], tracked.clone());
         assert_eq!(xs(&app, clip), vec![(1, 0.1), (2, 0.9)]);
-        // B selbst entfernt: Ergebnis verworfen, kein Verlaufsschritt
+        // B itself removed: result discarded, no history step
         let ids = fresh(&mut app);
         remove(&mut app, 1);
         let rev = app.doc.lock().unwrap().revision();
         app.censor_tracked(media, ids[1], tracked.clone());
         assert_eq!((xs(&app, clip), app.doc.lock().unwrap().revision()), (vec![(1, 0.1), (1, 0.3)], rev));
-        // A entfernt, dann rückgängig: B ist wieder an Stelle 1 und bekommt die Bahn
+        // A removed, then undone: B is at position 1 again and gets the path
         let ids = fresh(&mut app);
         remove(&mut app, 0);
         app.undo();
         app.sync_project();
         app.censor_tracked(media, ids[1], tracked.clone());
         assert_eq!(xs(&app, clip), vec![(1, 0.1), (2, 0.9), (1, 0.3)]);
-        // „Verfolgen“ aus: verworfen
+        // „Verfolgen“ off: discarded
         let ids = fresh(&mut app);
         let mut c = app.clip_view(clip).unwrap();
         c.fx.censor[1].track = false;
         app.apply(EditOp::ReplaceClip { clip: c });
         app.censor_tracked(media, ids[1], tracked.clone());
         assert_eq!(xs(&app, clip)[1], (1, 0.2));
-        // neue Fläche über „Zensieren“ bekommt eine eigene Kennung, auch wenn sie die letzte übernimmt
+        // a new area via „Zensieren“ gets its own ID, even if it takes over the last one
         let ids = fresh(&mut app);
         app.add_censor(&ctx, clip, cl_analyze::track::BoxN { cx: 0.5, cy: 0.5, w: 0.1, h: 0.1 });
         let all = app.clip_view(clip).unwrap().fx.censor;
         assert!(all[3].id.0 != ids[2].0);
         app.censor_tracked(media, ids[2], tracked.clone());
         assert_eq!(xs(&app, clip)[2..].to_vec(), vec![(2, 0.9), (1, all[3].path[0].cx)]);
-        // Clip geteilt: beide Hälften bekommen die Bahn (sie liegt in Quellzeit)
+        // clip split: both halves get the path (it lies in source time)
         let ids = fresh(&mut app);
         let Some(OpOutput::Clip(right)) = app.apply(EditOp::SplitClip { clip, at: Time::from_secs_f64(2.0) }) else {
             panic!()
@@ -1828,7 +1828,7 @@ mod tests {
         app.censor_tracked(media, ids[1], tracked.clone());
         assert_eq!(xs(&app, clip)[1], (2, 0.9));
         assert_eq!(xs(&app, right)[1], (2, 0.9));
-        // Clip gelöscht: verworfen
+        // clip deleted: discarded
         let ids = fresh(&mut app);
         app.apply(EditOp::RemoveClip { clip });
         let rev = app.doc.lock().unwrap().revision();
@@ -1836,9 +1836,9 @@ mod tests {
         assert_eq!(app.doc.lock().unwrap().revision(), rev);
     }
 
-    /// Messung am Ersatzmedium: Kästchen wandert auf einer Kurve über das Bild (640×360, 30 Bilder/s,
-    /// 4 s), Rahmen bei 1 s gezogen. Die Fläche überdeckt es in jedem Bild; Zahl der Keyframes und
-    /// Verfolgungszeit werden ausgegeben.
+    /// Measurement on the substitute medium: a box moves on a curve across the frame (640×360, 30 fps,
+    /// 4 s), frame drawn at 1 s. The area covers it in every frame; the number of keyframes and
+    /// the tracking time are printed.
     #[test]
     fn censor_tracking_covers_a_moving_object_in_every_frame() {
         if !cl_media::ffmpeg_available() {
@@ -1875,7 +1875,7 @@ mod tests {
                 missed.push(n);
             }
         }
-        assert!(missed.is_empty(), "nicht überdeckt in Bild {missed:?}");
+        assert!(missed.is_empty(), "not covered in frame {missed:?}");
         assert!(cs.path.len() < boxes.len() / 2, "{} Keyframes", cs.path.len());
     }
 }

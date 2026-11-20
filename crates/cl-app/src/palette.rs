@@ -1,5 +1,5 @@
-//! Befehlssuche (Strg+K): Feld mit Trefferliste oben über dem Editor. Sucht in den Aktionen aus
-//! `keymap::ACTIONS` und führt sie über `App::run_action` aus – wie Tastenkürzel und Menüs.
+//! Command search (Ctrl+K): field with a result list at the top above the editor. Searches the actions from
+//! `keymap::ACTIONS` and runs them via `App::run_action` – like shortcuts and menus.
 
 use eframe::egui::{self, Key, Modifiers};
 
@@ -12,7 +12,7 @@ pub struct Palette {
     pub open: bool,
     pub query: String,
     sel: usize,
-    /// zuletzt ausgeführte Befehle dieser Sitzung, neueste zuerst (nicht gespeichert)
+    /// commands run in this session, newest first (not saved)
     recent: Vec<&'static str>,
 }
 
@@ -30,7 +30,7 @@ impl Palette {
     }
 }
 
-/// Suchbare Befehle: (Aktion, [Name in der Oberflächensprache, deutscher Name falls anders])
+/// Searchable commands: (action, [name in the UI language, German name if different])
 fn items() -> Vec<(&'static str, Vec<String>)> {
     keymap::ACTIONS
         .iter()
@@ -44,8 +44,8 @@ fn items() -> Vec<(&'static str, Vec<String>)> {
 }
 
 impl App {
-    /// Zeichnet die Befehlssuche, solange sie offen ist. Läuft vor den Bereichen des Editors, damit
-    /// Esc, Enter und die Pfeile nur hier ankommen (Esc hebt dann keine Auswahl auf).
+    /// Draws the command search while it is open. Runs before the editor panels so that
+    /// Esc, Enter and the arrows only arrive here (Esc then clears no selection).
     pub fn command_palette(&mut self, ctx: &egui::Context) {
         if !self.palette.open {
             return;
@@ -93,7 +93,7 @@ impl App {
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                             for (k, id) in list.iter().enumerate() {
                                 let key = binds.iter().find(|(_, a)| a == id).map(|(c, _)| c.label()).unwrap_or_default();
-                                // ohne Symbol ein Geviert, damit die Namen untereinander stehen
+                                // without an icon an em quad, so the names line up
                                 let g = Some(keymap::icon(id)).filter(|g| !g.is_empty()).unwrap_or("\u{2003}");
                                 let mark = ui.painter().add(egui::Shape::Noop);
                                 let row = ui.add_enabled(
@@ -147,10 +147,10 @@ mod tests {
         assert!(all.iter().all(|i| !i.1.is_empty()));
     }
 
-    /// Jede Aktion der Liste lässt sich über den Verteiler ausführen, ohne zu paniken.
+    /// Every action in the list can be run via the dispatcher without panicking.
     #[test]
     fn every_action_runs() {
-        // öffnen einen Dateidialog des Systems und warten auf eine Wahl – ohne Fenster nicht testbar
+        // open a system file dialog and wait for a choice – not testable without a window
         const FILE_DIALOGS: &[&str] = &["import", "open", "save_as", "import_fonts", "archive", "quick_speakers"];
         let (mut app, _home, _g) = crate::saving::tests::test_app();
         app.set_doc(cl_core::Project::new("Befehle"));
@@ -159,6 +159,6 @@ mod tests {
             app.run_action(&ctx, id);
             let _ = app.action_enabled(id);
         }
-        assert!(app.palette.open, "„command_search“ öffnet die Suche");
+        assert!(app.palette.open, "„command_search“ opens the search");
     }
 }

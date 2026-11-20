@@ -1,8 +1,8 @@
-//! Linke Karte: senkrechte Icon-Leiste (passt bei jeder Fensterbreite)
-//! und die Bibliotheken: Medien, Audio (Soundeffekte, Musik, Aufnahmen), Text (Vorlagen,
-//! Texteffekte, Schriften), Sticker, Effekte, Übergänge, Filter, Untertitel, Plugins.
-//! Alles lässt sich anklicken (am Playhead bzw. auf die Auswahl), über „+“ hinzufügen oder
-//! in Zeitleiste/Player ziehen.
+//! Left card: vertical icon bar (fits at any window width)
+//! and the libraries: media, audio (sound effects, music, recordings), text (templates,
+//! text effects, fonts), stickers, effects, transitions, filters, captions, plugins.
+//! Everything can be clicked (at the playhead or onto the selection), added via „+“ or
+//! dragged into the timeline/player.
 
 use std::path::PathBuf;
 
@@ -16,7 +16,7 @@ use crate::timeline::menu_item;
 use crate::widgets;
 
 const RAIL_W: f32 = 58.0;
-/// Höhe der Symbolleiste, wenn sie oben liegt; Breite je Eintrag (wie seitlich: 48 + Abstand)
+/// Height of the toolbar when it is at the top; width per entry (as at the side: 48 + gap)
 const RAIL_TOP_H: f32 = 56.0;
 const RAIL_ITEM_W: f32 = 52.0;
 
@@ -32,12 +32,12 @@ const TABS: [(LeftTab, &str, &str); 8] = [
 ];
 
 const THUMB: (u32, u32) = (192, 108);
-/// Bilder je Übergangs-Filmstreifen
+/// Frames per transition film strip
 const STRIP: u32 = 16;
-/// Bilder für das Durchblättern von Videos beim Hovern
+/// Frames for scrubbing through videos on hover
 const SCRUB_N: u32 = 24;
 
-/// Unbearbeitetes Beispielbild (Hover-Vergleich bei Effekten/Filtern)
+/// Unedited sample image (hover comparison for effects/filters)
 fn orig_graph() -> String {
     format!(
         "{},trim=start=0.5,setpts=PTS-STARTPTS,format=rgba[out]",
@@ -45,7 +45,7 @@ fn orig_graph() -> String {
     )
 }
 
-/// Kachel-Graph für einen Effekt oder Filter auf dem Beispielbild
+/// Tile graph for an effect or filter on the sample image
 fn fx_tile_graph(id: &str, filters: bool) -> String {
     let mut fx = ClipFx::default();
     if filters {
@@ -82,7 +82,7 @@ fn fx_tile_graph(id: &str, filters: bool) -> String {
     lines.join(";")
 }
 
-/// Übergang von Bild A (Strand) zu Bild B (See) als Filmstreifen: `STRIP` Bilder über 1 s
+/// Transition from image A (beach) to image B (lake) as a film strip: `STRIP` frames over 1 s
 fn transition_strip_graph(id: &str) -> String {
     format!(
         "{}[a];{}[b];[a]format=gbrap[a1];[b]format=gbrap[b1];[a1][b1]xfade=transition={id}:duration=1:offset=0.2,trim=start=0.2,setpts=PTS-STARTPTS,fps={STRIP},format=rgba[out]",
@@ -91,7 +91,7 @@ fn transition_strip_graph(id: &str) -> String {
     )
 }
 
-/// Bild A (Strand) und B (See) nebeneinander, für Shader-Übergänge (cl-gpu mischt selbst)
+/// Image A (beach) and B (lake) side by side, for shader transitions (cl-gpu mixes itself)
 fn transition_pair_graph() -> String {
     format!(
         "{}[a];{}[b];[a][b]hstack=inputs=2,format=rgba[out]",
@@ -100,7 +100,7 @@ fn transition_pair_graph() -> String {
     )
 }
 
-/// Kachel eines Übergangs: Shader (falls Paket-Übergang) und `xfade`-Rückfall
+/// Tile of a transition: shader (if a pack transition) and `xfade` fallback
 fn transition_tile(id: &str) -> (String, Option<crate::preview::ShaderTile>) {
     let plan = cl_fx::catalog::transition_plan(id);
     let shader = plan.shader.map(|(file, params)| crate::preview::ShaderTile {
@@ -111,8 +111,8 @@ fn transition_tile(id: &str) -> (String, Option<crate::preview::ShaderTile>) {
     (transition_strip_graph(plan.xfade), shader)
 }
 
-/// Ordner eines Tabs: eingebaute Kategorien, dahinter neue Kategorien aus Paketen
-/// (in Reihenfolge des ersten Auftretens).
+/// Folders of a tab: built-in categories, behind them new categories from packs
+/// (in order of first appearance).
 fn tab_cats(builtin: &[&str], entries: &[cl_fx::catalog::Entry]) -> Vec<String> {
     let mut v: Vec<String> = builtin.iter().map(|s| s.to_string()).collect();
     for e in entries {
@@ -124,7 +124,7 @@ fn tab_cats(builtin: &[&str], entries: &[cl_fx::catalog::Entry]) -> Vec<String> 
     v
 }
 
-/// Eintrag des Sound- bzw. Elemente-Tabs: eingebaut (statische ID) oder Datei aus einem Paket.
+/// Entry of the sound or elements tab: built in (static ID) or a file from a pack.
 fn catalog_item(
     e: cl_fx::catalog::Entry,
     builtin_key: &str,
@@ -141,15 +141,15 @@ fn catalog_item(
         name: e.name,
         builtin,
         path,
-        // Paketdateien: nicht umbenennen, verschieben oder löschen
+        // pack files: do not rename, move or delete
         linked: true,
         tags: e.tags,
     })
 }
 
 impl App {
-    /// Wellenformen aller Sounds aus Katalog und Bibliothek im Hintergrund bereitstellen (beim Start
-    /// und nach Paketänderungen), damit der Sounds-Tab sie beim Öffnen schon hat.
+    /// Provide waveforms of all sounds from catalog and library in the background (at startup
+    /// and after pack changes), so the Sounds tab already has them when opened.
     pub fn prewarm_sounds(&mut self) {
         use crate::library::Kind;
         let mut all: Vec<crate::library::Item> = cl_fx::catalog::list_all(cl_fx::catalog::Kind::Sound)
@@ -168,14 +168,14 @@ impl App {
     }
 }
 
-/// Mindestbreite der Sound-Kacheln: bei normaler Breite des Medien-Menüs (≈ 290 px) vier Spalten
+/// Minimum width of the sound tiles: four columns at the normal width of the media menu (≈ 290 px)
 const SOUND_TILE_W: f32 = 64.0;
 
-/// Obergrenze des Sound-Zwischenspeichers (Länge und Wellenform je Eintrag)
+/// Upper limit of the sound cache (length and waveform per entry)
 pub const SOUND_META_CAP: usize = 400;
 
-/// In den begrenzten Zwischenspeicher legen. Ist er voll, fliegt ein anderer Eintrag heraus und darf
-/// wieder angefordert werden (`req`), sobald seine Kachel sichtbar wird.
+/// Put into the bounded cache. If it is full, another entry is evicted and may
+/// be requested again (`req`) as soon as its tile becomes visible.
 pub fn put_capped<V>(
     map: &mut std::collections::HashMap<String, V>,
     req: &mut std::collections::HashSet<String>,
@@ -191,12 +191,12 @@ pub fn put_capped<V>(
     map.insert(key, v);
 }
 
-/// Abspielstand als Anteil 0…1 (aus der wirklichen Position des Vorhörens)
+/// Playback position as a fraction 0…1 (from the real position of the preview)
 pub fn play_fraction(pos: Time, len: Time) -> f32 {
     (pos.as_secs_f64() / len.as_secs_f64().max(0.01)).clamp(0.0, 1.0) as f32
 }
 
-/// Länge eines Sounds: „2,4 s“ bzw. „1:05“
+/// Length of a sound: „2,4 s“ or „1:05“
 fn sound_len(d: Time) -> String {
     let s = d.as_secs_f64();
     if s >= 60.0 {
@@ -206,7 +206,7 @@ fn sound_len(d: Time) -> String {
     }
 }
 
-/// Audiodateien im Musikordner des Benutzers (einmalig im Hintergrund gesucht).
+/// Audio files in the user's music folder (searched once in the background).
 static MUSIC_LIST: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
 static MUSIC_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -246,8 +246,8 @@ fn music_files() -> Option<&'static [PathBuf]> {
     MUSIC_LIST.get().map(|v| v.as_slice())
 }
 
-/// Abstand der Einträge der senkrechten Symbolleiste und ob nur Symbole gezeigt werden.
-/// Reicht die Höhe nicht für alle Einträge mit Beschriftung, rücken sie zusammen.
+/// Gap between the entries of the vertical toolbar and whether only icons are shown.
+/// If the height is not enough for all entries with labels, they move closer together.
 fn rail_step(height: f32, n: usize, top: bool) -> (f32, bool) {
     if top {
         return (50.0, false);
@@ -259,11 +259,11 @@ fn rail_step(height: f32, n: usize, top: bool) -> (f32, bool) {
 impl App {
     pub fn assets_panel(&mut self, ui: &mut egui::Ui) {
         let full = ui.max_rect();
-        // Breite gehört dem Panel (sonst schrumpft es auf den Inhalt)
+        // the width belongs to the panel (otherwise it shrinks to the content)
         ui.expand_to_include_rect(full);
         let (right, top) = (self.settings.layout.assets_right, self.settings.layout.rail_top);
-        // Symbolleiste: oben über die ganze Breite oder seitlich an der äußeren Kante
-        // (Medien rechts: gespiegelt am rechten Fensterrand)
+        // Toolbar: at the top across the full width or at the side on the outer edge
+        // (media on the right: mirrored at the right window edge)
         let rail = if top {
             Rect::from_min_max(full.min, pos2(full.right(), full.top() + RAIL_TOP_H))
         } else if right {
@@ -278,7 +278,7 @@ impl App {
             (false, false) => egui::CornerRadius { nw: rr, sw: rr, ne: no, se: no },
         };
         ui.painter().rect_filled(rail, corners, theme::BG_INPUT());
-        // Einträge: senkrecht untereinander bzw. oben waagrecht (scrollt, wenn die Breite nicht reicht)
+        // Entries: stacked vertically or horizontal at the top (scrolls if the width is not enough)
         let strip = rail.shrink2(vec2(4.0, 0.0));
         let widths = [RAIL_ITEM_W; TABS.len()];
         let off = if top {
@@ -317,11 +317,11 @@ impl App {
                 r.center() - vec2(0.0, if compact { 0.0 } else { 7.0 }),
                 egui::Align2::CENTER_CENTER,
                 crate::tr(glyph),
-                // Icon-Glyphe der Leiste
+                // icon glyph of the bar
                 egui::FontId::proportional(17.0),
                 col,
             );
-            // Akzent nur am Icon (Zustand), der Text bleibt neutral
+            // accent only on the icon (state), the text stays neutral
             if !compact {
                 painter.text(
                     r.center() + vec2(0.0, 12.0),
@@ -355,7 +355,7 @@ impl App {
                 .layout(egui::Layout::top_down(egui::Align::Min)),
             |ui| {
                 ui.set_clip_rect(content.expand2(vec2(2.0, 4.0)));
-                // Tab-Wechsel: neuer Inhalt blendet kurz ein
+                // tab change: new content fades in briefly
                 let k = TABS.iter().position(|t| t.0 == self.tab).unwrap_or(0);
                 ui.multiply_opacity(theme::fade_on_change(ui.ctx(), egui::Id::new("asset-tab-fade"), k as u64));
                 match self.tab {
@@ -381,7 +381,7 @@ impl App {
         ui.add_space(4.0);
     }
 
-    // ------------------------------------------------------------------ Medien
+    // ------------------------------------------------------------------ media
 
     fn media_tab(&mut self, ui: &mut egui::Ui) {
         let _s = crate::app::section("Medien-Tab");
@@ -403,7 +403,7 @@ impl App {
             }
         });
         ui.add_space(6.0);
-        // Projekt · Bibliothek (über alle Projekte) · Pexels (Plugin)
+        // Project · library (across all projects) · Pexels (plugin)
         let mut srcs = vec![("", "Projekt"), ("lib", "Bibliothek")];
         if self.stock_enabled(crate::stock::PEXELS) {
             srcs.push(("pexels", "Pexels"));
@@ -426,7 +426,7 @@ impl App {
             }
             _ => {}
         }
-        // Ordner und Favoriten gelten pro Projekt
+        // Folders and favorites apply per project
         let area = crate::library_ui::intern(format!("media/{}", self.project.name));
         let (cat, q) = self.asset_bar(ui, area, &["Video", "Audio", "Bilder"]);
         if self.project.media.is_empty() {
@@ -481,7 +481,7 @@ impl App {
         let mut add: Option<MediaId> = None;
         let mut play: Option<(String, PathBuf)> = None;
         let mut menus: Vec<(egui::Response, MediaRef)> = Vec::new();
-        // Streifen kosten je 25 FFmpeg-Aufrufe: sichtbare nur nachladen, solange wenige ausstehen
+        // Strips cost 25 FFmpeg calls each: only load visible ones while few are pending
         let mut outstanding = self
             .fx_thumbs_requested
             .iter()
@@ -498,21 +498,21 @@ impl App {
                         .file_name()
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_default();
-                    // Hover über Videos: Inhalt durchblättern (Position der Maus = Zeit)
+                    // Hover over videos: scrub the content (mouse position = time)
                     let scrub = (m.kind == MediaKind::Video)
                         .then(|| ui.ctx().pointer_hover_pos().filter(|p| r.contains(*p)))
                         .flatten()
                         .map(|p| ((p.x - r.left()) / r.width()).clamp(0.0, 0.999));
-                    // (texture, Größe eines Bildes, v-Bereich im Streifen)
+                    // (texture, size of one frame, v range in the strip)
                     let mut thumb = self.thumbs.get(&m.id).map(|t| (t.id(), t.size_vec2(), (0.0, 1.0)));
-                    // Vorschau-Streifen vorab laden, sobald die Kachel sichtbar ist (dann klappt
-                    // das Durchblättern beim ersten Hovern); die gehoverte Kachel immer sofort
+                    // Preload the preview strip as soon as the tile is visible (then scrubbing
+                    // works on the first hover); the hovered tile always immediately
                     let strip_key = format!("strip:{}", m.id);
                     if m.kind == MediaKind::Video && ui.is_rect_visible(r) {
                         wanted.insert(strip_key.clone());
                     }
-                    // Filmstreifen zum Durchblättern erst, wenn das Vorschaubild der Kachel steht
-                    // (außer man fährt schon darüber): das Bild soll nie auf den Streifen warten
+                    // Film strip for scrubbing only once the tile's thumbnail is there
+                    // (unless already hovering): the image should never wait for the strip
                     if m.kind == MediaKind::Video
                         && ui.is_rect_visible(r)
                         && (scrub.is_some() || (outstanding < 4 && self.thumbs.contains_key(&m.id)))
@@ -520,8 +520,8 @@ impl App {
                         && self.presence.get(&m.path)
                     {
                         outstanding += 1;
-                        // gleich als gewünscht eintragen, sonst überspringt der Worker den Auftrag
-                        // womöglich, bevor die Liste am Ende dieses Bildes steht
+                        // register as wanted right away, otherwise the worker might skip the job
+                        // before the list is in place at the end of this frame
                         self.decoder.strips_wanted.lock().unwrap_or_else(|e| e.into_inner()).insert(strip_key.clone());
                         self.decoder.send(crate::preview::Job::MediaStrip {
                             key: strip_key.clone(),
@@ -536,7 +536,7 @@ impl App {
                         let sz = t.size_vec2();
                         thumb = Some((t.id(), vec2(sz.x, sz.y / n), (k / n, (k + 1.0) / n)));
                     }
-                    // Ton: Wellenform und Vorhören wie im Sounds-Tab (Schlüssel = Datei, gilt in jedem Projekt)
+                    // Audio: waveform and preview as in the Sounds tab (key = file, valid in every project)
                     let snd_key = format!("file:{}", m.path.display());
                     let snd = (m.kind == MediaKind::Audio).then(|| self.sound_look(ui, r, &snd_key, &m.path, None));
                     let dims = if m.kind == MediaKind::Audio { String::new() } else { format!("{}×{}", m.width, m.height) };
@@ -556,7 +556,7 @@ impl App {
                             };
                             match (&snd, thumb) {
                                 (Some(st), None) => st.paint(p, a, false),
-                                // Platzhalter, bis das Vorschaubild da ist; dann einblenden
+                                // placeholder until the thumbnail is there; then fade in
                                 (_, tex) if present || tex.is_some() => widgets::tile_image(
                                     p,
                                     egui::Id::new(("media", m.id)),
@@ -569,7 +569,7 @@ impl App {
                                         a.center(),
                                         egui::Align2::CENTER_CENTER,
                                         g,
-                                        // Icon-Glyphe als Platzhalter
+                                        // icon glyph as a placeholder
                                         egui::FontId::proportional(22.0),
                                         theme::TEXT_DIM(),
                                     );
@@ -598,13 +598,13 @@ impl App {
                                     a.left_top() + vec2(6.0, 5.0),
                                     egui::Align2::LEFT_TOP,
                                     icon::CHECK_CIRCLE,
-                                    // Icon-Glyphe
+                                    // icon glyph
                                     egui::FontId::proportional(12.0),
                                     theme::ACCENT(),
                                 );
                             }
                             if self.library.is_favorite(&format!("media:{}", m.id)) {
-                                // neben der Nadel, falls angepinnt
+                                // next to the pin, if pinned
                                 let pin = if ed.pinned(&format!("media:{}", m.id)) { 18.0 } else { 0.0 };
                                 crate::library_ui::badge(p, a.right_top() + vec2(-11.0 - pin, 10.0), icon::STAR);
                             }
@@ -680,7 +680,7 @@ impl App {
         }
     }
 
-    /// Medien → Bibliothek: Dateien für alle Projekte (eigene Ordner und verknüpfte Ordner)
+    /// Media → library: files for all projects (own folders and linked folders)
     fn library_media(&mut self, ui: &mut egui::Ui) {
         use crate::library::Kind;
         let (cat, q) = self.asset_bar(ui, "libmedia", &[]);
@@ -768,7 +768,7 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ Audio
+    // ------------------------------------------------------------------ audio
 
     fn audio_tab(&mut self, ui: &mut egui::Ui) {
         Self::tab_title(ui, "Audio", |ui| {
@@ -779,7 +779,7 @@ impl App {
                 self.pick_media();
             }
         });
-        // Epidemic Sound erscheint nur, wenn das Plugin eingeschaltet ist
+        // Epidemic Sound only appears when the plugin is switched on
         let mut modes: Vec<(&str, &str)> = vec![("sfx", "Sounds"), ("music", "Musik")];
         if self.epidemic_enabled() {
             modes.push(("es", "Epidemic"));
@@ -849,7 +849,7 @@ impl App {
                             };
                             let folder = if it.folder.is_empty() { String::new() } else { crate::tr(&it.folder) };
                             let (play, add, resp) = self.sound_tile(ui, r, &key, &it.name, &folder, fav, &path, sfx);
-                            // Bearbeiten-Modus: Ziehen sortiert um, Klicks spielen nichts ab und fügen nichts ein
+                            // Edit mode: dragging reorders, clicks play nothing and insert nothing
                             let editing = ed.tile(ui, &resp, &it.key, true);
                             let (play, add) = (play && !editing, add && !editing);
                             if !editing {
@@ -903,8 +903,8 @@ impl App {
                             .color(theme::TEXT_DIM()),
                         );
                         ui.add_space(4.0);
-                        // Unterordner des Musik-Ordners als Kategorien (nur Anzeige: umbenennen,
-                        // sortieren, verbergen ändern nichts an deinen Dateien)
+                        // Subfolders of the music folder as categories (display only: renaming,
+                        // sorting, hiding change nothing about your files)
                         let dir_of = |p: &PathBuf| {
                             p.parent()
                                 .and_then(|d| d.file_name())
@@ -985,7 +985,7 @@ impl App {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
                             ui.label(
-                                // Icon-Glyphe
+                                // icon glyph
                                 RichText::new(icon::MICROPHONE)
                                     .size(22.0)
                                     .color(theme::TEXT_DIM()),
@@ -1044,10 +1044,10 @@ impl App {
         }
     }
 
-    /// Zeile mit Abspielen, Name, Info und „+“. Gibt (abspielen, hinzufügen, Zieh-Antwort) zurück.
-    /// Zeile eines Sounds: Abspielknopf, Name, Kategorie · Länge, Wellenform mit Fortschritt,
-    /// „+“ beim Hovern. Klick auf die Zeile spielt ab, Doppelklick oder „+“ fügt am Playhead ein.
-    /// Gibt (abspielen, hinzufügen, Zieh-Antwort) zurück.
+    /// Row with play, name, info and „+“. Returns (play, add, drag response).
+    /// Row of a sound: play button, name, category · length, waveform with progress,
+    /// „+“ on hover. Clicking the row plays, double-click or „+“ inserts at the playhead.
+    /// Returns (play, add, drag response).
     fn sound_row(
         &mut self,
         ui: &mut egui::Ui,
@@ -1074,12 +1074,12 @@ impl App {
         if hover > 0.0 || playing.is_some() {
             p.rect_filled(r, theme::R_CARD, theme::BG_RAISED().linear_multiply(if playing.is_some() { 1.0 } else { hover }));
         }
-        // Abspielknopf
+        // Play button
         let play_r = Rect::from_center_size(r.left_center() + vec2(22.0, 0.0), vec2(30.0, 30.0));
         let on = playing.is_some() || loading;
         p.rect_filled(play_r, theme::R_CARD, if on { theme::ACCENT() } else { theme::BG_HOVER() });
         if loading {
-            // ohne Animationen stehende Punkte
+            // without animations, static dots
             let t = if theme::animations_on() { ui.input(|i| i.time) as f32 } else { 0.0 };
             let c = play_r.center();
             for k in 0..3 {
@@ -1092,12 +1092,12 @@ impl App {
                 play_r.center(),
                 egui::Align2::CENTER_CENTER,
                 if playing.is_some() { icon::PAUSE } else { icon::PLAY },
-                // Icon-Glyphe
+                // icon glyph
                 egui::FontId::proportional(12.0),
                 if on { theme::ACCENT_INK() } else { theme::TEXT() },
             );
         }
-        // Rechts: Wellenform (bzw. „+“ beim Hovern)
+        // Right: waveform (or „+“ on hover)
         let wave_w = (r.width() * 0.32).clamp(0.0, 96.0);
         let wave = Rect::from_min_max(
             pos2(r.right() - 12.0 - wave_w, r.top() + 11.0),
@@ -1154,7 +1154,7 @@ impl App {
                 plus_r.center(),
                 egui::Align2::CENTER_CENTER,
                 icon::PLUS,
-                // Icon-Glyphe
+                // icon glyph
                 egui::FontId::proportional(12.0),
                 theme::ACCENT_INK().linear_multiply(hover),
             );
@@ -1171,9 +1171,9 @@ impl App {
         )
     }
 
-    /// Kleine Sound-Kachel: Wellenform, Dauer unten rechts; Hover zeigt Play, Klick spielt/stoppt,
-    /// beim Abspielen füllt sich die Wellenform bis zur Abspielstelle. Doppelklick oder „+“ fügt ein.
-    /// Gibt (abspielen, hinzufügen, Antwort) zurück.
+    /// Small sound tile: waveform, duration bottom right; hover shows play, click plays/stops,
+    /// during playback the waveform fills up to the playback position. Double-click or „+“ inserts.
+    /// Returns (play, add, response).
     #[allow(clippy::too_many_arguments)]
     fn sound_tile(
         &mut self,
@@ -1199,8 +1199,8 @@ impl App {
         (play, add, resp)
     }
 
-    /// Zustand einer Ton-Kachel für dieses Bild (Wellenform aus dem gemerkten Bestand; Fehlendes
-    /// rechnet der Hintergrund nach). `key` ist auch der Schlüssel des Vorhörens.
+    /// State of an audio tile for this frame (waveform from the remembered store; missing ones
+    /// are computed in the background). `key` is also the key of the preview.
     fn sound_look(&mut self, ui: &egui::Ui, r: Rect, key: &str, path: &std::path::Path, sfx: Option<&'static str>) -> SoundLook {
         self.sound_bars.ensure(key, path, sfx);
         let loading = self.sound_pending.as_deref() == Some(key);
@@ -1210,7 +1210,7 @@ impl App {
         }
         let bars = self.sound_bars.get(key);
         SoundLook {
-            // Wellenform blendet ein, wenn sie nachträglich berechnet wurde
+            // the waveform fades in if it was computed later
             shown: widgets::reveal(ui.ctx(), egui::Id::new(("sfx-wave", key)), bars.as_ref().is_some_and(|b| !b.bars.is_empty())),
             playing: self
                 .sfx_preview
@@ -1219,7 +1219,7 @@ impl App {
                 .map(|(_, a)| play_fraction(a.position(), self.sfx_preview_len)),
             loading,
             bars,
-            // Bearbeiten-Modus (Reihenfolge): kein Play-Kreis, ein Klick spielt dort nichts ab
+            // Edit mode (order): no play circle, a click plays nothing there
             hover: theme::fade(
                 ui.ctx(),
                 egui::Id::new(("sfx-tile", key, "h")),
@@ -1232,7 +1232,7 @@ impl App {
     }
 }
 
-/// Aussehen einer Ton-Kachel: Wellenform, Abspielstand, Play/Stopp.
+/// Look of an audio tile: waveform, playback position, play/stop.
 struct SoundLook {
     shown: f32,
     playing: Option<f32>,
@@ -1244,12 +1244,12 @@ struct SoundLook {
 }
 
 impl SoundLook {
-    /// In die Kachelfläche `a` zeichnen; `len`: Dauer unten rechts (Kacheln ohne eigene Zeitangabe).
+    /// Draw into the tile area `a`; `len`: duration bottom right (tiles without their own time display).
     fn paint(&self, p: &egui::Painter, a: Rect, len: bool) {
         let (playing, loading, hover, moving, t) = (self.playing, self.loading, self.hover, self.moving, self.t);
         let meta = &self.bars;
         {
-            // oben frei für Stern und Nadel (Ecken-Plaketten), unten für die Dauer
+            // free at the top for star and pin (corner badges), at the bottom for the duration
             let wave = Rect::from_min_max(a.min + vec2(8.0, 20.0), a.max - vec2(8.0, 16.0));
             match meta {
                 Some(b) if !b.bars.is_empty() => {
@@ -1262,7 +1262,7 @@ impl SoundLook {
                         let mut h = (v.sqrt() * wave.height()).max(2.0);
                         let col = match playing {
                             Some(f) => {
-                                // Balken an der Abspielstelle heben sich leicht
+                                // bars at the playback position rise slightly
                                 if moving {
                                     let near = (1.0 - (at - f).abs() * n as f32 / 2.5).max(0.0);
                                     h = (h * (1.0 + near * (0.25 + 0.1 * (t * 10.0 + i as f32).sin()))).min(wave.height() + 4.0);
@@ -1277,7 +1277,7 @@ impl SoundLook {
                         );
                     }
                 }
-                // Platzhalter, bis die Werte da sind: ruhige Grundlinie
+                // Placeholder until the values are there: a calm baseline
                 _ => {
                     p.line_segment(
                         [wave.left_center(), wave.right_center()],
@@ -1286,7 +1286,7 @@ impl SoundLook {
                 }
             }
             if let Some(b) = meta.as_ref().filter(|_| len && hover < 0.99) {
-                // Dauer unten rechts; beim Hovern liegt dort das „+“
+                // Duration bottom right; on hover the „+“ is there
                 p.text(
                     a.right_bottom() - vec2(6.0, 4.0),
                     egui::Align2::RIGHT_BOTTOM,
@@ -1295,11 +1295,11 @@ impl SoundLook {
                     theme::TEXT_DIM().linear_multiply(1.0 - hover),
                 );
             }
-            // Play/Stopp mittig (beim Hovern bzw. während des Abspielens)
+            // Play/stop centered (on hover or during playback)
             let shown = if playing.is_some() || loading { 0.7 + 0.3 * hover } else { hover };
             if shown > 0.01 {
                 let c = wave.center();
-                // kleiner und leicht durchscheinend: die Füllung beim Abspielen bleibt sichtbar
+                // smaller and slightly translucent: the fill during playback stays visible
                 p.circle_filled(c, 9.0, theme::ACCENT().linear_multiply(0.8 * shown));
                 if loading {
                     let t = if moving { t } else { 0.0 };
@@ -1312,7 +1312,7 @@ impl SoundLook {
                         c,
                         egui::Align2::CENTER_CENTER,
                         if playing.is_some() { icon::STOP } else { icon::PLAY },
-                        // Icon-Glyphe im 18-px-Kreis
+                        // icon glyph in the 18 px circle
                         egui::FontId::proportional(9.0),
                         theme::ACCENT_INK().linear_multiply(shown),
                     );
@@ -1323,7 +1323,7 @@ impl SoundLook {
 }
 
 impl App {
-    // ------------------------------------------------------------------ Text
+    // ------------------------------------------------------------------ text
 
     fn text_tab(&mut self, ui: &mut egui::Ui) {
         Self::tab_title(ui, "Text", |ui| {
@@ -1357,7 +1357,7 @@ impl App {
                     .id_salt("tpl")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        // Standardtext zuerst
+                        // default text first
                         let mut items: Vec<Option<&'static cl_fx::text::TextTemplate>> = Vec::new();
                         if self
                             .library
@@ -1509,7 +1509,7 @@ impl App {
         }
     }
 
-    /// Text eingepasst in eine Kachel zeichnen.
+    /// Draw text fitted into a tile.
     fn text_preview(&self, p: &egui::Painter, st: &TextStyle, a: Rect) {
         let mut s = st.clone();
         s.auto_wrap = false;
@@ -1699,13 +1699,13 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ Sticker
+    // ------------------------------------------------------------------ stickers
 
     fn sticker_tab(&mut self, ui: &mut egui::Ui) {
         use crate::library::{Item, Kind};
         Self::tab_title(ui, "Elemente", |_| {});
         let entries = cl_fx::catalog::list(cl_fx::catalog::Kind::Sticker);
-        // eingebaute Ordner ohne Inhalt (z. B. ohne Emoji-Paket) nicht zeigen
+        // do not show built-in folders without content (e.g. without the emoji pack)
         let filled: Vec<&str> = cl_fx::stickers::STICKER_CATEGORIES
             .into_iter()
             .filter(|c| entries.iter().any(|e| e.category() == *c))
@@ -1719,7 +1719,7 @@ impl App {
             .collect();
         let mut items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
         let ed = self.reorder(ui, "sticker", &cat, &items, |i| i.key.clone());
-        // Logo aus dem Brand Kit als erste Kachel (nicht sortier- oder ziehbar)
+        // Logo from the Brand Kit as the first tile (not sortable or draggable)
         if let Some(p) = self.brand.logo.clone().filter(|_| cat == "Alle" && q.is_empty()) {
             let name = crate::tr(crate::keymap::name("brand_logo"));
             items.insert(0, Item { key: format!("brand:{}", p.display()), name, folder: String::new(), builtin: None, path: Some(p), linked: false, tags: Vec::new() });
@@ -1741,7 +1741,7 @@ impl App {
                     );
                 }
                 widgets::grid(ui, &items, 70.0, 1.0, 16.0, |ui, r, it| {
-                    // eingebaute Sticker erst rastern, wenn ihre Zeile sichtbar wird
+                    // rasterize built-in stickers only when their row becomes visible
                     if let Some(st) = it.builtin.filter(|id| !self.sticker_tex.contains_key(id)).and_then(cl_fx::stickers::sticker) {
                         if let Some(px) = cl_fx::stickers::render_rgba(st, 128) {
                             let img = egui::ColorImage::from_rgba_premultiplied([128, 128], &px);
@@ -1795,7 +1795,7 @@ impl App {
                                     a.left_top() + vec2(5.0, 4.0),
                                     egui::Align2::LEFT_TOP,
                                     icon::STAR,
-                                    // Icon-Glyphe
+                                    // icon glyph
                                     egui::FontId::proportional(11.0),
                                     theme::ACCENT(),
                                 );
@@ -1845,18 +1845,18 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ Effekte / Filter
+    // ------------------------------------------------------------------ effects / filters
 
     fn fx_thumb(&mut self, key: &str, graph: impl FnOnce() -> String) -> Option<egui::TextureId> {
         self.fx_strip(key, 1, graph)
     }
 
-    /// Kachel bzw. Filmstreifen mit `frames` Bildern untereinander (eine Textur, ein FFmpeg-Lauf)
+    /// Tile or film strip with `frames` frames stacked (one texture, one FFmpeg run)
     fn fx_strip(&mut self, key: &str, frames: u32, graph: impl FnOnce() -> String) -> Option<egui::TextureId> {
         self.fx_strip_tile(key, frames, || (graph(), None))
     }
 
-    /// Wie [`Self::fx_strip`], optional mit Shader-Übergang (Rückfall: der Graph).
+    /// Like [`Self::fx_strip`], optionally with a shader transition (fallback: the graph).
     fn fx_strip_tile(
         &mut self,
         key: &str,
@@ -1885,8 +1885,8 @@ impl App {
         None
     }
 
-    /// Alle Kacheln (Effekte, Filter, Übergänge) im Hintergrund vorladen – beim ersten Öffnen
-    /// der Tabs ist dann schon alles da.
+    /// Preload all tiles (effects, filters, transitions) in the background – then everything is
+    /// already there when the tabs are first opened.
     pub fn preload_fx_thumbs(&mut self) {
         self.fx_thumb("orig", orig_graph);
         for filters in [false, true] {
@@ -2002,7 +2002,7 @@ impl App {
                     };
                     let akey = format!("{pre}:{id}");
                     let fav = self.library.is_favorite(&akey);
-                    // Hover: Vorher/Nachher-Wischblende über dem Beispielbild
+                    // Hover: before/after wipe over the sample image
                     let wipe = (!id.is_empty() && theme::animations_on() && ui.rect_contains_pointer(r)).then(|| {
                         ui.ctx().request_repaint();
                         0.5 + 0.45 * (ui.input(|i| i.time) as f32 * 2.4).sin()
@@ -2081,7 +2081,7 @@ impl App {
     fn transitions_tab(&mut self, ui: &mut egui::Ui) {
         Self::tab_title(ui, "Übergänge", |_| {});
         ui.add_space(6.0);
-        // eingebaute und Übergänge aus Paketen (neue Ordner dahinter)
+        // built-in ones and transitions from packs (new folders behind)
         let entries = cl_fx::catalog::list(cl_fx::catalog::Kind::Transition);
         let cats = tab_cats(&cl_fx::TRANSITION_CATEGORIES, &entries);
         let cats: Vec<&str> = cats.iter().map(String::as_str).collect();
@@ -2107,8 +2107,8 @@ impl App {
             }
             widgets::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, (id, name)| {
                 let tex = self.fx_strip_tile(&format!("trs:{id}"), STRIP, || transition_tile(id));
-                // Ruhend: Bild mitten im Übergang (beide Bilder sichtbar). Hover: der ganze Übergang,
-                // am Anfang und Ende kurz stehen bleiben.
+                // Idle: frame in the middle of the transition (both images visible). Hover: the whole transition,
+                // pausing briefly at the start and end.
                 let mut k = STRIP as f32 * 0.55;
                 if theme::animations_on() && ui.rect_contains_pointer(r) {
                     let t = (ui.input(|i| i.time) * 0.75) % 1.5;
@@ -2149,7 +2149,7 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ Untertitel
+    // ------------------------------------------------------------------ captions
 
     fn captions_tab(&mut self, ui: &mut egui::Ui) {
         Self::tab_title(ui, "Untertitel", |_| {});
@@ -2192,7 +2192,7 @@ impl App {
             return;
         }
         let n = clips.len();
-        // erst Spur anlegen, dann Clips gezielt darauf
+        // create the track first, then the clips onto it
         if let Some(OpOutput::Track(t)) = self.apply(ops.remove(0)) {
             let ops = clips
                 .into_iter()
@@ -2208,13 +2208,13 @@ impl App {
 
 }
 
-/// SRT/WebVTT lesen: (Beginn, Ende, Text) je Untertitel. UTF-8 (mit/ohne BOM) oder Windows-Latin-1,
-/// Stunden optional (VTT `MM:SS.mmm`), Cue-Einstellungen hinter der Zeit werden ignoriert.
-/// Kaputte Einträge (falsche Zeiten, Ende vor Beginn, negativ, unendlich) fallen weg.
+/// Read SRT/WebVTT: (start, end, text) per caption. UTF-8 (with/without BOM) or Windows Latin-1,
+/// hours optional (VTT `MM:SS.mmm`), cue settings after the time are ignored.
+/// Broken entries (wrong times, end before start, negative, infinite) are dropped.
 pub(crate) fn parse_subtitles(bytes: &[u8]) -> Vec<(Time, Time, String)> {
     let text = match std::str::from_utf8(bytes) {
         Ok(t) => t.to_string(),
-        // shortcut: Latin-1 statt Windows-1252 (nur €, „“ … weichen ab), reicht für alte SRT-Dateien
+        // shortcut: Latin-1 instead of Windows-1252 (only €, „“ … differ), enough for old SRT files
         Err(_) => bytes.iter().map(|&b| b as char).collect(),
     };
     let ts = |s: &str| -> Option<Time> {
@@ -2257,10 +2257,10 @@ mod tests {
             put_capped(&mut map, &mut req, format!("k{i}"), i, 4);
             assert!(map.len() <= 4);
         }
-        assert!(map.contains_key("k9"), "neuester bleibt");
-        assert_eq!(req.len(), 4, "verdrängte Schlüssel sind wieder anforderbar");
+        assert!(map.contains_key("k9"), "newest stays");
+        assert_eq!(req.len(), 4, "evicted keys can be requested again");
         assert!(map.keys().all(|k| req.contains(k)));
-        // gleicher Schlüssel ersetzt nur
+        // the same key only replaces
         put_capped(&mut map, &mut req, "k9".into(), 99, 4);
         assert_eq!((map.len(), map["k9"]), (4, 99));
     }
@@ -2286,8 +2286,8 @@ mod tests {
         assert!(play_fraction(s(0.5), Time::ZERO) <= 1.0);
     }
 
-    /// Eingebaute Elemente heißen englisch eindeutig: keine Schnitt-Aktion („Teilen“ → „Split“) und
-    /// kein Name, den schon ein mitgeliefertes Paket-Element trägt.
+    /// Built-in elements have unique English names: no edit action („Teilen“ → „Split“) and
+    /// no name that a bundled pack element already has.
     #[test]
     fn builtin_sticker_names_translate_distinctly() {
         let dict: std::collections::HashMap<_, _> = cl_i18n::ui_entries().into_iter().collect();
@@ -2297,25 +2297,25 @@ mod tests {
             include_str!("../../../plugins/cutline-elemente/plugin.toml"),
         ];
         for (i, n) in en.iter().enumerate() {
-            assert!(!en[..i].contains(n), "doppelt: {n}");
-            assert!(!["Split", "Cut"].contains(n), "Schnitt-Wort: {n}");
+            assert!(!en[..i].contains(n), "duplicate: {n}");
+            assert!(!["Split", "Cut"].contains(n), "edit word: {n}");
             let tag = format!("en = \"{n}\" }}");
-            assert!(packs.iter().all(|p| !p.contains(&tag)), "wie ein Paket-Element: {n}");
+            assert!(packs.iter().all(|p| !p.contains(&tag)), "same as a pack element: {n}");
         }
     }
 
     #[test]
     fn rail_keeps_all_entries_when_short() {
-        // genug Höhe: voller Abstand mit Beschriftung
+        // enough height: full gap with labels
         assert_eq!(rail_step(600.0, 9, false), (50.0, false));
-        // wenig Höhe: enger und nur Symbole, aber alle neun passen hinein
+        // little height: tighter and only icons, but all nine fit
         let (step, compact) = rail_step(300.0, 9, false);
         assert!(compact && step * 9.0 <= 300.0);
-        // waagrechte Leiste ist davon unberührt
+        // the horizontal bar is not affected by this
         assert_eq!(rail_step(40.0, 9, true), (50.0, false));
     }
 
-    /// Paket-Kategorien: bekannter Name → eingebauter Ordner, sonst neuer Ordner dahinter.
+    /// Pack categories: known name → built-in folder, otherwise a new folder behind.
     #[test]
     fn pack_categories_join_builtin_folders() {
         let e = |c: &str| {
@@ -2327,8 +2327,8 @@ mod tests {
         assert_eq!(cats, ["Basis", "Licht", "Neu", "Alt"]);
     }
 
-    /// SRT/VTT-Import: eigene Exporte kommen unverändert zurück, kaputte Einträge fallen weg,
-    /// alte Latin-1-Dateien und VTT ohne Stunden/mit Cue-Einstellungen gehen.
+    /// SRT/VTT import: own exports come back unchanged, broken entries are dropped,
+    /// old Latin-1 files and VTT without hours/with cue settings work.
     #[test]
     fn subtitles_import_tolerates_odd_files() {
         let s = |x: f64| Time::from_secs_f64(x);
@@ -2342,7 +2342,7 @@ mod tests {
         assert_eq!(srt.len(), 3);
         assert_eq!(srt[0], (s(0.0), s(1.5), "Erste Zeile\nzweite".to_string()));
         assert_eq!(srt[2], (s(4.0), s(5.5), "Ümläut 🎬".to_string()));
-        assert_eq!(parse_subtitles(cl_export::to_vtt(&p).as_bytes()).len(), 3, "eigenes VTT");
+        assert_eq!(parse_subtitles(cl_export::to_vtt(&p).as_bytes()).len(), 3, "own VTT");
         let vtt = "WEBVTT\n\n01:02.500 --> 01:04.000 align:start position:10%\nKurz\n";
         assert_eq!(parse_subtitles(vtt.as_bytes()), vec![(s(62.5), s(64.0), "Kurz".to_string())]);
         // BOM, CRLF, Latin-1
@@ -2350,7 +2350,7 @@ mod tests {
         assert_eq!(parse_subtitles(&latin).len(), 1);
         latin = b"1\n00:00:01,000 --> 00:00:02,000\nGr\xfc\xdfe\n".to_vec();
         assert_eq!(parse_subtitles(&latin)[0].2, "Grüße");
-        // Kaputtes: nichts davon darf durchkommen oder abstürzen
+        // Broken input: none of it may get through or crash
         for bad in [
             "", "\n\n\n", "-->", "1\n-->\nx", "00:00:02,000 --> 00:00:01,000\nrückwärts", "-1:00:00,000 --> 00:00:01,000\nneg",
             "NaN:00:00 --> 00:00:01\nnan", "inf:00:00 --> inf:00:01\ninf", "99999999999999:00:00 --> 99999999999999:00:01\nriesig",
@@ -2358,7 +2358,7 @@ mod tests {
         ] {
             assert!(parse_subtitles(bad.as_bytes()).is_empty(), "{bad:?}");
         }
-        // Eintrag ohne Text bleibt (leerer Untertitel), Zeit ohne Nachkommastellen geht
+        // an entry without text stays (empty caption), a time without decimals works
         assert_eq!(parse_subtitles(b"00:00:01 --> 00:00:03\n").len(), 1);
     }
 }
