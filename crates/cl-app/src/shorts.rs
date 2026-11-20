@@ -74,11 +74,17 @@ fn visual<'a>(p: &'a Project, c: &Clip) -> Option<&'a MediaRef> {
 /// Kennung der weichgezeichneten Hintergrund-Kopie eines Clips (`ClipId::derived`)
 pub const BACK_SALT: u128 = 0xB1;
 
-/// Bildfüllende Ebene: Bildclip, nicht verkleinert, ohne Zuschnitt (Layout-Zellen haben einen),
-/// Lage auch mit Keyframes nahe der Mitte
-fn full_frame(c: &Clip, w: f32, h: f32) -> bool {
+/// Bildfüllende Ebene: Bildclip, nicht verkleinert, ohne Zuschnitt oder zugeschnitten und trotzdem
+/// mindestens 90 % des Bilds bedeckend (Layout-Zellen bedecken weniger), Lage auch mit Keyframes
+/// nahe der Mitte
+fn full_frame(c: &Clip, (mw, mh): (f32, f32), w: f32, h: f32) -> bool {
     let near = |p: Prop, v: f32, lim: f32| std::iter::once(v).chain(c.keyframes.0.get(&p).into_iter().flatten().map(|k| k.v)).all(|v| v.abs() <= lim);
-    !is_shrunk_overlay(c) && c.crop.is_none() && near(Prop::X, c.transform.x, 0.1 * w) && near(Prop::Y, c.transform.y, 0.1 * h)
+    // bedeckter Anteil einer Kante `l`: sichtbarer Bereich (Mitte `pos`, Medienkante `m`, Zuschnitt `a`/`b`)
+    let d = c.transform.scale * (w / mw).min(h / mh);
+    let part = |pos: f32, m: f32, a: f32, b: f32, l: f32| ((pos + d * m * (0.5 - b)).min(l / 2.0) - (pos + d * m * (a - 0.5)).max(-l / 2.0)).max(0.0) / l;
+    let cr = c.crop.clamped();
+    let covered = || part(c.transform.x, mw, cr.left, cr.right, w) * part(c.transform.y, mh, cr.top, cr.bottom, h) >= 0.9;
+    !is_shrunk_overlay(c) && (c.crop.is_none() || covered()) && near(Prop::X, c.transform.x, 0.1 * w) && near(Prop::Y, c.transform.y, 0.1 * h)
 }
 
 /// Mitte `c` (px ab Bildmitte) eines Objekts mit halber Größe `half` auf einer Kante `l` →
@@ -153,7 +159,7 @@ pub fn reframe(p: &Project, (w2, h2): (u32, u32), fill: bool, measure: Measure) 
                     scale_keys(c, Prop::X, |v| v * q);
                     scale_keys(c, Prop::Y, |v| v * q);
                 };
-                if full_frame(c, w, h) {
+                if full_frame(c, (mw, mh), w, h) {
                     let orig = c.clone();
                     base(c, if fill { cover } else { 1.0 });
                     if !fill {
@@ -663,6 +669,29 @@ mod tests {
         let ClipContent::Text(st) = &c.content else { panic!() };
         // gleiche Größe zur kürzeren Kante (1080 → 1080)
         assert!((st.size - 96.0).abs() < 0.01, "{}", st.size);
+    }
+
+    #[test]
+    fn slightly_cropped_main_clip_still_fills_the_frame() {
+        let (mut p, mid) = long_project();
+        let mut c = Clip::new(ClipContent::Media { media: mid, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(5.0));
+        // Ränder weg, wieder aufgezoomt: bedeckt das Bild weiter
+        c.crop = Crop { left: 0.05, right: 0.05, ..Default::default() };
+        c.transform.scale = 1.12;
+        let id = c.id;
+        let mut t = Track::new(TrackKind::Video);
+        t.clips.push(c);
+        p.timeline.tracks.push(t);
+        let o = reframe(&p, (1080, 1920), true, &rough);
+        let r = shown(&o, clip(&o, id), Time::ZERO);
+        assert!(covers(&o, r), "Füllen: Balken {r:?}");
+        // Einpassen: weichgezeichneter Hintergrund darunter
+        let o = reframe(&p, (1080, 1920), false, &rough);
+        assert_eq!(o.timeline.tracks.len(), 2);
+        assert_eq!(o.timeline.tracks[0].clips[0].id, id.derived(BACK_SALT));
+        // Shorts füllen ihn auch
+        let s = make_short(&p, Time::ZERO, Time::from_secs_f64(5.0), "S", None, &rough);
+        assert!(covers(&s, shown(&s, clip(&s, id), Time::ZERO)));
     }
 
     /// Grobes Textmaß: 0,6 × Größe je Zeichen, Umbruch an `wrap`
