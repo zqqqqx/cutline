@@ -1,11 +1,11 @@
-//! Schnellaktion „Layout“: Splitscreen und Bild-in-Bild für übereinanderliegende Bildclips.
-//! Das Ergebnis ist nur Transform + Zuschnitt je Clip (kein eigenes Format im Projekt).
+//! Quick action „Layout“: split screen and picture-in-picture for stacked image clips.
+//! The result is only transform + crop per clip (no format of its own in the project).
 
 use cl_core::*;
 
 use crate::app::App;
 
-/// Aktionen in Menüreihenfolge (Kennungen aus `keymap::ACTIONS`)
+/// Actions in menu order (IDs from `keymap::ACTIONS`)
 pub const IDS: &[&str] = &[
     "quick_layout_side",
     "quick_layout_stack",
@@ -21,17 +21,17 @@ pub const IDS: &[&str] = &[
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Arrange {
-    /// 2: links/rechts
+    /// 2: left/right
     Side,
-    /// 2: oben/unten
+    /// 2: top/bottom
     Stack,
-    /// 3: einer groß links, zwei rechts übereinander
+    /// 3: one large on the left, two stacked on the right
     BigLeft,
-    /// 3: drei Spalten
+    /// 3: three columns
     Columns,
     /// 4: 2×2
     Grid,
-    /// 2: oberer Clip klein in der Ecke (0 oben links, 1 oben rechts, 2 unten links, 3 unten rechts)
+    /// 2: upper clip small in the corner (0 top left, 1 top right, 2 bottom left, 3 bottom right)
     Pip(u8),
     Reset,
 }
@@ -53,7 +53,7 @@ impl Arrange {
         })
     }
 
-    /// Passt das Layout zu `n` Clips?
+    /// Does the layout fit `n` clips?
     pub fn fits(self, n: usize) -> bool {
         match self {
             Self::Side | Self::Stack | Self::Pip(_) => n == 2,
@@ -64,7 +64,7 @@ impl Arrange {
     }
 }
 
-/// Zellen (x, y, b, h) in Projektpixeln, Ursprung oben links; Reihenfolge = untere Spur zuerst
+/// Cells (x, y, w, h) in project pixels, origin top left; order = lower track first
 fn cells(a: Arrange, w: f32, h: f32) -> Vec<[f32; 4]> {
     let (w2, h2, w3) = (w / 2.0, h / 2.0, w / 3.0);
     match a {
@@ -77,8 +77,8 @@ fn cells(a: Arrange, w: f32, h: f32) -> Vec<[f32; 4]> {
     }
 }
 
-/// Quelle `sw`×`sh` füllt die Zelle: bedecken (gleicher Faktor in x und y), mittig zuschneiden.
-/// Skalierung 1 = ins Projekt `pw`×`ph` eingepasst (wie Player und Export).
+/// Source `sw`×`sh` fills the cell: cover (same factor in x and y), crop centered.
+/// Scale 1 = fitted into the project `pw`×`ph` (like player and export).
 fn fill(pw: f32, ph: f32, (sw, sh): (f32, f32), [x, y, cw, ch]: [f32; 4]) -> (Transform, Crop) {
     let fit = (pw / sw).min(ph / sh);
     let k = (cw / sw).max(ch / sh);
@@ -89,9 +89,9 @@ fn fill(pw: f32, ph: f32, (sw, sh): (f32, f32), [x, y, cw, ch]: [f32; 4]) -> (Tr
     )
 }
 
-/// Quelle `sw`×`sh` klein in einer Ecke des Projekts `pw`×`ph` (0 oben links, 1 oben rechts,
-/// 2 unten links, 3 unten rechts): Breite `share` × Projektbreite, Rand 4 % der kürzeren Seite.
-/// Skalierung 1 = eingepasst (wie Player und Export).
+/// Source `sw`×`sh` small in a corner of the project `pw`×`ph` (0 top left, 1 top right,
+/// 2 bottom left, 3 bottom right): width `share` × project width, margin 4 % of the shorter side.
+/// Scale 1 = fitted (like player and export).
 pub fn in_corner(pw: f32, ph: f32, (sw, sh): (f32, f32), share: f32, corner: u8) -> Transform {
     let (sw, sh) = (sw.max(1.0), sh.max(1.0));
     let (w, m) = (share * pw, 0.04 * pw.min(ph));
@@ -102,8 +102,8 @@ pub fn in_corner(pw: f32, ph: f32, (sw, sh): (f32, f32), share: f32, corner: u8)
     Transform { x: x + w / 2.0 - pw / 2.0, y: y + h / 2.0 - ph / 2.0, scale: w / sw / fit, rotation_deg: 0.0 }
 }
 
-/// Geometrie eines Layouts: Projekt `pw`×`ph`, angezeigte Quellgrößen (untere Spur zuerst) →
-/// je Clip (Transform, Zuschnitt). Passt die Zahl nicht, leer.
+/// Geometry of a layout: project `pw`×`ph`, shown source sizes (lower track first) →
+/// per clip (transform, crop). If the count does not fit, empty.
 pub fn arrange(pw: f32, ph: f32, sizes: &[(f32, f32)], a: Arrange) -> Vec<(Transform, Crop)> {
     if !a.fits(sizes.len()) {
         return Vec::new();
@@ -111,7 +111,7 @@ pub fn arrange(pw: f32, ph: f32, sizes: &[(f32, f32)], a: Arrange) -> Vec<(Trans
     match a {
         Arrange::Reset => vec![(Transform::default(), Crop::default()); sizes.len()],
         Arrange::Pip(corner) => {
-            // unten bildfüllend (Überstand liegt außerhalb des Bilds, kein Zuschnitt nötig)
+            // bottom fills the frame (overhang lies outside the frame, no crop needed)
             let back = (fill(pw, ph, sizes[0], [0.0, 0.0, pw, ph]).0, Crop::default());
             vec![back, (in_corner(pw, ph, sizes[1], 0.28, corner), Crop::default())]
         }
@@ -120,9 +120,9 @@ pub fn arrange(pw: f32, ph: f32, sizes: &[(f32, f32)], a: Arrange) -> Vec<(Trans
 }
 
 impl App {
-    /// Clips für ein Layout mit angezeigter Quellgröße (gedrehte Videos sind beim Einlesen
-    /// schon getauscht): ausgewählte Bildclips (ab zwei, beim Zurücksetzen ab einem), sonst die
-    /// Videos am Playhead (Bilder wie Logo/Sticker nur, wenn ausgewählt); untere Spur zuerst.
+    /// Clips for a layout with their shown source size (rotated videos are already swapped
+    /// on import): selected image clips (from two, when resetting from one), otherwise the
+    /// videos at the playhead (images like logo/sticker only if selected); lower track first.
     pub fn layout_clips(&self, a: Arrange) -> Vec<(ClipId, (f32, f32))> {
         let sel = self.selection();
         let pick = |only_sel: bool| -> Vec<(ClipId, (f32, f32))> {
@@ -151,8 +151,8 @@ impl App {
         if v.len() >= 2 || (a == Arrange::Reset && !v.is_empty()) { v } else { pick(false) }
     }
 
-    /// Layout `id` anwenden: ein Verlaufsschritt; Keyframes auf Position, Größe und Drehung
-    /// fallen weg, weil das Layout für den ganzen Clip gilt.
+    /// Apply layout `id`: one history step; keyframes on position, size and rotation
+    /// are dropped because the layout applies to the whole clip.
     pub fn tool_layout(&mut self, id: &str) {
         let Some(a) = Arrange::from_id(id) else {
             return;
@@ -190,8 +190,8 @@ mod tests {
     const PROJECTS: [(f32, f32); 3] = [(1920.0, 1080.0), (1080.0, 1920.0), (1080.0, 1080.0)];
     const SOURCES: [(f32, f32); 3] = [(1920.0, 1080.0), (1080.0, 1920.0), (640.0, 480.0)];
 
-    /// Sichtbares Rechteck (x0, y0, x1, y1) im Projekt und Faktoren je Achse, wie Player/Export
-    /// rechnen: eingepasst × Skalierung, Mitte + Position, Zuschnitt an seiner Stelle.
+    /// Visible rect (x0, y0, x1, y1) in the project and factors per axis, as player/export
+    /// compute it: fitted × scale, center + position, crop in its place.
     fn shown(pw: f32, ph: f32, (sw, sh): (f32, f32), t: &Transform, k: &Crop) -> ([f32; 4], f32, f32) {
         let fit = (pw / sw).min(ph / sh) * t.scale;
         let (w, h) = (sw * fit, sh * fit);
@@ -210,7 +210,7 @@ mod tests {
         for (pw, ph) in PROJECTS {
             for a in [Arrange::Side, Arrange::Stack, Arrange::BigLeft, Arrange::Columns, Arrange::Grid] {
                 let n = cells(a, pw, ph).len();
-                // die Zellen füllen das Bild lückenlos
+                // the cells fill the frame without gaps
                 let area: f32 = cells(a, pw, ph).iter().map(|c| c[2] * c[3]).sum();
                 assert!((area - pw * ph).abs() < 1.0, "{a:?} in {pw}×{ph}");
                 for i in 0..3 {
@@ -222,7 +222,7 @@ mod tests {
                         assert!(near(r, [c[0], c[1], c[0] + c[2], c[1] + c[3]]), "{a:?} {pw}×{ph} Quelle {s:?}: {r:?} statt {c:?}");
                         assert!((fx - fy).abs() < 1e-4, "verzerrt");
                         assert_eq!(t.rotation_deg, 0.0);
-                        // Zuschnitt bleibt unter der Grenze, die `Crop::clamped` erzwingt
+                        // the crop stays below the limit that `Crop::clamped` enforces
                         assert_eq!(k.clamped(), *k);
                     }
                 }
@@ -238,8 +238,8 @@ mod tests {
                     for corner in 0..4u8 {
                         let geo = arrange(pw, ph, &[back, top], Arrange::Pip(corner));
                         let (b, _, _) = shown(pw, ph, back, &geo[0].0, &geo[0].1);
-                        assert!(b[0] <= 0.5 && b[1] <= 0.5 && b[2] >= pw - 0.5 && b[3] >= ph - 0.5, "Hintergrund deckt nicht: {b:?}");
-                        // eine Achse liegt genau auf dem Bildrand: nicht größer als nötig
+                        assert!(b[0] <= 0.5 && b[1] <= 0.5 && b[2] >= pw - 0.5 && b[3] >= ph - 0.5, "background does not cover: {b:?}");
+                        // one axis lies exactly on the frame edge: no larger than needed
                         assert!(near([b[0], b[2], 0.0, 0.0], [0.0, pw, 0.0, 0.0]) || near([b[1], b[3], 0.0, 0.0], [0.0, ph, 0.0, 0.0]), "{b:?}");
                         let (r, fx, fy) = shown(pw, ph, top, &geo[1].0, &geo[1].1);
                         assert!(geo[1].1.is_none() && (fx - fy).abs() < 1e-4);
@@ -264,8 +264,8 @@ mod tests {
         assert!(IDS.iter().all(|id| Arrange::from_id(id).is_some() && !crate::keymap::name(id).is_empty()));
     }
 
-    /// Logo (Bild über die ganze Länge) zählt ohne Auswahl nicht mit; Zurücksetzen mit Auswahl
-    /// wirkt nur auf die Auswahl.
+    /// A logo (image over the full length) does not count without a selection; resetting with a selection
+    /// only affects the selection.
     #[test]
     fn logo_is_no_layout_clip_and_reset_keeps_to_the_selection() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -300,10 +300,10 @@ mod tests {
         app.set_doc(p);
         app.playhead = sec(1.0);
         assert!(app.quick_check("quick_layout_side").0 && !app.quick_check("quick_layout_columns").0);
-        // ausgewähltes Bild zählt mit
+        // a selected image counts
         app.select_only(Some(ids[2]));
         assert!(app.quick_check("quick_layout_columns").0);
-        // Zurücksetzen mit einem ausgewählten Clip: nur dieser
+        // Reset with one selected clip: only that one
         app.select_only(Some(ids[0]));
         let before = app.project.clone();
         app.tool_layout("quick_layout_reset");
@@ -312,14 +312,14 @@ mod tests {
         assert!(clip(&app.project, 0).keyframes.get(Prop::Scale).is_empty());
         assert_eq!(clip(&app.project, 1), clip(&before, 1));
         assert_eq!(clip(&app.project, 2), clip(&before, 2));
-        // ohne Auswahl: nur die Videos, das Logo bleibt
+        // without a selection: only the videos, the logo stays
         app.select_only(None);
         app.tool_layout("quick_layout_reset");
         assert_eq!(clip(&app.project, 1).transform, Transform::default());
         assert_eq!(clip(&app.project, 2), clip(&before, 2));
     }
 
-    /// Anwenden ist ein Verlaufsschritt (samt entfernten Keyframes), Rückgängig stellt alles her.
+    /// Applying is one history step (including removed keyframes), undo restores everything.
     #[test]
     fn layout_is_one_undo_step() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -350,7 +350,7 @@ mod tests {
             t.clips.push(c);
             p.timeline.tracks.push(t);
         }
-        // Text darüber bleibt unberührt
+        // text above stays untouched
         let mut tt = Track::new(TrackKind::Text);
         tt.clips.push(Clip::new(ClipContent::Text(TextStyle::default()), sec(0.0), sec(5.0)));
         p.timeline.tracks.push(tt);

@@ -1,6 +1,6 @@
 //! Presets: save a clip's look (adjust, filters, effects, LUT, animations,
 //! opacity, audio edits, for text the text style without content) and apply it with one click to
-//! one or more clips. Storage: `<Daten>/Library/presets.json`.
+//! one or more clips. Storage: `<data>/Library/presets.json`.
 
 use cl_core::{Animations, AudioFx, Clip, ClipContent, ClipFx, TextStyle};
 use eframe::egui::{self, RichText};

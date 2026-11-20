@@ -1,6 +1,6 @@
-//! Brand Kit: Farben, Schriften und Logo je Nutzer in `<Daten>/brand.json`; das Logo wird nach
-//! `<Daten>/Brand/` kopiert (Projekte zeigen auf die Kopie, sie wird nie gelöscht). Das Kit wirkt
-//! nur beim Auswählen und Einfügen, nie auf bestehende Clips.
+//! Brand Kit: colors, fonts and logo per user in `<data>/brand.json`; the logo is copied to
+//! `<data>/Brand/` (projects point to the copy, it is never deleted). The kit only takes effect
+//! when choosing and inserting, never on existing clips.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use crate::app::App;
 use crate::theme::{self, icon};
 
 pub const MAX_COLORS: usize = 8;
-/// Schriftrollen in der Reihenfolge von `BrandKit::fonts`
+/// Font roles in the order of `BrandKit::fonts`
 pub const ROLES: [&str; 3] = ["Titel", "Text", "Untertitel"];
 pub const TEXT: usize = 1;
 pub const CAPTION: usize = 2;
@@ -29,7 +29,7 @@ pub struct BrandColor {
 #[serde(default)]
 pub struct BrandKit {
     pub colors: Vec<BrandColor>,
-    /// Schriftfamilie je Rolle (`ROLES`), immer so viele Einträge wie Rollen
+    /// Font family per role (`ROLES`), always as many entries as roles
     pub fonts: Vec<Option<String>>,
     pub logo: Option<PathBuf>,
 }
@@ -41,8 +41,8 @@ impl Default for BrandKit {
 }
 
 impl BrandKit {
-    /// Inhalt von `brand.json`; kaputt oder fehlend → leeres Kit, Grenzen eingehalten,
-    /// verschwundenes Logo → kein Logo.
+    /// Content of `brand.json`; broken or missing → empty kit, limits enforced,
+    /// vanished logo → no logo.
     pub fn parse(text: &str) -> Self {
         let mut k: Self = serde_json::from_str(text).unwrap_or_default();
         k.colors.truncate(MAX_COLORS);
@@ -60,11 +60,11 @@ impl BrandKit {
         let _ = std::fs::create_dir_all(crate::paths::data_dir());
         let _ = crate::paths::write_atomic(&Self::path(), serde_json::to_string_pretty(self).unwrap_or_default());
     }
-    /// Schrift einer Rolle (`TEXT`, `CAPTION` …)
+    /// Font of a role (`TEXT`, `CAPTION` …)
     pub fn font(&self, role: usize) -> Option<&String> {
         self.fonts.get(role).and_then(Option::as_ref)
     }
-    /// Gesetzte Schriften ohne Doppelte, in Rollenreihenfolge
+    /// Set fonts without duplicates, in role order
     pub fn font_list(&self) -> Vec<String> {
         let mut v: Vec<String> = Vec::new();
         for f in self.fonts.iter().flatten() {
@@ -76,7 +76,7 @@ impl BrandKit {
     }
 }
 
-/// Logo in den Datenordner kopieren (gleiche Dateitypen wie eigene Sticker).
+/// Copy the logo into the data folder (same file types as custom stickers).
 pub fn copy_logo(src: &Path) -> std::result::Result<PathBuf, String> {
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     if !crate::library::STICKER_EXT.contains(&ext.as_str()) {
@@ -90,7 +90,7 @@ pub fn copy_logo(src: &Path) -> std::result::Result<PathBuf, String> {
     Ok(dest)
 }
 
-/// Lage des Logos: oben rechts, 12 % der Projektbreite breit (Ecke wie Bild-in-Bild).
+/// Position of the logo: top right, 12 % of the project width wide (corner like picture-in-picture).
 pub fn logo_transform(pw: f32, ph: f32, iw: f32, ih: f32) -> Transform {
     crate::arrange::in_corner(pw, ph, (iw, ih), 0.12, 1)
 }
@@ -99,18 +99,18 @@ fn colors_id() -> egui::Id {
     egui::Id::new("brand-colors")
 }
 
-/// Farben des Kits für den gemeinsamen Farbwähler (`widgets::color_button`) bereitstellen.
+/// Provide the kit's colors to the shared color picker (`widgets::color_button`).
 pub fn publish(ctx: &egui::Context, kit: &BrandKit) {
     ctx.data_mut(|d| d.insert_temp(colors_id(), Arc::new(kit.colors.clone())));
 }
 
-/// Farben, die der Farbwähler als Reihe zeigt (leer: keine Reihe).
+/// Colors the color picker shows as a row (empty: no row).
 pub fn colors(ctx: &egui::Context) -> Arc<Vec<BrandColor>> {
     ctx.data(|d| d.get_temp(colors_id())).unwrap_or_default()
 }
 
 impl App {
-    /// Bereich „Brand Kit“ im Einstellungsfenster
+    /// „Brand Kit“ section in the settings window
     pub fn brand_settings(&mut self, ui: &mut egui::Ui) {
         let mut kit = self.brand.clone();
         theme::section(ui, "Farben");
@@ -167,9 +167,9 @@ impl App {
         self.brand_edited(ui.ctx(), kit, settled);
     }
 
-    /// Bearbeitetes Kit übernehmen: Der Farbwähler folgt sofort, gespeichert wird erst, wenn die
-    /// Änderung abgeschlossen ist (`settled`: nichts wird gezogen, kein Textfeld aktiv) – nicht in
-    /// jedem Bild beim Ziehen. Den Rest schreiben Schließen der Einstellungen und Beenden.
+    /// Take over the edited kit: the color picker follows at once, it is only saved when the
+    /// change is finished (`settled`: nothing is being dragged, no text field active) – not
+    /// every frame while dragging. Closing the settings and quitting write the rest.
     fn brand_edited(&mut self, ctx: &egui::Context, kit: BrandKit, settled: bool) {
         if kit != self.brand {
             self.brand = kit;
@@ -181,14 +181,14 @@ impl App {
         }
     }
 
-    /// Noch nicht gespeicherte Änderung am Kit schreiben.
+    /// Write a not yet saved change to the kit.
     pub fn brand_flush(&mut self) {
         if std::mem::take(&mut self.brand_unsaved) {
             self.brand.save();
         }
     }
 
-    /// Kit übernehmen, speichern und dem Farbwähler geben.
+    /// Take over the kit, save it and give it to the color picker.
     pub fn set_brand(&mut self, ctx: &egui::Context, kit: BrandKit) {
         self.brand = kit;
         self.brand.save();
@@ -196,8 +196,8 @@ impl App {
         publish(ctx, &self.brand);
     }
 
-    /// Logo als Bild-Clip über dem Video, über die ganze Projektlänge, oben rechts (ein
-    /// Verlaufsschritt). Ohne Logo nichts.
+    /// Logo as an image clip above the video, over the whole project length, top right (one
+    /// history step). Without a logo nothing.
     pub fn insert_logo(&mut self) -> Option<ClipId> {
         let path = self.brand.logo.clone().filter(|p| p.is_file())?;
         let file = crate::library_ui::own_sticker_file(&path)?;
@@ -222,8 +222,8 @@ impl App {
 mod tests {
     use super::*;
 
-    /// Ziehen im Farbwähler: Die Farbreihe folgt sofort, `brand.json` wird erst geschrieben, wenn
-    /// die Änderung abgeschlossen ist – oder beim Schließen bzw. Beenden.
+    /// Dragging in the color picker: the color row follows at once, `brand.json` is only written when
+    /// the change is finished – or on closing or quitting.
     #[test]
     fn brand_saves_when_the_change_is_done() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
@@ -233,11 +233,11 @@ mod tests {
             kit.colors = vec![BrandColor { name: String::new(), rgb: [v, 0, 0] }];
             app.brand_edited(&ctx, kit.clone(), false);
             assert_eq!(colors(&ctx)[0].rgb, [v, 0, 0]);
-            assert_eq!(BrandKit::load(), BrandKit::default(), "beim Ziehen gespeichert");
+            assert_eq!(BrandKit::load(), BrandKit::default(), "saved while dragging");
         }
         app.brand_edited(&ctx, kit.clone(), true);
         assert_eq!(BrandKit::load(), kit);
-        // noch im Feld, dann Einstellungen geschlossen bzw. Programm beendet
+        // still in the field, then settings closed or program quit
         kit.colors[0].name = "Rot".into();
         app.brand_edited(&ctx, kit.clone(), false);
         assert_ne!(BrandKit::load(), kit);
@@ -256,13 +256,13 @@ mod tests {
             logo: Some(logo.clone()),
         };
         assert_eq!(BrandKit::parse(&serde_json::to_string(&kit).unwrap()), kit);
-        // kaputt oder leer: leeres Kit mit drei leeren Schriftrollen
+        // broken or empty: empty kit with three empty font roles
         for bad in ["", "{", "[1]", r#"{"colors": "rot"}"#] {
             let k = BrandKit::parse(bad);
             assert!(k.colors.is_empty() && k.logo.is_none(), "{bad}");
             assert_eq!(k.fonts, vec![None; 3], "{bad}");
         }
-        // Grenzen: höchstens 8 Farben und 3 Schriften
+        // Limits: at most 8 colors and 3 fonts
         let many = serde_json::json!({
             "colors": (0..12).map(|i| serde_json::json!({"rgb": [i, i, i]})).collect::<Vec<_>>(),
             "fonts": ["A", "B", "C", "D", "E"],
@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(k.colors.len(), MAX_COLORS);
         assert_eq!(k.fonts.len(), 3);
         assert_eq!(k.font(TEXT).map(String::as_str), Some("B"));
-        // Logo-Datei weg: kein Logo, der Rest bleibt
+        // Logo file gone: no logo, the rest stays
         std::fs::remove_file(&logo).unwrap();
         let k = BrandKit::parse(&serde_json::to_string(&kit).unwrap());
         assert!(k.logo.is_none());
@@ -285,7 +285,7 @@ mod tests {
         assert!(BrandKit::parse("").font_list().is_empty());
     }
 
-    /// Breite 12 % der Projektbreite, Rand 4 % der kürzeren Seite oben und rechts
+    /// Width 12 % of the project width, margin 4 % of the shorter side at the top and right
     #[test]
     fn logo_sits_top_right_in_every_format() {
         for (pw, ph) in [(1920.0, 1080.0), (1080.0, 1920.0), (1080.0, 1080.0)] {
@@ -303,7 +303,7 @@ mod tests {
         }
     }
 
-    /// Breite der Zeile mit dem gemeinsamen Farbwähler (ohne Fenster, eigener egui-Kontext)
+    /// Width of the row with the shared color picker (without a window, own egui context)
     fn picker_width(ctx: &egui::Context) -> f32 {
         let mut w = 0.0;
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
@@ -319,13 +319,13 @@ mod tests {
         w
     }
 
-    /// Die Reihe der Brand-Farben steht nur da, wenn das Kit Farben hat
+    /// The row of brand colors only shows when the kit has colors
     #[test]
     fn color_picker_shows_brand_row_only_with_colors() {
         let ctx = egui::Context::default();
         let plain = picker_width(&ctx);
         publish(&ctx, &BrandKit::default());
-        assert_eq!(picker_width(&ctx), plain, "leeres Kit: wie bisher");
+        assert_eq!(picker_width(&ctx), plain, "empty kit: as before");
         let mut kit = BrandKit::default();
         kit.colors = vec![BrandColor { name: "A".into(), rgb: [1, 2, 3] }; 3];
         publish(&ctx, &kit);
@@ -337,8 +337,8 @@ mod tests {
         image::save_buffer(path, &vec![200u8; (w * h * 4) as usize], w, h, image::ExtendedColorType::Rgba8).unwrap();
     }
 
-    /// „Logo einfügen“: neue Spur über dem Video, ganze Projektlänge, oben rechts; ein
-    /// Rückgängig-Schritt, der Rest des Projekts bleibt unberührt. Ohne Logo passiert nichts.
+    /// „Logo einfügen“: new track above the video, whole project length, top right; one
+    /// undo step, the rest of the project stays untouched. Without a logo nothing happens.
     #[test]
     fn insert_logo_is_one_undo_step_and_touches_nothing_else() {
         let (mut app, home, _g) = crate::saving::tests::test_app();
@@ -365,7 +365,7 @@ mod tests {
         let before = app.project.clone();
         assert!(!app.action_enabled("brand_logo"));
         assert!(app.insert_logo().is_none());
-        assert_eq!(app.project, before, "ohne Logo unverändert");
+        assert_eq!(app.project, before, "unchanged without a logo");
 
         let src = home.path().join("marke.png");
         png(&src, 64, 32);
@@ -379,7 +379,7 @@ mod tests {
         assert!(t.kind == TrackKind::Video && !t.main);
         assert_eq!((c.start, c.duration), (Time::ZERO, Time::from_secs_f64(10.0)));
         assert_eq!(c.transform, logo_transform(1920.0, 1080.0, 64.0, 32.0));
-        assert_eq!(app.project.timeline.tracks[0], before.timeline.tracks[0], "Hauptspur unberührt");
+        assert_eq!(app.project.timeline.tracks[0], before.timeline.tracks[0], "main track untouched");
         assert_eq!(app.project.timeline.tracks.len(), 2);
         assert!(app.project.media.iter().any(|m| m.path == logo));
 
@@ -389,19 +389,19 @@ mod tests {
         assert_eq!(app.project.media, before.media);
     }
 
-    /// Standardtext und Untertitel „Klassisch“ bekommen die Brand-Schrift; Vorlagen und andere
-    /// Untertitel-Stile behalten ihre eigene, ohne Kit bleibt alles wie bisher.
+    /// Default text and „Klassisch“ captions get the brand font; templates and other
+    /// caption styles keep their own, without a kit everything stays as before.
     #[test]
     fn new_text_and_classic_captions_use_brand_fonts() {
         let (mut app, _home, _g) = crate::saving::tests::test_app();
         app.set_doc(Project::new("Schrift"));
         let font = |app: &App, id: ClipId| match &app.project.find_clip(id).unwrap().1.content {
             ClipContent::Text(s) => s.font_family.clone(),
-            _ => panic!("kein Text"),
+            _ => panic!("no text"),
         };
         let cap = |app: &App| match app.caption_clip("Hallo", Time::ZERO, Time::from_secs_f64(1.0), Vec::new()).content {
             ClipContent::Text(s) => s.font_family,
-            _ => panic!("kein Text"),
+            _ => panic!("no text"),
         };
         let tpl = cl_fx::text::TEMPLATES.iter().find(|t| t.make().font_family.is_some()).unwrap();
         let other = crate::captions::PRESETS.iter().find(|p| p.id != "classic" && (p.style)().font_family.is_some()).unwrap();

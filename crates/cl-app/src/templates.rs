@@ -1,6 +1,6 @@
-//! Projektvorlagen: das offene Projekt als Vorlage speichern (Intro, Bauchbinden, Outro,
-//! Endcard, Format), auf der Startseite neue Projekte daraus anlegen, Vorlagen umbenennen
-//! und entfernen. Ablage: `<Daten>/Templates/<Name>.cutline`.
+//! Project templates: save the open project as a template (intro, lower thirds, outro,
+//! end card, format), create new projects from it on the start page, rename
+//! and remove templates. Storage: `<data>/Templates/<name>.cutline`.
 
 use std::path::PathBuf;
 
@@ -35,7 +35,7 @@ pub fn list() -> Vec<(String, PathBuf)> {
     v
 }
 
-/// Vorlagen heißen wie ihre Datei: Satzzeichen bleiben (vorhandene Namen bleiben gleich)
+/// Templates are named like their file: punctuation stays (existing names stay the same)
 fn safe(name: &str) -> String {
     let s: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
     paths::fit_name(&s)
@@ -45,15 +45,15 @@ fn safe(name: &str) -> String {
 pub enum TplDialog {
     Save { name: String },
     Rename { path: PathBuf, name: String },
-    /// „Aus Vorlage einfügen“: Liste aller Vorlagen (beim Öffnen geladen) mit Einfügeposition
+    /// „Aus Vorlage einfügen“: list of all templates (loaded on open) with insert position
     Insert(Vec<(String, Project)>),
 }
 
-/// Mitgelieferte Vorlagen (nicht löschbar), im Code erzeugt.
+/// Bundled templates (not deletable), generated in code.
 const BUILTIN: [&str; 3] = ["Intro-Titel", "Endkarte", "Kapitel-Titel"];
 
 fn builtin(i: usize) -> Project {
-    // (Text, Größe, fett, Hintergrund, y, Einblenden in s)
+    // (text, size, bold, background, y, fade-in in s)
     type Part = (&'static str, f32, bool, Option<[u8; 4]>, f32, f64);
     let (secs, parts): (f64, Vec<Part>) = match i {
         0 => (3.0, vec![("Dein Titel", 120.0, true, None, 0.0, 1.0), ("Untertitel", 56.0, false, None, 110.0, 1.0)]),
@@ -77,7 +77,7 @@ fn builtin(i: usize) -> Project {
     d.project().clone()
 }
 
-/// Alle lesbaren Vorlagen für den Einfügen-Dialog: erst mitgelieferte, dann eigene.
+/// All readable templates for the insert dialog: bundled first, then own ones.
 pub fn load_all() -> Vec<(String, Project)> {
     let own = list().into_iter().filter_map(|(n, p)| {
         let s = std::fs::read_to_string(p).ok()?;
@@ -86,36 +86,36 @@ pub fn load_all() -> Vec<(String, Project)> {
     (0..BUILTIN.len()).map(|i| (BUILTIN[i].to_string(), builtin(i))).chain(own).collect()
 }
 
-/// Nebenspur für Bild-Overlays der Vorlage: freie, sonst irgendeine nicht gesperrte Bildspur
-/// außer der Hauptspur (`AddClip` legt bei Belegung selbst eine Spur darüber an).
+/// Side track for the template's image overlays: a free one, otherwise any unlocked video track
+/// except the main track (`AddClip` creates a track above it itself when occupied).
 fn overlay_track(target: &Project, start: Time, dur: Time) -> Option<TrackId> {
     let mut cands = target.timeline.tracks.iter().filter(|t| t.kind == TrackKind::Video && !t.main && !t.locked);
     let first = cands.clone().next().map(|t| t.id);
     cands.find(|t| t.is_free(start, dur, None)).map(|t| t.id).or(first)
 }
 
-/// Braucht das Einfügen erst eine neue Overlay-Spur (Vorlage hat Bild-Overlays, Ziel keine Nebenspur)?
+/// Does inserting need a new overlay track first (template has image overlays, target no side track)?
 pub fn needs_overlay_track(tpl: &Project, target: &Project) -> bool {
     let overlays = tpl.timeline.tracks.iter().filter(|t| !t.main).flat_map(|t| &t.clips).any(|c| c.kind() == TrackKind::Video);
     overlays && overlay_track(target, Time::ZERO, Time::ZERO).is_none()
 }
 
-/// Umrechnung Vorlage + Zielprojekt + Zeit -> Ops (für einen Batch): Medien aufnehmen,
-/// Inhalt ab `at` um die Vorlagenlänge nach hinten schieben, Vorlagen-Clips setzen.
-/// Fehlende Spuren legt `AddClip` selbst an.
-/// Vorlagen ohne Hauptspur-Clips (Titel, Endkarte) sind Überlagerungen: sie verschieben nichts.
-/// shortcut: Clips, die `at` überspannen, bleiben liegen; die Hauptspur mit Magnet schiebt sich
-/// nur durch eingefügte Hauptspur-Clips.
+/// Convert template + target project + time -> ops (for one batch): add media,
+/// push content from `at` back by the template length, place template clips.
+/// `AddClip` creates missing tracks itself.
+/// Templates without main track clips (title, end card) are overlays: they move nothing.
+/// shortcut: clips spanning `at` stay in place; the main track with magnet only moves
+/// through inserted main track clips.
 pub fn insert_ops(tpl: &Project, target: &Project, at: Time) -> Vec<EditOp> {
     let len = tpl.duration();
     let pushes = tpl.timeline.tracks.iter().any(|t| t.main && !t.clips.is_empty());
     let mut ops: Vec<EditOp> = tpl.media.iter().map(|m| EditOp::ImportMedia { media: m.clone() }).collect();
     for t in target.timeline.tracks.iter().filter(|t| pushes && !t.locked && !(t.main && target.settings.main_track_magnet)) {
         let mut v: Vec<&Clip> = t.clips.iter().filter(|c| c.start >= at).collect();
-        v.sort_by_key(|c| std::cmp::Reverse(c.start)); // hinterste zuerst, damit nichts kollidiert
+        v.sort_by_key(|c| std::cmp::Reverse(c.start)); // last first, so nothing collides
         ops.extend(v.into_iter().map(|c| EditOp::MoveClip { clip: c.id, track: Some(t.id), start: c.start + len }));
     }
-    // Gruppen je Einfügung neu: zweimal dieselbe Vorlage ergibt zwei Gruppen
+    // Groups new per insertion: the same template twice gives two groups
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(1);
     let mut next = target.timeline.tracks.iter().flat_map(|t| &t.clips).filter_map(|c| c.group).max().unwrap_or(0).max(now);
     let mut groups = std::collections::HashMap::new();
@@ -130,7 +130,7 @@ pub fn insert_ops(tpl: &Project, target: &Project, at: Time) -> Vec<EditOp> {
                     next
                 })
             });
-            // nur Hauptspur-Clips der Vorlage in die Hauptspur, Bild-Overlays auf eine Nebenspur
+            // only the template's main track clips go to the main track, image overlays to a side track
             let track = if !t.main && n.kind() == TrackKind::Video { overlay_track(target, n.start, n.duration) } else { None };
             ops.push(EditOp::AddClip { track, clip: n });
         }
@@ -138,8 +138,8 @@ pub fn insert_ops(tpl: &Project, target: &Project, at: Time) -> Vec<EditOp> {
     ops
 }
 
-/// Multicam-Abschnitt: (deaktiviert, Deckkraft-Faktor, stumm). Die Tonquelle läuft immer
-/// (nicht aktiv: nur das Bild verschwindet), die anderen Winkel sind stumm.
+/// Multicam segment: (disabled, opacity factor, muted). The audio source always plays
+/// (not active: only the picture disappears), the other angles are muted.
 pub fn cam_piece(angle: usize, audio: usize, active: bool) -> (bool, f32, bool) {
     if angle == audio {
         (false, if active { 1.0 } else { 0.0 }, false)
@@ -148,8 +148,8 @@ pub fn cam_piece(angle: usize, audio: usize, active: bool) -> (bool, f32, bool) 
     }
 }
 
-/// Eintrag der Vorlagenliste auf der Startseite: linksbündig wie die übrigen Einträge der Spalte
-/// (add_sized zentriert), ein langer Name einzeilig mit „…“ gekürzt, voll im Tooltip.
+/// Entry in the template list on the start page: left-aligned like the column's other entries
+/// (add_sized centers), a long name on one line shortened with „…“, in full in the tooltip.
 fn template_row(ui: &mut egui::Ui, name: &str) -> egui::Response {
     let name = crate::tr(name);
     let full = format!("{}  {name}", icon::COPY_SIMPLE);
@@ -169,7 +169,7 @@ fn template_row(ui: &mut egui::Ui, name: &str) -> egui::Response {
 }
 
 impl App {
-    /// Startseite: Liste der Vorlagen unter „Neues Projekt“.
+    /// Start page: list of templates under „Neues Projekt“.
     pub fn home_templates(&mut self, ui: &mut egui::Ui) {
         let list = list();
         ui.add_space(8.0);
@@ -210,7 +210,7 @@ impl App {
         if let Some(p) = remove {
             let trash = paths::data_dir().join("Papierkorb");
             let _ = std::fs::create_dir_all(&trash);
-            // eindeutiger Name: eine früher entfernte gleichnamige Vorlage bleibt erhalten
+            // unique name: an earlier removed template of the same name stays kept
             let to = crate::library::unique(&trash, p.file_name().unwrap_or_default().to_string_lossy().into_owned());
             if std::fs::rename(&p, to).is_ok() {
                 self.toast("Vorlage in den Papierkorb verschoben");
@@ -238,22 +238,22 @@ impl App {
         self.toast("Neues Projekt aus Vorlage");
     }
 
-    /// Vorlage ins offene Projekt einfügen (`mode`: 0 Anfang, 1 Playhead, 2 Ende), ein Undo-Schritt.
+    /// Insert a template into the open project (`mode`: 0 start, 1 playhead, 2 end), one undo step.
     fn insert_template(&mut self, tpl: &Project, mode: u8) {
         let at = match mode {
             0 => Time::ZERO,
             1 => self.playhead,
             _ => self.project.duration(),
         };
-        // shortcut: fehlt eine Overlay-Spur, ist ihr Anlegen ein eigener Undo-Schritt (Spur-IDs
-        // entstehen erst beim Anwenden); ausbauen, wenn ein Batch neue Spuren benennen kann
+        // shortcut: if an overlay track is missing, creating it is a separate undo step (track IDs
+        // only arise when applying); extend once a batch can name new tracks
         let added = needs_overlay_track(tpl, &self.project)
             && self.apply(EditOp::InsertTrack { index: self.project.timeline.tracks.len(), kind: TrackKind::Video }).is_some();
         let ops = insert_ops(tpl, &self.project, at);
         if !ops.is_empty() && self.apply(EditOp::Batch { label: "Vorlage einfügen".into(), ops }).is_some() {
             self.toast("Vorlage eingefügt");
         } else if added {
-            // Einfügen fehlgeschlagen: die leere Spur wieder weg
+            // Insert failed: remove the empty track again
             let _ = self.doc.lock().unwrap_or_else(|e| e.into_inner()).undo();
             self.sync_project();
         }
@@ -289,7 +289,7 @@ impl App {
         }
     }
 
-    /// Multicam-Hinweisfenster: Erklärung und Tonquelle, solange der Modus aktiv ist.
+    /// Multicam hint window: explanation and audio source while the mode is active.
     fn multicam_hint(&mut self, ctx: &egui::Context) {
         let Some(n) = self.multicam.as_ref().map(|m| m.0.len()) else {
             return;
@@ -313,7 +313,7 @@ impl App {
         }
     }
 
-    /// Dialog „Als Vorlage speichern“ / „Vorlage umbenennen“.
+    /// „Als Vorlage speichern“ / „Vorlage umbenennen“ dialog.
     pub fn template_dialog(&mut self, ctx: &egui::Context) {
         self.multicam_hint(ctx);
         if matches!(self.tpl_dialog, Some(TplDialog::Insert(_))) {
@@ -341,7 +341,7 @@ impl App {
             r.request_focus();
             edited |= r.changed();
             theme::field_error(ui, err.as_deref());
-            // Namensfeld hat immer den Fokus: Enter bestätigt die Eingabe
+            // the name field always has focus: Enter confirms the input
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
@@ -380,7 +380,7 @@ impl App {
                 }
                 Some(TplDialog::Rename { path, name }) if !safe(&name).is_empty() => {
                     let to = dir().join(format!("{}.cutline", safe(&name)));
-                    // vorhandene Vorlage nicht ersetzen (nur Groß-/Kleinschreibung ändern geht)
+                    // do not replace an existing template (only changing upper/lower case works)
                     let same = to.to_string_lossy().to_lowercase() == path.to_string_lossy().to_lowercase();
                     if to.exists() && !same {
                         self.tpl_dialog = backup;
@@ -475,7 +475,7 @@ mod tests {
         Clip::new(ClipContent::Media { media: m.id, kind: m.kind }, Time::from_secs_f64(start), Time::from_secs_f64(dur))
     }
 
-    /// wie `insert_template`: bei Bedarf erst die Overlay-Spur, dann der Batch
+    /// like `insert_template`: the overlay track first if needed, then the batch
     fn insert(d: &mut Document, tpl: &Project, at: f64) -> cl_core::Result<()> {
         if needs_overlay_track(tpl, d.project()) {
             let n = d.project().timeline.tracks.len();
@@ -485,7 +485,7 @@ mod tests {
         d.apply(EditOp::Batch { label: String::new(), ops }, OpSource::Ui).map(|_| ())
     }
 
-    /// Ziel mit Magnet-Hauptspur (0–5, 5–10) und Vorlage mit Intro-Video (Hauptspur) + PNG (Spur 2)
+    /// Target with a magnet main track (0–5, 5–10) and a template with an intro video (main track) + PNG (track 2)
     fn main_and_overlay() -> (Project, Project, MediaId) {
         let (v, png) = (media(MediaKind::Video), media(MediaKind::Image));
         let mut target = Project::new("p");
@@ -520,7 +520,7 @@ mod tests {
         let (t, c) = p.timeline.tracks.iter().flat_map(|t| t.clips.iter().map(move |c| (t, c))).find(|(_, c)| is_png(c)).unwrap();
         assert!(!t.main && t.kind == TrackKind::Video);
         assert_eq!(c.start, Time::from_secs_f64(5.0));
-        // zweites Einfügen nutzt die vorhandene Nebenspur
+        // the second insert uses the existing side track
         let n = d.project().timeline.tracks.len();
         insert(&mut d, &tpl, 0.0).unwrap();
         assert!(d.project().timeline.tracks.len() <= n + 1);
@@ -556,8 +556,8 @@ mod tests {
     #[test]
     fn builtins_have_content_and_cam_audio_follows_main_angle() {
         assert!((0..3).all(|i| builtin(i).duration() > Time::ZERO));
-        assert_eq!(cam_piece(0, 0, false), (false, 0.0, false)); // Ton läuft, Bild weg
-        assert_eq!(cam_piece(1, 0, true), (false, 1.0, true)); // anderer Winkel: Bild, stumm
+        assert_eq!(cam_piece(0, 0, false), (false, 0.0, false)); // audio plays, picture gone
+        assert_eq!(cam_piece(1, 0, true), (false, 1.0, true)); // other angle: picture, muted
         assert_eq!(cam_piece(1, 0, false), (true, 1.0, true));
     }
 }
