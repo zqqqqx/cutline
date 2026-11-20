@@ -391,6 +391,42 @@ fn paint_live(ui: &egui::Ui, rect: Rect, live: &Live, prog: f32) -> bool {
     true
 }
 
+/// Laufende Analyse „Person folgen“ (Hintergrund-Thread): Fortschritt 0…1, Abbruch, Ergebnis
+/// (Spuren, erster Fehler)
+struct FocusJob {
+    progress: Arc<Mutex<f32>>,
+    cancel: Arc<AtomicBool>,
+    done: Arc<Mutex<Option<FocusFound>>>,
+}
+
+type FocusFound = (Vec<(crate::shorts::FocusKey, Vec<(f64, f32, f32)>)>, Option<String>);
+
+impl FocusJob {
+    fn start(ctx: &egui::Context, jobs: Vec<(crate::shorts::FocusKey, cl_core::MediaRef)>) -> Self {
+        let job = FocusJob { progress: Default::default(), cancel: Default::default(), done: Default::default() };
+        let (progress, cancel, done, ctx) = (job.progress.clone(), job.cancel.clone(), job.done.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let n = jobs.len() as f32;
+            let (mut found, mut err) = (Vec::new(), None);
+            for (i, (key, m)) in jobs.into_iter().enumerate() {
+                let sub = |v: f32| *progress.lock().unwrap() = (i as f32 + v) / n;
+                let r = cl_analyze::reframe::focus_path(&m.path, m.width, m.height, key.2.as_secs_f64(), key.3.as_secs_f64(), &sub, &cancel);
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                // Fehler: Clip bleibt mittig, ohne neuen Versuch bis zur nächsten Änderung
+                found.push((key, r.unwrap_or_else(|e| {
+                    err.get_or_insert(e);
+                    Vec::new()
+                })));
+            }
+            *done.lock().unwrap() = Some((found, err));
+            ctx.request_repaint();
+        });
+        job
+    }
+}
+
 #[derive(Default)]
 pub struct ExportDialog {
     open: bool,
@@ -406,10 +442,15 @@ pub struct ExportDialog {
     range_avail: Option<(Time, Time)>,
     /// „Seitenverhältnis“: 0 = Projekt, sonst Eintrag `aspect - 1` aus [`ASPECTS`]
     aspect: usize,
-    /// „Bild“ bei anderem Seitenverhältnis: 0 Füllen, 1 Einpassen
+    /// „Bild“ bei anderem Seitenverhältnis: 0 Füllen, 1 Person folgen, 2 Einpassen (nur im Speicher)
     fit: usize,
-    /// umgebautes Abbild (Projektstand, Format, Bild) für Vorschau und Export
-    pub(crate) framed: Option<((u64, (u32, u32), usize), Arc<Project>)>,
+    /// umgebautes Abbild (Projektstand, Format, Bild, Stand der Spuren) für Vorschau und Export
+    pub(crate) framed: Option<((u64, (u32, u32), usize, u64), Arc<Project>)>,
+    /// „Person folgen“: Spur je Analyse-Schlüssel (leer: keine Person oder Fehler → mittig);
+    /// Zähler steigt mit jedem Ergebnis
+    focus: HashMap<crate::shorts::FocusKey, Vec<(f64, f32, f32)>>,
+    focus_gen: u64,
+    focus_job: Option<FocusJob>,
     /// Gewählte Plattform (wird im Projekt gemerkt, wenn das Format passt)
     platform: Option<&'static str>,
     picked_platform: Option<&'static str>,
@@ -634,12 +675,44 @@ impl ExportDialog {
     /// Änderung von Projekt oder Wahl gemerkt
     fn framed(&mut self, p: &Project, fonts: &HashMap<String, (PathBuf, u32)>) -> Option<Arc<Project>> {
         let c = self.canvas(p)?;
-        let key = (self.rev, c, self.fit);
+        let key = (self.rev, c, self.fit, self.focus_gen);
         if self.framed.as_ref().is_none_or(|f| f.0 != key) {
             let m = crate::shorts::text_measure(fonts);
-            self.framed = Some((key, Arc::new(crate::shorts::reframe(p, c, self.fit == 0, &m))));
+            let focus: crate::shorts::FocusPaths = match self.fit {
+                1 => crate::shorts::follow_jobs(p).into_iter().filter_map(|(k, _)| Some((k.0, self.focus.get(&k)?.clone()))).collect(),
+                _ => Default::default(),
+            };
+            self.framed = Some((key, Arc::new(crate::shorts::reframe(p, c, self.fit != 2, &focus, &m))));
         }
         self.framed.as_ref().map(|f| f.1.clone())
+    }
+
+    /// „Person folgen“: fertige Analyse übernehmen (Fehler → eine Meldung; Abbruch → „Füllen“),
+    /// sonst fehlende Spuren im Hintergrund berechnen
+    fn follow(&mut self, ctx: &egui::Context, p: &Project) -> Option<String> {
+        let mut toast = None;
+        if let Some(j) = &self.focus_job {
+            let (found, err) = j.done.lock().unwrap().take()?;
+            let cancelled = j.cancel.load(Ordering::Relaxed);
+            self.focus_job = None;
+            if cancelled {
+                self.fit = 0;
+                return None;
+            }
+            self.focus.extend(found);
+            self.focus_gen += 1;
+            toast = err.map(|e| format!("{}: {e}", crate::tr("Person folgen")));
+        }
+        // nur nach einer Änderung (Projekt, Format, Wahl, Ergebnis) nach fehlenden Spuren suchen
+        let Some(c) = self.canvas(p).filter(|_| self.fit == 1) else { return toast };
+        if self.framed.as_ref().is_some_and(|f| f.0 == (self.rev, c, self.fit, self.focus_gen)) {
+            return toast;
+        }
+        let jobs: Vec<_> = crate::shorts::follow_jobs(p).into_iter().filter(|j| !self.focus.contains_key(&j.0)).collect();
+        if !jobs.is_empty() {
+            self.focus_job = Some(FocusJob::start(ctx, jobs));
+        }
+        toast
     }
 
     /// Im Export gewählte Plattform (einmalig abholen), damit das Projekt sie sich merkt.
@@ -889,7 +962,7 @@ impl ExportDialog {
         ctx: &egui::Context,
         p: &Project,
         fonts: &HashMap<String, (PathBuf, u32)>,
-        cover: Option<(cl_core::ClipId, egui::TextureId, egui::Vec2)>,
+        cover: Option<(cl_core::ClipId, egui::TextureId, egui::Vec2, Time)>,
         rev: u64,
     ) -> Option<String> {
         // aktueller Projektstand: nach einer Änderung gilt der letzte Export als veraltet
@@ -916,6 +989,7 @@ impl ExportDialog {
             let found = self.encoders.lock().unwrap().clone().unwrap_or_default();
             s.encoder = cl_export::export_default(&found, &crate::proxy::encoder_pref());
         }
+        toast = self.follow(ctx, p);
         // Vorschau aus dem umgebauten Abbild (Wahl vom letzten Bild)
         let framed = self.framed(p, fonts);
         let mut open = true;
@@ -953,8 +1027,8 @@ impl ExportDialog {
                             }
                             None => false,
                         };
-                        if let Some((cid, id, ts)) = cover.filter(|_| !live && !audio_only) {
-                            match framed.as_deref().map(|f| cover_layers(f, cid)).filter(|l| !l.is_empty()) {
+                        if let Some((cid, id, ts, at)) = cover.filter(|_| !live && !audio_only) {
+                            match framed.as_deref().map(|f| cover_layers(f, cid, at)).filter(|l| !l.is_empty()) {
                                 Some(layers) => paint_cover(ui, rect, id, &layers),
                                 // Bild füllt das Projektformat (Hochkant zeigt Hochkant, keine Balken)
                                 None => drop(ui.painter().image(id, rect, fill_uv(ts, rect.size()), Color32::WHITE)),
@@ -1055,8 +1129,18 @@ impl ExportDialog {
                                 let canvas = self.canvas(p);
                                 if canvas.is_some() {
                                     theme::row(ui, "Bild", |ui| {
-                                        ui.allocate_ui(vec2(200.0, 24.0), |ui| crate::widgets::segmented(ui, &["Füllen", "Einpassen"], &mut self.fit));
+                                        ui.allocate_ui(vec2(300.0, 24.0), |ui| crate::widgets::segmented(ui, &["Füllen", "Person folgen", "Einpassen"], &mut self.fit));
                                     });
+                                    if let Some(j) = &self.focus_job {
+                                        ui.horizontal(|ui| {
+                                            let (r, _) = ui.allocate_exact_size(vec2((ui.available_width() - 36.0).max(20.0), 3.0), egui::Sense::hover());
+                                            crate::widgets::task_line(ui.painter(), egui::Id::new("exp-follow"), r, *j.progress.lock().unwrap());
+                                            if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
+                                                j.cancel.store(true, Ordering::Relaxed);
+                                            }
+                                        });
+                                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+                                    }
                                 }
                                 theme::row(ui, "Auflösung", |ui| {
                                     let (pw, ph) = canvas.unwrap_or((p.settings.width, p.settings.height));
@@ -1235,7 +1319,8 @@ impl ExportDialog {
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let full = self.queue.len() >= QUEUE_MAX;
+                        // „Person folgen“ rechnet noch: erst danach exportieren
+                        let full = self.queue.len() >= QUEUE_MAX || self.focus_job.is_some();
                         if self.running.is_none() && self.unchanged_since_export(&s) {
                             // unverändert seit dem letzten Export: direkt zur fertigen Datei
                             if ui.add(theme::primary(format!("{}  Zur Datei", icon::FOLDER_OPEN))).clicked() || std::mem::take(&mut main) {
@@ -1277,6 +1362,7 @@ impl ExportDialog {
         }
         let (out, parts) = self.targets(p, &s);
         let mut clean = false;
+        start &= self.focus_job.is_none();
         // bei Teilen: eine Nachfrage für die ganze Gruppe
         if start && !overwrite && self.taken(&out, &parts) {
             self.confirm_overwrite = true;
@@ -1645,7 +1731,7 @@ fn estimate_mb(s: &ExportSettings, d: Time) -> (f64, bool) {
 
 /// Ebenen des Titelbilds (Clip `id`) im Abbild `p`: weichgezeichneter Hintergrund, falls da, dann
 /// der Clip; je Lage als Anteil der Bildfläche, UV-Ausschnitt (Zuschnitt), weichgezeichnet
-fn cover_layers(p: &Project, id: cl_core::ClipId) -> Vec<(Rect, Rect, bool)> {
+fn cover_layers(p: &Project, id: cl_core::ClipId, at: Time) -> Vec<(Rect, Rect, bool)> {
     let (w, h) = (p.settings.width.max(2) as f32, p.settings.height.max(2) as f32);
     [(id.derived(crate::shorts::BACK_SALT), true), (id, false)]
         .into_iter()
@@ -1653,9 +1739,11 @@ fn cover_layers(p: &Project, id: cl_core::ClipId) -> Vec<(Rect, Rect, bool)> {
             let c = p.find_clip(id)?.1;
             let cl_core::ClipContent::Media { media, .. } = &c.content else { return None };
             let m = p.media(*media).filter(|m| m.width > 0 && m.height > 0)?;
-            let d = c.transform.scale * (w / m.width as f32).min(h / m.height as f32);
+            // Lage am Titelbild (Keyframes, z. B. „Person folgen“)
+            let e = c.eval_at(Time((at - c.start).0.max(0)), w, h);
+            let d = e.scale * (w / m.width as f32).min(h / m.height as f32);
             let size = vec2(m.width as f32 * d / w, m.height as f32 * d / h);
-            let full = Rect::from_center_size(egui::pos2(0.5 + c.transform.x / w, 0.5 + c.transform.y / h), size);
+            let full = Rect::from_center_size(egui::pos2(0.5 + e.x / w, 0.5 + e.y / h), size);
             let cr = c.crop.clamped();
             let uv = Rect::from_min_max(egui::pos2(cr.left, cr.top), egui::pos2(1.0 - cr.right, 1.0 - cr.bottom));
             Some((Rect::from_min_max(full.lerp_inside(uv.min.to_vec2()), full.lerp_inside(uv.max.to_vec2())), uv, blur))
@@ -1800,15 +1888,7 @@ fn estimate_matches_a_real_1080p30_export() {
 
 #[cfg(test)]
 fn frame(d: &mut ExportDialog, ctx: &egui::Context, p: &Project, enter: bool) {
-    let events = if enter {
-        vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]
-    } else {
-        Vec::new()
-    };
-    let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
-        d.poll(ctx);
-        d.show(ctx, p, &HashMap::new(), None, 0);
-    });
+    frame_toast(d, ctx, p, enter);
 }
 
 #[test]
@@ -2720,12 +2800,12 @@ fn cover_preview_comes_from_the_reframed_snapshot() {
     // Füllen: eine Ebene, deckt die Fläche (seitlich beschnitten)
     let f = d.framed(&p, &HashMap::new()).unwrap();
     assert_eq!((f.settings.width, f.settings.height), (1080, 1920));
-    let l = cover_layers(&f, id);
+    let l = cover_layers(&f, id, Time::ZERO);
     assert_eq!(l.len(), 1);
     assert!(l[0].0.contains_rect(unit) && (l[0].0.height() - 1.0).abs() < 1e-3, "{l:?}");
     // Einpassen: weichgezeichneter, deckender Hintergrund, darüber das ganze Bild
-    d.fit = 1;
-    let l = cover_layers(&d.framed(&p, &HashMap::new()).unwrap(), id);
+    d.fit = 2;
+    let l = cover_layers(&d.framed(&p, &HashMap::new()).unwrap(), id, Time::ZERO);
     assert_eq!(l.iter().map(|x| x.2).collect::<Vec<_>>(), [true, false]);
     assert!(l[0].0.contains_rect(unit));
     assert!(unit.expand(1e-3).contains_rect(l[1].0) && (l[1].0.width() - 1.0).abs() < 1e-3, "{l:?}");
@@ -2744,7 +2824,7 @@ fn vertical_export_fills_or_fits_with_a_blurred_background() {
     let ctx = egui::Context::default();
     let p = circle_project(dir.path(), 2.0);
     let before = p.clone();
-    for fit in [0, 1] {
+    for fit in [0, 2] {
         let mut d = shorts_dialog(&p, dir.path());
         d.fit = fit;
         d.name = format!("Kreis {fit}");
@@ -2766,9 +2846,9 @@ fn vertical_export_fills_or_fits_with_a_blurred_background() {
             assert!((95..=115).contains(&w) && w.abs_diff(h) <= 3, "fit=0: Kreis {w}×{h}");
         } else {
             // Einpassen: oben/unten weichgezeichnet, in der Mitte das scharfe Bild
-            assert!(top.1 < 8.0 && bottom.1 < 8.0 && mid.1 > 20.0, "fit=1: Hintergrund nicht weich");
+            assert!(top.1 < 8.0 && bottom.1 < 8.0 && mid.1 > 20.0, "fit=2: Hintergrund nicht weich");
             let (w, h) = red_box(&img, 112..208);
-            assert!((30..=40).contains(&w) && w.abs_diff(h) <= 3, "fit=1: Kreis {w}×{h}");
+            assert!((30..=40).contains(&w) && w.abs_diff(h) <= 3, "fit=2: Kreis {w}×{h}");
         }
     }
     assert_eq!(p, before);
@@ -2878,4 +2958,158 @@ fn vertical_split_with_target_size() {
     }
     assert_eq!(crate::exports::for_project("Kreis", Some(&dir.path().join("p.cutline"))).len(), 2);
     std::env::remove_var("CUTLINE_HOME");
+}
+
+/// Ein Bild des Dialogs; gibt die Meldung (Toast) zurück
+#[cfg(test)]
+fn frame_toast(d: &mut ExportDialog, ctx: &egui::Context, p: &Project, enter: bool) -> Option<String> {
+    let events = if enter {
+        vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]
+    } else {
+        Vec::new()
+    };
+    let mut toast = None;
+    let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
+        d.poll(ctx);
+        toast = d.show(ctx, p, &HashMap::new(), None, 0);
+    });
+    toast
+}
+
+/// „Person folgen“, Analyse scheitert (Datei fehlt): kein Absturz, höchstens eine Meldung, Clip mittig wie
+/// „Füllen“, kein neuer Versuch
+#[test]
+fn follow_person_failure_keeps_the_clip_centred_with_one_toast() {
+    use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Track, TrackKind};
+    let dir = tempfile::tempdir().unwrap();
+    let mut p = Project::new("t");
+    let m = MediaRef { id: cl_core::MediaId::new(), path: dir.path().join("fehlt.mp4"), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+    let mut t = Track::new(TrackKind::Video);
+    let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(9.0));
+    let id = c.id;
+    t.clips.push(c);
+    (p.media, p.timeline.tracks) = (vec![m], vec![t]);
+    let ctx = egui::Context::default();
+    let mut d = ExportDialog::default();
+    d.open_for(&p, None, 0, None);
+    (d.aspect, d.fit) = (2, 0);
+    let plain = cover_layers(&d.framed(&p, &HashMap::new()).unwrap(), id, Time::ZERO);
+    d.fit = 1;
+    let mut toasts = Vec::new();
+    toasts.extend(frame_toast(&mut d, &ctx, &p, false));
+    assert!(d.focus_job.is_some(), "Analyse startet");
+    let t0 = Instant::now();
+    while d.focus_job.is_some() && t0.elapsed().as_secs() < 60 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        toasts.extend(frame_toast(&mut d, &ctx, &p, false));
+    }
+    for _ in 0..3 {
+        toasts.extend(frame_toast(&mut d, &ctx, &p, false));
+    }
+    assert!(d.focus_job.is_none(), "kein neuer Versuch");
+    // fehlende Datei liefert eine leere Spur, ohne FFmpeg einen Fehler: höchstens eine Meldung
+    assert!(toasts.len() <= 1, "{toasts:?}");
+    let f = d.framed(&p, &HashMap::new()).unwrap();
+    assert!(f.find_clip(id).unwrap().1.keyframes.0.is_empty());
+    assert_eq!(cover_layers(&f, id, Time::ZERO), plain);
+}
+
+/// Testbild 320×180: roter Kreis (Radius 20) läuft auf grauem Grund von x=60 nach x=260, 2 s mit Ton
+#[cfg(test)]
+fn walker_video(dir: &Path) -> cl_core::MediaRef {
+    let path = dir.join("laeufer.mp4");
+    let inside = "lt(hypot(X-(60+100*T)\\,Y-90)\\,20)";
+    let vf = format!("format=rgb24,geq=r='if({inside}\\,255\\,128)':g='if({inside}\\,0\\,128)':b='if({inside}\\,0\\,128)'");
+    let st = cl_media::ffmpeg_command()
+        .unwrap()
+        .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2"])
+        .args(["-vf", &vf, "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv444p", "-c:a", "aac", "-shortest"])
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    cl_media::probe(&path).unwrap()
+}
+
+/// Waagrechte Mitte der roten Pixel
+#[cfg(test)]
+fn red_center_x(img: &(usize, usize, Vec<u8>)) -> f64 {
+    let (w, _, px) = img;
+    let xs: Vec<usize> = px.chunks(4).enumerate().filter(|(_, p)| p[0] > 180 && p[1] < 70 && p[2] < 70).map(|(i, _)| i % w).collect();
+    assert!(!xs.is_empty(), "kein Rot im Bild");
+    xs.iter().sum::<usize>() as f64 / xs.len() as f64
+}
+
+/// Hochkant mit „Person folgen“, in 2 Teilen mit Zielgröße: Export wartet auf die Analyse, der
+/// laufende Kreis bleibt in beiden Teilen mittig (mittig beschnitten läge er bei 0,6 s am Rand)
+#[test]
+fn follow_person_with_split_parts_and_target_size() {
+    if !cl_media::ffmpeg_available() {
+        return;
+    }
+    use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    let m = walker_video(dir.path());
+    let mut p = Project::new("Lauf");
+    (p.settings.width, p.settings.height) = (320, 180);
+    let mut t = Track::new(TrackKind::Video);
+    t.main = true;
+    t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(2.0)));
+    p.media.push(m);
+    p.timeline.tracks.push(t);
+    let mut d = shorts_dialog(&p, dir.path());
+    (d.fit, d.split_on, d.split_by, d.split_count) = (1, true, 0, 2);
+    d.settings.as_mut().unwrap().target_mb = Some(1);
+    // Enter, während die Analyse läuft: nichts startet
+    frame(&mut d, &ctx, &p, true);
+    assert!(d.focus_job.is_some() && d.running.is_none() && d.queue.is_empty());
+    let t0 = Instant::now();
+    while d.focus_job.is_some() && t0.elapsed().as_secs() < 60 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        frame(&mut d, &ctx, &p, false);
+    }
+    frame(&mut d, &ctx, &p, true);
+    drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
+    for (n, at) in [("Lauf – Teil 01.mp4", 18), ("Lauf – Teil 02.mp4", 12)] {
+        let f = dir.path().join("Lauf").join(n);
+        let size = std::fs::metadata(&f).unwrap().len();
+        assert!(size <= 1_000_000, "{n}: {size}");
+        let img = grab(&f, at);
+        assert_eq!((img.0, img.1), (180, 320), "{n}");
+        let x = red_center_x(&img);
+        assert!((x - 90.0).abs() < 30.0, "{n}: Kreis bei x={x}");
+    }
+    std::env::remove_var("CUTLINE_HOME");
+}
+
+/// Titelbild mit „Person folgen“: Ausschnitt am Bild des Titelbilds (Anfang links, Ende rechts)
+#[test]
+fn cover_preview_shows_the_followed_crop_at_its_frame() {
+    use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Track, TrackKind};
+    let mut p = Project::new("t");
+    let m = MediaRef { id: cl_core::MediaId::new(), path: "a.mp4".into(), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+    let mut t = Track::new(TrackKind::Video);
+    let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::from_secs_f64(1.0), Time::from_secs_f64(4.0));
+    let (id, key) = (c.id, crate::shorts::focus_key(&c, &m));
+    t.clips.push(c);
+    (p.media, p.timeline.tracks) = (vec![m], vec![t]);
+    let mut d = ExportDialog::default();
+    d.open_for(&p, None, 0, None);
+    (d.aspect, d.fit) = (2, 1);
+    d.focus.insert(key, vec![(0.0, 0.2, 0.5), (4.0, 0.8, 0.5)]);
+    let f = d.framed(&p, &HashMap::new()).unwrap();
+    // Punkt der Person (Anteil im Quellbild) in der Vorschau
+    let at = |s: f64, fx: f32| {
+        let l = cover_layers(&f, id, Time::from_secs_f64(s));
+        l[0].0.left() + fx * l[0].0.width()
+    };
+    assert!((at(1.0, 0.2) - 0.5).abs() < 0.01 && (at(5.0, 0.8) - 0.5).abs() < 0.01, "{} {}", at(1.0, 0.2), at(5.0, 0.8));
+    // im Editor getrimmt: die Spur gehört zum alten Quellbereich und gilt nicht mehr
+    p.timeline.tracks[0].clips[0].source_in = Time::from_secs_f64(1.0);
+    d.rev = 1;
+    assert!(d.framed(&p, &HashMap::new()).unwrap().find_clip(id).unwrap().1.keyframes.0.is_empty());
 }

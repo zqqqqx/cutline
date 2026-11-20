@@ -356,30 +356,9 @@ impl App {
         );
         let k = (w / m.width.max(1) as f32).min(h / m.height.max(1) as f32);
         let (fw, fh) = (m.width as f32 * k, m.height as f32 * k);
-        let s = (w / fw).max(h / fh);
-        let (dw, dh) = (fw * s, fh * s);
-        let (mx, my) = (((dw - w) / 2.0).max(0.0), ((dh - h) / 2.0).max(0.0));
-        c.transform.scale = s;
-        for p in [Prop::X, Prop::Y, Prop::Scale] {
-            c.keyframes.0.remove(&p);
-        }
-        for (i, (t, fx, fy)) in pts.iter().enumerate() {
-            if i % 2 != 0 && i + 1 != pts.len() {
-                continue;
-            }
-            let tl = Time::from_secs_f64(t / c.speed.max(0.01) as f64);
-            if tl > c.duration {
-                break;
-            }
-            if mx > 0.5 {
-                c.keyframes
-                    .set(Prop::X, tl, ((0.5 - fx) * dw).clamp(-mx, mx));
-            }
-            if my > 0.5 {
-                c.keyframes
-                    .set(Prop::Y, tl, ((0.5 - fy) * dh).clamp(-my, my));
-            }
-        }
+        c.transform.scale = (w / fw).max(h / fh);
+        c.keyframes.0.remove(&Prop::Scale);
+        crate::shorts::follow_keys(&mut c, m, (w, h), pts);
         Some(c)
     }
 

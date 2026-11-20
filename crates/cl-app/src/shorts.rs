@@ -71,6 +71,62 @@ fn visual<'a>(p: &'a Project, c: &Clip) -> Option<&'a MediaRef> {
     }
 }
 
+/// Spur der Person je Clip (Punkte von `cl_analyze::reframe::focus_path`: Quellsekunden ab
+/// Clipanfang, Mitte 0…1 im Quellbild)
+pub type FocusPaths = std::collections::HashMap<ClipId, Vec<(f64, f32, f32)>>;
+
+/// Gemerkte Analyse „Person folgen“: Clip, Datei, Quellanfang, Quelllänge (Trimmen ändert ihn)
+pub type FocusKey = (ClipId, std::path::PathBuf, Time, Time);
+
+pub fn focus_key(c: &Clip, m: &MediaRef) -> FocusKey {
+    (c.id, m.path.clone(), c.source_time(c.start), c.source_span())
+}
+
+/// Eigene Bewegung (Positions- oder Zoom-Keyframes): „Person folgen“ lässt den Clip, wie er ist
+fn moves(c: &Clip) -> bool {
+    [Prop::X, Prop::Y, Prop::Scale].iter().any(|p| c.keyframes.0.get(p).is_some_and(|l| !l.is_empty()))
+}
+
+/// Clips, denen „Person folgen“ folgt: bildfüllende Videos ohne eigene Bewegung, mit Schlüssel
+pub fn follow_jobs(p: &Project) -> Vec<(FocusKey, MediaRef)> {
+    let (w, h) = (p.settings.width.max(2) as f32, p.settings.height.max(2) as f32);
+    p.timeline
+        .tracks
+        .iter()
+        .filter(|t| !t.hidden)
+        .flat_map(|t| &t.clips)
+        .filter_map(|c| {
+            let m = visual(p, c).filter(|m| m.kind == MediaKind::Video)?;
+            (!moves(c) && full_frame(c, (m.width as f32, m.height as f32), w, h)).then(|| (focus_key(c, m), m.clone()))
+        })
+        .collect()
+}
+
+/// Spur `pts` (siehe [`FocusPaths`]) als Positions-Keyframes im Bild `w`×`h`: der Punkt rückt zur
+/// Mitte, soweit das Bild den Rahmen dabei ganz bedeckt; die Skalierung bleibt.
+pub fn follow_keys(c: &mut Clip, m: &MediaRef, (w, h): (f32, f32), pts: &[(f64, f32, f32)]) {
+    let k = (w / m.width.max(1) as f32).min(h / m.height.max(1) as f32) * c.transform.scale;
+    let (dw, dh) = (m.width as f32 * k, m.height as f32 * k);
+    let (mx, my) = (((dw - w) / 2.0).max(0.0), ((dh - h) / 2.0).max(0.0));
+    c.keyframes.0.remove(&Prop::X);
+    c.keyframes.0.remove(&Prop::Y);
+    for (i, (t, fx, fy)) in pts.iter().enumerate() {
+        if i % 2 != 0 && i + 1 != pts.len() {
+            continue;
+        }
+        let tl = Time::from_secs_f64(t / c.speed.max(0.01) as f64);
+        if tl > c.duration {
+            break;
+        }
+        if mx > 0.5 {
+            c.keyframes.set(Prop::X, tl, ((0.5 - fx) * dw).clamp(-mx, mx));
+        }
+        if my > 0.5 {
+            c.keyframes.set(Prop::Y, tl, ((0.5 - fy) * dh).clamp(-my, my));
+        }
+    }
+}
+
 /// Kennung der weichgezeichneten Hintergrund-Kopie eines Clips (`ClipId::derived`)
 pub const BACK_SALT: u128 = 0xB1;
 
@@ -131,7 +187,8 @@ pub fn text_measure(fonts: &crate::thumb::Fonts) -> impl Fn(&TextStyle, f32) -> 
 ///   der neuen Breite umbrochen bzw. verkleinert
 /// - Masken von Effekt-/Filter-Elementen (Anteil des Bilds) folgen dem bildfüllenden Inhalt
 /// - Zuschnitt, Zensur und Clip-Masken liegen in Quell- bzw. Clipkoordinaten und bleiben
-pub fn reframe(p: &Project, (w2, h2): (u32, u32), fill: bool, measure: Measure) -> Project {
+/// - „Person folgen“: bildfüllende Clips in `focus` ohne eigene Bewegung folgen ihrer Spur ([`follow_keys`])
+pub fn reframe(p: &Project, (w2, h2): (u32, u32), fill: bool, focus: &FocusPaths, measure: Measure) -> Project {
     let mut out = p.clone();
     let (w, h) = (p.settings.width.max(2) as f32, p.settings.height.max(2) as f32);
     let (nw, nh) = (w2.max(2) as f32, h2.max(2) as f32);
@@ -162,6 +219,9 @@ pub fn reframe(p: &Project, (w2, h2): (u32, u32), fill: bool, measure: Measure) 
                 if full_frame(c, (mw, mh), w, h) {
                     let orig = c.clone();
                     base(c, if fill { cover } else { 1.0 });
+                    if let Some(pts) = focus.get(&c.id).filter(|_| fill && !moves(&orig)) {
+                        follow_keys(c, m, (nw, nh), pts);
+                    }
                     if !fill {
                         let shown = c.transform.scale * fit(nw, nh);
                         needs_back |= shown * mw < nw - 1.0 || shown * mh < nh - 1.0;
@@ -300,7 +360,7 @@ pub fn make_short(p: &Project, a: Time, b: Time, name: &str, captions: Option<(&
     for m in &mut out.timeline.markers {
         m.at = m.at - a;
     }
-    let mut out = reframe(&out, (1080, 1920), true, measure);
+    let mut out = reframe(&out, (1080, 1920), true, &FocusPaths::new(), measure);
     if let Some((ids, pre)) = captions {
         for c in out.timeline.tracks.iter_mut().filter(|t| ids.contains(&t.id)).flat_map(|t| t.clips.iter_mut()) {
             if let ClipContent::Text(s) = &mut c.content {
@@ -682,11 +742,11 @@ mod tests {
         let mut t = Track::new(TrackKind::Video);
         t.clips.push(c);
         p.timeline.tracks.push(t);
-        let o = reframe(&p, (1080, 1920), true, &rough);
+        let o = reframe(&p, (1080, 1920), true, &FocusPaths::new(), &rough);
         let r = shown(&o, clip(&o, id), Time::ZERO);
         assert!(covers(&o, r), "Füllen: Balken {r:?}");
         // Einpassen: weichgezeichneter Hintergrund darunter
-        let o = reframe(&p, (1080, 1920), false, &rough);
+        let o = reframe(&p, (1080, 1920), false, &FocusPaths::new(), &rough);
         assert_eq!(o.timeline.tracks.len(), 2);
         assert_eq!(o.timeline.tracks[0].clips[0].id, id.derived(BACK_SALT));
         // Shorts füllen ihn auch
@@ -849,7 +909,7 @@ mod tests {
             ps.apply_aspect(AspectPreset::Ratio(a, b));
             let (w2, h2) = (ps.width, ps.height);
             for fill in [true, false] {
-                let o = reframe(&s.p, (w2, h2), fill, &rough);
+                let o = reframe(&s.p, (w2, h2), fill, &FocusPaths::new(), &rough);
                 let case = format!("{w}×{h} → {w2}×{h2} {}", if fill { "Füllen" } else { "Einpassen" });
                 assert_eq!((o.settings.width, o.settings.height, o.settings.aspect), (w2, h2, AspectPreset::Ratio(a, b)), "{case}");
                 // bildfüllend: bedeckt die Fläche bzw. liegt ganz darin
@@ -915,5 +975,63 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// 16:9-Projekt mit einem bildfüllenden Video (4 s) und einem mit eigenem Schwenk danach
+    fn follow_project() -> (Project, ClipId, ClipId) {
+        let (mut p, mid) = long_project();
+        let a = Clip::new(ClipContent::Media { media: mid, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0));
+        let mut b = Clip::new(ClipContent::Media { media: mid, kind: MediaKind::Video }, Time::from_secs_f64(4.0), Time::from_secs_f64(4.0));
+        b.keyframes.set(Prop::X, Time::ZERO, 0.0);
+        b.keyframes.set(Prop::X, Time::from_secs_f64(4.0), 50.0);
+        let (ia, ib) = (a.id, b.id);
+        let mut t = Track::new(TrackKind::Video);
+        t.clips = vec![a, b];
+        p.timeline.tracks.push(t);
+        (p, ia, ib)
+    }
+
+    /// Person läuft von links (0,2) nach rechts (0,8): 16:9 → 9:16 folgt ihr, das Bild deckt immer
+    #[test]
+    fn follow_person_keeps_the_moving_focus_in_the_frame() {
+        let (p, a, _) = follow_project();
+        let path: Vec<(f64, f32, f32)> = (0..=8).map(|i| (i as f64 * 0.5, 0.2 + 0.075 * i as f32, 0.5)).collect();
+        let o = reframe(&p, (1080, 1920), true, &FocusPaths::from([(a, path.clone())]), &rough);
+        let c = clip(&o, a);
+        for (t, fx, _) in &path {
+            let r = shown(&o, c, Time::from_secs_f64(*t));
+            assert!(covers(&o, r), "{t}: Balken {r:?}");
+            // Punkt der Person im neuen Bild: mittig
+            let x = r[0] + fx * (r[2] - r[0]);
+            assert!(x.abs() < 20.0, "{t}: Person bei {x}");
+        }
+        // Anfang: linkes Drittel des Quellbilds im Bild, Ende: rechtes
+        let (r0, r1) = (shown(&o, c, Time::ZERO), shown(&o, c, Time::from_secs_f64(4.0)));
+        let third = |r: [f32; 4], f: f32| r[0] + f * (r[2] - r[0]);
+        assert!(third(r0, 1.0 / 3.0) > 0.0 && third(r1, 2.0 / 3.0) < 0.0, "{r0:?} {r1:?}");
+    }
+
+    /// Ohne Spur wie „Füllen“; eigene Keyframes bleiben, wie „Füllen“ sie setzt
+    #[test]
+    fn follow_person_without_path_or_on_own_keyframes_is_plain_fill() {
+        let (p, a, b) = follow_project();
+        let plain = reframe(&p, (1080, 1920), true, &FocusPaths::new(), &rough);
+        let path = vec![(0.0, 0.1, 0.5), (4.0, 0.9, 0.5)];
+        let o = reframe(&p, (1080, 1920), true, &FocusPaths::from([(a, vec![]), (b, path)]), &rough);
+        assert_eq!(o, plain);
+        assert_eq!(follow_jobs(&p).iter().map(|j| j.0 .0).collect::<Vec<_>>(), [a], "eigener Schwenk wird nicht analysiert");
+    }
+
+    /// Getrimmter Clip: neuer Schlüssel, die alte Spur passt nicht mehr
+    #[test]
+    fn focus_key_changes_when_the_clip_is_trimmed() {
+        let (mut p, a, _) = follow_project();
+        let k0 = follow_jobs(&p)[0].0.clone();
+        let c = &mut p.timeline.tracks[0].clips[0];
+        c.source_in = Time::from_secs_f64(1.0);
+        let k1 = follow_jobs(&p)[0].0.clone();
+        p.timeline.tracks[0].clips[0].duration = Time::from_secs_f64(3.0);
+        let k2 = follow_jobs(&p)[0].0.clone();
+        assert!(k0 != k1 && k1 != k2 && k0.0 == a && k2.0 == a, "{k0:?} {k1:?} {k2:?}");
     }
 }

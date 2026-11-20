@@ -3528,7 +3528,7 @@ impl eframe::App for App {
         // nur Bilder von Clips, die es noch gibt (sonst zeigt ein leeres Projekt ein altes Bild)
         let tex = main
             .or_else(|| self.project.timeline.tracks.iter().flat_map(|t| &t.clips).find_map(|c| self.frames.get(&c.id).map(|f| (c.id, f))))
-            .map(|(id, (_, t))| (id, t.id(), t.size_vec2()));
+            .map(|(id, (_, t))| (id, t.id(), t.size_vec2(), self.playhead));
         if std::mem::take(&mut self.export.chapter_hint_off) {
             self.settings.chapter_hint = false;
             self.settings.save();
@@ -4341,7 +4341,7 @@ fn download_running_at_a_project_change_is_not_inserted() {
 #[test]
 fn export_reframe_snapshot_is_dropped_with_the_project() {
     let (mut app, _home, _g) = crate::saving::tests::test_app();
-    app.export.framed = Some(((0, (1080, 1920), 0), std::sync::Arc::new(Project::new("Alt"))));
+    app.export.framed = Some(((0, (1080, 1920), 0, 0), std::sync::Arc::new(Project::new("Alt"))));
     app.reset_editor();
     assert!(app.export.framed.is_none());
 }
