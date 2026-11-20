@@ -5,7 +5,7 @@
 //! Analyses run in the background; the result is applied as one undo step.
 //! Pauses, filler words, ducking and punch-in first open the settings window (`quick.rs`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use cl_core::*;
 use eframe::egui;
@@ -478,11 +478,7 @@ impl App {
             .iter()
             .filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")))
         {
-            let dir = crate::paths::data_dir().join("Recordings").join(
-                f.file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-            );
+            let dir = recordings_dir(f);
             if cl_update::extract_zip(f, &dir).is_ok() {
                 let mut found: Vec<PathBuf> = walk_audio(&dir);
                 found.sort();
@@ -815,4 +811,23 @@ mod tests {
         assert_eq!(p.source_time(p.start), c.source_time(s(3.0)));
         assert_eq!(p.source_in, s(4.0));
     }
+}
+
+/// Fresh folder `Recordings/<zip name>` (` (2)` … when taken): unpacking truncates files, an
+/// earlier import with the same name must stay intact.
+fn recordings_dir(zip: &Path) -> PathBuf {
+    let stem = zip.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    crate::library::unique(&crate::paths::data_dir().join("Recordings"), stem)
+}
+
+#[test]
+fn second_zip_import_does_not_overwrite_the_first() {
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", home.path());
+    let first = recordings_dir(Path::new("C:/x/Anruf.zip"));
+    assert_eq!(first, home.path().join("Recordings").join("Anruf"));
+    std::fs::create_dir_all(&first).unwrap();
+    let second = recordings_dir(Path::new("D:/y/Anruf.zip"));
+    assert!(second != first && !second.exists(), "{}", second.display());
 }
