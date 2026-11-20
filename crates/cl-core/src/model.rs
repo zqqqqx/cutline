@@ -114,6 +114,9 @@ impl Project {
         if p.schema_version > PROJECT_SCHEMA_VERSION {
             return Err(newer());
         }
+        for t in &mut p.timeline.tracks {
+            t.clips.retain_mut(Clip::sanitize_times);
+        }
         // bring broken values (hand edits, foreign tools) to valid ones; valid ones stay
         if !p.settings.valid() {
             let s = &mut p.settings;
@@ -466,6 +469,15 @@ fn yes() -> bool {
 }
 
 impl Clip {
+    /// Times from outside (files, MCP, plugins): nothing before 0. `false` if the clip cannot
+    /// exist (duration not above 0). `Time::LIMIT` is only checked for new clips (`AddClip`):
+    /// edits can push later clips past it, and loading must not change such a timeline.
+    pub fn sanitize_times(&mut self) -> bool {
+        self.start = Time(self.start.0.max(0));
+        self.source_in = Time(self.source_in.0.max(0));
+        self.duration > Time::ZERO
+    }
+
     pub fn new(content: ClipContent, start: Time, duration: Time) -> Self {
         Self {
             id: ClipId::new(),

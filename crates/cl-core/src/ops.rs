@@ -966,11 +966,9 @@ fn after_change(p: &mut Project, ti: usize) {
 
 /// `home`: track the clip already was on (move) – the kind check does not apply there.
 fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Option<TrackId>) -> Result<OpOutput> {
-    // values from outside (MCP, plugins): nothing before 0, nothing beyond Time::LIMIT
-    clip.start = Time(clip.start.0.max(0));
-    clip.source_in = Time(clip.source_in.0.max(0));
     clip.crop = clip.crop.clamped();
-    if clip.duration <= Time::ZERO || clip.duration > Time::LIMIT || clip.start > Time::LIMIT {
+    // values from outside (MCP, plugins): nothing before 0, nothing beyond Time::LIMIT
+    if !clip.sanitize_times() || clip.duration > Time::LIMIT || clip.start > Time::LIMIT {
         return Err(CoreError::InvalidDuration);
     }
     let len = source_length(p, &clip);

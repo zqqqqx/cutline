@@ -2123,7 +2123,7 @@ impl App {
         if !needs_save(self.revision, self.saved_revision, self.project_path.is_some(), &self.project) {
             return;
         }
-        if self.doc.lock().unwrap().revision() != self.revision || self.saver.autosave_paused() {
+        if self.doc.lock().unwrap_or_else(|e| e.into_inner()).revision() != self.revision || self.saver.autosave_paused() {
             return;
         }
         if self.locked_out.is_some() && self.locked_out == self.project_path {
@@ -2230,7 +2230,7 @@ impl App {
     /// Put a project into the editor. It counts as unsaved (a new `Document` starts
     /// at revision 0 again – otherwise a restore would be taken as saved).
     pub fn set_doc(&mut self, proj: Project) {
-        *self.doc.lock().unwrap() = Document::new(proj);
+        *self.doc.lock().unwrap_or_else(|e| e.into_inner()) = Document::new(proj);
         self.tasks.next_generation();
         self.drops.list.clear();
         self.revision = u64::MAX;

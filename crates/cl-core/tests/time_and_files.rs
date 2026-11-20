@@ -287,3 +287,24 @@ fn invalid_settings_are_rejected_and_repaired_on_load() {
     assert!(back.settings.valid());
     assert_eq!(back.settings.height, 1080, "valid values stay");
 }
+
+/// A clip with a duration of 0 or less (hand edit, foreign tool) is dropped on load and broken
+/// start times are clamped; editing the rest must not panic (fades clamp to half the length).
+#[test]
+fn clips_with_impossible_times_are_dropped_on_load() {
+    let mut v: serde_json::Value = serde_json::from_str(&full_project_json()).unwrap();
+    let clips = v["timeline"]["tracks"][0]["clips"].as_array_mut().unwrap();
+    let n = clips.len();
+    assert!(n >= 2);
+    clips[0]["duration"] = (-5_000_000).into();
+    clips[1]["start"] = (-7).into();
+    clips[1]["source_in"] = (-3).into();
+    let p = Project::from_json(&v.to_string()).unwrap();
+    let t = &p.timeline.tracks[0];
+    assert_eq!(t.clips.len(), n - 1);
+    assert!(t.clips.iter().all(|c| c.duration > Time::ZERO && c.start >= Time::ZERO && c.source_in >= Time::ZERO));
+    let mut d = Document::new(p);
+    for c in d.project().timeline.tracks[0].clips.clone() {
+        apply(&mut d, EditOp::SetFades { clip: c.id, fade_in: Time::from_secs_f64(1.0), fade_out: Time::from_secs_f64(1.0) });
+    }
+}
