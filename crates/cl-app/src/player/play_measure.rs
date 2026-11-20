@@ -166,6 +166,25 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
     let mut paused_since: Option<f64> = None;
     let mut resumed: Option<f64> = None;
     let mut dragging = false;
+    // `CUTLINE_QA_PREROLL`: Vorlauf wie im Stand der App (`App::update_preroll`) – Strom der
+    // untersten Ebene vorab öffnen, ruhen lassen, bei Play anhängen
+    let mut preroll: Option<(PrerollSpec, f64, cl_media::FrameStream)> = None;
+    if std::env::var_os("CUTLINE_QA_PREROLL").is_some() {
+        let ns = needs(&project, &layers_in(&project, None, start), start, false, |_| {});
+        if let Some(n) = ns.iter().find(|n| n.prefetch.is_none() && n.overlay.is_none() && streamable(&n.clip)) {
+            let (div, half) = steps[0];
+            let sfps = if half { Rational::new(fps.num, fps.den * 2) } else { fps };
+            let fxh = fx_hash_of(&n.clip);
+            let (key, w, h) = stream_spec(n.id, &n.clip, &n.media, canvas, div as f32, sfps, fxh);
+            let alias = stream_alias(&n.clip, &n.media, (w, h), sfps, fxh);
+            let spec = PrerollSpec { id: lid(n.id), key, alias, at: start, revision };
+            let o = crate::playcore::Open { id: spec.id, key, at: start, gen: u64::MAX, seq: 0 };
+            starter.send(open_job(o, &n.clip, &n.media, n.media.path.clone(), (w, h), sfps, alias));
+            let (_, f, _, s) = starter.rx.recv().expect("Starter");
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            preroll = s.map(|s| (spec, f, s));
+        }
+    }
     core.play(start, revision, now());
     let t_play = now();
     while now() - t_play < secs {
@@ -365,7 +384,11 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
                 }
                 let alias = stream_alias(c, m, (w, h), sfps, fx_hash_of(c));
                 let want = Want { id: lid(n.id), key, start: n.prefetch.unwrap_or(playhead), end: c.end(), prefetch: n.prefetch.is_some(), alias };
-                if let Some(o) = core.want(&want, t) {
+                let o = core.want(&want, t);
+                let pre = o.and_then(|o| preroll.take_if(|p| preroll_fits(&p.0, &o, alias, revision)));
+                if let (Some(o), Some((_, f, s))) = (o, pre) {
+                    core.attach_alias(o, f, s, t, alias);
+                } else if let Some(o) = o {
                     let p = path();
                     run.proxy |= p != m.path;
                     let j = open_job(o, c, m, p, (w, h), sfps, alias);

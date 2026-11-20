@@ -209,6 +209,8 @@ pub struct App {
     pub ext_full: bool,
     /// Vorschaugröße beim Start der Wiedergabe (bleibt bis zum Anhalten)
     pub play_canvas_px: Option<egui::Vec2>,
+    /// im Stand vorab geöffneter Strom einer schweren Ebene (siehe `App::update_preroll`)
+    pub preroll: Option<crate::player::Preroll>,
     /// Aufteilung (Medien-, Inspektor-Breite, Zeitleisten-Höhe) als Anteil des Fensters
     pub layout_frac: (f32, f32, f32),
     pub layout_screen: Option<egui::Rect>,
@@ -481,6 +483,7 @@ impl App {
             ext_preview: false,
             ext_full: false,
             play_canvas_px: None,
+            preroll: None,
             layout_frac,
             layout_screen: None,
             onboard,
