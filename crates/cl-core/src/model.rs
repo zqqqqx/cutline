@@ -45,7 +45,12 @@ impl ClipId {
 id_type!(TrackId);
 id_type!(MediaId);
 
+/// Raise this whenever a field is added whose loss would change the user's edit: older versions
+/// then refuse the file instead of loading it and saving it back without that field.
 pub const PROJECT_SCHEMA_VERSION: u32 = 1;
+
+/// Load error for a project saved by a newer Cutline (the UI translates it as a whole).
+pub const NEWER_PROJECT: &str = "Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
@@ -96,7 +101,19 @@ impl Project {
     }
 
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        let mut p: Self = serde_json::from_str(s)?;
+        #[derive(Deserialize)]
+        struct Version {
+            schema_version: u32,
+        }
+        let newer = || <serde_json::Error as serde::de::Error>::custom(NEWER_PROJECT);
+        // a newer file may also fail to parse here: then the version is the better message
+        let mut p: Self = serde_json::from_str(s).map_err(|e| match serde_json::from_str::<Version>(s) {
+            Ok(v) if v.schema_version > PROJECT_SCHEMA_VERSION => newer(),
+            _ => e,
+        })?;
+        if p.schema_version > PROJECT_SCHEMA_VERSION {
+            return Err(newer());
+        }
         // bring broken values (hand edits, foreign tools) to valid ones; valid ones stay
         if !p.settings.valid() {
             let s = &mut p.settings;

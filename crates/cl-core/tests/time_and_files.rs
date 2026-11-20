@@ -210,6 +210,12 @@ fn unknown_fields_and_old_files_still_load() {
     v2["timeline"]["tracks"][0]["zukunft"] = 1.into();
     v2["timeline"]["tracks"][0]["clips"][0]["zukunft"] = 1.into();
     assert_eq!(Project::from_json(&v2.to_string()).unwrap(), p);
+    // a file from a newer version is refused instead of losing its new fields on the next save
+    v2["schema_version"] = (cl_core::PROJECT_SCHEMA_VERSION + 1).into();
+    let e = Project::from_json(&v2.to_string()).unwrap_err();
+    assert_eq!(e.to_string(), cl_core::NEWER_PROJECT);
+    v2["timeline"] = "neu".into();
+    assert_eq!(Project::from_json(&v2.to_string()).unwrap_err().to_string(), cl_core::NEWER_PROJECT);
     let _ = Project::from_json(&v.to_string()); // may fail, but must not crash
     // old files: all fields with default value are missing
     let mut old: serde_json::Value = serde_json::from_str(&json).unwrap();
