@@ -1,6 +1,6 @@
-//! Hintergrund entfernen: RobustVideoMatting (rekurrent, zeitlich stabil) erzeugt aus
-//! einem Video ein Graustufen-Maskenvideo (FFV1, verlustfrei, jedes Bild ein Schlüsselbild).
-//! Vorschau und Export legen es per `alphamerge` als Alphakanal auf den Clip.
+//! Background removal: RobustVideoMatting (recurrent, temporally stable) creates
+//! a grayscale mask video from a video (FFV1, lossless, every frame a keyframe).
+//! Preview and export put it on the clip as alpha channel via `alphamerge`.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -11,10 +11,10 @@ use ort::value::Tensor;
 
 use crate::{session, Models};
 
-/// Verarbeitungsgröße (längste Kante)
+/// Processing size (longest edge)
 const WORK: u32 = 640;
 
-/// Maskenvideo für die ganze Datei `src` nach `out` schreiben.
+/// Write the mask video for the whole file `src` to `out`.
 pub fn matte(
     models: &Models,
     src: &Path,
@@ -176,7 +176,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("v.mp4");
-        // „Person“ als heller Kreis vor bewegtem Hintergrund
+        // "person" as a bright circle in front of a moving background
         assert!(cl_media::ffmpeg_command()
             .unwrap()
             .args([

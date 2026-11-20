@@ -1,9 +1,9 @@
-//! Szenenwechsel erkennen (FFmpeg-Szenenwert je Bild).
+//! Detect scene changes (FFmpeg scene score per frame).
 
 use std::path::Path;
 use std::process::Stdio;
 
-/// Zeiten (s, relativ zu `start`) mit Szenenwechsel. `sensitivity` 0…1 (höher = mehr Schnitte).
+/// Times (s, relative to `start`) with a scene change. `sensitivity` 0…1 (higher = more cuts).
 pub fn detect(path: &Path, start: f64, dur: f64, sensitivity: f32) -> Result<Vec<f64>, String> {
     let thr = (0.55 - 0.45 * sensitivity.clamp(0.0, 1.0)).max(0.05);
     let out = cl_media::ffmpeg_command()
@@ -58,7 +58,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let v = dir.path().join("cuts.mp4");
-        // drei Szenen: rot (0–1 s), Testbild (1–2 s), blau (2–3 s)
+        // three scenes: red (0–1 s), test image (1–2 s), blue (2–3 s)
         let st = cl_media::ffmpeg_command()
             .unwrap()
             .args([
