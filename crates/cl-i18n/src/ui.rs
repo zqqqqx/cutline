@@ -1,10 +1,10 @@
-//! Laufzeit-Übersetzung der Oberflächentexte.
+//! Runtime translation of the UI texts.
 //!
-//! Die Oberfläche ist auf Deutsch geschrieben; `tr()` schlägt jeden sichtbaren Text in
-//! `locales/ui.en.tsv` nach (`deutsch<TAB>englisch`). Platzhalter `{}` stehen für
-//! beliebige Werte (Zahlen, Namen) und werden in derselben Reihenfolge übernommen;
-//! `{1}`, `{2}` … im englischen Text erlauben eine andere Reihenfolge.
-//! Icons aus der Private Use Area am Anfang/Ende bleiben unverändert.
+//! The UI is written in German; `tr()` looks up every visible text in
+//! `locales/ui.en.tsv` (`german<TAB>english`). Placeholders `{}` stand for
+//! arbitrary values (numbers, names) and are carried over in the same order;
+//! `{1}`, `{2}` … in the English text allow a different order.
+//! Icons from the Private Use Area at the start/end stay unchanged.
 
 use crate::Lang;
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ const EN_TSV: &str = include_str!("../locales/ui.en.tsv");
 
 static LANG: AtomicU8 = AtomicU8::new(0);
 
-/// Sprache für `tr()` setzen (wird von `I18n::new`/`set_lang` aufgerufen).
+/// Set the language for `tr()` (called by `I18n::new`/`set_lang`).
 pub fn set_ui_lang(lang: Lang) {
     LANG.store(
         match lang {
@@ -40,7 +40,7 @@ pub fn ui_lang() -> Lang {
 
 struct Dict {
     exact: HashMap<&'static str, &'static str>,
-    /// (Teile zwischen den Platzhaltern, englische Vorlage)
+    /// (parts between the placeholders, English template)
     templates: Vec<(Vec<&'static str>, &'static str)>,
 }
 
@@ -65,7 +65,7 @@ fn parse(src: &'static str) -> Dict {
             exact.insert(de, en);
         }
     }
-    // Längere (spezifischere) Vorlagen zuerst
+    // longer (more specific) templates first
     templates.sort_by_key(|(parts, _): &(Vec<&str>, &str)| {
         std::cmp::Reverse(parts.iter().map(|p| p.len()).sum::<usize>())
     });
@@ -80,7 +80,7 @@ fn is_icon(c: char) -> bool {
         || ('\u{F0000}'..='\u{FFFFD}').contains(&c)
 }
 
-/// Übersetzt einen sichtbaren Oberflächentext in die eingestellte Sprache.
+/// Translates a visible UI text into the selected language.
 pub fn tr(s: impl AsRef<str>) -> String {
     let s = s.as_ref();
     match ui_lang() {
@@ -108,7 +108,7 @@ fn translate(s: &str) -> String {
 }
 
 fn lookup(s: &str) -> String {
-    // Icons und Leerraum am Rand abtrennen
+    // split off icons and whitespace at the edges
     let start = s
         .char_indices()
         .find(|(_, c)| !is_icon(*c) && !c.is_whitespace())
@@ -133,17 +133,17 @@ fn lookup(s: &str) -> String {
             return format!("{pre}{}{post}", fill(en, &vals));
         }
     }
-    // Mehrzeilige Texte zeilenweise
+    // multi-line texts line by line
     if core.contains('\n') {
         let lines: Vec<String> = core.split('\n').map(lookup).collect();
         return format!("{pre}{}{post}", lines.join("\n"));
     }
-    // „Teil · Teil“ einzeln übersetzen
+    // translate "part · part" separately
     if core.contains(" · ") {
         let segs: Vec<String> = core.split(" · ").map(lookup).collect();
         return format!("{pre}{}{post}", segs.join(" · "));
     }
-    // „Text  (Kürzel)“: beide Teile einzeln
+    // "text  (shortcut)": both parts separately
     if let (Some(open), true) = (core.rfind(" ("), core.ends_with(')')) {
         let head = core[..open].trim_end();
         let gap = &core[head.len()..open + 1];
@@ -152,7 +152,7 @@ fn lookup(s: &str) -> String {
             return format!("{pre}{}{gap}({}){post}", lookup(head), lookup(inner));
         }
     }
-    // Tastenkürzel
+    // keyboard shortcuts
     const KEYS: [(&str, &str); 8] = [
         ("Strg", "Ctrl"),
         ("Umschalt", "Shift"),
@@ -176,7 +176,7 @@ fn lookup(s: &str) -> String {
     s.to_string()
 }
 
-/// Passt `s` auf eine Vorlage mit Platzhaltern; gibt die eingesetzten Werte zurück.
+/// Matches `s` against a template with placeholders; returns the inserted values.
 fn match_template<'a>(s: &'a str, parts: &[&str]) -> Option<Vec<&'a str>> {
     let first = parts[0];
     let last = parts[parts.len() - 1];
@@ -201,7 +201,7 @@ fn match_template<'a>(s: &'a str, parts: &[&str]) -> Option<Vec<&'a str>> {
             pos += rel + p.len();
         }
     }
-    // Werte enthalten keine weiteren Wörter der Vorlage, dürfen aber nicht leer sein
+    // values contain no further words of the template, but must not be empty
     if vals.iter().any(|v| v.is_empty()) {
         return None;
     }
@@ -255,7 +255,7 @@ fn report_missing(s: &str) {
     }
 }
 
-/// Alle deutschen Schlüssel (für Tests).
+/// All German keys (for tests).
 pub fn entries() -> Vec<(&'static str, &'static str)> {
     EN_TSV
         .lines()
@@ -285,13 +285,13 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for (de, en) in entries() {
             assert!(seen.insert(de), "doppelt: {de}");
-            assert!(!en.trim().is_empty(), "leer: {de}");
+            assert!(!en.trim().is_empty(), "empty: {de}");
             assert_eq!(
                 de.matches("{}").count(),
                 en.matches('{').count(),
                 "Platzhalter: {de}"
             );
-            // eine Schreibweise: amerikanisch (color, gray, canceled …)
+            // one spelling: American (color, gray, canceled …)
             let low = en.to_lowercase();
             for brit in ["colour", "grey", "centre", "cancelled", "favourite", "behaviour", "licence"] {
                 assert!(!low.contains(brit), "britisch „{brit}“: {en}");
@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(translate("1 Highlight als Marker gesetzt"), "1 highlight added as a marker");
         assert_eq!(translate("1 Pause entfernt (2.5 s)"), "1 pause removed (2.5 s)");
         assert_eq!(translate("vor 3 Min."), "3 min ago");
-        // Statuszeile: „Gespeichert “ + bereits übersetzte Zeitangabe
+        // status line: „Gespeichert “ + an already translated time
         assert_eq!(translate(&format!("\u{e0f0} Gespeichert {}", translate("vor 1 Min."))), "\u{e0f0} Saved 1 min ago");
         assert_eq!(translate(&format!("Gespeichert {}", translate("gerade eben"))), "Saved just now");
         assert_eq!(
@@ -320,7 +320,7 @@ mod tests {
             "Abbrechen · Abbrechen", "Strg+Entf", "Pos1", "🎬", "مرحبا", "Ä (", "x (y)", "{}", "{", "}", "{1}", "%s"] {
             let _ = translate(s);
         }
-        // Zufallszeichenketten aus Wörterbuchteilen, Mehrbyte-Zeichen und Sonderzeichen
+        // random strings from dictionary parts, multibyte characters and special characters
         let parts: Vec<&str> = entries().iter().take(400).map(|(de, _)| *de).collect();
         let extra = ["🎬", "ä", " ", "  ", "\n", " · ", " (", ")", "{}", "\u{e0f0}", "3", "‰", "\u{202e}"];
         let mut x: u64 = 0x2545_f491_4f6c_dd1d;
@@ -334,7 +334,7 @@ mod tests {
                     s.push_str(extra[(x / 3 % extra.len() as u64) as usize]);
                 } else {
                     let p = parts[(x / 3 % parts.len() as u64) as usize];
-                    // auch mitten im Wort abschneiden (an Zeichengrenzen)
+                    // also cut in the middle of a word (at character boundaries)
                     let cut = p.char_indices().nth((x % 7) as usize).map(|(i, _)| i).unwrap_or(p.len());
                     s.push_str(if x.is_multiple_of(2) { p } else { &p[..cut] });
                 }
@@ -346,12 +346,12 @@ mod tests {
     #[test]
     fn templates_with_multibyte_values() {
         assert_eq!(match_template("🎬 Clips gelöscht", &["", " Clips gelöscht"]), Some(vec!["🎬"]));
-        assert_eq!(match_template(" Clips gelöscht", &["", " Clips gelöscht"]), None, "leerer Wert");
+        assert_eq!(match_template(" Clips gelöscht", &["", " Clips gelöscht"]), None, "empty value");
         assert_eq!(match_template("x", &["xy", "z"]), None);
         assert_eq!(match_template("aXbYc", &["a", "b", "c"]), Some(vec!["X", "Y"]));
         assert_eq!(match_template("abc", &["a", "", "c"]), None);
         assert_eq!(fill("{3} {} {x} {", &["a"]), "{3} a {x} {");
-        assert_eq!(fill("{0}", &["a"]), "a", "0 zählt wie 1");
+        assert_eq!(fill("{0}", &["a"]), "a", "0 counts like 1");
         assert_eq!(fill("", &["a"]), "");
         assert_eq!(translate("\u{e0f0}"), "\u{e0f0}");
         assert_eq!(translate("  Abbrechen  "), "  Cancel  ");

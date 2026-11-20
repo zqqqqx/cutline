@@ -1,9 +1,9 @@
-//! Übersetzungen mit Project Fluent.
+//! Translations with Project Fluent.
 //!
-//! - Echte Plural- und Grammatikregeln statt String-Tabellen
-//! - Glossar-Test verhindert bekannte Fehlübersetzungen
-//! - Pseudo-Lokalisierung (`qps`) macht Texte ~40 % länger, damit abgeschnittene
-//!   Labels schon in der Entwicklung auffallen
+//! - Real plural and grammar rules instead of string tables
+//! - A glossary test prevents known mistranslations
+//! - Pseudo-localization (`qps`) makes texts ~40 % longer so truncated
+//!   labels show up during development already
 
 use fluent_bundle::concurrent::FluentBundle;
 use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
@@ -21,7 +21,7 @@ const EN: &str = include_str!("../locales/en.ftl");
 pub enum Lang {
     De,
     En,
-    /// Pseudo-Lokalisierung für Längen- und Kodierungstests.
+    /// Pseudo-localization for length and encoding tests.
     Pseudo,
 }
 
@@ -41,7 +41,7 @@ impl Lang {
             Lang::Pseudo => "Pseudo (Test)",
         }
     }
-    /// Aus Systemsprache, z. B. "de-DE" → De.
+    /// From the system language, e.g. "de-DE" → De.
     pub fn from_locale(s: &str) -> Lang {
         if s.to_ascii_lowercase().starts_with("de") {
             Lang::De
@@ -108,7 +108,7 @@ impl I18n {
         }
     }
 
-    /// Übersetzt `key`. Fehlende Schlüssel erscheinen sichtbar als `⟦key⟧`.
+    /// Translates `key`. Missing keys show up visibly as `⟦key⟧`.
     pub fn t(&self, key: &str) -> String {
         self.format(key, None)
     }
@@ -146,7 +146,7 @@ impl I18n {
     }
 }
 
-/// Alle Schlüssel einer FTL-Quelle (für Vollständigkeits-Tests).
+/// All keys of an FTL source (for completeness tests).
 pub fn keys(src: &str) -> Vec<String> {
     src.lines()
         .filter(|l| !l.starts_with(' ') && !l.starts_with('#'))
@@ -177,12 +177,12 @@ mod tests {
         assert_eq!(
             de.difference(&en).collect::<Vec<_>>(),
             Vec::<&String>::new(),
-            "fehlt in en"
+            "missing in en"
         );
         assert_eq!(
             en.difference(&de).collect::<Vec<_>>(),
             Vec::<&String>::new(),
-            "fehlt in de"
+            "missing in de"
         );
     }
 
@@ -206,7 +206,7 @@ mod tests {
         assert_eq!(de.t_num("files-importing", "count", 1), "Eine Datei wird importiert");
         assert_eq!(en.t_num("files-importing", "count", 3), "Importing 3 files");
         assert_eq!(en.t("does-not-exist"), "⟦does-not-exist⟧");
-        // Meldungen der Werkzeuge: Einzahl ohne „1 …n“
+        // tool messages: singular without „1 …n“
         assert_eq!(de.t_num("sync-done", "count", 1), "Eine Aufnahme synchronisiert");
         assert_eq!(de.t_num("sync-done", "count", 3), "3 Aufnahmen synchronisiert");
         assert_eq!(en.t_num("recap-done", "count", 1), "Recap created from one marker");
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(de.t_args("music-ducked", &db), "Musik an einer Stelle abgesenkt (−12 dB)");
     }
 
-    /// Bekannte Fehlübersetzungen dürfen bei uns nie auftauchen.
+    /// Known mistranslations must never appear here.
     #[test]
     fn german_glossary() {
         let forbidden = [
@@ -227,7 +227,7 @@ mod tests {
         ];
         for line in DE.lines().filter(|l| !l.starts_with('#')) {
             for f in forbidden {
-                assert!(!line.contains(f), "Glossar-Verstoß „{f}“ in: {line}");
+                assert!(!line.contains(f), "glossary violation „{f}“ in: {line}");
             }
         }
     }
@@ -252,7 +252,7 @@ mod tests {
             let s = de.t_num("fonts-count", "count", n);
             assert!(!s.contains('⟦') && !s.is_empty(), "{n}: {s}");
         }
-        // falscher Argumentname: kein Absturz, Text bleibt lesbar
+        // wrong argument name: no crash, the text stays readable
         assert!(!de.t_num("fonts-count", "falsch", 3).is_empty());
         assert!(!de.t_str("font-imported", "family", "🎬 {x} „").is_empty());
         assert_eq!(de.t(""), "⟦⟧");
@@ -262,6 +262,6 @@ mod tests {
         assert_eq!(i.lang(), Lang::De);
         assert_eq!(pseudo(""), "[]");
         assert!(pseudo("äbc").starts_with("[äbc"));
-        I18n::new(Lang::De); // globale Sprache für andere Tests zurücksetzen
+        I18n::new(Lang::De); // reset the global language for other tests
     }
 }
