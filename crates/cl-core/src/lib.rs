@@ -1,8 +1,8 @@
-//! Cutline-Kern: Datenmodell, Edit-Operationen und Undo-Verlauf.
+//! Cutline core: data model, edit operations and undo history.
 //!
-//! Jede Änderung am Projekt läuft über [`EditOp`] und [`Document::apply`], egal ob sie
-//! aus der UI, einem Plugin oder dem MCP-Endpunkt kommt. Dadurch ist alles rückgängig
-//! machbar und im Verlauf mit seiner Quelle sichtbar.
+//! Every change to the project goes through [`EditOp`] and [`Document::apply`], whether it
+//! comes from the UI, a plugin or the MCP endpoint. That makes everything undoable
+//! and visible in the history with its source.
 
 mod document;
 mod fx;

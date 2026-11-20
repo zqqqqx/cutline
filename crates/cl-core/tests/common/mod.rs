@@ -1,4 +1,4 @@
-//! Gemeinsame Helfer der Kern-Tests: Testprojekt, Zufallszahlen, Invarianten.
+//! Shared helpers of the core tests: test project, random numbers, invariants.
 #![allow(dead_code)]
 
 use cl_core::*;
@@ -9,7 +9,7 @@ pub fn s(x: f64) -> Time {
     Time::from_secs_f64(x)
 }
 
-/// Kleiner linearer Kongruenzgenerator (feste Seeds, keine Abhängigkeit).
+/// Small linear congruential generator (fixed seeds, no dependency).
 pub struct Lcg(pub u64);
 impl Lcg {
     pub fn next(&mut self) -> u64 {
@@ -29,7 +29,7 @@ impl Lcg {
     pub fn chance(&mut self, pct: u64) -> bool {
         self.next() % 100 < pct
     }
-    /// Zufallszahl in [a, b)
+    /// Random number in [a, b)
     pub fn range(&mut self, a: f64, b: f64) -> f64 {
         a + (self.next() % 1_000_000) as f64 / 1_000_000.0 * (b - a)
     }
@@ -67,11 +67,11 @@ pub fn apply(d: &mut Document, op: EditOp) -> OpOutput {
 pub fn clip_out(o: OpOutput) -> ClipId {
     match o {
         OpOutput::Clip(c) => c,
-        o => panic!("kein Clip: {o:?}"),
+        o => panic!("no clip: {o:?}"),
     }
 }
 
-/// Projekt mit allen Clip-Arten: Hauptspur (2 Videos + Bild), Ton, Text, Effekt, Filter, Marker.
+/// Project with all clip kinds: main track (2 videos + image), audio, text, effect, filter, markers.
 pub struct Rich {
     pub doc: Document,
     pub video: MediaRef,
@@ -127,7 +127,7 @@ pub fn rich() -> Rich {
     Rich { doc, video, audio, image, v1, v2, img, a1, t1, t2, fx }
 }
 
-/// Invarianten eines gültigen Projekts. `ctx` erscheint in der Fehlermeldung.
+/// Invariants of a valid project. `ctx` appears in the failure message.
 pub fn check(p: &Project, ctx: &str) {
     let mut clip_ids = HashSet::new();
     let mut track_ids = HashSet::new();
@@ -135,29 +135,29 @@ pub fn check(p: &Project, ctx: &str) {
     for t in &p.timeline.tracks {
         assert!(track_ids.insert(t.id), "{ctx}: Spur-ID doppelt");
         if t.main {
-            assert_eq!(t.kind, TrackKind::Video, "{ctx}: Hauptspur ist keine Bildspur");
+            assert_eq!(t.kind, TrackKind::Video, "{ctx}: main track is not a visual track");
         }
         for c in &t.clips {
             assert!(clip_ids.insert(c.id), "{ctx}: Clip-ID {} doppelt", c.id);
-            assert_eq!(c.kind(), t.kind, "{ctx}: Clip-Art passt nicht zur Spur");
+            assert_eq!(c.kind(), t.kind, "{ctx}: clip kind does not match the track");
             assert!(c.start >= Time::ZERO, "{ctx}: negativer Start {:?}", c.start);
-            assert!(c.duration > Time::ZERO, "{ctx}: Länge {:?}", c.duration);
+            assert!(c.duration > Time::ZERO, "{ctx}: length {:?}", c.duration);
             assert!(c.source_in >= Time::ZERO, "{ctx}: negativer Quellbeginn {:?}", c.source_in);
             for v in [c.speed, c.opacity, c.volume_db, c.transform.x, c.transform.y, c.transform.scale] {
-                assert!(v.is_finite(), "{ctx}: Zahl nicht endlich");
+                assert!(v.is_finite(), "{ctx}: number not finite");
             }
             assert!((0.0..=1.0).contains(&c.opacity), "{ctx}: Deckkraft {}", c.opacity);
             let k = c.crop;
             assert!(k.left.min(k.right).min(k.top).min(k.bottom) >= 0.0, "{ctx}: Zuschnitt {k:?}");
             assert!(k.left + k.right <= 0.981 && k.top + k.bottom <= 0.981, "{ctx}: Zuschnitt {k:?}");
             if let ClipContent::Media { media, .. } = &c.content {
-                assert!(p.media(*media).is_some(), "{ctx}: Clip ohne Medium");
+                assert!(p.media(*media).is_some(), "{ctx}: clip without media");
             }
         }
         for w in t.clips.windows(2) {
             assert!(
                 w[0].end() <= w[1].start,
-                "{ctx}: Überlappung auf {:?}-Spur (main={}): {:?}..{:?} / {:?}..{:?}",
+                "{ctx}: overlap on {:?} track (main={}): {:?}..{:?} / {:?}..{:?}",
                 t.kind,
                 t.main,
                 w[0].start,
@@ -171,5 +171,5 @@ pub fn check(p: &Project, ctx: &str) {
 }
 
 pub fn roundtrip(p: &Project) -> Project {
-    Project::from_json(&p.to_json()).expect("gespeichertes Projekt lädt wieder")
+    Project::from_json(&p.to_json()).expect("saved project loads again")
 }

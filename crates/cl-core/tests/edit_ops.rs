@@ -1,5 +1,5 @@
-//! Jede EditOp-Variante: anwenden, Rückgängig, Wiederholen ergeben exakt Ausgangs- bzw.
-//! Zielzustand; dazu gezielte Randfälle und Fehler, die hier gefunden wurden.
+//! Every EditOp variant: apply, undo, redo yield exactly the initial or
+//! target state; plus targeted edge cases and bugs found here.
 
 mod common;
 use cl_core::*;
@@ -7,7 +7,7 @@ use common::*;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-/// Erzwingt beim Hinzufügen einer Variante eine Erweiterung dieses Tests (kein `_`-Zweig).
+/// Forces an extension of this test when a variant is added (no `_` arm).
 fn variant(op: &EditOp) -> &'static str {
     match op {
         EditOp::ImportMedia { .. } => "ImportMedia",
@@ -144,20 +144,20 @@ fn every_op_applies_undoes_and_redoes_exactly() {
         let undo_len = d.undo_entries().len();
         apply(&mut d, op.clone());
         let after = d.project().clone();
-        assert_ne!(after, before, "{name} hat nichts geändert");
+        assert_ne!(after, before, "{name} changed nothing");
         check(&after, name);
         assert_eq!(roundtrip(&after), after, "{name}: Speichern+Laden");
-        // Op selbst ist serialisierbar (MCP/Plugins schicken JSON)
+        // the op itself is serializable (MCP/plugins send JSON)
         let back: EditOp = serde_json::from_str(&serde_json::to_string(&op).unwrap()).unwrap();
         assert_eq!(back, op, "{name}: Op-JSON");
-        assert_eq!(d.undo_entries().len(), undo_len + 1, "{name}: ein Verlaufsschritt");
+        assert_eq!(d.undo_entries().len(), undo_len + 1, "{name}: one history step");
         assert_eq!(d.undo().unwrap(), op.label(), "{name}");
-        assert_eq!(d.project(), &before, "{name}: Rückgängig");
+        assert_eq!(d.project(), &before, "{name}: undo");
         d.redo().unwrap();
         assert_eq!(d.project(), &after, "{name}: Wiederholen");
     }
     assert_eq!(seen.len(), VARIANTS, "jede Variante einmal: {seen:?}");
-    // Ganz zurück ergibt das Ausgangsprojekt, ganz vor wieder den Endstand
+    // all the way back gives the initial project, all the way forward the final state again
     let end = d.project().clone();
     let n = d.undo_entries().len();
     assert_eq!(d.step(-(n as isize)), n);
@@ -200,12 +200,12 @@ fn same_op_twice_deleted_clips_and_missing_tracks_fail_cleanly() {
         EditOp::MoveClip { clip: r.t2, track: Some(gone), start: s(0.0) },
         EditOp::RelinkMedia { media: MediaId::new(), path: PathBuf::new() },
         EditOp::AddClip { track: None, clip: media_clip(&media(MediaKind::Video, 1.0), 0.0, 1.0) },
-        // Batch: zweite Op scheitert → auch die erste ist zurückgenommen
+        // batch: second op fails → the first one is taken back too
         EditOp::Batch { label: String::new(), ops: vec![EditOp::Rename { name: "x".into() }, EditOp::RemoveClip { clip: r.t1 }] },
     ] {
         let name = format!("{op:?}");
         assert!(d.apply(op, OpSource::Ui).is_err(), "{name}");
-        assert_eq!(d.project(), &snap, "{name} hat das Projekt verändert");
+        assert_eq!(d.project(), &snap, "{name} changed the project");
         assert_eq!(d.undo_entries().len(), hist, "{name} steht im Verlauf");
     }
 }
@@ -218,10 +218,10 @@ fn undo_and_redo_on_empty_history() {
     assert_eq!(d.step(-5), 0);
     assert_eq!(d.step(5), 0);
     assert_eq!(d.revision(), 0);
-    // Batch ohne Ops ist gültig, ändert aber nichts: kein Verlaufsschritt
+    // batch without ops is valid but changes nothing: no history step
     apply(&mut d, EditOp::Batch { label: String::new(), ops: vec![] });
     assert_eq!(d.undo(), Err(CoreError::NothingToUndo));
-    // Verlauf ist begrenzt: der älteste Schritt fällt heraus
+    // history is limited: the oldest step drops out
     d.max_history = 3;
     for i in 0..5 {
         apply(&mut d, EditOp::Rename { name: format!("{i}") });
@@ -231,7 +231,7 @@ fn undo_and_redo_on_empty_history() {
     assert_eq!(d.project().name, "1");
 }
 
-/// Jeder Schritt ist eine volle Projektkopie: große Projekte behalten weniger Schritte.
+/// Every step is a full project copy: large projects keep fewer steps.
 #[test]
 fn history_shrinks_for_big_projects() {
     let mut p = Project::new("Groß");
@@ -243,7 +243,7 @@ fn history_shrinks_for_big_projects() {
         apply(&mut d, EditOp::Rename { name: format!("{i}") });
     }
     assert_eq!(d.undo_entries().len(), 20);
-    // kleine Projekte: 100 Schritte wie bisher
+    // small projects: 100 steps as before
     let mut d = Document::new(Project::new("Klein"));
     for i in 0..120 {
         apply(&mut d, EditOp::Rename { name: format!("{i}") });
@@ -278,12 +278,12 @@ fn locked_track_rejects_every_clip_edit() {
         assert_eq!(d.apply(op, OpSource::Ui), Err(CoreError::TrackLocked), "{name}");
         assert_eq!(d.project(), &snap);
     }
-    // Lücken schließen überspringt die gesperrte Spur
+    // closing gaps skips the locked track
     apply(&mut d, EditOp::CloseGaps { track: None });
     assert_eq!(d.project().find_clip(r.a1).unwrap().1.start, s(1.0));
 }
 
-/// Fehler: Ohne Magnet ließ sich ein Clip über den Nachbarn hinaus trimmen (Überlappung).
+/// Bug: without magnet a clip could be trimmed past its neighbour (overlap).
 #[test]
 fn trim_stops_at_neighbour_on_free_tracks() {
     let mut d = Document::new(Project::new("T"));
@@ -294,18 +294,18 @@ fn trim_stops_at_neighbour_on_free_tracks() {
     assert_eq!(d.project().find_clip(a).unwrap().1.end(), s(3.0));
     apply(&mut d, EditOp::TrimClip { clip: b, edge: Edge::Start, to: s(0.0) });
     assert_eq!(d.project().find_clip(b).unwrap().1.start, s(3.0));
-    check(d.project(), "Trimmen");
-    // Hauptspur ohne Magnet ebenso
+    check(d.project(), "trim");
+    // main track without magnet likewise
     let mut d = rich().doc;
     let mut st = d.project().settings.clone();
     st.main_track_magnet = false;
     apply(&mut d, EditOp::SetSettings { settings: st });
     let first = d.project().timeline.tracks.iter().find(|t| t.main).unwrap().clips[0].id;
     apply(&mut d, EditOp::TrimClip { clip: first, edge: Edge::End, to: s(30.0) });
-    check(d.project(), "Hauptspur ohne Magnet");
+    check(d.project(), "main track without magnet");
 }
 
-/// Fehler: Zeit setzen (Zahleneingabe, MCP) schob einen Clip in den Nachbarn (Überlappung).
+/// Bug: setting time (numeric entry, MCP) pushed a clip into its neighbour (overlap).
 #[test]
 fn set_timing_rejects_overlap_on_free_tracks() {
     let mut d = Document::new(Project::new("T"));
@@ -318,13 +318,13 @@ fn set_timing_rejects_overlap_on_free_tracks() {
         assert_eq!(d.apply(op, OpSource::Ui), Err(CoreError::InvalidDuration), "{start} +{dur}");
         assert_eq!(d.project(), &snap);
     }
-    // bis an den Nachbarn heran geht
+    // up to the neighbour works
     apply(&mut d, EditOp::SetClipTiming { clip: a, start: s(0.0), duration: s(3.0), source_in: Time::ZERO });
-    check(d.project(), "Zeit setzen");
+    check(d.project(), "set time");
 }
 
-/// Fehler: Nach Tempo oder Trimmen waren die Blenden länger als der Clip. Wie beim Setzen
-/// (SetFades) höchstens je die halbe Länge.
+/// Bug: after speed or trim the fades were longer than the clip. As when setting
+/// (SetFades), at most half the length each.
 #[test]
 fn shortening_clamps_fades_like_set_fades() {
     let mut d = Document::new(Project::new("F"));
@@ -332,8 +332,8 @@ fn shortening_clamps_fades_like_set_fades() {
     let half = |d: &Document| {
         let c = d.project().find_clip(a).unwrap().1;
         let h = Time(c.duration.0 / 2);
-        assert!(c.fade_in <= h && c.fade_out <= h, "{:?}+{:?} bei {:?}", c.fade_in, c.fade_out, c.duration);
-        assert!(c.fade_in > Time::ZERO && c.fade_out > Time::ZERO, "nicht ganz weg");
+        assert!(c.fade_in <= h && c.fade_out <= h, "{:?}+{:?} at {:?}", c.fade_in, c.fade_out, c.duration);
+        assert!(c.fade_in > Time::ZERO && c.fade_out > Time::ZERO, "not entirely gone");
     };
     let fades = || EditOp::SetFades { clip: a, fade_in: s(4.0), fade_out: s(4.0) };
     apply(&mut d, fades());
@@ -350,7 +350,7 @@ fn shortening_clamps_fades_like_set_fades() {
     half(&d);
 }
 
-/// Fehler: Langsamer machen auf der Hauptspur ohne Magnet überdeckte den nächsten Clip.
+/// Bug: slowing down on the main track without magnet covered the next clip.
 #[test]
 fn slowing_down_on_main_without_magnet_pushes_the_next_clip() {
     let r = rich();
@@ -359,11 +359,11 @@ fn slowing_down_on_main_without_magnet_pushes_the_next_clip() {
     st.main_track_magnet = false;
     apply(&mut d, EditOp::SetSettings { settings: st });
     apply(&mut d, EditOp::SetSpeed { clip: r.v1, speed: 0.5 });
-    check(d.project(), "Tempo");
+    check(d.project(), "speed");
     assert_eq!(d.project().find_clip(r.v2).unwrap().1.start, s(8.0));
 }
 
-/// Fehler: Magnet einschalten schob die Clips einer gesperrten Hauptspur zusammen.
+/// Bug: turning on the magnet pushed together the clips of a locked main track.
 #[test]
 fn enabling_magnet_leaves_locked_main_track_alone() {
     let r = rich();
@@ -380,7 +380,7 @@ fn enabling_magnet_leaves_locked_main_track_alone() {
     assert_eq!(d.project().find_clip(r.img).unwrap().1.start, before);
 }
 
-/// Fehler: AddClip übernahm negative Startzeiten, doppelte IDs und Zeiten am i64-Ende.
+/// Bug: AddClip accepted negative start times, duplicate IDs and times at the i64 end.
 #[test]
 fn add_clip_sanitizes_start_id_and_overflow() {
     let mut d = Document::new(Project::new("T"));
@@ -390,10 +390,10 @@ fn add_clip_sanitizes_start_id_and_overflow() {
     let p = d.project();
     assert_eq!(p.find_clip(a).unwrap().1.start, Time::ZERO);
     assert_eq!(p.find_clip(a).unwrap().1.source_in, Time::ZERO);
-    // dieselbe Op noch einmal (gleiche Clip-ID): zweiter Clip mit eigener ID
+    // the same op again (same clip ID): second clip with its own ID
     let b = clip_out(apply(&mut d, EditOp::AddClip { track: None, clip: c }));
     assert_ne!(a, b);
-    check(d.project(), "doppelt");
+    check(d.project(), "duplicate");
     let snap = d.project().clone();
     for (start, dur) in [(i64::MAX, 1), (i64::MAX - 10, 100), (1, i64::MAX), (Time::LIMIT.0 + 1, 1), (0, Time::LIMIT.0 + 1)] {
         let mut c = text_clip(0.0, 1.0);
@@ -404,26 +404,26 @@ fn add_clip_sanitizes_start_id_and_overflow() {
     }
     let op = EditOp::SetClipTiming { clip: a, start: Time(i64::MAX), duration: Time(5), source_in: Time::ZERO };
     assert_eq!(d.apply(op, OpSource::Ui), Err(CoreError::InvalidDuration));
-    // größte erlaubte Lage geht, und Ende/Dauer der Zeitleiste stimmen
+    // largest allowed position works, and end/duration of the timeline are right
     let mut c = text_clip(0.0, 1.0);
     c.start = Time::LIMIT;
     c.duration = Time::LIMIT;
     let m = clip_out(apply(&mut d, EditOp::AddClip { track: None, clip: c }));
     assert_eq!(d.project().find_clip(m).unwrap().1.end(), Time(2 * Time::LIMIT.0));
     assert_eq!(d.project().duration(), Time(2 * Time::LIMIT.0));
-    // Trimmen ans i64-Ende wird auf die Grenze gezogen
+    // trimming to the i64 end is pulled to the limit
     apply(&mut d, EditOp::TrimClip { clip: a, edge: Edge::End, to: Time(i64::MAX) });
     assert!(d.project().find_clip(a).unwrap().1.end() <= Time::LIMIT);
-    // Magnet-Einfügen mit riesigen Zeiten rechnet nicht über
+    // magnet insert with huge times doesn't overflow
     let r = rich();
     let mut d = r.doc;
     let mut c = media_clip(&r.video, 0.0, 1.0);
     c.start = Time::LIMIT;
     apply(&mut d, EditOp::AddClip { track: None, clip: c });
-    check(d.project(), "riesig");
+    check(d.project(), "huge");
 }
 
-/// Fehler: NaN/Unendlich (z. B. 1e300 per MCP → f32 = inf) machte die Projektdatei unlesbar.
+/// Bug: NaN/infinity (e.g. 1e300 via MCP → f32 = inf) made the project file unreadable.
 #[test]
 fn non_finite_numbers_are_rejected() {
     let r = rich();
@@ -446,7 +446,7 @@ fn non_finite_numbers_are_rejected() {
         assert_eq!(d.apply(op, OpSource::Ui), Err(CoreError::InvalidValue), "{name}");
         assert_eq!(d.project(), &snap);
     }
-    // über JSON (MCP, Plugins): 1e300 passt nicht in f32
+    // via JSON (MCP, plugins): 1e300 does not fit in f32
     let op: EditOp = serde_json::from_str(&format!(
         r#"{{"op":"set_transform","clip":"{}","transform":{{"x":1e300,"y":0,"scale":1,"rotation_deg":0}}}}"#,
         r.v1
@@ -456,12 +456,12 @@ fn non_finite_numbers_are_rejected() {
     assert_eq!(roundtrip(d.project()), *d.project());
 }
 
-/// Zuschnitt: Grenzen (mind. 2 % Rest), Speichern ohne Feld, wenn leer, alte Projekte laden.
+/// Crop: limits (at least 2 % left), saved without field when empty, old projects load.
 #[test]
 fn crop_is_clamped_and_only_saved_when_set() {
     let r = rich();
     let mut d = r.doc;
-    // ohne Zuschnitt steht das Feld nicht in der Datei; Dateien ohne Feld laden mit leerem Zuschnitt
+    // without crop the field is not in the file; files without the field load with an empty crop
     assert!(!d.project().to_json().contains("\"crop\""));
     let old = Project::from_json(&d.project().to_json()).unwrap();
     assert!(old.find_clip(r.v1).unwrap().1.crop.is_none());
@@ -474,7 +474,7 @@ fn crop_is_clamped_and_only_saved_when_set() {
     let c = get(&d);
     assert!((c.left + c.right - 0.98).abs() < 1e-6 && (c.left - c.right).abs() < 1e-6, "{c:?}");
     assert_eq!((c.top, c.bottom), (0.49, 0.49));
-    // mit Zuschnitt: gespeichert und verlustfrei geladen; auch Clips von außen werden begrenzt
+    // with crop: saved and loaded losslessly; clips from outside are clamped too
     assert!(d.project().to_json().contains("\"crop\""));
     assert_eq!(roundtrip(d.project()), *d.project());
     let mut c = text_clip(20.0, 1.0);
@@ -489,7 +489,7 @@ fn one_tick_clips_and_degenerate_values() {
     let mut c = text_clip(0.0, 1.0);
     c.duration = Time(1);
     let id = clip_out(apply(&mut d, EditOp::AddClip { track: None, clip: c }));
-    // nicht teilbar, nicht auf 0 trimmbar
+    // not splittable, not trimmable to 0
     assert_eq!(d.apply(EditOp::SplitClip { clip: id, at: Time(0) }, OpSource::Ui), Err(CoreError::InvalidSplit));
     assert_eq!(d.apply(EditOp::SplitClip { clip: id, at: Time(1) }, OpSource::Ui), Err(CoreError::InvalidSplit));
     assert_eq!(
@@ -500,13 +500,13 @@ fn one_tick_clips_and_degenerate_values() {
         d.apply(EditOp::TrimClip { clip: id, edge: Edge::Start, to: Time(1) }, OpSource::Ui),
         Err(CoreError::InvalidDuration)
     );
-    // Tempo-Extreme werden begrenzt, Länge bleibt positiv
+    // speed extremes are clamped, length stays positive
     for sp in [0.0, -3.0, 1e9, f32::MIN_POSITIVE] {
         apply(&mut d, EditOp::SetSpeed { clip: id, speed: sp });
         let c = d.project().find_clip(id).unwrap().1;
         assert!((0.1..=100.0).contains(&c.speed) && c.duration > Time::ZERO, "{sp}");
     }
-    // Deckkraft/Lautstärke werden begrenzt, Blenden auf die halbe Länge
+    // opacity/volume are clamped, fades to half the length
     apply(&mut d, EditOp::SetOpacity { clip: id, opacity: 7.0 });
     apply(&mut d, EditOp::SetVolume { clip: id, volume_db: -1e9 });
     apply(&mut d, EditOp::SetFades { clip: id, fade_in: s(-1.0), fade_out: s(99.0) });
@@ -514,15 +514,15 @@ fn one_tick_clips_and_degenerate_values() {
     assert_eq!((c.opacity, c.volume_db), (1.0, -60.0));
     assert_eq!(c.fade_in, Time::ZERO);
     assert!(c.fade_out <= Time(c.duration.0 / 2));
-    // Übergangsdauer begrenzt
+    // transition duration clamped
     apply(&mut d, EditOp::SetTransition { clip: id, transition: Some(TransitionRef { id: String::new(), duration: Time(-5) }) });
     assert_eq!(d.project().find_clip(id).unwrap().1.transition_out.as_ref().unwrap().duration, s(0.1));
-    // Ripple-Bereich verkehrt herum oder vor 0
+    // ripple range reversed or before 0
     let tr = track_of(d.project(), id);
     for (a, b) in [(2.0, 1.0), (1.0, 1.0), (-1.0, 1.0)] {
         assert!(d.apply(EditOp::RippleRange { track: tr, from: s(a), to: s(b), all_tracks: false }, OpSource::Ui).is_err());
     }
-    check(d.project(), "Extreme");
+    check(d.project(), "extremes");
 }
 
 #[test]
@@ -567,20 +567,20 @@ fn ten_thousand_clips_stay_fast_and_consistent() {
     let tr = d.project().timeline.tracks[1].id;
     apply(&mut d, EditOp::RippleRange { track: tr, from: s(100.0), to: s(200.0), all_tracks: true });
     apply(&mut d, EditOp::CloseGaps { track: None });
-    check(d.project(), "10 000 Clips");
+    check(d.project(), "10,000 clips");
     assert_eq!(roundtrip(d.project()), *d.project());
     assert_eq!(d.step(-4), 4);
     assert_eq!(d.project().timeline.tracks[0].clips.len(), 10_000);
-    assert!(t0.elapsed().as_secs() < 20, "zu langsam: {:?}", t0.elapsed());
+    assert!(t0.elapsed().as_secs() < 20, "too slow: {:?}", t0.elapsed());
 }
 
 #[test]
 fn ops_on_project_with_zero_length_clip_and_missing_media_do_not_panic() {
-    // So etwas kommt nur aus kaputten/fremden Dateien, darf aber nicht abstürzen
+    // such things only come from broken/foreign files, but must not crash
     let mut p = Project::new("Kaputt");
     let mut main = Track::new(TrackKind::Video);
     main.main = true;
-    let ghost = media(MediaKind::Video, 5.0); // nicht im Projekt
+    let ghost = media(MediaKind::Video, 5.0); // not in the project
     let mut zero = media_clip(&ghost, 0.0, 1.0);
     zero.duration = Time::ZERO;
     let normal = media_clip(&ghost, 0.0, 2.0);
@@ -608,8 +608,8 @@ fn ops_on_project_with_zero_length_clip_and_missing_media_do_not_panic() {
     let _ = roundtrip(d.project());
 }
 
-/// Eingeklappte Spuren stehen im Projekt (früher nur Fensterzustand: nach dem Öffnen wieder offen);
-/// Projekte ohne das Feld laden als „nicht eingeklappt“, und nicht eingeklappte schreiben es nicht.
+/// Collapsed tracks are stored in the project (formerly only window state: open again after reopening);
+/// projects without the field load as "not collapsed", and non-collapsed ones don't write it.
 #[test]
 fn collapsed_track_survives_save_and_old_projects_load() {
     let mut t = Track::new(TrackKind::Video);
@@ -624,7 +624,7 @@ fn collapsed_track_survives_save_and_old_projects_load() {
     assert!(back.collapsed && back.height == 2.2);
 }
 
-/// Unsinnige Höhen (von außen über MCP) werden begrenzt statt eine unsichtbare Spur zu ergeben
+/// Nonsensical heights (from outside via MCP) are clamped instead of yielding an invisible track
 #[test]
 fn track_height_is_limited() {
     let mut d = Document::new(Project::new("x"));

@@ -1,8 +1,8 @@
-//! Spuren anordnen: Anzeige-Reihenfolge, Stelle für eine neue Spur, Spur an eine andere Stelle ziehen.
+//! Arranging tracks: display order, position for a new track, dragging a track to another position.
 //!
-//! „Zeile“ = Position in der Anzeige von oben (0 = oberste Spur), „Lücke“ `g` = Stelle direkt
-//! über Zeile `g` (`g` = Anzahl Zeilen: unter der untersten). Ordnungsregeln: Bildspuren (alles
-//! außer Ton) liegen über allen Tonspuren, unter der Hauptspur liegt keine Bildspur.
+//! "Row" = position in the display from the top (0 = topmost track), "gap" `g` = position directly
+//! above row `g` (`g` = number of rows: below the lowest). Ordering rules: visual tracks (all
+//! but audio) lie above all audio tracks, no visual track lies below the main track.
 
 use crate::document::{Document, OpSource};
 use crate::model::*;
@@ -10,7 +10,7 @@ use crate::ops::EditOp;
 use crate::time::Time;
 use crate::{CoreError, Result};
 
-/// Spurindizes in Anzeige-Reihenfolge: Bildspuren mit höherem Index oben, darunter Ton in Indexfolge.
+/// Track indices in display order: visual tracks with a higher index on top, below them audio in index order.
 pub fn display_order(tracks: &[Track]) -> Vec<usize> {
     let audio = |i: &usize| tracks[*i].kind == TrackKind::Audio;
     let mut o: Vec<usize> = (0..tracks.len()).rev().filter(|i| !audio(i)).collect();
@@ -18,12 +18,12 @@ pub fn display_order(tracks: &[Track]) -> Vec<usize> {
     o
 }
 
-/// Nimmt die Spur Clips der Art `kind` auf (passende Art, nicht gesperrt)?
+/// Does the track take clips of kind `kind` (matching kind, not locked)?
 pub fn fits(t: &Track, kind: TrackKind) -> bool {
     t.kind.accepts(kind) && !t.locked
 }
 
-/// Erlaubte Lücken (von, bis einschließlich) für eine Spur der Art `kind`.
+/// Allowed gaps (from, to inclusive) for a track of kind `kind`.
 pub fn gap_range(tracks: &[Track], kind: TrackKind) -> (usize, usize) {
     let ord = display_order(tracks);
     let visual = tracks.iter().filter(|t| t.kind != TrackKind::Audio).count();
@@ -35,34 +35,34 @@ pub fn gap_range(tracks: &[Track], kind: TrackKind) -> (usize, usize) {
     }
 }
 
-/// Lücke für eine neue Spur der Art `kind`, wenn über Zeile `row` (in der oberen Hälfte:
-/// `upper`) abgelegt wird: direkt darüber bzw. darunter, sonst die nächste erlaubte Stelle.
+/// Gap for a new track of kind `kind` when dropped over row `row` (in the upper half:
+/// `upper`): directly above or below, otherwise the nearest allowed position.
 pub fn new_track_gap(tracks: &[Track], row: usize, upper: bool, kind: TrackKind) -> usize {
     let (lo, hi) = gap_range(tracks, kind);
     (row + usize::from(!upper)).clamp(lo, hi)
 }
 
-/// Index für [`EditOp::InsertTrack`], damit die neue Spur in der Anzeige an Lücke `gap` steht.
+/// Index for [`EditOp::InsertTrack`] so the new track stands at gap `gap` in the display.
 pub fn gap_index(tracks: &[Track], gap: usize, kind: TrackKind) -> usize {
     let ord = display_order(tracks);
     let visual = tracks.iter().filter(|t| t.kind != TrackKind::Audio).count();
     if kind != TrackKind::Audio {
         match gap.min(visual) {
-            g if g < visual => ord[g] + 1, // direkt über Zeile g
+            g if g < visual => ord[g] + 1, // directly above row g
             0 => 0,
-            g => ord[g - 1], // unter der untersten Bildspur
+            g => ord[g - 1], // below the lowest visual track
         }
     } else {
         match gap.clamp(visual, tracks.len()) {
-            g if g < tracks.len() => ord[g], // direkt vor Tonspur g
+            g if g < tracks.len() => ord[g], // directly before audio track g
             g if g > visual => ord[g - 1] + 1,
             _ => tracks.len(),
         }
     }
 }
 
-/// Zielstelle beim Ziehen der Spur in Zeile `row` zur Lücke `gap`: die nächste erlaubte;
-/// `None`, wenn die Spur nicht verschoben werden darf (Hauptspur) oder an ihrem Platz bliebe.
+/// Target position when dragging the track in row `row` to gap `gap`: the nearest allowed one;
+/// `None` if the track may not be moved (main track) or would stay in place.
 pub fn track_drop_gap(tracks: &[Track], row: usize, gap: usize) -> Option<usize> {
     let t = &tracks[*display_order(tracks).get(row)?];
     if t.main {
@@ -73,8 +73,8 @@ pub fn track_drop_gap(tracks: &[Track], row: usize, gap: usize) -> Option<usize>
     (g != row && g != row + 1).then_some(g)
 }
 
-/// Spur in Zeile `row` an Lücke `gap` verschieben – als ein Verlaufsschritt aus
-/// [`EditOp::MoveTrack`]-Schritten (Nachbarn gleicher Art werden übersprungen).
+/// Move the track in row `row` to gap `gap` – as one history step of
+/// [`EditOp::MoveTrack`] steps (neighbours of the same kind are skipped).
 pub fn move_track_to(tracks: &[Track], row: usize, gap: usize) -> Option<EditOp> {
     let g = track_drop_gap(tracks, row, gap)?;
     let ord = display_order(tracks);
@@ -88,9 +88,9 @@ pub fn move_track_to(tracks: &[Track], row: usize, gap: usize) -> Option<EditOp>
     })
 }
 
-/// Clips (Kennung, neuer Beginn) in neue Spuren neben Zeile `row` verschieben: je Clip-Art eine
-/// Spur an der Stelle aus [`new_track_gap`]; Clips derselben Art landen gemeinsam darin. Ein
-/// Verlaufsschritt; schlägt etwas fehl, bleibt das Projekt unverändert.
+/// Move clips (id, new start) to new tracks next to row `row`: one track per clip kind
+/// at the position from [`new_track_gap`]; clips of the same kind land in it together. One
+/// history step; if something fails, the project stays unchanged.
 pub fn move_to_new_tracks(doc: &mut Document, row: usize, upper: bool, moves: &[(ClipId, Time)]) -> Result<()> {
     let p = doc.project();
     let tracks = &p.timeline.tracks;
@@ -101,7 +101,7 @@ pub fn move_to_new_tracks(doc: &mut Document, row: usize, upper: bool, moves: &[
             kinds.push((k, gap_index(tracks, new_track_gap(tracks, row, upper, k), k)));
         }
     }
-    // höchster Index zuerst: spätere Einfügungen verschieben die schon angelegten nicht gegeneinander
+    // highest index first: later inserts don't shift the ones already created against each other
     kinds.sort_by_key(|k| std::cmp::Reverse(k.1));
     doc.transaction(|d| {
         let mut new = Vec::new();
@@ -128,7 +128,7 @@ mod tests {
     use super::*;
     use TrackKind::*;
 
-    /// Spuren in Anzeige-Reihenfolge von oben; `M` = Hauptspur (Video), `L` = gesperrt.
+    /// Tracks in display order from the top; `M` = main track (video), `L` = locked.
     fn proj(spec: &[&str]) -> Project {
         let mut p = Project::new("T");
         let mut vis = Vec::new();
@@ -201,16 +201,16 @@ mod tests {
     fn new_track_lands_above_or_below_the_row() {
         let p = proj(&["T", "V", "M", "A1", "A2"]);
         let t = &p.timeline.tracks;
-        // Video über Text: obere Hälfte darüber, untere darunter
+        // video over text: upper half above, lower half below
         assert_eq!(new_track_gap(t, 0, true, Video), 0);
         assert_eq!(new_track_gap(t, 0, false, Video), 1);
-        // Text über der Hauptspur (untere Hälfte): darunter wäre unter der Hauptspur → direkt darüber
+        // text over the main track (lower half): below would be under the main track → directly above
         assert_eq!(new_track_gap(t, 2, false, Text), 2);
-        // Ton über Bildspuren: oberste erlaubte Stelle im Tonbereich
+        // audio over visual tracks: topmost allowed position in the audio area
         assert_eq!(new_track_gap(t, 0, true, Audio), 3);
-        // Bild über Ton: direkt über der Hauptspur
+        // image over audio: directly above the main track
         assert_eq!(new_track_gap(t, 4, false, Effect), 2);
-        // Ränder: ganz unten bzw. ganz oben
+        // edges: at the very bottom or very top
         assert_eq!(new_track_gap(t, 4, false, Audio), 5);
         assert_eq!(new_track_gap(t, 3, true, Audio), 3);
     }
@@ -224,11 +224,11 @@ mod tests {
             (&["T", "V", "M", "A1", "A2"][..], 3, false, Audio, vec!["T", "V", "M", "A1", "neu Audio", "A2"]),
             (&["T", "V", "M", "A1", "A2"][..], 4, false, Audio, vec!["T", "V", "M", "A1", "A2", "neu Audio"]),
             (&["T", "V", "M", "A1", "A2"][..], 1, false, Text, vec!["T", "V", "neu Text", "M", "A1", "A2"]),
-            // ohne Hauptspur darf Bild ganz unten in den Bildbereich
+            // without main track an image may go to the very bottom of the visual area
             (&["T", "V", "A1"][..], 2, true, Effect, vec!["T", "V", "neu Effect", "A1"]),
-            // nur Ton: Bildspur kommt darüber
+            // audio only: visual track goes above
             (&["A1"][..], 0, false, Text, vec!["neu Text", "A1"]),
-            // nur Bild: Ton darunter
+            // visual only: audio below
             (&["T"][..], 0, true, Audio, vec!["T", "neu Audio"]),
         ] {
             let mut d = Document::new(proj(spec));
@@ -246,11 +246,11 @@ mod tests {
         let v2 = clip(&mut p, 1, 3.0);
         let a = clip(&mut p, 4, 1.0);
         clip(&mut p, 1, 6.0);
-        clip(&mut p, 4, 5.0); // A2 behält einen Clip (leer gewordene Spuren entfernt MoveClip wie bisher)
+        clip(&mut p, 4, 5.0); // A2 keeps a clip (MoveClip removes tracks that became empty, as before)
         let mut d = Document::new(p);
         let before = d.project().clone();
-        // Mehrfachauswahl über der gesperrten Tonspur A1 (untere Hälfte): Bild über die Hauptspur,
-        // Ton direkt unter A1; Abstände bleiben
+        // multi-selection over the locked audio track A1 (lower half): image above the main track,
+        // audio directly below A1; distances stay
         let s = |x: f64| Time::from_secs_f64(x);
         move_to_new_tracks(&mut d, 3, false, &[(v, s(10.0)), (v2, s(13.0)), (a, s(11.0))]).unwrap();
         assert_eq!(names(d.project()), ["T", "V", "neu Video", "M", "A1L", "neu Audio", "A2"]);
@@ -259,10 +259,10 @@ mod tests {
         let starts = |row: usize| tr[ord[row]].clips.iter().map(|c| c.start.as_secs_f64()).collect::<Vec<_>>();
         assert_eq!(starts(2), [10.0, 13.0]);
         assert_eq!(starts(5), [11.0]);
-        assert_eq!(starts(1), [6.0], "nicht gezogene Clips bleiben");
+        assert_eq!(starts(1), [6.0], "clips not dragged stay");
         assert_eq!(d.undo_entries().len(), 1);
         d.undo().unwrap();
-        assert_eq!(d.project(), &before, "vollständig umkehrbar");
+        assert_eq!(d.project(), &before, "fully reversible");
         d.redo().unwrap();
         assert_eq!(names(d.project()).len(), 7);
     }
@@ -270,12 +270,12 @@ mod tests {
     #[test]
     fn failed_move_leaves_nothing_behind() {
         let mut p = proj(&["VL", "M", "A1"]);
-        let v = clip(&mut p, 0, 0.0); // liegt auf gesperrter Spur: Verschieben scheitert
+        let v = clip(&mut p, 0, 0.0); // lies on a locked track: moving fails
         let mut d = Document::new(p);
         let before = d.project().clone();
         assert!(move_to_new_tracks(&mut d, 2, true, &[(v, Time::from_secs_f64(2.0))]).is_err());
-        assert_eq!(d.project(), &before, "keine neue Spur");
-        assert!(d.undo_entries().is_empty(), "kein Verlaufsschritt");
+        assert_eq!(d.project(), &before, "no new track");
+        assert!(d.undo_entries().is_empty(), "no history step");
     }
 
     #[test]
@@ -283,13 +283,13 @@ mod tests {
         let p = proj(&["T", "V", "M", "A1", "A2"]);
         let t = &p.timeline.tracks;
         assert_eq!(track_drop_gap(t, 0, 2), Some(2), "Text unter V");
-        assert_eq!(track_drop_gap(t, 0, 4), Some(2), "nicht unter die Hauptspur");
-        assert_eq!(track_drop_gap(t, 0, 0), None, "auf sich selbst");
-        assert_eq!(track_drop_gap(t, 0, 1), None, "auf sich selbst (darunter)");
-        assert_eq!(track_drop_gap(t, 2, 0), None, "Hauptspur bleibt");
-        assert_eq!(track_drop_gap(t, 4, 0), Some(3), "Ton bleibt unter den Bildspuren");
+        assert_eq!(track_drop_gap(t, 0, 4), Some(2), "not below the main track");
+        assert_eq!(track_drop_gap(t, 0, 0), None, "onto itself");
+        assert_eq!(track_drop_gap(t, 0, 1), None, "onto itself (below)");
+        assert_eq!(track_drop_gap(t, 2, 0), None, "main track stays");
+        assert_eq!(track_drop_gap(t, 4, 0), Some(3), "audio stays below the visual tracks");
         assert_eq!(track_drop_gap(t, 3, 5), Some(5));
-        assert_eq!(track_drop_gap(t, 9, 0), None, "keine solche Zeile");
+        assert_eq!(track_drop_gap(t, 9, 0), None, "no such row");
     }
 
     #[test]
@@ -325,10 +325,10 @@ mod tests {
 
     #[test]
     fn clip_moves_within_its_own_track_whatever_the_kind() {
-        // Bild-Clips (Art „Video“) auf einer Sticker-Spur, wie in erzeugten Projekten
+        // image clips (kind `Video`) on a sticker track, as in generated projects
         let mut p = proj(&["S", "V", "M"]);
         let png = clip(&mut p, 0, 0.0);
-        // Altlast: Text-Clip auf einer Bildspur – in seiner Spur trotzdem verschiebbar
+        // legacy: text clip on a visual track – still movable within its track
         let c = Clip::new(ClipContent::Text(TextStyle::default()), Time::from_secs_f64(3.0), Time::from_secs_f64(1.0));
         let txt = c.id;
         let mi = p.timeline.tracks.iter().position(|t| t.name.as_deref() == Some("V")).unwrap();
@@ -340,7 +340,7 @@ mod tests {
         let start = |id| d.project().find_clip(id).map(|(t, c)| (t.name.clone().unwrap(), c.start.as_secs_f64()));
         assert_eq!(start(png), Some(("S".into(), 5.0)));
         assert_eq!(start(txt), Some(("V".into(), 8.0)));
-        // Spurwechsel prüft weiter die Art: Text gehört nicht auf die Sticker-Spur
+        // track change still checks the kind: text does not belong on the sticker track
         let sticker = d.project().timeline.tracks.iter().find(|t| t.kind == Sticker).unwrap().id;
         assert!(d.apply(EditOp::MoveClip { clip: txt, track: Some(sticker), start: s(1.0) }, OpSource::Ui).is_err());
         assert!(fits(&d.project().timeline.tracks[display_order(&d.project().timeline.tracks)[0]], Video));

@@ -12,7 +12,7 @@ pub enum Edge {
     End,
 }
 
-/// Eine atomare, serialisierbare Änderung. UI, Plugins und MCP benutzen dieselben Ops.
+/// An atomic, serializable change. UI, plugins and MCP use the same ops.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum EditOp {
@@ -28,13 +28,13 @@ pub enum EditOp {
         hidden: bool,
         muted: bool,
     },
-    /// Darstellung der Spur in der Zeitleiste: eingeklappt, Höhenfaktor (wird mit dem Projekt gespeichert)
+    /// Display of the track in the timeline: collapsed, height factor (saved with the project)
     SetTrackView {
         track: TrackId,
         collapsed: bool,
         height: f32,
     },
-    /// `track = None`: passende Spur automatisch wählen (Video → Hauptspur).
+    /// `track = None`: choose a fitting track automatically (video → main track).
     AddClip {
         track: Option<TrackId>,
         clip: Clip,
@@ -64,7 +64,7 @@ pub enum EditOp {
         clip: ClipId,
         transform: Transform,
     },
-    /// Zuschnitt setzen (wird begrenzt, siehe `Crop::clamped`).
+    /// Set the crop (clamped, see `Crop::clamped`).
     SetCrop {
         clip: ClipId,
         crop: Crop,
@@ -86,7 +86,7 @@ pub enum EditOp {
     Rename {
         name: String,
     },
-    /// Geschwindigkeit ändern; der genutzte Quellbereich bleibt, die Dauer passt sich an.
+    /// Change speed; the used source range stays, the duration adapts.
     SetSpeed {
         clip: ClipId,
         speed: f32,
@@ -116,67 +116,67 @@ pub enum EditOp {
         fade_in: Time,
         fade_out: Time,
     },
-    /// Eigenschaften eines Clips ersetzen (Inhalt, Transform, Effekte, Keyframes …).
-    /// Lage und Länge (Start, Dauer, Quellbeginn, Tempo) bleiben unverändert.
+    /// Replace a clip's properties (content, transform, effects, keyframes …).
+    /// Position and length (start, duration, source in, speed) stay unchanged.
     ReplaceClip {
         clip: Clip,
     },
-    /// Neue leere Spur an Index (0 = unten) einfügen.
+    /// Insert a new empty track at index (0 = bottom).
     InsertTrack {
         index: usize,
         kind: TrackKind,
     },
-    /// Spur samt Clips entfernen (nicht die Hauptspur).
+    /// Remove a track with its clips (not the main track).
     RemoveTrack {
         track: TrackId,
     },
-    /// Spur in der Anzeige eine Stelle nach oben/unten (innerhalb Bild- bzw. Tonspuren,
-    /// die Hauptspur bleibt unten). Ganz oben/unten: keine Änderung.
+    /// Move a track one place up/down in the display (within visual or audio tracks,
+    /// the main track stays at the bottom). At the very top/bottom: no change.
     MoveTrack {
         track: TrackId,
         up: bool,
     },
-    /// Clip auf eine neue Spur an `index` verschieben (Ziehen ins Leere).
+    /// Move a clip to a new track at `index` (drag into empty space).
     MoveClipToNewTrack {
         clip: ClipId,
         index: usize,
         start: Time,
     },
-    /// Lücken schließen: eine Spur oder (None) alle Spuren.
+    /// Close gaps: one track or (None) all tracks.
     CloseGaps {
         track: Option<TrackId>,
     },
-    /// Lage und Quellbereich direkt setzen (Rollen, Slippen, Zahleneingabe), ohne Ripple
+    /// Set position and source range directly (roll, slip, numeric entry), without ripple
     SetClipTiming {
         clip: ClipId,
         start: Time,
         duration: Time,
         source_in: Time,
     },
-    /// Datei eines Mediums austauschen (verschoben/umbenannt)
+    /// Replace the file of a media item (moved/renamed)
     RelinkMedia {
         media: MediaId,
         path: PathBuf,
     },
-    /// Alle Marker ersetzen (setzen, verschieben, bearbeiten, löschen)
+    /// Replace all markers (set, move, edit, delete)
     SetMarkers {
         markers: Vec<crate::Marker>,
     },
-    /// Spur umbenennen (`None` = Standardname)
+    /// Rename a track (`None` = default name)
     RenameTrack {
         track: TrackId,
         name: Option<String>,
     },
-    /// Zeitbereich entfernen und alles dahinter nach links ziehen (Ripple). Mit
-    /// `all_tracks` auf allen nicht gesperrten Spuren (Clips am Rand werden geteilt), sonst
-    /// nur auf `track`. Marker dahinter wandern mit, Marker im Bereich fallen auf `from`.
+    /// Remove a time range and pull everything after it left (ripple). With
+    /// `all_tracks` on all unlocked tracks (clips at the edge are split), otherwise
+    /// only on `track`. Markers after it move along, markers inside the range fall to `from`.
     RippleRange {
         track: TrackId,
         from: Time,
         to: Time,
         all_tracks: bool,
     },
-    /// Mehrere Ops als ein Undo-Schritt (Mehrfachauswahl).
+    /// Several ops as one undo step (multi-selection).
     Batch {
         label: String,
         ops: Vec<EditOp>,
@@ -193,7 +193,7 @@ pub enum OpOutput {
 }
 
 impl EditOp {
-    /// Bezeichnung für den Undo-Verlauf (ein mitgegebener Batch-Name hat Vorrang).
+    /// Label for the undo history (a given batch name takes precedence).
     pub fn label(&self) -> String {
         let l: &str = match self {
             EditOp::ImportMedia { .. } => "Medium importieren",
@@ -274,7 +274,7 @@ impl EditOp {
             EditOp::SetTrackView { track, collapsed, height } => {
                 let t = track_mut(p, track)?;
                 t.collapsed = collapsed;
-                // Werte von außen (MCP) machen keine unsichtbare oder riesige Spur
+                // values from outside (MCP) don't make an invisible or huge track
                 t.height = height.clamp(0.5, 3.0);
                 Ok(OpOutput::None)
             }
@@ -302,14 +302,14 @@ impl EditOp {
                 clamp_fades(c);
                 let (start, duration) = (c.start, c.duration);
                 let magnet = p.settings.main_track_magnet;
-                // Ohne Magnet nicht in den Nachbarn hinein (wie Trimmen; Rollen kürzt zuerst)
+                // without magnet not into the neighbour (like trimming; rolling shortens first)
                 let t = &p.timeline.tracks[clip_track_index(p, clip)?];
                 if !(t.main && magnet) && !t.is_free(start, duration, Some(clip)) {
                     return Err(CoreError::InvalidDuration);
                 }
                 for t in &mut p.timeline.tracks {
                     t.sort();
-                    // Hauptspur-Magnet: Lücken sofort schließen
+                    // main track magnet: close gaps immediately
                     if magnet && t.main && t.clips.iter().any(|c| c.id == clip) {
                         compact(t);
                     }
@@ -355,8 +355,8 @@ impl EditOp {
                 if at <= c.start || at >= c.end() {
                     return Err(CoreError::InvalidSplit);
                 }
-                // Karaoke: beide Teile zeigen die ganze Zeile, die Hervorhebung läuft über den
-                // Schnitt weiter
+                // Karaoke: both parts show the whole line, the highlight continues across the
+                // cut
                 c.retime_words(|t| t);
                 let mut right = c.clone();
                 right.id = ClipId::new();
@@ -365,9 +365,9 @@ impl EditOp {
                 let rel = at - c.start;
                 let rel_src = Time((rel.0 as f64 * c.speed.max(0.01) as f64).round() as i64);
                 if c.fx.speed_curve.is_some() {
-                    // shortcut: Kurve wird beim Teilen zu konstantem Tempo je Teil, ausbauen wenn Kurven teilbar sein sollen
+                    // shortcut: a curve becomes constant speed per part on split, upgrade when curves should be splittable
                     let (s0, s1, s_at) = (c.source_in, c.source_in + c.source_span(), c.source_time(at));
-                    // vorwärts: links [s0, s_at), rechts [s_at, s1); rückwärts umgekehrt
+                    // forward: left [s0, s_at), right [s_at, s1); reversed the other way round
                     let (l_src, r_src) = if c.fx.reverse { ((s_at, s1), (s0, s_at)) } else { ((s0, s_at), (s_at, s1)) };
                     let tempo = |src: (Time, Time), d: Time| {
                         ((src.1 - src.0).0 as f64 / d.0.max(1) as f64).clamp(0.1, 100.0) as f32
@@ -379,7 +379,7 @@ impl EditOp {
                     c.source_in = l_src.0;
                     right.source_in = r_src.0;
                 } else if c.fx.reverse {
-                    // Rückwärts: der linke Teil zeigt das Ende des Quellbereichs
+                    // reversed: the left part shows the end of the source range
                     right.source_in = c.source_in;
                     c.source_in = c.source_in + c.source_span() - rel_src;
                 } else {
@@ -387,11 +387,11 @@ impl EditOp {
                 }
                 right.keyframes.shift(rel);
                 right.retime_words(|t| t - rel);
-                // Ausblend-Animation und Übergang gehören zum rechten Teil, Einblenden zum linken
+                // out animation and transition belong to the right part, fade-in to the left
                 right.anim.intro = None;
                 c.anim.outro = None;
                 c.transition_out = None;
-                // Blenden nur an den Außenkanten, sonst Blende länger als die Hälfte
+                // fades only at the outer edges, otherwise a fade longer than half
                 right.fade_in = Time::ZERO;
                 c.fade_out = Time::ZERO;
                 c.duration = rel;
@@ -405,12 +405,12 @@ impl EditOp {
                 let (src_len, is_audio, has_source, prev_end, next_start) = {
                     let t = &p.timeline.tracks[ti];
                     let c = t.clips.iter().find(|c| c.id == clip).expect("geprüft");
-                    // Ohne Magnet nicht in den Nachbarclip hinein verlängern (sonst Überlappung)
+                    // without magnet don't extend into the neighbouring clip (overlap otherwise)
                     let free = !(t.main && p.settings.main_track_magnet);
                     let others = t.clips.iter().filter(|o| free && o.id != clip);
                     let prev_end = others.clone().filter(|o| o.start < c.start).map(|o| o.end()).max();
                     let next_start = others.filter(|o| o.start >= c.start).map(|o| o.start).min();
-                    // Nach Inhalt statt nach bekannter Länge (Dauer 0 = unbekannt)
+                    // by content instead of known length (duration 0 = unknown)
                     let has_source = matches!(
                         c.content,
                         ClipContent::Media { kind: MediaKind::Video | MediaKind::Audio, .. }
@@ -427,14 +427,14 @@ impl EditOp {
                 let speed = c.speed.max(0.01) as f64;
                 let to_src = |d: Time| Time((d.0 as f64 * speed).round() as i64);
                 let to_tl = |d: Time| Time((d.0 as f64 / speed).round() as i64);
-                // Rückwärts läuft die Quelle vom Ende des Bereichs zu `source_in`:
-                // der Clipanfang hängt dann am Bereichsende, das Clipende an `source_in`.
+                // reversed, the source runs from the end of the range to `source_in`:
+                // the clip start then hangs on the range end, the clip end on `source_in`.
                 let rev = c.fx.reverse;
                 match edge {
                     Edge::Start => {
                         let mut to = Time(to.0.clamp(0, Time::LIMIT.0));
                         if let Some(len) = src_len {
-                            // Nicht über die Quelle hinaus: still begrenzen
+                            // not past the source: clamp silently
                             let room = if rev {
                                 Time((len - c.source_in - c.source_span()).0.max(0))
                             } else {
@@ -463,8 +463,8 @@ impl EditOp {
                     }
                     Edge::End => {
                         let mut new_dur = Time(to.0.min(Time::LIMIT.0)) - c.start;
-                        // Video: still auf das Quellende begrenzen. Audio darf länger
-                        // werden; der Rest wird mit Stille aufgefüllt.
+                        // video: silently clamp to the source end. Audio may get
+                        // longer; the rest is filled with silence.
                         if rev && src_len.is_some() {
                             let max = c.duration + to_tl(c.source_in);
                             if new_dur > max {
@@ -527,7 +527,7 @@ impl EditOp {
                 let old = c.duration;
                 c.speed = speed;
                 let new = Time(((span.0 as f64 / speed as f64).round() as i64).clamp(1000, Time::LIMIT.0));
-                // Keyframes und Wortzeiten proportional mitziehen
+                // pull keyframes and word times along proportionally
                 let f = new.0 as f64 / old.0.max(1) as f64;
                 c.retime_words(|t| Time((t.0 as f64 * f).round() as i64));
                 c.duration = new;
@@ -606,7 +606,7 @@ impl EditOp {
                 let id = t.id;
                 let main_idx = p.timeline.tracks.iter().position(|t| t.main);
                 let mut index = index.min(p.timeline.tracks.len());
-                // Nichts unter die Hauptspur außer Audio (Audio liegt in der Anzeige darunter)
+                // nothing below the main track except audio (audio lies below it in the display)
                 if let (Some(mi), false) = (main_idx, kind == TrackKind::Audio) {
                     index = index.max(mi + 1);
                 }
@@ -620,7 +620,7 @@ impl EditOp {
                     .position(|t| t.id == track)
                     .ok_or(CoreError::TrackNotFound(track))?;
                 let audio = tracks[i].kind == TrackKind::Audio;
-                // Anzeige: Bildspuren mit höherem Index liegen oben, Tonspuren mit kleinerem
+                // display: visual tracks with a higher index lie on top, audio tracks with a lower one
                 let peer = |t: &Track| (t.kind == TrackKind::Audio) == audio && !t.main;
                 if peer(&tracks[i]) {
                     let j = if up != audio {
@@ -644,7 +644,7 @@ impl EditOp {
                 let t = &p.timeline.tracks[ti];
                 ensure_unlocked(t)?;
                 if t.main {
-                    // Hauptspur bleibt bestehen, wird nur geleert
+                    // main track stays, is only emptied
                     p.timeline.tracks[ti].clips.clear();
                 } else {
                     p.timeline.tracks.remove(ti);
@@ -698,7 +698,7 @@ impl EditOp {
                     return Err(CoreError::InvalidDuration);
                 }
                 ensure_unlocked(track_mut(p, track)?)?;
-                // Marker folgen der Hauptspur (oder allem); Schnitte nur auf Nebenspuren lassen sie stehen
+                // markers follow the main track (or everything); cuts only on secondary tracks leave them
                 let move_markers = all_tracks || track_mut(p, track)?.main;
                 let ids: Vec<TrackId> = if all_tracks {
                     p.timeline.tracks.iter().filter(|t| !t.locked).map(|t| t.id).collect()
@@ -707,7 +707,7 @@ impl EditOp {
                 };
                 let d = to - from;
                 for id in ids {
-                    // Clips an den Bereichsgrenzen teilen, dann liegt alles ganz innen oder außen
+                    // split clips at the range bounds, then everything lies fully inside or outside
                     for at in [from, to] {
                         let hit = track_mut(p, id)?
                             .clips
@@ -806,7 +806,7 @@ impl EditOp {
     }
 }
 
-/// Lücken zwischen Clips (ab 0) als (von, bis), Clips in beliebiger Reihenfolge.
+/// Gaps between clips (from 0) as (from, to), clips in any order.
 pub fn gaps<'a>(clips: impl IntoIterator<Item = &'a Clip>) -> Vec<(Time, Time)> {
     let mut iv: Vec<(Time, Time)> = clips.into_iter().map(|c| (c.start, c.end())).collect();
     iv.sort();
@@ -821,9 +821,9 @@ pub fn gaps<'a>(clips: impl IntoIterator<Item = &'a Clip>) -> Vec<(Time, Time)> 
     out
 }
 
-/// Ripple-Ops für mehrere Bereiche (Spur, von, bis): überlappende werden zusammengefasst
-/// (bei `all_tracks` spurübergreifend) und von hinten nach vorn entfernt, damit frühere
-/// Bereiche ihre Lage behalten.
+/// Ripple ops for several ranges (track, from, to): overlapping ones are merged
+/// (across tracks with `all_tracks`) and removed back to front so earlier
+/// ranges keep their position.
 pub fn ripple_ops(ranges: Vec<(TrackId, Time, Time)>, all_tracks: bool) -> Vec<EditOp> {
     let mut r: Vec<(TrackId, Time, Time)> = ranges.into_iter().filter(|r| r.2 > r.1).collect();
     r.sort_by_key(|r| r.1);
@@ -864,14 +864,14 @@ fn source_length(p: &Project, c: &Clip) -> Option<Time> {
     }
 }
 
-/// Blenden je höchstens die halbe Clip-Länge (beim Setzen und wenn der Clip kürzer wird).
+/// Fades at most half the clip length each (when set and when the clip gets shorter).
 fn clamp_fades(c: &mut Clip) {
     let half = c.duration.0 / 2;
     c.fade_in = Time(c.fade_in.0.clamp(0, half));
     c.fade_out = Time(c.fade_out.0.clamp(0, half));
 }
 
-/// Video/Ton: Dauer höchstens bis zum Quellende ab `source_in` (Tempo beachtet).
+/// Video/audio: duration at most up to the source end from `source_in` (speed respected).
 fn clamp_to_source(c: &mut Clip, len: Option<Time>) {
     if let Some(len) = len {
         let max = Time(((len - c.source_in).0 as f64 / c.speed.max(0.01) as f64).floor() as i64);
@@ -915,8 +915,8 @@ fn clip_mut(p: &mut Project, id: ClipId) -> Result<&mut Clip> {
         .expect("geprüft"))
 }
 
-/// Hauptspur lückenlos zusammenschieben (Ripple, Hauptspur-Magnet).
-/// Die Reihenfolge im Vektor bleibt erhalten (sie ist die Schnittreihenfolge).
+/// Push the main track together without gaps (ripple, main track magnet).
+/// The order in the vector is kept (it is the cut order).
 fn compact(t: &mut Track) {
     let mut cursor = Time::ZERO;
     for c in &mut t.clips {
@@ -925,7 +925,7 @@ fn compact(t: &mut Track) {
     }
 }
 
-/// Leere Nebenspur entfernen (Spuren verschwinden, wenn der letzte Clip geht).
+/// Remove an empty secondary track (tracks vanish when the last clip goes).
 fn prune_if_empty(p: &mut Project, ti: usize) {
     if ti < p.timeline.tracks.len() {
         let t = &p.timeline.tracks[ti];
@@ -935,12 +935,12 @@ fn prune_if_empty(p: &mut Project, ti: usize) {
     }
 }
 
-/// Nach einer Längenänderung auf Nebenspuren: nachfolgende Clips, die jetzt
-/// überlappen, nach hinten schieben.
+/// After a length change on secondary tracks: push following clips that now
+/// overlap to the back.
 fn resolve_overlaps(p: &mut Project, ti: usize) {
     let magnet = p.settings.main_track_magnet;
     let t = &mut p.timeline.tracks[ti];
-    // Hauptspur mit Magnet ist schon lückenlos zusammengeschoben; ohne Magnet wie Nebenspuren
+    // main track with magnet is already pushed together without gaps; without magnet like secondary tracks
     if t.main && magnet {
         return;
     }
@@ -964,9 +964,9 @@ fn after_change(p: &mut Project, ti: usize) {
     }
 }
 
-/// `home`: Spur, in der der Clip schon lag (Verschieben) – dort gilt die Artprüfung nicht.
+/// `home`: track the clip already was on (move) – the kind check does not apply there.
 fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Option<TrackId>) -> Result<OpOutput> {
-    // Werte von außen (MCP, Plugins): nichts vor 0, nichts jenseits von Time::LIMIT
+    // values from outside (MCP, plugins): nothing before 0, nothing beyond Time::LIMIT
     clip.start = Time(clip.start.0.max(0));
     clip.source_in = Time(clip.source_in.0.max(0));
     clip.crop = clip.crop.clamped();
@@ -975,7 +975,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
     }
     let len = source_length(p, &clip);
     clamp_to_source(&mut clip, len);
-    // Doppelte Kennung (z. B. dieselbe Op zweimal) bekäme sonst zwei Clips mit einer ID
+    // a duplicate id (e.g. the same op twice) would otherwise give two clips one ID
     if p.find_clip(clip.id).is_some() {
         clip.id = ClipId::new();
     }
@@ -1007,7 +1007,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
             if magnet_main || t.is_free(clip.start, clip.duration, None) {
                 ti
             } else {
-                // Belegt: eine neue Spur darüber anlegen.
+                // occupied: create a new track above.
                 insert_track_above(p, ti, kind)
             }
         }
@@ -1044,7 +1044,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
     let magnet_main = p.timeline.tracks[ti].main && p.settings.main_track_magnet;
     let t = &mut p.timeline.tracks[ti];
     if magnet_main {
-        // Einfügen vor dem ersten Clip, dessen Mitte hinter der Ablageposition liegt
+        // insert before the first clip whose middle lies after the drop position
         let at = clip.start.0;
         let idx = t
             .clips

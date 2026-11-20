@@ -37,7 +37,7 @@ macro_rules! id_type {
 id_type!(ClipId);
 
 impl ClipId {
-    /// Abgeleitete, stabile ID (z. B. für eine zweite Vorschau-Fassung desselben Clips).
+    /// Derived, stable ID (e.g. for a second preview version of the same clip).
     pub fn derived(&self, salt: u128) -> Self {
         Self(uuid::Uuid::from_u128(self.0.as_u128() ^ salt))
     }
@@ -54,7 +54,7 @@ pub struct Project {
     pub settings: ProjectSettings,
     pub media: Vec<MediaRef>,
     pub timeline: Timeline,
-    /// Schriften, die nur in diesem Projekt gelten (werden beim Archivieren mitkopiert).
+    /// Fonts that apply only to this project (copied along when archiving).
     pub project_fonts: Vec<PathBuf>,
 }
 
@@ -97,7 +97,7 @@ impl Project {
 
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
         let mut p: Self = serde_json::from_str(s)?;
-        // kaputte Werte (Hand-Bearbeitung, fremde Werkzeuge) auf gültige bringen; gültige bleiben
+        // bring broken values (hand edits, foreign tools) to valid ones; valid ones stay
         if !p.settings.valid() {
             let s = &mut p.settings;
             s.width = s.width.clamp(16, 16384);
@@ -120,7 +120,7 @@ pub enum ColorSpace {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AspectPreset {
-    /// Übernimmt das Format des ersten Clips der Hauptspur.
+    /// Takes the format of the first clip on the main track.
     Original,
     Ratio(u32, u32),
     Custom,
@@ -147,20 +147,20 @@ pub struct ProjectSettings {
     pub height: u32,
     pub fps: Rational,
     pub aspect: AspectPreset,
-    /// Nicht ausgewertet (Auswahl aus der Oberfläche entfernt); bleiben mit `float_pipeline`,
-    /// damit Projektdateien unverändert laden und speichern.
+    /// Not evaluated (choice removed from the UI); kept with `float_pipeline`
+    /// so project files load and save unchanged.
     pub color_space: ColorSpace,
     pub float_pipeline: bool,
-    /// Hauptspur-Magnet: Clips der Hauptspur schließen lückenlos an.
+    /// Main track magnet: main track clips join without gaps.
     pub main_track_magnet: bool,
     pub snapping: bool,
-    /// „Alles mitziehen“: Ripple-Schnitte wirken auf alle nicht gesperrten Spuren.
+    /// „Alles mitziehen“: ripple edits act on all unlocked tracks.
     #[serde(default = "yes")]
     pub ripple_all_tracks: bool,
-    /// Gewählte Zielplattform (Format und Export-Vorlage), z. B. "shorts"
+    /// Chosen target platform (format and export preset), e.g. "shorts"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
-    /// Standard für die Tonkanäle aller Clips (einzeln überschreibbar)
+    /// Default for the audio channels of all clips (can be overridden per clip)
     #[serde(default)]
     pub channels: crate::fx::Channels,
 }
@@ -184,13 +184,13 @@ impl Default for ProjectSettings {
 }
 
 impl ProjectSettings {
-    /// Werte, mit denen Vorschau und Export arbeiten können: Größe 16…16384, Bildrate über 0 bis 240.
+    /// Values preview and export can work with: size 16…16384, frame rate above 0 up to 240.
     pub fn valid(&self) -> bool {
         let f = self.fps.as_f64();
         (16..=16384).contains(&self.width) && (16..=16384).contains(&self.height) && f > 0.0 && f <= 240.0
     }
 
-    /// Setzt ein Seitenverhältnis und hält die kürzere Kante (1080 bleibt 1080).
+    /// Sets an aspect ratio and keeps the shorter edge (1080 stays 1080).
     pub fn apply_aspect(&mut self, aspect: AspectPreset) {
         self.aspect = aspect;
         if let AspectPreset::Ratio(w, h) = aspect {
@@ -216,7 +216,7 @@ pub struct MediaRef {
     pub height: u32,
     pub fps: Option<Rational>,
     pub has_audio: bool,
-    /// Zahl der Tonspuren der Datei (0 = unbekannt, ältere Projekte; dann wie eine)
+    /// Number of audio streams in the file (0 = unknown, older projects; then treated as one)
     #[serde(default)]
     pub audio_streams: u32,
     pub video_codec: Option<String>,
@@ -224,9 +224,9 @@ pub struct MediaRef {
 }
 
 impl MediaRef {
-    /// Liegt die Datei lokal vor? Nur dann darf sie an FFmpeg (Vorschau wie Export) – ein Pfad
-    /// wie `http://…` aus der Projektdatei ließe FFmpeg sonst ins Netz gehen. Sonst gilt sie
-    /// als fehlend (neu verknüpfen).
+    /// Is the file local? Only then may it go to FFmpeg (preview and export) – a path
+    /// like `http://…` from the project file would otherwise make FFmpeg go online. Otherwise it counts
+    /// as missing (relink).
     pub fn is_local(&self) -> bool {
         self.path.is_file()
     }
@@ -241,14 +241,14 @@ pub enum MediaKind {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Timeline {
-    /// Index 0 ist die unterste Spur. Die erste Video-Spur mit `main = true` ist die Hauptspur.
+    /// Index 0 is the bottom track. The first video track with `main = true` is the main track.
     pub tracks: Vec<Track>,
-    /// Marker (Notizen, Kapitel), nach Zeit sortiert
+    /// Markers (notes, chapters), sorted by time
     #[serde(default)]
     pub markers: Vec<Marker>,
 }
 
-/// Marker auf der Zeitleiste: Zeitpunkt (optional mit Dauer), Farbe und Notiz.
+/// Marker on the timeline: point in time (optionally with duration), color and note.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Marker {
     pub id: u64,
@@ -259,12 +259,12 @@ pub struct Marker {
     pub name: String,
     #[serde(default)]
     pub note: String,
-    /// Index in `MARKER_COLORS`
+    /// Index into `MARKER_COLORS`
     #[serde(default)]
     pub color: u8,
 }
 
-/// Farbpalette für Marker und Clip-Labels (Name, RGB)
+/// Color palette for markers and clip labels (name, RGB)
 pub const MARKER_COLORS: [(&str, [u8; 3]); 8] = [
     ("Blau", [70, 140, 255]),
     ("Grün", [70, 200, 120]),
@@ -287,9 +287,9 @@ pub enum TrackKind {
 }
 
 impl TrackKind {
-    /// Darf ein Clip der Art `clip` (siehe [`Clip::kind`]) auf eine Spur dieser Art? Bild-Clips
-    /// (Medien mit Bild, Sticker) gelten als `Video`; Sticker-Spuren (z. B. aus Plugins oder
-    /// erzeugten Projekten) nehmen sie ebenfalls auf.
+    /// May a clip of kind `clip` (see [`Clip::kind`]) go on a track of this kind? Image clips
+    /// (media with picture, stickers) count as `Video`; sticker tracks (e.g. from plugins or
+    /// generated projects) take them too.
     pub fn accepts(self, clip: TrackKind) -> bool {
         self == clip || (self == TrackKind::Sticker && clip == TrackKind::Video)
     }
@@ -304,13 +304,13 @@ pub struct Track {
     pub hidden: bool,
     pub muted: bool,
     pub clips: Vec<Clip>,
-    /// Eigener Spurname (sonst Art + Nummer)
+    /// Custom track name (otherwise kind + number)
     #[serde(default)]
     pub name: Option<String>,
-    /// In der Zeitleiste eingeklappt (schmal, bleibt sichtbar)
+    /// Collapsed in the timeline (narrow, stays visible)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub collapsed: bool,
-    /// Höhenfaktor in der Zeitleiste (1 = normal)
+    /// Height factor in the timeline (1 = normal)
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub height: f32,
 }
@@ -344,7 +344,7 @@ impl Track {
     pub(crate) fn sort(&mut self) {
         self.clips.sort_by_key(|c| c.start);
     }
-    /// Freier Bereich ohne Überlappung?
+    /// Free range without overlap?
     pub fn is_free(&self, start: Time, dur: Time, ignore: Option<ClipId>) -> bool {
         let end = start + dur;
         self.clips
@@ -357,19 +357,19 @@ impl Track {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     pub id: ClipId,
-    /// Position auf der Zeitleiste.
+    /// Position on the timeline.
     pub start: Time,
     pub duration: Time,
-    /// Startpunkt innerhalb der Quelle (bei Medien-Clips).
+    /// Start point within the source (for media clips).
     pub source_in: Time,
     pub content: ClipContent,
     pub transform: Transform,
     pub opacity: f32,
     pub volume_db: f32,
-    /// Abspielgeschwindigkeit (1 = normal)
+    /// Playback speed (1 = normal)
     #[serde(default = "one")]
     pub speed: f32,
-    /// Deaktiviert (V): bleibt in der Zeitleiste, wird aber nicht gezeigt/gehört
+    /// Disabled (V): stays in the timeline but is not shown/heard
     #[serde(default)]
     pub disabled: bool,
     #[serde(default)]
@@ -378,35 +378,35 @@ pub struct Clip {
     pub keyframes: Keyframes,
     #[serde(default)]
     pub anim: Animations,
-    /// Übergang zum nächsten Clip derselben Spur
+    /// Transition to the next clip on the same track
     #[serde(default)]
     pub transition_out: Option<TransitionRef>,
-    /// Ton ein-/ausblenden
+    /// Audio fade in/out
     #[serde(default)]
     pub fade_in: Time,
     #[serde(default)]
     pub fade_out: Time,
     #[serde(default)]
     pub audio: AudioFx,
-    /// Tonspur der Datei (0 = erste); `None` = erste
+    /// Audio stream of the file (0 = first); `None` = first
     #[serde(default)]
     pub audio_stream: Option<u32>,
-    /// Erkannte Beats (Quellzeit), für Markierungen und Einrasten
+    /// Detected beats (source time), for marks and snapping
     #[serde(default)]
     pub beats: Vec<Time>,
-    /// Farbmarkierung (Index in `MARKER_COLORS`)
+    /// Color label (index into `MARKER_COLORS`)
     #[serde(default)]
     pub label: Option<u8>,
-    /// Gruppe: Clips mit gleicher Kennung werden gemeinsam ausgewählt und bewegt
+    /// Group: clips with the same id are selected and moved together
     #[serde(default)]
     pub group: Option<u64>,
-    /// Zuschnitt des Quellbilds (ohne Keyframes); leer = Feld fehlt in der Datei
+    /// Crop of the source image (without keyframes); empty = field missing in the file
     #[serde(default, skip_serializing_if = "Crop::is_none")]
     pub crop: Crop,
 }
 
-/// Zuschnitt: Ränder als Anteil der Quellbreite/-höhe (0…1). Wirkt vor Skalierung, Drehung
-/// und Position; der Rest bleibt an seiner Stelle im Bild.
+/// Crop: edges as a fraction of source width/height (0…1). Applies before scaling, rotation
+/// and position; the rest stays in its place in the image.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Crop {
@@ -417,14 +417,14 @@ pub struct Crop {
 }
 
 impl Crop {
-    /// Mindestens so viel bleibt je Richtung übrig.
+    /// At least this much remains in each direction.
     pub const MIN_REST: f32 = 0.02;
 
     pub fn is_none(&self) -> bool {
         *self == Crop::default()
     }
 
-    /// Ränder auf 0…1 begrenzen; reicht der Rest nicht, werden beide Seiten anteilig gekürzt.
+    /// Clamp edges to 0…1; if the rest is too small, both sides are shortened proportionally.
     pub fn clamped(self) -> Self {
         fn pair(a: f32, b: f32) -> (f32, f32) {
             let (a, b) = (a.clamp(0.0, 1.0), b.clamp(0.0, 1.0));
@@ -476,7 +476,7 @@ impl Clip {
         }
     }
 
-    /// Beats in Zeitleisten-Zeit (nur die im sichtbaren Bereich des Clips).
+    /// Beats in timeline time (only those in the visible range of the clip).
     pub fn beat_times(&self) -> Vec<Time> {
         let span = self.source_span();
         self.beats
@@ -497,15 +497,15 @@ impl Clip {
     pub fn contains(&self, t: Time) -> bool {
         t >= self.start && t < self.end()
     }
-    /// Karaoke-Wortzeiten wie Keyframes ändern (`f` je Zeit). Vor dem Ändern der Dauer aufrufen:
-    /// gleichmäßig verteilte Wörter werden dabei mit der bisherigen Dauer festgehalten.
+    /// Change karaoke word times like keyframes (`f` per time). Call before changing the duration:
+    /// evenly spread words are pinned with the previous duration.
     pub fn retime_words(&mut self, f: impl Fn(Time) -> Time) {
         let dur = self.duration;
         if let ClipContent::Text(TextStyle { text, karaoke: Some(k), .. }) = &mut self.content {
             k.words = k.starts(text, dur).into_iter().map(f).collect();
         }
     }
-    /// Zeitleisten-Zeit → Quellzeit (berücksichtigt Geschwindigkeit und Rückwärts).
+    /// Timeline time → source time (accounts for speed and reverse).
     pub fn source_time(&self, t: Time) -> Time {
         let mut rel = (t - self.start).0 as f64 * self.speed.max(0.01) as f64;
         if let Some(c) = &self.fx.speed_curve {
@@ -518,15 +518,15 @@ impl Clip {
             Time(self.source_in.0 + rel.round() as i64)
         }
     }
-    /// Zensur-Flächen mit der Bahn in Clipzeit (ab Clipbeginn) statt Quellzeit, wie die
-    /// Filterkette sie braucht. `at`: nur die Lage zu dieser Clipzeit (Einzelbild).
+    /// Censor areas with the path in clip time (from clip start) instead of source time, as the
+    /// filter chain needs them. `at`: only the position at this clip time (single frame).
     pub fn censor_in_clip_time(&self, at: Option<Time>) -> Vec<Censor> {
         let dur = self.duration;
         let mut ts = vec![Time::ZERO, dur];
         if let Some(a) = at {
             ts = vec![a];
         } else if self.fx.speed_curve.is_some() {
-            // Kurve: Zuordnung nicht linear, in Bildschritten abtasten
+            // curve: mapping not linear, sample in frame steps
             let step = Time::from_secs_f64(1.0 / 30.0);
             ts.extend((1..dur.0 / step.0.max(1)).map(|i| Time(i * step.0)));
         }
@@ -558,12 +558,12 @@ impl Clip {
             })
             .collect()
     }
-    /// Länge des genutzten Quellbereichs.
+    /// Length of the used source range.
     pub fn source_span(&self) -> Time {
         Time((self.duration.0 as f64 * self.speed.max(0.01) as f64).round() as i64)
     }
-    /// Darstellung zum Zeitpunkt `t_rel` (relativ zum Clipanfang): Keyframes,
-    /// dann Ein-/Aus-/Kombi-Animation.
+    /// Appearance at time `t_rel` (relative to the clip start): keyframes,
+    /// then in/out/combo animation.
     pub fn eval_at(&self, t_rel: Time, canvas_w: f32, canvas_h: f32) -> Evaluated {
         let k = &self.keyframes;
         let mut e = Evaluated {
@@ -608,7 +608,7 @@ impl Clip {
         e.opacity = e.opacity.clamp(0.0, 1.0);
         e
     }
-    /// Stärke eines Effekt-/Filter-Elements zum Zeitpunkt `t_rel` (Keyframes oder fester Wert).
+    /// Strength of an effect/filter element at time `t_rel` (keyframes or fixed value).
     pub fn strength_at(&self, t_rel: Time) -> f32 {
         let base = match &self.content {
             ClipContent::Effect(r) | ClipContent::Filter(r) => r.intensity,
@@ -651,56 +651,56 @@ pub enum ClipContent {
         kind: MediaKind,
     },
     Text(TextStyle),
-    /// Effekt als eigenes Element auf einer Effektspur: wirkt auf alles darunter
+    /// Effect as its own element on an effect track: acts on everything below
     Effect(FxRef),
-    /// Filter als eigenes Element auf einer Filterspur: wirkt auf alles darunter
+    /// Filter as its own element on a filter track: acts on everything below
     Filter(FxRef),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextStyle {
     pub text: String,
-    /// Familienname; `None` = Systemstandard.
+    /// Family name; `None` = system default.
     pub font_family: Option<String>,
     pub size: f32,
     pub color: [u8; 4],
     pub bold: bool,
     pub italic: bool,
     pub uppercase: bool,
-    /// Zeilenumbruch innerhalb der Bildbreite.
+    /// Line wrap within the image width.
     pub auto_wrap: bool,
-    /// Kontur (Breite in px, Farbe)
+    /// Outline (width in px, color)
     #[serde(default)]
     pub outline: Option<(f32, [u8; 4])>,
-    /// Hintergrundfläche hinter dem Text
+    /// Background box behind the text
     #[serde(default)]
     pub background: Option<[u8; 4]>,
     #[serde(default = "yes")]
     pub shadow: bool,
     #[serde(default = "one")]
     pub line_spacing: f32,
-    /// Ausrichtung: -1 links, 0 Mitte, 1 rechts
+    /// Alignment: -1 left, 0 center, 1 right
     #[serde(default)]
     pub align: i8,
-    /// Karaoke: das gerade gesprochene Wort in eigener Farbe
+    /// Karaoke: the word currently spoken in its own color
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub karaoke: Option<Karaoke>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Karaoke {
-    /// Hervorhebungsfarbe
+    /// Highlight color
     pub color: [u8; 4],
-    /// „Füllen“: bereits gesprochene Wörter behalten die Hervorhebung
+    /// „Füllen“: words already spoken keep the highlight
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fill: bool,
-    /// Beginn je Wort relativ zum Clipanfang (Spracherkennung); passt die Wortzahl nicht zum
-    /// Text, werden die Wörter gleichmäßig nach Zeichenzahl verteilt
+    /// Start of each word relative to the clip start (speech recognition); if the word count does not
+    /// match the text, the words are spread evenly by character count
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub words: Vec<Time>,
 }
 
-/// Byte-Bereiche der Wörter (getrennt an Leerraum).
+/// Byte ranges of the words (split at whitespace).
 pub fn word_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
     let mut v = Vec::new();
     let mut start = None;
@@ -718,8 +718,8 @@ pub fn word_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
 }
 
 impl Karaoke {
-    /// Beginn der Wörter von `text` bei Clipdauer `dur`: die gespeicherten, wenn die Wortzahl
-    /// passt, sonst gleichmäßig nach Zeichenzahl (wie `resegment` der Spracherkennung).
+    /// Start of the words of `text` at clip duration `dur`: the stored ones if the word count
+    /// matches, otherwise evenly by character count (like `resegment` in speech recognition).
     pub fn starts(&self, text: &str, dur: Time) -> Vec<Time> {
         let words = text.split_whitespace().map(|w| w.chars().count() + 1).collect::<Vec<_>>();
         if self.words.len() == words.len() {
@@ -738,14 +738,14 @@ impl Karaoke {
     }
 }
 
-/// Zur Zeit `t` (relativ zum Clipanfang) hervorgehobenes Wort: das zuletzt begonnene, auch in
-/// Sprechpausen bis zum nächsten; vor dem ersten Wort keins.
+/// Word highlighted at time `t` (relative to the clip start): the last one started, also in
+/// speech pauses until the next; none before the first word.
 pub fn karaoke_word(starts: &[Time], t: Time) -> Option<usize> {
     starts.partition_point(|s| *s <= t).checked_sub(1)
 }
 
 impl TextStyle {
-    /// Hervorgehobene Wörter (Indizes) zur Zeit `t` eines Clips der Dauer `dur`.
+    /// Highlighted words (indices) at time `t` of a clip of duration `dur`.
     pub fn karaoke_lit(&self, dur: Time, t: Time) -> Option<std::ops::Range<usize>> {
         let k = self.karaoke.as_ref()?;
         let i = karaoke_word(&k.starts(&self.text, dur), t)?;
@@ -776,7 +776,7 @@ impl Default for TextStyle {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Transform {
-    /// Position relativ zur Bildmitte in Pixeln des Projekts.
+    /// Position relative to the image center in project pixels.
     pub x: f32,
     pub y: f32,
     pub scale: f32,

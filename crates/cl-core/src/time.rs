@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Sub};
 
-/// Zeitpunkt bzw. Dauer in Mikrosekunden.
+/// Point in time or duration in microseconds.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
 )]
@@ -11,7 +11,7 @@ pub struct Time(pub i64);
 
 impl Time {
     pub const ZERO: Time = Time(0);
-    /// Größte Lage/Länge für Clips (~35 Jahre): Summen vieler Clips laufen nicht über.
+    /// Largest position/length for clips (~35 years): sums of many clips don't overflow.
     pub const LIMIT: Time = Time(1 << 50);
 
     pub fn from_secs_f64(s: f64) -> Self {
@@ -26,17 +26,17 @@ impl Time {
     pub fn as_millis(self) -> i64 {
         self.0 / 1000
     }
-    /// Rastet auf das nächste Frame-Raster der Bildrate ein.
+    /// Snaps to the nearest frame grid of the frame rate.
     pub fn snap_to_frame(self, fps: Rational) -> Self {
-        // Bildrate 0 (kaputte Projektdatei) würde jede Zeit auf 0 ziehen
+        // frame rate 0 (broken project file) would pull every time to 0
         if fps.num == 0 {
             return self;
         }
         let frame = (self.as_secs_f64() * fps.as_f64()).round();
         Time::from_secs_f64(frame / fps.as_f64())
     }
-    /// Ganze Sekunden und das Bild darin, aufs nächste Bild gerundet – eine Regel für alle
-    /// Zeitanzeigen (Zeitcode, Inspektor), sonst lagen sie um ein Bild auseinander.
+    /// Whole seconds and the frame within, rounded to the nearest frame – one rule for all
+    /// time displays (timecode, inspector), otherwise they were one frame apart.
     pub fn secs_frames(self, fps: Rational) -> (i64, i64) {
         let total = self.as_secs_f64().max(0.0);
         let fps_f = fps.as_f64();
@@ -49,7 +49,7 @@ impl Time {
         (secs, frames)
     }
 
-    /// Zeitcode `HH:MM:SS:FF`.
+    /// Timecode `HH:MM:SS:FF`.
     pub fn timecode(self, fps: Rational) -> String {
         let (secs, frames) = self.secs_frames(fps);
         format!(
@@ -65,7 +65,7 @@ impl Time {
 impl Add for Time {
     type Output = Time;
     fn add(self, o: Time) -> Time {
-        // sättigend: riesige Zeiten aus Dateien/MCP dürfen nicht überlaufen (Debug: Absturz)
+        // saturating: huge times from files/MCP must not overflow (debug: crash)
         Time(self.0.saturating_add(o.0))
     }
 }
@@ -81,7 +81,7 @@ impl fmt::Display for Time {
     }
 }
 
-/// Exakte Bildrate, z. B. 30000/1001 für 29,97 fps.
+/// Exact frame rate, e.g. 30000/1001 for 29.97 fps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Rational {
     pub num: u32,
@@ -95,7 +95,7 @@ impl Rational {
     pub fn as_f64(self) -> f64 {
         self.num as f64 / self.den.max(1) as f64
     }
-    /// Parst `30`, `29.97`, `30000/1001`, `12.5`. Null, negative und unendliche Raten → `None`.
+    /// Parses `30`, `29.97`, `30000/1001`, `12.5`. Zero, negative and infinite rates → `None`.
     pub fn parse(s: &str) -> Option<Self> {
         if let Some((n, d)) = s.split_once('/') {
             let (n, d) = (n.trim().parse().ok()?, d.trim().parse().ok()?);
@@ -140,7 +140,7 @@ mod tests {
             Time::from_secs_f64(3661.5).timecode(Rational::new(30, 1)),
             "01:01:01:15"
         );
-        // knapp vor einem Bild (Gleitkomma): aufs nächste Bild, mit Übertrag in die Sekunde
+        // just before a frame (floating point): to the nearest frame, carrying into the second
         let f30 = Rational::new(30, 1);
         assert_eq!(Time::from_secs_f64(3.0 + 19.0 / 30.0 - 1e-6).timecode(f30), "00:00:03:19");
         assert_eq!(Time::from_secs_f64(3.0 + 29.6 / 30.0).secs_frames(f30), (4, 0));
