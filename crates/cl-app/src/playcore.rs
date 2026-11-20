@@ -6,8 +6,8 @@
 //!
 //! Zustände und Übergänge:
 //! - `Stand` --Play--> `Puffern` (Ströme öffnen, Ton vorbereiten, Uhr steht)
-//! - `Puffern` --alle Ströme am Playhead haben ein Bild, sonst nach 0,5 s--> `Spielen` (Uhr läuft,
-//!   Ton setzt an der Uhr ein)
+//! - `Puffern` --alle Ströme am Playhead haben ein Bild, sonst nach 0,5 s, und der erste Ton liegt
+//!   bereit (höchstens 10 s)--> `Spielen` (Uhr läuft, Ton setzt an der Uhr ein)
 //! - `Spielen` --Pause (Ton läuft, Tempo 1)--> `Pause` (Ströme und Ton bleiben offen)
 //! - `Pause` --Play an derselben Stelle ohne Änderung--> `Spielen` (ohne neue Ströme)
 //! - `Pause` --Playhead verschoben oder Projekt geändert--> `Stand` (Ströme frei)
@@ -58,6 +58,8 @@ pub enum AudioIn {
     None,
     /// vorbereitet, noch nicht hörbar
     Pending,
+    /// vorbereitet, aber noch kein Sample da (erstes Ton-Fenster läuft an)
+    Loading,
     /// hörbar an dieser Stelle (Ton-Uhr)
     Running(Time),
     /// Ausgabe ließ sich nicht öffnen
@@ -171,6 +173,8 @@ const STALL: f64 = 2.0;
 const STALL_FIRST: f64 = 6.0;
 /// Puffern endet spätestens nach dieser Zeit (dann läuft die Uhr, das Bild holt auf)
 const WARM_MAX: f64 = 0.5;
+/// Kommt der erste Ton noch (kalte Platte), wartet das Puffern bis zu dieser Sicherungsfrist auf ihn
+const AUDIO_WAIT_MAX: f64 = 10.0;
 /// Hörbare Änderungen beim Abspielen: Ton erst so lange nach der letzten Änderung neu
 pub const AUDIO_DEBOUNCE: f64 = 0.15;
 /// Öffnen schlug fehl: so lange nicht erneut versuchen
@@ -632,7 +636,9 @@ impl<S: Source> PlayCore<S> {
             ready &= s.taken > 0;
         }
         let waited = t.now - self.warm_since;
-        if (ready && (any || waited > 0.05)) || waited > WARM_MAX {
+        // erster Ton noch unterwegs: nicht nach Systemzeit loslaufen, der Ton jagte der Uhr sonst hinterher
+        let audio_late = t.audio == AudioIn::Loading && waited < AUDIO_WAIT_MAX;
+        if !audio_late && ((ready && (any || waited > 0.05)) || waited > WARM_MAX) {
             self.mode = Mode::Spielen;
             for s in self.cur.values_mut().filter(|s| s.t0 <= pos) {
                 // erstes Bild = jetzt (nicht schon während des Pufferns fällige überspringen)
@@ -665,7 +671,7 @@ impl<S: Source> PlayCore<S> {
                     self.pos = p.max(self.pos);
                     self.clock = Some((now, self.pos));
                 }
-                AudioIn::None | AudioIn::Pending => {}
+                AudioIn::None | AudioIn::Pending | AudioIn::Loading => {}
             }
         }
         if !matches!(t.audio, AudioIn::Running(_)) {

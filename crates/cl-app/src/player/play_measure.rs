@@ -233,6 +233,7 @@ fn drive(mut project: Project, label: &str, start: Time, secs: f64) -> Run {
             Some(a) if a.failed() => AudioIn::Failed,
             Some(a) if a.started() && a.finished() => AudioIn::Finished,
             Some(a) if a.started() => AudioIn::Running(a.position()),
+            Some(a) if !a.ready() => AudioIn::Loading,
             Some(_) => AudioIn::Pending,
         };
         if let Some(a) = &audio {

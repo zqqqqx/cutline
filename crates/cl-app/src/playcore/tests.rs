@@ -87,6 +87,7 @@ impl Aud {
         }
         match self.st {
             AState::Off => AudioIn::None,
+            AState::Prep { ready, .. } if now < ready => AudioIn::Loading,
             AState::Prep { .. } => AudioIn::Pending,
             AState::Run { at, anchor, paused_at, paused } => {
                 let now = paused_at.unwrap_or(now);
@@ -298,8 +299,11 @@ impl World {
                     if let Some(f) = self.core.pull(c.id, now, i == 0) {
                         // aus der Zukunft höchstens das erste Bild eines Clips, der im Übergang schon sichtbar ist
                         assert!(f <= p.max(c.start) + 1e-6, "Bild aus der Zukunft: {f} bei {p}");
-                        // ein Ersatz, der nach REPLACE_AFTER mit Rückstand übernimmt, darf älter sein
-                        let late = had.is_some_and(|k| replacement(&self.core).is_none() && self.attached_at.get(&(c.id, k)).is_some_and(|t| now - t > REPLACE_AFTER));
+                        // ein Ersatz, der nach REPLACE_AFTER oder nach dem Ende des alten Stroms (`len`)
+                        // mit Rückstand übernimmt, darf älter sein
+                        let late = had.is_some_and(|k| {
+                            replacement(&self.core).is_none() && (c.dec.len.is_some() || self.attached_at.get(&(c.id, k)).is_some_and(|t| now - t > REPLACE_AFTER))
+                        });
                         if let Some(&last) = self.last_frame.get(&c.id).filter(|_| !late) {
                             assert!(f >= last - 1.01 / self.fps, "älteres Bild gezeigt: {f} nach {last}");
                         }
@@ -385,6 +389,31 @@ fn play_from_stand_buffers_then_runs_with_audio_clock() {
     let st = w.core.take_stats();
     assert_eq!(st.catch_ups, 0);
     assert_eq!(st.opens, 1);
+}
+
+/// Kalte Platte: das erste Ton-Fenster braucht 3 s. Die Uhr wartet darauf, statt Sekunden nach
+/// Systemzeit zu laufen (der Ton jagte ihr dann hinterher – oder holte sie nie ein).
+#[test]
+fn clock_waits_for_late_first_audio() {
+    let mut w = World::new(vec![clip(1, 0.0, 10.0)]);
+    w.aud.latency = 3.0;
+    w.play();
+    w.run(2.9, DT);
+    assert_eq!(w.core.mode(), Mode::Puffern, "Uhr läuft ohne Ton");
+    assert_eq!(w.core.pos(), Time::ZERO);
+    w.run(0.2, DT);
+    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)), "Ton setzt mit der Uhr ein");
+}
+
+/// Kommt gar kein Ton, läuft die Uhr nach der Sicherungsfrist trotzdem (kein Hänger).
+#[test]
+fn clock_starts_without_audio_after_wait_limit() {
+    let mut w = World::new(vec![clip(1, 0.0, 60.0)]);
+    w.aud.latency = 1e9;
+    w.play();
+    w.run(AUDIO_WAIT_MAX + 0.1, DT);
+    assert_eq!(w.core.mode(), Mode::Spielen);
 }
 
 #[test]

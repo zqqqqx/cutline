@@ -708,6 +708,12 @@ impl AudioPlayer {
         o.finished && o.buf.is_empty()
     }
 
+    /// Ton liegt bereit (erstes Fenster lieferte Samples oder die Zuführung ist fertig)
+    pub fn ready(&self) -> bool {
+        let o = self.shared.out.lock().unwrap();
+        o.buf.len() >= 2 || o.finished
+    }
+
     /// Zeitpunkt des ersten hörbaren Samples
     pub fn first_sound(&self) -> Option<Instant> {
         self.shared.first_sound.get().copied()
@@ -1186,6 +1192,23 @@ mod tests {
             eprintln!("Lauf {i}: Aufruf {:.0} ms, erstes Sample {:?} ms, Uhr − Systemzeit {:+.1} ms", opened.as_secs_f64() * 1e3, first.map(|d| (d.as_secs_f64() * 1e3).round()), diff * 1e3);
             assert!(diff.abs() < 0.005, "Übergabe ohne Sprung: {diff}");
         }
+    }
+
+    /// Vor dem Anker: bereit, sobald das erste Fenster Samples liefert (darauf wartet die Uhr)
+    #[test]
+    fn ready_once_first_window_delivers() {
+        if !cl_media::ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = test_project(dir.path(), 3.0);
+        let a = AudioPlayer::start_null(&p, Time::ZERO).unwrap();
+        let t0 = Instant::now();
+        while !a.ready() && t0.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(a.ready());
+        assert!(!a.started(), "ohne Anker kein Ton");
     }
 
     fn test_project(dir: &std::path::Path, secs: f64) -> Project {
