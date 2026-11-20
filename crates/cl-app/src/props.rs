@@ -1,5 +1,5 @@
-//! Rechtsklick → Eigenschaften: ein Fenster mit den Daten eines Mediums, Clips, einer Spur
-//! oder eines Projekts (nur lesen, Pfade kopierbar).
+//! Right-click → Properties: a window with the data of a medium, clip, track
+//! or project (read-only, paths copyable).
 
 use std::path::PathBuf;
 
@@ -43,7 +43,7 @@ fn secs(t: Time) -> String {
     }
 }
 
-/// Titel, Zeilen und Pfad des Eigenschaften-Fensters
+/// Title, rows and path of the properties window
 pub type PropsRows = (String, Vec<(&'static str, String)>, Option<PathBuf>);
 
 impl App {
@@ -172,7 +172,7 @@ impl App {
             self.props_cache = None;
             return;
         };
-        // Zeilen lesen Dateien (Größe, Projektdatei): nur beim Öffnen und nach Änderungen
+        // Rows read files (size, project file): only on open and after changes
         let (title, rows, path) = match &self.props_cache {
             Some((k, rev, r)) if *k == p && *rev == self.revision => r.clone(),
             _ => {
