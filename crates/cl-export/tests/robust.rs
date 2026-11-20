@@ -1,6 +1,6 @@
-//! Stabilität des Exports: kleine Zufallsprojekte (fester Seed) mit allen Clip-Arten und
-//! Kombinationen, Sonderzeichen in Texten und Pfaden, Randfälle und Fehlerfälle.
-//! Alles klein (≤ 3 s, ≤ 320×180), FFmpeg mit 2 Threads.
+//! Export robustness: small random projects (fixed seed) with all clip kinds and
+//! combinations, special characters in texts and paths, edge cases and error cases.
+//! Everything small (≤ 3 s, ≤ 320×180), FFmpeg with 2 threads.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,7 +27,7 @@ struct Media {
     wav: MediaRef,
 }
 
-/// Testmedien in `dir` (Name darf Sonderzeichen enthalten).
+/// Test media in `dir` (the name may contain special characters).
 fn media(dir: &Path) -> Media {
     std::fs::create_dir_all(dir).unwrap();
     let (v, i, g, a) = (dir.join("clip 'ä'.mp4"), dir.join("bild 50% [1].png"), dir.join("anim, 50%.gif"), dir.join("ton;x.wav"));
@@ -51,7 +51,7 @@ fn export(p: &Project, s: &ExportSettings, out: &Path) -> cl_export::Result<()> 
     run(&job, Arc::new(AtomicBool::new(false)), |_| {})
 }
 
-/// (Dauer s, Videostrom?, Tonstrom?)
+/// (duration s, video stream?, audio stream?)
 fn streams(f: &Path) -> (f64, bool, bool) {
     let o = cl_media::ffmpeg_command().unwrap().args(["-hide_banner", "-nostdin", "-i"]).arg(f).output().unwrap();
     let e = String::from_utf8_lossy(&o.stderr);
@@ -67,7 +67,7 @@ fn streams(f: &Path) -> (f64, bool, bool) {
     (d, e.contains("Video:"), e.contains("Audio:"))
 }
 
-/// Kleiner deterministischer Zufall (xorshift).
+/// Small deterministic random (xorshift).
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -102,7 +102,7 @@ fn random_project(seed: u64, m: &Media) -> Project {
         p.media.push(x.clone());
     }
     let total = r.f(2.0, 3.0);
-    // Hauptspur: Videoclips hintereinander, teils mit Übergängen
+    // main track: video clips one after another, some with transitions
     let mut main = Track::new(TrackKind::Video);
     main.main = true;
     let mut t = 0.0;
@@ -123,7 +123,7 @@ fn random_project(seed: u64, m: &Media) -> Project {
             c.fade_out = secs(r.f(0.0, 2.0));
         }
         if r.chance(0.5) {
-            // auch Übergänge länger als der Clip und unbekannte Ids
+            // also transitions longer than the clip and unknown ids
             let id = if r.chance(0.1) { "gibt-es-nicht'[x];movie=a".to_string() } else { r.pick(cl_fx::TRANSITIONS).0.to_string() };
             c.transition_out = Some(TransitionRef { id, duration: secs(r.f(0.1, 1.5)) });
         }
@@ -144,11 +144,11 @@ fn random_project(seed: u64, m: &Media) -> Project {
             c.fx.adjust.vignette = r.f(0.0, 1.0) as f32;
         }
         main.clips.push(c);
-        // manchmal eine Lücke: der Übergang des vorigen Clips zeigt dann ins Leere
+        // sometimes a gap: the transition of the previous clip then points into nothing
         t += len + if r.chance(0.15) { r.f(0.1, 0.4) } else { 0.0 };
     }
     p.timeline.tracks.push(main);
-    // Überlagerungen: Bild, bewegtes Bild, Video-PiP mit Keyframes und Animationen
+    // overlays: image, animated image, video PiP with keyframes and animations
     for _ in 0..(r.next() % 3) {
         let mut tr = Track::new(TrackKind::Video);
         let (media, kind) = *r.pick(&[(m.image.id, MediaKind::Image), (m.gif.id, MediaKind::Image), (m.video.id, MediaKind::Video)]);
@@ -169,7 +169,7 @@ fn random_project(seed: u64, m: &Media) -> Project {
         tr.clips.push(c);
         p.timeline.tracks.push(tr);
     }
-    // Texte mit Sonderzeichen
+    // texts with special characters
     let mut tx = Track::new(TrackKind::Text);
     let mut a = 0.0;
     while a < total - 0.3 {
@@ -184,7 +184,7 @@ fn random_project(seed: u64, m: &Media) -> Project {
         a += len + r.f(0.0, 0.3);
     }
     p.timeline.tracks.push(tx);
-    // Effekt- und Filter-Elemente
+    // effect and filter elements
     if r.chance(0.6) {
         let mut e = Track::new(TrackKind::Effect);
         let mut c = Clip::new(ClipContent::Effect(FxRef::new(r.pick(cl_fx::EFFECTS).id)), secs(r.f(0.0, 1.0)), secs(r.f(0.3, 1.5)));
@@ -200,7 +200,7 @@ fn random_project(seed: u64, m: &Media) -> Project {
         f.clips.push(Clip::new(ClipContent::Filter(FxRef::new(r.pick(cl_fx::FILTERS).id)), secs(r.f(0.0, 1.0)), secs(r.f(0.3, 1.5))));
         p.timeline.tracks.push(f);
     }
-    // Ton: Lautstärke-Keyframes, 0-Lautstärke, Blenden, Kanäle
+    // audio: volume keyframes, 0 volume, fades, channels
     let mut au = Track::new(TrackKind::Audio);
     au.muted = r.chance(0.2);
     let mut c = Clip::new(ClipContent::Media { media: m.wav.id, kind: MediaKind::Audio }, secs(r.f(0.0, 0.5)), secs(r.f(0.5, 2.0)));
@@ -217,8 +217,8 @@ fn random_project(seed: u64, m: &Media) -> Project {
     p
 }
 
-/// Echte Exporte kleiner Zufallsprojekte: Export gelingt, Länge stimmt auf ±1 Bild, Ströme wie
-/// erwartet. Findet Graph-Fehler, die nur bei Kombinationen auftreten.
+/// Real exports of small random projects: export succeeds, length right to ±1 frame, streams as
+/// expected. Finds graph errors that only appear in combinations.
 #[test]
 fn random_projects_export() {
     if !cl_media::ffmpeg_available() {
@@ -252,25 +252,25 @@ fn random_projects_export() {
         }
         let (d, v, a) = streams(&out);
         let want = p.duration().as_secs_f64();
-        // ±1 Bild (GIF: höchstens 15 Bilder/s), Ton-Container runden auf Audio-Pakete
+        // ±1 frame (GIF: at most 15 frames/s), audio containers round to audio packets
         let tol = match format {
             Format::Gif => 1.0 / 15.0 + 0.01,
             f if f.audio_only() => 0.05,
             _ => 1.0 / 30.0 + 0.03,
         };
         if (d - want).abs() > tol {
-            failed.push(format!("Seed {seed} ({format:?}): Länge {d:.3} statt {want:.3}"));
+            failed.push(format!("seed {seed} ({format:?}): length {d:.3} instead of {want:.3}"));
         }
         let want_v = !format.audio_only();
         let want_a = format.audio_only() || format != Format::Gif;
         if (v, a) != (want_v, want_a) {
-            failed.push(format!("Seed {seed} ({format:?}): Ströme Bild {v}/Ton {a}"));
+            failed.push(format!("seed {seed} ({format:?}): streams video {v}/audio {a}"));
         }
     }
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
 
-/// Randfälle, die nicht abstürzen dürfen und sauber exportieren.
+/// Edge cases that must not crash and export cleanly.
 #[test]
 fn edge_case_projects_export() {
     if !cl_media::ffmpeg_available() {
@@ -292,19 +292,19 @@ fn edge_case_projects_export() {
         p.timeline.tracks.push(t);
     };
     let mut cases: Vec<(&str, Project, f64)> = Vec::new();
-    // nur eine Lücke vor dem ersten Clip
+    // only a gap before the first clip
     let mut p = base(64, 64);
     with(&mut p, TrackKind::Video, vec![vclip(1.5, 0.5)]);
-    cases.push(("Lücke am Anfang", p, 2.0));
-    // ganzes Projekt kürzer als ein Bild der Live-Vorschau (2 Bilder/s): scheiterte früher
+    cases.push(("gap at the start", p, 2.0));
+    // whole project shorter than one frame of the live preview (2 frames/s): used to fail
     let mut p = base(64, 64);
     with(&mut p, TrackKind::Video, vec![vclip(0.0, 0.1)]);
-    cases.push(("Projekt 0,1 s", p, 0.1));
-    // 1 Bild lang, 1 Tick lang
+    cases.push(("project 0.1 s", p, 0.1));
+    // 1 frame long, 1 tick long
     let mut p = base(64, 64);
     with(&mut p, TrackKind::Video, vec![vclip(0.0, 1.0 / 30.0), vclip(1.0 / 30.0, 0.000001), vclip(0.5, 0.5)]);
-    cases.push(("1 Bild, 1 Tick", p, 1.0));
-    // Übergang länger als beide Clips, Übergang am letzten Clip, Übergang über eine Lücke
+    cases.push(("1 frame, 1 tick", p, 1.0));
+    // transition longer than both clips, transition at the last clip, transition across a gap
     let mut p = base(64, 64);
     let mut a = vclip(0.0, 0.3);
     a.transition_out = Some(TransitionRef { id: "fade".into(), duration: secs(2.0) });
@@ -313,8 +313,8 @@ fn edge_case_projects_export() {
     let mut c = vclip(1.0, 0.5);
     c.transition_out = Some(TransitionRef { id: "dissolve".into(), duration: secs(1.0) });
     with(&mut p, TrackKind::Video, vec![a, b, c]);
-    cases.push(("Übergänge zu lang / ins Leere", p, 1.5));
-    // geteilter Clip mit Blenden länger als die Teile (Blenden nach Teilen nicht gekürzt)
+    cases.push(("transitions too long / into nothing", p, 1.5));
+    // split clip with fades longer than the parts (fades not shortened after split)
     let mut p = base(64, 64);
     let mut l = vclip(0.0, 0.4);
     l.fade_in = secs(3.0);
@@ -324,15 +324,15 @@ fn edge_case_projects_export() {
     r.start = secs(0.4);
     r.source_in = secs(0.4);
     with(&mut p, TrackKind::Video, vec![l, r]);
-    cases.push(("Blenden länger als Teile", p, 0.8));
-    // Bildrate 1 und 240
+    cases.push(("fades longer than parts", p, 0.8));
+    // frame rate 1 and 240
     for (num, w) in [(1u32, 32u32), (240, 32)] {
         let mut p = base(w, 32);
         p.settings.fps = Rational::new(num, 1);
         with(&mut p, TrackKind::Video, vec![vclip(0.0, 2.0)]);
         cases.push((if num == 1 { "1 fps" } else { "240 fps" }, p, 2.0));
     }
-    // 16×16 und ungerade Größe
+    // 16×16 and odd size
     let mut p = base(16, 16);
     with(&mut p, TrackKind::Video, vec![vclip(0.0, 0.5)]);
     with(&mut p, TrackKind::Text, vec![Clip::new(ClipContent::Text(TextStyle { text: "Großer Text".into(), size: 200.0, ..Default::default() }), Time::ZERO, secs(0.5))]);
@@ -340,7 +340,7 @@ fn edge_case_projects_export() {
     let mut p = base(33, 17);
     with(&mut p, TrackKind::Video, vec![vclip(0.0, 0.5)]);
     cases.push(("33×17", p, 0.5));
-    // extreme Zahlen
+    // extreme numbers
     let mut p = base(64, 64);
     let mut c = vclip(0.0, 1.0);
     c.transform = Transform { x: 1e9, y: -1e9, scale: 1e6, rotation_deg: 1e7 };
@@ -360,9 +360,9 @@ fn edge_case_projects_export() {
     with(&mut p, TrackKind::Video, vec![c, d]);
     with(&mut p, TrackKind::Video, vec![e]);
     with(&mut p, TrackKind::Text, vec![Clip::new(ClipContent::Text(TextStyle { text: "x".into(), size: 1e6, line_spacing: -3.0, ..Default::default() }), Time::ZERO, secs(0.5))]);
-    cases.push(("extreme Zahlen", p, 1.5));
-    // einzeln, damit ein Fehler die Ursache nennt
-    for (name, vol, speed) in [("Lautstärke +1000 dB", 1000.0f32, 1.0f32), ("Lautstärke −1000 dB", -1000.0, 1.0), ("Tempo 1000×", 0.0, 1000.0), ("Tempo 0,001×", 0.0, 0.001)] {
+    cases.push(("extreme numbers", p, 1.5));
+    // one by one so an error names the cause
+    for (name, vol, speed) in [("volume +1000 dB", 1000.0f32, 1.0f32), ("volume −1000 dB", -1000.0, 1.0), ("speed 1000×", 0.0, 1000.0), ("speed 0.001×", 0.0, 0.001)] {
         let mut p = base(64, 64);
         let mut c = vclip(0.0, 1.0);
         c.volume_db = vol;
@@ -373,16 +373,16 @@ fn edge_case_projects_export() {
     type Tweak = fn(&mut Clip);
     let tweaks: [(&'static str, Tweak); 8] = [
         ("x/y 1e9", |c| (c.transform.x, c.transform.y) = (1e9, -1e9)),
-        ("Größe 1e6", |c| c.transform.scale = 1e6),
-        ("Größe 0", |c| c.transform.scale = 0.0),
-        ("Drehung 1e7", |c| c.transform.rotation_deg = 1e7),
-        ("Deckkraft −5", |c| c.opacity = -5.0),
+        ("size 1e6", |c| c.transform.scale = 1e6),
+        ("size 0", |c| c.transform.scale = 0.0),
+        ("rotation 1e7", |c| c.transform.rotation_deg = 1e7),
+        ("opacity −5", |c| c.opacity = -5.0),
         ("Keyframes 1e12/−5", |c| {
             c.keyframes.set(Prop::Scale, Time::ZERO, -5.0);
             c.keyframes.set(Prop::X, secs(0.5), 1e12);
         }),
-        ("Helligkeit 1e9", |c| (c.fx.adjust.brightness, c.fx.adjust.hue) = (1e9, -1e9)),
-        ("Bild Größe 1e-9", |c| c.transform.scale = 1e-9),
+        ("brightness 1e9", |c| (c.fx.adjust.brightness, c.fx.adjust.hue) = (1e9, -1e9)),
+        ("image size 1e-9", |c| c.transform.scale = 1e-9),
     ];
     for (name, f) in tweaks {
         let mut p = base(64, 64);
@@ -393,8 +393,8 @@ fn edge_case_projects_export() {
     }
     let mut p = base(64, 64);
     with(&mut p, TrackKind::Text, vec![Clip::new(ClipContent::Text(TextStyle { text: "x".into(), size: 1e6, line_spacing: -3.0, ..Default::default() }), Time::ZERO, secs(0.5))]);
-    cases.push(("Textgröße 1e6", p, 0.5));
-    // Zoom 20× (so weit lässt der Player ziehen) auf Full HD, lange Zeile ohne Umbruch
+    cases.push(("text size 1e6", p, 0.5));
+    // zoom 20× (as far as the player lets you drag) on Full HD, long line without wrap
     let mut p = base(1920, 1080);
     let mut c = Clip::new(ClipContent::Media { media: m.image.id, kind: MediaKind::Image }, Time::ZERO, secs(0.1));
     c.transform.scale = 20.0;
@@ -405,20 +405,20 @@ fn edge_case_projects_export() {
     k.keyframes.set(Prop::Scale, secs(0.1), 20.0);
     with(&mut p, TrackKind::Video, vec![c, k]);
     with(&mut p, TrackKind::Text, vec![Clip::new(ClipContent::Text(TextStyle { text: "W".repeat(3000), auto_wrap: false, size: 100.0, ..Default::default() }), Time::ZERO, secs(0.2))]);
-    cases.push(("Zoom 20× auf 1080p", p, 0.2));
-    // leerer Text, sehr langer Text, nur Leerzeichen
+    cases.push(("zoom 20× on 1080p", p, 0.2));
+    // empty text, very long text, spaces only
     let mut p = base(64, 64);
     let txt = |s: String, a: f64| Clip::new(ClipContent::Text(TextStyle { text: s, ..Default::default() }), secs(a), secs(0.3));
     with(&mut p, TrackKind::Text, vec![txt(String::new(), 0.0), txt("   \n\n ".into(), 0.3), txt("Sehr lang ".repeat(2000), 0.6)]);
-    cases.push(("leere/lange Texte", p, 0.9));
-    // 50 Spuren
+    cases.push(("empty/long texts", p, 0.9));
+    // 50 tracks
     let mut p = base(64, 64);
     for i in 0..50 {
         let mut c = Clip::new(ClipContent::Media { media: m.image.id, kind: MediaKind::Image }, secs(i as f64 * 0.02), secs(0.5));
         c.transform.x = i as f32;
         with(&mut p, TrackKind::Video, vec![c]);
     }
-    cases.push(("50 Spuren", p, 1.48));
+    cases.push(("50 tracks", p, 1.48));
     let mut failed = Vec::new();
     for (name, p, want) in cases {
         let out = dir.path().join("rand.mp4");
@@ -429,7 +429,7 @@ fn edge_case_projects_export() {
                 let (d, v, _) = streams(&out);
                 let fps = p.settings.fps.as_f64();
                 if !v || (d - want).abs() > 1.0 / fps + 0.05 {
-                    failed.push(format!("{name}: Länge {d:.3} statt {want:.3}, Bild {v}"));
+                    failed.push(format!("{name}: length {d:.3} instead of {want:.3}, frame {v}"));
                 }
             }
         }
@@ -437,7 +437,7 @@ fn edge_case_projects_export() {
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
 
-/// 500 Clips und 8K: nur den Graphen bauen (schnell, ohne Panik); 8K nicht rendern.
+/// 500 clips and 8K: only build the graph (fast, without panic); don't render 8K.
 #[test]
 fn huge_projects_build() {
     let dir = tempfile::tempdir().unwrap();
@@ -477,7 +477,7 @@ fn huge_projects_build() {
     let t0 = std::time::Instant::now();
     let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("o.mp4")).unwrap();
     assert!(t0.elapsed().as_secs() < 20, "Graph-Bau dauert {:?}", t0.elapsed());
-    // 500 Eingänge: in Abschnitten, jede Befehlszeile unter der Windows-Grenze
+    // 500 inputs: in sections, every command line below the Windows limit
     assert!(job.sections() > 1);
     assert!(job.section_args().iter().all(|a| a.iter().map(|x| x.len() + 3).sum::<usize>() < 32_000));
     let g = std::fs::read_to_string(job.workdir.path().join("graph_0.txt")).unwrap();
@@ -485,7 +485,7 @@ fn huge_projects_build() {
     assert!((job.duration.as_secs_f64() - 50.0).abs() < 1e-6);
 }
 
-/// Fehlerfälle: sauberer Fehler statt Absturz, keine Reste.
+/// Error cases: clean error instead of crash, no leftovers.
 #[test]
 fn failures_are_clean() {
     if !cl_media::ffmpeg_available() {
@@ -496,9 +496,9 @@ fn failures_are_clean() {
     let mut p = Project::new("Fehler");
     p.settings.width = 64;
     p.settings.height = 64;
-    // leer
+    // empty
     assert!(matches!(build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("x.mp4")), Err(ExportError::Empty)));
-    // fehlende Mediendatei / unbekannte Medien-Id
+    // missing media file / unknown media id
     let mut gone = m.video.clone();
     gone.id = MediaId::new();
     gone.path = dir.path().join("weg.mp4");
@@ -510,7 +510,7 @@ fn failures_are_clean() {
     assert!(matches!(build(&p, &s, &no_fonts, &dir.path().join("x.mp4")), Err(ExportError::MissingMedia(_))));
     p.media.clear();
     assert!(matches!(build(&p, &s, &no_fonts, &dir.path().join("x.mp4")), Err(ExportError::MissingMedia(_))));
-    // 0-Byte-Medium und nachträglich ersetzte/verkürzte Datei
+    // 0-byte media and file replaced/shortened afterwards
     let empty = dir.path().join("leer.mp4");
     std::fs::write(&empty, b"").unwrap();
     gone.path = empty;
@@ -521,31 +521,31 @@ fn failures_are_clean() {
     let short = dir.path().join("kurz.mp4");
     ffmpeg(&["-f", "lavfi", "-i", "testsrc2=s=32x32:r=30:d=0.3", "-f", "lavfi", "-i", "sine=d=0.3", "-pix_fmt", "yuv420p", "-shortest"], &short);
     p.media[0].path = short;
-    export(&p, &s, &dir.path().join("ersetzt.mp4")).expect("ersetzte, kürzere Datei");
+    export(&p, &s, &dir.path().join("ersetzt.mp4")).expect("replaced, shorter file");
     let (d, ..) = streams(&dir.path().join("ersetzt.mp4"));
     assert!((d - 1.0).abs() < 0.07, "{d}");
-    // ersetzt durch eine Datei ohne Ton (Projekt sagt „mit Ton“): heute ein sauberer FFmpeg-Fehler
-    // shortcut: Ströme werden beim Export nicht neu geprüft (Probe je Medium kostet Zeit), siehe Bericht
+    // replaced by a file without audio (project says "with audio"): today a clean FFmpeg error
+    // shortcut: streams are not re-probed on export (a probe per media costs time), see report
     let silent = dir.path().join("stumm.mp4");
     ffmpeg(&["-f", "lavfi", "-i", "testsrc2=s=32x32:r=30:d=1", "-pix_fmt", "yuv420p"], &silent);
     p.media[0].path = silent;
     assert!(matches!(export(&p, &s, &dir.path().join("stumm-aus.mp4")), Err(ExportError::Ffmpeg(_))));
     assert!(!dir.path().join("stumm-aus.part.mp4").exists());
-    // Ziel nicht schreibbar (Ordner fehlt / Ziel ist ein Ordner)
+    // target not writable (folder missing / target is a folder)
     p.media[0] = m.video.clone();
     p.timeline.tracks[0].clips[0].content = ClipContent::Media { media: m.video.id, kind: MediaKind::Video };
     assert!(export(&p, &s, &dir.path().join("fehlt").join("x.mp4")).is_err());
     let blocked = dir.path().join("ordner.mp4");
     std::fs::create_dir(&blocked).unwrap();
     assert!(export(&p, &s, &blocked).is_err());
-    // Bereich: leer oder verkehrt herum
+    // range: empty or reversed
     for range in [(secs(0.5), secs(0.5)), (secs(0.8), secs(0.2))] {
         let mut s = s.clone();
         s.range = Some(range);
         let r = build(&p, &s, &no_fonts, &dir.path().join("r.mp4"));
         assert!(matches!(r, Err(ExportError::Empty)), "{range:?}: {:?}", r.as_ref().err());
     }
-    // Abbrechen mitten im Export: kein Ziel, kein .part
+    // cancel in the middle of the export: no target, no .part
     let mut long = p.clone();
     long.timeline.tracks[0].clips[0].duration = secs(3.0);
     long.timeline.tracks[0].clips[0].fx.effects.push(FxRef::new("vhs"));

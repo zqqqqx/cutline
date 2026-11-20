@@ -1,15 +1,15 @@
-//! Export (Phase 1): Die Zeitleiste wird in einen FFmpeg-Filtergraphen übersetzt.
+//! Export (phase 1): the timeline is translated into an FFmpeg filter graph.
 //!
-//! - Video: schwarze Basis in Projektauflösung, darauf alle sichtbaren Video-/Bildclips
-//!   (Spurreihenfolge, Transform, Deckkraft) und Textclips (drawtext mit importierter Schrift,
-//!   Zeilenumbruch wie in der Vorschau, zentriert, Schatten).
-//! - Audio: alle hörbaren Clips (Lautstärke, Stummschaltung der Spur) werden gemischt.
-//! - Alle Hilfsdateien liegen in einem Arbeitsordner, damit im Graphen keine Windows-Pfade
-//!   escaped werden müssen.
+//! - Video: black base at project resolution, on it all visible video/image clips
+//!   (track order, transform, opacity) and text clips (drawtext with imported font,
+//!   line wrap as in the preview, centered, shadow).
+//! - Audio: all audible clips (volume, track mute) are mixed.
+//! - All helper files live in a work folder so no Windows paths need escaping
+//!   in the graph.
 //!
-//! Dieselbe Graph-Erzeugung liefert auch den Ton für die Vorschau-Wiedergabe.
-//! Phase 2: Effekte, Filter, Masken, Keyframes, Animationen, Übergänge und Geschwindigkeit
-//! kommen aus `graph.rs` (Sprite pro Clip, xfade-Ketten).
+//! The same graph generation also delivers the audio for preview playback.
+//! Phase 2: effects, filters, masks, keyframes, animations, transitions and speed
+//! come from `graph.rs` (sprite per clip, xfade chains).
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 pub enum ExportError {
     #[error("Das Projekt ist leer")]
     Empty,
-    /// Dateinamen der fehlenden Medien im Exportbereich
+    /// File names of the missing media in the export range
     #[error("{}", missing_text(.0))]
     MissingMedia(Vec<String>),
     #[error("FFmpeg: {0}")]
@@ -40,11 +40,11 @@ pub enum ExportError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Media(#[from] cl_media::MediaError),
-    /// Fehler in einem Abschnitt eines großen Exports (Zeiten der Zeitleiste; `args`: der
-    /// gescheiterte FFmpeg-Aufruf, leer bei anderen Fehlern)
+    /// Error in a section of a large export (timeline times; `args`: the
+    /// failed FFmpeg call, empty for other errors)
     #[error("Abschnitt {from}–{to}: {err}")]
     Section { from: String, to: String, err: Box<ExportError>, args: Vec<String> },
-    /// So viele Clips gleichzeitig, dass schon ein einzelnes Bild FFmpeg überfordert
+    /// So many clips at once that even a single frame overwhelms FFmpeg
     #[error("Zu viele gleichzeitige Clips bei {0} – FFmpeg kann sie nicht auf einmal öffnen")]
     TooManyClips(String),
     #[error("Zu wenig Speicherplatz für die Zwischendateien: {need} nötig, {free} frei")]
@@ -52,7 +52,7 @@ pub enum ExportError {
 }
 
 impl ExportError {
-    /// Argumente des gescheiterten FFmpeg-Laufs, wenn er nicht der Endlauf (`Job::args`) war.
+    /// Arguments of the failed FFmpeg run if it was not the final run (`Job::args`).
     pub fn failed_args(&self) -> Option<&[String]> {
         match self {
             ExportError::Section { args, .. } => Some(args),
@@ -70,7 +70,7 @@ pub enum Format {
     Mkv,
     WebM,
     Gif,
-    /// Nur Ton
+    /// Audio only
     Wav,
     Mp3,
     M4a,
@@ -139,7 +139,7 @@ impl Codec {
             Codec::Vp9 => "VP9",
         }
     }
-    /// Welche Codecs in welchem Container sinnvoll sind.
+    /// Which codecs make sense in which container.
     pub fn for_format(f: Format) -> &'static [Codec] {
         match f {
             Format::Mp4 => &[Codec::H264, Codec::Hevc, Codec::Av1],
@@ -167,15 +167,15 @@ pub enum Encoder {
     Nvenc,
     Qsv,
     Amf,
-    /// Windows (Media Foundation): `h264_mf`/`hevc_mf`, nur Hardware
+    /// Windows (Media Foundation): `h264_mf`/`hevc_mf`, hardware only
     Mf,
 }
 
 impl Encoder {
-    /// Reihenfolge der automatischen Wahl
+    /// Order of the automatic choice
     pub const AUTO: [Encoder; 5] = [Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Mf, Encoder::Software];
 
-    /// Kennung in den Einstellungen („Hardware-Kodierung“)
+    /// Id in the settings („Hardware-Kodierung“)
     pub fn id(self) -> &'static str {
         match self {
             Encoder::Software => "software",
@@ -187,9 +187,9 @@ impl Encoder {
     }
 }
 
-/// Encoder in der Reihenfolge der Versuche: der gewählte (`pref` = [`Encoder::id`]) und dann
-/// Software; sonst oder wenn der gewählte hier fehlt (anderer Rechner, Treiber weg) automatisch
-/// NVENC → QSV → AMF → Media Foundation → Software, soweit `found`. Software steht immer am Ende.
+/// Encoders in the order of attempts: the chosen one (`pref` = [`Encoder::id`]) and then
+/// software; otherwise, or if the chosen one is missing here (other computer, driver gone), automatically
+/// NVENC → QSV → AMF → Media Foundation → software, as far as `found`. Software is always last.
 pub fn encoder_chain(found: &[Encoder], pref: &str) -> Vec<Encoder> {
     let have = |e: &Encoder| *e == Encoder::Software || found.contains(e);
     match Encoder::AUTO.into_iter().find(|e| have(e) && e.id() == pref) {
@@ -199,8 +199,8 @@ pub fn encoder_chain(found: &[Encoder], pref: &str) -> Vec<Encoder> {
     }
 }
 
-/// Vorauswahl im Export-Dialog: Software – bei gleicher Qualität die kleinere Datei –, außer in den
-/// Einstellungen ist ausdrücklich ein Weg gewählt, den es hier gibt. („Automatisch" gilt für Proxys.)
+/// Preselection in the export dialog: software – the smaller file at equal quality –, unless the
+/// settings explicitly choose a path that exists here. („Automatisch" applies to proxies.)
 pub fn export_default(found: &[Encoder], pref: &str) -> Encoder {
     Encoder::AUTO.into_iter().find(|e| e.id() == pref && found.contains(e)).unwrap_or(Encoder::Software)
 }
@@ -215,53 +215,53 @@ pub struct ExportSettings {
     pub quality: Quality,
     pub encoder: Encoder,
     pub include_audio: bool,
-    /// Nur einen Bereich exportieren
+    /// Export only a range
     pub range: Option<(Time, Time)>,
-    /// Transparenter Hintergrund (nur ProRes 4444 in MOV und VP9 in WebM)
+    /// Transparent background (only ProRes 4444 in MOV and VP9 in WebM)
     #[serde(default)]
     pub transparent: bool,
-    /// Lautheit angleichen auf dieses Ziel (LUFS), zweistufig mit `loudnorm`, Spitze −1 dBTP
+    /// Normalize loudness to this target (LUFS), two-pass with `loudnorm`, peak −1 dBTP
     #[serde(default)]
     pub loudness: Option<f32>,
-    /// AAC-Tonbitrate in kbit/s (`None` = 256)
+    /// AAC audio bitrate in kbit/s (`None` = 256)
     #[serde(default)]
     pub audio_kbps: Option<u32>,
-    /// Marker als Kapitel in die Datei schreiben
+    /// Write markers as chapters into the file
     #[serde(default)]
     pub chapters: bool,
-    /// Kapitelname für Marker ohne Namen (Sprache der Oberfläche)
+    /// Chapter name for markers without a name (UI language)
     #[serde(default = "default_chapter_name")]
     pub chapter_name: String,
-    /// Zielgröße der Datei in MB (10⁶ Byte): Bitrate aus Größe und Dauer, Software-Encoder in
-    /// zwei Durchgängen (siehe [`ExportSettings::for_target`]); nur H.264, HEVC, AV1 und VP9
+    /// Target file size in MB (10⁶ bytes): bitrate from size and duration, software encoder in
+    /// two passes (see [`ExportSettings::for_target`]); only H.264, HEVC, AV1 and VP9
     #[serde(default)]
     pub target_mb: Option<u32>,
 }
 
-/// Bit je Pixel und Bild, unter denen bei Zielgröße verkleinert wird. Gemessen (x264, zwei
-/// Durchgänge, SSIM gegen das Original, drei echte Aufnahmen 1080p30): bei 0,015 ist 720p besser
-/// als 1080p, bei 0,03 etwa gleich, ab 0,05 ist 1080p besser.
+/// Bits per pixel and frame below which the target size scales down. Measured (x264, two
+/// passes, SSIM against the original, three real recordings 1080p30): at 0.015 720p is better
+/// than 1080p, at 0.03 about equal, from 0.05 1080p is better.
 pub const TARGET_MIN_BPP: f64 = 0.03;
-/// Standardauflösungen (kürzere Kante), auf die bei zu wenig Bitrate verkleinert wird
+/// Standard resolutions (shorter edge) to scale down to when the bitrate is too low
 pub const TARGET_EDGES: [u32; 4] = [1080, 720, 540, 360];
-/// Anteil der Zielgröße, den Bild und Ton nutzen; der Rest fängt Container und die Streuung der
-/// Encoder ab (x264 zwei Durchgänge: gemessen bis 3,5 % über der Bitrate)
+/// Share of the target size used by picture and audio; the rest absorbs the container and the encoders'
+/// spread (x264 two passes: measured up to 3.5 % above the bitrate)
 const TARGET_SHARE: f64 = 0.95;
 
-/// Gesamtbitrate (kbit/s), mit der `mb` MB in `secs` Sekunden passen
+/// Total bitrate (kbit/s) at which `mb` MB fit in `secs` seconds
 fn total_kbps(mb: u32, secs: f64) -> f64 {
     mb as f64 * 8000.0 / secs.max(0.1)
 }
 
-/// Videobitrate (kbit/s) für eine Datei von höchstens `mb` MB bei `secs` Sekunden und
-/// `audio` kbit/s Ton (mindestens 50 kbit/s).
+/// Video bitrate (kbit/s) for a file of at most `mb` MB at `secs` seconds and
+/// `audio` kbit/s audio (at least 50 kbit/s).
 pub fn target_kbps(mb: u32, secs: f64, audio: u32) -> u32 {
     (total_kbps(mb, secs) * TARGET_SHARE - audio as f64).max(50.0) as u32
 }
 
-/// Zu wenig Bitrate für `w`×`h` (unter [`TARGET_MIN_BPP`]): größte Standardauflösung (kürzere
-/// Kante), bei der es reicht, sonst 360p – nie größer als jetzt. `None`: reicht wie es ist;
-/// sonst (Kante, reicht dort).
+/// Too little bitrate for `w`×`h` (below [`TARGET_MIN_BPP`]): largest standard resolution (shorter
+/// edge) at which it suffices, otherwise 360p – never larger than now. `None`: suffices as is;
+/// otherwise (edge, suffices there).
 pub fn target_edge(kbps: u32, (w, h): (u32, u32), fps: f64) -> Option<(u32, bool)> {
     let short = w.min(h).max(1);
     let enough = |e: u32| {
@@ -300,16 +300,16 @@ impl ExportSettings {
         }
     }
 
-    /// Kann mit Zielgröße exportiert werden? (Bild mit H.264, HEVC, AV1 oder VP9)
+    /// Can it be exported with a target size? (picture with H.264, HEVC, AV1 or VP9)
     pub fn target_possible(&self) -> bool {
         !self.format.audio_only() && self.format != Format::Gif && matches!(video_codec(self), Codec::H264 | Codec::Hevc | Codec::Av1 | Codec::Vp9)
     }
 
-    /// Einstellungen, mit denen eine Datei von `secs` Sekunden die Zielgröße einhält: Software-
-    /// Encoder, Videobitrate aus Größe minus Ton (bei knapper Größe höchstens ein Viertel, mindestens
-    /// 64 kbit/s), bei zu wenig Bit je Pixel eine kleinere Standardauflösung. Ohne Zielgröße unverändert.
-    /// `audible`: der Bereich hat hörbaren Ton (sonst bleibt nur eine stille Spur von wenigen kbit/s,
-    /// für die nichts abgezogen wird; siehe [`audio_clips_in`]).
+    /// Settings with which a file of `secs` seconds meets the target size: software
+    /// encoder, video bitrate from size minus audio (with a tight size at most a quarter, at least
+    /// 64 kbit/s), with too few bits per pixel a smaller standard resolution. Unchanged without a target size.
+    /// `audible`: the range has audible sound (otherwise only a silent track of a few kbit/s remains,
+    /// for which nothing is deducted; see [`audio_clips_in`]).
     pub fn for_target(&self, secs: f64, audible: bool) -> ExportSettings {
         let mut s = self.clone();
         let Some(mb) = self.target_mb.filter(|_| self.target_possible()) else {
@@ -330,7 +330,7 @@ impl ExportSettings {
         s
     }
 
-    /// Tatsächliche Tonbitrate im Video (kbit/s, 0 = ohne Ton), wie in `codec_args`.
+    /// Actual audio bitrate in the video (kbit/s, 0 = without audio), as in `codec_args`.
     pub fn audio_bitrate(&self) -> u32 {
         match (self.format, self.codec) {
             _ if !self.include_audio || self.format == Format::Gif => 0,
@@ -340,7 +340,7 @@ impl ExportSettings {
         }
     }
 
-    /// Größe der geschriebenen Datei (gerade Maße); GIF höchstens [`GIF_MAX_W`] breit.
+    /// Size of the written file (even dimensions); GIF at most [`GIF_MAX_W`] wide.
     pub fn output_size(&self) -> (u32, u32) {
         let (w, h) = (self.width.max(2) & !1, self.height.max(2) & !1);
         if self.format == Format::Gif && w > GIF_MAX_W {
@@ -350,7 +350,7 @@ impl ExportSettings {
         (w, h)
     }
 
-    /// Unterstützen Container und Codec einen Alphakanal?
+    /// Do container and codec support an alpha channel?
     pub fn alpha_possible(&self) -> bool {
         matches!(
             (self.format, self.codec),
@@ -358,20 +358,20 @@ impl ExportSettings {
         )
     }
 
-    /// Wird tatsächlich mit Alphakanal exportiert?
+    /// Is it actually exported with an alpha channel?
     pub fn alpha(&self) -> bool {
         self.transparent && self.alpha_possible()
     }
 }
 
-/// GIF: höchstens so breit und so viele Bilder je Sekunde (Dateigröße).
+/// GIF: at most this wide and this many frames per second (file size).
 pub const GIF_MAX_W: u32 = 720;
 pub const GIF_FPS: u32 = 15;
 
-/// Schriftauflösung für Textclips: Familie → (Datei, Face-Index).
+/// Font resolution for text clips: family → (file, face index).
 pub type FontResolver<'a> = &'a dyn Fn(Option<&str>) -> Option<(PathBuf, u32)>;
 
-/// Standardschrift des Systems (wenn ein Textclip keine Schrift gesetzt hat).
+/// System default font (when a text clip has no font set).
 pub fn default_font() -> Option<PathBuf> {
     [
         "C:/Windows/Fonts/segoeui.ttf",
@@ -384,59 +384,59 @@ pub fn default_font() -> Option<PathBuf> {
     .find(|p| p.is_file())
 }
 
-/// Ein vorbereiteter FFmpeg-Aufruf samt Arbeitsordner (wird beim Drop gelöscht).
+/// A prepared FFmpeg call with its work folder (deleted on drop).
 pub struct Job {
     pub args: Vec<String>,
     pub workdir: tempfile::TempDir,
     pub duration: Time,
-    /// Ziel; FFmpeg schreibt nach `part`, erst bei Erfolg wird umbenannt
+    /// Target; FFmpeg writes to `part`, renamed only on success
     pub out: PathBuf,
     pub part: PathBuf,
-    /// Lautheit: erst den Ton messen, dann `[aout]` linear angleichen (siehe [`run`])
+    /// Loudness: first measure the audio, then normalize `[aout]` linearly (see [`run`])
     measure: Option<Measure>,
-    /// Live-Vorschau (JPEG, wird während des Exports laufend überschrieben); nur mit Bild
+    /// Live preview (JPEG, overwritten continuously during the export); only with picture
     preview: Option<PathBuf>,
-    /// Vorläufe der Shader-Übergänge (vor dem eigentlichen Export, siehe [`run`])
+    /// Pre-passes of the shader transitions (before the actual export, see [`run`])
     passes: Vec<graph::ShaderPass>,
-    /// Bilder des Exports (Gewichtung des Fortschritts gegenüber den Vorläufen)
+    /// Frames of the export (weighting of progress against the pre-passes)
     frames: f64,
-    /// Großes Projekt: Abschnitte, die vor `args` laufen; `args` hängt sie dann nur noch
-    /// aneinander (Bild ohne Neukodierung, Ton einmal begrenzt/angeglichen/kodiert)
+    /// Large project: sections that run before `args`; `args` then only joins them
+    /// (picture without re-encoding, audio limited/normalized/encoded once)
     sections: Vec<Section>,
-    /// Zielgröße: Bild in zwei Durchgängen (siehe [`run_encode`])
+    /// Target size: picture in two passes (see [`run_encode`])
     two_pass: bool,
 }
 
-/// Ein Abschnitt eines großen Exports (siehe `sections.rs`).
+/// A section of a large export (see `sections.rs`).
 struct Section {
     from: Time,
     to: Time,
-    /// Ton-Samples (48 kHz) ab Exportbeginn: erstes Sample und Anzahl
+    /// Audio samples (48 kHz) from export start: first sample and count
     samples: (u64, u64),
-    /// FFmpeg-Aufrufe: Bild (mit Vorschau), dann Ton
+    /// FFmpeg calls: picture (with preview), then audio
     runs: Vec<Vec<String>>,
-    /// Graph des Bildes (Shader-Rückfälle werden dort eingesetzt)
+    /// Graph of the picture (shader fallbacks are inserted there)
     graph: String,
     passes: Vec<graph::ShaderPass>,
-    /// Bild (Codec des Ziels bzw. FFV1 für GIF) und Ton (f32le, ohne Begrenzer)
+    /// Picture (target codec, or FFV1 for GIF) and audio (f32le, without limiter)
     video: Option<String>,
     audio: Option<String>,
 }
 
-/// Anteil der Abschnitte am Fortschritt (Rest: Zusammenfügen, ggf. Lautheit)
+/// Share of the sections in the progress (rest: joining, loudness if any)
 const SECTIONS_SHARE: f32 = 0.96;
-/// Ton aller Abschnitte hintereinander (f32le, Stereo, 48 kHz)
+/// Audio of all sections in a row (f32le, stereo, 48 kHz)
 const MIX_FILE: &str = "mix.f32";
-/// Zeichen der Befehlszeile ohne Eingänge (Programmpfad, feste Argumente, Vorschau)
+/// Characters of the command line without inputs (program path, fixed arguments, preview)
 const BASE_CHARS: usize = 900;
 
-/// Breite des Live-Vorschaubilds in Pixeln.
+/// Width of the live preview image in pixels.
 pub const PREVIEW_W: u32 = 480;
 
 struct Measure {
     args: Vec<String>,
     target: f32,
-    /// Graph des Exports ohne die Angleichung
+    /// Graph of the export without the normalization
     graph: String,
 }
 
@@ -445,38 +445,38 @@ impl Job {
         self.frames / self.duration.as_secs_f64().max(1e-6)
     }
 
-    /// Läuft vor dem Export ein Messlauf für „Lautheit angleichen“? (In Abschnitten läuft er
-    /// erst am Ende über den fertigen Ton, kurz und ohne eigene Anzeige.)
+    /// Does a measuring run for „Lautheit angleichen“ run before the export? (In sections it runs
+    /// only at the end over the finished audio, short and without its own display.)
     pub fn measures_loudness(&self) -> bool {
         self.measure.is_some() && self.sections.is_empty()
     }
 
-    /// Befehlszeilen der Abschnitte (Messungen).
+    /// Command lines of the sections (measurements).
     #[doc(hidden)]
     pub fn section_args(&self) -> Vec<Vec<String>> {
         self.sections.iter().flat_map(|s| s.runs.clone()).collect()
     }
 
-    /// Zahl der Abschnitte (0 = ein Durchgang).
+    /// Number of sections (0 = single pass).
     pub fn sections(&self) -> usize {
         self.sections.len()
     }
 
-    /// Vorschaubild des laufenden Exports (existiert erst nach den ersten Bildern).
+    /// Preview image of the running export (exists only after the first frames).
     pub fn preview_path(&self) -> Option<&Path> {
         self.preview.as_deref()
     }
 }
 
-/// Anteil des Messlaufs am gemeldeten Fortschritt (bei „Lautheit angleichen“).
+/// Share of the measuring run in the reported progress (with „Lautheit angleichen“).
 pub const MEASURE_SHARE: f32 = 0.1;
 
 fn loudnorm(target: f32) -> String {
     format!("loudnorm=I={target:.1}:TP=-1:LRA=50")
 }
 
-/// Zweiter Durchgang aus dem JSON des Messlaufs; Stille (−inf) bleibt unverändert.
-/// `None`: Messergebnis fehlt, obwohl Ton da ist.
+/// Second pass from the JSON of the measuring run; silence (−inf) stays unchanged.
+/// `None`: measurement result missing although there is audio.
 fn second_pass(log: &str, target: f32) -> Option<String> {
     let raw = |k: &str| {
         let key = format!("\"{k}\" : \"");
@@ -490,7 +490,7 @@ fn second_pass(log: &str, target: f32) -> Option<String> {
         _ => return Some("anull".into()),
     }
     let (i, tp, lra, th, off) = (get("input_i")?, get("input_tp")?, get("input_lra")?, get("input_thresh")?, get("target_offset")?);
-    // loudnorm nimmt measured_I/measured_thresh nur bis 0: vorher linear absenken, Messwerte mitschieben
+    // loudnorm takes measured_I/measured_thresh only up to 0: lower linearly first, shift the measured values along
     let n = (i.max(th) + 2.0).ceil().max(0.0);
     let pre = if n > 0.0 { format!("volume=-{n}dB,") } else { String::new() };
     let (i, tp, th) = (i - n, tp - n, th - n);
@@ -500,7 +500,7 @@ fn second_pass(log: &str, target: f32) -> Option<String> {
     ))
 }
 
-/// `<stem>.part.<ext>` neben dem Ziel (Endung bleibt, FFmpeg wählt danach den Muxer).
+/// `<stem>.part.<ext>` next to the target (extension stays, FFmpeg picks the muxer by it).
 fn part_path(out: &Path) -> PathBuf {
     let stem = out.file_stem().unwrap_or_default().to_string_lossy();
     match out.extension() {
@@ -513,20 +513,20 @@ pub(crate) fn f(x: f64) -> String {
     format!("{x:.6}")
 }
 
-/// Erzeugt den kompletten Export-Aufruf. Große Projekte (zu lange Befehlszeile, zu viele
-/// Eingänge) werden in Abschnitten gerechnet, siehe `sections.rs`.
+/// Creates the complete export call. Large projects (command line too long, too many
+/// inputs) are computed in sections, see `sections.rs`.
 pub fn build(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path) -> Result<Job> {
     build_with(p, s, fonts, out, sections::SINGLE_INPUTS, sections::MAX_INPUTS)
 }
 
-/// Wie [`build`] mit eigener Höchstzahl an Eingängen je FFmpeg (Tests und Messungen rechnen
-/// damit auch kleine Projekte in Abschnitten).
+/// Like [`build`] with its own maximum of inputs per FFmpeg (tests and measurements use it
+/// to compute small projects in sections too).
 #[doc(hidden)]
 pub fn build_limited(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, max_inputs: usize) -> Result<Job> {
     build_with(p, s, fonts, out, max_inputs, max_inputs)
 }
 
-/// `single`: höchstens so viele Eingänge im einen Durchgang; `section`: je FFmpeg eines Abschnitts.
+/// `single`: at most this many inputs in the single pass; `section`: per FFmpeg of a section.
 fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, single: usize, section: usize) -> Result<Job> {
     let p = &in_edit_ranges(p);
     let total = p.duration();
@@ -538,11 +538,11 @@ fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, 
     if !missing.is_empty() {
         return Err(ExportError::MissingMedia(missing));
     }
-    // leerer oder verkehrter Bereich (In = Out): FFmpeg bekäme `-t 0` bzw. eine negative Länge
+    // empty or reversed range (in = out): FFmpeg would get `-t 0` or a negative length
     if end <= start {
         return Err(ExportError::Empty);
     }
-    // Zielgröße: Bitrate (und ggf. Größe) aus der Länge dieses Exports
+    // target size: bitrate (and size if needed) from the length of this export
     let s = &s.for_target((end - start).as_secs_f64(), graph::audible_clips(p, start, end).next().is_some());
     let units = sections::units(p, start, end, !s.format.audio_only(), wants_audio(s));
     let base = BASE_CHARS + out.as_os_str().len();
@@ -556,8 +556,8 @@ fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, 
         }
     }
     match build_sections(p, s, fonts, out, (start, end), &units, base, lim) {
-        // Übergangskette mit mehr Eingängen, als ein Abschnitt fassen darf (Diashow): ein
-        // Durchgang wie bisher, solange die Befehlszeile passt
+        // transition chain with more inputs than a section may hold (slideshow): one
+        // pass as before, as long as the command line fits
         Err(ExportError::TooManyClips(t)) => {
             let job = build_single(p, s, fonts, out, start, end)?;
             if sections::cmd_len(&job.args) + 300 <= sections::HARD_CMD {
@@ -570,12 +570,12 @@ fn build_with(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, 
     }
 }
 
-/// Mit Ton? (Nur-Ton-Formate immer, GIF nie)
+/// With audio? (audio-only formats always, GIF never)
 fn wants_audio(s: &ExportSettings) -> bool {
     s.format.audio_only() || (s.include_audio && s.format != Format::Gif)
 }
 
-/// Ein Durchgang (kleine und mittlere Projekte).
+/// A single pass (small and medium projects).
 fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path, start: Time, end: Time) -> Result<Job> {
     let dur = end - start;
     let workdir = tempfile::Builder::new()
@@ -602,7 +602,7 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
     let mut vlabel = None;
     if !s.format.audio_only() {
         let full = graph::video_part(&mut ctx, p, end, dur)?;
-        // Live-Vorschau für den Export-Dialog: zweiter Zweig, 2 Bilder/s, klein
+        // live preview for the export dialog: second branch, 2 frames/s, small
         ctx.graph.push(format!("[{full}]split[vmain][pv0]"));
         ctx.graph.push(format!("[pv0]fps=2:eof_action=pass,scale={PREVIEW_W}:-2[pv]"));
         let cur = "vmain";
@@ -633,7 +633,7 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
     });
 
     std::fs::write(workdir.path().join("graph.txt"), ctx.graph.join(";\n"))?;
-    // Messlauf nur über den Ton (gleicher Graph wie die Vorschau), nicht über das ganze Video
+    // measuring run over the audio only (same graph as the preview), not over the whole video
     let measure = match (s.loudness, &alabel) {
         (Some(target), Some(_)) => {
             let (mut inputs, mut graph, mut n) = (Vec::new(), Vec::new(), 0);
@@ -671,7 +671,7 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
     args.extend(["-t".into(), f(dur.as_secs_f64())]);
     let part = part_path(out);
     args.push(part.to_string_lossy().into_owned());
-    // zweite Ausgabe: ein immer wieder überschriebenes JPEG im Arbeitsordner
+    // second output: a JPEG in the work folder that is overwritten again and again
     let preview = vlabel.map(|_| {
         args.extend(
             ["-map", "[pv]", "-an", "-f", "image2", "-update", "1", "-q:v", "6", "-t", &f(dur.as_secs_f64()), PREVIEW_FILE]
@@ -695,10 +695,10 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
     })
 }
 
-/// Ton-Mix des Exports (ein Durchgang): mit Begrenzer, wartet auf die Kanalprüfung.
+/// Audio mix of the export (single pass): with limiter, waits for the channel check.
 const EXPORT_AUDIO: graph::AudioOpts = graph::AudioOpts { wait_probe: true, limiter: true, lead: false, shared: false, skip_bad: false };
 
-/// Pixelformat des Bildes vor dem Encoder.
+/// Pixel format of the picture before the encoder.
 fn pix_fmt(s: &ExportSettings) -> &'static str {
     match (s.alpha(), s.codec) {
         (true, Codec::ProRes) => "yuva444p10le",
@@ -707,7 +707,7 @@ fn pix_fmt(s: &ExportSettings) -> &'static str {
     }
 }
 
-/// Ein FFmpeg-Aufruf eines Abschnitts: Graph in die Datei `gfile`, Eingänge, Ausgänge.
+/// An FFmpeg call of a section: graph into the file `gfile`, inputs, outputs.
 fn section_run(dir: &Path, gfile: &str, inputs: Vec<String>, graph: &[String], outs: Vec<String>) -> Result<Vec<String>> {
     std::fs::write(dir.join(gfile), graph.join(";\n"))?;
     let mut args = head();
@@ -717,13 +717,13 @@ fn section_run(dir: &Path, gfile: &str, inputs: Vec<String>, graph: &[String], o
     Ok(args)
 }
 
-/// Feste Kopf-Argumente jedes Export-Laufs (Fortschritt über stdout).
+/// Fixed head arguments of every export run (progress via stdout).
 fn head() -> Vec<String> {
     ["-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"].map(String::from).into()
 }
 
-/// Marker als Kapitel in die Datei (Player zeigen sie an; gleiche Liste wie die YouTube-Kapitel):
-/// schreibt `chapters.txt` in `dir` und gibt den Eingang dafür zurück (leer ohne Kapitel).
+/// Markers as chapters into the file (players show them; same list as the YouTube chapters):
+/// writes `chapters.txt` in `dir` and returns the input for it (empty without chapters).
 fn chapters_input(p: &Project, s: &ExportSettings, (start, end): (Time, Time), dir: &Path) -> Result<Vec<String>> {
     let fits = matches!(s.format, Format::Mp4 | Format::Mov | Format::Mkv | Format::WebM | Format::M4a);
     let Some(meta) = (s.chapters && fits).then(|| ffmetadata(&p.timeline.markers, start, end, &s.chapter_name)).flatten() else {
@@ -733,19 +733,19 @@ fn chapters_input(p: &Project, s: &ExportSettings, (start, end): (Time, Time), d
     Ok(["-f", "ffmetadata", "-i", "chapters.txt"].map(String::from).into())
 }
 
-/// Erstes Sample (48 kHz) zur Zeit `t` ab `start` (auf dem Abschnittsraster ganzzahlig).
+/// First sample (48 kHz) at time `t` from `start` (integral on the section grid).
 fn sample_at(t: Time, start: Time) -> u64 {
     ((t.0 - start.0).max(0) as u128 * 48_000 / 1_000_000) as u64
 }
 
-/// Geschätzter Platz der Zwischendateien (Bytes): Bild großzügig je Codec, Ton als f32.
+/// Estimated space of the intermediate files (bytes): picture generously per codec, audio as f32.
 fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
     let (w, h) = s.output_size();
     let px = w as f64 * h as f64 * s.fps.as_f64();
     let video_bits = if s.format.audio_only() {
         0.0
     } else if s.format == Format::Gif || copy_unproven(s) {
-        px * 8.0 // FFV1, verlustfrei
+        px * 8.0 // FFV1, lossless
     } else if let Quality::Bitrate(k) = s.quality {
         k as f64 * 1100.0
     } else if s.codec == Codec::ProRes && Codec::for_format(s.format).contains(&Codec::ProRes) {
@@ -757,10 +757,10 @@ fn scratch_bytes(s: &ExportSettings, dur: f64) -> u64 {
     ((video_bits / 8.0 + audio) * dur) as u64 + (64 << 20)
 }
 
-/// Hardware-Encoder, deren Abschnitte beim Zusammenfügen mit `-c:v copy` nicht geprüft sind
-/// (QSV, AMF, AV1 über NVENC: auf dem Prüfrechner nicht startbar): Abschnitte dann verlustfrei
-/// (FFV1) und einmal über das Ganze mit dem gewählten Encoder kodieren, wie bei GIF.
-/// Media Foundation ist geprüft (Test `sections_hardware_encoders_concat`, NVIDIA-MFT).
+/// Hardware encoders whose sections are not verified when joining with `-c:v copy`
+/// (QSV, AMF, AV1 via NVENC: not startable on the test machine): sections then lossless
+/// (FFV1) and encoded once over the whole with the chosen encoder, as with GIF.
+/// Media Foundation is verified (test `sections_hardware_encoders_concat`, NVIDIA MFT).
 fn copy_unproven(s: &ExportSettings) -> bool {
     matches!(
         (video_codec(s), s.encoder),
@@ -768,9 +768,9 @@ fn copy_unproven(s: &ExportSettings) -> bool {
     )
 }
 
-/// Nötiger Platz je Laufwerk (Ordner, Bytes): Die Abschnitte (`scratch`) bleiben liegen, bis die
-/// fertige Datei (etwa gleich groß) geschrieben ist; liegt sie auf demselben Laufwerk, zählt
-/// alles doppelt.
+/// Space needed per drive (folder, bytes): the sections (`scratch`) stay until the
+/// finished file (about the same size) is written; if it is on the same drive, everything
+/// counts double.
 fn space_needs(scratch: u64, work: &Path, out: &Path) -> Vec<(PathBuf, u64)> {
     let dir = out.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let root = |p: &Path| std::path::absolute(p).ok().and_then(|a| a.components().next().map(|c| c.as_os_str().to_string_lossy().to_uppercase()));
@@ -781,8 +781,8 @@ fn space_needs(scratch: u64, work: &Path, out: &Path) -> Vec<(PathBuf, u64)> {
     }
 }
 
-/// Großes Projekt: Abschnitte planen und je Abschnitt den Bereichs-Export bauen, dazu den
-/// Endlauf, der alles zusammenfügt.
+/// Large project: plan sections and build the range export per section, plus the
+/// final run that joins everything.
 #[allow(clippy::too_many_arguments)]
 fn build_sections(
     p: &Project,
@@ -833,8 +833,8 @@ fn build_sections(
         let len = f((b - a).as_secs_f64());
         let (vname, aname) = (format!("sec_{k}.{ext}"), format!("sec_{k}.f32"));
         let gfile = format!("graph_{k}.txt");
-        // Bild und Ton je in eigenem FFmpeg: in einem gemeinsamen Graphen mit vielen Eingängen
-        // warten die Zweige aufeinander (gemessen: ein Vielfaches der Summe beider Läufe)
+        // picture and audio each in their own FFmpeg: in a shared graph with many inputs
+        // the branches wait for each other (measured: a multiple of the sum of both runs)
         let mut runs = Vec::new();
         if video {
             let full = graph::video_part(&mut ctx, p, b, b - a)?;
@@ -842,7 +842,7 @@ fn build_sections(
             ctx.graph.push(format!("[pv0]fps=2:eof_action=pass,scale={PREVIEW_W}:-2[pv]"));
             let mut outs: Vec<String> = Vec::new();
             if gif {
-                // GIF: nur die Größe hier (je Bild); Bildrate und Palette einmal über das Ganze
+                // GIF: only the size here (per frame); frame rate and palette once over the whole
                 let (gw, gh) = s.output_size();
                 ctx.graph.push(format!("[vmain]scale={gw}:{gh}:flags=lanczos[vout]"));
                 outs.extend(["-map", "[vout]", "-c:v", "ffv1", "-level", "3"].map(String::from));
@@ -880,8 +880,8 @@ fn build_sections(
             audio: audio.then_some(aname),
         });
     }
-    // Endlauf: Bild aneinanderhängen (Liste der Abschnitte, ohne Neukodierung; GIF: Palette über
-    // das Ganze), Ton einmal begrenzen, ggf. angleichen und kodieren
+    // final run: concatenate the picture (list of sections, without re-encoding; GIF: palette over
+    // the whole), limit the audio once, normalize if needed and encode
     let d = f(dur.as_secs_f64());
     let mut args = head();
     let (mut n, mut graph) = (0usize, Vec::<String>::new());
@@ -967,8 +967,8 @@ fn build_sections(
     })
 }
 
-/// Dateinamen fehlender Medien, die ein aktiver Clip im Bereich `start..end` nutzt (samt den
-/// über Übergänge verbundenen Nachbarn, die der Export mitliest); ungenutzte dürfen fehlen.
+/// File names of missing media used by an active clip in the range `start..end` (including the
+/// neighbours joined via transitions, which the export also reads); unused ones may be missing.
 fn missing_media(p: &Project, start: Time, end: Time) -> Vec<String> {
     let mut v: Vec<String> = Vec::new();
     for g in p.timeline.tracks.iter().flat_map(graph::transition_groups) {
@@ -990,7 +990,7 @@ fn missing_media(p: &Project, start: Time, end: Time) -> Vec<String> {
     v
 }
 
-/// „Datei fehlt: a.mp4“ bzw. „4 Dateien fehlen: a.mp4, b.wav, c.png …“
+/// „Datei fehlt: a.mp4“ or „4 Dateien fehlen: a.mp4, b.wav, c.png …“
 pub fn missing_text(names: &[String]) -> String {
     match names {
         [one] => format!("Datei fehlt: {one}"),
@@ -1003,10 +1003,10 @@ pub fn missing_text(names: &[String]) -> String {
     }
 }
 
-/// Lautstärke und Tempo in die Bereiche der Bearbeitung (wie `EditOp::SetVolume`/`SetSpeed`):
-/// Projektdateien und MCP können mehr enthalten, +1000 dB bzw. Tempo 0,001 brachen den
-/// AAC-Encoder ab.
-/// Liegt schon alles in den Bereichen, ohne Kopie (Ton-Start der Vorschau bei jeder Bearbeitung).
+/// Volume and speed into the ranges of editing (like `EditOp::SetVolume`/`SetSpeed`):
+/// project files and MCP can contain more, +1000 dB or speed 0.001 crashed the
+/// AAC encoder.
+/// If everything is already within the ranges, no copy (audio start of the preview on every edit).
 fn in_edit_ranges(p: &Project) -> std::borrow::Cow<'_, Project> {
     let db = |v: f32| (-60.0..=20.0).contains(&v);
     let ok = p.timeline.tracks.iter().flat_map(|t| t.clips.iter()).all(|c| {
@@ -1028,10 +1028,10 @@ fn in_edit_ranges(p: &Project) -> std::borrow::Cow<'_, Project> {
     std::borrow::Cow::Owned(p)
 }
 
-/// Kapitel (Start relativ zu `start`, Titel) aus den Markern im Bereich `start..end`.
-/// YouTube verlangt ein Kapitel bei 0:00: Ein Marker in der ersten Sekunde wird dorthin
-/// gezogen, sonst kommt davor das Kapitel, das am Bereichsanfang läuft (letzter Marker davor),
-/// ohne solchen Marker „Intro“. Marker ohne Namen heißen `unnamed`.
+/// Chapters (start relative to `start`, title) from the markers in the range `start..end`.
+/// YouTube requires a chapter at 0:00: a marker in the first second is pulled there,
+/// otherwise the chapter running at the range start (last marker before it) comes first,
+/// without such a marker „Intro“. Markers without a name are called `unnamed`.
 pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time, unnamed: &str) -> Vec<(Time, String)> {
     let name = |m: &cl_core::Marker| if m.name.is_empty() { unnamed.to_string() } else { m.name.clone() };
     let mut v: Vec<(Time, String)> = markers
@@ -1047,12 +1047,12 @@ pub fn chapter_list(markers: &[cl_core::Marker], start: Time, end: Time, unnamed
             v.insert(0, (Time::ZERO, running.map_or_else(|| "Intro".into(), name)));
         }
     }
-    // zwei Marker in derselben Sekunde ergäben zweimal dieselbe Zeit: der erste gewinnt
+    // two markers in the same second would give the same time twice: the first one wins
     v.dedup_by(|b, a| (b.0 - a.0) < Time::from_secs_f64(1.0));
     v
 }
 
-/// Kapitel im FFmetadata-Format (siehe [`chapter_list`]); `None` ohne Marker.
+/// Chapters in FFmetadata format (see [`chapter_list`]); `None` without markers.
 fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time, unnamed: &str) -> Option<String> {
     let esc = |t: &str| {
         t.chars()
@@ -1082,8 +1082,8 @@ fn ffmetadata(markers: &[cl_core::Marker], start: Time, end: Time, unnamed: &str
     Some(out)
 }
 
-/// AV1 in Software: SVT-AV1, wenn das FFmpeg ihn mitbringt, sonst libaom (das mitgelieferte
-/// Windows-FFmpeg hat kein SVT-AV1). Endet auf `-crf`, der Wert folgt.
+/// AV1 in software: SVT-AV1 if the FFmpeg brings it, otherwise libaom (the bundled
+/// Windows FFmpeg has no SVT-AV1). Ends on `-crf`, the value follows.
 fn av1_software(svt: bool) -> &'static [&'static str] {
     if svt {
         &["-c:v", "libsvtav1", "-preset", "8", "-crf"]
@@ -1092,7 +1092,7 @@ fn av1_software(svt: bool) -> &'static [&'static str] {
     }
 }
 
-/// Kennt das benutzte FFmpeg den Encoder libsvtav1? (einmal je Programmlauf geprüft)
+/// Does the FFmpeg used know the encoder libsvtav1? (checked once per program run)
 fn has_svtav1() -> bool {
     static HAS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *HAS.get_or_init(|| {
@@ -1127,7 +1127,7 @@ fn codec_args(s: &ExportSettings) -> Vec<String> {
     a
 }
 
-/// Codec des Bildes (passend zum Container).
+/// Codec of the picture (matching the container).
 fn video_codec(s: &ExportSettings) -> Codec {
     if Codec::for_format(s.format).contains(&s.codec) {
         s.codec
@@ -1136,7 +1136,7 @@ fn video_codec(s: &ExportSettings) -> Codec {
     }
 }
 
-/// Ton-Encoder in Videoformaten (leer ohne Ton).
+/// Audio encoder in video formats (empty without audio).
 fn audio_args(s: &ExportSettings) -> Vec<String> {
     let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     if !s.include_audio {
@@ -1149,9 +1149,9 @@ fn audio_args(s: &ExportSettings) -> Vec<String> {
     }
 }
 
-/// Bitrate (kbit/s) für Media Foundation: Ein Modus mit konstanter Qualität ist nicht bei jedem
-/// Hardware-MFT sicher (ein unbekannter wird still übergangen, dann kodiert er mit < 1 Mbit/s),
-/// darum Bits je Bildpunkt: 1080p60 H.264 ≈ 6 / 10 / 15 Mbit/s, HEVC 70 %.
+/// Bitrate (kbit/s) for Media Foundation: a constant quality mode is not reliable on every
+/// hardware MFT (an unknown one is silently skipped, then it encodes at < 1 Mbit/s),
+/// hence bits per pixel: 1080p60 H.264 ≈ 6 / 10 / 15 Mbit/s, HEVC 70 %.
 fn mf_kbps(s: &ExportSettings, c: Codec) -> u32 {
     let (w, h) = s.output_size();
     let bpp = match s.quality {
@@ -1162,7 +1162,7 @@ fn mf_kbps(s: &ExportSettings, c: Codec) -> u32 {
     (w as f64 * h as f64 * s.fps.as_f64() * bpp / 1000.0).round().max(500.0) as u32
 }
 
-/// Bild-Encoder samt Bildrate (Videoformate).
+/// Picture encoder with frame rate (video formats).
 fn video_args(s: &ExportSettings) -> Vec<String> {
     let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     let mut a = Vec::new();
@@ -1202,8 +1202,8 @@ fn video_args(s: &ExportSettings) -> Vec<String> {
         (Codec::Hevc, Encoder::Amf) => a.extend(v(&["-c:v", "hevc_amf", "-quality", "quality"])),
         (c @ (Codec::H264 | Codec::Hevc), Encoder::Mf) => {
             let name = if c == Codec::H264 { "h264_mf" } else { "hevc_mf" };
-            // `-hw_encoding 1`: ohne Hardware-Weg scheitert der Start (kein Software-MFT);
-            // `-g 250` wie x264/NVENC (ohne: alle 12 Bilder ein Schlüsselbild)
+            // `-hw_encoding 1`: without a hardware path the start fails (no software MFT);
+            // `-g 250` like x264/NVENC (without it: a keyframe every 12 frames)
             a.extend(v(&["-c:v", name, "-pix_fmt", "nv12", "-hw_encoding", "1", "-g", "250"]));
             if !matches!(s.quality, Quality::Bitrate(_)) {
                 a.extend(["-b:v".into(), format!("{}k", mf_kbps(s, c))]);
@@ -1258,13 +1258,13 @@ fn video_args(s: &ExportSettings) -> Vec<String> {
         ])),
     }
     if let Quality::Bitrate(k) = s.quality {
-        // Konstante Qualität (-crf/-cq/-global_quality) würde die Bitrate übersteuern
+        // constant quality (-crf/-cq/-global_quality) would override the bitrate
         if let Some(i) = a.iter().position(|x| matches!(x.as_str(), "-crf" | "-cq" | "-global_quality")) {
             a.drain(i..i + 2);
         }
         a.extend(["-b:v".into(), format!("{k}k")]);
-        // Deckel knapp über dem Ziel, sonst überziehen vor allem Hardware-Encoder deutlich;
-        // libsvtav1 kennt -maxrate nur im CRF-Modus und bricht sonst ab
+        // cap just above the target, otherwise hardware encoders in particular overshoot clearly;
+        // libsvtav1 knows -maxrate only in CRF mode and aborts otherwise
         if !a.iter().any(|x| x == "libsvtav1") {
             a.extend(["-maxrate".into(), format!("{}k", k + k / 10), "-bufsize".into(), format!("{}k", k * 2)]);
         }
@@ -1273,9 +1273,9 @@ fn video_args(s: &ExportSettings) -> Vec<String> {
     a
 }
 
-/// Läuft einen Job und meldet den Fortschritt (0..1). `cancel` bricht ab.
-/// Eine vorhandene Zieldatei bleibt bei Abbruch oder Fehler unverändert.
-/// Mit „Lautheit angleichen“ läuft vorher der Messlauf (erste [`MEASURE_SHARE`] des Fortschritts).
+/// Runs a job and reports progress (0..1). `cancel` aborts.
+/// An existing target file stays unchanged on abort or error.
+/// With „Lautheit angleichen“ the measuring run goes first (first [`MEASURE_SHARE`] of the progress).
 pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
     let r = run_job(job, &cancel, &mut progress);
     if r.is_err() {
@@ -1285,7 +1285,7 @@ pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) ->
 }
 
 fn run_job(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<()> {
-    // große Projekte: erst die Abschnitte, dann fügt `args` sie zusammen
+    // large projects: first the sections, then `args` joins them
     let (lo, rest) = if job.sections.is_empty() {
         (0.0, 1.0)
     } else {
@@ -1294,7 +1294,7 @@ fn run_job(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Res
     };
     let progress = &mut |x: f32| progress(lo + x * rest);
     let secs = job.duration.as_secs_f64();
-    // Vorläufe der Shader-Übergänge: ihr Anteil am Fortschritt nach Bildern
+    // pre-passes of the shader transitions: their share of progress by frames
     let pre: usize = job.passes.iter().map(|p| p.progress.len()).sum();
     let share = if pre == 0 { 0.0 } else { (pre as f64 / (pre as f64 + job.frames.max(1.0))).min(0.5) as f32 };
     let failed = run_passes(job, &job.passes, cancel, &mut |x| progress(x * share))?;
@@ -1320,9 +1320,9 @@ fn run_job(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Res
     .map(|_| ())
 }
 
-/// Alle Abschnitte nacheinander (Fortschritt 0..1 nach Länge); hängt den Ton sample-genau an
-/// `mix.f32` und schreibt die Bildliste `video.txt` für den Endlauf. Ein Fehler nennt den
-/// Zeitbereich des Abschnitts; Zwischendateien liegen im Arbeitsordner (fällt mit dem Job weg).
+/// All sections one after another (progress 0..1 by length); appends the audio sample-exactly to
+/// `mix.f32` and writes the picture list `video.txt` for the final run. An error names the
+/// section's time range; intermediate files live in the work folder (go away with the job).
 fn run_sections(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<()> {
     let dir = job.workdir.path();
     let total: f64 = job.sections.iter().map(|s| (s.to - s.from).as_secs_f64()).sum::<f64>().max(1e-6);
@@ -1362,8 +1362,8 @@ fn run_sections(job: &Job, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -
     Ok(())
 }
 
-/// Genau `bytes` Bytes aus `src` anhängen (fehlende als Stille, überzählige weg), damit jeder
-/// Abschnitt sample-genau an seiner Stelle liegt.
+/// Append exactly `bytes` bytes from `src` (missing ones as silence, surplus dropped) so every
+/// section lies sample-exactly in its place.
 fn append_exact(src: &Path, dst: &mut impl std::io::Write, bytes: u64) -> Result<()> {
     let mut f = std::io::Read::take(std::fs::File::open(src)?, bytes);
     let n = std::io::copy(&mut f, dst)?;
@@ -1373,7 +1373,7 @@ fn append_exact(src: &Path, dst: &mut impl std::io::Write, bytes: u64) -> Result
     Ok(())
 }
 
-/// Ein Abschnitt: seine Shader-Vorläufe, dann FFmpeg (Bild nach `sec_k.*`, Ton nach `sec_k.f32`).
+/// A section: its shader pre-passes, then FFmpeg (picture to `sec_k.*`, audio to `sec_k.f32`).
 fn run_section(job: &Job, sec: &Section, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<()> {
     let secs = (sec.to - sec.from).as_secs_f64();
     let pre: usize = sec.passes.iter().map(|p| p.progress.len()).sum();
@@ -1385,7 +1385,7 @@ fn run_section(job: &Job, sec: &Section, cancel: &AtomicBool, progress: &mut dyn
         let g = failed.iter().fold(std::fs::read_to_string(&file)?, |g, p| g.replace(&p.block, &p.fallback));
         std::fs::write(&file, g)?;
     }
-    // Ton ist viel schneller als Bild: kleiner Anteil am Fortschritt
+    // audio is much faster than picture: small share of the progress
     let weights: Vec<f32> = match sec.runs.len() {
         2 => vec![0.9, 0.1],
         _ => vec![1.0],
@@ -1402,19 +1402,19 @@ fn run_section(job: &Job, sec: &Section, cancel: &AtomicBool, progress: &mut dyn
     Ok(())
 }
 
-/// Fehler eines Abschnitts mit Zeitbereich und dem gescheiterten Aufruf (für das Protokoll).
+/// Error of a section with time range and the failed call (for the log).
 fn section_error(sec: &Section, e: ExportError, args: Vec<String>) -> ExportError {
     ExportError::Section { from: sections::clock(sec.from), to: sections::clock(sec.to), err: Box::new(e), args }
 }
 
-/// `.part` ans Ziel. Scheitert das (Ziel z. B. im Player geöffnet), bleibt die fertige Datei liegen.
+/// `.part` to the target. If that fails (target e.g. open in the player), the finished file stays.
 fn finish(part: &Path, out: &Path) -> Result<()> {
     std::fs::rename(part, out).map_err(|e| {
         std::io::Error::new(e.kind(), format!("{e} – die fertige Datei liegt unter {}", part.display())).into()
     })
 }
 
-/// Beendet Kindprozesse, wenn der Vorlauf abbricht oder scheitert.
+/// Kills child processes when the pre-pass aborts or fails.
 struct Children(Vec<Child>);
 
 impl Drop for Children {
@@ -1426,8 +1426,8 @@ impl Drop for Children {
     }
 }
 
-/// Alle Vorläufe nacheinander; gibt die gescheiterten zurück (dort bleibt der `xfade`-Rückfall).
-/// Fehler nur bei Abbruch.
+/// All pre-passes one after another; returns the failed ones (they keep the `xfade` fallback).
+/// Error only on abort.
 fn run_passes<'a>(job: &Job, passes: &'a [graph::ShaderPass], cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<Vec<&'a graph::ShaderPass>> {
     let total = passes.iter().map(|p| p.progress.len()).sum::<usize>().max(1);
     let mut done = 0;
@@ -1437,7 +1437,7 @@ fn run_passes<'a>(job: &Job, passes: &'a [graph::ShaderPass], cancel: &AtomicBoo
             Ok(true) => {}
             Ok(false) => failed.push(p),
             Err(ExportError::Cancelled) => return Err(ExportError::Cancelled),
-            // kein Shader-Fehler darf den Export kosten
+            // no shader error may cost the export
             Err(e) => {
                 eprintln!("Shader-Übergang: {e}");
                 failed.push(p);
@@ -1448,8 +1448,8 @@ fn run_passes<'a>(job: &Job, passes: &'a [graph::ShaderPass], cancel: &AtomicBoo
     Ok(failed)
 }
 
-/// Ein Vorlauf: Bildpaare aus FFmpeg lesen, mit cl-gpu mischen, verlustfrei schreiben.
-/// `Ok(false)`: nicht möglich (keine GPU, FFmpeg- oder Shader-Fehler).
+/// A pre-pass: read frame pairs from FFmpeg, blend with cl-gpu, write losslessly.
+/// `Ok(false)`: not possible (no GPU, FFmpeg or shader error).
 fn run_pass(job: &Job, p: &graph::ShaderPass, cancel: &AtomicBool, progress: &mut dyn FnMut(usize)) -> Result<bool> {
     let Some(gpu) = cl_gpu::gpu() else {
         return Ok(false);
@@ -1464,7 +1464,7 @@ fn run_pass(job: &Job, p: &graph::ShaderPass, cancel: &AtomicBool, progress: &mu
         .args(["-v", "error", "-nostdin"])
         .args(&p.inputs)
         .args(["-/filter_complex", &p.graph_file, "-map", "[pout]", "-frames:v", &n.to_string()])
-        // Bildrate nennen: FFmpeg 7 kennt sie nach `setpts` nicht mehr und nähme 25
+        // name the frame rate: FFmpeg 7 no longer knows it after `setpts` and would take 25
         .args(["-r", &p.fps, "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -1523,19 +1523,19 @@ fn run_pass(job: &Job, p: &graph::ShaderPass, cancel: &AtomicBool, progress: &mu
     Ok(kids.0[1].wait()?.success())
 }
 
-/// Dateiname des Live-Vorschaubilds im Arbeitsordner
+/// File name of the live preview image in the work folder
 const PREVIEW_FILE: &str = "preview.jpg";
-/// Protokoll des ersten Durchgangs (im Arbeitsordner, fällt mit dem Job weg)
+/// Log of the first pass (in the work folder, goes away with the job)
 const PASSLOG: &str = "pass";
 
-/// Argumente für Durchgang `n` (1 oder 2) bei Zielgröße. `None`: der Aufruf kodiert kein Bild mit
-/// einem Encoder, der zwei Durchgänge kann (Ton, Zusammenfügen, SVT-AV1: dort ein Durchgang mit
-/// fester Bitrate).
+/// Arguments for pass `n` (1 or 2) with a target size. `None`: the call encodes no picture with
+/// an encoder that can do two passes (audio, joining, SVT-AV1: there one pass with a
+/// fixed bitrate).
 fn with_pass(args: &[String], n: u8) -> Option<Vec<String>> {
     let i = args.iter().position(|a| a == "-c:v")? + 2;
     let extra: Vec<String> = match args.get(i - 1)?.as_str() {
         "libx264" | "libvpx-vp9" | "libaom-av1" => vec!["-pass".into(), n.to_string(), "-passlogfile".into(), PASSLOG.into()],
-        // libx265 übernimmt `-pass` nicht, nur über die eigenen Parameter
+        // libx265 does not take `-pass`, only via its own parameters
         "libx265" => vec!["-x265-params".into(), format!("pass={n}:stats={PASSLOG}.x265")],
         _ => return None,
     };
@@ -1544,8 +1544,8 @@ fn with_pass(args: &[String], n: u8) -> Option<Vec<String>> {
     Some(a)
 }
 
-/// Ein Lauf; mit Zielgröße zwei Durchgänge. Der erste schreibt dieselben Ausgaben (auch die
-/// Live-Vorschau) und zählt als erste Hälfte des Fortschritts, der zweite überschreibt sie.
+/// One run; with a target size two passes. The first writes the same outputs (including the
+/// live preview) and counts as the first half of the progress, the second overwrites them.
 fn run_encode(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<String> {
     match (job.two_pass, with_pass(args, 1), with_pass(args, 2)) {
         (true, Some(first), Some(second)) => {
@@ -1556,10 +1556,10 @@ fn run_encode(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progre
     }
 }
 
-/// Argumente ohne die Vorschau-Ausgabe; nimmt auch den Vorschau-Zweig aus dem Graphen.
-/// `None`, wenn `args` keine Vorschau enthält (dann gibt es nichts zu wiederholen).
+/// Arguments without the preview output; also removes the preview branch from the graph.
+/// `None` if `args` contains no preview (then there is nothing to repeat).
 fn without_preview(job: &Job, args: &[String]) -> Option<Vec<String>> {
-    // die Vorschau ist die letzte Ausgabe: alles ab ihrem `-map [pv]` fällt weg
+    // the preview is the last output: everything from its `-map [pv]` is dropped
     let i = args.iter().position(|a| a == "[pv]")?.checked_sub(1)?;
     let graph = args.iter().position(|a| a == "-/filter_complex").and_then(|k| args.get(k + 1))?;
     let file = job.workdir.path().join(graph);
@@ -1572,8 +1572,8 @@ fn without_preview(job: &Job, args: &[String]) -> Option<Vec<String>> {
     Some(args[..i].to_vec())
 }
 
-/// Startet FFmpeg im Arbeitsordner des Jobs; gibt bei Erfolg die Fehlerausgabe (Log) zurück.
-/// `secs` = erwartete Länge (Fortschritt).
+/// Starts FFmpeg in the job's work folder; on success returns the error output (log).
+/// `secs` = expected length (progress).
 fn run_ffmpeg(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<String> {
     let mut child: Child = cl_media::ffmpeg_command()?
         .args(args)
@@ -1584,7 +1584,7 @@ fn run_ffmpeg(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progre
         .spawn()?;
     let stderr = child.stderr.take().expect("piped");
     let err_thread = std::thread::spawn(move || {
-        // Metadaten im Log können anders kodiert sein: Bytes lesen, nicht an UTF-8 scheitern
+        // metadata in the log may be encoded differently: read bytes, don't fail on UTF-8
         let mut b = Vec::new();
         let _ = std::io::Read::read_to_end(&mut BufReader::new(stderr), &mut b);
         String::from_utf8_lossy(&b).into_owned()
@@ -1609,8 +1609,8 @@ fn run_ffmpeg(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progre
     let status = child.wait()?;
     let err = err_thread.join().unwrap_or_default();
     if !status.success() {
-        // Das Vorschaubild darf den Export nie kosten: lässt es sich nicht schreiben (z. B. von einem
-        // Virenscanner gesperrt), läuft derselbe Export noch einmal ohne Vorschau.
+        // the preview image must never cost the export: if it cannot be written (e.g. locked by a
+        // virus scanner), the same export runs again without preview.
         if err.contains(PREVIEW_FILE) {
             if let Some(plain) = without_preview(job, args) {
                 return run_ffmpeg(job, &plain, secs, cancel, progress);
@@ -1624,10 +1624,10 @@ fn run_ffmpeg(job: &Job, args: &[String], secs: f64, cancel: &AtomicBool, progre
     Ok(err)
 }
 
-/// Der Testlauf eines Hardware-Encoders scheiterte NUR am Treiber: Die Grafikkarte kann es, der
-/// Treiber ist zu alt. Das meldet bisher allein NVENC eindeutig („Driver does not support the
-/// required nvenc API version … minimum required Nvidia driver …"); fehlt die Karte ganz, heißt es
-/// „No capable devices found" bzw. die Bibliothek lässt sich nicht laden – das zählt nicht.
+/// The test run of a hardware encoder failed ONLY because of the driver: the graphics card can do it, the
+/// driver is too old. So far only NVENC reports that unambiguously ("Driver does not support the
+/// required nvenc API version … minimum required Nvidia driver …"); if the card is missing entirely, it says
+/// "No capable devices found" or the library cannot be loaded – that does not count.
 pub fn driver_too_old(stderr: &str) -> bool {
     let l = stderr.to_ascii_lowercase();
     l.contains("driver does not support the required nvenc api version") || l.contains("minimum required nvidia driver")
@@ -1635,19 +1635,19 @@ pub fn driver_too_old(stderr: &str) -> bool {
 
 static OLD_DRIVER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Hinweis „Grafiktreiber veraltet“ nach der letzten Erkennung (siehe [`driver_hint`])?
+/// Hint „Grafiktreiber veraltet“ after the last detection (see [`driver_hint`])?
 pub fn old_driver_found() -> bool {
     OLD_DRIVER.load(Ordering::Relaxed)
 }
 
-/// Hinweis „Grafiktreiber veraltet“: nur wenn NVENC allein am Treiber scheitert UND kein anderer
-/// Hardware-Weg (QSV, AMF, Media Foundation) gefunden wurde – sonst kodiert die App ja in Hardware.
+/// Hint „Grafiktreiber veraltet“: only if NVENC fails solely because of the driver AND no other
+/// hardware path (QSV, AMF, Media Foundation) was found – otherwise the app does encode in hardware.
 pub fn driver_hint(nvenc_driver_old: bool, found: &[Encoder]) -> bool {
     nvenc_driver_old && found.iter().all(|e| *e == Encoder::Software)
 }
 
-/// Testläufe der Hardware-Encoder: Encoder und Argumente (Media Foundation nur unter Windows,
-/// mit `nv12` und erzwungener Hardware wie im Export).
+/// Test runs of the hardware encoders: encoder and arguments (Media Foundation only on Windows,
+/// with `nv12` and forced hardware as in the export).
 fn encoder_probes() -> Vec<(Encoder, &'static [&'static str])> {
     let mut v: Vec<(Encoder, &'static [&'static str])> = vec![
         (Encoder::Nvenc, &["h264_nvenc"]),
@@ -1660,7 +1660,7 @@ fn encoder_probes() -> Vec<(Encoder, &'static [&'static str])> {
     v
 }
 
-/// Prüft, welche Hardware-Encoder auf diesem Rechner wirklich funktionieren (kurzer Testlauf).
+/// Checks which hardware encoders really work on this computer (short test run).
 pub fn available_encoders() -> Vec<Encoder> {
     let mut v = vec![Encoder::Software];
     let mut old = false;
@@ -1689,7 +1689,7 @@ pub fn available_encoders() -> Vec<Encoder> {
     v
 }
 
-/// Ton der Zeitleiste ab `from` bis zum Projektende als f32le-Stereo mit `rate` Hz auf stdout.
+/// Timeline audio from `from` to the project end as f32le stereo at `rate` Hz on stdout.
 pub fn spawn_audio_preview(
     p: &Project,
     from: Time,
@@ -1698,15 +1698,15 @@ pub fn spawn_audio_preview(
     spawn_audio_window(p, from, p.duration(), rate)
 }
 
-/// Ids der hörbaren Clips, die den Bereich `start..end` berühren (= Eingänge des Ton-Mixes).
+/// Ids of the audible clips touching the range `start..end` (= inputs of the audio mix).
 pub fn audio_clips_in(p: &Project, start: Time, end: Time) -> Vec<ClipId> {
     graph::audible_clips(p, start, end).map(|(c, _)| c.id).collect()
 }
 
-/// Ton der Zeitleiste im Bereich `from..to` (höchstens bis zum Projektende) als f32le-Stereo mit
-/// `rate` Hz auf stdout (Vorschau-Wiedergabe in Fenstern). Gemischt werden nur die Clips, die den
-/// Bereich berühren; jeder Clip wird ab seinem Anfang gerechnet, darum klingt ein Abschnitt
-/// sample-gleich wie derselbe Abschnitt eines längeren Mixes.
+/// Timeline audio in the range `from..to` (at most up to the project end) as f32le stereo at
+/// `rate` Hz on stdout (preview playback in windows). Only the clips touching the
+/// range are mixed; every clip is computed from its start, so a section sounds
+/// sample-identical to the same section of a longer mix.
 pub fn spawn_audio_window(
     p: &Project,
     from: Time,
@@ -1751,9 +1751,9 @@ pub fn spawn_audio_window(
     Ok((child, workdir))
 }
 
-/// Eingänge, Graph und Ausgang des Ton-Mixes für ein Vorschau-Fenster. Unlesbare Dateien fallen
-/// einzeln heraus ([`audio_readable`]). Bei sehr vielen Clips (dichter Schnitt) teilen sich Clips
-/// derselben Datei einen Eingang, damit Befehlszeile und Anlauf klein bleiben.
+/// Inputs, graph and output of the audio mix for a preview window. Unreadable files drop out
+/// individually ([`audio_readable`]). With very many clips (dense cutting) clips of
+/// the same file share one input so command line and startup stay small.
 fn audio_window_graph(p: &Project, from: Time, end: Time) -> Result<(Vec<String>, Vec<String>, String)> {
     let mut o = graph::AudioOpts { wait_probe: false, limiter: true, lead: false, shared: false, skip_bad: true };
     loop {
@@ -1770,15 +1770,15 @@ fn audio_window_graph(p: &Project, from: Time, end: Time) -> Result<(Vec<String>
     }
 }
 
-/// Lesbarkeit des Tons je Datei (Größe und Änderungszeit gehören zum Schlüssel: eine ersetzte
-/// Datei wird neu geprüft). `None` = Prüfung läuft.
+/// Audio readability per file (size and modification time belong to the key: a replaced
+/// file is checked again). `None` = check running.
 type Readable = std::collections::HashMap<(PathBuf, u64, Option<std::time::SystemTime>), Option<bool>>;
 static READABLE: std::sync::Mutex<Option<Readable>> = std::sync::Mutex::new(None);
 static AUDIO_WARNINGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
-/// Kann FFmpeg den Ton dieser Datei lesen? Geprüft wird einmal je Datei mit ffprobe; ohne `wait`
-/// im Hintergrund (bis dahin gilt die Datei als lesbar, die Wiedergabe wartet nie). Eine
-/// unlesbare Datei landet einmal in [`take_audio_warnings`].
+/// Can FFmpeg read the audio of this file? Checked once per file with ffprobe; without `wait`
+/// in the background (until then the file counts as readable, playback never waits). An
+/// unreadable file lands in [`take_audio_warnings`] once.
 pub(crate) fn audio_readable(path: &Path, wait: bool) -> bool {
     let meta = std::fs::metadata(path).ok();
     let key = (path.to_path_buf(), meta.as_ref().map_or(0, |m| m.len()), meta.and_then(|m| m.modified().ok()));
@@ -1813,33 +1813,33 @@ pub(crate) fn audio_readable(path: &Path, wait: bool) -> bool {
     }
 }
 
-/// Warnungen der Vorschau-Wiedergabe seit dem letzten Aufruf (je unlesbarer Datei einmal), für
-/// einen Hinweis im Player.
+/// Warnings of preview playback since the last call (once per unreadable file), for
+/// a hint in the player.
 pub fn take_audio_warnings() -> Vec<String> {
     std::mem::take(&mut *AUDIO_WARNINGS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
-/// Textclips als SRT (z. B. für Untertitel-Export).
+/// Text clips as SRT (e.g. for subtitle export).
 pub fn to_srt(p: &Project) -> String {
     to_srt_in(p, Time::ZERO, Time(i64::MAX))
 }
 
-/// Textclips als WebVTT.
+/// Text clips as WebVTT.
 pub fn to_vtt(p: &Project) -> String {
     to_vtt_in(p, Time::ZERO, Time(i64::MAX))
 }
 
-/// SRT nur für den Bereich `start..end` (Zeiten ab `start`, am Rand gekürzt).
+/// SRT only for the range `start..end` (times from `start`, shortened at the edge).
 pub fn to_srt_in(p: &Project, start: Time, end: Time) -> String {
     subtitles(p, ',', start, end)
 }
 
-/// WebVTT nur für den Bereich `start..end`.
+/// WebVTT only for the range `start..end`.
 pub fn to_vtt_in(p: &Project, start: Time, end: Time) -> String {
     format!("WEBVTT\n\n{}", subtitles(p, '.', start, end))
 }
 
-/// SRT oder VTT je nach Dateiendung.
+/// SRT or VTT depending on the file extension.
 pub fn subtitles_for(p: &Project, path: &Path) -> String {
     match path.extension().and_then(|e| e.to_str()) {
         Some(e) if e.eq_ignore_ascii_case("vtt") => to_vtt(p),
@@ -1867,7 +1867,7 @@ fn subtitles(p: &Project, ms_sep: char, start: Time, end: Time) -> String {
         .flat_map(|t| t.clips.iter())
         .filter_map(|c| match &c.content {
             ClipContent::Text(s) if c.end() > start && c.start < end => {
-                // Leerzeilen beenden die Cue; in VTT sind <, >, & Markup und „-->“ trennt Zeiten
+                // blank lines end the cue; in VTT <, >, & are markup and "-->" separates times
                 let mut t = s.text.lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join("\n");
                 if vtt {
                     t = t.replace("-->", "->").replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
@@ -1898,11 +1898,11 @@ mod tests {
         let s = |x: f64| Time::from_secs_f64(x);
         let v = chapter_list(&ms, s(34.13), s(36.13), "Kapitel");
         assert_eq!(v, vec![(Time::ZERO, "Highlights".to_string()), (s(35.13) - s(34.13), "Interview".to_string())]);
-        // ganze Datei: wie bisher
+        // whole file: as before
         assert_eq!(chapter_list(&ms[1..], Time::ZERO, s(50.0), "Kapitel")[0].1, "Intro");
-        // Marker ohne Namen in der Sprache der Oberfläche
+        // markers without a name in the UI language
         assert_eq!(chapter_list(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter")[0].1, "Chapter");
-        // Kapiteldatei mit denselben Namen und Zeiten ab Bereichsanfang
+        // chapter file with the same names and times from the range start
         let meta = ffmetadata(&ms, s(34.13), s(36.13), "Kapitel").unwrap();
         assert!(ffmetadata(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter").unwrap().contains("title=Chapter\n"));
         assert!(meta.contains("START=0\nEND=1000\ntitle=Highlights\n") && meta.contains("START=1000\nEND=2000\ntitle=Interview\n"), "{meta}");
@@ -1924,7 +1924,7 @@ mod tests {
         p.media.extend([snd.clone(), mute_vid.clone(), img.clone(), gone.clone()]);
         let clip = |m: &MediaRef, a: f64, b: f64| Clip::new(ClipContent::Media { media: m.id, kind: m.kind }, s(a), s(b - a));
         let mut t = Track::new(TrackKind::Audio);
-        let before = clip(&snd, 0.0, 10.0); // endet genau am Fensteranfang: nicht dabei
+        let before = clip(&snd, 0.0, 10.0); // ends exactly at the window start: not included
         let across_start = clip(&snd, 5.0, 12.0);
         let inside = clip(&snd, 12.0, 14.0);
         let mut disabled = clip(&snd, 12.0, 14.0);
@@ -1935,7 +1935,7 @@ mod tests {
         fading_in.volume_db = -60.0;
         fading_in.keyframes.set(Prop::Volume, Time::ZERO, -60.0);
         let across_end = clip(&snd, 25.0, 40.0);
-        let after = clip(&snd, 30.0, 31.0); // beginnt genau am Fensterende: nicht dabei
+        let after = clip(&snd, 30.0, 31.0); // starts exactly at the window end: not included
         let missing = clip(&gone, 12.0, 13.0);
         for c in [&before, &across_start, &inside, &disabled, &silent, &fading_in, &across_end, &after, &missing] {
             t.clips.push(c.clone());
@@ -1979,13 +1979,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut s = ExportSettings::from_project(&p);
         let none = |_: Option<&str>| None;
-        // alle drei fehlen: alle genannt
+        // all three missing: all named
         match build(&p, &s, &none, &dir.path().join("o.mp4")) {
             Err(ExportError::MissingMedia(v)) => assert_eq!(v, ["a.mp4", "b.mp4", "c.mp4"]),
             Err(e) => panic!("{e}"),
             Ok(_) => panic!("Export trotz fehlender Medien"),
         }
-        // Bereich nur im zweiten Clip: nur dessen Datei zählt
+        // range only in the second clip: only its file counts
         s.range = Some((Time::from_secs_f64(12.0), Time::from_secs_f64(15.0)));
         assert!(matches!(build(&p, &s, &none, &dir.path().join("o.mp4")), Err(ExportError::MissingMedia(v)) if v == ["b.mp4"]));
     }
@@ -2021,7 +2021,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let part = dir.path().join("a.mp4.part");
         std::fs::write(&part, b"fertig").unwrap();
-        // Ziel ist ein Ordner: Umbenennen scheitert wie bei einer gesperrten Datei
+        // target is a folder: rename fails as with a locked file
         let out = dir.path().join("a.mp4");
         std::fs::create_dir(&out).unwrap();
         let e = finish(&part, &out).unwrap_err().to_string();
@@ -2155,7 +2155,7 @@ mod tests {
             OpSource::Ui,
         )
         .unwrap();
-        // gedrehter Text + gedrehtes Video (Player-Bearbeitung)
+        // rotated text + rotated video (player editing)
         let mut rc = Clip::new(
             ClipContent::Text(TextStyle {
                 text: "Gedreht".into(),
@@ -2234,7 +2234,7 @@ mod tests {
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let m = cl_media::probe(&out).unwrap();
         assert!((m.duration.as_secs_f64() - 4.0).abs() < 0.15);
-        // Filter-Element (Schwarzweiß) wirkt nur in seinem Zeitraum
+        // filter element (black & white) acts only in its time range
         let gray = cl_media::decode_frame(&out, Time::from_secs_f64(2.0), 32, 18).unwrap();
         let color = cl_media::decode_frame(&out, Time::from_secs_f64(0.2), 32, 18).unwrap();
         let sat = |f: &cl_media::RgbaFrame| {
@@ -2253,7 +2253,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let mut p = project(dir.path());
-        // Schwarzweiß nur in der linken Bildhälfte
+        // black & white only in the left half of the image
         let mut fl = Track::new(TrackKind::Filter);
         let mut c = Clip::new(
             ClipContent::Filter(FxRef::new("noir")),
@@ -2270,7 +2270,7 @@ mod tests {
         });
         fl.clips.push(c);
         p.timeline.tracks.push(fl);
-        // Zweites Element ab 2 s: Stärke 0 → 1 über eine Sekunde
+        // second element from 2 s: strength 0 → 1 over one second
         let mut fl2 = Track::new(TrackKind::Filter);
         let mut c2 = Clip::new(
             ClipContent::Filter(FxRef::new("noir")),
@@ -2311,11 +2311,11 @@ mod tests {
         let late = cl_media::decode_frame(&out, Time::from_secs_f64(3.5), 32, 56).unwrap();
         assert!(
             sat(&late, 0, 32) * 3 < sat(&early, 0, 32),
-            "Stärke steigt an"
+            "strength rises"
         );
     }
 
-    /// Export einer echten Projektdatei: `CUTLINE_EXPORT_PROJECT=<pfad> cargo test -p cl-export export_project_file -- --ignored`
+    /// Export of a real project file: `CUTLINE_EXPORT_PROJECT=<path> cargo test -p cl-export export_project_file -- --ignored`
     #[test]
     #[ignore]
     fn export_project_file() {
@@ -2333,8 +2333,8 @@ mod tests {
         assert!(cl_media::probe(&out).is_ok());
     }
 
-    /// Mikrofon nur links aufgenommen: im Export auf beiden Kanälen (Standard „Automatisch“),
-    /// mit „Stereo“ bleibt der rechte Kanal still.
+    /// Microphone recorded only on the left: on both channels in the export (default „Automatisch“),
+    /// with „Stereo“ the right channel stays silent.
     #[test]
     fn one_sided_audio_is_spread_to_both_channels() {
         if !cl_media::ffmpeg_available() {
@@ -2379,10 +2379,10 @@ mod tests {
         p.timeline.tracks.push(t);
         let auto = peaks(&p);
         assert_eq!(auto.len(), 2, "{auto:?}");
-        assert!(auto[0] > -20.0 && auto[1] > -20.0, "beide Kanäle hörbar: {auto:?}");
+        assert!(auto[0] > -20.0 && auto[1] > -20.0, "both channels audible: {auto:?}");
         p.settings.channels = Channels::Stereo;
         let stereo = peaks(&p);
-        assert!(stereo[1] < -60.0, "rechts still bei Stereo: {stereo:?}");
+        assert!(stereo[1] < -60.0, "right silent with stereo: {stereo:?}");
     }
 
     #[test]
@@ -2392,7 +2392,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let mut p = project(dir.path());
-        assert_eq!(p.duration(), Time::from_secs_f64(4.0)); // 3 s Video + 1 s Bild (Magnet)
+        assert_eq!(p.duration(), Time::from_secs_f64(4.0)); // 3 s video + 1 s image (magnet)
         let mk = |id, at: f64, name: &str| cl_core::Marker {
             id,
             at: Time::from_secs_f64(at),
@@ -2417,7 +2417,7 @@ mod tests {
             m.duration
         );
         assert!(m.has_audio);
-        // Marker landen als Kapitel in der Datei (mit „Intro“ ab 0:00)
+        // markers end up as chapters in the file (with „Intro“ from 0:00)
         let ch = cl_media::ffprobe_command()
             .unwrap()
             .args(["-v", "error", "-show_chapters", "-of", "csv=p=0"])
@@ -2427,7 +2427,7 @@ mod tests {
         let ch = String::from_utf8_lossy(&ch.stdout);
         let titles: Vec<&str> = ch.lines().filter_map(|l| l.rsplit(',').next()).collect();
         assert_eq!(titles, ["Intro", "Teil = 1", "Ende"], "{ch}");
-        // ausgeschaltet: keine Kapitel in der Datei
+        // turned off: no chapters in the file
         let off = build(&p, &ExportSettings { chapters: false, ..s.clone() }, &no_fonts, &out).unwrap();
         assert!(!off.args.iter().any(|a| a == "chapters.txt"));
 
@@ -2453,7 +2453,7 @@ mod tests {
         assert_eq!(w.kind, MediaKind::Audio);
         assert!((w.duration.as_secs_f64() - 4.0).abs() < 0.1);
 
-        // Bereichsexport
+        // range export
         s.format = Format::Mp4;
         s.range = Some((Time::from_secs_f64(1.0), Time::from_secs_f64(2.5)));
         let part = dir.path().join("part.mp4");
@@ -2466,7 +2466,7 @@ mod tests {
         assert!((cl_media::probe(&part).unwrap().duration.as_secs_f64() - 1.5).abs() < 0.15);
     }
 
-    /// Live-Vorschau: zweite Ausgabe schreibt ein kleines JPEG, die Hauptdatei bleibt wie bisher.
+    /// Live preview: a second output writes a small JPEG, the main file stays as before.
     #[test]
     fn export_writes_live_preview_without_changing_output() {
         if !cl_media::ffmpeg_available() {
@@ -2496,7 +2496,7 @@ mod tests {
         assert_eq!(kinds, ["audio", "video"]);
         let img = cl_media::probe(&pv).unwrap();
         assert_eq!(img.width, PREVIEW_W);
-        // mit Lautheits-Messlauf: zweiter Durchgang schreibt den Graph samt Vorschau-Zweig neu
+        // with loudness measuring run: the second pass rewrites the graph including the preview branch
         s.loudness = Some(-14.0);
         let job = build(&p, &s, &no_fonts, &out).unwrap();
         let mut seen = Vec::new();
@@ -2504,7 +2504,7 @@ mod tests {
         assert!(seen.windows(2).all(|w| w[0] <= w[1]) && seen.last() == Some(&1.0), "{seen:?}");
         assert!(job.preview_path().unwrap().is_file());
         assert!((cl_media::probe(&out).unwrap().duration.as_secs_f64() - 2.0).abs() < 0.15);
-        // Ton-Export: keine Vorschau
+        // audio export: no preview
         s.format = Format::Wav;
         let wav = build(&p, &s, &no_fonts, &dir.path().join("live.wav")).unwrap();
         assert!(wav.preview_path().is_none() && !wav.args.iter().any(|a| a == "preview.jpg"));
@@ -2512,7 +2512,7 @@ mod tests {
         assert!(!wav.workdir.path().join("preview.jpg").exists());
     }
 
-    /// Lässt sich das Vorschaubild nicht schreiben, läuft der Export ohne Vorschau durch.
+    /// If the preview image cannot be written, the export runs through without preview.
     #[test]
     fn blocked_preview_does_not_fail_export() {
         if !cl_media::ffmpeg_available() {
@@ -2522,28 +2522,28 @@ mod tests {
         let p = project(dir.path());
         let mut s = ExportSettings::from_project(&p);
         s.range = Some((Time::ZERO, Time::from_secs_f64(2.0)));
-        // mit Zielgröße: fällt der erste Durchgang auf „ohne Vorschau“ zurück, muss auch der zweite ohne Vorschau durchlaufen
+        // with a target size: if the first pass falls back to "without preview", the second must run without preview too
         for (loudness, target) in [(None, None), (Some(-14.0), None), (None, Some(1))] {
             (s.loudness, s.target_mb) = (loudness, target);
             let out = dir.path().join("blocked.mp4");
             let job = build(&p, &s, &no_fonts, &out).unwrap();
             assert_eq!(job.two_pass, target.is_some());
-            // ein Ordner unter dem Namen der Vorschau: FFmpeg kann die Datei nicht anlegen
+            // a folder with the name of the preview: FFmpeg cannot create the file
             std::fs::create_dir(job.preview_path().unwrap()).unwrap();
             let mut seen = Vec::new();
             run(&job, Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
             assert_eq!(seen.last(), Some(&1.0));
             assert!((cl_media::probe(&out).unwrap().duration.as_secs_f64() - 2.0).abs() < 0.15);
-            assert!(job.preview_path().unwrap().is_dir(), "Vorschau wurde nicht geschrieben");
+            assert!(job.preview_path().unwrap().is_dir(), "preview was not written");
             std::fs::remove_file(&out).unwrap();
         }
-        // ohne Vorschau in den Argumenten gibt es nichts zu wiederholen
+        // without preview in the arguments there is nothing to repeat
         let job = build(&p, &s, &no_fonts, &dir.path().join("x.mp4")).unwrap();
         let plain = without_preview(&job, &job.args).unwrap();
         assert!(!plain.iter().any(|a| a == PREVIEW_FILE) && without_preview(&job, &plain).is_none());
     }
 
-    /// Exportdauer mit/ohne Vorschau: `cargo test --release -p cl-export preview_overhead -- --ignored --nocapture`
+    /// Export time with/without preview: `cargo test --release -p cl-export preview_overhead -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn preview_overhead() {
@@ -2588,7 +2588,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let (v, img) = make_media(dir.path());
-        // Audio-Datei (1 s), die auf 2,5 s verlängert wird
+        // audio file (1 s) extended to 2.5 s
         let wav = dir.path().join("a.wav");
         assert!(cl_media::ffmpeg_command()
             .unwrap()
@@ -2639,7 +2639,7 @@ mod tests {
         else {
             panic!()
         };
-        // Übergang, Effekte, Filter, Maske, Speed, Rückwärts
+        // transition, effects, filters, mask, speed, reverse
         d.apply(
             EditOp::SetTransition {
                 clip: c1,
@@ -2674,7 +2674,7 @@ mod tests {
             OpSource::Ui,
         )
         .unwrap();
-        // Bild mit Keyframes und Animation
+        // image with keyframes and animation
         let OpOutput::Clip(ic) = d
             .apply(
                 EditOp::AddClip {
@@ -2713,7 +2713,7 @@ mod tests {
         )
         .unwrap();
         let _ = tid;
-        // Text mit Kontur, Fläche, Einblend-Animation
+        // text with outline, box, in animation
         let st = TextStyle {
             text: "Hallo".into(),
             size: 40.0,
@@ -2756,7 +2756,7 @@ mod tests {
             OpSource::Ui,
         )
         .unwrap();
-        // Audio verlängert + Lautstärke-Keyframes + Fades
+        // audio extended + volume keyframes + fades
         let OpOutput::Clip(ac) = d
             .apply(
                 EditOp::AddClip {
@@ -2823,14 +2823,14 @@ mod tests {
             "{} vs {total}",
             m.duration
         );
-        // Bild in der Mitte des Übergangs unterscheidet sich von beiden Nachbarn nicht schwarz
+        // frame in the middle of the transition differs from both neighbours, not black
         let f = cl_media::decode_frame(&out, Time::from_secs_f64(1.5), 64, 36).unwrap();
         assert!(f
             .data
             .chunks(4)
             .any(|px| px[0] > 30 || px[1] > 30 || px[2] > 30));
 
-        // Teilbereich mit Animationen
+        // partial range with animations
         let mut s2 = s.clone();
         s2.range = Some((Time::from_secs_f64(0.7), Time::from_secs_f64(2.0)));
         let part = dir.path().join("p2part.mp4");
@@ -2850,7 +2850,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let (v, _) = make_media(dir.path());
-        // Greenscreen-Clip und ein Maskenvideo (linke Hälfte sichtbar)
+        // green screen clip and a mask video (left half visible)
         let green = dir.path().join("green.mp4");
         assert!(cl_media::ffmpeg_command()
             .unwrap()
@@ -2932,7 +2932,7 @@ mod tests {
         over.fx.chroma = Some(ChromaKey::default());
         over.fx.stabilize = 0.5;
         let oid = over.id;
-        // Overlay landet auf eigener Spur über der Hauptspur
+        // overlay lands on its own track above the main track
         let main = d.project().timeline.tracks[0].id;
         d.apply(
             EditOp::InsertTrack {
@@ -2958,7 +2958,7 @@ mod tests {
             OpSource::Ui,
         )
         .unwrap();
-        // Hauptclip: Maske, Ton-Werkzeuge, Stimmfilter
+        // main clip: mask, audio tools, voice filter
         let mut c = d.project().find_clip(base).unwrap().1.clone();
         c.fx.cutout = Some(matte.to_string_lossy().into_owned());
         c.audio = AudioFx {
@@ -2988,20 +2988,20 @@ mod tests {
         assert!(m.has_audio);
         let f = cl_media::decode_frame(&out, Time::from_secs_f64(1.0), 320, 180).unwrap();
         let px = |x: usize, y: usize| &f.data[(y * 320 + x) * 4..(y * 320 + x) * 4 + 3];
-        // rechte Hälfte: Maske schwarz → Hauptclip weg → schwarzer Grund; Grün ist freigestellt
+        // right half: mask black → main clip gone → black ground; green is keyed out
         let r = px(300, 10);
         assert!(
             r[0] < 40 && r[1] < 40 && r[2] < 40,
-            "rechts oben sollte schwarz sein: {r:?}"
+            "top right should be black: {r:?}"
         );
-        // rotes Rechteck des Greenscreen-Clips bleibt sichtbar
+        // red rectangle of the green screen clip stays visible
         let c = px(160, 90);
-        assert!(c[0] > 150 && c[1] < 90, "Mitte sollte rot sein: {c:?}");
-        // links: Hauptclip (Testbild) sichtbar, kein Grün
+        assert!(c[0] > 150 && c[1] < 90, "middle should be red: {c:?}");
+        // left: main clip (test image) visible, no green
         let l = px(20, 160);
         assert!(
             !(l[1] > 150 && l[0] < 60 && l[2] < 100),
-            "links unten kein Greenscreen-Grün: {l:?}"
+            "bottom left no green screen green: {l:?}"
         );
         let _ = oid;
     }
@@ -3078,14 +3078,14 @@ mod tests {
             });
             out
         };
-        // Hintergrundfarbe: rechte Hälfte (Maske schwarz) wird blau, links bleibt das Bild
+        // background color: right half (mask black) turns blue, the left keeps the image
         let p = mk(Some(PersonFx::ColorBackground { color: [0, 0, 255] }), 0.5);
         let out = render(&p, &ExportSettings::from_project(&p), "color.mp4");
         let f = cl_media::decode_frame(&out, Time::from_secs_f64(0.5), 320, 180).unwrap();
         let px = |x: usize, y: usize| f.data[(y * 320 + x) * 4..(y * 320 + x) * 4 + 3].to_vec();
         let r = px(300, 90);
-        assert!(r[2] > 180 && r[0] < 60, "rechts sollte blau sein: {r:?}");
-        // Weichzeichnen und Umriss laufen ohne Fehler durch
+        assert!(r[2] > 180 && r[0] < 60, "right should be blue: {r:?}");
+        // blur and outline run through without errors
         for pf in [
             PersonFx::BlurBackground { amount: 0.7 },
             PersonFx::Outline {
@@ -3097,16 +3097,16 @@ mod tests {
             let p = mk(Some(pf), 1.0);
             render(&p, &ExportSettings::from_project(&p), "pf.mp4");
         }
-        // Umriss mit und ohne Hintergrund: ohne bleibt rechts (Maske schwarz) die Leinwand schwarz
+        // outline with and without background: without it the canvas on the right (mask black) stays black
         let right = |transparent: bool| {
             let p = mk(Some(PersonFx::Outline { color: [255, 0, 0], width: 0.5, transparent }), 1.0);
             let out = render(&p, &ExportSettings::from_project(&p), "ring.mp4");
             let f = cl_media::decode_frame(&out, Time::from_secs_f64(0.5), 320, 180).unwrap();
             f.data[(90 * 320 + 300) * 4..(90 * 320 + 300) * 4 + 3].iter().map(|&v| v as u32).sum::<u32>()
         };
-        assert!(right(false) > 60, "mit Hintergrund ist rechts das Bild");
-        assert!(right(true) < 30, "ohne Hintergrund ist rechts die schwarze Leinwand");
-        // Transparenter Export: freigestellt ohne Personen-Effekt → Alpha in MOV und WebM
+        assert!(right(false) > 60, "with background the right side is the image");
+        assert!(right(true) < 30, "without background the right side is the black canvas");
+        // transparent export: keyed out without person effect → alpha in MOV and WebM
         let p = mk(None, 1.0);
         for (fmt, codec, name) in [
             (Format::Mov, Codec::ProRes, "a.mov"),
@@ -3136,7 +3136,7 @@ mod tests {
             let txt = String::from_utf8_lossy(&pf.stdout).to_string();
             assert!(
                 txt.contains("yuva") || txt.contains("alpha_mode=1"),
-                "{name}: kein Alphakanal: {txt}"
+                "{name}: no alpha channel: {txt}"
             );
         }
     }
@@ -3156,7 +3156,7 @@ mod tests {
         assert!((secs - 3.0).abs() < 0.1, "{secs}");
     }
 
-    /// Peak-Pegel je Kanal (dB) einer Tondatei, nur der Abschnitt `ss`..`ss + t`.
+    /// Peak level per channel (dB) of an audio file, only the section `ss`..`ss + t`.
     fn peaks_db(path: &Path, ss: f64, t: f64) -> Vec<f64> {
         let o = cl_media::ffmpeg_command()
             .unwrap()
@@ -3172,7 +3172,7 @@ mod tests {
             .collect()
     }
 
-    /// Projekt mit einer Tonspur: Sinus (2 s) ab `start`.
+    /// Project with one audio track: sine (2 s) from `start`.
     fn sine_project(dir: &Path, start: f64) -> Project {
         let src = dir.join("sine.wav");
         assert!(cl_media::ffmpeg_command()
@@ -3212,8 +3212,8 @@ mod tests {
         run(&build(&p, &wav_settings(&p), &no_fonts, &quiet).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let src = peaks_db(&dir.path().join("sine.wav"), 0.0, 2.0);
         let q = peaks_db(&quiet, 0.0, 2.0);
-        assert!(q.len() == src.len() && q.iter().zip(&src).all(|(a, b)| (a - b).abs() < 0.01), "leise unverändert: {q:?} / {src:?}");
-        // drei gleichphasige Sinus mit je +15 dB: ohne Begrenzer ca. +6,5 dBFS
+        assert!(q.len() == src.len() && q.iter().zip(&src).all(|(a, b)| (a - b).abs() < 0.01), "quiet unchanged: {q:?} / {src:?}");
+        // three in-phase sines at +15 dB each: without limiter about +6.5 dBFS
         let clip = p.timeline.tracks[0].clips[0].clone();
         for _ in 0..3 {
             let mut t = Track::new(TrackKind::Audio);
@@ -3234,7 +3234,7 @@ mod tests {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        // wie im Testbericht: laute Sounds gleichzeitig, je +6 dB
+        // as in the test report: loud sounds at the same time, +6 dB each
         let dir = tempfile::tempdir().unwrap();
         let mut p = Project::new("Laut");
         for id in ["whoosh", "impact", "boom", "airhorn"] {
@@ -3267,7 +3267,7 @@ mod tests {
         run(&build(&p, &wav_settings(&p), &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let gap = peaks_db(&out, 0.0, 0.9);
         let tone = peaks_db(&out, 1.2, 1.5);
-        assert!(!gap.is_empty() && gap.iter().all(|v| *v < -60.0), "Lücke still: {gap:?}");
+        assert!(!gap.is_empty() && gap.iter().all(|v| *v < -60.0), "gap silent: {gap:?}");
         assert!(!tone.is_empty() && tone.iter().all(|v| *v > -30.0), "Ton ab 1 s: {tone:?}");
     }
 
@@ -3278,7 +3278,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let mut p = sine_project(dir.path(), 0.0);
-        // z. B. nach Tempo-Änderung: Blenden länger als der Clip
+        // e.g. after a speed change: fades longer than the clip
         let c = &mut p.timeline.tracks[0].clips[0];
         c.fade_in = Time::from_secs_f64(5.0);
         c.fade_out = Time::from_secs_f64(5.0);
@@ -3287,7 +3287,7 @@ mod tests {
         assert!(out.is_file());
     }
 
-    /// Integrierte Lautheit (LUFS) einer Datei laut `ebur128`.
+    /// Integrated loudness (LUFS) of a file according to `ebur128`.
     fn lufs(path: &Path) -> f64 {
         let o = cl_media::ffmpeg_command()
             .unwrap()
@@ -3315,9 +3315,9 @@ mod tests {
         run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
         let l = lufs(&out);
         assert!((l + 14.0).abs() <= 1.0, "{l} LUFS");
-        // Messlauf meldet sich im ersten Teil des Fortschritts
+        // the measuring run reports in the first part of the progress
         assert!(seen.iter().any(|x| *x <= MEASURE_SHARE) && seen.last() == Some(&1.0), "{seen:?}");
-        // Projekt ohne hörbaren Ton: Stille bleibt, kein Fehler
+        // project without audible sound: silence stays, no error
         p.timeline.tracks[0].muted = true;
         run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         assert!(peaks_db(&out, 0.0, 2.0).iter().all(|v| *v < -60.0));
@@ -3362,7 +3362,7 @@ mod tests {
         assert!(matches!(run(&job, Arc::new(AtomicBool::new(true)), |_| {}), Err(ExportError::Cancelled)));
         assert_eq!(std::fs::read(&out).unwrap(), b"alte Datei");
         assert!(!dir.path().join("ziel.part.wav").exists());
-        // Erfolg: Ziel ersetzt, keine Teildatei übrig
+        // success: target replaced, no partial file left
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         assert!(cl_media::probe(&out).is_ok());
         assert!(!job.part.exists());
@@ -3375,13 +3375,13 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let mut p = sine_project(dir.path(), 0.0);
-        // Ungenutztes fehlendes Medium blockiert den Export nicht
+        // an unused missing media item does not block the export
         let mut gone = p.media[0].clone();
         gone.id = MediaId::new();
         gone.path = dir.path().join("weg.wav");
         p.media.push(gone);
         assert!(build(&p, &wav_settings(&p), &no_fonts, &dir.path().join("o.wav")).is_ok());
-        // Vorschau lädt keine URL aus der Projektdatei
+        // preview loads no URL from the project file
         p.media[0].path = PathBuf::from("http://127.0.0.1:9/x.wav");
         let (mut child, wd) = spawn_audio_preview(&p, Time::ZERO, 48000).unwrap();
         let _ = child.kill();
@@ -3390,16 +3390,16 @@ mod tests {
         assert!(!g.contains(":a]"), "{g}");
     }
 
-    /// Harter Wisch von links: zur Mitte deutlich anders als der Rückfall „fade“.
+    /// Hard wipe from the left: clearly different from the fallback `fade` at the middle.
     const WIPE: &str = "fn transition(uv: vec2f, progress: f32, ratio: f32) -> vec4f { return select(from_color(uv), to_color(uv), uv.x < progress); }";
 
-    /// Testpaket mit Shader-Übergängen (der Katalog ist global: in allen Tests gleich, einmal
-    /// angelegt): `t.shader/wipe` und `t.shader/broken` (ungültiger Shader), Rückfall `fade`.
+    /// Test package with shader transitions (the catalog is global: the same in all tests, created
+    /// once): `t.shader/wipe` and `t.shader/broken` (invalid shader), fallback `fade`.
     fn shader_pack() {
         static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
         ONCE.get_or_init(|| {
             use cl_fx::catalog::{Entry, Kind, Pack, PackInfo, Payload};
-            // fester Name: je Testlauf ein neuer Ordner sammelte sich in %TEMP% (Inhalt ist immer gleich)
+            // fixed name: a new folder per test run piled up in %TEMP% (the content is always the same)
             let dir = std::env::temp_dir().join("cutline-shader-test");
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join("wipe.wgsl"), WIPE).unwrap();
@@ -3436,7 +3436,7 @@ mod tests {
         });
     }
 
-    /// Einfarbiges Video (30 Bilder/s)
+    /// Solid-color video (30 frames/s)
     fn color_video(dir: &Path, name: &str, color: &str, secs: f64, size: &str) -> MediaRef {
         let path = dir.join(name);
         let st = cl_media::ffmpeg_command()
@@ -3451,8 +3451,8 @@ mod tests {
         cl_media::probe(&path).unwrap()
     }
 
-    /// 3 s, 320×180: rot (0–1,5 s) → blau (1,5–3 s), Übergang `id` über 0,6 s (Fenster 1,2–1,8 s),
-    /// optional ein Text mit grüner Fläche darüber.
+    /// 3 s, 320×180: red (0–1.5 s) → blue (1.5–3 s), transition `id` over 0.6 s (window 1.2–1.8 s),
+    /// optionally a text with a green box on top.
     fn shader_project(dir: &Path, id: &str, text: bool) -> Project {
         let a = color_video(dir, "a.mp4", "red", 2.0, "320x180");
         let b = color_video(dir, "b.mp4", "blue", 2.0, "320x180");
@@ -3509,7 +3509,7 @@ mod tests {
         s as f64 / (n * 3) as f64
     }
 
-    /// Bild Nummer `n` (bildgenau, `decode_frame` sucht nur ungefähr)
+    /// Frame number `n` (frame-exact, `decode_frame` only seeks approximately)
     fn frame_n(f: &Path, n: usize) -> cl_media::RgbaFrame {
         let o = cl_media::ffmpeg_command()
             .unwrap()
@@ -3529,15 +3529,15 @@ mod tests {
         [f.data[i], f.data[i + 1], f.data[i + 2]]
     }
 
-    /// Waagrechte Ausdehnung (erste, letzte Spalte) heller Pixel je Zeilenband [y0, y1)
+    /// Horizontal extent (first, last column) of bright pixels per row band [y0, y1)
     fn ink_x(f: &cl_media::RgbaFrame, y0: u32, y1: u32) -> Option<(u32, u32)> {
         let cols: Vec<u32> = (0..f.width).filter(|&x| (y0..y1).any(|y| rgb_at(f, x, y).iter().all(|&v| v > 160))).collect();
         Some((*cols.first()?, *cols.last()?))
     }
 
-    /// Mehrzeiliger Text: FFmpeg 8.1 zeichnete den Zeilenumbruch als Kästchen ans Ende jeder
-    /// Zeile außer der letzten und verschob die Zeile um dessen halbe Breite. Zwei gleiche Zeilen
-    /// müssen genau so breit und so gelegen sein wie dieselbe Zeile allein – in jeder Ausrichtung.
+    /// Multi-line text: FFmpeg 8.1 drew the line break as a box at the end of every
+    /// line except the last and shifted the line by half its width. Two equal lines
+    /// must be exactly as wide and placed as the same line alone – in every alignment.
     #[test]
     fn multiline_text_has_no_box_at_line_ends() {
         if !cl_media::ffmpeg_available() {
@@ -3565,14 +3565,14 @@ mod tests {
             for (name, l) in [("erste Zeile", top), ("zweite Zeile", bottom)] {
                 assert!(
                     l.0.abs_diff(one.0) <= 2 && l.1.abs_diff(one.1) <= 2,
-                    "Ausrichtung {align}, {name}: {l:?} statt {one:?} wie einzeilig"
+                    "alignment {align}, {name}: {l:?} instead of {one:?} as single line"
                 );
             }
         }
     }
 
-    /// Karaoke über zwei Zeilen mit Kontur und Fett: zu jeder Zeit ist genau das gesprochene Wort
-    /// ganz gelb (keine weißen Reste darin, nichts Gelbes in den anderen Wörtern).
+    /// Karaoke over two lines with outline and bold: at any time exactly the spoken word
+    /// is fully yellow (no white remnants in it, nothing yellow in the other words).
     #[test]
     fn karaoke_highlights_exactly_the_spoken_word() {
         if !cl_media::ffmpeg_available() {
@@ -3599,7 +3599,7 @@ mod tests {
         let (out, _job) = export(&p, dir.path(), "k.mp4");
         for word in 0..4u32 {
             let f = frame_n(&out, (word * 30 + 15) as usize);
-            // Viertel des Bilds um die Textmitte: Zeile oben/unten, Wort links/rechts
+            // quarter of the image around the text center: line top/bottom, word left/right
             let (mut yellow, mut white_in, mut yellow_out) = (0, 0, 0);
             for y in 0..360 {
                 for x in 0..640 {
@@ -3615,21 +3615,21 @@ mod tests {
                     }
                 }
             }
-            assert!(yellow > 500 && white_in < 20 && yellow_out < 20, "Wort {word}: gelb {yellow}, weiß darin {white_in}, gelb daneben {yellow_out}");
+            assert!(yellow > 500 && white_in < 20 && yellow_out < 20, "word {word}: yellow {yellow}, white inside {white_in}, yellow outside {yellow_out}");
         }
     }
 
     #[test]
     fn window_frames_match_xfade() {
-        // 30 Bilder/s, Versatz 1,2 s, 0,6 s: Bilder 36 bis 54
+        // 30 frames/s, offset 1.2 s, 0.6 s: frames 36 to 54
         assert_eq!(graph::window_frames(1.2, 0.6, 30.0), (36, 19));
-        // Versatz zwischen zwei Bildern: erstes Bild danach
+        // offset between two frames: first frame after it
         assert_eq!(graph::window_frames(1.21, 0.6, 30.0).0, 37);
         assert_eq!(graph::window_frames(0.0, 0.04, 25.0), (0, 2));
     }
 
-    /// Zuschnitt: der abgeschnittene Bereich ist leer (schwarz), der Rest liegt Pixel für Pixel
-    /// an derselben Stelle wie ohne Zuschnitt – auch verkleinert, verschoben und gedreht.
+    /// Crop: the cropped area is empty (black), the rest lies pixel by pixel
+    /// in the same place as without crop – also scaled down, moved and rotated.
     #[test]
     fn crop_blanks_the_edges_and_keeps_the_rest_in_place() {
         if !cl_media::ffmpeg_available() {
@@ -3660,7 +3660,7 @@ mod tests {
             let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
             assert!(g.contains("crop=208:144:80:36,pad=320:180:80:36"), "{g}");
             let (a, b) = (frame_n(&plain, 15), frame_n(&cut, 15));
-            // Ausgabepixel → Quellpixel (Quelle 320×180 = Clipgröße, Drehung um die Bildmitte)
+            // output pixel → source pixel (source 320×180 = clip size, rotation around the image center)
             let (rad, s) = (tf.rotation_deg.to_radians(), tf.scale);
             let (mut gone, mut kept, mut diff) = (0, 0, 0u32);
             for py in (2..178).step_by(4) {
@@ -3676,24 +3676,24 @@ mod tests {
                     let (l, r, top) = (80.0, 320.0 - 32.0, 36.0);
                     if sx < l - 6.0 || sx > r + 6.0 || sy < top - 6.0 {
                         let v = rgb_at(&b, px, py);
-                        assert!(v.iter().all(|&c| c < 30), "#{n} ({px},{py}) sollte leer sein: {v:?}");
+                        assert!(v.iter().all(|&c| c < 30), "#{n} ({px},{py}) should be empty: {v:?}");
                         gone += 1;
                     } else if sx > l + 6.0 && sx < r - 6.0 && sy > top + 6.0 {
                         let (x, y) = (rgb_at(&a, px, py), rgb_at(&b, px, py));
-                        // einzelne Pixel weichen durch die Kodierung ab (4:2:0 an Farbkanten)
+                        // single pixels deviate due to encoding (4:2:0 at color edges)
                         diff += (0..3).map(|i| x[i].abs_diff(y[i]) as u32).sum::<u32>();
                         kept += 1;
                     }
                 }
             }
-            assert!(gone > 100 && kept > 400, "#{n}: {gone} leer, {kept} gleich");
+            assert!(gone > 100 && kept > 400, "#{n}: {gone} empty, {kept} equal");
             let mean = diff as f64 / (kept * 3) as f64;
             assert!(mean < 6.0, "#{n}: Rest weicht im Mittel um {mean:.1} ab (verschoben?)");
         }
     }
 
-    /// Shader-Übergang im Export: gleiche Länge und Ströme wie mit xfade, Mitte = cl-gpu-Bild,
-    /// davor/danach reine Clips, Ebenen darüber bleiben, kaputter Shader → Rückfall.
+    /// Shader transition in the export: same length and streams as with xfade, middle = cl-gpu image,
+    /// before/after pure clips, layers above stay, broken shader → fallback.
     #[test]
     fn shader_transition_exports_like_gpu_render() {
         if !cl_media::ffmpeg_available() {
@@ -3702,7 +3702,7 @@ mod tests {
         shader_pack();
         let dir = tempfile::tempdir().unwrap();
         let p = shader_project(dir.path(), "t.shader/wipe", false);
-        // erzwungener Fehler im Vorlauf (ungültiger Shader): Export gelingt mit dem Rückfall
+        // forced error in the pre-pass (invalid shader): export succeeds with the fallback
         let mut pb = p.clone();
         pb.timeline.tracks[0].clips[0].transition_out.as_mut().unwrap().id = "t.shader/broken".into();
         let (fall, job) = export(&pb, dir.path(), "fallback.mp4");
@@ -3710,7 +3710,7 @@ mod tests {
         let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
         assert!(!g.contains("movie="), "{g}");
         let Some(gpu) = cl_gpu::gpu() else {
-            eprintln!("keine GPU: nur der Rückfall geprüft");
+            eprintln!("no GPU: only the fallback checked");
             return;
         };
         let (out, job) = export(&p, dir.path(), "shader.mp4");
@@ -3719,7 +3719,7 @@ mod tests {
         let (a, b) = (cl_media::probe(&out).unwrap(), cl_media::probe(&fall).unwrap());
         assert!((a.duration.as_secs_f64() - b.duration.as_secs_f64()).abs() < 0.05, "{a:?} {b:?}");
         assert_eq!((a.width, a.height, a.has_audio), (b.width, b.height, b.has_audio));
-        // Mitte: Bild 45 (1,5 s) = Fortschritt 0,5
+        // middle: frame 45 (1.5 s) = progress 0.5
         let mid = frame_n(&out, 45);
         let red = vec![255u8, 0, 0, 255].repeat(320 * 180);
         let blue = vec![0u8, 0, 255, 255].repeat(320 * 180);
@@ -3729,18 +3729,18 @@ mod tests {
         let d = mean_diff(&mid.data, &want);
         assert!(d < 8.0, "Mitte weicht vom cl-gpu-Bild ab: {d}");
         let d_fall = mean_diff(&frame_n(&fall, 45).data, &want);
-        assert!(d_fall > 40.0, "Rückfall sollte anders aussehen: {d_fall}");
-        // links schon blau, rechts noch rot
+        assert!(d_fall > 40.0, "fallback should look different: {d_fall}");
+        // left already blue, right still red
         assert!(rgb_at(&mid, 40, 90)[2] > 200 && rgb_at(&mid, 280, 90)[0] > 200, "{:?} {:?}", rgb_at(&mid, 40, 90), rgb_at(&mid, 280, 90));
-        // kurz vor und nach dem Fenster (Bilder 36–54): reine Clips
+        // shortly before and after the window (frames 36–54): pure clips
         let before = frame_n(&out, 35);
         let after = frame_n(&out, 55);
-        assert!(mean_diff(&before.data, &red) < 8.0, "vorher nicht rot");
-        assert!(mean_diff(&after.data, &blue) < 8.0, "nachher nicht blau");
+        assert!(mean_diff(&before.data, &red) < 8.0, "not red before");
+        assert!(mean_diff(&after.data, &blue) < 8.0, "not blue after");
     }
 
-    /// FFmpeg 7 vergisst die Bildrate nach `setpts`; ein `tpad` direkt dahinter hält dann kein Bild
-    /// (Clip-Ende, Vorlauf des Shader-Übergangs). In keinem Graphen darf `tpad` auf `setpts` folgen.
+    /// FFmpeg 7 forgets the frame rate after `setpts`; a `tpad` right after it then holds no frame
+    /// (clip end, pre-pass of the shader transition). In no graph may `tpad` follow `setpts`.
     #[test]
     fn no_tpad_right_after_setpts() {
         if !cl_media::ffmpeg_available() {
@@ -3754,11 +3754,11 @@ mod tests {
         for e in std::fs::read_dir(job.workdir.path()).unwrap() {
             let g = std::fs::read_to_string(e.unwrap().path()).unwrap_or_default();
             graphs += usize::from(g.contains("tpad="));
-            // Filter ohne vorangestellte Labels: „[a][b]xfade=…“ → „xfade=…“
+            // filters without leading labels: "[a][b]xfade=…" → "xfade=…"
             let parts: Vec<&str> = g.split([',', ';', '\n']).map(|s| s.split(']').rfind(|x| !x.is_empty()).unwrap_or("")).collect();
             assert!(!parts.windows(2).any(|w| w[0].starts_with("setpts=") && w[1].starts_with("tpad=")), "{g}");
         }
-        assert!(graphs >= 2, "Hauptgraph und Vorlauf geprüft");
+        assert!(graphs >= 2, "main graph and pre-pass checked");
     }
 
     #[test]
@@ -3772,7 +3772,7 @@ mod tests {
         let (out, job) = export(&p, dir.path(), "text.mp4");
         assert_eq!(job.passes.len(), 1);
         let mid = frame_n(&out, 45);
-        // grüne Textfläche in der Mitte über dem Übergang
+        // green text box in the middle above the transition
         let c = rgb_at(&mid, 160, 90);
         assert!(c[1] > 180 && c[0] < 80 && c[2] < 80, "{c:?}");
     }
@@ -3792,7 +3792,7 @@ mod tests {
         assert!(!out.exists());
     }
 
-    /// Messung: 10-s-Projekt (1080p, 30 Bilder/s) mit 3 Übergängen, mit/ohne Shader.
+    /// Measurement: 10 s project (1080p, 30 frames/s) with 3 transitions, with/without shader.
     /// `cargo test --release -p cl-export shader_export_timing -- --ignored --nocapture`
     #[test]
     #[ignore]
@@ -3823,7 +3823,7 @@ mod tests {
             let s = std::time::Instant::now();
             let (_, job) = export(p, dir.path(), n);
             let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
-            println!("{n}: {} Shader-Übergänge im Graph", g.matches("blend=all_expr=B").count());
+            println!("{n}: {} shader transitions in the graph", g.matches("blend=all_expr=B").count());
             s.elapsed().as_secs_f64()
         };
         let with = time(&p, "mit.mp4");
@@ -3833,7 +3833,7 @@ mod tests {
             }
         }
         let without = time(&p, "ohne.mp4");
-        println!("Export 10 s 1080p, 3 Übergänge: mit Shader {with:.2} s, ohne {without:.2} s");
+        println!("Export 10 s 1080p, 3 transitions: with shader {with:.2} s, without {without:.2} s");
     }
 
     #[test]
@@ -3897,7 +3897,7 @@ mod tests {
         assert!(codec_args(&s).contains(&"-global_quality".to_string()));
     }
 
-    /// Jede angebotene Codec-Container-Kombination mit Software-Encoder exportiert mit eigener Bitrate.
+    /// Every offered codec/container combination with a software encoder exports with its own bitrate.
     #[test]
     fn bitrate_export_works_for_every_software_codec() {
         if !cl_media::ffmpeg_available() {
@@ -3920,8 +3920,8 @@ mod tests {
         }
     }
 
-    /// Das mitgelieferte Windows-FFmpeg hat kein SVT-AV1: der Ersatz (libaom) muss dort laufen,
-    /// mit Qualität und mit fester Bitrate samt Deckel.
+    /// The bundled Windows FFmpeg has no SVT-AV1: the substitute (libaom) must run there,
+    /// with quality and with a fixed bitrate including cap.
     #[test]
     fn av1_fallback_encoder_works() {
         if !cl_media::ffmpeg_available() {
@@ -3939,7 +3939,7 @@ mod tests {
                 .stdin(Stdio::null())
                 .status()
                 .unwrap();
-            assert!(st.success(), "libaom-av1 mit {extra:?}");
+            assert!(st.success(), "libaom-av1 with {extra:?}");
             assert!(out.metadata().unwrap().len() > 0);
         }
     }
@@ -3954,7 +3954,7 @@ mod tests {
         assert_eq!(second_pass(&log("-inf", "-inf"), -14.0).as_deref(), Some("anull"));
         assert_eq!(second_pass("kein JSON", -14.0), None);
         assert_eq!(second_pass(&log("-20.00", "-30.00").replace("input_lra", "x"), -14.0), None);
-        // +4 LUFS: loudnorm nimmt measured_I nur bis 0 → vorher um 6 dB absenken
+        // +4 LUFS: loudnorm takes measured_I only up to 0 → lower by 6 dB first
         let loud = second_pass(&log("4.00", "-6.00"), -14.0).unwrap();
         assert!(loud.starts_with("volume=-6dB,loudnorm=") && loud.contains("measured_I=-2:") && loud.contains("measured_thresh=-12:"), "{loud}");
     }
@@ -3988,7 +3988,7 @@ mod tests {
             "WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\n&lt;3 A -&gt; B &amp; C\nzwei\n\n2\n00:00:05.000 --> 00:00:06.000\nspäter\n"
         );
         assert!(to_srt(&p).contains("\n<3 A --> B & C\nzwei\n"));
-        // Bereich 2–4 s: erster Text gekürzt und verschoben, zweiter fehlt
+        // range 2–4 s: first text shortened and moved, second missing
         assert_eq!(
             to_srt_in(&p, Time::from_secs_f64(2.0), Time::from_secs_f64(4.0)),
             "1\n00:00:00,000 --> 00:00:01,000\n<3 A --> B & C\nzwei\n"
@@ -4021,9 +4021,9 @@ mod tests {
         assert_eq!(to_vtt(&p), "WEBVTT\n\n1\n00:00:01.500 --> 00:00:03.500\nHallo\n");
         assert!(subtitles_for(&p, Path::new("a.VTT")).starts_with("WEBVTT"));
     }
-    /// Bewegtes Bild (1 s, Streifen läuft nach rechts) als 4-s-Bild-Clip über blauem Video:
-    /// einmalig → steht bei 3,5 s auf dem letzten Bild; Schleife → läuft weiter. Transparenz
-    /// bleibt (daneben Hintergrund). Früher brach der Export mit „Option loop not found“ ab.
+    /// Animated image (1 s, stripe runs to the right) as a 4 s image clip over blue video:
+    /// once → stands on the last frame at 3.5 s; loop → keeps running. Transparency
+    /// stays (background next to it). Previously the export aborted with "Option loop not found".
     #[test]
     fn animated_image_clips_hold_or_loop() {
         if !cl_media::ffmpeg_available() {
@@ -4046,7 +4046,7 @@ mod tests {
         ff(&["-f", "lavfi", "-i", band, "-plays", "1", "-f", "apng", &p("once.png")]);
         let pal = "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse=alpha_threshold=128";
         ff(&["-f", "lavfi", "-i", band, "-vf", pal, "-loop", "-1", &p("once.gif")]);
-        // Spalte (0..64) mit rotem Element bzw. blauem Hintergrund?
+        // column (0..64) with red element or blue background?
         let col = |f: &cl_media::RgbaFrame, x: u32| {
             let i = ((32 * f.width + x) * 4) as usize;
             let px = &f.data[i..i + 3];
@@ -4087,10 +4087,10 @@ mod tests {
             let at = |t: f64| cl_media::decode_frame(&out, Time::from_secs_f64(t), 64, 64).unwrap();
             let (f30, f35) = (at(3.0), at(3.5));
             if looping {
-                // 3,0 s = Anfang der dritten Runde (Streifen links), 3,5 s = Mitte
+                // 3.0 s = start of the third round (stripe left), 3.5 s = middle
                 assert_eq!((col(&f30, 8), col(&f35, 8), col(&f35, 32), col(&f35, 55)), ('r', 'b', 'r', 'b'), "{file}");
             } else {
-                // letztes Bild (Streifen bei 43..58) steht, links Hintergrund
+                // last frame (stripe at 43..58) stands, background on the left
                 for f in [&f30, &f35] {
                     assert_eq!((col(f, 8), col(f, 32), col(f, 50)), ('b', 'b', 'r'), "{file}");
                 }
@@ -4098,7 +4098,7 @@ mod tests {
         }
     }
 
-    /// Aufteilung von `codec_args` in Bild/Ton/Container: Argumente wie zuvor (Reihenfolge inklusive).
+    /// Split of `codec_args` into picture/audio/container: arguments as before (including order).
     #[test]
     fn codec_args_unchanged_by_split() {
         let p = Project::new("C");
@@ -4116,7 +4116,7 @@ mod tests {
         assert_eq!(s(Format::M4a, Codec::H264, Quality::Recommended, true, false), "-c:a aac -b:a 256k");
     }
 
-    /// Kleines Projekt: ein Durchgang mit genau dem Aufruf von `build_single` (keine Abschnitte).
+    /// Small project: one pass with exactly the call of `build_single` (no sections).
     #[test]
     fn small_project_builds_one_pass_as_before() {
         let dir = tempfile::tempdir().unwrap();
@@ -4142,9 +4142,9 @@ mod tests {
         assert!(g(&job).contains("alimiter"), "Begrenzer im Durchgang");
     }
 
-    /// Dichter Schnitt im Vorschau-Fenster (300 Clips à 0,1 s in 20 s, lange Pfade): Clips einer
-    /// Datei teilen sich Eingänge, die Befehlszeile bleibt klein; mit 300 verschiedenen Dateien
-    /// gibt es eine klare Meldung statt eines stillen Fehlstarts.
+    /// Dense cutting in the preview window (300 clips of 0.1 s in 20 s, long paths): clips of one
+    /// file share inputs, the command line stays small; with 300 different files
+    /// there is a clear message instead of a silent failed start.
     #[test]
     fn dense_preview_window_stays_below_the_limit() {
         let dir = tempfile::tempdir().unwrap();
@@ -4153,8 +4153,8 @@ mod tests {
         let media = |n: usize| {
             let path = deep.join(format!("datei_{n}.wav"));
             std::fs::write(&path, b"x").unwrap();
-            // als lesbar vormerken: Die Prüfung im Hintergrund würde die Attrappe sonst mitten im
-            // Aufbau als unlesbar melden und ihre Clips fielen ab dann heraus (Test schwankte)
+            // mark as readable: the background check would otherwise report the dummy as unreadable in the
+            // middle of building and its clips would drop out from then on (test was flaky)
             let meta = std::fs::metadata(&path).unwrap();
             READABLE.lock().unwrap().get_or_insert_with(Default::default).insert((path.clone(), meta.len(), meta.modified().ok()), Some(true));
             MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None }
@@ -4165,7 +4165,7 @@ mod tests {
             p.media.extend(ms.iter().cloned());
             let mut t = Track::new(TrackKind::Audio);
             for i in 0..300 {
-                let m = &ms[i % files]; // 300 Clips à 0,1 s, davon 200 im 20-s-Fenster
+                let m = &ms[i % files]; // 300 clips of 0.1 s, 200 of them in the 20 s window
                 let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::from_secs_f64(i as f64 * 0.1), Time::from_secs_f64(0.1));
                 c.source_in = Time::from_secs_f64(30.0 + i as f64 * 0.37);
                 c.audio_stream = Some((i % 2) as u32);
@@ -4177,19 +4177,19 @@ mod tests {
         let p = dense(1);
         let (inputs, graph, _) = audio_window_graph(&p, Time::ZERO, Time::from_secs_f64(20.0)).unwrap();
         let n = inputs.iter().filter(|a| *a == "-i").count();
-        assert!(n <= 4, "{n} Eingänge");
+        assert!(n <= 4, "{n} inputs");
         assert!(sections::cmd_len(&inputs) < sections::MAX_CMD);
         let g = graph.join(";\n");
-        assert!(g.contains(":a:1]asplit") && g.contains(":a]asplit"), "Tonspur je Clip auch bei gemeinsamen Eingängen");
+        assert!(g.contains(":a:1]asplit") && g.contains(":a]asplit"), "audio stream per clip also with shared inputs");
         assert_eq!(g.matches("atrim=start=").count(), 200, "200 Clips im Fenster");
-        // viele verschiedene Dateien: verständlicher Fehler mit Zeit
+        // many different files: understandable error with time
         let e = audio_window_graph(&dense(300), Time::ZERO, Time::from_secs_f64(20.0)).unwrap_err();
         assert!(matches!(e, ExportError::TooManyClips(_)), "{e}");
     }
 
     #[test]
     fn shared_inputs_group_nearby_ranges_of_one_file() {
-        // Datei 0: 10–11, 12–13 (nah), 100–101 (weit); Datei 1: 10–11
+        // file 0: 10–11, 12–13 (near), 100–101 (far); file 1: 10–11
         let r = [(0, 10.0, 11.0), (1, 10.0, 11.0), (0, 100.0, 101.0), (0, 12.0, 13.0)];
         let (of, groups) = graph::share_inputs(&r, 10.0);
         assert_eq!(groups.len(), 3);
@@ -4202,16 +4202,16 @@ mod tests {
     fn lead_skip_only_for_plain_long_clips() {
         let s = Time::from_secs_f64;
         let mut c = Clip::new(ClipContent::Text(TextStyle::default()), s(10.0), s(100.0));
-        assert_eq!(graph::lead_skip(&c, s(11.5)), 0.0, "zu nah am Anfang");
+        assert_eq!(graph::lead_skip(&c, s(11.5)), 0.0, "too close to the start");
         assert_eq!(graph::lead_skip(&c, s(40.7)), 29.0, "ganze Sekunden, ≥ 1 s Vorlauf");
         c.speed = 2.0;
         assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "Tempo");
         c.speed = 1.0;
         c.fx.reverse = true;
-        assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "rückwärts");
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "reversed");
     }
 
-    /// Bild-Sprung trifft Quell- und Projektbilder und ganze µs.
+    /// Picture jump hits source and project frames and whole µs.
     #[test]
     fn video_skip_lands_on_source_and_project_frames() {
         let s = Time::from_secs_f64;
@@ -4225,8 +4225,8 @@ mod tests {
         assert_eq!(at(None, r(30, 1), 40.7), 0.0, "Quellrate unbekannt");
     }
 
-    /// Platzprüfung: Die fertige Datei braucht noch einmal so viel wie die Abschnitte – auf
-    /// demselben Laufwerk doppelt (1 h ProRes 1080p30 ≈ 100 GB: 110 GB frei reichen nicht).
+    /// Space check: the finished file needs as much again as the sections – on
+    /// the same drive double (1 h ProRes 1080p30 ≈ 100 GB: 110 GB free is not enough).
     #[test]
     fn space_check_counts_the_finished_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -4243,8 +4243,8 @@ mod tests {
         }
     }
 
-    /// Effekte, die eigene Zeitstempel vergeben oder Bilder zählen, rechnen ab Clipbeginn;
-    /// Ausdrücke mit `t` (Zeitstempel bleiben Clipzeit) dürfen springen.
+    /// Effects that assign their own timestamps or count frames compute from the clip start;
+    /// expressions with `t` (timestamps stay clip time) may jump.
     #[test]
     fn effects_with_own_time_start_at_the_clip() {
         let has = |id: &str| graph::fx_has_memory(&ClipFx { effects: vec![FxRef::new(id)], ..Default::default() });
@@ -4258,7 +4258,7 @@ mod tests {
         assert!(!graph::counts_frames("[u1n]eq=brightness='sin(t*3)':eval=frame,noise_x[o]"));
     }
 
-    /// Kaputte Datei: die Vorschau lässt sie aus und meldet sie einmal.
+    /// Broken file: the preview leaves it out and reports it once.
     #[test]
     fn unreadable_audio_is_left_out_and_reported_once() {
         if !cl_media::ffmpeg_available() {
@@ -4273,9 +4273,9 @@ mod tests {
         assert_eq!(w.len(), 1, "{w:?}");
     }
 
-    /// Shader-Übergang, durch den eine Abschnittsgrenze läuft (Grenze bei 1,5 s, Fenster
-    /// 1,2–1,8 s): beide Abschnitte rechnen ihren Vorlauf, das Ergebnis ist bildgleich mit dem
-    /// Durchgang (ohne GPU: der Rückfall, ebenso gleich).
+    /// Shader transition crossed by a section boundary (boundary at 1.5 s, window
+    /// 1.2–1.8 s): both sections compute their pre-pass, the result is frame-identical to the
+    /// single pass (without GPU: the fallback, equally identical).
     #[test]
     fn shader_transition_across_section_boundary() {
         if !cl_media::ffmpeg_available() {
@@ -4284,7 +4284,7 @@ mod tests {
         shader_pack();
         let dir = tempfile::tempdir().unwrap();
         let mut p = shader_project(dir.path(), "t.shader/wipe", false);
-        // zweite Spur mit kurzen Clips: zwingt Abschnittsgrenzen alle 0,5 s
+        // second track with short clips: forces section boundaries every 0.5 s
         let c = color_video(dir.path(), "c.mp4", "green", 1.0, "320x180");
         let mut t = Track::new(TrackKind::Video);
         for i in 0..6 {
@@ -4302,7 +4302,7 @@ mod tests {
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let job = build_limited(&p, &s, &no_fonts, &cut, 3).unwrap();
         let bounds: Vec<f64> = job.sections.iter().map(|x| x.from.as_secs_f64()).collect();
-        assert!(bounds.iter().any(|b| *b > 1.2 && *b < 1.8), "Grenze im Übergang: {bounds:?}");
+        assert!(bounds.iter().any(|b| *b > 1.2 && *b < 1.8), "boundary in the transition: {bounds:?}");
         assert!(job.sections.iter().filter(|x| !x.passes.is_empty()).count() >= 2, "Vorlauf in beiden Abschnitten");
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         for n in 0..90 {
@@ -4311,11 +4311,11 @@ mod tests {
         }
         if cl_gpu::gpu().is_some() {
             let used = job.sections.iter().filter(|x| std::fs::read_to_string(job.workdir.path().join(&x.graph)).unwrap().contains("movie=shader_")).count();
-            assert!(used >= 2, "Shader statt Rückfall in beiden Abschnitten: {used}");
+            assert!(used >= 2, "shader instead of fallback in both sections: {used}");
         }
     }
 
-    /// Ton-Start der Vorschau: liegt alles in den Bereichen, wird das Projekt nicht kopiert.
+    /// Audio start of the preview: if everything is within the ranges, the project is not copied.
     #[test]
     fn edit_ranges_copy_only_when_needed() {
         let mut p = Project::new("x");
@@ -4331,7 +4331,7 @@ mod tests {
         assert_eq!(q.timeline.tracks[0].clips[0].volume_db, 20.0);
     }
 
-    /// Nur „Treiber zu alt" zählt – keine Karte, fehlende Bibliothek oder andere Fehler nicht.
+    /// Only "driver too old" counts – no card, missing library or other errors don't.
     #[test]
     fn only_an_outdated_driver_counts() {
         assert!(driver_too_old("[h264_nvenc @ 0x1] Driver does not support the required nvenc API version. Required: 13.0 Found: 12.1"));
@@ -4343,7 +4343,7 @@ mod tests {
         assert!(!driver_too_old(""));
     }
 
-    /// Hinweis nur, wenn NVENC am Treiber scheitert und kein anderer Hardware-Weg da ist.
+    /// Hint only if NVENC fails because of the driver and no other hardware path exists.
     #[test]
     fn driver_hint_only_without_other_hardware() {
         use Encoder::*;
@@ -4357,8 +4357,8 @@ mod tests {
         assert!(!driver_hint(true, &[Software, Mf]));
     }
 
-    /// Automatisch NVENC → QSV → AMF → Media Foundation → Software; ein gewählter Weg vorn, fehlt
-    /// er hier, gilt automatisch.
+    /// Automatically NVENC → QSV → AMF → Media Foundation → software; a chosen path first, if it is
+    /// missing here, automatic applies.
     #[test]
     fn encoder_chain_follows_setting_and_falls_back_to_auto() {
         use Encoder::*;
@@ -4370,7 +4370,7 @@ mod tests {
         assert_eq!(encoder_chain(&all, "mf"), [Mf, Software]);
         assert_eq!(encoder_chain(&all, "software"), [Software]);
         assert_eq!(encoder_chain(&[], "software"), [Software]);
-        // gewählter Weg fehlt (anderer Rechner, Treiber weg) oder unbekannt: automatisch
+        // chosen path missing (other computer, driver gone) or unknown: automatic
         assert_eq!(encoder_chain(&[Software, Mf], "nvenc"), [Mf, Software]);
         assert_eq!(encoder_chain(&[Software, Qsv], "quatsch"), [Qsv, Software]);
         for e in Encoder::AUTO {
@@ -4378,8 +4378,8 @@ mod tests {
         }
     }
 
-    /// Media Foundation: nv12, erzwungene Hardware, GOP 250, Bitrate nach Qualität; eigene
-    /// Bitrate ersetzt sie; andere Codecs nicht über diesen Weg.
+    /// Media Foundation: nv12, forced hardware, GOP 250, bitrate by quality; a custom
+    /// bitrate replaces it; other codecs not via this path.
     #[test]
     fn media_foundation_args() {
         let mut s = ExportSettings::from_project(&Project::new("mf"));
@@ -4399,7 +4399,7 @@ mod tests {
         let a = codec_args(&s);
         assert_eq!(a.iter().filter(|x| *x == "-b:v").count(), 1, "{a:?}");
         assert!(args(&s).contains("-b:v 8000k -maxrate 8800k"), "{}", args(&s));
-        // kleine Ausgabe: nie unter 500 kbit/s
+        // small output: never below 500 kbit/s
         (s.width, s.height, s.fps, s.quality) = (128, 72, Rational::new(30, 1), Quality::Lower);
         assert!(args(&s).contains("-b:v 500k"), "{}", args(&s));
         s.quality = Quality::Recommended;
@@ -4418,41 +4418,41 @@ mod tests {
         assert_eq!(export_default(&found, ""), Encoder::Software);
         assert_eq!(export_default(&found, Encoder::Nvenc.id()), Encoder::Nvenc);
         assert_eq!(export_default(&found, Encoder::Mf.id()), Encoder::Mf);
-        assert_eq!(export_default(&found, Encoder::Qsv.id()), Encoder::Software, "gewählter Weg fehlt hier");
+        assert_eq!(export_default(&found, Encoder::Qsv.id()), Encoder::Software, "chosen path missing here");
         assert_eq!(export_default(&found, Encoder::Software.id()), Encoder::Software);
     }
 
     #[test]
     fn target_bitrate_and_resolution() {
-        // 10 MB in 60 s: 1333 kbit/s gesamt, 95 % davon minus 256 kbit/s Ton
+        // 10 MB in 60 s: 1333 kbit/s total, 95 % of it minus 256 kbit/s audio
         assert_eq!(target_kbps(10, 60.0, 256), 1010);
-        // sehr knapp: nie unter 50 kbit/s
+        // very tight: never below 50 kbit/s
         assert_eq!(target_kbps(1, 600.0, 64), 50);
-        // 1080p30 braucht 0,03 Bit je Pixel = 1866 kbit/s
+        // 1080p30 needs 0.03 bits per pixel = 1866 kbit/s
         assert_eq!(target_edge(1900, (1920, 1080), 30.0), None);
         assert_eq!(target_edge(1800, (1920, 1080), 30.0), Some((720, true)));
         assert_eq!(target_edge(500, (1920, 1080), 30.0), Some((540, true)));
         assert_eq!(target_edge(250, (1920, 1080), 30.0), Some((360, true)));
         assert_eq!(target_edge(100, (1920, 1080), 30.0), Some((360, false)));
-        // Hochkant: kürzere Kante zählt; 4K wird 1080p
+        // portrait: the shorter edge counts; 4K becomes 1080p
         assert_eq!(target_edge(1800, (1080, 1920), 30.0), Some((720, true)));
         assert_eq!(target_edge(3000, (3840, 2160), 30.0), Some((1080, true)));
-        // schon klein: nie größer, höchstens 360p
+        // already small: never larger, at most 360p
         assert_eq!(target_edge(10, (320, 180), 30.0), Some((180, false)));
         assert_eq!(target_edge(10, (640, 480), 30.0), Some((360, false)));
 
         let mut s = ExportSettings::from_project(&Project::new("z"));
         (s.width, s.height, s.fps, s.encoder) = (1920, 1080, Rational::new(30, 1), Encoder::Nvenc);
-        // ohne Zielgröße unverändert
+        // without target size unchanged
         assert_eq!(s.for_target(60.0, true), s);
         s.target_mb = Some(25);
         let t = s.for_target(60.0, true);
-        // 25 MB / 60 s: 3333 kbit/s, Ton 256 → Bild 2910 kbit/s, reicht für 1080p, Software
+        // 25 MB / 60 s: 3333 kbit/s, audio 256 → picture 2910 kbit/s, enough for 1080p, software
         assert_eq!((t.quality, t.width, t.height, t.encoder), (Quality::Bitrate(2910), 1920, 1080, Encoder::Software));
-        // 25 MB / 150 s: Bild 1010 kbit/s → 720p (1280×720 braucht 829)
+        // 25 MB / 150 s: picture 1010 kbit/s → 720p (1280×720 needs 829)
         let t = s.for_target(150.0, true);
         assert_eq!((t.width, t.height), (1280, 720), "{:?}", t.quality);
-        // Ton höchstens ein Viertel der Gesamtrate, mindestens 64 kbit/s; WebM (Opus) ebenso
+        // audio at most a quarter of the total rate, at least 64 kbit/s; WebM (Opus) likewise
         s.target_mb = Some(10);
         let t = s.for_target(600.0, true);
         assert_eq!((t.audio_bitrate(), t.width), (64, 640), "{:?}", t.quality);
@@ -4460,13 +4460,13 @@ mod tests {
         s.codec = Codec::Vp9;
         assert_eq!(s.for_target(600.0, true).audio_bitrate(), 64);
         assert_eq!(s.for_target(10.0, true).audio_bitrate(), 192);
-        // ohne hörbaren Ton (oder „Ton exportieren“ aus): nichts für Ton abziehen
+        // without audible sound (or „Ton exportieren“ off): deduct nothing for audio
         (s.format, s.codec, s.target_mb) = (Format::Mp4, Codec::H264, Some(25));
         assert_eq!(s.for_target(60.0, false).quality, Quality::Bitrate(3166));
         s.include_audio = false;
         assert_eq!(s.for_target(60.0, true).quality, Quality::Bitrate(3166));
         s.include_audio = true;
-        // ProRes, GIF, Ton: Zielgröße gilt nicht
+        // ProRes, GIF, audio: target size does not apply
         for (f, c) in [(Format::Mov, Codec::ProRes), (Format::Gif, Codec::H264), (Format::Mp3, Codec::H264)] {
             (s.format, s.codec) = (f, c);
             assert!(!s.target_possible());
@@ -4485,9 +4485,9 @@ mod tests {
         (s.format, s.codec) = (Format::WebM, Codec::Vp9);
         assert!(pass(&s, 2).unwrap().starts_with("-c:v libvpx-vp9 -pass 2 -passlogfile pass "));
         (s.format, s.codec) = (Format::Mp4, Codec::Av1);
-        // SVT-AV1 kann in FFmpeg keine zwei Durchgänge: ein Durchgang mit fester Bitrate
+        // SVT-AV1 cannot do two passes in FFmpeg: one pass with a fixed bitrate
         assert_eq!(pass(&s, 1).is_some(), !has_svtav1());
-        // Ton, Zusammenfügen ohne Neukodierung, Hardware: ein Durchgang
+        // audio, joining without re-encoding, hardware: one pass
         assert!(with_pass(&["-c:a".into(), "aac".into()], 1).is_none());
         assert!(with_pass(&["-c:v".into(), "copy".into()], 1).is_none());
         s.codec = Codec::H264;
@@ -4495,7 +4495,7 @@ mod tests {
         assert!(pass(&s, 1).is_none());
     }
 
-    /// 480×270, 30 Bilder/s, starkes Rauschen (sonst unterschreitet der Encoder jede Bitrate) und Ton
+    /// 480×270, 30 frames/s, strong noise (otherwise the encoder undercuts any bitrate) and audio
     fn noise_video(dir: &Path, secs: f64) -> MediaRef {
         noise_video_with(dir, secs, true)
     }
@@ -4517,7 +4517,7 @@ mod tests {
         cl_media::probe(&path).unwrap()
     }
 
-    /// Projekt aus `n` gleich langen Clips des Rauschvideos (mehrere: Abschnitte möglich)
+    /// Project of `n` equally long clips of the noise video (several: sections possible)
     fn noise_project(dir: &Path, secs: f64, n: usize) -> Project {
         let m = noise_video(dir, secs);
         let mut p = Project::new("Rauschen");
@@ -4532,9 +4532,9 @@ mod tests {
         p
     }
 
-    /// Zielgröße: zwei Durchgänge treffen 85–100 % der Größe; das Protokoll liegt im Arbeitsordner
-    /// des Auftrags (geht mit ihm), der erste Durchgang ist die erste Hälfte des Fortschritts.
-    /// Gemessene Größen: `cargo test --release -p cl-export target_size -- --nocapture`
+    /// Target size: two passes hit 85–100 % of the size; the log lives in the job's work folder
+    /// (goes with it), the first pass is the first half of the progress.
+    /// Measured sizes: `cargo test --release -p cl-export target_size -- --nocapture`
     #[test]
     fn target_size_is_kept_in_two_passes() {
         if !cl_media::ffmpeg_available() {
@@ -4551,11 +4551,11 @@ mod tests {
             assert!(job.two_pass);
             let mut seen = Vec::new();
             run(&job, Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
-            // SVT-AV1 (ein Durchgang, feste Bitrate): nur die Obergrenze
+            // SVT-AV1 (one pass, fixed bitrate): only the upper bound
             let two = !log.is_empty() || !has_svtav1();
             assert!(seen.windows(2).all(|w| w[0] <= w[1]) && (!two || seen.contains(&0.5)) && seen.last() == Some(&1.0), "{seen:?}");
             let size = std::fs::metadata(&out).unwrap().len();
-            eprintln!("Zielgröße 1 MB, {codec:?}: {size} Byte ({:.1} %)", size as f64 / 1e4);
+            eprintln!("target size 1 MB, {codec:?}: {size} bytes ({:.1} %)", size as f64 / 1e4);
             assert!(size <= 1_000_000 && (!two || size >= 850_000), "{codec:?}: {size}");
             let work = job.workdir.path().to_path_buf();
             if !log.is_empty() {
@@ -4566,7 +4566,7 @@ mod tests {
         }
     }
 
-    /// Ohne hörbaren Ton wird nichts für Ton eingeplant: 90–100 % der Zielgröße (vorher ≈85 %).
+    /// Without audible sound nothing is planned for audio: 90–100 % of the target size (before ≈85 %).
     #[test]
     fn target_size_without_sound_uses_the_budget() {
         if !cl_media::ffmpeg_available() {
@@ -4581,19 +4581,19 @@ mod tests {
         }
         let mut s = ExportSettings::from_project(&p);
         s.target_mb = Some(1);
-        // stumme Quelle (Spur wird still gemischt) und „Ton exportieren“ aus
+        // silent source (track is mixed silent) and „Ton exportieren“ off
         for include_audio in [true, false] {
             s.include_audio = include_audio;
             let out = dir.path().join(format!("stumm_{include_audio}.mp4"));
             run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
             let size = std::fs::metadata(&out).unwrap().len();
-            eprintln!("Zielgröße 1 MB ohne Ton (Spur {include_audio}): {size} Byte");
+            eprintln!("target size 1 MB without audio (track {include_audio}): {size} bytes");
             assert!((900_000..=1_000_000).contains(&size), "{include_audio}: {size}");
         }
     }
 
-    /// Abbrechen im ersten und im zweiten Durchgang: keine halbe Datei, Protokoll weg mit dem
-    /// Arbeitsordner.
+    /// Cancel in the first and in the second pass: no half file, log gone with the
+    /// work folder.
     #[test]
     fn target_size_cancel_cleans_up() {
         if !cl_media::ffmpeg_available() {
@@ -4621,8 +4621,8 @@ mod tests {
         }
     }
 
-    /// Großes Projekt in Abschnitten: jeder Abschnitt in zwei Durchgängen mit derselben Bitrate,
-    /// das Ganze hält die Zielgröße.
+    /// Large project in sections: every section in two passes with the same bitrate,
+    /// the whole keeps the target size.
     #[test]
     fn target_size_in_sections() {
         if !cl_media::ffmpeg_available() {
@@ -4637,7 +4637,7 @@ mod tests {
         assert!(job.sections() >= 2, "{}", job.sections());
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let size = std::fs::metadata(&out).unwrap().len();
-        eprintln!("Zielgröße 1 MB in {} Abschnitten: {size} Byte", job.sections());
+        eprintln!("target size 1 MB in {} sections: {size} bytes", job.sections());
         assert!((850_000..=1_000_000).contains(&size), "{size}");
         assert!((cl_media::probe(&out).unwrap().duration.as_secs_f64() - 6.0).abs() < 0.1);
     }

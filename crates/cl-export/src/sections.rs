@@ -1,49 +1,49 @@
-//! Export in Abschnitten für große Projekte.
+//! Export in sections for large projects.
 //!
-//! FFmpeg bekommt je Clip einen Eingang (`-ss … -i <Pfad>`). Windows begrenzt die Befehlszeile
-//! auf 32 767 Zeichen, und FFmpeg öffnet alle Eingänge vor dem ersten Bild (Sekunden bis Minuten
-//! bei tausenden). Über den Schwellen wird die Zeitleiste darum in Abschnitte zerlegt, jeder wird
-//! mit dem Bereichs-Export gerechnet, die Ergebnisse werden ohne Neukodierung aneinandergehängt.
-//! Grenzen liegen auf einem Raster, das zugleich ganze Bilder, ganze Mikrosekunden und ganze
-//! Samples (48 kHz) trifft; so passen Bild und Ton an jeder Naht genau.
+//! FFmpeg gets one input per clip (`-ss … -i <path>`). Windows limits the command line
+//! to 32,767 characters, and FFmpeg opens all inputs before the first frame (seconds to minutes
+//! with thousands). Above the thresholds the timeline is therefore split into sections, each is
+//! computed with the range export, the results are concatenated without re-encoding.
+//! Boundaries lie on a grid that hits whole frames, whole microseconds and whole
+//! samples (48 kHz) at once; so picture and audio fit exactly at every seam.
 
 use cl_core::*;
 
 use crate::graph;
 
-/// Sichere Länge der Befehlszeile (Windows: 32 767 Zeichen, Rest für Programmpfad und Puffer).
+/// Safe command line length (Windows: 32,767 characters, the rest for program path and buffer).
 pub const MAX_CMD: usize = 24_000;
-/// Höchstens so viele Eingänge je FFmpeg (Anlaufzeit: FFmpeg öffnet alle vor dem ersten Bild;
-/// mit vielen Eingängen warten die Zweige des Graphen zudem lange aufeinander).
+/// At most this many inputs per FFmpeg (startup time: FFmpeg opens all before the first frame;
+/// with many inputs the graph's branches also wait for each other for a long time).
 pub const MAX_INPUTS: usize = 40;
-/// Bis zu so vielen Eingängen bleibt es beim einen Durchgang wie bisher.
+/// Up to this many inputs it stays with the single pass as before.
 pub const SINGLE_INPUTS: usize = 150;
-/// Harte Grenze der Windows-Befehlszeile (Zeichen).
+/// Hard limit of the Windows command line (characters).
 pub const HARD_CMD: usize = 32_000;
 
-/// Zeichen der Befehlszeile (Argumente mit Leerzeichen getrennt, ggf. in Anführungszeichen).
+/// Characters of the command line (arguments separated by spaces, quoted if needed).
 pub fn cmd_len(args: &[String]) -> usize {
     args.iter().map(|a| a.len() + 3).sum()
 }
 
-/// Zeichen eines Eingangs (`-ss x -t y -i <Pfad>` bzw. `-loop 1 -t y -i <Pfad>`), großzügig.
+/// Characters of one input (`-ss x -t y -i <path>` or `-loop 1 -t y -i <path>`), generously.
 fn input_len(m: &MediaRef) -> usize {
     m.path.as_os_str().len() + 48
 }
 
-/// Teil der Zeitleiste, der Eingänge kostet: eine Übergangsgruppe, ein Clip oder ein Tonclip.
+/// Part of the timeline that costs inputs: a transition group, a clip or an audio clip.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Unit {
     pub start: Time,
     pub end: Time,
     pub inputs: usize,
     pub chars: usize,
-    /// Ton (eigener FFmpeg je Abschnitt) statt Bild
+    /// Audio (own FFmpeg per section) instead of picture
     pub audio: bool,
 }
 
-/// Eingänge des Exports von `start..end`, wie [`graph::video_part`] und [`graph::audio_part`]
-/// sie anlegen (Bild: sichtbare Spuren, Übergangsgruppen als Ganzes; Ton: hörbare Clips).
+/// Inputs of the export of `start..end` as [`graph::video_part`] and [`graph::audio_part`]
+/// create them (picture: visible tracks, transition groups as a whole; audio: audible clips).
 pub(crate) fn units(p: &Project, start: Time, end: Time, video: bool, audio: bool) -> Vec<Unit> {
     let mut v = Vec::new();
     if video {
@@ -89,10 +89,10 @@ fn lcm(a: u128, b: u128) -> u128 {
     a / gcd(a, b) * b
 }
 
-/// Raster der Abschnittsgrenzen: kleinste Bildzahl, die ganze Mikrosekunden und ganze Samples
-/// (48 kHz) ergibt (60 fps: 3 Bilder = 50 ms; 29,97 fps: 15 Bilder ≈ 0,5 s). Bei krummen Raten
-/// wäre das riesig (12,345 fps: 2469 Bilder ≈ 200 s): dann ein Bild, auf µs gerundet (den Rest
-/// beim Ton gleicht `append_exact` aus).
+/// Grid of the section boundaries: smallest frame count that gives whole microseconds and whole samples
+/// (48 kHz) (60 fps: 3 frames = 50 ms; 29.97 fps: 15 frames ≈ 0.5 s). With odd rates
+/// that would be huge (12.345 fps: 2469 frames ≈ 200 s): then one frame, rounded to µs (the rest
+/// in the audio is evened out by `append_exact`).
 pub fn grid_step(fps: Rational) -> Time {
     let (num, den) = (fps.num.max(1) as u128, fps.den.max(1) as u128);
     let need = |rate: u128| num / gcd(num, den * rate);
@@ -104,7 +104,7 @@ pub fn grid_step(fps: Rational) -> Time {
     }
 }
 
-/// Grenzen für einen Abschnitt.
+/// Limits for a section.
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
     pub inputs: usize,
@@ -115,8 +115,8 @@ impl Limits {
     pub const DEFAULT: Limits = Limits { inputs: MAX_INPUTS, chars: MAX_CMD };
 }
 
-/// (Eingänge, Zeichen) der Einheiten, die `a..b` berühren – je FFmpeg (Bild und Ton laufen
-/// getrennt), der größere Wert zählt.
+/// (inputs, characters) of the units touching `a..b` – per FFmpeg (picture and audio run
+/// separately), the larger value counts.
 fn cost(units: &[Unit], a: Time, b: Time) -> (usize, usize) {
     let (v, au) = units
         .iter()
@@ -137,7 +137,7 @@ fn fits(units: &[Unit], a: Time, b: Time, base: usize, lim: Limits) -> bool {
     i <= lim.inputs && c + base <= lim.chars
 }
 
-/// Passt der ganze Bereich in einen Durchgang (ein FFmpeg für Bild und Ton zusammen)?
+/// Does the whole range fit in one pass (one FFmpeg for picture and audio together)?
 pub fn single_pass(units: &[Unit], start: Time, end: Time, base: usize, lim: Limits) -> bool {
     let (i, c) = units
         .iter()
@@ -147,21 +147,21 @@ pub fn single_pass(units: &[Unit], start: Time, end: Time, base: usize, lim: Lim
     i <= lim.inputs && c + base <= lim.chars
 }
 
-/// Zerlegt `start..end` in Abschnitte, die je höchstens `lim` kosten (`base` = Zeichen ohne
-/// Eingänge). Grenzen liegen auf `start + k·step`; innerhalb der hinteren Hälfte des möglichen
-/// Abschnitts wird die Stelle gewählt, an der am wenigsten durchgeschnitten wird (am liebsten ein
-/// Schnitt aller Spuren; Übergangsgruppen zählen mit ihren Eingängen). `Err(t)`: schon ein
-/// Rasterschritt ab `t` hat zu viele gleichzeitige Clips.
+/// Splits `start..end` into sections that each cost at most `lim` (`base` = characters without
+/// inputs). Boundaries lie on `start + k·step`; within the rear half of the possible
+/// section the position is chosen where the least is cut through (preferably a
+/// cut of all tracks; transition groups count with their inputs). `Err(t)`: even one
+/// grid step from `t` has too many simultaneous clips.
 pub fn plan(units: &[Unit], start: Time, end: Time, step: Time, base: usize, lim: Limits) -> std::result::Result<Vec<(Time, Time)>, Time> {
     let step = Time(step.0.max(1));
     let at = |k: i64| Time(start.0 + k * step.0);
     let mut out = Vec::new();
     let mut ka = 0i64;
-    // letzter Rasterpunkt vor dem Ende
+    // last grid point before the end
     let k_end = (end.0 - start.0 - 1) / step.0;
     loop {
         let a = at(ka);
-        // Einheiten ab hier (sortiert nach Start; frühere, die schon enden, fallen weg)
+        // units from here (sorted by start; earlier ones that already end drop out)
         let first = units.partition_point(|u| u.start < a);
         let back = units[..first].iter().filter(|u| u.end > a).copied();
         let local: Vec<Unit> = back.chain(units[first..].iter().copied()).collect();
@@ -169,7 +169,7 @@ pub fn plan(units: &[Unit], start: Time, end: Time, step: Time, base: usize, lim
             out.push((a, end));
             return Ok(out);
         }
-        // größtes k mit passendem Abschnitt (Kosten wachsen mit k)
+        // largest k with a fitting section (cost grows with k)
         let (mut lo, mut hi) = (ka, k_end);
         if !fits(&local, a, at(ka + 1).min(end), base, lim) {
             return Err(a);
@@ -184,7 +184,7 @@ pub fn plan(units: &[Unit], start: Time, end: Time, step: Time, base: usize, lim
             }
         }
         let k_max = lo;
-        // bevorzugte Grenze in der hinteren Hälfte: wenigste Eingänge, die über die Grenze reichen
+        // preferred boundary in the rear half: fewest inputs reaching across the boundary
         let k_min = ka + ((k_max - ka) / 2).max(1);
         let span = |b: Time| local.iter().take_while(|u| u.start < b).filter(|u| u.end > b).map(|u| u.inputs).sum::<usize>();
         let mut cands: Vec<i64> = vec![k_max];
@@ -204,7 +204,7 @@ pub fn plan(units: &[Unit], start: Time, end: Time, step: Time, base: usize, lim
     }
 }
 
-/// Zeit als `m:ss` bzw. `h:mm:ss` (für Fehlertexte).
+/// Time as `m:ss` or `h:mm:ss` (for error texts).
 pub fn clock(t: Time) -> String {
     let s = t.as_secs_f64().max(0.0) as u64;
     if s >= 3600 {
@@ -214,7 +214,7 @@ pub fn clock(t: Time) -> String {
     }
 }
 
-/// Freier Platz auf dem Laufwerk von `dir` in Bytes (`None`: unbekannt).
+/// Free space on the drive of `dir` in bytes (`None`: unknown).
 #[cfg(windows)]
 pub fn free_space(dir: &std::path::Path) -> Option<u64> {
     use std::os::windows::ffi::OsStrExt;
@@ -224,18 +224,18 @@ pub fn free_space(dir: &std::path::Path) -> Option<u64> {
     }
     let w: Vec<u16> = dir.as_os_str().encode_wide().chain([0]).collect();
     let (mut avail, mut total, mut free) = (0u64, 0u64, 0u64);
-    // SAFETY: nullterminierter Pfad, gültige Zeiger auf lokale Variablen
+    // SAFETY: null-terminated path, valid pointers to local variables
     let ok = unsafe { GetDiskFreeSpaceExW(w.as_ptr(), &mut avail, &mut total, &mut free) };
     (ok != 0).then_some(avail)
 }
 
-/// shortcut: außerhalb von Windows keine Prüfung (statvfs bräuchte libc); nachrüsten, wenn es dort fehlt
+/// shortcut: no check outside Windows (statvfs would need libc); add it if it is missing there
 #[cfg(not(windows))]
 pub fn free_space(_dir: &std::path::Path) -> Option<u64> {
     None
 }
 
-/// Größe in lesbarer Form (MB/GB).
+/// Size in readable form (MB/GB).
 pub fn size_text(b: u64) -> String {
     if b >= 1 << 30 {
         format!("{:.1} GB", b as f64 / (1u64 << 30) as f64)
@@ -266,14 +266,14 @@ mod tests {
             assert!((frames - want_frames as f64).abs() < 1e-6, "{n}/{d}: {frames}");
             assert_eq!((st.0 as u64 * 48_000) % 1_000_000, 0, "{n}/{d}: Samples");
         }
-        // kaputte Rate: kein Absturz, positiver Schritt
+        // broken rate: no crash, positive step
         assert!(grid_step(Rational::new(0, 0)).0 > 0);
     }
 
-    /// Krumme Raten (Import, Projektdatei, MCP): kein Überlauf, Schritt ein Bild statt Minuten.
+    /// Odd rates (import, project file, MCP): no overflow, step of one frame instead of minutes.
     #[test]
     fn odd_rates_fall_back_to_whole_frames() {
-        assert_eq!(grid_step(Rational::new(12345, 1000)), Time(81_004), "1 Bild statt 2469");
+        assert_eq!(grid_step(Rational::new(12345, 1000)), Time(81_004), "1 frame instead of 2469");
         assert_eq!(grid_step(Rational::new(1_000_000_007, 1_000_000)), Time(1_000));
         assert!(grid_step(Rational::new(u32::MAX, 1)).0 > 0);
         assert_eq!(grid_step(Rational::new(1, u32::MAX)).0, u32::MAX as i64 * 1_000_000);
@@ -286,24 +286,24 @@ mod tests {
         assert_eq!(plan(&units, s(0.0), s(2.0), s(0.05), 500, LIM).unwrap(), vec![(s(0.0), s(2.0))]);
     }
 
-    /// Prüft eine Zerlegung: lückenlos, auf dem Raster, jeder Abschnitt in den Grenzen.
+    /// Checks a split: gapless, on the grid, every section within the limits.
     fn check(units: &[Unit], start: Time, end: Time, step: Time, plan: &[(Time, Time)], lim: Limits) {
         assert_eq!(plan.first().unwrap().0, start);
         assert_eq!(plan.last().unwrap().1, end);
         for w in plan.windows(2) {
-            assert_eq!(w[0].1, w[1].0, "lückenlos");
+            assert_eq!(w[0].1, w[1].0, "gapless");
         }
         for (a, b) in plan {
             assert!(a < b);
             assert_eq!((a.0 - start.0) % step.0, 0, "Raster");
             let (i, c) = cost(units, *a, *b);
-            assert!(i <= lim.inputs && c <= lim.chars, "{a:?}..{b:?}: {i} Eingänge");
+            assert!(i <= lim.inputs && c <= lim.chars, "{a:?}..{b:?}: {i} inputs");
         }
     }
 
     #[test]
     fn cuts_prefer_places_without_running_clips() {
-        // zwei Spuren mit Schnitten bei 1 s, 2 s …; eine Spur ist versetzt (Schnitte bei x.5)
+        // two tracks with cuts at 1 s, 2 s …; one track is offset (cuts at x.5)
         let mut units = Vec::new();
         for i in 0..40 {
             units.push(u(i as f64, i as f64 + 1.0, 1));
@@ -317,7 +317,7 @@ mod tests {
         let p = plan(&units, s(0.0), s(40.0), step, 0, LIM).unwrap();
         check(&units, s(0.0), s(40.0), step, &p, LIM);
         assert!(p.len() > 5);
-        // Grenzen liegen auf Schnitten der beiden dichten Spuren (ganze Sekunden)
+        // boundaries lie on cuts of both dense tracks (whole seconds)
         for (_, b) in &p[..p.len() - 1] {
             assert_eq!(b.0 % 1_000_000, 0, "{b:?}");
         }
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn long_and_short_clips_and_gaps() {
-        // langer Hintergrund (ganze Länge), viele sehr kurze Clips, dazwischen eine leere Strecke
+        // long background (whole length), many very short clips, an empty stretch in between
         let mut units = vec![u(0.0, 600.0, 1)];
         for i in 0..300 {
             units.push(u(i as f64 * 0.1, i as f64 * 0.1 + 0.1, 1));
@@ -337,7 +337,7 @@ mod tests {
         let step = grid_step(Rational::new(60, 1));
         let p = plan(&units, s(0.0), s(600.0), step, 0, LIM).unwrap();
         check(&units, s(0.0), s(600.0), step, &p, LIM);
-        // die leere Strecke wird nicht unnötig zerteilt
+        // the empty stretch is not split needlessly
         assert!(p.iter().any(|(a, b)| a.as_secs_f64() <= 31.0 && b.as_secs_f64() >= 399.0), "{p:?}");
     }
 
@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn too_many_at_once_is_an_error_with_time() {
-        // 12 Spuren übereinander ab 5 s, Grenze 10 Eingänge
+        // 12 tracks stacked from 5 s, limit 10 inputs
         let mut units: Vec<Unit> = (0..12).map(|_| u(5.0, 6.0, 1)).collect();
         units.insert(0, u(0.0, 5.0, 1));
         let e = plan(&units, s(0.0), s(6.0), s(0.05), 0, LIM).unwrap_err();
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn long_paths_keep_every_section_below_the_limit() {
-        // 2500 Clips auf 4 Spuren mit 260-Zeichen-Pfaden: Zeichen begrenzen vor den Eingängen
+        // 2500 clips on 4 tracks with 260-character paths: characters limit before inputs
         let mut units = Vec::new();
         for t in 0..4 {
             for i in 0..625 {
