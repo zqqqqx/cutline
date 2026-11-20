@@ -166,6 +166,9 @@ struct Queued {
     fonts: HashMap<String, (PathBuf, u32)>,
     /// Projektstand beim Einreihen
     rev: u64,
+    /// Überschreiben einer Gruppe: ältere Teile erst vor dem ersten Teil entfernen (ein noch
+    /// laufender oder wartender Export derselben Gruppe schriebe sie sonst wieder)
+    clean: bool,
 }
 
 /// Ein Teil eines Exports: Bereich, Zieldatei und Begleitdateien (Untertitel, Kapitel) mit Text
@@ -212,6 +215,7 @@ impl Running {
         let (p, s2, fonts) = (src.project.clone(), src.settings.clone(), src.fonts.clone());
         let parts: Vec<(Option<(Time, Time)>, PathBuf)> = src.parts.iter().map(|x| (x.range, x.out.clone())).collect();
         let folder = src.group().then(|| src.out.clone());
+        let clean = src.clean.then(|| (src.project.name.clone(), src.project_path.clone(), src.settings.format.extension()));
         // noch im Oberflächen-Faden: ein abgebrochener Vorgänger, dessen Faden noch läuft, sieht
         // den Ordner ab jetzt als belegt und löscht ihn nicht mehr
         if let Some(d) = &folder {
@@ -231,6 +235,13 @@ impl Running {
                 if cc.load(Ordering::Relaxed) {
                     first_err = Some(cl_export::ExportError::Cancelled.to_string());
                     break;
+                }
+                if let (0, Some(d), Some((name, path, ext))) = (i, &folder, &clean) {
+                    let recorded: Vec<PathBuf> = crate::exports::for_project(name, path.as_deref()).into_iter().map(|e| e.path).collect();
+                    let keep: Vec<PathBuf> = parts.iter().map(|x| x.1.clone()).collect();
+                    for f in stale_parts(d, ext, &keep, &recorded) {
+                        let _ = std::fs::remove_file(f);
+                    }
                 }
                 pi.store(i, Ordering::Relaxed);
                 let s = ExportSettings { range: *range, ..s2.clone() };
@@ -1258,6 +1269,7 @@ impl ExportDialog {
             self.open = false;
         }
         let (out, parts) = self.targets(p, &s);
+        let mut clean = false;
         // bei Teilen: eine Nachfrage für die ganze Gruppe
         if start && !overwrite && self.taken(&out, &parts) {
             self.confirm_overwrite = true;
@@ -1271,7 +1283,12 @@ impl ExportDialog {
             let exists = parts.iter().any(|f| f.1.exists());
             // Teile eines früheren Laufs, die es diesmal nicht mehr gibt (z. B. „Teil 06“ von 6, jetzt 4)
             let keep: Vec<PathBuf> = parts.iter().map(|f| f.1.clone()).collect();
-            let stale = if self.split(&s).is_some() { stale_parts(&out, &file_safe(&self.name), s.format.extension(), &keep) } else { Vec::new() };
+            let stale = if self.split(&s).is_some() {
+                let recorded: Vec<PathBuf> = crate::exports::for_project(&p.name, self.project_path.as_deref()).into_iter().map(|e| e.path).collect();
+                stale_parts(&out, s.format.extension(), &keep, &recorded)
+            } else {
+                Vec::new()
+            };
             let old = stale.iter().filter(|f| f.extension().is_some_and(|e| e == s.format.extension())).count();
             let m = crate::dialog::modal(ctx, "export-overwrite").show(ctx, |ui| {
                 ui.set_width(380.0);
@@ -1310,9 +1327,9 @@ impl ExportDialog {
             }
             match choice {
                 Some(0) => {
-                    for f in &stale {
-                        let _ = std::fs::remove_file(f);
-                    }
+                    // entfernt erst der Export selbst vor seinem ersten Teil (auch Teile eines
+                    // noch laufenden oder wartenden Exports, die es jetzt noch nicht gibt)
+                    clean = self.split(&s).is_some();
                     start = true;
                 }
                 Some(1) => {
@@ -1350,6 +1367,7 @@ impl ExportDialog {
                 out,
                 fonts: fonts.clone(),
                 rev: self.rev,
+                clean,
             });
             self.start_next(ctx);
         }
@@ -1370,16 +1388,20 @@ fn file_safe(name: &str) -> String {
     crate::paths::fit_name(&s)
 }
 
-/// Dateien einer früheren Teile-Gruppe in `dir`, die nicht zu den neuen Teilen `keep` gehören. Nur
-/// genau das Muster dieser Gruppe: `Name – Teil NN`, `Name – Part NN` oder `Name – NN[ Marker]`
-/// mit der Endung des Formats oder als Begleitdatei (.srt, .vtt, .chapters.txt); sonst nichts.
-fn stale_parts(dir: &Path, name: &str, ext: &str, keep: &[PathBuf]) -> Vec<PathBuf> {
+/// Dateien einer früheren Teile-Gruppe im Teile-Ordner `dir`, die nicht zu den neuen Teilen `keep`
+/// gehören. Nur genau das Muster dieser Gruppe: `Name – Teil NN`, `Name – Part NN` oder
+/// `Name – NN[ Marker]` (Name = Ordnername) mit der Endung des Formats oder als Begleitdatei
+/// (.srt, .vtt, .chapters.txt), und nur Teile, die Cutline selbst geschrieben hat (`recorded`,
+/// aus der Exporte-Liste) samt deren Begleitdateien; sonst nichts.
+fn stale_parts(dir: &Path, ext: &str, keep: &[PathBuf], recorded: &[PathBuf]) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let Some(name) = dir.file_name() else { return Vec::new() };
     let ends = [format!(".{ext}"), ".srt".into(), ".vtt".into(), ".chapters.txt".into()];
-    let prefix = format!("{name} – ");
+    let prefix = format!("{} – ", name.to_string_lossy());
     let nr = |t: &str| t.len() >= 2 && t.bytes().all(|b| b.is_ascii_digit());
     let ours = |n: &str| {
-        let Some(rest) = ends.iter().find_map(|e| n.strip_suffix(e.as_str())).and_then(|x| x.strip_prefix(&prefix)) else {
+        let Some(base) = ends.iter().find_map(|e| n.strip_suffix(e.as_str())) else { return false };
+        let Some(rest) = base.strip_prefix(&prefix).filter(|_| recorded.contains(&dir.join(format!("{base}.{ext}")))) else {
             return false;
         };
         match rest.split_once(' ') {
@@ -1916,6 +1938,7 @@ fn queued(p: &Project, out: &Path) -> Queued {
         parts: vec![Part { range: None, out: out.to_path_buf(), sidecars: Vec::new() }],
         fonts: HashMap::new(),
         rev: 0,
+        clean: false,
     }
 }
 
@@ -2300,29 +2323,66 @@ fn export_dialog_shows_all_settings_when_there_is_room() {
 #[test]
 fn overwriting_a_group_finds_only_its_own_older_parts() {
     let dir = tempfile::tempdir().unwrap();
-    let d = dir.path();
+    let d = &dir.path().join("Film");
+    std::fs::create_dir(d).unwrap();
     let files = [
         "Film – Teil 01.mp4", "Film – Teil 04.mp4", "Film – Teil 05.mp4", "Film – Teil 06.mp4", "Film – Teil 06.srt",
         "Film – Teil 06.vtt", "Film – Teil 06.chapters.txt", "Film – Part 07.mp4", "Film – 08 Ende.mp4", "Film – 09.mp4",
         // fremd: andere Endung, anderer Name, Zusatz, einstellige Nummer, Notizen
         "Film – Teil 06.mov", "Film – Teil 06 Kopie.mp4", "Anderer – Teil 06.mp4", "Film – Teil 6.mp4", "Notizen.txt", "Film.mp4",
         "Film – 10 .mp4",
+        // passt ins Muster, aber nicht von Cutline geschrieben (eigene Datei, Teil ohne Eintrag)
+        "Film – 2023 Sommer.mp4", "Film – Teil 12.mp4", "Film – Teil 12.srt",
     ];
     for f in files {
         std::fs::write(d.join(f), b"x").unwrap();
     }
     std::fs::create_dir(d.join("Film – Teil 11.mp4")).unwrap();
     let keep: Vec<PathBuf> = (1..=4).map(|i| d.join(format!("Film – Teil 0{i}.mp4"))).collect();
-    let stale: Vec<String> = stale_parts(d, "Film", "mp4", &keep).iter().map(|f| f.file_name().unwrap().to_string_lossy().to_string()).collect();
+    // Exporte-Liste: alle Videos außer den beiden fremden
+    let recorded: Vec<PathBuf> = files.iter().filter(|f| f.ends_with(".mp4") && !["Film – 2023 Sommer.mp4", "Film – Teil 12.mp4"].contains(f)).map(|f| d.join(f)).collect();
+    let stale: Vec<String> = stale_parts(d, "mp4", &keep, &recorded).iter().map(|f| f.file_name().unwrap().to_string_lossy().to_string()).collect();
     assert_eq!(
         stale,
         ["Film – 08 Ende.mp4", "Film – 09.mp4", "Film – Part 07.mp4", "Film – Teil 05.mp4", "Film – Teil 06.chapters.txt", "Film – Teil 06.mp4", "Film – Teil 06.srt", "Film – Teil 06.vtt"]
     );
     // Begleitdatei eines bleibenden Teils bleibt
     std::fs::write(d.join("Film – Teil 01.srt"), b"x").unwrap();
-    assert!(!stale_parts(d, "Film", "mp4", &keep).iter().any(|f| f.ends_with("Film – Teil 01.srt")));
+    assert!(!stale_parts(d, "mp4", &keep, &recorded).iter().any(|f| f.ends_with("Film – Teil 01.srt")));
     // ohne Ordner: nichts
-    assert!(stale_parts(&d.join("fehlt"), "Film", "mp4", &keep).is_empty());
+    assert!(stale_parts(&d.join("fehlt"), "mp4", &keep, &recorded).is_empty());
+}
+
+/// Überschreiben einer Gruppe: ältere Teile entfernt erst der neue Export, wenn sein erster Teil
+/// beginnt – ein vorher laufender oder wartender Export derselben Gruppe schriebe sie sonst wieder.
+#[test]
+fn overwrite_removes_old_parts_when_its_export_starts() {
+    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("CUTLINE_HOME", dir.path());
+    let ctx = egui::Context::default();
+    let p = text_project("Film", "eins", 2.0);
+    let mut d = split_dialog(&p, dir.path(), 2);
+    let folder = dir.path().join("Film");
+    std::fs::create_dir(&folder).unwrap();
+    for f in ["Film – Teil 03.mp4", "Film – Teil 03.srt", "Film – 2023 Sommer.mp4"] {
+        std::fs::write(folder.join(f), b"x").unwrap();
+    }
+    let pp = dir.path().join("p.cutline");
+    crate::exports::record("Film", Some(&pp), &folder.join("Film – Teil 03.mp4"));
+    // ein anderer Export läuft: der überschreibende wartet, noch nichts entfernt
+    d.running = Some(running(None));
+    let (out, parts) = d.targets(&p, d.settings.as_ref().unwrap());
+    let parts = parts.into_iter().map(|(range, out)| Part { range, out, sidecars: Vec::new() }).collect();
+    d.queue.push_back(Queued { parts, project_path: Some(pp), clean: true, ..queued(&p, &out) });
+    assert!(folder.join("Film – Teil 03.mp4").is_file());
+    d.cancel_current();
+    drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
+    let mut names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
+    names.sort();
+    assert_eq!(names, ["Film – 2023 Sommer.mp4", "Film – Teil 01.mp4", "Film – Teil 02.mp4"]);
+    std::env::remove_var("CUTLINE_HOME");
 }
 
 #[test]
