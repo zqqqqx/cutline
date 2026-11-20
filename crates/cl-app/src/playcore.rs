@@ -87,7 +87,8 @@ pub struct Want {
     pub id: Lid,
     /// changes with everything that changes the picture (effects, timing, size, frame rate)
     pub key: u64,
-    /// Timeline place where a stream opened ahead begins (clip/element start)
+    /// Timeline place where a stream opened ahead begins (clip/element start); for a replacement
+    /// during playback the place it is needed from at the earliest (source switch, see `player::want_start`)
     pub start: Time,
     /// End of the clip (a stream shortly before the end is not reopened)
     pub end: Time,
@@ -190,7 +191,7 @@ const KEY_SETTLE: f64 = 0.15;
 /// old (otherwise every job starves). Only renewed after this long as a safeguard.
 const STILL_PATIENCE: f64 = 10.0;
 
-struct Slot<S> {
+struct Slot<S: Source> {
     src: S,
     key: u64,
     alias: u64,
@@ -205,11 +206,14 @@ struct Slot<S> {
     behind_since: Option<f64>,
     /// Frames in the current measurement window
     win_frames: u64,
+    /// Opened ahead: first frame fetched before its turn, and when it was there (real startup)
+    ahead: Option<S::Frame>,
+    ready: Option<f64>,
 }
 
 impl<S: Source> Slot<S> {
     fn new(src: S, key: u64, t0: Time, fps: f64, now: f64) -> Self {
-        Self { src, key, alias: 0, t0, fps: fps.max(1.0), taken: 0, ended: false, waiting_since: None, opened: now, first: None, behind_since: None, win_frames: 0 }
+        Self { src, key, alias: 0, t0, fps: fps.max(1.0), taken: 0, ended: false, waiting_since: None, opened: now, first: None, behind_since: None, win_frames: 0, ahead: None, ready: None }
     }
 
     /// Fetch all due frames, return the newest (the rest counts as skipped).
@@ -217,10 +221,17 @@ impl<S: Source> Slot<S> {
     /// start shows its first frame until then); otherwise nothing is due before `t0`.
     fn drain(&mut self, pos: Time, now: f64, st: &mut Stats, early: bool) -> Option<S::Frame> {
         if pos < self.t0 && !(early && self.taken == 0) {
-            return None; // opened ahead: not its turn yet
+            // opened ahead: not its turn yet – take the first frame already, so `lead` is the startup, not the wait
+            if self.taken == 0 {
+                if let Ok(Some(f)) = self.src.try_next() {
+                    (self.taken, self.ahead, self.ready) = (1, Some(f), Some(now));
+                }
+            }
+            return None;
         }
         let target = ((pos - self.t0).as_secs_f64().max(0.0) * self.fps + 1e-6).floor() as u64;
-        let (mut latest, mut n) = (None, 0u64);
+        let mut latest = self.ahead.take();
+        let mut n = latest.is_some() as u64;
         while self.taken <= target {
             match self.src.try_next() {
                 Ok(Some(f)) => {
@@ -262,7 +273,7 @@ impl<S: Source> Slot<S> {
 
     /// Startup time of this stream (open to first frame), for catching up
     fn lead(&self) -> f64 {
-        self.first.map_or(0.3, |f| f - self.opened).clamp(0.05, 3.0)
+        self.ready.or(self.first).map_or(0.3, |f| f - self.opened).clamp(0.05, 3.0)
     }
 }
 
@@ -814,8 +825,9 @@ impl<S: Source> PlayCore<S> {
         self.opening.insert(id, (w.key, replace, self.seq));
         let at = match self.cur.get(&id) {
             _ if w.prefetch => w.start,
-            // replacement during playback: open where the clock stands when it starts up
-            Some(s) if self.mode == Mode::Spielen => self.pos + Time::from_secs_f64(s.lead()),
+            // replacement during playback: open where the clock stands when it starts up – the old
+            // stream's startup says nothing about a new source, so not before the place it is needed from
+            Some(s) if self.mode == Mode::Spielen => (self.pos + Time::from_secs_f64(s.lead())).max(w.start),
             _ => self.pos,
         };
         Some(Open { id, key: w.key, at, gen: self.gen, seq: self.seq })

@@ -138,10 +138,12 @@ struct Clip {
     lead_in: f64,
     /// Source fingerprint (same source after splitting), 0 = none
     alias: u64,
+    /// While active: place from which a new stream is needed (`Want::start`, source switch)
+    want_start: Option<f64>,
 }
 
 fn clip(id: Lid, start: f64, end: f64) -> Clip {
-    Clip { id, start, end, ver: 0, dec: Dec::default(), still_only: false, lead_in: 0.0, alias: 0 }
+    Clip { id, start, end, ver: 0, dec: Dec::default(), still_only: false, lead_in: 0.0, alias: 0, want_start: None }
 }
 
 /// Driver as in the app, but with simulated streams, single frames and sound.
@@ -284,7 +286,8 @@ impl World {
             }
             vis.push(c.id);
             if self.core.streaming() && !c.still_only {
-                let w = Want { id: c.id, key: self.key(c), start: Time::from_secs_f64(c.start), end: Time::from_secs_f64(c.end), prefetch: !active, alias: c.alias };
+                let start = c.want_start.filter(|_| active).unwrap_or(c.start);
+                let w = Want { id: c.id, key: self.key(c), start: Time::from_secs_f64(start), end: Time::from_secs_f64(c.end), prefetch: !active, alias: c.alias };
                 if let Some(o) = self.core.want(&w, now) {
                     self.opens += 1;
                     if c.dec.fail_open {
@@ -1119,4 +1122,49 @@ fn split_during_play_takes_over_the_running_stream() {
     assert_eq!(w.opens, opens, "no new stream");
     let gap = w.shown.iter().filter(|s| s.0 >= t - 0.1).map(|s| s.0).collect::<Vec<_>>().windows(2).map(|x| x[1] - x[0]).fold(0.0, f64::max);
     assert!(gap <= 2.0 / 30.0 + 0.01, "gap {gap} s after splitting");
+}
+/// Source switch proxy parts -> original during Play (PL_gross, ~2 s after Play): the parts stream
+/// runs on until the parts end, the original needs far longer to start (here 1.5 s) than the parts
+/// stream's lead. Before, the replacement opened at clock + old lead, was taken over after
+/// REPLACE_AFTER 1.4 s behind the sound, and the quality dropped. Now it opens where it is needed.
+#[test]
+fn source_switch_opens_the_replacement_where_it_is_needed() {
+    let mut c = clip(1, 0.0, 20.0);
+    c.dec.len = Some(7 * 30); // parts end at 7 s
+    let mut w = World::new(vec![c]);
+    w.max_q = 2;
+    w.play();
+    w.run(4.0, DT);
+    // switch to the original at ~4 s, needed from the parts end
+    w.clips[0].ver += 1;
+    w.clips[0].dec = Dec { delay: 1.5, ..Dec::default() };
+    w.clips[0].want_start = Some(7.0);
+    let (t, mut lag) = (w.now(), 0.0f64);
+    for _ in 0..(5.0 / DT) as usize {
+        w.step(DT);
+        lag = lag.max(w.core.av_offset_ms().unwrap_or(0.0));
+    }
+    assert!(w.core.pos().as_secs_f64() > 8.5);
+    assert!(lag < 100.0, "picture {lag:.0} ms behind the sound after the switch");
+    assert_eq!(w.level_changes, 0, "quality dropped");
+    assert!(w.gap(1, t, w.now()) <= 2.0 / 30.0 + 0.01, "gap {} s", w.gap(1, t, w.now()));
+}
+/// A stream opened ahead (source switch) measures its real startup, not the wait for its turn: the next
+/// replacement (quality level) opens at clock + this lead. With the wait (2.9 s in PL_gross) the slow
+/// original ran on until then and fell 2.6 s behind.
+#[test]
+fn stream_opened_ahead_measures_its_real_startup() {
+    let mut c = clip(1, 0.0, 20.0);
+    c.dec.len = Some(7 * 30);
+    let mut w = World::new(vec![c]);
+    w.play();
+    w.run(4.0, DT);
+    w.clips[0].ver += 1;
+    w.clips[0].dec = Dec { delay: 1.5, ..Dec::default() };
+    w.clips[0].want_start = Some(7.0);
+    w.run(4.0, DT);
+    assert!(w.core.pos().as_secs_f64() > 7.5);
+    let s = &w.core.cur[&1];
+    assert_eq!(s.key, w.key(&w.clips[0]), "switched stream runs");
+    assert!((s.lead() - 1.5).abs() < 0.05, "lead {:.2} s, startup 1.5 s", s.lead());
 }

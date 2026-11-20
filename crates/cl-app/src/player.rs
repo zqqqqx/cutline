@@ -575,6 +575,22 @@ pub(crate) fn stream_alias(c: &Clip, m: &MediaRef, (w, h): (u32, u32), fps: Rati
     hs.finish() | 1
 }
 
+/// Place a layer's stream is needed from (`Want::start`): opened ahead from the clip/element start.
+/// After a switch from proxy parts to the original (`Pick::Original`) from where the parts end:
+/// the parts stream runs on until there (`SWITCH_MARGIN`), and the original (4K, long GOP) starts far
+/// slower than the parts stream's lead – opened at clock + that lead it fell 1.1–1.7 s behind the sound.
+pub(crate) fn want_start(c: &Clip, pick: crate::proxy::Pick, playhead: Time, prefetch: Option<Time>) -> Time {
+    match (prefetch, pick) {
+        (Some(t), _) => t,
+        (None, crate::proxy::Pick::Original { since_ms }) => {
+            // streams run forwards at constant speed (`streamable`); the margin is SWITCH_MARGIN·speed source seconds
+            let rel = (since_ms as f64 / 1000.0 - c.source_in.as_secs_f64()) / c.speed.max(0.01) as f64;
+            c.start + Time::from_secs_f64(rel.max(0.0) + crate::proxy::parts::SWITCH_MARGIN)
+        }
+        _ => playhead,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn open_job(o: crate::playcore::Open, c: &Clip, m: &MediaRef, path: std::path::PathBuf, (w, h): (u32, u32), fps: Rational, alias: u64) -> OpenJob {
     let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
@@ -855,6 +871,30 @@ mod presence_tests {
         assert!((full.source_at.as_secs_f64() - 12.0).abs() < 1e-3, "{:?}", full.source_at);
         assert_ne!(full.open.key, parts.open.key);
         assert_ne!(full.alias, parts.alias, "source choice in the fingerprint");
+    }
+
+    /// PL_gross: clip at 0.66 s from source 53.74 s, only proxy part 5 (50–60 s) finished. 3 s before
+    /// the parts end the choice switches to the original; its stream is needed only from the parts end
+    /// (timeline 6.92 s), not from clock + startup of the parts stream.
+    #[test]
+    fn switch_to_the_original_is_needed_from_the_parts_end() {
+        use crate::proxy::parts::{choose_stream, Parting, PART_SECS};
+        use crate::proxy::Pick;
+        let mut c = Clip::new(ClipContent::Media { media: cl_core::MediaId::new(), kind: MediaKind::Video }, Time(658_843), Time(10_423_999));
+        c.source_in = Time(53_740_753);
+        let pt = Parting::new(300.0, Rational::new(60, 1), PART_SECS).unwrap();
+        let ready: Vec<bool> = (0..pt.count).map(|k| k == 5).collect();
+        let (end, margin) = ((c.source_in + c.source_span()).as_secs_f64(), crate::proxy::parts::SWITCH_MARGIN);
+        let at = |t: f64| c.source_time(Time::from_secs_f64(t)).as_secs_f64();
+        let parts = choose_stream(None, &ready, &pt, at(1.7), end, margin);
+        assert_eq!(parts, Pick::Parts { first: 5, end: 6 });
+        assert_eq!(want_start(&c, parts, Time::from_secs_f64(1.7), None), Time::from_secs_f64(1.7));
+        let orig = choose_stream(Some(parts), &ready, &pt, at(3.93), end, margin);
+        assert!(matches!(orig, Pick::Original { .. }), "{orig:?}");
+        let parts_end = c.start.as_secs_f64() + 60.0 - c.source_in.as_secs_f64();
+        let s = want_start(&c, orig, Time::from_secs_f64(3.93), None).as_secs_f64();
+        assert!((s - parts_end).abs() < 0.02, "needed from {s:.3} s, parts end at {parts_end:.3} s");
+        assert_eq!(want_start(&c, orig, Time::from_secs_f64(3.93), Some(Time::from_secs_f64(9.0))), Time::from_secs_f64(9.0), "opened ahead");
     }
 }
 
@@ -2145,7 +2185,7 @@ impl App {
             let want = Want {
                 id: lid(id),
                 key,
-                start: prefetch_at.unwrap_or(self.playhead),
+                start: want_start(c, pick, self.playhead, prefetch_at),
                 end: c.end(),
                 prefetch: prefetch_at.is_some(),
                 alias,

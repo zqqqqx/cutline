@@ -10,7 +10,7 @@
 //! job (click, scrubbing) and during playback as soon as playback falls behind;
 //! hardware encoders first.
 
-mod parts;
+pub(crate) mod parts;
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
