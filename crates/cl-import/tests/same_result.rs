@@ -19,7 +19,7 @@ fn ffmpeg(args: &[&str], out: &Path) -> bool {
 
 /// Tiny media: video with audio, image, audio (in the draft folder and next to it)
 fn media(dir: &Path) -> Option<[PathBuf; 3]> {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return None;
     }
     let v = dir.join("clip.mp4");

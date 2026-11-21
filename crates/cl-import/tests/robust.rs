@@ -6,7 +6,7 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 
 fn make_video(dir: &Path, name: &str) -> Option<PathBuf> {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return None;
     }
     let v = dir.join(name);

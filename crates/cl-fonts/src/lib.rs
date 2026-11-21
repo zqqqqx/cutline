@@ -660,7 +660,11 @@ mod tests {
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/System/Library/Fonts/Supplemental/Arial.ttf",
         ];
-        candidates.iter().map(PathBuf::from).find(|p| p.is_file())
+        let f = candidates.iter().map(PathBuf::from).find(|p| p.is_file());
+        if f.is_none() {
+            eprintln!("skipped (no system test font)");
+        }
+        f
     }
 
     /// Builds a WOFF 1.0 from an SFNT file (to test unpacking).
@@ -708,10 +712,7 @@ mod tests {
 
     #[test]
     fn import_ttf_dedupe_woff_and_remove() {
-        let Some(src) = sample_font() else {
-            eprintln!("No test font found, skipped");
-            return;
-        };
+        let Some(src) = sample_font() else { return };
         let dir = tempfile::tempdir().unwrap();
         let mut lib = FontLibrary::open(dir.path()).unwrap();
 

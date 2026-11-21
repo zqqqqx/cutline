@@ -291,26 +291,33 @@ pub(crate) mod testutil {
             .map(PathBuf::from)
             .or_else(|| {
                 std::env::var_os("LOCALAPPDATA").map(|l| PathBuf::from(l).join("cutline-models"))
-            })?;
-        d.is_dir().then(|| Models::new(d))
+            });
+        let m = d.filter(|d| d.is_dir()).map(Models::new);
+        if m.is_none() {
+            eprintln!("skipped (no model folder, set CUTLINE_MODELS)");
+        }
+        m
     }
 
-    /// Spoken German as a test file (Windows speech output), otherwise None.
+    /// Spoken German as a test file (Windows speech output), otherwise None (not Windows).
+    /// Panics if Windows has no German voice: an English voice would make the check meaningless.
     pub fn speech(dir: &Path, text: &str) -> Option<PathBuf> {
         if !cfg!(windows) {
+            eprintln!("skipped (speech output needs Windows)");
             return None;
         }
         let wav = dir.join("speech.wav");
         let ps = format!(
-            "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $v = $s.GetInstalledVoices() | Where-Object {{ $_.VoiceInfo.Culture.Name -like 'de*' }} | Select-Object -First 1; if ($v) {{ $s.SelectVoice($v.VoiceInfo.Name) }}; $s.Rate = 0; $s.SetOutputToWaveFile('{}'); $s.Speak('{}'); $s.Dispose()",
+            "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $v = $s.GetInstalledVoices() | Where-Object {{ $_.VoiceInfo.Culture.Name -like 'de*' }} | Select-Object -First 1; if (-not $v) {{ exit 3 }}; $s.SelectVoice($v.VoiceInfo.Name); $s.Rate = 0; $s.SetOutputToWaveFile('{}'); $s.Speak('{}'); $s.Dispose()",
             wav.display(),
             text
         );
-        let ok = std::process::Command::new("powershell")
+        let st = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps])
             .status()
-            .ok()?
-            .success();
-        (ok && wav.is_file()).then_some(wav)
+            .expect("powershell");
+        assert_ne!(st.code(), Some(3), "no German Windows voice installed (Settings > Time & language > Speech)");
+        assert!(st.success() && wav.is_file(), "speech output failed: {st}");
+        Some(wav)
     }
 }

@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn follows_the_moving_subject() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

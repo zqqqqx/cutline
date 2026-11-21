@@ -999,7 +999,7 @@ mod tests {
         assert_eq!(call(&s, "delete_clip", json!({"clip_id":id}))["isError"], true);
         assert_eq!(call(&s, "undo", json!({}))["structuredContent"]["undone"], "Clip löschen");
         assert_eq!(call(&s, "redo", json!({}))["structuredContent"]["redone"], "Clip löschen");
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = std::env::temp_dir().join(format!("cl-mcp-test-{}", uuid::Uuid::new_v4().simple()));

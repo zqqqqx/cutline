@@ -310,6 +310,13 @@ mod tests {
         assert_eq!(parse_json(r#"{"format": 1, "versions": []}"#), Some(Vec::new()));
     }
 
+    /// Without `sh` the script tests are skipped visibly; with `CUTLINE_REQUIRE_TOOLS=1` that fails.
+    /// (cl-update does not depend on cl-media, so this does not use `cl_media::test_tools`.)
+    fn no_sh() {
+        assert!(std::env::var("CUTLINE_REQUIRE_TOOLS").as_deref() != Ok("1"), "no sh but CUTLINE_REQUIRE_TOOLS=1");
+        eprintln!("skipped (no sh)");
+    }
+
     /// `changes-json.sh` from the release workflow yields the same data as `parse` from
     /// `CHANGELOG.md` – for the version and all earlier ones. Runs only where `sh` and `awk` exist.
     #[test]
@@ -322,7 +329,7 @@ mod tests {
                 .output()
         };
         let Ok(out) = run("v0.11.0", &root.join("CHANGELOG.md")) else {
-            eprintln!("no sh – skipped");
+            no_sh();
             return;
         };
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -357,7 +364,7 @@ mod tests {
                 .output()
         };
         let Ok(out) = run("v0.11.0") else {
-            eprintln!("no sh – skipped");
+            no_sh();
             return;
         };
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));

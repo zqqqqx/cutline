@@ -283,7 +283,7 @@ mod tests {
     fn parses_times_and_spine() {
         assert!((parse_time("3003/30000s") - 0.1001).abs() < 1e-9);
         assert_eq!(parse_time("5s"), 5.0);
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

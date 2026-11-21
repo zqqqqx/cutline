@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 const S: i64 = 1_000_000;
 
 fn video(dir: &Path, name: &str) -> Option<PathBuf> {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return None;
     }
     let v = dir.join(name);
@@ -230,9 +230,7 @@ fn measure_big_draft_steps() {
             .unwrap_or_else(|| PathBuf::from("F:/cutline-testmedien/import"))
             .join("grosser_entwurf")
     });
-    if !dir.exists() {
-        return;
-    }
+    assert!(dir.exists(), "missing test draft {} (set CUTLINE_IMPORT_DRAFT)", dir.display());
     let last: Arc<Mutex<(Step, std::time::Instant, f64)>> = Arc::new(Mutex::new((Step::Read, std::time::Instant::now(), 0.0)));
     let t0 = std::time::Instant::now();
     let slot: Arc<OnceLock<std::sync::Weak<Progress>>> = Arc::default();

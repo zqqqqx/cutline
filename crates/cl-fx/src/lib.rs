@@ -1324,7 +1324,7 @@ mod tests {
     /// image stays during playback).
     #[test]
     fn every_effect_and_filter_streams_for_playback() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1373,7 +1373,7 @@ mod tests {
     /// size: line pattern and color shift equally strong (previously much stronger in the preview).
     #[test]
     fn vhs_preview_size_looks_like_the_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         // image after the chain at 480×270: (line pattern, red−blue color shift at the vertical edge)
@@ -1447,7 +1447,9 @@ mod tests {
 
     #[test]
     fn every_effect_and_filter_runs_in_ffmpeg() {
-        if !cl_media::ffmpeg_available() {
+        assert!(EFFECTS.len() >= 30, "{}", EFFECTS.len());
+        assert!(FILTERS.len() >= 20);
+        if !cl_media::test_tools() {
             return;
         }
         let o = ChainOpts {
@@ -1476,13 +1478,11 @@ mod tests {
                 run_graph(&g, &[]).unwrap_or_else(|e| panic!("{} ({i}): {e}\n{g}", def.id));
             }
         }
-        assert!(EFFECTS.len() >= 30, "{}", EFFECTS.len());
-        assert!(FILTERS.len() >= 20);
     }
 
     #[test]
     fn full_chain_with_adjust_mask_alpha_and_lut() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1571,7 +1571,7 @@ mod tests {
 
     #[test]
     fn preview_graph_decodes() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1628,7 +1628,7 @@ mod tests {
 
     #[test]
     fn chroma_stabilize_and_matte_run() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let mut fx = ClipFx::default();
@@ -1668,7 +1668,7 @@ mod tests {
 
     #[test]
     fn plugin_chains_run() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         use catalog::{Entry, Kind, Pack, PackInfo, Payload};
@@ -1720,7 +1720,11 @@ mod tests {
 
     #[test]
     fn every_transition_runs_in_ffmpeg() {
-        if !cl_media::ffmpeg_available() {
+        // all xfade variants of the bundled FFmpeg except `custom` and `squeezev`
+        // (crashes in FFmpeg 9.0.2 at any size)
+        assert_eq!(TRANSITIONS.len(), 57);
+        assert!(!TRANSITIONS.iter().any(|t| t.0 == "squeezev"));
+        if !cl_media::test_tools() {
             return;
         }
         for (id, ..) in TRANSITIONS {
@@ -1728,10 +1732,6 @@ mod tests {
             run_graph(&g, &["color=red:s=160x90:r=15:d=0.6"])
                 .unwrap_or_else(|e| panic!("{id}: {e}"));
         }
-        // all xfade variants of the bundled FFmpeg except `custom` and `squeezev`
-        // (crashes in FFmpeg 9.0.2 at any size)
-        assert_eq!(TRANSITIONS.len(), 57);
-        assert!(!TRANSITIONS.iter().any(|t| t.0 == "squeezev"));
     }
 
     #[test]
@@ -1758,7 +1758,7 @@ mod tests {
         assert!(max < 40, "nested too deeply: {max}");
         assert!(e.matches("if(").count() < pts.len());
         let _ = piecewise_eval(&pts, 1.0);
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let g = format!(
@@ -1778,7 +1778,7 @@ mod tests {
         // don't cap very slow pieces of a speed curve (e.g. 0.5× with „Kugel“)
         let prod: f64 = atempo_chain(0.05).split(',').map(|a| a[7..].parse::<f64>().unwrap()).product();
         assert!((prod - 0.05).abs() < 1e-4, "{prod}");
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let sp = speed_setpts(1.0, Some("montage"), 0.6, 0.6);
@@ -1822,7 +1822,7 @@ mod tests {
         }
         assert!(assets.len() >= 30, "{}", assets.len());
         assert!(assets.iter().all(|(f, c)| *f || c.contains("{intensity}")));
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let (w, h, n) = (202usize, 114usize, 12usize);
@@ -1881,7 +1881,7 @@ mod tests {
 
     /// (width, height, frames, strengths)
     fn chains_at_sizes(sizes: &[(u32, u32, usize, &[f32])]) {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         // package chains of all bundled packages (lines as in `effekte_pack_chains_run`)
@@ -1957,7 +1957,7 @@ mod tests {
     /// 1 s became two).
     #[test]
     fn zoom_pulse_keeps_frames_and_duration_at_60_fps() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let def = effect("zoom-pulse").unwrap();

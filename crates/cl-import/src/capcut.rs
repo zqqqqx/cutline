@@ -898,7 +898,7 @@ mod tests {
 
     #[test]
     fn layers_follow_render_index_and_fonts_are_taken_over() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1026,7 +1026,7 @@ mod tests {
 
     #[test]
     fn converts_draft() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1111,7 +1111,7 @@ mod tests {
     /// audio stream of the file and audio fades – all combinations.
     #[test]
     fn mute_separated_sound_stream_and_fades() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
