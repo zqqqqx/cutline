@@ -787,8 +787,8 @@ mod tests {
 
     #[test]
     fn http_transport_requires_token() {
-        let s = server();
-        let (addr, _h) = s.serve_http(0, "geheim".into()).unwrap();
+        let srv = Http::start(server());
+        let addr = srv.addr;
         // send in one piece (`write!` on the stream wrote in many small parts)
         let post = |auth: &str, body: &str| -> String {
             let req = format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: {auth}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", addr.port(), body.len());
@@ -800,11 +800,9 @@ mod tests {
         assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
         assert!(ok.contains(r#""result":{}"#));
         let raw = |req: &[u8]| -> String {
-            let mut c = TcpStream::connect(addr).unwrap();
+            let mut c = connect(addr);
             let _ = c.write_all(req);
-            let mut s = String::new();
-            let _ = c.read_to_string(&mut s);
-            s
+            read_reply(&mut c)
         };
         let req = |host: &str, origin: &str| {
             format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\n{origin}Authorization: Bearer geheim\r\nContent-Length: {}\r\n\r\n{body}", body.len())
@@ -832,23 +830,63 @@ mod tests {
         s.handle(json!({"jsonrpc":"2.0","id":7,"method":method,"params":params})).unwrap()
     }
 
+    /// HTTP endpoint for one test; stopped (port freed, thread joined) when dropped, also on panic.
+    struct Http {
+        addr: SocketAddr,
+        stop: Arc<std::sync::atomic::AtomicBool>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl Http {
+        fn start(s: McpServer) -> Self {
+            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (addr, t) = s.serve_http_until(0, "geheim".into(), stop.clone()).unwrap();
+            Self { addr, stop, thread: Some(t) }
+        }
+    }
+
+    impl Drop for Http {
+        fn drop(&mut self) {
+            self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            if let Some(t) = self.thread.take() {
+                let _ = t.join();
+            }
+        }
+    }
+
+    /// Client socket with a read timeout: a server that never answers fails the test instead of hanging it.
+    fn connect(addr: SocketAddr) -> TcpStream {
+        let c = TcpStream::connect(addr).unwrap();
+        c.set_read_timeout(Some(std::time::Duration::from_secs(20))).unwrap();
+        c
+    }
+
+    /// Everything until the server closes; a reset counts as the end, a timeout fails.
+    fn read_reply(c: &mut TcpStream) -> String {
+        let mut s = String::new();
+        if let Err(e) = c.read_to_string(&mut s) {
+            let timeout = matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut);
+            assert!(!timeout, "no answer within 20 s, got so far: {s:?}");
+        }
+        s
+    }
+
     fn http(addr: SocketAddr, raw: &[u8]) -> String {
-        let mut c = TcpStream::connect(addr).unwrap();
+        let mut c = connect(addr);
         let _ = c.write_all(raw);
         let _ = c.shutdown(std::net::Shutdown::Write);
-        let mut s = String::new();
-        let _ = c.read_to_string(&mut s);
-        s
+        read_reply(&mut c)
     }
 
     /// Client sends header and body separately, wrong token: the 401 arrives (the server reads the
     /// body first, otherwise the connection breaks with RST and the response is lost).
     #[test]
     fn error_reply_arrives_when_body_follows_the_head() {
-        let (addr, _h) = server().serve_http(0, "geheim".into()).unwrap();
+        let srv = Http::start(server());
+        let addr = srv.addr;
         let body = vec![b' '; 1 << 20];
         for (host, auth, want) in [("localhost", "Bearer falsch", "HTTP/1.1 401"), ("evil.com", "Bearer geheim", "HTTP/1.1 403")] {
-            let mut c = TcpStream::connect(addr).unwrap();
+            let mut c = connect(addr);
             let head = format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\nAuthorization: {auth}\r\nContent-Length: {}\r\n\r\n", body.len());
             c.write_all(head.as_bytes()).unwrap();
             let _ = c.write_all(&body);
@@ -860,7 +898,8 @@ mod tests {
 
     #[test]
     fn token_must_match_exactly() {
-        let (addr, _h) = server().serve_http(0, "geheim".into()).unwrap();
+        let srv = Http::start(server());
+        let addr = srv.addr;
         let body = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
         let req = |auth: Option<&str>| {
             let a = auth.map(|a| format!("Authorization: {a}\r\n")).unwrap_or_default();
@@ -884,7 +923,9 @@ mod tests {
         assert!(r.starts_with("HTTP/1.1 400") && r.contains("-32700"), "{r}");
         // garbage instead of HTTP
         assert!(!http(addr, b"\x00\xff\xfe garbage\r\n\r\n").starts_with("HTTP/1.1 200"));
-        assert!(http(addr, b"").is_empty() || !http(addr, b"").starts_with("HTTP/1.1 200"));
+        // an empty request is an incomplete header section
+        let empty = http(addr, b"");
+        assert!(empty.starts_with("HTTP/1.1 431"), "{empty:?}");
         // the server is still alive
         assert!(http(addr, req(Some("Bearer geheim")).as_bytes()).starts_with("HTTP/1.1 200"));
     }

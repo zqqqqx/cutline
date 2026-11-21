@@ -720,6 +720,8 @@ mod tests {
         let addr = l.local_addr().unwrap();
         let send = |req: &str| {
             let mut s = std::net::TcpStream::connect(addr).unwrap();
+            // the answers below must arrive; a server bug then fails instead of hanging
+            s.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
             s.write_all(req.as_bytes()).unwrap();
             s
         };

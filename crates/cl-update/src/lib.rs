@@ -707,14 +707,20 @@ mod tests {
     }
 
     /// Small HTTP server: answers one connection after another with the raw response.
+    /// Each request line and the answer it got go to stderr, so a failing test shows when the
+    /// code asked in a different order than the canned answers expect.
     fn serve(answers: Vec<Vec<u8>>) -> String {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
         std::thread::spawn(move || {
-            for a in answers {
+            for (i, a) in answers.into_iter().enumerate() {
                 let Ok((mut c, _)) = l.accept() else { return };
                 let mut b = [0u8; 2048];
-                let _ = c.read(&mut b);
+                let n = c.read(&mut b).unwrap_or(0);
+                let req = String::from_utf8_lossy(&b[..n]);
+                let body = a.windows(4).position(|w| w == b"\r\n\r\n").map_or(&a[..], |p| &a[p + 4..]);
+                let body = String::from_utf8_lossy(&body[..body.len().min(30)]);
+                eprintln!("serve: request {i} {:?} gets body {body:?}", req.lines().next().unwrap_or(""));
                 let _ = c.write_all(&a);
             }
         });
