@@ -281,8 +281,7 @@ mod tests {
 
     #[test]
     fn parses_times_and_spine() {
-        assert!((parse_time("3003/30000s") - 0.1001).abs() < 1e-9);
-        assert_eq!(parse_time("5s"), 5.0);
+        // single time values: `fcpxml_times_and_formats` in tests/robust.rs
         if !cl_media::test_tools() {
             return;
         }

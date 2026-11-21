@@ -391,7 +391,7 @@ mod tests {
         cleanup_parts(&d.path().join("fehlt"), |_| false);
     }
 
-    /// The built package list matches its ZIPs (size, SHA-256).
+    /// Ignored: the built package list matches its ZIPs (size, SHA-256).
     /// Needs the package build folder `F:/cutline-pakete/fertig` (developer machine only):
     /// `cargo test --release -p cl-update -- --ignored real_index_matches_its_files`
     #[test]

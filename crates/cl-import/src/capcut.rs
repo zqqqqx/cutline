@@ -1004,11 +1004,12 @@ mod tests {
         assert_eq!(r.unwrap_err(), "Entwurf zu groß");
     }
 
-    /// Look at a real draft: CAPCUT_DRAFT=<folder> cargo test -- --ignored real_draft --nocapture
+    /// Ignored: prints what the import makes of a real CapCut draft; needs one in CAPCUT_DRAFT.
+    /// `CAPCUT_DRAFT=<folder> cargo test --release -p cl-import --lib -- --ignored real_draft --nocapture`
     #[test]
     #[ignore]
     fn real_draft() {
-        let Some(d) = std::env::var_os("CAPCUT_DRAFT") else { return };
+        let d = std::env::var_os("CAPCUT_DRAFT").expect("set CAPCUT_DRAFT=<draft folder>");
         let (p, rep) = import(std::path::Path::new(&d)).unwrap();
         for t in &p.timeline.tracks {
             let fonts: Vec<String> = t.clips.iter().filter_map(|c| match &c.content {

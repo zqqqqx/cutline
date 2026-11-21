@@ -229,7 +229,8 @@ fn very_large_draft_converts_every_clip() {
     assert_eq!(p.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>(), 3000);
 }
 
-/// Measurement test: large test draft (F:/cutline-testmedien/import, `mkdraft.py`) with times per step.
+/// Ignored measurement: times per import step for a large test draft (needs FFmpeg and the draft
+/// from `mkdraft.py` in F:/cutline-testmedien/import or CUTLINE_IMPORT_DRAFT).
 /// `cargo test --release -p cl-import --test staged -- --ignored --nocapture`
 #[test]
 #[ignore]

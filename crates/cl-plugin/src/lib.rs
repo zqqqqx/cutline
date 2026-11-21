@@ -736,6 +736,21 @@ mod tests {
         for c in &chains {
             assert!(ffmpeg_chain_allowed(c), "{c}");
         }
+        // integrations start disabled
+        let es = reg
+            .plugins
+            .iter()
+            .find(|p| p.manifest.plugin.id == "cutline.epidemic-sound")
+            .expect("Epidemic-Plugin");
+        assert!(!es.enabled);
+        assert!(!reg.integration_enabled("epidemic-sound"));
+        let mut reg = reg;
+        reg.apply_states(
+            &[("cutline.epidemic-sound".to_string(), true)]
+                .into_iter()
+                .collect(),
+        );
+        assert!(reg.integration_enabled("epidemic-sound"));
     }
 
     #[test]
@@ -846,27 +861,6 @@ params=[{type='float',id='a',min=0.0,max=2.0,default=1.5},{type='bool',id='b',de
         let m = tr("fallback='fade'
 params=[{type='color',id='c',default='#fff'}]");
         assert!(Manifest::parse(&m, p).unwrap().validate(None).is_err());
-    }
-
-    #[test]
-    fn shipped_plugins_load_and_integrations_start_disabled() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
-        let reg = Registry::scan([root.as_path()]);
-        assert!(reg.errors.is_empty(), "{:?}", reg.errors);
-        let es = reg
-            .plugins
-            .iter()
-            .find(|p| p.manifest.plugin.id == "cutline.epidemic-sound")
-            .expect("Epidemic-Plugin");
-        assert!(!es.enabled);
-        assert!(!reg.integration_enabled("epidemic-sound"));
-        let mut reg = reg;
-        reg.apply_states(
-            &[("cutline.epidemic-sound".to_string(), true)]
-                .into_iter()
-                .collect(),
-        );
-        assert!(reg.integration_enabled("epidemic-sound"));
     }
 
     const PACK: &str = r#"

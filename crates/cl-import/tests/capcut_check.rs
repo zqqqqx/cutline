@@ -50,6 +50,8 @@ fn amp(x: &[f32], hz: f64) -> f64 {
     (s1 * s1 + s2 * s2 - 2.0 * w.cos() * s1 * s2).max(0.0).sqrt() * 2.0 / x.len().max(1) as f64
 }
 
+/// Ignored: checks the preview audio of real CapCut drafts (needs FFmpeg and drafts, see the file head).
+/// `cargo test --release -p cl-import --test capcut_check -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn capcut_drafts_audio() {

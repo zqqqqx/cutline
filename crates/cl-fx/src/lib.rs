@@ -1447,40 +1447,6 @@ mod tests {
         has_alpha: false,
     };
 
-    #[test]
-    fn every_effect_and_filter_runs_in_ffmpeg() {
-        assert!(EFFECTS.len() >= 30, "{}", EFFECTS.len());
-        assert!(FILTERS.len() >= 20);
-        if !cl_media::test_tools() {
-            return;
-        }
-        let o = ChainOpts {
-            t_offset: 0.0,
-            apply_reverse: false,
-            lut: None,
-            matte: None,
-        };
-        for def in EFFECTS.iter().chain(FILTERS.iter()) {
-            for i in [0.4, 1.0] {
-                let mut fx = ClipFx::default();
-                if FILTERS.iter().any(|f| f.id == def.id) {
-                    fx.filter = Some(FxRef {
-                        id: def.id.into(),
-                        intensity: i,
-                        params: Default::default(),
-                    });
-                } else {
-                    fx.effects.push(FxRef {
-                        id: def.id.into(),
-                        intensity: i,
-                        params: Default::default(),
-                    });
-                }
-                let g = fx_graph(&fx, SRC, &o, "0:v", "out", "x").join(";\n");
-                run_graph(&g, &[]).unwrap_or_else(|e| panic!("{} ({i}): {e}\n{g}", def.id));
-            }
-        }
-    }
 
     #[test]
     fn full_chain_with_adjust_mask_alpha_and_lut() {
@@ -1731,7 +1697,7 @@ mod tests {
     #[test]
     fn every_transition_runs_in_ffmpeg() {
         // all xfade variants of the bundled FFmpeg except `custom` and `squeezev`
-        // (crashes in FFmpeg 9.0.2 at any size)
+        // (squeezev crashed FFmpeg at every size when this list was made)
         assert_eq!(TRANSITIONS.len(), 57);
         assert!(!TRANSITIONS.iter().any(|t| t.0 == "squeezev"));
         if !cl_media::test_tools() {
@@ -1831,9 +1797,9 @@ mod tests {
         .unwrap();
     }
 
-    /// Package „Effekte und Filter“ (`plugins/cutline-effekte`): every chain runs in FFmpeg as in
-    /// preview (RGBA) and export (YUV), keeps the image size, and effects do practically nothing
-    /// at strength 0.
+    /// Package „Effekte und Filter“ (`plugins/cutline-effekte`): every chain runs in FFmpeg on
+    /// export input (YUV), keeps the image size, and effects do practically nothing at strength 0.
+    /// (RGBA input as in the preview: `every_chain_runs_at_odd_sizes_and_strengths`.)
     #[test]
     fn effekte_pack_chains_run() {
         let src = std::fs::read_to_string(concat!(
@@ -1884,10 +1850,8 @@ mod tests {
         };
         let plain = render("yuv420p", None);
         for (filter, c) in &assets {
-            for fmt in ["yuv420p", "rgba"] {
-                render(fmt, Some((c, 0.6, *filter)));
-                render(fmt, Some((c, 1.0, *filter)));
-            }
+            render("yuv420p", Some((c, 0.6, *filter)));
+            render("yuv420p", Some((c, 1.0, *filter)));
             if !filter {
                 let zero = render("yuv420p", Some((c, 0.0, false)));
                 let diff = zero.iter().zip(&plain).map(|(a, b)| a.abs_diff(*b) as u64).sum::<u64>()
@@ -1902,10 +1866,13 @@ mod tests {
     /// odd dimensions and tiny images, and keeps the image size.
     #[test]
     fn every_chain_runs_at_odd_sizes_and_strengths() {
+        assert!(EFFECTS.len() >= 30, "{}", EFFECTS.len());
+        assert!(FILTERS.len() >= 20);
         chains_at_sizes(&[(161, 91, 2, &[0.0, 0.5, 1.0]), (64, 64, 1, &[1.0])]);
     }
 
-    /// The same in portrait Full HD (takes ~1 min): `cargo test -p cl-fx -- --ignored portrait`
+    /// Ignored: the same in portrait Full HD, takes ~1 min and needs FFmpeg.
+    /// `cargo test --release -p cl-fx -- --ignored every_chain_runs_in_portrait_full_hd`
     #[test]
     #[ignore]
     fn every_chain_runs_in_portrait_full_hd() {
