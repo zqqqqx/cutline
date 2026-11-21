@@ -4036,7 +4036,6 @@ impl Drop for HiresTimer {
 /// sets it differently)
 const EGUI_PREDICTED_DT: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
-/// Start of frame `n` at `fps` (µs, rounded up: from then on the frame is due)
 /// Can `c` be cut at `at` without a piece shorter than half a frame on either side? Such splinters
 /// come about at clip boundaries with odd frame rates or off-grid clip times and disturb the export.
 fn splittable(c: &Clip, at: Time, fps: Rational) -> bool {
@@ -4044,6 +4043,7 @@ fn splittable(c: &Clip, at: Time, fps: Rational) -> bool {
     c.contains(at) && at - c.start >= half && c.end() - at >= half
 }
 
+/// Start of frame `n` at `fps` (µs, rounded up: from then on the frame is due)
 fn frame_start(n: i128, fps: Rational) -> i128 {
     let (num, den) = (fps.num.max(1) as i128, fps.den.max(1) as i128);
     (n * den * 1_000_000).div_euclid(num) + i128::from((n * den * 1_000_000).rem_euclid(num) != 0)
