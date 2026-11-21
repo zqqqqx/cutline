@@ -197,6 +197,31 @@ fn hbar_scroll(range: (f64, f64), visible: f64, bar_w: f32, w: f32, x: f32) -> f
     range.0 + k * (range.1 - range.0 - visible).max(0.0)
 }
 
+/// Start (s) of a moved clip grabbed at `raw` s and `dur` s long: its start or end edge snaps to the
+/// nearer candidate from `snap`. Returns the start and the snap line (`None`: not snapped).
+fn move_start(raw: f64, dur: f64, snap: impl Fn(f64) -> Option<f64>) -> (f64, Option<f64>) {
+    let (ss, se) = (snap(raw), snap(raw + dur).map(|e| e - dur));
+    let (s, line) = match (ss, se) {
+        (Some(a), Some(b)) if (a - raw).abs() <= (b - raw).abs() => (a, Some(a)),
+        (_, Some(b)) => (b, Some(b + dur)),
+        (Some(a), None) => (a, Some(a)),
+        _ => (raw, None),
+    };
+    (s.max(0.0), line)
+}
+
+/// Time a dragged clip is placed at: on the frame grid, unless an edge snapped – then exactly there,
+/// so it touches its neighbour (rounded to a frame it could overlap it, and the move would put the
+/// clip on a new track instead of the one it was dropped on)
+fn drop_time(t: f64, snapped: bool, fps: Rational) -> Time {
+    let t = Time::from_secs_f64(t);
+    if snapped {
+        t
+    } else {
+        t.snap_to_frame(fps)
+    }
+}
+
 /// What stays fixed during smooth zooming
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Anchor {
@@ -1920,29 +1945,9 @@ impl App {
                     let moving: Vec<ClipId> = ids.iter().map(|x| x.0).collect();
                     let cands = snap_cands(&moving);
                     let raw = (xt(p.x) - grab).max(0.0);
-                    let ss = snap_to(raw, &cands);
-                    let se = snap_to(raw + dur, &cands).map(|e| e - dur);
-                    let s = match (ss, se) {
-                        (Some(a), Some(b)) => {
-                            if (a - raw).abs() <= (b - raw).abs() {
-                                snap_line = Some(a);
-                                a
-                            } else {
-                                snap_line = Some(b + dur);
-                                b
-                            }
-                        }
-                        (Some(a), None) => {
-                            snap_line = Some(a);
-                            a
-                        }
-                        (None, Some(b)) => {
-                            snap_line = Some(b + dur);
-                            b
-                        }
-                        _ => raw,
-                    }
-                    .max(0.0);
+                    let (s, line) = move_start(raw, dur, |t| snap_to(t, &cands));
+                    snap_line = line;
+                    let fr = |t: f64| drop_time(t, line.is_some(), fps);
                     let orig = ids.iter().find(|x| x.0 == clip).map(|x| x.1).unwrap_or(0.0);
                     let delta = s - orig;
                     // target: another track of the same kind; into empty space above/below or over an
@@ -1983,7 +1988,6 @@ impl App {
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
                         self.timeline.motion.skip.extend(ids.iter().map(|x| x.0));
-                        let fr = |t: f64| Time::from_secs_f64(t).snap_to_frame(fps);
                         let ops: Vec<EditOp> = match target {
                             Target::New(k, upper) => {
                                 // new track(s) + move = one history step
@@ -4229,6 +4233,55 @@ mod tests {
             st.step_view(age);
             assert!((x(st.scroll, st.pps) - 800.0).abs() < 1e-2, "{age}");
         }
+    }
+
+    /// Audio clip dragged onto another audio track so that an edge snaps to a clip there: it stays on
+    /// that track and touches the neighbour exactly – also with lengths and starts off the frame grid
+    /// (voice-over recordings) and at 29.97/59.94 fps
+    #[test]
+    fn snapped_move_touches_the_neighbour_on_the_target_track() {
+        let s = Time::from_secs_f64;
+        for fps in [Rational::new(30, 1), Rational::new(30000, 1001), Rational::new(60000, 1001)] {
+            for (a_start, a_len, b_start) in [(1.0, 2.0, 5.0), (0.5, 2.012_345_7, 5.016_1), (0.734_219, 3.217_431, 7.007)] {
+                for end_to_start in [true, false] {
+                    let mut p = Project::new("S");
+                    p.settings.fps = fps;
+                    let clip = |p: &mut Project, at: f64, len: f64| {
+                        let m = MediaRef { id: MediaId::new(), path: "x.wav".into(), kind: MediaKind::Audio, duration: s(100.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+                        let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, s(at), s(len));
+                        p.media.push(m);
+                        let mut t = Track::new(TrackKind::Audio);
+                        let id = c.id;
+                        t.clips.push(c);
+                        p.timeline.tracks.push(t);
+                        id
+                    };
+                    let a = clip(&mut p, a_start, a_len);
+                    let b = clip(&mut p, b_start, 3.0);
+                    let mut d = Document::new(p);
+                    let (b_track, bs, be) = d.project().find_clip(b).map(|(t, c)| (t.id, c.start, c.end())).unwrap();
+                    let dur = d.project().find_clip(a).unwrap().1.duration;
+                    let cands = [bs.as_secs_f64(), be.as_secs_f64()];
+                    let snap = |t: f64| cands.into_iter().find(|c| (c - t).abs() < 0.1);
+                    // pointer a little off the exact spot
+                    let raw = if end_to_start { bs.as_secs_f64() - dur.as_secs_f64() - 0.03 } else { be.as_secs_f64() + 0.04 };
+                    let (start, line) = move_start(raw, dur.as_secs_f64(), snap);
+                    assert!(line.is_some());
+                    let to = drop_time(start, line.is_some(), fps);
+                    d.apply(EditOp::MoveClip { clip: a, track: Some(b_track), start: to }, OpSource::Ui).unwrap();
+                    let (t, c) = d.project().find_clip(a).unwrap();
+                    let case = format!("{fps:?} {a_len} {b_start} {end_to_start}");
+                    assert_eq!(t.id, b_track, "stays on the target track: {case}");
+                    if end_to_start {
+                        assert_eq!(c.end(), bs, "{case}");
+                    } else {
+                        assert_eq!(c.start, be, "{case}");
+                    }
+                }
+            }
+        }
+        // not snapped: on the frame grid as before
+        assert_eq!(drop_time(1.01, false, Rational::new(30, 1)), s(1.0));
     }
 
     #[test]
