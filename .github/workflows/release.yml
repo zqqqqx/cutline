@@ -75,7 +75,18 @@ jobs:
           echo "$bin" >> $env:GITHUB_PATH
 
       - name: Tests
-        run: cargo test --workspace --release
+        # bash on both systems (Git Bash on Windows): pipefail keeps cargo's exit code through tee
+        shell: bash
+        env:
+          CUTLINE_REQUIRE_TOOLS: "1" # a missing FFmpeg/sh fails instead of skipping
+        run: |
+          set -o pipefail
+          cargo test --workspace --release --no-fail-fast 2>&1 | tee test-output.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: test-output-${{ matrix.os }}
+          path: test-output.txt
 
       - name: Build
         run: cargo build --release -p cl-app
