@@ -5079,4 +5079,87 @@ mod tests {
             assert_eq!(d.undo_entries().len(), 1);
         }
     }
+
+    /// Clip of length `len` on track 1 at the gap's time, dropped onto track 0 that has a gap of
+    /// `gap` s at `gs` between a clip from 0 and a very long one; `raw` = pointer start (None: the
+    /// gap start directly as `MoveClip`). Returns the document, the clip and its drop time.
+    fn drop_into_gap(fps: Rational, kind: TrackKind, main: bool, magnet: bool, gs: f64, gap: Time, len: f64, raw: Option<f64>) -> (Document, Vec<ClipId>, Time) {
+        let s = Time::from_secs_f64;
+        let right = (s(gs) + gap).as_secs_f64();
+        let (p, ids) = lanes(fps, magnet, &[(kind, main, &[(0.0, gs), (right, 5391.0)]), (kind, false, &[(gs, len)])]);
+        let x = ids[1][0];
+        let to = match raw {
+            None => s(gs),
+            Some(raw) => {
+                let cands: Vec<f64> = p.timeline.tracks[0].clips.iter().flat_map(|c| [c.start.as_secs_f64(), c.end().as_secs_f64()]).collect();
+                let (start, line) = move_start(raw, len, |t| cands.iter().copied().find(|c| (c - t).abs() < 0.1));
+                assert!(line.is_some(), "snapped");
+                drop_time(start, line.is_some(), fps)
+            }
+        };
+        let track = p.timeline.tracks[0].id;
+        let mut d = Document::new(p);
+        d.apply(EditOp::MoveClip { clip: x, track: Some(track), start: to }, OpSource::Ui).unwrap();
+        assert_eq!(d.undo_entries().len(), 1);
+        (d, vec![ids[0][0], x, ids[0][1]], to)
+    }
+
+    /// A clip dragged from another track into a gap of exactly its length (both edges snap) lands in
+    /// the gap and touches both neighbours, which stay where they are – audio, a video side track,
+    /// the main track with and without magnet, off the frame grid at 30 and 59.94 fps (v0.15.2: it
+    /// went back to a track of its own)
+    #[test]
+    fn clip_drops_into_an_exact_gap_on_another_track() {
+        let s = Time::from_secs_f64;
+        for fps in [Rational::new(30, 1), Rational::new(60000, 1001)] {
+            for (gs, len) in [(4.0, 1.3), (4.012_345, 1.300_017)] {
+                for (kind, main, magnet) in [(TrackKind::Audio, false, false), (TrackKind::Video, false, false), (TrackKind::Video, true, false), (TrackKind::Video, true, true)] {
+                    for raw in [None, Some(gs + 0.03), Some(gs - 0.04)] {
+                        let (d, ids, to) = drop_into_gap(fps, kind, main, magnet, gs, s(len), len, raw);
+                        let case = format!("{fps:?} {gs} {kind:?} main {main} magnet {magnet} {raw:?}");
+                        assert_eq!(to, s(gs), "{case}");
+                        let at = places(&d, &ids);
+                        assert!(at.iter().all(|x| x.0 == 0), "all on the target track: {case} {at:?}");
+                        assert_eq!(d.project().timeline.tracks.len(), 1, "emptied source track removed, none added: {case}");
+                        assert!(at[0].2 == at[1].1 && at[1].2 == at[2].1, "touching both: {case} {at:?}");
+                        assert_eq!(at[2].1, s(gs) + s(len), "right neighbour not pushed: {case}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Gap longer than the clip: it snaps to the nearer edge and stays on the target track. Gap one
+    /// microsecond shorter: the overlap rule of the track applies – a free track gets a new track for
+    /// the clip (as for any overlap), the magnet main track makes room by that microsecond
+    #[test]
+    fn clip_into_a_longer_or_too_short_gap() {
+        let s = Time::from_secs_f64;
+        let fps = Rational::new(30, 1);
+        let (gs, len) = (4.012_345, 1.300_017);
+        for (kind, main, magnet) in [(TrackKind::Audio, false, false), (TrackKind::Video, true, true)] {
+            // longer gap: start edge or end edge
+            for (raw, touches_left) in [(gs + 0.03, true), (gs + 0.5 - 0.03, false)] {
+                let (d, ids, _) = drop_into_gap(fps, kind, main, magnet, gs, s(len + 0.5), len, Some(raw));
+                let at = places(&d, &ids);
+                assert!(at.iter().all(|x| x.0 == 0), "{kind:?} {raw}");
+                if magnet {
+                    assert!(at[0].2 == at[1].1 && at[1].2 == at[2].1, "magnet closes the rest of the gap");
+                } else if touches_left {
+                    assert_eq!(at[1].1, at[0].2);
+                } else {
+                    assert_eq!(at[1].2, at[2].1);
+                }
+            }
+            // one microsecond too short
+            let (d, ids, _) = drop_into_gap(fps, kind, main, magnet, gs, s(len) - Time(1), len, Some(gs + 0.03));
+            let at = places(&d, &ids);
+            if magnet {
+                assert!(at.iter().all(|x| x.0 == 0) && at[2].1 == s(gs) + s(len), "main track makes room: {at:?}");
+            } else {
+                assert_eq!(d.project().timeline.tracks.len(), 2, "overlap: the clip gets a new track");
+                assert!(at[1].0 != at[0].0 && at[0].0 == at[2].0);
+            }
+        }
+    }
 }
