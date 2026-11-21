@@ -2941,7 +2941,6 @@ impl App {
 
     /// Run an action from `keymap::ACTIONS` – shortcuts and menus share this.
     pub fn run_action(&mut self, ctx: &egui::Context, a: &str) {
-        let frame = Time::from_secs_f64(1.0 / self.project.settings.fps.as_f64());
         {
             match a {
                 "play" => self.toggle_play(),
@@ -2961,8 +2960,8 @@ impl App {
                 "select_all" => self.select_all(),
                 "duplicate" => self.duplicate_selection(),
                 "settings" => self.settings_open = true,
-                "prev" => self.playhead = Time((self.playhead - frame).0.max(0)),
-                "next" => self.playhead = self.playhead + frame,
+                "prev" => self.playhead = self.playhead.step_frames(self.project.settings.fps, -1),
+                "next" => self.playhead = self.playhead.step_frames(self.project.settings.fps, 1),
                 "home" => self.playhead = Time::ZERO,
                 "end" => self.playhead = self.last_frame(),
                 "max" => self.player_max = !self.player_max,
@@ -4569,6 +4568,36 @@ fn cut_left_and_right_leave_no_slivers() {
         app.sync_project();
         assert_eq!(spans(&app), before, "left {left}");
     }
+}
+
+/// 23 × „Ein Bild vor“ from 0 at 30 fps lands on frame 23, where clip B starts: the paused
+/// preview shows B (before: the playhead stood 8 µs before it and still showed the clip before)
+#[test]
+fn frame_steps_reach_a_cut_on_its_frame() {
+    let mut app = crate::saving::tests::test_app();
+    let mut p = Project::new("Bild");
+    p.settings.fps = Rational::new(30, 1);
+    let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
+    let at = Time::from_secs_f64(23.0 / 30.0);
+    assert_eq!(at, Time(766_667));
+    let a = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), Time::ZERO, at);
+    let b = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), at, Time::from_secs_f64(2.0));
+    let ids = (a.id, b.id);
+    tr.clips.extend([a, b]);
+    let (a, b) = ids;
+    p.timeline.tracks.push(tr);
+    app.set_doc(p);
+    let ctx = egui::Context::default();
+    app.playhead = Time::ZERO;
+    for _ in 0..23 {
+        app.run_action(&ctx, "next");
+    }
+    let has = |app: &App, id| app.project.find_clip(id).unwrap().1.contains(app.playhead);
+    assert!(has(&app, b) && !has(&app, a), "playhead {:?}", app.playhead);
+    for _ in 0..30 {
+        app.run_action(&ctx, "prev");
+    }
+    assert_eq!(app.playhead, Time::ZERO);
 }
 
 #[test]

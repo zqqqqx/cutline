@@ -35,6 +35,15 @@ impl Time {
         let frame = (self.as_secs_f64() * fps.as_f64()).round();
         Time::from_secs_f64(frame / fps.as_f64())
     }
+    /// Time of the frame `steps` frames after the nearest frame of `self` (negative: before), never
+    /// below 0 – on the grid of [`Time::snap_to_frame`], so repeated steps don't drift off it.
+    pub fn step_frames(self, fps: Rational, steps: i64) -> Self {
+        if fps.num == 0 {
+            return self;
+        }
+        let n = ((self.as_secs_f64() * fps.as_f64()).round() as i64 + steps).max(0);
+        Time::from_secs_f64(n as f64 / fps.as_f64())
+    }
     /// First frame `n` whose time (in whole µs, as [`Time::snap_to_frame`] places it) is at or
     /// after `self`. Coverage rule of preview and export: a clip `[start, end)` shows on frames
     /// `start.first_frame_from(fps)..end.first_frame_from(fps)`, so edge-to-edge clips share no
@@ -145,6 +154,29 @@ impl Default for Rational {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Frame steps land exactly on the frame times, however many are taken (before: each step
+    /// added a duration rounded to whole µs, at 30 fps 1/3 µs short per step)
+    #[test]
+    fn frame_steps_stay_on_the_grid() {
+        for fps in [Rational::new(30, 1), Rational::new(30000, 1001)] {
+            let at = |n: i64| Time::from_secs_f64(n as f64 / fps.as_f64());
+            let mut t = Time::ZERO;
+            for n in 1..=90 {
+                t = t.step_frames(fps, 1);
+                assert_eq!(t, at(n), "forward {n} {fps:?}");
+            }
+            for n in (0..90).rev() {
+                t = t.step_frames(fps, -1);
+                assert_eq!(t, at(n), "back {n} {fps:?}");
+            }
+            assert_eq!(t.step_frames(fps, -1), Time::ZERO, "never below 0");
+        }
+        let fps = Rational::new(30, 1);
+        let off = Time(766_659); // 23 old steps from 0
+        assert_eq!(off.step_frames(fps, 1), Time::from_secs_f64(24.0 / 30.0));
+        assert_eq!(off.step_frames(fps, -1), Time::from_secs_f64(22.0 / 30.0));
+    }
 
     #[test]
     fn timecode_and_parse() {
