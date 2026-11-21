@@ -685,14 +685,9 @@ mod presence_tests {
         if !cl_media::ffmpeg_available() || !a.is_file() || !b.is_file() {
             return;
         }
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
-        std::env::set_var("CUTLINE_NO_UPDATE", "1");
-        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
         let ctx = egui::Context::default();
-        let mut app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None);
-        let mode = std::env::var("CUTLINE_QA_TEMPO").unwrap_or_else(|_| "2".into());
+        let mut app = crate::saving::tests::test_app_with(ctx.clone());
+        let mode =std::env::var("CUTLINE_QA_TEMPO").unwrap_or_else(|_| "2".into());
         let (ma, mb) = (cl_media::probe(a).unwrap(), cl_media::probe(b).unwrap());
         let mut p = Project::new("tempo");
         p.settings.fps = Rational::new(60, 1);
@@ -723,13 +718,14 @@ mod presence_tests {
         if let Some(n) = std::env::var("CUTLINE_QA_PARTS").ok().and_then(|s| s.parse().ok()) {
             let want = (app.settings.proxy_h, app.project.settings.fps);
             let t = std::time::Instant::now();
-            crate::proxy::test_build_parts(&mb, home.path().join("p").join("b-540.mp4"), want, n);
+            crate::proxy::test_build_parts(&mb, app.dir().join("p").join("b-540.mp4"), want, n);
             eprintln!("{n} Stücke in {:.0} s", t.elapsed().as_secs_f64());
         }
         for at in [20.0, 33.0, 72.0] {
             app.playhead = Time::from_secs_f64(at);
             app.core.stop();
-            app.core.play(app.playhead, app.revision, app.core_now());
+            let (at, rev, now) = (app.playhead, app.revision, app.core_now());
+            app.core.play(at, rev, now);
             let t0 = std::time::Instant::now();
             // stream frames of the upper layer (across stream changes) and from when
             let (mut total, mut last_taken, mut first) = (0u64, 0u64, None);
@@ -780,14 +776,9 @@ mod presence_tests {
     /// background check, nothing is requested (no open jobs).
     #[test]
     fn requests_follow_the_background_presence_check() {
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
-        std::env::set_var("CUTLINE_NO_UPDATE", "1");
-        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
         let ctx = egui::Context::default();
-        let mut app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None);
-        let path = home.path().join("gibt-es-nicht.mp4");
+        let mut app = crate::saving::tests::test_app_with(ctx.clone());
+        let path = app.dir().join("gibt-es-nicht.mp4");
         let m = MediaRef {
             id: cl_core::MediaId::new(),
             path: path.clone(),
@@ -827,14 +818,14 @@ mod presence_tests {
     /// source fingerprint (a change reopens, a donor stream of another choice is not taken over).
     #[test]
     fn stream_from_parts_opens_the_list_at_the_shifted_time() {
-        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         let (starter, jobs) = crate::preview::Starter::capture();
         app.starter = starter;
         app.settings.use_proxies = true;
         let m = MediaRef {
             id: cl_core::MediaId::new(),
-            path: home.path().join("q.mp4"),
+            path: app.dir().join("q.mp4"),
             kind: MediaKind::Video,
             duration: Time::from_secs_f64(100.0),
             width: 3840,
@@ -849,16 +840,16 @@ mod presence_tests {
         let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(100.0));
         let l = Layer { clip: c.clone(), t_rel: Time::from_secs_f64(12.0), alpha: 1.0, from: None };
         let want = (app.settings.proxy_h, app.project.settings.fps);
-        let out = home.path().join("q-540.mp4");
+        let out = app.dir().join("q-540.mp4");
         // parts 1–3 (10–40 s) finished
         let ready: Vec<bool> = (0..10).map(|k| (1..4).contains(&k)).collect();
         crate::proxy::set_test_entry(&m.path, out.clone(), want, ready.clone(), false);
         app.playhead = Time::from_secs_f64(12.0);
-        app.core.play(app.playhead, 0, 0.0);
+        app.core.play(Time::from_secs_f64(12.0), 0, 0.0);
         let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None);
         ask(&mut app);
         let parts = jobs.try_recv().expect("stream from parts requested");
-        assert_eq!(parts.path, home.path().join("q-540.teile").join("0001-0004.ffconcat"));
+        assert_eq!(parts.path, app.dir().join("q-540.teile").join("0001-0004.ffconcat"));
         assert!((parts.source_at.as_secs_f64() - 2.0).abs() < 1e-3, "source time 12 s − start of part 1 (10 s): {:?}", parts.source_at);
         ask(&mut app);
         assert!(jobs.try_recv().is_err(), "same choice: no new stream");
@@ -1532,7 +1523,7 @@ mod transition_tests {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        let (app, _home, _g) = crate::saving::tests::test_app();
+        let app = crate::saving::tests::test_app();
         let dir = tempfile::tempdir().unwrap();
         for text in ["AAA BBB\nCCC DDD", "EINS\nZWEI\nDREI", "HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH"] {
             let st = TextStyle { text: text.into(), size: 44.0, shadow: false, ..Default::default() };
@@ -1572,7 +1563,7 @@ mod transition_tests {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        let (app, _home, _g) = crate::saving::tests::test_app();
+        let app = crate::saving::tests::test_app();
         let dir = tempfile::tempdir().unwrap();
         let mut p = Project::new("Karaoke");
         (p.settings.width, p.settings.height) = (320, 180);

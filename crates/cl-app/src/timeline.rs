@@ -4364,12 +4364,6 @@ mod tests {
             p
         }
 
-        pub(crate) fn bench_app(ctx: &egui::Context, home: &std::path::Path) -> App {
-            std::env::set_var("CUTLINE_HOME", home);
-            std::env::set_var("CUTLINE_NO_UPDATE", "1");
-            std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
-            App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None)
-        }
 
         /// Set the project; thumbnails and waveforms are already there (no decoder job).
         pub(crate) fn load(app: &mut App, ctx: &egui::Context, p: Project) {
@@ -4451,9 +4445,8 @@ mod tests {
         #[test]
         #[ignore]
         fn measured_labels_match_layout() {
-            let home = tempfile::tempdir().unwrap();
             let ctx = egui::Context::default();
-            let _app = bench_app(&ctx, home.path());
+            let _app = crate::saving::tests::test_app_with(ctx.clone());
             let _ = ctx.run(Default::default(), |_| {});
             let font = egui::FontId::proportional(theme::FS_HINT);
             let tags = format!(" {} 1.50x {}", icon::GAUGE, icon::SPARKLE);
@@ -4494,10 +4487,9 @@ mod tests {
         #[test]
         #[ignore]
         fn timeline_frame_time() {
-            let home = tempfile::tempdir().unwrap();
             let file = std::env::current_exe().unwrap();
             let ctx = egui::Context::default();
-            let mut app = bench_app(&ctx, home.path());
+            let mut app = crate::saving::tests::test_app_with(ctx.clone());
             for n in [657usize, 50] {
                 load(&mut app, &ctx, synth_project(n, &file));
                 let clips: usize = app.project.timeline.tracks.iter().map(|t| t.clips.len()).sum();

@@ -752,12 +752,7 @@ mod tests {
 
     #[test]
     fn sync_result_is_dropped_after_the_project_changed() {
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
-        std::env::set_var("CUTLINE_NO_UPDATE", "1");
-        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
-        let mut app = App::new(&eframe::CreationContext::_new_kittest(egui::Context::default()), None);
+        let mut app = crate::saving::tests::test_app();
         let s = Time::from_secs_f64;
         let mut p = Project::new("Sync");
         let mut t = Track::new(TrackKind::Video);
@@ -822,9 +817,7 @@ fn recordings_dir(zip: &Path) -> PathBuf {
 
 #[test]
 fn second_zip_import_does_not_overwrite_the_first() {
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let home = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", home.path());
+    let home = crate::paths::TestHome::new();
     let first = recordings_dir(Path::new("C:/x/Anruf.zip"));
     assert_eq!(first, home.path().join("Recordings").join("Anruf"));
     std::fs::create_dir_all(&first).unwrap();

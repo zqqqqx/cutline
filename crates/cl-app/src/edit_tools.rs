@@ -427,7 +427,7 @@ mod tests {
     /// no source: rolling left works even without material before the right clip.
     #[test]
     fn roll_edit_moves_the_cut_both_ways() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let t = Time::from_secs_f64;
         let mut p = cl_core::Project::new("R");
         let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);

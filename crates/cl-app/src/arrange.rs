@@ -268,7 +268,7 @@ mod tests {
     /// only affects the selection.
     #[test]
     fn logo_is_no_layout_clip_and_reset_keeps_to_the_selection() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let mut p = Project::new("Logo");
         (p.settings.width, p.settings.height) = (1920, 1080);
         let sec = Time::from_secs_f64;
@@ -322,7 +322,7 @@ mod tests {
     /// Applying is one history step (including removed keyframes), undo restores everything.
     #[test]
     fn layout_is_one_undo_step() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let mut p = Project::new("Layout");
         (p.settings.width, p.settings.height) = (1920, 1080);
         let sec = Time::from_secs_f64;

@@ -744,9 +744,11 @@ mod tests {
         if !cl_media::ffmpeg_available() {
             return;
         }
-        let (mut app, home, _g) = crate::saving::tests::test_app();
-        app.set_doc(source(home.path(), 640, 360));
-        app.project = app.doc.lock().unwrap().project().clone();
+        let mut app = crate::saving::tests::test_app();
+        let p = source(app.dir(), 640, 360);
+        app.set_doc(p);
+        let p = app.doc.lock().unwrap().project().clone();
+        app.project = p;
         let before = (app.revision, app.saved_revision, app.doc.lock().unwrap().can_undo(), app.project.clone());
         let ctx = egui::Context::default();
         app.run_action(&ctx, "quick_thumbnail");
@@ -757,7 +759,7 @@ mod tests {
         for _ in 0..3 {
             let _ = ctx.run(Default::default(), |ctx| app.thumb_window(ctx));
         }
-        let out = home.path().join("t.png");
+        let out = app.dir().join("t.png");
         app.thumb_save(&ctx, out.clone());
         // collect results without applying them (Explorer would open)
         let t0 = std::time::Instant::now();

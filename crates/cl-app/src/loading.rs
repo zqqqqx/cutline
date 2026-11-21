@@ -487,8 +487,8 @@ mod tests {
     /// loading reads the file. New project and start page cancel a running load.
     #[test]
     fn reopen_writes_first_and_leaving_cancels_load() {
-        let (mut app, home, _g) = crate::saving::tests::test_app();
-        let f = home.path().join("a.cutline");
+        let mut app = crate::saving::tests::test_app();
+        let f = app.dir().join("a.cutline");
         app.set_doc(Project::new("A"));
         app.project_path = Some(f.clone());
         app.screen = Screen::Editor;

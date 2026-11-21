@@ -835,7 +835,7 @@ mod tests {
     /// store none (the file stays without a new field).
     #[test]
     fn karaoke_captions_keep_the_word_times() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         app.set_doc(Project::new("k"));
         let seg = cl_analyze::asr::Segment { start: 1.0, end: 3.0, text: "Hallo Welt".into(), words: vec![1.0, 2.2] };
         let words = |app: &App| -> Vec<Option<Vec<i64>>> {

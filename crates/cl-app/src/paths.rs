@@ -232,6 +232,37 @@ pub fn clear_dir(dir: &Path, skip: &[&str]) {
 #[cfg(test)]
 pub static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Test data folder: holds `HOME_LOCK`, points `CUTLINE_HOME` at a fresh temp folder and on drop
+/// (also after a panic) clears the variables first, then deletes the folder, then releases the lock.
+#[cfg(test)]
+pub struct TestHome {
+    dir: tempfile::TempDir,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl TestHome {
+    pub fn new() -> Self {
+        let _lock = HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", dir.path());
+        TestHome { dir, _lock }
+    }
+
+    pub fn path(&self) -> &Path {
+        self.dir.path()
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestHome {
+    fn drop(&mut self) {
+        for v in ["CUTLINE_HOME", "CUTLINE_NO_UPDATE", "CUTLINE_NO_ONBOARDING"] {
+            std::env::remove_var(v);
+        }
+    }
+}
+
 static PROJECTS_DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
 
 /// Own project folder from the settings (`None` = default in the data folder)
@@ -498,6 +529,10 @@ pub fn data_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("CUTLINE_HOME") {
         return PathBuf::from(d);
     }
+    // tests without a `TestHome` never touch the real data folder
+    #[cfg(test)]
+    return std::env::temp_dir().join(format!("cutline-test-{}", std::process::id()));
+    #[allow(unreachable_code)]
     if cfg!(windows) {
         if let Some(a) = std::env::var_os("APPDATA") {
             return PathBuf::from(a).join("Cutline");

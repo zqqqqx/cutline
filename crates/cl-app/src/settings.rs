@@ -1296,7 +1296,7 @@ mod tests {
     /// stay (the logo copy stays, projects may point to it)
     #[test]
     fn brand_reset_empties_the_kit() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let mut kit = crate::brand::BrandKit::default();
         kit.colors.push(crate::brand::BrandColor { name: "Rot".into(), rgb: [255, 0, 0] });
         kit.fonts[1] = Some("Poppins".into());

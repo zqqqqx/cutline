@@ -3950,10 +3950,11 @@ mod play_log_tests {
     /// Flow: Play begins the playback, the quality level is tracked, stop ends it
     #[test]
     fn playback_starts_and_ends_the_record() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         app.core.play(Time::ZERO, 0, 0.0);
         let _ = app.core.cmds();
-        app.play_log_step(app.core.playing(), None);
+        let on = app.core.playing();
+        app.play_log_step(on, None);
         assert!(app.play_log.is_some());
         app.core.quality.level = 2;
         app.play_log_step(true, None);
@@ -3962,7 +3963,8 @@ mod play_log_tests {
         assert_eq!(app.play_log.as_ref().map(|l| l.quality), Some(2));
         app.core.stop();
         let _ = app.core.cmds();
-        app.play_log_step(app.core.playing(), None);
+        let on = app.core.playing();
+        app.play_log_step(on, None);
         assert!(app.play_log.is_none());
     }
 }
@@ -4338,9 +4340,9 @@ mod load_perf;
 /// Unreadable file: short message with the name, no raw FFmpeg text in the UI
 #[test]
 fn unreadable_file_gives_a_short_message() {
-    let (mut app, home, _g) = crate::saving::tests::test_app();
+    let mut app = crate::saving::tests::test_app();
     app.set_doc(Project::new("Kaputt"));
-    let f = home.path().join("kaputt.mp4");
+    let f = app.dir().join("kaputt.mp4");
     std::fs::write(&f, b"kein Video").unwrap();
     assert!(app.import_media(vec![f]).is_empty());
     let msgs: Vec<&str> = app.toasts.iter().map(|t| t.0.as_str()).collect();
@@ -4350,7 +4352,7 @@ fn unreadable_file_gives_a_short_message() {
 /// A message with a very long name stays in the window (shortened) instead of being cut off left and right
 #[test]
 fn download_running_at_a_project_change_is_not_inserted() {
-    let (mut app, _home, _g) = crate::saving::tests::test_app();
+    let mut app = crate::saving::tests::test_app();
     app.set_doc(Project::new("Alt"));
     app.stock.busy = true;
     app.es.loading_track = Some("t1".into());
@@ -4367,7 +4369,7 @@ fn download_running_at_a_project_change_is_not_inserted() {
 /// same format would otherwise hit the same key)
 #[test]
 fn export_reframe_snapshot_is_dropped_with_the_project() {
-    let (mut app, _home, _g) = crate::saving::tests::test_app();
+    let mut app = crate::saving::tests::test_app();
     app.export.framed = Some(((0, (1080, 1920), 0, 0), std::sync::Arc::new(Project::new("Alt"))));
     app.reset_editor();
     assert!(app.export.framed.is_none());
@@ -4377,7 +4379,7 @@ fn export_reframe_snapshot_is_dropped_with_the_project() {
 /// a space (no playback), Esc closes only the search (selection stays), Enter runs.
 #[test]
 fn command_search_keys_stay_in_the_search() {
-    let (mut app, _home, _g) = crate::saving::tests::test_app();
+    let mut app = crate::saving::tests::test_app();
     app.set_doc(Project::new("Suche"));
     let ctx = egui::Context::default();
     let key = |key: Key, modifiers: Modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
@@ -4424,7 +4426,7 @@ fn esc_in_a_field_is_not_a_shortcut() {
 /// A message with a very long name stays in the window (shortened) instead of being cut off left and right
 #[test]
 fn long_toast_stays_inside_the_window() {
-    let (mut app, _home, _g) = crate::saving::tests::test_app();
+    let mut app = crate::saving::tests::test_app();
     app.toast(format!("Vorlage „{}“ gespeichert", "sehr lang ".repeat(40)));
     let ctx = egui::Context::default();
     let raw = || egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
