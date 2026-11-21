@@ -17,6 +17,7 @@
 - **Stacked clips pushed onto new tracks keep their order.** When a moved selection ran into other clips, clips lying on top of each other could swap places.
 - **Q and W with a locked track in the selection** cut the other selected clips instead of doing nothing.
 - **Q and W no longer leave tiny leftover clips** when a clip edge lies right next to the playhead.
+- **Stepping frame by frame lands exactly on the frame.** After many steps with the arrow keys the paused preview could still show the clip before a cut although the timecode already stood on it.
 
 ### Deutsch
 
@@ -30,6 +31,7 @@
 - **Übereinander liegende Clips behalten auf neuen Spuren ihre Reihenfolge.** Stieß eine verschobene Auswahl an andere Clips, konnten übereinander liegende Clips die Plätze tauschen.
 - **Q und W mit einer gesperrten Spur in der Auswahl** schneiden die übrigen gewählten Clips, statt nichts zu tun.
 - **Q und W lassen keine winzigen Restclips mehr stehen**, wenn eine Clipkante direkt neben dem Abspielkopf liegt.
+- **Bildweises Weiterschalten landet genau auf dem Bild.** Nach vielen Schritten mit den Pfeiltasten konnte die Vorschau im Standbild an einem Schnitt noch den alten Clip zeigen, obwohl der Timecode schon darauf stand.
 
 ## 0.15.3 – 2026-11-21
 
