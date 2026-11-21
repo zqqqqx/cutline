@@ -881,7 +881,6 @@ fn group_layer(ctx: &mut Ctx, p: &Project, group: &[&Clip], k: usize) -> Result<
             "color=c=black@0.0:s={w}x{h}:r={}:d={},format=rgba[{canvas}]",
             ctx.fps,
             // the chain's last layer one frame longer, as in `media_sprite` (never shown)
-            // the chain's last layer one frame longer, as in `media_sprite` (never shown)
             f(len + if k + 1 == group.len() { 1.0 / fps_value(&ctx.fps) } else { 0.0 })
         ));
         let x = sp.x.replace("TT", "t");
