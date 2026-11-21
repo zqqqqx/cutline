@@ -729,6 +729,10 @@ fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, start: Time, end: Time) -> Strin
 /// the result is mixed with the original over time. On the frames [`frame_span`] gives.
 fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool) -> Result<String> {
     let (n0, n1, fd) = frame_span(ctx, c.start, c.end());
+    // covers no export frame: build nothing (an empty stream through the whole chain)
+    if n1 <= n0.max(0) {
+        return Ok(cur.to_string());
+    }
     let kfs = c.keyframes.get(Prop::Strength);
     let mut r = r.clone();
     if !kfs.is_empty() {
