@@ -1061,11 +1061,10 @@ permissions=['net']
         w.write_all(PACK.as_bytes()).unwrap();
         w.add_symlink("ding.wav", secret.to_string_lossy(), zip::write::SimpleFileOptions::default()).unwrap();
         w.finish().unwrap();
-        if install_zip(&lz, &root, true).is_ok() {
-            let f = root.join("test.sounds/ding.wav");
-            assert!(!std::fs::symlink_metadata(&f).unwrap().file_type().is_symlink());
-            assert_ne!(std::fs::read_to_string(&f).unwrap(), "geheim");
-        }
+        install_zip(&lz, &root, true).expect("a link entry installs as an ordinary file");
+        let f = root.join("test.sounds/ding.wav");
+        assert!(!std::fs::symlink_metadata(&f).unwrap().file_type().is_symlink());
+        assert_ne!(std::fs::read_to_string(&f).unwrap(), "geheim");
         assert_eq!(std::fs::read_to_string(&secret).unwrap(), "geheim");
         // no ZIP / empty file / truncated ZIP: error, root stays clean
         let bad = dir.path().join("kaputt.zip");

@@ -271,8 +271,9 @@ pub fn gray_frames(
 
 /// Every catalog file is checked against a SHA-256 sum after download (`#sha256=` at the
 /// address, evaluated by `cl_update::download_to`) – a new file without a sum shows up here.
+/// Guarantees only that each address carries a well-formed 64-hex sum, not that it matches the file.
 #[test]
-fn every_model_file_has_a_checksum() {
+fn every_model_url_carries_a_sha256() {
     for m in CATALOG {
         for (name, url) in m.files {
             let sum = url.rsplit_once("#sha256=").map(|(_, h)| h).unwrap_or("");

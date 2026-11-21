@@ -1354,7 +1354,9 @@ mod tests {
             } else {
                 c.fx.effects.push(FxRef::new(&id));
             }
+            // every effect and filter needs a graph; without one the clip would play unchanged
             let Some(g) = preview_graph(&c, 320, 180, 0.5, Some(fps), None) else {
+                failed.push(format!("{id} (no graph)"));
                 continue;
             };
             let s = cl_media::FrameStream::open_fx(&src, Time::from_secs_f64(0.5), 320, 180, fps, Some(&g));
@@ -1765,10 +1767,33 @@ mod tests {
         }
         assert!(max < 40, "nested too deeply: {max}");
         assert!(e.matches("if(").count() < pts.len());
-        let _ = piecewise_eval(&pts, 1.0);
         if !cl_media::test_tools() {
             return;
         }
+        // FFmpeg evaluates the expression (as one audio sample per 1/100 s, `t` = time in s):
+        // it matches the curve itself at every sample, also before the first and after the last point
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("g.txt"), format!("aevalsrc=exprs='{e}':s=100:d=58[out]")).unwrap();
+        let out = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-nostdin", "-/filter_complex", "g.txt", "-map", "[out]", "-f", "f64le", "-"])
+            .current_dir(dir.path())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let got: Vec<f64> = out.stdout.chunks_exact(8).map(|b| f64::from_le_bytes(b.try_into().unwrap())).collect();
+        assert_eq!(got.len(), 5800);
+        let bad: Vec<String> = got
+            .iter()
+            .enumerate()
+            .filter_map(|(i, y)| {
+                let want = piecewise_eval(&pts, i as f64 / 100.0);
+                ((y - want).abs() > 1e-3).then(|| format!("t={}: {y} instead of {want}", i as f64 / 100.0))
+            })
+            .collect();
+        assert!(bad.is_empty(), "{} of {}: {:?}", bad.len(), got.len(), &bad[..bad.len().min(5)]);
+        // and as a frame-wise size expression, the way text clips use it
         let g = format!(
             "[0:v]scale=w='max(2,trunc(320*(0.5+{})/2)*2)':h=180:eval=frame[out]",
             e

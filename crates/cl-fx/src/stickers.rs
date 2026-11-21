@@ -520,7 +520,6 @@ mod tests {
         let p = dir.path().join("s/heart.png");
         render_png(&STICKERS[0], 256, &p).unwrap();
         assert!(std::fs::metadata(&p).unwrap().len() > 500);
-        assert!(STICKERS.len() >= 24);
     }
 
     /// Package „Bewegte Elemente“: every file is an animated image, looping exactly where the

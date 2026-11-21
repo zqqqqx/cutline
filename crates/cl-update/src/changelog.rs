@@ -318,7 +318,8 @@ mod tests {
     }
 
     /// `changes-json.sh` from the release workflow yields the same data as `parse` from
-    /// `CHANGELOG.md` – for the version and all earlier ones. Runs only where `sh` and `awk` exist.
+    /// `CHANGELOG.md` – for every released version, each with all earlier ones.
+    /// Runs only where `sh` and `awk` exist.
     #[test]
     fn changes_json_script_matches_the_changelog() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -334,9 +335,18 @@ mod tests {
         };
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         let got = parse_json(&String::from_utf8(out.stdout).unwrap()).expect("valid changes.json");
-        let want: Vec<Notes> = parse(CHANGELOG).into_iter().filter(|n| n.version.is_some_and(|v| v <= Version(0, 11, 0))).collect();
-        assert!(want.len() >= 4);
-        assert_eq!(got, want);
+        let all = parse(CHANGELOG);
+        let upto = |v: Version| -> Vec<Notes> { all.iter().filter(|n| n.version.is_some_and(|w| w <= v)).cloned().collect() };
+        assert_eq!(upto(Version(0, 11, 0)).len(), 4);
+        assert_eq!(got, upto(Version(0, 11, 0)));
+        let released: Vec<Version> = all.iter().filter_map(|n| n.version).collect();
+        assert!(released.len() >= 13, "{released:?}");
+        for &v in &released {
+            let out = run(&format!("v{v}"), &root.join("CHANGELOG.md")).unwrap();
+            assert!(out.status.success(), "{v}: {}", String::from_utf8_lossy(&out.stderr));
+            let got = parse_json(&String::from_utf8(out.stdout).unwrap()).unwrap_or_else(|| panic!("{v}: invalid changes.json"));
+            assert_eq!(got, upto(v), "{v}");
+        }
         // small example: special characters, continuation lines, entry without group, pre-release
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("CHANGELOG.md");
@@ -352,8 +362,9 @@ mod tests {
         assert!(!out.status.success() && out.stdout.is_empty());
     }
 
-    /// The script from the release workflow cuts out exactly the version's section, and the
-    /// app reads the result back. Runs only where `sh` and `awk` exist (CI, Git Bash).
+    /// The script from the release workflow cuts out exactly the version's section (plus up to three
+    /// older ones), and the app reads the result back – for every released version.
+    /// Runs only where `sh` and `awk` exist (CI, Git Bash).
     #[test]
     fn release_notes_script_cuts_the_version() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -375,6 +386,19 @@ mod tests {
         let all = parse(CHANGELOG);
         assert_eq!(notes[0], *all.iter().find(|n| n.version == Some(vs[0])).unwrap(), "adopted unchanged");
         assert!(text.contains("<details>") && !text.contains("Unreleased"));
+        let released: Vec<Version> = all.iter().filter_map(|n| n.version).collect();
+        assert!(released.len() >= 13, "{released:?}");
+        for (i, &v) in released.iter().enumerate() {
+            let out = run(&format!("v{v}")).unwrap();
+            assert!(out.status.success(), "{v}: {}", String::from_utf8_lossy(&out.stderr));
+            let text = String::from_utf8(out.stdout).unwrap();
+            let notes = parse(&text);
+            let want: Vec<Version> = released[i..].iter().take(4).copied().collect();
+            assert_eq!(notes.iter().filter_map(|n| n.version).collect::<Vec<_>>(), want, "{v}");
+            assert_eq!(notes[0], *all.iter().find(|n| n.version == Some(v)).unwrap(), "{v}: adopted unchanged");
+            assert_eq!(text.contains("<details>"), want.len() > 1, "{v}");
+            assert!(!text.contains("Unreleased"), "{v}");
+        }
         // a pre-release takes the section of the base version; a missing section aborts
         assert!(run("0.11.0-rc.1").unwrap().status.success());
         let out = run("9.9.9").unwrap();
