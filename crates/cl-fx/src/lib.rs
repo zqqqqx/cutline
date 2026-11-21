@@ -939,20 +939,15 @@ pub fn fx_graph(
             2.0 + 8.0 * k
         ));
     }
-    let mut person_done = false;
-    if let (Some(m), Some(pf)) = (&o.matte, &fx.person) {
-        person_graph(&mut g, m, pf, src);
-        person_done = true;
-    }
-    if person_done {
-    } else if let Some(m) = &o.matte {
-        // remove background: mask as alpha channel
-        g.push("format=rgb24");
-        let cur = g.current();
-        let l = g.next_label("cm");
-        g.lines.push(format!("[{cur}][{m}]alphamerge[{l}]"));
-        g.set_current(l);
-    } else if fx.stabilize > 0.0 {
+    let edge = fx.edge.clamped();
+    // color key as a gray mask when background effect or edge values need one; never next to a
+    // person mask (older projects with both keep their image: key applied after the person)
+    let chroma_matte = fx
+        .chroma
+        .filter(|_| o.matte.is_none() && fx.cutout.is_none() && (fx.person.is_some() || !edge.is_identity()));
+    let mut matte = o.matte.clone();
+    // stabilization is skipped with a person mask (it would no longer fit)
+    if matte.is_none() && fx.stabilize > 0.0 {
         let k = fx.stabilize.clamp(0.0, 1.0);
         let r = 16 * (1.0 + 3.0 * k).round() as u32;
         let z = 1.0 - 0.08 * k;
@@ -965,32 +960,51 @@ pub fn fx_graph(
             src.w, src.h
         ));
     }
+    if let Some(k) = &chroma_matte {
+        let cur = g.current();
+        let (main, key, km) = (g.next_label("ck"), g.next_label("cka"), g.next_label("ckm"));
+        g.lines.push(format!("[{cur}]split[{main}][{key}]"));
+        g.lines.push(format!("[{key}]{},format=rgba,alphaextract[{km}]", chroma_filter(k)));
+        g.set_current(main);
+        if let Some(d) = despill_filter(k) {
+            g.push(d);
+        }
+        matte = Some(km);
+    }
+    if let Some(m) = matte.as_mut().filter(|_| !edge.is_identity()) {
+        *m = edge_graph(&mut g, m, &edge, src);
+    }
+    let mut person_done = false;
+    if let (Some(m), Some(pf)) = (&matte, &fx.person) {
+        person_graph(&mut g, m, pf, src);
+        person_done = true;
+    }
+    if person_done {
+    } else if let Some(m) = &matte {
+        // remove background: mask as alpha channel
+        g.push("format=rgb24");
+        let cur = g.current();
+        let l = g.next_label("cm");
+        g.lines.push(format!("[{cur}][{m}]alphamerge[{l}]"));
+        g.set_current(l);
+    }
     if fx.flip_h {
         g.push("hflip");
     }
     if fx.flip_v {
         g.push("vflip");
     }
-    if let Some(k) = &fx.chroma {
-        let [r, gg, b] = k.color;
-        g.push(format!(
-            "chromakey=color=0x{r:02x}{gg:02x}{b:02x}:similarity={:.3}:blend={:.3}",
-            k.similarity.clamp(0.01, 1.0),
-            k.blend.clamp(0.0, 1.0)
-        ));
-        if k.spill > 0.0 {
-            let ty = if b > gg { "blue" } else { "green" };
-            g.push(format!(
-                "format=rgba,despill=type={ty}:mix={:.2}:expand=0.1",
-                k.spill.clamp(0.0, 1.0)
-            ));
+    if let Some(k) = fx.chroma.as_ref().filter(|_| chroma_matte.is_none()) {
+        g.push(chroma_filter(k));
+        if let Some(d) = despill_filter(k) {
+            g.push(d);
         }
     }
     let src = Src {
         has_alpha: src.has_alpha
-            || (o.matte.is_some()
+            || (matte.is_some()
                 && (!person_done || matches!(fx.person, Some(cl_core::PersonFx::Outline { transparent: true, .. }))))
-            || fx.chroma.is_some(),
+            || (fx.chroma.is_some() && chroma_matte.is_none()),
         ..src
     };
     let colour_work = !fx.adjust.is_identity()
@@ -1048,6 +1062,43 @@ pub fn fx_graph(
         ));
     }
     g.finish(output)
+}
+
+fn chroma_filter(k: &ChromaKey) -> String {
+    let [r, gg, b] = k.color;
+    format!(
+        "chromakey=color=0x{r:02x}{gg:02x}{b:02x}:similarity={:.3}:blend={:.3}",
+        k.similarity.clamp(0.01, 1.0),
+        k.blend.clamp(0.0, 1.0)
+    )
+}
+
+fn despill_filter(k: &ChromaKey) -> Option<String> {
+    let [_, gg, b] = k.color;
+    let ty = if b > gg { "blue" } else { "green" };
+    (k.spill > 0.0).then(|| format!("format=rgba,despill=type={ty}:mix={:.2}:expand=0.1", k.spill.clamp(0.0, 1.0)))
+}
+
+/// Edge of the mask `m` (gray): grow/shrink (blur + threshold, the trick of the outline in
+/// `person_graph`), then soften, then invert. Sizes relative to the frame: preview = export.
+/// Returns the label of the new mask.
+fn edge_graph(g: &mut GraphBuilder, m: &str, e: &MatteEdge, src: Src) -> String {
+    let k = src.w.max(src.h) as f32 / 1920.0;
+    let mut v = vec!["format=gray".to_string()];
+    if e.shift != 0.0 {
+        // threshold at a quarter (grow) or three quarters (shrink) of the blurred edge
+        v.push(format!("gblur=sigma={:.2}", 30.0 * e.shift.abs() * k));
+        v.push(if e.shift > 0.0 { "lut=y='min(255,val*4)'" } else { "lut=y='max(0,val*4-765)'" }.into());
+    }
+    if e.feather > 0.0 {
+        v.push(format!("gblur=sigma={:.2}", 20.0 * e.feather * k));
+    }
+    if e.invert {
+        v.push("negate".into());
+    }
+    let l = g.next_label("me");
+    g.lines.push(format!("[{m}]{}[{l}]", v.join(",")));
+    l
 }
 
 /// Censor area (path in clip time, see `Clip::censor_in_clip_time`): pixelate or blur a copy
@@ -1976,5 +2027,104 @@ mod tests {
         let last: i64 = rows[59].split(',').nth(2).unwrap().trim().parse().unwrap();
         assert_eq!(last, 59);
         assert!(rows.iter().all(|l| l.contains("86400")), "image size stays 320x180");
+    }
+
+    fn matte_case(fx: &ClipFx, matte: bool) -> String {
+        let o = ChainOpts { t_offset: 0.0, apply_reverse: false, lut: None, matte: matte.then(|| "mt".into()) };
+        fx_graph(fx, SRC, &o, "0:v", "out", "u").join(";")
+    }
+
+    fn matte_cases() -> Vec<(&'static str, ClipFx, bool)> {
+        let person = |p: PersonFx| ClipFx { person: Some(p), ..Default::default() };
+        let chroma = ClipFx { chroma: Some(ChromaKey::default()), ..Default::default() };
+        vec![
+            ("matte", ClipFx::default(), true),
+            ("blur", person(PersonFx::from_index(0)), true),
+            ("color", person(PersonFx::from_index(1)), true),
+            ("outline", person(PersonFx::from_index(2)), true),
+            ("outline_transparent", person(PersonFx::Outline { color: [1, 2, 3], width: 0.5, transparent: true }), true),
+            ("chroma", chroma.clone(), false),
+            ("chroma_stabilize", ClipFx { stabilize: 0.5, ..chroma.clone() }, false),
+            ("cutout_chroma", chroma.clone(), true),
+            ("cutout_chroma_color", ClipFx { person: Some(PersonFx::from_index(1)), ..chroma.clone() }, true),
+        ]
+    }
+
+    /// Identity edge values: the graphs stay byte-identical to the ones before `MatteEdge`.
+    #[test]
+    fn matte_graphs_unchanged_without_edge() {
+        let got: Vec<String> = matte_cases().iter().map(|(n, fx, m)| format!("{n}: {}", matte_case(fx, *m))).collect();
+        let want: Vec<&str> = vec![
+            r#"matte: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),format=rgb24[uc1];[uc1][mt]alphamerge[ucm2];[ucm2]null[out]"#,
+            r#"blur: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),format=rgb24[uc1];[uc1]split[upf2][upb3];[upb3]gblur=sigma=5.36[upbg6];[upf2][mt]alphamerge[upfg5];[upbg6][upfg5]overlay=format=auto,format=rgb24[upo7];[upo7]null[out]"#,
+            r#"color: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),format=rgb24[uc1];[uc1]split[upf2][upb3];[upb3]drawbox=x=0:y=0:w=iw:h=ih:color=0x1878ff:t=fill[upbg6];[upf2][mt]alphamerge[upfg5];[upbg6][upfg5]overlay=format=auto,format=rgb24[upo7];[upo7]null[out]"#,
+            r#"outline: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),format=rgb24[uc1];[uc1]split=3[upf2][upb3][upbs12];[mt]split[upm18][upm29];[upm29]format=gray,gblur=sigma=1.35,lut=y='min(255,val*4)'[upm4];[upb3]drawbox=x=0:y=0:w=iw:h=ih:color=0xffffff:t=fill[upc11];[upc11][upm4]alphamerge[upr10];[upbs12][upr10]overlay=format=auto[uprd13];[upf2][upm18]alphamerge[upfg5];[uprd13][upfg5]overlay=format=auto,format=rgb24[upo7];[upo7]null[out]"#,
+            r#"outline_transparent: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),format=rgb24[uc1];[uc1]split[upf2][upb3];[mt]split[upm18][upm29];[upm29]format=gray,gblur=sigma=1.62,lut=y='min(255,val*4)'[upm4];[upb3]drawbox=x=0:y=0:w=iw:h=ih:color=0x010203:t=fill[upc11];[upc11][upm4]alphamerge[upr10];[upf2][upm18]alphamerge[upfg5];[upr10][upfg5]overlay=format=auto,format=rgba[upo7];[upo7]null[out]"#,
+            r#"chroma: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),chromakey=color=0x00b140:similarity=0.180:blend=0.080,format=rgba,despill=type=green:mix=0.50:expand=0.1[uc1];[uc1]null[out]"#,
+            r#"chroma_stabilize: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),deshake=rx=48:ry=48:edge=mirror,crop=152:86,scale=160:90,chromakey=color=0x00b140:similarity=0.180:blend=0.080,format=rgba,despill=type=green:mix=0.50:expand=0.1[uc1];[uc1]null[out]"#,
+            r#"cutout_chroma: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),format=rgb24[uc1];[uc1][mt]alphamerge[ucm2];[ucm2]chromakey=color=0x00b140:similarity=0.180:blend=0.080,format=rgba,despill=type=green:mix=0.50:expand=0.1[uc3];[uc3]null[out]"#,
+            r#"cutout_chroma_color: [0:v]setpts=PTS-STARTPTS+round(0.000000/TB),format=rgb24[uc1];[uc1]split[upf2][upb3];[upb3]drawbox=x=0:y=0:w=iw:h=ih:color=0x1878ff:t=fill[upbg6];[upf2][mt]alphamerge[upfg5];[upbg6][upfg5]overlay=format=auto,format=rgb24[upo7];[upo7]chromakey=color=0x00b140:similarity=0.180:blend=0.080,format=rgba,despill=type=green:mix=0.50:expand=0.1[uc8];[uc8]null[out]"#,
+        ];
+        assert_eq!(got, want, "\n{}", got.join("\n"));
+    }
+
+    /// Each edge value changes the mask once, before its first use, and every variant runs in FFmpeg.
+    #[test]
+    fn edge_values_change_the_matte() {
+        let edges = [
+            ("feather", MatteEdge { feather: 0.5, ..Default::default() }, "gblur=sigma=0.83"),
+            ("grow", MatteEdge { shift: 0.5, ..Default::default() }, "lut=y='min(255,val*4)'"),
+            ("shrink", MatteEdge { shift: -0.5, ..Default::default() }, "lut=y='max(0,val*4-765)'"),
+            ("invert", MatteEdge { invert: true, ..Default::default() }, "negate"),
+        ];
+        for (name, base, m) in matte_cases() {
+            let plain = matte_case(&base, m);
+            for (e, edge, part) in edges {
+                let fx = ClipFx { edge, ..base.clone() };
+                let g = matte_case(&fx, m);
+                if name == "chroma_stabilize" || name == "chroma" {
+                    // without person mask the color key turns into the mask
+                    assert!(g.contains("alphaextract[uckm"), "{name} + {e}: {g}");
+                }
+                assert_ne!(g, plain, "{name} + {e}");
+                let edge_lines: Vec<&str> = g.split(';').filter(|l| l.contains("[ume")).collect();
+                assert_eq!(edge_lines.len(), 2, "{name} + {e}: made once, used once: {g}");
+                assert_eq!(edge_lines[0].matches(part).count(), 1, "{name} + {e}: {}", edge_lines[0]);
+                if cl_media::test_tools() {
+                    let (gl, extra): (String, &[&str]) = if m {
+                        (format!("[1:v]format=gray[mt];{g}"), &["color=gray:s=160x90:r=15:d=0.6"])
+                    } else {
+                        (g.clone(), &[])
+                    };
+                    run_graph(&gl, extra).unwrap_or_else(|err| panic!("{name} + {e}: {err}\n{gl}"));
+                }
+            }
+        }
+    }
+
+    /// Green screen with a background effect: the key becomes a gray mask that feeds the
+    /// person effect (despill on the picture), after stabilization.
+    #[test]
+    fn chroma_with_background_effect_uses_the_mask_path() {
+        let fx = ClipFx {
+            chroma: Some(ChromaKey::default()),
+            person: Some(PersonFx::from_index(1)),
+            stabilize: 0.4,
+            ..Default::default()
+        };
+        let g = matte_case(&fx, false);
+        let i = |s: &str| g.find(s).unwrap_or_else(|| panic!("{s} missing: {g}"));
+        assert!(i("deshake") < i("split[uck"), "{g}");
+        assert!(g.contains("chromakey=color=0x00b140:similarity=0.180:blend=0.080,format=rgba,alphaextract[uckm"), "{g}");
+        assert!(i("despill") < i("drawbox"), "{g}");
+        assert_eq!(g.matches("chromakey").count(), 1, "{g}");
+        assert!(g.contains("overlay=format=auto,format=rgb24"), "{g}");
+        if cl_media::test_tools() {
+            for k in 0..3 {
+                let fx = ClipFx { person: Some(PersonFx::from_index(k)), ..fx.clone() };
+                let g = matte_case(&fx, false);
+                run_graph(&g, &[]).unwrap_or_else(|e| panic!("{e}\n{g}"));
+            }
+        }
     }
 }
