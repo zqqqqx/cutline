@@ -180,7 +180,8 @@ fn broken_project_files_give_errors_not_panics() {
         assert!(Project::from_json(&w.to_string()).is_err(), "{ptr}");
     }
     // number larger than i64
-    let w = json.replacen("\"schema_version\": 1", "\"schema_version\": 99999999999999999999999", 1);
+    let w = json.replacen(&format!("\"schema_version\": {}", cl_core::PROJECT_SCHEMA_VERSION), "\"schema_version\": 99999999999999999999999", 1);
+    assert_ne!(w, json);
     assert!(Project::from_json(&w).is_err());
 }
 

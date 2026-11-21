@@ -1895,3 +1895,5 @@ Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutlin
 Datei kann nicht gelesen werden: „{}“	Cannot read file: “{}”
 Beim Schließen zur Projektübersicht	Go to projects when closing
 Scrollleiste in der Zeitleiste	Scrollbar in the timeline
+Ton zurückholen	Restore audio
+Diese Tonspur ist schon extrahiert	This audio track is already extracted

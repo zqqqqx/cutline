@@ -3261,8 +3261,8 @@ impl App {
                 } else {
                     Color32::from_rgba_unmultiplied(0xC8, 0xF0, 0xF2, 160)
                 };
-                // sound muted (track muted or −60 dB) although the file has sound: waveform pale
-                let wcol = if tr.muted || c.volume_db <= -59.9 { wcol.gamma_multiply(0.35) } else { wcol };
+                // sound muted (track muted, −60 dB or stream extracted) although the file has sound: waveform pale
+                let wcol = if tr.muted || c.volume_db <= -59.9 || c.extracted_streams.contains(&stream) { wcol.gamma_multiply(0.35) } else { wcol };
                 if !audio {
                     inner.rect_filled(
                         Rect::from_min_max(

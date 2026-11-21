@@ -452,10 +452,9 @@ impl Build<'_> {
                 if vol <= 0.0001 && track.muted {
                     vol = s.get("last_nonzero_volume").and_then(|v| v.as_f64()).unwrap_or(vol);
                 }
-                // audio split from the video: it exists as its own audio clip (like „Ton extrahieren“)
-                if mkind == "videos" && m.get("has_sound_separated").and_then(|v| v.as_bool()).unwrap_or(false) {
-                    vol = 0.0;
-                }
+                // audio split from the video: it exists as its own audio clip (like „Ton extrahieren“),
+                // marked below once the clip's audio stream is known
+                let separated = mkind == "videos" && m.get("has_sound_separated").and_then(|v| v.as_bool()).unwrap_or(false);
                 // limits as when editing (ReplaceClip, dragging in the player); nonsensical values
                 // from broken drafts would otherwise be infinite as f32
                 let fin = |v: f64, d: f32| Some(v as f32).filter(|v| v.is_finite()).unwrap_or(d);
@@ -518,6 +517,11 @@ impl Build<'_> {
                         }
                         self.rep.skip("Animation (als Blende übernommen)");
                     }
+                }
+                // shortcut: a missing file relinked to one with fewer streams than CapCut's index plays
+                // the first stream unmarked; fine until such relinks show up
+                if separated {
+                    clip.extracted_streams.push(clip.audio_stream.unwrap_or(0));
                 }
                 // for text the size is already contained in the font
                 if matches!(clip.content, ClipContent::Text(_)) {
@@ -1160,8 +1164,8 @@ mod tests {
         let tr = &p.timeline.tracks;
         let main = tr.iter().find(|t| t.main).unwrap();
         assert!(main.muted);
-        assert_eq!(main.clips.iter().map(vol).collect::<Vec<_>>(), [-1.9, 0.0, -60.0], "0.8 adopted; split audio muted like „Ton extrahieren“");
-        assert_eq!(main.clips[2].audio_stream, Some(1));
+        assert_eq!(main.clips.iter().map(vol).collect::<Vec<_>>(), [-1.9, 0.0, 0.0], "0.8 adopted; split audio keeps its volume");
+        assert_eq!((main.clips[2].audio_stream, &main.clips[2].extracted_streams[..]), (Some(1), &[1][..]), "split stream marked like „Ton extrahieren“");
         // second visual track: muted, volume 0 without `last_nonzero_volume` stays 0
         let v2 = tr.iter().find(|t| t.kind == TrackKind::Video && !t.main).unwrap();
         assert!(v2.muted && vol(&v2.clips[0]) == -60.0);

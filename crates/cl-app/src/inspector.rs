@@ -1514,7 +1514,18 @@ impl App {
         if matches!(c.content, ClipContent::Media { kind: MediaKind::Audio, .. }) {
             disabled_toggle(ui, c, e, &self.key_of("disable"));
         }
-        if let ClipContent::Media {
+        let taken = match c.content {
+            ClipContent::Media { media, kind: MediaKind::Video } => self.project.media(media).map(|m| c.played_stream(m)).filter(|n| c.extracted_streams.contains(n)),
+            _ => None,
+        };
+        if let Some(n) = taken {
+            // stream already has its own clip: bring it back into the video instead
+            ui.add_space(8.0);
+            if ui.add(theme::secondary(format!("{}  Ton zurückholen", icon::WAVEFORM))).clicked() {
+                c.extracted_streams.retain(|&s| s != n);
+                e.commit = true;
+            }
+        } else if let ClipContent::Media {
             kind: MediaKind::Video,
             ..
         } = c.content

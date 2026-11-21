@@ -47,7 +47,7 @@ id_type!(MediaId);
 
 /// Raise this whenever a field is added whose loss would change the user's edit: older versions
 /// then refuse the file instead of loading it and saving it back without that field.
-pub const PROJECT_SCHEMA_VERSION: u32 = 1;
+pub const PROJECT_SCHEMA_VERSION: u32 = 2;
 
 /// Load error for a project saved by a newer Cutline (the UI translates it as a whole).
 pub const NEWER_PROJECT: &str = "Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.";
@@ -114,6 +114,8 @@ impl Project {
         if p.schema_version > PROJECT_SCHEMA_VERSION {
             return Err(newer());
         }
+        // saved again by this version, the file may get fields an older one would drop
+        p.schema_version = PROJECT_SCHEMA_VERSION;
         for t in &mut p.timeline.tracks {
             t.clips.retain_mut(Clip::sanitize_times);
         }
@@ -411,6 +413,10 @@ pub struct Clip {
     /// Audio stream of the file (0 = first); `None` = first
     #[serde(default)]
     pub audio_stream: Option<u32>,
+    /// Audio streams of the file moved to their own clip („Ton extrahieren“): silent in this clip,
+    /// the other streams keep `volume_db`
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extracted_streams: Vec<u32>,
     /// Detected beats (source time), for marks and snapping
     #[serde(default)]
     pub beats: Vec<Time>,
@@ -473,6 +479,16 @@ pub const MIN_SPEED: f32 = 0.1;
 pub const MAX_SPEED: f32 = 100.0;
 
 impl Clip {
+    /// Audio stream of `m` this clip plays (a stream the file lacks falls back to the first).
+    pub fn played_stream(&self, m: &MediaRef) -> u32 {
+        self.audio_stream.filter(|&n| n < m.audio_streams).unwrap_or(0)
+    }
+
+    /// The stream it plays was extracted into its own clip: this clip stays silent.
+    pub fn stream_extracted(&self, m: &MediaRef) -> bool {
+        self.extracted_streams.contains(&self.played_stream(m))
+    }
+
     /// Fades at most half the clip length each (when set and when the clip gets shorter).
     pub fn clamp_fades(&mut self) {
         let half = self.duration.0 / 2;
@@ -509,6 +525,7 @@ impl Clip {
             fade_out: Time::ZERO,
             audio: AudioFx::default(),
             audio_stream: None,
+            extracted_streams: Vec::new(),
             beats: Vec::new(),
             label: None,
             group: None,
