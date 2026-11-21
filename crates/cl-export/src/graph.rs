@@ -682,13 +682,16 @@ fn karaoke_states(g: &Geo, txt: &str, starts: &[Time], fill: bool, dur: f64) -> 
     out
 }
 
-/// Place the sprite covering `start..end` (relative to the export start, start also negative)
-/// on `cur`: on the frames [`Time::first_frame_from`] gives (the preview's rule), its first
-/// frame on the first of them.
+/// Place the sprite covering `start..end` (absolute timeline times) on `cur`: on the frames
+/// [`Time::first_frame_from`] gives (the preview's rule), its first frame on the first of them.
+/// Frame numbers come from absolute times minus the export start's frame (n0 may be negative):
+/// relative µs times round differently when the export starts at a frame time off whole µs.
 fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, start: Time, end: Time) -> String {
     let fps = Rational::parse(&ctx.fps).unwrap_or(Rational::new(30, 1));
     let fd = 1.0 / fps.as_f64();
-    let (n0, n1) = (start.first_frame_from(fps), end.first_frame_from(fps));
+    // export frame 0 = first frame at or after the export start (it need not lie on a frame)
+    let s = ctx.start.first_frame_from(fps);
+    let (n0, n1) = (start.first_frame_from(fps) - s, end.first_frame_from(fps) - s);
     let t0 = n0 as f64 * fd;
     let shifted = ctx.label("pl");
     // rounded like `trim` (otherwise setpts cuts off: at 29.97 fps a clip was one frame off in a
@@ -1114,7 +1117,7 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
                 sprite_for(ctx, &proj, c, skip)?
             };
             let Some(sp) = sprite else { continue };
-            cur = place(ctx, &cur, &sp, g_start - ctx.start, g_end - ctx.start);
+            cur = place(ctx, &cur, &sp, g_start, g_end);
         }
     }
     Ok(cur)
