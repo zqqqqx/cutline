@@ -778,6 +778,9 @@ mod presence_tests {
     fn requests_follow_the_background_presence_check() {
         let ctx = egui::Context::default();
         let mut app = crate::saving::tests::test_app_with(ctx.clone());
+        // stream jobs arrive here at once (no starter thread): the checks below need no waiting
+        let (starter, jobs) = crate::preview::Starter::capture();
+        app.starter = starter;
         let path = app.dir().join("gibt-es-nicht.mp4");
         let m = MediaRef {
             id: cl_core::MediaId::new(),
@@ -803,14 +806,18 @@ mod presence_tests {
         app.presence.set_all([(path.clone(), true)].into(), 1);
         ask(&mut app);
         assert!(app.core.has_requests(), "present per check: requested");
-        // playback: stream is requested (the starter reports even if opening fails)
+        // playback: stream is requested
         app.core.play(Time::ZERO, 0, 0.0);
         ask(&mut app);
-        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_secs(20)).is_ok(), "stream requested");
+        assert!(jobs.try_recv().is_ok(), "stream requested");
         app.core.invalidate();
-        app.presence.set_all([(path, false)].into(), 1);
+        app.presence.set_all([(path.clone(), false)].into(), 1);
         ask(&mut app);
-        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_millis(500)).is_err(), "missing: no stream");
+        assert!(jobs.try_recv().is_err(), "missing: no stream");
+        // the same request once present again: the missing file alone held it back
+        app.presence.set_all([(path, true)].into(), 1);
+        ask(&mut app);
+        assert!(jobs.try_recv().is_ok(), "present again: requested");
     }
 
     /// Stream from proxy parts: the job points to the part list, and the time in it is shifted by

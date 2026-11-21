@@ -206,7 +206,9 @@ mod tests {
         t.spawn(&ctx, "model", "Modell", |_, _| TaskDone::Model { id: "m" });
         t.next_generation();
         let mut got = Vec::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while got.len() < 2 {
+            assert!(std::time::Instant::now() < deadline, "tasks did not report within 30 s: {} of 2", got.len());
             got.extend(t.poll());
             std::thread::yield_now();
         }

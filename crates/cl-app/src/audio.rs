@@ -995,6 +995,7 @@ mod tests {
         let pp = p.clone();
         let t = std::thread::spawn(move || feed(pp, from, rate, sh, first));
         let mut all = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(120);
         loop {
             let mut o = shared.out.lock().unwrap();
             all.extend(o.buf.drain(..));
@@ -1002,6 +1003,7 @@ mod tests {
                 break;
             }
             drop(o);
+            assert!(std::time::Instant::now() < deadline, "feed not finished after 120 s ({} samples so far)", all.len());
             std::thread::sleep(Duration::from_millis(2));
         }
         t.join().unwrap();

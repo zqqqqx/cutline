@@ -750,7 +750,9 @@ mod tests {
         });
         app.go_home();
         go_tx.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while !app.tasks.list.is_empty() {
+            assert!(std::time::Instant::now() < deadline, "task did not finish within 30 s");
             app.poll_tasks();
             std::thread::yield_now();
         }
