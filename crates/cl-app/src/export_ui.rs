@@ -2776,12 +2776,9 @@ fn split_markers_capped_at_split_max() {
     assert_eq!(split_summary(&v), "50 Teile · 0:01 bis 2:41");
 }
 
-/// Test image 320×180: red circle (radius 30) in the middle on a grey 4 px checkerboard, 2 s with sound
+/// Test image 320×180, 2 s with sound: red where the FFmpeg expression `inside` holds, grey value `gray` elsewhere
 #[cfg(test)]
-fn circle_video(dir: &Path) -> cl_core::MediaRef {
-    let path = dir.join("testbild.mp4");
-    let gray = "64+128*mod(floor(X/4)+floor(Y/4)\\,2)";
-    let inside = "lt(hypot(X-160\\,Y-90)\\,30)";
+fn red_video(path: &Path, inside: &str, gray: &str) -> cl_core::MediaRef {
     let vf = format!("format=rgb24,geq=r='if({inside}\\,255\\,{gray})':g='if({inside}\\,0\\,{gray})':b='if({inside}\\,0\\,{gray})'");
     let st = cl_media::ffmpeg_command()
         .unwrap()
@@ -2791,7 +2788,13 @@ fn circle_video(dir: &Path) -> cl_core::MediaRef {
         .status()
         .unwrap();
     assert!(st.success());
-    cl_media::probe(&path).unwrap()
+    cl_media::probe(path).unwrap()
+}
+
+/// Test image: red circle (radius 30) in the middle on a grey 4 px checkerboard
+#[cfg(test)]
+fn circle_video(dir: &Path) -> cl_core::MediaRef {
+    red_video(&dir.join("testbild.mp4"), "lt(hypot(X-160\\,Y-90)\\,30)", "64+128*mod(floor(X/4)+floor(Y/4)\\,2)")
 }
 
 /// 16:9 project 320×180 with the test image filling the frame (length `secs`, clip repeated)
@@ -3134,21 +3137,10 @@ fn follow_person_failure_keeps_the_clip_centred_with_one_toast() {
     assert_eq!(cover_layers(&f, id, Time::ZERO), plain);
 }
 
-/// Test image 320×180: red circle (radius 20) moves on a grey background from x=60 to x=260, 2 s with sound
+/// Test image: red circle (radius 20) moves on a grey background from x=60 to x=260
 #[cfg(test)]
 fn walker_video(dir: &Path) -> cl_core::MediaRef {
-    let path = dir.join("laeufer.mp4");
-    let inside = "lt(hypot(X-(60+100*T)\\,Y-90)\\,20)";
-    let vf = format!("format=rgb24,geq=r='if({inside}\\,255\\,128)':g='if({inside}\\,0\\,128)':b='if({inside}\\,0\\,128)'");
-    let st = cl_media::ffmpeg_command()
-        .unwrap()
-        .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2"])
-        .args(["-vf", &vf, "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv444p", "-c:a", "aac", "-shortest"])
-        .arg(&path)
-        .status()
-        .unwrap();
-    assert!(st.success());
-    cl_media::probe(&path).unwrap()
+    red_video(&dir.join("laeufer.mp4"), "lt(hypot(X-(60+100*T)\\,Y-90)\\,20)", "128")
 }
 
 /// Horizontal centre of the red pixels

@@ -1952,7 +1952,7 @@ mod tests {
     /// `cargo test --release -p cl-app --bin cutline -- --ignored --nocapture measure_parts`
     /// (`CUTLINE_PROXY_SRC=<file>`; `CUTLINE_PROXY_FULL=1`: whole build without and with simulated playback)
     #[test]
-    #[ignore]
+    #[ignore = "measurement only: needs FFmpeg and a long video (CUTLINE_PROXY_SRC or %USERPROFILE%/Downloads/videoplayback.mp4), prints timings"]
     fn measure_parts() {
         let src = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()).join("Downloads/videoplayback.mp4");
         let src = std::env::var_os("CUTLINE_PROXY_SRC").map(PathBuf::from).unwrap_or(src);
@@ -2128,9 +2128,9 @@ mod tests {
     }
 
     /// Measurement test (manual): proxy for the 23 min 1080p60 original with each encoder.
-    /// `cargo test --release -p cl-app -- --ignored --nocapture measure_proxy_build`
+    /// `cargo test --release -p cl-app --bin cutline -- --ignored --nocapture measure_proxy_build` (`CUTLINE_PROXY_SRC=<file>`)
     #[test]
-    #[ignore]
+    #[ignore = "measurement only: needs FFmpeg and a long video (CUTLINE_PROXY_SRC or %USERPROFILE%/Downloads/videoplayback.mp4), prints timings"]
     fn measure_proxy_build() {
         let src = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()).join("Downloads/videoplayback.mp4");
         let src = std::env::var_os("CUTLINE_PROXY_SRC").map(PathBuf::from).unwrap_or(src);
