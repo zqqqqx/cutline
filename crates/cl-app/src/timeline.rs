@@ -161,10 +161,19 @@ fn norm_zoom(n: f32, lo: f32) -> f32 {
     (lo.ln() + n.clamp(0.0, 1.0) * (PPS_MAX.ln() - lo.ln())).exp()
 }
 
+/// Scroll after zooming from `old` to `new` px/s with the view `view_w` px wide: the playhead
+/// (s) keeps its screen x; outside the view it comes to the centre. Never left of 0:00 or of
+/// the margin left by „Ganze Zeitleiste zeigen“.
+fn zoom_scroll(scroll: f64, old: f32, new: f32, playhead: f64, view_w: f32) -> f64 {
+    let x = ((playhead - scroll) as f32) * old;
+    let x = if (0.0..=view_w).contains(&x) { x } else { view_w * 0.5 };
+    (playhead - (x / new) as f64).max(scroll.min(0.0))
+}
+
 /// What stays fixed during smooth zooming
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Anchor {
-    /// Time `t` stays `x` px right of the track edge (under the pointer); scroll not below `floor`
+    /// Time `t` stays `x` px right of the track edge (the playhead); scroll not below `floor`
     At { t: f64, x: f32, floor: f64 },
     /// Scroll glides from → to
     Scroll(f64, f64),
@@ -765,10 +774,19 @@ impl TimelineState {
         self.view_glide = Some(g);
         self.step_view(now);
     }
-    /// Zoom around the point `x` px right of the track edge
-    fn zoom_to(&mut self, pps: f32, x: f32, now: f64) {
-        let t = self.scroll + (x / self.pps) as f64;
-        self.glide_view(pps, Anchor::At { t, x, floor: self.scroll.min(0.0) }, now);
+    /// Zoom to `pps` around the playhead (`playhead` s), see [`zoom_scroll`]. A running movement
+    /// counts from its target, so further wheel steps continue it without a jump.
+    fn zoom_to(&mut self, pps: f32, playhead: f64, now: f64) {
+        let (from_pps, from_scroll, _) = self.view_glide.map_or((self.pps, self.scroll, true), |g| g.at(0.0, 0.0));
+        let scroll = zoom_scroll(from_scroll, from_pps, pps, playhead, self.view_w);
+        let x = ((playhead - scroll) as f32) * pps;
+        // playhead already where it stays: pin it during the glide; otherwise glide the scroll there
+        let anchor = if (((playhead - self.scroll) as f32) * self.pps - x).abs() < 0.5 {
+            Anchor::At { t: playhead, x, floor: self.scroll.min(0.0) }
+        } else {
+            Anchor::Scroll(self.scroll, scroll)
+        };
+        self.glide_view(pps, anchor, now);
     }
     /// „Ganze Zeitleiste zeigen“: fit a project of length `dur` with margin (smoothly)
     fn show_all(&mut self, dur: f64, now: f64) {
@@ -1098,7 +1116,7 @@ impl App {
                     self.timeline.show_all(dur, now);
                 }
                 if zoom && theme::icon_button(ui, icon::PLUS, "Vergrößern (Strg+Mausrad)", true, false).clicked() {
-                    self.timeline.zoom_to((target * 1.25).min(PPS_MAX), 0.0, now);
+                    self.timeline.zoom_to((target * 1.25).min(PPS_MAX), self.playhead.as_secs_f64(), now);
                 }
                 if slider {
                 ui.allocate_ui(vec2(90.0, 20.0), |ui| {
@@ -1109,7 +1127,7 @@ impl App {
                     if let Some(p) = resp.interact_pointer_pos() {
                         let z = norm_zoom(((p.x - track.left()) / track.width()).clamp(0.0, 1.0), lo);
                         if (z - target).abs() > target * 1e-4 {
-                            self.timeline.zoom_to(z, 0.0, now);
+                            self.timeline.zoom_to(z, self.playhead.as_secs_f64(), now);
                         }
                     }
                     ui.painter().rect_filled(track, 1.0, theme::BG_HOVER());
@@ -1119,7 +1137,7 @@ impl App {
                 }
                 if zoom {
                     if theme::icon_button(ui, icon::MINUS, "Verkleinern", true, false).clicked() {
-                        self.timeline.zoom_to((target / 1.25).max(lo), 0.0, now);
+                        self.timeline.zoom_to((target / 1.25).max(lo), self.playhead.as_secs_f64(), now);
                     }
                     ui.add(egui::Separator::default().vertical().spacing(10.0));
                 }
@@ -1246,11 +1264,10 @@ impl App {
             // scroll left at most to 0:00 – or to the margin left by „Ganze Zeitleiste zeigen“
             let floor = self.timeline.scroll.min(0.0);
             if ctrl && dy != 0.0 {
-                // zoom glides around the pointer position; further wheel steps continue the target
+                // zoom glides around the playhead; further wheel steps continue the target
                 let lo = min_pps(total_t, self.timeline.view_w);
                 let to = (self.timeline.target_pps() * (1.0 + dy * 0.0015)).clamp(lo, PPS_MAX);
-                let ax = pointer.map_or(0.0, |p| (p.x - x0).max(0.0));
-                self.timeline.zoom_to(to, ax, now_s);
+                self.timeline.zoom_to(to, self.playhead.as_secs_f64(), now_s);
             } else if shift || overflow <= 0.0 || pointer.is_some_and(|p| p.y < ruler.bottom()) {
                 let d = if dx != 0.0 { dx } else { dy };
                 if d != 0.0 {
@@ -4124,6 +4141,40 @@ mod tests {
     }
 
     #[test]
+    fn zoom_keeps_playhead_in_place() {
+        let x = |scroll: f64, pps: f32| ((120.0 - scroll) as f32) * pps;
+        // playhead (120 s) visible: same screen x before and after, zooming in and out
+        for new in [100.0f32, 10.0] {
+            let s = zoom_scroll(100.0, 40.0, new, 120.0, 1000.0);
+            assert!((x(s, new) - x(100.0, 40.0)).abs() < 1e-3, "{new}");
+        }
+        // playhead off-screen (right and left of the view): it comes to the centre
+        for scroll in [0.0, 200.0] {
+            let s = zoom_scroll(scroll, 40.0, 80.0, 120.0, 1000.0);
+            assert!((x(s, 80.0) - 500.0).abs() < 1e-3, "{scroll}");
+        }
+        // zooming out at the start: not left of 0:00 (or the margin of „Ganze Zeitleiste zeigen“)
+        assert_eq!(zoom_scroll(0.0, 100.0, 5.0, 1.0, 1000.0), 0.0);
+        assert_eq!(zoom_scroll(-3.0, 100.0, 5.0, 1.0, 1000.0), -3.0);
+        // a wheel gesture that starts off-screen keeps gliding to the centre, no jump
+        let mut st = TimelineState { pps: 40.0, scroll: 200.0, view_w: 1000.0, ..Default::default() };
+        st.zoom_to(50.0, 120.0, 0.0);
+        st.step_view(theme::MOTION as f64 / 2.0);
+        let (pps, scroll) = (st.pps, st.scroll);
+        st.zoom_to(60.0, 120.0, theme::MOTION as f64 / 2.0);
+        assert_eq!((st.pps, st.scroll), (pps, scroll), "continues from the current state");
+        st.step_view(10.0);
+        assert!((x(st.scroll, 60.0) - 500.0).abs() < 1e-3 && st.pps == 60.0, "{}", st.scroll);
+        // playhead visible: it stays pinned during the whole glide
+        let mut st = TimelineState { pps: 40.0, scroll: 100.0, view_w: 1000.0, ..Default::default() };
+        st.zoom_to(100.0, 120.0, 0.0);
+        for age in [0.03, 0.08, 10.0] {
+            st.step_view(age);
+            assert!((x(st.scroll, st.pps) - 800.0).abs() < 1e-2, "{age}");
+        }
+    }
+
+    #[test]
     fn tiny_clips_merge_into_bars() {
         let r = |a: f32, b: f32| Rect::from_min_max(pos2(a, 0.0), pos2(b, 10.0));
         let (red, blue) = (Color32::RED, Color32::BLUE);
@@ -4565,7 +4616,8 @@ mod tests {
                     t += 1.0 / 60.0;
                     if f % 12 == 0 {
                         let to = if f % 24 == 0 { full * 3.0 } else { full };
-                        app.timeline.zoom_to(to, 600.0, t);
+                        let ph = app.playhead.as_secs_f64();
+                        app.timeline.zoom_to(to, ph, t);
                     }
                     let (ms, ..) = frame(&mut app, &ctx, t, pointer);
                     times.push(ms);
