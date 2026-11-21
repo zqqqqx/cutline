@@ -1157,6 +1157,9 @@ mod tests {
 
     #[test]
     fn detects_one_sided_stereo() {
+        if !test_tools() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let mk = |name: &str, pan: &str| {
             let out = dir.path().join(name);
@@ -1208,7 +1211,7 @@ mod tests {
     /// even if the graph reports another frame rate (FFmpeg 7: none at all after `setpts`, then 25).
     #[test]
     fn graph_stream_keeps_every_frame_at_the_stream_rate() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1227,7 +1230,7 @@ mod tests {
     /// layer stayed a still. Now the picture moves at once.
     #[test]
     fn graph_stream_with_a_late_clip_time_moves_at_once() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1244,7 +1247,7 @@ mod tests {
     /// grid time (as the player rounds it); at the end of the file fewer frames come.
     #[test]
     fn window_frames_equal_single_frames() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1269,7 +1272,7 @@ mod tests {
     /// blowing up the command line – single frame and stream.
     #[test]
     fn long_graph_goes_through_a_file() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1290,7 +1293,7 @@ mod tests {
         for p in [r"C:\Videos\a.mp4", "C:/Videos/a.mp4", r"\\?\C:\a.mp4", r"\\nas\share\a b.mp4", "/home/u/a:b.mp4", "clip 1.mp4"] {
             assert!(!is_url(Path::new(p)), "{p}");
         }
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let url = Path::new("https://127.0.0.1:9/x.mp4");
@@ -1304,7 +1307,7 @@ mod tests {
     /// waveform rate, length not a multiple of the bucket: the last short bucket counts too).
     #[test]
     fn waveform_peaks_match_the_samples() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let samples: Vec<i16> = (0..8000 * 2 + 300).map(|i: i32| ((i * 37 % 2000 - 1000) * (1 + i / 900)).clamp(-32768, 32767) as i16).collect();
@@ -1329,7 +1332,7 @@ mod tests {
 
     #[test]
     fn probe_swaps_size_for_rotated_video() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1352,7 +1355,7 @@ mod tests {
 
     #[test]
     fn missing_frame_error_names_time_and_file() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1365,7 +1368,7 @@ mod tests {
 
     #[test]
     fn probe_decode_and_stream() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             eprintln!("FFmpeg missing, test skipped");
             return;
         }
@@ -1394,7 +1397,7 @@ mod tests {
 
     #[test]
     fn waveform_has_expected_resolution() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1409,7 +1412,7 @@ mod tests {
 
     #[test]
     fn dropping_full_stream_does_not_deadlock() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1438,7 +1441,7 @@ mod tests {
 
     #[test]
     fn killed_job_returns_cancelled() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1460,7 +1463,11 @@ mod tests {
     /// for rounding in color conversion). Skipped without a hardware decoder.
     #[test]
     fn hw_and_sw_frames_match() {
-        if !ffmpeg_available() || hwaccel().is_none() {
+        if !test_tools() {
+            return;
+        }
+        if hwaccel().is_none() {
+            eprintln!("skipped (no hardware decoder)");
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1494,7 +1501,11 @@ mod tests {
     /// without a jump: every frame equals that of the pure software stream, none missing or doubled.
     #[test]
     fn hw_stream_starts_in_software_and_takes_over_seamlessly() {
-        if !ffmpeg_available() || hwaccel().is_none() {
+        if !test_tools() {
+            return;
+        }
+        if hwaccel().is_none() {
+            eprintln!("skipped (no hardware decoder)");
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1532,7 +1543,11 @@ mod tests {
     /// "broken" mark results as long as software has no frame either.
     #[test]
     fn hw_failure_is_only_remembered_when_software_works() {
-        if !ffmpeg_available() || hwaccel().is_none() {
+        if !test_tools() {
+            return;
+        }
+        if hwaccel().is_none() {
+            eprintln!("skipped (no hardware decoder)");
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1585,7 +1600,7 @@ mod tests {
 
     #[test]
     fn probe_image_and_garbage() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1643,7 +1658,7 @@ mod tests {
 
     #[test]
     fn probe_unusual_files() {
-        if !ffmpeg_available() {
+        if !test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

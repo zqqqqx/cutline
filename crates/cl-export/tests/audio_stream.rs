@@ -18,7 +18,7 @@ fn amp(x: &[f32], hz: f64) -> f64 {
 
 #[test]
 fn clip_plays_chosen_audio_stream() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();

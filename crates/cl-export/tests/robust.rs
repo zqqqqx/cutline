@@ -221,7 +221,7 @@ fn random_project(seed: u64, m: &Media) -> Project {
 /// expected. Finds graph errors that only appear in combinations.
 #[test]
 fn random_projects_export() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -273,7 +273,7 @@ fn random_projects_export() {
 /// Edge cases that must not crash and export cleanly.
 #[test]
 fn edge_case_projects_export() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -488,7 +488,7 @@ fn huge_projects_build() {
 /// Error cases: clean error instead of crash, no leftovers.
 #[test]
 fn failures_are_clean() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();

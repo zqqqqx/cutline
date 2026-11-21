@@ -95,7 +95,7 @@ fn export(p: &Project, s: &ExportSettings, out: &Path) -> f64 {
 
 #[test]
 fn export_test_projects() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     if let Some(f) = std::env::var_os("CUTLINE_EXPORT_PROJECT") {

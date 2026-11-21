@@ -2222,7 +2222,7 @@ mod tests {
 
     #[test]
     fn effect_and_filter_elements_apply_to_layers_below() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -2261,7 +2261,7 @@ mod tests {
 
     #[test]
     fn effect_element_mask_and_strength_keyframes() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -2350,7 +2350,7 @@ mod tests {
     /// with „Stereo“ the right channel stays silent.
     #[test]
     fn one_sided_audio_is_spread_to_both_channels() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -2400,7 +2400,7 @@ mod tests {
 
     #[test]
     fn exports_mp4_gif_and_audio() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -2482,7 +2482,7 @@ mod tests {
     /// Live preview: a second output writes a small JPEG, the main file stays as before.
     #[test]
     fn export_writes_live_preview_without_changing_output() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -2528,7 +2528,7 @@ mod tests {
     /// If the preview image cannot be written, the export runs through without preview.
     #[test]
     fn blocked_preview_does_not_fail_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -2596,7 +2596,7 @@ mod tests {
 
     #[test]
     fn exports_phase2_features() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -2858,7 +2858,7 @@ mod tests {
 
     #[test]
     fn exports_phase3_features() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3021,7 +3021,7 @@ mod tests {
 
     #[test]
     fn exports_phase4_features() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3156,7 +3156,7 @@ mod tests {
 
     #[test]
     fn audio_preview_streams_pcm() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3216,7 +3216,7 @@ mod tests {
 
     #[test]
     fn overlapping_loud_clips_are_limited_quiet_stays() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3244,7 +3244,7 @@ mod tests {
 
     #[test]
     fn limited_aac_peak_stays_below_minus_one_db() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         // as in the test report: loud sounds at the same time, +6 dB each
@@ -3271,7 +3271,7 @@ mod tests {
 
     #[test]
     fn audio_clip_offset_leaves_leading_silence() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3286,7 +3286,7 @@ mod tests {
 
     #[test]
     fn fade_longer_than_clip_still_exports() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3316,7 +3316,7 @@ mod tests {
 
     #[test]
     fn loudness_is_normalized_in_two_passes() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3338,7 +3338,7 @@ mod tests {
 
     #[test]
     fn speed_curve_keeps_audio() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3364,7 +3364,7 @@ mod tests {
 
     #[test]
     fn cancelled_export_keeps_existing_file() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3383,7 +3383,7 @@ mod tests {
 
     #[test]
     fn unused_or_remote_media_is_ignored() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3553,7 +3553,7 @@ mod tests {
     /// must be exactly as wide and placed as the same line alone – in every alignment.
     #[test]
     fn multiline_text_has_no_box_at_line_ends() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3588,7 +3588,7 @@ mod tests {
     /// is fully yellow (no white remnants in it, nothing yellow in the other words).
     #[test]
     fn karaoke_highlights_exactly_the_spoken_word() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3645,7 +3645,7 @@ mod tests {
     /// in the same place as without crop – also scaled down, moved and rotated.
     #[test]
     fn crop_blanks_the_edges_and_keeps_the_rest_in_place() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3709,7 +3709,7 @@ mod tests {
     /// before/after pure clips, layers above stay, broken shader → fallback.
     #[test]
     fn shader_transition_exports_like_gpu_render() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         shader_pack();
@@ -3756,7 +3756,7 @@ mod tests {
     /// (clip end, pre-pass of the shader transition). In no graph may `tpad` follow `setpts`.
     #[test]
     fn no_tpad_right_after_setpts() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         shader_pack();
@@ -3776,7 +3776,11 @@ mod tests {
 
     #[test]
     fn layer_above_shader_transition_stays_visible() {
-        if !cl_media::ffmpeg_available() || default_font().is_none() || cl_gpu::gpu().is_none() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        if default_font().is_none() || cl_gpu::gpu().is_none() {
+            eprintln!("skipped (no default font or no GPU)");
             return;
         }
         shader_pack();
@@ -3792,7 +3796,11 @@ mod tests {
 
     #[test]
     fn cancel_during_shader_pass_stops() {
-        if !cl_media::ffmpeg_available() || cl_gpu::gpu().is_none() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        if cl_gpu::gpu().is_none() {
+            eprintln!("skipped (no GPU)");
             return;
         }
         shader_pack();
@@ -3851,7 +3859,7 @@ mod tests {
 
     #[test]
     fn transition_id_cannot_inject_filters() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3869,7 +3877,11 @@ mod tests {
 
     #[test]
     fn text_with_percent_and_backslash_is_literal() {
-        if !cl_media::ffmpeg_available() || default_font().is_none() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        if default_font().is_none() {
+            eprintln!("skipped (no default font)");
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3913,7 +3925,7 @@ mod tests {
     /// Every offered codec/container combination with a software encoder exports with its own bitrate.
     #[test]
     fn bitrate_export_works_for_every_software_codec() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3937,7 +3949,7 @@ mod tests {
     /// with quality and with a fixed bitrate including cap.
     #[test]
     fn av1_fallback_encoder_works() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -3974,7 +3986,7 @@ mod tests {
 
     #[test]
     fn very_loud_audio_is_normalized() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -4039,7 +4051,7 @@ mod tests {
     /// stays (background next to it). Previously the export aborted with "Option loop not found".
     #[test]
     fn animated_image_clips_hold_or_loop() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -4274,7 +4286,7 @@ mod tests {
     /// Broken file: the preview leaves it out and reports it once.
     #[test]
     fn unreadable_audio_is_left_out_and_reported_once() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -4291,7 +4303,7 @@ mod tests {
     /// single pass (without GPU: the fallback, equally identical).
     #[test]
     fn shader_transition_across_section_boundary() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         shader_pack();
@@ -4322,7 +4334,9 @@ mod tests {
             let d = mean_diff(&frame_n(&one, n).data, &frame_n(&cut, n).data);
             assert!(d < 0.05, "Bild {n}: Abweichung {d}");
         }
-        if cl_gpu::gpu().is_some() {
+        if cl_gpu::gpu().is_none() {
+            eprintln!("no GPU: shader use in sections not checked");
+        } else {
             let used = job.sections.iter().filter(|x| std::fs::read_to_string(job.workdir.path().join(&x.graph)).unwrap().contains("movie=shader_")).count();
             assert!(used >= 2, "shader instead of fallback in both sections: {used}");
         }
@@ -4550,7 +4564,7 @@ mod tests {
     /// Measured sizes: `cargo test --release -p cl-export target_size -- --nocapture`
     #[test]
     fn target_size_is_kept_in_two_passes() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -4582,7 +4596,7 @@ mod tests {
     /// Without audible sound nothing is planned for audio: 90–100 % of the target size (before ≈85 %).
     #[test]
     fn target_size_without_sound_uses_the_budget() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -4609,7 +4623,7 @@ mod tests {
     /// work folder.
     #[test]
     fn target_size_cancel_cleans_up() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -4638,7 +4652,7 @@ mod tests {
     /// the whole keeps the target size.
     #[test]
     fn target_size_in_sections() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

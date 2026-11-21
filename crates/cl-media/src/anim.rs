@@ -191,7 +191,10 @@ mod tests {
     /// delivered all of them. Now at most as many as were checked.
     #[test]
     fn decode_all_reads_at_most_the_counted_frames() {
-        let Some(cmd) = decode_all_cmd(Path::new("a.gif"), 8, 8, 7) else { return };
+        if !crate::test_tools() {
+            return;
+        }
+        let cmd = decode_all_cmd(Path::new("a.gif"), 8, 8, 7).unwrap();
         let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         assert!(args.windows(2).any(|w| w[0] == "-frames:v" && w[1] == "7"), "{args:?}");
     }
@@ -208,7 +211,7 @@ mod tests {
 
     #[test]
     fn reads_frames_and_loop_flag_of_apng_and_gif() {
-        if !crate::ffmpeg_available() {
+        if !crate::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -234,7 +237,7 @@ mod tests {
     /// All frames at once (preview in memory) = the same frames as one by one with `-ss`.
     #[test]
     fn decode_all_matches_single_frames() {
-        if !crate::ffmpeg_available() {
+        if !crate::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -264,7 +267,7 @@ mod tests {
     /// The preview decodes with `-ss seek_time` exactly the frame the export shows.
     #[test]
     fn seek_time_hits_the_frame_with_ffmpeg() {
-        if !crate::ffmpeg_available() {
+        if !crate::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

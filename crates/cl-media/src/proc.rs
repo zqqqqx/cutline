@@ -340,7 +340,7 @@ mod tests {
     /// Playback processes run above normal priority (Windows); elsewhere it silently stays at normal.
     #[test]
     fn playback_processes_can_be_raised() {
-        if !crate::ffmpeg_available() {
+        if !crate::test_tools() {
             return;
         }
         let mut c = crate::ffmpeg_command()
@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn playback_processes_join_the_job_directly() {
         use std::os::windows::io::AsRawHandle;
-        if !crate::ffmpeg_available() {
+        if !crate::test_tools() {
             return;
         }
         let mut c = crate::playback_command()
@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn ffmpeg_dies_with_its_owner() {
         use std::io::BufRead;
-        if !crate::ffmpeg_available() {
+        if !crate::test_tools() {
             return;
         }
         let mut helper = std::process::Command::new(std::env::current_exe().unwrap())

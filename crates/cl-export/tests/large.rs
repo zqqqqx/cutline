@@ -319,7 +319,7 @@ fn wav_samples(f: &Path) -> Vec<i16> {
 /// Audio: in sections sample-identical to the single pass (limiter and loudness over the whole).
 #[test]
 fn sections_audio_equals_one_pass() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -343,7 +343,7 @@ fn sections_audio_equals_one_pass() {
 /// Picture: ProRes (every frame encoded independently) in sections frame-identical to the single pass.
 #[test]
 fn sections_video_equals_one_pass_prores() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -373,7 +373,7 @@ fn sections_video_equals_one_pass_prores() {
 /// audio (encoded once) equal; plus chapters and fast start.
 #[test]
 fn sections_h264_aac_seams() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -409,7 +409,7 @@ fn sections_h264_aac_seams() {
 /// More formats: WebM/VP9 with alpha, GIF, audio only (M4A) – as in the single pass.
 #[test]
 fn sections_other_formats() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -460,7 +460,7 @@ fn sections_other_formats() {
 /// Cancel in the middle of the sections: no target, no `.part`, work folder gone.
 #[test]
 fn cancel_during_sections_leaves_nothing() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -489,7 +489,7 @@ fn cancel_during_sections_leaves_nothing() {
 /// Progress over all sections rising steadily up to 1; an error names the time range.
 #[test]
 fn progress_is_monotonic_and_errors_name_the_section() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -557,7 +557,7 @@ fn profile_one_section() {
 /// continuing (shake etc. jumped at the boundary).
 #[test]
 fn boundary_inside_effect_and_transition() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -581,7 +581,7 @@ fn boundary_inside_effect_and_transition() {
 /// the single pass occasionally ended with the last clip under load (11.5 s).
 #[test]
 fn audio_length_under_load() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -654,7 +654,7 @@ fn long_transition_chain_builds_as_one_pass() {
 /// A chain above the input limit (here 4) exports completely with real FFmpeg.
 #[test]
 fn long_transition_chain_exports() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -673,7 +673,7 @@ fn long_transition_chain_exports() {
 /// too early by the jump.
 #[test]
 fn zoom_pulse_on_long_clip_across_sections() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -694,11 +694,12 @@ fn zoom_pulse_on_long_clip_across_sections() {
 /// yield all frames, monotonic timestamps and decode without errors.
 #[test]
 fn sections_hardware_encoders_concat() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let hw: Vec<_> = cl_export::available_encoders().iter().copied().filter(|e| *e != cl_export::Encoder::Software).collect();
     if hw.is_empty() {
+        eprintln!("skipped (no hardware encoder)");
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -724,7 +725,7 @@ fn sections_hardware_encoders_concat() {
 /// encodes once with the chosen encoder instead of `-c:v copy`.
 #[test]
 fn unproven_hardware_encoders_encode_once() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -753,7 +754,11 @@ fn unproven_hardware_encoders_encode_once() {
 /// correct duration and the chosen codec.
 #[test]
 fn media_foundation_export_h264_and_hevc() {
-    if !cl_media::ffmpeg_available() || !cl_export::available_encoders().contains(&cl_export::Encoder::Mf) {
+    if !cl_media::test_tools() {
+        return;
+    }
+    if !cl_export::available_encoders().contains(&cl_export::Encoder::Mf) {
+        eprintln!("skipped (no Media Foundation encoder)");
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -782,7 +787,7 @@ fn media_foundation_export_h264_and_hevc() {
 /// miss the source frames at 29.97 fps from about 17 s.
 #[test]
 fn lead_skip_with_ntsc_project_and_other_source_rate() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
