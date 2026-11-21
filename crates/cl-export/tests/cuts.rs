@@ -128,8 +128,14 @@ fn frame_time(p: &Project, n: i64) -> Time {
 /// Exports `p` (or only frames `range.0..range.1`) and compares output frame `n` with the
 /// preview's rule at absolute frame `n + range.0`.
 fn export_and_check(p: &Project, out: &Path, max_inputs: usize, range: Option<(i64, i64)>) -> Check {
+    export_and_check_early(p, out, max_inputs, range, Time::ZERO)
+}
+
+/// [`export_and_check`] with both range times `early` before their frames (export frame 0 is
+/// then still frame `range.0`, the first one at or after the start).
+fn export_and_check_early(p: &Project, out: &Path, max_inputs: usize, range: Option<(i64, i64)>, early: Time) -> Check {
     let mut s = ExportSettings::from_project(p);
-    s.range = range.map(|(a, b)| (frame_time(p, a), frame_time(p, b)));
+    s.range = range.map(|(a, b)| (frame_time(p, a) - early, frame_time(p, b) - early));
     let job = build_limited(p, &s, &no_fonts, out, max_inputs).unwrap();
     run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
     let fr = frames(out);
@@ -341,6 +347,43 @@ fn effect_edges_match_preview() {
                     let c = export_and_check(&p, &dir.path().join(file), max, r);
                     report(&name, &c, edges.len(), &mut fails);
                 }
+            }
+        }
+    }
+    assert!(fails.is_empty(), "{fails:#?}");
+}
+
+/// Effect clips that cover no frame time (between two frames; in a range one that starts
+/// before the range start and ends before the first exported frame): the export finishes
+/// (time limit: a stalled graph fails) and no frame is inverted by them.
+#[test]
+fn effect_without_frames_changes_nothing() {
+    if !cl_media::test_tools() {
+        return;
+    }
+    let m = sources(&media_dir());
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let fps = Rational::new(30, 1);
+    let fd = 1e6 / fps.as_f64();
+    let mut p = project(fps, &m[..1], &cuts(fps, &[0, 80], |_, _| 0.0));
+    let at = |n: i64, part: f64| Time((n as f64 * fd + part * fd).round() as i64);
+    let mut tr = Track::new(TrackKind::Effect);
+    for (a, b) in [(at(7, 0.0), at(12, 0.0)), (at(20, 0.2), at(20, 0.7)), (at(3, 0.4), at(3, 0.8))] {
+        tr.clips.push(Clip::new(ClipContent::Effect(FxRef::new("invert")), a, b - a));
+    }
+    p.timeline.tracks.push(tr);
+    // range start 0.5 frame before frame 4: the third clip starts before it, ends before frame 4
+    let early = Time((0.5 * fd).round() as i64);
+    let mut fails = Vec::new();
+    for r in [None, Some((4, 75))] {
+        for (mode, max) in [("single", 500), ("sections", 2)] {
+            let (p, out) = (p.clone(), dir.path().join(format!("fx-empty-{}-{mode}.mp4", r.is_some())));
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || tx.send(export_and_check_early(&p, &out, max, r, early)).unwrap());
+            let name = format!("30/1 fx without frames {r:?} {mode}");
+            match rx.recv_timeout(std::time::Duration::from_secs(120)) {
+                Ok(c) => report(&name, &c, 2, &mut fails),
+                Err(e) => fails.push(format!("{name}: no result ({e})")),
             }
         }
     }
