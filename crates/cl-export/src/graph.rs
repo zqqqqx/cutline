@@ -340,7 +340,10 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
         pre.push(format!("tpad=stop_mode=clone:stop_duration={}", f(dur + 0.1)));
     }
     pre.push(format!("scale={bw}:{bh}:flags=bicubic"));
-    pre.push(if skip > 0.0 { format!("trim=end={}", f(dur)) } else { format!("trim=duration={}", f(dur)) });
+    // one frame more than the clip: `trim` rounds to whole frames, `place` may need ceil(dur·fps)
+    // frames; the extra one is never shown
+    let keep = dur + 1.0 / fps_value(&ctx.fps);
+    pre.push(if skip > 0.0 { format!("trim=end={}", f(keep)) } else { format!("trim=duration={}", f(keep)) });
     let pl = ctx.label("pre");
     ctx.graph.push(format!("[{i}:v]{}[{pl}]", pre.join(",")));
     // copy the LUT into the work folder (no path escapes in the graph)
@@ -375,7 +378,7 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
             .collect();
         mpre.retain(|p| !p.starts_with("trim="));
         mpre.push(format!("scale={bw}:{bh}:flags=bilinear"));
-        mpre.push(format!("trim=duration={}", f(dur)));
+        mpre.push(format!("trim=duration={}", f(keep)));
         mpre.push("format=gray".into());
         let ml = ctx.label("mt");
         ctx.graph.push(format!("[{mi}:v]{}[{ml}]", mpre.join(",")));
@@ -563,7 +566,8 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     let shear = if st.italic { format!(",shear=shx={ITALIC_SHEAR}:fillcolor=black@0") } else { String::new() };
     let dur = c.duration.as_secs_f64();
     let src = ctx.label("tx");
-    let layer = format!("color=c=black@0.0:s={lw}x{lh}:r={}:d={},format=rgba", ctx.fps, f(dur));
+    // one frame more, as in `media_sprite`
+    let layer = format!("color=c=black@0.0:s={lw}x{lh}:r={}:d={},format=rgba", ctx.fps, f(dur + 1.0 / fps_value(&ctx.fps)));
     let boxes = match &st.karaoke {
         Some(k) => {
             let geo = Geo { data: &data, idx, size, tw, lw, lh, pitch, align: st.align, bold: st.bold };
@@ -678,22 +682,31 @@ fn karaoke_states(g: &Geo, txt: &str, starts: &[Time], fill: bool, dur: f64) -> 
     out
 }
 
-/// Place the sprite at time `t0` (s, relative to the export start, also negative) on `cur`.
-fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, t0: f64, len: f64) -> String {
+/// Place the sprite covering `start..end` (relative to the export start, start also negative)
+/// on `cur`: on the frames [`Time::first_frame_from`] gives (the preview's rule), its first
+/// frame on the first of them.
+fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, start: Time, end: Time) -> String {
+    let fps = Rational::parse(&ctx.fps).unwrap_or(Rational::new(30, 1));
+    let fd = 1.0 / fps.as_f64();
+    let (n0, n1) = (start.first_frame_from(fps), end.first_frame_from(fps));
+    let t0 = n0 as f64 * fd;
     let shifted = ctx.label("pl");
     // rounded like `trim` (otherwise setpts cuts off: at 29.97 fps a clip was one frame off in a
     // single pass compared with a section that starts inside it)
-    let shift = if t0 >= 0.0 {
+    let shift = if n0 >= 0 {
         format!("setpts=PTS-STARTPTS+round({}/TB)", f(t0))
     } else {
-        format!("trim=start={},setpts=PTS-STARTPTS", f(-t0))
+        // 1 µs early: frame -n0 stays although `f` rounds; `trim` rounds `start` to the time base,
+        // so a larger margin (half a frame) would keep the frame before at 1/fps
+        format!("trim=start={},setpts=PTS-STARTPTS", f(-t0 - 1e-6))
     };
     ctx.graph.push(format!("[{}]{shift}[{shifted}]", sp.label));
     let var = format!("(t-{})", f(t0));
     let x = sp.x.replace("TT", &var);
     let y = sp.y.replace("TT", &var);
     let out = ctx.label("base");
-    let (a, b) = (t0.max(0.0), t0 + len);
+    // frames n0..n1 with half-frame margins: frame times are never compared for equality
+    let (a, b) = ((n0.max(0) as f64 - 0.5) * fd, (n1 as f64 - 0.5) * fd);
     ctx.graph.push(format!(
         "[{cur}][{shifted}]overlay=x='(W-w)/2+{x}':y='(H-h)/2+{y}':eval=frame:eof_action=pass{}:enable='between(t,{},{})'[{out}]",
         if ctx.alpha { ":format=auto" } else { "" },
@@ -864,7 +877,9 @@ fn group_layer(ctx: &mut Ctx, p: &Project, group: &[&Clip], k: usize) -> Result<
         ctx.graph.push(format!(
             "color=c=black@0.0:s={w}x{h}:r={}:d={},format=rgba[{canvas}]",
             ctx.fps,
-            f(len)
+            // the chain's last layer one frame longer, as in `media_sprite` (never shown)
+            // the chain's last layer one frame longer, as in `media_sprite` (never shown)
+            f(len + if k + 1 == group.len() { 1.0 / fps_value(&ctx.fps) } else { 0.0 })
         ));
         let x = sp.x.replace("TT", "t");
         let y = sp.y.replace("TT", "t");
@@ -1099,8 +1114,7 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
                 sprite_for(ctx, &proj, c, skip)?
             };
             let Some(sp) = sprite else { continue };
-            let t0 = (g_start - ctx.start).as_secs_f64();
-            cur = place(ctx, &cur, &sp, t0, (g_end - g_start).as_secs_f64());
+            cur = place(ctx, &cur, &sp, g_start - ctx.start, g_end - ctx.start);
         }
     }
     Ok(cur)
