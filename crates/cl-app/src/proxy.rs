@@ -1490,7 +1490,7 @@ mod tests {
     /// Where Media Foundation starts, the parts alternate between it and software.
     #[test]
     fn parts_join_frame_exact_and_merge_keeps_every_frame() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let mix = if available_encoders().contains(&Encoder::Mf) { vec![Encoder::Mf, Encoder::Software] } else { vec![Encoder::Software] };
@@ -1556,7 +1556,7 @@ mod tests {
     /// show the same frame as the original at the same source time (`-ss` counts from the file start).
     #[test]
     fn parts_and_proxy_match_the_original_when_video_starts_late() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = tempfile::tempdir().unwrap();
@@ -1596,7 +1596,7 @@ mod tests {
     /// Video shorter than the file (sound longer): the last part has no frame, the build still finishes.
     #[test]
     fn part_behind_video_end_is_empty_and_merge_still_works() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = tempfile::tempdir().unwrap();
@@ -1635,7 +1635,7 @@ mod tests {
     /// cleaned up, only what is missing is built (a finished part never again), one file at the end.
     #[test]
     fn resume_after_abort_builds_only_missing_parts() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = tempfile::tempdir().unwrap();
@@ -1760,7 +1760,7 @@ mod tests {
         assert_eq!(fails_in_row(1, false), Some(2));
         assert_eq!(fails_in_row(2, false), None);
         assert_eq!(fails_in_row(2, true), Some(0), "a success resets");
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1846,7 +1846,7 @@ mod tests {
     /// playable.
     #[test]
     fn builds_small_proxy() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = tempfile::tempdir().unwrap();
@@ -1886,7 +1886,7 @@ mod tests {
     /// Cancel during the pause too: no half file is left behind.
     #[test]
     fn cancel_while_paused_leaves_nothing() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = tempfile::tempdir().unwrap();

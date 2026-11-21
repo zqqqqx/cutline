@@ -2203,6 +2203,9 @@ fn queue_takes_turns_names_limit_and_keeps_its_snapshot() {
 
 #[test]
 fn queued_exports_run_in_turn_from_their_own_snapshot() {
+    if !cl_media::test_tools() {
+        return;
+    }
     use cl_core::{Clip, ClipContent, TextStyle, Track, TrackKind};
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
@@ -2286,6 +2289,9 @@ fn drain(d: &mut ExportDialog, ctx: &egui::Context, p: &Project) {
 
 #[test]
 fn split_export_writes_parts_into_a_folder_as_one_entry() {
+    if !cl_media::test_tools() {
+        return;
+    }
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("CUTLINE_HOME", dir.path());
@@ -2328,6 +2334,9 @@ fn split_export_writes_parts_into_a_folder_as_one_entry() {
 
 #[test]
 fn failed_part_does_not_stop_the_others() {
+    if !cl_media::test_tools() {
+        return;
+    }
     use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
@@ -2357,6 +2366,9 @@ fn failed_part_does_not_stop_the_others() {
 
 #[test]
 fn cancel_stops_the_whole_group_without_half_files() {
+    if !cl_media::test_tools() {
+        return;
+    }
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("CUTLINE_HOME", dir.path());
@@ -2463,6 +2475,9 @@ fn overwriting_a_group_finds_only_its_own_older_parts() {
 /// begins – a previously running or waiting export of the same group would otherwise write them again.
 #[test]
 fn overwrite_removes_old_parts_when_its_export_starts() {
+    if !cl_media::test_tools() {
+        return;
+    }
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("CUTLINE_HOME", dir.path());
@@ -2495,6 +2510,9 @@ fn overwrite_removes_old_parts_when_its_export_starts() {
 /// and preselects from it instead of silently using the software encoder.
 #[test]
 fn export_started_during_encoder_probe_uses_the_probed_list() {
+    if !cl_media::test_tools() {
+        return;
+    }
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("CUTLINE_HOME", dir.path());
@@ -2600,6 +2618,9 @@ fn split_folder_is_never_the_chosen_folder_and_survives_cancel() {
 /// Target size applies per part: bitrate from the length of the part.
 #[test]
 fn target_size_applies_per_part() {
+    if !cl_media::test_tools() {
+        return;
+    }
     use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
@@ -2888,7 +2909,7 @@ fn cover_preview_comes_from_the_reframed_snapshot() {
 /// blurred background; the circle stays round; the project stays unchanged.
 #[test]
 fn vertical_export_fills_or_fits_with_a_blurred_background() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -2931,7 +2952,7 @@ fn vertical_export_fills_or_fits_with_a_blurred_background() {
 /// Censoring still on the subject after the rebuild (pixel test as in the player)
 #[test]
 fn censor_stays_on_its_subject_after_reframing() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -2958,7 +2979,7 @@ fn censor_stays_on_its_subject_after_reframing() {
 #[test]
 fn split_parts_have_every_frame_exactly_once() {
     use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -3008,7 +3029,7 @@ fn split_parts_have_every_frame_exactly_once() {
 /// Portrait, in 2 parts, target size: all in one export
 #[test]
 fn vertical_split_with_target_size() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -3117,7 +3138,7 @@ fn red_center_x(img: &(usize, usize, Vec<u8>)) -> f64 {
 /// moving circle stays centred in both parts (centre-cropped it would be at the edge at 0.6 s)
 #[test]
 fn follow_person_with_split_parts_and_target_size() {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
