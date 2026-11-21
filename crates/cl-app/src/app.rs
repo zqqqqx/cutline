@@ -1761,11 +1761,16 @@ impl App {
     pub fn delete_side(&mut self, left: bool) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
         let inside = |c: &Clip| at > c.start && at < c.end();
-        let mut targets: Vec<(ClipId, bool)> = self
+        let mut targets: Vec<(ClipId, bool, bool)> = self
             .selection()
             .into_iter()
-            .filter_map(|s| self.project.find_clip(s).filter(|(_, c)| inside(c)).map(|(t, _)| (s, t.main)))
+            .filter_map(|s| self.project.find_clip(s).filter(|(_, c)| inside(c)).map(|(t, _)| (s, t.main, t.locked)))
             .collect();
+        // clips on locked tracks (Ctrl+A selects them too) would fail the whole batch: leave them
+        // out – unless nothing else is hit, then the error message says why nothing happens
+        if targets.iter().any(|t| !t.2) {
+            targets.retain(|t| !t.2);
+        }
         if targets.is_empty() {
             targets = self
                 .project
@@ -1774,12 +1779,12 @@ impl App {
                 .iter()
                 .find(|t| t.main)
                 .and_then(|t| t.clips.iter().find(|c| inside(c)))
-                .map(|c| vec![(c.id, true)])
+                .map(|c| vec![(c.id, true, false)])
                 .unwrap_or_default();
         }
         let main = targets.iter().find(|t| t.1).map(|t| t.0);
         let edge = if left { Edge::Start } else { Edge::End };
-        let ops = targets.iter().map(|(clip, _)| EditOp::TrimClip { clip: *clip, edge, to: at }).collect();
+        let ops = targets.iter().map(|(clip, ..)| EditOp::TrimClip { clip: *clip, edge, to: at }).collect();
         if self.apply_batch(ops).is_some() && left && self.project.settings.main_track_magnet {
             // the main track closed the gap: the playhead goes along to the cut
             if let Some((_, c)) = main.and_then(|id| self.project.find_clip(id)) {
@@ -4490,6 +4495,38 @@ fn cut_left_and_right_hit_every_selected_clip() {
         app.undo();
         app.sync_project();
         assert_eq!(spans(&app), vec![(t(0.0), t(4.0)); 3], "one undo restores all (left {left})");
+    }
+}
+
+/// Q / W after Ctrl+A with one locked track: the unlocked clips are cut, the locked one stays
+/// (before: the batch failed on the locked track and nothing was cut)
+#[test]
+fn cut_left_and_right_skip_locked_tracks() {
+    let mut app = crate::saving::tests::test_app();
+    let t = Time::from_secs_f64;
+    let mut p = Project::new("QW");
+    let mut ids = Vec::new();
+    for i in 0..3 {
+        let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
+        tr.locked = i == 1;
+        let c = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), t(0.0), t(4.0));
+        ids.push(c.id);
+        tr.clips.push(c);
+        p.timeline.tracks.push(tr);
+    }
+    app.set_doc(p);
+    let spans = |app: &App| ids.iter().map(|id| app.project.find_clip(*id).map(|(_, c)| (c.start, c.end())).unwrap()).collect::<Vec<_>>();
+    let full = (t(0.0), t(4.0));
+    for left in [true, false] {
+        app.select_all();
+        app.playhead = t(1.0);
+        app.delete_side(left);
+        app.sync_project();
+        let cut = if left { (t(1.0), t(4.0)) } else { (t(0.0), t(1.0)) };
+        assert_eq!(spans(&app), vec![cut, full, cut], "left {left}");
+        app.undo();
+        app.sync_project();
+        assert_eq!(spans(&app), vec![full; 3], "one undo restores all (left {left})");
     }
 }
 
