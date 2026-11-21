@@ -682,7 +682,7 @@ mod presence_tests {
     #[ignore]
     fn tempo_in_app() {
         let (a, b) = (std::path::Path::new("F:/cutline-testmedien/4k60_h264_80mbit.mp4"), std::path::Path::new("F:/cutline-testmedien/4k60_hevc10_50mbit.mp4"));
-        if !cl_media::ffmpeg_available() || !a.is_file() || !b.is_file() {
+        if !cl_media::test_tools() || !a.is_file() || !b.is_file() {
             return;
         }
         let ctx = egui::Context::default();
@@ -1229,7 +1229,7 @@ mod transition_tests {
     /// instead of B showing through without mask.
     #[test]
     fn masked_clip_pixelize_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = still_vs_export("pixelize", true, None, 1.6);
@@ -1240,7 +1240,7 @@ mod transition_tests {
     /// a different crop on B: preview like export.
     #[test]
     fn crop_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1265,7 +1265,7 @@ mod transition_tests {
     /// Split screen from the layout action (crop + transform of two tracks): preview like export.
     #[test]
     fn splitscreen_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1295,7 +1295,7 @@ mod transition_tests {
     /// the finished transition), not cross-faded.
     #[test]
     fn circleopen_under_filter_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = still_vs_export("circleopen", false, Some("noir"), 1.5);
@@ -1305,8 +1305,11 @@ mod transition_tests {
     /// Cube (package shader) after a masked clip under a filter element (N_tr 37:90).
     #[test]
     fn shader_transition_under_filter_matches_export() {
-        if !cl_media::ffmpeg_available() || cl_gpu::gpu().is_none() {
-            eprintln!("kein FFmpeg oder keine GPU, übersprungen");
+        if !cl_media::test_tools() {
+            return;
+        }
+        if cl_gpu::gpu().is_none() {
+            eprintln!("skipped (no GPU): shader_transition_under_filter_matches_export");
             return;
         }
         load_shipped_packs();
@@ -1527,7 +1530,7 @@ mod transition_tests {
     /// of the lines and the middle of the block.
     #[test]
     fn text_lines_match_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let app = crate::saving::tests::test_app();
@@ -1567,7 +1570,7 @@ mod transition_tests {
     /// compared.
     #[test]
     fn karaoke_word_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let app = crate::saving::tests::test_app();
@@ -1664,7 +1667,7 @@ mod transition_tests {
     /// level), next to it the picture is unchanged, and the area lies left at 0.2 s, right at 1.8 s.
     #[test]
     fn censor_destroys_the_pattern_only_inside_and_moves() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1694,7 +1697,7 @@ mod transition_tests {
     /// Preview against export at two points in time (the area moves in between).
     #[test]
     fn censor_preview_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1716,7 +1719,7 @@ mod transition_tests {
     /// place of the source frame – in preview and export.
     #[test]
     fn censor_follows_crop_scale_and_position() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

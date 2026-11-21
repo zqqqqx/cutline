@@ -225,7 +225,7 @@ mod tests {
         let r = hound::WavReader::open(&p).unwrap();
         assert_eq!(r.spec().sample_rate, 48000);
         assert_eq!(r.duration(), 48000);
-        if cl_media::ffmpeg_available() {
+        if cl_media::test_tools() {
             let m = cl_media::probe(&p).unwrap();
             assert_eq!(m.kind, cl_core::MediaKind::Audio);
             assert!((m.duration.as_secs_f64() - 1.0).abs() < 0.01);

@@ -341,6 +341,9 @@ mod tests {
     /// undo step, the rest of the project stays untouched. Without a logo nothing happens.
     #[test]
     fn insert_logo_is_one_undo_step_and_touches_nothing_else() {
+        if !cl_media::test_tools() {
+            return;
+        }
         let mut app = crate::saving::tests::test_app();
         let mut p = Project::new("Logo");
         let video = MediaRef {

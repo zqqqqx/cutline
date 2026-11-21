@@ -1841,7 +1841,7 @@ mod tests {
     /// the tracking time are printed.
     #[test]
     fn censor_tracking_covers_a_moving_object_in_every_frame() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
