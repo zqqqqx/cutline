@@ -1669,13 +1669,23 @@ impl App {
         if targets.is_empty() {
             return;
         }
-        let ops: Vec<EditOp> = targets
-            .iter()
-            .map(|c| EditOp::SplitClip { clip: *c, at })
-            .collect();
-        if let Some(OpOutput::Clip(r)) = self.apply_batch(ops) {
-            self.select_only(Some(r));
-        }
+        // one history step; every split clip is replaced in the selection by its right piece (as for
+        // a single clip), selected clips the playhead missed stay
+        let rights: Vec<(ClipId, ClipId)> = self.one_step(|s| {
+            targets
+                .iter()
+                .filter_map(|c| match s.apply(EditOp::SplitClip { clip: *c, at }) {
+                    Some(OpOutput::Clip(r)) => Some((*c, r)),
+                    _ => None,
+                })
+                .collect()
+        });
+        let piece = |c: ClipId| rights.iter().find(|r| r.0 == c).map_or(c, |r| r.1);
+        let primary = self.selected.map(piece);
+        let keep: Vec<ClipId> = self.selection().into_iter().filter(|c| !rights.iter().any(|r| r.0 == *c)).collect();
+        let Some(first) = primary.or(rights.first().map(|r| r.1)) else { return };
+        self.select_only(Some(first));
+        self.sel_extra = rights.iter().map(|r| r.1).chain(keep).filter(|c| *c != first).collect();
     }
 
     /// Clips that „Teilen“ hits at the playhead: the selection, otherwise the main track's clip
@@ -4522,4 +4532,38 @@ fn window_close_goes_to_the_start_page_when_switched_on() {
             assert!(app.screen == Screen::Editor && paths::lock_path(&p).exists());
         }
     }
+}
+
+/// Splitting several selected clips: afterwards one piece of every one is selected (the right one,
+/// as for a single clip); a selected clip the playhead misses stays selected
+#[test]
+fn split_keeps_every_selected_clip_selected() {
+    let mut app = crate::saving::tests::test_app();
+    let t = Time::from_secs_f64;
+    let mut p = Project::new("Teilen");
+    let mut ids = Vec::new();
+    for at in [0.0, 0.0, 0.0, 10.0] {
+        let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
+        let c = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), t(at), t(4.0));
+        ids.push(c.id);
+        tr.clips.push(c);
+        p.timeline.tracks.push(tr);
+    }
+    app.set_doc(p);
+    app.select_all();
+    let primary = app.selected.unwrap();
+    app.playhead = t(1.0);
+    app.split_at_playhead();
+    app.sync_project();
+    let sel = app.selection();
+    assert_eq!(sel.len(), 4, "{sel:?}");
+    let mut per_track: Vec<(TrackId, Time)> = sel.iter().map(|c| app.project.find_clip(*c).map(|(tr, c)| (tr.id, c.start)).unwrap()).collect();
+    per_track.sort_by_key(|x| x.1);
+    assert_eq!(per_track.iter().map(|x| x.1).collect::<Vec<_>>(), [t(1.0), t(1.0), t(1.0), t(10.0)], "right halves plus the untouched clip");
+    let tracks: HashSet<TrackId> = per_track.iter().map(|x| x.0).collect();
+    assert_eq!(tracks.len(), 4, "one per track");
+    assert!(sel.contains(&ids[3]));
+    // the primary selection is the piece of the clip that was primary
+    let (pt, _) = app.project.find_clip(app.selected.unwrap()).map(|(tr, c)| (tr.id, c.start)).unwrap();
+    assert_eq!(Some(pt), app.project.timeline.tracks.iter().find(|tr| tr.clips.iter().any(|c| c.id == primary)).map(|tr| tr.id));
 }
