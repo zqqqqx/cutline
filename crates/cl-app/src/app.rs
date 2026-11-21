@@ -1746,55 +1746,35 @@ impl App {
         }
     }
 
-    /// Q / W: cut away left or right of the playhead (selected clip or main track).
+    /// Q / W: cut away left or right of the playhead – on every selected clip the playhead lies in
+    /// (one history step), without such a selection on the main track's clip.
     pub fn delete_side(&mut self, left: bool) {
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
-        let target = self
-            .selected
-            .filter(|s| {
-                self.project
-                    .find_clip(*s)
-                    .is_some_and(|(_, c)| c.contains(at))
-            })
-            .or_else(|| {
-                self.project
-                    .timeline
-                    .tracks
-                    .iter()
-                    .find(|t| t.main)
-                    .and_then(|t| t.clips.iter().find(|c| c.contains(at)))
-                    .map(|c| c.id)
-            });
-        let Some(id) = target else { return };
-        let Some((tr, c)) = self
-            .project
-            .find_clip(id)
-            .map(|(t, c)| (t.clone(), c.clone()))
-        else {
-            return;
-        };
-        if at <= c.start || at >= c.end() {
-            return;
-        }
-        let op = if left {
-            EditOp::TrimClip {
-                clip: id,
-                edge: Edge::Start,
-                to: at,
-            }
-        } else {
-            EditOp::TrimClip {
-                clip: id,
-                edge: Edge::End,
-                to: at,
-            }
-        };
-        if self.apply(op).is_some() && left && tr.main && self.project.settings.main_track_magnet {
-            self.playhead = self
+        let inside = |c: &Clip| at > c.start && at < c.end();
+        let mut targets: Vec<(ClipId, bool)> = self
+            .selection()
+            .into_iter()
+            .filter_map(|s| self.project.find_clip(s).filter(|(_, c)| inside(c)).map(|(t, _)| (s, t.main)))
+            .collect();
+        if targets.is_empty() {
+            targets = self
                 .project
-                .find_clip(id)
-                .map(|(_, c)| c.start)
-                .unwrap_or(self.playhead);
+                .timeline
+                .tracks
+                .iter()
+                .find(|t| t.main)
+                .and_then(|t| t.clips.iter().find(|c| inside(c)))
+                .map(|c| vec![(c.id, true)])
+                .unwrap_or_default();
+        }
+        let main = targets.iter().find(|t| t.1).map(|t| t.0);
+        let edge = if left { Edge::Start } else { Edge::End };
+        let ops = targets.iter().map(|(clip, _)| EditOp::TrimClip { clip: *clip, edge, to: at }).collect();
+        if self.apply_batch(ops).is_some() && left && self.project.settings.main_track_magnet {
+            // the main track closed the gap: the playhead goes along to the cut
+            if let Some((_, c)) = main.and_then(|id| self.project.find_clip(id)) {
+                self.playhead = c.start;
+            }
         }
     }
 
@@ -4463,6 +4443,36 @@ fn long_toast_stays_inside_the_window() {
     }
     let r = ctx.memory(|m| m.area_rect(egui::Id::new("toasts"))).unwrap();
     assert!(r.left() >= 0.0 && r.right() <= 800.0, "{r:?}");
+}
+
+/// Q / W with clips on several tracks selected: every selected clip under the playhead is cut,
+/// as one undo step (before: only the primary selection, the clip clicked last)
+#[test]
+fn cut_left_and_right_hit_every_selected_clip() {
+    let mut app = crate::saving::tests::test_app();
+    let t = Time::from_secs_f64;
+    let mut p = Project::new("QW");
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
+        let c = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), t(0.0), t(4.0));
+        ids.push(c.id);
+        tr.clips.push(c);
+        p.timeline.tracks.push(tr);
+    }
+    app.set_doc(p);
+    let spans = |app: &App| ids.iter().map(|id| app.project.find_clip(*id).map(|(_, c)| (c.start, c.end())).unwrap()).collect::<Vec<_>>();
+    for left in [true, false] {
+        app.select_all();
+        app.playhead = t(1.0);
+        app.delete_side(left);
+        app.sync_project();
+        let want = if left { (t(1.0), t(4.0)) } else { (t(0.0), t(1.0)) };
+        assert_eq!(spans(&app), vec![want; 3], "left {left}");
+        app.undo();
+        app.sync_project();
+        assert_eq!(spans(&app), vec![(t(0.0), t(4.0)); 3], "one undo restores all (left {left})");
+    }
 }
 
 #[test]
