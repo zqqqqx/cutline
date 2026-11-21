@@ -80,6 +80,47 @@ fn task_bar(ui: &mut egui::Ui, app: &App, key: &str) -> bool {
     false
 }
 
+/// Way of cutting out, derived from the clip (not stored). Stage 3 adds `Object` here and in `ALL`.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum CutMode {
+    Off,
+    Person,
+    Color,
+}
+
+impl CutMode {
+    const ALL: [(CutMode, &'static str); 3] = [(CutMode::Off, "Aus"), (CutMode::Person, "Person"), (CutMode::Color, "Farbe")];
+
+    /// `matte_running`: a mask job runs for the clip. Older projects with mask and color key = Person.
+    fn of(fx: &ClipFx, matte_running: bool) -> Self {
+        if fx.cutout.is_some() || matte_running {
+            CutMode::Person
+        } else if fx.chroma.is_some() {
+            CutMode::Color
+        } else {
+            CutMode::Off
+        }
+    }
+
+    /// Choose this way: the fields of the other ways go (one undo step). Person: the mask
+    /// comes from `App::start_matte`; Off also drops background effect and edge.
+    fn apply(self, fx: &mut ClipFx) {
+        match self {
+            CutMode::Off => {
+                fx.cutout = None;
+                fx.chroma = None;
+                fx.person = None;
+                fx.edge = MatteEdge::default();
+            }
+            CutMode::Person => fx.chroma = None,
+            CutMode::Color => {
+                fx.cutout = None;
+                fx.chroma.get_or_insert_with(ChromaKey::default);
+            }
+        }
+    }
+}
+
 fn matte_cache(path: &std::path::Path) -> PathBuf {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     path.hash(&mut h);
@@ -477,7 +518,9 @@ impl App {
         }
     }
 
-    fn start_matte(&mut self, ctx: &egui::Context, c: &Clip) {
+    /// Person mask: a finished one from the cache goes into `c` (the caller commits), otherwise
+    /// the job starts and sets it when done.
+    fn start_matte(&mut self, ctx: &egui::Context, c: &mut Clip) {
         let ClipContent::Media {
             media,
             kind: MediaKind::Video,
@@ -491,10 +534,7 @@ impl App {
         };
         let out = matte_cache(&m.path);
         if out.is_file() {
-            let mut c2 = c.clone();
-            c2.fx.cutout = Some(out.to_string_lossy().into_owned());
-            self.live = None;
-            self.apply(EditOp::ReplaceClip { clip: c2 });
+            c.fx.cutout = Some(out.to_string_lossy().into_owned());
             return;
         }
         if !self.need_models(&["onnxruntime", "rvm"]) {
@@ -606,87 +646,36 @@ impl App {
             .any(|t| t.main && t.clips.iter().any(|x| x.id == c.id));
         if is_media {
             theme::section(ui, "Freistellen");
-            if is_video {
-                let running = self.tasks.running(&format!("matte:{}", c.id)).is_some();
-                let mut on = c.fx.cutout.is_some() || running;
-                if widgets::toggle_row(ui, "Hintergrund entfernen", &mut on) {
-                    if running {
-                        if let Some(t) = self.tasks.running(&format!("matte:{}", c.id)) {
-                            t.cancel();
-                        }
-                    } else if on {
-                        self.start_matte(&ctx, c);
-                    } else {
-                        c.fx.cutout = None;
+            let task = format!("matte:{}", c.id);
+            let mode = CutMode::of(&c.fx, self.tasks.running(&task).is_some());
+            let mut sel = CutMode::ALL.iter().position(|m| m.0 == mode).unwrap_or(0);
+            let names = CutMode::ALL.map(|m| m.1);
+            let enabled = CutMode::ALL.map(|m| m.0 != CutMode::Person || is_video);
+            if widgets::segmented_some(ui, &names, &mut sel, &enabled) && CutMode::ALL[sel].0 != mode {
+                let new = CutMode::ALL[sel].0;
+                if let Some(t) = self.tasks.running(&task).filter(|_| new != CutMode::Person) {
+                    t.cancel();
+                }
+                new.apply(&mut c.fx);
+                if new == CutMode::Person {
+                    self.start_matte(&ctx, c);
+                }
+                e.commit = true;
+            }
+            if mode == CutMode::Person {
+                task_bar(ui, self, &task);
+                // older projects: mask and color key at once
+                if c.fx.chroma.is_some() {
+                    let x = theme::row(ui, "Farbe zusätzlich aktiv", |ui| {
+                        theme::icon_button(ui, icon::X, "Farbschlüssel entfernen", true, false).clicked()
+                    });
+                    if x {
+                        c.fx.chroma = None;
                         e.commit = true;
                     }
                 }
-                task_bar(ui, self, &format!("matte:{}", c.id));
-                if c.fx.cutout.is_some() {
-                    // Person effects: what happens to the background
-                    let mut sel = c.fx.person.as_ref().map(|p| p.index() + 1).unwrap_or(0);
-                    let items = [
-                        "Transparent",
-                        PersonFx::KINDS[0],
-                        PersonFx::KINDS[1],
-                        PersonFx::KINDS[2],
-                    ];
-                    theme::row(ui, "Hintergrund", |ui| {
-                        egui::ComboBox::from_id_salt(("person", c.id))
-                            .selected_text(crate::tr(items[sel]))
-                            .width((ui.available_width() - 12.0).max(60.0))
-                            .show_ui(ui, |ui| {
-                                for (i, it) in items.iter().enumerate() {
-                                    if ui.selectable_value(&mut sel, i, crate::tr(*it)).changed() {
-                                        c.fx.person = (i > 0).then(|| PersonFx::from_index(i - 1));
-                                        e.commit = true;
-                                    }
-                                }
-                            });
-                    });
-                    match &mut c.fx.person {
-                        Some(PersonFx::BlurBackground { amount }) => {
-                            *e |= theme::row(ui, "Unschärfe", |ui| {
-                                Slider::new(amount, 0.0..=1.0)
-                                    .percent()
-                                    .default(0.6)
-                                    .show(ui)
-                            });
-                        }
-                        Some(PersonFx::ColorBackground { color }) => {
-                            theme::row(ui, "Farbe", |ui| {
-                                let mut rgba = [color[0], color[1], color[2], 255];
-                                if widgets::color_button(ui, &mut rgba) {
-                                    *color = [rgba[0], rgba[1], rgba[2]];
-                                    e.commit = true;
-                                }
-                            });
-                        }
-                        Some(PersonFx::Outline { color, width, .. }) => {
-                            theme::row(ui, "Farbe", |ui| {
-                                let mut rgba = [color[0], color[1], color[2], 255];
-                                if widgets::color_button(ui, &mut rgba) {
-                                    *color = [rgba[0], rgba[1], rgba[2]];
-                                    e.commit = true;
-                                }
-                            });
-                            *e |= theme::row(ui, "Breite", |ui| {
-                                Slider::new(width, 0.0..=1.0)
-                                    .percent()
-                                    .default(0.4)
-                                    .show(ui)
-                            });
-                        }
-                        None => {}
-                    }
-                }
             }
-            let mut ck = c.fx.chroma.is_some();
-            if widgets::toggle_row(ui, "Chroma-Key (Greenscreen)", &mut ck) {
-                c.fx.chroma = ck.then(ChromaKey::default);
-                e.commit = true;
-            }
-            if let Some(k) = &mut c.fx.chroma {
+            if let Some(k) = c.fx.chroma.as_mut().filter(|_| mode == CutMode::Color) {
                 theme::row(ui, "Farbe", |ui| {
                     let mut rgba = [k.color[0], k.color[1], k.color[2], 255];
                     if widgets::color_button(ui, &mut rgba) {
@@ -728,6 +717,82 @@ impl App {
                         .default(0.5)
                         .show(ui)
                 });
+            }
+            if mode != CutMode::Off {
+                // shared by all ways: what happens to the background, then the mask edge
+                let mut sel = c.fx.person.as_ref().map(|p| p.index() + 1).unwrap_or(0);
+                let items = [
+                    "Transparent",
+                    PersonFx::KINDS[0],
+                    PersonFx::KINDS[1],
+                    PersonFx::KINDS[2],
+                ];
+                theme::row(ui, "Hintergrund", |ui| {
+                    egui::ComboBox::from_id_salt(("person", c.id))
+                        .selected_text(crate::tr(items[sel]))
+                        .width((ui.available_width() - 12.0).max(60.0))
+                        .show_ui(ui, |ui| {
+                            for (i, it) in items.iter().enumerate() {
+                                if ui.selectable_value(&mut sel, i, crate::tr(*it)).changed() {
+                                    c.fx.person = (i > 0).then(|| PersonFx::from_index(i - 1));
+                                    e.commit = true;
+                                }
+                            }
+                        });
+                });
+                match &mut c.fx.person {
+                    Some(PersonFx::BlurBackground { amount }) => {
+                        *e |= theme::row(ui, "Unschärfe", |ui| {
+                            Slider::new(amount, 0.0..=1.0)
+                                .percent()
+                                .default(0.6)
+                                .show(ui)
+                        });
+                    }
+                    Some(PersonFx::ColorBackground { color }) => {
+                        theme::row(ui, "Farbe", |ui| {
+                            let mut rgba = [color[0], color[1], color[2], 255];
+                            if widgets::color_button(ui, &mut rgba) {
+                                *color = [rgba[0], rgba[1], rgba[2]];
+                                e.commit = true;
+                            }
+                        });
+                    }
+                    Some(PersonFx::Outline { color, width, transparent }) => {
+                        theme::row(ui, "Farbe", |ui| {
+                            let mut rgba = [color[0], color[1], color[2], 255];
+                            if widgets::color_button(ui, &mut rgba) {
+                                *color = [rgba[0], rgba[1], rgba[2]];
+                                e.commit = true;
+                            }
+                        });
+                        *e |= theme::row(ui, "Breite", |ui| {
+                            Slider::new(width, 0.0..=1.0)
+                                .percent()
+                                .default(0.4)
+                                .show(ui)
+                        });
+                        if widgets::toggle_row(ui, "Ohne Hintergrund", transparent) {
+                            e.commit = true;
+                        }
+                    }
+                    None => {}
+                }
+                *e |= theme::row(ui, "Weiche Kante", |ui| {
+                    Slider::new(&mut c.fx.edge.feather, 0.0..=1.0)
+                        .percent()
+                        .default(0.0)
+                        .show(ui)
+                });
+                *e |= theme::row(ui, "Kante verschieben", |ui| {
+                    Slider::new(&mut c.fx.edge.shift, -1.0..=1.0)
+                        .percent()
+                        .default(0.0)
+                        .show(ui)
+                });
+                if widgets::toggle_row(ui, "Umkehren", &mut c.fx.edge.invert) {
+                    e.commit = true;
+                }
             }
         }
         if is_video {
@@ -1646,6 +1711,71 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
 mod tests {
     use super::*;
     use cl_analyze::asr::Engine;
+
+    #[test]
+    fn cut_mode_is_derived_from_clip_and_task() {
+        let k = Some(ChromaKey::default());
+        let m = Some("m.mkv".to_string());
+        let fx = |cutout: &Option<String>, chroma: &Option<ChromaKey>| ClipFx { cutout: cutout.clone(), chroma: *chroma, ..Default::default() };
+        for running in [false, true] {
+            let busy = |m: CutMode| if running { CutMode::Person } else { m };
+            assert_eq!(CutMode::of(&fx(&None, &None), running), busy(CutMode::Off));
+            assert_eq!(CutMode::of(&fx(&None, &k), running), busy(CutMode::Color));
+            assert_eq!(CutMode::of(&fx(&m, &None), running), CutMode::Person);
+            // older project with both: Person (plus the status row for the key)
+            assert_eq!(CutMode::of(&fx(&m, &k), running), CutMode::Person);
+        }
+        // a person effect or edge alone is no way of its own
+        let only = ClipFx { person: Some(PersonFx::from_index(1)), edge: MatteEdge { invert: true, ..Default::default() }, ..Default::default() };
+        assert_eq!(CutMode::of(&only, false), CutMode::Off);
+    }
+
+    /// Each choice is one clip replacement (one undo step) with the fields of the other ways gone.
+    #[test]
+    fn cut_mode_choice_is_one_undo_step() {
+        let mut p = Project::new("Freistellen");
+        let mut t = Track::new(TrackKind::Video);
+        // fields only: the content does not matter for the choice
+        let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
+        let custom = ChromaKey { similarity: 0.3, ..Default::default() };
+        c.fx.cutout = Some("m.mkv".into());
+        c.fx.chroma = Some(custom);
+        c.fx.person = Some(PersonFx::from_index(2));
+        c.fx.edge.shift = 0.5;
+        c.fx.adjust.brightness = 0.2;
+        t.clips.push(c.clone());
+        p.timeline.tracks.push(t);
+        let mut doc = Document::new(p);
+        let choose = |doc: &mut Document, m: CutMode| {
+            let mut c = doc.project().timeline.tracks[0].clips[0].clone();
+            m.apply(&mut c.fx);
+            let before = doc.undo_entries().len();
+            doc.apply(EditOp::ReplaceClip { clip: c }, OpSource::Ui).unwrap();
+            assert_eq!(doc.undo_entries().len(), before + 1);
+            doc.project().timeline.tracks[0].clips[0].fx.clone()
+        };
+        // Color: mask goes, the existing key stays, background effect and edge stay
+        let fx = choose(&mut doc, CutMode::Color);
+        assert_eq!((fx.cutout, fx.chroma), (None, Some(custom)));
+        assert_eq!((fx.person.is_some(), fx.edge.shift), (true, 0.5));
+        doc.undo().unwrap();
+        // Person: key goes, the mask stays
+        let fx = choose(&mut doc, CutMode::Person);
+        assert_eq!((fx.cutout.as_deref(), fx.chroma), (Some("m.mkv"), None));
+        assert_eq!(CutMode::of(&fx, false), CutMode::Person);
+        // Off: everything of the cutout goes, the rest of the look stays
+        let fx = choose(&mut doc, CutMode::Off);
+        assert!(fx.cutout.is_none() && fx.chroma.is_none() && fx.person.is_none() && fx.edge.is_identity());
+        assert_eq!(fx.adjust.brightness, 0.2);
+        // Color from nothing: default key
+        let fx = choose(&mut doc, CutMode::Color);
+        assert_eq!(fx.chroma, Some(ChromaKey::default()));
+        // one undo brings back the previous state as a whole
+        doc.undo().unwrap();
+        doc.undo().unwrap();
+        assert_eq!(doc.project().timeline.tracks[0].clips[0].fx.chroma, None);
+        assert_eq!(doc.project().timeline.tracks[0].clips[0].fx.cutout.as_deref(), Some("m.mkv"));
+    }
 
     #[test]
     fn asr_offer_lists_installed_engines_and_forces_the_choice() {
