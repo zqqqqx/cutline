@@ -1960,14 +1960,23 @@ fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
     assert!(d.name.starts_with("t ("), "{}", d.name);
 }
 
+/// Poll `done` every 20 ms; fails the test if it is still false after `secs` seconds
+#[cfg(test)]
+fn wait_until(what: &str, secs: u64, mut done: impl FnMut() -> bool) {
+    let t0 = Instant::now();
+    while !done() {
+        assert!(t0.elapsed().as_secs() < secs, "still waiting after {secs} s: {what}");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
 /// Draw frames until the export thread is done
 #[cfg(test)]
 fn finish(d: &mut ExportDialog, ctx: &egui::Context, p: &Project) {
-    let t0 = Instant::now();
-    while d.running.is_some() && t0.elapsed().as_secs() < 30 {
-        std::thread::yield_now();
+    wait_until("export thread", 30, || d.running.is_none() || {
         frame(d, ctx, p, false);
-    }
+        false
+    });
 }
 
 #[test]
@@ -2092,15 +2101,17 @@ fn window_close_during_export_asks_and_cancels() {
     let r = running(None);
     let (cancel, result) = (r.cancel.clone(), r.result.clone());
     d.running = Some(r);
+    // stand-in for the export thread: reacts only to the cancel, then needs a moment to end FFmpeg
+    // (the 100 ms are what `cancel_and_wait` must wait out, not a guess about scheduling)
     std::thread::spawn(move || {
-        while !cancel.load(Ordering::Relaxed) {
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        wait_until("cancel", 10, || cancel.load(Ordering::Relaxed));
         std::thread::sleep(std::time::Duration::from_millis(100));
         *result.lock().unwrap() = Some(Err("Abgebrochen".into()));
     });
-    d.cancel_and_wait(std::time::Duration::from_secs(5));
-    assert!(d.running.as_ref().unwrap().result.lock().unwrap().is_some());
+    let t0 = Instant::now();
+    d.cancel_and_wait(std::time::Duration::from_secs(10));
+    assert!(d.running.as_ref().unwrap().result.lock().unwrap().is_some(), "returned before the thread reported");
+    assert!(t0.elapsed() < std::time::Duration::from_secs(10), "waited out the limit although the thread reported");
 }
 
 #[test]
@@ -2235,11 +2246,7 @@ fn queued_exports_run_in_turn_from_their_own_snapshot() {
     let po = dir.path().join("Anders.cutline");
     d.open_for(&other, Some(&po), 7, None);
     d.cancel_current();
-    let t0 = Instant::now();
-    while (d.running.is_some() || !d.queue.is_empty()) && t0.elapsed().as_secs() < 60 {
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        frame(&mut d, &ctx, &other, false);
-    }
+    drain(&mut d, &ctx, &other);
     assert_eq!(d.error, None);
     for f in ["A.mp4", "A kurz.mp4"] {
         let m = cl_media::probe(&dir.path().join(f)).unwrap();
@@ -2280,11 +2287,10 @@ fn split_dialog(p: &Project, dir: &Path, n: u32) -> ExportDialog {
 /// Draw frames until export and queue are empty
 #[cfg(test)]
 fn drain(d: &mut ExportDialog, ctx: &egui::Context, p: &Project) {
-    let t0 = Instant::now();
-    while (d.running.is_some() || !d.queue.is_empty()) && t0.elapsed().as_secs() < 120 {
-        std::thread::sleep(std::time::Duration::from_millis(20));
+    wait_until("export and queue", 120, || (d.running.is_none() && d.queue.is_empty()) || {
         frame(d, ctx, p, false);
-    }
+        false
+    });
 }
 
 #[test]
@@ -2383,18 +2389,23 @@ fn cancel_stops_the_whole_group_without_half_files() {
     d.cancel_current();
     drain(&mut d, &ctx, &p);
     assert!(d.error.is_none());
-    // right away again: cancelled after the first part → finished parts stay, no half file, rest missing
-    frame(&mut d, &ctx, &p, true);
-    let t0 = Instant::now();
-    while d.running.as_ref().is_some_and(|r| r.finished.lock().unwrap().is_empty()) && t0.elapsed().as_secs() < 60 {
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    // right away again: cancelled after the first part → finished parts stay, no half file, rest missing.
+    // Parts by a marker at 1 s: 1 s, then 1 h. The cancel comes within 20 ms of part 1 being reported,
+    // while part 2 needs minutes to encode – the group cannot be finished before the cancel lands.
+    let mut long = text_project("Film", "eins", 3600.0);
+    long.timeline.markers = vec![cl_core::Marker { id: 1, at: Time::from_secs_f64(1.0), duration: Time::ZERO, name: String::new(), note: String::new(), color: 0 }];
+    d.split_by = 2;
+    frame(&mut d, &ctx, &long, true);
+    let done = d.running.as_ref().expect("export started").finished.clone();
+    wait_until("first part", 60, || !done.lock().unwrap().is_empty());
     d.cancel_current();
-    drain(&mut d, &ctx, &p);
+    drain(&mut d, &ctx, &long);
     assert!(d.error.is_none(), "{:?}", d.error);
+    assert_eq!(*done.lock().unwrap(), [0]);
     let names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
-    assert!(names.contains(&"Film – Teil 01.mp4".to_string()) && !names.contains(&"Film – Teil 08.mp4".to_string()), "{names:?}");
-    assert!(names.iter().all(|n| !n.contains(".part")), "{names:?}");
+    assert_eq!(names, ["Film – 01.mp4"], "no half file, nothing after the cancelled part");
+    // exports list: the finished part only
+    assert_eq!(crate::exports::for_project("Film", Some(&dir.path().join("p.cutline"))).len(), 1);
     std::env::remove_var("CUTLINE_HOME");
 }
 
@@ -2522,9 +2533,7 @@ fn export_started_during_encoder_probe_uses_the_probed_list() {
     d.open_for(&p, Some(&dir.path().join("p.cutline")), 0, None);
     d.folder = dir.path().to_path_buf();
     // let the background thread of `open_for` finish, then pretend the list is not there yet
-    while d.encoders.lock().unwrap().is_none() {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    wait_until("encoder probe", 60, || d.encoders.lock().unwrap().is_some());
     *d.encoders.lock().unwrap() = None;
     d.running = Some(running(None));
     frame(&mut d, &ctx, &p, true);
@@ -2562,8 +2571,10 @@ fn overwrite_prompt_checks_the_disk_once() {
     // closed („Anderen Namen“): facts forgotten for the next prompt
     frame(&mut d, &ctx, &p, true);
     assert!(!d.confirm_overwrite && d.overwrite_facts.is_none());
+    assert_eq!(d.running.as_ref().map(|r| r.src.out.clone()), Some(dir.path().join("Film (2)")));
     d.cancel_current();
     drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None, "a cancel is no error");
     std::env::remove_var("CUTLINE_HOME");
 }
 
@@ -2609,8 +2620,13 @@ fn split_folder_is_never_the_chosen_folder_and_survives_cancel() {
     d.name = "Film".into();
     std::fs::create_dir(chosen.join("Film")).unwrap();
     frame(&mut d, &ctx, &p, true);
+    // the thread cleans up only after `poll` has reported the cancel: wait until it has ended
+    // (its handle on the result is gone), otherwise a wrong removal would come after the check
+    let result = d.running.as_ref().expect("export started").result.clone();
     d.cancel_current();
     drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None, "a cancel is no error");
+    wait_until("export thread", 60, || Arc::strong_count(&result) == 1);
     assert!(chosen.join("Film").is_dir());
     std::env::remove_var("CUTLINE_HOME");
 }
@@ -3092,11 +3108,10 @@ fn follow_person_failure_keeps_the_clip_centred_with_one_toast() {
     let mut toasts = Vec::new();
     toasts.extend(frame_toast(&mut d, &ctx, &p, false));
     assert!(d.focus_job.is_some(), "analysis starts");
-    let t0 = Instant::now();
-    while d.focus_job.is_some() && t0.elapsed().as_secs() < 60 {
-        std::thread::sleep(std::time::Duration::from_millis(20));
+    wait_until("analysis", 60, || d.focus_job.is_none() || {
         toasts.extend(frame_toast(&mut d, &ctx, &p, false));
-    }
+        false
+    });
     for _ in 0..3 {
         toasts.extend(frame_toast(&mut d, &ctx, &p, false));
     }
@@ -3160,11 +3175,10 @@ fn follow_person_with_split_parts_and_target_size() {
     // Enter while the analysis runs: nothing starts
     frame(&mut d, &ctx, &p, true);
     assert!(d.focus_job.is_some() && d.running.is_none() && d.queue.is_empty());
-    let t0 = Instant::now();
-    while d.focus_job.is_some() && t0.elapsed().as_secs() < 60 {
-        std::thread::sleep(std::time::Duration::from_millis(20));
+    wait_until("analysis", 60, || d.focus_job.is_none() || {
         frame(&mut d, &ctx, &p, false);
-    }
+        false
+    });
     frame(&mut d, &ctx, &p, true);
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None);
