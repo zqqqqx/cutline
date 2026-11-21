@@ -682,13 +682,21 @@ fn karaoke_states(g: &Geo, txt: &str, starts: &[Time], fill: bool, dur: f64) -> 
     out
 }
 
-/// Place the sprite covering `start..end` (relative to the export start, start also negative)
-/// on `cur`: on the frames [`Time::first_frame_from`] gives (the preview's rule), its first
-/// frame on the first of them.
-fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, start: Time, end: Time) -> String {
+/// Export frames `n0..n1` showing something that covers `start..end` (absolute timeline times)
+/// by the preview's rule [`Time::first_frame_from`], and the frame duration. Absolute frame numbers
+/// minus the export start's frame (n0 may be negative): relative µs times round differently
+/// when the export starts at a frame time off whole µs.
+fn frame_span(ctx: &Ctx, start: Time, end: Time) -> (i64, i64, f64) {
     let fps = Rational::parse(&ctx.fps).unwrap_or(Rational::new(30, 1));
-    let fd = 1.0 / fps.as_f64();
-    let (n0, n1) = (start.first_frame_from(fps), end.first_frame_from(fps));
+    // export frame 0 = first frame at or after the export start (it need not lie on a frame)
+    let s = ctx.start.first_frame_from(fps);
+    (start.first_frame_from(fps) - s, end.first_frame_from(fps) - s, 1.0 / fps.as_f64())
+}
+
+/// Place the sprite covering `start..end` (absolute timeline times) on `cur`: on the frames
+/// [`frame_span`] gives, its first frame on the first of them.
+fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, start: Time, end: Time) -> String {
+    let (n0, n1, fd) = frame_span(ctx, start, end);
     let t0 = n0 as f64 * fd;
     let shifted = ctx.label("pl");
     // rounded like `trim` (otherwise setpts cuts off: at 29.97 fps a clip was one frame off in a
@@ -718,9 +726,9 @@ fn place(ctx: &mut Ctx, cur: &str, sp: &Sprite, start: Time, end: Time) -> Strin
 
 /// Effect/filter element: copy the whole image up to here, apply the effect (optionally only
 /// within the mask) and overlay it for the element's duration. With strength keyframes
-/// the result is mixed with the original over time.
-fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0: f64) -> Result<String> {
-    let len = c.duration.as_secs_f64();
+/// the result is mixed with the original over time. On the frames [`frame_span`] gives.
+fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool) -> Result<String> {
+    let (n0, n1, fd) = frame_span(ctx, c.start, c.end());
     let kfs = c.keyframes.get(Prop::Strength);
     let mut r = r.clone();
     if !kfs.is_empty() {
@@ -732,9 +740,12 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
         mask: c.fx.mask,
         ..Default::default()
     };
-    // only the active time window is processed (not the whole video)
-    let (s0, s1) = (t0.max(0.0), t0 + len);
-    let window = format!("trim=start={}:end={},setpts=PTS-STARTPTS", f(s0), f(s1));
+    // only the active frames are processed (not the whole video)
+    let (s0, s1) = (n0.max(0) as f64 * fd, n1 as f64 * fd);
+    // element time of the first processed frame (export starts inside the element: not 0)
+    let into = (-n0).max(0) as f64 * fd;
+    // by frame index (exact; `trim=start/end` rounds to the time base, a margin landed on a frame)
+    let window = format!("trim=start_frame={}:end_frame={n1},setpts=PTS-STARTPTS", n0.max(0));
     let (a, b, bw, fo) = (ctx.label("ea"), ctx.label("eb"), ctx.label("ew"), ctx.label("ef"));
     let o = ctx.label("eo");
     // without strength keyframes only two branches: a third with nullsink makes ffmpeg
@@ -748,7 +759,7 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
     let uniq = ctx.label("e");
     let opts = ChainOpts {
         // if the export starts inside the element, the effect time continues there (not from 0)
-        t_offset: s0 - t0,
+        t_offset: into,
         apply_reverse: false,
         lut: None,
         matte: None,
@@ -762,7 +773,7 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
     let fmt = if ctx.alpha { ":format=auto" } else { "" };
     let (pre, top, out) = (ctx.label("ep"), ctx.label("et"), ctx.label("base"));
     // effect time ran from `s0 - t0`: from 0 again for the overlay
-    let rebase = if s0 - t0 > 0.0 { "setpts=PTS-STARTPTS," } else { "" };
+    let rebase = if into > 0.0 { "setpts=PTS-STARTPTS," } else { "" };
     if kfs.is_empty() {
         ctx.graph.push(format!("[{fo}]{rebase}format=rgba,setsar=1[{pre}]"));
     } else {
@@ -779,7 +790,7 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
         };
         ctx.graph.push(format!("[{ow}][{fr}]overlay=eof_action=pass{fmt}[{fm}]"));
         let mix = ctx.label("mix");
-        let lo = s0 - t0; // offset in case the export starts inside the element
+        let lo = into; // offset in case the export starts inside the element
         let k = |tau: f64| {
             c.keyframes
                 .eval(Prop::Strength, Time::from_secs_f64(lo + tau))
@@ -806,11 +817,12 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
     if s0 > 0.0 {
         let pad = ctx.label("epad");
         ctx.graph.push(format!(
-            "color=c=black@0.0:s={}x{}:r={}:d={},format=rgba,setsar=1[{pad}]",
+            "color=c=black@0.0:s={}x{}:r={},trim=end_frame={},format=rgba,setsar=1[{pad}]",
             ctx.w,
             ctx.h,
             ctx.fps,
-            f(s0)
+            // exactly n0 frames (`d` rounded to µs gave one more at 23/30 s)
+            n0
         ));
         ctx.graph.push(format!("[{pad}][{pre}]concat=n=2:v=1:a=0[{top}]"));
     } else {
@@ -818,8 +830,8 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool, t0:
     }
     ctx.graph.push(format!(
         "[{a}][{top}]overlay=eof_action=pass{fmt}:enable='between(t,{},{})'[{out}]",
-        f(s0),
-        f(s1)
+        f(s0 - fd / 2.0),
+        f(s1 - fd / 2.0)
     ));
     Ok(out)
 }
@@ -877,7 +889,6 @@ fn group_layer(ctx: &mut Ctx, p: &Project, group: &[&Clip], k: usize) -> Result<
         ctx.graph.push(format!(
             "color=c=black@0.0:s={w}x{h}:r={}:d={},format=rgba[{canvas}]",
             ctx.fps,
-            // the chain's last layer one frame longer, as in `media_sprite` (never shown)
             // the chain's last layer one frame longer, as in `media_sprite` (never shown)
             f(len + if k + 1 == group.len() { 1.0 / fps_value(&ctx.fps) } else { 0.0 })
         ));
@@ -1086,8 +1097,7 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
                     ClipContent::Filter(r) => (r, true),
                     _ => continue,
                 };
-                let t0 = (c.start - ctx.start).as_secs_f64();
-                cur = effect_layer(ctx, &cur, c, r, filter, t0)?;
+                cur = effect_layer(ctx, &cur, c, r, filter)?;
             }
             continue;
         }
@@ -1114,7 +1124,7 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
                 sprite_for(ctx, &proj, c, skip)?
             };
             let Some(sp) = sprite else { continue };
-            cur = place(ctx, &cur, &sp, g_start - ctx.start, g_end - ctx.start);
+            cur = place(ctx, &cur, &sp, g_start, g_end);
         }
     }
     Ok(cur)
