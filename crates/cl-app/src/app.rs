@@ -1877,7 +1877,7 @@ impl App {
         self.apply_batch(ops);
     }
 
-    /// Create a video clip's sound as its own audio clip and mute it in the video.
+    /// Create the audio stream a video clip plays as its own audio clip and silence that stream in the video.
     pub fn extract_audio(&mut self, id: ClipId) {
         let Some(c) = self.clip_view(id) else { return };
         let ClipContent::Media {
@@ -1887,12 +1887,19 @@ impl App {
         else {
             return;
         };
-        if !self.project.media(media).is_some_and(|m| m.has_audio) {
+        let Some(m) = self.project.media(media).filter(|m| m.has_audio) else {
             self.toast_err("Dieser Clip hat keinen Ton");
+            return;
+        };
+        // only the stream the clip plays; the video keeps its volume for the other streams
+        let n = c.played_stream(m);
+        if c.extracted_streams.contains(&n) {
+            self.toast_err("Diese Tonspur ist schon extrahiert");
             return;
         }
         let mut a = c.clone();
         a.id = ClipId::new();
+        a.extracted_streams.clear();
         a.content = ClipContent::Media {
             media,
             kind: MediaKind::Audio,
@@ -1902,11 +1909,12 @@ impl App {
             speed_curve: c.fx.speed_curve.clone(),
             ..Default::default()
         };
-        a.keyframes = Keyframes::default();
+        // the volume curve belongs to the sound, the picture keyframes stay with the video
+        a.keyframes.0.retain(|p, _| *p == Prop::Volume);
         a.anim = Animations::default();
         a.transition_out = None;
         let mut v = c.clone();
-        v.volume_db = -60.0;
+        v.extracted_streams.push(n);
         self.apply_batch(vec![
             EditOp::ReplaceClip { clip: v },
             EditOp::AddClip {
@@ -3655,7 +3663,7 @@ fn audio_signature(p: &Project) -> u64 {
                 c.fx.reverse,
             )
                 .hash(&mut h);
-            (c.speed.to_bits(), c.volume_db.to_bits(), c.audio_stream).hash(&mut h);
+            (c.speed.to_bits(), c.volume_db.to_bits(), c.audio_stream, &c.extracted_streams).hash(&mut h);
             serde_json::to_string(&c.audio)
                 .unwrap_or_default()
                 .hash(&mut h);
@@ -4436,4 +4444,58 @@ fn long_toast_stays_inside_the_window() {
     }
     let r = ctx.memory(|m| m.area_rect(egui::Id::new("toasts"))).unwrap();
     assert!(r.left() >= 0.0 && r.right() <= 800.0, "{r:?}");
+}
+
+/// File with two audio streams: extracting stream 1 and then stream 2 gives two audible clips at
+/// the video's volume (no −60 dB inherited), the video only loses the extracted streams, the same
+/// stream is not extracted twice, and each extraction is one undo step.
+#[test]
+fn extracting_two_audio_streams_keeps_both_audible() {
+    let mut app = crate::saving::tests::test_app();
+    let path = app.dir().join("zwei spuren.mp4");
+    std::fs::write(&path, b"x").unwrap();
+    let m = MediaRef { id: MediaId::new(), path, kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None };
+    let mut p = Project::new("Spuren");
+    let mut t = Track::new(TrackKind::Video);
+    t.main = true;
+    let mut v = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0));
+    v.volume_db = -3.0;
+    let vid = v.id;
+    t.clips.push(v);
+    p.timeline.tracks.push(t);
+    p.media.push(m);
+    app.set_doc(p);
+    let video = |app: &App| app.project.find_clip(vid).unwrap().1.clone();
+    // audible (clip id, stream) pairs, as the preview and export mix see them
+    let audible = |app: &App| {
+        let mut v: Vec<(bool, u32, f32)> = cl_export::audible_clips(&app.project, Time::ZERO, Time::from_secs_f64(4.0)).map(|(c, m)| (c.id == vid, c.played_stream(m), c.volume_db)).collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v
+    };
+    assert_eq!(audible(&app), [(true, 0, -3.0)]);
+    let before = app.project.clone();
+    app.extract_audio(vid);
+    assert_eq!(audible(&app), [(false, 0, -3.0)], "stream 1 now only in its own clip, at the video's volume");
+    assert_eq!((video(&app).volume_db, video(&app).extracted_streams), (-3.0, vec![0]));
+    app.undo();
+    app.sync_project();
+    assert_eq!(app.project.timeline, before.timeline, "one undo step");
+    app.redo();
+    app.sync_project();
+    // the same stream again: refused, no second copy
+    let n = app.project.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>();
+    app.extract_audio(vid);
+    assert_eq!(app.project.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>(), n);
+    // the video switched to stream 2 (inspector): audible again at its own volume
+    let mut c = video(&app);
+    c.audio_stream = Some(1);
+    app.apply(EditOp::ReplaceClip { clip: c });
+    assert_eq!(audible(&app), [(false, 0, -3.0), (true, 1, -3.0)]);
+    let before = app.project.clone();
+    app.extract_audio(vid);
+    assert_eq!(audible(&app), [(false, 0, -3.0), (false, 1, -3.0)], "stream 2 extracted audible");
+    assert_eq!(video(&app).extracted_streams, [0, 1]);
+    app.undo();
+    app.sync_project();
+    assert_eq!(app.project.timeline, before.timeline, "one undo step");
 }

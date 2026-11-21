@@ -1129,7 +1129,7 @@ pub fn audible_clips(p: &Project, start: Time, end: Time) -> impl Iterator<Item 
         .filter_map(|c| match &c.content {
             ClipContent::Media { media, kind } if *kind != MediaKind::Image => {
                 // flag first: `is_local` asks the disk, and the export dialog calls this every frame
-                p.media(*media).filter(|m| m.has_audio && m.is_local()).map(|m| (c, m))
+                p.media(*media).filter(|m| m.has_audio && !c.stream_extracted(m) && m.is_local()).map(|m| (c, m))
             }
             _ => None,
         })

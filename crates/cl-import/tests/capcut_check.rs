@@ -89,7 +89,7 @@ fn capcut_drafts_audio() {
             for c in &tr.clips {
                 let ClipContent::Media { media, kind } = &c.content else { continue };
                 let Some(m) = p.media(*media).filter(|m| *kind != MediaKind::Image && m.has_audio && m.is_local()) else { continue };
-                if tr.muted || c.disabled || c.volume_db <= -59.9 {
+                if tr.muted || c.disabled || c.volume_db <= -59.9 || c.stream_extracted(m) {
                     sum[5] += 1;
                     continue;
                 }
