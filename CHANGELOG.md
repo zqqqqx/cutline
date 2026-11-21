@@ -8,6 +8,24 @@
 ### English
 
 **New**
+
+**Improved**
+
+**Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.15.3 – 2026-11-21
+
+### English
+
+**New**
 - **Scrollbar in the timeline.** A slim bar at the bottom of the timeline moves the view left and right. It can be switched off in Settings → General.
 - **Closing can lead to your projects.** With "Go to projects when closing" switched on in Settings → General, the window’s X saves the project and opens the project overview instead of quitting. A second X quits.
 - **2K export.** The export list names 2560×1440 "2K (1440p)", and a target file size now steps a 4K project down to 1440p before 1080p.
