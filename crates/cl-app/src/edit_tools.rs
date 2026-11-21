@@ -164,19 +164,35 @@ impl App {
         self.commit_live();
         let fps = self.project.settings.fps.as_f64();
         let d = Time::from_secs_f64(frames as f64 / fps);
-        let ops: Vec<EditOp> = self
-            .selection()
-            .into_iter()
-            .filter_map(|id| {
-                self.project.find_clip(id).map(|(t, c)| EditOp::MoveClip {
-                    clip: id,
-                    track: Some(t.id),
-                    start: Time((c.start.0 + d.0).max(0)),
-                })
-            })
-            .collect();
-        if !ops.is_empty() {
-            self.apply_batch(ops);
+        let ids: Vec<(ClipId, f64)> =
+            self.selection().into_iter().filter_map(|id| self.project.find_clip(id).map(|(_, c)| (id, c.start.as_secs_f64()))).collect();
+        let Some(&(first, st)) = ids.first() else {
+            return;
+        };
+        let moves = crate::timeline::group_moves(&ids, first, Time(Time::from_secs_f64(st).0 + d.0));
+        match crate::timeline::group_in_time(&self.project, &moves) {
+            Ok(op) => {
+                self.apply(op);
+            }
+            Err((row, upper)) => {
+                self.clips_to_new_tracks(row, upper, &moves);
+            }
+        }
+    }
+
+    /// Clips (id, new start) onto new tracks next to display row `row` – one history step; false
+    /// (with a message) if that is not possible
+    pub fn clips_to_new_tracks(&mut self, row: usize, upper: bool, moves: &[(ClipId, Time)]) -> bool {
+        let r = cl_core::move_to_new_tracks(&mut self.doc.lock().unwrap_or_else(|e| e.into_inner()), row, upper, moves);
+        match r {
+            Ok(()) => {
+                self.sync_project();
+                true
+            }
+            Err(e) => {
+                self.toast_err(e.to_string());
+                false
+            }
         }
     }
 

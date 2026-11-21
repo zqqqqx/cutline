@@ -222,6 +222,31 @@ fn drop_time(t: f64, snapped: bool, fps: Rational) -> Time {
     }
 }
 
+/// New starts of a dragged selection (clip, start s) when the clip `grab` lands at `to`: one exact
+/// shift (µs) for all, so clips that touched still touch and gaps stay; the group stops at 0 as a block
+pub(crate) fn group_moves(ids: &[(ClipId, f64)], grab: ClipId, to: Time) -> Vec<(ClipId, Time)> {
+    let t = Time::from_secs_f64;
+    let from = ids.iter().find(|x| x.0 == grab).map_or(to, |x| t(x.1));
+    let first = ids.iter().map(|x| t(x.1).0).min().unwrap_or(0);
+    let d = (to.0 - from.0).max(-first);
+    ids.iter().map(|(id, s)| (*id, Time(t(*s).0 + d))).collect()
+}
+
+/// A selection moved in time within its own tracks (`moves`: clip, new start): `Ok` = one batch in
+/// which its clips never block each other. If the group would overlap clips outside it, `Err` =
+/// display row and side for new tracks next to the first clip's track: like a single clip, the
+/// group then goes onto a new track – as a whole, never clip by clip
+pub(crate) fn group_in_time(p: &Project, moves: &[(ClipId, Time)]) -> std::result::Result<EditOp, (usize, bool)> {
+    if let Some((_, op)) = shift_tracks(p, moves, 0) {
+        return Ok(op);
+    }
+    let tracks = &p.timeline.tracks;
+    let at = moves.first().and_then(|m| p.find_clip(m.0));
+    let row = at.and_then(|(t, _)| display_order(tracks).iter().position(|&i| tracks[i].id == t.id));
+    // audio: below its track, visual: above – where a single clip's new track appears
+    Err((row.unwrap_or(0), at.is_none_or(|(_, c)| c.kind() != TrackKind::Audio)))
+}
+
 /// The clip as trimming its `edge` to `to` leaves it: the commit's own op ([`EditOp::TrimClip`]) on
 /// a copy holding only the clip's track and media, so the drag shows exactly what release commits.
 /// `None` if the trim is not possible.
@@ -1975,8 +2000,7 @@ impl App {
                     let (s, line) = move_start(raw, dur, |t| snap_to(t, &cands));
                     snap_line = line;
                     let fr = |t: f64| drop_time(t, line.is_some(), fps);
-                    let orig = ids.iter().find(|x| x.0 == clip).map(|x| x.1).unwrap_or(0.0);
-                    let delta = s - orig;
+                    let moves = group_moves(&ids, clip, fr(s));
                     // several clips onto another track: each the same number of tracks of its own kind
                     let mut shifted = None;
                     // target: another track of the same kind; into empty space above/below or over an
@@ -1995,16 +2019,24 @@ impl App {
                                 target = Target::Track(t);
                             } else if let Some(n) = self.project.find_clip(clip).and_then(|(src, _)| kind_steps(&tracks[..], src.id, tracks[t].id)).filter(|n| *n != 0) {
                                 // a clip that cannot follow keeps the whole group in its tracks (time still moves)
-                                let moves: Vec<(ClipId, Time)> = ids.iter().map(|(id, st)| (*id, fr((st + delta).max(0.0)))).collect();
                                 shifted = shift_tracks(&self.project, &moves, n);
                             }
                         }
                     }
-                    for (id, st) in &ids {
+                    let shift = shifted.is_some();
+                    // several clips in their own tracks: one batch for the whole group
+                    let mut same_op = None;
+                    if matches!(target, Target::Same) && !shift && ids.len() > 1 {
+                        match group_in_time(&self.project, &moves) {
+                            Ok(op) => same_op = Some(op),
+                            Err((k, upper)) => target = Target::New(k, upper),
+                        }
+                    }
+                    for (id, ns) in &moves {
                         let Some((_, x)) = self.project.find_clip(*id) else {
                             continue;
                         };
-                        let ns = (st + delta).max(0.0);
+                        let ns = ns.as_secs_f64();
                         let tr = match target {
                             Target::Track(t) if *id == clip => rows.iter().find(|r| r.track == t).map(|r| r.rect),
                             Target::New(k, upper) => {
@@ -2025,21 +2057,12 @@ impl App {
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
                         self.timeline.motion.skip.extend(ids.iter().map(|x| x.0));
-                        let shift = shifted.is_some();
                         let ops: Vec<EditOp> = match target {
                             Target::New(k, upper) => {
-                                // new track(s) + move = one history step
-                                let moves: Vec<(ClipId, Time)> =
-                                    ids.iter().map(|(id, st)| (*id, fr((st + delta).max(0.0)))).collect();
-                                let r = move_to_new_tracks(&mut self.doc.lock().unwrap_or_else(|e| e.into_inner()), k, upper, &moves);
-                                match r {
-                                    Ok(()) => {
-                                        self.sync_project();
-                                        // scroll the new track with the clip smoothly into the visible range
-                                        let t = self.project.find_clip(clip).map(|(t, _)| t.id);
-                                        self.timeline.reveal = t.map(|t| (t, now_s, self.timeline.vscroll));
-                                    }
-                                    Err(e) => self.toast_err(e.to_string()),
+                                if self.clips_to_new_tracks(k, upper, &moves) {
+                                    // scroll the new track with the clip smoothly into the visible range
+                                    let t = self.project.find_clip(clip).map(|(t, _)| t.id);
+                                    self.timeline.reveal = t.map(|t| (t, now_s, self.timeline.vscroll));
                                 }
                                 Vec::new()
                             }
@@ -2048,19 +2071,12 @@ impl App {
                                 track: Some(tracks[t].id),
                                 start: fr(s),
                             }],
-                            Target::Same => match shifted.take() {
-                                Some((_, op)) => vec![op],
-                                None => ids
-                                    .iter()
-                                    .map(|(id, st)| EditOp::MoveClip {
-                                        clip: *id,
-                                        track: None,
-                                        start: fr((st + delta).max(0.0)),
-                                    })
-                                    .collect(),
+                            Target::Same => match (shifted.take(), same_op) {
+                                (Some((_, op)), _) | (None, Some(op)) => vec![op],
+                                _ => moves.iter().map(|(id, st)| EditOp::MoveClip { clip: *id, track: None, start: *st }).collect(),
                             },
                         };
-                        let moved = ids.iter().any(|(_, st)| (st + delta - st).abs() > 1e-4)
+                        let moved = ids.iter().zip(&moves).any(|(x, m)| Time::from_secs_f64(x.1) != m.1)
                             || !matches!(target, Target::Same)
                             || shift;
                         if moved {
@@ -4906,5 +4922,161 @@ mod tests {
         assert_eq!((v(100.0), v(900.0)), (-1.0, 1.0));
         assert_eq!((v(124.0), v(876.0)), (-0.5, 0.5));
         assert_eq!((v(-500.0), v(5000.0)), (-3.0, 3.0));
+    }
+
+    /// Tracks of (kind, main, clips as (start, length) s) – raw, in index order; ids per track
+    fn lanes(fps: Rational, magnet: bool, spec: &[(TrackKind, bool, &[(f64, f64)])]) -> (Project, Vec<Vec<ClipId>>) {
+        let s = Time::from_secs_f64;
+        let mut p = Project::new("G");
+        p.settings.fps = fps;
+        p.settings.main_track_magnet = magnet;
+        let mut ids = Vec::new();
+        for (kind, main, clips) in spec {
+            let mk = if *kind == TrackKind::Audio { MediaKind::Audio } else { MediaKind::Video };
+            let mut t = Track::new(*kind);
+            t.main = *main;
+            let mut row = Vec::new();
+            for (at, len) in clips.iter() {
+                let m = MediaRef { id: MediaId::new(), path: "x".into(), kind: mk, duration: s(100_000.0), width: 64, height: 36, fps: None, has_audio: mk == MediaKind::Audio, audio_streams: (mk == MediaKind::Audio) as u32, video_codec: None, audio_codec: None };
+                let c = Clip::new(ClipContent::Media { media: m.id, kind: mk }, s(*at), s(*len));
+                p.media.push(m);
+                row.push(c.id);
+                t.clips.push(c);
+            }
+            p.timeline.tracks.push(t);
+            ids.push(row);
+        }
+        (p, ids)
+    }
+
+    /// The drag commit for a selection that stays in its tracks: grabbed clip `ids[0]` dropped at
+    /// `raw` s (not snapped, so on the frame grid); returns the project after the move
+    fn drag_in_time(p: &Project, ids: &[ClipId], raw: f64) -> Document {
+        let sel: Vec<(ClipId, f64)> = ids.iter().map(|id| (*id, p.find_clip(*id).unwrap().1.start.as_secs_f64())).collect();
+        let moves = group_moves(&sel, ids[0], drop_time(raw.max(0.0), false, p.settings.fps));
+        let op = group_in_time(p, &moves).expect("free");
+        let mut d = Document::new(p.clone());
+        d.apply(op, OpSource::Ui).unwrap();
+        assert_eq!(d.undo_entries().len(), 1, "one undo step");
+        d
+    }
+
+    /// (track index, start, end) of each clip
+    fn places(d: &Document, ids: &[ClipId]) -> Vec<(usize, Time, Time)> {
+        let p = d.project();
+        ids.iter()
+            .map(|id| {
+                let (t, c) = p.find_clip(*id).unwrap();
+                (p.timeline.tracks.iter().position(|x| x.id == t.id).unwrap(), c.start, c.end())
+            })
+            .collect()
+    }
+
+    /// Several touching clips on one track (short, short, very long), all selected and dragged in
+    /// time: they stay on their track in their order and keep touching, whatever the selection
+    /// order – before, each clip landed on its not yet moved neighbour and got a new track
+    #[test]
+    fn group_drag_in_time_stays_on_its_track() {
+        let fps = Rational::new(30, 1);
+        for kind in [TrackKind::Video, TrackKind::Audio] {
+            for delta in [0.5, 3.0, 0.8, -0.5, -3.0, -0.8] {
+                for reversed in [false, true] {
+                    let (p, ids) = lanes(fps, false, &[(kind, false, &[(10.0, 0.7), (10.7, 0.9), (11.6, 5391.0)])]);
+                    let mut sel = ids[0].clone();
+                    if reversed {
+                        sel.reverse();
+                    }
+                    let grab_start = p.find_clip(sel[0]).unwrap().1.start.as_secs_f64();
+                    let before = places(&Document::new(p.clone()), &ids[0]);
+                    let d = drag_in_time(&p, &sel, grab_start + delta);
+                    let case = format!("{kind:?} {delta} {reversed}");
+                    assert_eq!(d.project().timeline.tracks.len(), 1, "no new track: {case}");
+                    let after = places(&d, &ids[0]);
+                    let dt = Time::from_secs_f64(delta);
+                    for (b, a) in before.iter().zip(&after) {
+                        assert_eq!((a.1, a.2), (b.1 + dt, b.2 + dt), "shifted exactly: {case}");
+                    }
+                    assert!(after[0].2 == after[1].1 && after[1].2 == after[2].1, "still touching: {case}");
+                    let order: Vec<ClipId> = d.project().timeline.tracks[0].clips.iter().map(|c| c.id).collect();
+                    assert_eq!(order, ids[0], "same order: {case}");
+                }
+            }
+        }
+    }
+
+    /// The recording: three tracks × three touching clips, all nine selected, dragged right – every
+    /// clip stays on its own track (main track with and without magnet)
+    #[test]
+    fn group_drag_over_three_tracks_keeps_every_track() {
+        let row: &[(f64, f64)] = &[(2.0, 0.7), (2.7, 0.9), (3.6, 5391.0)];
+        for magnet in [false, true] {
+            let (p, ids) = lanes(Rational::new(30, 1), magnet, &[(TrackKind::Video, true, row), (TrackKind::Audio, false, row), (TrackKind::Audio, false, row)]);
+            // selection order mixed across tracks, the grabbed clip in the middle
+            let sel: Vec<ClipId> = [(1, 1), (0, 2), (2, 0), (0, 0), (1, 2), (2, 2), (0, 1), (1, 0), (2, 1)].iter().map(|&(t, i)| ids[t][i]).collect();
+            let d = drag_in_time(&p, &sel, 2.7 + 2.5);
+            assert_eq!(d.project().timeline.tracks.len(), 3, "magnet {magnet}");
+            for (t, row_ids) in ids.iter().enumerate() {
+                let order: Vec<ClipId> = d.project().timeline.tracks[t].clips.iter().map(|c| c.id).collect();
+                assert_eq!(&order, row_ids, "track {t}, magnet {magnet}");
+            }
+            if !magnet {
+                assert_eq!(d.project().timeline.tracks[1].clips[0].start, Time::from_secs_f64(4.5));
+            }
+        }
+    }
+
+    /// Starts and lengths off the frame grid (voice-over recordings): one exact shift for the group,
+    /// so touching clips still touch and no track is added (each start rounded on its own could
+    /// overlap the neighbour by a fraction of a frame)
+    #[test]
+    fn group_drag_off_grid_keeps_clips_touching() {
+        for fps in [Rational::new(30, 1), Rational::new(60000, 1001)] {
+            for raw in [5.0, 7.31, 9.123_457, 3.2] {
+                let a = 4.012_345;
+                let (b, c) = (a + 0.711_113, a + 0.711_113 + 0.903_337);
+                let (p, ids) = lanes(fps, false, &[(TrackKind::Audio, false, &[(a, 0.711_113), (b, 0.903_337), (c, 5391.013_7)])]);
+                let d = drag_in_time(&p, &ids[0], raw);
+                let at = places(&d, &ids[0]);
+                let case = format!("{fps:?} {raw}");
+                assert_eq!(d.project().timeline.tracks.len(), 1, "{case}");
+                assert!(at[0].2 == at[1].1 && at[1].2 == at[2].1, "touching exactly: {case} {at:?}");
+                assert_eq!(at[0].1, Time::from_secs_f64(raw).snap_to_frame(fps), "grabbed clip on the grid: {case}");
+            }
+        }
+    }
+
+    /// Dragged against time 0 the group stops as a block (gaps inside stay, nothing is squeezed)
+    #[test]
+    fn group_drag_stops_at_zero_as_a_block() {
+        let s = Time::from_secs_f64;
+        let (p, ids) = lanes(Rational::new(30, 1), false, &[(TrackKind::Audio, false, &[(1.0, 0.7), (1.7, 0.9), (3.0, 2.0)])]);
+        // grabbed the second clip, pointer far left of 0
+        let sel = vec![ids[0][1], ids[0][0], ids[0][2]];
+        let d = drag_in_time(&p, &sel, -10.0);
+        let at: Vec<Time> = places(&d, &ids[0]).iter().map(|x| x.1).collect();
+        assert_eq!(at, [s(0.0), s(0.7), s(2.0)]);
+        // pure: the shift is the same for every clip
+        let m = group_moves(&[(ids[0][1], 1.7), (ids[0][0], 1.0)], ids[0][1], s(0.2));
+        assert_eq!(m, [(ids[0][1], s(0.7)), (ids[0][0], s(0.0))]);
+    }
+
+    /// A group that would overlap a clip outside it goes onto a new track as a whole (the rule of a
+    /// single clip), never clip by clip
+    #[test]
+    fn group_onto_other_clips_moves_to_a_new_track_as_a_whole() {
+        for kind in [TrackKind::Video, TrackKind::Audio] {
+            let (p, ids) = lanes(Rational::new(30, 1), false, &[(kind, false, &[(1.0, 1.0), (2.0, 1.0), (5.0, 3.0)])]);
+            let sel = vec![ids[0][0], ids[0][1]];
+            let moves = group_moves(&[(sel[0], 1.0), (sel[1], 2.0)], sel[0], Time::from_secs_f64(4.0));
+            let (row, upper) = group_in_time(&p, &moves).expect_err("overlaps the third clip");
+            assert_eq!((row, upper), (0, kind != TrackKind::Audio));
+            let mut d = Document::new(p.clone());
+            move_to_new_tracks(&mut d, row, upper, &moves).unwrap();
+            let at = places(&d, &sel);
+            assert_eq!(d.project().timeline.tracks.len(), 2, "{kind:?}");
+            assert_eq!(at[0].0, at[1].0, "together on one track: {kind:?}");
+            assert_ne!(at[0].0, places(&d, &ids[0][2..])[0].0);
+            assert_eq!(d.undo_entries().len(), 1);
+        }
     }
 }

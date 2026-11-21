@@ -151,7 +151,8 @@ pub fn shift_tracks(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Opti
         let t = *peers.get(at.checked_add_signed(steps)?)?;
         let end = *start + c.duration;
         let free = t.clips.iter().filter(|o| !moving.contains(&o.id)).all(|o| end <= o.start || *start >= o.end());
-        if src.locked || !fits(t, c.kind()) || !(free || (t.main && p.settings.main_track_magnet)) {
+        // its own track keeps a clip of another kind (legacy projects), as a single move does
+        if src.locked || !(t.id == src.id || fits(t, c.kind())) || !(free || (t.main && p.settings.main_track_magnet)) {
             return None;
         }
         plan.push((*id, c.start, *start, src.id, t.id));
@@ -166,7 +167,16 @@ pub fn shift_tracks(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Opti
         plan.reverse();
     }
     let mut ops: Vec<EditOp> = plan.iter().map(|x| EditOp::MoveClip { clip: x.0, track: None, start: park + x.1 }).collect();
-    ops.extend(plan.iter().map(|x| EditOp::MoveClip { clip: x.0, track: Some(x.4), start: x.2 }));
+    let magnet = tracks.iter().find(|t| t.main && p.settings.main_track_magnet).filter(|m| plan.iter().any(|x| x.4 == m.id));
+    ops.extend(plan.iter().filter(|x| magnet.is_none_or(|m| x.4 != m.id)).map(|x| EditOp::MoveClip { clip: x.0, track: Some(x.4), start: x.2 }));
+    if let Some(m) = magnet {
+        // magnet main track: only the order counts (one by one, the insert by middles of a packed
+        // track can swap the group) – append all its clips in the order of their new starts
+        let mut line: Vec<(Time, ClipId)> = m.clips.iter().filter(|c| !moving.contains(&c.id)).map(|c| (c.start, c.id)).collect();
+        line.extend(plan.iter().filter(|x| x.4 == m.id).map(|x| (x.2, x.0)));
+        line.sort_by_key(|x| x.0);
+        ops.extend(line.into_iter().map(|(_, clip)| EditOp::MoveClip { clip, track: Some(m.id), start: park + park }));
+    }
     Some((plan.iter().map(|x| (x.0, x.4)).collect(), EditOp::Batch { label: "Clips verschieben".into(), ops }))
 }
 
@@ -432,6 +442,30 @@ mod tests {
         let (_, op) = shift_tracks(d.project(), &[(x, s(0.0)), (y, s(0.0))], -1).unwrap();
         d.apply(op, OpSource::Ui).unwrap();
         assert_eq!((at(&d, x).0, at(&d, y).0), ("V3".into(), "V2".into()));
+    }
+
+    /// Group moved in time on the magnet main track (steps 0): the clips line up by their new starts
+    /// – all selected keeps the order, a part dragged past a clip goes behind it (one by one, the
+    /// insert by middles of the packed track swapped the group)
+    #[test]
+    fn group_on_the_magnet_main_track_keeps_its_order() {
+        let mut p = proj(&["M", "A1"]);
+        let ids: Vec<ClipId> = (0..3).map(|i| clip(&mut p, 0, i as f64)).collect();
+        let s = |x: f64| Time::from_secs_f64(x);
+        let order = |d: &Document| d.project().timeline.tracks.iter().find(|t| t.main).unwrap().clips.iter().map(|c| c.id).collect::<Vec<_>>();
+        for sel in [[0, 1, 2], [2, 0, 1], [1, 2, 0]] {
+            let moves: Vec<(ClipId, Time)> = sel.iter().map(|&i| (ids[i], s(i as f64 + 2.5))).collect();
+            let (_, op) = shift_tracks(&p, &moves, 0).unwrap();
+            let mut d = Document::new(p.clone());
+            d.apply(op, OpSource::Ui).unwrap();
+            assert_eq!(order(&d), ids, "{sel:?}");
+        }
+        // first two dragged past the third clip's start
+        let (_, op) = shift_tracks(&p, &[(ids[1], s(3.5)), (ids[0], s(2.5))], 0).unwrap();
+        let mut d = Document::new(p.clone());
+        d.apply(op, OpSource::Ui).unwrap();
+        assert_eq!(order(&d), [ids[2], ids[0], ids[1]]);
+        assert_eq!(d.undo_entries().len(), 1);
     }
 
     #[test]
