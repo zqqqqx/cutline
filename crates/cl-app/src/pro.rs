@@ -1608,6 +1608,14 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
     e |= theme::row(ui, "Höhen", |ui| {
         Slider::new(&mut a.treble, -12.0..=12.0).suffix(" dB").default(0.0).show(ui)
     });
+    e |= theme::row(ui, "Hall", |ui| {
+        Slider::new(&mut a.reverb, 0.0..=1.0).percent().default(0.0).show(ui)
+    });
+    if a.reverb > 0.0 {
+        e |= theme::row(ui, "Raumgröße", |ui| {
+            Slider::new(&mut a.reverb_size, 0.0..=1.0).percent().default(0.5).show(ui)
+        });
+    }
     if widgets::toggle_row(ui, "Lautheit angleichen (−14 LUFS)", &mut a.normalize) {
         e.commit = true;
     }

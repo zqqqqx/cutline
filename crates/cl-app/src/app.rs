@@ -3698,6 +3698,25 @@ fn audio_signature(p: &Project) -> u64 {
     h.finish()
 }
 
+/// Moving an audio slider must rebuild the preview sound
+#[test]
+fn audio_signature_follows_reverb() {
+    let mut p = Project::new("Hall");
+    let mut t = Track::new(TrackKind::Audio);
+    t.clips.push(Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Audio }, Time::ZERO, Time::from_secs_f64(2.0)));
+    p.timeline.tracks.push(t);
+    let mut seen = vec![audio_signature(&p)];
+    fn a(p: &mut Project) -> &mut AudioFx {
+        &mut p.timeline.tracks[0].clips[0].audio
+    }
+    a(&mut p).reverb = 0.4;
+    seen.push(audio_signature(&p));
+    a(&mut p).reverb_size = 0.9;
+    seen.push(audio_signature(&p));
+    seen.dedup();
+    assert_eq!(seen.len(), 3, "every step changes the signature");
+}
+
 impl App {
     /// When dragging from the library: icon and name at the mouse pointer, so it is clear what is being moved.
     fn drag_ghost(&self, ctx: &egui::Context) {

@@ -325,7 +325,7 @@ impl Default for ChromaKey {
 }
 
 /// Audio editing of a clip.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AudioFx {
     /// Denoise 0…1
@@ -349,6 +349,12 @@ pub struct AudioFx {
     pub compress: f32,
     /// Audio filter (id from `cl_fx::audio::FILTERS`)
     pub filter: Option<String>,
+    /// Reverb amount 0…1 (0 = off)
+    #[serde(skip_serializing_if = "is_zero")]
+    pub reverb: f32,
+    /// Reverb room size 0…1
+    #[serde(skip_serializing_if = "is_half")]
+    pub reverb_size: f32,
     /// Channels; `None` = project default
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channels: Option<Channels>,
@@ -397,6 +403,35 @@ impl Channels {
             },
         }
     }
+}
+
+impl Default for AudioFx {
+    fn default() -> Self {
+        Self {
+            denoise: 0.0,
+            voice_isolate: false,
+            normalize: false,
+            voice: None,
+            bass: 0.0,
+            treble: 0.0,
+            hum: false,
+            rumble: false,
+            declick: false,
+            compress: 0.0,
+            filter: None,
+            reverb: 0.0,
+            reverb_size: 0.5,
+            channels: None,
+        }
+    }
+}
+
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
+}
+
+fn is_half(v: &f32) -> bool {
+    *v == 0.5
 }
 
 impl AudioFx {
@@ -993,6 +1028,21 @@ pub fn curve_speed_at(id: &str, u: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reverb off writes no new field: the audio block is saved as before
+    #[test]
+    fn audio_without_reverb_is_saved_as_before() {
+        let a = AudioFx::default();
+        assert_eq!((a.reverb, a.reverb_size), (0.0, 0.5));
+        let old = r#"{"denoise":0.3,"voice_isolate":true,"normalize":false,"voice":"robot","bass":2.0,"treble":0.0,"hum":true,"rumble":false,"declick":false,"compress":0.5,"filter":null}"#;
+        let a: AudioFx = serde_json::from_str(old).unwrap();
+        assert_eq!((a.reverb, a.reverb_size), (0.0, 0.5), "old file loads without reverb");
+        assert_eq!(serde_json::to_string(&a).unwrap(), old, "round trip unchanged");
+        let r = AudioFx { reverb: 0.4, reverb_size: 0.8, ..a };
+        let s = serde_json::to_string(&r).unwrap();
+        assert!(s.contains("\"reverb\":0.4") && s.contains("\"reverb_size\":0.8"), "{s}");
+        assert_eq!(serde_json::from_str::<AudioFx>(&s).unwrap(), r);
+    }
 
     /// Outline without „durchsichtig“ does not write the field (project file as before 0.13)
     #[test]
