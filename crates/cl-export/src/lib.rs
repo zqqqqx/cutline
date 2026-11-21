@@ -3408,13 +3408,16 @@ mod tests {
 
     /// Test package with shader transitions (the catalog is global: the same in all tests, created
     /// once): `t.shader/wipe` and `t.shader/broken` (invalid shader), fallback `fade`.
+    /// Only this helper loads packs in this binary; the tests calling it are the ones that use
+    /// `t.shader/*` (shader transition export, tpad, layer above, cancel, timing, section boundary).
     fn shader_pack() {
-        static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-        ONCE.get_or_init(|| {
+        // own folder per test process, alive as long as the process (statics are not dropped, so it
+        // stays in the temp folder afterwards; a fixed shared path could be changed by another run)
+        static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        DIR.get_or_init(|| {
             use cl_fx::catalog::{Entry, Kind, Pack, PackInfo, Payload};
-            // fixed name: a new folder per test run piled up in %TEMP% (the content is always the same)
-            let dir = std::env::temp_dir().join("cutline-shader-test");
-            std::fs::create_dir_all(&dir).unwrap();
+            let tmp = tempfile::Builder::new().prefix("cutline-shader-test").tempdir().unwrap();
+            let dir = tmp.path();
             std::fs::write(dir.join("wipe.wgsl"), WIPE).unwrap();
             std::fs::write(dir.join("broken.wgsl"), "fn transition( kaputt").unwrap();
             let e = |id: &str| Entry {
@@ -3446,6 +3449,7 @@ mod tests {
                 enabled: true,
                 entries: vec![e("wipe"), e("broken")],
             }]);
+            tmp
         });
     }
 
