@@ -151,20 +151,42 @@ pub fn matte(
     let _ = dec.kill();
     let _ = dec.wait();
     let ok = enc.wait().map(|s| s.success()).unwrap_or(false);
-    result?;
-    if !ok || n == 0 {
-        let _ = std::fs::remove_file(&tmp);
-        return Err("Maskenvideo konnte nicht geschrieben werden".into());
-    }
-    std::fs::rename(&tmp, out).map_err(|e| e.to_string())?;
+    finish(&tmp, out, result, ok && n > 0)?;
     progress(1.0);
     Ok(())
+}
+
+/// `tmp` becomes `out` only when everything worked (`written`: encoder fine, frames
+/// written); on every other path (cancel, model or FFmpeg error, rename) it is removed.
+fn finish(tmp: &Path, out: &Path, result: Result<(), String>, written: bool) -> Result<(), String> {
+    let done = result
+        .and_then(|()| if written { Ok(()) } else { Err("Maskenvideo konnte nicht geschrieben werden".into()) })
+        .and_then(|()| std::fs::rename(tmp, out).map_err(|e| e.to_string()));
+    if done.is_err() {
+        let _ = std::fs::remove_file(tmp);
+    }
+    done
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testutil;
+
+    /// Cancel and errors leave no `.part.mkv` behind; success renames it.
+    #[test]
+    fn finish_removes_the_part_file_unless_done() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tmp, out) = (dir.path().join("m.part.mkv"), dir.path().join("m.mkv"));
+        for (result, written) in [(Err("Abgebrochen".to_string()), true), (Err("Modell".into()), false), (Ok(()), false)] {
+            std::fs::write(&tmp, b"x").unwrap();
+            assert!(finish(&tmp, &out, result, written).is_err());
+            assert!(!tmp.exists() && !out.exists(), "part file left behind");
+        }
+        std::fs::write(&tmp, b"x").unwrap();
+        finish(&tmp, &out, Ok(()), true).unwrap();
+        assert!(!tmp.exists() && out.is_file());
+    }
 
     #[test]
     fn writes_matte_video_with_all_frames() {
