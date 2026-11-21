@@ -47,7 +47,7 @@ id_type!(MediaId);
 
 /// Raise this whenever a field is added whose loss would change the user's edit: older versions
 /// then refuse the file instead of loading it and saving it back without that field.
-pub const PROJECT_SCHEMA_VERSION: u32 = 2;
+pub const PROJECT_SCHEMA_VERSION: u32 = 3;
 
 /// Load error for a project saved by a newer Cutline (the UI translates it as a whole).
 pub const NEWER_PROJECT: &str = "Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.";

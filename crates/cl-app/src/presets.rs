@@ -33,11 +33,7 @@ impl Preset {
     /// speed curve, reverse, censor areas) are left out.
     pub fn from_clip(name: &str, c: &Clip) -> Self {
         let mut fx = c.fx.clone();
-        fx.cutout = None;
-        fx.person = None;
-        fx.speed_curve = None;
-        fx.reverse = false;
-        fx.censor.clear();
+        fx.keep_bound(&ClipFx::default());
         let text = match &c.content {
             ClipContent::Text(t) => Some(TextStyle {
                 text: String::new(),
@@ -57,15 +53,9 @@ impl Preset {
 
     /// Apply to a clip (content, position, time and mask stay).
     pub fn apply(&self, c: &mut Clip) {
-        let keep = (
-            c.fx.cutout.clone(),
-            c.fx.person.clone(),
-            c.fx.speed_curve.clone(),
-            c.fx.reverse,
-            std::mem::take(&mut c.fx.censor),
-        );
-        c.fx = self.fx.clone();
-        (c.fx.cutout, c.fx.person, c.fx.speed_curve, c.fx.reverse, c.fx.censor) = keep;
+        let mut fx = self.fx.clone();
+        fx.keep_bound(&c.fx);
+        c.fx = fx;
         c.anim = self.anim.clone();
         c.opacity = self.opacity;
         c.audio = self.audio.clone();
@@ -349,9 +339,11 @@ mod tests {
         });
         a.fx.adjust.brightness = 0.2;
         a.fx.cutout = Some("matte.mkv".into());
+        a.fx.edge.feather = 0.3;
         a.opacity = 0.8;
         let p = Preset::from_clip("Look", &a);
         assert!(p.fx.cutout.is_none());
+        assert!(p.fx.edge.is_identity(), "edge stays with the clip");
         let mut b = Clip::new(
             ClipContent::Media {
                 media: MediaId::new(),
@@ -361,7 +353,9 @@ mod tests {
             Time::from_secs_f64(1.0),
         );
         b.fx.cutout = Some("eigene.mkv".into());
+        b.fx.edge.shift = -0.2;
         p.apply(&mut b);
+        assert_eq!(b.fx.edge.shift, -0.2);
         assert_eq!(b.fx.filter, a.fx.filter);
         assert_eq!(b.fx.adjust.brightness, 0.2);
         assert_eq!(b.opacity, 0.8);

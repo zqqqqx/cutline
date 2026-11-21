@@ -36,21 +36,9 @@ impl Default for PasteAttrs {
 impl PasteAttrs {
     pub fn apply(&self, src: &Clip, dst: &mut Clip) {
         if self.look {
-            let keep = (
-                dst.fx.cutout.clone(),
-                dst.fx.person.clone(),
-                dst.fx.speed_curve.clone(),
-                dst.fx.reverse,
-                std::mem::take(&mut dst.fx.censor),
-            );
-            dst.fx = src.fx.clone();
-            (
-                dst.fx.cutout,
-                dst.fx.person,
-                dst.fx.speed_curve,
-                dst.fx.reverse,
-                dst.fx.censor,
-            ) = keep;
+            let mut fx = src.fx.clone();
+            fx.keep_bound(&dst.fx);
+            dst.fx = fx;
         }
         if self.transform {
             dst.transform = src.transform;
@@ -419,6 +407,24 @@ mod tests {
         assert!(dst.crop.is_none());
         PasteAttrs { transform: true, ..Default::default() }.apply(&src, &mut dst);
         assert_eq!(dst.crop.left, 0.25);
+    }
+
+    /// The look carries chroma and filters; mask, person effect and edge stay with the target clip.
+    #[test]
+    fn paste_look_keeps_the_clip_bound_cutout() {
+        let m = ClipContent::Media { media: cl_core::MediaId::new(), kind: MediaKind::Video };
+        let mut src = Clip::new(m, Time::ZERO, Time::from_secs_f64(1.0));
+        src.fx.chroma = Some(Default::default());
+        src.fx.cutout = Some("src.mkv".into());
+        src.fx.edge.feather = 0.5;
+        let mut dst = src.clone();
+        dst.fx = Default::default();
+        dst.fx.cutout = Some("dst.mkv".into());
+        dst.fx.edge.invert = true;
+        PasteAttrs::default().apply(&src, &mut dst);
+        assert_eq!(dst.fx.chroma, src.fx.chroma);
+        assert_eq!(dst.fx.cutout.as_deref(), Some("dst.mkv"));
+        assert_eq!(dst.fx.edge, cl_core::MatteEdge { invert: true, ..Default::default() });
     }
 
     #[test]

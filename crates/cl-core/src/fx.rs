@@ -125,6 +125,9 @@ pub struct ClipFx {
     pub cutout: Option<String>,
     /// What happens to the background when a person mask exists
     pub person: Option<PersonFx>,
+    /// Edge of the cutout mask (person or color key); identity = field missing in the file
+    #[serde(skip_serializing_if = "MatteEdge::is_identity")]
+    pub edge: MatteEdge,
     /// Denoise 0…1
     pub denoise: f32,
     /// Deflicker brightness (artificial light, time-lapse)
@@ -258,6 +261,29 @@ pub fn censor_simplify(boxes: &[CensorKey]) -> Vec<CensorKey> {
         i = j;
     }
     out
+}
+
+/// Edge of a cutout mask, shared by all cutout modes. Sizes relative to the frame.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MatteEdge {
+    /// Soft edge 0…1
+    pub feather: f32,
+    /// Grow (> 0) or shrink (< 0) the visible area, −1…1
+    pub shift: f32,
+    /// Swap foreground and background
+    pub invert: bool,
+}
+
+impl MatteEdge {
+    pub fn is_identity(&self) -> bool {
+        *self == MatteEdge::default()
+    }
+    /// Values in their valid ranges (hand edits, foreign tools)
+    pub fn clamped(self) -> Self {
+        let c = |v: f32, lo: f32| if v.is_finite() { v.clamp(lo, 1.0) } else { 0.0 };
+        Self { feather: c(self.feather, 0.0), shift: c(self.shift, -1.0), invert: self.invert }
+    }
 }
 
 /// Person effects based on the mask from „Hintergrund entfernen“.
@@ -408,6 +434,18 @@ impl AudioFx {
 impl ClipFx {
     pub fn is_empty(&self) -> bool {
         *self == ClipFx::default()
+    }
+
+    /// Take the clip-bound fields from `from` (they stay with the clip when a look or
+    /// pasted attributes replace the rest): cutout mask and its edge, person effect,
+    /// speed curve, reverse, censor areas.
+    pub fn keep_bound(&mut self, from: &ClipFx) {
+        self.cutout = from.cutout.clone();
+        self.person = from.person.clone();
+        self.edge = from.edge;
+        self.speed_curve = from.speed_curve.clone();
+        self.reverse = from.reverse;
+        self.censor = from.censor.clone();
     }
 }
 
@@ -1011,6 +1049,95 @@ mod tests {
             *transparent = true;
         }
         assert!(p.to_json().contains("\"transparent\": true"));
+    }
+
+    fn one_clip_project(fx: ClipFx) -> crate::model::Project {
+        use crate::model::*;
+        let mut p = Project::new("Kante");
+        let mut t = Track::new(TrackKind::Video);
+        let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
+        c.fx = fx;
+        t.clips.push(c);
+        p.timeline.tracks.push(t);
+        p
+    }
+
+    /// Identity edge is not written; a version 2 file (no edge) loads with identity edge
+    /// and is saved as version 3.
+    #[test]
+    fn identity_edge_is_not_saved_and_old_files_load() {
+        let fx = ClipFx { cutout: Some("m.mkv".into()), chroma: Some(ChromaKey::default()), ..Default::default() };
+        let s = one_clip_project(fx).to_json();
+        assert!(!s.contains("\"edge\""), "{s}");
+        assert!(s.contains("\"schema_version\": 3"), "{s}");
+        let old = s.replace("\"schema_version\": 3", "\"schema_version\": 2");
+        let p = crate::model::Project::from_json(&old).unwrap();
+        assert_eq!(p.schema_version, 3);
+        assert!(p.timeline.tracks[0].clips[0].fx.edge.is_identity());
+        assert_eq!(p.to_json(), s);
+    }
+
+    #[test]
+    fn edge_values_round_trip() {
+        let edge = MatteEdge { feather: 0.25, shift: -0.5, invert: true };
+        let s = one_clip_project(ClipFx { edge, ..Default::default() }).to_json();
+        assert!(s.contains("\"edge\""), "{s}");
+        let p = crate::model::Project::from_json(&s).unwrap();
+        assert_eq!(p.timeline.tracks[0].clips[0].fx.edge, edge);
+        assert_eq!(p.to_json(), s);
+        // a partly written edge fills the rest with defaults
+        let part = s.replace("\"invert\": true", "\"invert\": false").replace("\"feather\": 0.25,", "");
+        let p = crate::model::Project::from_json(&part).unwrap();
+        assert_eq!(p.timeline.tracks[0].clips[0].fx.edge, MatteEdge { feather: 0.0, shift: -0.5, invert: false });
+    }
+
+    #[test]
+    fn edge_clamps_to_valid_ranges() {
+        let e = MatteEdge { feather: 3.0, shift: -7.0, invert: true }.clamped();
+        assert_eq!(e, MatteEdge { feather: 1.0, shift: -1.0, invert: true });
+        assert!(MatteEdge { feather: f32::NAN, shift: f32::INFINITY, invert: false }.clamped().is_identity());
+    }
+
+    /// `keep_bound` keeps exactly what the three copied keep-lists in presets.rs and
+    /// edit_tools.rs kept before (reproduced here), plus the new edge.
+    #[test]
+    fn keep_bound_keeps_what_the_old_lists_kept() {
+        let src = ClipFx {
+            effects: vec![FxRef::new("a")],
+            filter: Some(FxRef::new("f")),
+            lut: Some("l.cube".into()),
+            flip_h: true,
+            chroma: Some(ChromaKey::default()),
+            stabilize: 0.3,
+            cutout: Some("src.mkv".into()),
+            person: Some(PersonFx::from_index(1)),
+            edge: MatteEdge { feather: 0.1, ..Default::default() },
+            speed_curve: Some("s".into()),
+            denoise: 0.2,
+            censor: vec![Censor::default()],
+            ..Default::default()
+        };
+        let dst = ClipFx {
+            cutout: Some("dst.mkv".into()),
+            person: Some(PersonFx::from_index(2)),
+            edge: MatteEdge { shift: 0.4, invert: true, ..Default::default() },
+            reverse: true,
+            mask: Some(Mask::new(MaskShape::Circle)),
+            ..Default::default()
+        };
+        // the old list: cutout, person, speed_curve, reverse, censor from the destination
+        let mut old = src.clone();
+        (old.cutout, old.person, old.speed_curve, old.reverse, old.censor) =
+            (dst.cutout.clone(), dst.person.clone(), dst.speed_curve.clone(), dst.reverse, dst.censor.clone());
+        let mut new = src.clone();
+        new.keep_bound(&dst);
+        assert_eq!(new, ClipFx { edge: dst.edge, ..old });
+        // presets: nothing clip-bound goes into the look
+        let mut look = src.clone();
+        look.keep_bound(&ClipFx::default());
+        assert!(look.cutout.is_none() && look.person.is_none() && look.edge.is_identity());
+        assert!(look.speed_curve.is_none() && !look.reverse && look.censor.is_empty());
+        assert_eq!(look.chroma, src.chroma);
     }
 
     #[test]
