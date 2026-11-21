@@ -244,7 +244,7 @@ pub struct ExportSettings {
 /// than 1080p, at 0.03 about equal, from 0.05 1080p is better.
 pub const TARGET_MIN_BPP: f64 = 0.03;
 /// Standard resolutions (shorter edge) to scale down to when the bitrate is too low
-pub const TARGET_EDGES: [u32; 4] = [1080, 720, 540, 360];
+pub const TARGET_EDGES: [u32; 5] = [1440, 1080, 720, 540, 360];
 /// Share of the target size used by picture and audio; the rest absorbs the container and the encoders'
 /// spread (x264 two passes: measured up to 3.5 % above the bitrate)
 const TARGET_SHARE: f64 = 0.95;
@@ -4470,9 +4470,13 @@ mod tests {
         assert_eq!(target_edge(500, (1920, 1080), 30.0), Some((540, true)));
         assert_eq!(target_edge(250, (1920, 1080), 30.0), Some((360, true)));
         assert_eq!(target_edge(100, (1920, 1080), 30.0), Some((360, false)));
-        // portrait: the shorter edge counts; 4K becomes 1080p
+        // portrait: the shorter edge counts; 4K becomes 1440p (2560×1440×30 needs 3318), else 1080p
         assert_eq!(target_edge(1800, (1080, 1920), 30.0), Some((720, true)));
+        assert_eq!(target_edge(3500, (3840, 2160), 30.0), Some((1440, true)));
+        assert_eq!(target_edge(3500, (2160, 3840), 30.0), Some((1440, true)));
         assert_eq!(target_edge(3000, (3840, 2160), 30.0), Some((1080, true)));
+        // 1440p itself steps to 1080p
+        assert_eq!(target_edge(3000, (2560, 1440), 30.0), Some((1080, true)));
         // already small: never larger, at most 360p
         assert_eq!(target_edge(10, (320, 180), 30.0), Some((180, false)));
         assert_eq!(target_edge(10, (640, 480), 30.0), Some((360, false)));

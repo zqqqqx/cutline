@@ -126,6 +126,16 @@ pub fn youtube_kbps(short_edge: u32, fps: f64) -> Option<u32> {
     Some(if fps > 30.5 { hi } else { lo })
 }
 
+/// Name of a resolution choice (shorter edge, 0 = project size `pw`×`ph`)
+fn res_label(e: u32, (pw, ph): (u32, u32)) -> String {
+    match e {
+        0 => format!("Projekt ({pw}×{ph})"),
+        1440 => "2K (1440p)".into(),
+        2160 => "4K (2160p)".into(),
+        e => format!("{e}p"),
+    }
+}
+
 /// Choice „Seitenverhältnis“ in the export (after „Projekt“)
 pub const ASPECTS: [(u32, u32); 4] = [(16, 9), (9, 16), (1, 1), (4, 5)];
 
@@ -1153,11 +1163,7 @@ impl ExportDialog {
                                 }
                                 theme::row(ui, "Auflösung", |ui| {
                                     let (pw, ph) = canvas.unwrap_or((p.settings.width, p.settings.height));
-                                    let label = |e: u32| match e {
-                                        0 => format!("Projekt ({pw}×{ph})"),
-                                        2160 => "4K (2160p)".into(),
-                                        e => format!("{e}p"),
-                                    };
+                                    let label = |e: u32| res_label(e, (pw, ph));
                                     egui::ComboBox::from_id_salt("exp-res").selected_text(crate::tr(label(self.short_edge))).width(200.0).show_ui(ui, |ui| {
                                         for e in [0, 480, 720, 1080, 1440, 2160] {
                                             ui.selectable_value(&mut self.short_edge, e, crate::tr(label(e)));
@@ -2896,6 +2902,26 @@ fn platform_template_sets_the_aspect_and_leaves_the_project_alone() {
     wide.settings.platform = Some("shorts".into());
     d.open_for(&wide, None, 0, None);
     assert_eq!(d.canvas(&wide), Some((1080, 1920)));
+}
+
+/// 2K (1440p): 2560×1440 at 16:9, the shorter edge 1440 in every other aspect ratio
+#[test]
+fn resolution_2k_in_every_aspect() {
+    let (ctx, mut p) = (egui::Context::default(), text_project("Film", "eins", 2.0));
+    (p.settings.width, p.settings.height) = (1920, 1080);
+    assert_eq!(res_label(1440, (1920, 1080)), "2K (1440p)");
+    assert_eq!(res_label(2160, (1920, 1080)), "4K (2160p)");
+    let mut d = ExportDialog::default();
+    d.open_for(&p, None, 0, None);
+    for (aspect, want) in [(0, (2560, 1440)), (1, (2560, 1440)), (2, (1440, 2560)), (3, (1440, 1440)), (4, (1440, 1800))] {
+        (d.aspect, d.short_edge) = (aspect, 1440);
+        frame(&mut d, &ctx, &p, false);
+        let s = d.settings.clone().unwrap();
+        assert_eq!((s.width, s.height), want, "aspect {aspect}");
+    }
+    // YouTube guide values for 1440p: 16 Mbit/s up to 30 fps, 24 Mbit/s above
+    assert_eq!(youtube_kbps(1440, 30.0), Some(16_000));
+    assert_eq!(youtube_kbps(1440, 60.0), Some(24_000));
 }
 
 /// Preview on the left: cover image from the rebuilt snapshot

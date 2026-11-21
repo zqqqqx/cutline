@@ -152,3 +152,27 @@ fn export_test_projects() {
         eprintln!("{}: ok ({secs:.1} s)", f.display());
     }
 }
+
+/// 2K: a project exported at 2560×1440 (software encoder) probes as 2560×1440.
+#[test]
+fn export_at_1440p() {
+    if !cl_media::test_tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("src.mp4");
+    ffmpeg(&["-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=1", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", &src.to_string_lossy()]);
+    let m = cl_media::probe(&src).unwrap();
+    let mut p = Project::new("2k");
+    let mut t = cl_core::Track::new(cl_core::TrackKind::Video);
+    t.clips.push(cl_core::Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, cl_core::Time::ZERO, m.duration));
+    p.timeline.tracks.push(t);
+    p.media.push(m);
+    let mut s = ExportSettings::from_project(&p);
+    (s.width, s.height) = (2560, 1440);
+    let out = dir.path().join("out.mp4");
+    export(&p, &s, &out);
+    let r = cl_media::probe(&out).unwrap();
+    assert_eq!((r.width, r.height), (2560, 1440));
+    assert!(r.duration.as_secs_f64() > 0.8, "{}", r.duration);
+}
