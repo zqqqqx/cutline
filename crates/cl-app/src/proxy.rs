@@ -1284,6 +1284,21 @@ mod tests {
         }
     }
 
+    /// Held by tests that run FFmpeg through `run_encode`: `cancel_while_paused_leaves_nothing`
+    /// pauses every running build (process-wide switch) while it runs.
+    fn builds() -> std::sync::MutexGuard<'static, ()> {
+        static L: Mutex<()> = Mutex::new(());
+        L.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Removes the source's registry entry when the test ends (also on failure)
+    struct Forget(PathBuf);
+    impl Drop for Forget {
+        fn drop(&mut self) {
+            registry().remove(&self.0);
+        }
+    }
+
     #[test]
     fn spec_follows_project_rate_and_keeps_short_gop() {
         let r = |n| Rational::new(n, 1);
@@ -1434,11 +1449,14 @@ mod tests {
     /// Older single-file proxies stay valid: no part build, stream from the finished file.
     #[test]
     fn old_single_file_proxy_is_used_not_rebuilt() {
-        let d = tempfile::tempdir().unwrap();
+        // the registry is shared with the app tests: under the home lock, entry removed at the end
+        let home = crate::export_ui::TestHome::new();
+        let d = &home.dir;
         let src = d.path().join("quelle.mp4");
         std::fs::write(&src, b"x").unwrap();
         let mut m = media(1920, 1080, Rational::new(30, 1), "h264");
         m.path = src;
+        let _f = Forget(m.path.clone());
         let root = d.path().join("proxies");
         std::fs::create_dir_all(&root).unwrap();
         // name as before (without frame rate)
@@ -1490,9 +1508,10 @@ mod tests {
     /// Where Media Foundation starts, the parts alternate between it and software.
     #[test]
     fn parts_join_frame_exact_and_merge_keeps_every_frame() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
+        let _b = builds();
         let mix = if available_encoders().contains(&Encoder::Mf) { vec![Encoder::Mf, Encoder::Software] } else { vec![Encoder::Software] };
         let d = tempfile::tempdir().unwrap();
         let vfr = ",setpts='(N/60+0.006*sin(N*1.7))/TB'";
@@ -1556,9 +1575,10 @@ mod tests {
     /// show the same frame as the original at the same source time (`-ss` counts from the file start).
     #[test]
     fn parts_and_proxy_match_the_original_when_video_starts_late() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
+        let _b = builds();
         let d = tempfile::tempdir().unwrap();
         let src = d.path().join("spaet.mp4");
         assert!(cl_media::ffmpeg_command()
@@ -1596,9 +1616,10 @@ mod tests {
     /// Video shorter than the file (sound longer): the last part has no frame, the build still finishes.
     #[test]
     fn part_behind_video_end_is_empty_and_merge_still_works() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
+        let _b = builds();
         let d = tempfile::tempdir().unwrap();
         let src = d.path().join("kurz.mp4");
         assert!(cl_media::ffmpeg_command()
@@ -1635,11 +1656,14 @@ mod tests {
     /// cleaned up, only what is missing is built (a finished part never again), one file at the end.
     #[test]
     fn resume_after_abort_builds_only_missing_parts() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
-        let d = tempfile::tempdir().unwrap();
+        let home = crate::export_ui::TestHome::new();
+        let _b = builds();
+        let d = &home.dir;
         let m = coded_source(d.path(), "q.mp4", 4.0, "", &[]);
+        let _f = Forget(m.path.clone());
         let spec = proxy_spec(&m, 90, Rational::new(30, 1));
         let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
         assert_eq!(pt.count, 4);
@@ -1651,6 +1675,8 @@ mod tests {
         for k in [0, 2] {
             build_part_with(&m, &pdir, &pt, 0.0, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
         }
+        // cancelled from the first progress call: `run_encode` checks the flag again in that same round,
+        // also when FFmpeg has already ended, so the part is always aborted (no timing involved)
         let cancel = AtomicBool::new(false);
         let r = build_part_with(&m, &pdir, &pt, 0.0, 1, &spec, Encoder::Software, None, &|_| cancel.store(true, Ordering::Relaxed), &cancel);
         assert_eq!(r.unwrap_err(), "Abgebrochen");
@@ -1760,11 +1786,12 @@ mod tests {
         assert_eq!(fails_in_row(1, false), Some(2));
         assert_eq!(fails_in_row(2, false), None);
         assert_eq!(fails_in_row(2, true), Some(0), "a success resets");
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let d = tempfile::tempdir().unwrap();
+        let home = crate::export_ui::TestHome::new();
+        let _b = builds();
+        let d = &home.dir;
         let mut m = media(1920, 1080, Rational::new(30, 1), "h264");
         m.path = d.path().join("weg.mp4");
         let out = d.path().join("weg-540.mp4");
@@ -1848,10 +1875,13 @@ mod tests {
     /// playable.
     #[test]
     fn builds_small_proxy() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
-        let d = tempfile::tempdir().unwrap();
+        // touches the registry: home lock first, then the build lock (same order everywhere)
+        let home = crate::export_ui::TestHome::new();
+        let _b = builds();
+        let d = &home.dir;
         let m = make_source(d.path(), "testsrc2=s=2560x1440:r=60:d=2");
         assert!(wants_proxy(&m));
         let out = d.path().join("p.mp4");
@@ -1888,24 +1918,29 @@ mod tests {
     /// Cancel during the pause too: no half file is left behind.
     #[test]
     fn cancel_while_paused_leaves_nothing() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
+        // the pause below is process-wide: keep other proxy builds (here and under the home lock) out
+        let _home = crate::export_ui::TestHome::new();
+        let _b = builds();
         let d = tempfile::tempdir().unwrap();
         let m = make_source(d.path(), "testsrc2=s=1920x1080:r=60:d=4");
         let out = d.path().join("p.mp4");
         let spec = proxy_spec(&m, 540, Rational::new(30, 1));
         let cancel = AtomicBool::new(false);
-        let calls = std::cell::Cell::new(0);
-        let r = build_with(&m, &out, &spec, Encoder::Software, None, &|_| {
-            // first progress: player active (next round pauses), then cancel
-            calls.set(calls.get() + 1);
-            match calls.get() {
-                1 => note_activity(),
-                3 => cancel.store(true, Ordering::Relaxed),
-                _ => {}
+        // paused before the start: the first round of `run_encode` suspends FFmpeg, then calls
+        // progress, which cancels; the cancel wins in that same round even if FFmpeg had ended.
+        // Deterministic, unlike a player click (pause only within 300 ms of it).
+        struct Unpause;
+        impl Drop for Unpause {
+            fn drop(&mut self) {
+                ProxyState::set_paused(false);
             }
-        }, &cancel);
+        }
+        let _u = Unpause;
+        ProxyState::set_paused(true);
+        let r = build_with(&m, &out, &spec, Encoder::Software, None, &|_| cancel.store(true, Ordering::Relaxed), &cancel);
         assert_eq!(r.unwrap_err(), "Abgebrochen");
         assert!(!out.exists() && !parts::tmp_of(&out).exists());
     }
@@ -1919,7 +1954,7 @@ mod tests {
     /// `cargo test --release -p cl-app --bin cutline -- --ignored --nocapture measure_parts`
     /// (`CUTLINE_PROXY_SRC=<file>`; `CUTLINE_PROXY_FULL=1`: whole build without and with simulated playback)
     #[test]
-    #[ignore]
+    #[ignore = "measurement only: needs FFmpeg and a long video (CUTLINE_PROXY_SRC or %USERPROFILE%/Downloads/videoplayback.mp4), prints timings"]
     fn measure_parts() {
         let src = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()).join("Downloads/videoplayback.mp4");
         let src = std::env::var_os("CUTLINE_PROXY_SRC").map(PathBuf::from).unwrap_or(src);
@@ -2095,9 +2130,9 @@ mod tests {
     }
 
     /// Measurement test (manual): proxy for the 23 min 1080p60 original with each encoder.
-    /// `cargo test --release -p cl-app -- --ignored --nocapture measure_proxy_build`
+    /// `cargo test --release -p cl-app --bin cutline -- --ignored --nocapture measure_proxy_build` (`CUTLINE_PROXY_SRC=<file>`)
     #[test]
-    #[ignore]
+    #[ignore = "measurement only: needs FFmpeg and a long video (CUTLINE_PROXY_SRC or %USERPROFILE%/Downloads/videoplayback.mp4), prints timings"]
     fn measure_proxy_build() {
         let src = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()).join("Downloads/videoplayback.mp4");
         let src = std::env::var_os("CUTLINE_PROXY_SRC").map(PathBuf::from).unwrap_or(src);
