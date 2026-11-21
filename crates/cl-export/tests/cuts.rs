@@ -82,15 +82,17 @@ fn project(fps: Rational, m: &[MediaRef], cuts: &[i64]) -> Project {
 }
 
 /// Level the preview's rule expects on frame `n`: topmost clip with start <= frame time < end
-/// (frame time in whole µs, as the playhead stands on it), or black.
+/// (frame time in whole µs, as the playhead stands on it), or black; an "invert" effect clip
+/// active by the same rule (`Clip::contains`, as the player) negates what lies below.
 fn expected(p: &Project, n: i64) -> u8 {
     let t = frame_time(p, n);
     let mut lv = 0;
     for tr in &p.timeline.tracks {
-        for c in &tr.clips {
-            if c.start <= t && t < c.end() {
-                let ClipContent::Media { media, .. } = c.content else { continue };
-                lv = level(p.media.iter().position(|m| m.id == media).unwrap());
+        for c in tr.clips.iter().filter(|c| c.contains(t)) {
+            match &c.content {
+                ClipContent::Media { media, .. } => lv = level(p.media.iter().position(|m| m.id == *media).unwrap()),
+                ClipContent::Effect(r) if r.id == "invert" => lv = 255 - lv,
+                _ => {}
             }
         }
     }
@@ -303,6 +305,42 @@ fn cuts_in_range_export_match_preview() {
                 let c = export_and_check(&p, &dir.path().join(format!("range-{}-{a}-{mode}.mp4", fps.num)), max, Some((a, 75)));
                 let n_cuts = FRAMES.iter().filter(|&&n| n > a && n < 75).count();
                 report(&format!("{}/{} range {a}..75 {mode}", fps.num, fps.den), &c, n_cuts, &mut fails);
+            }
+        }
+    }
+    assert!(fails.is_empty(), "{fails:#?}");
+}
+
+/// Effect clip edges: one grey clip under an effect track with "invert" clips (gaps and an
+/// edge-to-edge pair) – every frame inverted exactly when the preview has the effect on.
+/// Full export and a range starting off whole µs, single pass and sections mode.
+#[test]
+fn effect_edges_match_preview() {
+    if !cl_media::test_tools() {
+        return;
+    }
+    let m = sources(&media_dir());
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let mut fails = Vec::new();
+    // effect clips (start frame, end frame); 23..31 and 31..38 edge to edge
+    const FX: [(i64, i64); 5] = [(7, 12), (23, 31), (31, 38), (47, 53), (64, 71)];
+    for (fps, range) in [(Rational::new(30, 1), (4, 75)), (Rational::new(30000, 1001), (5, 75))] {
+        for (case, off) in [("grid", (|_, _| 0.0) as fn(usize, f64) -> f64), ("off-grid", off_grid)] {
+            let mut p = project(fps, &m[..1], &cuts(fps, &[0, 80], |_, _| 0.0));
+            let edges: Vec<i64> = FX.iter().flat_map(|&(a, b)| [a, b]).collect();
+            let at = cuts(fps, &[[0].as_slice(), &edges].concat(), |k, fd| off(k, fd));
+            let mut tr = Track::new(TrackKind::Effect);
+            for w in at[1..].chunks(2) {
+                tr.clips.push(Clip::new(ClipContent::Effect(FxRef::new("invert")), Time(w[0]), Time(w[1] - w[0])));
+            }
+            p.timeline.tracks.push(tr);
+            for r in [None, Some(range)] {
+                for (mode, max) in [("single", 500), ("sections", 2)] {
+                    let name = format!("{}/{} fx {case} {r:?} {mode}", fps.num, fps.den);
+                    let file = format!("fx-{}-{case}-{}-{mode}.mp4", fps.num, r.is_some());
+                    let c = export_and_check(&p, &dir.path().join(file), max, r);
+                    report(&name, &c, edges.len(), &mut fails);
+                }
             }
         }
     }
