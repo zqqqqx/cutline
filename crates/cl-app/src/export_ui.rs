@@ -1944,7 +1944,9 @@ fn in_out_range_is_preselected_on_every_open() {
 #[test]
 fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
     let (ctx, p) = (egui::Context::default(), Project::new("t"));
-    let mut d = ExportDialog::default();
+    let dir = tempfile::tempdir().unwrap();
+    // a folder of its own: without one `open_for` picks the user's real „Videos“ folder
+    let mut d = ExportDialog { folder: dir.path().to_path_buf(), ..Default::default() };
     *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
     d.open_for(&p, None, 0, None);
     // as after Enter on „Exportieren“: question opened in the same frame, Enter still pressed
@@ -1957,7 +1959,31 @@ fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
     assert!(!d.confirm_overwrite);
     finish(&mut d, &ctx, &p);
     assert!(d.error.is_some());
-    assert!(d.name.starts_with("t ("), "{}", d.name);
+    assert_eq!(d.name, "t (2)");
+}
+
+/// Test home: holds `HOME_LOCK` for the whole test and points `CUTLINE_HOME` at a fresh temp folder.
+/// Drop clears the variable (also when the test fails), then deletes the folder, then releases the lock.
+#[cfg(test)]
+pub(crate) struct TestHome {
+    pub dir: tempfile::TempDir,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl TestHome {
+    pub fn new() -> Self {
+        let _lock = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", dir.path());
+        TestHome { dir, _lock }
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestHome {
+    fn drop(&mut self) {
+        }
 }
 
 /// Poll `done` every 20 ms; fails the test if it is still false after `secs` seconds
@@ -2127,7 +2153,8 @@ fn sidecars_follow_range_and_wait_for_success() {
     p.timeline.markers = vec![mk(1, 75.0, "Mitte"), mk(2, 125.0, "Später")];
     let mut s = ExportSettings::from_project(&p);
     s.range = Some((Time::from_secs_f64(60.0), Time::from_secs_f64(120.0)));
-    let dir = tempfile::tempdir().unwrap();
+    let home = TestHome::new();
+    let dir = &home.dir;
     let v = sidecars(&p, &s, true, &dir.path().join("a.mp4"));
     let get = |ext: &str| v.iter().find(|(f, _)| f.to_string_lossy().ends_with(ext)).unwrap().1.clone();
     assert_eq!(get(".chapters.txt"), "0:00 Intro\n0:15 Mitte");
@@ -2137,8 +2164,6 @@ fn sidecars_follow_range_and_wait_for_success() {
     assert!(off.iter().all(|(f, _)| !f.to_string_lossy().ends_with(".chapters.txt")));
     assert_eq!(get(".srt"), "1\n00:00:00,000 --> 00:00:10,000\ndrin\n");
     // write side files only after a successful export (success records in `exports.json`)
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    std::env::set_var("CUTLINE_HOME", dir.path());
     let (ctx, mut d) = (egui::Context::default(), ExportDialog::default());
     for ok in [false, true] {
         let r = running(Some(if ok { Ok(()) } else { Err("x".into()) }));
@@ -2150,7 +2175,6 @@ fn sidecars_follow_range_and_wait_for_success() {
         frame(&mut d, &ctx, &p, false);
         assert_eq!(v.iter().all(|(f, _)| f.is_file()), ok);
     }
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 #[test]
@@ -2218,9 +2242,8 @@ fn queued_exports_run_in_turn_from_their_own_snapshot() {
         return;
     }
     use cl_core::{Clip, ClipContent, TextStyle, Track, TrackKind};
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let project = |name: &str, txt: &str, secs: f64| {
         let mut p = Project::new(name);
         (p.settings.width, p.settings.height) = (320, 180);
@@ -2258,7 +2281,6 @@ fn queued_exports_run_in_turn_from_their_own_snapshot() {
     // exports list: assigned to the project they come from
     assert_eq!(crate::exports::for_project("A", Some(&pa)).len(), 2);
     assert!(crate::exports::for_project("Anders", Some(&po)).is_empty());
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// Test project 320×180, one text over `secs` seconds
@@ -2298,9 +2320,8 @@ fn split_export_writes_parts_into_a_folder_as_one_entry() {
     if !cl_media::test_tools() {
         return;
     }
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let p = text_project("Film", "eins", 4.0);
     let mut d = split_dialog(&p, dir.path(), 4);
@@ -2335,7 +2356,6 @@ fn split_export_writes_parts_into_a_folder_as_one_entry() {
     assert_eq!(d.running.as_ref().map(|r| r.src.out.clone()), Some(dir.path().join("Film (2)")));
     drain(&mut d, &ctx, &p);
     assert!(dir.path().join("Film (2)").join("Film (2) – Teil 04.mp4").is_file());
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 #[test]
@@ -2344,9 +2364,8 @@ fn failed_part_does_not_stop_the_others() {
         return;
     }
     use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     // part 3 (2–3 s) needs a video that is missing by now
     let mut p = text_project("Film", "eins", 4.0);
@@ -2367,7 +2386,6 @@ fn failed_part_does_not_stop_the_others() {
     for (n, there) in [(1, true), (2, true), (3, false), (4, true)] {
         assert_eq!(folder.join(format!("Film – Teil 0{n}.mp4")).is_file(), there, "part {n}");
     }
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 #[test]
@@ -2375,9 +2393,8 @@ fn cancel_stops_the_whole_group_without_half_files() {
     if !cl_media::test_tools() {
         return;
     }
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let p = text_project("Film", "eins", 8.0);
     let folder = dir.path().join("Film");
@@ -2406,7 +2423,6 @@ fn cancel_stops_the_whole_group_without_half_files() {
     assert_eq!(names, ["Film – 01.mp4"], "no half file, nothing after the cancelled part");
     // exports list: the finished part only
     assert_eq!(crate::exports::for_project("Film", Some(&dir.path().join("p.cutline"))).len(), 1);
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// Height of the export window without a real window: draw two frames in the program window `w`×`h`
@@ -2489,9 +2505,8 @@ fn overwrite_removes_old_parts_when_its_export_starts() {
     if !cl_media::test_tools() {
         return;
     }
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let p = text_project("Film", "eins", 2.0);
     let mut d = split_dialog(&p, dir.path(), 2);
@@ -2514,7 +2529,6 @@ fn overwrite_removes_old_parts_when_its_export_starts() {
     let mut names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
     names.sort();
     assert_eq!(names, ["Film – 2023 Sommer.mp4", "Film – Teil 01.mp4", "Film – Teil 02.mp4"]);
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// First export of a session while the encoder probe still runs: the start waits for the list
@@ -2524,9 +2538,8 @@ fn export_started_during_encoder_probe_uses_the_probed_list() {
     if !cl_media::test_tools() {
         return;
     }
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let p = text_project("Probe", "eins", 1.0);
     let mut d = ExportDialog::default();
@@ -2543,15 +2556,13 @@ fn export_started_during_encoder_probe_uses_the_probed_list() {
     d.queue.clear();
     d.cancel_current();
     drain(&mut d, &ctx, &p);
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// The overwrite prompt looks at the disk and exports.json once when it opens, not every frame.
 #[test]
 fn overwrite_prompt_checks_the_disk_once() {
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let p = text_project("Film", "eins", 2.0);
     let mut d = split_dialog(&p, dir.path(), 2);
@@ -2575,7 +2586,6 @@ fn overwrite_prompt_checks_the_disk_once() {
     d.cancel_current();
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None, "a cancel is no error");
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 #[test]
@@ -2602,9 +2612,8 @@ fn cleanup_of_a_cancelled_group_spares_a_newer_export_in_the_same_folder() {
 /// the export created.
 #[test]
 fn split_folder_is_never_the_chosen_folder_and_survives_cancel() {
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let p = text_project("Film", "eins", 8.0);
     let chosen = dir.path().join("Ziel");
@@ -2628,7 +2637,6 @@ fn split_folder_is_never_the_chosen_folder_and_survives_cancel() {
     assert_eq!(d.error, None, "a cancel is no error");
     wait_until("export thread", 60, || Arc::strong_count(&result) == 1);
     assert!(chosen.join("Film").is_dir());
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// Target size applies per part: bitrate from the length of the part.
@@ -2638,9 +2646,8 @@ fn target_size_applies_per_part() {
         return;
     }
     use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     // strong noise (otherwise the encoder undercuts any bitrate) and sound (the planned
     // share would otherwise stay unused)
@@ -2671,7 +2678,6 @@ fn target_size_applies_per_part() {
         eprintln!("Zielgröße 1 MB je Teil (2 s): {n} {size} Byte");
         assert!((850_000..=1_000_000).contains(&size), "{n}: {size}");
     }
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 #[test]
@@ -2928,9 +2934,8 @@ fn vertical_export_fills_or_fits_with_a_blurred_background() {
     if !cl_media::test_tools() {
         return;
     }
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let p = circle_project(dir.path(), 2.0);
     let before = p.clone();
@@ -2962,7 +2967,6 @@ fn vertical_export_fills_or_fits_with_a_blurred_background() {
         }
     }
     assert_eq!(p, before);
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// Censoring still on the subject after the rebuild (pixel test as in the player)
@@ -2971,9 +2975,8 @@ fn censor_stays_on_its_subject_after_reframing() {
     if !cl_media::test_tools() {
         return;
     }
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let mut p = circle_project(dir.path(), 2.0);
     // source x 136–184, y 18–54 → in the 9:16 image (factor 16/9) about x 47–132, y 32–96
@@ -2988,7 +2991,6 @@ fn censor_stays_on_its_subject_after_reframing() {
     eprintln!("Zensur: innen {inside:?}, daneben {beside:?}");
     assert!(inside.1 < 8.0, "pattern still there under the area: {inside:?}");
     assert!(beside.1 > 20.0, "pattern next to the area missing: {beside:?}");
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// Seams: 4 s with frame counter into 4 parts – each frame exactly once, none duplicated or lost
@@ -2998,9 +3000,8 @@ fn split_parts_have_every_frame_exactly_once() {
     if !cl_media::test_tools() {
         return;
     }
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     // frame number in binary as 8 stripes of 40 px (white = 1, least significant bit on the left)
     let src = dir.path().join("zaehler.mp4");
     let st = cl_media::ffmpeg_command()
@@ -3039,7 +3040,6 @@ fn split_parts_have_every_frame_exactly_once() {
         seen.extend(part);
     }
     assert_eq!(seen, (0..120).collect::<Vec<_>>());
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// Portrait, in 2 parts, target size: all in one export
@@ -3048,9 +3048,8 @@ fn vertical_split_with_target_size() {
     if !cl_media::test_tools() {
         return;
     }
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let p = circle_project(dir.path(), 4.0);
     let mut d = shorts_dialog(&p, dir.path());
@@ -3067,7 +3066,6 @@ fn vertical_split_with_target_size() {
         assert!((m.duration.as_secs_f64() - 2.0).abs() < 0.1 && size <= 1_000_000, "{n}: {:?} {size}", m.duration);
     }
     assert_eq!(crate::exports::for_project("Kreis", Some(&dir.path().join("p.cutline"))).len(), 2);
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// One frame of the dialog; returns the message (toast)
@@ -3157,9 +3155,8 @@ fn follow_person_with_split_parts_and_target_size() {
         return;
     }
     use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
-    let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", dir.path());
+    let home = TestHome::new();
+    let dir = &home.dir;
     let ctx = egui::Context::default();
     let m = walker_video(dir.path());
     let mut p = Project::new("Lauf");
@@ -3191,7 +3188,6 @@ fn follow_person_with_split_parts_and_target_size() {
         let x = red_center_x(&img);
         assert!((x - 90.0).abs() < 30.0, "{n}: circle at x={x}");
     }
-    std::env::remove_var("CUTLINE_HOME");
 }
 
 /// Cover image with „Person folgen“: section at the frame of the cover image (start left, end right)

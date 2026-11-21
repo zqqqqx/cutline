@@ -254,9 +254,8 @@ impl crate::app::App {
 
 #[test]
 fn exports_are_listed_per_project_and_move_with_the_folder() {
-    let _g = paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let home = tempfile::tempdir().unwrap();
-    std::env::set_var("CUTLINE_HOME", home.path());
+    let h = crate::export_ui::TestHome::new();
+    let home = &h.dir;
     let (a, b) = (home.path().join("alt"), home.path().join("neu"));
     std::fs::create_dir_all(&a).unwrap();
     std::fs::create_dir_all(&b).unwrap();
@@ -280,5 +279,4 @@ fn exports_are_listed_per_project_and_move_with_the_folder() {
     let pk = b.join("Kino.cutline");
     rename_project(&pb, &pk, "Film", "Kino");
     assert_eq!(for_project("Kino", Some(&pk)).len(), 1);
-    std::env::remove_var("CUTLINE_HOME");
 }

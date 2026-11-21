@@ -1291,6 +1291,14 @@ mod tests {
         L.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Removes the source's registry entry when the test ends (also on failure)
+    struct Forget(PathBuf);
+    impl Drop for Forget {
+        fn drop(&mut self) {
+            registry().remove(&self.0);
+        }
+    }
+
     #[test]
     fn spec_follows_project_rate_and_keeps_short_gop() {
         let r = |n| Rational::new(n, 1);
@@ -1441,11 +1449,14 @@ mod tests {
     /// Older single-file proxies stay valid: no part build, stream from the finished file.
     #[test]
     fn old_single_file_proxy_is_used_not_rebuilt() {
-        let d = tempfile::tempdir().unwrap();
+        // the registry is shared with the app tests: under the home lock, entry removed at the end
+        let home = crate::export_ui::TestHome::new();
+        let d = &home.dir;
         let src = d.path().join("quelle.mp4");
         std::fs::write(&src, b"x").unwrap();
         let mut m = media(1920, 1080, Rational::new(30, 1), "h264");
         m.path = src;
+        let _f = Forget(m.path.clone());
         let root = d.path().join("proxies");
         std::fs::create_dir_all(&root).unwrap();
         // name as before (without frame rate)
@@ -1648,9 +1659,11 @@ mod tests {
         if !cl_media::test_tools() {
             return;
         }
+        let home = crate::export_ui::TestHome::new();
         let _b = builds();
-        let d = tempfile::tempdir().unwrap();
+        let d = &home.dir;
         let m = coded_source(d.path(), "q.mp4", 4.0, "", &[]);
+        let _f = Forget(m.path.clone());
         let spec = proxy_spec(&m, 90, Rational::new(30, 1));
         let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
         assert_eq!(pt.count, 4);
@@ -1776,9 +1789,9 @@ mod tests {
         if !cl_media::test_tools() {
             return;
         }
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = crate::export_ui::TestHome::new();
         let _b = builds();
-        let d = tempfile::tempdir().unwrap();
+        let d = &home.dir;
         let mut m = media(1920, 1080, Rational::new(30, 1), "h264");
         m.path = d.path().join("weg.mp4");
         let out = d.path().join("weg-540.mp4");
@@ -1863,8 +1876,10 @@ mod tests {
         if !cl_media::test_tools() {
             return;
         }
+        // touches the registry: home lock first, then the build lock (same order everywhere)
+        let home = crate::export_ui::TestHome::new();
         let _b = builds();
-        let d = tempfile::tempdir().unwrap();
+        let d = &home.dir;
         let m = make_source(d.path(), "testsrc2=s=2560x1440:r=60:d=2");
         assert!(wants_proxy(&m));
         let out = d.path().join("p.mp4");
@@ -1905,7 +1920,7 @@ mod tests {
             return;
         }
         // the pause below is process-wide: keep other proxy builds (here and under the home lock) out
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = crate::export_ui::TestHome::new();
         let _b = builds();
         let d = tempfile::tempdir().unwrap();
         let m = make_source(d.path(), "testsrc2=s=1920x1080:r=60:d=4");
