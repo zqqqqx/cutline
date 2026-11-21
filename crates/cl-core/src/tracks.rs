@@ -123,6 +123,53 @@ pub fn move_to_new_tracks(doc: &mut Document, row: usize, upper: bool, moves: &[
     })
 }
 
+/// Rows the track `to` lies `steps` tracks of the same kind below `from` (negative: above), counted
+/// in display order among the tracks of `from`'s kind; `None` if `to` is of another kind.
+pub fn kind_steps(tracks: &[Track], from: TrackId, to: TrackId) -> Option<isize> {
+    let kind = tracks.iter().find(|t| t.id == from)?.kind;
+    let peers: Vec<TrackId> = display_order(tracks).into_iter().map(|i| &tracks[i]).filter(|t| t.kind == kind).map(|t| t.id).collect();
+    let pos = |id| peers.iter().position(|t| *t == id).map(|i| i as isize);
+    Some(pos(to)? - pos(from)?)
+}
+
+/// Dragging a selection (clip, new start) `steps` tracks down (negative: up): every clip goes the
+/// same number of tracks among the tracks of its own track's kind, so video stays on video, audio
+/// on audio and the arrangement of the group stays. All or nothing: `None` if a clip would leave
+/// the tracks of its kind, land on or leave a locked track, or overlap a clip that stays on the
+/// target (the main track with magnet makes room itself). Returns the target per clip and the
+/// move as one batch.
+pub fn shift_tracks(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<(Vec<(ClipId, TrackId)>, EditOp)> {
+    let tracks = &p.timeline.tracks;
+    let ord = display_order(tracks);
+    let row = |id: TrackId| ord.iter().position(|&i| tracks[i].id == id);
+    let moving: Vec<ClipId> = moves.iter().map(|m| m.0).collect();
+    let mut plan = Vec::new();
+    for (id, start) in moves {
+        let (src, c) = p.find_clip(*id)?;
+        let peers: Vec<&Track> = ord.iter().map(|&i| &tracks[i]).filter(|t| t.kind == src.kind).collect();
+        let at = peers.iter().position(|t| t.id == src.id)?;
+        let t = *peers.get(at.checked_add_signed(steps)?)?;
+        let end = *start + c.duration;
+        let free = t.clips.iter().filter(|o| !moving.contains(&o.id)).all(|o| end <= o.start || *start >= o.end());
+        if src.locked || !fits(t, c.kind()) || !(free || (t.main && p.settings.main_track_magnet)) {
+            return None;
+        }
+        plan.push((*id, c.start, *start, src.id, t.id));
+    }
+    // first park every moving clip on its own track behind everything, then move them over: a clip
+    // never meets one that is about to leave, and a track that is also a target never runs empty
+    // (`MoveClip` removes emptied tracks). Tracks are filled against the move direction.
+    let end = tracks.iter().flat_map(|t| &t.clips).map(|c| c.end()).chain(moves.iter().map(|m| m.1)).max().unwrap_or(Time::ZERO);
+    let park = end + Time::from_secs_f64(3600.0);
+    plan.sort_by_key(|x| row(x.3));
+    if steps < 0 {
+        plan.reverse();
+    }
+    let mut ops: Vec<EditOp> = plan.iter().map(|x| EditOp::MoveClip { clip: x.0, track: None, start: park + x.1 }).collect();
+    ops.extend(plan.iter().map(|x| EditOp::MoveClip { clip: x.0, track: Some(x.4), start: x.2 }));
+    Some((plan.iter().map(|x| (x.0, x.4)).collect(), EditOp::Batch { label: "Clips verschieben".into(), ops }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,6 +368,70 @@ mod tests {
         d.apply(op, OpSource::Ui).unwrap();
         let n = names(d.project());
         assert_eq!((n[0].as_str(), n[47].as_str(), n[48].as_str()), ("T1", "T0", "M"));
+    }
+
+    /// where each clip is: (track name, start)
+    fn at(d: &Document, id: ClipId) -> (String, f64) {
+        d.project().find_clip(id).map(|(t, c)| (t.name.clone().unwrap_or_default(), c.start.as_secs_f64())).unwrap()
+    }
+
+    #[test]
+    fn group_moves_tracks_within_each_kind() {
+        let mut p = proj(&["V2", "V1", "M", "A2", "A1"]);
+        let (v, v2) = (clip(&mut p, 1, 0.0), clip(&mut p, 1, 3.0));
+        let (a, a2) = (clip(&mut p, 4, 0.0), clip(&mut p, 4, 3.0));
+        clip(&mut p, 0, 8.0);
+        clip(&mut p, 3, 8.0);
+        let mut d = Document::new(p);
+        let before = d.project().clone();
+        let s = |x: f64| Time::from_secs_f64(x);
+        let moves = [(v, s(0.0)), (v2, s(3.0)), (a, s(0.0)), (a2, s(3.0))];
+        // one track up: video on V2, audio on A2, times unchanged
+        let (targets, op) = shift_tracks(d.project(), &moves, -1).unwrap();
+        assert_eq!(targets.len(), 4);
+        d.apply(op, OpSource::Ui).unwrap();
+        assert_eq!([at(&d, v), at(&d, v2), at(&d, a), at(&d, a2)], [("V2".into(), 0.0), ("V2".into(), 3.0), ("A2".into(), 0.0), ("A2".into(), 3.0)]);
+        assert_eq!(d.undo_entries().len(), 1);
+        d.undo().unwrap();
+        assert_eq!(d.project(), &before, "one undo restores all");
+        // a clip on the target track in the way: nothing moves
+        let mut p = before.clone();
+        clip(&mut p, 0, 3.5);
+        assert!(shift_tracks(&p, &moves, -1).is_none());
+        // audio already on the top audio track: the group does not change tracks (video could)
+        let (_, op) = shift_tracks(&before, &moves, -1).unwrap();
+        let mut d = Document::new(before.clone());
+        d.apply(op, OpSource::Ui).unwrap();
+        let ids = [(v, 0.0), (v2, 3.0), (a, 0.0), (a2, 3.0)].map(|x| (x.0, s(x.1)));
+        assert!(shift_tracks(d.project(), &ids, -1).is_none(), "A2 is the top audio track");
+        assert!(shift_tracks(d.project(), &ids, 2).is_none(), "below A1 there is none");
+        // locked target: refused
+        let mut p = before.clone();
+        p.timeline.tracks.iter_mut().find(|t| t.name.as_deref() == Some("A2")).unwrap().locked = true;
+        assert!(shift_tracks(&p, &moves, -1).is_none());
+    }
+
+    #[test]
+    fn group_shift_through_its_own_tracks() {
+        // clips on V3 and V2 at the same time, one track down: V3 → V2 (still occupied by the leaving
+        // clip while planning), V2 → V1 next to a clip that stays
+        let mut p = proj(&["V3", "V2", "V1", "M", "A1"]);
+        let (x, y) = (clip(&mut p, 0, 0.0), clip(&mut p, 1, 0.0));
+        clip(&mut p, 2, 5.0);
+        clip(&mut p, 0, 5.0); // V3 keeps a clip, otherwise it is removed when emptied
+        let mut d = Document::new(p);
+        let s = |x: f64| Time::from_secs_f64(x);
+        let t = &d.project().timeline.tracks;
+        let id = |n: &str| t.iter().find(|t| t.name.as_deref() == Some(n)).unwrap().id;
+        assert_eq!(kind_steps(t, id("V3"), id("V1")), Some(2));
+        assert_eq!(kind_steps(t, id("V1"), id("A1")), None);
+        let (_, op) = shift_tracks(d.project(), &[(x, s(0.0)), (y, s(0.0))], 1).unwrap();
+        d.apply(op, OpSource::Ui).unwrap();
+        assert_eq!((at(&d, x), at(&d, y)), (("V2".into(), 0.0), ("V1".into(), 0.0)));
+        // back up again (other order)
+        let (_, op) = shift_tracks(d.project(), &[(x, s(0.0)), (y, s(0.0))], -1).unwrap();
+        d.apply(op, OpSource::Ui).unwrap();
+        assert_eq!((at(&d, x).0, at(&d, y).0), ("V3".into(), "V2".into()));
     }
 
     #[test]

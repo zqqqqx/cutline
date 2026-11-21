@@ -1950,6 +1950,8 @@ impl App {
                     let fr = |t: f64| drop_time(t, line.is_some(), fps);
                     let orig = ids.iter().find(|x| x.0 == clip).map(|x| x.1).unwrap_or(0.0);
                     let delta = s - orig;
+                    // several clips onto another track: each the same number of tracks of its own kind
+                    let mut shifted = None;
                     // target: another track of the same kind; into empty space above/below or over an
                     // unsuitable/locked track = new track(s) next to it (one per clip kind)
                     let mut target = Target::Same;
@@ -1964,6 +1966,10 @@ impl App {
                                 target = Target::New(k, p.y < rows[k].rect.center().y);
                             } else if ids.len() <= 1 {
                                 target = Target::Track(t);
+                            } else if let Some(n) = self.project.find_clip(clip).and_then(|(src, _)| kind_steps(&tracks[..], src.id, tracks[t].id)).filter(|n| *n != 0) {
+                                // a clip that cannot follow keeps the whole group in its tracks (time still moves)
+                                let moves: Vec<(ClipId, Time)> = ids.iter().map(|(id, st)| (*id, fr((st + delta).max(0.0)))).collect();
+                                shifted = shift_tracks(&self.project, &moves, n);
                             }
                         }
                     }
@@ -1981,13 +1987,18 @@ impl App {
                                 }
                                 Some(Rect::from_center_size(pos2(rect.center().x, y), vec2(rect.width(), ROW_H * 0.7)))
                             }
-                            _ => None,
+                            _ => shifted
+                                .as_ref()
+                                .and_then(|(to, _): &(Vec<(ClipId, TrackId)>, EditOp)| to.iter().find(|x| x.0 == *id))
+                                .and_then(|x| rows.iter().find(|r| tracks.get(r.track).is_some_and(|t| t.id == x.1)))
+                                .map(|r| r.rect),
                         };
                         ghost.push((*id, ns, ns + x.duration.as_secs_f64(), tr));
                     }
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
                         self.timeline.motion.skip.extend(ids.iter().map(|x| x.0));
+                        let shift = shifted.is_some();
                         let ops: Vec<EditOp> = match target {
                             Target::New(k, upper) => {
                                 // new track(s) + move = one history step
@@ -2010,17 +2021,21 @@ impl App {
                                 track: Some(tracks[t].id),
                                 start: fr(s),
                             }],
-                            Target::Same => ids
-                                .iter()
-                                .map(|(id, st)| EditOp::MoveClip {
-                                    clip: *id,
-                                    track: None,
-                                    start: fr((st + delta).max(0.0)),
-                                })
-                                .collect(),
+                            Target::Same => match shifted.take() {
+                                Some((_, op)) => vec![op],
+                                None => ids
+                                    .iter()
+                                    .map(|(id, st)| EditOp::MoveClip {
+                                        clip: *id,
+                                        track: None,
+                                        start: fr((st + delta).max(0.0)),
+                                    })
+                                    .collect(),
+                            },
                         };
                         let moved = ids.iter().any(|(_, st)| (st + delta - st).abs() > 1e-4)
-                            || !matches!(target, Target::Same);
+                            || !matches!(target, Target::Same)
+                            || shift;
                         if moved {
                             self.apply_batch(ops);
                         }
