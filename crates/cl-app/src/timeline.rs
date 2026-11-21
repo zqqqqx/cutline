@@ -3823,10 +3823,10 @@ mod tests {
 
     #[test]
     fn track_head_click_versus_drag() {
-        assert!(!track_lifted(0.0, 0.0), "Klick");
-        assert!(!track_lifted(3.0, 0.1), "kleines Zittern beim Klicken");
-        assert!(track_lifted(6.0, 0.0), "Bewegung");
-        assert!(track_lifted(0.0, 0.25), "gedrückt gehalten");
+        assert!(!track_lifted(0.0, 0.0), "click");
+        assert!(!track_lifted(3.0, 0.1), "a short click with a small jitter stays a click");
+        assert!(track_lifted(4.0, 0.0), "movement");
+        assert!(track_lifted(0.0, 0.15), "held for 150 ms: lifts (click test saw nothing after 100 ms yet)");
     }
 
     #[test]
@@ -4024,13 +4024,6 @@ mod tests {
             assert!(from < 0.0 && to > dur, "{w}: visible {from:.1}…{to:.1} s");
             assert!(to - from < dur * 1.2, "{w}: not much wider than needed");
         }
-    }
-
-    #[test]
-    fn track_head_lifts_early() {
-        assert!(track_lifted(0.0, 0.15), "held for 150 ms: lifts (click test saw nothing after 100 ms yet)");
-        assert!(track_lifted(4.0, 0.0));
-        assert!(!track_lifted(3.0, 0.1), "a short click stays a click");
     }
 
     #[test]
@@ -4451,7 +4444,6 @@ mod tests {
         /// Measured head lines and clip texts equal laying out per attempt (`clip_head`,
         /// `theme::elide`) with the app's real fonts.
         #[test]
-        #[ignore]
         fn measured_labels_match_layout() {
             let ctx = egui::Context::default();
             let _app = crate::saving::tests::test_app_with(ctx.clone());
@@ -4492,6 +4484,7 @@ mod tests {
         }
 
         /// Frame time (compute + tessellate) with the timeline fully visible: stopped and playing.
+        /// Measurement, needs nothing else: `cargo test --release -p cl-app timeline_frame_time -- --ignored --nocapture`
         #[test]
         #[ignore]
         fn timeline_frame_time() {

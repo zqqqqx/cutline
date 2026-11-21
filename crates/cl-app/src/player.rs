@@ -1096,9 +1096,12 @@ pub(crate) mod still {
     }
 
     /// Reproduce by hand: `CUTLINE_STILL="<project>;<sec>[,<sec>…];<output folder>"`.
+    /// Tool, not a check: writes still images of a project; needs `CUTLINE_STILL`.
+    /// `CUTLINE_STILL=… cargo test --release -p cl-app --bin cutline still_from_env -- --ignored`
     #[test]
+    #[ignore]
     fn still_from_env() {
-        let Ok(v) = std::env::var("CUTLINE_STILL") else { return };
+        let v = std::env::var("CUTLINE_STILL").expect("CUTLINE_STILL not set");
         let parts: Vec<&str> = v.split(';').collect();
         let project = Project::from_json(&std::fs::read_to_string(parts[0]).unwrap()).unwrap();
         let _g = crate::paths::test_lock();
@@ -1390,10 +1393,12 @@ mod transition_tests {
         assert_eq!(sp.step((b, c), true), Step::Mix);
     }
 
+    /// The assembly of `run_mix`: which frame pair becomes the base image, unmasked elements folded into
+    /// it at their opacity, masked ones as their own frames with their sets. The pixel math itself
+    /// (`mix_layers`, `fold_fx`) is used for the expectation and checked against the export by the
+    /// `*_matches_export` tests.
     #[test]
-    fn background_mix_matches_direct_mix_with_elements() {
-        // same computation as before in the UI thread: blended frame, unmasked element
-        // included, masked one as its own frame
+    fn background_mix_folds_unmasked_elements_and_keeps_masked_ones_apart() {
         let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         let f = |v: u8| std::sync::Arc::new(cl_media::RgbaFrame { width: 32, height: 18, data: [v, 255 - v, 90, 255].repeat(32 * 18) });
         // built-in: independent of the global pack catalog
@@ -1428,7 +1433,7 @@ mod transition_tests {
         assert_eq!(mix_size(1080.0, 1920.0, egui::vec2(400.0, 700.0), true), (394, 700));
     }
 
-    /// Time per blended frame (1080p project): `cargo test --release -p cl-app mix_time -- --ignored --nocapture`
+    /// Time per blended frame (1080p project), needs nothing else: `cargo test --release -p cl-app mix_time -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn mix_time() {

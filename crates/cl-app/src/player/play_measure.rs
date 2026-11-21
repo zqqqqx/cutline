@@ -527,6 +527,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
     run
 }
 
+/// Measurement, needs the QA projects (see the module doc): `CUTLINE_QA_DIR=<folder> cargo test --release -p cl-app --bin cutline play_measure -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn play_measure() {
@@ -712,6 +713,7 @@ fn tempo_layers() {
     }
 }
 
+/// Measurement of the per-frame layer/hash cost, needs the QA projects: `CUTLINE_QA_DIR=<folder> cargo test --release -p cl-app --bin cutline player_cost -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn player_cost() {

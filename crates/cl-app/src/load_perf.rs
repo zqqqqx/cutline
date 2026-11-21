@@ -102,6 +102,7 @@ impl Headless {
     }
 }
 
+/// Measurement (see the module doc for material and command): `… -- --ignored --nocapture load_perf_import_big_draft`
 #[test]
 #[ignore]
 fn load_perf_import_big_draft() {
@@ -176,6 +177,7 @@ fn big_project(dir: &Path) -> Project {
     p
 }
 
+/// Measurement (see the module doc for material and command): `… -- --ignored --nocapture load_perf_open_big_project`
 #[test]
 #[ignore]
 fn load_perf_open_big_project() {

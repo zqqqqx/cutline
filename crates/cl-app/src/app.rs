@@ -4323,6 +4323,7 @@ mod frame_rate_tests {
         assert!((next_frame_delay(t, fps, -1.0).as_secs_f64() - (0.5 / 30.0 + 0.001)).abs() < 2e-6);
     }
 
+    /// The last line pins a decision: the UI draws at most 125 frames/s (`MIN_FRAME`).
     #[test]
     fn frame_wait_caps_ui_rate() {
         assert_eq!(frame_wait(Duration::from_millis(2)), Duration::from_millis(6));
@@ -4349,7 +4350,7 @@ fn unreadable_file_gives_a_short_message() {
     assert_eq!(msgs, ["Datei kann nicht gelesen werden: „kaputt.mp4“"]);
 }
 
-/// A message with a very long name stays in the window (shortened) instead of being cut off left and right
+/// A stock download still running when the project changes is not inserted into the new project
 #[test]
 fn download_running_at_a_project_change_is_not_inserted() {
     let mut app = crate::saving::tests::test_app();
