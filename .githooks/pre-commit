@@ -1,6 +1,8 @@
 #!/bin/sh
 # Before each commit: export and check the test projects from crates/cl-export/tests/projects.
 # Enable: git config core.hooksPath .githooks   (skip: git commit --no-verify)
+# a missing FFmpeg fails the test instead of skipping it
+export CUTLINE_REQUIRE_TOOLS=1
 echo "Export test with the test projects …"
 cargo test --release -q -p cl-export --test project_export || {
     echo "Export test failed – commit aborted."

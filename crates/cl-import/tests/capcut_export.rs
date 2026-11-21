@@ -53,12 +53,12 @@ fn frames(f: &Path) -> usize {
         .unwrap_or(0)
 }
 
+/// Ignored: imports and exports a large real CapCut draft (needs FFmpeg and a draft in CUTLINE_CAPCUT_DRAFT).
+/// `CUTLINE_CAPCUT_DRAFT=<folder> cargo test --release -p cl-import --test capcut_export -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn capcut_big_export() {
-    let Some(dir) = std::env::var_os("CUTLINE_CAPCUT_DRAFT").map(PathBuf::from) else {
-        return;
-    };
+    let dir = std::env::var_os("CUTLINE_CAPCUT_DRAFT").map(PathBuf::from).expect("set CUTLINE_CAPCUT_DRAFT=<draft folder>");
     let (p, rep) = cl_import::capcut::import(&dir).unwrap();
     println!(
         "Import: {} Clips, {} Medien, {} fehlend",

@@ -347,6 +347,9 @@ mod tests {
     /// mean deviation per channel.
     #[test]
     fn preview_matches_ffmpeg_xfade() {
+        if !cl_media::test_tools() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let (pa, pb) = (dir.path().join("a.png"), dir.path().join("b.png"));
         let src = format!("testsrc2=s={W}x{H}:r=1:d=1");

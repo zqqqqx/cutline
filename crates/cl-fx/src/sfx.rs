@@ -103,7 +103,14 @@ mod tests {
 
     #[test]
     fn all_sfx_render_and_are_audible() {
-        if !cl_media::ffmpeg_available() {
+        assert!(SFX.len() >= 39);
+        // categories complete and IDs unique
+        assert!(SFX.iter().all(|s| SFX_CATEGORIES.contains(&s.category)));
+        let mut ids: Vec<&str> = SFX.iter().map(|s| s.id).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), SFX.len());
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -118,12 +125,5 @@ mod tests {
                 .fold(0.0, f32::max);
             assert!(peak > 0.05, "{} is silent ({peak})", s.id);
         }
-        assert!(SFX.len() >= 39);
-        // categories complete and IDs unique
-        assert!(SFX.iter().all(|s| SFX_CATEGORIES.contains(&s.category)));
-        let mut ids: Vec<&str> = SFX.iter().map(|s| s.id).collect();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), SFX.len());
     }
 }

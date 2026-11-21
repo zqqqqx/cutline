@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 const S: i64 = 1_000_000;
 
 fn video(dir: &Path, name: &str) -> Option<PathBuf> {
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return None;
     }
     let v = dir.join(name);
@@ -114,11 +114,22 @@ fn probe_all_keeps_order_and_limits_workers() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let paths: Vec<PathBuf> = (0..40).map(|i| PathBuf::from(format!("{i}"))).collect();
     let (now, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let calls = (Mutex::new(0usize), std::sync::Condvar::new());
     let p = Progress::default();
     let out = cl_import::probe_all(&paths, 3, &p, |path| {
         let n = now.fetch_add(1, Ordering::SeqCst) + 1;
         peak.fetch_max(n, Ordering::SeqCst);
-        std::thread::yield_now();
+        // the first three calls wait (at most 10 s) until three run at the same time:
+        // fewer workers make the test fail after the wait instead of passing
+        let (m, cv) = &calls;
+        let mut k = m.lock().unwrap();
+        *k += 1;
+        cv.notify_all();
+        if *k <= 3 {
+            drop(cv.wait_timeout_while(k, std::time::Duration::from_secs(10), |k| *k < 3).unwrap());
+        } else {
+            drop(k);
+        }
         now.fetch_sub(1, Ordering::SeqCst);
         if path == Path::new("7") {
             Err("kaputt".into())
@@ -127,7 +138,7 @@ fn probe_all_keeps_order_and_limits_workers() {
         }
     })
     .unwrap();
-    assert!(peak.load(Ordering::SeqCst) <= 3);
+    assert_eq!(peak.load(Ordering::SeqCst), 3, "three workers at once, never more");
     assert_eq!(p.status().done, 40);
     for (i, r) in out.iter().enumerate() {
         let want = if i == 7 { "kaputt".to_string() } else { i.to_string() };
@@ -197,8 +208,10 @@ fn place_trims_to_the_window() {
     assert_eq!(v, [(10_000, 2_000, 1_000), (11_000, 1_000, 0)]);
 }
 
+/// 3000 text clips on 12 tracks all arrive. (No wall-clock limit: it said nothing on a slow
+/// machine or in a debug build; `nested_draft_bomb_stops_early` guards against runaway work.)
 #[test]
-fn very_large_draft_is_converted_quickly() {
+fn very_large_draft_converts_every_clip() {
     let mut texts = Vec::new();
     let mut tracks = Vec::new();
     for t in 0..12 {
@@ -211,14 +224,13 @@ fn very_large_draft_is_converted_quickly() {
         tracks.push(json!({"type": "text", "segments": segs}));
     }
     let d = json!({"materials": {"texts": texts}, "tracks": tracks});
-    let t = std::time::Instant::now();
     let (p, rep) = capcut::convert(&d, Path::new("."), "x").unwrap();
     assert_eq!(rep.texts, 3000);
     assert_eq!(p.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>(), 3000);
-    assert!(t.elapsed().as_secs_f64() < 10.0, "{:?}", t.elapsed());
 }
 
-/// Measurement test: large test draft (F:/cutline-testmedien/import, `mkdraft.py`) with times per step.
+/// Ignored measurement: times per import step for a large test draft (needs FFmpeg and the draft
+/// from `mkdraft.py` in F:/cutline-testmedien/import or CUTLINE_IMPORT_DRAFT).
 /// `cargo test --release -p cl-import --test staged -- --ignored --nocapture`
 #[test]
 #[ignore]
@@ -230,9 +242,7 @@ fn measure_big_draft_steps() {
             .unwrap_or_else(|| PathBuf::from("F:/cutline-testmedien/import"))
             .join("grosser_entwurf")
     });
-    if !dir.exists() {
-        return;
-    }
+    assert!(dir.exists(), "missing test draft {} (set CUTLINE_IMPORT_DRAFT)", dir.display());
     let last: Arc<Mutex<(Step, std::time::Instant, f64)>> = Arc::new(Mutex::new((Step::Read, std::time::Instant::now(), 0.0)));
     let t0 = std::time::Instant::now();
     let slot: Arc<OnceLock<std::sync::Weak<Progress>>> = Arc::default();

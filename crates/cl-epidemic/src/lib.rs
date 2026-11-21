@@ -695,14 +695,13 @@ mod tests {
     /// An aborted download leaves neither `<id>.part` nor a half file.
     #[test]
     fn a_broken_download_leaves_no_part_file() {
-        let t = std::env::temp_dir().join(format!("cl-epidemic-test-{}-{}", std::process::id(), random_token(6)));
-        let dest = t.join("Vorrat/t1.mp3");
+        let t = tempfile::tempdir().unwrap();
+        let dest = t.path().join("Vorrat/t1.mp3");
         let broken = std::io::Read::chain(&b"ID3abc"[..], BrokenReader);
         assert!(save_whole(broken, &dest).is_err());
         assert!(!dest.exists() && !dest.with_extension("part").exists());
         save_whole(&b"ID3"[..], &dest).unwrap();
         assert_eq!(std::fs::read(&dest).unwrap(), b"ID3");
-        let _ = std::fs::remove_dir_all(&t);
     }
 
     struct BrokenReader;
@@ -720,6 +719,8 @@ mod tests {
         let addr = l.local_addr().unwrap();
         let send = |req: &str| {
             let mut s = std::net::TcpStream::connect(addr).unwrap();
+            // the answers below must arrive; a server bug then fails instead of hanging
+            s.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
             s.write_all(req.as_bytes()).unwrap();
             s
         };

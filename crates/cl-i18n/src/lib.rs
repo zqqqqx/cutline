@@ -162,6 +162,8 @@ pub fn source(lang: Lang) -> &'static str {
     }
 }
 
+// `I18n::new` also sets the process-wide UI language; no test in this crate reads it
+// (`ui::translate` ignores it and `tr` is not tested here), so the tests need no reset.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,6 +264,5 @@ mod tests {
         assert_eq!(i.lang(), Lang::De);
         assert_eq!(pseudo(""), "[]");
         assert!(pseudo("äbc").starts_with("[äbc"));
-        I18n::new(Lang::De); // reset the global language for other tests
     }
 }

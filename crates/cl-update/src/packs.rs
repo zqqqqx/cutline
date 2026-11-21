@@ -391,13 +391,14 @@ mod tests {
         cleanup_parts(&d.path().join("fehlt"), |_| false);
     }
 
-    /// The bundled test copy of the list matches its ZIPs (size, SHA-256).
+    /// Ignored: the built package list matches its ZIPs (size, SHA-256).
+    /// Needs the package build folder `F:/cutline-pakete/fertig` (developer machine only):
+    /// `cargo test --release -p cl-update -- --ignored real_index_matches_its_files`
     #[test]
+    #[ignore]
     fn real_index_matches_its_files() {
         let dir = Path::new("F:/cutline-pakete/fertig");
-        if !dir.join(INDEX_FILE).is_file() {
-            return;
-        }
+        assert!(dir.join(INDEX_FILE).is_file(), "missing {}", dir.join(INDEX_FILE).display());
         let s = Source::Dir(dir.into());
         let list = fetch_index(&s).unwrap();
         assert!(!list.is_empty());

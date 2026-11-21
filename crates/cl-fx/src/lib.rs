@@ -1324,7 +1324,7 @@ mod tests {
     /// image stays during playback).
     #[test]
     fn every_effect_and_filter_streams_for_playback() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1354,7 +1354,9 @@ mod tests {
             } else {
                 c.fx.effects.push(FxRef::new(&id));
             }
+            // every effect and filter needs a graph; without one the clip would play unchanged
             let Some(g) = preview_graph(&c, 320, 180, 0.5, Some(fps), None) else {
+                failed.push(format!("{id} (no graph)"));
                 continue;
             };
             let s = cl_media::FrameStream::open_fx(&src, Time::from_secs_f64(0.5), 320, 180, fps, Some(&g));
@@ -1373,7 +1375,7 @@ mod tests {
     /// size: line pattern and color shift equally strong (previously much stronger in the preview).
     #[test]
     fn vhs_preview_size_looks_like_the_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         // image after the chain at 480×270: (line pattern, red−blue color shift at the vertical edge)
@@ -1445,44 +1447,10 @@ mod tests {
         has_alpha: false,
     };
 
-    #[test]
-    fn every_effect_and_filter_runs_in_ffmpeg() {
-        if !cl_media::ffmpeg_available() {
-            return;
-        }
-        let o = ChainOpts {
-            t_offset: 0.0,
-            apply_reverse: false,
-            lut: None,
-            matte: None,
-        };
-        for def in EFFECTS.iter().chain(FILTERS.iter()) {
-            for i in [0.4, 1.0] {
-                let mut fx = ClipFx::default();
-                if FILTERS.iter().any(|f| f.id == def.id) {
-                    fx.filter = Some(FxRef {
-                        id: def.id.into(),
-                        intensity: i,
-                        params: Default::default(),
-                    });
-                } else {
-                    fx.effects.push(FxRef {
-                        id: def.id.into(),
-                        intensity: i,
-                        params: Default::default(),
-                    });
-                }
-                let g = fx_graph(&fx, SRC, &o, "0:v", "out", "x").join(";\n");
-                run_graph(&g, &[]).unwrap_or_else(|e| panic!("{} ({i}): {e}\n{g}", def.id));
-            }
-        }
-        assert!(EFFECTS.len() >= 30, "{}", EFFECTS.len());
-        assert!(FILTERS.len() >= 20);
-    }
 
     #[test]
     fn full_chain_with_adjust_mask_alpha_and_lut() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1571,7 +1539,7 @@ mod tests {
 
     #[test]
     fn preview_graph_decodes() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1628,7 +1596,7 @@ mod tests {
 
     #[test]
     fn chroma_stabilize_and_matte_run() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let mut fx = ClipFx::default();
@@ -1668,10 +1636,18 @@ mod tests {
 
     #[test]
     fn plugin_chains_run() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         use catalog::{Entry, Kind, Pack, PackInfo, Payload};
+        // fx_graph reads the global catalog (there is no `_in` variant): empty it again, also on panic
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                catalog::load_packs(Vec::new());
+            }
+        }
+        let _reset = Reset;
         let info = PackInfo {
             id: "t.p".into(),
             name: "T".into(),
@@ -1720,7 +1696,11 @@ mod tests {
 
     #[test]
     fn every_transition_runs_in_ffmpeg() {
-        if !cl_media::ffmpeg_available() {
+        // all xfade variants of the bundled FFmpeg except `custom` and `squeezev`
+        // (squeezev crashed FFmpeg at every size when this list was made)
+        assert_eq!(TRANSITIONS.len(), 57);
+        assert!(!TRANSITIONS.iter().any(|t| t.0 == "squeezev"));
+        if !cl_media::test_tools() {
             return;
         }
         for (id, ..) in TRANSITIONS {
@@ -1728,10 +1708,6 @@ mod tests {
             run_graph(&g, &["color=red:s=160x90:r=15:d=0.6"])
                 .unwrap_or_else(|e| panic!("{id}: {e}"));
         }
-        // all xfade variants of the bundled FFmpeg except `custom` and `squeezev`
-        // (crashes in FFmpeg 9.0.2 at any size)
-        assert_eq!(TRANSITIONS.len(), 57);
-        assert!(!TRANSITIONS.iter().any(|t| t.0 == "squeezev"));
     }
 
     #[test]
@@ -1757,10 +1733,33 @@ mod tests {
         }
         assert!(max < 40, "nested too deeply: {max}");
         assert!(e.matches("if(").count() < pts.len());
-        let _ = piecewise_eval(&pts, 1.0);
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
+        // FFmpeg evaluates the expression (as one audio sample per 1/100 s, `t` = time in s):
+        // it matches the curve itself at every sample, also before the first and after the last point
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("g.txt"), format!("aevalsrc=exprs='{e}':s=100:d=58[out]")).unwrap();
+        let out = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-nostdin", "-/filter_complex", "g.txt", "-map", "[out]", "-f", "f64le", "-"])
+            .current_dir(dir.path())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let got: Vec<f64> = out.stdout.chunks_exact(8).map(|b| f64::from_le_bytes(b.try_into().unwrap())).collect();
+        assert_eq!(got.len(), 5800);
+        let bad: Vec<String> = got
+            .iter()
+            .enumerate()
+            .filter_map(|(i, y)| {
+                let want = piecewise_eval(&pts, i as f64 / 100.0);
+                ((y - want).abs() > 1e-3).then(|| format!("t={}: {y} instead of {want}", i as f64 / 100.0))
+            })
+            .collect();
+        assert!(bad.is_empty(), "{} of {}: {:?}", bad.len(), got.len(), &bad[..bad.len().min(5)]);
+        // and as a frame-wise size expression, the way text clips use it
         let g = format!(
             "[0:v]scale=w='max(2,trunc(320*(0.5+{})/2)*2)':h=180:eval=frame[out]",
             e
@@ -1778,7 +1777,7 @@ mod tests {
         // don't cap very slow pieces of a speed curve (e.g. 0.5× with „Kugel“)
         let prod: f64 = atempo_chain(0.05).split(',').map(|a| a[7..].parse::<f64>().unwrap()).product();
         assert!((prod - 0.05).abs() < 1e-4, "{prod}");
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let sp = speed_setpts(1.0, Some("montage"), 0.6, 0.6);
@@ -1798,9 +1797,9 @@ mod tests {
         .unwrap();
     }
 
-    /// Package „Effekte und Filter“ (`plugins/cutline-effekte`): every chain runs in FFmpeg as in
-    /// preview (RGBA) and export (YUV), keeps the image size, and effects do practically nothing
-    /// at strength 0.
+    /// Package „Effekte und Filter“ (`plugins/cutline-effekte`): every chain runs in FFmpeg on
+    /// export input (YUV), keeps the image size, and effects do practically nothing at strength 0.
+    /// (RGBA input as in the preview: `every_chain_runs_at_odd_sizes_and_strengths`.)
     #[test]
     fn effekte_pack_chains_run() {
         let src = std::fs::read_to_string(concat!(
@@ -1822,7 +1821,7 @@ mod tests {
         }
         assert!(assets.len() >= 30, "{}", assets.len());
         assert!(assets.iter().all(|(f, c)| *f || c.contains("{intensity}")));
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let (w, h, n) = (202usize, 114usize, 12usize);
@@ -1851,10 +1850,8 @@ mod tests {
         };
         let plain = render("yuv420p", None);
         for (filter, c) in &assets {
-            for fmt in ["yuv420p", "rgba"] {
-                render(fmt, Some((c, 0.6, *filter)));
-                render(fmt, Some((c, 1.0, *filter)));
-            }
+            render("yuv420p", Some((c, 0.6, *filter)));
+            render("yuv420p", Some((c, 1.0, *filter)));
             if !filter {
                 let zero = render("yuv420p", Some((c, 0.0, false)));
                 let diff = zero.iter().zip(&plain).map(|(a, b)| a.abs_diff(*b) as u64).sum::<u64>()
@@ -1869,10 +1866,13 @@ mod tests {
     /// odd dimensions and tiny images, and keeps the image size.
     #[test]
     fn every_chain_runs_at_odd_sizes_and_strengths() {
+        assert!(EFFECTS.len() >= 30, "{}", EFFECTS.len());
+        assert!(FILTERS.len() >= 20);
         chains_at_sizes(&[(161, 91, 2, &[0.0, 0.5, 1.0]), (64, 64, 1, &[1.0])]);
     }
 
-    /// The same in portrait Full HD (takes ~1 min): `cargo test -p cl-fx -- --ignored portrait`
+    /// Ignored: the same in portrait Full HD, takes ~1 min and needs FFmpeg.
+    /// `cargo test --release -p cl-fx -- --ignored every_chain_runs_in_portrait_full_hd`
     #[test]
     #[ignore]
     fn every_chain_runs_in_portrait_full_hd() {
@@ -1881,7 +1881,7 @@ mod tests {
 
     /// (width, height, frames, strengths)
     fn chains_at_sizes(sizes: &[(u32, u32, usize, &[f32])]) {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         // package chains of all bundled packages (lines as in `effekte_pack_chains_run`)
@@ -1957,7 +1957,7 @@ mod tests {
     /// 1 s became two).
     #[test]
     fn zoom_pulse_keeps_frames_and_duration_at_60_fps() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let def = effect("zoom-pulse").unwrap();

@@ -554,10 +554,15 @@ mod tests {
     fn shipped_transitions_have_known_fallbacks() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
         let reg = cl_plugin::Registry::scan([root.as_path()]);
+        // a package that fails to load would drop its transitions from the check unseen
+        assert!(reg.errors.is_empty(), "{:?}", reg.errors);
+        let mut n = 0;
         for (_, a) in reg.assets(cl_plugin::AssetKind::Transition) {
             let fb = a.fallback.as_deref().unwrap_or_else(|| panic!("{}: no fallback", a.id));
             assert!(cl_fx::TRANSITIONS.iter().any(|t| t.0 == fb), "{}: {fb}", a.id);
+            n += 1;
         }
+        assert!(n >= 30, "only {n} shipped transitions");
     }
 
     #[test]

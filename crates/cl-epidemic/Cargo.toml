@@ -12,3 +12,6 @@ ureq = { version = "2", features = ["json"] }
 sha2 = "0.10"
 base64 = "0.22"
 getrandom = "0.2"
+
+[dev-dependencies]
+tempfile.workspace = true

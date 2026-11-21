@@ -172,6 +172,10 @@ mod tests {
             return;
         };
         if models.rvm().is_none() || models.ort_dll().is_none() {
+            eprintln!("skipped (RVM model or onnxruntime missing)");
+            return;
+        }
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

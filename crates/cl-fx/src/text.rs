@@ -856,10 +856,16 @@ mod tests {
                 assert!(cl_core::ANIMATIONS.iter().any(|x| x.0 == a), "{a}");
             }
         }
-        let mut s = TextStyle::default();
+        // every effect keeps the text and gives its own look (two equal effects would be a copy mistake)
+        let mut looks: Vec<(&str, TextStyle)> = Vec::new();
         for e in TEXT_EFFECTS {
+            let mut s = TextStyle::default();
             (e.apply)(&mut s);
             assert_eq!(s.text, "Standardtext");
+            if let Some((other, _)) = looks.iter().find(|(id, l)| *l == s || *id == e.id) {
+                panic!("{} repeats {other}", e.id);
+            }
+            looks.push((e.id, s));
         }
     }
 }

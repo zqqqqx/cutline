@@ -777,6 +777,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "ureq",
 ]
 
@@ -855,6 +856,7 @@ dependencies = [
  "cl-fonts",
  "cl-media",
  "serde_json",
+ "tempfile",
  "uuid",
 ]
 

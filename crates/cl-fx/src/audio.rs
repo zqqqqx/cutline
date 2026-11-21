@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn every_voice_and_tool_runs_and_stays_audible() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         for (id, ..) in VOICES {

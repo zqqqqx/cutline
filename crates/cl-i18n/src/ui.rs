@@ -314,12 +314,24 @@ mod tests {
         );
     }
 
+    /// Odd input: no panic, known parts translate, unknown text and the icon/space frame stay.
     #[test]
     fn odd_strings_never_panic() {
-        for s in ["", " ", "\u{e0f0}", "\u{e0f0}  ", "✓", "()", " ()", "a ()", "(", ")", " · ", "·", "\n", "Abbrechen\n", "\nAbbrechen",
-            "Abbrechen · Abbrechen", "Strg+Entf", "Pos1", "🎬", "مرحبا", "Ä (", "x (y)", "{}", "{", "}", "{1}", "%s"] {
-            let _ = translate(s);
+        for s in ["", " ", "\u{e0f0}", "\u{e0f0}  ", "✓", "()", " ()", "a ()", "(", ")", " · ", "·", "\n", "🎬", "مرحبا", "Ä (", "x (y)", "{}", "{", "}", "{1}", "%s"] {
+            assert_eq!(translate(s), s);
         }
+        for (s, want) in [("Abbrechen\n", "Cancel\n"), ("\nAbbrechen", "\nCancel"), ("Abbrechen · Abbrechen", "Cancel · Cancel"), ("Strg+Entf", "Ctrl+Del"), ("Pos1", "Home")] {
+            assert_eq!(translate(s), want, "{s:?}");
+        }
+        // leading/trailing icons and spaces come back unchanged; text without letters stays as it is
+        let check = |s: &str| {
+            let out = translate(s);
+            let edge = |c: char| is_icon(c) || c.is_whitespace();
+            let start = s.len() - s.trim_start_matches(edge).len();
+            let end = s.trim_end_matches(edge).len().max(start);
+            assert!(out.starts_with(&s[..start]) && out.ends_with(&s[end..]), "{s:?} → {out:?}");
+            assert!(s.chars().any(char::is_alphabetic) || out == s, "{s:?} → {out:?}");
+        };
         // random strings from dictionary parts, multibyte characters and special characters
         let parts: Vec<&str> = entries().iter().take(400).map(|(de, _)| *de).collect();
         let extra = ["🎬", "ä", " ", "  ", "\n", " · ", " (", ")", "{}", "\u{e0f0}", "3", "‰", "\u{202e}"];
@@ -339,7 +351,7 @@ mod tests {
                     s.push_str(if x.is_multiple_of(2) { p } else { &p[..cut] });
                 }
             }
-            let _ = translate(&s);
+            check(&s);
         }
     }
 

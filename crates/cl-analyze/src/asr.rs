@@ -629,6 +629,9 @@ mod tests {
         let Some(models) = testutil::models() else {
             return;
         };
+        if !cl_media::test_tools() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let Some(wav) = testutil::speech(
             dir.path(),
@@ -664,8 +667,23 @@ mod tests {
             let low = all.to_lowercase();
             assert!(low.contains("morgen") && low.contains("video"), "{all}");
             assert!(segs.first().unwrap().start < 1.5 && segs.last().unwrap().end <= dur + 0.5);
+        } else {
+            eprintln!("skipped Parakeet part (model or onnxruntime missing)");
         }
-        if models.whisper().is_some() {
+        // the filter check runs in the background: wait for its answer
+        let t0 = std::time::Instant::now();
+        let filter = loop {
+            if let Some(f) = whisper_filter_available() {
+                break f;
+            }
+            assert!(t0.elapsed().as_secs() < 30, "ffmpeg -filters gave no answer in 30 s");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        if models.whisper().is_some() && !filter {
+            eprintln!("skipped Whisper part (this FFmpeg has no whisper filter)");
+        } else if models.whisper().is_none() {
+            eprintln!("skipped Whisper part (no Whisper model)");
+        } else {
             let o = Options {
                 force: Some(Engine::Whisper),
                 language: "de".into(),

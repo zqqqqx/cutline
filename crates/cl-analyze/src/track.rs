@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn follows_moving_box() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -333,7 +333,7 @@ mod tests {
     /// Growing box: the size grows along; if it disappears, the box stands still.
     #[test]
     fn box_follows_size_and_holds_when_lost() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

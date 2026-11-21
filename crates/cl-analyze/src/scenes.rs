@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn finds_hard_cuts() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
