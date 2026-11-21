@@ -12,6 +12,11 @@
 **Improved**
 
 **Fixed**
+- **Cuts in a range or part export sit on the right frame.** When only an In/Out range or parts were exported, a cut could come one frame later than in the preview.
+- **Effects and filters start and end on the right frame in the export.** An effect could start one frame late or stay one frame too long, into the next clip.
+- **Stacked clips pushed onto new tracks keep their order.** When a moved selection ran into other clips, clips lying on top of each other could swap places.
+- **Q and W with a locked track in the selection** cut the other selected clips instead of doing nothing.
+- **Q and W no longer leave tiny leftover clips** when a clip edge lies right next to the playhead.
 
 ### Deutsch
 
@@ -20,6 +25,11 @@
 **Verbessert**
 
 **Behoben**
+- **Schnitte im Bereichs- und Teile-Export liegen auf dem richtigen Bild.** Wurde nur ein In/Out-Bereich oder in Teilen exportiert, konnte ein Schnitt ein Bild später kommen als in der Vorschau.
+- **Effekte und Filter beginnen und enden im Export auf dem richtigen Bild.** Ein Effekt konnte ein Bild zu spät beginnen oder ein Bild zu lang stehen, bis in den nächsten Clip.
+- **Übereinander liegende Clips behalten auf neuen Spuren ihre Reihenfolge.** Stieß eine verschobene Auswahl an andere Clips, konnten übereinander liegende Clips die Plätze tauschen.
+- **Q und W mit einer gesperrten Spur in der Auswahl** schneiden die übrigen gewählten Clips, statt nichts zu tun.
+- **Q und W lassen keine winzigen Restclips mehr stehen**, wenn eine Clipkante direkt neben dem Abspielkopf liegt.
 
 ## 0.15.3 – 2026-11-21
 
