@@ -1568,7 +1568,8 @@ mod tests {
     }
 
     /// Measurement test (manual): single frame from the original at 10 positions, software against
-    /// hardware, wall clock and CPU time of the FFmpeg.
+    /// hardware, wall clock and CPU time of the FFmpeg. Needs a hardware decoder and the files under
+    /// `F:/cutline-testmedien` (missing ones are left out, so without them it checks nothing).
     /// `cargo test --release -p cl-media -- --ignored --nocapture measure_still_frames`
     #[test]
     #[ignore]

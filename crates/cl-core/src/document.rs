@@ -324,7 +324,7 @@ mod tests {
         else {
             panic!()
         };
-        // drop at 9 s (past the middle of the 10 s clip, now at 2–12) → before it, since middle = 7 < 9 → after it
+        // drop at 9 s: the 10 s clip now lies at 2–12, its middle 7 < 9 → after it
         let OpOutput::Clip(b) = d
             .apply(
                 EditOp::AddClip {
@@ -385,6 +385,7 @@ mod tests {
         assert_eq!(l.duration, Time::from_secs_f64(4.0));
         assert_eq!(r.start, Time::from_secs_f64(4.0));
         assert_eq!(r.source_in, Time::from_secs_f64(4.0));
+        assert_eq!((l.speed, r.speed), (1.0, 1.0), "without curve the speed stays");
         assert_eq!(
             d.apply(
                 EditOp::SplitClip {
@@ -420,14 +421,6 @@ mod tests {
             near(l.source_time(l.start), c.source_time(c.start));
             near(r.source_time(r.end()), c.source_time(c.end()));
         }
-        // without curve: speed stays
-        let (mut d, id) = doc_with_clip();
-        let OpOutput::Clip(right) = d.apply(EditOp::SplitClip { clip: id, at: Time::from_secs_f64(4.0) }, OpSource::Ui).unwrap() else {
-            panic!()
-        };
-        let p = d.project();
-        assert_eq!((p.find_clip(id).unwrap().1.speed, p.find_clip(right).unwrap().1.speed), (1.0, 1.0));
-        assert_eq!(p.find_clip(right).unwrap().1.source_in, Time::from_secs_f64(4.0));
     }
 
     #[test]

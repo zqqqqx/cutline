@@ -1,6 +1,7 @@
 //! Export robustness: small random projects (fixed seed) with all clip kinds and
 //! combinations, special characters in texts and paths, edge cases and error cases.
-//! Everything small (≤ 3 s, ≤ 320×180), FFmpeg with 2 threads.
+//! Rendered projects stay small (≤ 3 s, ≤ 320×180); test media are made with 2 FFmpeg threads.
+//! `huge_projects_build` only builds an 8K graph with 500 inputs, it renders nothing.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

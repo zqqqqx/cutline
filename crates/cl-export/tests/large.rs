@@ -88,8 +88,9 @@ fn cmd_chars(args: &[String]) -> usize {
     args.iter().map(|a| a.len() + 3).sum()
 }
 
-/// Measurement: project with 2500 clips (26 min, paths ~130 characters) – command line length,
-/// start attempt, error text. `cargo test --release -p cl-export --test large -- --ignored --nocapture measure_2500`
+/// Measurement (manual, needs only FFmpeg; long: renders 26 min): project with 2500 clips (paths ~110
+/// characters) – command line length, start attempt, error text.
+/// `cargo test --release -p cl-export --test large -- --ignored --nocapture measure_2500`
 #[test]
 #[ignore]
 fn measure_2500_clips() {
@@ -113,7 +114,7 @@ fn measure_2500_clips() {
     println!("run: {:?} after {:?}", r.as_ref().err().map(|e| e.to_string()), t0.elapsed());
 }
 
-/// Measurement: 300 karaoke subtitles of 6 words each (10 min portrait 1080×1920 over video) against
+/// Measurement (manual, needs FFmpeg): 300 karaoke subtitles of 6 words each (10 min portrait 1080×1920 over video) against
 /// the same subtitles without karaoke – filters in the graph, inputs, export time.
 /// `cargo test --release -p cl-export --test large -- --ignored --nocapture measure_karaoke`
 #[test]
@@ -361,10 +362,10 @@ fn sections_video_equals_one_pass_prores() {
         assert!(d < 0.01, "Bild {k}: mittlere Abweichung {d}");
     }
     let (wa, wb) = (wav_samples(&one), wav_samples(&cut));
-    // sections: audio exactly 12 s. In MOV the single pass occasionally ends with the last
-    // clip (11.5 s, known from the old path) – the common length is compared.
+    // audio exactly 12 s in both (the single pass used to end with the last clip under load,
+    // see `audio_length_under_load`)
     assert_eq!(wb.len(), 12 * 48_000 * 2, "audio in sections: full length");
-    assert!(wa.len() >= 11 * 48_000 * 2);
+    assert_eq!(wa.len(), wb.len(), "audio in the single pass: full length");
     let worst = wa.iter().zip(&wb).map(|(x, y)| (*x as i32 - *y as i32).abs()).max().unwrap();
     assert!(worst <= 1, "PCM audio: largest deviation {worst}");
 }
@@ -392,12 +393,10 @@ fn sections_h264_aac_seams() {
     assert!((va - aa).abs() < 1.0 / 30.0, "A/V-Versatz {va} / {aa}");
     let worst = worst_frame(&rgb(&one), &rgb(&cut));
     assert!(worst < 4.0, "largest mean frame deviation {worst}");
-    // AAC encoded once over the whole: same as in the single pass (first 10 s; the single pass
-    // occasionally ends with the last clip, see ProRes test)
+    // AAC encoded once over the whole: same as in the single pass
     let (x, y) = (decode(&one, "0:a", &["-f", "f32le"]), decode(&cut, "0:a", &["-f", "f32le"]));
-    let n = 10 * 48_000 * 8;
-    assert!(x.len() >= n && y.len() >= n);
-    assert!(x[..n] == y[..n], "AAC encoded once over the whole");
+    assert!(x.len() >= 12 * 48_000 * 8, "{} bytes", x.len());
+    assert!(x == y, "AAC encoded once over the whole");
     let o = cl_media::ffprobe_command().unwrap().args(["-v", "error", "-show_chapters", "-of", "csv=p=0"]).arg(&cut).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&o.stdout).lines().count(), 2, "Kapitel");
     let head = std::fs::read(&cut).unwrap();
@@ -517,41 +516,6 @@ fn progress_is_monotonic_and_errors_name_the_section() {
     let failed = e.failed_args().expect("Abschnitt");
     assert!(job.section_args().iter().any(|a| a == failed) && failed != job.args.as_slice(), "{failed:?}");
     assert!(failed.iter().any(|a| a.contains("kaputt.mp4")));
-}
-
-/// One section of the large project for re-measuring (range 0–50 s).
-#[test]
-#[ignore]
-fn profile_one_section() {
-    let root = tempfile::tempdir().unwrap();
-    let keep = std::env::var("CL_DUMP").map(PathBuf::from).unwrap_or_else(|_| root.path().to_path_buf());
-    let dir = deep_dir(&keep, 130);
-    let m = media(&dir);
-    let p = big_project(&m, 2500, 26.0 * 60.0);
-    let mut s = ExportSettings::from_project(&p);
-    s.range = Some((Time::ZERO, Time::from_secs_f64(50.0)));
-    let t0 = Instant::now();
-    let max = std::env::var("CL_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(100);
-    let job = cl_export::build_limited(&p, &s, &no_fonts, &root.path().join("a.mp4"), max).unwrap();
-    println!("Abschnitte: {}, build {:?}", job.sections(), t0.elapsed());
-    if let Ok(d) = std::env::var("CL_DUMP") {
-        for e in std::fs::read_dir(job.workdir.path()).unwrap() {
-            let e = e.unwrap();
-            std::fs::copy(e.path(), Path::new(&d).join(e.file_name())).unwrap();
-        }
-        std::fs::write(Path::new(&d).join("args.txt"), job.section_args()[0].join("
-")).unwrap();
-        return;
-    }
-    let t0 = Instant::now();
-    let mut first = None;
-    run(&job, Arc::new(AtomicBool::new(false)), |x| {
-        if x > 0.0 && first.is_none() {
-            first = Some(t0.elapsed());
-        }
-    })
-    .unwrap();
-    println!("erster Fortschritt {:?}, gesamt {:?}", first, t0.elapsed());
 }
 
 /// Boundary in the middle of an effect clip and a transition, without background (also with alpha):

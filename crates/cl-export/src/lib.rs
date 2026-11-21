@@ -2538,7 +2538,8 @@ mod tests {
         assert!(!plain.iter().any(|a| a == PREVIEW_FILE) && without_preview(&job, &plain).is_none());
     }
 
-    /// Export time with/without preview: `cargo test --release -p cl-export preview_overhead -- --ignored --nocapture`
+    /// Measurement (manual, needs FFmpeg): export time with/without preview image.
+    /// `cargo test --release -p cl-export preview_overhead -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn preview_overhead() {
@@ -2818,7 +2819,7 @@ mod tests {
             "{} vs {total}",
             m.duration
         );
-        // frame in the middle of the transition differs from both neighbours, not black
+        // frame in the middle of the transition is not black
         let f = cl_media::decode_frame(&out, Time::from_secs_f64(1.5), 64, 36).unwrap();
         assert!(f
             .data
@@ -3803,7 +3804,8 @@ mod tests {
         assert!(!out.exists());
     }
 
-    /// Measurement: 10 s project (1080p, 30 frames/s) with 3 transitions, with/without shader.
+    /// Measurement (manual, needs FFmpeg; the shader path only with a GPU): 10 s project (1080p,
+    /// 30 frames/s) with 3 transitions, with/without shader.
     /// `cargo test --release -p cl-export shader_export_timing -- --ignored --nocapture`
     #[test]
     #[ignore]

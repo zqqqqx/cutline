@@ -198,7 +198,8 @@ fn random_op_sequences_keep_invariants() {
     }
 }
 
-/// Long run: `cargo test --release -p cl-core -- --ignored long_random`
+/// Long run of the random edits (more seeds and steps; needs nothing, takes minutes):
+/// `cargo test --release -p cl-core -- --ignored long_random`
 #[test]
 #[ignore]
 fn long_random_op_sequences() {

@@ -408,7 +408,8 @@ mod tests {
     }
 
     /// Helper process for `ffmpeg_dies_with_its_owner`: starts an endless FFmpeg, reports
-    /// its PID and then waits forever.
+    /// its PID and then waits forever. Not run by hand: that test starts it with
+    /// `CUTLINE_ORPHAN_HELPER=1` (without the variable it returns at once).
     #[test]
     #[ignore]
     fn orphan_helper() {
