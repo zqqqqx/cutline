@@ -170,6 +170,33 @@ fn zoom_scroll(scroll: f64, old: f32, new: f32, playhead: f64, view_w: f32) -> f
     (playhead - (x / new) as f64).max(scroll.min(0.0))
 }
 
+/// Height of the strip of the horizontal scrollbar under the tracks
+const HBAR_H: f32 = 10.0;
+
+/// Horizontal scrollbar: time range (s) it covers – from 0:00 (or the margin left of it) to the
+/// project end plus 5 %, further if the view already reaches beyond
+fn hbar_range(dur: f64, scroll: f64, visible: f64) -> (f64, f64) {
+    (scroll.min(0.0), (dur * 1.05).max(scroll + visible))
+}
+
+/// Thumb (left edge, width) in px on a bar `bar_w` px wide showing `visible` s from `scroll`;
+/// `None`: everything fits, no thumb
+fn hbar_thumb(range: (f64, f64), scroll: f64, visible: f64, bar_w: f32) -> Option<(f32, f32)> {
+    let total = range.1 - range.0;
+    if visible >= total - 1e-6 {
+        return None;
+    }
+    let w = (bar_w * (visible / total) as f32).clamp(18.0_f32.min(bar_w), bar_w);
+    let k = ((scroll - range.0) / (total - visible)).clamp(0.0, 1.0) as f32;
+    Some((k * (bar_w - w), w))
+}
+
+/// Scroll for the thumb (`w` px wide) with its left edge at `x` px, held inside the range
+fn hbar_scroll(range: (f64, f64), visible: f64, bar_w: f32, w: f32, x: f32) -> f64 {
+    let k = (x / (bar_w - w).max(1.0)).clamp(0.0, 1.0) as f64;
+    range.0 + k * (range.1 - range.0 - visible).max(0.0)
+}
+
 /// What stays fixed during smooth zooming
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Anchor {
@@ -1174,7 +1201,10 @@ impl App {
     }
 
     fn timeline_canvas(&mut self, ui: &mut egui::Ui) {
-        let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+        let (outer, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+        // the tracks give up the strip of the horizontal scrollbar at the bottom
+        let bar_h = if self.settings.timeline_scrollbar { HBAR_H } else { 0.0 };
+        let rect = Rect::from_min_max(outer.min, pos2(outer.right(), (outer.bottom() - bar_h).max(outer.top())));
         let painter = ui.painter_at(rect);
         let x0 = rect.left() + HEADER_W;
         self.timeline.view_w = (rect.right() - x0).max(1.0);
@@ -1308,6 +1338,33 @@ impl App {
             if vy != 0.0 {
                 self.timeline.vscroll = (self.timeline.vscroll + vy * 500.0 * dt).clamp(0.0, overflow);
                 ui.ctx().request_repaint();
+            }
+        }
+        // horizontal scrollbar: dragging the thumb scrolls, pressing beside it centres the thumb there
+        if bar_h > 0.0 {
+            let bar = Rect::from_min_max(pos2(x0, rect.bottom()), outer.max);
+            let visible = (self.timeline.view_w / self.timeline.pps) as f64;
+            let range = hbar_range(total_t, self.timeline.scroll, visible);
+            if let Some((left, w)) = hbar_thumb(range, self.timeline.scroll, visible, bar.width()) {
+                let r = ui.interact(bar, ui.id().with("timeline-hbar"), Sense::click_and_drag());
+                let p = r.interact_pointer_pos();
+                let on_thumb = p.is_some_and(|p| (bar.left() + left..=bar.left() + left + w).contains(&p.x));
+                let to = if (r.clicked() || r.drag_started()) && !on_thumb {
+                    p.map(|p| p.x - bar.left() - w * 0.5)
+                } else if r.dragged() {
+                    Some(left + r.drag_delta().x)
+                } else {
+                    None
+                };
+                if let Some(x) = to.filter(|x| *x != left) {
+                    self.timeline.view_glide = None;
+                    self.timeline.scroll = hbar_scroll(range, visible, bar.width(), w, x);
+                }
+                if let Some((left, w)) = hbar_thumb(range, self.timeline.scroll, visible, bar.width()) {
+                    let thumb = Rect::from_min_size(pos2(bar.left() + left, bar.center().y - 2.0), vec2(w, 4.0));
+                    let a = if r.hovered() || r.dragged() { 100 } else { 60 };
+                    ui.painter().rect_filled(thumb, 2.0, theme::overlay(a));
+                }
             }
         }
         // if the playhead jumps (Home/End, markers, cuts …) out of the visible range,
@@ -4172,6 +4229,31 @@ mod tests {
             st.step_view(age);
             assert!((x(st.scroll, st.pps) - 800.0).abs() < 1e-2, "{age}");
         }
+    }
+
+    #[test]
+    fn scrollbar_thumb_follows_scroll_and_back() {
+        // 100 s project (range to 105 s), 21 s visible on a 210 px bar: thumb 42 px
+        let range = hbar_range(100.0, 0.0, 21.0);
+        assert_eq!(range, (0.0, 105.0));
+        assert_eq!(hbar_thumb(range, 0.0, 21.0, 210.0), Some((0.0, 42.0)));
+        let (left, w) = hbar_thumb(range, 42.0, 21.0, 210.0).unwrap();
+        assert!((left - 84.0).abs() < 1e-3 && w == 42.0, "{left}");
+        // thumb → scroll and back
+        assert!((hbar_scroll(range, 21.0, 210.0, w, left) - 42.0).abs() < 1e-3);
+        // clamped at both ends
+        assert_eq!(hbar_scroll(range, 21.0, 210.0, w, -50.0), 0.0);
+        assert_eq!(hbar_scroll(range, 21.0, 210.0, w, 500.0), 84.0);
+        assert_eq!(hbar_thumb(range, 84.0, 21.0, 210.0), Some((168.0, 42.0)));
+        // the margin of „Ganze Zeitleiste zeigen“ and a view past the end widen the range
+        assert_eq!(hbar_range(100.0, -5.0, 21.0).0, -5.0);
+        assert_eq!(hbar_range(100.0, 200.0, 21.0).1, 221.0);
+        // everything fits (after „Ganze Zeitleiste zeigen“): no thumb
+        let (pps, scroll) = fit_all(100.0, 1000.0, min_pps(100.0, 1000.0));
+        let visible = (1000.0 / pps) as f64;
+        assert_eq!(hbar_thumb(hbar_range(100.0, scroll, visible), scroll, visible, 1000.0), None);
+        // tiny share: the thumb stays grabbable
+        assert_eq!(hbar_thumb(hbar_range(10_000.0, 0.0, 1.0), 0.0, 1.0, 200.0).unwrap().1, 18.0);
     }
 
     #[test]

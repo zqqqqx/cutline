@@ -41,6 +41,8 @@ pub struct AppSettings {
     pub start_on_home: bool,
     /// Closing the window (X, Alt+F4) with a project open goes to the start page instead of quitting
     pub close_to_home: bool,
+    /// Horizontal scrollbar under the timeline tracks
+    pub timeline_scrollbar: bool,
     pub image_duration: f32,
     pub text_duration: f32,
     pub transition_duration: f32,
@@ -138,6 +140,7 @@ impl Default for AppSettings {
             ui_scale: 1.0,
             start_on_home: true,
             close_to_home: false,
+            timeline_scrollbar: true,
             image_duration: 5.0,
             text_duration: 3.0,
             transition_duration: 0.5,
@@ -266,6 +269,7 @@ impl AppSettings {
                 self.ui_scale = d.ui_scale;
                 self.start_on_home = d.start_on_home;
                 self.close_to_home = d.close_to_home;
+                self.timeline_scrollbar = d.timeline_scrollbar;
                 self.layout = d.layout;
                 self.layout_locked = d.layout_locked;
             }
@@ -760,6 +764,7 @@ impl App {
                     let ctx = ui.ctx().clone();
                     theme::apply(&ctx);
                 }
+                widgets::toggle_row(ui, "Scrollleiste in der Zeitleiste", &mut self.settings.timeline_scrollbar);
                 theme::row(ui, "Oberfläche", |ui| {
                     let mut v = self.settings.ui_scale;
                     let e = Slider::new(&mut v, 0.6..=2.0)
