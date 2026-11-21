@@ -2355,7 +2355,12 @@ fn split_export_writes_parts_into_a_folder_as_one_entry() {
     assert!(!d.confirm_overwrite);
     assert_eq!(d.running.as_ref().map(|r| r.src.out.clone()), Some(dir.path().join("Film (2)")));
     drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
+    // the first group untouched, the new one complete and listed as well
+    assert!(folder.join("Film – Teil 04.mp4").is_file());
+    assert_eq!(std::fs::read_dir(dir.path().join("Film (2)")).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().ends_with(".mp4")).count(), 4);
     assert!(dir.path().join("Film (2)").join("Film (2) – Teil 04.mp4").is_file());
+    assert_eq!(crate::exports::for_project("Film", Some(&dir.path().join("p.cutline"))).len(), 8);
 }
 
 #[test]
@@ -2548,14 +2553,22 @@ fn export_started_during_encoder_probe_uses_the_probed_list() {
     // let the background thread of `open_for` finish, then pretend the list is not there yet
     wait_until("encoder probe", 60, || d.encoders.lock().unwrap().is_some());
     *d.encoders.lock().unwrap() = None;
+    // The start probes on its own (the list cannot be handed in), so the expectation is fixed by the
+    // setting instead: the first hardware encoder found, chosen in „Hardware-Kodierung“. Not waiting
+    // for the list would give software. Without hardware (CI) only the stored list is checked.
+    let found = cl_export::available_encoders();
+    let want = found.iter().copied().find(|e| *e != Encoder::Software).unwrap_or(Encoder::Software);
+    let pref = crate::proxy::encoder_pref();
+    crate::proxy::set_encoder_pref(want.id());
     d.running = Some(running(None));
     frame(&mut d, &ctx, &p, true);
-    let found = cl_export::available_encoders();
-    assert_eq!(d.encoders.lock().unwrap().as_deref(), Some(found));
-    assert_eq!(d.queue.back().map(|q| q.settings.encoder), Some(cl_export::export_default(found, &crate::proxy::encoder_pref())));
+    crate::proxy::set_encoder_pref(&pref);
+    assert_eq!(d.encoders.lock().unwrap().as_deref(), Some(found), "probed list kept for the next start");
+    assert_eq!(d.queue.back().map(|q| q.settings.encoder), Some(want));
     d.queue.clear();
     d.cancel_current();
     drain(&mut d, &ctx, &p);
+    assert_eq!(d.error, None);
 }
 
 /// The overwrite prompt looks at the disk and exports.json once when it opens, not every frame.
