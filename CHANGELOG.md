@@ -8,18 +8,42 @@
 ### English
 
 **New**
+- **Scrollbar in the timeline.** A slim bar at the bottom of the timeline moves the view left and right. It can be switched off in Settings → General.
+- **Closing can lead to your projects.** With "Go to projects when closing" switched on in Settings → General, the window’s X saves the project and opens the project overview instead of quitting. A second X quits.
+- **2K export.** The export list names 2560×1440 "2K (1440p)", and a target file size now steps a 4K project down to 1440p before 1080p.
 
 **Improved**
+- **Zooming the timeline keeps the playhead in place** instead of the spot under the mouse – with the wheel, the slider and the buttons.
+- **Trimming by dragging shows the result live.** Thumbnails and waveform stay where they are and are cut away while you drag, not only when you let go.
 
 **Fixed**
+- **No more black frames at cuts in the exported file.** Between clips sitting edge to edge, the export could show a single black frame that the preview never showed. Export and preview now use the same rule for which clip owns a frame. Just export the project again.
+- **Extracting audio from a video with several audio tracks.** Extracting one track no longer mutes the others, and a second extracted track is no longer silent. Projects edited before this fix keep their muted clips – raise the volume once.
+- **Moving several selected clips** keeps them on their tracks as one block. Before, the clips could be scattered onto new tracks.
+- **Moving a mixed selection to other tracks** works: video clips move within the video tracks, audio clips within the audio tracks, all together or not at all.
+- **Dropping a clip next to another on a different track** lets it snap exactly and stay there, also into a gap it fits exactly. Before, it could jump back to its old track.
+- **Q and W with several clips selected** cut every selected clip under the playhead, not only one.
+- **Splitting several selected clips** keeps all of them selected afterwards.
 
 ### Deutsch
 
 **Neu**
+- **Scrollleiste in der Zeitleiste.** Eine schmale Leiste am unteren Rand der Zeitleiste verschiebt die Ansicht nach links und rechts. Ausschalten geht unter Einstellungen → Allgemein.
+- **Schließen kann zur Projektübersicht führen.** Ist „Beim Schließen zur Projektübersicht“ unter Einstellungen → Allgemein eingeschaltet, speichert das X des Fensters das Projekt und öffnet die Projektübersicht, statt Cutline zu beenden. Ein zweites X beendet.
+- **2K-Export.** Die Exportliste nennt 2560×1440 „2K (1440p)“, und eine Zielgröße stuft ein 4K-Projekt jetzt erst auf 1440p herunter, dann auf 1080p.
 
 **Verbessert**
+- **Zoomen in der Zeitleiste hält den Abspielkopf an seiner Stelle** statt die Stelle unter der Maus – mit Mausrad, Regler und Knöpfen.
+- **Trimmen durch Ziehen zeigt das Ergebnis sofort.** Vorschaubilder und Wellenform bleiben stehen und werden beim Ziehen abgeschnitten, nicht erst beim Loslassen.
 
 **Behoben**
+- **Keine schwarzen Bilder mehr an Schnitten in der exportierten Datei.** Zwischen aneinanderliegenden Clips konnte der Export ein einzelnes schwarzes Bild zeigen, das die Vorschau nie zeigte. Export und Vorschau entscheiden jetzt nach derselben Regel, welcher Clip ein Bild zeigt. Einfach das Projekt neu exportieren.
+- **Ton extrahieren bei Videos mit mehreren Tonspuren.** Das Extrahieren einer Spur schaltet die anderen nicht mehr stumm, und eine zweite extrahierte Spur ist nicht mehr lautlos. Projekte, die vor diesem Fix bearbeitet wurden, behalten ihre stummen Clips – dort einmal die Lautstärke hochziehen.
+- **Mehrere ausgewählte Clips verschieben** hält sie als Block auf ihren Spuren. Vorher konnten die Clips auf neue Spuren verstreut werden.
+- **Eine gemischte Auswahl in andere Spuren verschieben** geht: Videoclips wandern innerhalb der Videospuren, Audioclips innerhalb der Audiospuren, alle zusammen oder gar nicht.
+- **Einen Clip neben einen anderen auf einer anderen Spur legen** lässt ihn genau einrasten und dort bleiben, auch in einer Lücke, in die er genau passt. Vorher konnte er auf seine alte Spur zurückspringen.
+- **Q und W bei mehreren ausgewählten Clips** schneiden jeden ausgewählten Clip unter dem Abspielkopf, nicht nur einen.
+- **Mehrere ausgewählte Clips teilen** lässt danach alle ausgewählt.
 
 ## 0.15.2 – 2026-11-20
 
