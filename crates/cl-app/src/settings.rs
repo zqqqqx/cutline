@@ -39,6 +39,8 @@ pub struct AppSettings {
     pub ui_scale: f32,
     /// Show the start page at program start
     pub start_on_home: bool,
+    /// Closing the window (X, Alt+F4) with a project open goes to the start page instead of quitting
+    pub close_to_home: bool,
     pub image_duration: f32,
     pub text_duration: f32,
     pub transition_duration: f32,
@@ -135,6 +137,7 @@ impl Default for AppSettings {
             .into(),
             ui_scale: 1.0,
             start_on_home: true,
+            close_to_home: false,
             image_duration: 5.0,
             text_duration: 3.0,
             transition_duration: 0.5,
@@ -262,6 +265,7 @@ impl AppSettings {
                 self.animations = d.animations;
                 self.ui_scale = d.ui_scale;
                 self.start_on_home = d.start_on_home;
+                self.close_to_home = d.close_to_home;
                 self.layout = d.layout;
                 self.layout_locked = d.layout_locked;
             }
@@ -772,6 +776,7 @@ impl App {
                     "Beim Start die Projektübersicht zeigen",
                     &mut self.settings.start_on_home,
                 );
+                widgets::toggle_row(ui, "Beim Schließen zur Projektübersicht", &mut self.settings.close_to_home);
                 // Tour and introduction are in the main menu
             }
             Section::Projects => {

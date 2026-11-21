@@ -271,6 +271,7 @@ pub fn restart(ctx: &egui::Context) {
     if let Ok(exe) = std::env::current_exe() {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if std::process::Command::new(exe).args(args).spawn().is_ok() {
+            ctx.data_mut(|d| d.insert_temp(egui::Id::new(crate::app::EXPLICIT_QUIT), true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }

@@ -562,6 +562,11 @@ impl ExportDialog {
         }
     }
 
+    /// The close request is the export's: held off with the question open, or quitting confirmed
+    pub fn owns_close(&self) -> bool {
+        self.quit_ask || self.quit_ok
+    }
+
     /// Cancel the running export and wait at most `max` until FFmpeg has ended and the
     /// `.part` file is deleted (when quitting the program).
     pub fn cancel_and_wait(&mut self, max: std::time::Duration) {

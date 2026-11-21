@@ -2389,6 +2389,24 @@ impl App {
         }
     }
 
+    /// Window close (X, Alt+F4, close request of the system) with „Beim Schließen zur
+    /// Projektübersicht“: back to the start page instead of quitting. Runs after the export's
+    /// own question. If leaving fails, the close goes through as before (`on_exit` rescues the
+    /// state), so a close request is never blocked for good.
+    fn close_to_home(&mut self, ctx: &egui::Context) {
+        if !ctx.input(|i| i.viewport().close_requested()) {
+            return;
+        }
+        let explicit = self.export.owns_close() || ctx.data(|d| d.get_temp::<bool>(egui::Id::new(EXPLICIT_QUIT))).unwrap_or(false);
+        if !close_goes_home(self.settings.close_to_home, self.screen == Screen::Editor, explicit) {
+            return;
+        }
+        self.go_home();
+        if self.screen == Screen::Home {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        }
+    }
+
     pub fn go_home(&mut self) {
         if !self.flush_before_leaving() {
             return;
@@ -3407,6 +3425,7 @@ impl eframe::App for App {
         self.window_frame(ctx);
         // window close button during an export: ask first
         self.export.guard_close(ctx);
+        self.close_to_home(ctx);
         egui::TopBottomPanel::top("top")
             .exact_height(theme::TITLE_H)
             .frame(
@@ -3628,6 +3647,14 @@ impl eframe::App for App {
         }
         crate::applog::session_end();
     }
+}
+
+/// egui temp flag: the next close request really quits (restart after an update)
+pub(crate) const EXPLICIT_QUIT: &str = "explicit-quit";
+
+/// Does a window close request lead to the start page instead of quitting?
+fn close_goes_home(setting: bool, project_open: bool, explicit_quit: bool) -> bool {
+    setting && project_open && !explicit_quit
 }
 
 /// Fingerprint of all audible properties (tracks, audio clips, volume, speed, audio effects).
@@ -4436,4 +4463,53 @@ fn long_toast_stays_inside_the_window() {
     }
     let r = ctx.memory(|m| m.area_rect(egui::Id::new("toasts"))).unwrap();
     assert!(r.left() >= 0.0 && r.right() <= 800.0, "{r:?}");
+}
+
+#[test]
+fn close_goes_home_only_with_the_setting_and_an_open_project() {
+    for setting in [false, true] {
+        for open in [false, true] {
+            for explicit in [false, true] {
+                assert_eq!(close_goes_home(setting, open, explicit), setting && open && !explicit, "{setting} {open} {explicit}");
+            }
+        }
+    }
+}
+
+/// Closing the window with „Beim Schließen zur Projektübersicht“ on: start page, project saved,
+/// lock released, the close cancelled; off: the close goes through and the project stays
+#[test]
+fn window_close_goes_to_the_start_page_when_switched_on() {
+    let ctx = egui::Context::default();
+    let close = || {
+        let mut raw = egui::RawInput::default();
+        raw.viewports.insert(egui::ViewportId::ROOT, egui::ViewportInfo { events: vec![egui::ViewportEvent::Close], ..Default::default() });
+        raw
+    };
+    for on in [true, false] {
+        let mut app = crate::saving::tests::test_app();
+        app.settings.close_to_home = on;
+        app.set_doc(Project::new("Schließen"));
+        let p = app.dir().join("schliessen.cutline");
+        app.project_path = Some(p.clone());
+        app.take_lock(&p);
+        app.screen = Screen::Editor;
+        app.apply(EditOp::Rename { name: "Geändert".into() });
+        let out = ctx.run(close(), |ctx| {
+            app.export.guard_close(ctx);
+            app.close_to_home(ctx);
+        });
+        let cancelled = out.viewport_output[&egui::ViewportId::ROOT].commands.contains(&egui::ViewportCommand::CancelClose);
+        assert_eq!(cancelled, on, "{on}");
+        if on {
+            assert!(app.screen == Screen::Home);
+            assert_eq!(Project::from_json(&std::fs::read_to_string(&p).unwrap()).unwrap().name, "Geändert");
+            assert!(!paths::lock_path(&p).exists(), "lock released");
+            // on the start page the next close quits
+            let out = ctx.run(close(), |ctx| app.close_to_home(ctx));
+            assert!(!out.viewport_output[&egui::ViewportId::ROOT].commands.contains(&egui::ViewportCommand::CancelClose));
+        } else {
+            assert!(app.screen == Screen::Editor && paths::lock_path(&p).exists());
+        }
+    }
 }
