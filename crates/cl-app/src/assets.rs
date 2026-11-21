@@ -2273,6 +2273,7 @@ mod tests {
 
     #[test]
     fn sound_length_uses_the_decimal_comma_in_german() {
+        let _g = crate::paths::test_lock();
         cl_i18n::set_ui_lang(cl_i18n::Lang::De);
         assert_eq!(sound_len(Time::from_secs_f64(0.8)), "0,8 s");
         assert_eq!(sound_len(Time::from_secs_f64(65.0)), "1:05");

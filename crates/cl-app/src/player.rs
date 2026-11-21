@@ -1101,6 +1101,7 @@ pub(crate) mod still {
         let Ok(v) = std::env::var("CUTLINE_STILL") else { return };
         let parts: Vec<&str> = v.split(';').collect();
         let project = Project::from_json(&std::fs::read_to_string(parts[0]).unwrap()).unwrap();
+        let _g = crate::paths::test_lock();
         let reg = cl_plugin::Registry::scan([std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins"))]);
         cl_fx::catalog::load_packs(crate::contents::catalog_packs(&reg, "de"));
         let (cw, ch) = (640, 360);
@@ -1118,9 +1119,13 @@ mod transition_tests {
     use super::*;
     use std::path::Path;
 
-    fn load_shipped_packs() {
+    /// Replaces the global pack catalog: keep the returned test lock while using it (`App::new` replaces it too)
+    #[must_use]
+    fn load_shipped_packs() -> std::sync::MutexGuard<'static, ()> {
+        let g = crate::paths::test_lock();
         let reg = cl_plugin::Registry::scan([Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins"))]);
         cl_fx::catalog::load_packs(crate::contents::catalog_packs(&reg, "de"));
+        g
     }
 
     fn media(dir: &Path, name: &str, src: &str) -> MediaRef {
@@ -1312,13 +1317,15 @@ mod transition_tests {
             eprintln!("skipped (no GPU): shader_transition_under_filter_matches_export");
             return;
         }
-        load_shipped_packs();
+        let _packs = load_shipped_packs();
         let d = still_vs_export("cutline.uebergaenge/wuerfel", false, Some("noir"), 1.5);
         assert!(d < 8.0, "preview differs from the export: {d:.1}");
     }
 
     /// Decision "blend or cross-fade": an effect/filter element over the transition is
     /// no longer a reason to cross-fade (before: cube and circle open were missing in N_tr).
+    /// Only built-in transitions: `transition_plan` resolves them before looking at the loaded packs,
+    /// so the global catalog does not matter here.
     #[test]
     fn elements_above_do_not_force_a_crossfade() {
         let clip = |s: f64, tr: Option<&str>| {
@@ -1389,7 +1396,8 @@ mod transition_tests {
         // included, masked one as its own frame
         let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         let f = |v: u8| std::sync::Arc::new(cl_media::RgbaFrame { width: 32, height: 18, data: [v, 255 - v, 90, 255].repeat(32 * 18) });
-        let plan = cl_fx::catalog::transition_plan("circleopen");
+        // built-in: independent of the global pack catalog
+        let plan = cl_fx::catalog::transition_plan_in(&[], "circleopen");
         let mask = Mask::new(MaskShape::Circle);
         let job = MixJob {
             id: 7,
@@ -1424,7 +1432,7 @@ mod transition_tests {
     #[test]
     #[ignore]
     fn mix_time() {
-        load_shipped_packs();
+        let _packs = load_shipped_packs();
         let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         for (cw, ch) in [(1920, 1080), (1600, 900), (1280, 720), (960, 540)] {
             let f = |v: u8| cl_media::RgbaFrame { width: cw, height: ch, data: [v, 255 - v, 90, 255].repeat((cw * ch) as usize) };

@@ -228,9 +228,15 @@ pub fn clear_dir(dir: &Path, skip: &[&str]) {
     }
 }
 
-/// Tests that set CUTLINE_HOME (process-wide) run one after another
+/// Tests that change process-wide state (CUTLINE_HOME, UI language, accent, animations, pack
+/// catalog – `App::new` sets all of them) run one after another
 #[cfg(test)]
 pub static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Test data folder: holds `HOME_LOCK`, points `CUTLINE_HOME` at a fresh temp folder and on drop
 /// (also after a panic) clears the variables first, then deletes the folder, then releases the lock.
@@ -243,7 +249,7 @@ pub struct TestHome {
 #[cfg(test)]
 impl TestHome {
     pub fn new() -> Self {
-        let _lock = HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = test_lock();
         let dir = tempfile::tempdir().unwrap();
         std::env::set_var("CUTLINE_HOME", dir.path());
         TestHome { dir, _lock }

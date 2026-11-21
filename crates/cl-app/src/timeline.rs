@@ -3855,6 +3855,10 @@ mod tests {
 
     #[test]
     fn target_change_mid_glide_starts_from_shown_place() {
+        // animations are global: on for the glide, off for the jump, restored at the end
+        let _g = crate::paths::test_lock();
+        let was = theme::animations_on();
+        theme::set_animations(true);
         let tr = TrackId::new();
         let mut a = Track::new(TrackKind::Video);
         a.id = tr;
@@ -3870,10 +3874,6 @@ mod tests {
         b.clips[0] = c.clone();
         m.update(std::slice::from_ref(&a), std::slice::from_ref(&b), &rows, 1.0);
         let secs = theme::anim(theme::MOTION);
-        if secs == 0.0 {
-            assert!(m.glides.is_empty(), "animations off: jumps");
-            return;
-        }
         let g = m.glides[&c.id];
         assert_eq!((g.s0, g.t0), (0.0, 1.0));
         // new target halfway: the new movement begins at the shown place
@@ -3884,10 +3884,19 @@ mod tests {
         let g2 = m.glides[&c.id];
         assert!((g2.s0 - half).abs() < 1e-6, "{} != {half}", g2.s0);
         assert_eq!(g2.at(place(30.0, 32.0, tr), secs, secs).0, 30.0);
+        theme::set_animations(false);
+        let mut off = Motion::default();
+        off.update(&[], std::slice::from_ref(&a), &rows, 0.0);
+        off.update(std::slice::from_ref(&a), std::slice::from_ref(&b), &rows, 1.0);
+        theme::set_animations(was);
+        assert!(off.glides.is_empty(), "animations off: jumps");
     }
 
     #[test]
     fn track_change_glides_vertically_and_own_drag_jumps() {
+        let _g = crate::paths::test_lock();
+        let was = theme::animations_on();
+        theme::set_animations(true);
         let (t1, t2) = (TrackId::new(), TrackId::new());
         let id = ClipId::new();
         let mut m = Motion { places: HashMap::from([(id, place(0.0, 2.0, t1))]), ..Default::default() };
@@ -3905,9 +3914,8 @@ mod tests {
         // moved to the other track by something else (undo): glides vertically from 100 to 200
         m.places.insert(id, place(0.0, 2.0, t1));
         m.update(&[], std::slice::from_ref(&nt), &rows, 0.0);
-        if theme::anim(theme::MOTION) > 0.0 {
-            assert_eq!(m.glides[&id].dy0, -100.0);
-        }
+        theme::set_animations(was);
+        assert_eq!(m.glides[&id].dy0, -100.0);
     }
 
     #[test]

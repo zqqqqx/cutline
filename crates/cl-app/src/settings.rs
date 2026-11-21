@@ -1153,8 +1153,15 @@ mod tests {
 
     #[test]
     fn test_apps_stay_german_under_an_english_system_language() {
+        let _g = crate::paths::test_lock();
+        let old = std::env::var_os("LANG");
         std::env::set_var("LANG", "en_US.UTF-8");
-        assert_eq!(AppSettings::default().lang(), cl_i18n::Lang::De);
+        let lang = AppSettings::default().lang();
+        match old {
+            Some(v) => std::env::set_var("LANG", v),
+            None => std::env::remove_var("LANG"),
+        }
+        assert_eq!(lang, cl_i18n::Lang::De);
     }
 
     #[test]
@@ -1167,6 +1174,7 @@ mod tests {
         };
         // The port comes from the system: tests running in parallel can get it by chance between
         // stop and restart. If the old server still held it, on the other hand, EVERY attempt would fail.
+        // Asserted: in at least one of five rounds the restart gets the same port at once.
         let ok = (0..5).any(|_| {
             let first = start(0).unwrap();
             let port = first.port;
