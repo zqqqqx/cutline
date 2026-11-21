@@ -1690,11 +1690,9 @@ impl App {
 
     /// Clips that „Teilen“ hits at the playhead: the selection, otherwise the main track's clip
     pub fn split_targets(&self) -> Vec<ClipId> {
-        let at = self.playhead.snap_to_frame(self.project.settings.fps);
-        // no splinters shorter than half a frame (they come about at clip boundaries
-        // with odd frame rates and disturb the export)
-        let half = Time::from_secs_f64(0.5 / self.project.settings.fps.as_f64());
-        let splittable = |c: &Clip| c.contains(at) && at - c.start >= half && c.end() - at >= half;
+        let fps = self.project.settings.fps;
+        let at = self.playhead.snap_to_frame(fps);
+        let splittable = |c: &Clip| splittable(c, at, fps);
         let sel = self.selection();
         let mut targets: Vec<ClipId> = sel
             .iter()
@@ -1759,8 +1757,9 @@ impl App {
     /// Q / W: cut away left or right of the playhead – on every selected clip the playhead lies in
     /// (one history step), without such a selection on the main track's clip.
     pub fn delete_side(&mut self, left: bool) {
-        let at = self.playhead.snap_to_frame(self.project.settings.fps);
-        let inside = |c: &Clip| at > c.start && at < c.end();
+        let fps = self.project.settings.fps;
+        let at = self.playhead.snap_to_frame(fps);
+        let inside = |c: &Clip| splittable(c, at, fps);
         let mut targets: Vec<(ClipId, bool, bool)> = self
             .selection()
             .into_iter()
@@ -4038,6 +4037,13 @@ impl Drop for HiresTimer {
 const EGUI_PREDICTED_DT: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
 /// Start of frame `n` at `fps` (µs, rounded up: from then on the frame is due)
+/// Can `c` be cut at `at` without a piece shorter than half a frame on either side? Such splinters
+/// come about at clip boundaries with odd frame rates or off-grid clip times and disturb the export.
+fn splittable(c: &Clip, at: Time, fps: Rational) -> bool {
+    let half = Time::from_secs_f64(0.5 / fps.as_f64());
+    c.contains(at) && at - c.start >= half && c.end() - at >= half
+}
+
 fn frame_start(n: i128, fps: Rational) -> i128 {
     let (num, den) = (fps.num.max(1) as i128, fps.den.max(1) as i128);
     (n * den * 1_000_000).div_euclid(num) + i128::from((n * den * 1_000_000).rem_euclid(num) != 0)
@@ -4527,6 +4533,41 @@ fn cut_left_and_right_skip_locked_tracks() {
         app.undo();
         app.sync_project();
         assert_eq!(spans(&app), vec![full; 3], "one undo restores all (left {left})");
+    }
+}
+
+/// Q / W with clip edges a few µs next to the playhead (snapped clips keep off-grid times): only
+/// the long clip is cut, the near-edge clips stay – no clip shorter than half a frame afterwards
+#[test]
+fn cut_left_and_right_leave_no_slivers() {
+    let mut app = crate::saving::tests::test_app();
+    let t = Time::from_secs_f64;
+    let at = t(1.0);
+    let us = Time(3);
+    let mut p = Project::new("QW");
+    let mut ids = Vec::new();
+    for (start, end) in [(t(0.0), t(4.0)), (at - us, t(3.0)), (t(0.0), at + us)] {
+        let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
+        let c = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), start, end - start);
+        ids.push(c.id);
+        tr.clips.push(c);
+        p.timeline.tracks.push(tr);
+    }
+    app.set_doc(p);
+    let fps = app.project.settings.fps;
+    assert_eq!(at.snap_to_frame(fps), at, "playhead on the frame grid");
+    let spans = |app: &App| ids.iter().map(|id| app.project.find_clip(*id).map(|(_, c)| (c.start, c.end())).unwrap()).collect::<Vec<_>>();
+    let before = spans(&app);
+    for left in [true, false] {
+        app.select_all();
+        app.playhead = at;
+        app.delete_side(left);
+        app.sync_project();
+        let cut = if left { (at, t(4.0)) } else { (t(0.0), at) };
+        assert_eq!(spans(&app), vec![cut, before[1], before[2]], "left {left}");
+        app.undo();
+        app.sync_project();
+        assert_eq!(spans(&app), before, "left {left}");
     }
 }
 
