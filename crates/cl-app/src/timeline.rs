@@ -222,6 +222,31 @@ fn drop_time(t: f64, snapped: bool, fps: Rational) -> Time {
     }
 }
 
+/// The clip as trimming its `edge` to `to` leaves it: the commit's own op ([`EditOp::TrimClip`]) on
+/// a copy holding only the clip's track and media, so the drag shows exactly what release commits.
+/// `None` if the trim is not possible.
+fn trimmed_clip(p: &Project, clip: ClipId, edge: Edge, to: Time) -> Option<Clip> {
+    let (t, c) = p.find_clip(clip)?;
+    let mut mini = Project::new("");
+    mini.settings = p.settings.clone();
+    mini.media = p.media.iter().filter(|m| matches!(&c.content, ClipContent::Media { media, .. } if *media == m.id)).cloned().collect();
+    mini.timeline.tracks = vec![t.clone()];
+    let mut d = Document::new(mini);
+    d.apply(EditOp::TrimClip { clip, edge, to }, OpSource::Ui).ok()?;
+    d.project().find_clip(clip).map(|(_, c)| c.clone())
+}
+
+/// x (px) where the thumbnail tiles of a clip drawn from `left` to `right` start: where its source
+/// begins (reversed: where it would end), so the tiles stay put when an edge is trimmed
+fn tile_origin(c: &Clip, left: f32, right: f32, pps: f32) -> f32 {
+    let lead = c.source_in.as_secs_f64() as f32 / c.speed.max(0.01) * pps;
+    if c.fx.reverse {
+        right + lead
+    } else {
+        left - lead
+    }
+}
+
 /// What stays fixed during smooth zooming
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Anchor {
@@ -1917,10 +1942,12 @@ impl App {
         // ---------- Dragging ----------
         // ghost of a dragged clip: (clip, begin, end, row area if not its own)
         let mut ghost: Vec<(ClipId, f64, f64, Option<Rect>)> = Vec::new();
+        // clip whose edge is being dragged, as the trim will leave it (drawn with its content)
+        let mut trim_shown: Option<Clip> = None;
         let mut snap_line: Option<f64> = None;
         let dragging = resp.dragged() || resp.drag_stopped();
         // Esc cancels moving clips (nothing is changed)
-        if esc && matches!(self.timeline.drag, Drag::Move { .. }) {
+        if esc && matches!(self.timeline.drag, Drag::Move { .. } | Drag::Trim { .. }) {
             self.timeline.drag = Drag::None;
         }
         if let (Some(p), true) = (pointer, dragging) {
@@ -2075,19 +2102,22 @@ impl App {
                         Edge::Start => (t.clamp(min_s.max(0.0), ce - 0.05), ce),
                         Edge::End => (cs, t.clamp(cs + 0.05, max_e)),
                     };
-                    ghost.push((clip, s, e, None));
+                    let to = if edge == Edge::Start { s } else { e };
+                    let moved = (to - if edge == Edge::Start { cs } else { ce }).abs() > 1e-4;
+                    let to = Time::from_secs_f64(to).snap_to_frame(fps);
+                    // shown while dragging = what release commits (same op, same time)
+                    let shown = moved.then(|| trimmed_clip(&self.project, clip, edge, to)).flatten();
+                    let (gs, ge) = shown.as_ref().map_or((cs, ce), |c| (c.start.as_secs_f64(), c.end().as_secs_f64()));
+                    ghost.push((clip, gs, ge, None));
+                    trim_shown = shown;
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
                         self.timeline.motion.skip.insert(clip);
-                        let to = if edge == Edge::Start { s } else { e };
-                        if (to - if edge == Edge::Start { cs } else { ce }).abs() > 1e-4 {
-                            self.apply(EditOp::TrimClip {
-                                clip,
-                                edge,
-                                to: Time::from_secs_f64(to).snap_to_frame(fps),
-                            });
+                        if trim_shown.is_some() {
+                            self.apply(EditOp::TrimClip { clip, edge, to });
                         }
                         ghost.clear();
+                        trim_shown = None;
                     }
                 }
                 Drag::Roll { left, right } => {
@@ -2556,6 +2586,9 @@ impl App {
                     }
                 };
                 let mut c = std::borrow::Cow::Borrowed(self.clip_ref(c0));
+                if let Some(t) = trim_shown.as_ref().filter(|t| t.id == c0.id) {
+                    c = std::borrow::Cow::Owned(t.clone());
+                }
                 let audio_drag = match &self.timeline.drag {
                     Drag::Audio { clip, handle, value }
                         if has_audio(&c)
@@ -3189,8 +3222,9 @@ impl App {
                     let th = body.height();
                     let tw = (ts.x / ts.y * th).max(8.0);
                     let mut x = body.left().max(x0 - tw);
-                    // align to the tile grid
-                    x = body.left() + ((x - body.left()) / tw).floor() * tw;
+                    // align to the tile grid, which hangs on the source: trimming does not slide it
+                    let origin = tile_origin(c, body.left(), body.right(), pps);
+                    x = origin + ((x - origin) / tw).floor() * tw;
                     while x < body.right().min(right) {
                         let uv = if c.fx.flip_h {
                             Rect::from_min_max(pos2(1.0, 0.0), pos2(0.0, 1.0))
@@ -4297,6 +4331,46 @@ mod tests {
         }
         // not snapped: on the frame grid as before
         assert_eq!(drop_time(1.01, false, Rational::new(30, 1)), s(1.0));
+    }
+
+    /// While an edge is dragged the clip is drawn as the committed trim leaves it, and its content
+    /// stays anchored in time (no sliding, no squeezing)
+    #[test]
+    fn trim_drag_shows_the_committed_clip() {
+        let s = Time::from_secs_f64;
+        for (speed, reverse) in [(1.0f32, false), (2.0, false), (1.0, true), (2.0, true)] {
+            for (edge, to) in [(Edge::Start, 3.0), (Edge::Start, 0.5), (Edge::Start, 5.99), (Edge::End, 4.0), (Edge::End, 9.0), (Edge::End, 30.0), (Edge::End, 2.0)] {
+                let mut p = Project::new("T");
+                let m = MediaRef { id: MediaId::new(), path: "v.mp4".into(), kind: MediaKind::Video, duration: s(10.0), width: 64, height: 36, fps: None, has_audio: false, audio_streams: 0, video_codec: None, audio_codec: None };
+                let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, s(2.0), s(4.0));
+                c.source_in = s(1.0);
+                c.speed = speed;
+                c.duration = s(4.0 / speed as f64);
+                c.fx.reverse = reverse;
+                let id = c.id;
+                p.media.push(m);
+                let mut t = Track::new(TrackKind::Video);
+                // neighbour on the same free track: limits extending the start
+                t.clips.push(Clip::new(ClipContent::Text(TextStyle::default()), s(0.0), s(1.0)));
+                t.clips.push(c.clone());
+                p.timeline.tracks.push(t);
+                let shown = trimmed_clip(&p, id, edge, s(to));
+                let mut d = Document::new(p.clone());
+                let committed = d.apply(EditOp::TrimClip { clip: id, edge, to: s(to) }, OpSource::Ui).ok().map(|_| d.project().find_clip(id).unwrap().1.clone());
+                let case = format!("{speed} {reverse} {edge:?} {to}");
+                assert_eq!(shown, committed, "{case}");
+                // content anchored: the tiles' origin (screen, 50 px/s, scroll 0) does not move
+                if let Some(n) = shown {
+                    let x = |t: Time| t.as_secs_f64() as f32 * 50.0;
+                    let before = tile_origin(&c, x(c.start), x(c.end()), 50.0);
+                    let after = tile_origin(&n, x(n.start), x(n.end()), 50.0);
+                    assert!((before - after).abs() < 0.01, "{case}: {before} → {after}");
+                    // and the frame at a remaining spot is the same before and after
+                    let mid = Time((n.start.0 + n.end().0) / 2);
+                    assert!((c.source_time(mid).as_secs_f64() - n.source_time(mid).as_secs_f64()).abs() < 1e-3, "{case}");
+                }
+            }
+        }
     }
 
     #[test]
