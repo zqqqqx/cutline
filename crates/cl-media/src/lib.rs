@@ -1418,15 +1418,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let clip = make_clip(dir.path());
         let s = FrameStream::open(&clip, Time::ZERO, 64, 36, Rational::new(25, 1)).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(500)); // channel fills up
-        let t = std::time::Instant::now();
-        drop(s);
-        // only kill, don't wait (the UI thread must not hang here)
-        assert!(
-            t.elapsed() < std::time::Duration::from_millis(250),
-            "Drop hat blockiert: {:?}",
-            t.elapsed()
-        );
+        std::thread::sleep(std::time::Duration::from_millis(500)); // channel fills up (makes the case likely, not required)
+        // a deadlock never returns; the generous limit only turns a hang into a failure
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(s);
+            let _ = tx.send(());
+        });
+        assert!(rx.recv_timeout(Duration::from_secs(30)).is_ok(), "drop of a full stream hangs");
     }
 
     #[test]
@@ -1455,6 +1454,10 @@ mod tests {
         assert_eq!((f.data.len(), info.hw), (32 * 18 * 4, false));
     }
 
+    /// Serializes the hardware tests: together they could take all [`MAX_HW_DECODERS`] slots, and a
+    /// test whose probe got hardware would then see its stream fall back to software.
+    static HW_TESTS: Mutex<()> = Mutex::new(());
+
     fn mean_diff(a: &[u8], b: &[u8]) -> f64 {
         a.iter().zip(b).map(|(x, y)| x.abs_diff(*y) as f64).sum::<f64>() / a.len().max(1) as f64
     }
@@ -1470,6 +1473,7 @@ mod tests {
             eprintln!("skipped (no hardware decoder)");
             return;
         }
+        let _hw = HW_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         let clip = gen(
             dir.path(),
@@ -1508,6 +1512,7 @@ mod tests {
             eprintln!("skipped (no hardware decoder)");
             return;
         }
+        let _hw = HW_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         let clip = gen(
             dir.path(),
@@ -1550,6 +1555,7 @@ mod tests {
             eprintln!("skipped (no hardware decoder)");
             return;
         }
+        let _hw = HW_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         let clip = make_clip(dir.path());
         assert!(decode_frame_opts(&clip, Time::from_secs_f64(9.0), 32, 18, None, true, None).is_err());

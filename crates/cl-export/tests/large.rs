@@ -471,6 +471,8 @@ fn cancel_during_sections_leaves_nothing() {
     let work = job.workdir.path().to_path_buf();
     let cancel = Arc::new(AtomicBool::new(false));
     let c2 = cancel.clone();
+    // deterministic: 0.4 lies inside the sections (share 0.96), progress only comes from an `out_time_us=`
+    // line, FFmpeg always writes more lines of that block, and `run_ffmpeg` checks the flag before each line
     let r = run(&job, cancel, move |x| {
         if x > 0.4 {
             c2.store(true, std::sync::atomic::Ordering::Relaxed);

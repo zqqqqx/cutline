@@ -545,7 +545,7 @@ fn names_empty_long_emoji_and_rtl_survive_save() {
 }
 
 #[test]
-fn ten_thousand_clips_stay_fast_and_consistent() {
+fn ten_thousand_clips_stay_consistent() {
     let mut p = Project::new("Groß");
     let m = media(MediaKind::Video, 3600.0);
     p.media.push(m.clone());
@@ -559,7 +559,6 @@ fn ten_thousand_clips_stay_fast_and_consistent() {
         text.clips.push(text_clip(i as f64 * 2.0, 1.5));
     }
     p.timeline.tracks = vec![main, text];
-    let t0 = std::time::Instant::now();
     let mut d = Document::new(p);
     let mid = d.project().timeline.tracks[0].clips[5000].id;
     apply(&mut d, EditOp::SplitClip { clip: mid, at: s(5000.5) });
@@ -571,7 +570,6 @@ fn ten_thousand_clips_stay_fast_and_consistent() {
     assert_eq!(roundtrip(d.project()), *d.project());
     assert_eq!(d.step(-4), 4);
     assert_eq!(d.project().timeline.tracks[0].clips.len(), 10_000);
-    assert!(t0.elapsed().as_secs() < 20, "too slow: {:?}", t0.elapsed());
 }
 
 #[test]

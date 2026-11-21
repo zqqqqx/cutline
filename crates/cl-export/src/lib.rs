@@ -4635,6 +4635,8 @@ mod tests {
             let job = build(&p, &s, &no_fonts, &out).unwrap();
             let cancel = Arc::new(AtomicBool::new(false));
             let c = cancel.clone();
+            // deterministic: progress only comes from an `out_time_us=` line, FFmpeg always writes more
+            // lines of that block, and `run_ffmpeg` checks the flag before each line (0.6: second pass)
             let r = run(&job, cancel, |x| {
                 if x >= stop {
                     c.store(true, Ordering::Relaxed);

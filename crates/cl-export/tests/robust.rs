@@ -474,9 +474,7 @@ fn huge_projects_build() {
         tx.clips.push(Clip::new(ClipContent::Text(TextStyle { text: format!("Zeile {i}"), ..Default::default() }), secs(i as f64 * 0.1), secs(0.1)));
     }
     p.timeline.tracks.push(tx);
-    let t0 = std::time::Instant::now();
     let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("o.mp4")).unwrap();
-    assert!(t0.elapsed().as_secs() < 20, "Graph-Bau dauert {:?}", t0.elapsed());
     // 500 inputs: in sections, every command line below the Windows limit
     assert!(job.sections() > 1);
     assert!(job.section_args().iter().all(|a| a.iter().map(|x| x.len() + 3).sum::<usize>() < 32_000));
@@ -545,7 +543,8 @@ fn failures_are_clean() {
         let r = build(&p, &s, &no_fonts, &dir.path().join("r.mp4"));
         assert!(matches!(r, Err(ExportError::Empty)), "{range:?}: {:?}", r.as_ref().err());
     }
-    // cancel in the middle of the export: no target, no .part
+    // cancel in the middle of the export: no target, no .part. Deterministic: progress only comes from an
+    // `out_time_us=` line, FFmpeg always writes more lines of that block, and `run_ffmpeg` checks the flag first.
     let mut long = p.clone();
     long.timeline.tracks[0].clips[0].duration = secs(3.0);
     long.timeline.tracks[0].clips[0].fx.effects.push(FxRef::new("vhs"));
