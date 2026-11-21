@@ -234,17 +234,20 @@ pub(crate) fn group_moves(ids: &[(ClipId, f64)], grab: ClipId, to: Time) -> Vec<
 
 /// A selection moved in time within its own tracks (`moves`: clip, new start): `Ok` = one batch in
 /// which its clips never block each other. If the group would overlap clips outside it, `Err` =
-/// display row and side for new tracks next to the first clip's track: like a single clip, the
-/// group then goes onto a new track – as a whole, never clip by clip
+/// display row and side for new tracks: like a single clip, the group then goes onto a new track –
+/// as a whole, never clip by clip. The row does not depend on the order of `moves`.
 pub(crate) fn group_in_time(p: &Project, moves: &[(ClipId, Time)]) -> std::result::Result<EditOp, (usize, bool)> {
     if let Some((_, op)) = shift_tracks(p, moves, 0) {
         return Ok(op);
     }
     let tracks = &p.timeline.tracks;
-    let at = moves.first().and_then(|m| p.find_clip(m.0));
-    let row = at.and_then(|(t, _)| display_order(tracks).iter().position(|&i| tracks[i].id == t.id));
-    // audio: below its track, visual: above – where a single clip's new track appears
-    Err((row.unwrap_or(0), at.is_none_or(|(_, c)| c.kind() != TrackKind::Audio)))
+    let ord = display_order(tracks);
+    let at: Vec<(usize, TrackKind)> =
+        moves.iter().filter_map(|m| p.find_clip(m.0)).filter_map(|(t, c)| Some((ord.iter().position(|&i| tracks[i].id == t.id)?, c.kind()))).collect();
+    let visual = at.iter().any(|x| x.1 != TrackKind::Audio);
+    // visual: above the topmost track, audio only: below the lowest – where a single clip's new track appears
+    let row = if visual { at.iter().map(|x| x.0).min() } else { at.iter().map(|x| x.0).max() };
+    Err((row.unwrap_or(0), visual || at.is_empty()))
 }
 
 /// The clip as trimming its `edge` to `to` leaves it: the commit's own op ([`EditOp::TrimClip`]) on
@@ -5077,6 +5080,33 @@ mod tests {
             assert_eq!(at[0].0, at[1].0, "together on one track: {kind:?}");
             assert_ne!(at[0].0, places(&d, &ids[0][2..])[0].0);
             assert_eq!(d.undo_entries().len(), 1);
+        }
+    }
+
+    /// Two stacked clips (one per track) dragged into their neighbours: they go to new tracks and the
+    /// upper one stays above, whatever the selection order
+    #[test]
+    fn stacked_group_onto_other_clips_keeps_its_order() {
+        for kind in [TrackKind::Video, TrackKind::Audio] {
+            let row: &[(f64, f64)] = &[(1.0, 1.0), (5.0, 3.0)];
+            let (p, ids) = lanes(Rational::new(30, 1), false, &[(kind, false, row), (kind, false, row)]);
+            let mut results = Vec::new();
+            for sel in [vec![ids[0][0], ids[1][0]], vec![ids[1][0], ids[0][0]]] {
+                let moves = group_moves(&[(sel[0], 1.0), (sel[1], 1.0)], sel[0], Time::from_secs_f64(4.5));
+                let (row, upper) = group_in_time(&p, &moves).expect_err("overlaps the neighbours");
+                let mut d = Document::new(p.clone());
+                move_to_new_tracks(&mut d, row, upper, &moves).unwrap();
+                assert_eq!(d.project().timeline.tracks.len(), 4, "{kind:?}");
+                assert_eq!(d.undo_entries().len(), 1);
+                let tr = &d.project().timeline.tracks;
+                let ord = display_order(tr);
+                let disp = |id: ClipId| ord.iter().position(|&i| tr[i].id == d.project().find_clip(id).unwrap().0.id).unwrap();
+                // display rows of the clips from the upper and the lower source track
+                let (up, low) = if kind == TrackKind::Audio { (ids[0][0], ids[1][0]) } else { (ids[1][0], ids[0][0]) };
+                assert!(disp(up) < disp(low), "upper stays above: {kind:?} {sel:?}");
+                results.push(places(&d, &[ids[0][0], ids[1][0]]));
+            }
+            assert_eq!(results[0], results[1], "same result for both selection orders: {kind:?}");
         }
     }
 

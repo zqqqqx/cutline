@@ -89,32 +89,61 @@ pub fn move_track_to(tracks: &[Track], row: usize, gap: usize) -> Option<EditOp>
 }
 
 /// Move clips (id, new start) to new tracks next to row `row`: one track per clip kind
-/// at the position from [`new_track_gap`]; clips of the same kind land in it together. One
-/// history step; if something fails, the project stays unchanged.
+/// at the position from [`new_track_gap`]; clips of the same kind land in it together. If clips
+/// of one kind from different tracks would overlap there, that kind gets one new track per source
+/// track instead, in the sources' display order (what was above stays above). The result does not
+/// depend on the order of `moves`. One history step; if something fails, the project stays unchanged.
 pub fn move_to_new_tracks(doc: &mut Document, row: usize, upper: bool, moves: &[(ClipId, Time)]) -> Result<()> {
     let p = doc.project();
     let tracks = &p.timeline.tracks;
-    let mut kinds: Vec<(TrackKind, usize)> = Vec::new();
-    for (id, _) in moves {
-        let k = p.find_clip(*id).ok_or(CoreError::ClipNotFound(*id))?.1.kind();
-        if !kinds.iter().any(|x| x.0 == k) {
-            kinds.push((k, gap_index(tracks, new_track_gap(tracks, row, upper, k), k)));
+    let ord = display_order(tracks);
+    // per clip: kind, display row of its source track, new range
+    let mut info = Vec::new();
+    for (id, start) in moves {
+        let (t, c) = p.find_clip(*id).ok_or(CoreError::ClipNotFound(*id))?;
+        let src = ord.iter().position(|&i| tracks[i].id == t.id).unwrap_or(0);
+        info.push((c.kind(), src, *start, *start + c.duration));
+    }
+    // per kind: insert index and the source rows that get a track of their own (sorted; one entry = shared track)
+    let mut kinds: Vec<(TrackKind, usize, Vec<usize>)> = Vec::new();
+    for (k, ..) in &info {
+        if kinds.iter().any(|x| x.0 == *k) {
+            continue;
         }
+        let same: Vec<_> = info.iter().filter(|x| x.0 == *k).collect();
+        let clash = same.iter().any(|a| same.iter().any(|b| a.1 != b.1 && a.2 < b.3 && b.2 < a.3));
+        let mut rows: Vec<usize> = same.iter().map(|x| x.1).collect();
+        rows.sort_unstable();
+        rows.dedup();
+        if !clash {
+            rows.truncate(1);
+        }
+        kinds.push((*k, gap_index(tracks, new_track_gap(tracks, row, upper, *k), *k), rows));
     }
     // highest index first: later inserts don't shift the ones already created against each other
     kinds.sort_by_key(|k| std::cmp::Reverse(k.1));
     doc.transaction(|d| {
-        let mut new = Vec::new();
-        for (kind, index) in kinds {
-            if let crate::OpOutput::Track(t) = d.apply(EditOp::InsertTrack { index, kind }, OpSource::Ui)? {
-                new.push((kind, t));
+        // per kind: the new tracks in display order, paired with the source rows
+        let mut new: Vec<(TrackKind, Vec<usize>, Vec<TrackId>)> = Vec::new();
+        for (kind, index, rows) in kinds {
+            let mut ids = Vec::new();
+            for _ in &rows {
+                if let crate::OpOutput::Track(t) = d.apply(EditOp::InsertTrack { index, kind }, OpSource::Ui)? {
+                    ids.push(t);
+                }
             }
+            new.push((kind, rows, ids));
+        }
+        let tr = &d.project().timeline.tracks;
+        let ord = display_order(tr);
+        for n in &mut new {
+            n.2.sort_by_key(|id| ord.iter().position(|&i| tr[i].id == *id));
         }
         let ops = moves
             .iter()
-            .map(|(clip, start)| {
-                let kind = d.project().find_clip(*clip).map(|c| c.1.kind());
-                let track = new.iter().find(|n| Some(n.0) == kind).map(|n| n.1);
+            .zip(&info)
+            .map(|((clip, start), (kind, src, ..))| {
+                let track = new.iter().find(|n| n.0 == *kind).and_then(|n| n.2.get(n.1.iter().position(|r| r == src).unwrap_or(0)).copied());
                 EditOp::MoveClip { clip: *clip, track, start: *start }
             })
             .collect();
@@ -322,6 +351,55 @@ mod tests {
         assert_eq!(d.project(), &before, "fully reversible");
         d.redo().unwrap();
         assert_eq!(names(d.project()).len(), 7);
+    }
+
+    #[test]
+    fn stacked_clips_keep_their_order_on_new_tracks_whatever_the_move_order() {
+        let s = |x: f64| Time::from_secs_f64(x);
+        for n in [2usize, 3] {
+            let spec = ["V1", "V2", "V3", "M"];
+            let mut p = proj(&spec[3 - n..]);
+            // one stacked clip per video track, plus a clip that keeps each source track alive
+            let ids: Vec<ClipId> = (0..n).map(|r| clip(&mut p, r, 0.0)).collect();
+            for r in 0..n {
+                clip(&mut p, r, 50.0);
+            }
+            let perms: Vec<Vec<usize>> = if n == 2 {
+                vec![vec![0, 1], vec![1, 0]]
+            } else {
+                vec![vec![0, 1, 2], vec![0, 2, 1], vec![1, 0, 2], vec![1, 2, 0], vec![2, 0, 1], vec![2, 1, 0]]
+            };
+            for perm in perms {
+                let mut d = Document::new(p.clone());
+                let before = d.project().clone();
+                let moves: Vec<(ClipId, Time)> = perm.iter().map(|&i| (ids[i], s(5.0))).collect();
+                // over the main track, upper half: the new tracks go directly above it
+                move_to_new_tracks(&mut d, n, true, &moves).unwrap();
+                let tr = &d.project().timeline.tracks;
+                let ord = display_order(tr);
+                assert_eq!(ord.len(), 2 * n + 1, "one new track per source track ({perm:?})");
+                for (i, id) in ids.iter().enumerate() {
+                    let t = &tr[ord[n + i]];
+                    assert!(t.clips.iter().any(|c| c.id == *id && c.start == s(5.0)), "clip {i} not on new row {} ({perm:?})", n + i);
+                }
+                assert_eq!(d.undo_entries().len(), 1);
+                d.undo().unwrap();
+                assert_eq!(d.project(), &before, "one undo restores everything ({perm:?})");
+            }
+        }
+    }
+
+    #[test]
+    fn clips_from_different_tracks_that_do_not_collide_share_one_new_track() {
+        let s = |x: f64| Time::from_secs_f64(x);
+        let mut p = proj(&["V1", "V2", "M"]);
+        let a = clip(&mut p, 0, 0.0);
+        let b = clip(&mut p, 1, 0.0);
+        clip(&mut p, 0, 50.0);
+        clip(&mut p, 1, 50.0);
+        let mut d = Document::new(p);
+        move_to_new_tracks(&mut d, 2, true, &[(b, s(7.0)), (a, s(5.0))]).unwrap();
+        assert_eq!(names(d.project()), ["V1", "V2", "neu Video", "M"]);
     }
 
     #[test]
