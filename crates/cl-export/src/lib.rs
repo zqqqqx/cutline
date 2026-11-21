@@ -2998,6 +2998,72 @@ mod tests {
         );
     }
 
+    /// Edge values and green screen through the mask path in a real export: white source,
+    /// mask white on the left half (x < 160), black canvas below.
+    #[test]
+    fn exports_matte_edge_and_green_screen_background() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let make = |name: &str, src: &str, args: &[&str]| {
+            let path = dir.path().join(name);
+            let st = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", src]).args(args).arg(&path).status().unwrap();
+            assert!(st.success(), "{name}");
+            path
+        };
+        let white = cl_media::probe(&make("white.mp4", "color=white:s=320x180:r=30:d=2", &["-pix_fmt", "yuv420p"])).unwrap();
+        let green = cl_media::probe(&make(
+            "green.mp4",
+            "color=0x00b140:s=320x180:r=30:d=2,drawbox=x=120:y=60:w=80:h=60:color=red:t=fill",
+            &["-pix_fmt", "yuv420p"],
+        ))
+        .unwrap();
+        let matte = make("matte.mkv", "color=black:s=320x180:r=30:d=2,drawbox=x=0:y=0:w=160:h=180:color=white:t=fill,format=gray", &["-c:v", "ffv1"]);
+        let frame = |m: &MediaRef, fx: ClipFx, name: &str| {
+            let mut d = Document::new(Project::new("Kante"));
+            let mut s = d.project().settings.clone();
+            (s.width, s.height) = (320, 180);
+            d.apply(EditOp::SetSettings { settings: s }, OpSource::Ui).unwrap();
+            d.apply(EditOp::ImportMedia { media: m.clone() }, OpSource::Ui).unwrap();
+            let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, m.duration);
+            c.fx = fx;
+            d.apply(EditOp::AddClip { track: None, clip: c }, OpSource::Ui).unwrap();
+            let p = d.project().clone();
+            let out = dir.path().join(name);
+            let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &out).unwrap();
+            let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+            run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap_or_else(|e| panic!("{e}\n{g}"));
+            cl_media::decode_frame(&out, Time::from_secs_f64(0.5), 320, 180).unwrap().data
+        };
+        let cut = |edge: MatteEdge| ClipFx { cutout: Some(matte.to_string_lossy().into_owned()), edge, ..Default::default() };
+        // brightness (R) at x in the middle row
+        let at = |f: &[u8], x: usize| f[(90 * 320 + x) * 4];
+        let plain = frame(&white, cut(MatteEdge::default()), "plain.mp4");
+        assert!(at(&plain, 100) > 230 && at(&plain, 220) < 25, "mask as is");
+        assert!(at(&plain, 159) > 205 && at(&plain, 160) < 50, "hard edge: {} {}", at(&plain, 159), at(&plain, 160));
+        let inv = frame(&white, cut(MatteEdge { invert: true, ..Default::default() }), "invert.mp4");
+        assert!(at(&inv, 100) < 25 && at(&inv, 220) > 230, "invert swaps: {} {}", at(&inv, 100), at(&inv, 220));
+        let soft = frame(&white, cut(MatteEdge { feather: 1.0, ..Default::default() }), "feather.mp4");
+        for x in [159, 160] {
+            assert!((50..=205).contains(&at(&soft, x)), "soft edge at {x}: {}", at(&soft, x));
+        }
+        let grow = frame(&white, cut(MatteEdge { shift: 1.0, ..Default::default() }), "grow.mp4");
+        assert!(at(&grow, 161) > 205 && at(&grow, 220) < 25, "grown: {} {}", at(&grow, 161), at(&grow, 220));
+        let shrink = frame(&white, cut(MatteEdge { shift: -1.0, ..Default::default() }), "shrink.mp4");
+        assert!(at(&shrink, 158) < 50 && at(&shrink, 100) > 230, "shrunk: {} {}", at(&shrink, 158), at(&shrink, 100));
+        // green screen + background color: blue where the green was, the red box stays
+        let fx = ClipFx {
+            chroma: Some(ChromaKey::default()),
+            person: Some(PersonFx::ColorBackground { color: [0, 0, 255] }),
+            ..Default::default()
+        };
+        let f = frame(&green, fx, "green.mp4");
+        let px = |x: usize, y: usize| &f[(y * 320 + x) * 4..(y * 320 + x) * 4 + 3];
+        assert!(px(20, 20)[2] > 180 && px(20, 20)[0] < 60 && px(20, 20)[1] < 60, "background blue: {:?}", px(20, 20));
+        assert!(px(160, 90)[0] > 150 && px(160, 90)[1] < 90, "red box stays: {:?}", px(160, 90));
+    }
+
     #[test]
     fn exports_phase4_features() {
         if !cl_media::test_tools() {
