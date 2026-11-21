@@ -1694,11 +1694,11 @@ mod tests {
     /// nobody yields.
     #[test]
     fn second_media_at_playhead_gets_its_part() {
-        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         let mk = |name: &str| {
             let mut m = media(3840, 2160, Rational::new(30, 1), "h264");
-            m.path = home.path().join(name);
+            m.path = app.dir().join(name);
             m.duration = Time::from_secs_f64(100.0);
             m
         };
@@ -1713,8 +1713,8 @@ mod tests {
         let ready = |k: Option<usize>| (0..10).map(|i| Some(i) == k).collect::<Vec<_>>();
         let set = |x_ready: Option<usize>, y_ready: Option<usize>| {
             let want = (540, Rational::new(30, 1));
-            set_test_entry(&x.path, home.path().join("x-540.mp4"), want, ready(x_ready), false);
-            set_test_entry(&y.path, home.path().join("y-540.mp4"), want, ready(y_ready), false);
+            set_test_entry(&x.path, app.dir().join("x-540.mp4"), want, ready(x_ready), false);
+            set_test_entry(&y.path, app.dir().join("y-540.mp4"), want, ready(y_ready), false);
         };
         let missing = [x.id, y.id];
         // none finished: media order, nobody yields
@@ -1783,17 +1783,19 @@ mod tests {
     /// (new key). In the pause it stays; when stopped it is freed.
     #[test]
     fn stream_picks_survive_a_pause() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         app.proxy_picks.insert(7, Pick::Parts { first: 2, end: 9 });
-        app.core.play(Time::ZERO, app.revision, 0.0);
+        let rev = app.revision;
+        app.core.play(Time::ZERO, rev, 0.0);
         let tick = |app: &mut crate::app::App, now: f64| {
             let t = crate::playcore::Tick { now, playhead: app.core.pos(), revision: app.revision, audio: crate::playcore::AudioIn::Pending, end: Time::from_secs_f64(60.0), fps: 30.0, loop_range: None, recording: false, max_quality_level: 0 };
             app.core.tick(&t);
         };
         tick(&mut app, 0.1);
         assert_eq!(app.core.mode(), crate::playcore::Mode::Spielen);
-        app.core.pause(app.revision, true, true);
+        let rev = app.revision;
+        app.core.pause(rev, true, true);
         app.ensure_proxies(&ctx);
         assert_eq!(app.proxy_picks.get(&7), Some(&Pick::Parts { first: 2, end: 9 }), "pause: choice stays");
         app.core.stop();
@@ -1805,12 +1807,12 @@ mod tests {
     /// would not find it at all); after the build the cache stays until the next search.
     #[test]
     fn full_proxy_stream_comes_from_the_registry() {
-        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let mut m = media(3840, 2160, Rational::new(30, 1), "h264");
-        m.path = home.path().join("v.mp4");
+        m.path = app.dir().join("v.mp4");
         app.project.media.push(m.clone());
         let want = (app.settings.proxy_h, app.project.settings.fps);
-        let out = home.path().join("woanders").join("v-540.mp4");
+        let out = app.dir().join("woanders").join("v-540.mp4");
         set_test_entry(&m.path, out.clone(), want, vec![true; 10], true);
         assert_eq!(app.stream_source(&m, 540, Pick::Full), (out, Time::ZERO));
         app.proxies.key = Some(want);

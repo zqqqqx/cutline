@@ -956,9 +956,7 @@ mod tests {
 
     #[test]
     fn search_spans_all_folders_but_not_hidden_ones() {
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
+        let _home = crate::paths::TestHome::new();
         let mut lib = Library::default();
         let v = |lib: &Library, q: &str| lib.visible("effect", "b:Intro", q, "fx:shake", "Handkamera", "Bewegung");
         assert!(!v(&lib, ""), "without search only the active folder");
@@ -975,9 +973,7 @@ mod tests {
         assert_eq!(save_kind(Path::new("a.mp3")), Some(Kind::Sound));
         assert_eq!(save_kind(Path::new("a.mp4")), None);
         assert_eq!(save_kind(Path::new("a")), None);
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
+        let home = crate::paths::TestHome::new();
         let src = home.path().join("clip.gif");
         std::fs::write(&src, b"x").unwrap();
         let mut lib = Library::default();
@@ -1036,9 +1032,7 @@ mod tests {
 
     #[test]
     fn favorites_order_pins_and_search() {
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
+        let _home = crate::paths::TestHome::new();
         let mut lib = Library::default();
         let all = keys(&["fx:a", "fx:b", "fx:c"]);
         let id = |s: &String| s.clone();
@@ -1100,9 +1094,7 @@ mod tests {
 
     #[test]
     fn own_folder_order_survives_rename_and_goes_with_delete() {
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
+        let home = crate::paths::TestHome::new();
         let mut lib = Library::default();
         // Collection folder
         let v = lib.create_virtual("effect", "Intro").unwrap();
@@ -1141,9 +1133,7 @@ mod tests {
 
     #[test]
     fn linked_folders_are_listed_but_not_owned() {
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
+        let _home = crate::paths::TestHome::new();
         let ext = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(ext.path().join("Clips/sub")).unwrap();
         std::fs::write(ext.path().join("Clips/a.mp4"), b"x").unwrap();
@@ -1163,9 +1153,7 @@ mod tests {
 
     #[test]
     fn import_folders_favorites_move_remove() {
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
+        let home = crate::paths::TestHome::new();
         let src = home.path().join("in");
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(src.join("boom.wav"), b"x").unwrap();

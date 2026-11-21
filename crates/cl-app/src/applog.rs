@@ -1111,6 +1111,13 @@ mod tests {
         log_files(dir).into_iter().map(|(_, p)| std::fs::read_to_string(p).unwrap()).collect()
     }
 
+    /// Like `sync`, but fails if the writer thread does not answer in time
+    fn synced(tx: &Sender<Msg>, flush: bool, wait: Duration) {
+        let (a, b) = channel();
+        tx.send(Msg::Sync(a, flush)).expect("writer thread gone");
+        b.recv_timeout(wait).expect("writer thread did not answer in time");
+    }
+
     #[test]
     fn stamps_round_trip_across_offsets_and_days() {
         for off in [0, 3600, 7200, -5 * 3600, 5 * 3600 + 1800] {
@@ -1213,7 +1220,7 @@ mod tests {
             tx.send(Msg::Rec(rec(now, Level::Info, &format!("Zeile {i}")))).unwrap();
         }
         tx.send(Msg::Rec(rec(now, Level::Warn, "Warnung bleibt"))).unwrap();
-        sync(&tx, true, Duration::from_secs(10));
+        synced(&tx, true, Duration::from_secs(10));
         let t = read_all(d.path());
         assert_eq!(t.matches(LIMIT_NOTE).count(), 1, "{t}");
         assert!(t.contains("Warnung bleibt") && !t.contains("Zeile 199"));
@@ -1230,7 +1237,7 @@ mod tests {
         }
         tx.send(Msg::Rec(rec(now, Level::Info, "anders"))).unwrap();
         tx.send(Msg::Rec(rec(now, Level::Info, "anders"))).unwrap();
-        sync(&tx, true, Duration::from_secs(10));
+        synced(&tx, true, Duration::from_secs(10));
         let t = read_all(d.path());
         assert_eq!(t.matches("Ton: Aussetzer").count(), 1, "{t}");
         assert!(t.contains("test: … 37× wiederholt") && t.contains("test: … 1× wiederholt"), "{t}");
@@ -1299,7 +1306,7 @@ mod tests {
             })
             .collect();
         hs.into_iter().for_each(|h| h.join().unwrap());
-        sync(&tx, true, Duration::from_secs(30));
+        synced(&tx, true, Duration::from_secs(30));
         let t = read_all(d.path());
         let lines: Vec<&str> = t.lines().collect();
         assert_eq!(lines.len(), 10_000);
@@ -1321,7 +1328,7 @@ mod tests {
         tx.send(Msg::Rec(rec(now_ms(), Level::Info, "davor"))).unwrap();
         tx.send(Msg::Rec(rec(now_ms(), Level::Error, "Fehler XYZ"))).unwrap();
         // only wait until processed – without a flush
-        sync(&tx, false, Duration::from_secs(10));
+        synced(&tx, false, Duration::from_secs(10));
         let t = read_all(d.path());
         assert!(t.contains("davor") && t.contains("ERROR test: Fehler XYZ"), "{t:?}");
     }
@@ -1335,9 +1342,12 @@ mod tests {
         for i in 0..100 {
             tx.send(Msg::Rec(rec(now_ms(), Level::Error, &format!("{i}")))).unwrap();
         }
-        let (a, b) = channel();
-        tx.send(Msg::Sync(a, true)).unwrap();
-        b.recv_timeout(Duration::from_secs(10)).expect("writer thread alive");
+        // the writer survives the failed writes and keeps answering; nothing was written anywhere
+        synced(&tx, true, Duration::from_secs(10));
+        tx.send(Msg::Rec(rec(now_ms(), Level::Error, "danach"))).unwrap();
+        synced(&tx, true, Duration::from_secs(10));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "x", "blocking file untouched");
+        assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 1, "no log written elsewhere");
     }
 
     #[test]
@@ -1346,7 +1356,8 @@ mod tests {
         assert_eq!(hw_encoders(list), ["h264_nvenc", "hevc_qsv", "h264_mf"]);
     }
 
-    /// Child process for [`panic_hook_logs_message_and_place`]
+    /// Child process for [`panic_hook_logs_message_and_place`] – not a test of its own: the parent starts it with
+    /// `CUTLINE_LOG_CHILD=<dir>`; ignored so it never runs alone.
     #[test]
     #[ignore]
     fn panic_child() {

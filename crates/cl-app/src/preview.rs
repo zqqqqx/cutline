@@ -1167,7 +1167,7 @@ mod tests {
     /// videos and still images go the old way.
     #[test]
     fn animations_are_served_from_memory_after_one_decode() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1214,6 +1214,7 @@ mod tests {
         let r = shader_strip(&s, &pair, w, h, 4);
         if cl_gpu::gpu().is_none() {
             assert!(r.is_err());
+            eprintln!("skipped (no GPU): shader_strip_splits_pair_and_starts_with_a");
             return;
         }
         let r = r.unwrap();
@@ -1296,7 +1297,7 @@ mod tests {
     /// probing the file once more: a stored portrait size gives a portrait image.
     #[test]
     fn thumb_uses_the_size_from_the_job() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1320,7 +1321,7 @@ mod tests {
     /// is byte-identical to the single frame without window.
     #[test]
     fn reverse_window_delivers_the_same_frames() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

@@ -226,7 +226,7 @@ mod tests {
     /// the change is finished – or on closing or quitting.
     #[test]
     fn brand_saves_when_the_change_is_done() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         let mut kit = BrandKit::default();
         for v in [10, 20, 30] {
@@ -341,11 +341,14 @@ mod tests {
     /// undo step, the rest of the project stays untouched. Without a logo nothing happens.
     #[test]
     fn insert_logo_is_one_undo_step_and_touches_nothing_else() {
-        let (mut app, home, _g) = crate::saving::tests::test_app();
+        if !cl_media::test_tools() {
+            return;
+        }
+        let mut app = crate::saving::tests::test_app();
         let mut p = Project::new("Logo");
         let video = MediaRef {
             id: MediaId::new(),
-            path: home.path().join("a.mp4"),
+            path: app.dir().join("a.mp4"),
             kind: MediaKind::Video,
             duration: Time::from_secs_f64(10.0),
             width: 1920,
@@ -367,11 +370,11 @@ mod tests {
         assert!(app.insert_logo().is_none());
         assert_eq!(app.project, before, "unchanged without a logo");
 
-        let src = home.path().join("marke.png");
+        let src = app.dir().join("marke.png");
         png(&src, 64, 32);
         let logo = copy_logo(&src).unwrap();
         assert!(logo.starts_with(crate::paths::data_dir().join("Brand")) && logo.is_file());
-        assert!(copy_logo(&home.path().join("x.txt")).is_err());
+        assert!(copy_logo(&app.dir().join("x.txt")).is_err());
         app.brand.logo = Some(logo.clone());
         assert!(app.action_enabled("brand_logo"));
         let id = app.insert_logo().expect("logo clip");
@@ -393,7 +396,7 @@ mod tests {
     /// caption styles keep their own, without a kit everything stays as before.
     #[test]
     fn new_text_and_classic_captions_use_brand_fonts() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         app.set_doc(Project::new("Schrift"));
         let font = |app: &App, id: ClipId| match &app.project.find_clip(id).unwrap().1.content {
             ClipContent::Text(s) => s.font_family.clone(),

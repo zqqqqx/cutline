@@ -228,9 +228,63 @@ pub fn clear_dir(dir: &Path, skip: &[&str]) {
     }
 }
 
-/// Tests that set CUTLINE_HOME (process-wide) run one after another
+/// Tests that change process-wide state (CUTLINE_HOME, UI language, accent, animations, pack
+/// catalog – `App::new` sets all of them) run one after another
 #[cfg(test)]
 pub static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Test data folder: holds `HOME_LOCK`, points `CUTLINE_HOME` at a fresh temp folder and on drop
+/// (also after a panic) clears the variables first, then deletes the folder, then releases the lock.
+#[cfg(test)]
+pub struct TestHome {
+    dir: tempfile::TempDir,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl TestHome {
+    pub fn new() -> Self {
+        let _lock = test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("CUTLINE_HOME", dir.path());
+        TestHome { dir, _lock }
+    }
+
+    pub fn path(&self) -> &Path {
+        self.dir.path()
+    }
+}
+
+/// Test: set the modification time of a file or folder `secs` into the past (instead of sleeping
+/// and hoping the clock has moved on)
+#[cfg(test)]
+pub fn set_age(p: &Path, secs: u64) {
+    let mut o = std::fs::OpenOptions::new();
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_WRITE_ATTRIBUTES; FILE_FLAG_BACKUP_SEMANTICS opens folders too
+        o.access_mode(0x100).custom_flags(0x0200_0000);
+    }
+    #[cfg(not(windows))]
+    o.read(true);
+    let t = std::time::SystemTime::now() - std::time::Duration::from_secs(secs);
+    o.open(p).and_then(|f| f.set_modified(t)).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+}
+
+#[cfg(test)]
+impl Drop for TestHome {
+    fn drop(&mut self) {
+        for v in ["CUTLINE_HOME", "CUTLINE_NO_UPDATE", "CUTLINE_NO_ONBOARDING"] {
+            std::env::remove_var(v);
+        }
+    }
+}
 
 static PROJECTS_DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
 
@@ -279,8 +333,8 @@ fn remove_older_keeps_fresh_files() {
     std::fs::write(d.path().join("sub/neu.bin"), b"x").unwrap();
     assert_eq!(remove_older(d.path(), std::time::Duration::from_secs(3600), &[]), 0);
     assert!(d.path().join("sub/neu.bin").is_file());
-    std::thread::sleep(std::time::Duration::from_millis(30));
-    assert_eq!(remove_older(d.path(), std::time::Duration::from_millis(10), &[]), 1);
+    set_age(&d.path().join("sub/neu.bin"), 7200);
+    assert_eq!(remove_older(d.path(), std::time::Duration::from_secs(3600), &[]), 1);
 }
 
 #[test]
@@ -289,9 +343,9 @@ fn cache_cleanup_keeps_project_files() {
     for f in ["matte/a.mkv", "svg/b.png", "proxies/c.mp4", "x.bin"] {
         std::fs::create_dir_all(d.path().join(f).parent().unwrap()).unwrap();
         std::fs::write(d.path().join(f), b"x").unwrap();
+        set_age(&d.path().join(f), 7200);
     }
-    std::thread::sleep(std::time::Duration::from_millis(30));
-    assert_eq!(remove_older(d.path(), std::time::Duration::from_millis(10), CACHE_KEEP), 2);
+    assert_eq!(remove_older(d.path(), std::time::Duration::from_secs(3600), CACHE_KEEP), 2);
     std::fs::write(d.path().join("proxies/c.mp4"), b"x").unwrap();
     clear_dir(d.path(), CACHE_KEEP);
     assert!(d.path().join("matte/a.mkv").is_file() && d.path().join("svg/b.png").is_file());
@@ -498,6 +552,10 @@ pub fn data_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("CUTLINE_HOME") {
         return PathBuf::from(d);
     }
+    // tests without a `TestHome` never touch the real data folder
+    #[cfg(test)]
+    return std::env::temp_dir().join(format!("cutline-test-{}", std::process::id()));
+    #[allow(unreachable_code)]
     if cfg!(windows) {
         if let Some(a) = std::env::var_os("APPDATA") {
             return PathBuf::from(a).join("Cutline");

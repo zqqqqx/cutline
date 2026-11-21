@@ -308,7 +308,7 @@ mod room_tests {
     /// the dialog box stayed at the default duration). Now up to the neighbor.
     #[test]
     fn dialog_text_stops_at_the_next_clip() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let t = Time::from_secs_f64;
         let mut p = Project::new("S");
         let mut tr = Track::new(TrackKind::Text);

@@ -329,7 +329,10 @@ mod temp_tests {
         // freshly created: stays (could belong to a running instance)
         super::cleanup_temp(t.path(), std::time::Duration::from_secs(3600));
         assert!(t.path().join("cutline-audio-x1").exists());
-        super::cleanup_temp(t.path(), std::time::Duration::ZERO);
+        for e in std::fs::read_dir(t.path()).unwrap().flatten() {
+            crate::paths::set_age(&e.path(), 7200);
+        }
+        super::cleanup_temp(t.path(), std::time::Duration::from_secs(3600));
         let mut left: Vec<String> = std::fs::read_dir(t.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         left.sort();
         assert_eq!(left, ["cutline-export-datei", "cutline-models", "fremd"]);
@@ -349,7 +352,10 @@ mod temp_tests {
         super::cleanup_temp(t.path(), std::time::Duration::from_secs(3600));
         assert!(!t.path().join(&gone).exists());
         assert!(t.path().join(&mine).exists() && t.path().join("cutline-export-x2").exists());
-        super::cleanup_temp(t.path(), std::time::Duration::ZERO);
+        for d in [&mine, "cutline-export-x2"] {
+            crate::paths::set_age(&t.path().join(d), 7200);
+        }
+        super::cleanup_temp(t.path(), std::time::Duration::from_secs(3600));
         assert!(t.path().join(&mine).exists() && !t.path().join("cutline-export-x2").exists());
     }
 }

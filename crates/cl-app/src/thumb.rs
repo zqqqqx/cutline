@@ -668,7 +668,7 @@ mod tests {
     /// Without a model: image and text, 1280×720; the text is visible, 9:16 fills without black borders.
     #[test]
     fn renders_image_and_text_and_fills_other_aspect_ratios() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -718,7 +718,7 @@ mod tests {
     /// files of the old state disappear from the work folder.
     #[test]
     fn project_change_renders_a_new_frame() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -741,12 +741,14 @@ mod tests {
     /// Open, change, save: no history step, no revision, nothing unsaved.
     #[test]
     fn open_project_stays_untouched() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
-        let (mut app, home, _g) = crate::saving::tests::test_app();
-        app.set_doc(source(home.path(), 640, 360));
-        app.project = app.doc.lock().unwrap().project().clone();
+        let mut app = crate::saving::tests::test_app();
+        let p = source(app.dir(), 640, 360);
+        app.set_doc(p);
+        let p = app.doc.lock().unwrap().project().clone();
+        app.project = p;
         let before = (app.revision, app.saved_revision, app.doc.lock().unwrap().can_undo(), app.project.clone());
         let ctx = egui::Context::default();
         app.run_action(&ctx, "quick_thumbnail");
@@ -757,7 +759,7 @@ mod tests {
         for _ in 0..3 {
             let _ = ctx.run(Default::default(), |ctx| app.thumb_window(ctx));
         }
-        let out = home.path().join("t.png");
+        let out = app.dir().join("t.png");
         app.thumb_save(&ctx, out.clone());
         // collect results without applying them (Explorer would open)
         let t0 = std::time::Instant::now();

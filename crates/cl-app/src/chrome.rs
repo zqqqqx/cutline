@@ -552,7 +552,7 @@ mod scale_tests {
     /// despite the pause the next job started.
     #[test]
     fn proxy_pause_stays_between_builds_and_holds_the_next() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         app.settings.use_proxies = true;
         (app.proxies.done, app.proxies.total) = (3, 10);
         let rows = app.task_rows();
@@ -567,7 +567,7 @@ mod scale_tests {
 
     #[test]
     fn first_tab_does_not_focus_the_title_bar_drag_area() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         let mut bar = egui::Rect::NOTHING;
         for tab in [false, true, false] {

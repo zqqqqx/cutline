@@ -3823,10 +3823,10 @@ mod tests {
 
     #[test]
     fn track_head_click_versus_drag() {
-        assert!(!track_lifted(0.0, 0.0), "Klick");
-        assert!(!track_lifted(3.0, 0.1), "kleines Zittern beim Klicken");
-        assert!(track_lifted(6.0, 0.0), "Bewegung");
-        assert!(track_lifted(0.0, 0.25), "gedrückt gehalten");
+        assert!(!track_lifted(0.0, 0.0), "click");
+        assert!(!track_lifted(3.0, 0.1), "a short click with a small jitter stays a click");
+        assert!(track_lifted(4.0, 0.0), "movement");
+        assert!(track_lifted(0.0, 0.15), "held for 150 ms: lifts (click test saw nothing after 100 ms yet)");
     }
 
     #[test]
@@ -3855,6 +3855,10 @@ mod tests {
 
     #[test]
     fn target_change_mid_glide_starts_from_shown_place() {
+        // animations are global: on for the glide, off for the jump, restored at the end
+        let _g = crate::paths::test_lock();
+        let was = theme::animations_on();
+        theme::set_animations(true);
         let tr = TrackId::new();
         let mut a = Track::new(TrackKind::Video);
         a.id = tr;
@@ -3870,10 +3874,6 @@ mod tests {
         b.clips[0] = c.clone();
         m.update(std::slice::from_ref(&a), std::slice::from_ref(&b), &rows, 1.0);
         let secs = theme::anim(theme::MOTION);
-        if secs == 0.0 {
-            assert!(m.glides.is_empty(), "animations off: jumps");
-            return;
-        }
         let g = m.glides[&c.id];
         assert_eq!((g.s0, g.t0), (0.0, 1.0));
         // new target halfway: the new movement begins at the shown place
@@ -3884,10 +3884,19 @@ mod tests {
         let g2 = m.glides[&c.id];
         assert!((g2.s0 - half).abs() < 1e-6, "{} != {half}", g2.s0);
         assert_eq!(g2.at(place(30.0, 32.0, tr), secs, secs).0, 30.0);
+        theme::set_animations(false);
+        let mut off = Motion::default();
+        off.update(&[], std::slice::from_ref(&a), &rows, 0.0);
+        off.update(std::slice::from_ref(&a), std::slice::from_ref(&b), &rows, 1.0);
+        theme::set_animations(was);
+        assert!(off.glides.is_empty(), "animations off: jumps");
     }
 
     #[test]
     fn track_change_glides_vertically_and_own_drag_jumps() {
+        let _g = crate::paths::test_lock();
+        let was = theme::animations_on();
+        theme::set_animations(true);
         let (t1, t2) = (TrackId::new(), TrackId::new());
         let id = ClipId::new();
         let mut m = Motion { places: HashMap::from([(id, place(0.0, 2.0, t1))]), ..Default::default() };
@@ -3905,9 +3914,8 @@ mod tests {
         // moved to the other track by something else (undo): glides vertically from 100 to 200
         m.places.insert(id, place(0.0, 2.0, t1));
         m.update(&[], std::slice::from_ref(&nt), &rows, 0.0);
-        if theme::anim(theme::MOTION) > 0.0 {
-            assert_eq!(m.glides[&id].dy0, -100.0);
-        }
+        theme::set_animations(was);
+        assert_eq!(m.glides[&id].dy0, -100.0);
     }
 
     #[test]
@@ -4016,13 +4024,6 @@ mod tests {
             assert!(from < 0.0 && to > dur, "{w}: visible {from:.1}…{to:.1} s");
             assert!(to - from < dur * 1.2, "{w}: not much wider than needed");
         }
-    }
-
-    #[test]
-    fn track_head_lifts_early() {
-        assert!(track_lifted(0.0, 0.15), "held for 150 ms: lifts (click test saw nothing after 100 ms yet)");
-        assert!(track_lifted(4.0, 0.0));
-        assert!(!track_lifted(3.0, 0.1), "a short click stays a click");
     }
 
     #[test]
@@ -4364,12 +4365,6 @@ mod tests {
             p
         }
 
-        pub(crate) fn bench_app(ctx: &egui::Context, home: &std::path::Path) -> App {
-            std::env::set_var("CUTLINE_HOME", home);
-            std::env::set_var("CUTLINE_NO_UPDATE", "1");
-            std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
-            App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None)
-        }
 
         /// Set the project; thumbnails and waveforms are already there (no decoder job).
         pub(crate) fn load(app: &mut App, ctx: &egui::Context, p: Project) {
@@ -4449,11 +4444,9 @@ mod tests {
         /// Measured head lines and clip texts equal laying out per attempt (`clip_head`,
         /// `theme::elide`) with the app's real fonts.
         #[test]
-        #[ignore]
         fn measured_labels_match_layout() {
-            let home = tempfile::tempdir().unwrap();
             let ctx = egui::Context::default();
-            let _app = bench_app(&ctx, home.path());
+            let _app = crate::saving::tests::test_app_with(ctx.clone());
             let _ = ctx.run(Default::default(), |_| {});
             let font = egui::FontId::proportional(theme::FS_HINT);
             let tags = format!(" {} 1.50x {}", icon::GAUGE, icon::SPARKLE);
@@ -4491,13 +4484,13 @@ mod tests {
         }
 
         /// Frame time (compute + tessellate) with the timeline fully visible: stopped and playing.
+        /// Measurement, needs nothing else: `cargo test --release -p cl-app timeline_frame_time -- --ignored --nocapture`
         #[test]
         #[ignore]
         fn timeline_frame_time() {
-            let home = tempfile::tempdir().unwrap();
             let file = std::env::current_exe().unwrap();
             let ctx = egui::Context::default();
-            let mut app = bench_app(&ctx, home.path());
+            let mut app = crate::saving::tests::test_app_with(ctx.clone());
             for n in [657usize, 50] {
                 load(&mut app, &ctx, synth_project(n, &file));
                 let clips: usize = app.project.timeline.tracks.iter().map(|t| t.clips.len()).sum();

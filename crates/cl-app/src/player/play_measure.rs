@@ -527,6 +527,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
     run
 }
 
+/// Measurement, needs the QA projects (see the module doc): `CUTLINE_QA_DIR=<folder> cargo test --release -p cl-app --bin cutline play_measure -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn play_measure() {
@@ -534,7 +535,7 @@ fn play_measure() {
         eprintln!("CUTLINE_QA_DIR fehlt – übersprungen");
         return;
     };
-    if !cl_media::ffmpeg_available() {
+    if !cl_media::test_tools() {
         return;
     }
     // effects and transitions of the bundled packages (as at app start)
@@ -674,7 +675,7 @@ fn parts_measure() {
 #[ignore]
 fn tempo_layers() {
     let (a, b) = (std::path::Path::new("F:/cutline-testmedien/4k60_h264_80mbit.mp4"), std::path::Path::new("F:/cutline-testmedien/4k60_hevc10_50mbit.mp4"));
-    if !cl_media::ffmpeg_available() || !a.is_file() || !b.is_file() {
+    if !cl_media::test_tools() || !a.is_file() || !b.is_file() {
         return;
     }
     let mode = std::env::var("CUTLINE_QA_TEMPO").unwrap_or_else(|_| "2".into());
@@ -712,6 +713,7 @@ fn tempo_layers() {
     }
 }
 
+/// Measurement of the per-frame layer/hash cost, needs the QA projects: `CUTLINE_QA_DIR=<folder> cargo test --release -p cl-app --bin cutline player_cost -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn player_cost() {

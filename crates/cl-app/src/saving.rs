@@ -230,9 +230,7 @@ pub(crate) mod tests {
 
     #[test]
     fn saves_in_background_and_rescues_on_failure() {
-        let dir = tempfile::tempdir().unwrap();
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::set_var("CUTLINE_HOME", dir.path());
+        let dir = crate::paths::TestHome::new();
         let s = Saver::new(egui::Context::default());
         let p = dir.path().join("x.cutline");
         for rev in 1..=5 {
@@ -259,9 +257,7 @@ pub(crate) mod tests {
     /// rescue file is created – not one per attempt.
     #[test]
     fn repeated_failure_of_one_state_rescues_once() {
-        let dir = tempfile::tempdir().unwrap();
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::set_var("CUTLINE_HOME", dir.path());
+        let dir = crate::paths::TestHome::new();
         let s = Saver::new(egui::Context::default());
         let bad = dir.path().join("ordner.cutline");
         std::fs::create_dir_all(&bad).unwrap();
@@ -282,28 +278,57 @@ pub(crate) mod tests {
         assert!(matches!(s.poll().pop(), Some(Done::Failed { rescued: Some(_), .. })));
     }
 
-    pub(crate) fn test_app() -> (crate::app::App, tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
-        let g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
+    /// App on its own data folder. Fields drop in order: the app first, then the `TestHome`
+    /// (variables cleared, folder deleted, lock released) – so the next test waits for both.
+    pub(crate) struct TestApp {
+        app: crate::app::App,
+        home: crate::paths::TestHome,
+    }
+
+    impl TestApp {
+        /// The data folder (`CUTLINE_HOME`)
+        pub(crate) fn dir(&self) -> &std::path::Path {
+            self.home.path()
+        }
+    }
+
+    impl std::ops::Deref for TestApp {
+        type Target = crate::app::App;
+        fn deref(&self) -> &crate::app::App {
+            &self.app
+        }
+    }
+
+    impl std::ops::DerefMut for TestApp {
+        fn deref_mut(&mut self) -> &mut crate::app::App {
+            &mut self.app
+        }
+    }
+
+    pub(crate) fn test_app() -> TestApp {
+        test_app_with(egui::Context::default())
+    }
+
+    pub(crate) fn test_app_with(ctx: egui::Context) -> TestApp {
+        let home = crate::paths::TestHome::new();
         std::env::set_var("CUTLINE_NO_UPDATE", "1");
         std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
-        let app = crate::app::App::new(&eframe::CreationContext::_new_kittest(egui::Context::default()), None);
-        (app, home, g)
+        let app = crate::app::App::new(&eframe::CreationContext::_new_kittest(ctx), None);
+        TestApp { app, home }
     }
 
     /// Quit only once the state is really on disk; if writing fails,
     /// the project stays open (otherwise the changes would be gone after the reset).
     #[test]
     fn leaving_waits_for_the_write_and_stays_open_on_failure() {
-        let (mut app, home, _g) = test_app();
+        let mut app = test_app();
         app.set_doc(Project::new("Verlassen"));
-        let bad = home.path().join("ordner.cutline");
+        let bad = app.dir().join("ordner.cutline");
         std::fs::create_dir_all(&bad).unwrap();
         app.project_path = Some(bad);
         assert!(!app.flush_before_leaving());
         assert!(app.saver.autosave_paused(), "after the error autosave pauses");
-        let good = home.path().join("gut.cutline");
+        let good = app.dir().join("gut.cutline");
         app.project_path = Some(good.clone());
         assert!(app.flush_before_leaving());
         assert_eq!(Project::from_json(&std::fs::read_to_string(&good).unwrap()).unwrap().name, "Verlassen");
@@ -312,9 +337,9 @@ pub(crate) mod tests {
     /// An explicit save shows its failure even right after an earlier one (no 60 s throttle).
     #[test]
     fn explicit_save_reports_its_own_failure() {
-        let (mut app, home, _g) = test_app();
+        let mut app = test_app();
         app.set_doc(Project::new("Fehler"));
-        let bad = home.path().join("ordner.cutline");
+        let bad = app.dir().join("ordner.cutline");
         std::fs::create_dir_all(&bad).unwrap();
         app.project_path = Some(bad);
         let errors = |app: &crate::app::App| app.toasts.iter().filter(|t| t.2 && t.0.contains("nicht gespeichert")).count();
@@ -330,14 +355,14 @@ pub(crate) mod tests {
     /// the file and the lock; its edits go to the backups, „Speichern unter“ elsewhere works.
     #[test]
     fn second_window_never_writes_a_project_open_elsewhere() {
-        let (mut app, home, _g) = test_app();
+        let mut app = test_app();
         // another running Cutline: a child process that waits on its stdin
         let mut other = if cfg!(windows) { std::process::Command::new("cmd") } else { std::process::Command::new("cat") };
         if cfg!(windows) {
             other.args(["/c", "pause"]);
         }
         let mut other = other.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).spawn().unwrap();
-        let p = home.path().join("a.cutline");
+        let p = app.dir().join("a.cutline");
         std::fs::write(&p, Project::new("A").to_json()).unwrap();
         let lock = crate::paths::lock_path(&p);
         std::fs::write(&lock, other.id().to_string()).unwrap();
@@ -355,7 +380,7 @@ pub(crate) mod tests {
         let rescued = std::fs::read_dir(crate::project_tools::backup_dir(&p)).unwrap().flatten().next().unwrap().path();
         assert_eq!(Project::from_json(&std::fs::read_to_string(rescued).unwrap()).unwrap().name, "B");
         // another path is written normally and its lock taken; every save refreshes the lock
-        let q = home.path().join("b.cutline");
+        let q = app.dir().join("b.cutline");
         assert!(app.write_project(&q));
         assert!(app.saver.wait_idle(Duration::from_secs(10)));
         let ql = crate::paths::lock_path(&q);

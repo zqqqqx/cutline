@@ -618,15 +618,7 @@ mod tests {
         }
     }
 
-    fn test_app() -> (App, tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
-        let g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
-        std::env::set_var("CUTLINE_NO_UPDATE", "1");
-        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
-        let app = App::new(&eframe::CreationContext::_new_kittest(egui::Context::default()), None);
-        (app, home, g)
-    }
+    use crate::saving::tests::test_app;
 
     fn pending(target: Option<Target>, states: Vec<State>) -> Pending {
         let (_tx, rx) = channel();
@@ -642,7 +634,7 @@ mod tests {
     /// restores the project exactly; a file already in the project is reused.
     #[test]
     fn drop_is_one_undo_step_even_with_a_failure() {
-        let (mut app, _home, _g) = test_app();
+        let mut app = test_app();
         let mut p = Project::new("Ablegen");
         let have = media(MediaKind::Video, 4.0, "schon.mp4");
         let mut main = Track::new(TrackKind::Video);
@@ -682,7 +674,7 @@ mod tests {
     /// Without a target only import; all failed → nothing changed
     #[test]
     fn drop_without_target_imports_only() {
-        let (mut app, _home, _g) = test_app();
+        let mut app = test_app();
         app.set_doc(Project::new("Import"));
         let before = app.project.clone();
         app.commit_file_drop(pending(None, vec![State::Failed]));
@@ -699,7 +691,7 @@ mod tests {
     /// only after the next change.
     #[test]
     fn new_fonts_redraw_text_clips() {
-        let (mut app, _home, _g) = test_app();
+        let mut app = test_app();
         let ctx = egui::Context::default();
         let _ = ctx.run(Default::default(), |ctx| {
             app.register_fonts(ctx);
@@ -713,7 +705,7 @@ mod tests {
     /// above M, new audio track directly below A1 – as the preview shows them.
     #[test]
     fn two_new_tracks_land_where_shown() {
-        let (mut app, _home, _g) = test_app();
+        let mut app = test_app();
         let mut p = Project::new("Zwei neue");
         let mut main = Track::new(TrackKind::Video);
         main.main = true;
@@ -747,7 +739,7 @@ mod tests {
     /// change the left project (it would later be saved without a lock).
     #[test]
     fn results_after_going_home_do_not_touch_the_left_project() {
-        let (mut app, _home, _g) = test_app();
+        let mut app = test_app();
         app.set_doc(Project::new("Verlassen"));
         let (go_tx, go_rx) = channel::<()>();
         app.tasks.spawn(&egui::Context::default(), "spät", "Spät", move |_, _| {
@@ -758,7 +750,9 @@ mod tests {
         });
         app.go_home();
         go_tx.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while !app.tasks.list.is_empty() {
+            assert!(std::time::Instant::now() < deadline, "task did not finish within 30 s");
             app.poll_tasks();
             std::thread::yield_now();
         }
@@ -771,9 +765,9 @@ mod tests {
     /// in, otherwise discarded).
     #[test]
     fn files_still_probing_land_before_going_home() {
-        let (mut app, home, _g) = test_app();
+        let mut app = test_app();
         app.set_doc(Project::new("Ablegen"));
-        let file = home.path().join("Ablegen.cutline");
+        let file = app.dir().join("Ablegen.cutline");
         app.project_path = Some(file.clone());
         let (tx, rx) = channel();
         let entries = (0..2).map(|i| Entry { path: PathBuf::from(format!("b{i}.png")), audio: false, state: State::Probing }).collect();

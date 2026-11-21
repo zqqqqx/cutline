@@ -995,6 +995,7 @@ mod tests {
         let pp = p.clone();
         let t = std::thread::spawn(move || feed(pp, from, rate, sh, first));
         let mut all = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(120);
         loop {
             let mut o = shared.out.lock().unwrap();
             all.extend(o.buf.drain(..));
@@ -1002,6 +1003,7 @@ mod tests {
                 break;
             }
             drop(o);
+            assert!(std::time::Instant::now() < deadline, "feed not finished after 120 s ({} samples so far)", all.len());
             std::thread::sleep(Duration::from_millis(2));
         }
         t.join().unwrap();
@@ -1020,7 +1022,7 @@ mod tests {
     /// Whole chain with real FFmpeg (without output device): window by window into the buffer.
     #[test]
     fn feeder_delivers_exact_frame_count_across_windows() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1084,7 +1086,7 @@ mod tests {
     /// Window mix over two windows = old full mix of the same section.
     #[test]
     fn windowed_mix_matches_whole_mix() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1172,7 +1174,7 @@ mod tests {
     #[test]
     #[ignore]
     fn output_start_latency() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1197,7 +1199,7 @@ mod tests {
     /// Before the anchor: ready as soon as the first window delivers samples (the clock waits for that)
     #[test]
     fn ready_once_first_window_delivers() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

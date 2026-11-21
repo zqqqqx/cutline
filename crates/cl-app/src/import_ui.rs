@@ -519,7 +519,7 @@ mod tests {
     /// (folders and files in the UI thread caused a long frame on import).
     #[test]
     fn draft_list_is_read_off_the_ui_thread() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         app.settings.import_capcut = true;
         app.import.open = true;
@@ -537,16 +537,16 @@ mod tests {
     /// „Medien neu verknüpfen“ opens.
     #[test]
     fn opened_import_marks_missing_media_for_relinking() {
-        let (mut app, home, _g) = crate::saving::tests::test_app();
-        let src = draft_dir(home.path());
-        let gone = home.path().join("fehlt.mp4");
+        let mut app = crate::saving::tests::test_app();
+        let src = draft_dir(app.dir());
+        let gone = app.dir().join("fehlt.mp4");
         let j = serde_json::json!({
             "materials": {"videos": [{"id": "V", "type": "video", "path": gone.to_string_lossy()}]},
             "tracks": [{"type": "video", "segments": [{"material_id": "V", "target_timerange": {"start": 0, "duration": 1000000}}]}]
         });
         std::fs::write(src.join("draft_content.json"), j.to_string()).unwrap();
         let fonts = Mutex::new(cl_fonts::FontLibrary::default());
-        let imp = run_import(&src, &home.path().join("Projekte"), &fonts, &Progress::default()).unwrap();
+        let imp = run_import(&src, &app.dir().join("Projekte"), &fonts, &Progress::default()).unwrap();
         assert_eq!(imp.report.missing, [gone.clone()]);
         app.import.results.push(imp);
         app.open_imported(0);
@@ -599,11 +599,11 @@ mod tests {
     /// Quitting cancels a running import (otherwise its checks keep running).
     #[test]
     fn exit_cancels_running_import() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let progress = Arc::new(Progress::default());
         let (_tx, rx) = channel();
         app.import.job = Some(Job { label: "x".into(), progress: progress.clone(), rx });
-        eframe::App::on_exit(&mut app);
+        eframe::App::on_exit(&mut *app);
         assert!(progress.cancelled());
     }
 

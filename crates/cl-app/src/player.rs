@@ -682,17 +682,12 @@ mod presence_tests {
     #[ignore]
     fn tempo_in_app() {
         let (a, b) = (std::path::Path::new("F:/cutline-testmedien/4k60_h264_80mbit.mp4"), std::path::Path::new("F:/cutline-testmedien/4k60_hevc10_50mbit.mp4"));
-        if !cl_media::ffmpeg_available() || !a.is_file() || !b.is_file() {
+        if !cl_media::test_tools() || !a.is_file() || !b.is_file() {
             return;
         }
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
-        std::env::set_var("CUTLINE_NO_UPDATE", "1");
-        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
         let ctx = egui::Context::default();
-        let mut app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None);
-        let mode = std::env::var("CUTLINE_QA_TEMPO").unwrap_or_else(|_| "2".into());
+        let mut app = crate::saving::tests::test_app_with(ctx.clone());
+        let mode =std::env::var("CUTLINE_QA_TEMPO").unwrap_or_else(|_| "2".into());
         let (ma, mb) = (cl_media::probe(a).unwrap(), cl_media::probe(b).unwrap());
         let mut p = Project::new("tempo");
         p.settings.fps = Rational::new(60, 1);
@@ -723,13 +718,14 @@ mod presence_tests {
         if let Some(n) = std::env::var("CUTLINE_QA_PARTS").ok().and_then(|s| s.parse().ok()) {
             let want = (app.settings.proxy_h, app.project.settings.fps);
             let t = std::time::Instant::now();
-            crate::proxy::test_build_parts(&mb, home.path().join("p").join("b-540.mp4"), want, n);
+            crate::proxy::test_build_parts(&mb, app.dir().join("p").join("b-540.mp4"), want, n);
             eprintln!("{n} Stücke in {:.0} s", t.elapsed().as_secs_f64());
         }
         for at in [20.0, 33.0, 72.0] {
             app.playhead = Time::from_secs_f64(at);
             app.core.stop();
-            app.core.play(app.playhead, app.revision, app.core_now());
+            let (at, rev, now) = (app.playhead, app.revision, app.core_now());
+            app.core.play(at, rev, now);
             let t0 = std::time::Instant::now();
             // stream frames of the upper layer (across stream changes) and from when
             let (mut total, mut last_taken, mut first) = (0u64, 0u64, None);
@@ -780,14 +776,12 @@ mod presence_tests {
     /// background check, nothing is requested (no open jobs).
     #[test]
     fn requests_follow_the_background_presence_check() {
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", home.path());
-        std::env::set_var("CUTLINE_NO_UPDATE", "1");
-        std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
         let ctx = egui::Context::default();
-        let mut app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None);
-        let path = home.path().join("gibt-es-nicht.mp4");
+        let mut app = crate::saving::tests::test_app_with(ctx.clone());
+        // stream jobs arrive here at once (no starter thread): the checks below need no waiting
+        let (starter, jobs) = crate::preview::Starter::capture();
+        app.starter = starter;
+        let path = app.dir().join("gibt-es-nicht.mp4");
         let m = MediaRef {
             id: cl_core::MediaId::new(),
             path: path.clone(),
@@ -812,14 +806,18 @@ mod presence_tests {
         app.presence.set_all([(path.clone(), true)].into(), 1);
         ask(&mut app);
         assert!(app.core.has_requests(), "present per check: requested");
-        // playback: stream is requested (the starter reports even if opening fails)
+        // playback: stream is requested
         app.core.play(Time::ZERO, 0, 0.0);
         ask(&mut app);
-        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_secs(20)).is_ok(), "stream requested");
+        assert!(jobs.try_recv().is_ok(), "stream requested");
         app.core.invalidate();
-        app.presence.set_all([(path, false)].into(), 1);
+        app.presence.set_all([(path.clone(), false)].into(), 1);
         ask(&mut app);
-        assert!(app.starter.rx.recv_timeout(std::time::Duration::from_millis(500)).is_err(), "missing: no stream");
+        assert!(jobs.try_recv().is_err(), "missing: no stream");
+        // the same request once present again: the missing file alone held it back
+        app.presence.set_all([(path, true)].into(), 1);
+        ask(&mut app);
+        assert!(jobs.try_recv().is_ok(), "present again: requested");
     }
 
     /// Stream from proxy parts: the job points to the part list, and the time in it is shifted by
@@ -827,14 +825,14 @@ mod presence_tests {
     /// source fingerprint (a change reopens, a donor stream of another choice is not taken over).
     #[test]
     fn stream_from_parts_opens_the_list_at_the_shifted_time() {
-        let (mut app, home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         let (starter, jobs) = crate::preview::Starter::capture();
         app.starter = starter;
         app.settings.use_proxies = true;
         let m = MediaRef {
             id: cl_core::MediaId::new(),
-            path: home.path().join("q.mp4"),
+            path: app.dir().join("q.mp4"),
             kind: MediaKind::Video,
             duration: Time::from_secs_f64(100.0),
             width: 3840,
@@ -849,16 +847,16 @@ mod presence_tests {
         let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(100.0));
         let l = Layer { clip: c.clone(), t_rel: Time::from_secs_f64(12.0), alpha: 1.0, from: None };
         let want = (app.settings.proxy_h, app.project.settings.fps);
-        let out = home.path().join("q-540.mp4");
+        let out = app.dir().join("q-540.mp4");
         // parts 1–3 (10–40 s) finished
         let ready: Vec<bool> = (0..10).map(|k| (1..4).contains(&k)).collect();
         crate::proxy::set_test_entry(&m.path, out.clone(), want, ready.clone(), false);
         app.playhead = Time::from_secs_f64(12.0);
-        app.core.play(app.playhead, 0, 0.0);
+        app.core.play(Time::from_secs_f64(12.0), 0, 0.0);
         let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None);
         ask(&mut app);
         let parts = jobs.try_recv().expect("stream from parts requested");
-        assert_eq!(parts.path, home.path().join("q-540.teile").join("0001-0004.ffconcat"));
+        assert_eq!(parts.path, app.dir().join("q-540.teile").join("0001-0004.ffconcat"));
         assert!((parts.source_at.as_secs_f64() - 2.0).abs() < 1e-3, "source time 12 s − start of part 1 (10 s): {:?}", parts.source_at);
         ask(&mut app);
         assert!(jobs.try_recv().is_err(), "same choice: no new stream");
@@ -1098,11 +1096,15 @@ pub(crate) mod still {
     }
 
     /// Reproduce by hand: `CUTLINE_STILL="<project>;<sec>[,<sec>…];<output folder>"`.
+    /// Tool, not a check: writes still images of a project; needs `CUTLINE_STILL`.
+    /// `CUTLINE_STILL=… cargo test --release -p cl-app --bin cutline still_from_env -- --ignored`
     #[test]
+    #[ignore]
     fn still_from_env() {
-        let Ok(v) = std::env::var("CUTLINE_STILL") else { return };
+        let v = std::env::var("CUTLINE_STILL").expect("CUTLINE_STILL not set");
         let parts: Vec<&str> = v.split(';').collect();
         let project = Project::from_json(&std::fs::read_to_string(parts[0]).unwrap()).unwrap();
+        let _g = crate::paths::test_lock();
         let reg = cl_plugin::Registry::scan([std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins"))]);
         cl_fx::catalog::load_packs(crate::contents::catalog_packs(&reg, "de"));
         let (cw, ch) = (640, 360);
@@ -1120,9 +1122,13 @@ mod transition_tests {
     use super::*;
     use std::path::Path;
 
-    fn load_shipped_packs() {
+    /// Replaces the global pack catalog: keep the returned test lock while using it (`App::new` replaces it too)
+    #[must_use]
+    fn load_shipped_packs() -> std::sync::MutexGuard<'static, ()> {
+        let g = crate::paths::test_lock();
         let reg = cl_plugin::Registry::scan([Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins"))]);
         cl_fx::catalog::load_packs(crate::contents::catalog_packs(&reg, "de"));
+        g
     }
 
     fn media(dir: &Path, name: &str, src: &str) -> MediaRef {
@@ -1231,7 +1237,7 @@ mod transition_tests {
     /// instead of B showing through without mask.
     #[test]
     fn masked_clip_pixelize_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = still_vs_export("pixelize", true, None, 1.6);
@@ -1242,7 +1248,7 @@ mod transition_tests {
     /// a different crop on B: preview like export.
     #[test]
     fn crop_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1267,7 +1273,7 @@ mod transition_tests {
     /// Split screen from the layout action (crop + transform of two tracks): preview like export.
     #[test]
     fn splitscreen_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1297,7 +1303,7 @@ mod transition_tests {
     /// the finished transition), not cross-faded.
     #[test]
     fn circleopen_under_filter_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let d = still_vs_export("circleopen", false, Some("noir"), 1.5);
@@ -1307,17 +1313,22 @@ mod transition_tests {
     /// Cube (package shader) after a masked clip under a filter element (N_tr 37:90).
     #[test]
     fn shader_transition_under_filter_matches_export() {
-        if !cl_media::ffmpeg_available() || cl_gpu::gpu().is_none() {
-            eprintln!("kein FFmpeg oder keine GPU, übersprungen");
+        if !cl_media::test_tools() {
             return;
         }
-        load_shipped_packs();
+        if cl_gpu::gpu().is_none() {
+            eprintln!("skipped (no GPU): shader_transition_under_filter_matches_export");
+            return;
+        }
+        let _packs = load_shipped_packs();
         let d = still_vs_export("cutline.uebergaenge/wuerfel", false, Some("noir"), 1.5);
         assert!(d < 8.0, "preview differs from the export: {d:.1}");
     }
 
     /// Decision "blend or cross-fade": an effect/filter element over the transition is
     /// no longer a reason to cross-fade (before: cube and circle open were missing in N_tr).
+    /// Only built-in transitions: `transition_plan` resolves them before looking at the loaded packs,
+    /// so the global catalog does not matter here.
     #[test]
     fn elements_above_do_not_force_a_crossfade() {
         let clip = |s: f64, tr: Option<&str>| {
@@ -1382,13 +1393,16 @@ mod transition_tests {
         assert_eq!(sp.step((b, c), true), Step::Mix);
     }
 
+    /// The assembly of `run_mix`: which frame pair becomes the base image, unmasked elements folded into
+    /// it at their opacity, masked ones as their own frames with their sets. The pixel math itself
+    /// (`mix_layers`, `fold_fx`) is used for the expectation and checked against the export by the
+    /// `*_matches_export` tests.
     #[test]
-    fn background_mix_matches_direct_mix_with_elements() {
-        // same computation as before in the UI thread: blended frame, unmasked element
-        // included, masked one as its own frame
+    fn background_mix_folds_unmasked_elements_and_keeps_masked_ones_apart() {
         let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         let f = |v: u8| std::sync::Arc::new(cl_media::RgbaFrame { width: 32, height: 18, data: [v, 255 - v, 90, 255].repeat(32 * 18) });
-        let plan = cl_fx::catalog::transition_plan("circleopen");
+        // built-in: independent of the global pack catalog
+        let plan = cl_fx::catalog::transition_plan_in(&[], "circleopen");
         let mask = Mask::new(MaskShape::Circle);
         let job = MixJob {
             id: 7,
@@ -1419,11 +1433,11 @@ mod transition_tests {
         assert_eq!(mix_size(1080.0, 1920.0, egui::vec2(400.0, 700.0), true), (394, 700));
     }
 
-    /// Time per blended frame (1080p project): `cargo test --release -p cl-app mix_time -- --ignored --nocapture`
+    /// Time per blended frame (1080p project), needs nothing else: `cargo test --release -p cl-app mix_time -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn mix_time() {
-        load_shipped_packs();
+        let _packs = load_shipped_packs();
         let ev = Evaluated { x: 0.0, y: 0.0, scale: 1.0, rotation_deg: 0.0, opacity: 1.0, volume_db: 0.0, crop: Crop::default() };
         for (cw, ch) in [(1920, 1080), (1600, 900), (1280, 720), (960, 540)] {
             let f = |v: u8| cl_media::RgbaFrame { width: cw, height: ch, data: [v, 255 - v, 90, 255].repeat((cw * ch) as usize) };
@@ -1529,10 +1543,10 @@ mod transition_tests {
     /// of the lines and the middle of the block.
     #[test]
     fn text_lines_match_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
-        let (app, _home, _g) = crate::saving::tests::test_app();
+        let app = crate::saving::tests::test_app();
         let dir = tempfile::tempdir().unwrap();
         for text in ["AAA BBB\nCCC DDD", "EINS\nZWEI\nDREI", "HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH"] {
             let st = TextStyle { text: text.into(), size: 44.0, shadow: false, ..Default::default() };
@@ -1569,10 +1583,10 @@ mod transition_tests {
     /// compared.
     #[test]
     fn karaoke_word_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
-        let (app, _home, _g) = crate::saving::tests::test_app();
+        let app = crate::saving::tests::test_app();
         let dir = tempfile::tempdir().unwrap();
         let mut p = Project::new("Karaoke");
         (p.settings.width, p.settings.height) = (320, 180);
@@ -1666,7 +1680,7 @@ mod transition_tests {
     /// level), next to it the picture is unchanged, and the area lies left at 0.2 s, right at 1.8 s.
     #[test]
     fn censor_destroys_the_pattern_only_inside_and_moves() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1696,7 +1710,7 @@ mod transition_tests {
     /// Preview against export at two points in time (the area moves in between).
     #[test]
     fn censor_preview_matches_export() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
@@ -1718,7 +1732,7 @@ mod transition_tests {
     /// place of the source frame – in preview and export.
     #[test]
     fn censor_follows_crop_scale_and_position() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

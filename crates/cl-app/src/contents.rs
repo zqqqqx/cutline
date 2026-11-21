@@ -809,6 +809,18 @@ These are separate programs and libraries that Cutline starts or loads; they are
         }
         let have = std::fs::read_to_string(&file).unwrap_or_default().replace("\r\n", "\n");
         assert_eq!(have, want, "THIRD_PARTY.md outdated (see the comment on the test)");
+        // the versions named above are the ones the release workflow ships
+        let wf = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/release.yml")).unwrap();
+        let (win, linux, onnx) = ("8.1", "ffmpeg-n8.1.3-36-ge22a4510c9-linux64-gpl-8.1", "1.31.1");
+        for (doc, ci) in [
+            (format!("**FFmpeg {win}**"), format!("ffmpeg-{win}-full_build-shared.zip")),
+            (format!("`{linux}`"), format!("{linux}.tar.xz")),
+            (format!("**ONNX Runtime {onnx}**"), format!("onnxruntime-win-x64-{onnx}.zip")),
+            (format!("**ONNX Runtime {onnx}**"), format!("libonnxruntime-{onnx}-linux-x64.so")),
+        ] {
+            assert!(bundled.contains(&doc), "{doc} missing in the bundled programs");
+            assert!(wf.contains(&ci), "release.yml no longer ships {ci}: update the bundled programs and THIRD_PARTY.md");
+        }
     }
 
     /// Small test pack with a sound (WAV) and a sticker (SVG): listed, gone when switched off,
@@ -1025,12 +1037,12 @@ file = "star.svg"
     }
 
     /// Every ZIP of the local test copy matches the list and can be installed.
+    /// Needs the local pack copy `F:/cutline-pakete/fertig`: `cargo test --release -p cl-app real_packs_install -- --ignored`
     #[test]
+    #[ignore]
     fn real_packs_install() {
         let dir = Path::new("F:/cutline-pakete/fertig");
-        if !dir.join(packs::INDEX_FILE).is_file() {
-            return;
-        }
+        assert!(dir.join(packs::INDEX_FILE).is_file(), "no pack copy in {}", dir.display());
         let src = Source::Dir(dir.into());
         let list = packs::fetch_index(&src).unwrap();
         let t = tempfile::tempdir().unwrap();

@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn long_files_are_read_only_at_the_start_but_keep_their_length() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

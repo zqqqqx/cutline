@@ -1197,6 +1197,7 @@ mod tests {
 
     #[test]
     fn shown_numbers_use_the_decimal_comma_in_german() {
+        let _g = crate::paths::test_lock();
         cl_i18n::set_ui_lang(cl_i18n::Lang::De);
         assert_eq!(crate::props::fmt_bytes(1_920_000_000), "1,79 GB");
         assert_eq!(crate::props::fmt_bytes(5 << 20), "5,0 MB");
@@ -1324,8 +1325,8 @@ mod tests {
         }
     }
 
-    // One test, because the accent is global (parallel tests would overwrite each other)
-    /// Contract of the design system: 6 font steps, 3 radii, 3 spacings, each ascending
+    /// Contract of the design system: 6 font steps, 3 radii, 3 spacings, each ascending (pins the
+    /// decided values; a change here is a design decision, not a fix)
     #[test]
     fn tokens_match_brand_guide() {
         let fs = [FS_HINT, FS_UI, FS_TEXT, FS_TITLE, FS_PAGE, FS_HERO];
@@ -1339,8 +1340,10 @@ mod tests {
         assert!(pad.windows(2).all(|w| w[0] < w[1]));
     }
 
+    // One test, because the accent is global; under the test lock, reset to „auto“ at the end
     #[test]
     fn accents_readable_on_all_palettes() {
+        let _g = crate::paths::test_lock();
         for (id, ..) in ACCENTS {
             set_accent(id);
             for p in &PALETTES {

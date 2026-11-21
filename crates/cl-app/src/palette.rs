@@ -152,7 +152,7 @@ mod tests {
     fn every_action_runs() {
         // open a system file dialog and wait for a choice – not testable without a window
         const FILE_DIALOGS: &[&str] = &["import", "open", "save_as", "import_fonts", "archive", "quick_speakers"];
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         app.set_doc(cl_core::Project::new("Befehle"));
         let ctx = egui::Context::default();
         for (id, _, _) in keymap::ACTIONS.iter().filter(|a| !FILE_DIALOGS.contains(&a.0)) {

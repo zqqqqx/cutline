@@ -1680,7 +1680,7 @@ mod tests {
     /// (mirrored back into the source frame) the area, 15 % larger; further ones take over the kind.
     #[test]
     fn censor_action_and_area_from_the_player_box() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         let img = MediaRef {
             id: MediaId::new(),
@@ -1742,7 +1742,7 @@ mod tests {
     /// removing before/after, undo, splitting and deleting the clip during tracking.
     #[test]
     fn censor_tracking_result_goes_to_its_own_area() {
-        let (mut app, _home, _g) = crate::saving::tests::test_app();
+        let mut app = crate::saving::tests::test_app();
         let ctx = egui::Context::default();
         let m = MediaRef {
             id: MediaId::new(),
@@ -1841,7 +1841,7 @@ mod tests {
     /// the tracking time are printed.
     #[test]
     fn censor_tracking_covers_a_moving_object_in_every_frame() {
-        if !cl_media::ffmpeg_available() {
+        if !cl_media::test_tools() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

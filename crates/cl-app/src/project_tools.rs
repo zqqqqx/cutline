@@ -439,9 +439,7 @@ mod tests {
 
     #[test]
     fn same_named_projects_keep_separate_backups() {
-        let home = tempfile::tempdir().unwrap();
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::set_var("CUTLINE_HOME", home.path());
+        let home = crate::paths::TestHome::new();
         let a = home.path().join("x/Film.cutline");
         let b = home.path().join("y/Film.cutline");
         // An old-style backup stays visible
@@ -461,9 +459,7 @@ mod tests {
 
     #[test]
     fn backups_rotate_and_archive_copies() {
-        let home = tempfile::tempdir().unwrap();
-        let _g = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::set_var("CUTLINE_HOME", home.path());
+        let home = crate::paths::TestHome::new();
         let proj = home.path().join("Film.cutline");
         for i in 0..(BACKUP_KEEP + 3) {
             let p = write_backup(&proj, &format!("{{\"n\":{i}}}"), BACKUP_KEEP).unwrap();

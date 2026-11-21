@@ -63,24 +63,18 @@ impl Stats {
 }
 
 struct Headless {
-    app: App,
+    // holds the data folder and its lock for the whole measurement
+    app: crate::saving::tests::TestApp,
     ctx: egui::Context,
     frame: eframe::Frame,
-    _home: tempfile::TempDir,
 }
 
 fn headless() -> Headless {
-    let home = tempfile::tempdir().unwrap();
-    // CUTLINE_HOME is process-wide: hold the lock for the whole measurement
-    std::mem::forget(crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
-    std::env::set_var("CUTLINE_HOME", home.path());
-    std::env::set_var("CUTLINE_NO_UPDATE", "1");
-    std::env::set_var("CUTLINE_NO_ONBOARDING", "1");
     std::env::set_var("CUTLINE_PERF", "1");
     assert!(perf(), "Mess-Tests einzeln laufen lassen (CUTLINE_PERF wird einmal gelesen)");
     let ctx = egui::Context::default();
-    let app = App::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None);
-    Headless { app, ctx, frame: eframe::Frame::_new_kittest(), _home: home }
+    let app = crate::saving::tests::test_app_with(ctx.clone());
+    Headless { app, ctx, frame: eframe::Frame::_new_kittest() }
 }
 
 impl Headless {
@@ -92,7 +86,7 @@ impl Headless {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1600.0, 900.0))),
             ..Default::default()
         };
-        let (app, frame) = (&mut self.app, &mut self.frame);
+        let (app, frame) = (&mut *self.app, &mut self.frame);
         let _ = self.ctx.run(input, |ctx| eframe::App::update(app, ctx, frame));
         let (d, secs) = last_frame();
         (d, slowest_section(d, &secs).0, secs)
@@ -108,6 +102,7 @@ impl Headless {
     }
 }
 
+/// Measurement (see the module doc for material and command): `… -- --ignored --nocapture load_perf_import_big_draft`
 #[test]
 #[ignore]
 fn load_perf_import_big_draft() {
@@ -182,6 +177,7 @@ fn big_project(dir: &Path) -> Project {
     p
 }
 
+/// Measurement (see the module doc for material and command): `… -- --ignored --nocapture load_perf_open_big_project`
 #[test]
 #[ignore]
 fn load_perf_open_big_project() {
@@ -190,7 +186,7 @@ fn load_perf_open_big_project() {
     let Some(dir) = material().or_else(|| own.clone()) else { return };
     let mut h = headless();
     h.frame();
-    let file = h._home.path().join("gross.cutline");
+    let file = h.app.dir().join("gross.cutline");
     let p = match &own {
         Some(f) => {
             std::fs::copy(f, &file).unwrap();
