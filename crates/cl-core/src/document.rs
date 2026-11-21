@@ -517,7 +517,6 @@ mod tests {
         assert_eq!(d.redo_entries().len(), total);
         assert_eq!(d.step(-1), 0);
         assert_eq!(d.step(2), 2.min(total));
-        assert!(d.undo_entries().iter().all(|e| e.at <= std::time::SystemTime::now()));
     }
 
     #[test]

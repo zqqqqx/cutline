@@ -573,8 +573,8 @@ fn ten_thousand_clips_stay_consistent() {
 }
 
 #[test]
-fn ops_on_project_with_zero_length_clip_and_missing_media_do_not_panic() {
-    // such things only come from broken/foreign files, but must not crash
+fn zero_length_clip_is_dropped_on_load_and_missing_media_edits_safely() {
+    // such things only come from broken/foreign files
     let mut p = Project::new("Kaputt");
     let mut main = Track::new(TrackKind::Video);
     main.main = true;
@@ -585,25 +585,31 @@ fn ops_on_project_with_zero_length_clip_and_missing_media_do_not_panic() {
     let (z, n) = (zero.id, normal.id);
     main.clips = vec![zero, normal];
     p.timeline.tracks.push(main);
+    // since v0.15.2 loading drops clips without positive length; the other one stays
+    let p = Project::from_json(&p.to_json()).unwrap();
+    let ids: Vec<ClipId> = p.timeline.tracks[0].clips.iter().map(|c| c.id).collect();
+    assert_eq!(ids, vec![n], "zero-length clip dropped, normal clip kept");
     let mut d = Document::new(p);
-    let c = d.project().find_clip(z).unwrap().1.clone();
+    assert!(d.apply(EditOp::SetSpeed { clip: z, speed: 2.0 }, OpSource::Ui).is_err(), "dropped clip is gone");
+    let c = d.project().find_clip(n).unwrap().1.clone();
     assert_eq!(c.label(d.project()), "Medium fehlt");
+    // computations on a clip whose media is missing must not panic
     let _ = c.source_time(s(1.0));
     let _ = c.eval_at(Time::ZERO, 1920.0, 1080.0);
     let _ = c.beat_times();
     for op in [
-        EditOp::SplitClip { clip: z, at: Time::ZERO },
-        EditOp::TrimClip { clip: z, edge: Edge::End, to: s(1.0) },
         EditOp::TrimClip { clip: n, edge: Edge::Start, to: s(0.5) },
-        EditOp::SetSpeed { clip: z, speed: 2.0 },
-        EditOp::SetFades { clip: z, fade_in: s(1.0), fade_out: s(1.0) },
-        EditOp::SplitClip { clip: n, at: s(1.0) },
+        EditOp::SetSpeed { clip: n, speed: 2.0 },
+        EditOp::SetFades { clip: n, fade_in: s(1.0), fade_out: s(1.0) },
+        EditOp::SplitClip { clip: n, at: s(0.6) },
         EditOp::CloseGaps { track: None },
         EditOp::MoveClip { clip: n, track: None, start: s(3.0) },
     ] {
         let _ = d.apply(op, OpSource::Ui);
     }
-    let _ = roundtrip(d.project());
+    let clips = &d.project().timeline.tracks[0].clips;
+    assert!(!clips.is_empty() && clips.iter().all(|c| c.duration > Time::ZERO), "{clips:?}");
+    assert_eq!(roundtrip(d.project()), *d.project(), "edited project saves and loads unchanged");
 }
 
 /// Collapsed tracks are stored in the project (formerly only window state: open again after reopening);

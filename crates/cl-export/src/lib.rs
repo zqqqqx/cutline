@@ -2328,24 +2328,6 @@ mod tests {
         );
     }
 
-    /// Export of a real project file: `CUTLINE_EXPORT_PROJECT=<path> cargo test -p cl-export export_project_file -- --ignored`
-    #[test]
-    #[ignore]
-    fn export_project_file() {
-        let Some(path) = std::env::var_os("CUTLINE_EXPORT_PROJECT") else {
-            return;
-        };
-        let p = Project::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let s = ExportSettings::from_project(&p);
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("out.mp4");
-        let job = build(&p, &s, &no_fonts, &out).unwrap();
-        
-        let t = std::time::Instant::now();
-        run(&job, Arc::new(AtomicBool::new(false)), |x| eprintln!("{:.1}s {x:.3}", t.elapsed().as_secs_f32())).unwrap();
-        assert!(cl_media::probe(&out).is_ok());
-    }
-
     /// Microphone recorded only on the left: on both channels in the export (default „Automatisch“),
     /// with „Stereo“ the right channel stays silent.
     #[test]
@@ -2944,7 +2926,6 @@ mod tests {
         );
         over.fx.chroma = Some(ChromaKey::default());
         over.fx.stabilize = 0.5;
-        let oid = over.id;
         // overlay lands on its own track above the main track
         let main = d.project().timeline.tracks[0].id;
         d.apply(
@@ -2991,12 +2972,10 @@ mod tests {
         let p = d.project().clone();
         let out = dir.path().join("p3.mp4");
         let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &out).unwrap();
-        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap_or_else(|e| {
-            panic!(
-                "{e}\n{}",
-                std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap()
-            )
-        });
+        // chroma is checked on the pixels below; stabilizing has no clear pixel signature
+        let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+        assert!(g.contains("deshake="), "stabilize in the graph: {g}");
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap_or_else(|e| panic!("{e}\n{g}"));
         let m = cl_media::probe(&out).unwrap();
         assert!(m.has_audio);
         let f = cl_media::decode_frame(&out, Time::from_secs_f64(1.0), 320, 180).unwrap();
@@ -3016,7 +2995,6 @@ mod tests {
             !(l[1] > 150 && l[0] < 60 && l[2] < 100),
             "bottom left no green screen green: {l:?}"
         );
-        let _ = oid;
     }
 
     #[test]
@@ -3098,18 +3076,22 @@ mod tests {
         let px = |x: usize, y: usize| f.data[(y * 320 + x) * 4..(y * 320 + x) * 4 + 3].to_vec();
         let r = px(300, 90);
         assert!(r[2] > 180 && r[0] < 60, "right should be blue: {r:?}");
-        // blur and outline run through without errors
-        for pf in [
-            PersonFx::BlurBackground { amount: 0.7 },
-            PersonFx::Outline {
-                color: [255, 0, 0],
-                width: 0.5,
-                transparent: false,
-            },
-        ] {
-            let p = mk(Some(pf), 1.0);
-            render(&p, &ExportSettings::from_project(&p), "pf.mp4");
-        }
+        // blurred background: the right half (mask black) loses its edges, the left half keeps them
+        let p = mk(Some(PersonFx::BlurBackground { amount: 0.7 }), 1.0);
+        let out = render(&p, &ExportSettings::from_project(&p), "blur.mp4");
+        let f = cl_media::decode_frame(&out, Time::from_secs_f64(0.5), 320, 180).unwrap();
+        let src = cl_media::decode_frame(&v.path, Time::from_secs_f64(0.5), 320, 180).unwrap();
+        // sum of differences between horizontal neighbours in columns x0..x0+140
+        let edges = |d: &[u8], x0: usize| -> u64 {
+            (0..180)
+                .flat_map(|y| (x0..x0 + 140).map(move |x| (y * 320 + x) * 4))
+                .map(|i| (0..3).map(|c| d[i + c].abs_diff(d[i + 4 + c]) as u64).sum::<u64>())
+                .sum()
+        };
+        let (blur_r, src_r, blur_l, src_l) = (edges(&f.data, 170), edges(&src.data, 170), edges(&f.data, 5), edges(&src.data, 5));
+        // measured: blurred 0.68 of the source, without blur 0.98 (testsrc2 has large flat areas)
+        assert!(blur_r * 5 < src_r * 4, "right half blurred: {blur_r} vs source {src_r}");
+        assert!(blur_l * 10 > src_l * 9, "left half sharp: {blur_l} vs source {src_l}");
         // outline with and without background: without it the canvas on the right (mask black) stays black
         let right = |transparent: bool| {
             let p = mk(Some(PersonFx::Outline { color: [255, 0, 0], width: 0.5, transparent }), 1.0);
@@ -3297,7 +3279,11 @@ mod tests {
         c.fade_out = Time::from_secs_f64(5.0);
         let out = dir.path().join("fade.wav");
         run(&build(&p, &wav_settings(&p), &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
-        assert!(out.is_file());
+        assert!((cl_media::probe(&out).unwrap().duration.as_secs_f64() - 2.0).abs() < 0.05);
+        // both fades are cut to the clip: silent at the edges, audible in the middle
+        let (start, mid, end) = (peaks_db(&out, 0.0, 0.02), peaks_db(&out, 0.9, 0.2), peaks_db(&out, 1.98, 0.02));
+        assert!(!mid.is_empty() && mid.iter().all(|v| *v > -40.0), "middle audible: {mid:?}");
+        assert!(start.iter().chain(&end).all(|v| *v < -55.0), "edges faded: {start:?} {end:?}");
     }
 
     /// Integrated loudness (LUFS) of a file according to `ebur128`.
@@ -3902,7 +3888,11 @@ mod tests {
         let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
         assert!(g.contains("expansion=none"), "{g}");
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
-        assert!(cl_media::probe(&out).is_ok());
+        // white text on the black canvas: enough bright pixels
+        let m = cl_media::probe(&out).unwrap();
+        let f = cl_media::decode_frame(&out, Time::from_secs_f64(0.25), m.width, m.height).unwrap();
+        let bright = f.data.chunks(4).filter(|px| px[..3].iter().all(|v| *v > 200)).count();
+        assert!(bright > 200, "text drawn: {bright} bright pixels");
     }
 
     #[test]
@@ -3926,9 +3916,11 @@ mod tests {
         assert!(codec_args(&s).contains(&"-global_quality".to_string()));
     }
 
-    /// Every offered codec/container combination with a software encoder exports with its own bitrate.
+    /// Every offered codec/container combination with a software encoder exports with a fixed-bitrate
+    /// setting: a 1 s file of the set size. The bitrate itself is not measured (black frames stay far
+    /// below any target; the arguments are checked in `bitrate_quality_drops_constant_quality_args`).
     #[test]
-    fn bitrate_export_works_for_every_software_codec() {
+    fn bitrate_setting_exports_with_every_software_codec() {
         if !cl_media::test_tools() {
             return;
         }
@@ -3945,6 +3937,9 @@ mod tests {
                 let out = dir.path().join(format!("{codec:?}.{}", format.extension()));
                 let job = build(&p, &s, &no_fonts, &out).unwrap();
                 run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap_or_else(|e| panic!("{codec:?} in {format:?}: {e}"));
+                let m = cl_media::probe(&out).unwrap();
+                assert_eq!((m.kind, m.width, m.height, m.has_audio), (MediaKind::Video, 128, 72, false), "{codec:?} in {format:?}");
+                assert!((m.duration.as_secs_f64() - 1.0).abs() < 0.1, "{codec:?} in {format:?}: {:?}", m.duration);
             }
         }
     }
@@ -3969,7 +3964,8 @@ mod tests {
                 .status()
                 .unwrap();
             assert!(st.success(), "libaom-av1 with {extra:?}");
-            assert!(out.metadata().unwrap().len() > 0);
+            let m = cl_media::probe(&out).unwrap();
+            assert_eq!((m.video_codec.as_deref(), m.width), (Some("av1"), 128), "{extra:?}");
         }
     }
 
@@ -4378,14 +4374,21 @@ mod tests {
     #[test]
     fn driver_hint_only_without_other_hardware() {
         use Encoder::*;
-        for old in [false, true] {
-            for found in [vec![Software], vec![Software, Qsv], vec![Software, Amf], vec![Software, Mf], vec![Software, Nvenc], vec![], vec![Software, Qsv, Amf, Mf]] {
-                let want = old && found.iter().all(|e| *e == Software);
-                assert_eq!(driver_hint(old, &found), want, "{old} {found:?}");
-            }
+        let cases: [(bool, &[Encoder], bool); 10] = [
+            (true, &[Software], true),
+            (true, &[], true),
+            (true, &[Software, Qsv], false),
+            (true, &[Software, Amf], false),
+            (true, &[Software, Mf], false),
+            (true, &[Software, Nvenc], false),
+            (true, &[Software, Qsv, Amf, Mf], false),
+            (false, &[Software], false),
+            (false, &[], false),
+            (false, &[Software, Qsv], false),
+        ];
+        for (old, found, want) in cases {
+            assert_eq!(driver_hint(old, found), want, "{old} {found:?}");
         }
-        assert!(driver_hint(true, &[Software]));
-        assert!(!driver_hint(true, &[Software, Mf]));
     }
 
     /// Automatically NVENC → QSV → AMF → Media Foundation → software; a chosen path first, if it is

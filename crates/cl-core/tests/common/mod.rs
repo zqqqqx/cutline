@@ -170,6 +170,30 @@ pub fn check(p: &Project, ctx: &str) {
     assert!(p.timeline.markers.windows(2).all(|w| w[0].at <= w[1].at), "{ctx}: Marker unsortiert");
 }
 
+/// Save and load. On failure (seen about once in 2000 runs, cause unknown) it collects evidence:
+/// the lines around the error, whether a second parse of the same text fails too, whether saving
+/// again gives the same text, and the text itself in a file in the temp folder.
 pub fn roundtrip(p: &Project) -> Project {
-    Project::from_json(&p.to_json()).expect("saved project loads again")
+    let json = p.to_json();
+    let e = match Project::from_json(&json) {
+        Ok(q) => return q,
+        Err(e) => e,
+    };
+    let line = e.line().max(1);
+    let around: String = json
+        .lines()
+        .enumerate()
+        .skip(line.saturating_sub(6))
+        .take(11)
+        .map(|(i, l)| format!("{:>8}{} {l}\n", i + 1, if i + 1 == line { ">" } else { " " }))
+        .collect();
+    let again = Project::from_json(&json).err().map(|e| e.to_string());
+    let same_text = p.to_json() == json;
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let file = std::env::temp_dir().join(format!("cutline-roundtrip-{}-{nanos}.json", std::process::id()));
+    let saved = std::fs::write(&file, &json).map(|_| file.display().to_string());
+    panic!(
+        "saved project loads again: {e}\nlines around {line}:\n{around}second parse of the same text: {again:?}\n\
+         saving again gives the same text: {same_text}\ntext saved to: {saved:?}"
+    );
 }

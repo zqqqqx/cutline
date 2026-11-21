@@ -1337,19 +1337,22 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let src = make_clip(dir.path());
-        let rot = dir.path().join("rot.mp4");
-        // mimic a portrait phone video: stored landscape, rotation as side data
-        let st = command("ffmpeg")
-            .unwrap()
-            .args(["-v", "error", "-y", "-display_rotation", "90", "-i"])
-            .arg(&src)
-            .args(["-c", "copy"])
-            .arg(&rot)
-            .status()
-            .unwrap();
-        assert!(st.success());
-        let m = probe(&rot).unwrap();
-        assert_eq!((m.width, m.height), (180, 320));
+        // mimic a portrait phone video: stored landscape, rotation as side data (90° and 270°:
+        // the side data holds a negative and a positive angle)
+        for deg in ["90", "270"] {
+            let rot = dir.path().join(format!("rot{deg}.mp4"));
+            let st = command("ffmpeg")
+                .unwrap()
+                .args(["-v", "error", "-y", "-display_rotation", deg, "-i"])
+                .arg(&src)
+                .args(["-c", "copy"])
+                .arg(&rot)
+                .status()
+                .unwrap();
+            assert!(st.success());
+            let m = probe(&rot).unwrap();
+            assert_eq!((m.width, m.height), (180, 320), "{deg}°");
+        }
         assert_eq!((probe(&src).unwrap().width, probe(&src).unwrap().height), (320, 180));
     }
 
@@ -1545,7 +1548,9 @@ mod tests {
     }
 
     /// If the hardware path fails (here: file without a frame at the end), no false
-    /// "broken" mark results as long as software has no frame either.
+    /// "broken" mark results as long as software has no frame either. The positive case (hardware
+    /// fails, software works → remembered) needs a file only the hardware decoder rejects; FFmpeg
+    /// falls back to software by itself for unsupported formats, so there is no such test file.
     #[test]
     fn hw_failure_is_only_remembered_when_software_works() {
         if !test_tools() {
@@ -1682,19 +1687,18 @@ mod tests {
         let m = probe(&v).unwrap();
         assert_eq!((m.kind, m.has_audio), (MediaKind::Video, false));
         assert_eq!(m.fps, Some(cl_core::Rational::new(24000, 1001)));
-        // a single frame as video, rotation 270°
+        // a single frame as video
         let one = gen(dir.path(), "eins.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=25:d=0.04", "-pix_fmt", "yuv420p"]);
         let m = probe(&one).unwrap();
-        assert_eq!(m.kind, MediaKind::Video);
-        let rot = dir.path().join("rot.mp4");
-        assert!(command("ffmpeg").unwrap().args(["-v", "error", "-y", "-display_rotation", "270", "-i"]).arg(&one)
-            .args(["-c", "copy"]).arg(&rot).status().unwrap().success());
-        assert_eq!((probe(&rot).unwrap().width, probe(&rot).unwrap().height), (36, 64));
-        // truncated file: error or video with duration, but no crash
+        assert_eq!((m.kind, m.width, m.height), (MediaKind::Video, 64, 36));
+        // truncated file: a clean "unreadable" error or the video as it is, never a crash
         let data = std::fs::read(&v).unwrap();
         let cut = dir.path().join("halb.mp4");
         std::fs::write(&cut, &data[..data.len() / 2]).unwrap();
-        let _ = probe(&cut);
+        match probe(&cut) {
+            Ok(m) => assert_eq!((m.kind, m.width, m.height), (MediaKind::Video, 64, 36), "{m:?}"),
+            Err(e) => assert!(matches!(e, MediaError::Unreadable(_)), "{e:?}"),
+        }
         // frame after the end, frame from garbage, stream from garbage: error instead of crash/hang
         assert!(decode_frame(&v, Time::from_secs_f64(50.0), 32, 18).is_err());
         assert!(decode_frame(&empty, Time::ZERO, 32, 18).is_err());

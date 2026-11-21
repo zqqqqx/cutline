@@ -216,7 +216,12 @@ fn unknown_fields_and_old_files_still_load() {
     assert_eq!(e.to_string(), cl_core::NEWER_PROJECT);
     v2["timeline"] = "neu".into();
     assert_eq!(Project::from_json(&v2.to_string()).unwrap_err().to_string(), cl_core::NEWER_PROJECT);
-    let _ = Project::from_json(&v.to_string()); // may fail, but must not crash
+    // unknown keys everywhere, also next to enum tags (clip content `{"Media": …}`): today refused
+    // with a position error; if it ever loads, nothing of the project may be lost
+    match Project::from_json(&v.to_string()) {
+        Ok(q) => assert_eq!(q, p),
+        Err(e) => assert!(e.line() > 0 && e.column() > 0, "{e}"),
+    }
     // old files: all fields with default value are missing
     let mut old: serde_json::Value = serde_json::from_str(&json).unwrap();
     for k in ["ripple_all_tracks", "platform", "channels"] {
