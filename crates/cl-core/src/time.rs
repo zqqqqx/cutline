@@ -35,6 +35,24 @@ impl Time {
         let frame = (self.as_secs_f64() * fps.as_f64()).round();
         Time::from_secs_f64(frame / fps.as_f64())
     }
+    /// First frame `n` whose time (in whole µs, as [`Time::snap_to_frame`] places it) is at or
+    /// after `self`. Coverage rule of preview and export: a clip `[start, end)` shows on frames
+    /// `start.first_frame_from(fps)..end.first_frame_from(fps)`, so edge-to-edge clips share no
+    /// frame and leave none out.
+    pub fn first_frame_from(self, fps: Rational) -> i64 {
+        if fps.num == 0 || fps.den == 0 {
+            return 0;
+        }
+        let at = |n: i64| Time::from_secs_f64(n as f64 / fps.as_f64());
+        let mut n = (self.as_secs_f64() * fps.as_f64()).ceil() as i64;
+        while at(n - 1) >= self {
+            n -= 1;
+        }
+        while at(n) < self {
+            n += 1;
+        }
+        n
+    }
     /// Whole seconds and the frame within, rounded to the nearest frame – one rule for all
     /// time displays (timecode, inspector), otherwise they were one frame apart.
     pub fn secs_frames(self, fps: Rational) -> (i64, i64) {
@@ -144,5 +162,38 @@ mod tests {
         let f30 = Rational::new(30, 1);
         assert_eq!(Time::from_secs_f64(3.0 + 19.0 / 30.0 - 1e-6).timecode(f30), "00:00:03:19");
         assert_eq!(Time::from_secs_f64(3.0 + 29.6 / 30.0).secs_frames(f30), (4, 0));
+    }
+
+    /// Clip showing on frame `n` by the preview's rule (start <= frame time < end, frame time in
+    /// µs as the playhead has it) – index into `cuts` windows, `None` = nothing.
+    fn preview_clip(cuts: &[i64], n: i64, fps: Rational) -> Option<usize> {
+        let t = Time::from_secs_f64(n as f64 / fps.as_f64()).0;
+        cuts.windows(2).position(|w| w[0] <= t && t < w[1])
+    }
+
+    #[test]
+    fn coverage_rule_off_grid_cuts() {
+        for fps in [Rational::new(30, 1), Rational::new(30000, 1001), Rational::new(60000, 1001)] {
+            let fd = 1e6 / fps.as_f64();
+            // cuts on the grid (µs rounded up and down), a few µs and up to almost a frame off it
+            let mut cuts = vec![0i64];
+            for (k, off) in [0.0, 3.0, -3.0, 0.25 * fd, 0.5 * fd, -0.5 * fd, 0.75 * fd, 0.999 * fd, 1.0].iter().enumerate() {
+                cuts.push(((5 * k + 6) as f64 * fd + off).round() as i64);
+            }
+            cuts.push(Time::from_secs_f64(2.0).0);
+            let spans: Vec<(i64, i64)> = cuts.windows(2).map(|w| (Time(w[0]).first_frame_from(fps), Time(w[1]).first_frame_from(fps))).collect();
+            for n in 0..(2.0 * fps.as_f64()) as i64 {
+                let by_span = spans.iter().position(|s| s.0 <= n && n < s.1);
+                assert_eq!(by_span, preview_clip(&cuts, n, fps), "frame {n} at {fps:?}, cuts {cuts:?}");
+                assert!(by_span.is_some(), "frame {n} shows no clip");
+            }
+        }
+        // the failing cut from the export: frame 23 at 30 fps lies at 766_667 µs (exactly 766_666.67)
+        let f30 = Rational::new(30, 1);
+        assert_eq!(Time(766_667).first_frame_from(f30), 23);
+        assert_eq!(Time(766_668).first_frame_from(f30), 24);
+        assert_eq!(Time(400_000).first_frame_from(f30), 12);
+        assert_eq!(Time(-40_000).first_frame_from(f30), -1);
+        assert_eq!(Time(5).first_frame_from(Rational::new(0, 1)), 0);
     }
 }
