@@ -117,6 +117,23 @@ pub fn ffmpeg_available() -> bool {
     tool("ffmpeg").is_ok() && tool("ffprobe").is_ok()
 }
 
+/// For tests: `true` if FFmpeg/ffprobe can be used. Without them the test should return early;
+/// that skip is printed to stderr (visible with `--nocapture`). With `CUTLINE_REQUIRE_TOOLS=1`
+/// a missing FFmpeg panics instead, so CI cannot pass by skipping.
+pub fn test_tools() -> bool {
+    let require = std::env::var("CUTLINE_REQUIRE_TOOLS").is_ok_and(|v| v == "1");
+    tools_decision(ffmpeg_available(), require)
+}
+
+/// Pure part of [`test_tools`]: panics if tools are required but missing.
+fn tools_decision(available: bool, require: bool) -> bool {
+    if !available {
+        assert!(!require, "FFmpeg/ffprobe not found but CUTLINE_REQUIRE_TOOLS=1");
+        eprintln!("skipped (no FFmpeg): {}", std::thread::current().name().unwrap_or("?"));
+    }
+    available
+}
+
 fn command(name: &str) -> Result<Command> {
     command_with(name, true)
 }
@@ -1099,6 +1116,15 @@ pub fn escape_path(p: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tools_skips_or_panics() {
+        assert!(tools_decision(true, false));
+        assert!(tools_decision(true, true));
+        assert!(!tools_decision(false, false));
+        let e = std::panic::catch_unwind(|| tools_decision(false, true)).unwrap_err();
+        assert!(e.downcast_ref::<&str>().is_some_and(|m| m.contains("CUTLINE_REQUIRE_TOOLS=1")));
+    }
 
     /// Long graphs: an existing file is not rewritten (another decoder may be reading
     /// it right now); concurrent calls never see a half file, nothing is left behind.
