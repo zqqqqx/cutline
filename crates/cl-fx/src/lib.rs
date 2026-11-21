@@ -1672,6 +1672,14 @@ mod tests {
             return;
         }
         use catalog::{Entry, Kind, Pack, PackInfo, Payload};
+        // fx_graph reads the global catalog (there is no `_in` variant): empty it again, also on panic
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                catalog::load_packs(Vec::new());
+            }
+        }
+        let _reset = Reset;
         let info = PackInfo {
             id: "t.p".into(),
             name: "T".into(),

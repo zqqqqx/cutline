@@ -1043,9 +1043,8 @@ mod tests {
         if !cl_media::test_tools() {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("cl-mcp-test-{}", uuid::Uuid::new_v4().simple()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let v = dir.join("Ä b 🎬.mp4");
+        let dir = tempfile::tempdir().unwrap();
+        let v = dir.path().join("Ä b 🎬.mp4");
         assert!(cl_media::ffmpeg_command().unwrap()
             .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=1", "-threads", "2", "-pix_fmt", "yuv420p"])
             .arg(&v).status().unwrap().success());
@@ -1057,6 +1056,5 @@ mod tests {
         let info = call(&s, "project_info", json!({}));
         assert!((info["structuredContent"]["duration"].as_f64().unwrap() - 1.0).abs() < 0.1, "{info}");
         assert_eq!(call(&s, "list_media", json!({}))["structuredContent"][0]["kind"], "Video");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }
