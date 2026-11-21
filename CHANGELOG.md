@@ -12,6 +12,20 @@
 **Improved**
 
 **Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.15.4 – 2026-11-21
+
+### English
+
+**Fixed**
 - **Cuts in a range or part export sit on the right frame.** When only an In/Out range or parts were exported, a cut could come one frame later than in the preview.
 - **Effects and filters start and end on the right frame in the export.** An effect could start one frame late or stay one frame too long, into the next clip.
 - **Stacked clips pushed onto new tracks keep their order.** When a moved selection ran into other clips, clips lying on top of each other could swap places.
@@ -20,10 +34,6 @@
 - **Stepping frame by frame lands exactly on the frame.** After many steps with the arrow keys the paused preview could still show the clip before a cut although the timecode already stood on it.
 
 ### Deutsch
-
-**Neu**
-
-**Verbessert**
 
 **Behoben**
 - **Schnitte im Bereichs- und Teile-Export liegen auf dem richtigen Bild.** Wurde nur ein In/Out-Bereich oder in Teilen exportiert, konnte ein Schnitt ein Bild später kommen als in der Vorschau.
