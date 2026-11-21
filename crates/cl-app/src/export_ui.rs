@@ -1962,29 +1962,9 @@ fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
     assert_eq!(d.name, "t (2)");
 }
 
-/// Test home: holds `HOME_LOCK` for the whole test and points `CUTLINE_HOME` at a fresh temp folder.
-/// Drop clears the variable (also when the test fails), then deletes the folder, then releases the lock.
+/// Test home of the crate (lock, `CUTLINE_HOME`, cleanup on drop)
 #[cfg(test)]
-pub(crate) struct TestHome {
-    pub dir: tempfile::TempDir,
-    _lock: std::sync::MutexGuard<'static, ()>,
-}
-
-#[cfg(test)]
-impl TestHome {
-    pub fn new() -> Self {
-        let _lock = crate::paths::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("CUTLINE_HOME", dir.path());
-        TestHome { dir, _lock }
-    }
-}
-
-#[cfg(test)]
-impl Drop for TestHome {
-    fn drop(&mut self) {
-        }
-}
+pub(crate) use crate::paths::TestHome;
 
 /// Poll `done` every 20 ms; fails the test if it is still false after `secs` seconds
 #[cfg(test)]

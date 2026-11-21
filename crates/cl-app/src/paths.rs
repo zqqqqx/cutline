@@ -242,7 +242,7 @@ pub fn test_lock() -> std::sync::MutexGuard<'static, ()> {
 /// (also after a panic) clears the variables first, then deletes the folder, then releases the lock.
 #[cfg(test)]
 pub struct TestHome {
-    dir: tempfile::TempDir,
+    pub dir: tempfile::TempDir,
     _lock: std::sync::MutexGuard<'static, ()>,
 }
 
