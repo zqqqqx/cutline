@@ -705,7 +705,7 @@ impl App {
                         .default(0.18)
                         .show(ui)
                 });
-                *e |= theme::row(ui, "Weiche Kante", |ui| {
+                *e |= theme::row(ui, "Farbübergang", |ui| {
                     Slider::new(&mut k.blend, 0.0..=0.5)
                         .percent()
                         .default(0.08)
