@@ -349,6 +349,9 @@ struct Still {
 /// running frame then still shows roughly the right place, and killing it starved every job.
 pub(crate) const KILL_DIST: f64 = 1.0;
 
+/// A waiting job that stays the newest this long means the playhead rests (see `InFlight::rested`)
+const STILL_REST: std::time::Duration = std::time::Duration::from_millis(150);
+
 /// What a new single-frame job does next to the clip's running one
 #[derive(Debug, PartialEq)]
 pub(crate) enum Next {
@@ -376,16 +379,17 @@ pub(crate) fn next_still(run: Option<(u64, &std::path::Path, Time)>, prev: Time,
 }
 
 /// Running player frames: at most one decode per clip, and while it runs at most the newest
-/// further job waits ("newest wins"; older waiting ones are dropped without a process).
+/// further job waits ("newest wins"; older waiting ones are dropped without a process), with the
+/// time since it is the newest.
 #[derive(Default)]
-struct InFlight(HashMap<ClipId, ((u64, PathBuf, Time, Arc<KillSwitch>), Option<Still>)>);
+struct InFlight(HashMap<ClipId, ((u64, PathBuf, Time, Arc<KillSwitch>), Option<(Still, std::time::Instant)>)>);
 
 impl InFlight {
     /// New job: `Some` = start it now (with its switch, and the switch of a killed one)
     fn offer(&mut self, clip: ClipId, s: Still) -> Option<(Still, Arc<KillSwitch>, Option<Arc<KillSwitch>>)> {
         let slot = self.0.get(&clip);
         let run = slot.as_ref().map(|((k, p, a, _), _)| (*k, p.as_path(), *a));
-        let prev = slot.as_ref().map_or(s.at, |((.., a, _), w)| w.as_ref().map_or(*a, |w| w.at));
+        let prev = slot.as_ref().map_or(s.at, |((.., a, _), w)| w.as_ref().map_or(*a, |w| w.0.at));
         let old = match next_still(run, prev, s.key, &s.path, s.at) {
             Next::Same => {
                 if let Some(slot) = self.0.get_mut(&clip) {
@@ -395,7 +399,9 @@ impl InFlight {
             }
             Next::Wait => {
                 if let Some(slot) = self.0.get_mut(&clip) {
-                    slot.1 = Some(s);
+                    // the same job again (safety net of the core): it keeps its time
+                    let since = slot.1.as_ref().filter(|w| w.0.key == s.key).map_or_else(std::time::Instant::now, |w| w.1);
+                    slot.1 = Some((s, since));
                 }
                 return None;
             }
@@ -415,7 +421,26 @@ impl InFlight {
         if self.0.get(&clip).is_none_or(|((k, ..), _)| *k != key) {
             return None;
         }
-        self.0.remove(&clip).map(|(_, w)| w)
+        self.0.remove(&clip).map(|(_, w)| w.map(|w| w.0))
+    }
+    /// The playhead rests: a job waited `rest` without a newer one – the running one is killed and the
+    /// waiting one starts at once (otherwise the exact frame came only after the stale decode, with 4K
+    /// originals twice the time). Returns (clip, job, its switch, killed switch).
+    fn rested(&mut self, rest: std::time::Duration) -> Vec<(ClipId, Still, Arc<KillSwitch>, Arc<KillSwitch>)> {
+        let due: Vec<ClipId> = self.0.iter().filter(|(_, (_, w))| w.as_ref().is_some_and(|w| w.1.elapsed() >= rest)).map(|(c, _)| *c).collect();
+        let mut out = Vec::new();
+        for clip in due {
+            if let Some(((.., old), Some((s, _)))) = self.0.remove(&clip) {
+                let ks = Arc::new(KillSwitch::default());
+                self.0.insert(clip, ((s.key, s.path.clone(), s.at, ks.clone()), None));
+                out.push((clip, s, ks, old));
+            }
+        }
+        out
+    }
+    /// How long until the next waiting job counts as rested (at most `max`)
+    fn next_rest(&self, rest: std::time::Duration, max: std::time::Duration) -> std::time::Duration {
+        self.0.values().filter_map(|(_, w)| w.as_ref()).map(|w| rest.saturating_sub(w.1.elapsed())).fold(max, std::time::Duration::min)
     }
     fn len(&self) -> usize {
         self.0.len()
@@ -510,6 +535,7 @@ fn frame_dispatcher(
     busy: Arc<AtomicUsize>,
     held: Arc<[AtomicUsize; 4]>,
     decode: StillFn,
+    rest: std::time::Duration,
 ) {
     let proxies = crate::proxy::dir();
     let spawn = |s: Still, ks: Arc<KillSwitch>, clip: ClipId| {
@@ -548,7 +574,12 @@ fn frame_dispatcher(
             keep
         });
         cache.set_generation(gen.load(Ordering::Relaxed));
-        let msg = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+        for (clip, s, ks, old) in inflight.rested(rest) {
+            old.kill();
+            perf_discarded();
+            spawn(s, ks, clip);
+        }
+        let msg = match rx.recv_timeout(inflight.next_rest(rest, std::time::Duration::from_secs(1))) {
             Ok(m) => m,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
@@ -957,10 +988,10 @@ fn run(job: Job) -> Option<Done> {
 
 impl Decoder {
     pub fn new(ctx: egui::Context) -> Self {
-        Self::with_still_decoder(ctx, Arc::new(|p, at, w, h, g, ks| cl_media::decode_frame_opts(p, at, w, h, g, false, Some(ks))))
+        Self::with_still_decoder(ctx, Arc::new(|p, at, w, h, g, ks| cl_media::decode_frame_opts(p, at, w, h, g, false, Some(ks))), STILL_REST)
     }
 
-    fn with_still_decoder(ctx: egui::Context, decode: StillFn) -> Self {
+    fn with_still_decoder(ctx: egui::Context, decode: StillFn, rest: std::time::Duration) -> Self {
         let (done_tx, rx) = channel::<Done>();
         // player frames
         let (tx, jobs) = channel::<Msg>();
@@ -971,7 +1002,7 @@ impl Decoder {
             let (done_tx, ctx, gen, busy, tx, held) = (done_tx.clone(), ctx.clone(), generation.clone(), busy.clone(), tx.clone(), held.clone());
             std::thread::Builder::new()
                 .name("cl-decoder".into())
-                .spawn(move || frame_dispatcher(jobs, tx, done_tx, ctx, gen, busy, held, decode))
+                .spawn(move || frame_dispatcher(jobs, tx, done_tx, ctx, gen, busy, held, decode, rest))
                 .expect("Decoder-Thread");
         }
         let strips_wanted: Arc<Mutex<HashSet<String>>> = Default::default();
@@ -1361,9 +1392,9 @@ mod tests {
     /// Dispatcher with a fake decoder (no FFmpeg, no clock): many quick jobs of one clip start at
     /// most two decodes, the overtaken ones never; the first frame comes as neighbour, then the exact
     /// one without further input; finished frames are cached; other clips run independently.
-    #[test]
-    fn quick_jobs_start_at_most_two_decodes_per_clip() {
-        // each decode reports (source time ms, release) and waits for its release
+    /// Fake single-frame decoder: each decode reports (source time ms, release) and waits for its
+    /// release or its kill switch.
+    fn gated_decoder(rest: std::time::Duration) -> (Decoder, Receiver<(u64, Sender<()>)>) {
         let (calls_tx, calls) = channel::<(u64, Sender<()>)>();
         let calls_tx = Mutex::new(calls_tx);
         let d = Decoder::with_still_decoder(
@@ -1381,7 +1412,15 @@ mod tests {
                     }
                 }
             }),
+            rest,
         );
+        (d, calls)
+    }
+
+    #[test]
+    fn quick_jobs_start_at_most_two_decodes_per_clip() {
+        // no rest rule here: the order of events alone decides
+        let (d, calls) = gated_decoder(std::time::Duration::MAX);
         let (a, b) = (ClipId::new(), ClipId::new());
         let job = |clip, key, at: f64| Job::Frame { clip, key, path: "a.mp4".into(), at: Time::from_secs_f64(at), w: 4, h: 2, graph: None, window: None };
         let call = || calls.recv_timeout(std::time::Duration::from_secs(10)).expect("decode started");
@@ -1420,6 +1459,28 @@ mod tests {
         go21.send(()).unwrap();
         assert_eq!(frame(), (a, 21, true, 132));
         assert!(calls.try_recv().is_err(), "no further decode");
+    }
+
+    /// The playhead rests (the waiting job stays the newest for `STILL_REST`; here at once): the
+    /// running stale decode is killed and the exact one starts without waiting for it.
+    #[test]
+    fn resting_playhead_starts_the_waiting_job_at_once() {
+        let (d, calls) = gated_decoder(std::time::Duration::ZERO);
+        let clip = ClipId::new();
+        let job = |key, at: f64| Job::Frame { clip, key, path: "a.mp4".into(), at: Time::from_secs_f64(at), w: 4, h: 2, graph: None, window: None };
+        let call = || calls.recv_timeout(std::time::Duration::from_secs(10)).expect("decode started");
+        d.send(job(1, 1.0));
+        let (_, go1) = call();
+        d.send(job(2, 1.1));
+        let (ms, go2) = call();
+        assert_eq!(ms, 1100, "waiting job started while the first one still runs");
+        go2.send(()).unwrap();
+        let _ = go1.send(());
+        match d.rx.recv_timeout(std::time::Duration::from_secs(10)).expect("frame") {
+            Done::Frame { key, exact, .. } => assert_eq!((key, exact), (2, true), "the killed one shows nothing"),
+            _ => panic!("not a frame"),
+        }
+        assert!(d.rx.recv_timeout(std::time::Duration::from_millis(200)).is_err());
     }
 
     /// Dragging a slider during Play: many jobs of the same layer pile up – only the newest
