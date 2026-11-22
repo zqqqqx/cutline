@@ -21,6 +21,20 @@
 
 **Behoben**
 
+## 0.16.1 – 2026-11-22
+
+### English
+
+**Fixed**
+- **Transparent videos stay transparent.** Files with an alpha channel – ProRes 4444, Animation and PNG in MOV, WebM with transparency – no longer lose it in the preview or the export. They are shown from the original instead of a preview copy.
+- **A clip trimmed to the size of a gap fits into it.** Trimming an edge until it snaps keeps it exactly on the neighbour, and a clip that is a hair too long for a gap is shortened by that hair when you drop it in. Before, it landed on a new track.
+
+### Deutsch
+
+**Behoben**
+- **Transparente Videos bleiben transparent.** Dateien mit Alphakanal – ProRes 4444, Animation und PNG in MOV, WebM mit Transparenz – verlieren ihn nicht mehr, weder in der Vorschau noch im Export. Sie werden aus dem Original gezeigt statt aus einer Vorschaukopie.
+- **Ein auf Lückengröße geschnittener Clip passt in die Lücke.** Eine eingerastete Kante bleibt beim Trimmen genau am Nachbarn, und ein Clip, der um Haaresbreite zu lang für eine Lücke ist, wird beim Ablegen um dieses Stück gekürzt. Vorher landete er auf einer neuen Spur.
+
 ## 0.16.0 – 2026-11-22
 
 ### English
