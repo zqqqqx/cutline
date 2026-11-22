@@ -1926,7 +1926,7 @@ mod tests {
         let media = |name: &str, audio: bool, kind: MediaKind| {
             let path = dir.path().join(name);
             std::fs::write(&path, b"x").unwrap();
-            MediaRef { id: MediaId::new(), path, kind, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: audio, audio_streams: audio as u32, video_codec: None, audio_codec: None }
+            MediaRef { id: MediaId::new(), path, kind, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: audio, audio_streams: audio as u32, video_codec: None, audio_codec: None, has_alpha: false }
         };
         let s = Time::from_secs_f64;
         let (snd, mute_vid, img) = (media("a.wav", true, MediaKind::Audio), media("v.mp4", false, MediaKind::Video), media("i.png", false, MediaKind::Image));
@@ -1981,6 +1981,7 @@ mod tests {
             audio_streams: 0,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let mut t = Track::new(TrackKind::Video);
         for (i, n) in ["a.mp4", "b.mp4", "c.mp4"].iter().enumerate() {
@@ -3506,6 +3507,80 @@ mod tests {
         });
     }
 
+    /// Transparent overlay (64×36, opaque yellow box bottom right) over a blue clip, `tweak` applied
+    /// to the overlay clips; `sections`: the overlay as two clips, exported in sections. Returns
+    /// (corner, box) colour of frame 5.
+    fn alpha_over_blue(dir: &Path, overlay: &Path, tweak: &dyn Fn(&mut Clip), sections: bool) -> ([u8; 3], [u8; 3]) {
+        let blue = color_video(dir, "blau.mp4", "blue", 2.0, "64x36");
+        let o = cl_media::probe(overlay).unwrap();
+        let mut p = Project::new("Alpha");
+        (p.settings.width, p.settings.height) = (64, 36);
+        p.settings.fps = Rational { num: 25, den: 1 };
+        let mut base = Track::new(TrackKind::Video);
+        base.clips.push(Clip::new(ClipContent::Media { media: blue.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(2.0)));
+        let mut top = Track::new(TrackKind::Video);
+        for i in 0..if sections { 2 } else { 1 } {
+            let mut c = Clip::new(ClipContent::Media { media: o.id, kind: MediaKind::Video }, Time::from_secs_f64(i as f64), Time::from_secs_f64(1.0));
+            tweak(&mut c);
+            top.clips.push(c);
+        }
+        p.media = vec![blue, o];
+        p.timeline.tracks = vec![base, top];
+        let out = dir.join(format!("alpha-{}.mp4", overlay.file_stem().unwrap().to_string_lossy()));
+        let s = ExportSettings::from_project(&p);
+        let job = if sections { build_limited(&p, &s, &no_fonts, &out, 2).unwrap() } else { build(&p, &s, &no_fonts, &out).unwrap() };
+        assert_eq!(!job.sections.is_empty(), sections, "sections mode");
+        run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+        let f = frame_n(&out, 5);
+        (rgb_at(&f, 4, 4), rgb_at(&f, 48, 27))
+    }
+
+    /// Transparent videos stay transparent over lower tracks: blue in the corner, yellow in the box.
+    #[test]
+    fn exports_transparent_video_over_lower_track() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let files = cl_media::write_alpha_samples(dir.path());
+        let bright = |c: &mut Clip| c.fx.adjust.brightness = 0.2;
+        let vivid = |c: &mut Clip| c.fx.filter = Some(FxRef::new("vivid"));
+        // `format=gbrp` inside: without the alpha rescue around colour work the alpha is gone
+        let heat = |c: &mut Clip| c.fx.effects.push(FxRef::new("heat"));
+        let fast = |c: &mut Clip| {
+            c.speed = 2.0;
+            c.duration = Time::from_secs_f64(0.5);
+        };
+        let back = |c: &mut Clip| c.fx.reverse = true;
+        let crop = |c: &mut Clip| c.crop.right = 0.1;
+        let mut cases: Vec<(&Path, &str, &dyn Fn(&mut Clip), bool)> = Vec::new();
+        for f in &files {
+            cases.push((f, "plain", &|_| {}, false));
+            cases.push((f, "brightness", &bright, false));
+            cases.push((f, "filter", &vivid, false));
+            cases.push((f, "heat effect", &heat, false));
+        }
+        cases.push((&files[0], "sections", &|_| {}, true));
+        cases.push((&files[0], "speed 2x", &fast, false));
+        cases.push((&files[0], "reversed", &back, false));
+        cases.push((&files[0], "cropped", &crop, false));
+        // all cases first, then one report: which formats and paths lose alpha
+        let mut bad = Vec::new();
+        for (f, what, tweak, sections) in cases {
+            let name = f.file_name().unwrap().to_string_lossy();
+            let (corner, bx) = alpha_over_blue(dir.path(), f, tweak, sections);
+            if !(corner[2] > 180 && corner[0] < 70 && corner[1] < 70) {
+                bad.push(format!("{name} {what}: lower track hidden in the corner, got {corner:?}"));
+            }
+            // the heat effect recolours the box: only the corner counts there
+            if what != "heat effect" && !(bx[0] > 170 && bx[1] > 170 && bx[2] < 90) {
+                bad.push(format!("{name} {what}: overlay colour lost in the box, got {bx:?}"));
+            }
+        }
+        assert!(bad.is_empty(), "{}", bad.join("
+"));
+    }
+
     /// Solid-color video (30 frames/s)
     fn color_video(dir: &Path, name: &str, color: &str, secs: f64, size: &str) -> MediaRef {
         let path = dir.join(name);
@@ -4215,7 +4290,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a.wav");
         std::fs::write(&path, b"x").unwrap();
-        let m = MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(60.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+        let m = MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(60.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None, has_alpha: false };
         let mut p = Project::new("K");
         p.media.push(m.clone());
         let mut t = Track::new(TrackKind::Audio);
@@ -4250,7 +4325,7 @@ mod tests {
             // middle of building and its clips would drop out from then on (test was flaky)
             let meta = std::fs::metadata(&path).unwrap();
             READABLE.lock().unwrap().get_or_insert_with(Default::default).insert((path.clone(), meta.len(), meta.modified().ok()), Some(true));
-            MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None }
+            MediaRef { id: MediaId::new(), path, kind: MediaKind::Audio, duration: Time::from_secs_f64(600.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None, has_alpha: false }
         };
         let dense = |files: usize| {
             let ms: Vec<MediaRef> = (0..files).map(media).collect();

@@ -175,6 +175,8 @@ pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
             }
         }
     }
+    reprobe_alpha(&mut project, &present);
+    progress.check()?;
     // Prepare the timeline: image animations (thumbnail time), fonts, content
     let images: Vec<&cl_core::MediaRef> = project.media.iter().filter(|m| m.kind == MediaKind::Image && present.get(&m.path) == Some(&true)).collect();
     progress.set(Step::Timeline, 0, images.len() + 1, "");
@@ -199,6 +201,29 @@ pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
     progress.tick("");
     progress.check()?;
     Ok(Loaded { project, present, fonts, gone })
+}
+
+/// Codecs that can carry alpha: projects saved before `MediaRef::has_alpha` existed say `false`
+/// for every file, so these are probed again (a short FFprobe each, in parallel). The rest stays.
+const ALPHA_CODECS: &[&str] = &["prores", "qtrle", "png", "vp8", "vp9", "hevc", "ffv1", "utvideo", "rawvideo", "hap"];
+
+fn reprobe_alpha(project: &mut Project, present: &HashMap<PathBuf, bool>) {
+    let mut todo: Vec<&mut cl_core::MediaRef> = project
+        .media
+        .iter_mut()
+        .filter(|m| m.kind == MediaKind::Video && !m.has_alpha && present.get(&m.path) == Some(&true))
+        .filter(|m| m.video_codec.as_deref().is_some_and(|c| ALPHA_CODECS.contains(&c)))
+        .collect();
+    let n = todo.len();
+    std::thread::scope(|s| {
+        for chunk in todo.chunks_mut(n.div_ceil(CHECK_WORKERS).max(1)) {
+            s.spawn(|| {
+                for m in chunk {
+                    m.has_alpha = cl_media::probe_alpha(&m.path).unwrap_or(false);
+                }
+            });
+        }
+    });
 }
 
 impl Load {
@@ -439,6 +464,34 @@ mod tests {
         // broken file: error, no crash
         std::fs::write(dir.path().join("kaputt.cutline"), "{").unwrap();
         assert!(load(&dir.path().join("kaputt.cutline"), &Progress::default()).is_err());
+    }
+
+    /// A project saved before `has_alpha` existed: transparent videos get it on load, opaque ones not
+    #[test]
+    fn old_project_learns_alpha_on_load() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut files = cl_media::write_alpha_samples(dir.path());
+        let opaque = dir.path().join("prores422.mov");
+        let st = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=64x36:d=1", "-c:v", "prores_ks", "-profile:v", "2"]).arg(&opaque).status().unwrap();
+        assert!(st.success());
+        files.push(opaque.clone());
+        let mut p = Project::new("Alt");
+        for f in &files {
+            p.media.push(cl_media::probe(f).unwrap());
+        }
+        let mut json: serde_json::Value = serde_json::from_str(&p.to_json()).unwrap();
+        for m in json["media"].as_array_mut().unwrap() {
+            assert!(m.as_object_mut().unwrap().remove("has_alpha").is_some());
+        }
+        let file = dir.path().join("alt.cutline");
+        std::fs::write(&file, json.to_string()).unwrap();
+        let done = load(&file, &Progress::default()).unwrap();
+        for m in &done.project.media {
+            assert_eq!(m.has_alpha, m.path != opaque, "{}", m.path.display());
+        }
     }
 
     #[test]

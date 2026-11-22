@@ -48,6 +48,7 @@ pub fn media(kind: MediaKind, dur: f64) -> MediaRef {
         audio_streams: (kind != MediaKind::Image) as u32,
         video_codec: None,
         audio_codec: None,
+        has_alpha: false,
     }
 }
 

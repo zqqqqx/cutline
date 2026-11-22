@@ -206,6 +206,7 @@ mod tests {
             audio_streams: 1,
             video_codec: Some("h264".into()),
             audio_codec: Some("aac".into()),
+            has_alpha: false,
         }
     }
 

@@ -335,6 +335,7 @@ mod tests {
                     audio_streams: (kind == Audio) as u32,
                     video_codec: None,
                     audio_codec: None,
+                    has_alpha: false,
                 };
                 p.media.push(m.clone());
                 ClipContent::Media { media: m.id, kind: mk }

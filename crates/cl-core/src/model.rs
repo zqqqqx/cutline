@@ -243,6 +243,10 @@ pub struct MediaRef {
     pub audio_streams: u32,
     pub video_codec: Option<String>,
     pub audio_codec: Option<String>,
+    /// The video carries transparency (cached probe result; older projects lack it and get it
+    /// re-probed on load, so no schema raise: an older version only drops this cache)
+    #[serde(default)]
+    pub has_alpha: bool,
 }
 
 impl MediaRef {

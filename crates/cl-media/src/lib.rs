@@ -156,6 +156,7 @@ struct ProbeOut {
 struct ProbeStream {
     codec_type: Option<String>,
     codec_name: Option<String>,
+    pix_fmt: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
     avg_frame_rate: Option<String>,
@@ -175,6 +176,8 @@ struct SideData {
 #[derive(Deserialize)]
 struct StreamTags {
     rotate: Option<String>,
+    /// WebM: VP8/VP9 with a separately coded alpha channel (the pix_fmt says yuv420p)
+    alpha_mode: Option<String>,
 }
 #[derive(Deserialize, Default)]
 struct Disposition {
@@ -298,7 +301,82 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
         audio_streams: p.streams.iter().filter(|s| s.codec_type.as_deref() == Some("audio")).count() as u32,
         video_codec: video.and_then(|v| v.codec_name.clone()),
         audio_codec: audio.and_then(|a| a.codec_name.clone()),
+        has_alpha: kind == MediaKind::Video && video.is_some_and(|v| remember_alpha(path, v)),
     })
+}
+
+/// Does the stream carry alpha? A pixel format with an alpha plane (palette transparency is not
+/// counted) or WebM VP8/VP9 with `alpha_mode=1` (there the pix_fmt says yuv420p). Remembers the
+/// decoder for [`decoder_args`].
+fn remember_alpha(path: &Path, v: &ProbeStream) -> bool {
+    let f = v.pix_fmt.as_deref().unwrap_or("");
+    let alpha = ["yuva", "ya", "gbrap", "rgba", "bgra", "argb", "abgr"].iter().any(|p| f.starts_with(p))
+        || v.tags.as_ref().is_some_and(|t| t.alpha_mode.as_deref() == Some("1"));
+    decoders().insert(path.to_path_buf(), alpha_decoder(v.codec_name.as_deref(), alpha));
+    alpha
+}
+
+/// Decoder to name before `-i` so the picture keeps its alpha: FFmpeg's own VP8/VP9 decoders drop
+/// the WebM alpha channel, libvpx keeps it. Every FFmpeg call that decodes a source picture puts
+/// [`decoder_args`] before its `-i`.
+fn alpha_decoder(codec: Option<&str>, has_alpha: bool) -> Option<&'static str> {
+    let dec = match codec? {
+        "vp9" => "libvpx-vp9",
+        "vp8" => "libvpx",
+        _ => return None,
+    };
+    (has_alpha && has_decoder(dec)).then_some(dec)
+}
+
+/// Is decoder `name` in this FFmpeg build? (without it: default decoder, picture opaque as before)
+fn has_decoder(name: &str) -> bool {
+    static LIST: OnceLock<String> = OnceLock::new();
+    let list = LIST.get_or_init(|| {
+        command("ffmpeg")
+            .and_then(|mut c| Ok(c.args(["-hide_banner", "-decoders"]).stdin(Stdio::null()).output()?))
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .unwrap_or_default()
+    });
+    list.lines().any(|l| l.split_whitespace().nth(1) == Some(name))
+}
+
+/// Decoder per source path (filled by [`probe`] and [`probe_alpha`], otherwise once per session
+/// with a short FFprobe – only for Matroska/WebM, the only containers with VP8/VP9 alpha).
+fn decoders() -> std::sync::MutexGuard<'static, std::collections::HashMap<PathBuf, Option<&'static str>>> {
+    static D: OnceLock<Mutex<std::collections::HashMap<PathBuf, Option<&'static str>>>> = OnceLock::new();
+    D.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Input options for decoding the picture of `path` (before `-i`): empty or `-c:v libvpx…`.
+pub fn decoder_args(path: &Path) -> Vec<&'static str> {
+    let known = decoders().get(path).copied();
+    let matroska = || path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("webm") || e.eq_ignore_ascii_case("mkv"));
+    let dec = match known {
+        Some(d) => d,
+        None if matroska() => {
+            if probe_alpha(path).is_err() {
+                decoders().insert(path.to_path_buf(), None);
+            }
+            decoders().get(path).copied().flatten()
+        }
+        None => None,
+    };
+    dec.map_or(Vec::new(), |d| vec!["-c:v", d])
+}
+
+/// Only the alpha part of [`probe`] (old projects without `has_alpha`): short FFprobe of the first
+/// video stream. Also remembers the decoder for [`decoder_args`].
+pub fn probe_alpha(path: &Path) -> Result<bool> {
+    let out = command("ffprobe")?
+        .args(["-v", "error", "-select_streams", "v:0", "-print_format", "json", "-show_entries", "stream=codec_name,pix_fmt:stream_tags=alpha_mode"])
+        .arg(path)
+        .stdin(Stdio::null())
+        .output()?;
+    if !out.status.success() {
+        return Err(MediaError::Unreadable(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+    }
+    let p: ProbeOut = serde_json::from_slice(&out.stdout)?;
+    Ok(p.streams.first().is_some_and(|v| remember_alpha(path, v)))
 }
 
 /// RGBA8 image (unpremultiplied).
@@ -472,6 +550,7 @@ fn decode_raw(
     if let Some(a) = accel {
         cmd.args(["-hwaccel", a]);
     }
+    cmd.args(decoder_args(path));
     cmd.args(["-ss", &format!("{:.6}", at.as_secs_f64().max(0.0))])
         .arg("-i")
         .arg(path);
@@ -813,6 +892,7 @@ fn spawn_stream(
     if let Some(a) = accel {
         cmd.args(["-hwaccel", a]);
     }
+    cmd.args(decoder_args(path));
     cmd.args(["-ss", &format!("{:.6}", start.as_secs_f64().max(0.0))])
         .arg("-i")
         .arg(path)
@@ -1096,6 +1176,32 @@ impl Drop for FrameStream {
             let _ = c.kill();
         }
     }
+}
+
+/// For tests in several crates: one second, 64×36, 25 fps, transparent except an opaque yellow box
+/// in the bottom right quarter (x 32…63, y 18…35), in the five formats with alpha:
+/// ProRes 4444, QuickTime Animation, PNG in MOV, VP9 and VP8 WebM.
+#[doc(hidden)]
+pub fn write_alpha_samples(dir: &Path) -> Vec<PathBuf> {
+    const SRC: &str = "color=c=red@0.0:s=64x36:d=1:r=25,format=rgba,drawbox=x=32:y=18:w=32:h=18:c=yellow@1:t=fill:replace=1";
+    let files: [(&str, &[&str]); 5] = [
+        ("prores4444.mov", &["-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le"]),
+        ("qtrle.mov", &["-c:v", "qtrle"]),
+        ("png.mov", &["-c:v", "png"]),
+        ("vp9.webm", &["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p"]),
+        ("vp8.webm", &["-c:v", "libvpx", "-pix_fmt", "yuva420p", "-auto-alt-ref", "0"]),
+    ];
+    files
+        .iter()
+        .map(|(name, args)| {
+            let out = dir.join(name);
+            let st = command("ffmpeg")
+                .and_then(|mut c| Ok(c.args(["-v", "error", "-y", "-f", "lavfi", "-i", SRC]).args(*args).arg(&out).stdin(Stdio::null()).status()?))
+                .expect("ffmpeg");
+            assert!(st.success(), "{name}");
+            out
+        })
+        .collect()
 }
 
 /// Escape a path as the value of a filter option in the filter graph (`C:/x.cube` → `C\\:/x.cube`).
@@ -1666,6 +1772,59 @@ mod tests {
             .unwrap();
         assert!(st.success(), "{name}");
         out
+    }
+
+    /// Alpha of the pixel (x, y) of a 64×36 frame
+    fn alpha_at(f: &RgbaFrame, x: usize, y: usize) -> u8 {
+        assert_eq!((f.width, f.height), (64, 36));
+        f.data[(y * 64 + x) * 4 + 3]
+    }
+
+    #[test]
+    fn probe_and_decode_keep_alpha() {
+        if !test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        for p in write_alpha_samples(dir.path()) {
+            let name = p.file_name().unwrap().to_string_lossy().into_owned();
+            assert!(probe(&p).unwrap().has_alpha, "{name}: probe should report alpha");
+            // a fresh path (no probe in this session): the decoder must be found on its own, as for
+            // a project loaded with `has_alpha` already stored
+            let copy = dir.path().join(format!("copy-{name}"));
+            std::fs::copy(&p, &copy).unwrap();
+            for src in [&p, &copy] {
+                let f = decode_frame(src, Time::ZERO, 64, 36).unwrap();
+                assert_eq!(alpha_at(&f, 4, 4), 0, "{name}: single frame, transparent corner");
+                assert_eq!(alpha_at(&f, 48, 27), 255, "{name}: single frame, opaque box");
+                assert!(f.data[(27 * 64 + 48) * 4] > 200 && f.data[(27 * 64 + 48) * 4 + 1] > 200, "{name}: box stays yellow");
+            }
+            let s = FrameStream::open(&p, Time::ZERO, 64, 36, Rational::new(25, 1)).unwrap();
+            let f = s.next_blocking().unwrap();
+            assert_eq!((alpha_at(&f, 4, 4), alpha_at(&f, 48, 27)), (0, 255), "{name}: playback stream");
+            let w = decode_frames(&p, Time::ZERO, 3, 64, 36, &|_| true, None).unwrap();
+            assert_eq!((alpha_at(&w[2].1, 4, 4), alpha_at(&w[2].1, 48, 27)), (0, 255), "{name}: reverse window");
+        }
+    }
+
+    #[test]
+    fn opaque_files_have_no_alpha() {
+        if !test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = ["-f", "lavfi", "-i", "testsrc2=s=64x36:r=25:d=1"];
+        for (name, args) in [
+            ("h264.mp4", &["-c:v", "libx264", "-pix_fmt", "yuv420p"][..]),
+            ("prores422.mov", &["-c:v", "prores_ks", "-profile:v", "2"]),
+            ("plain.webm", &["-c:v", "libvpx-vp9"]),
+        ] {
+            let p = gen(dir.path(), name, &[&src[..], args].concat());
+            let m = probe(&p).unwrap();
+            assert!(!m.has_alpha, "{name}");
+            assert!(!probe_alpha(&p).unwrap(), "{name}");
+            assert!(decoder_args(&p).is_empty(), "{name}: default decoder");
+        }
     }
 
     #[test]

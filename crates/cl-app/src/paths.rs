@@ -482,6 +482,7 @@ fn moves_projects_and_media_folders() {
         audio_streams: 1,
         video_codec: None,
         audio_codec: None,
+        has_alpha: false,
     };
     proj.media.push(m.clone());
     std::fs::write(a.path().join("Clip.cutline"), proj.to_json()).unwrap();
