@@ -298,6 +298,11 @@ enum Msg {
         res: cl_media::Result<Vec<(u32, RgbaFrame)>>,
         ms: f64,
     },
+    /// The UI asks for the same frame on a later tick: the playhead rests (see [`EXACT_REST`])
+    Rest {
+        clip: ClipId,
+        key: u64,
+    },
     /// Frame `idx` of the scrub window decode `seq` (sent as soon as it is decoded)
     ScrubFrame {
         clip: ClipId,
@@ -410,12 +415,13 @@ pub(crate) fn next_still(run: Option<(u64, &std::path::Path, Time)>, prev: Time,
 /// further job waits ("newest wins"; older waiting ones are dropped without a process), with the
 /// time when it starts anyway (see `rested`).
 #[derive(Default)]
-struct InFlight(HashMap<ClipId, ((u64, PathBuf, Time, Arc<KillSwitch>), Option<(Still, std::time::Instant)>)>);
+struct InFlight(HashMap<ClipId, ((u64, PathBuf, Time, Arc<KillSwitch>), Option<(Still, std::time::Instant, bool)>)>);
 
 impl InFlight {
     /// New job: `Some` = start it now (with its switch, and the switch of a killed one). A waiting job
     /// starts anyway once it stayed the newest for `rest`; `urgent`: never wait, kill the running one;
-    /// `defer`: wait for `rest` even when nothing runs (a placeholder with key 0 holds the slot).
+    /// `defer`: wait for `rest` even when nothing runs (a placeholder with key 0 holds the slot), and
+    /// only start once the UI reported the playhead resting on it ([`InFlight::rest`]).
     fn offer(&mut self, clip: ClipId, s: Still, rest: std::time::Duration, urgent: bool, defer: bool) -> Option<(Still, Arc<KillSwitch>, Option<Arc<KillSwitch>>)> {
         if defer && !urgent && !self.0.contains_key(&clip) {
             self.0.insert(clip, ((0, s.path.clone(), s.at, Arc::default()), None));
@@ -423,6 +429,7 @@ impl InFlight {
         let slot = self.0.get(&clip);
         let run = slot.as_ref().map(|((k, p, a, _), _)| (*k, p.as_path(), *a));
         let prev = slot.as_ref().map_or(s.at, |((.., a, _), w)| w.as_ref().map_or(*a, |w| w.0.at));
+        let resting = |w: &(Still, std::time::Instant, bool)| w.0.key == s.key;
         let next = match next_still(run, prev, s.key, &s.path, s.at) {
             Next::Wait if urgent => Next::Replace,
             n => n,
@@ -437,8 +444,10 @@ impl InFlight {
             Next::Wait => {
                 if let Some(slot) = self.0.get_mut(&clip) {
                     // the same job again (safety net of the core): it keeps its time
-                    let due = slot.1.as_ref().filter(|w| w.0.key == s.key).map_or_else(|| std::time::Instant::now() + rest.min(std::time::Duration::from_secs(3600)), |w| w.1);
-                    slot.1 = Some((s, due));
+                    let same = slot.1.as_ref().filter(|w| resting(w));
+                    let due = same.map_or_else(|| std::time::Instant::now() + rest.min(std::time::Duration::from_secs(3600)), |w| w.1);
+                    let ready = same.map_or(!defer, |w| w.2);
+                    slot.1 = Some((s, due, ready));
                 }
                 return None;
             }
@@ -460,15 +469,21 @@ impl InFlight {
         }
         self.0.remove(&clip).map(|(_, w)| w.map(|w| w.0))
     }
+    /// The UI asked for the same frame again on a later tick: the playhead rests on job `key`
+    fn rest(&mut self, clip: ClipId, key: u64) {
+        if let Some(w) = self.0.get_mut(&clip).and_then(|s| s.1.as_mut()).filter(|w| w.0.key == key) {
+            w.2 = true;
+        }
+    }
     /// The playhead rests: a job waited `rest` without a newer one – the running one is killed and the
     /// waiting one starts at once (otherwise the exact frame came only after the stale decode, with 4K
     /// originals twice the time). Returns (clip, job, its switch, killed switch).
     fn rested(&mut self) -> Vec<(ClipId, Still, Arc<KillSwitch>, Option<Arc<KillSwitch>>)> {
         let now = std::time::Instant::now();
-        let due: Vec<ClipId> = self.0.iter().filter(|(_, (_, w))| w.as_ref().is_some_and(|w| w.1 <= now)).map(|(c, _)| *c).collect();
+        let due: Vec<ClipId> = self.0.iter().filter(|(_, (_, w))| w.as_ref().is_some_and(|w| w.2 && w.1 <= now)).map(|(c, _)| *c).collect();
         let mut out = Vec::new();
         for clip in due {
-            if let Some(((k, .., old), Some((s, _)))) = self.0.remove(&clip) {
+            if let Some(((k, .., old), Some((s, ..)))) = self.0.remove(&clip) {
                 let ks = Arc::new(KillSwitch::default());
                 self.0.insert(clip, ((s.key, s.path.clone(), s.at, ks.clone()), None));
                 out.push((clip, s, ks, (k != 0).then_some(old)));
@@ -479,7 +494,7 @@ impl InFlight {
     /// How long until the next waiting job counts as rested (at most `max`)
     fn next_rest(&self, max: std::time::Duration) -> std::time::Duration {
         let now = std::time::Instant::now();
-        self.0.values().filter_map(|(_, w)| w.as_ref()).map(|w| w.1.saturating_duration_since(now)).fold(max, std::time::Duration::min)
+        self.0.values().filter_map(|(_, w)| w.as_ref().filter(|w| w.2)).map(|w| w.1.saturating_duration_since(now)).fold(max, std::time::Duration::min)
     }
     fn len(&self) -> usize {
         self.0.len()
@@ -663,13 +678,15 @@ impl ScrubWin {
 /// Decoder of window runs (`cl_media::decode_frames_each`; tests count with a fake)
 type FramesFn = Arc<dyn Fn(&std::path::Path, Time, u32, u32, u32, &KillSwitch, &mut dyn FnMut(u32, RgbaFrame)) -> cl_media::Result<u32> + Send + Sync>;
 
-/// A scrub job whose exact frame is still to be decoded waits this long for a newer one before its
-/// decode starts: while dragging or holding an arrow key (a job every 16–33 ms) the window shows the
-/// frames and no process is started per position; once the playhead rests this long, the exact frame
-/// is decoded (and a window decode that already holds the target is stopped, it only ran ahead).
+/// A scrub job whose exact frame is still to be decoded starts its decode only when the playhead rests:
+/// the UI asked for the same frame again on a later tick ([`Decoder::rest`]) and at least this long has
+/// passed since the job. A late tick with a new position is movement, however long it took (under load
+/// UI ticks slip past 40 ms; time alone stopped the window in the middle of a held arrow key). While
+/// moving, the window shows the frames and no process is started per position; at rest the exact frame
+/// is decoded and the window decode stops.
 /// Measured: starting it at every step (as before the window) cost a process per step and slowed the
 /// window and the exact frame at rest alike.
-const EXACT_REST: std::time::Duration = std::time::Duration::from_millis(40);
+pub(crate) const EXACT_REST: std::time::Duration = std::time::Duration::from_millis(40);
 
 /// Dispatcher of the player frames (runs in the `cl-decoder` thread).
 #[allow(clippy::too_many_arguments)]
@@ -996,6 +1013,10 @@ fn frame_dispatcher(
                 }
                 _ => None,
             },
+            Msg::Rest { clip, key } => {
+                inflight.rest(clip, key);
+                None
+            }
             Msg::ScrubEnd { clip, seq, read, n } => {
                 if let Some(wn) = scrubs.get_mut(&clip).filter(|w| w.busy.as_ref().is_some_and(|b| b.0 == seq)) {
                     if let Some((_, first, ..)) = wn.busy.take() {
@@ -1367,6 +1388,11 @@ impl Decoder {
                 let _ = self.tx_bg.send((g, job));
             }
         }
+    }
+
+    /// Stand: the UI asks for the same single frame again on a later tick (the playhead rests on it)
+    pub fn rest(&self, clip: ClipId, key: u64) {
+        let _ = self.tx.send(Msg::Rest { clip, key });
     }
 
     /// Project change: still waiting jobs of the old project expire
@@ -1937,9 +1963,11 @@ mod tests {
         go.send(()).unwrap();
         assert_eq!(next_frame(&d), (1, true, 0));
         d.send(scrub_job(clip, 2, 1, (2, 1), None));
+        assert_eq!(next_frame(&d), (2, false, 1), "window frame as neighbour");
+        // the next tick asks for the same frame: the playhead rests
+        d.rest(clip, 2);
         let (ms, go) = calls.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
         assert_eq!(ms, 8, "exact decode once the playhead rests");
-        assert_eq!(next_frame(&d), (2, false, 1), "window frame as neighbour");
         go.send(()).unwrap();
         assert_eq!(next_frame(&d), (2, true, 0), "full-size exact frame follows");
         assert_eq!(wins.try_iter().count(), 1);
@@ -1951,6 +1979,41 @@ mod tests {
         let (_, go) = calls.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
         go.send(()).unwrap();
         assert!(wins.try_recv().is_err(), "no window with a graph");
+    }
+
+    /// Rest means an unchanged playhead on a later tick, not a pause between ticks: slow ticks (100 ms
+    /// apart, longer than `EXACT_REST`) with new positions never start an exact decode nor stop the
+    /// window; the same position on the next tick starts exactly one; the exact frame replaces the
+    /// neighbour.
+    #[test]
+    fn slow_ticks_with_new_positions_are_movement() {
+        let (d, calls, wins) = fake_decoder(STILL_REST);
+        let clip = ClipId::new();
+        d.send(scrub_job(clip, 1, 0, (2, 1), None));
+        let (_, go) = calls.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+        go.send(()).unwrap();
+        assert_eq!(next_frame(&d), (1, true, 0));
+        for i in 1..=6 {
+            d.send(scrub_job(clip, 1 + i as u64, i, (2, 1), None));
+            assert_eq!(next_frame(&d), (1 + i as u64, false, i as u8), "tick {i}: window frame");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            assert!(calls.try_recv().is_err(), "tick {i}: no exact decode while moving");
+        }
+        assert_eq!(wins.try_iter().count(), 1, "one window run, never stopped");
+        // a stale rest for an older position changes nothing
+        d.rest(clip, 3);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(calls.try_recv().is_err());
+        // same position on the next tick: exactly one exact decode
+        d.rest(clip, 7);
+        d.rest(clip, 7);
+        let (ms, go) = calls.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+        assert_eq!(ms, 50);
+        go.send(()).unwrap();
+        assert_eq!(next_frame(&d), (7, true, 5), "exact frame follows the neighbour");
+        d.rest(clip, 7);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(calls.try_recv().is_err(), "only one");
     }
 
     /// Real FFmpeg: scrub window frames (proxy-like file with 0.25-s keyframes and an original with

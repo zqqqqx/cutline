@@ -1007,6 +1007,11 @@ impl<S: Source> PlayCore<S> {
         }
     }
 
+    /// Is single frame `key` of the layer requested and its exact frame still missing?
+    pub fn still_open(&self, id: Lid, key: u64) -> bool {
+        self.requested.get(&id).is_some_and(|(k, _)| *k == key) && self.shown.get(&id) != Some(&key)
+    }
+
     /// Single frame delivered: show it if it is the requested one
     pub fn still_done(&mut self, id: Lid, key: u64) -> bool {
         if self.requested.get(&id).is_some_and(|(k, _)| *k == key) {

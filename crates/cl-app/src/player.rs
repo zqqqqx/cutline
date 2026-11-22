@@ -2515,7 +2515,16 @@ impl App {
         });
         let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx, fxh, fps);
         // missing file (background check): do not request at all, otherwise the job would stay open
-        if self.presence.get(&m.path) && self.core.still(lid(id), key, now) {
+        if !self.presence.get(&m.path) {
+            return;
+        }
+        if !self.core.still(lid(id), key, now) {
+            // same frame on a later tick while it is still open: the playhead rests (scrub window: now
+            // the exact frame is decoded)
+            if !self.core.playing() && self.core.still_open(lid(id), key) {
+                self.decoder.rest(id, key);
+            }
+        } else {
             // check the LUT file only when requesting, not per UI frame
             let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
@@ -2523,6 +2532,10 @@ impl App {
             let window = reverse_window(c, m, path == m.path, graph.is_none(), self.core.playing() && self.core.rate() > 0.0, fps);
             // Stand: scrub window (proxy first) for plain clips; with an effect graph single frames
             let scrub = (scrub && !self.core.playing() && graph.is_none() && !animated_fx).then(|| self.window_source(m, (w, h), src)).flatten();
+            if scrub.is_some() {
+                // a quiet UI does not draw: the next tick (same frame = rest) must come by itself
+                ctx.request_repaint_after(crate::preview::EXACT_REST + std::time::Duration::from_millis(10));
+            }
             self.decoder.send(Job::Frame {
                 clip: id,
                 key,
