@@ -47,7 +47,7 @@ id_type!(MediaId);
 
 /// Raise this whenever a field is added whose loss would change the user's edit: older versions
 /// then refuse the file instead of loading it and saving it back without that field.
-pub const PROJECT_SCHEMA_VERSION: u32 = 3;
+pub const PROJECT_SCHEMA_VERSION: u32 = 4;
 
 /// Load error for a project saved by a newer Cutline (the UI translates it as a whole).
 pub const NEWER_PROJECT: &str = "Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.";
@@ -738,6 +738,9 @@ pub struct TextStyle {
     pub background: Option<[u8; 4]>,
     #[serde(default = "yes")]
     pub shadow: bool,
+    /// Look of the shadow while `shadow` is on; `None` = the fixed default (`Shadow::default()`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_style: Option<Shadow>,
     #[serde(default = "one")]
     pub line_spacing: f32,
     /// Alignment: -1 left, 0 center, 1 right
@@ -746,6 +749,30 @@ pub struct TextStyle {
     /// Karaoke: the word currently spoken in its own color
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub karaoke: Option<Karaoke>,
+}
+
+/// Hard text shadow: colour (alpha = opacity) and offset in project pixels (y down).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Shadow {
+    pub color: [u8; 4],
+    pub dx: f32,
+    pub dy: f32,
+}
+
+impl Default for Shadow {
+    /// The look of the shadow switch before it was adjustable: black 60 %, 3/3 px
+    fn default() -> Self {
+        Self { color: [0, 0, 0, 153], dx: 3.0, dy: 3.0 }
+    }
+}
+
+impl Shadow {
+    /// Offset as drawn in preview and export: whole pixels (FFmpeg's `drawtext` only takes
+    /// integers; rounded half away from zero), at most ±100 px; NaN counts as 0.
+    pub fn offset(&self) -> (i32, i32) {
+        let r = |v: f32| v.clamp(-100.0, 100.0).round() as i32;
+        (r(self.dx), r(self.dy))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -828,6 +855,7 @@ impl Default for TextStyle {
             outline: None,
             background: None,
             shadow: true,
+            shadow_style: None,
             line_spacing: 1.0,
             align: 0,
             karaoke: None,

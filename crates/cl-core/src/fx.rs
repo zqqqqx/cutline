@@ -1154,16 +1154,17 @@ mod tests {
     }
 
     /// Identity edge is not written; a version 2 file (no edge) loads with identity edge
-    /// and is saved as version 3.
+    /// and is saved as the current version.
     #[test]
     fn identity_edge_is_not_saved_and_old_files_load() {
         let fx = ClipFx { cutout: Some("m.mkv".into()), chroma: Some(ChromaKey::default()), ..Default::default() };
         let s = one_clip_project(fx).to_json();
         assert!(!s.contains("\"edge\""), "{s}");
-        assert!(s.contains("\"schema_version\": 3"), "{s}");
-        let old = s.replace("\"schema_version\": 3", "\"schema_version\": 2");
+        let cur = format!("\"schema_version\": {}", crate::model::PROJECT_SCHEMA_VERSION);
+        assert!(s.contains(&cur), "{s}");
+        let old = s.replace(&cur, "\"schema_version\": 2");
         let p = crate::model::Project::from_json(&old).unwrap();
-        assert_eq!(p.schema_version, 3);
+        assert_eq!(p.schema_version, crate::model::PROJECT_SCHEMA_VERSION);
         assert!(p.timeline.tracks[0].clips[0].fx.edge.is_identity());
         assert_eq!(p.to_json(), s);
     }

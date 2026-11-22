@@ -264,6 +264,45 @@ fn unknown_fields_and_old_files_still_load() {
     check(d.project(), "old file");
 }
 
+/// Adjustable shadow (format 4): a file without `shadow_style` loads with the fixed default look
+/// and is saved without the field; a set shadow survives saving; offsets are clamped when drawn.
+#[test]
+fn text_shadow_style_round_trips_and_old_files_keep_the_default() {
+    assert_eq!(PROJECT_SCHEMA_VERSION, 4);
+    let text = |st: TextStyle| {
+        let mut p = Project::new("S");
+        let mut t = Track::new(TrackKind::Text);
+        t.clips.push(Clip::new(ClipContent::Text(st), Time::ZERO, Time::from_secs_f64(1.0)));
+        p.timeline.tracks.push(t);
+        p
+    };
+    let style = |p: &Project| match &p.timeline.tracks[0].clips[0].content {
+        ClipContent::Text(st) => st.clone(),
+        _ => unreachable!(),
+    };
+    // old file (version 3, no field): default look, nothing new written
+    let json = text(TextStyle::default()).to_json();
+    assert!(!json.contains("shadow_style"), "{json}");
+    assert!(json.contains("\"schema_version\": 4"), "{json}");
+    let old = json.replace("\"schema_version\": 4", "\"schema_version\": 3");
+    let p = Project::from_json(&old).unwrap();
+    assert_eq!(style(&p).shadow_style, None);
+    assert_eq!(p.to_json(), json);
+    // set shadow: survives saving and loading
+    let sh = Shadow { color: [255, 0, 0, 200], dx: 12.0, dy: -8.0 };
+    let p = text(TextStyle { shadow_style: Some(sh), ..Default::default() });
+    let json = p.to_json();
+    assert!(json.contains("shadow_style"), "{json}");
+    assert_eq!(style(&Project::from_json(&json).unwrap()).shadow_style, Some(sh));
+    // the default is the look before the shadow was adjustable; offsets whole and within ±100 px
+    assert_eq!(Shadow::default(), Shadow { color: [0, 0, 0, 153], dx: 3.0, dy: 3.0 });
+    assert_eq!(Shadow::default().offset(), (3, 3));
+    let off = |dx: f32, dy: f32| Shadow { dx, dy, ..Default::default() }.offset();
+    assert_eq!(off(2.5, -2.5), (3, -3));
+    assert_eq!(off(1e6, -1e6), (100, -100));
+    assert_eq!(off(f32::NAN, f32::INFINITY), (0, 100));
+}
+
 /// Bug: a URL as media path went to FFmpeg (network) and did not count as missing on relink.
 #[test]
 fn only_local_files_count_as_media() {
