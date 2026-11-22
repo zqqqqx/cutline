@@ -926,15 +926,24 @@ impl App {
         (self.preview_path_loose(m, need_h, loose), at)
     }
 
-    /// Would a moving playhead read a proxy that is not used at rest (its lines not enough for
-    /// `need_h`)? Then the single frame gets its own key, so the sharp one is requested at rest.
-    /// Known without file access (background search, parts inventory).
-    /// shortcut: a part not built yet at that place falls back to the original under the moving key, so
-    /// at rest the original is decoded once more; fine while parts are being built.
-    pub fn scrub_proxy(&self, m: &MediaRef, need_h: u32) -> bool {
-        let want = self.proxy_want();
-        let h = self.proxies.cached(m.id, want).flatten().map(|(_, h)| h).or_else(|| registry().get(&m.path).filter(|e| e.want == want).map(|e| e.spec.height));
-        self.proxy_allowed(m) && h.is_some_and(|h| !proxy_sharp(false, need_h, h))
+    /// Source of the scrub window of a single frame of size `w`×`h` (see `preview::ScrubSpec`): the
+    /// proxy or a finished part whatever its sharpness (fast seeking, 0.5-s keyframes), at most at its
+    /// own size; without one the original at half the height. Never a proxy for alpha media
+    /// (`proxy_allowed`). `None` for non-videos and without a frame rate.
+    pub fn window_source(&self, m: &MediaRef, (w, h): (u32, u32), at: Time) -> Option<crate::preview::ScrubSpec> {
+        if m.kind != MediaKind::Video {
+            return None;
+        }
+        let (path, at) = self.still_source(m, h, at, true);
+        let (fps, max_h) = if path == m.path {
+            (m.fps?, h / 2)
+        } else {
+            let want = self.proxy_want();
+            let spec = proxy_spec(m, want.0, want.1);
+            (spec.fps.or(m.fps)?, spec.height)
+        };
+        let (w, h) = if h <= max_h { (w, h) } else { cl_media::fit_size(w, h, w, max_h) };
+        Some(crate::preview::ScrubSpec { path, at, fps, w, h })
     }
 
     /// Source of the stream of layer `id` from timeline place `from` (rules: [`parts::choose_stream`]).
@@ -1913,8 +1922,11 @@ mod tests {
         let pick = app.stream_pick(1, &c, &m, Time::ZERO);
         assert_eq!(app.stream_source(&m, 540, pick).0, out, "opaque: proxy");
         assert_eq!(app.still_source(&m, 540, Time::ZERO, false).0, out, "opaque: proxy");
-        // display larger than the proxy: proxy only while the playhead moves, sharp original at rest
-        assert!(app.scrub_proxy(&m, 1080) && !app.scrub_proxy(&m, 540));
+        // display larger than the proxy: the scrub window reads the proxy at its size, the exact frame
+        // at rest the sharp original
+        let win = app.window_source(&m, (1920, 1080), Time::ZERO).unwrap();
+        assert_eq!((win.path.clone(), win.h), (out.clone(), 540), "window: proxy");
+        assert_eq!(app.window_source(&m, (960, 540), Time::ZERO).unwrap().h, 540, "window = still size: reusable");
         assert_eq!(app.still_source(&m, 1080, Time::ZERO, true).0, out, "moving: proxy");
         assert_eq!(app.still_source(&m, 1080, Time::ZERO, false).0, m.path, "rest: original");
         m.has_alpha = true;
@@ -1923,7 +1935,8 @@ mod tests {
         assert_eq!(app.stream_source(&m, 540, pick).0, m.path, "alpha: original stream");
         assert_eq!(app.still_source(&m, 540, Time::ZERO, false).0, m.path, "alpha: original single frame");
         assert_eq!(app.still_source(&m, 1080, Time::ZERO, true).0, m.path, "alpha: original while moving too");
-        assert!(!app.scrub_proxy(&m, 1080));
+        let win = app.window_source(&m, (1920, 1080), Time::ZERO).unwrap();
+        assert_eq!((win.path.clone(), win.h), (m.path.clone(), 540), "alpha: window from the original at half height");
     }
 
     #[test]

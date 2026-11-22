@@ -990,6 +990,23 @@ fn stills_in_stand_show_overtaken_frames_as_neighbours_until_the_exact_one() {
     assert_eq!(core.held(), Some(1));
 }
 
+/// Scrub window at a lower resolution than the still: its frame for the requested position comes as
+/// neighbour under the requested key itself. Shown, the request stays open (wait line on) until the
+/// full-size exact frame; nothing covers the exact frame afterwards; a stuck neighbour is asked again.
+#[test]
+fn window_frame_of_the_requested_key_bridges_until_the_exact_one() {
+    let mut core: PlayCore<Sim> = PlayCore::default();
+    assert!(core.still(1, 10, 0.0));
+    assert!(core.still_near(1, 10), "window frame shown");
+    assert!(core.waiting(), "exact frame still open");
+    assert!(!core.still(1, 10, 0.2));
+    assert!(core.still(1, 10, 0.6), "no exact frame after 0.5 s: asked again");
+    assert!(core.still_done(1, 10));
+    assert!(!core.waiting());
+    assert!(!core.still_near(1, 10), "never over the exact frame");
+    assert!(!core.still(1, 10, 2.0));
+}
+
 /// World with a slow single-frame decoder (80 ms): drag the playhead one frame per 16-ms UI tick.
 /// Before, every new position killed the running decode and nothing came until the pointer rested.
 fn drag(w: &mut World, from: f64, step: f64, ticks: usize) -> (u32, u32) {

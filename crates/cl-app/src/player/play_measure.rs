@@ -461,7 +461,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
                     let graph = cl_fx::preview_graph(c, w, h, n.layer.t_rel.as_secs_f64(), None, None);
                     let p = path();
                     let window = reverse_window(c, m, p == m.path, graph.is_none(), core.playing() && core.rate() > 0.0, fps);
-                    decoder.send(Job::Frame { clip: n.id, key, path: p, at: src, w, h, graph, window });
+                    decoder.send(Job::Frame { clip: n.id, key, path: p, at: src, w, h, graph, window, scrub: None });
                 }
             }
         }

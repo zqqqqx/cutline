@@ -510,8 +510,9 @@ pub(crate) fn streamable(c: &Clip) -> bool {
 /// Preroll when stopped: the playhead must rest on a heavy layer this long before its stream
 /// is already opened (Play then shows frames at once; clicking and scrubbing open nothing)
 const PREROLL_REST: f64 = 0.3;
-/// The playhead counts as moving this long after its last change (single frames from the proxy)
-const SCRUB_REST: f64 = 0.15;
+/// Scrub windows only for this many media layers from the top (memory: 120 MB each at most);
+/// layers further down get single frames (newest wins)
+const SCRUB_LAYERS: usize = 2;
 /// Generation of a preroll job at the starter (the core's counts from 0)
 const PREROLL_GEN: u64 = u64::MAX;
 
@@ -805,8 +806,8 @@ mod presence_tests {
             .filter(|p| p.is_file())
             .collect();
         let only = std::env::var("CUTLINE_QA_RUN").ok();
-        println!("| file | proxy | run | frames/s moving | longest gap ms | final exact ms | decodes started | killed |");
-        println!("|---|---|---|---|---|---|---|---|");
+        println!("| file | proxy | run | frames/s moving | longest gap ms | final exact ms | single decodes | killed | window decodes |");
+        println!("|---|---|---|---|---|---|---|---|---|");
         for path in &files {
             let m = cl_media::probe(path).unwrap();
             let fps = m.fps.map_or(60.0, |f| f.as_f64());
@@ -816,7 +817,7 @@ mod presence_tests {
                     let out = work.join(format!("{}-540.mp4", path.file_stem().unwrap().to_string_lossy()));
                     crate::proxy::test_build_parts(&m, out, (540, Rational::new(60, 1)), 1);
                 }
-                for run in ["slow", "medium", "fast", "steps"] {
+                for run in ["slow", "medium", "fast", "steps", "hold"] {
                     if only.as_deref().is_some_and(|o| o != run) {
                         continue;
                     }
@@ -841,7 +842,10 @@ mod presence_tests {
                         "slow" => (0..=120).map(|i| start + i as f64 * frame).collect(),
                         "medium" => (0..=30).map(|i| start + i as f64 * 4.0 * frame).collect(),
                         "fast" => (0..=19).map(|i| start + 2.0 * i as f64 / 19.0).collect(),
-                        _ => (0..=60).chain((0..60).rev()).flat_map(|i| [start + i as f64 * frame; 2]).collect(),
+                        // 60 single steps forward at 30/s, ending on a position not seen before
+                        "steps" => (0..=60).flat_map(|i| [start + i as f64 * frame; 2]).collect(),
+                        // arrow key held: 2 s forward, 2 s back, ending one frame before the start
+                        _ => (0..=60).chain((-1..60).rev()).flat_map(|i| [start + i as f64 * frame; 2]).collect(),
                     };
                     let tick = |app: &mut crate::saving::tests::TestApp, at: f64| {
                         app.playhead = Time::from_secs_f64(at);
@@ -861,7 +865,8 @@ mod presence_tests {
                         }
                         std::thread::sleep(Duration::from_millis(16));
                     }
-                    let jobs0 = [crate::preview::STILL_JOBS[0].load(Relaxed), crate::preview::STILL_JOBS[1].load(Relaxed)];
+                    let count = || crate::preview::STILL_JOBS.iter().map(|a| a.load(Relaxed)).chain([0; 3]).take(3).collect::<Vec<_>>();
+                    let jobs0 = count();
                     let t0 = Instant::now();
                     let (mut last_key, mut changes, mut last_change, mut gap) = (tick(&mut app, start), 0u32, 0.0f64, 0.0f64);
                     for (i, at) in plan.iter().enumerate().skip(1) {
@@ -891,16 +896,17 @@ mod presence_tests {
                             break;
                         }
                     }
-                    let jobs = [crate::preview::STILL_JOBS[0].load(Relaxed) - jobs0[0], crate::preview::STILL_JOBS[1].load(Relaxed) - jobs0[1]];
+                    let jobs: Vec<usize> = count().iter().zip(&jobs0).map(|(a, b)| a - b).collect();
                     println!(
-                        "| {} | {} | {run} | {:.1} | {:.0} | {} | {} | {} |",
+                        "| {} | {} | {run} | {:.1} | {:.0} | {} | {} | {} | {} |",
                         path.file_name().unwrap().to_string_lossy(),
                         if proxy { "yes" } else { "no" },
                         changes as f64 / moved,
                         gap * 1e3,
                         final_ms.map_or("timeout".into(), |v| v.to_string()),
                         jobs[0],
-                        jobs[1]
+                        jobs[1],
+                        jobs[2]
                     );
                 }
             }
@@ -937,7 +943,7 @@ mod presence_tests {
         let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
         let l = Layer { clip: c.clone(), t_rel: Time::ZERO, alpha: 1.0, from: None };
         let canvas = egui::vec2(64.0, 36.0);
-        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, canvas, None);
+        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, canvas, None, true);
         // stopped: single frame only if present
         app.presence.set_all([(path.clone(), false)].into(), 1);
         ask(&mut app);
@@ -993,7 +999,7 @@ mod presence_tests {
         crate::proxy::set_test_entry(&m.path, out.clone(), want, ready.clone(), false);
         app.playhead = Time::from_secs_f64(12.0);
         app.core.play(Time::from_secs_f64(12.0), 0, 0.0);
-        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None);
+        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None, true);
         ask(&mut app);
         let parts = jobs.try_recv().expect("stream from parts requested");
         assert_eq!(parts.path, app.dir().join("q-540.teile").join("0001-0004.ffconcat"));
@@ -2302,11 +2308,6 @@ impl App {
         };
         // attach streams opened in the background (the core discards stale ones)
         let now = self.core_now();
-        if self.playhead != self.scrub_moved.0 {
-            self.scrub_moved = (self.playhead, now);
-            // a quiet UI does not draw: look again once the playhead rests (sharp frame)
-            ctx.request_repaint_after(std::time::Duration::from_secs_f64(SCRUB_REST + 0.01));
-        }
         while let Ok((o, fps, alias, s)) = self.starter.rx.try_recv() {
             match s {
                 // preroll: keep only if it is still wanted (otherwise it ends when discarded)
@@ -2333,12 +2334,14 @@ impl App {
         });
         let mut visible = Vec::with_capacity(needs.len());
         let mut overlays = Vec::new();
+        // scrub windows for the top media layers (`needs` lists them bottom first)
+        let windowed: Vec<ClipId> = needs.iter().rev().filter(|n| n.prefetch.is_none() && n.overlay.is_none()).take(SCRUB_LAYERS).map(|n| n.id).collect();
         for n in &needs {
             visible.push(n.id);
             if let Some((base, mk, k)) = n.overlay {
                 overlays.push((base, n.id, mk, k));
             }
-            self.request_frame(ctx, n.id, &n.clip, &n.media, &n.layer, canvas_px, n.prefetch);
+            self.request_frame(ctx, n.id, &n.clip, &n.media, &n.layer, canvas_px, n.prefetch, windowed.contains(&n.id));
         }
         self.fx_overlays = overlays;
         self.update_preroll(ctx, &needs, canvas_px);
@@ -2433,6 +2436,7 @@ impl App {
         l: &Layer,
         canvas_px: egui::Vec2,
         prefetch_at: Option<Time>,
+        scrub: bool,
     ) {
         let (div, half) = self.play_quality();
         let div = div as f32;
@@ -2509,17 +2513,16 @@ impl App {
                     | "warm-leak"
             )
         });
-        // playhead moving: proxy (fast seeking) under its own key, at rest the sharp source; the proxy
-        // frame stays until the sharp one arrives, both stay in the cache
-        let moving = !self.playing && now - self.scrub_moved.1 < SCRUB_REST && self.scrub_proxy(m, h);
-        let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx, fxh, fps) ^ (moving as u64) << 1;
+        let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx, fxh, fps);
         // missing file (background check): do not request at all, otherwise the job would stay open
         if self.presence.get(&m.path) && self.core.still(lid(id), key, now) {
             // check the LUT file only when requesting, not per UI frame
             let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
-            let (path, at) = self.still_source(m, h, src, moving);
+            let (path, at) = self.still_source(m, h, src, false);
             let window = reverse_window(c, m, path == m.path, graph.is_none(), self.core.playing() && self.core.rate() > 0.0, fps);
+            // Stand: scrub window (proxy first) for plain clips; with an effect graph single frames
+            let scrub = (scrub && !self.core.playing() && graph.is_none() && !animated_fx).then(|| self.window_source(m, (w, h), src)).flatten();
             self.decoder.send(Job::Frame {
                 clip: id,
                 key,
@@ -2529,6 +2532,7 @@ impl App {
                 h,
                 graph,
                 window,
+                scrub,
             });
         }
     }

@@ -211,8 +211,6 @@ pub struct App {
     pub play_canvas_px: Option<egui::Vec2>,
     /// stream of a heavy layer opened ahead while stopped (see `App::update_preroll`)
     pub preroll: Option<crate::player::Preroll>,
-    /// Playhead and core time of its last change (single frames read the proxy while it moves)
-    pub scrub_moved: (cl_core::Time, f64),
     /// Layout (media width, inspector width, timeline height) as a share of the window
     pub layout_frac: (f32, f32, f32),
     pub layout_screen: Option<egui::Rect>,
@@ -488,7 +486,6 @@ impl App {
             ext_full: false,
             play_canvas_px: None,
             preroll: None,
-            scrub_moved: (cl_core::Time::ZERO, f64::NEG_INFINITY),
             layout_frac,
             layout_screen: None,
             onboard,

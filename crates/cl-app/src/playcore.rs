@@ -985,8 +985,9 @@ impl<S: Source> PlayCore<S> {
     /// while the exact frame of the current request is still open; the request stays open (wait line
     /// keeps running, no flicker) until the exact frame comes – never shown over an exact frame.
     pub fn still_near(&mut self, id: Lid, key: u64) -> bool {
+        // `key` may be the requested one itself (scrub window: a lower-resolution or neighbouring frame)
         if self.mode == Mode::Stand {
-            let open = self.requested.get(&id).is_some_and(|(k, _)| *k != key && self.shown.get(&id) != Some(k));
+            let open = self.requested.get(&id).is_some_and(|(k, _)| self.shown.get(&id) != Some(k));
             if open {
                 self.near.insert(id);
                 self.held = Some(id);

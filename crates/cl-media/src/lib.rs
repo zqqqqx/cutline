@@ -493,8 +493,24 @@ pub fn decode_frame_opts(
 /// `k`-th frame after `from`; only those with `keep(k)` stay in memory (number, frame). At the
 /// end of the file fewer, none at all = error.
 pub fn decode_frames(path: &Path, from: Time, n: u32, w: u32, h: u32, keep: &dyn Fn(u32) -> bool, kill: Option<&KillSwitch>) -> Result<Vec<(u32, RgbaFrame)>> {
-    let (frames, _) = decode_raw(path, from, n.max(1), w, h, None, None, keep, kill)?;
-    Ok(frames.into_iter().map(|(k, data)| (k, RgbaFrame { width: w, height: h, data })).collect())
+    let mut frames = Vec::new();
+    decode_raw(path, from, n.max(1), w, h, None, None, &mut |k, data| {
+        if keep(k) {
+            frames.push((k, RgbaFrame { width: w, height: h, data }));
+        }
+    }, kill)?;
+    Ok(frames)
+}
+
+/// Like [`decode_frames`], but each frame goes to `each` as soon as it is decoded (scrub window:
+/// the picture follows while the window fills). Returns the number of frames read.
+pub fn decode_frames_each(path: &Path, from: Time, n: u32, w: u32, h: u32, kill: Option<&KillSwitch>, each: &mut dyn FnMut(u32, RgbaFrame)) -> Result<u32> {
+    let mut read = 0;
+    decode_raw(path, from, n.max(1), w, h, None, None, &mut |k, data| {
+        read = k + 1;
+        each(k, RgbaFrame { width: w, height: h, data });
+    }, kill)?;
+    Ok(read)
 }
 
 fn decode_once(
@@ -506,8 +522,9 @@ fn decode_once(
     accel: Option<&str>,
     kill: Option<&KillSwitch>,
 ) -> Result<(RgbaFrame, Option<Duration>)> {
-    let (mut f, cpu) = decode_raw(path, at, 1, w, h, graph, accel, &|_| true, kill)?;
-    Ok((RgbaFrame { width: w, height: h, data: f.remove(0).1 }, cpu))
+    let mut f = Vec::new();
+    let cpu = decode_raw(path, at, 1, w, h, graph, accel, &mut |_, data| f = data, kill)?;
+    Ok((RgbaFrame { width: w, height: h, data: f }, cpu))
 }
 
 /// `scheme:…` such as `https://host/x.mp4` from a project file: FFmpeg would go online. Purely
@@ -533,8 +550,8 @@ thread_local! {
     static SPAWNS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
-/// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), keeping only
-/// those with `keep(k)`
+/// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), each handed
+/// to `sink(k, bytes)` as soon as it is read
 #[allow(clippy::too_many_arguments)]
 fn decode_raw(
     path: &Path,
@@ -544,9 +561,9 @@ fn decode_raw(
     h: u32,
     graph: Option<&str>,
     accel: Option<&str>,
-    keep: &dyn Fn(u32) -> bool,
+    sink: &mut dyn FnMut(u32, Vec<u8>),
     kill: Option<&KillSwitch>,
-) -> Result<(Vec<(u32, Vec<u8>)>, Option<Duration>)> {
+) -> Result<Option<Duration>> {
     not_url(path)?;
     // already stale (scrubbing: overtaken while waiting for its turn): no process at all
     if kill.is_some_and(KillSwitch::is_killed) {
@@ -592,11 +609,9 @@ fn decode_raw(
     let ks = kill.unwrap_or(&local);
     ks.hold(child)?;
     let need = (w * h * 4) as usize;
-    let (mut frames, mut read, mut buf) = (Vec::new(), 0u32, vec![0u8; need]);
+    let (mut read, mut buf) = (0u32, vec![0u8; need]);
     while read < n && out.read_exact(&mut buf).is_ok() {
-        if keep(read) {
-            frames.push((read, std::mem::replace(&mut buf, vec![0u8; need])));
-        }
+        sink(read, std::mem::replace(&mut buf, vec![0u8; need]));
         read += 1;
     }
     let mut child = ks.release();
@@ -617,7 +632,7 @@ fn decode_raw(
             err
         }));
     }
-    Ok((frames, cpu))
+    Ok(cpu)
 }
 
 /// Maximum number of simultaneous hardware decoders (NVDEC sessions etc. are limited); every
