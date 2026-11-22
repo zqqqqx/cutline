@@ -1023,6 +1023,7 @@ impl App {
                 sh.set_polar(dist, deg);
             }
             ed |= geo;
+            ed |= theme::row(ui, "Weichheit", |ui| Slider::new(&mut sh.blur, 0.0..=40.0).decimals(1).suffix(" px").default(0.0).show(ui));
             if ed.changed || ed.commit {
                 st.shadow_style = Some(sh);
             }
