@@ -762,6 +762,123 @@ impl App {
         }
     }
 
+    /// Font picker with a search field (inspector text tab and brand kit). `none` names the entry for
+    /// "no font" ("System" / "Keine"). Returns the picked entry, `Some(None)` for the no-font entry.
+    pub fn font_picker(
+        &mut self,
+        ui: &mut egui::Ui,
+        salt: impl std::hash::Hash,
+        current: Option<&str>,
+        none: &str,
+        brand: &[String],
+        width: f32,
+    ) -> Option<Option<String>> {
+        let id = egui::Id::new(salt);
+        let state = id.with("search");
+        let fonts = self.font_name_list();
+        let mut picked = None;
+        let mut close = false;
+        let open = egui::ComboBox::from_id_salt(id)
+            .selected_text(current.unwrap_or(none))
+            .width(width)
+            .height(320.0)
+            // clicks into the search field must not close the popup
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show_ui(ui, |ui| {
+                let (mut q, mut sel): (String, usize) = ui.data(|d| d.get_temp(state)).unwrap_or_default();
+                // keys before the field: the single-line field would otherwise drop the focus on Enter.
+                // Esc while typing is consumed by `App::shortcuts` (selection stays) and marked for fields.
+                let (esc, enter, up, down) = ui.input_mut(|i| {
+                    let k = |i: &mut egui::InputState, k| i.consume_key(egui::Modifiers::NONE, k);
+                    (k(i, egui::Key::Escape), k(i, egui::Key::Enter), k(i, egui::Key::ArrowUp), k(i, egui::Key::ArrowDown))
+                });
+                let field = ui.add(
+                    egui::TextEdit::singleline(&mut q)
+                        .hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS)))
+                        .desired_width(f32::INFINITY),
+                );
+                field.request_focus();
+                if field.changed() {
+                    sel = 0;
+                }
+                let mut recent: Vec<(usize, &String)> = fonts
+                    .iter()
+                    .filter_map(|f| self.library.recent_rank(&format!("font:{f}")).map(|r| (r, f)))
+                    .collect();
+                recent.sort();
+                let recent: Vec<String> = recent.into_iter().map(|(_, f)| f.clone()).collect();
+                let rows = font_rows(&fonts, brand, &|f| self.library.is_favorite(&format!("font:{f}")), &recent, none, &q);
+                let pickable: Vec<usize> = (0..rows.len()).filter(|&k| rows[k] != FontRow::Separator).collect();
+                let last = pickable.len().saturating_sub(1);
+                if down {
+                    sel = (sel + 1).min(last);
+                }
+                if up {
+                    sel = sel.saturating_sub(1);
+                }
+                let mut hit = pickable.get(sel).filter(|_| enter).copied();
+                close = esc || crate::widgets::field_esc(ui.ctx());
+                ui.separator();
+                egui::ScrollArea::vertical().max_height(276.0).show(ui, |ui| {
+                    for (k, row) in rows.iter().enumerate() {
+                        let txt = match row {
+                            FontRow::Separator => {
+                                ui.separator();
+                                continue;
+                            }
+                            FontRow::NoFont => RichText::new(none),
+                            FontRow::Font(f) => {
+                                let fav = self.library.is_favorite(&format!("font:{f}"));
+                                RichText::new(if fav { format!("★ {f}") } else { f.clone() })
+                                    .font(egui::FontId::new(15.0, self.font_family(Some(f))))
+                            }
+                        };
+                        let name = match row {
+                            FontRow::Font(f) => Some(f.as_str()),
+                            _ => None,
+                        };
+                        let mark = ui.painter().add(egui::Shape::Noop);
+                        let r = ui.selectable_label(current == name, txt);
+                        if pickable.get(sel) == Some(&k) {
+                            ui.painter().set(mark, egui::Shape::rect_filled(r.rect, theme::R_CTRL, theme::BG_HOVER()));
+                            if up || down {
+                                r.scroll_to_me(None);
+                            }
+                        }
+                        if r.clicked() {
+                            hit = Some(k);
+                        }
+                    }
+                    ui.separator();
+                    if ui.button(crate::tr(format!("{}  Schrift importieren …", icon::UPLOAD_SIMPLE))).clicked() {
+                        let ctx = ui.ctx().clone();
+                        self.pick_fonts(&ctx);
+                    }
+                });
+                if let Some(k) = hit {
+                    picked = Some(match &rows[k] {
+                        FontRow::Font(f) => Some(f.clone()),
+                        _ => None,
+                    });
+                    close = true;
+                }
+                ui.data_mut(|d| d.insert_temp(state, (q, sel)));
+            })
+            .inner
+            .is_some();
+        if close {
+            ui.memory_mut(|m| m.close_popup());
+        }
+        // closed: next time the search starts empty
+        if !open || close {
+            ui.data_mut(|d| d.remove::<(String, usize)>(state));
+        }
+        if let Some(Some(f)) = &picked {
+            self.library.mark_used(&format!("font:{f}"));
+        }
+        picked
+    }
+
     fn text_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let fonts = self.font_name_list();
         // brand fonts at the top, where present
@@ -788,56 +905,11 @@ impl App {
         }
         theme::section(ui, "Schrift");
         theme::row(ui, "Schriftart", |ui| {
-            let current = st.font_family.clone().unwrap_or_else(|| "System".into());
-            egui::ComboBox::from_id_salt("font")
-                .selected_text(current)
-                .width((ui.available_width() - 12.0).max(60.0))
-                .height(320.0)
-                .show_ui(ui, |ui| {
-                    for f in &brand {
-                        let txt = RichText::new(f).font(egui::FontId::new(15.0, self.font_family(Some(f))));
-                        if ui.selectable_label(st.font_family.as_deref() == Some(f), txt).clicked() {
-                            st.font_family = Some(f.clone());
-                            e.commit = true;
-                        }
-                    }
-                    if !brand.is_empty() {
-                        ui.separator();
-                    }
-                    if ui
-                        .selectable_label(st.font_family.is_none(), crate::tr("System"))
-                        .clicked()
-                    {
-                        st.font_family = None;
-                        e.commit = true;
-                    }
-                    // favorites first (with a star)
-                    let mut fonts: Vec<String> = fonts.to_vec();
-                    fonts.sort_by_key(|f| !self.library.is_favorite(&format!("font:{f}")));
-                    for f in &fonts {
-                        let fav = self.library.is_favorite(&format!("font:{f}"));
-                        let txt = RichText::new(if fav { format!("★ {f}") } else { f.clone() })
-                            .font(egui::FontId::new(15.0, self.font_family(Some(f))));
-                        if ui
-                            .selectable_label(st.font_family.as_deref() == Some(f), txt)
-                            .clicked()
-                        {
-                            st.font_family = Some(f.clone());
-                            e.commit = true;
-                        }
-                    }
-                    ui.separator();
-                    if ui
-                        .button(crate::tr(format!(
-                            "{}  Schrift importieren …",
-                            icon::UPLOAD_SIMPLE
-                        )))
-                        .clicked()
-                    {
-                        let ctx = ui.ctx().clone();
-                        self.pick_fonts(&ctx);
-                    }
-                });
+            let w = (ui.available_width() - 12.0).max(60.0);
+            if let Some(f) = self.font_picker(ui, "font", st.font_family.as_deref(), &crate::tr("System"), &brand, w) {
+                st.font_family = f;
+                e.commit = true;
+            }
         });
         *e |= theme::row(ui, "Größe", |ui| {
             Slider::new(&mut st.size, 8.0..=400.0)
@@ -1932,9 +2004,91 @@ fn disabled_toggle(ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit, key: &str) {
     }
 }
 
+/// One row of the font picker
+#[derive(Debug, Clone, PartialEq)]
+pub enum FontRow {
+    Font(String),
+    /// "System" / "Keine"
+    NoFont,
+    Separator,
+}
+
+/// Rows of the font picker: brand fonts, up to 5 recently used ones (`recent`, newest first; only with an
+/// empty query), the no-font entry (`none`), then all fonts with favourites first. A query keeps only the
+/// entries whose name contains it (case-insensitive), in the same order.
+pub fn font_rows(all: &[String], brand: &[String], fav: &dyn Fn(&str) -> bool, recent: &[String], none: &str, query: &str) -> Vec<FontRow> {
+    let q = query.trim().to_lowercase();
+    let hit = |f: &str| f.to_lowercase().contains(&q);
+    let fonts = |v: &mut dyn Iterator<Item = &String>| v.filter(|f| hit(f)).map(|f| FontRow::Font(f.clone())).collect::<Vec<_>>();
+    let mut sorted: Vec<&String> = all.iter().collect();
+    sorted.sort_by_key(|f| !fav(f));
+    let mut rest: Vec<FontRow> = if hit(none) { vec![FontRow::NoFont] } else { Vec::new() };
+    rest.extend(fonts(&mut sorted.into_iter()));
+    let recent = if q.is_empty() { fonts(&mut recent.iter().filter(|f| !brand.contains(f)).take(5)) } else { Vec::new() };
+    let mut rows = Vec::new();
+    for block in [fonts(&mut brand.iter()), recent, rest] {
+        if block.is_empty() {
+            continue;
+        }
+        if !rows.is_empty() {
+            rows.push(FontRow::Separator);
+        }
+        rows.extend(block);
+    }
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Empty query and no recents: the order the picker had before the search (brand, separator,
+    /// System, favourites first, then the rest)
+    #[test]
+    fn font_rows_without_query_keep_the_old_order() {
+        use FontRow::*;
+        let all = names(&["Arial", "Georgia", "Impact"]);
+        let fav = |f: &str| f == "Impact";
+        let f = |s: &str| Font(s.into());
+        assert_eq!(
+            font_rows(&all, &names(&["Georgia"]), &fav, &[], "System", ""),
+            vec![f("Georgia"), Separator, NoFont, f("Impact"), f("Arial"), f("Georgia")]
+        );
+        assert_eq!(font_rows(&all, &[], &fav, &[], "System", ""), vec![NoFont, f("Impact"), f("Arial"), f("Georgia")]);
+    }
+
+    #[test]
+    fn font_rows_filter_by_query() {
+        use FontRow::*;
+        let all = names(&["Arial", "Georgia", "Impact", "Arimo"]);
+        let fav = |f: &str| f == "Arimo";
+        let f = |s: &str| Font(s.into());
+        // case-insensitive, fixed entries that do not match are gone, favourites stay first
+        assert_eq!(font_rows(&all, &names(&["Georgia"]), &fav, &names(&["Arial"]), "System", "aR"), vec![f("Arimo"), f("Arial")]);
+        // a matching fixed entry stays
+        assert_eq!(font_rows(&all, &names(&["Georgia"]), &fav, &[], "System", "geo"), vec![f("Georgia"), Separator, f("Georgia")]);
+        assert_eq!(font_rows(&all, &[], &fav, &[], "System", "sys"), vec![NoFont]);
+        assert!(font_rows(&all, &names(&["Georgia"]), &fav, &[], "System", "xyz").is_empty());
+    }
+
+    #[test]
+    fn font_rows_show_at_most_five_recents_without_query() {
+        use FontRow::*;
+        let all = names(&["A", "B", "C", "D", "E", "F", "G"]);
+        let no = |_: &str| false;
+        let recent = names(&["G", "B", "F", "E", "D", "C"]);
+        let rows = font_rows(&all, &names(&["B"]), &no, &recent, "System", "");
+        let f = |s: &str| Font(s.into());
+        // brand font B is not repeated among the recents
+        assert_eq!(rows[..8], [f("B"), Separator, f("G"), f("F"), f("E"), f("D"), f("C"), Separator]);
+        assert_eq!(rows[8], NoFont);
+        assert_eq!(rows.len(), 9 + all.len());
+        assert!(!font_rows(&all, &[], &no, &recent, "System", "g").contains(&Separator), "no recents while searching");
+    }
 
     #[test]
     fn strip_keeps_entry_visible_and_steps() {

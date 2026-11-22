@@ -4476,6 +4476,73 @@ fn command_search_keys_stay_in_the_search() {
     assert_eq!(app.selected, Some(clip));
 }
 
+/// Font picker in the inspector: the search field has the focus, two letters + Enter take the first
+/// match as one undo step; Esc closes the picker and leaves the clip selected and its font alone
+#[test]
+fn font_search_enter_picks_and_esc_keeps_the_selection() {
+    let mut app = crate::saving::tests::test_app();
+    let mut p = Project::new("Schrift");
+    let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
+    let c = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), Time::ZERO, Time::from_secs_f64(2.0));
+    let clip = c.id;
+    tr.clips.push(c);
+    p.timeline.tracks.push(tr);
+    app.set_doc(p);
+    app.selected = Some(clip);
+    app.clip_tab = ClipTab::Text;
+    let ctx = egui::Context::default();
+    let key = |key: Key| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
+    let frame = |app: &mut App, events: Vec<egui::Event>| {
+        let fonts = ["Arial", "Courier", "Gentium", "Georgia"].map(String::from).to_vec();
+        app.font_names = Some((Instant::now(), Arc::new(fonts)));
+        let mut raw = egui::RawInput { events, ..Default::default() };
+        eframe::App::raw_input_hook(app, &ctx, &mut raw);
+        let _ = ctx.run(raw, |ctx| {
+            if !app.esc_closes(ctx) {
+                app.shortcuts(ctx);
+            }
+            egui::CentralPanel::default().show(ctx, |ui| app.inspector_panel(ui));
+        });
+        app.sync_project();
+    };
+    let font = |app: &App| match &app.project.find_clip(clip).unwrap().1.content {
+        ClipContent::Text(st) => st.font_family.clone(),
+        _ => unreachable!(),
+    };
+    frame(&mut app, vec![]);
+    // the combo box id hangs on the inspector layout: open each widget's popup until the search field has the focus
+    let ids: Vec<egui::Id> = ctx.viewport(|v| v.prev_pass.widgets.layers().flat_map(|(_, w)| w.iter().map(|w| w.id)).collect());
+    let open = |app: &mut App| {
+        for id in &ids {
+            ctx.memory_mut(|m| m.open_popup(id.with("popup")));
+            frame(app, vec![]);
+            if typing(&ctx) {
+                return;
+            }
+        }
+        panic!("no font picker among {} widgets", ids.len());
+    };
+    open(&mut app);
+    frame(&mut app, vec![egui::Event::Text("ge".into())]);
+    frame(&mut app, vec![key(Key::Enter)]);
+    assert_eq!(font(&app).as_deref(), Some("Gentium"), "Enter takes the first match");
+    assert_eq!(app.library.recent_rank("font:Gentium"), Some(0), "… and remembers it as recently used");
+    frame(&mut app, vec![]);
+    assert!(!typing(&ctx), "the picker closed");
+    app.undo();
+    app.sync_project();
+    assert_eq!(font(&app), None, "one undo step");
+    // Esc: closes, the clip stays selected, the font unchanged, the next search starts empty
+    open(&mut app);
+    frame(&mut app, vec![egui::Event::Text("ar".into())]);
+    frame(&mut app, vec![key(Key::Escape)]);
+    frame(&mut app, vec![]);
+    assert!(!typing(&ctx), "Esc closes the picker");
+    assert_eq!(app.selected, Some(clip), "… and leaves the selection alone");
+    assert_eq!(font(&app), None);
+    assert!(ctx.data(|d| d.get_temp::<(String, usize)>(egui::Id::new("font").with("search"))).is_none(), "query cleared");
+}
+
 /// Esc in the field only discards the input
 #[test]
 fn esc_in_a_field_is_not_a_shortcut() {
