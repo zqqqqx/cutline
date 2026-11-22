@@ -21,6 +21,30 @@
 
 **Behoben**
 
+## 0.18.0 – 2026-11-22
+
+### English
+
+**New**
+- **Soft text shadow.** A "Softness" slider under the shadow settings blurs the shadow – also for bold, italic and karaoke text.
+
+**Improved**
+- **Scrubbing follows the playhead.** Dragging the playhead or holding the arrow keys now shows the frames in between instead of waiting for the mouse to rest. Cutline keeps about a second of frames around the playhead in memory, so stepping back and forth is immediate. It works best with preview copies (proxies) switched on; 4K files without one still load frame by frame.
+
+**Fixed**
+- **Text shadows in the export are as dark as set.** Over video the exported shadow was much fainter than in the preview (60 % looked like 36 %). Exports now match the preview, so shadows come out darker than in earlier versions.
+
+### Deutsch
+
+**Neu**
+- **Weicher Textschatten.** Ein Regler „Weichheit“ bei den Schatten-Einstellungen zeichnet den Schatten weich – auch bei fettem, kursivem und Karaoke-Text.
+
+**Verbessert**
+- **Die Vorschau folgt dem Abspielkopf.** Beim Ziehen des Abspielkopfs oder bei gehaltener Pfeiltaste erscheinen jetzt die Bilder dazwischen, statt erst wenn die Maus ruht. Cutline hält etwa eine Sekunde Bilder um den Abspielkopf im Speicher, darum geht bildweises Vor und Zurück sofort. Am besten mit eingeschalteten Vorschaukopien (Proxys); 4K-Dateien ohne Proxy laden weiter Bild für Bild.
+
+**Behoben**
+- **Textschatten sind im Export so dunkel wie eingestellt.** Über Video war der exportierte Schatten viel blasser als in der Vorschau (60 % sah aus wie 36 %). Der Export entspricht jetzt der Vorschau; Schatten kommen dadurch dunkler heraus als in früheren Versionen.
+
 ## 0.17.1 – 2026-11-22
 
 ### English
