@@ -769,6 +769,142 @@ mod presence_tests {
         }
     }
 
+    /// Scrub measurement (manual, stage 0 of the scrubbing plan): with the real app (source choice,
+    /// core, dispatcher) and a UI tick every 16 ms, the playhead is dragged over 2 s of a clip at three
+    /// speeds, then 60 frame steps forward and 60 back at 30 steps/s. Per run: distinct frames shown
+    /// per second while moving, longest time without a new frame, time from the last move to the exact
+    /// frame, single-frame decodes started and killed. Each run uses a fresh app (empty frame cache).
+    /// Files: those of `preview::tests::test_media` on F: plus a 1080p60 file with 1 s GOP (generated).
+    /// `cargo test --release -p cl-app --bin cutline scrub_in_app -- --ignored --nocapture --test-threads=1`
+    #[test]
+    #[ignore]
+    fn scrub_in_app() {
+        use std::sync::atomic::Ordering::Relaxed;
+        use std::time::{Duration, Instant};
+        if !cl_media::test_tools() {
+            return;
+        }
+        let work = std::path::PathBuf::from(std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "F:/cl-target/a2".into())).join("scrub-measure");
+        std::fs::create_dir_all(&work).unwrap();
+        let gen = work.join("1080p60_gop1s.mp4");
+        if !gen.is_file() {
+            let ok = cl_media::ffmpeg_command()
+                .unwrap()
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=60:d=12", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "60", "-b:v", "12M"])
+                .arg(&gen)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        }
+        let files: Vec<std::path::PathBuf> = [gen.to_str().unwrap(), "F:/cutline-testmedien/1080p60_gop10s.mp4", "F:/cutline-testmedien/4k60_h264_80mbit.mp4", "F:/cutline-testmedien/4k60_hevc10_50mbit.mp4"]
+            .iter()
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.is_file())
+            .collect();
+        let only = std::env::var("CUTLINE_QA_RUN").ok();
+        println!("| file | proxy | run | frames/s moving | longest gap ms | final exact ms | decodes started | killed |");
+        println!("|---|---|---|---|---|---|---|---|");
+        for path in &files {
+            let m = cl_media::probe(path).unwrap();
+            let fps = m.fps.map_or(60.0, |f| f.as_f64());
+            for proxy in [false, true] {
+                if proxy {
+                    // proxy parts of the first 10 s (the measured range lies in part 0)
+                    let out = work.join(format!("{}-540.mp4", path.file_stem().unwrap().to_string_lossy()));
+                    crate::proxy::test_build_parts(&m, out, (540, Rational::new(60, 1)), 1);
+                }
+                for run in ["slow", "medium", "fast", "steps"] {
+                    if only.as_deref().is_some_and(|o| o != run) {
+                        continue;
+                    }
+                    let ctx = egui::Context::default();
+                    let mut app = crate::saving::tests::test_app_with(ctx.clone());
+                    app.settings.use_proxies = proxy;
+                    app.settings.proxy_h = 540;
+                    let mut p = Project::new("scrub");
+                    p.settings.fps = Rational::new(60, 1);
+                    let mut v1 = cl_core::Track::new(TrackKind::Video);
+                    v1.main = true;
+                    let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, m.duration);
+                    let id = c.id;
+                    v1.clips.push(c);
+                    p.timeline.tracks = vec![v1];
+                    p.media = vec![m.clone()];
+                    app.project = p;
+                    // positions per UI tick (16 ms): drag over 2 s from 3 s, or steps at 30/s
+                    let start = 3.0;
+                    let frame = 1.0 / fps;
+                    let plan: Vec<f64> = match run {
+                        "slow" => (0..=120).map(|i| start + i as f64 * frame).collect(),
+                        "medium" => (0..=30).map(|i| start + i as f64 * 4.0 * frame).collect(),
+                        "fast" => (0..=19).map(|i| start + 2.0 * i as f64 / 19.0).collect(),
+                        _ => (0..=60).chain((0..60).rev()).flat_map(|i| [start + i as f64 * frame; 2]).collect(),
+                    };
+                    let tick = |app: &mut crate::saving::tests::TestApp, at: f64| {
+                        app.playhead = Time::from_secs_f64(at);
+                        app.receive_decoded(&ctx);
+                        let t = crate::playcore::Tick { now: app.core_now(), playhead: app.playhead, revision: app.revision, audio: crate::playcore::AudioIn::None, end: app.project.duration(), fps: 60.0, loop_range: None, recording: false, max_quality_level: 3 };
+                        app.playhead = app.core.tick(&t);
+                        app.playing = false;
+                        let layers = app.layers_at(app.playhead);
+                        app.update_layers(&ctx, &layers, egui::vec2(1280.0, 720.0));
+                        app.frames.get(&id).map(|f| f.0)
+                    };
+                    // rest at the start position until its exact frame is there
+                    let t = Instant::now();
+                    while t.elapsed() < Duration::from_secs(20) {
+                        if tick(&mut app, start).is_some() && !app.core.waiting() {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(16));
+                    }
+                    let jobs0 = [crate::preview::STILL_JOBS[0].load(Relaxed), crate::preview::STILL_JOBS[1].load(Relaxed)];
+                    let t0 = Instant::now();
+                    let (mut last_key, mut changes, mut last_change, mut gap) = (tick(&mut app, start), 0u32, 0.0f64, 0.0f64);
+                    for (i, at) in plan.iter().enumerate().skip(1) {
+                        let due = Duration::from_millis(16 * i as u64);
+                        if let Some(d) = due.checked_sub(t0.elapsed()) {
+                            std::thread::sleep(d);
+                        }
+                        let k = tick(&mut app, *at);
+                        let el = t0.elapsed().as_secs_f64();
+                        if k != last_key {
+                            changes += 1;
+                            gap = gap.max(el - last_change);
+                            last_change = el;
+                            last_key = k;
+                        }
+                    }
+                    let moved = t0.elapsed().as_secs_f64();
+                    gap = gap.max(moved - last_change);
+                    let rest = *plan.last().unwrap();
+                    let t1 = Instant::now();
+                    let mut final_ms = None;
+                    while t1.elapsed() < Duration::from_secs(15) {
+                        std::thread::sleep(Duration::from_millis(16));
+                        tick(&mut app, rest);
+                        if !app.core.waiting() {
+                            final_ms = Some(t1.elapsed().as_millis());
+                            break;
+                        }
+                    }
+                    let jobs = [crate::preview::STILL_JOBS[0].load(Relaxed) - jobs0[0], crate::preview::STILL_JOBS[1].load(Relaxed) - jobs0[1]];
+                    println!(
+                        "| {} | {} | {run} | {:.1} | {:.0} | {} | {} | {} |",
+                        path.file_name().unwrap().to_string_lossy(),
+                        if proxy { "yes" } else { "no" },
+                        changes as f64 / moved,
+                        gap * 1e3,
+                        final_ms.map_or("timeout".into(), |v| v.to_string()),
+                        jobs[0],
+                        jobs[1]
+                    );
+                }
+            }
+        }
+    }
+
     /// Review finding: during playback each UI frame checked the file per layer
     /// (`is_local`, blocking on the NAS). Now the background state `presence`
     /// decides – here "present" for a file that does not exist: stream and single frame

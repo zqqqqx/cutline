@@ -594,6 +594,8 @@ fn frame_dispatcher(
                                 o.kill();
                                 perf_discarded();
                             }
+                            #[cfg(test)]
+                            STILL_JOBS[0].fetch_add(1, Ordering::Relaxed);
                             let tx = tx.clone();
                             let proxy = path.starts_with(&proxies);
                             std::thread::spawn(move || {
@@ -682,7 +684,13 @@ fn frame_dispatcher(
     }
 }
 
+/// Measurement only (`scrub_in_app`): single-frame decodes started and killed by the dispatcher
+#[cfg(test)]
+pub(crate) static STILL_JOBS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
+
 fn perf_discarded() {
+    #[cfg(test)]
+    STILL_JOBS[1].fetch_add(1, Ordering::Relaxed);
     if crate::app::perf() {
         crate::applog::perf_line!("perf: einzelbild verworfen (veraltet)");
     }
