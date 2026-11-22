@@ -192,7 +192,30 @@ pub fn shift_tracks(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Opti
         line.sort_by_key(|x| x.0);
         ops.extend(line.into_iter().map(|(_, clip)| EditOp::MoveClip { clip, track: Some(m.id), start: park + park }));
     }
+    count_ops(ops.len());
     Some((plan.iter().map(|x| (x.0, x.4)).collect(), EditOp::Batch { label: "Clips verschieben".into(), ops }))
+}
+
+#[cfg(test)]
+thread_local!(static WORK: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) });
+/// Test builds count the elementary steps of the drag checks (clips visited, lookups, search steps),
+/// so a test can guard their growth without measuring time
+fn count_steps(n: usize) {
+    #[cfg(test)]
+    WORK.with(|w| w.set((w.get().0 + n as u64, w.get().1)));
+    #[cfg(not(test))]
+    let _ = n;
+}
+/// Test builds count the ops built (the per-frame check must build none)
+fn count_ops(n: usize) {
+    #[cfg(test)]
+    WORK.with(|w| w.set((w.get().0, w.get().1 + n as u64)));
+    #[cfg(not(test))]
+    let _ = n;
+}
+/// Rounds of a binary search (or of the merges of a sort) over `n` items
+fn log2(n: usize) -> usize {
+    (usize::BITS - n.leading_zeros()) as usize
 }
 
 /// The check of [`shift_tracks`] without building the batch (cheap enough for every frame of a
@@ -209,6 +232,7 @@ fn shift_plan(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<(Ve
     // per track index: its position among the tracks of its kind in display order
     let mut peers: HashMap<TrackKind, Vec<usize>> = HashMap::new();
     let mut at = vec![0; tracks.len()];
+    count_steps(tracks.len());
     for i in display_order(tracks) {
         let v = peers.entry(tracks[i].kind).or_default();
         at[i] = v.len();
@@ -217,6 +241,7 @@ fn shift_plan(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<(Ve
     // the first track holding a clip wins, as in `Project::find_clip`
     let mut clips: HashMap<ClipId, (usize, &Clip)> = HashMap::new();
     for (i, t) in tracks.iter().enumerate() {
+        count_steps(t.clips.len());
         for c in &t.clips {
             clips.entry(c.id).or_insert((i, c));
         }
@@ -225,6 +250,7 @@ fn shift_plan(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<(Ve
     // per target track: the clips that stay, sorted by start, end = largest end so far
     let mut stay: HashMap<usize, Vec<(Time, Time)>> = HashMap::new();
     let mut plan = Vec::with_capacity(moves.len());
+    count_steps(2 * moves.len()); // the set above and one lookup per clip
     for (id, start) in moves {
         let &(si, c) = clips.get(id)?;
         let src = &tracks[si];
@@ -234,6 +260,7 @@ fn shift_plan(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<(Ve
         let line = stay.entry(ti).or_insert_with(|| {
             let mut v: Vec<(Time, Time)> = t.clips.iter().filter(|o| !moving.contains(&o.id)).map(|o| (o.start, o.end())).collect();
             v.sort_by_key(|x| x.0);
+            count_steps(t.clips.len() + v.len() * log2(v.len()));
             for k in 1..v.len() {
                 v[k].1 = v[k].1.max(v[k - 1].1);
             }
@@ -241,6 +268,7 @@ fn shift_plan(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<(Ve
         });
         // overlap = a staying clip that starts before `end` and ends after `start`
         let k = line.partition_point(|x| x.0 < end);
+        count_steps(log2(line.len()));
         let free = k == 0 || line[k - 1].1 <= *start;
         // its own track keeps a clip of another kind (legacy projects), as a single move does
         if src.locked || !(t.id == src.id || fits(t, c.kind())) || !(free || (t.main && p.settings.main_track_magnet)) {
@@ -586,6 +614,29 @@ mod tests {
         d.apply(op, OpSource::Ui).unwrap();
         assert_eq!(order(&d), [ids[2], ids[0], ids[1]]);
         assert_eq!(d.undo_entries().len(), 1);
+    }
+
+    /// Guard for dragging a whole large project: the check run every frame grows about linearly with
+    /// the clips (counted steps, not time: independent of machine, build profile and load) and builds
+    /// no ops. 8x the clips may cost at most 12x the steps (n log n of the sorts ≈ 10x, quadratic 64x).
+    #[test]
+    fn group_shift_check_scales_linearly_and_builds_no_ops() {
+        let work = |n: usize, f: &dyn Fn(&Project, &[(ClipId, Time)])| {
+            let mut p = proj(&["V2", "V1", "M", "A1", "A2", "A3"]);
+            let ids: Vec<ClipId> = (0..n).map(|i| clip(&mut p, i % 6, (i / 6) as f64)).collect();
+            let moves: Vec<(ClipId, Time)> = ids.iter().map(|id| (*id, p.find_clip(*id).unwrap().1.start + Time::from_secs_f64(3.0))).collect();
+            WORK.with(|w| w.set((0, 0)));
+            f(&p, &moves);
+            WORK.with(|w| w.get())
+        };
+        let check = |p: &Project, m: &[(ClipId, Time)]| assert!(shift_targets(p, m, 0).is_some(), "fits in its tracks");
+        let (small, ops) = work(500, &check);
+        let (big, _) = work(4000, &check);
+        assert_eq!(ops, 0, "the per-frame check builds no ops");
+        assert!(big <= 12 * small, "8x the clips cost {:.1}x the steps ({big} vs {small}): quadratic again?", big as f64 / small as f64);
+        // the batch on release is built by `shift_tracks` (counted, so the counter works)
+        let (_, ops) = work(500, &|p, m| assert!(shift_tracks(p, m, 0).is_some()));
+        assert_eq!(ops, 1000, "park and move per clip");
     }
 
     #[test]

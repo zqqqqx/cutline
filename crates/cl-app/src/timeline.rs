@@ -234,11 +234,24 @@ pub(crate) fn group_moves(ids: &[(ClipId, f64)], grab: ClipId, to: Time) -> Vec<
     ids.iter().map(|(id, s)| (*id, Time(t(*s).0 + d))).collect()
 }
 
+#[cfg(test)]
+thread_local!(static STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) });
+/// Test builds count the elementary steps (clips visited, lookups) of the per-frame drag checks,
+/// so a test can guard their growth without measuring time
+fn count_steps(n: usize) {
+    #[cfg(test)]
+    STEPS.with(|s| s.set(s.get() + n as u64));
+    #[cfg(not(test))]
+    let _ = n;
+}
+
 /// Snap times: 0:00, the playhead `ph`, edges and beats of all clips except `ignore`
 fn snap_cands(tracks: &[Track], ph: f64, ignore: &[ClipId]) -> Vec<f64> {
     let ignore: HashSet<ClipId> = ignore.iter().copied().collect();
+    count_steps(ignore.len());
     let mut v = vec![0.0, ph];
     for tr in tracks.iter() {
+        count_steps(tr.clips.len());
         for c in tr.clips.iter().filter(|c| !ignore.contains(&c.id)) {
             v.push(c.start.as_secs_f64());
             v.push(c.end().as_secs_f64());
@@ -275,12 +288,14 @@ pub(crate) fn group_in_time(p: &Project, moves: &[(ClipId, Time)]) -> std::resul
 fn group_new_row(p: &Project, moves: &[(ClipId, Time)]) -> (usize, bool) {
     let tracks = &p.timeline.tracks;
     let mut row = vec![0; tracks.len()];
+    count_steps(tracks.len() + moves.len());
     for (r, i) in display_order(tracks).into_iter().enumerate() {
         row[i] = r;
     }
     // the first track holding a clip wins, as in `Project::find_clip`
     let mut place: HashMap<ClipId, (usize, TrackKind)> = HashMap::new();
     for (i, t) in tracks.iter().enumerate() {
+        count_steps(t.clips.len());
         for c in &t.clips {
             place.entry(c.id).or_insert((row[i], c.kind()));
         }
@@ -5151,29 +5166,23 @@ mod tests {
         println!("app.apply_batch {applied:.1} ms, frame after it {next:.1} ms");
     }
 
-    /// Guard for the drag of a large selection: the per-frame checks (fits in its tracks, row for new
-    /// tracks, snap candidates) grow linearly with the project. Without absolute times, so it holds
-    /// on slow or loaded machines: the fastest of several runs at 500 and 4,000 clips – 8× the clips
-    /// costs ≈ 8× when linear and ≈ 64× with the former quadratic checks; the limit is 24×.
+    /// Guard for the drag of a large selection: the per-frame checks in the app (row for new tracks,
+    /// snap candidates) grow linearly with the project. Counted steps, not time, so it holds whatever
+    /// the machine, build profile or load: 8x the clips may cost at most 10x the steps (quadratic:
+    /// 64x). `shift_targets` has its own guard in cl-core.
     #[test]
     fn group_drag_checks_scale_linearly() {
-        use std::time::Instant;
-        let best = |n: usize| {
+        let work = |n: usize| {
             let (p, all) = cut_project(n);
-            let sel: Vec<(ClipId, f64)> = all.iter().map(|id| (*id, p.find_clip(*id).unwrap().1.start.as_secs_f64())).collect();
-            let moves = group_moves(&sel, all[0], Time::from_secs_f64(sel[0].1 + 3.0));
-            (0..7)
-                .map(|_| {
-                    let t0 = Instant::now();
-                    assert!(shift_targets(&p, &moves, 0).is_some(), "fits in its tracks");
-                    std::hint::black_box(group_new_row(&p, &moves));
-                    std::hint::black_box(snap_cands(&p.timeline.tracks, 0.0, &all));
-                    t0.elapsed().as_secs_f64()
-                })
-                .fold(f64::MAX, f64::min)
+            let moves: Vec<(ClipId, Time)> = all.iter().map(|id| (*id, Time::from_secs_f64(1.0))).collect();
+            STEPS.with(|s| s.set(0));
+            std::hint::black_box(group_new_row(&p, &moves));
+            std::hint::black_box(snap_cands(&p.timeline.tracks, 0.0, &all));
+            STEPS.with(|s| s.get())
         };
-        let (small, big) = (best(500), best(4000));
-        assert!(big < small * 24.0, "8x the clips cost {:.1}x ({:.3} ms vs {:.3} ms): quadratic again?", big / small, big * 1e3, small * 1e3);
+        let (small, big) = (work(500), work(4000));
+        assert!(small > 0, "steps are counted");
+        assert!(big <= 10 * small, "8x the clips cost {:.1}x the steps ({big} vs {small}): quadratic again?", big as f64 / small as f64);
     }
 
     /// Tracks of (kind, main, clips as (start, length) s) – raw, in index order; ids per track
