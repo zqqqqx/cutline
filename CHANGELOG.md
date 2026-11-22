@@ -21,6 +21,32 @@
 
 **Behoben**
 
+## 0.17.0 – 2026-11-22
+
+### English
+
+**New**
+- **Adjustable text shadow.** With "Shadow" on, the Text tab shows color, opacity, distance and angle. Texts you already have keep their shadow.
+- **Search in the font list.** The font menu opens with a search field: type to filter, arrow keys and Enter to choose. Fonts you used recently are at the top. The Brand Kit uses the same menu.
+
+**Improved**
+- **The text shadow in the preview matches the export** – same distance and darkness at every zoom.
+
+**Fixed**
+- **No more sound drop-outs while adjusting during playback.** Changing volume, fades, mute, solo or an audio effect while playing no longer silences the sound for a moment; the change fades in shortly after.
+
+### Deutsch
+
+**Neu**
+- **Einstellbarer Textschatten.** Ist „Schatten“ an, zeigt der Reiter Text Farbe, Deckkraft, Abstand und Winkel. Vorhandene Texte behalten ihren Schatten.
+- **Suche in der Schriftliste.** Das Schriftmenü öffnet mit einem Suchfeld: tippen filtert, Pfeiltasten und Enter wählen. Zuletzt benutzte Schriften stehen oben. Das Brand Kit nutzt dasselbe Menü.
+
+**Verbessert**
+- **Der Textschatten in der Vorschau entspricht dem Export** – gleicher Abstand und gleiche Dunkelheit bei jedem Zoom.
+
+**Behoben**
+- **Keine Ton-Aussetzer mehr beim Einstellen während der Wiedergabe.** Lautstärke, Blenden, Stumm, Solo oder einen Audioeffekt beim Abspielen zu ändern lässt den Ton nicht mehr kurz verstummen; die Änderung blendet kurz danach ein.
+
 ## 0.16.1 – 2026-11-22
 
 ### English
