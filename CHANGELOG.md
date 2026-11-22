@@ -34,6 +34,7 @@
 
 **Fixed**
 - **No more sound drop-outs while adjusting during playback.** Changing volume, fades, mute, solo or an audio effect while playing no longer silences the sound for a moment; the change fades in shortly after.
+- **Dropping a clip from the media list or a file right behind another clip** lets it sit exactly at that clip’s end on the same track.
 
 ### Deutsch
 
@@ -46,6 +47,7 @@
 
 **Behoben**
 - **Keine Ton-Aussetzer mehr beim Einstellen während der Wiedergabe.** Lautstärke, Blenden, Stumm, Solo oder einen Audioeffekt beim Abspielen zu ändern lässt den Ton nicht mehr kurz verstummen; die Änderung blendet kurz danach ein.
+- **Einen Clip aus der Medienliste oder eine Datei direkt hinter einen anderen Clip legen** setzt ihn genau an dessen Ende auf dieselbe Spur.
 
 ## 0.16.1 – 2026-11-22
 
