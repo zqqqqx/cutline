@@ -59,8 +59,10 @@ enum Drag {
         src: f64,
         x: f32,
     },
+    /// `origin`: start corner in timeline coordinates (time s, content y px = screen y + vscroll),
+    /// so it stays on its spot of the timeline while the view scrolls
     Marquee {
-        origin: Pos2,
+        origin: (f64, f32),
         additive: bool,
     },
     /// Fade handle or volume line on a clip with sound (`value`: seconds or dB)
@@ -230,6 +232,20 @@ pub(crate) fn group_moves(ids: &[(ClipId, f64)], grab: ClipId, to: Time) -> Vec<
     let first = ids.iter().map(|x| t(x.1).0).min().unwrap_or(0);
     let d = (to.0 - from.0).max(-first);
     ids.iter().map(|(id, s)| (*id, Time(t(*s).0 + d))).collect()
+}
+
+/// Clips a marquee from corner `a` to corner `b` covers, both as (time s, content y px = screen y +
+/// vscroll), so the start corner stays on its spot of the timeline however far the view scrolls.
+/// `rows`: (top, bottom in content y, clips of the track); edges touching count, as `Rect::intersects`.
+fn marquee_hits<'a>(a: (f64, f32), b: (f64, f32), rows: impl IntoIterator<Item = (f32, f32, &'a [Clip])>) -> Vec<ClipId> {
+    let (t0, t1) = (a.0.min(b.0), a.0.max(b.0));
+    let (y0, y1) = (a.1.min(b.1), a.1.max(b.1));
+    rows.into_iter()
+        .filter(|r| r.0 <= y1 && r.1 >= y0)
+        .flat_map(|r| r.2)
+        .filter(|c| c.start.as_secs_f64() <= t1 && c.end().as_secs_f64() >= t0)
+        .map(|c| c.id)
+        .collect()
 }
 
 /// A selection moved in time within its own tracks (`moves`: clip, new start): `Ok` = one batch in
@@ -1456,6 +1472,8 @@ impl App {
         }
         self.timeline.last_playhead = Some(self.playhead);
         self.timeline.vscroll = self.timeline.vscroll.clamp(0.0, overflow);
+        // vertical scroll the rows below are laid out with (content y = screen y + vs)
+        let vs = self.timeline.vscroll;
         let pps = self.timeline.pps;
         let scroll = self.timeline.scroll;
         let tx = |t: f64| x0 + ((t - scroll) as f32) * pps;
@@ -1958,7 +1976,7 @@ impl App {
                             }
                         }
                         None if p.x >= x0 && hit_block(p).is_none() => Drag::Marquee {
-                            origin: p,
+                            origin: (xt(p.x), p.y + vs),
                             additive: multi,
                         },
                         None => Drag::None,
@@ -2186,7 +2204,9 @@ impl App {
                     }
                 }
                 Drag::Marquee { origin, additive } => {
-                    let r = Rect::from_two_pos(origin, p);
+                    // start corner scrolled out of view: drawn at the edge, hit test keeps its real spot
+                    let o = pos2(tx(origin.0).clamp(x0, lanes.right()), (origin.1 - vs).clamp(lanes.top(), lanes.bottom()));
+                    let r = Rect::from_two_pos(o, p);
                     painter.rect_filled(r, 2.0, theme::overlay(14));
                     painter.rect_stroke(
                         r,
@@ -2194,18 +2214,11 @@ impl App {
                         Stroke::new(1.0_f32, theme::overlay(120)),
                         egui::StrokeKind::Inside,
                     );
-                    let mut inside = Vec::new();
-                    for row in rows.iter().filter(|r| r.track != REC_ROW) {
-                        for c in &tracks[row.track].clips {
-                            let cr = Rect::from_min_max(
-                                pos2(tx(c.start.as_secs_f64()), row.rect.top()),
-                                pos2(tx(c.end().as_secs_f64()), row.rect.bottom()),
-                            );
-                            if cr.intersects(r) {
-                                inside.push(c.id);
-                            }
-                        }
-                    }
+                    let inside = marquee_hits(
+                        origin,
+                        (xt(p.x), p.y + vs),
+                        rows.iter().filter(|r| r.track != REC_ROW).map(|r| (r.rect.top() + vs, r.rect.bottom() + vs, &tracks[r.track].clips[..])),
+                    );
                     if !additive {
                         self.sel_extra.clear();
                         self.selected = None;
@@ -4925,6 +4938,97 @@ mod tests {
         assert_eq!((v(100.0), v(900.0)), (-1.0, 1.0));
         assert_eq!((v(124.0), v(876.0)), (-0.5, 0.5));
         assert_eq!((v(-500.0), v(5000.0)), (-3.0, 3.0));
+    }
+
+    /// The recording: a marquee started in empty space left of the clips, then the view scrolls by
+    /// many screen widths (and down): the start corner stays on its spot of the timeline, so every
+    /// clip between it and the pointer stays selected – also those scrolled out to the left/top.
+    /// Before, the corner kept its screen position and only clips between it and the pointer counted.
+    #[test]
+    fn marquee_start_stays_anchored_while_the_view_scrolls() {
+        use egui::{Event, PointerButton};
+        let row: Vec<(f64, f64)> = [(0.0, 1.0), (2.0, 1.0)].into_iter().chain((0..197).map(|k| (20.0 + 5.0 * k as f64, 1.0))).collect();
+        let spec: Vec<(TrackKind, bool, &[(f64, f64)])> = (0..14).map(|i| (TrackKind::Video, i == 0, &row[..])).collect();
+        let (p, _) = lanes(Rational::new(30, 1), false, &spec);
+        let ctx = egui::Context::default();
+        let mut app = crate::saving::tests::test_app_with(ctx.clone());
+        app.set_doc(p);
+        app.timeline.pps = 20.0;
+        app.timeline.scroll = 0.0;
+        app.timeline.vscroll = 0.0;
+        let mut t = 0.0;
+        let mut step = |app: &mut App, events: Vec<Event>| {
+            t += 1.0 / 60.0;
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, bench::SCREEN)),
+                time: Some(t),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::TopBottomPanel::bottom("tl").exact_height(bench::PANEL_H).show(ctx, |ui| app.timeline_panel(ui));
+            });
+        };
+        // screen y of the middle of display row `k` in the last frame
+        let mid = |app: &App, k: usize| {
+            let m = &app.timeline.motion;
+            let (top, h) = m.rows[&m.order[k]];
+            top + h * 0.5
+        };
+        let btn = |pos, pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        step(&mut app, vec![Event::PointerMoved(pos2(400.0, 700.0))]);
+        // press in empty space (x 400 ≈ 5…11 s, before the clips at 20 s) on display row 1
+        let o = pos2(400.0, mid(&app, 1));
+        step(&mut app, vec![Event::PointerMoved(o), btn(o, true)]);
+        step(&mut app, vec![Event::PointerMoved(o + vec2(30.0, 0.0))]);
+        assert!(matches!(app.timeline.drag, Drag::Marquee { .. }), "marquee started");
+        // the view scrolls ~8 screen widths right and to the bottom while the drag goes on
+        app.timeline.scroll = 600.0;
+        app.timeline.vscroll = 10_000.0;
+        step(&mut app, vec![Event::PointerMoved(pos2(1300.0, 700.0))]);
+        assert!(app.timeline.vscroll > 0.0, "tracks overflow vertically");
+        let n = app.timeline.motion.order.len();
+        let rows_of = |app: &App| -> Vec<Vec<(f64, bool)>> {
+            let sel: HashSet<ClipId> = app.selection().into_iter().collect();
+            app.timeline.motion.order.iter().map(|id| {
+                let tr = app.project.timeline.tracks.iter().find(|x| x.id == *id).unwrap();
+                tr.clips.iter().map(|c| (c.start.as_secs_f64(), sel.contains(&c.id))).collect()
+            }).collect()
+        };
+        // pointer on the bottom row, right part of the view (time > 600 s)
+        let y = mid(&app, n - 1);
+        step(&mut app, vec![Event::PointerMoved(pos2(1300.0, y))]);
+        for (k, r) in rows_of(&app).iter().enumerate() {
+            for &(s, on) in r {
+                let want = k >= 1 && (20.0..600.0).contains(&s);
+                if k == 0 || s < 20.0 || s > 700.0 || want {
+                    assert_eq!(on, want, "pointer at the right: row {k}, clip at {s} s");
+                }
+            }
+        }
+        // dragging back left of the origin's former screen x (still far right in time): the corner stays at t0
+        step(&mut app, vec![Event::PointerMoved(pos2(300.0, y))]);
+        for (k, r) in rows_of(&app).iter().enumerate() {
+            for &(s, on) in r {
+                let want = k >= 1 && (20.0..590.0).contains(&s);
+                if k == 0 || s < 20.0 || s > 620.0 || want {
+                    assert_eq!(on, want, "pointer back left: row {k}, clip at {s} s");
+                }
+            }
+        }
+        // view back at the start, pointer left of the origin and on row 0: only the clips before it
+        app.timeline.scroll = 0.0;
+        app.timeline.vscroll = 0.0;
+        step(&mut app, vec![Event::PointerMoved(pos2(300.0, 700.0))]);
+        let y = mid(&app, 0);
+        step(&mut app, vec![Event::PointerMoved(pos2(120.0, y))]);
+        for (k, r) in rows_of(&app).iter().enumerate() {
+            for &(s, on) in r {
+                assert_eq!(on, k <= 1 && s < 20.0, "pointer before the origin: row {k}, clip at {s} s");
+            }
+        }
+        step(&mut app, vec![btn(pos2(120.0, y), false)]);
+        assert!(matches!(app.timeline.drag, Drag::None), "released");
     }
 
     /// Tracks of (kind, main, clips as (start, length) s) – raw, in index order; ids per track
