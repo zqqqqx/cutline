@@ -510,6 +510,8 @@ pub(crate) fn streamable(c: &Clip) -> bool {
 /// Preroll when stopped: the playhead must rest on a heavy layer this long before its stream
 /// is already opened (Play then shows frames at once; clicking and scrubbing open nothing)
 const PREROLL_REST: f64 = 0.3;
+/// The playhead counts as moving this long after its last change (single frames from the proxy)
+const SCRUB_REST: f64 = 0.15;
 /// Generation of a preroll job at the starter (the core's counts from 0)
 const PREROLL_GEN: u64 = u64::MAX;
 
@@ -2293,6 +2295,11 @@ impl App {
         };
         // attach streams opened in the background (the core discards stale ones)
         let now = self.core_now();
+        if self.playhead != self.scrub_moved.0 {
+            self.scrub_moved = (self.playhead, now);
+            // a quiet UI does not draw: look again once the playhead rests (sharp frame)
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(SCRUB_REST + 0.01));
+        }
         while let Ok((o, fps, alias, s)) = self.starter.rx.try_recv() {
             match s {
                 // preroll: keep only if it is still wanted (otherwise it ends when discarded)
@@ -2495,13 +2502,16 @@ impl App {
                     | "warm-leak"
             )
         });
-        let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx, fxh, fps);
+        // playhead moving: proxy (fast seeking) under its own key, at rest the sharp source; the proxy
+        // frame stays until the sharp one arrives, both stay in the cache
+        let moving = !self.playing && now - self.scrub_moved.1 < SCRUB_REST && self.scrub_proxy(m, h);
+        let key = Self::frame_key(id, c, src, w, h, l.t_rel, animated_fx, fxh, fps) ^ (moving as u64) << 1;
         // missing file (background check): do not request at all, otherwise the job would stay open
         if self.presence.get(&m.path) && self.core.still(lid(id), key, now) {
             // check the LUT file only when requesting, not per UI frame
             let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
-            let (path, at) = self.still_source(m, h, src);
+            let (path, at) = self.still_source(m, h, src, moving);
             let window = reverse_window(c, m, path == m.path, graph.is_none(), self.core.playing() && self.core.rate() > 0.0, fps);
             self.decoder.send(Job::Frame {
                 clip: id,

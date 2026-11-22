@@ -865,6 +865,12 @@ fn folder_usage(dir: &Path) -> (u64, u64) {
     (n, bytes)
 }
 
+/// Is a proxy of height `proxy_h` the right source for a frame of height `need_h`? Its lines must be
+/// enough (sharp), unless sharpness does not count (`loose`: playback, moving playhead).
+pub fn proxy_sharp(loose: bool, need_h: u32, proxy_h: u32) -> bool {
+    loose || need_h <= proxy_h * 6 / 5
+}
+
 impl App {
     fn proxy_want(&self) -> (u32, Rational) {
         (self.settings.proxy_h, self.project.settings.fps)
@@ -880,6 +886,11 @@ impl App {
     /// the proxy's lines are not enough for the needed height `need_h` (sharp).
     /// Existing proxies come from the cache of the background search.
     pub fn preview_path(&self, m: &MediaRef, need_h: u32) -> PathBuf {
+        self.preview_path_loose(m, need_h, self.playing)
+    }
+
+    /// Like [`Self::preview_path`]; `loose`: the proxy counts as sharp enough (playback, moving playhead)
+    fn preview_path_loose(&self, m: &MediaRef, need_h: u32, loose: bool) -> PathBuf {
         if self.proxy_allowed(m) {
             let key = self.proxy_want();
             let found = match self.proxies.cached(m.id, key) {
@@ -887,7 +898,7 @@ impl App {
                 None => existing_proxy(m, key.0, key.1),
             };
             if let Some((p, h)) = found {
-                if self.playing || need_h <= h * 6 / 5 {
+                if proxy_sharp(loose, need_h, h) {
                     return p;
                 }
             }
@@ -896,13 +907,15 @@ impl App {
     }
 
     /// Single frame at source time `at`: (file, time in it) – from a finished part, otherwise like
-    /// [`Self::preview_path`].
-    pub fn still_source(&self, m: &MediaRef, need_h: u32, at: Time) -> (PathBuf, Time) {
+    /// [`Self::preview_path`]. `moving`: the playhead is being dragged – the proxy (fast seeking) even if
+    /// its lines are not enough; at rest the sharp source as before.
+    pub fn still_source(&self, m: &MediaRef, need_h: u32, at: Time, moving: bool) -> (PathBuf, Time) {
+        let loose = self.playing || moving;
         if self.proxy_allowed(m) {
             let want = self.proxy_want();
             let part = registry().get(&m.path).filter(|e| e.want == want && !e.complete).and_then(|e| {
                 let (k, rel) = parts::still_part(&e.pt?, at.as_secs_f64())?;
-                let sharp = self.playing || need_h <= e.spec.height * 6 / 5;
+                let sharp = proxy_sharp(loose, need_h, e.spec.height);
                 (sharp && e.ready.get(k as usize) == Some(&true)).then(|| (parts::parts_dir(&e.out).join(parts::part_name(k)), rel))
             });
             // empty part (past the video end): original
@@ -910,7 +923,18 @@ impl App {
                 return (p, Time::from_secs_f64(rel));
             }
         }
-        (self.preview_path(m, need_h), at)
+        (self.preview_path_loose(m, need_h, loose), at)
+    }
+
+    /// Would a moving playhead read a proxy that is not used at rest (its lines not enough for
+    /// `need_h`)? Then the single frame gets its own key, so the sharp one is requested at rest.
+    /// Known without file access (background search, parts inventory).
+    /// shortcut: a part not built yet at that place falls back to the original under the moving key, so
+    /// at rest the original is decoded once more; fine while parts are being built.
+    pub fn scrub_proxy(&self, m: &MediaRef, need_h: u32) -> bool {
+        let want = self.proxy_want();
+        let h = self.proxies.cached(m.id, want).flatten().map(|(_, h)| h).or_else(|| registry().get(&m.path).filter(|e| e.want == want).map(|e| e.spec.height));
+        self.proxy_allowed(m) && h.is_some_and(|h| !proxy_sharp(false, need_h, h))
     }
 
     /// Source of the stream of layer `id` from timeline place `from` (rules: [`parts::choose_stream`]).
@@ -1888,12 +1912,25 @@ mod tests {
         let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
         let pick = app.stream_pick(1, &c, &m, Time::ZERO);
         assert_eq!(app.stream_source(&m, 540, pick).0, out, "opaque: proxy");
-        assert_eq!(app.still_source(&m, 540, Time::ZERO).0, out, "opaque: proxy");
+        assert_eq!(app.still_source(&m, 540, Time::ZERO, false).0, out, "opaque: proxy");
+        // display larger than the proxy: proxy only while the playhead moves, sharp original at rest
+        assert!(app.scrub_proxy(&m, 1080) && !app.scrub_proxy(&m, 540));
+        assert_eq!(app.still_source(&m, 1080, Time::ZERO, true).0, out, "moving: proxy");
+        assert_eq!(app.still_source(&m, 1080, Time::ZERO, false).0, m.path, "rest: original");
         m.has_alpha = true;
         let pick = app.stream_pick(1, &c, &m, Time::ZERO);
         assert_eq!(pick, Pick::Whole);
         assert_eq!(app.stream_source(&m, 540, pick).0, m.path, "alpha: original stream");
-        assert_eq!(app.still_source(&m, 540, Time::ZERO).0, m.path, "alpha: original single frame");
+        assert_eq!(app.still_source(&m, 540, Time::ZERO, false).0, m.path, "alpha: original single frame");
+        assert_eq!(app.still_source(&m, 1080, Time::ZERO, true).0, m.path, "alpha: original while moving too");
+        assert!(!app.scrub_proxy(&m, 1080));
+    }
+
+    #[test]
+    fn proxy_is_sharp_enough_or_moving() {
+        assert!(proxy_sharp(false, 648, 540), "up to 6/5 of the proxy lines at rest");
+        assert!(!proxy_sharp(false, 720, 540), "rest, larger display: original");
+        assert!(proxy_sharp(true, 2160, 540), "moving or playing: proxy");
     }
 
     #[test]
