@@ -1410,37 +1410,45 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let p = test_project(dir.path(), 20.0);
+        let p = test_project(dir.path(), 120.0); // the end is never reached, even on a slow machine
         let mut a = AudioPlayer::start_null(&p, Time::ZERO).unwrap();
         a.anchor(Instant::now());
-        let wait = |a: &mut AudioPlayer, what: &str, done: &dyn Fn(&mut AudioPlayer) -> bool| {
+        let wait = |a: &mut AudioPlayer, what: &str, done: &mut dyn FnMut(&mut AudioPlayer) -> bool| {
             let t0 = Instant::now();
             while !done(a) {
-                assert!(t0.elapsed() < Duration::from_secs(20), "timeout: {what}");
+                assert!(t0.elapsed() < Duration::from_secs(60), "timeout: {what}");
                 a.poll();
                 std::thread::sleep(Duration::from_millis(5));
             }
         };
-        wait(&mut a, "first sound", &|a| a.started());
+        wait(&mut a, "first sound", &mut |a| a.started());
         let state = |db: f32| {
             let mut q = p.clone();
             q.timeline.tracks[0].clips[0].volume_db = db;
             q
         };
+        // hold the output (no switch can happen) while the three changes arrive, however slow the machine
+        a.shared.out.lock().unwrap().phase = Phase::Waiting;
         for db in [-3.0, -9.0, -40.0] {
             a.remix(state(db));
         }
         assert!(a.remixing());
         assert_eq!(a.shared.out.lock().unwrap().alt.as_ref().unwrap().gen, 1, "only the first one started");
         assert_eq!(a.queued.as_ref().unwrap().timeline.tracks[0].clips[0].volume_db, -40.0, "newest waits, -9 dB dropped");
-        wait(&mut a, "both rebuilds", &|a| !a.remixing() && a.queued.is_none() && a.remix_t0.is_none());
+        a.shared.out.lock().unwrap().phase = Phase::Running;
+        wait(&mut a, "both rebuilds", &mut |a| !a.remixing() && a.queued.is_none() && a.remix_t0.is_none());
         assert_eq!(a.shared.out.lock().unwrap().gen, 2, "exactly two rebuilds (first and newest)");
-        // the newest state is heard: -40 dB of a sine at 1/8
-        std::thread::sleep(Duration::from_millis(100));
+        // the newest state is heard: -40 dB of a sine at 1/8. Wait on conditions, not on time (a busy
+        // machine may not run the output thread or the feed for a while): first the crossfade is over,
+        // so later levels come from the newest mix only, then the first block with sound.
+        wait(&mut a, "crossfade over", &mut |a| a.shared.out.lock().unwrap().xf == 0);
         a.take_peaks();
-        std::thread::sleep(Duration::from_millis(100));
-        let (l, _) = a.take_peaks();
-        assert!(l > 0.0 && l < 0.01, "peak after the rebuild: {l}");
+        let mut l = 0.0;
+        wait(&mut a, "sound of the newest mix", &mut |a| {
+            l = a.take_peaks().0;
+            l > 0.0
+        });
+        assert!(l < 0.01, "peak after the rebuild: {l}");
     }
 
     /// Manual measurement without device: silence around an audible change during playback, old way
