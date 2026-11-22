@@ -318,6 +318,11 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
                     }
                 }
                 Cmd::StopAudio => audio = None,
+                Cmd::RemixAudio => {
+                    if let Some(a) = &mut audio {
+                        a.remix(project.clone());
+                    }
+                }
                 Cmd::PauseAudio => {
                     if !audio.as_ref().is_some_and(|a| a.pause()) {
                         core.stop();

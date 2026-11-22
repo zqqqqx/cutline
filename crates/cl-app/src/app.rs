@@ -2456,6 +2456,12 @@ impl App {
                         }
                     }
                     Cmd::StopAudio => self.audio = None,
+                    Cmd::RemixAudio => {
+                        let p = self.audio_project().into_owned();
+                        if let Some(a) = &mut self.audio {
+                            a.remix(p);
+                        }
+                    }
                     Cmd::PauseAudio => {
                         if !self.audio.as_ref().is_some_and(|a| a.pause()) {
                             self.core.stop();
@@ -2552,7 +2558,7 @@ impl App {
         self.run_core();
     }
 
-    /// Restart the sound from the playhead (solo, output device). The clock keeps running; the sound comes in
+    /// Restart the sound from the playhead (output device, voice-over). The clock keeps running; the sound comes in
     /// without a jump at the then current place (while buffering only when that ends).
     pub fn restart_audio(&mut self) {
         self.core.restart_audio(self.core_now());
@@ -2565,8 +2571,20 @@ impl App {
         if self.voiceover.recorder.is_some() && self.voiceover.mute_project {
             return;
         }
-        // solo: all other audio tracks muted (only in the preview)
-        let proj = if self.solo.is_empty() {
+        match AudioPlayer::start_synced(self.audio_project(), at) {
+            Ok(a) => {
+                if anchor {
+                    a.anchor(Instant::now());
+                }
+                self.audio = Some(a);
+            }
+            Err(e) => log::warn!("Ton: {e}"),
+        }
+    }
+
+    /// Project as heard in the preview: with solo all other audio tracks muted
+    fn audio_project(&self) -> std::borrow::Cow<'_, Project> {
+        if self.solo.is_empty() {
             std::borrow::Cow::Borrowed(&self.project)
         } else {
             let mut p = self.project.clone();
@@ -2576,15 +2594,6 @@ impl App {
                 }
             }
             std::borrow::Cow::Owned(p)
-        };
-        match AudioPlayer::start_synced(proj, at) {
-            Ok(a) => {
-                if anchor {
-                    a.anchor(Instant::now());
-                }
-                self.audio = Some(a);
-            }
-            Err(e) => log::warn!("Ton: {e}"),
         }
     }
 
@@ -2648,6 +2657,9 @@ impl App {
             self.toast_err(w);
         }
         self.perf_audio();
+        if let Some(a) = &mut self.audio {
+            a.poll();
+        }
         let max_q = if self.settings.auto_quality { self.quality_steps().len() - 1 } else { 0 };
         let t = Tick {
             now: self.core_now(),
@@ -3272,7 +3284,8 @@ impl App {
         }
         let Some(a) = &self.audio else { return };
         if let (Some(p), Some(t)) = (&mut self.perf_play, a.first_sound()) {
-            if !p.sound {
+            // a rebuilt mix keeps the first sound from before (it has its own line)
+            if !p.sound && t >= p.pressed {
                 p.sound = true;
                 crate::applog::perf_line!(
                     "perf: {} → erster Ton {:.0} ms",
