@@ -193,6 +193,8 @@ const KEY_SETTLE: f64 = 0.15;
 /// not replaced just because the clock is further – its frame is shown even if it is a few frames
 /// old (otherwise every job starves). Only renewed after this long as a safeguard.
 const STILL_PATIENCE: f64 = 10.0;
+/// Stand: a neighbour shows and the exact frame has not come after this long – request it again
+const NEAR_RETRY: f64 = 0.5;
 
 struct Slot<S: Source> {
     src: S,
@@ -960,7 +962,15 @@ impl<S: Source> PlayCore<S> {
     /// each new one aborts the previous one and no frame ever comes (standstill).
     pub fn still(&mut self, id: Lid, key: u64, now: f64) -> bool {
         match self.requested.get(&id) {
-            Some((k, _)) if *k == key => false,
+            Some((k, since)) if *k == key => {
+                // Stand: a neighbour bridges and the exact frame is overdue – ask again (safety net:
+                // the decoder starts the newest waiting job by itself and ignores a duplicate)
+                let retry = self.mode == Mode::Stand && self.near.contains(&id) && self.shown.get(&id) != Some(k) && now - since >= NEAR_RETRY;
+                if retry {
+                    self.requested.insert(id, (key, now));
+                }
+                retry
+            }
             Some((k, since)) if self.playing() && self.shown.get(&id) != Some(k) && now - since < STILL_PATIENCE => false,
             _ => {
                 self.requested.insert(id, (key, now));
@@ -971,7 +981,19 @@ impl<S: Source> PlayCore<S> {
 
     /// Neighbour instead of the requested frame (reverse window during playback): shown like it,
     /// but in the pause the job is asked again, so the exact frame replaces it.
+    /// Stand (scrubbing): any frame of the layer (an overtaken job that was allowed to finish) bridges
+    /// while the exact frame of the current request is still open; the request stays open (wait line
+    /// keeps running, no flicker) until the exact frame comes – never shown over an exact frame.
     pub fn still_near(&mut self, id: Lid, key: u64) -> bool {
+        // `key` may be the requested one itself (scrub window: a lower-resolution or neighbouring frame)
+        if self.mode == Mode::Stand {
+            let open = self.requested.get(&id).is_some_and(|(k, _)| self.shown.get(&id) != Some(k));
+            if open {
+                self.near.insert(id);
+                self.held = Some(id);
+            }
+            return open;
+        }
         let ok = self.still_done(id, key);
         if ok {
             self.near.insert(id);
@@ -983,6 +1005,11 @@ impl<S: Source> PlayCore<S> {
         for id in self.near.drain() {
             self.requested.remove(&id);
         }
+    }
+
+    /// Is single frame `key` of the layer requested and its exact frame still missing?
+    pub fn still_open(&self, id: Lid, key: u64) -> bool {
+        self.requested.get(&id).is_some_and(|(k, _)| *k == key) && self.shown.get(&id) != Some(&key)
     }
 
     /// Single frame delivered: show it if it is the requested one

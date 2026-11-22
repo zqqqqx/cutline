@@ -493,8 +493,24 @@ pub fn decode_frame_opts(
 /// `k`-th frame after `from`; only those with `keep(k)` stay in memory (number, frame). At the
 /// end of the file fewer, none at all = error.
 pub fn decode_frames(path: &Path, from: Time, n: u32, w: u32, h: u32, keep: &dyn Fn(u32) -> bool, kill: Option<&KillSwitch>) -> Result<Vec<(u32, RgbaFrame)>> {
-    let (frames, _) = decode_raw(path, from, n.max(1), w, h, None, None, keep, kill)?;
-    Ok(frames.into_iter().map(|(k, data)| (k, RgbaFrame { width: w, height: h, data })).collect())
+    let mut frames = Vec::new();
+    decode_raw(path, from, n.max(1), w, h, None, None, &mut |k, data| {
+        if keep(k) {
+            frames.push((k, RgbaFrame { width: w, height: h, data }));
+        }
+    }, kill)?;
+    Ok(frames)
+}
+
+/// Like [`decode_frames`], but each frame goes to `each` as soon as it is decoded (scrub window:
+/// the picture follows while the window fills). Returns the number of frames read.
+pub fn decode_frames_each(path: &Path, from: Time, n: u32, w: u32, h: u32, kill: Option<&KillSwitch>, each: &mut dyn FnMut(u32, RgbaFrame)) -> Result<u32> {
+    let mut read = 0;
+    decode_raw(path, from, n.max(1), w, h, None, None, &mut |k, data| {
+        read = k + 1;
+        each(k, RgbaFrame { width: w, height: h, data });
+    }, kill)?;
+    Ok(read)
 }
 
 fn decode_once(
@@ -506,8 +522,9 @@ fn decode_once(
     accel: Option<&str>,
     kill: Option<&KillSwitch>,
 ) -> Result<(RgbaFrame, Option<Duration>)> {
-    let (mut f, cpu) = decode_raw(path, at, 1, w, h, graph, accel, &|_| true, kill)?;
-    Ok((RgbaFrame { width: w, height: h, data: f.remove(0).1 }, cpu))
+    let mut f = Vec::new();
+    let cpu = decode_raw(path, at, 1, w, h, graph, accel, &mut |_, data| f = data, kill)?;
+    Ok((RgbaFrame { width: w, height: h, data: f }, cpu))
 }
 
 /// `scheme:…` such as `https://host/x.mp4` from a project file: FFmpeg would go online. Purely
@@ -527,8 +544,14 @@ fn not_url(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), keeping only
-/// those with `keep(k)`
+#[cfg(test)]
+thread_local! {
+    /// FFmpeg processes started by `decode_raw` in this thread (tests)
+    static SPAWNS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), each handed
+/// to `sink(k, bytes)` as soon as it is read
 #[allow(clippy::too_many_arguments)]
 fn decode_raw(
     path: &Path,
@@ -538,10 +561,16 @@ fn decode_raw(
     h: u32,
     graph: Option<&str>,
     accel: Option<&str>,
-    keep: &dyn Fn(u32) -> bool,
+    sink: &mut dyn FnMut(u32, Vec<u8>),
     kill: Option<&KillSwitch>,
-) -> Result<(Vec<(u32, Vec<u8>)>, Option<Duration>)> {
+) -> Result<Option<Duration>> {
     not_url(path)?;
+    // already stale (scrubbing: overtaken while waiting for its turn): no process at all
+    if kill.is_some_and(KillSwitch::is_killed) {
+        return Err(MediaError::Cancelled);
+    }
+    #[cfg(test)]
+    SPAWNS.with(|s| s.set(s.get() + 1));
     let mut cmd = command_with("ffmpeg", kill.is_none())?;
     cmd.args(["-v", "error", "-nostdin"]);
     if kill.is_some() {
@@ -580,11 +609,9 @@ fn decode_raw(
     let ks = kill.unwrap_or(&local);
     ks.hold(child)?;
     let need = (w * h * 4) as usize;
-    let (mut frames, mut read, mut buf) = (Vec::new(), 0u32, vec![0u8; need]);
+    let (mut read, mut buf) = (0u32, vec![0u8; need]);
     while read < n && out.read_exact(&mut buf).is_ok() {
-        if keep(read) {
-            frames.push((read, std::mem::replace(&mut buf, vec![0u8; need])));
-        }
+        sink(read, std::mem::replace(&mut buf, vec![0u8; need]));
         read += 1;
     }
     let mut child = ks.release();
@@ -605,7 +632,7 @@ fn decode_raw(
             err
         }));
     }
-    Ok((frames, cpu))
+    Ok(cpu)
 }
 
 /// Maximum number of simultaneous hardware decoders (NVDEC sessions etc. are limited); every
@@ -1556,11 +1583,15 @@ mod tests {
         let clip = make_clip(dir.path());
         let k = KillSwitch::default();
         k.kill();
+        let spawns = || SPAWNS.with(|s| s.get());
+        let before = spawns();
         let r = decode_frame_opts(&clip, Time::from_millis(500), 32, 18, None, false, Some(&k));
         assert!(matches!(r, Err(MediaError::Cancelled)));
+        assert_eq!(spawns(), before, "a job killed before its start spawns no process");
         let (f, info) =
             decode_frame_opts(&clip, Time::from_millis(500), 32, 18, None, false, Some(&KillSwitch::default())).unwrap();
         assert_eq!((f.data.len(), info.hw), (32 * 18 * 4, false));
+        assert_eq!(spawns(), before + 1);
     }
 
     /// Serializes the hardware tests: together they could take all [`MAX_HW_DECODERS`] slots, and a
