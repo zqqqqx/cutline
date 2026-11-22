@@ -1182,20 +1182,16 @@ mod tests {
             let (addr, t) = cl_mcp::McpServer::new(doc, None).serve_http_until(port, "x".into(), stop.clone())?;
             Ok::<_, std::io::Error>(McpRunning { port: addr.port(), token: "x".into(), read_only: false, stop, thread: Some(t) })
         };
-        // The port comes from the system: tests running in parallel can get it by chance between
-        // stop and restart. If the old server still held it, on the other hand, EVERY attempt would fail.
-        // Asserted: in at least one of five rounds the restart gets the same port at once.
-        // what each round saw: a failure names the cause (port taken by another test, or still held)
-        let mut seen = Vec::new();
-        let ok = (0..5).any(|_| {
+        // Restarting on the port just freed must work every time. Seen in CI on Linux: the bind
+        // failed five times in a row with AddrInUse while other tests were starting FFmpeg – a
+        // forked child still held the old socket. `serve_http_until` waits for that.
+        for _ in 0..5 {
             let first = start(0).unwrap();
             let port = first.port;
             drop(first);
             let again = start(port).map(|a| a.port);
-            seen.push(format!("{port}: {again:?}"));
-            again.is_ok_and(|p| p == port)
-        });
-        assert!(ok, "port free right after stopping: {seen:?}");
+            assert_eq!(again.ok(), Some(port), "port free right after stopping");
+        }
     }
 
     #[test]

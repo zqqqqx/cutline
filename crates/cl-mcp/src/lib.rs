@@ -500,7 +500,18 @@ impl McpServer {
         token: String,
         stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> std::io::Result<(SocketAddr, std::thread::JoinHandle<()>)> {
-        let listener = TcpListener::bind(("127.0.0.1", port))?;
+        // a port just freed by our own server can stay taken for a moment: a child process being
+        // started elsewhere (fork before exec) still holds a copy of the old socket. Wait briefly.
+        let mut tries = 0;
+        let listener = loop {
+            match TcpListener::bind(("127.0.0.1", port)) {
+                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && port != 0 && tries < 50 => {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                r => break r?,
+            }
+        };
         listener.set_nonblocking(true)?;
         let addr = listener.local_addr()?;
         let handle = std::thread::Builder::new()
