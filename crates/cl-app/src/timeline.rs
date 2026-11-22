@@ -307,6 +307,53 @@ fn group_new_row(p: &Project, moves: &[(ClipId, Time)]) -> (usize, bool) {
     (row.unwrap_or(0), visual || at.is_empty())
 }
 
+/// Where the single clip `c` dropped on track `t` at `start` lands: (start, length). As it is when
+/// it is free there (or `t` is the main track with magnet, which makes room). If it overlaps the
+/// clips staying there by less than half a frame in total – a sliver from rounding or from older
+/// projects – it is shortened by that sliver on the overlapping side(s) and goes into the gap; the
+/// neighbours never move and clips never overlap. `None`: half a frame or more (a new track, as before).
+fn fit_in_gap(t: &Track, magnet: bool, c: &Clip, start: Time, fps: Rational) -> Option<(Time, Time)> {
+    let dur = c.duration;
+    if (t.main && magnet) || t.is_free(start, dur, Some(c.id)) {
+        return Some((start, dur));
+    }
+    let end = start + dur;
+    let others = || t.clips.iter().filter(|o| o.id != c.id);
+    let head = others().filter(|o| o.start <= start && o.end() > start).map(|o| o.end().0 - start.0).max().unwrap_or(0);
+    let tail = others().filter(|o| o.end() >= end && o.start < end).map(|o| end.0 - o.start.0).max().unwrap_or(0);
+    let half = Time::from_secs_f64(0.5 / fps.as_f64().max(1.0));
+    if head + tail >= half.0 || head + tail >= dur.0 {
+        return None;
+    }
+    let (s2, d2) = (Time(start.0 + head), Time(dur.0 - head - tail));
+    t.is_free(s2, d2, Some(c.id)).then_some((s2, d2))
+}
+
+/// Ops (one undo step) dropping the single clip `clip` on track `track` at `start`: a plain move, or,
+/// when it overlaps the neighbours there by a sliver ([`fit_in_gap`]), park it on the target behind
+/// everything, trim the sliver off there (the source track, perhaps a magnet main track, stays
+/// untouched) and put it into the gap.
+fn single_drop_ops(p: &Project, clip: ClipId, track: TrackId, start: Time, fps: Rational) -> Vec<EditOp> {
+    let plain = vec![EditOp::MoveClip { clip, track: Some(track), start }];
+    let (Some((_, c)), Some(t)) = (p.find_clip(clip), p.timeline.tracks.iter().find(|t| t.id == track)) else {
+        return plain;
+    };
+    let Some((s2, d2)) = fit_in_gap(t, p.settings.main_track_magnet, c, start, fps).filter(|f| f.1 != c.duration) else {
+        return plain;
+    };
+    let park = p.duration() + Time::from_secs_f64(3600.0);
+    let head = Time(s2.0 - start.0);
+    let mut ops = vec![EditOp::MoveClip { clip, track: Some(track), start: park }];
+    if head.0 > 0 {
+        ops.push(EditOp::TrimClip { clip, edge: Edge::Start, to: park + head });
+    }
+    if head + d2 != c.duration {
+        ops.push(EditOp::TrimClip { clip, edge: Edge::End, to: park + head + d2 });
+    }
+    ops.push(EditOp::MoveClip { clip, track: Some(track), start: s2 });
+    ops
+}
+
 /// Edge time a trim drag of `c`'s `edge` to `t` s commits, held inside the source (videos) and a
 /// minimum length. An edge that snapped stays exactly on the snap point – rounded to the frame grid
 /// it could end a sliver past the neighbour it touches, and that clip then no longer fits into the
@@ -2104,6 +2151,14 @@ impl App {
                             target = Target::New(k, upper);
                         }
                     }
+                    // single clip onto a track: where and how long the drop leaves it (a sliver may go)
+                    let fitted = match target {
+                        Target::Track(t) => self.project.timeline.tracks.iter().find(|x| x.id == tracks[t].id).and_then(|tr| {
+                            let c = self.project.find_clip(clip)?.1;
+                            fit_in_gap(tr, self.project.settings.main_track_magnet, c, fr(s), fps)
+                        }),
+                        _ => None,
+                    };
                     let info: HashMap<ClipId, (f64, TrackKind)> =
                         self.project.timeline.tracks.iter().flat_map(|t| &t.clips).map(|c| (c.id, (c.duration.as_secs_f64(), c.kind()))).collect();
                     for (id, ns) in &moves {
@@ -2126,7 +2181,11 @@ impl App {
                                 .and_then(|to| rows.iter().find(|r| tracks.get(r.track).is_some_and(|t| t.id == *to)))
                                 .map(|r| r.rect),
                         };
-                        ghost.insert(*id, (ns, ns + dur, tr));
+                        let (ns, ne) = match fitted.filter(|_| *id == clip) {
+                            Some((a, d)) => (a.as_secs_f64(), (a + d).as_secs_f64()),
+                            None => (ns, ns + dur),
+                        };
+                        ghost.insert(*id, (ns, ne, tr));
                     }
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
@@ -2140,11 +2199,7 @@ impl App {
                                 }
                                 Vec::new()
                             }
-                            Target::Track(t) => vec![EditOp::MoveClip {
-                                clip,
-                                track: Some(tracks[t].id),
-                                start: fr(s),
-                            }],
+                            Target::Track(t) => single_drop_ops(&self.project, clip, tracks[t].id, fr(s), fps),
                             Target::Same => match shifted.take().map(|x| x.0).or(group.then_some(0)).and_then(|n| shift_tracks(&self.project, &moves, n)) {
                                 Some((_, op)) => vec![op],
                                 None => moves.iter().map(|(id, st)| EditOp::MoveClip { clip: *id, track: None, start: *st }).collect(),
@@ -5384,8 +5439,9 @@ mod tests {
             }
         };
         let track = p.timeline.tracks[0].id;
+        let ops = single_drop_ops(&p, x, track, to, fps);
         let mut d = Document::new(p);
-        d.apply(EditOp::MoveClip { clip: x, track: Some(track), start: to }, OpSource::Ui).unwrap();
+        d.apply(EditOp::Batch { label: String::new(), ops }, OpSource::Ui).unwrap();
         assert_eq!(d.undo_entries().len(), 1);
         (d, vec![ids[0][0], x, ids[0][1]], to)
     }
@@ -5410,6 +5466,48 @@ mod tests {
                         assert!(at[0].2 == at[1].1 && at[1].2 == at[2].1, "touching both: {case} {at:?}");
                         assert_eq!(at[2].1, s(gs) + s(len), "right neighbour not pushed: {case}");
                     }
+                }
+            }
+        }
+    }
+
+    /// A clip a sliver longer than the gap it is dropped into (older projects, sub-frame edges):
+    /// under half a frame in total it goes into the gap, shortened by the sliver at the side that
+    /// overlaps, and one undo restores its length and track; half a frame or more: a new track as before
+    #[test]
+    fn clip_a_sliver_too_long_still_fits_the_gap() {
+        let s = Time::from_secs_f64;
+        for fps in [Rational::new(30, 1), Rational::new(30000, 1001)] {
+            let half = Time::from_secs_f64(0.5 / fps.as_f64());
+            for over in [Time(1), Time(100), Time(half.0 - 1), half] {
+                for at_start in [false, true] {
+                    let (gs, gap) = (s(4.012_345), s(1.3));
+                    let ge = gs + gap;
+                    let (p, ids) = lanes(fps, false, &[(TrackKind::Video, true, &[(0.0, gs.as_secs_f64()), (ge.as_secs_f64(), 100.0)]), (TrackKind::Video, false, &[(10.0, (gap + over).as_secs_f64())])]);
+                    let x = ids[1][0];
+                    let len = p.find_clip(x).unwrap().1.duration;
+                    // end on the gap start's side overlapping the right neighbour, or start overlapping the left one
+                    let start = if at_start { ge - len } else { gs };
+                    let main = p.timeline.tracks[0].id;
+                    let case = format!("{fps:?} over {} µs, at start {at_start}", over.0);
+                    let preview = fit_in_gap(&p.timeline.tracks[0], false, p.find_clip(x).unwrap().1, start, fps);
+                    let mut d = Document::new(p.clone());
+                    d.apply(EditOp::Batch { label: String::new(), ops: single_drop_ops(&p, x, main, start, fps) }, OpSource::Ui).unwrap();
+                    assert_eq!(d.undo_entries().len(), 1, "{case}");
+                    let (t, c) = d.project().find_clip(x).map(|(t, c)| (t.id, c.clone())).unwrap();
+                    if over < half {
+                        assert_eq!((t, c.start, c.end()), (main, gs, ge), "in the gap, touching both: {case}");
+                        assert_eq!(d.project().timeline.tracks.len(), 1, "{case}");
+                        assert_eq!(preview, Some((gs, gap)), "preview = result: {case}");
+                    } else {
+                        assert!(t != main && d.project().timeline.tracks.len() == 2, "half a frame: a new track as before (the emptied one goes): {case}");
+                        assert_eq!(c.duration, len, "{case}");
+                        assert_eq!(preview, None, "{case}");
+                    }
+                    let n = d.project().timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>();
+                    assert_eq!(n, 3, "{case}");
+                    d.undo().unwrap();
+                    assert_eq!(d.project(), &p, "one undo restores length and track: {case}");
                 }
             }
         }
@@ -5455,8 +5553,8 @@ mod tests {
     }
 
     /// Gap longer than the clip: it snaps to the nearer edge and stays on the target track. Gap one
-    /// microsecond shorter: the overlap rule of the track applies – a free track gets a new track for
-    /// the clip (as for any overlap), the magnet main track makes room by that microsecond
+    /// microsecond shorter: the clip goes into the gap without that microsecond (before: a new track,
+    /// although the preview showed it in the gap), the magnet main track makes room by it
     #[test]
     fn clip_into_a_longer_or_too_short_gap() {
         let s = Time::from_secs_f64;
@@ -5482,8 +5580,8 @@ mod tests {
             if magnet {
                 assert!(at.iter().all(|x| x.0 == 0) && at[2].1 == s(gs) + s(len), "main track makes room: {at:?}");
             } else {
-                assert_eq!(d.project().timeline.tracks.len(), 2, "overlap: the clip gets a new track");
-                assert!(at[1].0 != at[0].0 && at[0].0 == at[2].0);
+                assert_eq!(d.project().timeline.tracks.len(), 1, "sliver: into the gap, no new track");
+                assert!(at.iter().all(|x| x.0 == 0) && at[0].2 == at[1].1 && at[1].2 == at[2].1, "touching both: {at:?}");
             }
         }
     }
