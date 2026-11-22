@@ -773,6 +773,17 @@ impl Shadow {
         let r = |v: f32| v.clamp(-100.0, 100.0).round() as i32;
         (r(self.dx), r(self.dy))
     }
+
+    /// Distance and angle (0–360°) as the inspector shows them. The angle points to the light, as in
+    /// image editors (counter-clockwise from the right), so 135° = light top left = shadow down right.
+    pub fn polar(&self) -> (f32, f32) {
+        (self.dx.hypot(self.dy), self.dy.atan2(-self.dx).to_degrees().rem_euclid(360.0))
+    }
+
+    pub fn set_polar(&mut self, dist: f32, deg: f32) {
+        let (s, c) = deg.to_radians().sin_cos();
+        (self.dx, self.dy) = (-dist * c, dist * s);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

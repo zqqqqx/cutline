@@ -301,6 +301,16 @@ fn text_shadow_style_round_trips_and_old_files_keep_the_default() {
     assert_eq!(off(2.5, -2.5), (3, -3));
     assert_eq!(off(1e6, -1e6), (100, -100));
     assert_eq!(off(f32::NAN, f32::INFINITY), (0, 100));
+    // inspector: 135° = light top left, shadow down right; distance and angle there and back
+    let (d, a) = Shadow::default().polar();
+    assert!((d - 18f32.sqrt()).abs() < 1e-4 && (a - 135.0).abs() < 1e-3, "{d} {a}");
+    for (dist, deg, want) in [(10.0, 0.0, (-10, 0)), (10.0, 90.0, (0, 10)), (10.0, 270.0, (0, -10)), (20.0, 315.0, (-14, -14))] {
+        let mut s = Shadow::default();
+        s.set_polar(dist, deg);
+        assert_eq!(s.offset(), want, "{deg}°");
+        let (d, a) = s.polar();
+        assert!((d - dist).abs() < 1e-3 && (a - deg).abs() < 1e-3, "{deg}°: {d} {a}");
+    }
 }
 
 /// Bug: a URL as media path went to FFmpeg (network) and did not count as missing on relink.

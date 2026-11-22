@@ -936,6 +936,26 @@ impl App {
         if widgets::toggle_row(ui, "Schatten", &mut st.shadow) {
             e.commit = true;
         }
+        if st.shadow {
+            // any change turns the default look into an own style
+            let mut sh = st.shadow_style.unwrap_or_default();
+            let mut ed = Edit::default();
+            theme::row(ui, "Farbe", |ui| ed.commit |= widgets::color_button(ui, &mut sh.color));
+            let mut op = sh.color[3] as f32 / 255.0;
+            ed |= theme::row(ui, "Deckkraft", |ui| Slider::new(&mut op, 0.0..=1.0).percent().default(0.6).show(ui));
+            sh.color[3] = (op * 255.0).round() as u8;
+            let (mut dist, mut deg) = sh.polar();
+            let mut geo = theme::row(ui, "Abstand", |ui| Slider::new(&mut dist, 0.0..=40.0).decimals(1).suffix(" px").default(18f32.sqrt()).show(ui));
+            geo |= theme::row(ui, "Winkel", |ui| Slider::new(&mut deg, 0.0..=360.0).suffix("°").default(135.0).show(ui));
+            if geo.changed || geo.commit {
+                sh.set_polar(dist, deg);
+            }
+            ed |= geo;
+            if ed.changed || ed.commit {
+                st.shadow_style = Some(sh);
+            }
+            *e |= ed;
+        }
         theme::section(ui, "Texteffekte");
         let mut chosen = None;
         widgets::grid(
