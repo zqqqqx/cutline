@@ -1,0 +1,99 @@
+//! Text shadow in the export graph: without a shadow style (`None`) the graph stays exactly as
+//! before the adjustable shadow (pinned strings), a set style reaches `drawtext` and the sprite pad.
+//! A fake font file makes the text metrics fall back to fixed values, so the strings do not depend
+//! on the fonts of the machine.
+
+use cl_core::*;
+use cl_export::{build, ExportSettings};
+
+/// Text layer lines of the graph of a project with one text clip; the font copy's name (hash of a temp path) is normalised.
+fn graph(st: &TextStyle) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let font = dir.path().join("schrift.ttf");
+    std::fs::write(&font, b"no real font").unwrap();
+    let mut p = Project::new("T");
+    (p.settings.width, p.settings.height) = (640, 360);
+    p.settings.fps = Rational { num: 30, den: 1 };
+    let mut t = Track::new(TrackKind::Text);
+    t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, Time::from_secs_f64(2.0)));
+    p.timeline.tracks.push(t);
+    let resolver = move |_: Option<&str>| Some((font.clone(), 0));
+    let job = build(&p, &ExportSettings::from_project(&p), &resolver, &dir.path().join("o.mp4")).unwrap();
+    let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+    // only the text layers (sprite size and every drawtext); the rest of the graph is not about text
+    let g: String = g.lines().filter(|l| l.contains("drawtext=")).map(|l| format!("{l}
+")).collect();
+    let mut out = String::new();
+    for (i, part) in g.split("fontfile=").enumerate() {
+        if i > 0 {
+            out.push_str("fontfile=F");
+            out.push_str(&part[part.find(':').unwrap()..]);
+        } else {
+            out.push_str(part);
+        }
+    }
+    out
+}
+
+fn styles() -> Vec<(&'static str, TextStyle)> {
+    let base = TextStyle { text: "Hallo Welt".into(), size: 44.0, ..Default::default() };
+    vec![
+        ("plain", base.clone()),
+        ("no shadow", TextStyle { shadow: false, ..base.clone() }),
+        ("bold", TextStyle { bold: true, ..base.clone() }),
+        ("outline bold", TextStyle { bold: true, outline: Some((4.0, [0, 0, 0, 255])), ..base.clone() }),
+        ("italic two lines", TextStyle { italic: true, text: "Eins\nZwei".into(), ..base.clone() }),
+        ("box left", TextStyle { background: Some([0, 0, 0, 170]), align: -1, ..base.clone() }),
+        (
+            "karaoke",
+            TextStyle {
+                karaoke: Some(Karaoke { color: [255, 221, 0, 255], fill: true, words: Vec::new() }),
+                text: "Eins zwei drei".into(),
+                ..base.clone()
+            },
+        ),
+    ]
+}
+
+/// Graphs captured before the adjustable shadow: `None` must not change a single byte.
+#[test]
+fn graphs_without_shadow_style_stay_byte_identical() {
+    let want = include_str!("snapshots/text_graphs.txt").replace("\r\n", "\n");
+    let got: String = styles().iter().map(|(name, st)| format!("## {name}\n{}\n", graph(st))).collect();
+    if want != got {
+        for (w, g) in want.lines().zip(got.lines()) {
+            assert_eq!(w, g);
+        }
+        assert_eq!(want, got);
+    }
+}
+
+/// Sprite size `WxH` of the (first) text layer
+fn sprite(g: &str) -> (u32, u32) {
+    let s = &g[g.find(":s=").unwrap() + 3..];
+    let (w, h) = s[..s.find(':').unwrap()].split_once('x').unwrap();
+    (w.parse().unwrap(), h.parse().unwrap())
+}
+
+#[test]
+fn shadow_style_reaches_drawtext_and_the_pad() {
+    let base = TextStyle { text: "Hallo Welt".into(), size: 44.0, bold: true, ..Default::default() };
+    let (w0, h0) = sprite(&graph(&base));
+    // red, 60 % → 12/−8 (sub-pixel offsets rounded half away from zero)
+    let sh = Shadow { color: [255, 0, 0, 153], dx: 11.5, dy: -7.6 };
+    let g = graph(&TextStyle { shadow_style: Some(sh), ..base.clone() });
+    assert_eq!(g.matches(":shadowx=12:shadowy=-8:shadowcolor=0xff0000@0.600").count(), 1, "{g}");
+    // bold: two prints, the shadow only under the first (drawn before its text)
+    assert_eq!(g.matches("drawtext=").count(), 2, "{g}");
+    assert!(g.find("shadowx").unwrap() < g.rfind("drawtext=").unwrap(), "{g}");
+    // the pad grows by the larger offset on every side
+    assert_eq!(sprite(&g), (w0 + 24, h0 + 24), "{g}");
+    // the default look set explicitly: same offset and sprite as without a style
+    let g = graph(&TextStyle { shadow_style: Some(Shadow::default()), ..base.clone() });
+    assert!(g.contains(":shadowx=3:shadowy=3:shadowcolor=0x000000@0.600"), "{g}");
+    assert_eq!(sprite(&g), (w0 + 6, h0 + 6));
+    // switch off: no shadow, whatever the style
+    let g = graph(&TextStyle { shadow: false, shadow_style: Some(sh), ..base.clone() });
+    assert!(!g.contains("shadow"), "{g}");
+    assert_eq!(sprite(&g), (w0, h0));
+}

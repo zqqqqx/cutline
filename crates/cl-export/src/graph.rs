@@ -486,7 +486,10 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     let block = pitch * lines.len() as f32;
     let th = (size * 1.3 * ls * lines.len() as f32).max(block);
     let outline = st.outline.map(|o| o.0).unwrap_or(0.0);
-    let pad = (size * 0.4 + outline * 2.0 + 8.0).ceil();
+    // a set shadow style may point far away: room for its offset (`None` keeps the old pad)
+    let shadow = st.shadow_style.filter(|_| st.shadow).map(|s| (s.offset(), s.color));
+    let reach = shadow.map_or(0, |((dx, dy), _)| dx.abs().max(dy.abs()));
+    let pad = (size * 0.4 + outline * 2.0 + 8.0).ceil() + reach as f32;
     // very long lines without wrap: limit the area (the rest is outside the image anyway)
     // italic: shearing needs room at the sides
     let slant = if st.italic { ITALIC_SHEAR * th } else { 0.0 };
@@ -529,8 +532,12 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         if let Some((bw, col)) = st.outline {
             dt.push_str(&format!(":borderw={bw:.1}:bordercolor={}", rgba(col)));
         }
-        if st.shadow {
-            dt.push_str(":shadowx=3:shadowy=3:shadowcolor=black@0.6");
+        match shadow {
+            // not on the bold second print: drawtext would paint that shadow over the first print
+            // (and double the opacity where both overlap); the preview leaves it out the same way
+            Some(((dx, dy), c)) => dt.push_str(&format!(":shadowx={dx}:shadowy={dy}:shadowcolor={}", rgba(c))),
+            None if st.shadow => dt.push_str(":shadowx=3:shadowy=3:shadowcolor=black@0.6"),
+            None => {}
         }
         // bold and italic like the preview (`draw_text` in the player) from the style's switches, not
         // from the font file's weight: a second imprint offset by 3 % of the size, shear

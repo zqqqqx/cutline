@@ -1,0 +1,22 @@
+## plain
+color=c=black@0.0:s=316x110:r=30/1:d=2.033333,format=rgba,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+0.0:y=69.3:y_align=baseline:shadowx=3:shadowy=3:shadowcolor=black@0.6[tx2];
+
+## no shadow
+color=c=black@0.0:s=316x110:r=30/1:d=2.033333,format=rgba,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+0.0:y=69.3:y_align=baseline[tx2];
+
+## bold
+color=c=black@0.0:s=316x110:r=30/1:d=2.033333,format=rgba,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+0.0:y=69.3:y_align=baseline:shadowx=3:shadowy=3:shadowcolor=black@0.6,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+1.3:y=69.3:y_align=baseline[tx2];
+
+## outline bold
+color=c=black@0.0:s=332x126:r=30/1:d=2.033333,format=rgba,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+0.0:y=77.3:y_align=baseline:borderw=4.0:bordercolor=0x000000@1.000:shadowx=3:shadowy=3:shadowcolor=black@0.6,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+1.3:y=77.3:y_align=baseline[tx2];
+
+## italic two lines
+color=c=black@0.0:s=188x168:r=30/1:d=2.033333,format=rgba,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+0.0:y=70.8:y_align=baseline:shadowx=3:shadowy=3:shadowcolor=black@0.6,drawtext=fontfile=F:textfile=text_t1_1.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+0.0:y=125.8:y_align=baseline:shadowx=3:shadowy=3:shadowcolor=black@0.6,shear=shx=0.25:fillcolor=black@0[tx2];
+
+## box left
+color=c=black@0.0:s=316x110:r=30/1:d=2.033333,format=rgba,drawbox=x=15:y=19:w=286:h=73:color=0x000000@0.667:t=fill:replace=1,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=26.0+0.0:y=69.3:y_align=baseline:shadowx=3:shadowy=3:shadowcolor=black@0.6[tx2];
+
+## karaoke
+color=c=black@0.0:s=422x110:r=30/1:d=2.033333,format=rgba,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffffff@1.000:x=(w-text_w)/2+0.0:y=69.3:y_align=baseline:shadowx=3:shadowy=3:shadowcolor=black@0.6[kb3];
+color=c=black@0.0:s=422x110:r=30/1:d=2.033333,format=rgba,drawtext=fontfile=F:textfile=text_t1_0.txt:expansion=none:fontsize=44.0:fontcolor=0xffdd00@1.000:x=(w-text_w)/2+0.0:y=69.3:y_align=baseline:shadowx=3:shadowy=3:shadowcolor=black@0.6,split=3[kp4][kp5][kp6];
+
