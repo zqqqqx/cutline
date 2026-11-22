@@ -79,6 +79,9 @@ pub enum Cmd {
     StopAudio,
     PauseAudio,
     ResumeAudio,
+    /// Audible change while the sound runs: mix anew, the running sound keeps playing until the new
+    /// one takes over at the place it has reached (no gap, the audio clock goes on)
+    RemixAudio,
 }
 
 /// A layer for which a stream should run during playback.
@@ -584,7 +587,8 @@ impl<S: Source> PlayCore<S> {
 
     /// Edit during playback. Visible changes need nothing (new keys →
     /// replacement streams); audible ones renew the sound only [`AUDIO_DEBOUNCE`] after the last one (dragging
-    /// a slider does not restart it at every step), the picture keeps running.
+    /// a slider does not rebuild it at every step), the picture keeps running; running sound is
+    /// rebuilt without a gap ([`Cmd::RemixAudio`]).
     pub fn edit(&mut self, audible: bool, now: f64) {
         if audible && self.playing() {
             self.audio_due = Some(now + AUDIO_DEBOUNCE);
@@ -672,11 +676,17 @@ impl<S: Source> PlayCore<S> {
 
     fn run(&mut self, t: &Tick) {
         let now = t.now;
-        if self.audio_due.is_some_and(|d| now >= d) {
+        let due = self.audio_due.is_some_and(|d| now >= d);
+        if due && !matches!(t.audio, AudioIn::Running(_)) {
+            // no sound playing yet: nothing to keep, start anew at the clock's place
             self.audio_due = None;
             self.start_audio(self.pos, true);
             self.clock = Some((now, self.pos));
         } else {
+            if due {
+                self.audio_due = None;
+                self.cmds.push(Cmd::RemixAudio);
+            }
             match t.audio {
                 AudioIn::Failed | AudioIn::Finished => {
                     // without sound continue on system time

@@ -70,11 +70,12 @@ struct Aud {
     /// Sound aborts at this wall time
     cut_at: Option<f64>,
     starts: u32,
+    remixes: u32,
 }
 
 impl Aud {
     fn new() -> Self {
-        Self { st: AState::Off, latency: 0.1, fail: false, cut_at: None, starts: 0 }
+        Self { st: AState::Off, latency: 0.1, fail: false, cut_at: None, starts: 0, remixes: 0 }
     }
     fn input(&mut self, now: f64) -> AudioIn {
         if let AState::Prep { at, ready, anchor: Some(a) } = self.st {
@@ -109,6 +110,8 @@ impl Aud {
                 }
             }
             Cmd::StopAudio => self.st = AState::Off,
+            // the running sound keeps playing (and keeps the clock) while the new mix is made
+            Cmd::RemixAudio => self.remixes += 1,
             Cmd::PauseAudio => {
                 if let AState::Run { paused_at, .. } = &mut self.st {
                     *paused_at = Some(now);
@@ -567,12 +570,50 @@ fn audible_edits_restart_audio_once_after_debounce() {
         w.core.edit(true, w.now());
         w.run(0.05, DT);
     }
-    assert_eq!(w.aud.starts, starts, "sound not renewed at every step");
+    assert_eq!(w.aud.remixes, 0, "sound not renewed at every step");
     w.run(0.2, DT);
-    assert_eq!(w.aud.starts, starts + 1);
+    assert_eq!(w.aud.remixes, 1);
     w.run(0.5, DT);
+    assert_eq!(w.aud.starts, starts, "running sound is rebuilt, not stopped and started anew");
     assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)));
     assert!(w.gap(1, 1.0, w.now()) <= 2.0 / 30.0 + 0.01, "picture kept running");
+}
+
+/// An audible edit while the sound runs must not stop it: every tick from the edit on the sound
+/// stays audible (the old one plays until the rebuilt one takes over) and the clock keeps following it.
+#[test]
+fn audible_edit_keeps_running_sound_without_silence() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    w.aud.latency = 0.4; // FFmpeg start of the new mix
+    w.play();
+    w.run(1.0, DT);
+    assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)));
+    w.core.edit(true, w.now());
+    let mut silent = 0;
+    for _ in 0..60 {
+        w.step(DT);
+        if !matches!(w.aud.input(w.now()), AudioIn::Running(_)) {
+            silent += 1;
+        }
+    }
+    assert_eq!(silent, 0, "ticks without sound after an audible edit");
+    assert_eq!(w.aud.remixes, 1);
+    // the clock still is the sound's clock
+    let AudioIn::Running(p) = w.aud.input(w.now()) else { unreachable!() };
+    assert_eq!(w.core.pos(), p);
+}
+
+/// Edit while no sound plays (here: output failed): nothing to keep, it starts anew (as before).
+#[test]
+fn audible_edit_without_running_sound_starts_it_anew() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    w.aud.fail = true;
+    w.play();
+    w.run(1.0, DT);
+    let starts = w.aud.starts;
+    w.core.edit(true, w.now());
+    w.run(0.3, DT);
+    assert_eq!((w.aud.starts, w.aud.remixes), (starts + 1, 0));
 }
 
 #[test]

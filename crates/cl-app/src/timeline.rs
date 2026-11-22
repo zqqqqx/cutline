@@ -3095,9 +3095,8 @@ impl App {
                     if !self.solo.remove(&tr.id) {
                         self.solo.insert(tr.id);
                     }
-                    if self.playing {
-                        self.restart_audio();
-                    }
+                    // rebuilt beside the running sound, without a gap
+                    self.core.edit(true, self.core_now());
                 } else if br.clicked() {
                     let (mut l, mut h, mut m) = (tr.locked, tr.hidden, tr.muted);
                     match k {
@@ -3933,9 +3932,8 @@ impl App {
                     if !self.solo.remove(&tid) {
                         self.solo.insert(tid);
                     }
-                    if self.playing {
-                        self.restart_audio();
-                    }
+                    // rebuilt beside the running sound, without a gap
+                    self.core.edit(true, self.core_now());
                 }
                 ui.separator();
                 if menu_item(ui, icon::SELECTION_ALL, "Alle Clips der Spur auswählen", "") {

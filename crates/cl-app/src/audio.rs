@@ -32,6 +32,8 @@ pub const LEAD_SECS: u64 = 5;
 pub const PRE_MS: u64 = 200;
 /// Fade in/out when sound starts and stops (against clicks)
 pub const FADE_MS: u64 = 15;
+/// Crossfade from the running mix to a rebuilt one (audible change during playback)
+pub const XFADE_MS: u64 = 30;
 
 pub struct AudioPlayer {
     /// Control of the output thread (true = play, false = pause); dropping it ends the thread
@@ -43,6 +45,10 @@ pub struct AudioPlayer {
     peaks: Arc<[AtomicU32; 2]>,
     rate: u32,
     pub start: Time,
+    /// Newest audible state waiting for its rebuild ([`Self::remix`])
+    queued: Option<Project>,
+    /// Start of the rebuild in flight (perf log)
+    remix_t0: Option<Instant>,
 }
 
 /// State shared by output (cpal), feed (windows) and UI
@@ -224,11 +230,31 @@ struct Out {
     underrun_frames: u64,
     /// current playback gain (glides to [`GAIN`])
     gain: f32,
+    /// Feed generation that fills `buf` (a rebuilt mix gets the next one)
+    gen: u64,
+    /// Rebuilt mix being prepared beside the running one
+    alt: Option<Alt>,
+    /// Rest of the old mix during the crossfade, remaining and total crossfade frames
+    xf_old: VecDeque<f32>,
+    xf: u32,
+    xf_len: u32,
+}
+
+/// Rebuilt mix (audible change during playback): its samples start at output frame `at`.
+struct Alt {
+    gen: u64,
+    at: u64,
+    buf: VecDeque<f32>,
 }
 
 impl Out {
     fn new(phase: Phase, rate: u32) -> Self {
         Self {
+            gen: 0,
+            alt: None,
+            xf_old: VecDeque::new(),
+            xf: 0,
+            xf_len: (rate as u64 * XFADE_MS / 1000).max(1) as u32,
             buf: VecDeque::with_capacity(rate as usize * 4),
             phase,
             played: 0,
@@ -270,7 +296,7 @@ impl Out {
                 self.phase = Phase::Running;
                 self.fade_in = self.fade_len;
             }
-            Phase::Running => {}
+            Phase::Running => self.take_alt(n),
         }
         let mut real = 0;
         for _ in 0..n {
@@ -287,6 +313,18 @@ impl Out {
             };
             self.in_underrun = false;
             real += 1;
+            let (mut l, mut r) = (l, r);
+            if self.xf > 0 {
+                // old mix fades out while the rebuilt one fades in (same frame in both)
+                let k = self.xf as f32 / self.xf_len as f32;
+                let (ol, or) = (self.xf_old.pop_front().unwrap_or(0.0), self.xf_old.pop_front().unwrap_or(0.0));
+                l += (ol - l) * k;
+                r += (or - r) * k;
+                self.xf -= 1;
+                if self.xf == 0 {
+                    self.xf_old = VecDeque::new();
+                }
+            }
             let mut g = 1.0;
             if self.fade_in > 0 {
                 g = 1.0 - self.fade_in as f32 / self.fade_len as f32;
@@ -300,6 +338,33 @@ impl Out {
         }
         self.played += real;
         real
+    }
+
+    /// Rebuilt mix: discard its frames the output has already passed; once it holds the frames from
+    /// `played` on (at least a block and the crossfade), it becomes the playing one – no gap, no jump.
+    fn take_alt(&mut self, n: usize) {
+        let Some(a) = &mut self.alt else { return };
+        let drop = self.played.saturating_sub(a.at).min(a.buf.len() as u64 / 2);
+        a.buf.drain(..drop as usize * 2);
+        a.at += drop;
+        if self.closing.is_some() || a.at != self.played || a.buf.len() / 2 < n.max(self.xf_len as usize) {
+            return;
+        }
+        let a = self.alt.take().expect("checked above");
+        self.xf_old = std::mem::replace(&mut self.buf, a.buf);
+        self.gen = a.gen;
+        self.xf = self.xf_len;
+        // the old feed may have reached the end; the new one reports its own end
+        self.finished = false;
+    }
+
+    /// Buffer the feed of generation `gen` fills: the playing one, the rebuilt one, or none (outdated)
+    fn slot(&mut self, gen: u64) -> Option<&mut VecDeque<f32>> {
+        if gen == self.gen {
+            Some(&mut self.buf)
+        } else {
+            self.alt.as_mut().filter(|a| a.gen == gen).map(|a| &mut a.buf)
+        }
     }
 }
 
@@ -396,8 +461,9 @@ fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shar
     Ok(Win { child, q, done, ready, plan, spawned: Instant::now() })
 }
 
-/// Fetches window after window into the output buffer (at most `max_buffered` samples ahead).
-fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: Win) {
+/// Fetches window after window into the output buffer of generation `gen` (at most `max_buffered`
+/// samples ahead); ends when a rebuilt mix has replaced it.
+fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: Win, gen: u64) {
     let end = project.duration();
     let max_buffered = rate as usize * 2; // 1 s stereo
     let mut next: Option<Win> = None;
@@ -415,20 +481,29 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
                 }
             }
         }
-        let room = max_buffered.saturating_sub(shared.out.lock().unwrap().buf.len()) / 2 * 2;
+        let Some(len) = shared.out.lock().unwrap().slot(gen).map(|b| b.len()) else { break };
+        let room = max_buffered.saturating_sub(len) / 2 * 2;
         let mut got = 0;
         if room > 0 {
             let mut q = cur.q.lock().unwrap();
             got = room.min(q.len());
             if got > 0 {
                 let mut o = shared.out.lock().unwrap();
-                o.buf.extend(q.drain(..got));
+                let Some(b) = o.slot(gen) else { break };
+                b.extend(q.drain(..got));
             }
         }
         moved += got as u64 / 2;
         let exhausted = cur.done.load(Ordering::Acquire) && cur.q.lock().unwrap().is_empty();
         if exhausted && moved >= cur.plan.frames {
-            let Some(n) = next.take() else { break };
+            let Some(n) = next.take() else {
+                // a rebuilt mix that is not playing yet must not report the end of the running one
+                if shared.out.lock().unwrap().gen == gen {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(4));
+                continue;
+            };
             if crate::app::perf() {
                 // Lead: how long the next window already held sound; offset: deviation
                 // of the window start from the continuous sample counter (must be 0)
@@ -450,7 +525,13 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
             std::thread::sleep(Duration::from_millis(4));
         }
     }
-    shared.out.lock().unwrap().finished = true;
+    let mut o = shared.out.lock().unwrap();
+    if o.gen == gen {
+        o.finished = true;
+    } else if o.alt.as_ref().is_some_and(|a| a.gen == gen) {
+        // rebuild failed: the running mix stays, a waiting one may start
+        o.alt = None;
+    }
 }
 
 /// One output block of `n` frames at time `now`: advance the clock, pass sound (or silence) to `put`,
@@ -549,7 +630,7 @@ impl AudioPlayer {
             let (p, sh) = (project.into_owned(), shared.clone());
             std::thread::Builder::new()
                 .name("cl-audio-feed".into())
-                .spawn(move || feed(p, from, rate, sh, first))
+                .spawn(move || feed(p, from, rate, sh, first, 0))
                 .map_err(|e| e.to_string())?;
         }
 
@@ -582,7 +663,7 @@ impl AudioPlayer {
                     }
                 })
                 .map_err(|e| e.to_string())?;
-            return Ok(Self { ctl, failed, shared, peaks, rate, start: from });
+            return Ok(Self { ctl, failed, shared, peaks, rate, start: from, queued: None, remix_t0: None });
         };
         let out = move || -> Result<(), String> {
             let err = |e| log::warn!("Audio: {e}");
@@ -650,7 +731,7 @@ impl AudioPlayer {
                 }
             })
             .map_err(|e| e.to_string())?;
-        Ok(Self { ctl, failed, shared, peaks, rate, start: from })
+        Ok(Self { ctl, failed, shared, peaks, rate, start: from, queued: None, remix_t0: None })
     }
 
     /// Release the clock: time runs from `at`; sound comes in at the then current place.
@@ -659,6 +740,55 @@ impl AudioPlayer {
         if o.phase == Phase::Waiting {
             o.phase = Phase::Anchored(at);
         }
+    }
+
+    /// Audible change during playback: mix `project` anew beside the running sound; it takes over
+    /// with a crossfade at the frame the output has reached then (no gap, clock goes on). At most one
+    /// rebuild in flight; meanwhile only the newest state waits ([`Self::poll`]).
+    pub fn remix(&mut self, project: Project) {
+        self.queued = Some(project);
+        self.poll();
+    }
+
+    /// Start the waiting rebuild once none is in flight (called every tick).
+    pub fn poll(&mut self) {
+        if self.remixing() {
+            return;
+        }
+        if let Some(t0) = self.remix_t0.take() {
+            if crate::app::perf() {
+                crate::applog::perf_line!("perf: Ton neu gemischt, übernommen nach {:.0} ms (ohne Lücke)", t0.elapsed().as_secs_f64() * 1000.0);
+            }
+        }
+        let Some(p) = self.queued.take() else { return };
+        let at = self.shared.out.lock().unwrap().played;
+        // `at` frames after `start` (sub-microsecond rounding, far below one sample)
+        let from = self.start + Time((at as u128 * 1_000_000 / self.rate.max(1) as u128) as i64);
+        let Some(plan) = window_plan(from, p.duration(), self.rate, 0) else { return };
+        let first = match open_window(&p, plan, self.rate, &self.shared) {
+            Ok(w) => w,
+            Err(e) => return log::warn!("Ton: {e}"),
+        };
+        let gen = {
+            let mut o = self.shared.out.lock().unwrap();
+            let gen = o.gen + 1;
+            o.alt = Some(Alt { gen, at, buf: VecDeque::new() });
+            gen
+        };
+        let (sh, rate) = (self.shared.clone(), self.rate);
+        let spawned = std::thread::Builder::new().name("cl-audio-feed".into()).spawn(move || feed(p, from, rate, sh, first, gen));
+        match spawned {
+            Ok(_) => self.remix_t0 = Some(Instant::now()),
+            Err(e) => {
+                self.shared.out.lock().unwrap().alt = None;
+                log::warn!("Ton: {e}");
+            }
+        }
+    }
+
+    /// A rebuilt mix is on its way and not playing yet
+    pub fn remixing(&self) -> bool {
+        self.shared.out.lock().unwrap().alt.is_some()
     }
 
     /// Pause or resume output (buffer and clock are kept → continue at once)
@@ -902,6 +1032,65 @@ mod tests {
         assert!(v[15..].iter().all(|s| s.0 == 0.0));
     }
 
+    /// Rebuilt mix during playback (audible change): the old mix plays on until the new one holds
+    /// the current frame, then a crossfade – not one silent sample, the frame count runs on without a jump.
+    #[test]
+    fn rebuilt_mix_takes_over_without_silence_at_the_reached_frame() {
+        let mut o = Out::new(Phase::Running, 1000); // 30 frames crossfade
+        feed_ramp(&mut o, 1, 400); // old mix: frame i = i (never 0)
+        let mut v = take(&mut o, 100, 0);
+        // remix requested at frame 100; FFmpeg needs a while, the old mix keeps playing
+        o.alt = Some(Alt { gen: 1, at: o.played, buf: VecDeque::new() });
+        for _ in 0..6 {
+            v.extend(take(&mut o, 10, 0));
+        }
+        assert_eq!(o.gen, 0, "no switch without new samples");
+        // the new mix arrives from frame 100 on (frame i = 10000 + i), the output is at 160 by now
+        let alt = o.alt.as_mut().unwrap();
+        for i in 101..400 {
+            alt.buf.extend([10_000.0 + i as f32, 0.0]);
+        }
+        for _ in 0..10 {
+            v.extend(take(&mut o, 10, 0));
+        }
+        assert_eq!(o.gen, 1, "switched");
+        assert!(o.alt.is_none() && o.slot(0).is_none(), "old feed is outdated and stops");
+        assert_eq!(o.played, 260);
+        assert_eq!(v.iter().filter(|s| s.0 == 0.0).count(), 0, "silent samples around the rebuild");
+        // up to frame 160 the old mix, then crossfade, from 190 only the new mix – same frame numbers
+        assert_eq!(v[159].0, 160.0);
+        assert!(v[165].0 > 166.0 && v[165].0 < 10_166.0, "crossfade: {}", v[165].0);
+        assert!(v[161..190].windows(2).all(|w| w[1].0 > w[0].0), "crossfade rises smoothly");
+        assert_eq!(v[190].0, 10_191.0);
+        assert_eq!(v[259].0, 10_260.0, "frame position continuous after the switch");
+        assert_eq!(o.underruns, 0);
+    }
+
+    /// Stopping while a rebuild is pending: fade out to silence, the late new mix never comes in.
+    #[test]
+    fn stop_during_pending_rebuild_stays_silent() {
+        let mut o = Out::new(Phase::Running, 1000);
+        feed_ramp(&mut o, 1, 400);
+        take(&mut o, 50, 0);
+        o.alt = Some(Alt { gen: 1, at: o.played, buf: VecDeque::new() });
+        o.closing = Some(o.fade_len);
+        o.alt.as_mut().unwrap().buf.extend(std::iter::repeat_n(5.0, 600));
+        let v = take(&mut o, 100, 0);
+        assert_eq!(o.gen, 0, "no switch after stop");
+        assert!(v[o.fade_len as usize..].iter().all(|s| s.0 == 0.0), "silence after the fade-out");
+    }
+
+    /// The alternative feed fills only its own buffer; a later rebuild makes it outdated.
+    #[test]
+    fn feed_slots_follow_the_generation() {
+        let mut o = Out::new(Phase::Running, 1000);
+        assert!(o.slot(0).is_some() && o.slot(1).is_none());
+        o.alt = Some(Alt { gen: 1, at: 0, buf: VecDeque::new() });
+        o.slot(1).unwrap().push_back(1.0);
+        assert_eq!((o.buf.len(), o.alt.as_ref().unwrap().buf.len()), (0, 1));
+        assert!(o.slot(2).is_none());
+    }
+
     #[test]
     fn clock_is_smooth_between_callbacks_and_stops_in_a_gap() {
         let r = 48_000;
@@ -993,7 +1182,7 @@ mod tests {
         let first = open_window(p, window_plan(from, p.duration(), rate, 0).unwrap(), rate, &shared).unwrap();
         let sh = shared.clone();
         let pp = p.clone();
-        let t = std::thread::spawn(move || feed(pp, from, rate, sh, first));
+        let t = std::thread::spawn(move || feed(pp, from, rate, sh, first, 0));
         let mut all = Vec::new();
         let deadline = std::time::Instant::now() + Duration::from_secs(120);
         loop {
@@ -1211,6 +1400,92 @@ mod tests {
         }
         assert!(a.ready());
         assert!(!a.started(), "no sound without anchor");
+    }
+
+    /// Several audible changes in a row (slider drag): one rebuild in flight at a time, states in
+    /// between are skipped, the newest one is heard in the end – with real FFmpeg, without device.
+    #[test]
+    fn remixes_coalesce_to_the_newest_state() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = test_project(dir.path(), 20.0);
+        let mut a = AudioPlayer::start_null(&p, Time::ZERO).unwrap();
+        a.anchor(Instant::now());
+        let wait = |a: &mut AudioPlayer, what: &str, done: &dyn Fn(&mut AudioPlayer) -> bool| {
+            let t0 = Instant::now();
+            while !done(a) {
+                assert!(t0.elapsed() < Duration::from_secs(20), "timeout: {what}");
+                a.poll();
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+        wait(&mut a, "first sound", &|a| a.started());
+        let state = |db: f32| {
+            let mut q = p.clone();
+            q.timeline.tracks[0].clips[0].volume_db = db;
+            q
+        };
+        for db in [-3.0, -9.0, -40.0] {
+            a.remix(state(db));
+        }
+        assert!(a.remixing());
+        assert_eq!(a.shared.out.lock().unwrap().alt.as_ref().unwrap().gen, 1, "only the first one started");
+        assert_eq!(a.queued.as_ref().unwrap().timeline.tracks[0].clips[0].volume_db, -40.0, "newest waits, -9 dB dropped");
+        wait(&mut a, "both rebuilds", &|a| !a.remixing() && a.queued.is_none() && a.remix_t0.is_none());
+        assert_eq!(a.shared.out.lock().unwrap().gen, 2, "exactly two rebuilds (first and newest)");
+        // the newest state is heard: -40 dB of a sine at 1/8
+        std::thread::sleep(Duration::from_millis(100));
+        a.take_peaks();
+        std::thread::sleep(Duration::from_millis(100));
+        let (l, _) = a.take_peaks();
+        assert!(l > 0.0 && l < 0.01, "peak after the rebuild: {l}");
+    }
+
+    /// Manual measurement without device: silence around an audible change during playback, old way
+    /// (stop + new player; the real device opening comes on top) against the rebuild.
+    /// `cargo test --release -p cl-app -- --ignored remix_gap_measurement --nocapture`
+    #[test]
+    #[ignore]
+    fn remix_gap_measurement() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = test_project(dir.path(), 30.0);
+        let until = |what: &str, done: &mut dyn FnMut() -> bool| {
+            let t0 = Instant::now();
+            while !done() {
+                assert!(t0.elapsed() < Duration::from_secs(20), "timeout: {what}");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            t0.elapsed().as_secs_f64() * 1000.0
+        };
+        for i in 0..3 {
+            let a = AudioPlayer::start_null(&p, Time::ZERO).unwrap();
+            a.anchor(Instant::now());
+            until("start", &mut || a.started());
+            std::thread::sleep(Duration::from_millis(300));
+            let at = a.position();
+            drop(a);
+            let b = AudioPlayer::start_null(&p, at).unwrap();
+            b.anchor(Instant::now());
+            let old = until("restart", &mut || b.first_sound().is_some());
+            drop(b);
+            let mut a = AudioPlayer::start_null(&p, Time::ZERO).unwrap();
+            a.anchor(Instant::now());
+            until("start", &mut || a.started());
+            std::thread::sleep(Duration::from_millis(300));
+            a.take_underruns();
+            let mut q = p.clone();
+            q.timeline.tracks[0].clips[0].volume_db = -6.0;
+            a.remix(q);
+            let new = until("switch", &mut || !a.remixing());
+            std::thread::sleep(Duration::from_millis(100));
+            let (n, d) = a.take_underruns();
+            eprintln!("run {i}: old way silence {old:.0} ms · rebuild heard after {new:.0} ms, dropouts {n} ({:.0} ms)", d.as_secs_f64() * 1e3);
+        }
     }
 
     fn test_project(dir: &std::path::Path, secs: f64) -> Project {
