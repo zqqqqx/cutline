@@ -489,7 +489,11 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     // a set shadow style may point far away: room for its offset (`None` keeps the old pad)
     let shadow = st.shadow_style.filter(|_| st.shadow).map(|s| (s.offset(), s.color));
     let reach = shadow.map_or(0, |((dx, dy), _)| dx.abs().max(dy.abs()));
-    let pad = (size * 0.4 + outline * 2.0 + 8.0).ceil() + reach as f32;
+    // soft shadow: its own blurred layer under the text (hard ones stay drawtext's own shadow);
+    // the blur fades out within about 3 sigma
+    let soft = st.shadow_style.filter(|s| st.shadow && s.sigma() > 0.0);
+    let fade = soft.map_or(0.0, |s| (3.0 * s.sigma()).ceil());
+    let pad = (size * 0.4 + outline * 2.0 + 8.0).ceil() + reach as f32 + fade;
     // very long lines without wrap: limit the area (the rest is outside the image anyway)
     // italic: shearing needs room at the sides
     let slant = if st.italic { ITALIC_SHEAR * th } else { 0.0 };
@@ -533,6 +537,9 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
             dt.push_str(&format!(":borderw={bw:.1}:bordercolor={}", rgba(col)));
         }
         match shadow {
+            Some(_) if soft.is_some() => {}
+            // known limit, kept for byte-identical graphs: on the transparent layer drawtext blends its
+            // shadow's alpha with itself, so it comes out fainter than its colour says (60 % → ~36 %)
             // not on the bold second print: drawtext would paint that shadow over the first print
             // (and double the opacity where both overlap); the preview leaves it out the same way
             Some(((dx, dy), c)) => dt.push_str(&format!(":shadowx={dx}:shadowy={dy}:shadowcolor={}", rgba(c))),
@@ -562,7 +569,8 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         format!("drawbox=x={bx}:y={by}:w={bw}:h={bh}:color={}:t=fill:replace=1", rgba(bg))
     });
     let draw = |col: [u8; 4]| {
-        let mut v: Vec<String> = backdrop.clone().into_iter().collect();
+        // soft shadow: the box lies under the shadow layer
+        let mut v: Vec<String> = backdrop.clone().filter(|_| soft.is_none()).into_iter().collect();
         v.extend(files.iter().map(|(file, x, y)| draw_one(col, file, x, y)));
         if v.is_empty() {
             "null".to_string()
@@ -573,6 +581,11 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     let shear = if st.italic { format!(",shear=shx={ITALIC_SHEAR}:fillcolor=black@0") } else { String::new() };
     let dur = c.duration.as_secs_f64();
     let src = ctx.label("tx");
+    // soft shadow: the text is composed on its own and laid over (box and) shadow, then sheared as a whole
+    let (out, shear_text) = match soft {
+        Some(_) => (ctx.label("st"), String::new()),
+        None => (src.clone(), shear.clone()),
+    };
     // one frame more, as in `media_sprite`
     let layer = format!("color=c=black@0.0:s={lw}x{lh}:r={}:d={},format=rgba", ctx.fps, f(dur + 1.0 / fps_value(&ctx.fps)));
     let boxes = match &st.karaoke {
@@ -604,9 +617,52 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
                 ));
                 cur = out;
             }
-            ctx.graph.push(format!("[{cur}]null{shear}[{src}]"));
+            ctx.graph.push(format!("[{cur}]null{shear_text}[{out}]"));
         }
-        _ => ctx.graph.push(format!("{layer},{}{shear}[{src}]", draw(st.color))),
+        _ => ctx.graph.push(format!("{layer},{}{shear_text}[{out}]", draw(st.color))),
+    }
+    if let Some(sh) = soft {
+        // the text in the shadow colour, opaque (outline as border, bold print included, so overlaps
+        // do not add up), blurred, then the shadow's opacity; the layer's own colour is the shadow
+        // colour so the blur only fades the alpha
+        let ((dx, dy), [r, g, b, a]) = (sh.offset(), sh.color);
+        let ink = [r, g, b, 255];
+        let prints: Vec<String> = files
+            .iter()
+            .map(|(file, x, y)| {
+                let y = format!("{y}{dy:+}");
+                let mut dt = core(dx as f32, ink, file, x, &y);
+                if let Some((bw, _)) = st.outline {
+                    dt.push_str(&format!(":borderw={bw:.1}:bordercolor={}", rgba(ink)));
+                }
+                if st.bold {
+                    dt.push(',');
+                    dt.push_str(&core(dx as f32 + size * 0.03, ink, file, x, &y));
+                }
+                dt
+            })
+            .collect();
+        let sl = ctx.label("sl");
+        ctx.graph.push(format!(
+            "color=c=0x{r:02x}{g:02x}{b:02x}@0.0:s={lw}x{lh}:r={}:d={},format=rgba{}{},gblur=sigma={:.2},colorchannelmixer=aa={:.3}[{sl}]",
+            ctx.fps,
+            f(dur + 1.0 / fps_value(&ctx.fps)),
+            if prints.is_empty() { "" } else { "," },
+            prints.join(","),
+            sh.sigma(),
+            a as f32 / 255.0,
+        ));
+        // box: the shadow of the text only lies on it, as with the hard shadow
+        let under = match &backdrop {
+            Some(bx) => {
+                let u = ctx.label("su");
+                ctx.graph.push(format!("{layer},{bx}[{u}]"));
+                ctx.graph.push(format!("[{u}][{sl}]overlay=0:0:format=rgb[{u}b]"));
+                format!("{u}b")
+            }
+            None => sl,
+        };
+        ctx.graph.push(format!("[{under}][{out}]overlay=0:0:format=rgb{shear}[{src}]"));
     }
     let s = samples(c, ctx.w as f32, ctx.h as f32);
     let label = post_transform(ctx, &src, lw, lh, &s);

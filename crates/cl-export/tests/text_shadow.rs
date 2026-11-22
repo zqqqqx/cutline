@@ -8,6 +8,10 @@ use cl_export::{build, ExportSettings};
 
 /// Text layer lines of the graph of a project with one text clip; the font copy's name (hash of a temp path) is normalised.
 fn graph(st: &TextStyle) -> String {
+    graph_lines(st, |l| l.contains("drawtext="))
+}
+
+fn graph_lines(st: &TextStyle, keep: impl Fn(&str) -> bool) -> String {
     let dir = tempfile::tempdir().unwrap();
     let font = dir.path().join("schrift.ttf");
     std::fs::write(&font, b"no real font").unwrap();
@@ -21,8 +25,7 @@ fn graph(st: &TextStyle) -> String {
     let job = build(&p, &ExportSettings::from_project(&p), &resolver, &dir.path().join("o.mp4")).unwrap();
     let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
     // only the text layers (sprite size and every drawtext); the rest of the graph is not about text
-    let g: String = g.lines().filter(|l| l.contains("drawtext=")).map(|l| format!("{l}
-")).collect();
+    let g: String = g.lines().filter(|l| keep(l)).map(|l| format!("{l}\n")).collect();
     let mut out = String::new();
     for (i, part) in g.split("fontfile=").enumerate() {
         if i > 0 {
@@ -113,4 +116,36 @@ fn shadow_style_reaches_drawtext_and_the_pad() {
     let g = graph(&TextStyle { shadow: false, shadow_style: Some(sh), ..base.clone() });
     assert!(!g.contains("shadow"), "{g}");
     assert_eq!(sprite(&g), (w0, h0));
+}
+
+/// Soft shadow: its own layer (text in the shadow colour, opaque, outline as border, bold print,
+/// offset, blurred, then the opacity) under the text; drawtext's own shadow is gone; the pad grows
+/// by the offset and 3 sigma; italic shears text and shadow together, once.
+#[test]
+fn soft_shadow_builds_its_own_layer() {
+    let base = TextStyle { text: "Hallo Welt".into(), size: 44.0, ..Default::default() };
+    let soft = Shadow { color: [255, 0, 0, 153], dx: 12.0, dy: -8.0, blur: 6.0 };
+    let hard = graph(&TextStyle { shadow_style: Some(Shadow { blur: 0.0, ..soft }), ..base.clone() });
+    let g = graph(&TextStyle { shadow_style: Some(soft), ..base.clone() });
+    assert!(!g.contains("shadowx"), "{g}");
+    let layer = g.lines().find(|l| l.contains("gblur")).unwrap_or_else(|| panic!("{g}"));
+    assert!(layer.starts_with("color=c=0xff0000@0.0:"), "{layer}");
+    assert!(layer.contains("fontcolor=0xff0000@1.000:x=(w-text_w)/2+12.0:y=") && layer.contains("-8:y_align=baseline"), "{layer}");
+    assert!(layer.contains(",gblur=sigma=3.00,colorchannelmixer=aa=0.600["), "{layer}");
+    // the text itself in its colour on its own layer, laid over the shadow
+    assert!(g.contains("fontcolor=0xffffff@1.000"), "{g}");
+    // sigma 3: 9 px more on each side than the hard shadow
+    let (w, h) = sprite(&hard);
+    assert_eq!(sprite(layer), (w + 18, h + 18), "{g}");
+    // bold and outline: the shadow layer has both prints, the first with the outline as border
+    let g = graph(&TextStyle { shadow_style: Some(soft), bold: true, outline: Some((4.0, [0, 0, 0, 255])), ..base.clone() });
+    let layer = g.lines().find(|l| l.contains("gblur")).unwrap();
+    assert_eq!(layer.matches("drawtext=").count(), 2, "{layer}");
+    assert!(layer.contains(":borderw=4.0:bordercolor=0xff0000@1.000"), "{layer}");
+    // italic: one shear, after text and shadow are put together
+    let g = graph_lines(&TextStyle { shadow_style: Some(soft), italic: true, ..base.clone() }, |_| true);
+    assert_eq!(g.matches("shear=").count(), 1, "{g}");
+    // switched off: no layer
+    let g = graph(&TextStyle { shadow: false, shadow_style: Some(soft), ..base.clone() });
+    assert!(!g.contains("gblur") && !g.contains("shadow"), "{g}");
 }
