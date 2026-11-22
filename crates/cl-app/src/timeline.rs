@@ -307,6 +307,30 @@ fn group_new_row(p: &Project, moves: &[(ClipId, Time)]) -> (usize, bool) {
     (row.unwrap_or(0), visual || at.is_empty())
 }
 
+/// Edge time a trim drag of `c`'s `edge` to `t` s commits, held inside the source (videos) and a
+/// minimum length. An edge that snapped stays exactly on the snap point – rounded to the frame grid
+/// it could end a sliver past the neighbour it touches, and that clip then no longer fits into the
+/// gap it was cut for; otherwise on the frame grid. `None`: the edge does not move.
+fn trim_to(p: &Project, c: &Clip, edge: Edge, t: f64, snapped: bool, fps: Rational) -> Option<Time> {
+    let (cs, ce) = (c.start.as_secs_f64(), c.end().as_secs_f64());
+    // videos/images: limits of the source (audio may get longer)
+    let (min_s, max_e) = match &c.content {
+        ClipContent::Media { media, kind: MediaKind::Video } => {
+            let len = p.media(*media).map(|m| m.duration.as_secs_f64()).unwrap_or(f64::MAX);
+            let sp = c.speed.max(0.01) as f64;
+            (cs - c.source_in.as_secs_f64() / sp, cs + (len - c.source_in.as_secs_f64()) / sp)
+        }
+        _ => (0.0, f64::MAX),
+    };
+    let to = match edge {
+        Edge::Start => t.clamp(min_s.max(0.0), ce - 0.05),
+        Edge::End => t.clamp(cs + 0.05, max_e),
+    };
+    let moved = (to - if edge == Edge::Start { cs } else { ce }).abs() > 1e-4;
+    // held by a limit, the edge is no longer on the snap point
+    moved.then(|| drop_time(to, snapped && to == t, fps))
+}
+
 /// The clip as trimming its `edge` to `to` leaves it: the commit's own op ([`EditOp::TrimClip`]) on
 /// a copy holding only the clip's track and media, so the drag shows exactly what release commits.
 /// `None` if the trim is not possible.
@@ -2141,45 +2165,19 @@ impl App {
                     };
                     let cands = snap_cands(&[clip]);
                     let raw = xt(p.x);
-                    let t = snap_to(raw, &cands)
-                        .inspect(|s| snap_line = Some(*s))
-                        .unwrap_or(raw);
+                    let snapped = snap_to(raw, &cands);
+                    snap_line = snapped.or(snap_line);
+                    let to = trim_to(&self.project, c, edge, snapped.unwrap_or(raw), snapped.is_some(), fps);
                     let (cs, ce) = (c.start.as_secs_f64(), c.end().as_secs_f64());
-                    // videos/images: limits of the source (audio may get longer)
-                    let (min_s, max_e) = match &c.content {
-                        ClipContent::Media {
-                            media,
-                            kind: MediaKind::Video,
-                        } => {
-                            let len = self
-                                .project
-                                .media(*media)
-                                .map(|m| m.duration.as_secs_f64())
-                                .unwrap_or(f64::MAX);
-                            let sp = c.speed.max(0.01) as f64;
-                            (
-                                cs - c.source_in.as_secs_f64() / sp,
-                                cs + (len - c.source_in.as_secs_f64()) / sp,
-                            )
-                        }
-                        _ => (0.0, f64::MAX),
-                    };
-                    let (s, e) = match edge {
-                        Edge::Start => (t.clamp(min_s.max(0.0), ce - 0.05), ce),
-                        Edge::End => (cs, t.clamp(cs + 0.05, max_e)),
-                    };
-                    let to = if edge == Edge::Start { s } else { e };
-                    let moved = (to - if edge == Edge::Start { cs } else { ce }).abs() > 1e-4;
-                    let to = Time::from_secs_f64(to).snap_to_frame(fps);
                     // shown while dragging = what release commits (same op, same time)
-                    let shown = moved.then(|| trimmed_clip(&self.project, clip, edge, to)).flatten();
+                    let shown = to.and_then(|to| trimmed_clip(&self.project, clip, edge, to));
                     let (gs, ge) = shown.as_ref().map_or((cs, ce), |c| (c.start.as_secs_f64(), c.end().as_secs_f64()));
                     ghost.insert(clip, (gs, ge, None));
                     trim_shown = shown;
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
                         self.timeline.motion.skip.insert(clip);
-                        if trim_shown.is_some() {
+                        if let (Some(_), Some(to)) = (&trim_shown, to) {
                             self.apply(EditOp::TrimClip { clip, edge, to });
                         }
                         ghost.clear();
@@ -5414,6 +5412,45 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// The recording: a clip above a gap of the main track, its end (or start) dragged until it snaps
+    /// to the neighbour across the gap, then dragged down into the gap. The trimmed edge lies exactly
+    /// on the neighbour's edge – also when that is off the frame grid by a few µs or almost half a
+    /// frame (before, the snapped edge was rounded to the grid and could end up a sliver past the
+    /// neighbour: the clip then went onto a new track) – and the clip goes into the gap.
+    #[test]
+    fn trim_snapped_to_a_neighbour_fits_the_gap() {
+        let s = Time::from_secs_f64;
+        for fps in [Rational::new(30, 1), Rational::new(30000, 1001)] {
+            let frame = 1.0 / fps.as_f64();
+            for d in [3e-6, -3e-6, 0.49 * frame, -0.49 * frame] {
+                for edge in [Edge::End, Edge::Start] {
+                    // gap [4 s + d, 6 s - d] on the main track; the clip above covers it and more
+                    let (gs, ge) = (s(4.0 + d), s(6.0 - d));
+                    let (cs, len) = if edge == Edge::End { (gs, 3.0) } else { (ge - s(3.0), 3.0) };
+                    let (p, ids) = lanes(fps, false, &[(TrackKind::Video, true, &[(0.0, gs.as_secs_f64()), (ge.as_secs_f64(), 100.0)]), (TrackKind::Video, false, &[(cs.as_secs_f64(), len)])]);
+                    let x = ids[1][0];
+                    let c = p.find_clip(x).unwrap().1.clone();
+                    let snap = if edge == Edge::End { ge } else { gs };
+                    let case = format!("{fps:?} {d} {edge:?}");
+                    let to = trim_to(&p, &c, edge, snap.as_secs_f64(), true, fps).expect("moves");
+                    assert_eq!(trimmed_clip(&p, x, edge, to).map(|c| (c.start, c.end())), Some((gs, ge)), "preview: {case}");
+                    let mut d = Document::new(p.clone());
+                    d.apply(EditOp::TrimClip { clip: x, edge, to }, OpSource::Ui).unwrap();
+                    let c = d.project().find_clip(x).unwrap().1.clone();
+                    assert_eq!((c.start, c.end()), (gs, ge), "trimmed exactly to the gap: {case}");
+                    let main = d.project().timeline.tracks[0].id;
+                    d.apply(EditOp::MoveClip { clip: x, track: Some(main), start: c.start }, OpSource::Ui).unwrap();
+                    assert_eq!(d.project().timeline.tracks.len(), 1, "in the gap, no new track: {case}");
+                    assert_eq!(d.project().find_clip(x).unwrap().0.id, main, "{case}");
+                }
+            }
+            // not snapped: on the frame grid as before
+            let (p, ids) = lanes(fps, false, &[(TrackKind::Video, false, &[(1.0, 3.0)])]);
+            let c = p.find_clip(ids[0][0]).unwrap().1.clone();
+            assert_eq!(trim_to(&p, &c, Edge::End, 2.51, false, fps), Some(s(2.51).snap_to_frame(fps)));
         }
     }
 
