@@ -1443,6 +1443,51 @@ mod tests {
         assert!(l > 0.0 && l < 0.01, "peak after the rebuild: {l}");
     }
 
+    /// Manual measurement without device: silence around an audible change during playback, old way
+    /// (stop + new player; the real device opening comes on top) against the rebuild.
+    /// `cargo test --release -p cl-app -- --ignored remix_gap_measurement --nocapture`
+    #[test]
+    #[ignore]
+    fn remix_gap_measurement() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = test_project(dir.path(), 30.0);
+        let until = |what: &str, done: &mut dyn FnMut() -> bool| {
+            let t0 = Instant::now();
+            while !done() {
+                assert!(t0.elapsed() < Duration::from_secs(20), "timeout: {what}");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            t0.elapsed().as_secs_f64() * 1000.0
+        };
+        for i in 0..3 {
+            let a = AudioPlayer::start_null(&p, Time::ZERO).unwrap();
+            a.anchor(Instant::now());
+            until("start", &mut || a.started());
+            std::thread::sleep(Duration::from_millis(300));
+            let at = a.position();
+            drop(a);
+            let b = AudioPlayer::start_null(&p, at).unwrap();
+            b.anchor(Instant::now());
+            let old = until("restart", &mut || b.first_sound().is_some());
+            drop(b);
+            let mut a = AudioPlayer::start_null(&p, Time::ZERO).unwrap();
+            a.anchor(Instant::now());
+            until("start", &mut || a.started());
+            std::thread::sleep(Duration::from_millis(300));
+            a.take_underruns();
+            let mut q = p.clone();
+            q.timeline.tracks[0].clips[0].volume_db = -6.0;
+            a.remix(q);
+            let new = until("switch", &mut || !a.remixing());
+            std::thread::sleep(Duration::from_millis(100));
+            let (n, d) = a.take_underruns();
+            eprintln!("run {i}: old way silence {old:.0} ms · rebuild heard after {new:.0} ms, dropouts {n} ({:.0} ms)", d.as_secs_f64() * 1e3);
+        }
+    }
+
     fn test_project(dir: &std::path::Path, secs: f64) -> Project {
         use cl_core::*;
         let src = dir.join("t.wav");
