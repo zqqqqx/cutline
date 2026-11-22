@@ -1771,6 +1771,12 @@ impl App {
                 .filter(|c| ((c - t).abs() as f32) * pps < SNAP_PX)
                 .min_by(|a, b| (a - t).abs().total_cmp(&(b - t).abs()))
         };
+        // start of a new clip dropped at `t` s (asset, file): snapped exactly onto the edge, so it
+        // touches an off-grid neighbour instead of reaching a sliver into it; otherwise on the grid
+        let drop_at = |t: f64| {
+            let s = snap_to(t, &snap_cands(&[]));
+            drop_time(s.unwrap_or(t), s.is_some(), fps)
+        };
         let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
         let hovered_clip = resp.hover_pos().and_then(|p| hit(p).map(|h| h.0));
         let head_rect = Rect::from_center_size(pos2(tx(ph), rect.top() + 9.0), vec2(14.0, 18.0));
@@ -2415,8 +2421,7 @@ impl App {
             }
         };
         if let (Some(items), Some(p)) = (self.drops.hover.clone(), self.drops.pos.filter(|p| rect.contains(*p))) {
-            let t = xt(p.x);
-            let at = Time::from_secs_f64(snap_to(t, &snap_cands(&[])).unwrap_or(t)).snap_to_frame(fps);
+            let at = drop_at(xt(p.x));
             let target = crate::file_drop::Target {
                 at,
                 video: crate::file_drop::lane_at(&tracks, &drows, lanes, p, TrackKind::Video, ROW_GAP),
@@ -3182,10 +3187,7 @@ impl App {
 
         // ---------- Drop ----------
         if let Some(payload) = resp.dnd_release_payload::<DragAsset>() {
-            let at = pointer.map(|p| {
-                let t = xt(p.x);
-                Time::from_secs_f64(snap_to(t, &snap_cands(&[])).unwrap_or(t)).snap_to_frame(fps)
-            });
+            let at = pointer.map(|p| drop_at(xt(p.x)));
             let at = at.unwrap_or(self.playhead);
             let kind = asset_kind(&self.project, &payload);
             // new track and drop are one history step (otherwise an empty track would remain after undo)
@@ -5111,6 +5113,78 @@ mod tests {
         }
         step(&mut app, vec![btn(pos2(120.0, y), false)]);
         assert!(matches!(app.timeline.drag, Drag::None), "released");
+    }
+
+    /// A clip dragged in from the media list (asset) or from the explorer (file) right after a clip
+    /// whose end is off the frame grid snaps to that end and starts there exactly, on the same track –
+    /// before, the snapped start was rounded to the grid again: a sliver into the neighbour (a new track
+    /// for the clip) or a sliver of gap. Not snapped: on the frame grid as before.
+    #[test]
+    fn dropped_clip_starts_exactly_at_an_off_grid_clip_end() {
+        use egui::{Event, PointerButton};
+        let s = Time::from_secs_f64;
+        for fps in [Rational::new(30, 1), Rational::new(30000, 1001)] {
+            let frame = 1.0 / fps.as_f64();
+            for d in [3e-6, -3e-6, 0.49 * frame, -0.49 * frame] {
+                for via_file in [false, true] {
+                    let e = s(4.0 + d);
+                    let (mut p, _) = lanes(fps, false, &[(TrackKind::Video, true, &[(0.0, e.as_secs_f64())])]);
+                    p.settings.snapping = true;
+                    // the dropped media is already in the project: a file drop of its path needs no check
+                    let m = MediaRef { id: MediaId::new(), path: "drop.mp4".into(), kind: MediaKind::Video, duration: s(2.0), width: 64, height: 36, fps: None, has_audio: false, audio_streams: 0, video_codec: None, audio_codec: None, has_alpha: false };
+                    p.media.push(m.clone());
+                    let main = p.timeline.tracks[0].id;
+                    let ctx = egui::Context::default();
+                    let mut app = crate::saving::tests::test_app_with(ctx.clone());
+                    app.set_doc(p);
+                    app.timeline.pps = 100.0;
+                    app.timeline.scroll = 0.0;
+                    app.playhead = Time::ZERO;
+                    let mut t = 0.0;
+                    let mut step = |app: &mut App, events: Vec<Event>, payload: Option<DragAsset>| {
+                        t += 1.0 / 60.0;
+                        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, bench::SCREEN)), time: Some(t), events, ..Default::default() };
+                        let _ = ctx.run(input, |ctx| {
+                            if let Some(pl) = payload.clone() {
+                                egui::DragAndDrop::set_payload(ctx, pl);
+                            }
+                            egui::TopBottomPanel::bottom("tl").exact_height(bench::PANEL_H).show(ctx, |ui| app.timeline_panel(ui));
+                        });
+                    };
+                    step(&mut app, vec![Event::PointerMoved(pos2(1200.0, 700.0))], None);
+                    let y = {
+                        let m = &app.timeline.motion;
+                        let (top, h) = m.rows[&m.order[0]];
+                        top + h * 0.5
+                    };
+                    // where 0:00 is on screen: from the file-drop preview at a spot without snap candidates
+                    app.drops.hover = Some(vec![crate::file_drop::Item { name: "drop.mp4".into(), audio: false, dur: Some(s(2.0)) }]);
+                    app.drops.pos = Some(pos2(1200.0, y));
+                    step(&mut app, vec![], None);
+                    let free = app.drops.target.take().expect("preview").at;
+                    assert_eq!(free, free.snap_to_frame(fps), "not snapped: on the frame grid");
+                    let x0 = 1200.0 - free.as_secs_f64() as f32 * 100.0;
+                    // a few px right of the clip end (snaps)
+                    let at = pos2(x0 + e.as_secs_f64() as f32 * 100.0 + 4.0, y);
+                    if via_file {
+                        app.drops.pos = Some(at);
+                        step(&mut app, vec![], None);
+                        let target = app.drops.target.take().expect("preview");
+                        (app.drops.hover, app.drops.pos) = (None, None);
+                        app.start_file_drop(&ctx, vec!["drop.mp4".into()], Some(target));
+                    } else {
+                        (app.drops.hover, app.drops.pos) = (None, None);
+                        let up = Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: false, modifiers: Default::default() };
+                        step(&mut app, vec![Event::PointerMoved(at), up], Some(DragAsset::Media(m.id)));
+                    }
+                    let case = format!("{fps:?} {d} file {via_file}");
+                    let p = &app.project;
+                    let (tr, c) = p.timeline.tracks.iter().flat_map(|t| t.clips.iter().map(move |c| (t.id, c))).find(|(_, c)| matches!(c.content, ClipContent::Media { media, .. } if media == m.id)).expect(&case);
+                    assert_eq!((tr, c.start), (main, e), "starts exactly at the clip end, same track: {case}");
+                    assert_eq!(p.timeline.tracks.len(), 1, "no new track: {case}");
+                }
+            }
+        }
     }
 
     /// Edited project: `n` touching clips (0.5…1.25 s) spread over 3 video tracks (the lowest the

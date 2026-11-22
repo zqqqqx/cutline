@@ -1778,7 +1778,9 @@ mod transition_tests {
 
     /// Shadow: default look (black 60 % on a white box), red 12/−8 and red 40/40: the preview draws
     /// it at the export's offset in the export's colour, and the export does not cut it off at the
-    /// edge of the text sprite. Measured on the edge of the shadow that sticks out past the text.
+    /// edge of the text sprite. Measured on the edge of the shadow that sticks out past the text:
+    /// straight-edged letters of a bundled font, not bold (the bold print has no shadow and would
+    /// move the text's edge), so neither a round glyph nor the system's fallback font can skew it.
     #[test]
     fn text_shadow_matches_export() {
         if !cl_media::test_tools() {
@@ -1791,9 +1793,8 @@ mod transition_tests {
         let cases = [(None, [102, 102, 102], (3, 3)), (red(12.0, -8.0), [255, 0, 0], (12, -8)), (red(40.0, 40.0), [255, 0, 0], (40, 40))];
         for (style, ink, (dx, dy)) in cases {
             let st = TextStyle {
-                text: "HALLO".into(),
+                text: "HIH".into(),
                 size: 40.0,
-                bold: true,
                 color: [0, 0, 255, 255],
                 background: Some([255, 255, 255, 255]),
                 shadow_style: style,
@@ -1804,7 +1805,7 @@ mod transition_tests {
             let col = |ts: &egui::epaint::TextShape| ts.galley.job.sections[0].format.color;
             let sh = style.unwrap_or_default();
             let want = Color32::from_rgba_unmultiplied(sh.color[0], sh.color[1], sh.color[2], sh.color[3]);
-            assert_eq!(shapes.len(), 3, "{style:?}: shadow, text, bold print");
+            assert_eq!(shapes.len(), 2, "{style:?}: shadow, text");
             assert_eq!(col(&shapes[0]), want, "{style:?}: shadow colour");
             let off = shapes[0].pos - shapes[1].pos;
             assert_eq!((off.x, off.y), (dx as f32, dy as f32), "{style:?}: preview offset");
@@ -1815,7 +1816,13 @@ mod transition_tests {
             let mut t = Track::new(TrackKind::Text);
             t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, Time::from_secs_f64(1.0)));
             p.timeline.tracks.push(t);
-            let img = export_frame(&p, dir.path(), 0);
+            let out = dir.path().join("schatten.mp4");
+            let font = |_: Option<&str>| Some((Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/Anton-Regular.ttf")).to_path_buf(), 0));
+            let job = cl_export::build(&p, &cl_export::ExportSettings::from_project(&p), &font, &out).unwrap();
+            cl_export::run(&job, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}).unwrap();
+            let o = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-i"]).arg(&out).args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]).output().unwrap();
+            let img = o.stdout;
+            assert_eq!(img.len(), 320 * 180 * 4);
             let text = ink_box(&img, [0, 0, 255]).expect("text in the export");
             let shadow = ink_box(&img, ink).unwrap_or_else(|| panic!("{style:?}: no shadow colour in the export"));
             let ex = (if dx > 0 { shadow.2 - text.2 } else { shadow.0 - text.0 }, if dy > 0 { shadow.3 - text.3 } else { shadow.1 - text.1 });
