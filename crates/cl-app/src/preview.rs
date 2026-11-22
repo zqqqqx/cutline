@@ -1071,7 +1071,9 @@ pub fn stream_decode(m: &cl_core::MediaRef, path: &std::path::Path) -> cl_media:
 pub fn stream_hw(m: &cl_core::MediaRef, path: &std::path::Path) -> bool {
     let codec = m.video_codec.as_deref().unwrap_or("").to_ascii_lowercase();
     let high_rate = m.fps.is_some_and(|f| f.as_f64() >= 50.0);
+    // hardware decoders may hand back frames without the alpha plane: transparent videos in software
     path == m.path
+        && !m.has_alpha
         && (m.width > 1920
             || m.height > 1080
             || (m.width.min(m.height) >= 1080 && (high_rate || ["hevc", "av1", "vp9"].iter().any(|c| codec.contains(c)))))
@@ -1134,6 +1136,7 @@ mod tests {
             has_audio: false,
             audio_codec: None,
             audio_streams: 0,
+            has_alpha: false,
         };
         let p = std::path::Path::new("a.mp4");
         assert!(stream_hw(&m(1920, 1080, 60, "h264"), p), "1080p60: hardware");

@@ -637,6 +637,7 @@ mod tests {
             audio_streams: 1,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let mid = m.id;
         p.media.push(m);
@@ -679,6 +680,7 @@ mod tests {
             audio_streams: 1,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let id = m.id;
         p.media.push(m);
@@ -778,6 +780,7 @@ mod tests {
             audio_streams: 1,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         }
     }
 

@@ -358,6 +358,7 @@ mod tests {
             audio_streams: 0,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let mut main = Track::new(TrackKind::Video);
         main.main = true;

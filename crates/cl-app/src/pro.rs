@@ -1843,6 +1843,7 @@ mod tests {
             audio_streams: 0,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let mut p = Project::new("Zensur");
         let mut t = Track::new(TrackKind::Video);
@@ -1905,6 +1906,7 @@ mod tests {
             audio_streams: 0,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let media = m.id;
         let c = Clip::new(ClipContent::Media { media, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0));

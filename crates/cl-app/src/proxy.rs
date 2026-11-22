@@ -129,7 +129,8 @@ fn existing_proxy_in(d: &Path, m: &MediaRef, height: u32, project_fps: Rational)
 
 /// Is a proxy worth it?
 pub fn wants_proxy(m: &MediaRef) -> bool {
-    if m.kind != MediaKind::Video {
+    // proxies are H.264 without alpha: a transparent video always plays from the original
+    if m.kind != MediaKind::Video || m.has_alpha {
         return false;
     }
     let fps = m.fps.map(|f| f.as_f64()).unwrap_or(30.0);
@@ -869,11 +870,17 @@ impl App {
         (self.settings.proxy_h, self.project.settings.fps)
     }
 
+    /// May the preview read `m` from a proxy (or its parts)? Never for transparent videos, even if
+    /// an older version left a proxy in the cache: it has no alpha.
+    fn proxy_allowed(&self, m: &MediaRef) -> bool {
+        self.settings.use_proxies && m.kind == MediaKind::Video && !m.has_alpha
+    }
+
     /// File for the preview: during playback the proxy (smooth), when stopped the original if
     /// the proxy's lines are not enough for the needed height `need_h` (sharp).
     /// Existing proxies come from the cache of the background search.
     pub fn preview_path(&self, m: &MediaRef, need_h: u32) -> PathBuf {
-        if self.settings.use_proxies && m.kind == MediaKind::Video {
+        if self.proxy_allowed(m) {
             let key = self.proxy_want();
             let found = match self.proxies.cached(m.id, key) {
                 Some(c) => c,
@@ -891,7 +898,7 @@ impl App {
     /// Single frame at source time `at`: (file, time in it) – from a finished part, otherwise like
     /// [`Self::preview_path`].
     pub fn still_source(&self, m: &MediaRef, need_h: u32, at: Time) -> (PathBuf, Time) {
-        if self.settings.use_proxies && m.kind == MediaKind::Video {
+        if self.proxy_allowed(m) {
             let want = self.proxy_want();
             let part = registry().get(&m.path).filter(|e| e.want == want && !e.complete).and_then(|e| {
                 let (k, rel) = parts::still_part(&e.pt?, at.as_secs_f64())?;
@@ -909,7 +916,7 @@ impl App {
     /// Source of the stream of layer `id` from timeline place `from` (rules: [`parts::choose_stream`]).
     /// Goes into the stream key: a change runs through the replacement stream of the player core.
     pub fn stream_pick(&mut self, id: u128, c: &Clip, m: &MediaRef, from: Time) -> Pick {
-        if !self.settings.use_proxies || m.kind != MediaKind::Video {
+        if !self.proxy_allowed(m) {
             return Pick::Whole;
         }
         let want = self.proxy_want();
@@ -1281,6 +1288,7 @@ mod tests {
             audio_streams: 0,
             video_codec: Some(codec.into()),
             audio_codec: None,
+            has_alpha: false,
         }
     }
 
@@ -1847,6 +1855,45 @@ mod tests {
         app.proxy_finished(m.id, true);
         assert_eq!(app.proxies.cached(m.id, want), Some(None), "no look on disk until the search");
         registry().remove(&m.path);
+    }
+
+    #[test]
+    fn transparent_videos_get_no_proxy() {
+        let r = |n| Rational::new(n, 1);
+        for (w, h, fps, codec) in [(3840, 2160, r(60), "prores"), (1920, 1080, r(30), "vp9"), (1280, 720, r(30), "qtrle")] {
+            let mut m = media(w, h, fps, codec);
+            m.has_alpha = true;
+            assert!(!wants_proxy(&m), "{codec} {w}x{h} with alpha");
+            m.has_alpha = false;
+            assert_eq!(wants_proxy(&m), codec != "qtrle", "{codec} {w}x{h} opaque: as before");
+        }
+    }
+
+    /// A proxy (whole or in parts) left in the cache for a transparent video is never read: it has
+    /// no alpha. The same media without alpha does use it (the guard checks the setup).
+    #[test]
+    fn transparent_video_ignores_existing_proxy() {
+        let mut app = crate::saving::tests::test_app();
+        app.settings.use_proxies = true;
+        let mut m = media(3840, 2160, Rational::new(30, 1), "prores");
+        m.path = app.dir().join("alpha.mov");
+        let _f = Forget(m.path.clone());
+        app.project.media.push(m.clone());
+        let want = (app.settings.proxy_h, app.project.settings.fps);
+        let out = app.dir().join("alpha-540.mp4");
+        std::fs::write(&out, b"x").unwrap();
+        set_test_entry(&m.path, out.clone(), want, vec![true; 10], true);
+        app.proxies.key = Some(want);
+        app.proxies.known.insert(m.id, Some((out.clone(), 540)));
+        let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
+        let pick = app.stream_pick(1, &c, &m, Time::ZERO);
+        assert_eq!(app.stream_source(&m, 540, pick).0, out, "opaque: proxy");
+        assert_eq!(app.still_source(&m, 540, Time::ZERO).0, out, "opaque: proxy");
+        m.has_alpha = true;
+        let pick = app.stream_pick(1, &c, &m, Time::ZERO);
+        assert_eq!(pick, Pick::Whole);
+        assert_eq!(app.stream_source(&m, 540, pick).0, m.path, "alpha: original stream");
+        assert_eq!(app.still_source(&m, 540, Time::ZERO).0, m.path, "alpha: original single frame");
     }
 
     #[test]

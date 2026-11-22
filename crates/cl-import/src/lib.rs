@@ -213,6 +213,7 @@ pub(crate) fn placeholder(path: PathBuf, kind: cl_core::MediaKind, duration: cl_
         audio_streams: u32::from(sound),
         video_codec: None,
         audio_codec: None,
+        has_alpha: false,
     }
 }
 

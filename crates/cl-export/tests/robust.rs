@@ -456,6 +456,7 @@ fn huge_projects_build() {
         audio_streams: 0,
         video_codec: None,
         audio_codec: None,
+        has_alpha: false,
     };
     let mut p = Project::new("Groß");
     p.settings.width = 7680;

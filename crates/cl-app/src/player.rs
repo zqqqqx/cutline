@@ -794,6 +794,7 @@ mod presence_tests {
             audio_streams: 0,
             video_codec: Some("h264".into()),
             audio_codec: None,
+            has_alpha: false,
         };
         let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
         let l = Layer { clip: c.clone(), t_rel: Time::ZERO, alpha: 1.0, from: None };
@@ -842,6 +843,7 @@ mod presence_tests {
             audio_streams: 0,
             video_codec: Some("h264".into()),
             audio_codec: None,
+            has_alpha: false,
         };
         app.project.media.push(m.clone());
         let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(100.0));
@@ -934,6 +936,7 @@ mod shader_tests {
             audio_streams: 0,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
         let p = Rational::new(60, 1);
@@ -1093,6 +1096,35 @@ pub(crate) mod still {
             }
         }
         out
+    }
+
+    /// Preview = export for transparent videos: the still (decode path of the stopped player)
+    /// shows what is below (black here) in the transparent corner, also with a colour adjustment.
+    #[test]
+    fn transparent_video_stays_transparent_in_preview() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        for f in cl_media::write_alpha_samples(dir.path()) {
+            let m = cl_media::probe(&f).unwrap();
+            for brightness in [0.0, 0.2] {
+                let mut p = Project::new("Alpha");
+                (p.settings.width, p.settings.height) = (64, 36);
+                p.settings.fps = Rational { num: 25, den: 1 };
+                let mut t = Track::new(TrackKind::Video);
+                let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.0));
+                c.fx.adjust.brightness = brightness;
+                t.clips.push(c);
+                p.media = vec![m.clone()];
+                p.timeline.tracks.push(t);
+                let img = render(&p, Time::from_secs_f64(0.2), 64, 36);
+                let px = |x: usize, y: usize| [img[(y * 64 + x) * 4], img[(y * 64 + x) * 4 + 1], img[(y * 64 + x) * 4 + 2]];
+                let name = f.file_name().unwrap().to_string_lossy();
+                assert!(px(4, 4).iter().all(|v| *v < 40), "{name} brightness {brightness}: corner shows the black below, got {:?}", px(4, 4));
+                assert!(px(48, 27)[0] > 170 && px(48, 27)[1] > 170, "{name} brightness {brightness}: yellow box, got {:?}", px(48, 27));
+            }
+        }
     }
 
     /// Reproduce by hand: `CUTLINE_STILL="<project>;<sec>[,<sec>…];<output folder>"`.

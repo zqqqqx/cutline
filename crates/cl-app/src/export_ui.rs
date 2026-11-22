@@ -2929,7 +2929,7 @@ fn resolution_2k_in_every_aspect() {
 fn cover_preview_comes_from_the_reframed_snapshot() {
     use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Track, TrackKind};
     let mut p = Project::new("t");
-    let m = MediaRef { id: cl_core::MediaId::new(), path: "a.mp4".into(), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+    let m = MediaRef { id: cl_core::MediaId::new(), path: "a.mp4".into(), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None, has_alpha: false };
     let mut t = Track::new(TrackKind::Video);
     let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(9.0));
     let id = c.id;
@@ -3118,7 +3118,7 @@ fn follow_person_failure_keeps_the_clip_centred_with_one_toast() {
     use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Track, TrackKind};
     let dir = tempfile::tempdir().unwrap();
     let mut p = Project::new("t");
-    let m = MediaRef { id: cl_core::MediaId::new(), path: dir.path().join("fehlt.mp4"), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+    let m = MediaRef { id: cl_core::MediaId::new(), path: dir.path().join("fehlt.mp4"), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None, has_alpha: false };
     let mut t = Track::new(TrackKind::Video);
     let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(9.0));
     let id = c.id;
@@ -3211,7 +3211,7 @@ fn follow_person_with_split_parts_and_target_size() {
 fn cover_preview_shows_the_followed_crop_at_its_frame() {
     use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Track, TrackKind};
     let mut p = Project::new("t");
-    let m = MediaRef { id: cl_core::MediaId::new(), path: "a.mp4".into(), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+    let m = MediaRef { id: cl_core::MediaId::new(), path: "a.mp4".into(), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None, has_alpha: false };
     let mut t = Track::new(TrackKind::Video);
     let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::from_secs_f64(1.0), Time::from_secs_f64(4.0));
     let (id, key) = (c.id, crate::shorts::focus_key(&c, &m));

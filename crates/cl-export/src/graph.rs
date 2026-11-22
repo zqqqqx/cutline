@@ -289,14 +289,14 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
         ]).collect())
     } else {
         let (seg_in, _) = source_segment(c);
-        ctx.input(vec![
+        ctx.input(cl_media::decoder_args(&m.path).into_iter().map(String::from).chain([
             "-ss".into(),
             f(seg_in.as_secs_f64() + skip),
             "-t".into(),
             f((seg_len.as_secs_f64() - skip).max(0.04)),
             "-i".into(),
             path,
-        ])
+        ]).collect())
     };
     // base size: fitted as in the player (contain)
     let fit = (w as f64 / m.width.max(1) as f64).min(h as f64 / m.height.max(1) as f64);
@@ -400,7 +400,7 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
         Src {
             w: bw,
             h: bh,
-            has_alpha: image,
+            has_alpha: image || m.has_alpha,
         },
         &opts,
         &pl,

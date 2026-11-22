@@ -1974,6 +1974,7 @@ impl App {
                     "-ss",
                     &format!("{:.4}", c.source_time(at).as_secs_f64()),
                 ])
+                .args(cl_media::decoder_args(&m.path))
                 .arg("-i")
                 .arg(&m.path)
                 .args(["-frames:v", "1"])
@@ -4716,7 +4717,7 @@ fn extracting_two_audio_streams_keeps_both_audible() {
     let mut app = crate::saving::tests::test_app();
     let path = app.dir().join("zwei spuren.mp4");
     std::fs::write(&path, b"x").unwrap();
-    let m = MediaRef { id: MediaId::new(), path, kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None };
+    let m = MediaRef { id: MediaId::new(), path, kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None, has_alpha: false };
     let mut p = Project::new("Spuren");
     let mut t = Track::new(TrackKind::Video);
     t.main = true;

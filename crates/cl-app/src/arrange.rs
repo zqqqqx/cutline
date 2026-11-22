@@ -284,6 +284,7 @@ mod tests {
             audio_streams: 0,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let mut ids = Vec::new();
         for kind in [MediaKind::Video, MediaKind::Video, MediaKind::Image] {
@@ -338,6 +339,7 @@ mod tests {
             audio_streams: 0,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let mid = m.id;
         p.media.push(m);

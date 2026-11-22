@@ -615,6 +615,7 @@ mod tests {
             audio_streams: u32::from(kind == MediaKind::Audio),
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         }
     }
 

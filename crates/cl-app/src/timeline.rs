@@ -4410,7 +4410,7 @@ mod tests {
                     let mut p = Project::new("S");
                     p.settings.fps = fps;
                     let clip = |p: &mut Project, at: f64, len: f64| {
-                        let m = MediaRef { id: MediaId::new(), path: "x.wav".into(), kind: MediaKind::Audio, duration: s(100.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None };
+                        let m = MediaRef { id: MediaId::new(), path: "x.wav".into(), kind: MediaKind::Audio, duration: s(100.0), width: 0, height: 0, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None, has_alpha: false };
                         let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, s(at), s(len));
                         p.media.push(m);
                         let mut t = Track::new(TrackKind::Audio);
@@ -4455,7 +4455,7 @@ mod tests {
         for (speed, reverse) in [(1.0f32, false), (2.0, false), (1.0, true), (2.0, true)] {
             for (edge, to) in [(Edge::Start, 3.0), (Edge::Start, 0.5), (Edge::Start, 5.99), (Edge::End, 4.0), (Edge::End, 9.0), (Edge::End, 30.0), (Edge::End, 2.0)] {
                 let mut p = Project::new("T");
-                let m = MediaRef { id: MediaId::new(), path: "v.mp4".into(), kind: MediaKind::Video, duration: s(10.0), width: 64, height: 36, fps: None, has_audio: false, audio_streams: 0, video_codec: None, audio_codec: None };
+                let m = MediaRef { id: MediaId::new(), path: "v.mp4".into(), kind: MediaKind::Video, duration: s(10.0), width: 64, height: 36, fps: None, has_audio: false, audio_streams: 0, video_codec: None, audio_codec: None, has_alpha: false };
                 let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, s(2.0), s(4.0));
                 c.source_in = s(1.0);
                 c.speed = speed;
@@ -4613,6 +4613,7 @@ mod tests {
             audio_streams: 0,
             video_codec: None,
             audio_codec: None,
+            has_alpha: false,
         };
         let mut p = crate::loading::Presence::default();
         assert!(missing_media(std::slice::from_ref(&m), &p).is_empty(), "not checked yet: counts as present");
@@ -4706,6 +4707,7 @@ mod tests {
                 audio_streams: audio as u32,
                 video_codec: None,
                 audio_codec: None,
+                has_alpha: false,
             };
             let v = media(MediaKind::Video, false, 1400.0);
             let va = media(MediaKind::Video, true, 1400.0);
@@ -5251,7 +5253,7 @@ mod tests {
             t.main = *main;
             let mut row = Vec::new();
             for (at, len) in clips.iter() {
-                let m = MediaRef { id: MediaId::new(), path: "x".into(), kind: mk, duration: s(100_000.0), width: 64, height: 36, fps: None, has_audio: mk == MediaKind::Audio, audio_streams: (mk == MediaKind::Audio) as u32, video_codec: None, audio_codec: None };
+                let m = MediaRef { id: MediaId::new(), path: "x".into(), kind: mk, duration: s(100_000.0), width: 64, height: 36, fps: None, has_audio: mk == MediaKind::Audio, audio_streams: (mk == MediaKind::Audio) as u32, video_codec: None, audio_codec: None, has_alpha: false };
                 let c = Clip::new(ClipContent::Media { media: m.id, kind: mk }, s(*at), s(*len));
                 p.media.push(m);
                 row.push(c.id);

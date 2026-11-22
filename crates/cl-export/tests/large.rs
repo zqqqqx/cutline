@@ -586,6 +586,7 @@ fn slideshow(img: &Path, n: usize, len: f64) -> Project {
         audio_streams: 0,
         video_codec: None,
         audio_codec: None,
+        has_alpha: false,
     };
     let mut p = Project::new("Diashow");
     p.settings.width = 32;
