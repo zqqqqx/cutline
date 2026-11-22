@@ -1185,13 +1185,17 @@ mod tests {
         // The port comes from the system: tests running in parallel can get it by chance between
         // stop and restart. If the old server still held it, on the other hand, EVERY attempt would fail.
         // Asserted: in at least one of five rounds the restart gets the same port at once.
+        // what each round saw: a failure names the cause (port taken by another test, or still held)
+        let mut seen = Vec::new();
         let ok = (0..5).any(|_| {
             let first = start(0).unwrap();
             let port = first.port;
             drop(first);
-            start(port).is_ok_and(|again| again.port == port)
+            let again = start(port).map(|a| a.port);
+            seen.push(format!("{port}: {again:?}"));
+            again.is_ok_and(|p| p == port)
         });
-        assert!(ok, "port free right after stopping");
+        assert!(ok, "port free right after stopping: {seen:?}");
     }
 
     #[test]
