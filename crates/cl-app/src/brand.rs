@@ -131,19 +131,11 @@ impl App {
             kit.colors.push(BrandColor { name: String::new(), rgb: [255, 255, 255] });
         }
         theme::section(ui, "Schriften");
-        let fonts = self.font_name_list();
         for (i, role) in ROLES.iter().enumerate() {
             theme::row(ui, role, |ui| {
-                egui::ComboBox::from_id_salt(("brand-font", i))
-                    .selected_text(kit.fonts[i].clone().unwrap_or_else(|| crate::tr("Keine")))
-                    .width(260.0)
-                    .height(320.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut kit.fonts[i], None, crate::tr("Keine"));
-                        for f in fonts.iter() {
-                            ui.selectable_value(&mut kit.fonts[i], Some(f.clone()), f);
-                        }
-                    });
+                if let Some(f) = self.font_picker(ui, ("brand-font", i), kit.fonts[i].as_deref(), &crate::tr("Keine"), &[], 260.0) {
+                    kit.fonts[i] = f;
+                }
             });
         }
         theme::section(ui, "Logo");

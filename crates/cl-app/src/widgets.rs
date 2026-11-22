@@ -238,7 +238,7 @@ pub fn mark_field_esc(ctx: &egui::Context) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new("field_esc"), now));
 }
 
-fn field_esc(ctx: &egui::Context) -> bool {
+pub(crate) fn field_esc(ctx: &egui::Context) -> bool {
     ctx.input(|i| i.key_pressed(egui::Key::Escape))
         || ctx.data(|d| d.get_temp::<u64>(egui::Id::new("field_esc"))) == Some(ctx.cumulative_pass_nr())
 }
