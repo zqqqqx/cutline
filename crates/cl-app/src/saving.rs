@@ -343,11 +343,13 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&bad).unwrap();
         app.project_path = Some(bad);
         let errors = |app: &crate::app::App| app.toasts.iter().filter(|t| t.2 && t.0.contains("nicht gespeichert")).count();
-        for want in 1..=2 {
+        for _ in 0..2 {
+            // the first toast closed (a still shown identical one is not stacked twice)
+            app.toasts.clear();
             app.save(false);
             assert!(app.saver.wait_idle(Duration::from_secs(10)));
             app.poll_saves();
-            assert_eq!(errors(&app), want);
+            assert_eq!(errors(&app), 1);
         }
     }
 

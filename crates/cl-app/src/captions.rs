@@ -408,23 +408,26 @@ impl App {
 
     /// Insert recognized lines as captions (own track, chosen style)
     pub fn add_caption_segments(&mut self, segs: &[cl_analyze::asr::Segment], offset: Time) -> usize {
-        let Some(t) = self.new_caption_track() else { return 0 };
-        let ops: Vec<EditOp> = segs
-            .iter()
-            .filter(|s| s.end > s.start)
-            .map(|s| EditOp::AddClip {
-                track: Some(t),
-                clip: self.caption_clip(
-                    &s.text,
-                    offset + Time::from_secs_f64(s.start),
-                    Time::from_secs_f64(s.end - s.start),
-                    s.words.iter().map(|w| Time::from_secs_f64(w - s.start)).collect(),
-                ),
-            })
-            .collect();
-        let n = ops.len();
-        self.apply_batch(ops);
-        n
+        // track and lines as ONE undo step
+        self.one_step(|app| {
+            let Some(t) = app.new_caption_track() else { return 0 };
+            let ops: Vec<EditOp> = segs
+                .iter()
+                // checked after rounding to µs: one empty line would fail the whole batch
+                .filter(|s| Time::from_secs_f64(s.end - s.start) > Time::ZERO)
+                .map(|s| EditOp::AddClip {
+                    track: Some(t),
+                    clip: app.caption_clip(
+                        &s.text,
+                        offset + Time::from_secs_f64(s.start),
+                        Time::from_secs_f64(s.end - s.start),
+                        s.words.iter().map(|w| Time::from_secs_f64(w - s.start)).collect(),
+                    ),
+                })
+                .collect();
+            let n = ops.len();
+            if app.apply_batch(ops).is_some() { n } else { 0 }
+        })
     }
 
     /// Style picker as small preview tiles
@@ -647,8 +650,11 @@ impl App {
                                 // Duration (up to the next caption)
                                 let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
                                 let mut d = c.duration.as_secs_f64();
+                                // the range must contain the current value: egui clamps it otherwise and
+                                // reports a change every frame (short captions: "Ungültige Dauer" per frame)
+                                let range = 0.2f64.min(d)..=room.max(d);
                                 if ui
-                                    .add(egui::DragValue::new(&mut d).range(0.2..=room.max(0.2)).speed(0.02).custom_formatter(|v, _| crate::theme::dec(v, 1)).custom_parser(crate::theme::parse_dec).suffix(" s").update_while_editing(false))
+                                    .add(egui::DragValue::new(&mut d).range(range).speed(0.02).custom_formatter(|v, _| crate::theme::dec(v, 1)).custom_parser(crate::theme::parse_dec).suffix(" s").update_while_editing(false))
                                     .on_hover_text(crate::tr("Dauer"))
                                     .changed()
                                 {
@@ -861,6 +867,57 @@ mod tests {
         app.add_caption_segments(&[seg], Time::ZERO);
         assert_eq!(words(&app), [None]);
         assert!(!app.project.to_json().contains("karaoke"));
+    }
+
+    /// Fast speech gives captions shorter than the duration field's 0.2 s minimum, ending where the
+    /// next one starts. Showing the list clamped them to 0.2 s every frame: against the neighbour
+    /// that failed with "Ungültige Dauer" ~20× per second, otherwise it edited them silently.
+    #[test]
+    fn captions_list_leaves_short_captions_alone() {
+        let mut app = crate::saving::tests::test_app();
+        app.set_doc(Project::new("k"));
+        let seg = |a: f64, b: f64, t: &str| cl_analyze::asr::Segment { start: a, end: b, text: t.into(), words: vec![a] };
+        app.add_caption_segments(&[seg(1.0, 1.08, "Ja."), seg(1.08, 2.0, "Genau so."), seg(5.0, 5.1, "Gut")], Time::ZERO);
+        let steps = app.doc.lock().unwrap().undo_entries().len();
+        let ctx = egui::Context::default();
+        for _ in 0..5 {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| app.captions_editor(ui));
+            });
+        }
+        let errs: Vec<&str> = app.toasts.iter().filter(|t| t.2).map(|t| t.0.as_str()).collect();
+        assert!(errs.is_empty(), "error toasts while only showing the list: {errs:?}");
+        assert_eq!(app.doc.lock().unwrap().undo_entries().len(), steps, "showing the list must not add history steps");
+        let durs: Vec<i64> = app.caption_clips().iter().map(|c| c.duration.as_millis()).collect();
+        assert_eq!(durs, [80, 920, 100], "durations unchanged");
+    }
+
+    /// A long recognition (≈2,000 lines) lands complete and as ONE undo step (track included)
+    #[test]
+    fn many_captions_are_one_undo_step() {
+        let mut app = crate::saving::tests::test_app();
+        app.set_doc(Project::new("k"));
+        let steps = app.doc.lock().unwrap().undo_entries().len();
+        let before = app.doc.lock().unwrap().project().clone();
+        let segs: Vec<cl_analyze::asr::Segment> = (0..2000)
+            .map(|i| cl_analyze::asr::Segment { start: i as f64 * 0.75, end: i as f64 * 0.75 + 0.75, text: format!("Wort{i}"), words: Vec::new() })
+            .collect();
+        assert_eq!(app.add_caption_segments(&segs, Time::ZERO), 2000);
+        assert_eq!(app.caption_clips().len(), 2000);
+        assert_eq!(app.doc.lock().unwrap().undo_entries().len(), steps + 1, "one undo step");
+        app.undo();
+        assert!(app.doc.lock().unwrap().project() == &before, "undo removes the captions and their track");
+    }
+
+    /// A line whose length rounds to 0 µs must not fail the whole batch (no captions at all)
+    #[test]
+    fn caption_rounding_to_zero_is_skipped() {
+        let mut app = crate::saving::tests::test_app();
+        app.set_doc(Project::new("k"));
+        let seg = |a: f64, b: f64| cl_analyze::asr::Segment { start: a, end: b, text: "x".into(), words: Vec::new() };
+        assert_eq!(app.add_caption_segments(&[seg(1.0, 1.0000001), seg(2.0, 3.0)], Time::ZERO), 1);
+        assert_eq!(app.caption_clips().len(), 1);
+        assert!(!app.toasts.iter().any(|t| t.2), "no error");
     }
 
     #[test]

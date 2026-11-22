@@ -21,6 +21,22 @@
 
 **Behoben**
 
+## 0.17.1 – 2026-11-22
+
+### English
+
+**Fixed**
+- **No more "Invalid duration" error flood after generating captions.** With very short captions in the list, the error appeared many times per second. The list no longer changes captions on its own.
+- **Captions: no words lost, one undo step.** Words that fell on the same instant as the next line are kept, and one undo removes the generated captions together with their track.
+- **The same message is shown once** instead of stacking up while it is still on screen.
+
+### Deutsch
+
+**Behoben**
+- **Keine Fehlerflut „Ungültige Dauer“ mehr nach dem Erzeugen von Untertiteln.** Bei sehr kurzen Untertiteln in der Liste erschien der Fehler viele Male pro Sekunde. Die Liste ändert Untertitel nicht mehr von selbst.
+- **Untertitel: keine verlorenen Wörter, ein Rückgängig-Schritt.** Wörter, die auf denselben Moment fielen wie die nächste Zeile, bleiben erhalten, und ein Rückgängig entfernt die erzeugten Untertitel samt Spur.
+- **Dieselbe Meldung erscheint einmal**, statt sich zu stapeln, solange sie noch zu sehen ist.
+
 ## 0.17.0 – 2026-11-22
 
 ### English
