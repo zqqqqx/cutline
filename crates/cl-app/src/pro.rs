@@ -1585,18 +1585,21 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
     e |= theme::row(ui, "Entrauschen", |ui| {
         Slider::new(&mut a.denoise, 0.0..=1.0).percent().default(0.0).show(ui)
     });
-    let toggles: [(&str, &str, &mut bool); 4] = [
-        ("Brummen", "Netzbrummen (50/60 Hz) entfernen", &mut a.hum),
-        ("Rumpeln & Wind", "Tiefe Störgeräusche unter 90 Hz entfernen", &mut a.rumble),
-        ("Klicks", "Klicks und Knackser entfernen", &mut a.declick),
-        ("Stimme hervorheben", "Sprache betonen, Hintergrund absenken", &mut a.voice_isolate),
+    let toggles: [(&str, &str, &mut bool, &mut f32); 4] = [
+        ("Brummen", "Netzbrummen (50/60 Hz) entfernen", &mut a.hum, &mut a.hum_amount),
+        ("Rumpeln & Wind", "Tiefe Störgeräusche unter 90 Hz entfernen", &mut a.rumble, &mut a.rumble_amount),
+        ("Klicks", "Klicks und Knackser entfernen", &mut a.declick, &mut a.declick_amount),
+        ("Stimme hervorheben", "Sprache betonen, Hintergrund absenken", &mut a.voice_isolate, &mut a.voice_isolate_amount),
     ];
-    for (label, tip, v) in toggles {
+    for (label, tip, v, amount) in toggles {
         let r = ui.scope(|ui| widgets::toggle_row(ui, label, v));
         if r.inner {
             e.commit = true;
         }
         r.response.on_hover_text(crate::tr(tip));
+        if *v {
+            e |= strength_row(ui, amount);
+        }
     }
     theme::section(ui, "Klang");
     e |= theme::row(ui, "Kompressor", |ui| {
@@ -1619,9 +1622,9 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
     if widgets::toggle_row(ui, "Lautheit angleichen (−14 LUFS)", &mut a.normalize) {
         e.commit = true;
     }
-    for (title, list, slot, salt) in [
-        ("Audiofilter", cl_fx::audio::FILTERS, &mut a.filter, "afilter"),
-        ("Stimmfilter", cl_fx::audio::VOICES, &mut a.voice, "voice"),
+    for (title, list, slot, salt, amount) in [
+        ("Audiofilter", cl_fx::audio::FILTERS, &mut a.filter, "afilter", &mut a.filter_amount),
+        ("Stimmfilter", cl_fx::audio::VOICES, &mut a.voice, "voice", &mut a.voice_amount),
     ] {
         theme::section(ui, title);
         let mut items: Vec<(&str, &str)> = vec![("", "Kein")];
@@ -1646,8 +1649,16 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
             *slot = (!v.is_empty()).then_some(v);
             e.commit = true;
         }
+        if list.iter().any(|x| Some(x.0) == slot.as_deref() && cl_fx::audio::preset_adjustable(x.2)) {
+            e |= strength_row(ui, amount);
+        }
     }
     e
+}
+
+/// Strength of a switched-on audio effect (100 % = full effect).
+fn strength_row(ui: &mut egui::Ui, amount: &mut f32) -> Edit {
+    theme::row(ui, "Stärke", |ui| Slider::new(amount, 0.0..=1.0).percent().default(1.0).show(ui))
 }
 
 #[cfg(test)]

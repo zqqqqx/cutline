@@ -332,23 +332,38 @@ pub struct AudioFx {
     pub denoise: f32,
     /// Enhance voice (lower the background)
     pub voice_isolate: bool,
+    /// Strength 0…1 of `voice_isolate`
+    #[serde(skip_serializing_if = "is_one")]
+    pub voice_isolate_amount: f32,
     /// Normalize loudness (−14 LUFS, social media standard)
     pub normalize: bool,
     /// Voice filter (id from `cl_fx::audio::VOICES`)
     pub voice: Option<String>,
+    /// Strength 0…1 of the voice filter
+    #[serde(skip_serializing_if = "is_one")]
+    pub voice_amount: f32,
     /// Bass / treble in dB (−12…12)
     pub bass: f32,
     pub treble: f32,
     /// Remove mains hum (50/60 Hz and harmonics)
     pub hum: bool,
+    #[serde(skip_serializing_if = "is_one")]
+    pub hum_amount: f32,
     /// Remove rumble and wind (lows below ~90 Hz)
     pub rumble: bool,
+    #[serde(skip_serializing_if = "is_one")]
+    pub rumble_amount: f32,
     /// Remove clicks and crackles
     pub declick: bool,
+    #[serde(skip_serializing_if = "is_one")]
+    pub declick_amount: f32,
     /// Compressor 0…1 (more even volume)
     pub compress: f32,
     /// Audio filter (id from `cl_fx::audio::FILTERS`)
     pub filter: Option<String>,
+    /// Strength 0…1 of the audio filter
+    #[serde(skip_serializing_if = "is_one")]
+    pub filter_amount: f32,
     /// Reverb amount 0…1 (0 = off)
     #[serde(skip_serializing_if = "is_zero")]
     pub reverb: f32,
@@ -410,15 +425,21 @@ impl Default for AudioFx {
         Self {
             denoise: 0.0,
             voice_isolate: false,
+            voice_isolate_amount: 1.0,
             normalize: false,
             voice: None,
+            voice_amount: 1.0,
             bass: 0.0,
             treble: 0.0,
             hum: false,
+            hum_amount: 1.0,
             rumble: false,
+            rumble_amount: 1.0,
             declick: false,
+            declick_amount: 1.0,
             compress: 0.0,
             filter: None,
+            filter_amount: 1.0,
             reverb: 0.0,
             reverb_size: 0.5,
             channels: None,
@@ -428,6 +449,10 @@ impl Default for AudioFx {
 
 fn is_zero(v: &f32) -> bool {
     *v == 0.0
+}
+
+fn is_one(v: &f32) -> bool {
+    *v == 1.0
 }
 
 fn is_half(v: &f32) -> bool {
@@ -1042,6 +1067,22 @@ mod tests {
         let s = serde_json::to_string(&r).unwrap();
         assert!(s.contains("\"reverb\":0.4") && s.contains("\"reverb_size\":0.8"), "{s}");
         assert_eq!(serde_json::from_str::<AudioFx>(&s).unwrap(), r);
+    }
+
+    /// Effects switched on in an old file load at full strength (= the sound before strengths)
+    #[test]
+    fn old_effects_load_at_full_strength() {
+        let old = r#"{"denoise":0.0,"voice_isolate":true,"normalize":true,"voice":"deep","bass":0.0,"treble":0.0,"hum":true,"rumble":true,"declick":true,"compress":0.0,"filter":"radio"}"#;
+        let a: AudioFx = serde_json::from_str(old).unwrap();
+        let d = AudioFx::default();
+        for v in [a.voice_isolate_amount, a.voice_amount, a.hum_amount, a.rumble_amount, a.declick_amount, a.filter_amount, d.hum_amount, d.filter_amount] {
+            assert_eq!(v, 1.0);
+        }
+        assert_eq!(serde_json::to_string(&a).unwrap(), old, "full strength is not written");
+        let half = AudioFx { hum_amount: 0.5, voice_amount: 0.25, ..a };
+        let s = serde_json::to_string(&half).unwrap();
+        assert!(s.contains("\"hum_amount\":0.5") && s.contains("\"voice_amount\":0.25"), "{s}");
+        assert_eq!(serde_json::from_str::<AudioFx>(&s).unwrap(), half);
     }
 
     /// Outline without „durchsichtig“ does not write the field (project file as before 0.13)

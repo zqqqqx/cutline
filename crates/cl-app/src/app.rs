@@ -3700,7 +3700,7 @@ fn audio_signature(p: &Project) -> u64 {
 
 /// Moving an audio slider must rebuild the preview sound
 #[test]
-fn audio_signature_follows_reverb() {
+fn audio_signature_follows_reverb_and_strengths() {
     let mut p = Project::new("Hall");
     let mut t = Track::new(TrackKind::Audio);
     t.clips.push(Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Audio }, Time::ZERO, Time::from_secs_f64(2.0)));
@@ -3713,8 +3713,14 @@ fn audio_signature_follows_reverb() {
     seen.push(audio_signature(&p));
     a(&mut p).reverb_size = 0.9;
     seen.push(audio_signature(&p));
+    a(&mut p).hum = true;
+    seen.push(audio_signature(&p));
+    a(&mut p).hum_amount = 0.5;
+    seen.push(audio_signature(&p));
+    a(&mut p).voice_amount = 0.5;
+    seen.push(audio_signature(&p));
     seen.dedup();
-    assert_eq!(seen.len(), 3, "every step changes the signature");
+    assert_eq!(seen.len(), 6, "every step changes the signature");
 }
 
 impl App {
