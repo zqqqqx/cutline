@@ -784,7 +784,7 @@ impl App {
                         .default(0.0)
                         .show(ui)
                 });
-                *e |= theme::row(ui, "Kante verschieben", |ui| {
+                *e |= theme::row(ui, "Kantenlage", |ui| {
                     Slider::new(&mut c.fx.edge.shift, -1.0..=1.0)
                         .percent()
                         .default(0.0)

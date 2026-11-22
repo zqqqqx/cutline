@@ -45,7 +45,7 @@
 - **Hall für den Ton.** Im Reiter Audio gibt es den Regler „Hall“ und, sobald er an ist, „Raumgröße“ – vom kleinen Raum bis zur großen Halle.
 - **Stärke für Audio-Werkzeuge und Filter.** Rumpeln, Brummen, Klicks, Stimme hervorheben sowie die Klang- und Stimmfilter haben je einen Regler „Stärke“, solange sie an sind. Vorhandene Projekte klingen wie bisher.
 - **Greenscreen mit Hintergrund-Effekten.** Ein Clip mit Farbschlüssel kann jetzt einen weichen Hintergrund, eine Hintergrundfarbe oder einen Umriss bekommen, wie eine freigestellte Person – auch bei Bildern.
-- **Kanten-Regler fürs Freistellen.** „Weiche Kante“, „Kante verschieben“ und „Umkehren“ gelten für freigestellte Personen und für Greenscreen.
+- **Kanten-Regler fürs Freistellen.** „Weiche Kante“, „Kantenlage“ und „Umkehren“ gelten für freigestellte Personen und für Greenscreen.
 
 **Verbessert**
 - **Ein Bereich fürs Freistellen.** Der Reiter Smart hat einen Bereich „Freistellen“ mit Aus / Person / Farbe statt zwei getrennter Abschnitte. Der Umriss lässt sich dort jetzt auch ohne Hintergrund zeigen.
