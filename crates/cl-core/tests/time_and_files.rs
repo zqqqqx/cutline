@@ -268,7 +268,7 @@ fn unknown_fields_and_old_files_still_load() {
 /// and is saved without the field; a set shadow survives saving; offsets are clamped when drawn.
 #[test]
 fn text_shadow_style_round_trips_and_old_files_keep_the_default() {
-    assert_eq!(PROJECT_SCHEMA_VERSION, 4);
+    let cur = format!("\"schema_version\": {PROJECT_SCHEMA_VERSION}");
     let text = |st: TextStyle| {
         let mut p = Project::new("S");
         let mut t = Track::new(TrackKind::Text);
@@ -283,19 +283,19 @@ fn text_shadow_style_round_trips_and_old_files_keep_the_default() {
     // old file (version 3, no field): default look, nothing new written
     let json = text(TextStyle::default()).to_json();
     assert!(!json.contains("shadow_style"), "{json}");
-    assert!(json.contains("\"schema_version\": 4"), "{json}");
-    let old = json.replace("\"schema_version\": 4", "\"schema_version\": 3");
+    assert!(json.contains(&cur), "{json}");
+    let old = json.replace(&cur, "\"schema_version\": 3");
     let p = Project::from_json(&old).unwrap();
     assert_eq!(style(&p).shadow_style, None);
     assert_eq!(p.to_json(), json);
     // set shadow: survives saving and loading
-    let sh = Shadow { color: [255, 0, 0, 200], dx: 12.0, dy: -8.0 };
+    let sh = Shadow { color: [255, 0, 0, 200], dx: 12.0, dy: -8.0, blur: 0.0 };
     let p = text(TextStyle { shadow_style: Some(sh), ..Default::default() });
     let json = p.to_json();
     assert!(json.contains("shadow_style"), "{json}");
     assert_eq!(style(&Project::from_json(&json).unwrap()).shadow_style, Some(sh));
     // the default is the look before the shadow was adjustable; offsets whole and within ±100 px
-    assert_eq!(Shadow::default(), Shadow { color: [0, 0, 0, 153], dx: 3.0, dy: 3.0 });
+    assert_eq!(Shadow::default(), Shadow { color: [0, 0, 0, 153], dx: 3.0, dy: 3.0, blur: 0.0 });
     assert_eq!(Shadow::default().offset(), (3, 3));
     let off = |dx: f32, dy: f32| Shadow { dx, dy, ..Default::default() }.offset();
     assert_eq!(off(2.5, -2.5), (3, -3));
@@ -362,4 +362,23 @@ fn clips_with_impossible_times_are_dropped_on_load() {
     for c in d.project().timeline.tracks[0].clips.clone() {
         apply(&mut d, EditOp::SetFades { clip: c.id, fade_in: Time::from_secs_f64(1.0), fade_out: Time::from_secs_f64(1.0) });
     }
+}
+
+/// Soft shadow (format 5): a hard shadow is written exactly as 0.17.0 wrote it (no `blur`), a
+/// file without `blur` loads hard, a soft one survives saving; the softness is clamped.
+#[test]
+fn soft_shadow_round_trips_and_hard_shadows_stay_as_before() {
+    assert_eq!(PROJECT_SCHEMA_VERSION, 5);
+    // as 0.17.0 wrote a set shadow
+    let v4 = r#"{"color":[255,0,0,200],"dx":12.0,"dy":-8.0}"#;
+    let hard: Shadow = serde_json::from_str(v4).unwrap();
+    assert_eq!(hard.blur, 0.0);
+    assert_eq!(serde_json::to_string(&hard).unwrap(), v4);
+    let soft = Shadow { blur: 6.0, ..hard };
+    let json = serde_json::to_string(&soft).unwrap();
+    assert!(json.contains("\"blur\":6.0"), "{json}");
+    assert_eq!(serde_json::from_str::<Shadow>(&json).unwrap(), soft);
+    // sigma = softness / 2, softness within 0–40
+    let sigma = |blur: f32| Shadow { blur, ..hard }.sigma();
+    assert_eq!((sigma(6.0), sigma(0.0), sigma(-3.0), sigma(1e9), sigma(f32::NAN)), (3.0, 0.0, 0.0, 20.0, 0.0));
 }

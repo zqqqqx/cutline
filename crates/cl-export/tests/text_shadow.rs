@@ -80,7 +80,7 @@ fn shadow_style_reaches_drawtext_and_the_pad() {
     let base = TextStyle { text: "Hallo Welt".into(), size: 44.0, bold: true, ..Default::default() };
     let (w0, h0) = sprite(&graph(&base));
     // red, 60 % → 12/−8 (sub-pixel offsets rounded half away from zero)
-    let sh = Shadow { color: [255, 0, 0, 153], dx: 11.5, dy: -7.6 };
+    let sh = Shadow { color: [255, 0, 0, 153], dx: 11.5, dy: -7.6, blur: 0.0 };
     let g = graph(&TextStyle { shadow_style: Some(sh), ..base.clone() });
     assert_eq!(g.matches(":shadowx=12:shadowy=-8:shadowcolor=0xff0000@0.600").count(), 1, "{g}");
     // bold: two prints, the shadow only under the first (drawn before its text)

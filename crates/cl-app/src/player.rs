@@ -1650,7 +1650,7 @@ mod transition_tests {
         }
         let app = crate::saving::tests::test_app();
         let dir = tempfile::tempdir().unwrap();
-        let red = |dx: f32, dy: f32| Some(Shadow { color: [255, 0, 0, 255], dx, dy });
+        let red = |dx: f32, dy: f32| Some(Shadow { color: [255, 0, 0, 255], dx, dy, blur: 0.0 });
         // (shadow style, shadow pixel on the white box / black canvas, offset)
         let cases = [(None, [102, 102, 102], (3, 3)), (red(12.0, -8.0), [255, 0, 0], (12, -8)), (red(40.0, 40.0), [255, 0, 0], (40, 40))];
         for (style, ink, (dx, dy)) in cases {
