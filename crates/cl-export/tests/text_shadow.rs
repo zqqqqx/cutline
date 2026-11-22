@@ -37,6 +37,7 @@ fn graph(st: &TextStyle) -> String {
 
 fn styles() -> Vec<(&'static str, TextStyle)> {
     let base = TextStyle { text: "Hallo Welt".into(), size: 44.0, ..Default::default() };
+    let red = Shadow { color: [255, 0, 0, 153], dx: 12.0, dy: -8.0, blur: 0.0 };
     vec![
         ("plain", base.clone()),
         ("no shadow", TextStyle { shadow: false, ..base.clone() }),
@@ -52,10 +53,26 @@ fn styles() -> Vec<(&'static str, TextStyle)> {
                 ..base.clone()
             },
         ),
+        // stage 1: hard shadow styles (0.17.0)
+        ("hard red", TextStyle { shadow_style: Some(red), ..base.clone() }),
+        ("hard red bold outline", TextStyle { shadow_style: Some(red), bold: true, outline: Some((4.0, [0, 0, 0, 255])), ..base.clone() }),
+        ("hard red italic two lines", TextStyle { shadow_style: Some(red), italic: true, text: "Eins
+Zwei".into(), ..base.clone() }),
+        (
+            "hard red karaoke box",
+            TextStyle {
+                shadow_style: Some(red),
+                background: Some([0, 0, 0, 170]),
+                karaoke: Some(Karaoke { color: [255, 221, 0, 255], fill: false, words: Vec::new() }),
+                text: "Eins zwei drei".into(),
+                ..base.clone()
+            },
+        ),
     ]
 }
 
-/// Graphs captured before the adjustable shadow: `None` must not change a single byte.
+/// Graphs captured before the adjustable shadow (`None`) and before the soft shadow (hard styles):
+/// neither may change a single byte.
 #[test]
 fn graphs_without_shadow_style_stay_byte_identical() {
     let want = include_str!("snapshots/text_graphs.txt").replace("\r\n", "\n");
