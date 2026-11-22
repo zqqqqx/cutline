@@ -21,6 +21,40 @@
 
 **Behoben**
 
+## 0.16.0 – 2026-11-22
+
+### English
+
+**New**
+- **Reverb for sound.** The Audio tab has a "Reverb" slider and, once it is on, "Room size" – from a small room to a large hall.
+- **Strength for the audio tools and filters.** Rumble, hum, clicks, voice enhancement and the audio and voice filters each get a "Strength" slider while they are on. Projects you already have sound as before.
+- **Green screen with background effects.** A keyed clip can now have a blurred background, a background color or an outline, like a cut-out person – also on images.
+- **Edge controls for cutouts.** "Soft edge", "Shift edge" and "Invert" work for cut-out people and for green screen.
+
+**Improved**
+- **One place for cutouts.** The Smart tab has one "Cutout" area with Off / Person / Color instead of two separate sections. The outline can now be shown without the background there too.
+- **Moving a large selection is smooth.** Dragging thousands of selected clips no longer makes the timeline stutter.
+
+**Fixed**
+- **The selection rectangle follows the timeline while it scrolls.** Its start stays where you began, so clips that scroll out of view stay selected.
+- **Cancelling a person cutout** no longer leaves an unfinished mask file behind.
+
+### Deutsch
+
+**Neu**
+- **Hall für den Ton.** Im Reiter Audio gibt es den Regler „Hall“ und, sobald er an ist, „Raumgröße“ – vom kleinen Raum bis zur großen Halle.
+- **Stärke für Audio-Werkzeuge und Filter.** Rumpeln, Brummen, Klicks, Stimme hervorheben sowie die Klang- und Stimmfilter haben je einen Regler „Stärke“, solange sie an sind. Vorhandene Projekte klingen wie bisher.
+- **Greenscreen mit Hintergrund-Effekten.** Ein Clip mit Farbschlüssel kann jetzt einen weichen Hintergrund, eine Hintergrundfarbe oder einen Umriss bekommen, wie eine freigestellte Person – auch bei Bildern.
+- **Kanten-Regler fürs Freistellen.** „Weiche Kante“, „Kante verschieben“ und „Umkehren“ gelten für freigestellte Personen und für Greenscreen.
+
+**Verbessert**
+- **Ein Bereich fürs Freistellen.** Der Reiter Smart hat einen Bereich „Freistellen“ mit Aus / Person / Farbe statt zwei getrennter Abschnitte. Der Umriss lässt sich dort jetzt auch ohne Hintergrund zeigen.
+- **Große Auswahl verschieben läuft flüssig.** Beim Ziehen tausender ausgewählter Clips ruckelt die Zeitleiste nicht mehr.
+
+**Behoben**
+- **Der Auswahlrahmen folgt der Zeitleiste beim Rollen.** Sein Anfang bleibt dort, wo man begonnen hat; Clips, die aus dem Bild rollen, bleiben ausgewählt.
+- **Abbrechen beim Freistellen einer Person** lässt keine halbfertige Maskendatei mehr liegen.
+
 ## 0.15.4 – 2026-11-21
 
 ### English
