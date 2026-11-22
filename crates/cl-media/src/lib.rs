@@ -527,6 +527,12 @@ fn not_url(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+thread_local! {
+    /// FFmpeg processes started by `decode_raw` in this thread (tests)
+    static SPAWNS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 /// Raw RGBA bytes of up to `n` frames from `at` (at least one read, otherwise error), keeping only
 /// those with `keep(k)`
 #[allow(clippy::too_many_arguments)]
@@ -542,6 +548,12 @@ fn decode_raw(
     kill: Option<&KillSwitch>,
 ) -> Result<(Vec<(u32, Vec<u8>)>, Option<Duration>)> {
     not_url(path)?;
+    // already stale (scrubbing: overtaken while waiting for its turn): no process at all
+    if kill.is_some_and(KillSwitch::is_killed) {
+        return Err(MediaError::Cancelled);
+    }
+    #[cfg(test)]
+    SPAWNS.with(|s| s.set(s.get() + 1));
     let mut cmd = command_with("ffmpeg", kill.is_none())?;
     cmd.args(["-v", "error", "-nostdin"]);
     if kill.is_some() {
@@ -1556,11 +1568,15 @@ mod tests {
         let clip = make_clip(dir.path());
         let k = KillSwitch::default();
         k.kill();
+        let spawns = || SPAWNS.with(|s| s.get());
+        let before = spawns();
         let r = decode_frame_opts(&clip, Time::from_millis(500), 32, 18, None, false, Some(&k));
         assert!(matches!(r, Err(MediaError::Cancelled)));
+        assert_eq!(spawns(), before, "a job killed before its start spawns no process");
         let (f, info) =
             decode_frame_opts(&clip, Time::from_millis(500), 32, 18, None, false, Some(&KillSwitch::default())).unwrap();
         assert_eq!((f.data.len(), info.hw), (32 * 18 * 4, false));
+        assert_eq!(spawns(), before + 1);
     }
 
     /// Serializes the hardware tests: together they could take all [`MAX_HW_DECODERS`] slots, and a

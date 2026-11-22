@@ -161,8 +161,13 @@ struct World {
     playhead: Time,
     loop_range: Option<(Time, Time)>,
     max_q: usize,
-    /// Single frames in progress: (layer, key, ready at)
-    stills: Vec<(Lid, u64, f64)>,
+    /// Single frames in progress like the dispatcher: (layer, key, ready at, source time); per layer one
+    /// running and at most the newest waiting (`still_wait`: key, source time)
+    stills: Vec<(Lid, u64, f64, f64)>,
+    still_wait: HashMap<Lid, (u64, f64)>,
+    /// single-frame decodes started and killed
+    still_starts: u32,
+    still_kills: u32,
     still_time: f64,
     /// opened, not yet attached streams (starter thread): (ready at, job, decoder)
     opening: Vec<(f64, Open, Dec, u64, u64)>,
@@ -197,6 +202,9 @@ impl World {
             loop_range: None,
             max_q: 0,
             stills: Vec::new(),
+            still_wait: HashMap::new(),
+            still_starts: 0,
+            still_kills: 0,
             still_time: 0.08,
             opening: Vec::new(),
             last_frame: HashMap::new(),
@@ -322,20 +330,50 @@ impl World {
                 let frame = ((p - c.start) * self.fps) as u64;
                 let key = self.key(c) ^ frame << 32;
                 if self.core.still(c.id, key, now) {
-                    self.stills.push((c.id, key, now + self.still_time));
+                    self.offer_still(c.id, key, p - c.start, now);
                 }
             }
         }
         let (done, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.stills).into_iter().partition(|s| s.2 <= now);
         self.stills = rest;
-        for (id, key, _) in done {
-            if self.core.still_done(id, key) {
+        for (id, key, _, _) in done {
+            // a newer job waited: the finished frame comes as neighbour, the waiting one starts
+            let next = self.still_wait.remove(&id);
+            let shown = if next.is_some() { self.core.still_near(id, key) } else { self.core.still_done(id, key) };
+            if shown {
                 self.stills_shown += 1;
                 self.ever_shown = true;
+            }
+            if let Some((k, at)) = next {
+                self.still_starts += 1;
+                self.stills.push((id, k, now + self.still_time, at));
             }
         }
         self.core.visible(&vis);
         self.check();
+    }
+
+    /// New single-frame job, decided like the dispatcher (`preview::next_still`)
+    fn offer_still(&mut self, id: Lid, key: u64, at: f64, now: f64) {
+        use crate::preview::{next_still, Next};
+        let (path, t) = (std::path::Path::new("x.mp4"), Time::from_secs_f64);
+        let run = self.stills.iter().find(|s| s.0 == id).map(|s| (s.1, s.3));
+        let prev = self.still_wait.get(&id).map(|w| w.1).or(run.map(|r| r.1)).unwrap_or(at);
+        match next_still(run.map(|r| (r.0, path, t(r.1))), t(prev), key, path, t(at)) {
+            Next::Same => {
+                self.still_wait.remove(&id);
+            }
+            Next::Wait => {
+                self.still_wait.insert(id, (key, at));
+            }
+            n => {
+                self.still_kills += (n == Next::Replace) as u32;
+                self.stills.retain(|s| s.0 != id);
+                self.still_wait.remove(&id);
+                self.still_starts += 1;
+                self.stills.push((id, key, now + self.still_time, at));
+            }
+        }
     }
 
     fn check(&self) {
@@ -920,26 +958,86 @@ fn open_failure_retries_after_a_while() {
     assert_eq!(w.core.mode(), Mode::Spielen);
 }
 
+/// Stand (scrubbing), changed deliberately with "newest wins": the core still requests every new
+/// position (the dispatcher lets the running decode finish and keeps only the newest waiting), and an
+/// overtaken frame is shown as neighbour instead of being thrown away. The request stays open until
+/// its exact frame comes: the wait line does not flicker, a neighbour never covers the exact frame.
 #[test]
-fn stills_in_stand_replace_running_requests_and_drive_the_wait_line() {
+fn stills_in_stand_show_overtaken_frames_as_neighbours_until_the_exact_one() {
     let mut core: PlayCore<Sim> = PlayCore::default();
     assert!(!core.waiting());
     assert!(core.still(1, 10, 0.0));
     assert!(core.waiting(), "requested, nothing there yet");
     assert!(!core.still(1, 10, 0.01), "the same job is already running");
-    // scrubbing: the new one replaces the old one at once
+    // scrubbing: the newer one is requested at once
     assert!(core.still(1, 11, 0.02));
-    assert!(!core.still_done(1, 10), "stale frame is not shown");
-    assert!(core.waiting());
+    assert!(!core.still_done(1, 10), "overtaken frame is not the exact one");
+    assert!(core.still_near(1, 10), "but it bridges as neighbour");
+    assert_eq!(core.held(), Some(1));
+    assert!(core.waiting(), "still waiting for the exact frame: line stays on");
+    assert!(!core.still(1, 11, 0.1), "no repeat while the exact frame is young");
+    assert!(core.still(1, 11, 0.6), "overdue: asked again");
+    assert!(!core.still(1, 11, 0.7));
     assert!(core.still_done(1, 11));
     assert!(!core.waiting());
-    assert_eq!(core.held(), Some(1));
+    assert!(!core.still_near(1, 10), "a late neighbour never covers the exact frame");
+    assert!(!core.still(1, 11, 5.0), "exact frame stays, no repeat");
     // project changed: request again, picture stays
     core.forget_stills();
     assert!(core.still(1, 11, 0.1));
     core.visible(&[]);
     assert!(!core.waiting());
     assert_eq!(core.held(), Some(1));
+}
+
+/// World with a slow single-frame decoder (80 ms): drag the playhead one frame per 16-ms UI tick.
+/// Before, every new position killed the running decode and nothing came until the pointer rested.
+fn drag(w: &mut World, from: f64, step: f64, ticks: usize) -> (u32, u32) {
+    let (shown, mut gaps) = (w.stills_shown, 0);
+    for i in 0..ticks {
+        w.playhead = Time::from_secs_f64(from + i as f64 * step);
+        w.step(0.016);
+        gaps += (i > 0 && !w.core.waiting()) as u32;
+    }
+    (w.stills_shown - shown, gaps)
+}
+
+#[test]
+fn scrubbing_finishes_running_stills_and_ends_on_the_exact_frame() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    let (shown, line_off) = drag(&mut w, 2.0, 1.0 / 30.0, 60);
+    // ~0.96 s at 80 ms per decode: about 12 decodes finish, at most one waits at any time
+    assert!(shown >= 8, "{shown} frames while dragging");
+    assert!(w.still_starts <= 14, "{} decodes started for 60 positions", w.still_starts);
+    assert_eq!(w.still_kills, 0, "dragging kills nothing");
+    assert_eq!(line_off, 0, "wait line stays on while dragging (no flicker)");
+    assert!(w.stills.len() <= 1 && w.still_wait.len() <= 1);
+    // rest: the exact frame of the last position comes without any further input
+    let starts = w.still_starts;
+    w.run(0.3, 0.016);
+    assert!(!w.core.waiting(), "exact frame at rest");
+    assert!(w.still_starts <= starts + 1, "at most the waiting one started");
+    assert!(w.stills.is_empty() && w.still_wait.is_empty());
+}
+
+#[test]
+fn far_jump_in_stand_kills_the_running_still() {
+    let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+    w.playhead = Time::from_secs_f64(1.0);
+    w.step(0.016);
+    w.playhead = Time::from_secs_f64(20.0);
+    w.step(0.016);
+    assert_eq!((w.still_starts, w.still_kills), (2, 1));
+    w.run(0.2, 0.016);
+    assert!(!w.core.waiting());
+    // a short click back: the running decode is close, it is allowed to finish
+    w.playhead = Time::from_secs_f64(19.5);
+    w.step(0.016);
+    w.playhead = Time::from_secs_f64(19.8);
+    w.step(0.016);
+    assert_eq!(w.still_kills, 1);
+    w.run(0.3, 0.016);
+    assert!(!w.core.waiting());
 }
 
 /// Review finding: a failed single frame stayed as a job – loading line
