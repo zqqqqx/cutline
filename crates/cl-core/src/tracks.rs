@@ -9,6 +9,7 @@ use crate::model::*;
 use crate::ops::EditOp;
 use crate::time::Time;
 use crate::{CoreError, Result};
+use std::collections::{HashMap, HashSet};
 
 /// Track indices in display order: visual tracks with a higher index on top, below them audio in index order.
 pub fn display_order(tracks: &[Track]) -> Vec<usize> {
@@ -168,30 +169,15 @@ pub fn kind_steps(tracks: &[Track], from: TrackId, to: TrackId) -> Option<isize>
 /// target (the main track with magnet makes room itself). Returns the target per clip and the
 /// move as one batch.
 pub fn shift_tracks(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<(Vec<(ClipId, TrackId)>, EditOp)> {
+    let (mut plan, moving) = shift_plan(p, moves, steps)?;
     let tracks = &p.timeline.tracks;
-    let ord = display_order(tracks);
-    let row = |id: TrackId| ord.iter().position(|&i| tracks[i].id == id);
-    let moving: Vec<ClipId> = moves.iter().map(|m| m.0).collect();
-    let mut plan = Vec::new();
-    for (id, start) in moves {
-        let (src, c) = p.find_clip(*id)?;
-        let peers: Vec<&Track> = ord.iter().map(|&i| &tracks[i]).filter(|t| t.kind == src.kind).collect();
-        let at = peers.iter().position(|t| t.id == src.id)?;
-        let t = *peers.get(at.checked_add_signed(steps)?)?;
-        let end = *start + c.duration;
-        let free = t.clips.iter().filter(|o| !moving.contains(&o.id)).all(|o| end <= o.start || *start >= o.end());
-        // its own track keeps a clip of another kind (legacy projects), as a single move does
-        if src.locked || !(t.id == src.id || fits(t, c.kind())) || !(free || (t.main && p.settings.main_track_magnet)) {
-            return None;
-        }
-        plan.push((*id, c.start, *start, src.id, t.id));
-    }
+    let rows: HashMap<TrackId, usize> = display_order(tracks).into_iter().enumerate().map(|(r, i)| (tracks[i].id, r)).collect();
     // first park every moving clip on its own track behind everything, then move them over: a clip
     // never meets one that is about to leave, and a track that is also a target never runs empty
     // (`MoveClip` removes emptied tracks). Tracks are filled against the move direction.
     let end = tracks.iter().flat_map(|t| &t.clips).map(|c| c.end()).chain(moves.iter().map(|m| m.1)).max().unwrap_or(Time::ZERO);
     let park = end + Time::from_secs_f64(3600.0);
-    plan.sort_by_key(|x| row(x.3));
+    plan.sort_by_key(|x| rows.get(&x.3).copied());
     if steps < 0 {
         plan.reverse();
     }
@@ -207,6 +193,62 @@ pub fn shift_tracks(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Opti
         ops.extend(line.into_iter().map(|(_, clip)| EditOp::MoveClip { clip, track: Some(m.id), start: park + park }));
     }
     Some((plan.iter().map(|x| (x.0, x.4)).collect(), EditOp::Batch { label: "Clips verschieben".into(), ops }))
+}
+
+/// The check of [`shift_tracks`] without building the batch (cheap enough for every frame of a
+/// drag): the target track per clip, `None` if the move is not possible.
+pub fn shift_targets(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<Vec<(ClipId, TrackId)>> {
+    shift_plan(p, moves, steps).map(|(plan, _)| plan.iter().map(|x| (x.0, x.4)).collect())
+}
+
+/// Per clip in `moves` order: (clip, old start, new start, source track, target track), and the set
+/// of moving clips. Linear in the clips of the project (lookups by hash, overlap by binary search).
+#[allow(clippy::type_complexity)]
+fn shift_plan(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Option<(Vec<(ClipId, Time, Time, TrackId, TrackId)>, HashSet<ClipId>)> {
+    let tracks = &p.timeline.tracks;
+    // per track index: its position among the tracks of its kind in display order
+    let mut peers: HashMap<TrackKind, Vec<usize>> = HashMap::new();
+    let mut at = vec![0; tracks.len()];
+    for i in display_order(tracks) {
+        let v = peers.entry(tracks[i].kind).or_default();
+        at[i] = v.len();
+        v.push(i);
+    }
+    // the first track holding a clip wins, as in `Project::find_clip`
+    let mut clips: HashMap<ClipId, (usize, &Clip)> = HashMap::new();
+    for (i, t) in tracks.iter().enumerate() {
+        for c in &t.clips {
+            clips.entry(c.id).or_insert((i, c));
+        }
+    }
+    let moving: HashSet<ClipId> = moves.iter().map(|m| m.0).collect();
+    // per target track: the clips that stay, sorted by start, end = largest end so far
+    let mut stay: HashMap<usize, Vec<(Time, Time)>> = HashMap::new();
+    let mut plan = Vec::with_capacity(moves.len());
+    for (id, start) in moves {
+        let &(si, c) = clips.get(id)?;
+        let src = &tracks[si];
+        let ti = *peers[&src.kind].get(at[si].checked_add_signed(steps)?)?;
+        let t = &tracks[ti];
+        let end = *start + c.duration;
+        let line = stay.entry(ti).or_insert_with(|| {
+            let mut v: Vec<(Time, Time)> = t.clips.iter().filter(|o| !moving.contains(&o.id)).map(|o| (o.start, o.end())).collect();
+            v.sort_by_key(|x| x.0);
+            for k in 1..v.len() {
+                v[k].1 = v[k].1.max(v[k - 1].1);
+            }
+            v
+        });
+        // overlap = a staying clip that starts before `end` and ends after `start`
+        let k = line.partition_point(|x| x.0 < end);
+        let free = k == 0 || line[k - 1].1 <= *start;
+        // its own track keeps a clip of another kind (legacy projects), as a single move does
+        if src.locked || !(t.id == src.id || fits(t, c.kind())) || !(free || (t.main && p.settings.main_track_magnet)) {
+            return None;
+        }
+        plan.push((*id, c.start, *start, src.id, t.id));
+    }
+    Some((plan, moving))
 }
 
 #[cfg(test)]
