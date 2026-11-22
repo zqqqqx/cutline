@@ -184,6 +184,56 @@ fn measure_karaoke_300_captions() {
     }
 }
 
+/// Measurement (manual, needs FFmpeg): the 300 subtitles of `measure_karaoke_300_captions` (bold,
+/// outline, no karaoke) with a hard and with a soft shadow, single pass and in sections – export time.
+/// `cargo test --release -p cl-export --test large -- --ignored --nocapture measure_soft_shadow`
+#[test]
+#[ignore]
+fn measure_soft_shadow_300_captions() {
+    let root = tempfile::tempdir().unwrap();
+    let m = media(root.path());
+    let mut p = Project::new("Schatten");
+    (p.settings.width, p.settings.height) = (1080, 1920);
+    p.settings.fps = Rational::new(30, 1);
+    p.media.push(m[0].clone());
+    let mut v = Track::new(TrackKind::Video);
+    for i in 0..10 {
+        let mut c = Clip::new(ClipContent::Media { media: m[0].id, kind: MediaKind::Video }, Time::from_secs_f64(60.0 * i as f64), Time::from_secs_f64(60.0));
+        c.transform.scale = 20.0;
+        v.clips.push(c);
+    }
+    p.timeline.tracks.push(v);
+    let caps = |blur: f32| {
+        let mut t = Track::new(TrackKind::Text);
+        for i in 0..300 {
+            let st = TextStyle {
+                text: format!("Satz {i} mit sechs Wörtern drin"),
+                size: 64.0,
+                bold: true,
+                outline: Some((6.0, [0, 0, 0, 255])),
+                shadow_style: Some(Shadow { blur, ..Default::default() }),
+                ..Default::default()
+            };
+            let mut c = Clip::new(ClipContent::Text(st), Time::from_secs_f64(2.0 * i as f64), Time::from_secs_f64(2.0));
+            c.transform.y = 480.0;
+            t.clips.push(c);
+        }
+        t
+    };
+    for (name, blur) in [("hard", 0.0), ("soft 8 px", 8.0)] {
+        let mut q = p.clone();
+        q.timeline.tracks.push(caps(blur));
+        for sections in [false, true] {
+            let out = root.path().join("s.mp4");
+            let s = ExportSettings::from_project(&q);
+            let job = if sections { cl_export::build_limited(&q, &s, &no_fonts, &out, 4).unwrap() } else { build(&q, &s, &no_fonts, &out).unwrap() };
+            let t0 = Instant::now();
+            run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+            println!("{name}, sections {}: export {:.1} s", job.sections(), t0.elapsed().as_secs_f64());
+        }
+    }
+}
+
 // ---------- sections equal single pass (real FFmpeg, small) ----------
 
 fn run_job(job: &cl_export::Job) {
