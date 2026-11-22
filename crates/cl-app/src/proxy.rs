@@ -942,6 +942,9 @@ impl App {
             let spec = proxy_spec(m, want.0, want.1);
             (spec.fps.or(m.fps)?, spec.height)
         };
+        // the still size if the proxy is that sharp (window frames are then the exact ones), otherwise
+        // at most half the height: ~1 MB per frame, a window run of up to 1 s fits the memory budget
+        let max_h = if h <= max_h { h } else { max_h.min(h / 2).max(2) };
         let (w, h) = if h <= max_h { (w, h) } else { cl_media::fit_size(w, h, w, max_h) };
         Some(crate::preview::ScrubSpec { path, at, fps, w, h })
     }
@@ -1925,7 +1928,8 @@ mod tests {
         // display larger than the proxy: the scrub window reads the proxy at its size, the exact frame
         // at rest the sharp original
         let win = app.window_source(&m, (1920, 1080), Time::ZERO).unwrap();
-        assert_eq!((win.path.clone(), win.h), (out.clone(), 540), "window: proxy");
+        assert_eq!((win.path.clone(), win.h), (out.clone(), 540), "window: proxy at its own size");
+        assert_eq!(app.window_source(&m, (1280, 720), Time::ZERO).unwrap().h, 360, "at most half the height");
         assert_eq!(app.window_source(&m, (960, 540), Time::ZERO).unwrap().h, 540, "window = still size: reusable");
         assert_eq!(app.still_source(&m, 1080, Time::ZERO, true).0, out, "moving: proxy");
         assert_eq!(app.still_source(&m, 1080, Time::ZERO, false).0, m.path, "rest: original");
