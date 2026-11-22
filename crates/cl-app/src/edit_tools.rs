@@ -366,11 +366,10 @@ impl App {
 
     /// Add all clips of the same group(s) to the selection.
     pub fn expand_groups(&mut self) {
-        let groups: Vec<u64> = self
-            .selection()
-            .iter()
-            .filter_map(|id| self.project.find_clip(*id).and_then(|(_, c)| c.group))
-            .collect();
+        // one pass over the project with hash sets: a selection of thousands of clips stays cheap
+        let sel: std::collections::HashSet<ClipId> = self.selection().into_iter().collect();
+        let groups: std::collections::HashSet<u64> =
+            self.project.timeline.tracks.iter().flat_map(|t| &t.clips).filter(|c| sel.contains(&c.id)).filter_map(|c| c.group).collect();
         if groups.is_empty() {
             return;
         }

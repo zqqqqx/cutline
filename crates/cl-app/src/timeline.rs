@@ -234,6 +234,20 @@ pub(crate) fn group_moves(ids: &[(ClipId, f64)], grab: ClipId, to: Time) -> Vec<
     ids.iter().map(|(id, s)| (*id, Time(t(*s).0 + d))).collect()
 }
 
+/// Snap times: 0:00, the playhead `ph`, edges and beats of all clips except `ignore`
+fn snap_cands(tracks: &[Track], ph: f64, ignore: &[ClipId]) -> Vec<f64> {
+    let ignore: HashSet<ClipId> = ignore.iter().copied().collect();
+    let mut v = vec![0.0, ph];
+    for tr in tracks.iter() {
+        for c in tr.clips.iter().filter(|c| !ignore.contains(&c.id)) {
+            v.push(c.start.as_secs_f64());
+            v.push(c.end().as_secs_f64());
+            v.extend(c.beat_times().into_iter().map(|b| b.as_secs_f64()));
+        }
+    }
+    v
+}
+
 /// Clips a marquee from corner `a` to corner `b` covers, both as (time s, content y px = screen y +
 /// vscroll), so the start corner stays on its spot of the timeline however far the view scrolls.
 /// `rows`: (top, bottom in content y, clips of the track); edges touching count, as `Rect::intersects`.
@@ -253,17 +267,29 @@ fn marquee_hits<'a>(a: (f64, f32), b: (f64, f32), rows: impl IntoIterator<Item =
 /// display row and side for new tracks: like a single clip, the group then goes onto a new track –
 /// as a whole, never clip by clip. The row does not depend on the order of `moves`.
 pub(crate) fn group_in_time(p: &Project, moves: &[(ClipId, Time)]) -> std::result::Result<EditOp, (usize, bool)> {
-    if let Some((_, op)) = shift_tracks(p, moves, 0) {
-        return Ok(op);
-    }
+    shift_tracks(p, moves, 0).map(|x| x.1).ok_or_else(|| group_new_row(p, moves))
+}
+
+/// Display row and side for the new tracks of a group that does not fit in its own tracks (the
+/// `Err` of [`group_in_time`]); linear in the clips of the project
+fn group_new_row(p: &Project, moves: &[(ClipId, Time)]) -> (usize, bool) {
     let tracks = &p.timeline.tracks;
-    let ord = display_order(tracks);
-    let at: Vec<(usize, TrackKind)> =
-        moves.iter().filter_map(|m| p.find_clip(m.0)).filter_map(|(t, c)| Some((ord.iter().position(|&i| tracks[i].id == t.id)?, c.kind()))).collect();
+    let mut row = vec![0; tracks.len()];
+    for (r, i) in display_order(tracks).into_iter().enumerate() {
+        row[i] = r;
+    }
+    // the first track holding a clip wins, as in `Project::find_clip`
+    let mut place: HashMap<ClipId, (usize, TrackKind)> = HashMap::new();
+    for (i, t) in tracks.iter().enumerate() {
+        for c in &t.clips {
+            place.entry(c.id).or_insert((row[i], c.kind()));
+        }
+    }
+    let at: Vec<(usize, TrackKind)> = moves.iter().filter_map(|m| place.get(&m.0).copied()).collect();
     let visual = at.iter().any(|x| x.1 != TrackKind::Audio);
     // visual: above the topmost track, audio only: below the lowest – where a single clip's new track appears
     let row = if visual { at.iter().map(|x| x.0).min() } else { at.iter().map(|x| x.0).max() };
-    Err((row.unwrap_or(0), visual || at.is_empty()))
+    (row.unwrap_or(0), visual || at.is_empty())
 }
 
 /// The clip as trimming its `edge` to `to` leaves it: the commit's own op ([`EditOp::TrimClip`]) on
@@ -1648,17 +1674,7 @@ impl App {
         };
 
         let ph = self.playhead.as_secs_f64();
-        let snap_cands = |ignore: &[ClipId]| -> Vec<f64> {
-            let mut v = vec![0.0, ph];
-            for tr in tracks.iter() {
-                for c in tr.clips.iter().filter(|c| !ignore.contains(&c.id)) {
-                    v.push(c.start.as_secs_f64());
-                    v.push(c.end().as_secs_f64());
-                    v.extend(c.beat_times().into_iter().map(|b| b.as_secs_f64()));
-                }
-            }
-            v
-        };
+        let snap_cands = |ignore: &[ClipId]| snap_cands(&tracks, ph, ignore);
         let snap_to = |t: f64, cands: &[f64]| -> Option<f64> {
             if !snapping {
                 return None;
@@ -1960,15 +1976,9 @@ impl App {
                                 .find_clip(c)
                                 .map(|(_, c)| c.start.as_secs_f64())
                                 .unwrap_or(0.0);
-                            let ids = self
-                                .selection()
-                                .into_iter()
-                                .filter_map(|id| {
-                                    self.project
-                                        .find_clip(id)
-                                        .map(|(_, x)| (id, x.start.as_secs_f64()))
-                                })
-                                .collect();
+                            let starts: HashMap<ClipId, f64> =
+                                self.project.timeline.tracks.iter().flat_map(|t| &t.clips).map(|c| (c.id, c.start.as_secs_f64())).collect();
+                            let ids = self.selection().into_iter().filter_map(|id| starts.get(&id).map(|s| (id, *s))).collect();
                             Drag::Move {
                                 clip: c,
                                 grab: xt(p.x) - start,
@@ -1987,7 +1997,7 @@ impl App {
 
         // ---------- Dragging ----------
         // ghost of a dragged clip: (clip, begin, end, row area if not its own)
-        let mut ghost: Vec<(ClipId, f64, f64, Option<Rect>)> = Vec::new();
+        let mut ghost: HashMap<ClipId, (f64, f64, Option<Rect>)> = HashMap::new();
         // clip whose edge is being dragged, as the trim will leave it (drawn with its content)
         let mut trim_shown: Option<Clip> = None;
         let mut snap_line: Option<f64> = None;
@@ -2040,28 +2050,32 @@ impl App {
                                 target = Target::Track(t);
                             } else if let Some(n) = self.project.find_clip(clip).and_then(|(src, _)| kind_steps(&tracks[..], src.id, tracks[t].id)).filter(|n| *n != 0) {
                                 // a clip that cannot follow keeps the whole group in its tracks (time still moves)
-                                shifted = shift_tracks(&self.project, &moves, n);
+                                shifted = shift_targets(&self.project, &moves, n).map(|to| (n, to.into_iter().collect::<HashMap<ClipId, TrackId>>()));
                             }
                         }
                     }
                     let shift = shifted.is_some();
-                    // several clips in their own tracks: one batch for the whole group
-                    let mut same_op = None;
+                    // several clips in their own tracks: one batch for the whole group (built on release)
+                    let mut group = false;
                     if matches!(target, Target::Same) && !shift && ids.len() > 1 {
-                        match group_in_time(&self.project, &moves) {
-                            Ok(op) => same_op = Some(op),
-                            Err((k, upper)) => target = Target::New(k, upper),
+                        if shift_targets(&self.project, &moves, 0).is_some() {
+                            group = true;
+                        } else {
+                            let (k, upper) = group_new_row(&self.project, &moves);
+                            target = Target::New(k, upper);
                         }
                     }
+                    let info: HashMap<ClipId, (f64, TrackKind)> =
+                        self.project.timeline.tracks.iter().flat_map(|t| &t.clips).map(|c| (c.id, (c.duration.as_secs_f64(), c.kind()))).collect();
                     for (id, ns) in &moves {
-                        let Some((_, x)) = self.project.find_clip(*id) else {
+                        let Some(&(dur, kind)) = info.get(id) else {
                             continue;
                         };
                         let ns = ns.as_secs_f64();
                         let tr = match target {
                             Target::Track(t) if *id == clip => rows.iter().find(|r| r.track == t).map(|r| r.rect),
                             Target::New(k, upper) => {
-                                let y = gap_y(new_track_gap(&tracks, k, upper, x.kind()));
+                                let y = gap_y(new_track_gap(&tracks, k, upper, kind));
                                 if !insert_lines.contains(&y) {
                                     insert_lines.push(y);
                                 }
@@ -2069,11 +2083,11 @@ impl App {
                             }
                             _ => shifted
                                 .as_ref()
-                                .and_then(|(to, _): &(Vec<(ClipId, TrackId)>, EditOp)| to.iter().find(|x| x.0 == *id))
-                                .and_then(|x| rows.iter().find(|r| tracks.get(r.track).is_some_and(|t| t.id == x.1)))
+                                .and_then(|(_, to)| to.get(id))
+                                .and_then(|to| rows.iter().find(|r| tracks.get(r.track).is_some_and(|t| t.id == *to)))
                                 .map(|r| r.rect),
                         };
-                        ghost.push((*id, ns, ns + x.duration.as_secs_f64(), tr));
+                        ghost.insert(*id, (ns, ns + dur, tr));
                     }
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
@@ -2092,9 +2106,9 @@ impl App {
                                 track: Some(tracks[t].id),
                                 start: fr(s),
                             }],
-                            Target::Same => match (shifted.take(), same_op) {
-                                (Some((_, op)), _) | (None, Some(op)) => vec![op],
-                                _ => moves.iter().map(|(id, st)| EditOp::MoveClip { clip: *id, track: None, start: *st }).collect(),
+                            Target::Same => match shifted.take().map(|x| x.0).or(group.then_some(0)).and_then(|n| shift_tracks(&self.project, &moves, n)) {
+                                Some((_, op)) => vec![op],
+                                None => moves.iter().map(|(id, st)| EditOp::MoveClip { clip: *id, track: None, start: *st }).collect(),
                             },
                         };
                         let moved = ids.iter().zip(&moves).any(|(x, m)| Time::from_secs_f64(x.1) != m.1)
@@ -2145,7 +2159,7 @@ impl App {
                     // shown while dragging = what release commits (same op, same time)
                     let shown = moved.then(|| trimmed_clip(&self.project, clip, edge, to)).flatten();
                     let (gs, ge) = shown.as_ref().map_or((cs, ce), |c| (c.start.as_secs_f64(), c.end().as_secs_f64()));
-                    ghost.push((clip, gs, ge, None));
+                    ghost.insert(clip, (gs, ge, None));
                     trim_shown = shown;
                     if resp.drag_stopped() {
                         self.timeline.drag = Drag::None;
@@ -2166,8 +2180,8 @@ impl App {
                         (self.project.find_clip(left), self.project.find_clip(right))
                     {
                         let t = t.clamp(l.start.as_secs_f64() + 0.04, r.end().as_secs_f64() - 0.04);
-                        ghost.push((left, l.start.as_secs_f64(), t, None));
-                        ghost.push((right, t, r.end().as_secs_f64(), None));
+                        ghost.insert(left, (l.start.as_secs_f64(), t, None));
+                        ghost.insert(right, (t, r.end().as_secs_f64(), None));
                         painter.text(
                             pos2(tx(t), ruler.bottom() + 2.0),
                             egui::Align2::CENTER_TOP,
@@ -2568,7 +2582,7 @@ impl App {
                     let (gs, ge, dy) = g.at(Place { s, e, track: tr.id }, (now_s - g.t0) as f32, secs);
                     (s, e, r) = (gs, ge, r.translate(vec2(0.0, dy)));
                 }
-                if let Some((_, gs, ge, gt)) = ghost.iter().find(|g| g.0 == c0.id) {
+                if let Some((gs, ge, gt)) = ghost.get(&c0.id) {
                     s = *gs;
                     e = *ge;
                     r = gt.unwrap_or(row.rect);
@@ -5029,6 +5043,137 @@ mod tests {
         }
         step(&mut app, vec![btn(pos2(120.0, y), false)]);
         assert!(matches!(app.timeline.drag, Drag::None), "released");
+    }
+
+    /// Edited project: `n` touching clips (0.5…1.25 s) spread over 3 video tracks (the lowest the
+    /// main track) and 3 audio tracks
+    fn cut_project(n: usize) -> (Project, Vec<ClipId>) {
+        let per = n / 6;
+        let row: Vec<(f64, f64)> = (0..per).scan(0.0, |t, i| {
+            let len = 0.5 + (i % 4) as f64 * 0.25;
+            *t += len;
+            Some((*t - len, len))
+        }).collect();
+        let kinds = [TrackKind::Video, TrackKind::Video, TrackKind::Video, TrackKind::Audio, TrackKind::Audio, TrackKind::Audio];
+        let spec: Vec<(TrackKind, bool, &[(f64, f64)])> = kinds.iter().enumerate().map(|(i, k)| (*k, i == 0, &row[..])).collect();
+        let (p, ids) = lanes(Rational::new(30, 1), false, &spec);
+        (p, ids.concat())
+    }
+
+    /// Measurement: the whole edited project (3,000 clips on 6 tracks) selected and dragged in time.
+    /// Prints the pure per-frame parts, whole timeline frames while dragging, release and undo.
+    /// `cargo test --release -p cl-app group_drag_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn group_drag_cost() {
+        use egui::{Event, PointerButton};
+        use std::time::Instant;
+        let (p, all) = cut_project(3000);
+        let sel: Vec<(ClipId, f64)> = all.iter().map(|id| (*id, p.find_clip(*id).unwrap().1.start.as_secs_f64())).collect();
+        let median = |f: &mut dyn FnMut()| {
+            let v: Vec<f64> = (0..15).map(|_| {
+                let t0 = Instant::now();
+                f();
+                t0.elapsed().as_secs_f64() * 1000.0
+            }).collect();
+            bench::stats(v).0
+        };
+        let grab = all[all.len() / 2];
+        let to = Time::from_secs_f64(sel[all.len() / 2].1 + 3.0);
+        let moves = group_moves(&sel, grab, to);
+        let ids: Vec<ClipId> = all.clone();
+        let a = median(&mut || drop(group_moves(&sel, grab, to)));
+        let b = median(&mut || drop(group_in_time(&p, &moves)));
+        let c = median(&mut || drop(snap_cands(&p.timeline.tracks, 0.0, &ids)));
+        let e = median(&mut || drop(shift_targets(&p, &moves, 0)));
+        println!("{} clips, pure per-frame parts: group_moves {a:.3} ms, group_in_time (with batch) {b:.3} ms, shift_targets (check only) {e:.3} ms, snap_cands {c:.3} ms", all.len());
+        let op = group_in_time(&p, &moves).expect("free");
+        let mut d = Document::new(p.clone());
+        let t0 = Instant::now();
+        d.apply(op, OpSource::Ui).unwrap();
+        let apply = t0.elapsed().as_secs_f64() * 1000.0;
+        let t0 = Instant::now();
+        d.undo().unwrap();
+        println!("apply {apply:.1} ms, undo {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
+
+        // whole timeline frames (compute + layout, no tessellation) while the selection is dragged
+        let ctx = egui::Context::default();
+        let mut app = crate::saving::tests::test_app_with(ctx.clone());
+        app.set_doc(p);
+        app.timeline.pps = 60.0;
+        app.timeline.scroll = 0.0;
+        let mut t = 0.0;
+        let mut step = |app: &mut App, events: Vec<Event>| {
+            t += 1.0 / 60.0;
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, bench::SCREEN)), time: Some(t), events, ..Default::default() };
+            let t0 = Instant::now();
+            let _ = ctx.run(input, |ctx| {
+                egui::TopBottomPanel::bottom("tl").exact_height(bench::PANEL_H).show(ctx, |ui| app.timeline_panel(ui));
+            });
+            t0.elapsed().as_secs_f64() * 1000.0
+        };
+        let btn = |pos, pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        step(&mut app, vec![Event::PointerMoved(pos2(500.0, 700.0))]);
+        let y = {
+            let m = &app.timeline.motion;
+            let (top, h) = m.rows[&m.order[0]];
+            top + h * 0.5
+        };
+        // press on a clip body (not an edge): try along the row until a move starts
+        let mut x = 400.0;
+        loop {
+            app.sel_extra = all.iter().copied().collect();
+            app.selected = None;
+            step(&mut app, vec![Event::PointerMoved(pos2(x, y)), btn(pos2(x, y), true)]);
+            step(&mut app, vec![Event::PointerMoved(pos2(x + 10.0, y))]);
+            if matches!(app.timeline.drag, Drag::Move { .. }) {
+                break;
+            }
+            step(&mut app, vec![btn(pos2(x + 10.0, y), false)]);
+            x += 7.0;
+            assert!(x < 900.0, "no clip to grab");
+        }
+        assert_eq!(app.selection().len(), all.len());
+        let frames: Vec<f64> = (0..40).map(|i| step(&mut app, vec![Event::PointerMoved(pos2(x + 10.0 + 3.0 * i as f32, y))])).collect();
+        let (med, max, _) = bench::stats(frames);
+        let release = step(&mut app, vec![btn(pos2(x + 130.0, y), false)]);
+        let after = step(&mut app, vec![Event::PointerMoved(pos2(x + 130.0, y))]);
+        let t0 = Instant::now();
+        app.undo();
+        let undo = t0.elapsed().as_secs_f64() * 1000.0;
+        println!("timeline frame while dragging all: median {med:.2} ms, max {max:.2} ms; release frame {release:.1} ms, next frame {after:.1} ms, undo {undo:.1} ms");
+        // the release split up: the batch through the app alone, then the frame that follows it
+        let op = group_in_time(&app.project, &moves).expect("free");
+        let t0 = Instant::now();
+        app.apply_batch(vec![op]);
+        let applied = t0.elapsed().as_secs_f64() * 1000.0;
+        let next = step(&mut app, vec![Event::PointerMoved(pos2(x + 131.0, y))]);
+        println!("app.apply_batch {applied:.1} ms, frame after it {next:.1} ms");
+    }
+
+    /// Guard for the drag of a large selection: the per-frame checks (fits in its tracks, row for new
+    /// tracks, snap candidates) grow linearly with the project. Without absolute times, so it holds
+    /// on slow or loaded machines: the fastest of several runs at 500 and 4,000 clips – 8× the clips
+    /// costs ≈ 8× when linear and ≈ 64× with the former quadratic checks; the limit is 24×.
+    #[test]
+    fn group_drag_checks_scale_linearly() {
+        use std::time::Instant;
+        let best = |n: usize| {
+            let (p, all) = cut_project(n);
+            let sel: Vec<(ClipId, f64)> = all.iter().map(|id| (*id, p.find_clip(*id).unwrap().1.start.as_secs_f64())).collect();
+            let moves = group_moves(&sel, all[0], Time::from_secs_f64(sel[0].1 + 3.0));
+            (0..7)
+                .map(|_| {
+                    let t0 = Instant::now();
+                    assert!(shift_targets(&p, &moves, 0).is_some(), "fits in its tracks");
+                    std::hint::black_box(group_new_row(&p, &moves));
+                    std::hint::black_box(snap_cands(&p.timeline.tracks, 0.0, &all));
+                    t0.elapsed().as_secs_f64()
+                })
+                .fold(f64::MAX, f64::min)
+        };
+        let (small, big) = (best(500), best(4000));
+        assert!(big < small * 24.0, "8x the clips cost {:.1}x ({:.3} ms vs {:.3} ms): quadratic again?", big / small, big * 1e3, small * 1e3);
     }
 
     /// Tracks of (kind, main, clips as (start, length) s) – raw, in index order; ids per track

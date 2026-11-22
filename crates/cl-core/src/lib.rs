@@ -20,7 +20,7 @@ pub use paste::{paste_ops, paste_splits, paste_targets};
 pub use time::{Rational, Time};
 pub use tracks::{
     display_order, fits, gap_index, gap_range, move_to_new_tracks, move_track_to, new_track_gap,
-    track_drop_gap, kind_steps, shift_tracks,
+    track_drop_gap, kind_steps, shift_tracks, shift_targets,
 };
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
