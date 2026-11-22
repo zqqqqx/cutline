@@ -531,6 +531,16 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
             rgba(col),
         )
     };
+    // drawtext blends its shadow's alpha into the transparent layer with itself (opacity a comes out
+    // as a², measured with FFmpeg 7.1 and 8.1): write √a there. On an opaque box that holds the whole
+    // shadow the colour is right, but the box's alpha drops to 1 − a(1 − a) there (60 %: 0.76, so over
+    // grey video 58 % instead of 60 %, over black 70 %; √a would give 73 % / 81 %). On a translucent box
+    // √a is the closer value (white 50 % box: 30 % → 36 %, 60 % → 59 %).
+    let on_box = st.background.is_some_and(|bg| bg[3] == 255) && {
+        let (dx, dy) = st.shadow_style.map_or((3, 3), |s| s.offset());
+        dx.abs().max(dy.abs()) as f32 <= (size * 0.25).max(4.0)
+    };
+    let shadow_alpha = |a: f32| if on_box { a } else { a.sqrt() };
     let draw_one = |col: [u8; 4], file: &str, x: &str, y: &str| {
         let mut dt = core(0.0, col, file, x, y);
         if let Some((bw, col)) = st.outline {
@@ -538,12 +548,16 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         }
         match shadow {
             Some(_) if soft.is_some() => {}
-            // known limit, kept for byte-identical graphs: on the transparent layer drawtext blends its
-            // shadow's alpha with itself, so it comes out fainter than its colour says (60 % → ~36 %)
             // not on the bold second print: drawtext would paint that shadow over the first print
             // (and double the opacity where both overlap); the preview leaves it out the same way
-            Some(((dx, dy), c)) => dt.push_str(&format!(":shadowx={dx}:shadowy={dy}:shadowcolor={}", rgba(c))),
-            None if st.shadow => dt.push_str(":shadowx=3:shadowy=3:shadowcolor=black@0.6"),
+            Some(((dx, dy), c)) => dt.push_str(&format!(
+                ":shadowx={dx}:shadowy={dy}:shadowcolor=0x{:02x}{:02x}{:02x}@{:.3}",
+                c[0],
+                c[1],
+                c[2],
+                shadow_alpha(c[3] as f32 / 255.0)
+            )),
+            None if st.shadow => dt.push_str(&format!(":shadowx=3:shadowy=3:shadowcolor=black@{}", if on_box { "0.6".into() } else { format!("{:.3}", shadow_alpha(0.6)) })),
             None => {}
         }
         // bold and italic like the preview (`draw_text` in the player) from the style's switches, not

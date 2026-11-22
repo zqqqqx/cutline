@@ -1664,6 +1664,72 @@ mod transition_tests {
         p
     }
 
+    /// Hard shadow over a video (grey) at 30 / 60 / 100 %: the export darkens the video as much as
+    /// the preview's shadow colour says. drawtext alone would square the opacity on the transparent
+    /// text layer (60 % → 36 %); on an opaque box that holds the shadow it must stay uncompensated
+    /// (there the remaining error is the box turning partly see-through, see below).
+    #[test]
+    fn hard_shadow_darkness_matches_preview() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let app = crate::saving::tests::test_app();
+        let dir = tempfile::tempdir().unwrap();
+        let grey = dir.path().join("grau.mp4");
+        let ok = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=0x808080:s=320x180:r=30:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p"])
+            .arg(&grey)
+            .status()
+            .unwrap();
+        assert!(ok.success());
+        let m = cl_media::probe(&grey).unwrap();
+        let green = |img: &[u8], x: usize, y: usize| img[(y * 320 + x) * 4 + 1] as f32;
+        // shadow level: median of the darker pixels of a band (the plateau, not the codec's ringing at its edges)
+        let median = |mut v: Vec<f32>| {
+            assert!(v.len() > 50, "too few shadow pixels: {}", v.len());
+            v.sort_by(f32::total_cmp);
+            v[v.len() / 2]
+        };
+        for a in [77u8, 153, 255] {
+            // shadow 60 px below the text, on the video
+            let st = TextStyle { text: "HIH".into(), size: 40.0, shadow_style: Some(Shadow { color: [0, 0, 0, a], dx: 0.0, dy: 60.0, blur: 0.0 }), ..Default::default() };
+            let pv = preview_shapes(&app, &st)[0].galley.job.sections[0].format.color.a() as f32 / 255.0;
+            let mut p = text_project(&st);
+            let mut v = Track::new(TrackKind::Video);
+            v.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.0)));
+            p.media.push(m.clone());
+            p.timeline.tracks.insert(0, v);
+            let img = anton_frame(&p, dir.path());
+            let t = ink_box(&img, [255, 255, 255]).expect("text in the export");
+            let under = green(&img, 4, 4);
+            let band = (t.3 as usize + 30..180).flat_map(|y| (0..320).map(move |x| (x, y)));
+            let v = median(band.map(|(x, y)| green(&img, x, y)).filter(|g| *g < under - 6.0).collect());
+            let ex = 1.0 - v / under;
+            eprintln!("hard shadow {a}: preview {pv:.3}, export {ex:.3} (video {under}, shadow {v})");
+            assert!((ex - pv).abs() < 0.05, "opacity {a}: export darkens by {ex:.3}, preview {pv:.3}");
+        }
+        // opaque white box holding the shadow (0/24, box margin 30 at size 120), blue text, black below.
+        // drawtext also blends the box's alpha there (1 → 1 − a(1 − a)), so the box turns partly see-
+        // through under the shadow: over black 1 − (1 − a)(1 − a(1 − a)) = 0.696 at 60 % (√a: 0.81)
+        let st = TextStyle {
+            text: "HIH".into(),
+            size: 120.0,
+            color: [0, 0, 255, 255],
+            background: Some([255, 255, 255, 255]),
+            shadow_style: Some(Shadow { color: [0, 0, 0, 153], dx: 0.0, dy: 24.0, blur: 0.0 }),
+            ..Default::default()
+        };
+        let img = anton_frame(&text_project(&st), dir.path());
+        // the band just below the letters lies on the box: grey shadow under the stems, white between
+        let t = ink_box(&img, [0, 0, 255]).expect("text in the export");
+        let band = (t.3 as usize + 4..t.3 as usize + 20).flat_map(|y| (t.0 as usize..t.2 as usize).map(move |x| (x, y)));
+        let v = median(band.map(|(x, y)| green(&img, x, y)).filter(|g| *g < 240.0).collect());
+        let ex = 1.0 - v / 255.0;
+        eprintln!("hard shadow on an opaque box: export {ex:.3}");
+        assert!((ex - 0.696).abs() < 0.04, "on the box: {ex:.3}");
+    }
+
     /// Soft shadow of an „I“ (Anton 120, white; shadow red 60 % 40 px to the right, beside the text):
     /// - in the middle of the shadowed stroke (wider than the blur) preview and export have the
     ///   shadow's full opacity (the preview's copies all overlap there);

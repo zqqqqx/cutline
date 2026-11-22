@@ -102,7 +102,7 @@ fn shadow_style_reaches_drawtext_and_the_pad() {
     // red, 60 % → 12/−8 (sub-pixel offsets rounded half away from zero)
     let sh = Shadow { color: [255, 0, 0, 153], dx: 11.5, dy: -7.6, blur: 0.0 };
     let g = graph(&TextStyle { shadow_style: Some(sh), ..base.clone() });
-    assert_eq!(g.matches(":shadowx=12:shadowy=-8:shadowcolor=0xff0000@0.600").count(), 1, "{g}");
+    assert_eq!(g.matches(":shadowx=12:shadowy=-8:shadowcolor=0xff0000@0.775").count(), 1, "{g}");
     // bold: two prints, the shadow only under the first (drawn before its text)
     assert_eq!(g.matches("drawtext=").count(), 2, "{g}");
     assert!(g.find("shadowx").unwrap() < g.rfind("drawtext=").unwrap(), "{g}");
@@ -110,7 +110,7 @@ fn shadow_style_reaches_drawtext_and_the_pad() {
     assert_eq!(sprite(&g), (w0 + 24, h0 + 24), "{g}");
     // the default look set explicitly: same offset and sprite as without a style
     let g = graph(&TextStyle { shadow_style: Some(Shadow::default()), ..base.clone() });
-    assert!(g.contains(":shadowx=3:shadowy=3:shadowcolor=0x000000@0.600"), "{g}");
+    assert!(g.contains(":shadowx=3:shadowy=3:shadowcolor=0x000000@0.775"), "{g}");
     assert_eq!(sprite(&g), (w0 + 6, h0 + 6));
     // switch off: no shadow, whatever the style
     let g = graph(&TextStyle { shadow: false, shadow_style: Some(sh), ..base.clone() });
@@ -148,4 +148,42 @@ fn soft_shadow_builds_its_own_layer() {
     // switched off: no layer
     let g = graph(&TextStyle { shadow: false, shadow_style: Some(soft), ..base.clone() });
     assert!(!g.contains("gblur") && !g.contains("shadow"), "{g}");
+}
+
+/// The hard shadow's opacity compensation (√a where drawtext would square it) changed only the
+/// shadow alphas against the graphs of 0.17.1: everything else stays byte for byte.
+#[test]
+fn shadow_compensation_changes_only_the_shadow_alpha() {
+    let strip = |g: &str| {
+        let mut out = String::new();
+        for (i, part) in g.replace("
+", "
+").split("shadowcolor=").enumerate() {
+            if i > 0 {
+                out.push_str("shadowcolor=");
+                let (col, rest) = part.split_at(part.find('@').unwrap() + 1);
+                out.push_str(col);
+                out.push_str(rest.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.'));
+            } else {
+                out.push_str(part);
+            }
+        }
+        out
+    };
+    let (old, new) = (include_str!("snapshots/text_graphs_0171.txt"), include_str!("snapshots/text_graphs.txt"));
+    assert_ne!(old.replace("
+", "
+"), new.replace("
+", "
+"));
+    assert_eq!(strip(old), strip(new));
+    // no box or a translucent one: √0.6; the default look on an opaque box that holds the shadow: 0.6
+    let base = TextStyle { text: "Hallo".into(), size: 44.0, ..Default::default() };
+    assert!(graph(&base).contains("shadowcolor=black@0.775"));
+    assert!(graph(&TextStyle { background: Some([0, 0, 0, 170]), ..base.clone() }).contains("shadowcolor=black@0.775"));
+    let g = graph(&TextStyle { background: Some([0, 0, 0, 255]), ..base.clone() });
+    assert!(g.contains("shadowcolor=black@0.6") && !g.contains("@0.775"), "{g}");
+    // opaque box, but the shadow reaches past it (box margin 11 px at size 44): compensated
+    let far = Shadow { dx: 20.0, ..Default::default() };
+    assert!(graph(&TextStyle { background: Some([0, 0, 0, 255]), shadow_style: Some(far), ..base.clone() }).contains("shadowcolor=0x000000@0.775"));
 }
