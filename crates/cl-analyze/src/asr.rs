@@ -359,6 +359,19 @@ pub fn group_words(words: &[Word], max_chars: usize, max_dur: f64) -> Vec<Segmen
         }
     }
     out.extend(cur);
+    // a line without room (the next one starts in the same frame) joins the next instead of being lost
+    let mut i = 0;
+    while i + 1 < out.len() {
+        if out[i + 1].start <= out[i].start {
+            let a = out.remove(i);
+            let n = &mut out[i];
+            n.text = format!("{} {}", a.text, n.text);
+            n.words.splice(0..0, a.words);
+            n.end = n.end.max(a.end);
+        } else {
+            i += 1;
+        }
+    }
     // minimum duration and no overlap
     for i in 0..out.len() {
         let next = out.get(i + 1).map(|n| n.start);
@@ -698,6 +711,18 @@ mod tests {
             println!("Whisper: {all:?}");
             assert!(all.to_lowercase().contains("video"), "{all}");
         }
+    }
+
+    /// TDT can emit several tokens in one frame: a sentence end and the next word with the same
+    /// start left a line of zero length, which the app dropped together with its text.
+    #[test]
+    fn grouping_keeps_words_of_a_line_without_room() {
+        let w = |s: f64, e: f64, t: &str| Word { start: s, end: e, text: t.into() };
+        let g = group_words(&[w(1.0, 1.08, "Ja."), w(1.0, 1.4, "Genau"), w(1.4, 1.6, "so.")], 30, 5.0);
+        assert!(g.iter().all(|s| s.end > s.start), "no line without duration: {g:?}");
+        let text: Vec<&str> = g.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(text.join(" "), "Ja. Genau so.", "no word lost");
+        assert_eq!(g.iter().map(|s| s.words.len()).sum::<usize>(), 3);
     }
 
     #[test]

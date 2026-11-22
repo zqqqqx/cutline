@@ -649,14 +649,18 @@ impl App {
     pub fn toast(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
         log::info!(target: "meldung", "{}", crate::applog::anon(&msg));
-        self.toasts
-            .push((crate::tr(msg), Instant::now(), false));
+        self.push_toast(crate::tr(msg), false);
     }
     pub fn toast_err(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
         log::error!(target: "meldung", "{}", crate::applog::anon(&msg));
-        self.toasts
-            .push((crate::tr(msg), Instant::now(), true));
+        self.push_toast(crate::tr(msg), true);
+    }
+    fn push_toast(&mut self, msg: String, err: bool) {
+        // the same message while it is still shown: no second one (a repeating error stacked hundreds)
+        if !self.toasts.iter().any(|t| t.0 == msg && t.2 == err) {
+            self.toasts.push((msg, Instant::now(), err));
+        }
     }
 
     /// The only way for changes from the UI.
@@ -4577,6 +4581,19 @@ fn long_toast_stays_inside_the_window() {
     }
     let r = ctx.memory(|m| m.area_rect(egui::Id::new("toasts"))).unwrap();
     assert!(r.left() >= 0.0 && r.right() <= 800.0, "{r:?}");
+}
+
+/// The same message again while it is still shown stacks no second toast; a different one does
+#[test]
+fn repeated_toast_is_shown_once() {
+    let mut app = crate::saving::tests::test_app();
+    for _ in 0..200 {
+        app.toast_err("Ungültige Dauer");
+    }
+    app.toast("Ungültige Dauer");
+    app.toast_err("Keine Sprache erkannt");
+    let msgs: Vec<(&str, bool)> = app.toasts.iter().map(|t| (t.0.as_str(), t.2)).collect();
+    assert_eq!(msgs, [("Ungültige Dauer", true), ("Ungültige Dauer", false), ("Keine Sprache erkannt", true)]);
 }
 
 /// Q / W with clips on several tracks selected: every selected clip under the playhead is cut,
