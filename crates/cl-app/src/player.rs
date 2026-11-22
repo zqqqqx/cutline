@@ -1610,6 +1610,82 @@ mod transition_tests {
         }
     }
 
+    /// Text shapes of the preview (320×180, scale 1) in drawing order
+    fn preview_shapes(app: &App, st: &TextStyle) -> Vec<egui::epaint::TextShape> {
+        let ctx = egui::Context::default();
+        ctx.begin_pass(egui::RawInput::default());
+        let painter = egui::Painter::new(ctx.clone(), egui::LayerId::background(), Rect::from_min_size(pos2(0.0, 0.0), vec2(320.0, 180.0)));
+        app.draw_text(&painter, st, pos2(160.0, 90.0), 1.0, 0.0, 1.0, 320.0, None);
+        let out = ctx.end_pass();
+        out.shapes
+            .into_iter()
+            .filter_map(|s| match s.shape {
+                egui::Shape::Text(ts) => Some(ts),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Bounding box (x0, y0, x1, y1) of the export pixels within 50 of colour `c`
+    fn ink_box(img: &[u8], c: [u8; 3]) -> Option<(i32, i32, i32, i32)> {
+        let mut b: Option<(i32, i32, i32, i32)> = None;
+        for (i, px) in img.chunks_exact(4).enumerate() {
+            if (0..3).all(|k| (px[k] as i32 - c[k] as i32).abs() < 50) {
+                let (x, y) = ((i % 320) as i32, (i / 320) as i32);
+                b = Some(b.map_or((x, y, x + 1, y + 1), |b| (b.0.min(x), b.1.min(y), b.2.max(x + 1), b.3.max(y + 1))));
+            }
+        }
+        b
+    }
+
+    /// Shadow: default look (black 60 % on a white box), red 12/−8 and red 40/40: the preview draws
+    /// it at the export's offset in the export's colour, and the export does not cut it off at the
+    /// edge of the text sprite. Measured on the edge of the shadow that sticks out past the text.
+    #[test]
+    fn text_shadow_matches_export() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let app = crate::saving::tests::test_app();
+        let dir = tempfile::tempdir().unwrap();
+        let red = |dx: f32, dy: f32| Some(Shadow { color: [255, 0, 0, 255], dx, dy });
+        // (shadow style, shadow pixel on the white box / black canvas, offset)
+        let cases = [(None, [102, 102, 102], (3, 3)), (red(12.0, -8.0), [255, 0, 0], (12, -8)), (red(40.0, 40.0), [255, 0, 0], (40, 40))];
+        for (style, ink, (dx, dy)) in cases {
+            let st = TextStyle {
+                text: "HALLO".into(),
+                size: 40.0,
+                bold: true,
+                color: [0, 0, 255, 255],
+                background: Some([255, 255, 255, 255]),
+                shadow_style: style,
+                ..Default::default()
+            };
+            // preview: shadow first, in its colour, offset from the first print of the text
+            let shapes = preview_shapes(&app, &st);
+            let col = |ts: &egui::epaint::TextShape| ts.galley.job.sections[0].format.color;
+            let sh = style.unwrap_or_default();
+            let want = Color32::from_rgba_unmultiplied(sh.color[0], sh.color[1], sh.color[2], sh.color[3]);
+            assert_eq!(shapes.len(), 3, "{style:?}: shadow, text, bold print");
+            assert_eq!(col(&shapes[0]), want, "{style:?}: shadow colour");
+            let off = shapes[0].pos - shapes[1].pos;
+            assert_eq!((off.x, off.y), (dx as f32, dy as f32), "{style:?}: preview offset");
+            // export: the shadow's outer edge lies the same offset past the text's
+            let mut p = Project::new("Schatten");
+            (p.settings.width, p.settings.height) = (320, 180);
+            p.settings.fps = Rational { num: 30, den: 1 };
+            let mut t = Track::new(TrackKind::Text);
+            t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, Time::from_secs_f64(1.0)));
+            p.timeline.tracks.push(t);
+            let img = export_frame(&p, dir.path(), 0);
+            let text = ink_box(&img, [0, 0, 255]).expect("text in the export");
+            let shadow = ink_box(&img, ink).unwrap_or_else(|| panic!("{style:?}: no shadow colour in the export"));
+            let ex = (if dx > 0 { shadow.2 - text.2 } else { shadow.0 - text.0 }, if dy > 0 { shadow.3 - text.3 } else { shadow.1 - text.1 });
+            eprintln!("{style:?}: preview ({dx}, {dy}), export {ex:?}");
+            assert!((ex.0 - dx).abs() <= 1 && (ex.1 - dy).abs() <= 1, "{style:?}: export offset {ex:?}, preview ({dx}, {dy})");
+        }
+    }
+
     /// Karaoke at three points in time (and „Füllen“): in preview and export the same word is yellow.
     /// The preview uses egui's font, so the position relative to the text width is
     /// compared.
@@ -2728,9 +2804,12 @@ impl App {
                 .collect();
             p.add(egui::Shape::convex_polygon(pts, a(bg), egui::Stroke::NONE));
         }
-        if st.shadow {
-            let sg = p.layout_job(job(Color32::from_black_alpha((150.0 * alpha) as u8), None));
-            let off = rot(vec2(1.0, 1.0) * (px / 22.0).clamp(1.0, 4.0));
+        // like the export: whole project pixels × scale, under the first print only
+        let sh = st.shadow_style.unwrap_or_default();
+        let (dx, dy) = sh.offset();
+        if st.shadow && (dx, dy) != (0, 0) {
+            let sg = p.layout_job(job(a(sh.color), None));
+            let off = rot(vec2(dx as f32, dy as f32) * k);
             p.add(egui::epaint::TextShape::new(anchor + off, sg, Color32::BLACK).with_angle(angle));
         }
         if let Some((w, col)) = st.outline {
