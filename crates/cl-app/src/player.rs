@@ -1506,6 +1506,10 @@ mod transition_tests {
         let (mut all, mut lit) = ((f32::MAX, f32::MIN), (f32::MAX, f32::MIN));
         for s in &out.shapes {
             let egui::Shape::Text(ts) = &s.shape else { continue };
+            // shadow copies are translucent, the text is not
+            if ts.galley.job.sections[0].format.color.a() < 255 {
+                continue;
+            }
             for g in ts.galley.rows.iter().flat_map(|r| r.glyphs.iter()).filter(|g| !g.chr.is_whitespace()) {
                 let (x0, x1) = (ts.pos.x + g.pos.x, ts.pos.x + g.pos.x + g.advance_width);
                 all = (all.0.min(x0), all.1.max(x1));
@@ -1638,6 +1642,148 @@ mod transition_tests {
         b
     }
 
+    /// First frame of the export (320×180) with the bundled Anton font for every text
+    fn anton_frame(p: &Project, dir: &Path) -> Vec<u8> {
+        let out = dir.join("schatten.mp4");
+        let font = |_: Option<&str>| Some((Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/Anton-Regular.ttf")).to_path_buf(), 0));
+        let job = cl_export::build(p, &cl_export::ExportSettings::from_project(p), &font, &out).unwrap();
+        cl_export::run(&job, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}).unwrap();
+        let o = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-i"]).arg(&out).args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]).output().unwrap();
+        assert_eq!(o.stdout.len(), 320 * 180 * 4);
+        o.stdout
+    }
+
+    /// One text clip (0–1 s) on a 320×180 project
+    fn text_project(st: &TextStyle) -> Project {
+        let mut p = Project::new("Schatten");
+        (p.settings.width, p.settings.height) = (320, 180);
+        p.settings.fps = Rational { num: 30, den: 1 };
+        let mut t = Track::new(TrackKind::Text);
+        t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, Time::from_secs_f64(1.0)));
+        p.timeline.tracks.push(t);
+        p
+    }
+
+    /// Hard shadow over a video (grey) at 30 / 60 / 100 %: the export darkens the video as much as
+    /// the preview's shadow colour says. drawtext alone would square the opacity on the transparent
+    /// text layer (60 % → 36 %); on an opaque box that holds the shadow it must stay uncompensated
+    /// (there the remaining error is the box turning partly see-through, see below).
+    #[test]
+    fn hard_shadow_darkness_matches_preview() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let app = crate::saving::tests::test_app();
+        let dir = tempfile::tempdir().unwrap();
+        let grey = dir.path().join("grau.mp4");
+        let ok = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=0x808080:s=320x180:r=30:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p"])
+            .arg(&grey)
+            .status()
+            .unwrap();
+        assert!(ok.success());
+        let m = cl_media::probe(&grey).unwrap();
+        let green = |img: &[u8], x: usize, y: usize| img[(y * 320 + x) * 4 + 1] as f32;
+        // shadow level: median of the darker pixels of a band (the plateau, not the codec's ringing at its edges)
+        let median = |mut v: Vec<f32>| {
+            assert!(v.len() > 50, "too few shadow pixels: {}", v.len());
+            v.sort_by(f32::total_cmp);
+            v[v.len() / 2]
+        };
+        for a in [77u8, 153, 255] {
+            // shadow 60 px below the text, on the video
+            let st = TextStyle { text: "HIH".into(), size: 40.0, shadow_style: Some(Shadow { color: [0, 0, 0, a], dx: 0.0, dy: 60.0, blur: 0.0 }), ..Default::default() };
+            let pv = preview_shapes(&app, &st)[0].galley.job.sections[0].format.color.a() as f32 / 255.0;
+            let mut p = text_project(&st);
+            let mut v = Track::new(TrackKind::Video);
+            v.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.0)));
+            p.media.push(m.clone());
+            p.timeline.tracks.insert(0, v);
+            let img = anton_frame(&p, dir.path());
+            let t = ink_box(&img, [255, 255, 255]).expect("text in the export");
+            let under = green(&img, 4, 4);
+            let band = (t.3 as usize + 30..180).flat_map(|y| (0..320).map(move |x| (x, y)));
+            let v = median(band.map(|(x, y)| green(&img, x, y)).filter(|g| *g < under - 6.0).collect());
+            let ex = 1.0 - v / under;
+            eprintln!("hard shadow {a}: preview {pv:.3}, export {ex:.3} (video {under}, shadow {v})");
+            assert!((ex - pv).abs() < 0.05, "opacity {a}: export darkens by {ex:.3}, preview {pv:.3}");
+        }
+        // opaque white box holding the shadow (0/24, box margin 30 at size 120), blue text, black below.
+        // drawtext also blends the box's alpha there (1 → 1 − a(1 − a)), so the box turns partly see-
+        // through under the shadow: over black 1 − (1 − a)(1 − a(1 − a)) = 0.696 at 60 % (√a: 0.81)
+        let st = TextStyle {
+            text: "HIH".into(),
+            size: 120.0,
+            color: [0, 0, 255, 255],
+            background: Some([255, 255, 255, 255]),
+            shadow_style: Some(Shadow { color: [0, 0, 0, 153], dx: 0.0, dy: 24.0, blur: 0.0 }),
+            ..Default::default()
+        };
+        let img = anton_frame(&text_project(&st), dir.path());
+        // the band just below the letters lies on the box: grey shadow under the stems, white between
+        let t = ink_box(&img, [0, 0, 255]).expect("text in the export");
+        let band = (t.3 as usize + 4..t.3 as usize + 20).flat_map(|y| (t.0 as usize..t.2 as usize).map(move |x| (x, y)));
+        let v = median(band.map(|(x, y)| green(&img, x, y)).filter(|g| *g < 240.0).collect());
+        let ex = 1.0 - v / 255.0;
+        eprintln!("hard shadow on an opaque box: export {ex:.3}");
+        assert!((ex - 0.696).abs() < 0.04, "on the box: {ex:.3}");
+    }
+
+    /// Soft shadow of an „I“ (Anton 120, white; shadow red 60 % 40 px to the right, beside the text):
+    /// - in the middle of the shadowed stroke (wider than the blur) preview and export have the
+    ///   shadow's full opacity (the preview's copies all overlap there);
+    /// - one sigma outside the hard shadow's edge the soft one is partly red, the hard one not; one
+    ///   sigma inside the soft one is no longer full, the hard one is;
+    /// - bold: the shadow layer carries the second print, so the soft shadow is wider.
+    /// The hard shadow is only compared with itself: drawtext's own shadow on the transparent text
+    /// layer comes out fainter than its colour says (see `text_sprite`).
+    #[test]
+    fn soft_text_shadow_matches_export() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let app = crate::saving::tests::test_app();
+        let dir = tempfile::tempdir().unwrap();
+        let style = |blur: f32, bold: bool| TextStyle {
+            text: "I".into(),
+            size: 120.0,
+            bold,
+            shadow_style: Some(Shadow { color: [255, 0, 0, 153], dx: 40.0, dy: 0.0, blur }),
+            ..Default::default()
+        };
+        // red along the row through the middle of the text, and the middle of the shadow
+        let profile = |st: &TextStyle| {
+            let img = anton_frame(&text_project(st), dir.path());
+            let t = ink_box(&img, [255, 255, 255]).expect("text in the export");
+            let y = ((t.1 + t.3) / 2) as usize;
+            let row: Vec<i32> = (0..320).map(|x| img[(y * 320 + x) * 4] as i32 - img[(y * 320 + x) * 4 + 1] as i32).collect();
+            (row, (t.0 + t.2) / 2 + 40)
+        };
+        let at = |row: &[i32], x: i32| row[x as usize];
+        let (hard, mid) = profile(&style(0.0, false));
+        let (soft, _) = profile(&style(8.0, false));
+        let (soft_bold, _) = profile(&style(8.0, true));
+        let (ph, ps) = (at(&hard, mid), at(&soft, mid));
+        // right edge: last column at half the shadow's own full opacity
+        let edge = |row: &[i32], full: i32| row.iter().rposition(|&r| r > full / 2).unwrap() as i32;
+        let (e, es, eb) = (edge(&hard, ph), edge(&soft, ps), edge(&soft_bold, ps));
+        eprintln!("middle {mid}: hard {ph} soft {ps}; edge hard {e} soft {es} soft bold {eb}");
+        // preview: the 17 faint copies laid over each other in the middle
+        let shapes = preview_shapes(&app, &style(8.0, false));
+        let alphas: Vec<f32> = shapes.iter().map(|s| s.galley.job.sections[0].format.color.a() as f32 / 255.0).filter(|a| *a < 1.0).collect();
+        assert_eq!(alphas.len(), 17);
+        let pv = 255.0 * (1.0 - alphas.iter().map(|a| 1.0 - a).product::<f32>());
+        assert!((pv - 153.0).abs() < 6.0 && (ps as f32 - pv).abs() < 16.0, "middle: preview {pv:.0}, export {ps}");
+        assert!(ph > 20, "hard shadow missing: {ph}");
+        assert!(at(&hard, e + 4) < 6 && at(&soft, e + 4) > ps / 10 && at(&soft, e + 4) < ps * 8 / 10, "outside: hard {} soft {}", at(&hard, e + 4), at(&soft, e + 4));
+        assert!(at(&hard, e - 4) > ph * 9 / 10 && at(&soft, e - 4) < ps * 95 / 100, "inside: hard {} soft {}", at(&hard, e - 4), at(&soft, e - 4));
+        assert!(eb - es >= 2, "bold shadow: {eb} vs {es}");
+        // italic: text and soft shadow sheared together, the shadow still there
+        let (it, _) = profile(&TextStyle { italic: true, ..style(8.0, false) });
+        assert!(it.iter().max().copied().unwrap_or(0) > ps * 8 / 10, "italic: no soft shadow");
+    }
+
     /// Shadow: default look (black 60 % on a white box), red 12/−8 and red 40/40: the preview draws
     /// it at the export's offset in the export's colour, and the export does not cut it off at the
     /// edge of the text sprite. Measured on the edge of the shadow that sticks out past the text:
@@ -1650,7 +1796,7 @@ mod transition_tests {
         }
         let app = crate::saving::tests::test_app();
         let dir = tempfile::tempdir().unwrap();
-        let red = |dx: f32, dy: f32| Some(Shadow { color: [255, 0, 0, 255], dx, dy });
+        let red = |dx: f32, dy: f32| Some(Shadow { color: [255, 0, 0, 255], dx, dy, blur: 0.0 });
         // (shadow style, shadow pixel on the white box / black canvas, offset)
         let cases = [(None, [102, 102, 102], (3, 3)), (red(12.0, -8.0), [255, 0, 0], (12, -8)), (red(40.0, 40.0), [255, 0, 0], (40, 40))];
         for (style, ink, (dx, dy)) in cases {
@@ -1672,19 +1818,8 @@ mod transition_tests {
             let off = shapes[0].pos - shapes[1].pos;
             assert_eq!((off.x, off.y), (dx as f32, dy as f32), "{style:?}: preview offset");
             // export: the shadow's outer edge lies the same offset past the text's
-            let mut p = Project::new("Schatten");
-            (p.settings.width, p.settings.height) = (320, 180);
-            p.settings.fps = Rational { num: 30, den: 1 };
-            let mut t = Track::new(TrackKind::Text);
-            t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, Time::from_secs_f64(1.0)));
-            p.timeline.tracks.push(t);
-            let out = dir.path().join("schatten.mp4");
-            let font = |_: Option<&str>| Some((Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/Anton-Regular.ttf")).to_path_buf(), 0));
-            let job = cl_export::build(&p, &cl_export::ExportSettings::from_project(&p), &font, &out).unwrap();
-            cl_export::run(&job, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}).unwrap();
-            let o = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-i"]).arg(&out).args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]).output().unwrap();
-            let img = o.stdout;
-            assert_eq!(img.len(), 320 * 180 * 4);
+            let p = text_project(&st);
+            let img = anton_frame(&p, dir.path());
             let text = ink_box(&img, [0, 0, 255]).expect("text in the export");
             let shadow = ink_box(&img, ink).unwrap_or_else(|| panic!("{style:?}: no shadow colour in the export"));
             let ex = (if dx > 0 { shadow.2 - text.2 } else { shadow.0 - text.0 }, if dy > 0 { shadow.3 - text.3 } else { shadow.1 - text.1 });
@@ -1695,13 +1830,19 @@ mod transition_tests {
 
     /// Karaoke at three points in time (and „Füllen“): in preview and export the same word is yellow.
     /// The preview uses egui's font, so the position relative to the text width is
-    /// compared.
+    /// compared. Also with a soft shadow (its own layer under the highlighted text).
     #[test]
     fn karaoke_word_matches_export() {
         if !cl_media::test_tools() {
             return;
         }
         let app = crate::saving::tests::test_app();
+        for shadow in [None, Some(Shadow { color: [0, 0, 0, 153], dx: 3.0, dy: 3.0, blur: 6.0 })] {
+            karaoke_case(&app, shadow);
+        }
+    }
+
+    fn karaoke_case(app: &App, shadow: Option<Shadow>) {
         let dir = tempfile::tempdir().unwrap();
         let mut p = Project::new("Karaoke");
         (p.settings.width, p.settings.height) = (320, 180);
@@ -1710,7 +1851,8 @@ mod transition_tests {
         let mut st = TextStyle {
             text: "AAA BBB CCC".into(),
             size: 36.0,
-            shadow: false,
+            shadow: shadow.is_some(),
+            shadow_style: shadow,
             karaoke: Some(Karaoke { color: [255, 221, 0, 255], fill: false, words }),
             ..Default::default()
         };
@@ -1719,9 +1861,9 @@ mod transition_tests {
         t.clips.push(Clip::new(ClipContent::Text(st.clone()), Time::ZERO, dur));
         p.timeline.tracks.push(t);
         for (t, word) in [(0.5f64, 0usize), (1.5, 1), (2.5, 2)] {
-            let pv = karaoke_preview(&app, &st, dur, t);
+            let pv = karaoke_preview(app, &st, dur, t);
             let ex = karaoke_export(&export_frame(&p, dir.path(), (t * 30.0).round() as usize));
-            eprintln!("Karaoke bei {t} s: Vorschau {pv:.2?}, Export {ex:.2?}");
+            eprintln!("Karaoke bei {t} s ({shadow:?}): Vorschau {pv:.2?}, Export {ex:.2?}");
             assert_eq!(((pv.0 * 3.0) as usize, (ex.0 * 3.0) as usize), (word, word), "at {t} s");
             assert!((pv.0 - ex.0).abs() < 0.06, "at {t} s: preview {pv:?}, export {ex:?}");
             // only the one word: nothing colours into the neighbours
@@ -1730,7 +1872,7 @@ mod transition_tests {
         // „Füllen“: at 1.5 s the first two words are yellow
         st.karaoke.as_mut().unwrap().fill = true;
         p.timeline.tracks[0].clips[0].content = ClipContent::Text(st.clone());
-        let pv = karaoke_preview(&app, &st, dur, 1.5);
+        let pv = karaoke_preview(app, &st, dur, 1.5);
         let ex = karaoke_export(&export_frame(&p, dir.path(), 45));
         assert!(pv.1 < 0.05 && ex.1 < 0.05 && (0.55..0.72).contains(&pv.2) && (0.55..0.72).contains(&ex.2), "{pv:?} {ex:?}");
     }
@@ -2814,7 +2956,26 @@ impl App {
         // like the export: whole project pixels × scale, under the first print only
         let sh = st.shadow_style.unwrap_or_default();
         let (dx, dy) = sh.offset();
-        if st.shadow && (dx, dy) != (0, 0) {
+        let sigma = sh.sigma();
+        if st.shadow && sigma > 0.0 {
+            // soft (approximation of the export's gaussian blur): 17 copies, one at the offset and
+            // 8 each on rings of 1 and 2 sigma; each so faint that where all overlap (inside wide
+            // strokes) they add up to the shadow's opacity, towards the edges fewer overlap
+            let rings = [(0.0, 1), (1.0, 8), (2.0, 8)];
+            let n = rings.iter().map(|r| r.1).sum::<usize>() as f32;
+            let total = sh.color[3] as f32 / 255.0 * alpha;
+            let each = ((1.0 - (1.0 - total).powf(1.0 / n)) * 255.0).round() as u8;
+            let [r, g, b, _] = sh.color;
+            let sg = p.layout_job(job(Color32::from_rgba_unmultiplied(r, g, b, each), None));
+            for (ri, (radius, count)) in rings.into_iter().enumerate() {
+                for i in 0..count {
+                    // the outer ring between the inner one's copies
+                    let ang = (i as f32 + if ri == 2 { 0.5 } else { 0.0 }) / count as f32 * std::f32::consts::TAU;
+                    let off = vec2(dx as f32, dy as f32) + vec2(ang.cos(), ang.sin()) * radius * sigma;
+                    p.add(egui::epaint::TextShape::new(anchor + rot(off * k), sg.clone(), Color32::BLACK).with_angle(angle));
+                }
+            }
+        } else if st.shadow && (dx, dy) != (0, 0) {
             let sg = p.layout_job(job(a(sh.color), None));
             let off = rot(vec2(dx as f32, dy as f32) * k);
             p.add(egui::epaint::TextShape::new(anchor + off, sg, Color32::BLACK).with_angle(angle));

@@ -47,7 +47,7 @@ id_type!(MediaId);
 
 /// Raise this whenever a field is added whose loss would change the user's edit: older versions
 /// then refuse the file instead of loading it and saving it back without that field.
-pub const PROJECT_SCHEMA_VERSION: u32 = 4;
+pub const PROJECT_SCHEMA_VERSION: u32 = 5;
 
 /// Load error for a project saved by a newer Cutline (the UI translates it as a whole).
 pub const NEWER_PROJECT: &str = "Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.";
@@ -751,18 +751,25 @@ pub struct TextStyle {
     pub karaoke: Option<Karaoke>,
 }
 
-/// Hard text shadow: colour (alpha = opacity) and offset in project pixels (y down).
+/// Text shadow: colour (alpha = opacity), offset and softness in project pixels (y down).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Shadow {
     pub color: [u8; 4],
     pub dx: f32,
     pub dy: f32,
+    /// Softness: how far the edge fades out (0 = hard); see `sigma`
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub blur: f32,
+}
+
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
 }
 
 impl Default for Shadow {
     /// The look of the shadow switch before it was adjustable: black 60 %, 3/3 px
     fn default() -> Self {
-        Self { color: [0, 0, 0, 153], dx: 3.0, dy: 3.0 }
+        Self { color: [0, 0, 0, 153], dx: 3.0, dy: 3.0, blur: 0.0 }
     }
 }
 
@@ -772,6 +779,12 @@ impl Shadow {
     pub fn offset(&self) -> (i32, i32) {
         let r = |v: f32| v.clamp(-100.0, 100.0).round() as i32;
         (r(self.dx), r(self.dy))
+    }
+
+    /// Gaussian sigma of the softness, 0–20 px: the edge fades over about ±2 sigma, so the
+    /// softness value (0–40 px) is about the visible width of the fade on each side. NaN counts as 0.
+    pub fn sigma(&self) -> f32 {
+        self.blur.clamp(0.0, 40.0).max(0.0) / 2.0
     }
 
     /// Distance and angle (0–360°) as the inspector shows them. The angle points to the light, as in
