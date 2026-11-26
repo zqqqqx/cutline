@@ -42,6 +42,7 @@ mod project_tools;
 mod props;
 mod proxy;
 mod record;
+mod report;
 mod settings;
 mod soundbars;
 mod shorts;

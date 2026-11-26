@@ -123,6 +123,8 @@ pub struct AppSettings {
     pub layouts: Vec<crate::layout::LayoutProfile>,
     /// Lock the layout: panels can no longer be resized with the mouse
     pub layout_locked: bool,
+    /// Send panics and errors to the developer (only when the build has a DSN)
+    pub send_reports: bool,
 }
 
 impl Default for AppSettings {
@@ -186,6 +188,7 @@ impl Default for AppSettings {
             layout: Default::default(),
             layouts: Vec::new(),
             layout_locked: false,
+            send_reports: false,
         }
     }
 }
@@ -1152,6 +1155,9 @@ impl App {
                 );
                 ui.add_space(8.0);
                 crate::applog::about_buttons(self, ui);
+                if crate::report::available() {
+                    widgets::toggle_row(ui, "Fehlerberichte senden", &mut self.settings.send_reports);
+                }
             }
         }
     }
@@ -1208,6 +1214,16 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"new_rate\"") && !json.contains("\"new_fps\""));
         assert!(FPS_CHOICES.iter().all(|f| cl_core::Rational::parse(f).is_some()));
+    }
+
+    /// Error reports are opt-in: files from before the setting existed load as off
+    #[test]
+    fn error_reports_are_off_for_old_and_new_settings() {
+        let old: AppSettings = serde_json::from_str(r#"{"onboarding_done":true,"auto_update":true}"#).unwrap();
+        assert!(!old.send_reports && old.onboarding_done);
+        assert!(!AppSettings::default().send_reports);
+        let on: AppSettings = serde_json::from_str(r#"{"send_reports":true}"#).unwrap();
+        assert!(on.send_reports);
     }
 
     #[test]

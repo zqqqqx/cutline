@@ -28,6 +28,8 @@ pub struct Onboard {
     /// Checked recommendations (plugins, models)
     pub picked: BTreeSet<&'static str>,
     picks_for: Option<BTreeSet<&'static str>>,
+    /// „Fehlerberichte senden“: off until the user switches it on
+    pub reports: bool,
 }
 
 impl Onboard {
@@ -43,6 +45,7 @@ impl Onboard {
             keys: 0,
             picked: BTreeSet::new(),
             picks_for: None,
+            reports: false,
         }
     }
 }
@@ -363,6 +366,7 @@ impl App {
         self.settings.onboarding_done = true;
         if apply {
             self.settings.use_cases = ob.uses.iter().map(|s| s.to_string()).collect();
+            self.settings.send_reports = ob.reports;
             if ob.keys > 0 {
                 if let Some((_, diff)) = crate::keymap::PRESETS.get(ob.keys) {
                     self.settings.shortcuts = diff
@@ -682,6 +686,10 @@ impl App {
                         ui.add_space(2.0);
                     }
                 }
+                if crate::report::available() {
+                    ui.add_space(10.0);
+                    crate::widgets::toggle_row(ui, "Fehlerberichte senden", &mut ob.reports);
+                }
             });
     }
 
@@ -973,6 +981,24 @@ fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The introduction asks about error reports: unticked by default, the choice is stored,
+    /// skipping leaves it off
+    #[test]
+    fn onboarding_stores_the_error_report_choice() {
+        let mut app = crate::saving::tests::test_app();
+        let ctx = egui::Context::default();
+        let mut ob = Onboard::new(&[]);
+        assert!(!ob.reports);
+        ob.reports = true;
+        app.finish_onboarding(&ctx, &ob, false);
+        assert!(!app.settings.send_reports, "skipped: stays off");
+        app.finish_onboarding(&ctx, &ob, true);
+        assert!(app.settings.send_reports);
+        ob.reports = false;
+        app.finish_onboarding(&ctx, &ob, true);
+        assert!(!app.settings.send_reports);
+    }
 
     #[test]
     fn tour_frame_stays_inside_the_window() {

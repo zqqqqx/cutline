@@ -3144,6 +3144,7 @@ impl App {
     }
 
     fn draw_toasts(&mut self, ctx: &egui::Context) {
+        crate::report::frame(ctx, self);
         crate::applog::crash_notice(ctx, self);
         // once: the graphics card could encode in hardware, only the driver is too old
         if !self.settings.driver_hint_shown && cl_export::old_driver_found() {

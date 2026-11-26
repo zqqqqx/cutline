@@ -537,7 +537,11 @@ fn run(rx: Receiver<Msg>, mut w: Writer, check: bool) {
         prune(&w.dir, (now_ms() + w.off * 1000).div_euclid(DAY_MS));
         let files = log_files(&w.dir);
         let text: String = files.iter().rev().take(2).rev().filter_map(|(_, p)| std::fs::read(p).ok()).map(|b| String::from_utf8_lossy(&b).into_owned()).collect();
-        CRASHED.store(unclean_exit(&text, crate::paths::pid_alive), Ordering::Relaxed);
+        let crashed = unclean_exit(&text, crate::paths::pid_alive);
+        CRASHED.store(crashed, Ordering::Relaxed);
+        if crashed {
+            crate::report::set_previous(&text);
+        }
     }
     loop {
         match rx.recv_timeout(Duration::from_secs(1)) {
@@ -594,6 +598,7 @@ impl log::Log for Logger {
         }
         let area = r.target().strip_prefix("cutline::").unwrap_or(r.target());
         let msg = r.args().to_string();
+        crate::report::observe(r.level(), area, &msg, own(r.target()));
         // previous error output stays visible in the console
         if r.level() <= Level::Warn && own(r.target()) {
             eprintln!("{area}: {msg}");
@@ -633,12 +638,8 @@ fn init_at(dir: PathBuf, check: bool) {
 /// Panic into the log: message, location, backtrace; then the previous behavior
 fn panic_hook(info: &str) {
     let th = std::thread::current();
-    let msg = format!(
-        "{PANIC} pid={} im Thread „{}“: {info}\n{}",
-        std::process::id(),
-        th.name().unwrap_or("?"),
-        std::backtrace::Backtrace::force_capture()
-    );
+    let bt = std::backtrace::Backtrace::force_capture().to_string();
+    let msg = format!("{PANIC} pid={} im Thread „{}“: {info}\n{bt}", std::process::id(), th.name().unwrap_or("?"));
     let r = Rec { ms: now_ms(), level: Level::Error, area: "absturz".into(), msg: redact(&msg) };
     if th.name() == Some(THREAD) {
         // the writer thread itself: append directly
@@ -651,6 +652,8 @@ fn panic_hook(info: &str) {
         let _ = tx.send(Msg::Rec(r));
         sync(tx, true, Duration::from_secs(2));
     }
+    // on disk first: switched off, the next start still offers to send it
+    crate::report::on_panic(info, th.name(), &bt);
 }
 
 fn build() -> &'static str {
@@ -1017,6 +1020,7 @@ pub fn crash_notice(ctx: &egui::Context, app: &mut crate::app::App) {
                     if ui.add(theme::secondary("Protokoll exportieren")).clicked() {
                         app.export_log(ctx);
                     }
+                    crate::report::crash_button(ui, app);
                     close |= theme::icon_button(ui, icon::X, "Schließen", true, false).clicked();
                 });
             });
