@@ -245,28 +245,54 @@ impl App {
             self.roto_live = Some(RotoLive::start(ctx, clip, self.models()));
         }
         self.pick = Some(Pick::Roto(clip));
+        self.roto_tool = Some(clip);
     }
 
     /// Leave the tool: the worker ends and tracking starts.
     pub(crate) fn roto_leave(&mut self, ctx: &egui::Context) {
-        let clip = self.roto_live.take().map(|l| l.clip).or(match self.pick {
+        let clip = self.roto_tool.take().or(match self.pick {
             Some(Pick::Roto(c)) => Some(c),
             _ => None,
         });
-        self.pick = None;
+        if matches!(self.pick, Some(Pick::Roto(_))) {
+            self.pick = None;
+        }
+        self.roto_live = None;
         if let Some(c) = clip {
             self.start_roto(ctx, c);
+        }
+    }
+
+    /// However the tool ends – Esc (the global shortcut clears `pick` before the player sees the
+    /// key), another tool, another clip selected, another inspector tab – tracking starts as on
+    /// leaving. Runs every frame and right where Esc clears the tool.
+    pub(crate) fn roto_watch(&mut self, ctx: &egui::Context) {
+        if let Some(Pick::Roto(c)) = self.pick {
+            if self.selected != Some(c) || self.clip_tab != crate::app::ClipTab::Smart {
+                log::info!(target: "objekt", "Markieren beendet (Auswahl oder Reiter gewechselt)");
+                self.roto_leave(ctx);
+            }
+            return;
+        }
+        if self.roto_tool.is_some() {
+            log::info!(target: "objekt", "Markieren beendet");
+            self.roto_leave(ctx);
         }
     }
 
     /// Track the clip's marks in the background unless the mask is there or being made. A clip
     /// trimmed since gets its new mask name first (one undo step).
     pub(crate) fn start_roto(&mut self, ctx: &egui::Context, clip: ClipId) {
-        let Some(c) = self.clip_view(clip) else { return };
-        let ClipContent::Media { media, .. } = c.content else { return };
-        let Some(m) = self.project.media(media).cloned() else { return };
+        let skip = |why: &str| log::info!(target: "objekt", "Verfolgen nicht gestartet: {why}");
+        let Some(c) = self.clip_view(clip) else { return skip("Clip nicht mehr da") };
+        let ClipContent::Media { media, .. } = c.content else { return skip("kein Medienclip") };
+        let Some(m) = self.project.media(media).cloned() else { return skip("Medium fehlt im Projekt") };
         let (gen, cache) = (crate::paths::generated_dir(), crate::paths::data_dir().join("cache"));
-        let Some(plan) = roto_plan(&c, &m, &gen, &cache) else { return };
+        // no object point or frame: nothing to track (the inspector shows no mask status then)
+        let Some(plan) = roto_plan(&c, &m, &gen, &cache) else { return skip("nichts markiert") };
+        if self.tasks.running(&format!("roto:{clip}")).is_some() {
+            return skip("läuft schon");
+        }
         let out = plan.out.to_string_lossy().into_owned();
         if c.fx.cutout.as_deref() != Some(out.as_str()) || c.fx.cutout_span != plan.span {
             let mut c = c.clone();
@@ -276,9 +302,14 @@ impl App {
         }
         if plan.out.is_file() {
             self.masks_changed();
-            return;
+            return skip("Maske schon vorhanden");
+        }
+        // model or runtime missing: message and the model settings instead of a task that fails later
+        if !self.need_models(&["onnxruntime", "sam2"]) {
+            return skip("Modell fehlt");
         }
         let models = self.models();
+        log::info!(target: "objekt", "Verfolgen: {} Bilder ab Bild {}", plan.grid.n, plan.key);
         let job = cl_analyze::roto::Job {
             src: m.path.clone(),
             grid: plan.grid,
@@ -305,7 +336,7 @@ impl App {
     pub(crate) fn roto_pick(&mut self, ui: &egui::Ui, resp: &egui::Response, regions: &[Region], clip: ClipId) {
         let ctx = ui.ctx().clone();
         if let Some(e) = self.roto_live.as_mut().and_then(|l| l.poll(&ctx)) {
-            (self.roto_live, self.pick) = (None, None);
+            (self.roto_live, self.pick, self.roto_tool) = (None, None, None);
             self.toast_err(format!("Objekt: {e}"));
             return;
         }
@@ -451,6 +482,85 @@ mod tests {
         // a changed source file: a new mask
         std::fs::write(&m.path, b"another video").unwrap();
         assert_ne!(roto_mark(&bg, &m, at, Mark::Point(0.5, 0.5, false), &gen, &cache).fx.cutout, one.fx.cutout);
+    }
+
+    /// Bug (window test): after Esc in the marking tool tracking never started and nothing said
+    /// why – the global Esc shortcut cleared the tool before the player saw the key. Driven like the
+    /// window: whole app frames, Esc as a key event. Leaving by another clip, another tab or another
+    /// tool starts it too. Without the model the user gets the "needs" message instead of nothing.
+    #[test]
+    fn leaving_the_tool_starts_tracking_or_says_why() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let ctx = egui::Context::default();
+        let mut t = crate::saving::tests::test_app_with(ctx.clone());
+        let dir = t.dir().to_path_buf();
+        let v = dir.join("v.mp4");
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=1", "-pix_fmt", "yuv420p"])
+            .arg(&v)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let m = cl_media::probe(&v).unwrap();
+        let mut p = Project::new("Objekt");
+        let mut tr = Track::new(TrackKind::Video);
+        let (a, b) = (
+            Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(0.5)),
+            Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::from_secs_f64(0.5), Time::from_secs_f64(0.5)),
+        );
+        let (ida, idb) = (a.id, b.id);
+        tr.main = true;
+        tr.clips = vec![a, b];
+        p.timeline.tracks.push(tr);
+        p.media.push(m.clone());
+        t.set_doc(p);
+        t.screen = crate::app::Screen::Editor;
+        let mut frame = eframe::Frame::_new_kittest();
+        let mut run = |app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0))), events, ..Default::default() };
+            let _ = ctx.run(input, |ctx| eframe::App::update(app, ctx, &mut frame));
+        };
+        let esc = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        // the tool on clip `id`, one object point marked as a click does (the worker plays no part)
+        let enter = |app: &mut App, id: ClipId| {
+            (app.selected, app.clip_tab) = (Some(id), crate::app::ClipTab::Smart);
+            app.roto_enter(&ctx, id);
+            app.roto_live = None;
+            let c = app.clip_view(id).unwrap();
+            let marked = roto_mark(&c, &m, c.source_time(c.start), Mark::Point(0.5, 0.5, false), &crate::paths::generated_dir(), &dir);
+            app.apply(EditOp::ReplaceClip { clip: marked });
+            app.toasts.clear();
+            app.settings_open = false;
+        };
+        // started, or the model is missing and the user is told so
+        let started = |app: &App, id: ClipId| {
+            app.tasks.running(&format!("roto:{id}")).is_some() || app.toasts.iter().any(|t| t.0.contains("SAM 2.1 Tiny"))
+        };
+        let tool = |app: &App| matches!(app.pick, Some(Pick::Roto(_)));
+        enter(&mut t, ida);
+        run(&mut t, vec![]);
+        assert!(tool(&t) && !started(&t, ida), "the tool stays open while marking");
+        run(&mut t, vec![esc.clone()]);
+        assert!(!tool(&t), "Esc leaves the tool");
+        assert!(started(&t, ida), "Esc: no task and no message; toasts {:?}", t.toasts);
+        // another clip selected
+        enter(&mut t, idb);
+        t.selected = Some(ida);
+        run(&mut t, vec![]);
+        assert!(!tool(&t) && started(&t, idb), "selecting another clip; toasts {:?}", t.toasts);
+        // another inspector tab
+        enter(&mut t, idb);
+        t.clip_tab = crate::app::ClipTab::Basic;
+        run(&mut t, vec![]);
+        assert!(!tool(&t) && started(&t, idb), "another tab; toasts {:?}", t.toasts);
+        // another tool takes over: it stays, tracking starts
+        enter(&mut t, idb);
+        t.pick = Some(Pick::Chroma(idb));
+        run(&mut t, vec![]);
+        assert!(t.pick == Some(Pick::Chroma(idb)) && started(&t, idb), "another tool; toasts {:?}", t.toasts);
     }
 
     /// Graphics card files that do not match the catalog are not used: a status line instead.

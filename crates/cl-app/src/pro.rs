@@ -231,7 +231,7 @@ impl App {
         )
     }
 
-    fn need_models(&mut self, ids: &[&str]) -> bool {
+    pub(crate) fn need_models(&mut self, ids: &[&str]) -> bool {
         let m = self.models();
         let missing: Vec<&str> = ids.iter().copied().filter(|i| !m.installed(i)).collect();
         if missing.is_empty() {
@@ -716,7 +716,7 @@ impl App {
                         t.cancel();
                     }
                     if self.pick == Some(Pick::Roto(c.id)) {
-                        (self.pick, self.roto_live) = (None, None);
+                        (self.pick, self.roto_live, self.roto_tool) = (None, None, None);
                     }
                 }
                 new.apply(c);

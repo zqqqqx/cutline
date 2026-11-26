@@ -368,6 +368,8 @@ pub struct App {
     pub pick_origin: Option<egui::Pos2>,
     /// Model of the object marking tool (while `Pick::Roto` is active)
     pub roto_live: Option<crate::roto_ui::RotoLive>,
+    /// Clip of the object marking tool while it is open (tracking starts when it ends)
+    pub roto_tool: Option<ClipId>,
     pub censor_drag: Option<crate::pro::CensorDrag>,
     pub frame_cpu: Option<(ClipId, cl_media::RgbaFrame)>,
     /// Preview of shader transitions (cl-gpu)
@@ -600,6 +602,7 @@ impl App {
             pick: None,
             pick_origin: None,
             roto_live: None,
+            roto_tool: None,
             censor_drag: None,
             frame_cpu: None,
             shader_preview: Default::default(),
@@ -3016,7 +3019,9 @@ impl App {
                     if self.timeline.tool != crate::timeline::Tool::Select {
                         self.timeline.tool = crate::timeline::Tool::Select
                     } else if self.pick.is_some() {
-                        self.pick = None
+                        // the object tool starts tracking when left (see `roto_watch`)
+                        self.pick = None;
+                        self.roto_watch(ctx);
                     } else if self.player_max {
                         self.player_max = false
                     } else {
@@ -3438,6 +3443,7 @@ impl eframe::App for App {
         {
             let _s = section("Aufgaben");
             self.poll_tasks();
+            self.roto_watch(ctx);
             self.poll_file_drops();
         }
         self.poll_epidemic(ctx);
