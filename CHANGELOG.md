@@ -21,6 +21,28 @@
 
 **Behoben**
 
+## 0.18.1 – 2026-11-26
+
+### English
+
+**Improved**
+- **The captions list stays fast with thousands of captions.** It now draws only the rows you see, and follows the active caption during playback.
+
+**Fixed**
+- **Exports carry the same color tags from start to end.** Long projects could change their color information in the middle of the file (first none, then BT.709), and some platforms rejected such files. Every export is now marked Rec.709, limited range, throughout, and the picture is converted to match. Exports of projects without tagged video can look slightly different than before – that difference is the correction. An already exported file needs a new export.
+- **Synchronize keeps clips on their track.** Synchronizing clips by sound could scatter them onto new tracks.
+- **A new clip that is a hair too long for a gap fits into it** – the same rule as for moved clips.
+
+### Deutsch
+
+**Verbessert**
+- **Die Untertitel-Liste bleibt mit Tausenden Untertiteln schnell.** Sie zeichnet nur noch die sichtbaren Zeilen und folgt beim Abspielen dem aktiven Untertitel.
+
+**Behoben**
+- **Exporte tragen von Anfang bis Ende dieselben Farbangaben.** Lange Projekte konnten ihre Farbinformationen mitten in der Datei wechseln (erst keine, dann BT.709); manche Plattformen lehnten solche Dateien ab. Jeder Export ist jetzt durchgehend als Rec.709, begrenzter Bereich, gekennzeichnet, und das Bild wird passend umgerechnet. Exporte von Projekten ohne gekennzeichnetes Video können etwas anders aussehen als bisher – dieser Unterschied ist die Korrektur. Eine schon exportierte Datei muss neu exportiert werden.
+- **Synchronisieren lässt Clips auf ihrer Spur.** Beim Synchronisieren nach Ton konnten Clips auf neue Spuren verstreut werden.
+- **Ein neuer Clip, der um Haaresbreite zu lang für eine Lücke ist, passt hinein** – dieselbe Regel wie bei verschobenen Clips.
+
 ## 0.18.0 – 2026-11-22
 
 ### English

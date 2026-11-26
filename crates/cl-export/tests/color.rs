@@ -53,12 +53,16 @@ fn sources(dir: &Path) -> [MediaRef; 4] {
     let vf709 = format!("scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,{}", tag("tv"));
     let vffull = format!("scale=out_color_matrix=bt709:out_range=pc,format=yuv420p,{}", tag("pc"));
     let src = patch_src();
+    // the tests run in parallel and share these files: written once, the others wait
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
     for (f, vf) in files[..3].iter().zip([vf709.as_str(), "format=yuv420p", vffull.as_str()]) {
         let mut a = vec!["-f", "lavfi", "-i", &src, "-vf", vf];
         a.extend(x264);
         ffmpeg(&a, f);
     }
     ffmpeg(&["-f", "lavfi", "-i", &src, "-frames:v", "1"], &files[3]);
+    });
     files.map(|f| cl_media::probe(&f).unwrap_or_else(|e| panic!("{}: {e}", f.display())))
 }
 
