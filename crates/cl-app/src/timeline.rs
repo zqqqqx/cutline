@@ -312,7 +312,7 @@ fn group_new_row(p: &Project, moves: &[(ClipId, Time)]) -> (usize, bool) {
 /// clips staying there by less than half a frame in total – a sliver from rounding or from older
 /// projects – it is shortened by that sliver on the overlapping side(s) and goes into the gap; the
 /// neighbours never move and clips never overlap. `None`: half a frame or more (a new track, as before).
-fn fit_in_gap(t: &Track, magnet: bool, c: &Clip, start: Time, fps: Rational) -> Option<(Time, Time)> {
+pub(crate) fn fit_in_gap(t: &Track, magnet: bool, c: &Clip, start: Time, fps: Rational) -> Option<(Time, Time)> {
     let dur = c.duration;
     if (t.main && magnet) || t.is_free(start, dur, Some(c.id)) {
         return Some((start, dur));
@@ -5182,6 +5182,90 @@ mod tests {
                     let (tr, c) = p.timeline.tracks.iter().flat_map(|t| t.clips.iter().map(move |c| (t.id, c))).find(|(_, c)| matches!(c.content, ClipContent::Media { media, .. } if media == m.id)).expect(&case);
                     assert_eq!((tr, c.start), (main, e), "starts exactly at the clip end, same track: {case}");
                     assert_eq!(p.timeline.tracks.len(), 1, "no new track: {case}");
+                }
+            }
+        }
+    }
+
+    /// A new 2 s clip (asset or file drop) snapped to the end of a clip, into a gap it is a sliver
+    /// (under half a frame) too long for: shortened by the sliver, it fills the gap touching both
+    /// neighbours, same track, one undo step – before, it went to a new track although the preview
+    /// showed it in the gap. Half a frame or more too long, or much longer: a new track as before.
+    #[test]
+    fn new_clip_a_sliver_too_long_for_a_gap_is_shortened_into_it() {
+        use egui::{Event, PointerButton};
+        let s = Time::from_secs_f64;
+        for fps in [Rational::new(30, 1), Rational::new(30000, 1001)] {
+            let frame = 1.0 / fps.as_f64();
+            // (how much longer the clip is than the gap, lands in the gap)
+            for (over, fits) in [(1e-6, true), (0.49 * frame, true), (0.5 * frame, false), (0.6 * frame, false), (1.0, false), (0.0, true), (-0.5, true)] {
+                for (via_file, main_track) in [(false, true), (true, true), (false, false), (true, false)] {
+                    let gap = Time(s(2.0).0 - s(over).0);
+                    let next = s(4.0) + gap;
+                    let (mut p, _) = lanes(fps, false, &[(TrackKind::Video, main_track, &[(0.0, 4.0), (next.as_secs_f64(), 3.0)])]);
+                    p.timeline.tracks[0].clips[1].start = next;
+                    p.settings.snapping = true;
+                    let m = MediaRef { id: MediaId::new(), path: "drop.mp4".into(), kind: MediaKind::Video, duration: s(2.0), width: 64, height: 36, fps: None, has_audio: false, audio_streams: 0, video_codec: None, audio_codec: None, has_alpha: false };
+                    p.media.push(m.clone());
+                    let main = p.timeline.tracks[0].id;
+                    let ctx = egui::Context::default();
+                    let mut app = crate::saving::tests::test_app_with(ctx.clone());
+                    app.set_doc(p);
+                    app.timeline.pps = 100.0;
+                    app.timeline.scroll = 0.0;
+                    app.playhead = Time::ZERO;
+                    let mut t = 0.0;
+                    let mut step = |app: &mut App, events: Vec<Event>, payload: Option<DragAsset>| {
+                        t += 1.0 / 60.0;
+                        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, bench::SCREEN)), time: Some(t), events, ..Default::default() };
+                        let _ = ctx.run(input, |ctx| {
+                            if let Some(pl) = payload.clone() {
+                                egui::DragAndDrop::set_payload(ctx, pl);
+                            }
+                            egui::TopBottomPanel::bottom("tl").exact_height(bench::PANEL_H).show(ctx, |ui| app.timeline_panel(ui));
+                        });
+                    };
+                    step(&mut app, vec![Event::PointerMoved(pos2(1200.0, 700.0))], None);
+                    let y = {
+                        let m = &app.timeline.motion;
+                        let (top, h) = m.rows[&m.order[0]];
+                        top + h * 0.5
+                    };
+                    // where 0:00 is on screen: from the file-drop preview at a spot without snap candidates
+                    app.drops.hover = Some(vec![crate::file_drop::Item { name: "drop.mp4".into(), audio: false, dur: Some(s(2.0)) }]);
+                    app.drops.pos = Some(pos2(1200.0, y));
+                    step(&mut app, vec![], None);
+                    let free = app.drops.target.take().expect("preview").at;
+                    let x0 = 1200.0 - free.as_secs_f64() as f32 * 100.0;
+                    // just right of the first clip's end (snaps there)
+                    let at = pos2(x0 + 4.0 * 100.0 + 2.0, y);
+                    let undo = app.doc.lock().unwrap().undo_entries().len();
+                    if via_file {
+                        app.drops.pos = Some(at);
+                        step(&mut app, vec![], None);
+                        let target = app.drops.target.take().expect("preview");
+                        (app.drops.hover, app.drops.pos) = (None, None);
+                        app.start_file_drop(&ctx, vec!["drop.mp4".into()], Some(target));
+                    } else {
+                        (app.drops.hover, app.drops.pos) = (None, None);
+                        let up = Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: false, modifiers: Default::default() };
+                        step(&mut app, vec![Event::PointerMoved(at), up], Some(DragAsset::Media(m.id)));
+                    }
+                    let case = format!("{fps:?} over {over} file {via_file} main {main_track}");
+                    let p = &app.project;
+                    let (tr, c) = p.timeline.tracks.iter().flat_map(|t| t.clips.iter().map(move |c| (t.id, c))).find(|(_, c)| matches!(c.content, ClipContent::Media { media, .. } if media == m.id)).expect(&case);
+                    assert_eq!(app.doc.lock().unwrap().undo_entries().len(), undo + 1, "one undo step: {case}");
+                    if fits {
+                        assert_eq!((tr, c.start), (main, s(4.0)), "touches the left neighbour, same track: {case}");
+                        assert_eq!(c.end(), next.min(s(6.0)), "ends at the right neighbour (or its own end): {case}");
+                        assert_eq!(p.timeline.tracks.len(), 1, "no new track: {case}");
+                    } else {
+                        assert_eq!((c.start, c.duration), (s(4.0), s(2.0)), "full length: {case}");
+                        assert_ne!(tr, main, "a new track as before: {case}");
+                    }
+                    app.undo();
+                    app.sync_project();
+                    assert_eq!(app.project.timeline.tracks[0].clips.len(), 2, "undo removes it: {case}");
                 }
             }
         }

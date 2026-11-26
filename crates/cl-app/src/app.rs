@@ -1255,7 +1255,23 @@ impl App {
         }
     }
 
-    fn insert_clip(&mut self, clip: Clip, track: Option<TrackId>) -> Option<ClipId> {
+    fn insert_clip(&mut self, mut clip: Clip, track: Option<TrackId>) -> Option<ClipId> {
+        // dropped on a track into a gap it is a sliver too long for: shortened into it, as a moved clip
+        // (no track: a video goes onto the main track, see `EditOp::AddClip`)
+        let tracks = &self.project.timeline.tracks;
+        let target = match track {
+            Some(id) => tracks.iter().find(|t| t.id == id),
+            None => tracks.iter().find(|t| t.main).filter(|_| clip.kind() == TrackKind::Video),
+        };
+        if let Some(t) = target {
+            let (magnet, fps) = (self.project.settings.main_track_magnet, self.project.settings.fps);
+            if let Some((start, duration)) = crate::timeline::fit_in_gap(t, magnet, &clip, clip.start, fps) {
+                // a new clip is never reversed: the cut-off head comes off the front of its source
+                let head = (start - clip.start).as_secs_f64() * clip.speed as f64;
+                clip.source_in = clip.source_in + Time::from_secs_f64(head);
+                (clip.start, clip.duration) = (start, duration);
+            }
+        }
         if let Some(OpOutput::Clip(c)) = self.apply(EditOp::AddClip { track, clip }) {
             self.select_only(Some(c));
             return Some(c);
