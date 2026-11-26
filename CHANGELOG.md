@@ -21,6 +21,34 @@
 
 **Behoben**
 
+## 0.19.0 – 2026-11-26
+
+### English
+
+**New**
+- **Cut out any object.** Under Smart → Cut out there is now "Object" next to Person and Color: click the object in the player, click again to add parts, Alt+click or right-click to remove, drag a frame around it. Press Esc and Cutline follows the object through the clip in the background. It needs the model "SAM 2.1 Tiny" (Settings → Models, 83 MB). On Windows the optional "Graphics card acceleration" makes tracking many times faster; without it tracking runs on the processor and takes a few seconds per frame.
+- **Masks for a part of a clip and for still images.** A mask can cover just the part of a file a clip uses. The inspector says when a mask is missing or a range is not tracked, and the export dialog warns before exporting without a finished mask.
+- **Send error reports to the developer (optional).** Off by default; asked once during setup and switchable under Settings → About Cutline. After a crash, "Send to developer" sits next to "Export log" – also when the setting is off. Reports contain the version, the system, the error and the end of the log, with file names, paths, project names and user names removed.
+
+**Improved**
+- **Projects are saved in format 6.** Earlier versions of Cutline cannot open projects saved with this one.
+
+**Fixed**
+- **Cut-outs sit on the right frame in the preview.** At a paused position or when playback started in the middle of a clip, the preview used a later frame of the mask, so a person cut-out could lag behind or run ahead of the picture. The export was not affected.
+
+### Deutsch
+
+**Neu**
+- **Beliebige Objekte freistellen.** Unter Smart → Freistellen gibt es neben Person und Farbe jetzt „Objekt“: Objekt im Player anklicken, weitere Klicks fügen Teile hinzu, Alt+Klick oder Rechtsklick nimmt weg, Ziehen legt einen Rahmen darum. Nach Esc verfolgt Cutline das Objekt im Hintergrund durch den Clip. Nötig ist das Modell „SAM 2.1 Tiny“ (Einstellungen → Modelle, 83 MB). Unter Windows macht die optionale „Grafikkarten-Beschleunigung“ das Verfolgen um ein Vielfaches schneller; ohne sie rechnet der Prozessor und braucht einige Sekunden je Bild.
+- **Masken für einen Teil eines Clips und für Standbilder.** Eine Maske kann nur den Teil einer Datei abdecken, den ein Clip nutzt. Der Inspektor zeigt, wenn eine Maske fehlt oder ein Bereich nicht verfolgt ist, und der Export-Dialog warnt vor dem Export ohne fertige Maske.
+- **Fehlerberichte an den Entwickler senden (freiwillig).** Standardmäßig aus; wird beim Einrichten einmal gefragt und lässt sich unter Einstellungen → Über Cutline schalten. Nach einem Absturz steht „An Entwickler senden“ neben „Protokoll exportieren“ – auch wenn die Einstellung aus ist. Berichte enthalten Version, System, Fehler und das Ende des Protokolls; Dateinamen, Pfade, Projektnamen und Benutzernamen werden entfernt.
+
+**Verbessert**
+- **Projekte werden im Format 6 gespeichert.** Ältere Cutline-Versionen können damit gespeicherte Projekte nicht öffnen.
+
+**Behoben**
+- **Freistellungen sitzen in der Vorschau auf dem richtigen Bild.** Im Stand oder wenn die Wiedergabe mitten im Clip begann, nahm die Vorschau ein späteres Bild der Maske; eine Personen-Freistellung konnte dem Bild nachhängen oder vorauslaufen. Der Export war nicht betroffen.
+
 ## 0.18.3 – 2026-11-26
 
 ### English
