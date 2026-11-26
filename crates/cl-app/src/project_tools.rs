@@ -136,15 +136,8 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
     std::fs::create_dir_all(&media_dir).map_err(|e| e.to_string())?;
     let mut out = p.clone();
     let mut used = std::collections::HashSet::new();
-    for m in &mut out.media {
-        if !m.path.is_file() {
-            continue;
-        }
-        let name = m
-            .path
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
+    let mut copy = |src: &Path| -> Result<PathBuf, String> {
+        let name = src.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         // do not overwrite identical file names from different folders
         let mut target = media_dir.join(&name);
         let mut i = 2;
@@ -153,8 +146,25 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
             i += 1;
         }
         used.insert(target.clone());
-        std::fs::copy(&m.path, &target).map_err(|e| format!("{}: {e}", m.path.display()))?;
-        m.path = target;
+        std::fs::copy(src, &target).map_err(|e| format!("{}: {e}", src.display()))?;
+        Ok(target)
+    };
+    for m in &mut out.media {
+        if m.path.is_file() {
+            m.path = copy(&m.path)?;
+        }
+    }
+    // files the clips point to (cutout mask under Generated/, LUT), each copied once
+    let mut copied = std::collections::HashMap::<String, String>::new();
+    for c in out.timeline.tracks.iter_mut().flat_map(|t| &mut t.clips) {
+        for f in [&mut c.fx.cutout, &mut c.fx.lut].into_iter().flatten() {
+            if !copied.contains_key(f.as_str()) && Path::new(f.as_str()).is_file() {
+                copied.insert(f.clone(), copy(Path::new(f.as_str()))?.to_string_lossy().into_owned());
+            }
+            if let Some(t) = copied.get(f.as_str()) {
+                *f = t.clone();
+            }
+        }
     }
     if !fonts.is_empty() {
         let fd = dir.join("Schriften");
@@ -497,6 +507,52 @@ mod tests {
         // Search by name
         let f = find_by_name(&media, &["CLIP.mp4".into()], 3);
         assert_eq!(f.len(), 2);
+    }
+
+    /// Bug: the archive copied the media but not the cutout masks (under Generated/) and LUT
+    /// files the clips point to, so the archived project lost its cut-outs and looks.
+    #[test]
+    fn archive_takes_cutout_masks_and_luts_along() {
+        let home = crate::paths::TestHome::new();
+        let src = home.path().join("src");
+        let gen = home.path().join("Generated").join("matte");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&gen).unwrap();
+        std::fs::write(src.join("clip.mp4"), b"1").unwrap();
+        std::fs::write(gen.join("person.mkv"), b"mask").unwrap();
+        std::fs::write(src.join("look.cube"), b"lut").unwrap();
+        let m: cl_core::MediaRef = serde_json::from_value(serde_json::json!({
+            "id": cl_core::MediaId::new(), "path": src.join("clip.mp4"), "kind": "Video", "duration": 1000000,
+            "width": 2, "height": 2, "fps": null, "has_audio": false, "video_codec": null, "audio_codec": null
+        }))
+        .unwrap();
+        let mut p = Project::new("Maske");
+        let mut t = cl_core::Track::new(cl_core::TrackKind::Video);
+        for i in 0..2 {
+            // a split clip: both halves share one mask
+            let mut c = cl_core::Clip::new(
+                cl_core::ClipContent::Media { media: m.id, kind: cl_core::MediaKind::Video },
+                cl_core::Time::from_secs_f64(i as f64),
+                cl_core::Time::from_secs_f64(1.0),
+            );
+            c.fx.cutout = Some(gen.join("person.mkv").to_string_lossy().into_owned());
+            c.fx.lut = Some(src.join("look.cube").to_string_lossy().into_owned());
+            t.clips.push(c);
+        }
+        p.media.push(m);
+        p.timeline.tracks.push(t);
+        let out = archive(&p, &[], &home.path().join("out")).unwrap();
+        let back = Project::from_json(&std::fs::read_to_string(out.join("Maske.cutline")).unwrap()).unwrap();
+        let clips = &back.timeline.tracks[0].clips;
+        for c in clips {
+            for f in [&c.fx.cutout, &c.fx.lut] {
+                let f = PathBuf::from(f.as_deref().unwrap());
+                assert!(f.starts_with(out.join("Medien")) && f.is_file(), "points into the archive: {}", f.display());
+            }
+        }
+        assert_eq!(std::fs::read(clips[0].fx.cutout.as_deref().unwrap()).unwrap(), b"mask");
+        assert_eq!(clips[0].fx.cutout, clips[1].fx.cutout, "a shared mask is copied once");
+        assert_eq!(std::fs::read_dir(out.join("Medien")).unwrap().count(), 3, "clip, mask, LUT");
     }
 
     #[test]
