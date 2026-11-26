@@ -954,6 +954,9 @@ fn frame_dispatcher(
                         }
                         let same = sw.path == path && (sw.w, sw.h) == (w, h);
                         wn.want = Some((idx, key, same));
+                        // stale run: the playhead is more than a run length past it. Measured: killing it as soon as
+                        // the playhead leaves it (and restarting at the playhead) showed fewer frames on fast drags –
+                        // each restart seeks again, while the running one still shows frames on the way.
                         let off = wn.busy.as_ref().is_some_and(|(_, b, bn, _)| idx < b - n || idx >= b + bn + n);
                         if jump || off {
                             wn.kill();
@@ -2065,6 +2068,48 @@ mod tests {
         d.send(fx_job(clip, 2001, 32, b));
         assert_eq!(wait(2001), (2001, true, 32, b.len() as u8), "new window with the new effect");
         assert_eq!(wins.try_iter().count(), 1);
+    }
+
+    /// A window run the playhead left by more than a run length (in steps, no jump) is killed and the next
+    /// run starts at the playhead, instead of decoding the stale run to its end first.
+    #[test]
+    fn stale_window_run_is_killed_and_restarts_at_the_playhead() {
+        let (wins_tx, wins) = channel::<(i64, u32)>();
+        let (killed_tx, killed) = channel::<i64>();
+        let (wins_tx, killed_tx) = (Mutex::new(wins_tx), Mutex::new(killed_tx));
+        let d = Decoder::with_still_decoder(
+            egui::Context::default(),
+            Arc::new(|_, _, w, h, _, _| Ok((RgbaFrame { width: w, height: h, data: vec![0; (w * h * 4) as usize] }, Default::default()))),
+            // one frame, then a slow decode until it is killed
+            Arc::new(move |_, from, n, w, h, _, ks, each| {
+                let first = (from.as_secs_f64() * 120.0).round() as i64;
+                wins_tx.lock().unwrap().send((first, n)).unwrap();
+                each(0, RgbaFrame { width: w, height: h, data: vec![first as u8; (w * h * 4) as usize] });
+                let t = std::time::Instant::now();
+                while !ks.is_killed() && t.elapsed() < std::time::Duration::from_secs(10) {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                if ks.is_killed() {
+                    killed_tx.lock().unwrap().send(first).unwrap();
+                }
+                Err(cl_media::MediaError::Cancelled)
+            }),
+            STILL_REST,
+        );
+        let clip = ClipId::new();
+        let s10 = std::time::Duration::from_secs(10);
+        d.send(scrub_job(clip, 1, 0, (4, 2), None));
+        assert_eq!(next_frame(&d).0, 1);
+        d.send(scrub_job(clip, 2, 1, (4, 2), None));
+        assert_eq!(wins.recv_timeout(s10).unwrap(), (1, 120));
+        assert_eq!(next_frame(&d), (2, true, 1));
+        // the run covers 1..=120; the playhead moves on in steps under a run length (no jump): the run still
+        // brings frames on the way up to 240, past that it is stale
+        for (k, i) in [(3, 100), (4, 200), (5, 241)] {
+            d.send(scrub_job(clip, k, i, (4, 2), None));
+        }
+        assert_eq!(killed.recv_timeout(s10).expect("stale run killed"), 1);
+        assert_eq!(wins.recv_timeout(s10).unwrap().0, 241, "next run starts at the playhead");
     }
 
     /// Rest means an unchanged playhead on a later tick, not a pause between ticks: slow ticks (100 ms
