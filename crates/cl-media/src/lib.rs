@@ -589,8 +589,10 @@ fn decode_raw(
         Some(g) => graph_arg(&mut cmd, g)?.args(["-map", "[out]"]),
         None => cmd.args(["-vf", &format!("scale={w}:{h}:flags=bilinear,format=rgba")]),
     };
+    // every decoded frame once: after `setpts` in a graph FFmpeg 7 forgets the frame rate, takes 25/s and
+    // drops frames of a window run (frame k was no longer the k-th after `at`)
     let mut child = cmd
-        .args(["-frames:v", &n.to_string(), "-an", "-sn", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .args(["-frames:v", &n.to_string(), "-an", "-sn", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1401,6 +1403,30 @@ mod tests {
         assert!(some[3].1.data == win[15].1.data);
         let tail = decode_frames(&src, at(172), 16, 32, 18, &|_| true, None).unwrap();
         assert!((1..=8).contains(&tail.len()), "{} Bilder am Ende", tail.len());
+    }
+
+    /// Window run through an effect graph (starts with `setpts`, like `cl_fx::preview_graph`): frame k is
+    /// the single frame k frames after the start. FFmpeg 7.1 without `-fps_mode passthrough` gave
+    /// frames 31, 32, 34, 36, … for a run from 31 (25/s output rate after `setpts`).
+    #[test]
+    fn graph_window_frames_equal_single_frames() {
+        if !test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = gen(dir.path(), "fx.mp4", &["-f", "lavfi", "-i", "testsrc2=s=128x72:r=60:d=3", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "60"]);
+        let at = |i: i64| Time::from_secs_f64(i as f64 / 60.0);
+        let graph = |off: f64| format!("[0:v]setpts=PTS-STARTPTS,scale=64:36:flags=bilinear[pre];[pre]setpts=PTS-STARTPTS+round({off:.6}/TB),eq=brightness=0.06,format=rgba[out]");
+        for first in [30, 31] {
+            let mut win = Vec::new();
+            let read = decode_frames_each(&src, at(first), 8, 64, 36, Some(&graph(0.0)), None, &mut |k, f| win.push((k, f))).unwrap();
+            assert_eq!(read, 8);
+            for (k, f) in &win {
+                let i = first + *k as i64;
+                let one = decode_frame_fx(&src, at(i), 64, 36, Some(&graph(at(i).as_secs_f64()))).unwrap();
+                assert!(one.data == f.data, "run from {first}: frame {i} differs");
+            }
+        }
     }
 
     /// Graphs over 32,767 characters (long censor paths) go through a file instead of
