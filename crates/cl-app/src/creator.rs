@@ -728,21 +728,27 @@ fn apply_sync(app: &mut App, rev: u64, moves: &[(ClipId, f64)]) {
         app.toast_err("Kein gemeinsamer Ton gefunden");
         return;
     }
-    let ops: Vec<EditOp> = moves
+    let moves: Vec<(ClipId, Time)> = moves
         .iter()
-        .filter_map(|(id, s)| {
-            app.project.find_clip(*id).map(|(t, _)| EditOp::MoveClip {
-                clip: *id,
-                track: Some(t.id),
-                start: Time::from_secs_f64(*s),
-            })
-        })
+        .filter(|(id, _)| app.project.find_clip(*id).is_some())
+        .map(|(id, s)| (*id, Time::from_secs_f64(*s)))
         .collect();
-    let n = ops.len();
-    app.apply(EditOp::Batch {
-        label: "Synchronisieren".into(),
-        ops,
-    });
+    let n = moves.len();
+    // like a group move: park, then place on their own tracks, so no synced clip lands on one not
+    // yet moved; blocked by another clip, the synced clips go onto a new track together
+    match crate::timeline::group_in_time(&app.project, &moves) {
+        Ok(EditOp::Batch { ops, .. }) => {
+            app.apply(EditOp::Batch { label: "Synchronisieren".into(), ops });
+        }
+        Ok(op) => {
+            app.apply(op);
+        }
+        Err((row, upper)) => {
+            if !app.clips_to_new_tracks(row, upper, &moves) {
+                return;
+            }
+        }
+    }
     app.toast(app.i18n.t_num("sync-done", "count", n as i64));
 }
 
@@ -772,6 +778,110 @@ mod tests {
         let rev = app.revision;
         apply_sync(&mut app, rev, &[(id, 1.0)]);
         assert_eq!(start(&app), s(1.0));
+    }
+
+    /// Text tracks with clips (start, length); returns the project and the clip ids per track
+    fn sync_lanes(rows: &[&[(f64, f64)]]) -> (Project, Vec<Vec<ClipId>>) {
+        let s = Time::from_secs_f64;
+        let mut p = Project::new("Sync");
+        let mut ids = Vec::new();
+        for row in rows {
+            let mut t = Track::new(TrackKind::Text);
+            ids.push(row.iter().map(|(a, l)| {
+                let c = Clip::new(ClipContent::Text(TextStyle::default()), s(*a), s(*l));
+                t.clips.push(c.clone());
+                c.id
+            }).collect());
+            p.timeline.tracks.push(t);
+        }
+        (p, ids)
+    }
+
+    /// (track index, start, end) per clip
+    fn spots(app: &App, ids: &[ClipId]) -> Vec<(usize, Time, Time)> {
+        let p = &app.project;
+        ids.iter().map(|id| {
+            let (t, c) = p.find_clip(*id).unwrap();
+            (p.timeline.tracks.iter().position(|x| x.id == t.id).unwrap(), c.start, c.end())
+        }).collect()
+    }
+
+    fn permutations(v: &[(ClipId, f64)]) -> Vec<Vec<(ClipId, f64)>> {
+        if v.len() <= 1 {
+            return vec![v.to_vec()];
+        }
+        (0..v.len()).flat_map(|i| {
+            let mut rest = v.to_vec();
+            let x = rest.remove(i);
+            permutations(&rest).into_iter().map(move |mut p| { p.insert(0, x); p })
+        }).collect()
+    }
+
+    /// Synced clips whose new places overlap the old places of other synced clips stay on their
+    /// tracks, each at its own new start, whatever the order of the results; one undo step
+    /// restores everything. Before, each clip was moved on its own and landed on a not yet moved
+    /// one: a new track.
+    #[test]
+    fn sync_keeps_clips_on_their_tracks_in_any_order() {
+        let s = Time::from_secs_f64;
+        let cases: Vec<(Vec<&[(f64, f64)]>, Vec<(usize, usize, f64)>)> = vec![
+            // one track: reference at 0, the other two shift right onto each other's old places
+            (vec![&[(0.0, 2.0), (2.0, 2.0), (4.0, 2.0)]], vec![(0, 1, 4.0), (0, 2, 6.5)]),
+            // shifted left onto each other
+            (vec![&[(0.0, 1.0), (3.0, 2.0), (5.0, 2.0)]], vec![(0, 1, 1.5), (0, 2, 3.5)]),
+            // two tracks, different shifts per clip
+            (vec![&[(0.0, 2.0), (2.0, 2.0)], &[(0.0, 2.0), (2.0, 2.0)]], vec![(0, 0, 2.0), (0, 1, 4.5), (1, 0, 1.0), (1, 1, 3.25)]),
+        ];
+        for (rows, want) in cases {
+            let (p, ids) = sync_lanes(&rows);
+            let moves: Vec<(ClipId, f64)> = want.iter().map(|&(t, k, at)| (ids[t][k], at)).collect();
+            let all: Vec<ClipId> = ids.concat();
+            for order in permutations(&moves) {
+                let mut app = crate::saving::tests::test_app();
+                app.set_doc(p.clone());
+                let before = spots(&app, &all);
+                let undo = app.doc.lock().unwrap().undo_entries().len();
+                let rev = app.revision;
+                apply_sync(&mut app, rev, &order);
+                let case = format!("{rows:?} {order:?}");
+                assert_eq!(app.project.timeline.tracks.len(), rows.len(), "no new track: {case}");
+                for &(t, k, at) in &want {
+                    let got = spots(&app, &[ids[t][k]])[0];
+                    assert_eq!((got.0, got.1), (t, s(at)), "own track, synced start: {case}");
+                }
+                assert_eq!(app.doc.lock().unwrap().undo_entries().len(), undo + 1, "one undo step: {case}");
+                app.undo();
+                app.sync_project();
+                assert_eq!(spots(&app, &all), before, "undo restores: {case}");
+            }
+        }
+    }
+
+    /// A synced result that overlaps a clip outside the sync: as a blocked group move, the synced
+    /// clips go onto a new track together (never clip by clip), the other clip stays; one undo step.
+    #[test]
+    fn sync_onto_an_unselected_clip_moves_the_synced_clips_to_a_new_track_together() {
+        let s = Time::from_secs_f64;
+        // reference 0–2, synced 2–4 and 4–6, a clip outside the sync at 9–11
+        let (p, ids) = sync_lanes(&[&[(0.0, 2.0), (2.0, 2.0), (4.0, 2.0), (9.0, 2.0)]]);
+        let moves = vec![(ids[0][1], 6.0), (ids[0][2], 8.0)];
+        for order in permutations(&moves) {
+            let mut app = crate::saving::tests::test_app();
+            app.set_doc(p.clone());
+            let before = spots(&app, &ids[0]);
+            let rev = app.revision;
+            apply_sync(&mut app, rev, &order);
+            let at = spots(&app, &ids[0]);
+            assert_eq!(app.project.timeline.tracks.len(), 2, "one new track: {order:?}");
+            assert_eq!((at[1].1, at[2].1), (s(6.0), s(8.0)), "synced starts: {order:?}");
+            assert_eq!(at[1].0, at[2].0, "together: {order:?}");
+            assert_ne!(at[1].0, at[3].0, "not on the blocking clip's track: {order:?}");
+            assert_eq!(at[3].0, at[0].0, "the other clips stay together: {order:?}");
+            assert_eq!(app.doc.lock().unwrap().undo_entries().len(), 1, "one undo step: {order:?}");
+            app.undo();
+            app.sync_project();
+            assert_eq!(spots(&app, &ids[0]), before, "undo restores: {order:?}");
+        }
     }
 
     #[test]
