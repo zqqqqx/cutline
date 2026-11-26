@@ -124,6 +124,17 @@ pub(crate) fn check_gpu_runtime(m: &cl_analyze::Models) {
     }
 }
 
+/// Marks the live mask is computed from: once something is marked exactly those (the overlay then
+/// shows what gets tracked), before that the point under the pointer as a click there would mark
+/// it. Adding the pointer to existing marks changed SAM's mask choice (one point: best of three
+/// candidates; more points: one combined mask), so the overlay showed more than was tracked.
+pub(crate) fn live_prompt(marked: Prompt, hover: Option<(f32, f32, bool)>) -> Prompt {
+    if marked.rect.is_some() || !marked.points.is_empty() {
+        return marked;
+    }
+    Prompt { points: hover.into_iter().collect(), rect: None }
+}
+
 /// Display fractions (mirrored as shown) → source fractions
 fn unflip(c: &Clip, (u, v): (f32, f32)) -> (f32, f32) {
     (if c.fx.flip_h { 1.0 - u } else { u }, if c.fx.flip_v { 1.0 - v } else { v })
@@ -384,19 +395,18 @@ impl App {
             self.live = None;
             self.apply(EditOp::ReplaceClip { clip: shown.clone() });
         }
-        // live mask: the marks on this frame plus the point under the pointer
+        // live mask: what is marked on this frame, before the first mark what a click would mark
         let grid = roto_grid(&shown, &m);
         let index = grid.index(at.as_secs_f64());
-        let mut prompt = shown
+        let marked = shown
             .roto
             .as_ref()
             .and_then(|r| r.keys.first())
             .filter(|k| grid.index(k.t.as_secs_f64()) == index)
             .map(prompt_of)
             .unwrap_or_default();
-        if let Some((x, y)) = resp.hover_pos().filter(|_| self.pick_origin.is_none()).and_then(&inside) {
-            prompt.points.push((x, y, alt));
-        }
+        let hover = resp.hover_pos().filter(|_| self.pick_origin.is_none()).and_then(&inside).map(|(x, y)| (x, y, alt));
+        let prompt = live_prompt(marked, hover);
         let tag = fnv(fnv(FNV0, m.path.to_string_lossy().as_bytes()), format!("{:?}{index}{prompt:?}", grid.start).as_bytes()) | 1;
         if let Some(l) = self.roto_live.as_mut() {
             l.want(Want { tag, src: m.path.clone(), grid, index, prompt });
@@ -561,6 +571,107 @@ mod tests {
         t.pick = Some(Pick::Chroma(idb));
         run(&mut t, vec![]);
         assert!(t.pick == Some(Pick::Chroma(idb)) && started(&t, idb), "another tool; toasts {:?}", t.toasts);
+    }
+
+    /// Bug (window test): after one click the overlay showed the whole figure, the track only the
+    /// part clicked – the overlay added the pointer (still on the clicked spot) as a second point.
+    /// Once marked, the live mask uses exactly the marks; before, the pointer alone.
+    #[test]
+    fn live_mask_uses_the_marks_once_there_are_any() {
+        let click = Prompt { points: vec![(0.3, 0.5, false)], rect: None };
+        assert_eq!(live_prompt(click.clone(), Some((0.3, 0.5, false))), click);
+        assert_eq!(live_prompt(click.clone(), None), click);
+        let framed = Prompt { points: vec![], rect: Some([0.1, 0.1, 0.5, 0.5]) };
+        assert_eq!(live_prompt(framed.clone(), Some((0.9, 0.9, false))), framed);
+        // nothing marked yet: what a click under the pointer would give
+        assert_eq!(live_prompt(Prompt::default(), Some((0.2, 0.4, true))).points, vec![(0.2, 0.4, true)]);
+        assert_eq!(live_prompt(Prompt::default(), None), Prompt::default());
+    }
+
+    /// With the model (`CUTLINE_MODELS`, skipped without): one click on the body of a figure of
+    /// four parts (head, body, two legs) moving right at 120 px/s, 1 px per frame at the 320 px
+    /// compared. The mask the overlay draws after the click is
+    /// frame 0 of the track, and every tracked frame keeps it, shifted by the motion.
+    #[test]
+    fn tracked_mask_is_what_the_overlay_showed() {
+        let Some(models) = std::env::var_os("CUTLINE_MODELS").map(cl_analyze::Models::new).filter(|m| m.sam2().is_some() && m.ort_dll().is_some()) else {
+            eprintln!("skipped (CUTLINE_MODELS without the object model)");
+            return;
+        };
+        if !cl_media::test_tools() {
+            return;
+        }
+        if let Some(d) = models.gpu_runtime() {
+            cl_analyze::use_gpu_runtime(d);
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("fig.mp4");
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args([
+                "-v", "error", "-y", "-f", "lavfi", "-i",
+                "gradients=s=1280x720:c0=0xa0e040:c1=0xd4b848:x0=700:y0=300:x1=1000:y1=600:speed=0.0001:r=30:d=2[bg];\
+                 color=c=0xff00ff:s=160x460:r=30:d=2,format=rgb24,drawbox=x=20:y=0:w=120:h=120:color=0xe0a070:t=fill,\
+                 drawbox=x=0:y=120:w=160:h=200:color=0xc0c030:t=fill,drawbox=x=10:y=320:w=60:h=140:color=0x303030:t=fill,\
+                 drawbox=x=90:y=320:w=60:h=140:color=0x303030:t=fill,colorkey=0xff00ff:0.1:0[fg];\
+                 [bg][fg]overlay=x='200+t*120':y=180:shortest=1",
+                "-pix_fmt", "yuv420p",
+            ])
+            .arg(&src)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let grid = Grid::new(0.0, 2.0, 30.0);
+        // on the body at frame 0 (body 200..360 × 300..500 of 1280×720)
+        let click = Prompt { points: vec![(0.218, 0.552, false)], rect: None };
+        let threads = std::thread::available_parallelism().map_or(2, |n| n.get() / 2).max(1);
+        let mut live = cl_analyze::roto::Live::new(&models, threads).unwrap();
+        let s = live.size();
+        let mut rgb = vec![];
+        cl_analyze::roto::frames(&src, &grid, 0, 1, s, |_, f| {
+            rgb = f.to_vec();
+            Ok(())
+        })
+        .unwrap();
+        live.set_frame(1, &rgb).unwrap();
+        // the overlay right after the click, the pointer still on the clicked spot
+        let shown = live.mask(&live_prompt(click.clone(), Some(click.points[0]))).unwrap().expect("a mask");
+        let overlay = cl_analyze::roto::upscale(&shown, s, 320, 180);
+        drop(live);
+        let job = cl_analyze::roto::Job {
+            src: src.clone(),
+            grid,
+            key: 0,
+            prompt: click,
+            work: dir.path().join("work"),
+            out: dir.path().join("m.mkv"),
+            size: (1280, 720),
+            rate: "30".into(),
+        };
+        cl_analyze::roto::track(&models, &job, threads, &|_| {}, &std::sync::atomic::AtomicBool::new(false), &|| false).unwrap();
+        let mut frames = vec![];
+        cl_analyze::gray_frames(&job.out, 320, 180, 30.0, 0.0, 10.0, |_, f| {
+            frames.push(f.to_vec());
+            true
+        })
+        .unwrap();
+        assert_eq!(frames.len(), grid.n);
+        let iou = |a: &[u8], b: &[u8], dx: usize| {
+            let (mut i, mut u) = (0usize, 0usize);
+            for y in 0..180 {
+                for x in 0..320 {
+                    let p = a[y * 320 + x] > 127;
+                    let q = x >= dx && b[y * 320 + x - dx] > 127;
+                    i += (p && q) as usize;
+                    u += (p || q) as usize;
+                }
+            }
+            i as f64 / u.max(1) as f64
+        };
+        let first = iou(&frames[0], &overlay, 0);
+        assert!(first > 0.98, "frame 0 of the track against the overlay: IoU {first:.3}");
+        let low: Vec<(usize, f64)> = (0..frames.len()).map(|i| (i, iou(&frames[i], &overlay, i))).filter(|(_, v)| *v < 0.8).collect();
+        assert!(low.is_empty(), "tracked frames off the shifted overlay: {low:?}");
     }
 
     /// Graphics card files that do not match the catalog are not used: a status line instead.
