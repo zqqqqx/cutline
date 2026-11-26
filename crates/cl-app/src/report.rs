@@ -367,7 +367,8 @@ fn now_secs() -> f64 {
 }
 
 fn send_report(dsn: &Dsn, r: &Report, who: &Who) -> bool {
-    post(dsn, &envelope(&event(r, who, &event_id(), now_secs()))).is_ok()
+    // the reason goes to the log (a DNS blocker is a common one); a warning, so it is not reported itself
+    post(dsn, &envelope(&event(r, who, &event_id(), now_secs()))).map_err(|e| log::warn!(target: "bericht", "nicht gesendet: {e}")).is_ok()
 }
 
 // ---------- automatic reports ----------
