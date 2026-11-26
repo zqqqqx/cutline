@@ -621,7 +621,7 @@ fn build_single(p: &Project, s: &ExportSettings, fonts: FontResolver, out: &Path
             ctx.graph
                 .push("[g1][pal]paletteuse=dither=sierra2_4a[vout]".into());
         } else {
-            ctx.graph.push(format!("[{cur}]format={}[vout]", pix_fmt(s)));
+            ctx.graph.push(format!("[{cur}]{}[vout]", to_yuv(s)));
         }
         vlabel = Some("vout");
     }
@@ -710,6 +710,34 @@ fn pix_fmt(s: &ExportSettings) -> &'static str {
         (true, _) => "yuva420p",
         _ => "yuv420p",
     }
+}
+
+/// Frame tags of the delivered picture: Rec.709 SDR, limited range (the only colour space the
+/// export renders; `settings.color_space` has no other implementation).
+const BT709_FRAMES: &str = "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709";
+
+/// Last step of the graph: the RGB(A) composite to the encoder's YUV with an explicit BT.709
+/// limited matrix, frames tagged to match. Without it FFmpeg took matrix and range from
+/// whichever tagged input a run had (none: BT.601, untagged), so the sections of one export
+/// differed in pixels and tags.
+fn to_yuv(s: &ExportSettings) -> String {
+    format!("scale=out_color_matrix=bt709:out_range=tv,format={},{BT709_FRAMES}", pix_fmt(s))
+}
+
+/// Colour tags for the encoder, the same as [`to_yuv`] gives the frames (older FFmpeg takes them
+/// only from here). Hardware H.264/HEVC via QSV, AMF and Media Foundation additionally get them
+/// written into the bitstream (Media Foundation measured: writes none or only the range).
+fn color_args(s: &ExportSettings) -> Vec<String> {
+    let mut a: Vec<String> = ["-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"].map(String::from).into();
+    let bsf = match video_codec(s) {
+        Codec::H264 => "h264_metadata",
+        Codec::Hevc => "hevc_metadata",
+        _ => return a,
+    };
+    if matches!(s.encoder, Encoder::Qsv | Encoder::Amf | Encoder::Mf) {
+        a.extend(["-bsf:v".into(), format!("{bsf}=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1")]);
+    }
+    a
 }
 
 /// An FFmpeg call of a section: graph into the file `gfile`, inputs, outputs.
@@ -852,7 +880,7 @@ fn build_sections(
                 ctx.graph.push(format!("[vmain]scale={gw}:{gh}:flags=lanczos[vout]"));
                 outs.extend(["-map", "[vout]", "-c:v", "ffv1", "-level", "3"].map(String::from));
             } else {
-                ctx.graph.push(format!("[vmain]format={}[vout]", pix_fmt(s)));
+                ctx.graph.push(format!("[vmain]{}[vout]", to_yuv(s)));
                 outs.extend(["-map".into(), "[vout]".into()]);
                 outs.extend(if lossless { ["-c:v", "ffv1", "-level", "3"].map(String::from).into() } else { video_args(s) });
             }
@@ -898,6 +926,10 @@ fn build_sections(
             graph.push(format!("[0:v]fps=min({GIF_FPS}\\,{fps}),split[g0][g1]"));
             graph.push("[g0]palettegen=stats_mode=diff[pal]".into());
             graph.push("[g1][pal]paletteuse=dither=sierra2_4a[vout]".into());
+            vmap = Some("[vout]".to_string());
+        } else if lossless {
+            // FFV1 in NUT keeps no colour tags: put them back before the encoder
+            graph.push(format!("[0:v]{BT709_FRAMES}[vout]"));
             vmap = Some("[vout]".to_string());
         } else {
             vmap = Some("0:v".to_string());
@@ -1275,6 +1307,7 @@ fn video_args(s: &ExportSettings) -> Vec<String> {
         }
     }
     a.extend(["-r".into(), format!("{}/{}", s.fps.num, s.fps.den)]);
+    a.extend(color_args(s));
     a
 }
 
@@ -4275,11 +4308,12 @@ mod tests {
             (s.format, s.codec, s.quality, s.include_audio, s.transparent) = (f, c, q, audio, transparent);
             codec_args(&s).join(" ")
         };
-        assert_eq!(s(Format::Mp4, Codec::H264, Quality::Recommended, true, false), "-c:v libx264 -preset medium -crf 20 -r 30/1 -c:a aac -b:a 256k -movflags +faststart");
-        assert_eq!(s(Format::Mov, Codec::Hevc, Quality::Higher, true, false), "-c:v libx265 -preset medium -tag:v hvc1 -crf 19 -r 30/1 -c:a aac -b:a 256k -movflags +faststart");
-        assert_eq!(s(Format::Mkv, Codec::H264, Quality::Bitrate(4000), false, false), "-c:v libx264 -preset medium -b:v 4000k -maxrate 4400k -bufsize 8000k -r 30/1");
-        assert_eq!(s(Format::WebM, Codec::Vp9, Quality::Lower, true, true), "-c:v libvpx-vp9 -b:v 0 -row-mt 1 -crf 38 -pix_fmt yuva420p -auto-alt-ref 0 -r 30/1 -c:a libopus -b:a 192k");
-        assert_eq!(s(Format::Mov, Codec::ProRes, Quality::Recommended, true, false), "-c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le -r 30/1 -c:a pcm_s16le -movflags +faststart");
+        let r = "-r 30/1 -color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709";
+        assert_eq!(s(Format::Mp4, Codec::H264, Quality::Recommended, true, false), format!("-c:v libx264 -preset medium -crf 20 {r} -c:a aac -b:a 256k -movflags +faststart"));
+        assert_eq!(s(Format::Mov, Codec::Hevc, Quality::Higher, true, false), format!("-c:v libx265 -preset medium -tag:v hvc1 -crf 19 {r} -c:a aac -b:a 256k -movflags +faststart"));
+        assert_eq!(s(Format::Mkv, Codec::H264, Quality::Bitrate(4000), false, false), format!("-c:v libx264 -preset medium -b:v 4000k -maxrate 4400k -bufsize 8000k {r}"));
+        assert_eq!(s(Format::WebM, Codec::Vp9, Quality::Lower, true, true), format!("-c:v libvpx-vp9 -b:v 0 -row-mt 1 -crf 38 -pix_fmt yuva420p -auto-alt-ref 0 {r} -c:a libopus -b:a 192k"));
+        assert_eq!(s(Format::Mov, Codec::ProRes, Quality::Recommended, true, false), format!("-c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le {r} -c:a pcm_s16le -movflags +faststart"));
         assert_eq!(s(Format::Gif, Codec::H264, Quality::Recommended, true, false), "-loop 0");
         assert_eq!(s(Format::M4a, Codec::H264, Quality::Recommended, true, false), "-c:a aac -b:a 256k");
     }
@@ -4555,6 +4589,36 @@ mod tests {
         }
     }
 
+    /// Every encoder of a delivered picture gets the BT.709 limited tags (hardware that does not
+    /// write them itself also the bitstream filter); the graph converts with the same matrix.
+    #[test]
+    fn color_args_everywhere() {
+        let p = Project::new("c");
+        let tags = ["-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"];
+        let encs = [Encoder::Software, Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Mf];
+        for format in [Format::Mp4, Format::Mov, Format::Mkv, Format::WebM] {
+            for &codec in Codec::for_format(format) {
+                for (encoder, transparent) in encs.iter().flat_map(|e| [(*e, false), (*e, true)]) {
+                    let s = ExportSettings { format, codec, encoder, transparent, ..ExportSettings::from_project(&p) };
+                    let a = video_args(&s);
+                    assert!(a.windows(tags.len()).any(|w| w == tags), "{s:?}: {a:?}");
+                    let bsf = a.iter().position(|x| x == "-bsf:v").map(|i| a[i + 1].clone());
+                    let needs = matches!(codec, Codec::H264 | Codec::Hevc) && matches!(encoder, Encoder::Qsv | Encoder::Amf | Encoder::Mf);
+                    assert_eq!(bsf.is_some(), needs, "{s:?}: {a:?}");
+                    if let Some(b) = bsf {
+                        assert!(b.starts_with(if codec == Codec::H264 { "h264_metadata=" } else { "hevc_metadata=" }) && b.ends_with(":matrix_coefficients=1"), "{b}");
+                    }
+                    assert!(to_yuv(&s).starts_with("scale=out_color_matrix=bt709:out_range=tv,format=") && to_yuv(&s).ends_with(BT709_FRAMES));
+                }
+            }
+        }
+        // GIF and audio-only: no colour tags
+        for format in [Format::Gif, Format::Wav, Format::M4a] {
+            let s = ExportSettings { format, ..ExportSettings::from_project(&p) };
+            assert!(!codec_args(&s).iter().any(|x| x == "-colorspace"), "{format:?}");
+        }
+    }
+
     /// Media Foundation: nv12, forced hardware, GOP 250, bitrate by quality; a custom
     /// bitrate replaces it; other codecs not via this path.
     #[test]
@@ -4564,7 +4628,10 @@ mod tests {
         let args = |s: &ExportSettings| codec_args(s).join(" ");
         s.codec = Codec::H264;
         s.quality = Quality::Recommended;
-        assert_eq!(args(&s), "-c:v h264_mf -pix_fmt nv12 -hw_encoding 1 -g 250 -b:v 9953k -r 60/1 -movflags +faststart");
+        assert_eq!(
+            args(&s),
+            "-c:v h264_mf -pix_fmt nv12 -hw_encoding 1 -g 250 -b:v 9953k -r 60/1 -color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 -bsf:v h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1 -movflags +faststart"
+        );
         s.quality = Quality::Lower;
         assert!(args(&s).contains("-b:v 6221k"), "{}", args(&s));
         s.quality = Quality::Higher;
