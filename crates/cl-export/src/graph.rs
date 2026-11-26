@@ -605,7 +605,13 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
     let boxes = match &st.karaoke {
         Some(k) => {
             let geo = Geo { data: &data, idx, size, tw, lw, lh, pitch, align: st.align, bold: st.bold };
-            karaoke_states(&geo, &txt, &k.starts(&st.text, c.duration), k.fill, dur)
+            // word starts as frames of this layer by the preview's coverage rule (layer frame 0 is
+            // the clip's first frame, see `place`): seconds against the layer's own `t` were off by
+            // the clip start's distance to the frame grid
+            let fps = Rational::parse(&ctx.fps).unwrap_or(Rational::new(30, 1));
+            let f0 = c.start.first_frame_from(fps);
+            let frames: Vec<i64> = k.starts(&st.text, c.duration).iter().map(|w| (c.start + *w).first_frame_from(fps) - f0).collect();
+            karaoke_states(&geo, &txt, &frames, k.fill, c.end().first_frame_from(fps) - f0)
         }
         None => Vec::new(),
     };
@@ -712,11 +718,11 @@ struct KBox {
     enable: String,
 }
 
-/// Rectangle per word of `txt` (already wrapped) on the text area, with the time in which it
-/// is highlighted (`starts` relative to the clip start, like `karaoke_word`). The rectangles reach
+/// Rectangle per word of `txt` (already wrapped) on the text area, with the layer frames on which it
+/// is highlighted (`starts`: first frame per word, `end`: frames of the clip). The rectangles reach
 /// to the middle of the spaces and the line gaps: both versions differ only in
 /// the fill color of the letters, so small measuring errors don't show.
-fn karaoke_states(g: &Geo, txt: &str, starts: &[Time], fill: bool, dur: f64) -> Vec<KBox> {
+fn karaoke_states(g: &Geo, txt: &str, starts: &[i64], fill: bool, end: i64) -> Vec<KBox> {
     let width = |s: &str| cl_fonts::text_width(g.data, g.idx, g.size, s).unwrap_or(g.size * 0.6 * s.chars().count() as f32);
     let space = width(" ");
     let bold = if g.bold { g.size * 0.03 } else { 0.0 };
@@ -739,9 +745,9 @@ fn karaoke_states(g: &Geo, txt: &str, starts: &[Time], fill: bool, dur: f64) -> 
             let Some(&a) = starts.get(i) else { break };
             let next = starts.get(i + 1).copied();
             i += 1;
-            let a = a.as_secs_f64();
-            let b = if fill { None } else { next.map(|b| b.as_secs_f64()) };
-            if a >= dur || b.is_some_and(|b| b <= 0.0 || b <= a) {
+            let b = if fill { None } else { next };
+            // no frame of its own (shorter than a frame, or outside the clip): the preview never lights it
+            if a >= end || b.is_some_and(|b| b <= a.max(0)) {
                 continue;
             }
             let x0 = (left + width(&line[..r.start]) - space / 2.0).max(0.0);
@@ -749,9 +755,10 @@ fn karaoke_states(g: &Geo, txt: &str, starts: &[Time], fill: bool, dur: f64) -> 
             let (x, y) = ((x0.floor() as u32).min(g.lw - 1), (y0.floor() as u32).min(g.lh - 1));
             let w = (x1.ceil() as u32).saturating_sub(x).clamp(1, g.lw - x);
             let h = (y1.ceil() as u32).saturating_sub(y).clamp(1, g.lh - y);
+            // `n`: frame counter of the layer (main input, a `color` source from frame 0)
             let enable = match b {
-                Some(b) => format!("gte(t,{})*lt(t,{})", f(a), f(b)),
-                None => format!("gte(t,{})", f(a)),
+                Some(b) => format!("gte(n,{a})*lt(n,{b})"),
+                None => format!("gte(n,{a})"),
             };
             out.push(KBox { x, y, w, h, enable });
         }
