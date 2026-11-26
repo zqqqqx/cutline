@@ -297,6 +297,35 @@ pub struct MatteSpan {
     pub end: Time,
 }
 
+/// Object cut-out: what the user marked. Lives on the clip, not in `ClipFx`, so marking does not
+/// change the effect fingerprint of the preview; the mask file it yields goes to `ClipFx::cutout`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Roto {
+    /// Marked frames in creation order; `keys[0]` is the base frame
+    pub keys: Vec<RotoKey>,
+}
+
+/// Marks on one frame: source time; points and frame as fractions of the source image before flip.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RotoKey {
+    pub t: Time,
+    pub points: Vec<RotoPoint>,
+    /// Frame around the object: left, top, right, bottom
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rect: Option<[f32; 4]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct RotoPoint {
+    pub x: f32,
+    pub y: f32,
+    /// Background point (Alt or right click) instead of object
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remove: bool,
+}
+
 /// Person effects based on the mask from „Hintergrund entfernen“.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

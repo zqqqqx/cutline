@@ -42,6 +42,12 @@ impl Region {
         let v = if sy < 0.0 { k.top } else { 1.0 - k.bottom };
         self.corner(2.0 * u - 1.0, 2.0 * v - 1.0)
     }
+    /// Screen point → fractions of the clip image as displayed (0…1 inside; mirrored like the player)
+    pub fn local(&self, p: Pos2) -> (f32, f32) {
+        let d = p - self.center;
+        let (s, c) = (-self.angle).sin_cos();
+        ((d.x * c - d.y * s) / self.size.x + 0.5, (d.x * s + d.y * c) / self.size.y + 0.5)
+    }
     /// Does `p` lie in the visible (cropped) area? 2 px of slack.
     pub fn contains(&self, p: Pos2) -> bool {
         let d = p - self.center;

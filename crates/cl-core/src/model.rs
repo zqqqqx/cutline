@@ -440,6 +440,9 @@ pub struct Clip {
     /// Detected beats (source time), for marks and snapping
     #[serde(default)]
     pub beats: Vec<Time>,
+    /// Object cut-out marks (the mask itself is `fx.cutout`); missing in the file when unused
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roto: Option<Roto>,
     /// Color label (index into `MARKER_COLORS`)
     #[serde(default)]
     pub label: Option<u8>,
@@ -547,6 +550,7 @@ impl Clip {
             audio_stream: None,
             extracted_streams: Vec::new(),
             beats: Vec::new(),
+            roto: None,
             label: None,
             group: None,
             crop: Crop::default(),

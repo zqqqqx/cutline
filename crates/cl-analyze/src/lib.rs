@@ -15,13 +15,15 @@ pub mod audio;
 pub mod beats;
 pub mod matte;
 pub mod reframe;
+pub mod roto;
 pub mod scenes;
 pub mod track;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 /// Downloadable models: (id, name, description, size MB, files (target relative to the model folder, URL)).
 /// URLs point to fixed commits; `#sha256=<hex>` at the end is checked by `cl_update::download_to`
@@ -69,7 +71,42 @@ pub static CATALOG: &[ModelInfo] = &[
         size_mb: 15,
         files: &[("rvm_mobilenetv3_fp32.onnx", "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx#sha256=88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828")],
     },
+    // export: huggingface.co/diffusionstudio/sam2.1-tiny-video-onnx-fp16 (Apache-2.0), mirrored
+    ModelInfo {
+        id: "sam2",
+        name: "SAM 2.1 Tiny",
+        about: "Objekte per Klick freistellen und verfolgen (Meta, Apache-2.0)",
+        size_mb: 80,
+        files: &[
+            ("sam2.1-tiny-512/onnx/vision_encoder.onnx", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/sam2.1-tiny-512-fp16-vision_encoder.onnx#sha256=24e9ccf5994be5c8dd93ebe771a4cc4f8bb122d0524555ac3ba4e7141710b133"),
+            ("sam2.1-tiny-512/onnx/mask_decoder.onnx", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/sam2.1-tiny-512-fp16-mask_decoder.onnx#sha256=6bc158b0d028777ca2e25203ece0f27429c436de39a5c7fe301b3858d6059789"),
+            ("sam2.1-tiny-512/onnx/memory_encoder.onnx", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/sam2.1-tiny-512-fp16-memory_encoder.onnx#sha256=8b2bb6810444cee684ef938b7464c5645653f236014f5497c3db3654818cc7ce"),
+            ("sam2.1-tiny-512/onnx/memory_attention.onnx", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/sam2.1-tiny-512-fp16-memory_attention.onnx#sha256=67c4e4da01bc7f501b88294bb19a8200362915ece04e9d7e367a437658f342c9"),
+            ("sam2.1-tiny-512/onnx/pointer_tpos.onnx", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/sam2.1-tiny-512-fp16-pointer_tpos.onnx#sha256=3ab5bfce40ed01208301b2d8f596b9c9f7f493dcd7e09ef01ec22e5be3694bd7"),
+            ("sam2.1-tiny-512/constants.json", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/sam2.1-tiny-512-fp16-constants.json#sha256=67583810f4b80b762285377a5cc1066bbe19cdf8ef7fc87ff6aa78fc79830ef2"),
+            ("sam2.1-tiny-512/LICENSE.txt", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/sam2.1-LICENSE-Apache-2.0.txt#sha256=cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"),
+        ],
+    },
+    // Windows only (the settings leave it out elsewhere). Microsoft stopped the DirectML build of
+    // ONNX Runtime at 1.24.4; DirectML itself is proprietary (redistribution with an application allowed)
+    ModelInfo {
+        id: "directml",
+        name: "Grafikkarten-Beschleunigung",
+        about: "Objekt freistellen auf der Grafikkarte (Microsoft DirectML 1.15.4, proprietäre Lizenz; ONNX Runtime 1.24.4, MIT-Lizenz)",
+        size_mb: 35,
+        files: &[
+            ("directml/onnxruntime.dll", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/onnxruntime-directml-1.24.4-win-x64.dll#sha256=e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40"),
+            ("directml/DirectML.dll", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/DirectML-1.15.4-win-x64.dll#sha256=9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"),
+            ("directml/LICENSE-DirectML.txt", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/DirectML-1.15.4-LICENSE.txt#sha256=a05138e3a085ff60a44881eedfa58dccb03ecc1d7b1f6ae888418e8c2fec4b8d"),
+            ("directml/LICENSE-onnxruntime.txt", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/onnxruntime-directml-1.24.4-LICENSE.txt#sha256=c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674"),
+        ],
+    },
 ];
+
+/// Catalog entry for this system? (the graphics card runtime exists only for Windows)
+pub fn offered(id: &str) -> bool {
+    id != "directml" || cfg!(windows)
+}
 
 /// Model folder with search logic for the individual files.
 #[derive(Debug, Clone)]
@@ -132,6 +169,16 @@ impl Models {
     pub fn rvm(&self) -> Option<PathBuf> {
         Some(self.dir.join("rvm_mobilenetv3_fp32.onnx")).filter(|p| p.is_file())
     }
+    /// Folder of the object model (five graphs and constants)
+    pub fn sam2(&self) -> Option<PathBuf> {
+        let d = self.dir.join(roto::MODEL_DIR);
+        (d.join("constants.json").is_file() && roto::GRAPHS.iter().all(|g| d.join("onnx").join(format!("{g}.onnx")).is_file())).then_some(d)
+    }
+    /// Folder with the DirectML build of the runtime and `DirectML.dll` (Windows only)
+    pub fn gpu_runtime(&self) -> Option<PathBuf> {
+        let d = self.dir.join("directml");
+        (cfg!(windows) && ["onnxruntime.dll", "DirectML.dll"].iter().all(|f| d.join(f).is_file())).then_some(d)
+    }
     /// Is a catalog entry completely present?
     pub fn installed(&self, id: &str) -> bool {
         match id {
@@ -139,16 +186,78 @@ impl Models {
             "parakeet" => self.parakeet().is_some(),
             "whisper" => self.whisper().is_some(),
             "rvm" => self.rvm().is_some(),
+            "sam2" => self.sam2().is_some(),
+            "directml" => self.gpu_runtime().is_some(),
             _ => false,
         }
     }
 }
 
 static ENV: OnceLock<Result<ort::environment::Environment, String>> = OnceLock::new();
+/// Checked folder of the graphics card runtime (see [`use_gpu_runtime`])
+static GPU_DIR: OnceLock<PathBuf> = OnceLock::new();
+static GPU_LOADED: AtomicBool = AtomicBool::new(false);
+static NOTE: Mutex<Option<String>> = Mutex::new(None);
 
-/// Load the ONNX runtime once.
+/// Load the runtime from `dir` (DirectML build + `DirectML.dll`, files checked by the caller)
+/// instead of the bundled one, if the runtime is not loaded yet. Only one runtime per process:
+/// it then serves every model.
+pub fn use_gpu_runtime(dir: PathBuf) {
+    let _ = GPU_DIR.set(dir);
+}
+
+/// The loaded runtime is the DirectML build.
+pub fn gpu_runtime_loaded() -> bool {
+    GPU_LOADED.load(Ordering::Relaxed)
+}
+
+/// Has a runtime been loaded (successfully or not)?
+pub fn runtime_loaded() -> bool {
+    ENV.get().is_some()
+}
+
+/// Why the graphics card is not used (load or session error), for a status line.
+pub fn runtime_note() -> Option<String> {
+    NOTE.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+pub fn note_runtime(s: String) {
+    eprintln!("ONNX Runtime: {s}");
+    *NOTE.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
+}
+
+/// Load `DirectML.dll` from its full path first: the runtime's import of it then resolves to this
+/// module instead of the older copy in System32 (Windows searches the exe folder, not the runtime's).
+#[cfg(windows)]
+fn preload(dll: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryW(name: *const u16) -> *mut std::ffi::c_void;
+    }
+    let w: Vec<u16> = dll.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: plain Win32 call with a NUL-terminated path; the module stays loaded on purpose
+    !unsafe { LoadLibraryW(w.as_ptr()) }.is_null()
+}
+
+/// Load the ONNX runtime once: the graphics card build if [`use_gpu_runtime`] named one and it loads,
+/// else the bundled one (a failed attempt leaves nothing behind, see `ort::init_from`).
 pub fn ort_env(models: &Models) -> Result<&'static ort::environment::Environment, String> {
     ENV.get_or_init(|| {
+        #[cfg(windows)]
+        if let Some(d) = GPU_DIR.get() {
+            if !preload(&d.join("DirectML.dll")) {
+                note_runtime("DirectML.dll nicht ladbar".into());
+            } else {
+                match ort::init_from(d.join("onnxruntime.dll")) {
+                    Ok(b) => {
+                        GPU_LOADED.store(true, Ordering::Relaxed);
+                        return b.with_name("cutline").build().map_err(|e| e.to_string());
+                    }
+                    Err(e) => note_runtime(e.to_string()),
+                }
+            }
+        }
         let dll = models
             .ort_dll()
             .ok_or("ONNX Runtime fehlt (Einstellungen → Modelle)")?;

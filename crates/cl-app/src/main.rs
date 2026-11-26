@@ -41,6 +41,7 @@ mod quick;
 mod project_tools;
 mod props;
 mod proxy;
+mod roto_ui;
 mod record;
 mod settings;
 mod soundbars;

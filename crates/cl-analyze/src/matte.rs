@@ -158,7 +158,7 @@ pub fn matte(
 
 /// `tmp` becomes `out` only when everything worked (`written`: encoder fine, frames
 /// written); on every other path (cancel, model or FFmpeg error, rename) it is removed.
-fn finish(tmp: &Path, out: &Path, result: Result<(), String>, written: bool) -> Result<(), String> {
+pub(crate) fn finish(tmp: &Path, out: &Path, result: Result<(), String>, written: bool) -> Result<(), String> {
     let done = result
         .and_then(|()| if written { Ok(()) } else { Err("Maskenvideo konnte nicht geschrieben werden".into()) })
         .and_then(|()| std::fs::rename(tmp, out).map_err(|e| e.to_string()));

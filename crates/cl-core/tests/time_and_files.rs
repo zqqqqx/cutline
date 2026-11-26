@@ -400,3 +400,22 @@ fn mask_range_round_trips_and_old_clips_stay_as_before() {
     assert_eq!((look.cutout, look.cutout_span), (set.cutout, Some(span)));
 }
 
+/// Object marks (format 6) live on the clip: absent from the file when unused, a set one survives
+/// saving with its frame and background points; background points alone count as nothing marked.
+#[test]
+fn object_marks_round_trip_on_the_clip() {
+    let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
+    assert!(!serde_json::to_string(&c).unwrap().contains("roto"));
+    let key = RotoKey {
+        t: Time::from_secs_f64(0.5),
+        points: vec![RotoPoint { x: 0.25, y: 0.5, remove: false }, RotoPoint { x: 0.9, y: 0.1, remove: true }],
+        rect: Some([0.1, 0.2, 0.6, 0.8]),
+    };
+    c.roto = Some(Roto { keys: vec![key.clone()] });
+    let json = serde_json::to_string(&c).unwrap();
+    assert_eq!(serde_json::from_str::<Clip>(&json).unwrap().roto, c.roto);
+    // the marks do not touch the effects (their fingerprint keys the preview)
+    assert_eq!(c.fx, ClipFx::default());
+    // an object point written without `remove`
+    assert!(json.contains(r#"{"x":0.25,"y":0.5}"#), "{json}");
+}

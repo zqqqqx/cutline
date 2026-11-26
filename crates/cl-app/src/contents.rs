@@ -675,7 +675,13 @@ impl App {
             }
             if ui.add(theme::ghost(format!("{}  Quellen und Lizenzen", icon::INFO))).clicked() {
                 let packs = catalog_packs(&self.plugins, self.i18n.lang().code());
-                self.contents_dialog = Some(ContentsDialog::Credits(catalog::credits(&packs, &|s| crate::tr(s))));
+                let mut text = catalog::credits(&packs, &|s| crate::tr(s));
+                // downloadable models and runtimes with their licenses (from the model catalog)
+                text += &format!("\n## {}\n\n", crate::tr("KI-Modelle"));
+                for i in cl_analyze::CATALOG.iter().filter(|i| cl_analyze::offered(i.id)) {
+                    text += &format!("- {}: {}\n", crate::tr(i.name), crate::tr(i.about));
+                }
+                self.contents_dialog = Some(ContentsDialog::Credits(text));
             }
         });
         self.available_packs(ui, &snap, &avail);
