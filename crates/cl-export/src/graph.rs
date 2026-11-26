@@ -94,14 +94,23 @@ pub(crate) fn source_segment(c: &Clip) -> (Time, Time) {
     (a.min(b), Time((b.0 - a.0).abs()))
 }
 
-/// Evaluated appearance, sampled over the clip length (for expressions).
-fn samples(c: &Clip, w: f32, h: f32) -> Vec<(f64, Evaluated)> {
+/// Distance from `start` to the first frame at or after it ([`Time::first_frame_from`]): layer time
+/// `τ` (0 on the clip's first frame) shows clip time `τ + δ`, as the preview evaluates frame time
+/// minus clip start.
+fn grid_lag(fps: &str, start: Time) -> f64 {
+    let fps = Rational::parse(fps).unwrap_or(Rational::new(30, 1));
+    (Time::from_secs_f64(start.first_frame_from(fps) as f64 / fps.as_f64()) - start).as_secs_f64()
+}
+
+/// Evaluated appearance, sampled over the clip length (for expressions in layer time).
+fn samples(ctx: &Ctx, c: &Clip) -> Vec<(f64, Evaluated)> {
     let dur = c.duration.as_secs_f64();
     let n = ((dur * 12.0).ceil() as usize).clamp(2, 240);
+    let lag = grid_lag(&ctx.fps, c.start);
     (0..=n)
         .map(|k| {
             let t = dur * k as f64 / n as f64;
-            (t, c.eval_at(Time::from_secs_f64(t), w, h))
+            (t - lag, c.eval_at(Time::from_secs_f64(t), ctx.w as f32, ctx.h as f32))
         })
         .collect()
 }
@@ -408,7 +417,7 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
         &u,
     ));
     let fl = crop_layer(ctx, &fl, bw, bh, c.crop);
-    let s = samples(c, w as f32, h as f32);
+    let s = samples(ctx, c);
     let label = post_transform(ctx, &fl, bw, bh, &s);
     Ok(Sprite {
         label,
@@ -684,7 +693,7 @@ fn text_sprite(ctx: &mut Ctx, c: &Clip, st: &TextStyle) -> Result<Option<Sprite>
         };
         ctx.graph.push(format!("[{under}][{out}]overlay=0:0:format=rgb{shear}[{src}]"));
     }
-    let s = samples(c, ctx.w as f32, ctx.h as f32);
+    let s = samples(ctx, c);
     let label = post_transform(ctx, &src, lw, lh, &s);
     Ok(Some(Sprite {
         label,
@@ -878,7 +887,8 @@ fn effect_layer(ctx: &mut Ctx, cur: &str, c: &Clip, r: &FxRef, filter: bool) -> 
         };
         ctx.graph.push(format!("[{ow}][{fr}]overlay=eof_action=pass{fmt}[{fm}]"));
         let mix = ctx.label("mix");
-        let lo = into; // offset in case the export starts inside the element
+        // element time of the first processed frame, as the preview evaluates it
+        let lo = into + grid_lag(&ctx.fps, c.start);
         let k = |tau: f64| {
             c.keyframes
                 .eval(Prop::Strength, Time::from_secs_f64(lo + tau))
