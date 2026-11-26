@@ -503,10 +503,12 @@ pub fn decode_frames(path: &Path, from: Time, n: u32, w: u32, h: u32, keep: &dyn
 }
 
 /// Like [`decode_frames`], but each frame goes to `each` as soon as it is decoded (scrub window:
-/// the picture follows while the window fills). Returns the number of frames read.
-pub fn decode_frames_each(path: &Path, from: Time, n: u32, w: u32, h: u32, kill: Option<&KillSwitch>, each: &mut dyn FnMut(u32, RgbaFrame)) -> Result<u32> {
+/// the picture follows while the window fills), optionally through `graph` like [`decode_frame_fx`].
+/// Returns the number of frames read.
+#[allow(clippy::too_many_arguments)]
+pub fn decode_frames_each(path: &Path, from: Time, n: u32, w: u32, h: u32, graph: Option<&str>, kill: Option<&KillSwitch>, each: &mut dyn FnMut(u32, RgbaFrame)) -> Result<u32> {
     let mut read = 0;
-    decode_raw(path, from, n.max(1), w, h, None, None, &mut |k, data| {
+    decode_raw(path, from, n.max(1), w, h, graph, None, &mut |k, data| {
         read = k + 1;
         each(k, RgbaFrame { width: w, height: h, data });
     }, kill)?;

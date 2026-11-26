@@ -278,6 +278,40 @@ pub struct ScrubSpec {
     pub fps: Rational,
     pub w: u32,
     pub h: u32,
+    /// Effect graph of the window frames (at the window size); must be `Some` exactly when the job
+    /// has a graph, see [`window_graph_ok`]
+    pub graph: Option<String>,
+}
+
+/// Can a single-frame effect graph run over a scrub window (one FFmpeg for many frames) and give
+/// each frame as its own single decode would? Only when every output frame depends on its own input
+/// frame alone: no time or frame-number variables, no filter that mixes frames, draws per-frame noise
+/// or reads an input of its own. Unclear cases (e.g. a `t` in a file path) fall back to single frames.
+pub(crate) fn window_graph_ok(g: &str) -> bool {
+    const TEMPORAL: [&str; 21] = [
+        "noise", "tmix", "tblend", "lagfun", "deflicker", "hqdn3d", "atadenoise", "tmedian", "deshake", "vidstabtransform", "minterpolate",
+        "movie", "zoompan", "fade", "random", "select", "framestep", "reverse", "loop", "fps", "trim",
+    ];
+    const TIME: [&str; 8] = ["t", "T", "n", "N", "time", "pos", "on", "in"];
+    let b = g.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if !(b[i].is_ascii_alphabetic() || b[i] == b'_') {
+            i += 1;
+            continue;
+        }
+        let s = i;
+        while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+            i += 1;
+        }
+        let tok = &g[s..i];
+        // `t=fill` (option name) and `[in]` (label) are no time variables
+        let name = b.get(i) == Some(&b'=') || (s > 0 && b[s - 1] == b'[');
+        if TEMPORAL.contains(&tok) || (!name && TIME.contains(&tok)) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Message to the player frame dispatcher: new job or finished result.
@@ -603,8 +637,8 @@ fn scrub_next(idx: i64, dir: i64, held: Option<(i64, i64)>, n: i64, end: Option<
 /// Scrub window of a clip in Stand: consecutive frames around the playhead from one FFmpeg, answered
 /// by source frame index (like the reverse window). Holds one contiguous run of at most `cap` frames.
 struct ScrubWin {
-    /// File, size, frame rate: if one changes, nothing is valid any more
-    spec: (PathBuf, u32, u32, Rational),
+    /// File, size, frame rate, effect graph: if one changes, nothing is valid any more
+    spec: (PathBuf, u32, u32, Rational, Option<String>),
     frames: std::collections::BTreeMap<i64, RgbaFrame>,
     /// running decode: (number, first frame, count, abort)
     busy: Option<(u64, i64, i64, Arc<KillSwitch>)>,
@@ -620,7 +654,7 @@ struct ScrubWin {
 }
 
 impl ScrubWin {
-    fn new(spec: (PathBuf, u32, u32, Rational)) -> Self {
+    fn new(spec: (PathBuf, u32, u32, Rational, Option<String>)) -> Self {
         Self { spec, frames: Default::default(), busy: None, end: None, want: None, shown: None, dir: 1, resting: false, last: std::time::Instant::now() }
     }
     fn kill(&mut self) {
@@ -676,7 +710,7 @@ impl ScrubWin {
 }
 
 /// Decoder of window runs (`cl_media::decode_frames_each`; tests count with a fake)
-type FramesFn = Arc<dyn Fn(&std::path::Path, Time, u32, u32, u32, &KillSwitch, &mut dyn FnMut(u32, RgbaFrame)) -> cl_media::Result<u32> + Send + Sync>;
+type FramesFn = Arc<dyn Fn(&std::path::Path, Time, u32, u32, u32, Option<&str>, &KillSwitch, &mut dyn FnMut(u32, RgbaFrame)) -> cl_media::Result<u32> + Send + Sync>;
 
 /// A scrub job whose exact frame is still to be decoded starts its decode only when the playhead rests:
 /// the UI asked for the same frame again on a later tick ([`Decoder::rest`]) and at least this long has
@@ -708,10 +742,10 @@ fn frame_dispatcher(
         STILL_JOBS[2].fetch_add(1, Ordering::Relaxed);
         let ks = Arc::new(KillSwitch::default());
         wn.busy = Some((seq, first, n, ks.clone()));
-        let (tx, frames_fn, (path, w, h, fps)) = (tx.clone(), frames_fn.clone(), wn.spec.clone());
+        let (tx, frames_fn, (path, w, h, fps, graph)) = (tx.clone(), frames_fn.clone(), wn.spec.clone());
         std::thread::spawn(move || {
             let from = Time::from_secs_f64(first as f64 / fps.as_f64());
-            let res = frames_fn(&path, from, n as u32, w, h, &ks, &mut |k, frame| {
+            let res = frames_fn(&path, from, n as u32, w, h, graph.as_deref(), &ks, &mut |k, frame| {
                 let _ = tx.send(Msg::ScrubFrame { clip, seq, idx: first + k as i64, frame });
             });
             let read = match res {
@@ -891,7 +925,8 @@ fn frame_dispatcher(
                     } else {
                         None
                     };
-                    let scrub = scrub.filter(|_| graph.is_none() && anim.is_none());
+                    // a graph only with its window graph (otherwise the window frames would lack the effects)
+                    let scrub = scrub.filter(|s| graph.is_some() == s.graph.is_some() && anim.is_none());
                     if let Some(frame) = anim.or_else(|| cache.get(key).cloned()) {
                         if let Some(k) = inflight.cancel(clip) {
                             k.kill();
@@ -901,7 +936,7 @@ fn frame_dispatcher(
                     } else if let Some(sw) = scrub {
                         // Stand with scrub window: steps and drags from memory, the exact frame (job's own
                         // file and size) as a single decode beside it
-                        let spec = (sw.path.clone(), sw.w, sw.h, sw.fps);
+                        let spec = (sw.path.clone(), sw.w, sw.h, sw.fps, sw.graph.clone());
                         let wn = scrubs.entry(clip).or_insert_with(|| ScrubWin::new(spec.clone()));
                         if wn.spec != spec {
                             wn.kill();
@@ -940,7 +975,7 @@ fn frame_dispatcher(
                             }
                         } else {
                             // a jump decodes its exact frame at once, otherwise once the playhead rests
-                            if let Some((s, ks, old)) = inflight.offer(clip, Still { key, path, at, w, h, graph: None }, EXACT_REST, jump, true) {
+                            if let Some((s, ks, old)) = inflight.offer(clip, Still { key, path, at, w, h, graph }, EXACT_REST, jump, true) {
                                 if let Some(o) = old {
                                     o.kill();
                                     perf_discarded();
@@ -1284,7 +1319,7 @@ impl Decoder {
         Self::with_still_decoder(
             ctx,
             Arc::new(|p, at, w, h, g, ks| cl_media::decode_frame_opts(p, at, w, h, g, false, Some(ks))),
-            Arc::new(|p, from, n, w, h, ks, each| cl_media::decode_frames_each(p, from, n, w, h, Some(ks), each)),
+            Arc::new(|p, from, n, w, h, g, ks, each| cl_media::decode_frames_each(p, from, n, w, h, g, Some(ks), each)),
             STILL_REST,
         )
     }
@@ -1718,11 +1753,14 @@ mod tests {
                     }
                 }
             }),
-            Arc::new(move |_, from, n, w, h, _, each| {
+            Arc::new(move |_, from, n, w, h, graph, _, each| {
                 let first = (from.as_secs_f64() * 120.0).round() as i64;
                 wins_tx.lock().unwrap().send((first, n)).unwrap();
                 for k in 0..n {
-                    each(k, RgbaFrame { width: w, height: h, data: vec![(first + k as i64) as u8; (w * h * 4) as usize] });
+                    let mut data = vec![(first + k as i64) as u8; (w * h * 4) as usize];
+                    // second byte: which graph made the frame (its length)
+                    data[1] = graph.map_or(0, |g| g.len() as u8);
+                    each(k, RgbaFrame { width: w, height: h, data });
                 }
                 Ok(n)
             }),
@@ -1882,7 +1920,7 @@ mod tests {
 
     fn scrub_job(clip: ClipId, key: u64, idx: i64, win: (u32, u32), graph: Option<String>) -> Job {
         let at = Time::from_secs_f64(idx as f64 / 120.0);
-        let scrub = ScrubSpec { path: "p.mp4".into(), at, fps: Rational::new(120, 1), w: win.0, h: win.1 };
+        let scrub = ScrubSpec { path: "p.mp4".into(), at, fps: Rational::new(120, 1), w: win.0, h: win.1, graph: None };
         Job::Frame { clip, key, path: "p.mp4".into(), at, w: 4, h: 2, graph, window: None, scrub: Some(scrub) }
     }
 
@@ -1981,6 +2019,54 @@ mod tests {
         assert!(wins.try_recv().is_err(), "no window with a graph");
     }
 
+    fn fx_job(clip: ClipId, key: u64, idx: i64, graph: &str) -> Job {
+        let at = Time::from_secs_f64(idx as f64 / 120.0);
+        let scrub = ScrubSpec { path: "p.mp4".into(), at, fps: Rational::new(120, 1), w: 4, h: 2, graph: Some(graph.into()) };
+        Job::Frame { clip, key, path: "p.mp4".into(), at, w: 4, h: 2, graph: Some(graph.into()), window: None, scrub: Some(scrub) }
+    }
+
+    /// Clip with an effect graph: scrubbing 30 positions starts one exact single decode (the first
+    /// position, a jump) and ONE window decode through the graph instead of 30 single decodes; its
+    /// frames are the exact ones. An effect change drops the window: no frame of the old graph shows,
+    /// the new position is decoded with the new graph and the next window runs with it.
+    #[test]
+    fn effect_clip_scrubs_from_one_window_and_an_effect_change_drops_it() {
+        let (d, calls, wins) = fake_decoder(STILL_REST);
+        let clip = ClipId::new();
+        let (a, b) = ("[0:v]eq=brightness=0.1[out]", "[0:v]eq=brightness=0.25,hflip[out]");
+        let frame = || match d.rx.recv_timeout(std::time::Duration::from_secs(10)).expect("frame") {
+            Done::Frame { key, exact, frame, .. } => (key, exact, frame.data[0], frame.data[1]),
+            _ => panic!("not a frame"),
+        };
+        let wait = |key: u64| {
+            let mut f = frame();
+            while f.0 < key {
+                f = frame();
+            }
+            f
+        };
+        d.send(fx_job(clip, 1000, 0, a));
+        let (_, go) = calls.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+        go.send(()).unwrap();
+        assert_eq!(frame().0, 1000);
+        for i in 1..=30 {
+            d.send(fx_job(clip, 1000 + i as u64, i, a));
+            assert_eq!(wait(1000 + i as u64), (1000 + i as u64, true, i as u8, a.len() as u8), "step {i}");
+        }
+        assert_eq!(wins.try_iter().count(), 1, "one window decode for 30 positions");
+        assert_eq!(calls.try_iter().count(), 0, "no single decode while scrubbing");
+        // effect changed: the old window is gone, the exact frame comes from a single decode
+        d.send(fx_job(clip, 2000, 31, b));
+        let (ms, go) = calls.recv_timeout(std::time::Duration::from_secs(10)).expect("single decode with the new effect");
+        assert_eq!(ms, 258);
+        go.send(()).unwrap();
+        let f = wait(2000);
+        assert!(f.0 == 2000 && f.3 != a.len() as u8, "frame of the old effect shown: {f:?}");
+        d.send(fx_job(clip, 2001, 32, b));
+        assert_eq!(wait(2001), (2001, true, 32, b.len() as u8), "new window with the new effect");
+        assert_eq!(wins.try_iter().count(), 1);
+    }
+
     /// Rest means an unchanged playhead on a later tick, not a pause between ticks: slow ticks (100 ms
     /// apart, longer than `EXACT_REST`) with new positions never start an exact decode nor stop the
     /// window; the same position on the next tick starts exactly one; the exact frame replaces the
@@ -2039,7 +2125,7 @@ mod tests {
             let fps = Rational::new(60, 1);
             for (n, i) in (30..50).chain((20..30).rev()).enumerate() {
                 let at = Time::from_secs_f64(i as f64 / 60.0);
-                let scrub = ScrubSpec { path: src.clone(), at, fps, w: 64, h: 36 };
+                let scrub = ScrubSpec { path: src.clone(), at, fps, w: 64, h: 36, graph: None };
                 let key = n as u64 + 1;
                 d.send(Job::Frame { clip, key, path: src.clone(), at, w: 64, h: 36, graph: None, window: None, scrub: Some(scrub) });
                 let f = loop {
@@ -2053,6 +2139,66 @@ mod tests {
                 assert!(one.data == f.data, "{name}: frame {i} differs");
             }
         }
+    }
+
+    /// Real FFmpeg: with an effect graph (colour adjust, blur, mask) the scrub window frames are
+    /// byte-identical with single frames through the still graph of their position.
+    #[test]
+    fn scrub_window_frames_with_effects_equal_single_frames() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("fx.mp4");
+        let ok = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=128x72:r=60:d=3", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "60"])
+            .arg(&src)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let mut c = cl_core::Clip::new(cl_core::ClipContent::Media { media: MediaId::new(), kind: cl_core::MediaKind::Video }, Time::ZERO, Time::from_secs_f64(3.0));
+        (c.fx.adjust.brightness, c.fx.adjust.saturation) = (0.2, 0.4);
+        c.fx.effects.push(cl_core::FxRef { id: "blur".into(), intensity: 0.6, params: Default::default() });
+        c.fx.mask = Some(cl_core::Mask::new(cl_core::MaskShape::Circle));
+        let win_graph = cl_fx::preview_graph(&c, 64, 36, 0.0, None, None);
+        assert!(win_graph.as_deref().is_some_and(window_graph_ok));
+        // real decoders; single decodes counted (the frames must come from the windows)
+        let stills = Arc::new(AtomicUsize::new(0));
+        let n = stills.clone();
+        let d = Decoder::with_still_decoder(
+            egui::Context::default(),
+            Arc::new(move |p, at, w, h, g, ks| {
+                n.fetch_add(1, Ordering::Relaxed);
+                cl_media::decode_frame_opts(p, at, w, h, g, false, Some(ks))
+            }),
+            Arc::new(|p, from, n, w, h, g, ks, each| cl_media::decode_frames_each(p, from, n, w, h, g, Some(ks), each)),
+            STILL_REST,
+        );
+        let clip = ClipId::new();
+        let fps = Rational::new(60, 1);
+        let mut key = 0u64;
+        for i in (30..50).chain((20..30).rev()) {
+            let at = Time::from_secs_f64(i as f64 / 60.0);
+            let graph = cl_fx::preview_graph(&c, 64, 36, at.as_secs_f64(), None, None);
+            let scrub = ScrubSpec { path: src.clone(), at, fps, w: 64, h: 36, graph: win_graph.clone() };
+            key += 1;
+            d.send(Job::Frame { clip, key, path: src.clone(), at, w: 64, h: 36, graph: graph.clone(), window: None, scrub: Some(scrub) });
+            let f = loop {
+                match d.rx.recv_timeout(std::time::Duration::from_secs(20)).expect("no frame") {
+                    Done::Frame { key: k, frame, exact: true, .. } if k == key => break frame,
+                    Done::Error(e) | Done::FrameFailed { error: e, .. } => panic!("{e}"),
+                    _ => {}
+                }
+            };
+            let one = cl_media::decode_frame_fx(&src, at, 64, 36, graph.as_deref()).unwrap();
+            assert!(one.data == f.data, "frame {i} differs");
+        }
+        // frames came from windows (exactly how many depends on the machine: a window is dropped after
+        // 2 s without a job, and here every single decode waits for its frame; counts: fake decoder tests)
+        let stills = stills.load(Ordering::Relaxed);
+        assert!(stills < 30, "{stills} single decodes for 30 positions");
     }
 
     /// Timeline thumbnails take the size from the job (`MediaRef`, rotation applied) instead of
