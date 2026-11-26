@@ -89,6 +89,9 @@ jobs:
           path: test-output.txt
 
       - name: Build
+        env:
+          # address for the opt-in error reports; empty: the feature stays hidden
+          CUTLINE_SENTRY_DSN: ${{ secrets.CUTLINE_SENTRY_DSN }}
         run: cargo build --release -p cl-app
 
       - name: ONNX Runtime (for subtitles and background removal)
