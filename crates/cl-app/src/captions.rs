@@ -361,7 +361,14 @@ impl App {
         self.project.timeline.tracks.iter().filter(|t| is_caption_track(t)).map(|t| t.id).collect()
     }
 
+    /// Any caption at all? Cheap enough for every frame (no collecting)
+    pub fn has_captions(&self) -> bool {
+        self.project.timeline.tracks.iter().any(|t| is_caption_track(t) && !t.clips.is_empty())
+    }
+
     pub fn caption_clips(&self) -> Vec<Clip> {
+        #[cfg(test)]
+        tests::COLLECTS.with(|n| n.set(n.get() + 1));
         bulk_targets(&self.project)
     }
 
@@ -885,12 +892,14 @@ fn text_of(c: &Clip) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     thread_local! {
         /// Captions whose row the list built in this thread (test-only counter)
         pub(super) static BUILT: std::cell::RefCell<Vec<ClipId>> = const { std::cell::RefCell::new(Vec::new()) };
+        /// Calls of `caption_clips` in this thread (test-only counter)
+        pub(crate) static COLLECTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     }
 
     #[test]

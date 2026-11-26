@@ -383,7 +383,7 @@ impl App {
             return;
         };
         let total = self.project.duration().as_secs_f64();
-        let has_caps = !self.caption_clips().is_empty();
+        let has_caps = self.has_captions();
         let max = st.hits.iter().map(|h| h.strength).fold(0.0f32, f32::max).max(1e-6);
         let (mut make, mut markers) = (false, false);
         // before drawing: a value field gives up focus already on Enter
@@ -1036,5 +1036,23 @@ mod tests {
         p.timeline.tracks[0].clips[0].duration = Time::from_secs_f64(3.0);
         let k2 = follow_jobs(&p)[0].0.clone();
         assert!(k0 != k1 && k1 != k2 && k0.0 == a && k2.0 == a, "{k0:?} {k1:?} {k2:?}");
+    }
+
+    /// Bug: the open Highlights window collected, cloned and sorted all captions every frame
+    /// just to know whether there are any.
+    #[test]
+    fn highlights_window_does_not_collect_captions_per_frame() {
+        let mut app = crate::saving::tests::test_app();
+        app.set_doc(Project::new("k"));
+        let seg = cl_analyze::asr::Segment { start: 1.0, end: 2.0, text: "Hallo".into(), words: Vec::new() };
+        assert_eq!(app.add_caption_segments(&[seg], Time::ZERO), 1);
+        app.shorts = Some(ShortsState { hits: vec![Hit { at: 1.0, strength: 1.0, on: true }], len: 30.0, captions: true });
+        let ctx = egui::Context::default();
+        crate::captions::tests::COLLECTS.with(|n| n.set(0));
+        for _ in 0..5 {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| app.shorts_window(ctx));
+        }
+        assert!(app.shorts.is_some(), "window stays open");
+        assert_eq!(crate::captions::tests::COLLECTS.with(|n| n.get()), 0, "captions collected while only showing the window");
     }
 }
