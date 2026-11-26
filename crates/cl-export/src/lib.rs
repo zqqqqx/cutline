@@ -3098,6 +3098,67 @@ mod tests {
         assert!(px(160, 90)[0] > 150 && px(160, 90)[1] < 90, "red box stays: {:?}", px(160, 90));
     }
 
+    /// Bug (window test): the preview applied the mask at about twice the clip time – the mask
+    /// stream started at 0 while the picture carried the clip time, and `alphamerge` pairs by time.
+    /// A mask whose white bar moves 3 px per frame tells which mask frame was used: still frames,
+    /// the playback stream from mid-clip and the export must all use the mask frame of the source
+    /// frame shown – for an old whole-file mask and for a range not starting at 0, with `source_in` > 0.
+    #[test]
+    fn preview_and_export_use_the_mask_frame_of_the_source_frame() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let make = |name: &str, src: &str, args: &[&str]| {
+            let path = dir.path().join(name);
+            let st = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", src]).args(args).arg(&path).status().unwrap();
+            assert!(st.success(), "{name}");
+            path
+        };
+        let white = cl_media::probe(&make("white.mp4", "color=white:s=320x180:r=30:d=4", &["-pix_fmt", "yuv420p"])).unwrap();
+        // mask frame k: white bar at x = 8 + 3k
+        let matte = make("bar.mkv", "color=black:s=320x180:r=30:d=3[b];color=white:s=16x180:r=30:d=3[w];[b][w]overlay=x='8+t*90':y=0,format=gray", &["-c:v", "ffv1"]);
+        let fps = Rational::new(30, 1);
+        // first column with the mask white (alpha or brightness above half)
+        let bar = |f: &cl_media::RgbaFrame, alpha: bool| (0..320usize).find(|x| f.data[(90 * 320 + x) * 4 + if alpha { 3 } else { 0 }] > 128);
+        // (mask frame 0 in source time, span): an old whole-file person mask, a range from 0.5 s
+        for (base, span) in [(0.0, None), (0.5, Some(MatteSpan { start: Time::from_secs_f64(0.5), end: Time::from_secs_f64(3.5) }))] {
+            let mut c = Clip::new(ClipContent::Media { media: white.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.5));
+            c.source_in = Time::from_secs_f64(1.0);
+            c.fx.cutout = Some(matte.to_string_lossy().into_owned());
+            c.fx.cutout_span = span;
+            let want = |t: f64| Some((8.0 + 3.0 * ((1.0 + t - base) * 30.0).round()) as usize);
+            let near = |got: Option<usize>, t: f64| got.zip(want(t)).is_some_and(|(g, w)| g.abs_diff(w) <= 3);
+            for t in [0.0, 0.5, 1.0, 1.4] {
+                let g = cl_fx::preview_graph(&c, 320, 180, t, None, None).unwrap();
+                let f = cl_media::decode_frame_fx(&white.path, c.source_time(c.start + Time::from_secs_f64(t)), 320, 180, Some(&g)).unwrap();
+                assert!(near(bar(&f, true), t), "still at {t} (base {base}): bar at {:?}, want {:?}\n{g}", bar(&f, true), want(t));
+            }
+            let t0 = 0.5;
+            let g = cl_fx::preview_graph(&c, 320, 180, t0, Some(fps), None).unwrap();
+            let s = cl_media::FrameStream::open_fx(&white.path, c.source_time(c.start + Time::from_secs_f64(t0)), 320, 180, fps, Some(&g)).unwrap();
+            for j in 0..20 {
+                let f = s.next_blocking().expect("stream frame");
+                let t = t0 + j as f64 / 30.0;
+                assert!(near(bar(&f, true), t), "stream frame {j} (base {base}): bar at {:?}, want {:?}\n{g}", bar(&f, true), want(t));
+            }
+            let mut d = Document::new(Project::new("Balken"));
+            let mut st = d.project().settings.clone();
+            (st.width, st.height, st.fps) = (320, 180, fps);
+            d.apply(EditOp::SetSettings { settings: st }, OpSource::Ui).unwrap();
+            d.apply(EditOp::ImportMedia { media: white.clone() }, OpSource::Ui).unwrap();
+            d.apply(EditOp::AddClip { track: None, clip: c.clone() }, OpSource::Ui).unwrap();
+            let p = d.project().clone();
+            let out = dir.path().join("bar.mp4");
+            let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &out).unwrap();
+            run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+            for t in [0.0, 0.5, 1.0, 1.4] {
+                let f = cl_media::decode_frame(&out, Time::from_secs_f64(t), 320, 180).unwrap();
+                assert!(near(bar(&f, false), t), "export at {t} (base {base}): bar at {:?}, want {:?}", bar(&f, false), want(t));
+            }
+        }
+    }
+
     /// A mask covering only 0.5–1.0 s of the source (white source on the black canvas, mask
     /// black = cut out): cut out only there – forwards, reversed, a clip outside the range
     /// (no mask input at all) – and the preview agrees frame by frame. A still image uses its

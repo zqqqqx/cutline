@@ -1358,6 +1358,11 @@ pub fn preview_graph(
             None => matte_pre.push(format!("fps={}/{}", fps.num, fps.den)),
         }
     }
+    // the picture carries the clip time from `fx_graph` (`setpts=…+t_offset`) and `alphamerge` pairs
+    // frames by time: the mask needs the same time, or it runs `t_offset` ahead
+    if t_offset > 0.0 {
+        matte_pre.push(format!("setpts=PTS-STARTPTS+round({t_offset:.6}/TB)"));
+    }
     matte_pre.push(format!("scale={w}:{h}:flags=bilinear,format=gray"));
     if let Some(fps) = stream {
         if fx.speed_curve.is_none() && (speed - 1.0).abs() > 1e-3 {
@@ -1376,10 +1381,13 @@ pub fn preview_graph(
     let mut lines = vec![format!("[0:v]{}[pre]", pre.join(","))];
     let mut matte = None;
     if let Some((m, win)) = cutout {
+        let seek = win.seek.as_secs_f64();
+        // `movie` seeks to an index point before `seek_point` and passes everything from there: drop
+        // the frames before the wanted one (2 ms slack for millisecond timestamps)
+        let trim = if seek > 0.0 { format!("trim=start={:.6},", (seek - 0.002).max(0.0)) } else { String::new() };
         lines.push(format!(
-            "movie=filename={}:seek_point={:.4},{}[mt]",
+            "movie=filename={}:seek_point={seek:.4},{trim}{}[mt]",
             cl_media::escape_path(m),
-            win.seek.as_secs_f64(),
             matte_pre.join(",")
         ));
         matte = Some("mt".to_string());
