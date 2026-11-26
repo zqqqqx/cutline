@@ -55,11 +55,11 @@ pub(crate) fn units(p: &Project, start: Time, end: Time, video: bool, audio: boo
                 }
                 let mut u = Unit { start: a, end: b, inputs: 0, chars: 0, audio: false };
                 for c in g {
-                    let ClipContent::Media { media, kind: MediaKind::Video | MediaKind::Image } = &c.content else { continue };
+                    let ClipContent::Media { media, kind: kind @ (MediaKind::Video | MediaKind::Image) } = &c.content else { continue };
                     let Some(m) = p.media(*media) else { continue };
                     u.inputs += 1;
                     u.chars += input_len(m);
-                    if let Some(mp) = c.fx.cutout.as_ref().filter(|mp| std::path::Path::new(mp).is_file()) {
+                    if let Some((mp, _)) = graph::matte_input(c, *kind == MediaKind::Image) {
                         u.inputs += 1;
                         u.chars += mp.len() + 48;
                     }

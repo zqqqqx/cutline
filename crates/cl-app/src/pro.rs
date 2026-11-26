@@ -107,18 +107,30 @@ impl CutMode {
     fn apply(self, fx: &mut ClipFx) {
         match self {
             CutMode::Off => {
-                fx.cutout = None;
+                (fx.cutout, fx.cutout_span) = (None, None);
                 fx.chroma = None;
                 fx.person = None;
                 fx.edge = MatteEdge::default();
             }
             CutMode::Person => fx.chroma = None,
             CutMode::Color => {
-                fx.cutout = None;
+                (fx.cutout, fx.cutout_span) = (None, None);
                 fx.chroma.get_or_insert_with(ChromaKey::default);
             }
         }
     }
+}
+
+/// Status line of the clip's mask in the inspector (`busy`: its job runs, the task bar shows
+/// that); `None` = fine. The clip may reach past the computed range (trimmed longer).
+pub(crate) fn mask_status(c: &Clip, busy: bool) -> Option<&'static str> {
+    c.fx.cutout.as_ref().filter(|_| !busy)?;
+    if cl_fx::matte_file(&c.fx).is_none() {
+        return Some("Maske fehlt");
+    }
+    let span = c.fx.cutout_span?;
+    let (a, b) = (c.source_time(c.start), c.source_time(c.end()));
+    (a.min(b) < span.start || a.max(b) > span.end).then_some("Bereich nicht verfolgt")
 }
 
 fn matte_cache(path: &std::path::Path) -> PathBuf {
@@ -663,7 +675,11 @@ impl App {
                 e.commit = true;
             }
             if mode == CutMode::Person {
-                task_bar(ui, self, &task);
+                if !task_bar(ui, self, &task) {
+                    if let Some(s) = mask_status(c, false) {
+                        ui.label(RichText::new(crate::tr(format!("{}  {s}", icon::WARNING))).small().color(theme::WARN_TEXT()));
+                    }
+                }
                 // older projects: mask and color key at once
                 if c.fx.chroma.is_some() {
                     let x = theme::row(ui, "Farbe zusätzlich aktiv", |ui| {
@@ -1794,6 +1810,32 @@ mod tests {
         doc.undo().unwrap();
         assert_eq!(doc.project().timeline.tracks[0].clips[0].fx.chroma, None);
         assert_eq!(doc.project().timeline.tracks[0].clips[0].fx.cutout.as_deref(), Some("m.mkv"));
+    }
+
+    /// Status of the mask: missing file, clip longer than the computed range, nothing while its
+    /// job runs or without a mask.
+    #[test]
+    fn mask_status_names_missing_file_and_untracked_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Time::from_secs_f64;
+        let mut c = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, s(2.0));
+        assert_eq!(mask_status(&c, false), None);
+        let f = dir.path().join("m.mkv");
+        c.fx.cutout = Some(f.to_string_lossy().into_owned());
+        assert_eq!(mask_status(&c, false), Some("Maske fehlt"));
+        assert_eq!(mask_status(&c, true), None);
+        let before = crate::player::fx_hash_of(&c);
+        std::fs::write(&f, b"x").unwrap();
+        assert_eq!(mask_status(&c, false), None);
+        // the file appearing changes the preview key (frames and streams open with the mask)
+        assert_ne!(crate::player::fx_hash_of(&c), before);
+        c.fx.cutout_span = Some(MatteSpan { start: Time::ZERO, end: s(2.0) });
+        assert_eq!(mask_status(&c, false), None);
+        // trimmed longer than the range, in either direction
+        c.duration = s(2.5);
+        assert_eq!(mask_status(&c, false), Some("Bereich nicht verfolgt"));
+        (c.duration, c.source_in, c.fx.cutout_span) = (s(1.0), s(0.5), Some(MatteSpan { start: s(1.0), end: s(3.0) }));
+        assert_eq!(mask_status(&c, false), Some("Bereich nicht verfolgt"));
     }
 
     #[test]

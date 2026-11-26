@@ -3098,6 +3098,93 @@ mod tests {
         assert!(px(160, 90)[0] > 150 && px(160, 90)[1] < 90, "red box stays: {:?}", px(160, 90));
     }
 
+    /// A mask covering only 0.5–1.0 s of the source (white source on the black canvas, mask
+    /// black = cut out): cut out only there – forwards, reversed, a clip outside the range
+    /// (no mask input at all) – and the preview agrees frame by frame. A still image uses its
+    /// one-frame mask.
+    #[test]
+    fn exports_a_mask_for_part_of_the_source_and_for_images() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let make = |name: &str, src: &str, args: &[&str]| {
+            let path = dir.path().join(name);
+            let st = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", src]).args(args).arg(&path).status().unwrap();
+            assert!(st.success(), "{name}");
+            path
+        };
+        let white = cl_media::probe(&make("white.mp4", "color=white:s=320x180:r=30:d=2", &["-pix_fmt", "yuv420p"])).unwrap();
+        let matte = make("short.mkv", "color=black:s=320x180:r=30:d=0.5,format=gray", &["-c:v", "ffv1"]);
+        let png = cl_media::probe(&make("still.png", "color=white:s=320x180:d=0.04", &["-frames:v", "1"])).unwrap();
+        let half = make("half.mkv", "color=white:s=320x180:r=30:d=0.04,drawbox=x=0:y=0:w=160:h=180:color=black:t=fill,format=gray", &["-c:v", "ffv1"]);
+        let span = Some(MatteSpan { start: Time::from_secs_f64(0.5), end: Time::from_secs_f64(1.0) });
+        let export = |m: &MediaRef, c: Clip, name: &str| {
+            let mut d = Document::new(Project::new("Bereich"));
+            let mut s = d.project().settings.clone();
+            (s.width, s.height) = (320, 180);
+            d.apply(EditOp::SetSettings { settings: s }, OpSource::Ui).unwrap();
+            d.apply(EditOp::ImportMedia { media: m.clone() }, OpSource::Ui).unwrap();
+            d.apply(EditOp::AddClip { track: None, clip: c }, OpSource::Ui).unwrap();
+            let p = d.project().clone();
+            let out = dir.path().join(name);
+            let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &out).unwrap();
+            let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
+            run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap_or_else(|e| panic!("{e}\n{g}"));
+            (out, g)
+        };
+        let clip = |m: &MediaRef, kind: MediaKind, mask: &std::path::Path| {
+            let mut c = Clip::new(ClipContent::Media { media: m.id, kind }, Time::ZERO, Time::from_secs_f64(2.0));
+            c.fx.cutout = Some(mask.to_string_lossy().into_owned());
+            c
+        };
+        let r = |f: &cl_media::RgbaFrame, x: usize| f.data[(90 * 320 + x) * 4];
+        // (reverse, times with the expected brightness: 255 = shown, 0 = cut out)
+        for (reverse, want) in [(false, [(0.25, 255), (0.75, 0), (1.5, 255)]), (true, [(0.75, 255), (1.25, 0), (1.75, 255)])] {
+            let mut c = clip(&white, MediaKind::Video, &matte);
+            (c.fx.cutout_span, c.fx.reverse) = (span, reverse);
+            let (out, g) = export(&white, c.clone(), "range.mp4");
+            // every frame: the mask's 15 frames exactly at frames 15–29 (or mirrored), none lost at its end
+            let s = cl_media::FrameStream::open_fx(&out, Time::ZERO, 320, 180, Rational::new(30, 1), None).unwrap();
+            let mut got = vec![];
+            while let Some(f) = s.next_blocking() {
+                got.push(r(&f, 160) < 128);
+            }
+            let cut: Vec<usize> = (0..got.len()).filter(|&i| got[i]).collect();
+            let first = if reverse { 30 } else { 15 };
+            assert_eq!(cut, (first..first + 15).collect::<Vec<_>>(), "cut-out frames (reverse {reverse}) of {}\n{g}", got.len());
+            for (t, v) in want {
+                let at = Time::from_secs_f64(t);
+                let f = cl_media::decode_frame(&out, at, 320, 180).unwrap();
+                assert!(r(&f, 160).abs_diff(v) < 40, "export at {t} (reverse {reverse}): {}\n{g}", r(&f, 160));
+                if !reverse {
+                    // preview: alpha of the same frame (outside the range: no graph, opaque)
+                    let pg = cl_fx::preview_graph(&c, 320, 180, t, None, None).unwrap_or_default();
+                    let pf = cl_media::decode_frame_fx(&white.path, at, 320, 180, Some(pg.as_str()).filter(|g| !g.is_empty())).unwrap();
+                    assert_eq!(pf.data[(90 * 320 + 160) * 4 + 3], v, "preview at {t}\n{pg}");
+                }
+            }
+        }
+        // a clip showing only source 1.2–2.0 s: no overlap, no mask input
+        let mut c = clip(&white, MediaKind::Video, &matte);
+        c.fx.cutout_span = span;
+        (c.source_in, c.duration) = (Time::from_secs_f64(1.2), Time::from_secs_f64(0.8));
+        let (out, g) = export(&white, c, "outside.mp4");
+        assert!(!g.contains("short.mkv"), "{g}");
+        assert!(r(&cl_media::decode_frame(&out, Time::from_secs_f64(0.4), 320, 180).unwrap(), 160) > 215);
+        // still image with a one-frame mask (left half black): left cut out, right shown, all along
+        let still = clip(&png, MediaKind::Image, &half);
+        let (out, g) = export(&png, still.clone(), "still.mp4");
+        for t in [0.1, 1.8] {
+            let f = cl_media::decode_frame(&out, Time::from_secs_f64(t), 320, 180).unwrap();
+            assert!(r(&f, 60) < 40 && r(&f, 260) > 215, "image at {t}: {} {}\n{g}", r(&f, 60), r(&f, 260));
+            let pg = cl_fx::preview_graph(&still, 320, 180, t, None, None).unwrap();
+            let pf = cl_media::decode_frame_fx(&png.path, Time::ZERO, 320, 180, Some(&pg)).unwrap();
+            let a = |x: usize| pf.data[(90 * 320 + x) * 4 + 3];
+            assert_eq!((a(60), a(260)), (0, 255), "image preview at {t}\n{pg}");
+        }
+    }
+
     #[test]
     fn exports_phase4_features() {
         if !cl_media::test_tools() {

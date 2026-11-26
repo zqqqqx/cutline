@@ -125,6 +125,9 @@ pub struct ClipFx {
     pub cutout: Option<String>,
     /// What happens to the background when a person mask exists
     pub person: Option<PersonFx>,
+    /// Source range the mask file covers (frame 0 = `start`); `None` = the whole file
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cutout_span: Option<MatteSpan>,
     /// Edge of the cutout mask (person or color key); identity = field missing in the file
     #[serde(skip_serializing_if = "MatteEdge::is_identity")]
     pub edge: MatteEdge,
@@ -284,6 +287,14 @@ impl MatteEdge {
         let c = |v: f32, lo: f32| if v.is_finite() { v.clamp(lo, 1.0) } else { 0.0 };
         Self { feather: c(self.feather, 0.0), shift: c(self.shift, -1.0), invert: self.invert }
     }
+}
+
+/// Part of the source a mask file covers (source time, `end` exclusive); frame 0 of the file
+/// shows `start`. Outside of it the clip is not cut out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MatteSpan {
+    pub start: Time,
+    pub end: Time,
 }
 
 /// Person effects based on the mask from „Hintergrund entfernen“.
@@ -501,6 +512,7 @@ impl ClipFx {
     /// speed curve, reverse, censor areas.
     pub fn keep_bound(&mut self, from: &ClipFx) {
         self.cutout = from.cutout.clone();
+        self.cutout_span = from.cutout_span;
         self.person = from.person.clone();
         self.edge = from.edge;
         self.speed_curve = from.speed_curve.clone();

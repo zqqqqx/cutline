@@ -368,7 +368,7 @@ fn clips_with_impossible_times_are_dropped_on_load() {
 /// file without `blur` loads hard, a soft one survives saving; the softness is clamped.
 #[test]
 fn soft_shadow_round_trips_and_hard_shadows_stay_as_before() {
-    assert_eq!(PROJECT_SCHEMA_VERSION, 5);
+    assert!(PROJECT_SCHEMA_VERSION >= 5);
     // as 0.17.0 wrote a set shadow
     let v4 = r#"{"color":[255,0,0,200],"dx":12.0,"dy":-8.0}"#;
     let hard: Shadow = serde_json::from_str(v4).unwrap();
@@ -382,3 +382,21 @@ fn soft_shadow_round_trips_and_hard_shadows_stay_as_before() {
     let sigma = |blur: f32| Shadow { blur, ..hard }.sigma();
     assert_eq!((sigma(6.0), sigma(0.0), sigma(-3.0), sigma(1e9), sigma(f32::NAN)), (3.0, 0.0, 0.0, 20.0, 0.0));
 }
+
+/// Mask range (format 6): a clip without one is written as before (no `cutout_span`), a set
+/// range survives saving, and `keep_bound` keeps it with the mask.
+#[test]
+fn mask_range_round_trips_and_old_clips_stay_as_before() {
+    assert_eq!(PROJECT_SCHEMA_VERSION, 6);
+    let plain = ClipFx { cutout: Some("m.mkv".into()), ..Default::default() };
+    let json = serde_json::to_string(&plain).unwrap();
+    assert!(!json.contains("cutout_span"), "{json}");
+    let span = MatteSpan { start: Time::from_secs_f64(1.0), end: Time::from_secs_f64(2.5) };
+    let set = ClipFx { cutout_span: Some(span), ..plain.clone() };
+    let json = serde_json::to_string(&set).unwrap();
+    assert_eq!(serde_json::from_str::<ClipFx>(&json).unwrap(), set);
+    let mut look = ClipFx::default();
+    look.keep_bound(&set);
+    assert_eq!((look.cutout, look.cutout_span), (set.cutout, Some(span)));
+}
+
