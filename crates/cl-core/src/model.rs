@@ -118,6 +118,8 @@ impl Project {
         p.schema_version = PROJECT_SCHEMA_VERSION;
         for t in &mut p.timeline.tracks {
             t.clips.retain_mut(Clip::sanitize_times);
+            // the ops rely on clips sorted by start (binary search for free room)
+            t.clips.sort_by_key(|c| c.start);
         }
         // bring broken values (hand edits, foreign tools) to valid ones; valid ones stay
         if !p.settings.valid() {

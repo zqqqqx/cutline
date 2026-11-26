@@ -21,6 +21,28 @@
 
 **Behoben**
 
+## 0.18.3 – 2026-11-26
+
+### English
+
+**Improved**
+- **Reverb rings out after the clip.** The tail of the "Reverb" audio effect is no longer cut off at the end of the clip – in the preview and in the export.
+- **Creating thousands of captions is fast.** Speech recognition on long videos and re-splitting lines no longer slow down with the number of captions.
+
+**Fixed**
+- **Animations in the export run on the same frame as in the preview.** Keyframes (opacity, position, scale, rotation), text animations and effect strength could be up to one frame early when a clip did not start exactly on a frame.
+- **Archiving a project takes cut-out masks and LUT files along.** Before, the archived copy lost its person cut-outs and looks.
+
+### Deutsch
+
+**Verbessert**
+- **Hall klingt nach dem Clip aus.** Der Ausklang des Audioeffekts „Hall“ wird am Clip-Ende nicht mehr abgeschnitten – in der Vorschau und im Export.
+- **Tausende Untertitel anlegen geht schnell.** Spracherkennung bei langen Videos und das Neuaufteilen werden mit der Zahl der Untertitel nicht mehr langsamer.
+
+**Behoben**
+- **Animationen laufen im Export auf demselben Bild wie in der Vorschau.** Keyframes (Deckkraft, Position, Größe, Drehung), Textanimationen und Effektstärke konnten bis zu ein Bild zu früh kommen, wenn ein Clip nicht genau auf einem Bild begann.
+- **Projekt archivieren nimmt Freistell-Masken und LUT-Dateien mit.** Vorher verlor die archivierte Kopie ihre Personen-Freistellung und Looks.
+
 ## 0.18.2 – 2026-11-26
 
 ### English
