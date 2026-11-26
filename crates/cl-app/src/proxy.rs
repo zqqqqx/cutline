@@ -946,7 +946,7 @@ impl App {
         // at most half the height: ~1 MB per frame, a window run of up to 1 s fits the memory budget
         let max_h = if h <= max_h { h } else { max_h.min(h / 2).max(2) };
         let (w, h) = if h <= max_h { (w, h) } else { cl_media::fit_size(w, h, w, max_h) };
-        Some(crate::preview::ScrubSpec { path, at, fps, w, h })
+        Some(crate::preview::ScrubSpec { path, at, fps, w, h, graph: None })
     }
 
     /// Source of the stream of layer `id` from timeline place `from` (rules: [`parts::choose_stream`]).

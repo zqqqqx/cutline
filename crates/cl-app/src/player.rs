@@ -368,6 +368,12 @@ fn decode_size(c: &Clip, m: &MediaRef, canvas_px: egui::Vec2, div: f32) -> (u32,
     cl_media::fit_size(m.width, m.height, max_w, max_h)
 }
 
+/// May the clip's single-frame graph run over the scrub window: each frame depends on its own input
+/// frame only (`preview::window_graph_ok`); censor areas follow the position, so they need single frames.
+fn scrub_graph_ok(c: &Clip, graph: Option<&str>) -> bool {
+    graph.is_none_or(|g| crate::preview::window_graph_ok(g) && c.fx.censor.is_empty())
+}
+
 /// Source time of a clip's single frame at clip time `t_rel`.
 fn still_src(c: &Clip, m: &MediaRef, t_rel: Time, fps: Rational) -> Time {
     let ClipContent::Media { kind: MediaKind::Video, .. } = &c.content else {
@@ -806,12 +812,20 @@ mod presence_tests {
             .filter(|p| p.is_file())
             .collect();
         let only = std::env::var("CUTLINE_QA_RUN").ok();
-        println!("| file | proxy | run | frames/s moving | longest gap ms | final exact ms | single decodes | killed | window decodes |");
-        println!("|---|---|---|---|---|---|---|---|---|");
-        for path in &files {
+        // clip kinds (comma list): plain, adjust (colour adjust), effect (blur), reverse, stacked (two layers)
+        let kinds = std::env::var("CUTLINE_QA_CLIP").unwrap_or_else(|_| "plain".into());
+        let only_file = std::env::var("CUTLINE_QA_FILE").ok();
+        let only_proxy = std::env::var("CUTLINE_QA_PROXY").ok();
+        println!("| file | clip | proxy | run | frames/s moving | longest gap ms | final exact ms | single decodes | killed | window decodes |");
+        println!("|---|---|---|---|---|---|---|---|---|---|");
+        let files: Vec<_> = files.iter().filter(|p| only_file.as_deref().is_none_or(|f| p.to_string_lossy().contains(f))).collect();
+        for (kind, path) in kinds.split(',').flat_map(|k| files.iter().map(move |p| (k, p))) {
             let m = cl_media::probe(path).unwrap();
             let fps = m.fps.map_or(60.0, |f| f.as_f64());
             for proxy in [false, true] {
+                if only_proxy.as_deref().is_some_and(|o| (o == "yes") != proxy) {
+                    continue;
+                }
                 if proxy {
                     // proxy parts of the first 10 s (the measured range lies in part 0)
                     let out = work.join(format!("{}-540.mp4", path.file_stem().unwrap().to_string_lossy()));
@@ -829,10 +843,25 @@ mod presence_tests {
                     p.settings.fps = Rational::new(60, 1);
                     let mut v1 = cl_core::Track::new(TrackKind::Video);
                     v1.main = true;
-                    let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, m.duration);
-                    let id = c.id;
-                    v1.clips.push(c);
+                    let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, m.duration);
+                    match kind {
+                        "adjust" => (c.fx.adjust.brightness, c.fx.adjust.saturation) = (0.2, 0.3),
+                        "effect" => c.fx.effects.push(cl_core::FxRef { id: "blur".into(), intensity: 0.5, params: Default::default() }),
+                        "reverse" => c.fx.reverse = true,
+                        _ => {}
+                    }
+                    let mut id = c.id;
+                    v1.clips.push(c.clone());
                     p.timeline.tracks = vec![v1];
+                    if kind == "stacked" {
+                        // second layer above, smaller, so both are visible; measured is the top one
+                        let mut top = Clip { id: ClipId::new(), ..c };
+                        top.transform.scale = 0.5;
+                        id = top.id;
+                        let mut v2 = cl_core::Track::new(TrackKind::Video);
+                        v2.clips.push(top);
+                        p.timeline.tracks.push(v2);
+                    }
                     p.media = vec![m.clone()];
                     app.project = p;
                     // positions per UI tick (16 ms): drag over 2 s from 3 s, or steps at 30/s
@@ -898,7 +927,7 @@ mod presence_tests {
                     }
                     let jobs: Vec<usize> = count().iter().zip(&jobs0).map(|(a, b)| a - b).collect();
                     println!(
-                        "| {} | {} | {run} | {:.1} | {:.0} | {} | {} | {} | {} |",
+                        "| {} | {kind} | {} | {run} | {:.1} | {:.0} | {} | {} | {} | {} |",
                         path.file_name().unwrap().to_string_lossy(),
                         if proxy { "yes" } else { "no" },
                         changes as f64 / moved,
@@ -1109,6 +1138,39 @@ mod shader_tests {
         assert!(!preroll_fits(&spec, &crate::playcore::Open { key: 43, ..o }, 9, 3), "quality, size, effects, source");
         assert!(!preroll_fits(&spec, &crate::playcore::Open { id: 8, ..o }, 9, 3), "other layer");
         assert!(!preroll_fits(&spec, &o, 10, 3), "other source");
+    }
+
+    /// Which effect graphs the scrub window may run (real graphs from `cl_fx::preview_graph`): spatial
+    /// ones yes; time expressions, per-frame noise, frame mixing, stabilise, denoise, deflicker and
+    /// censor areas need single frames.
+    #[test]
+    fn scrub_window_runs_only_frame_independent_graphs() {
+        let base = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
+        let fx = |id: &str| cl_core::FxRef { id: id.into(), intensity: 0.7, params: Default::default() };
+        let ok = |f: &dyn Fn(&mut Clip)| {
+            let mut c = base.clone();
+            f(&mut c);
+            let g = cl_fx::preview_graph(&c, 64, 36, 2.5, None, None);
+            scrub_graph_ok(&c, g.as_deref())
+        };
+        assert!(ok(&|_| {}), "plain clip");
+        assert!(ok(&|c| (c.fx.adjust.brightness, c.fx.adjust.saturation, c.fx.adjust.hue) = (0.2, 0.3, 20.0)), "colour adjust");
+        assert!(ok(&|c| c.fx.effects.push(fx("blur"))), "blur");
+        assert!(ok(&|c| c.fx.effects.push(fx("sepia"))), "sepia");
+        assert!(ok(&|c| c.fx.mask = Some(cl_core::Mask::new(cl_core::MaskShape::Circle))), "mask");
+        assert!(ok(&|c| c.fx.flip_h = true), "flip");
+        assert!(ok(&|c| c.fx.reverse = true), "reverse alone has no graph");
+        for id in ["grain", "shake", "zoom-pulse", "motion-blur", "echo", "glitch", "strobe", "flash", "old-film", "warm-leak", "vhs"] {
+            assert!(!ok(&|c| c.fx.effects.push(fx(id))), "{id}");
+        }
+        assert!(!ok(&|c| c.fx.adjust.grain = 0.5), "grain adjust");
+        assert!(!ok(&|c| c.fx.stabilize = 0.5), "stabilise");
+        assert!(!ok(&|c| c.fx.denoise = 0.5), "denoise");
+        assert!(!ok(&|c| c.fx.deflicker = true), "deflicker");
+        assert!(!ok(&|c| c.fx.censor.push(Default::default())), "censor");
+        // names and labels are no time variables
+        assert!(crate::preview::window_graph_ok("[0:v]drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill[in];[in]null[out]"));
+        assert!(!crate::preview::window_graph_ok("[0:v]crop=10:10:x='t*5'[out]"));
     }
 
     #[test]
@@ -2669,11 +2731,15 @@ impl App {
         } else {
             // check the LUT file only when requesting, not per UI frame
             let lut = c.fx.lut.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(cl_media::escape_path);
-            let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut);
+            let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut.clone());
             let (path, at) = self.still_source(m, h, src, false);
             let window = reverse_window(c, m, path == m.path, graph.is_none(), self.core.playing() && self.core.rate() > 0.0, fps);
-            // Stand: scrub window (proxy first) for plain clips; with an effect graph single frames
-            let scrub = (scrub && !self.core.playing() && graph.is_none() && !animated_fx).then(|| self.window_source(m, (w, h), src)).flatten();
+            // Stand: scrub window (proxy first), with the effect graph if it can run over a window
+            let scrub = (scrub && !self.core.playing() && scrub_graph_ok(c, graph.as_deref()) && !animated_fx).then(|| self.window_source(m, (w, h), src)).flatten().map(|s| {
+                // at the window size; the clip time does not matter for such a graph
+                let graph = graph.as_ref().and_then(|_| cl_fx::preview_graph(c, s.w, s.h, 0.0, None, lut));
+                crate::preview::ScrubSpec { graph, ..s }
+            });
             if scrub.is_some() {
                 // a quiet UI does not draw: the next tick (same frame = rest) must come by itself
                 ctx.request_repaint_after(crate::preview::EXACT_REST + std::time::Duration::from_millis(10));
