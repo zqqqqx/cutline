@@ -47,7 +47,7 @@ id_type!(MediaId);
 
 /// Raise this whenever a field is added whose loss would change the user's edit: older versions
 /// then refuse the file instead of loading it and saving it back without that field.
-pub const PROJECT_SCHEMA_VERSION: u32 = 5;
+pub const PROJECT_SCHEMA_VERSION: u32 = 6;
 
 /// Load error for a project saved by a newer Cutline (the UI translates it as a whole).
 pub const NEWER_PROJECT: &str = "Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.";
@@ -440,6 +440,9 @@ pub struct Clip {
     /// Detected beats (source time), for marks and snapping
     #[serde(default)]
     pub beats: Vec<Time>,
+    /// Object cut-out marks (the mask itself is `fx.cutout`); missing in the file when unused
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roto: Option<Roto>,
     /// Color label (index into `MARKER_COLORS`)
     #[serde(default)]
     pub label: Option<u8>,
@@ -547,6 +550,7 @@ impl Clip {
             audio_stream: None,
             extracted_streams: Vec::new(),
             beats: Vec::new(),
+            roto: None,
             label: None,
             group: None,
             crop: Crop::default(),

@@ -561,10 +561,12 @@ pub(crate) fn reverse_window(c: &Clip, m: &MediaRef, original: bool, no_graph: b
     (video && hd && c.fx.reverse && original && no_graph && playing_forward).then(|| m.fps.unwrap_or(fps))
 }
 
-/// Fingerprint of a clip's effects (part of the frame and stream keys)
+/// Fingerprint of a clip's effects (part of the frame and stream keys); includes whether the
+/// mask file exists yet (it appears after the edit that names it, see `App::masks_changed`)
 pub(crate) fn fx_hash_of(c: &Clip) -> u64 {
     let mut hs = std::collections::hash_map::DefaultHasher::new();
     serde_json::to_string(&c.fx).unwrap_or_default().hash(&mut hs);
+    cl_fx::matte_file(&c.fx).is_some().hash(&mut hs);
     hs.finish()
 }
 
@@ -2467,6 +2469,12 @@ impl App {
             self.fx_hashes = (self.revision, Default::default());
         }
         *self.fx_hashes.1.entry(id).or_insert_with(calc)
+    }
+
+    /// A mask file appeared (or went) without an edit: fingerprints are computed anew, so the
+    /// preview opens frames and streams with the mask.
+    pub(crate) fn masks_changed(&mut self) {
+        self.fx_hashes.1.clear();
     }
 
     fn layers_at(&self, t: Time) -> Vec<Layer> {

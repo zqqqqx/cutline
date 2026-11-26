@@ -263,6 +263,11 @@ static BEHIND: AtomicBool = AtomicBool::new(false);
 static USER_PAUSED: AtomicBool = AtomicBool::new(false);
 static LAST_ACTIVITY: Mutex<Option<Instant>> = Mutex::new(None);
 
+/// Playback is running (background work such as object tracking pauses meanwhile).
+pub fn playing() -> bool {
+    PLAYING.load(Ordering::Relaxed)
+}
+
 /// The player has just requested or received a single frame (click, scrubbing).
 pub fn note_activity() {
     *LAST_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());

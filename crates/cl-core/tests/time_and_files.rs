@@ -368,7 +368,7 @@ fn clips_with_impossible_times_are_dropped_on_load() {
 /// file without `blur` loads hard, a soft one survives saving; the softness is clamped.
 #[test]
 fn soft_shadow_round_trips_and_hard_shadows_stay_as_before() {
-    assert_eq!(PROJECT_SCHEMA_VERSION, 5);
+    assert!(PROJECT_SCHEMA_VERSION >= 5);
     // as 0.17.0 wrote a set shadow
     let v4 = r#"{"color":[255,0,0,200],"dx":12.0,"dy":-8.0}"#;
     let hard: Shadow = serde_json::from_str(v4).unwrap();
@@ -381,4 +381,41 @@ fn soft_shadow_round_trips_and_hard_shadows_stay_as_before() {
     // sigma = softness / 2, softness within 0–40
     let sigma = |blur: f32| Shadow { blur, ..hard }.sigma();
     assert_eq!((sigma(6.0), sigma(0.0), sigma(-3.0), sigma(1e9), sigma(f32::NAN)), (3.0, 0.0, 0.0, 20.0, 0.0));
+}
+
+/// Mask range (format 6): a clip without one is written as before (no `cutout_span`), a set
+/// range survives saving, and `keep_bound` keeps it with the mask.
+#[test]
+fn mask_range_round_trips_and_old_clips_stay_as_before() {
+    assert_eq!(PROJECT_SCHEMA_VERSION, 6);
+    let plain = ClipFx { cutout: Some("m.mkv".into()), ..Default::default() };
+    let json = serde_json::to_string(&plain).unwrap();
+    assert!(!json.contains("cutout_span"), "{json}");
+    let span = MatteSpan { start: Time::from_secs_f64(1.0), end: Time::from_secs_f64(2.5) };
+    let set = ClipFx { cutout_span: Some(span), ..plain.clone() };
+    let json = serde_json::to_string(&set).unwrap();
+    assert_eq!(serde_json::from_str::<ClipFx>(&json).unwrap(), set);
+    let mut look = ClipFx::default();
+    look.keep_bound(&set);
+    assert_eq!((look.cutout, look.cutout_span), (set.cutout, Some(span)));
+}
+
+/// Object marks (format 6) live on the clip: absent from the file when unused, a set one survives
+/// saving with its frame and background points; background points alone count as nothing marked.
+#[test]
+fn object_marks_round_trip_on_the_clip() {
+    let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
+    assert!(!serde_json::to_string(&c).unwrap().contains("roto"));
+    let key = RotoKey {
+        t: Time::from_secs_f64(0.5),
+        points: vec![RotoPoint { x: 0.25, y: 0.5, remove: false }, RotoPoint { x: 0.9, y: 0.1, remove: true }],
+        rect: Some([0.1, 0.2, 0.6, 0.8]),
+    };
+    c.roto = Some(Roto { keys: vec![key.clone()] });
+    let json = serde_json::to_string(&c).unwrap();
+    assert_eq!(serde_json::from_str::<Clip>(&json).unwrap().roto, c.roto);
+    // the marks do not touch the effects (their fingerprint keys the preview)
+    assert_eq!(c.fx, ClipFx::default());
+    // an object point written without `remove`
+    assert!(json.contains(r#"{"x":0.25,"y":0.5}"#), "{json}");
 }

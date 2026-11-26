@@ -481,6 +481,8 @@ pub struct ExportDialog {
     error: Option<String>,
     /// Effects/filters the catalog does not know (dropped in the export)
     missing: Vec<String>,
+    /// Media whose cutout mask is missing or not finished yet (exported without the cutout)
+    masks: Vec<String>,
     /// Time and duration of the last successful export (short success animation)
     done: Option<(Instant, f32)>,
     /// Project state when the dialog was opened
@@ -600,6 +602,7 @@ impl ExportDialog {
         self.missing = cl_fx::catalog::missing(p).into_iter().map(|m| cl_fx::fx_name(&m.0)).collect();
         self.missing.sort();
         self.missing.dedup();
+        self.masks = cl_fx::missing_masks(p);
         self.last_output = None;
         self.name = p.name.clone();
         self.project_path = project_path.map(Path::to_path_buf);
@@ -1294,6 +1297,15 @@ impl ExportDialog {
                         )))
                         .small()
                         .color(theme::WARN_TEXT()),
+                    );
+                }
+                if !self.masks.is_empty() {
+                    // a mask finished while the dialog is open: the warning goes
+                    self.masks = cl_fx::missing_masks(p);
+                    ui.label(
+                        RichText::new(crate::tr(format!("{}  Maske fehlt oder ist noch nicht fertig: {}", icon::WARNING, self.masks.join(", "))))
+                            .small()
+                            .color(theme::WARN_TEXT()),
                     );
                 }
                 if let Some(e) = &self.error {

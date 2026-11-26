@@ -1235,6 +1235,68 @@ fn person_graph(g: &mut GraphBuilder, m: &str, pf: &cl_core::PersonFx, src: Src)
     g.set_current(out);
 }
 
+/// Part of a mask file that feeds a source segment, see [`matte_window`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatteWindow {
+    /// Start in the mask file (from its frame 0) and length to read
+    pub seek: Time,
+    pub len: Time,
+    /// Source time before the mask begins and after it ends: not cut out there
+    pub lead: Time,
+    pub tail: Time,
+}
+
+/// Mask file covering `span` (`None` = the whole source, frame 0 = source 0) for the source
+/// segment `src_start .. src_start + src_len`; `None` when they do not overlap (not cut out at all).
+pub fn matte_window(span: Option<MatteSpan>, src_start: Time, src_len: Time) -> Option<MatteWindow> {
+    let Some(s) = span else {
+        return Some(MatteWindow { seek: src_start, len: src_len, lead: Time::ZERO, tail: Time::ZERO });
+    };
+    let end = src_start + src_len;
+    let (a, b) = (src_start.max(s.start), end.min(s.end));
+    (b > a).then(|| MatteWindow { seek: a - s.start, len: b - a, lead: a - src_start, tail: end - b })
+}
+
+/// `tpad` that fills `lead`/`tail` seconds with a mask that keeps the whole picture (white; black
+/// when the edge inverts it, so it ends up white). `None` without padding (graph as before).
+pub fn matte_pad(lead: f64, tail: f64, invert: bool) -> Option<String> {
+    let color = if invert { "black" } else { "white" };
+    let mut v = vec![];
+    if lead > 0.0 {
+        v.push(format!("start_duration={lead:.6}"));
+    }
+    if tail > 0.0 {
+        v.push(format!("stop_duration={tail:.6}"));
+    }
+    (!v.is_empty()).then(|| format!("tpad={}:color={color}", v.join(":")))
+}
+
+/// Mask file of the clip, if it exists (person or object mask).
+pub fn matte_file(fx: &ClipFx) -> Option<&String> {
+    fx.cutout.as_ref().filter(|p| std::path::Path::new(p).is_file())
+}
+
+/// File names of the media whose visible clips name a mask that is not on disk (missing or
+/// still being computed): the export would show them without the cutout.
+pub fn missing_masks(p: &Project) -> Vec<String> {
+    let mut v: Vec<String> = p
+        .timeline
+        .tracks
+        .iter()
+        .filter(|t| !t.hidden)
+        .flat_map(|t| &t.clips)
+        .filter(|c| !c.disabled && c.fx.cutout.is_some() && matte_file(&c.fx).is_none())
+        .filter_map(|c| match c.content {
+            ClipContent::Media { media, .. } => p.media(media),
+            _ => None,
+        })
+        .map(|m| m.path.file_name().map_or_else(|| m.path.display().to_string(), |n| n.to_string_lossy().into_owned()))
+        .collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
 /// Filter graph for the preview (`[0:v]` → `[out]`, `w`×`h` RGBA), or `None` if the
 /// fast path without effects is enough. `t_offset` = clip time of the first frame,
 /// `stream` = playback (frame rate and speed), otherwise single frame.
@@ -1248,10 +1310,20 @@ pub fn preview_graph(
 ) -> Option<String> {
     let speed = c.speed;
     let fx = &c.fx;
-    let cutout = fx
-        .cutout
-        .as_ref()
-        .filter(|p| std::path::Path::new(p).is_file());
+    let image = matches!(c.content, ClipContent::Media { kind: MediaKind::Image, .. });
+    // mask part for this frame (single frame) or from here to the clip end (stream)
+    let src_t = c.source_time(c.start + Time::from_secs_f64(t_offset));
+    let src_len = match stream {
+        Some(_) => Time((c.source_time(c.end()).0 - src_t.0).max(1)),
+        None => Time(1),
+    };
+    let window = if image {
+        // still image: one mask frame
+        Some(MatteWindow { seek: Time::ZERO, len: Time(1), lead: Time::ZERO, tail: Time::ZERO })
+    } else {
+        matte_window(fx.cutout_span, src_t, src_len)
+    };
+    let cutout = matte_file(fx).zip(window);
     let needs = !fx.is_empty()
         && (fx.flip_h
             || fx.flip_v
@@ -1273,10 +1345,18 @@ pub fn preview_graph(
     let mut pre = vec!["setpts=PTS-STARTPTS".to_string()];
     let mut matte_pre = vec!["setpts=PTS-STARTPTS".to_string()];
     if let Some(fps) = stream {
-        if fx.speed_curve.is_none() && (speed - 1.0).abs() > 1e-3 {
+        let sped = fx.speed_curve.is_none() && (speed - 1.0).abs() > 1e-3;
+        if sped {
             matte_pre.push(format!("setpts=(PTS-STARTPTS)/{speed:.5}"));
         }
-        matte_pre.push(format!("fps={}/{}", fps.num, fps.den));
+        // padding in stream time (source time / speed) after `fps`: FFmpeg 7 forgets the rate after
+        // `setpts`. `eof_action=pass` keeps the mask's last frame (the movie source ends at its pts).
+        // shortcut: with a speed curve the padding uses speed 1, exact enough for the preview
+        let k = if sped { speed.max(0.01) as f64 } else { 1.0 };
+        match cutout.and_then(|(_, w)| matte_pad(w.lead.as_secs_f64() / k, w.tail.as_secs_f64() / k, fx.edge.invert)) {
+            Some(p) => matte_pre.extend([format!("fps={}/{}:eof_action=pass", fps.num, fps.den), p]),
+            None => matte_pre.push(format!("fps={}/{}", fps.num, fps.den)),
+        }
     }
     matte_pre.push(format!("scale={w}:{h}:flags=bilinear,format=gray"));
     if let Some(fps) = stream {
@@ -1295,13 +1375,11 @@ pub fn preview_graph(
     pre.push(format!("scale={w}:{h}:flags=bilinear"));
     let mut lines = vec![format!("[0:v]{}[pre]", pre.join(","))];
     let mut matte = None;
-    if let Some(m) = cutout {
-        let src_t = c
-            .source_time(c.start + Time::from_secs_f64(t_offset))
-            .as_secs_f64();
+    if let Some((m, win)) = cutout {
         lines.push(format!(
-            "movie=filename={}:seek_point={src_t:.4},{}[mt]",
+            "movie=filename={}:seek_point={:.4},{}[mt]",
             cl_media::escape_path(m),
+            win.seek.as_secs_f64(),
             matte_pre.join(",")
         ));
         matte = Some("mt".to_string());
@@ -2125,6 +2203,110 @@ mod tests {
                 let g = matte_case(&fx, false);
                 run_graph(&g, &[]).unwrap_or_else(|e| panic!("{e}\n{g}"));
             }
+        }
+    }
+
+    /// Mask range against a source segment: jump into the file, lead and tail outside, no overlap.
+    #[test]
+    fn matte_window_cuts_the_mask_range() {
+        let s = |a: f64| Time::from_secs_f64(a);
+        let span = Some(MatteSpan { start: s(2.0), end: s(5.0) });
+        let w = |a: f64, len: f64| matte_window(span, s(a), s(len));
+        // whole file (as before): read from the segment start
+        assert_eq!(
+            matte_window(None, s(1.0), s(3.0)),
+            Some(MatteWindow { seek: s(1.0), len: s(3.0), lead: Time::ZERO, tail: Time::ZERO })
+        );
+        // inside
+        assert_eq!(w(3.0, 1.0), Some(MatteWindow { seek: s(1.0), len: s(1.0), lead: Time::ZERO, tail: Time::ZERO }));
+        // starts before, ends after: lead and tail
+        assert_eq!(w(1.0, 6.0), Some(MatteWindow { seek: Time::ZERO, len: s(3.0), lead: s(1.0), tail: s(2.0) }));
+        // only touching or outside: not cut out
+        assert_eq!(w(0.0, 2.0), None);
+        assert_eq!(w(5.0, 1.0), None);
+        // single frame (1 µs) at the first and just before the end
+        assert_eq!(w(2.0, 0.000001).map(|w| w.seek), Some(Time::ZERO));
+        assert!(w(4.999, 0.000001).is_some() && w(1.999, 0.000001).is_none());
+        // padding: white keeps the picture, black when the edge inverts; nothing without padding
+        assert_eq!(matte_pad(0.0, 0.0, false), None);
+        assert_eq!(matte_pad(0.5, 0.0, false).unwrap(), "tpad=start_duration=0.500000:color=white");
+        assert_eq!(matte_pad(0.0, 1.0, true).unwrap(), "tpad=stop_duration=1.000000:color=black");
+    }
+
+    /// The export warns about visible clips whose mask is named but not on disk (yet).
+    #[test]
+    fn missing_masks_lists_visible_clips_without_their_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = Project::new("M");
+        let m = MediaRef {
+            id: MediaId::new(),
+            path: dir.path().join("a.mp4"),
+            kind: MediaKind::Video,
+            duration: Time::from_secs_f64(1.0),
+            width: 16,
+            height: 16,
+            fps: None,
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: None,
+            audio_codec: None,
+            has_alpha: false,
+        };
+        let mut t = Track::new(TrackKind::Video);
+        let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(1.0));
+        p.media.push(m);
+        let f = dir.path().join("mask.mkv");
+        c.fx.cutout = Some(f.to_string_lossy().into_owned());
+        t.clips.push(c);
+        p.timeline.tracks.push(t);
+        assert_eq!(missing_masks(&p), vec!["a.mp4".to_string()]);
+        p.timeline.tracks[0].clips[0].disabled = true;
+        assert!(missing_masks(&p).is_empty());
+        p.timeline.tracks[0].clips[0].disabled = false;
+        std::fs::write(&f, b"x").unwrap();
+        assert!(missing_masks(&p).is_empty());
+    }
+
+    /// Preview of a clip whose mask covers only 0.5–1.0 s: before and after not cut out, inside
+    /// cut out – single frames and a running stream; an inverted mask pads with black.
+    #[test]
+    fn preview_cuts_out_only_inside_the_mask_range() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let make = |name: &str, src: &str, args: &[&str]| {
+            let p = dir.path().join(name);
+            let st = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", src]).args(args).arg(&p).status().unwrap();
+            assert!(st.success(), "{name}");
+            p
+        };
+        let v = make("v.mp4", "color=white:s=160x90:r=30:d=2", &["-pix_fmt", "yuv420p"]);
+        let black = make("black.mkv", "color=black:s=160x90:r=30:d=0.5,format=gray", &["-c:v", "ffv1"]);
+        let white = make("white.mkv", "color=white:s=160x90:r=30:d=0.5,format=gray", &["-c:v", "ffv1"]);
+        let fps = Rational::new(30, 1);
+        for (mask, invert) in [(&black, false), (&white, true)] {
+            let mut c = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(2.0));
+            c.fx.cutout = Some(mask.to_string_lossy().into_owned());
+            c.fx.cutout_span = Some(MatteSpan { start: Time::from_secs_f64(0.5), end: Time::from_secs_f64(1.0) });
+            c.fx.edge.invert = invert;
+            for (t, alpha) in [(0.25, 255), (0.75, 0), (1.5, 255)] {
+                // outside the range nothing to do: the fast path without a graph (opaque)
+                let g = preview_graph(&c, 160, 90, t, None, None).unwrap_or_default();
+                let f = cl_media::decode_frame_fx(&v, Time::from_secs_f64(t), 160, 90, Some(g.as_str()).filter(|g| !g.is_empty())).unwrap();
+                assert_eq!(f.data[(45 * 160 + 80) * 4 + 3], alpha, "single frame at {t} (invert {invert})\n{g}");
+            }
+            let g = preview_graph(&c, 160, 90, 0.0, Some(fps), None).unwrap();
+            let s = cl_media::FrameStream::open_fx(&v, Time::ZERO, 160, 90, fps, Some(&g)).unwrap();
+            let mut a = vec![];
+            while let Some(f) = s.next_blocking() {
+                a.push(f.data[(45 * 160 + 80) * 4 + 3]);
+            }
+            assert!(a.len() >= 58, "stream ran through: {} frames\n{g}", a.len());
+            // frame 15 is the first of the mask, frame 30 the first after it
+            let want = |i: usize| if (15..30).contains(&i) { 0 } else { 255 };
+            let bad: Vec<usize> = (0..a.len()).filter(|&i| a[i] != want(i)).collect();
+            assert!(bad.is_empty(), "stream frames off: {bad:?} (invert {invert})\n{a:?}\n{g}");
         }
     }
 }

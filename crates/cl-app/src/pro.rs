@@ -23,6 +23,8 @@ pub enum Pick {
     Track { clip: ClipId, target: ClipId },
     /// Draw a frame around the subject to censor
     Censor(ClipId),
+    /// Mark an object to cut out (click, Alt/right click, frame)
+    Roto(ClipId),
 }
 
 /// Running drag of a censor area in the player (display position at press).
@@ -80,20 +82,25 @@ fn task_bar(ui: &mut egui::Ui, app: &App, key: &str) -> bool {
     false
 }
 
-/// Way of cutting out, derived from the clip (not stored). Stage 3 adds `Object` here and in `ALL`.
+/// Way of cutting out, derived from the clip (not stored).
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum CutMode {
     Off,
     Person,
+    Object,
     Color,
 }
 
 impl CutMode {
-    const ALL: [(CutMode, &'static str); 3] = [(CutMode::Off, "Aus"), (CutMode::Person, "Person"), (CutMode::Color, "Farbe")];
+    const ALL: [(CutMode, &'static str); 4] =
+        [(CutMode::Off, "Aus"), (CutMode::Person, "Person"), (CutMode::Object, "Objekt"), (CutMode::Color, "Farbe")];
 
-    /// `matte_running`: a mask job runs for the clip. Older projects with mask and color key = Person.
-    fn of(fx: &ClipFx, matte_running: bool) -> Self {
-        if fx.cutout.is_some() || matte_running {
+    /// `roto`: the clip has object marks; `matte_running`: a person mask job runs for the clip.
+    /// Older projects with mask and color key = Person.
+    fn of(fx: &ClipFx, roto: bool, matte_running: bool) -> Self {
+        if roto {
+            CutMode::Object
+        } else if fx.cutout.is_some() || matte_running {
             CutMode::Person
         } else if fx.chroma.is_some() {
             CutMode::Color
@@ -103,22 +110,63 @@ impl CutMode {
     }
 
     /// Choose this way: the fields of the other ways go (one undo step). Person: the mask
-    /// comes from `App::start_matte`; Off also drops background effect and edge.
-    fn apply(self, fx: &mut ClipFx) {
+    /// comes from `App::start_matte`; Object: marks start empty; Off also drops background effect and edge.
+    fn apply(self, c: &mut Clip) {
+        let fx = &mut c.fx;
+        let had_roto = c.roto.is_some();
+        if self != CutMode::Object {
+            c.roto = None;
+        }
         match self {
             CutMode::Off => {
-                fx.cutout = None;
+                (fx.cutout, fx.cutout_span) = (None, None);
                 fx.chroma = None;
                 fx.person = None;
                 fx.edge = MatteEdge::default();
             }
-            CutMode::Person => fx.chroma = None,
+            CutMode::Person => {
+                // an object mask is no person mask
+                if had_roto {
+                    (fx.cutout, fx.cutout_span) = (None, None);
+                }
+                fx.chroma = None;
+            }
+            CutMode::Object => {
+                (fx.cutout, fx.cutout_span) = (None, None);
+                fx.chroma = None;
+                c.roto.get_or_insert_with(Roto::default);
+            }
             CutMode::Color => {
-                fx.cutout = None;
+                (fx.cutout, fx.cutout_span) = (None, None);
                 fx.chroma.get_or_insert_with(ChromaKey::default);
             }
         }
     }
+}
+
+/// Status of the installed graphics card runtime: not usable (why), or waiting for a restart
+/// (one runtime per process, the bundled one is loaded already); `None` = in use or not installed.
+fn gpu_status(installed: bool) -> Option<String> {
+    if !installed || cl_analyze::gpu_runtime_loaded() {
+        return None;
+    }
+    match cl_analyze::runtime_note() {
+        Some(n) => Some(format!("{}  Grafikkarte nicht nutzbar: {n}", icon::WARNING)),
+        None => cl_analyze::runtime_loaded().then(|| format!("{}  Aktiv nach Neustart", icon::INFO)),
+    }
+}
+
+/// Status line of the clip's mask in the inspector (`busy`: its job runs, the task bar shows
+/// that); `None` = fine. The clip may reach past the computed range (trimmed longer).
+pub(crate) fn mask_status(c: &Clip, busy: bool) -> Option<&'static str> {
+    c.fx.cutout.as_ref().filter(|_| !busy)?;
+    if cl_fx::matte_file(&c.fx).is_none() {
+        // an object mask appears once tracked
+        return Some(if c.roto.is_some() { "Noch nicht verfolgt" } else { "Maske fehlt" });
+    }
+    let span = c.fx.cutout_span?;
+    let (a, b) = (c.source_time(c.start), c.source_time(c.end()));
+    (a.min(b) < span.start || a.max(b) > span.end).then_some("Bereich nicht verfolgt")
 }
 
 fn matte_cache(path: &std::path::Path) -> PathBuf {
@@ -223,6 +271,9 @@ impl App {
                     }
                 }
                 TaskDone::Model { id } => {
+                    if id == "directml" {
+                        crate::roto_ui::check_gpu_runtime(&self.models());
+                    }
                     let n = cl_analyze::CATALOG
                         .iter()
                         .find(|c| c.id == id)
@@ -647,23 +698,71 @@ impl App {
         if is_media {
             theme::section(ui, "Freistellen");
             let task = format!("matte:{}", c.id);
-            let mode = CutMode::of(&c.fx, self.tasks.running(&task).is_some());
+            let rtask = format!("roto:{}", c.id);
+            let mode = CutMode::of(&c.fx, c.roto.is_some(), self.tasks.running(&task).is_some());
             let mut sel = CutMode::ALL.iter().position(|m| m.0 == mode).unwrap_or(0);
             let names = CutMode::ALL.map(|m| m.1);
             let enabled = CutMode::ALL.map(|m| m.0 != CutMode::Person || is_video);
-            if widgets::segmented_some(ui, &names, &mut sel, &enabled) && CutMode::ALL[sel].0 != mode {
+            if widgets::segmented_some(ui, &names, &mut sel, &enabled)
+                && CutMode::ALL[sel].0 != mode
+                && (CutMode::ALL[sel].0 != CutMode::Object || self.need_models(&["onnxruntime", "sam2"]))
+            {
                 let new = CutMode::ALL[sel].0;
                 if let Some(t) = self.tasks.running(&task).filter(|_| new != CutMode::Person) {
                     t.cancel();
                 }
-                new.apply(&mut c.fx);
-                if new == CutMode::Person {
-                    self.start_matte(&ctx, c);
+                if new != CutMode::Object {
+                    if let Some(t) = self.tasks.running(&rtask) {
+                        t.cancel();
+                    }
+                    if self.pick == Some(Pick::Roto(c.id)) {
+                        (self.pick, self.roto_live) = (None, None);
+                    }
+                }
+                new.apply(c);
+                match new {
+                    CutMode::Person => self.start_matte(&ctx, c),
+                    CutMode::Object => self.roto_enter(&ctx, c.id),
+                    _ => {}
                 }
                 e.commit = true;
             }
+            if mode == CutMode::Object {
+                let marking = self.pick == Some(Pick::Roto(c.id));
+                ui.horizontal_wrapped(|ui| {
+                    let label = format!("{}  Objekt markieren", icon::CURSOR_CLICK);
+                    if ui.add(if marking { theme::primary(label) } else { theme::secondary(label) }).clicked() {
+                        if marking {
+                            self.roto_leave(&ctx);
+                        } else {
+                            self.roto_enter(&ctx, c.id);
+                        }
+                    }
+                    let marked = c.roto.as_ref().is_some_and(|r| !r.keys.is_empty());
+                    if marked && ui.add(theme::ghost(format!("{}  Markierung löschen", icon::X))).clicked() {
+                        if let Some(t) = self.tasks.running(&rtask) {
+                            t.cancel();
+                        }
+                        c.roto = Some(Roto::default());
+                        (c.fx.cutout, c.fx.cutout_span) = (None, None);
+                        e.commit = true;
+                    }
+                });
+                if !task_bar(ui, self, &rtask) {
+                    if let Some(s) = mask_status(c, false) {
+                        ui.label(RichText::new(crate::tr(format!("{}  {s}", icon::WARNING))).small().color(theme::WARN_TEXT()));
+                    }
+                }
+                if let Some(n) = cl_analyze::runtime_note().filter(|_| self.models().installed("directml")) {
+                    ui.label(RichText::new(crate::tr(format!("{}  Grafikkarte nicht nutzbar: {n}", icon::WARNING))).small().color(theme::WARN_TEXT()));
+                }
+            }
             if mode == CutMode::Person {
-                task_bar(ui, self, &task);
+                if !task_bar(ui, self, &task) {
+                    if let Some(s) = mask_status(c, false) {
+                        ui.label(RichText::new(crate::tr(format!("{}  {s}", icon::WARNING))).small().color(theme::WARN_TEXT()));
+                    }
+                }
                 // older projects: mask and color key at once
                 if c.fx.chroma.is_some() {
                     let x = theme::row(ui, "Farbe zusätzlich aktiv", |ui| {
@@ -1085,6 +1184,9 @@ impl App {
     ) -> bool {
         let Some(pick) = self.pick else { return false };
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if matches!(pick, Pick::Roto(_)) {
+                self.roto_leave(ui.ctx());
+            }
             self.pick = None;
             return true;
         }
@@ -1092,6 +1194,7 @@ impl App {
         let hint = match pick {
             Pick::Chroma(_) => "Klicke auf die Farbe, die verschwinden soll",
             Pick::Track { .. } | Pick::Censor(_) => "Ziehe einen Rahmen um das Objekt",
+            Pick::Roto(_) => &crate::tr("Objekt markieren"),
         };
         let g = painter.layout_no_wrap(
             format!(
@@ -1099,6 +1202,7 @@ impl App {
                 match pick {
                     Pick::Chroma(_) => icon::EYEDROPPER,
                     Pick::Track { .. } | Pick::Censor(_) => icon::CROSSHAIR,
+                    Pick::Roto(_) => icon::CURSOR_CLICK,
                 }
             ),
             egui::FontId::proportional(theme::FS_TEXT),
@@ -1111,13 +1215,9 @@ impl App {
         painter.rect_filled(br, 12.0, theme::ACCENT()); // pill: radius = half the height
         painter.galley(br.min + vec2(10.0, 5.0), g, theme::ACCENT_INK());
         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
-        let local = |r: &Region, p: egui::Pos2| -> (f32, f32) {
-            let d = p - r.center;
-            let (s, c) = (-r.angle).sin_cos();
-            let v = vec2(d.x * c - d.y * s, d.x * s + d.y * c);
-            (v.x / r.size.x + 0.5, v.y / r.size.y + 0.5)
-        };
+        let local = |r: &Region, p: egui::Pos2| r.local(p);
         match pick {
+            Pick::Roto(clip) => self.roto_pick(ui, resp, regions, clip),
             Pick::Chroma(clip) => {
                 if resp.clicked() {
                     if let (Some(p), Some(r)) = (
@@ -1156,7 +1256,7 @@ impl App {
             Pick::Track { .. } | Pick::Censor(_) => {
                 let (clip, target) = match pick {
                     Pick::Track { clip, target } => (clip, target),
-                    Pick::Censor(c) | Pick::Chroma(c) => (c, c),
+                    Pick::Censor(c) | Pick::Chroma(c) | Pick::Roto(c) => (c, c),
                 };
                 if resp.drag_started() {
                     self.pick_origin = ui
@@ -1420,11 +1520,7 @@ impl App {
         let now = c.source_time(self.playhead.clamp(c.start, c.end()));
         // display position (mirrored as in the player) ↔ screen
         let screen = |u: f32, v: f32| reg.corner(2.0 * u - 1.0, 2.0 * v - 1.0);
-        let local = |p: egui::Pos2| {
-            let d = p - reg.center;
-            let (s, co) = (-reg.angle).sin_cos();
-            ((d.x * co - d.y * s) / reg.size.x + 0.5, (d.x * s + d.y * co) / reg.size.y + 0.5)
-        };
+        let local = |p: egui::Pos2| reg.local(p);
         let shown = |i: usize| censor_flip(&c, c.fx.censor[i].at(now));
         let painter = ui.painter_at(resp.rect);
         let pointer = ui.input(|i| i.pointer.latest_pos());
@@ -1514,7 +1610,7 @@ impl App {
         let m = self.models();
         ui.add_space(6.0);
         ui.add_space(8.0);
-        for info in cl_analyze::CATALOG {
+        for info in cl_analyze::CATALOG.iter().filter(|i| cl_analyze::offered(i.id)) {
             let installed = m.installed(info.id);
             egui::Frame::default()
                 .fill(theme::BG_RAISED())
@@ -1532,6 +1628,9 @@ impl App {
                                     .small()
                                     .color(theme::TEXT_DIM()),
                             );
+                            if let Some(s) = gpu_status(installed && info.id == "directml") {
+                                ui.label(RichText::new(crate::tr(s)).small().color(theme::WARN_TEXT()));
+                            }
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let key = format!("model:{}", info.id);
@@ -1738,15 +1837,18 @@ mod tests {
         let fx = |cutout: &Option<String>, chroma: &Option<ChromaKey>| ClipFx { cutout: cutout.clone(), chroma: *chroma, ..Default::default() };
         for running in [false, true] {
             let busy = |m: CutMode| if running { CutMode::Person } else { m };
-            assert_eq!(CutMode::of(&fx(&None, &None), running), busy(CutMode::Off));
-            assert_eq!(CutMode::of(&fx(&None, &k), running), busy(CutMode::Color));
-            assert_eq!(CutMode::of(&fx(&m, &None), running), CutMode::Person);
+            assert_eq!(CutMode::of(&fx(&None, &None), false, running), busy(CutMode::Off));
+            assert_eq!(CutMode::of(&fx(&None, &k), false, running), busy(CutMode::Color));
+            assert_eq!(CutMode::of(&fx(&m, &None), false, running), CutMode::Person);
             // older project with both: Person (plus the status row for the key)
-            assert_eq!(CutMode::of(&fx(&m, &k), running), CutMode::Person);
+            assert_eq!(CutMode::of(&fx(&m, &k), false, running), CutMode::Person);
         }
         // a person effect or edge alone is no way of its own
         let only = ClipFx { person: Some(PersonFx::from_index(1)), edge: MatteEdge { invert: true, ..Default::default() }, ..Default::default() };
-        assert_eq!(CutMode::of(&only, false), CutMode::Off);
+        assert_eq!(CutMode::of(&only, false, false), CutMode::Off);
+        // object marks decide over everything else (their mask is also in `cutout`)
+        assert_eq!(CutMode::of(&fx(&m, &None), true, false), CutMode::Object);
+        assert_eq!(CutMode::of(&fx(&None, &None), true, true), CutMode::Object);
     }
 
     /// Each choice is one clip replacement (one undo step) with the fields of the other ways gone.
@@ -1767,7 +1869,7 @@ mod tests {
         let mut doc = Document::new(p);
         let choose = |doc: &mut Document, m: CutMode| {
             let mut c = doc.project().timeline.tracks[0].clips[0].clone();
-            m.apply(&mut c.fx);
+            m.apply(&mut c);
             let before = doc.undo_entries().len();
             doc.apply(EditOp::ReplaceClip { clip: c }, OpSource::Ui).unwrap();
             assert_eq!(doc.undo_entries().len(), before + 1);
@@ -1781,7 +1883,7 @@ mod tests {
         // Person: key goes, the mask stays
         let fx = choose(&mut doc, CutMode::Person);
         assert_eq!((fx.cutout.as_deref(), fx.chroma), (Some("m.mkv"), None));
-        assert_eq!(CutMode::of(&fx, false), CutMode::Person);
+        assert_eq!(CutMode::of(&fx, false, false), CutMode::Person);
         // Off: everything of the cutout goes, the rest of the look stays
         let fx = choose(&mut doc, CutMode::Off);
         assert!(fx.cutout.is_none() && fx.chroma.is_none() && fx.person.is_none() && fx.edge.is_identity());
@@ -1794,6 +1896,46 @@ mod tests {
         doc.undo().unwrap();
         assert_eq!(doc.project().timeline.tracks[0].clips[0].fx.chroma, None);
         assert_eq!(doc.project().timeline.tracks[0].clips[0].fx.cutout.as_deref(), Some("m.mkv"));
+        // Object: person mask and key go, the marks start empty
+        let fx = choose(&mut doc, CutMode::Object);
+        let clip = |doc: &Document| doc.project().timeline.tracks[0].clips[0].clone();
+        assert_eq!((fx.cutout, fx.chroma, clip(&doc).roto), (None, None, Some(Roto::default())));
+        // marked and named a mask; then Person: marks and the object mask go
+        let mut c = clip(&doc);
+        (c.fx.cutout, c.roto) = (Some("roto.mkv".into()), Some(Roto { keys: vec![RotoKey::default()] }));
+        doc.apply(EditOp::ReplaceClip { clip: c }, OpSource::Ui).unwrap();
+        let fx = choose(&mut doc, CutMode::Person);
+        assert_eq!((fx.cutout, clip(&doc).roto), (None, None), "an object mask is no person mask");
+    }
+
+    /// Status of the mask: missing file, clip longer than the computed range, nothing while its
+    /// job runs or without a mask.
+    #[test]
+    fn mask_status_names_missing_file_and_untracked_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Time::from_secs_f64;
+        let mut c = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, s(2.0));
+        assert_eq!(mask_status(&c, false), None);
+        let f = dir.path().join("m.mkv");
+        c.fx.cutout = Some(f.to_string_lossy().into_owned());
+        assert_eq!(mask_status(&c, false), Some("Maske fehlt"));
+        assert_eq!(mask_status(&c, true), None);
+        // an object mask that is not there yet: not tracked yet
+        let mut obj = c.clone();
+        obj.roto = Some(Roto::default());
+        assert_eq!(mask_status(&obj, false), Some("Noch nicht verfolgt"));
+        let before = crate::player::fx_hash_of(&c);
+        std::fs::write(&f, b"x").unwrap();
+        assert_eq!(mask_status(&c, false), None);
+        // the file appearing changes the preview key (frames and streams open with the mask)
+        assert_ne!(crate::player::fx_hash_of(&c), before);
+        c.fx.cutout_span = Some(MatteSpan { start: Time::ZERO, end: s(2.0) });
+        assert_eq!(mask_status(&c, false), None);
+        // trimmed longer than the range, in either direction
+        c.duration = s(2.5);
+        assert_eq!(mask_status(&c, false), Some("Bereich nicht verfolgt"));
+        (c.duration, c.source_in, c.fx.cutout_span) = (s(1.0), s(0.5), Some(MatteSpan { start: s(1.0), end: s(3.0) }));
+        assert_eq!(mask_status(&c, false), Some("Bereich nicht verfolgt"));
     }
 
     #[test]

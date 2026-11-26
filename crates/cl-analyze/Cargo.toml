@@ -9,5 +9,9 @@ license.workspace = true
 cl-media.workspace = true
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "ndarray", "api-24"] }
 
+# DirectML for object cut-out on the graphics card (runtime loaded from the model folder)
+[target.'cfg(windows)'.dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["directml"] }
+
 [dev-dependencies]
 tempfile.workspace = true

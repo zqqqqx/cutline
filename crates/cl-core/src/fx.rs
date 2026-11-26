@@ -125,6 +125,9 @@ pub struct ClipFx {
     pub cutout: Option<String>,
     /// What happens to the background when a person mask exists
     pub person: Option<PersonFx>,
+    /// Source range the mask file covers (frame 0 = `start`); `None` = the whole file
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cutout_span: Option<MatteSpan>,
     /// Edge of the cutout mask (person or color key); identity = field missing in the file
     #[serde(skip_serializing_if = "MatteEdge::is_identity")]
     pub edge: MatteEdge,
@@ -284,6 +287,43 @@ impl MatteEdge {
         let c = |v: f32, lo: f32| if v.is_finite() { v.clamp(lo, 1.0) } else { 0.0 };
         Self { feather: c(self.feather, 0.0), shift: c(self.shift, -1.0), invert: self.invert }
     }
+}
+
+/// Part of the source a mask file covers (source time, `end` exclusive); frame 0 of the file
+/// shows `start`. Outside of it the clip is not cut out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MatteSpan {
+    pub start: Time,
+    pub end: Time,
+}
+
+/// Object cut-out: what the user marked. Lives on the clip, not in `ClipFx`, so marking does not
+/// change the effect fingerprint of the preview; the mask file it yields goes to `ClipFx::cutout`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Roto {
+    /// Marked frames in creation order; `keys[0]` is the base frame
+    pub keys: Vec<RotoKey>,
+}
+
+/// Marks on one frame: source time; points and frame as fractions of the source image before flip.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RotoKey {
+    pub t: Time,
+    pub points: Vec<RotoPoint>,
+    /// Frame around the object: left, top, right, bottom
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rect: Option<[f32; 4]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct RotoPoint {
+    pub x: f32,
+    pub y: f32,
+    /// Background point (Alt or right click) instead of object
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remove: bool,
 }
 
 /// Person effects based on the mask from „Hintergrund entfernen“.
@@ -501,6 +541,7 @@ impl ClipFx {
     /// speed curve, reverse, censor areas.
     pub fn keep_bound(&mut self, from: &ClipFx) {
         self.cutout = from.cutout.clone();
+        self.cutout_span = from.cutout_span;
         self.person = from.person.clone();
         self.edge = from.edge;
         self.speed_curve = from.speed_curve.clone();

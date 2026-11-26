@@ -1912,3 +1912,27 @@ An Entwickler senden	Send to developer
 Bericht wird gesendet	Sending report
 Bericht gesendet	Report sent
 Bericht konnte nicht gesendet werden	Report could not be sent
+Maske fehlt	Mask missing
+Bereich nicht verfolgt	Range not tracked
+Maske fehlt oder ist noch nicht fertig: {}	Mask missing or not finished yet: {}
+Objekt	Object
+Objekt markieren	Mark object
+Markierung löschen	Clear selection
+Objekt wird verfolgt …	Tracking object …
+Objekt freigestellt	Object cut out
+Noch nicht verfolgt	Not tracked yet
+Objekt: {}	Object: {}
+Grafikkarte nicht nutzbar: {}	Graphics card not usable: {}
+Aktiv nach Neustart	Active after a restart
+KI-Modelle	AI models
+SAM 2.1 Tiny	SAM 2.1 Tiny
+Objekte per Klick freistellen und verfolgen (Meta, Apache-2.0)	Cut out and track objects with a click (Meta, Apache-2.0)
+Grafikkarten-Beschleunigung	Graphics card acceleration
+Objekt freistellen auf der Grafikkarte (Microsoft DirectML 1.15.4, proprietäre Lizenz; ONNX Runtime 1.24.4, MIT-Lizenz)	Object cut-out on the graphics card (Microsoft DirectML 1.15.4, proprietary license; ONNX Runtime 1.24.4, MIT license)
+Objekt-Modell fehlt (Einstellungen → Modelle)	Object model missing (Settings → Models)
+Nichts markiert	Nothing marked
+Dateien beschädigt	Files damaged
+DirectML.dll nicht ladbar	DirectML.dll cannot be loaded
+Abschnitt unvollständig	Section incomplete
+Bild nicht lesbar	Frame not readable
+Modell nicht geladen	Model not loaded

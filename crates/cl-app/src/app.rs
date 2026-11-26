@@ -366,6 +366,8 @@ pub struct App {
     pub tasks: crate::tasks::Tasks,
     pub pick: Option<crate::pro::Pick>,
     pub pick_origin: Option<egui::Pos2>,
+    /// Model of the object marking tool (while `Pick::Roto` is active)
+    pub roto_live: Option<crate::roto_ui::RotoLive>,
     pub censor_drag: Option<crate::pro::CensorDrag>,
     pub frame_cpu: Option<(ClipId, cl_media::RgbaFrame)>,
     /// Preview of shader transitions (cl-gpu)
@@ -434,6 +436,8 @@ impl App {
                 ctx.request_repaint();
             });
         }
+        // graphics card runtime for the AI models: used only with files matching the catalog
+        std::thread::spawn(|| crate::roto_ui::check_gpu_runtime(&cl_analyze::Models::new(paths::models_dir())));
 
         let project = Project::new("Neues Projekt");
         let screen = if open.is_some() || !settings.start_on_home {
@@ -595,6 +599,7 @@ impl App {
             tasks: Default::default(),
             pick: None,
             pick_origin: None,
+            roto_live: None,
             censor_drag: None,
             frame_cpu: None,
             shader_preview: Default::default(),

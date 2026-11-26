@@ -276,6 +276,19 @@ pub(crate) fn counts_frames(g: &str) -> bool {
     g.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|w| w == "n" || w == "N")
 }
 
+/// Mask file of the clip and the part of it that feeds the clip's source segment
+/// (`cl_fx::matte_window`); a still image uses the one frame of its mask.
+pub(crate) fn matte_input(c: &Clip, image: bool) -> Option<(&String, cl_fx::MatteWindow)> {
+    let mp = cl_fx::matte_file(&c.fx)?;
+    let (seg_in, seg_len) = source_segment(c);
+    let win = if image {
+        cl_fx::MatteWindow { seek: Time::ZERO, len: Time::ZERO, lead: Time::ZERO, tail: Time::ZERO }
+    } else {
+        cl_fx::matte_window(c.fx.cutout_span, seg_in, seg_len)?
+    };
+    Some((mp, win))
+}
+
 fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -> Result<Sprite> {
     let (w, h) = (ctx.w, ctx.h);
     let dur = c.duration.as_secs_f64();
@@ -366,26 +379,28 @@ fn media_sprite(ctx: &mut Ctx, c: &Clip, m: &MediaRef, image: bool, skip: f64) -
     };
     // remove background: mask video with an identical time axis as a second input
     let mut matte = None;
-    if let Some(mp) =
-        c.fx.cutout
-            .as_ref()
-            .filter(|p| !image && Path::new(p).is_file())
-    {
-        let (seg_in, _) = source_segment(c);
+    if let Some((mp, win)) = matte_input(c, image) {
         let mi = ctx.input(vec![
             "-ss".into(),
-            f(seg_in.as_secs_f64()),
+            f(win.seek.as_secs_f64()),
             "-t".into(),
-            f(seg_len.as_secs_f64().max(0.04)),
+            f(win.len.as_secs_f64().max(0.04)),
             "-i".into(),
             mp.clone(),
         ]);
+        // still image: the one mask frame held like the picture (`pre` has no `tpad` for it)
+        let hold = image.then(|| format!("tpad=stop_mode=clone:stop_duration={}", f(dur + 0.1)));
         let mut mpre: Vec<String> = pre
             .iter()
             .filter(|p| !p.starts_with("scale="))
             .cloned()
             .collect();
         mpre.retain(|p| !p.starts_with("trim="));
+        // outside the mask's range (source time, before reverse and speed): not cut out
+        if let Some(p) = cl_fx::matte_pad(win.lead.as_secs_f64(), win.tail.as_secs_f64(), c.fx.edge.invert) {
+            mpre.insert(0, p);
+        }
+        mpre.extend(hold.filter(|_| anim.is_none()));
         mpre.push(format!("scale={bw}:{bh}:flags=bilinear"));
         mpre.push(format!("trim=duration={}", f(keep)));
         mpre.push("format=gray".into());
