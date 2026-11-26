@@ -132,12 +132,15 @@ fn check_bt709(f: &Path, what: &str, min_frames: usize, fails: &mut Vec<String>)
     let (stream, runs) = color_tags(f);
     let frames: usize = runs.iter().map(|r| r.2).sum();
     assert!(frames >= min_frames, "{what}: {frames} frames");
-    if stream != BT709 || runs.len() != 1 || runs[0].1 != BT709 {
+    let codec = probe(f, "stream=codec_name").first().cloned().unwrap_or_default();
+    // ProRes is limited range by definition and MOV `colr nclc` has no range field: FFprobe 7.1
+    // reports the stream range unknown there (the frames say tv)
+    let stream_ok = stream == BT709 || (codec.contains("prores") && stream == BT709.replace("color_range=tv", "color_range=unknown"));
+    if !stream_ok || runs.len() != 1 || runs[0].1 != BT709 {
         fails.push(format!("{what}: colour tags must be BT.709 limited\n  stream: {stream}\n  frames (from s, tags, count): {runs:?}"));
     }
     // H.264/HEVC: also in the bitstream (VUI), not only in the container (MP4 `colr`, which
     // hides an encoder that writes none, e.g. Media Foundation)
-    let codec = probe(f, "stream=codec_name").first().cloned().unwrap_or_default();
     if !codec.contains("h264") && !codec.contains("hevc") {
         return;
     }
