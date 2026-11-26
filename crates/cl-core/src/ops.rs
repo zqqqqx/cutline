@@ -278,7 +278,7 @@ impl EditOp {
                 t.height = height.clamp(0.5, 3.0);
                 Ok(OpOutput::None)
             }
-            EditOp::AddClip { track, clip } => add_clip(p, track, clip, None),
+            EditOp::AddClip { track, clip } => add_clip(p, track, clip, None, None),
             EditOp::SetClipTiming {
                 clip,
                 start,
@@ -506,7 +506,7 @@ impl EditOp {
                 c.start = Time(start.0.max(0));
                 after_change(p, ti);
                 let target = track.unwrap_or(src_track);
-                let out = add_clip(p, Some(target), c, Some(src_track))?;
+                let out = add_clip(p, Some(target), c, Some(src_track), None)?;
                 if target != src_track {
                     if let Some(ti) = p.timeline.tracks.iter().position(|t| t.id == src_track) {
                         prune_if_empty(p, ti);
@@ -741,8 +741,21 @@ impl EditOp {
             }
             EditOp::Batch { ops, .. } => {
                 let mut last = OpOutput::None;
+                // ids of all clips while AddClips follow each other: thousands of captions stay linear
+                let mut ids: Option<std::collections::HashSet<ClipId>> = None;
                 for op in ops {
-                    let out = op.apply(p)?;
+                    let out = match op {
+                        EditOp::AddClip { track, clip } => {
+                            let ids = ids.get_or_insert_with(|| {
+                                p.timeline.tracks.iter().flat_map(|t| &t.clips).filter(|_| visit()).map(|c| c.id).collect()
+                            });
+                            add_clip(p, track, clip, None, Some(ids))?
+                        }
+                        op => {
+                            ids = None;
+                            op.apply(p)?
+                        }
+                    };
                     if out != OpOutput::None {
                         last = out;
                     }
@@ -957,8 +970,23 @@ fn after_change(p: &mut Project, ti: usize) {
     }
 }
 
+/// `Track::is_free` in O(log n); relies on the order every op keeps (sorted by start, no overlaps).
+fn free_sorted(t: &Track, start: Time, dur: Time) -> bool {
+    let end = start + dur;
+    let i = t.clips.partition_point(|c| visit() && c.start < end);
+    // of the clips starting before `end`, the last one ends latest
+    i == 0 || t.clips[i - 1].end() <= start
+}
+
 /// `home`: track the clip already was on (move) – the kind check does not apply there.
-fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Option<TrackId>) -> Result<OpOutput> {
+/// `ids`: all clip ids of the project (batch of AddClips), kept up to date here.
+fn add_clip(
+    p: &mut Project,
+    track: Option<TrackId>,
+    mut clip: Clip,
+    home: Option<TrackId>,
+    mut ids: Option<&mut std::collections::HashSet<ClipId>>,
+) -> Result<OpOutput> {
     clip.crop = clip.crop.clamped();
     // values from outside (MCP, plugins): nothing before 0, nothing beyond Time::LIMIT
     if !clip.sanitize_times() || clip.duration > Time::LIMIT || clip.start > Time::LIMIT {
@@ -967,7 +995,11 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
     let len = source_length(p, &clip);
     clamp_to_source(&mut clip, len);
     // a duplicate id (e.g. the same op twice) would otherwise give two clips one ID
-    if p.find_clip(clip.id).is_some() {
+    let taken = match &ids {
+        Some(ids) => ids.contains(&clip.id),
+        None => p.find_clip(clip.id).is_some(),
+    };
+    if taken {
         clip.id = ClipId::new();
     }
     if let ClipContent::Media { media, .. } = &clip.content {
@@ -995,7 +1027,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
             }
             ensure_unlocked(t)?;
             let magnet_main = t.main && p.settings.main_track_magnet;
-            if magnet_main || t.is_free(clip.start, clip.duration, None) {
+            if magnet_main || free_sorted(t, clip.start, clip.duration) {
                 ti
             } else {
                 // occupied: create a new track above.
@@ -1006,7 +1038,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
             Some(ti) => {
                 ensure_unlocked(&p.timeline.tracks[ti])?;
                 let magnet = p.settings.main_track_magnet;
-                if magnet || p.timeline.tracks[ti].is_free(clip.start, clip.duration, None) {
+                if magnet || free_sorted(&p.timeline.tracks[ti], clip.start, clip.duration) {
                     ti
                 } else {
                     insert_track_above(p, ti, kind)
@@ -1021,7 +1053,7 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
         },
         None => {
             match p.timeline.tracks.iter().position(|t| {
-                t.kind == kind && !t.locked && t.is_free(clip.start, clip.duration, None)
+                t.kind == kind && !t.locked && free_sorted(t, clip.start, clip.duration)
             }) {
                 Some(ti) => ti,
                 None => {
@@ -1045,8 +1077,12 @@ fn add_clip(p: &mut Project, track: Option<TrackId>, mut clip: Clip, home: Optio
         t.clips.insert(idx, clip);
         compact(t);
     } else {
-        t.clips.push(clip);
-        t.sort();
+        // behind clips with the same start, like push + stable sort
+        let i = t.clips.partition_point(|c| visit() && c.start <= clip.start);
+        t.clips.insert(i, clip);
+    }
+    if let Some(ids) = ids.as_mut() {
+        ids.insert(id);
     }
     Ok(OpOutput::Clip(id))
 }

@@ -1039,4 +1039,37 @@ mod tests {
         let c = |x: f64, y: f64| Clip::new(ClipContent::Text(TextStyle::default()), s(x), s(y - x));
         assert_eq!(gaps(&[c(1.0, 2.0), c(4.0, 5.0), c(1.5, 3.0)]), vec![(s(0.0), s(1.0)), (s(3.0), s(4.0))]);
     }
+    /// Bug: thousands of captions in one batch took ~3·n²/2 clip visits (find_clip, is_free, sort per AddClip).
+    #[test]
+    fn batch_add_clip_work_is_near_linear() {
+        let s = Time::from_secs_f64;
+        for n in [2_000usize, 5_000, 20_000] {
+            let mut d = Document::new(Project::new("t"));
+            let OpOutput::Track(t) = d.apply(EditOp::AddTrack { kind: TrackKind::Text }, OpSource::Ui).unwrap() else { panic!() };
+            let mut ops: Vec<EditOp> = (0..n)
+                .map(|i| EditOp::AddClip {
+                    track: Some(t),
+                    clip: Clip::new(ClipContent::Text(TextStyle::default()), s(i as f64), s(0.5)),
+                })
+                .collect();
+            // the same clip twice: the second one still gets a fresh id and lands on a new track (occupied)
+            let EditOp::AddClip { clip, .. } = &ops[0] else { panic!() };
+            ops.push(EditOp::AddClip { track: Some(t), clip: clip.clone() });
+            let before = d.project().clone();
+            crate::model::CLIP_VISITS.with(|v| v.set(0));
+            d.apply(EditOp::Batch { label: String::new(), ops }, OpSource::Ui).unwrap();
+            let visits = crate::model::CLIP_VISITS.with(|v| v.get());
+            eprintln!("{n} captions: {visits} clip visits");
+            let p = d.project();
+            let ids: std::collections::HashSet<ClipId> = p.timeline.tracks.iter().flat_map(|t| t.clips.iter().map(|c| c.id)).collect();
+            assert_eq!(ids.len(), n + 1, "every clip keeps its own id");
+            let tr = &p.timeline.tracks.iter().find(|x| x.id == t).unwrap().clips;
+            assert_eq!(tr.len(), n);
+            assert!(tr.windows(2).all(|w| w[0].end() <= w[1].start), "sorted, no overlap");
+            assert_eq!(p.timeline.tracks.len(), 2, "the duplicate went onto a new track");
+            assert!(visits <= 40 * n as u64, "{n} captions took {visits} clip visits (not near-linear)");
+            d.undo().unwrap();
+            assert_eq!(*d.project(), before, "one undo step takes the whole batch back");
+        }
+    }
 }
