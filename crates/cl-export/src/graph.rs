@@ -1228,15 +1228,15 @@ fn curve_pieces(id: &str, src: f64, dur: f64) -> Vec<(f64, f64, f32)> {
         .collect()
 }
 
-/// Audible clips (with media) touching the range `start..end` – in track and
-/// clip order (the order of the inputs in the mix).
+/// Audible clips (with media) touching the range `start..end` (reverb tail included) – in track
+/// and clip order (the order of the inputs in the mix).
 pub fn audible_clips(p: &Project, start: Time, end: Time) -> impl Iterator<Item = (&Clip, &MediaRef)> {
     p.timeline
         .tracks
         .iter()
         .filter(|tr| !tr.muted && matches!(tr.kind, TrackKind::Video | TrackKind::Audio))
         .flat_map(|tr| tr.clips.iter())
-        .filter(move |c| !c.disabled && c.end() > start && c.start < end)
+        .filter(move |c| !c.disabled && c.end() + Time::from_secs_f64(cl_fx::audio::reverb_tail(&c.audio)) > start && c.start < end)
         .filter(|c| c.volume_db > -59.9 || !c.keyframes.get(Prop::Volume).is_empty())
         .filter_map(|c| match &c.content {
             ClipContent::Media { media, kind } if *kind != MediaKind::Image => {
@@ -1402,9 +1402,11 @@ pub(crate) fn audio_part(
             }
         }
         chain.extend(cl_fx::audio::audio_chain(&c.audio));
+        // the reverb rings on after the clip end (aecho flushes its delays) and is mixed over what follows
+        let keep = dur + cl_fx::audio::reverb_tail(&c.audio);
         // audio stretched longer: fill with silence (counted from the first sample read)
-        chain.push(format!("apad=whole_dur={}", f(dur - skip)));
-        chain.push(format!("atrim=0:{}", f(dur)));
+        chain.push(format!("apad=whole_dur={}", f(keep - skip)));
+        chain.push(format!("atrim=0:{}", f(keep)));
         chain.push(if skip > 0.0 { format!("asetpts=PTS-STARTPTS+{}/TB", f(skip)) } else { "asetpts=PTS-STARTPTS".into() });
         let vol = c.keyframes.get(Prop::Volume);
         if vol.is_empty() {

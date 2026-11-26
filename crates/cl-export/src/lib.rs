@@ -3291,6 +3291,63 @@ mod tests {
         p
     }
 
+    /// Bug: the reverb stopped dead at the clip end (the clip audio was trimmed to the clip length
+    /// after the effect chain). Now the tail rings on over the silence that follows, the same in
+    /// export and preview, also in a preview window that starts after the clip end.
+    #[test]
+    fn reverb_tail_rings_after_the_clip_end() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = sine_project(dir.path(), 0.0);
+        // silence after the tone: a text clip makes the project 4 s long
+        let mut t = Track::new(TrackKind::Text);
+        t.clips.push(Clip::new(ClipContent::Text(TextStyle::default()), Time::from_secs_f64(2.0), Time::from_secs_f64(2.0)));
+        p.timeline.tracks.push(t);
+        let rms = |v: &[f32], from: f64, a: f64, b: f64| {
+            let i = |x: f64| (((x - from) * 48000.0) as usize * 2).min(v.len());
+            let s = &v[i(a)..i(b)];
+            (s.iter().map(|x| (*x as f64).powi(2)).sum::<f64>() / s.len().max(1) as f64).sqrt()
+        };
+        let preview = |p: &Project, from: f64| {
+            let (mut child, _wd) = spawn_audio_window(p, Time::from_secs_f64(from), p.duration(), 48000).unwrap();
+            let mut raw = Vec::new();
+            std::io::Read::read_to_end(child.stdout.as_mut().unwrap(), &mut raw).unwrap();
+            child.wait().unwrap();
+            raw.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect::<Vec<f32>>()
+        };
+        let export = |p: &Project, name: &str| {
+            let out = dir.path().join(name);
+            run(&build(p, &wav_settings(p), &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
+            let o = cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-i"]).arg(&out).args(["-f", "f32le", "-ar", "48000", "-ac", "2", "-"]).output().unwrap();
+            o.stdout.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect::<Vec<f32>>()
+        };
+        let dry = preview(&p, 0.0);
+        assert!(rms(&dry, 0.0, 1.0, 1.9) > 0.05, "tone audible");
+        assert!(rms(&dry, 0.0, 2.02, 3.9) < 1e-5, "no reverb: silence after the clip");
+        p.timeline.tracks[0].clips[0].audio.reverb = 0.8;
+        let tail = cl_fx::audio::reverb_tail(&p.timeline.tracks[0].clips[0].audio);
+        assert!((tail - 1.168).abs() < 1e-9, "{tail}");
+        let wet = preview(&p, 0.0);
+        let (r1, r2, r3) = (rms(&wet, 0.0, 2.02, 2.4), rms(&wet, 0.0, 2.6, 3.0), rms(&wet, 0.0, 3.2, 3.9));
+        eprintln!("reverb tail rms: {r1:.6} {r2:.6} {r3:.6}");
+        assert!(r1 > 1e-3, "the tail rings after the clip end: {r1}");
+        assert!(r2 > 1e-6 && r2 < r1 / 2.0, "the tail decays: {r1} → {r2}");
+        assert!(r3 < 1e-5, "and ends after {tail} s: {r3}");
+        // export sounds like the preview
+        let ex = export(&p, "wet.wav");
+        for k in 0..40 {
+            let (a, b) = (k as f64 * 0.1, k as f64 * 0.1 + 0.1);
+            let (x, y) = (rms(&ex, 0.0, a, b), rms(&wet, 0.0, a, b));
+            assert!((x - y).abs() <= 1e-4 + 0.02 * y, "export {x} / preview {y} at {a} s");
+        }
+        // a preview window starting after the clip end still hears the tail
+        let late = preview(&p, 2.2);
+        let (x, y) = (rms(&late, 2.2, 2.2, 2.6), rms(&wet, 0.0, 2.2, 2.6));
+        assert!(y > 1e-4 && (x - y).abs() <= 0.02 * y, "window from 2.2 s: {x} / whole: {y}");
+    }
+
     fn wav_settings(p: &Project) -> ExportSettings {
         let mut s = ExportSettings::from_project(p);
         s.format = Format::Wav;
