@@ -21,6 +21,24 @@
 
 **Behoben**
 
+## 0.18.2 – 2026-11-26
+
+### English
+
+**Improved**
+- **Smooth scrubbing for clips with color changes and effects.** Dragging the playhead over a clip with color adjustment, a filter, blur or a mask now shows the frames in between, as plain clips already did. Effects that change over time (shake, glitch, grain), stabilization and cut-out masks still load frame by frame.
+
+**Fixed**
+- **Karaoke highlight in the export switches on the same frame as in the preview.** It could be one frame late when the text clip did not start exactly on a frame.
+
+### Deutsch
+
+**Verbessert**
+- **Flüssiges Scrubben bei Clips mit Farbänderungen und Effekten.** Beim Ziehen des Abspielkopfs über einen Clip mit Farbkorrektur, Filter, Weichzeichner oder Maske erscheinen jetzt die Bilder dazwischen, wie schon bei einfachen Clips. Effekte, die sich mit der Zeit ändern (Wackeln, Glitch, Körnung), Stabilisierung und Freistell-Masken laden weiter Bild für Bild.
+
+**Behoben**
+- **Die Karaoke-Hervorhebung schaltet im Export auf demselben Bild wie in der Vorschau.** Sie konnte ein Bild zu spät kommen, wenn der Textclip nicht genau auf einem Bild begann.
+
 ## 0.18.1 – 2026-11-26
 
 ### English
