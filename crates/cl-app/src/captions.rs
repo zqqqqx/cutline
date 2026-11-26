@@ -508,7 +508,8 @@ impl App {
 
     /// List for editing: add, text, duration, merge, delete, find & replace
     pub fn captions_editor(&mut self, ui: &mut egui::Ui) {
-        let items = self.caption_clips();
+        // the same query as the list below: the cache keeps its matches
+        let items = self.caption_list(ui.ctx(), self.asset_cat.get("cap-q").map_or("", |q| q.as_str())).items;
         let fps = self.project.settings.fps;
         ui.horizontal(|ui| {
             ui.label(RichText::new(crate::tr(format!("Untertitel ({})", items.len()))).strong());
@@ -542,7 +543,7 @@ impl App {
             let margin = egui::Margin::symmetric(4, 2);
             ui.add(egui::TextEdit::singleline(&mut q).hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS))).margin(margin).desired_width(w));
             ui.add(egui::TextEdit::singleline(&mut rep).hint_text(crate::tr("Ersetzen durch")).margin(margin).desired_width(w));
-            let hits = if q.is_empty() { 0 } else { items.iter().filter(|c| text_of(c).contains(&q)).count() };
+            let hits = if q.is_empty() { 0 } else { self.caption_list(ui.ctx(), &q).shown.len() };
             if theme::icon_button(ui, icon::SWAP, format!("{}  ({hits})", crate::tr("Alle ersetzen")), hits > 0, false).clicked() {
                 let ops: Vec<EditOp> = items
                     .iter()
@@ -593,6 +594,24 @@ impl App {
             });
         }
         ui.add_space(4.0);
+        let shown = self.caption_list(ui.ctx(), &q).shown;
+        let ctx = ui.ctx().clone();
+        // All rows are equally high (single-line text field): height measured on the last frame
+        let hid = egui::Id::new("cap-row-h");
+        let row_h = ctx.data(|d| d.get_temp::<f32>(hid)).unwrap_or(ui.spacing().interact_size.y + 8.0);
+        let gap = 3.0 + ui.spacing().item_spacing.y;
+        let stride = row_h + gap;
+        // While playing, bring the caption under the playhead into view once when it changes
+        let active = active_row(&items, &shown, self.playhead);
+        let aid = egui::Id::new("cap-active");
+        let follow = self.playing && active.is_some() && ctx.data(|d| d.get_temp::<Option<usize>>(aid)) != Some(active);
+        ctx.data_mut(|d| d.insert_temp(aid, active));
+        let reveal = self.caption_focus.and_then(|f| shown.iter().position(|&i| items[i].id == f)).or(active.filter(|_| follow));
+        // Text field with focus: when its row scrolls out, egui drops the focus without `lost_focus`
+        let eid = egui::Id::new("cap-editing");
+        let editing = ctx.data(|d| d.get_temp::<Option<ClipId>>(eid)).flatten();
+        let mut editing_now = None;
+        let mut measured = None;
         let mut jump = None;
         let mut ops: Vec<EditOp> = Vec::new();
         let focus = self.caption_focus;
@@ -600,103 +619,136 @@ impl App {
         // own scroll area down to the bottom edge: a new entry only scrolls the list,
         // the header with „Hinzufügen“ stays put
         let h = (ui.clip_rect().bottom() - ui.cursor().top() - 4.0).max(160.0);
-        egui::ScrollArea::vertical().id_salt("cap-list").max_height(h).auto_shrink([false, true]).show(ui, |ui| {
-            for (i, c) in items.iter().enumerate() {
+        egui::ScrollArea::vertical().id_salt("cap-list").max_height(h).auto_shrink([false, true]).show_viewport(ui, |ui, vp| {
+            ui.set_height((stride * shown.len() as f32 - gap).max(0.0));
+            let (top, xs) = (ui.max_rect().top(), ui.max_rect().x_range());
+            let row_rect = |k: usize| Rect::from_x_y_ranges(xs, top + k as f32 * stride..=top + k as f32 * stride + row_h);
+            if let Some(k) = reveal {
+                ui.scroll_to_rect(row_rect(k), None);
+            }
+            let first = ((vp.min.y / stride).floor().max(0.0) as usize).min(shown.len());
+            let last = ((vp.max.y / stride).ceil().max(0.0) as usize).min(shown.len());
+            // one child Ui per row: the auto IDs inside a row stay the same while scrolling
+            ui.skip_ahead_auto_ids(first);
+            for (k, &i) in shown.iter().enumerate().take(last).skip(first) {
+                let c = &items[i];
+                #[cfg(test)]
+                tests::BUILT.with(|b| b.borrow_mut().push(c.id));
                 let text = text_of(c);
-                if !q.is_empty() && !text.contains(&q) {
-                    continue;
-                }
                 let next = items.get(i + 1);
                 let active = c.contains(self.playhead);
-                egui::Frame::default()
-                    .fill(if active { theme::BG_HOVER() } else { theme::BG_RAISED() })
-                    .corner_radius(theme::R_CARD)
-                    .inner_margin(egui::Margin::symmetric(theme::PAD_CARD, 4))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal(|ui| {
-                            let t = c.start.timecode(fps);
-                            if ui
-                                .add(theme::ghost(&t[3..8]))
-                                .on_hover_text(crate::tr("Hinspringen"))
-                                .clicked()
-                            {
-                                jump = Some(c.id);
-                            }
-                            // Buttons on the right first, the text field takes the rest: nothing sticks out over the edge
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                // Apply the text change before merge/duration (as before, in reading order)
-                                let at = ops.len();
-                                if theme::icon_button(ui, icon::TRASH, "Löschen", true, false).clicked() {
-                                    ops.push(EditOp::RemoveClip { clip: c.id });
-                                }
-                                if let Some(n) = next {
-                                    if theme::icon_button(ui, icon::ARROWS_MERGE, "Mit dem nächsten zusammenführen", true, false).clicked() {
-                                        let mut m = c.clone();
-                                        // Word times of both parts together (the second from its start)
-                                        let mut words = karaoke_words(c);
-                                        words.extend(karaoke_words(n).into_iter().map(|w| w + (n.start - c.start)));
-                                        if let ClipContent::Text(s) = &mut m.content {
-                                            s.text = format!("{} {}", text, text_of(n));
-                                            if let Some(k) = &mut s.karaoke {
-                                                k.words = words;
-                                            }
-                                        }
-                                        ops.push(EditOp::RemoveClip { clip: n.id });
-                                        ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: n.end() - c.start, source_in: c.source_in });
-                                        ops.push(EditOp::ReplaceClip { clip: m });
-                                    }
-                                }
-                                // Duration (up to the next caption)
-                                let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
-                                let mut d = c.duration.as_secs_f64();
-                                // the range must contain the current value: egui clamps it otherwise and
-                                // reports a change every frame (short captions: "Ungültige Dauer" per frame)
-                                let range = 0.2f64.min(d)..=room.max(d);
+                let row = ui.scope_builder(egui::UiBuilder::new().max_rect(row_rect(k)), |ui| {
+                    egui::Frame::default()
+                        .fill(if active { theme::BG_HOVER() } else { theme::BG_RAISED() })
+                        .corner_radius(theme::R_CARD)
+                        .inner_margin(egui::Margin::symmetric(theme::PAD_CARD, 4))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                let t = c.start.timecode(fps);
                                 if ui
-                                    .add(egui::DragValue::new(&mut d).range(range).speed(0.02).custom_formatter(|v, _| crate::theme::dec(v, 1)).custom_parser(crate::theme::parse_dec).suffix(" s").update_while_editing(false))
-                                    .on_hover_text(crate::tr("Dauer"))
-                                    .changed()
+                                    .add(theme::ghost(&t[3..8]))
+                                    .on_hover_text(crate::tr("Hinspringen"))
+                                    .clicked()
                                 {
-                                    ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: Time::from_secs_f64(d), source_in: c.source_in });
+                                    jump = Some(c.id);
                                 }
-                                let id = egui::Id::new(("cap-text", c.id));
-                                let mut buf = ui.data_mut(|d| d.get_temp::<String>(id)).unwrap_or_else(|| text.clone());
-                                let r = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(f32::INFINITY).frame(false));
-                                if focus == Some(c.id) {
-                                    focused = true;
-                                    // only scroll if needed: otherwise the „Hinzufügen“ button moves with every click
-                                    r.scroll_to_me(None);
-                                    r.request_focus();
-                                    // select the whole placeholder text: typing replaces it
-                                    if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
-                                        let all = egui::text::CCursorRange::two(
-                                            egui::text::CCursor::new(0),
-                                            egui::text::CCursor::new(buf.chars().count()),
-                                        );
-                                        state.cursor.set_char_range(Some(all));
-                                        state.store(ui.ctx(), r.id);
+                                // Buttons on the right first, the text field takes the rest: nothing sticks out over the edge
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    // Apply the text change before merge/duration (as before, in reading order)
+                                    let at = ops.len();
+                                    if theme::icon_button(ui, icon::TRASH, "Löschen", true, false).clicked() {
+                                        ops.push(EditOp::RemoveClip { clip: c.id });
                                     }
-                                }
-                                if r.changed() {
-                                    ui.data_mut(|d| d.insert_temp(id, buf.clone()));
-                                }
-                                if r.lost_focus() {
-                                    ui.data_mut(|d| d.remove::<String>(id));
-                                    if buf != text {
-                                        let mut n = c.clone();
-                                        if let ClipContent::Text(s) = &mut n.content {
-                                            s.text = buf;
+                                    if let Some(n) = next {
+                                        if theme::icon_button(ui, icon::ARROWS_MERGE, "Mit dem nächsten zusammenführen", true, false).clicked() {
+                                            let mut m = c.clone();
+                                            // Word times of both parts together (the second from its start)
+                                            let mut words = karaoke_words(c);
+                                            words.extend(karaoke_words(n).into_iter().map(|w| w + (n.start - c.start)));
+                                            if let ClipContent::Text(s) = &mut m.content {
+                                                s.text = format!("{} {}", text, text_of(n));
+                                                if let Some(k) = &mut s.karaoke {
+                                                    k.words = words;
+                                                }
+                                            }
+                                            ops.push(EditOp::RemoveClip { clip: n.id });
+                                            ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: n.end() - c.start, source_in: c.source_in });
+                                            ops.push(EditOp::ReplaceClip { clip: m });
                                         }
-                                        ops.insert(at, EditOp::ReplaceClip { clip: n });
                                     }
-                                }
+                                    // Duration (up to the next caption)
+                                    let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
+                                    let mut d = c.duration.as_secs_f64();
+                                    // the range must contain the current value: egui clamps it otherwise and
+                                    // reports a change every frame (short captions: "Ungültige Dauer" per frame)
+                                    let range = 0.2f64.min(d)..=room.max(d);
+                                    if ui
+                                        .add(egui::DragValue::new(&mut d).range(range).speed(0.02).custom_formatter(|v, _| crate::theme::dec(v, 1)).custom_parser(crate::theme::parse_dec).suffix(" s").update_while_editing(false))
+                                        .on_hover_text(crate::tr("Dauer"))
+                                        .changed()
+                                    {
+                                        ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: Time::from_secs_f64(d), source_in: c.source_in });
+                                    }
+                                    let id = egui::Id::new(("cap-text", c.id));
+                                    let mut buf = ui.data_mut(|d| d.get_temp::<String>(id)).unwrap_or_else(|| text.clone());
+                                    let r = ui.add(egui::TextEdit::singleline(&mut buf).id(id.with("edit")).desired_width(f32::INFINITY).frame(false));
+                                    if r.has_focus() {
+                                        editing_now = Some(c.id);
+                                    }
+                                    if focus == Some(c.id) {
+                                        focused = true;
+                                        // only scroll if needed: otherwise the „Hinzufügen“ button moves with every click
+                                        r.scroll_to_me(None);
+                                        r.request_focus();
+                                        // select the whole placeholder text: typing replaces it
+                                        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
+                                            let all = egui::text::CCursorRange::two(
+                                                egui::text::CCursor::new(0),
+                                                egui::text::CCursor::new(buf.chars().count()),
+                                            );
+                                            state.cursor.set_char_range(Some(all));
+                                            state.store(ui.ctx(), r.id);
+                                        }
+                                    }
+                                    if r.changed() {
+                                        ui.data_mut(|d| d.insert_temp(id, buf.clone()));
+                                    }
+                                    if r.lost_focus() {
+                                        ui.data_mut(|d| d.remove::<String>(id));
+                                        if buf != text {
+                                            let mut n = c.clone();
+                                            if let ClipContent::Text(s) = &mut n.content {
+                                                s.text = buf;
+                                            }
+                                            ops.insert(at, EditOp::ReplaceClip { clip: n });
+                                        }
+                                    }
+                                });
                             });
-                        });
-                    });
-                ui.add_space(3.0);
+                        })
+                });
+                measured = Some(row.response.rect.height());
             }
         });
+        if let Some(m) = measured.filter(|m| (m - row_h).abs() > 0.5) {
+            ctx.data_mut(|d| d.insert_temp(hid, m));
+            ctx.request_repaint();
+        }
+        // The edited row is gone from view: keep its text as if the field had lost focus
+        if let Some(e) = editing.filter(|e| editing_now != Some(*e)) {
+            let tid = egui::Id::new(("cap-text", e));
+            if let Some(buf) = ctx.data_mut(|d| d.get_temp::<String>(tid)) {
+                ctx.data_mut(|d| d.remove::<String>(tid));
+                if let Some(mut n) = self.project.find_clip(e).map(|(_, c)| c.clone()).filter(|c| text_of(c) != buf) {
+                    if let ClipContent::Text(s) = &mut n.content {
+                        s.text = buf;
+                    }
+                    ops.push(EditOp::ReplaceClip { clip: n });
+                }
+            }
+        }
+        ctx.data_mut(|d| d.insert_temp(eid, editing_now));
         if focused {
             self.caption_focus = None;
         }
@@ -762,6 +814,44 @@ impl App {
     }
 }
 
+/// Captions sorted by start and the positions of those matching the search, see [`App::caption_list`]
+#[derive(Clone, Default)]
+pub struct CapList {
+    epoch: Option<u64>,
+    q: Option<String>,
+    pub items: std::sync::Arc<Vec<Clip>>,
+    pub shown: std::sync::Arc<Vec<usize>>,
+}
+
+impl App {
+    /// The captions list without collecting, sorting and cloning all captions every frame: rebuilt
+    /// when the project changes (`project_epoch` grows with every synced change, undo and new
+    /// project included), the matches when the search changes.
+    pub fn caption_list(&self, ctx: &egui::Context, q: &str) -> CapList {
+        let id = egui::Id::new("cap-list-cache");
+        let mut l: CapList = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
+        if l.epoch != Some(self.project_epoch) {
+            l = CapList { epoch: Some(self.project_epoch), items: std::sync::Arc::new(self.caption_clips()), ..Default::default() };
+        }
+        if l.q.as_deref() != Some(q) {
+            let hit = |c: &Clip| matches!(&c.content, ClipContent::Text(s) if s.text.contains(q));
+            l.shown = std::sync::Arc::new((0..l.items.len()).filter(|&i| hit(&l.items[i])).collect());
+            l.q = Some(q.to_string());
+            ctx.data_mut(|d| d.insert_temp(id, l.clone()));
+        }
+        l
+    }
+}
+
+/// Position in `shown` of the caption under the playhead (`items` sorted by start)
+fn active_row(items: &[Clip], shown: &[usize], at: Time) -> Option<usize> {
+    let i = items.partition_point(|c| c.start <= at).checked_sub(1)?;
+    if !items[i].contains(at) {
+        return None;
+    }
+    shown.binary_search(&i).ok()
+}
+
 /// Clips that „Stil auf alle“ and „Neu aufteilen“ change: only on tracks named „Untertitel“.
 fn is_caption_track(t: &cl_core::Track) -> bool {
     t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME)
@@ -797,6 +887,11 @@ fn text_of(c: &Clip) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    thread_local! {
+        /// Captions whose row the list built in this thread (test-only counter)
+        pub(super) static BUILT: std::cell::RefCell<Vec<ClipId>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
 
     #[test]
     fn style_for_all_leaves_plain_text_clips_alone() {
@@ -918,6 +1013,135 @@ mod tests {
         assert_eq!(app.add_caption_segments(&[seg(1.0, 1.0000001), seg(2.0, 3.0)], Time::ZERO), 1);
         assert_eq!(app.caption_clips().len(), 1);
         assert!(!app.toasts.iter().any(|t| t.2), "no error");
+    }
+
+    /// App with `n` captions of 0.75 s each ("Wort0", "Wort1", ...)
+    fn app_with_captions(n: usize) -> crate::saving::tests::TestApp {
+        let mut app = crate::saving::tests::test_app();
+        app.set_doc(Project::new("k"));
+        let segs: Vec<cl_analyze::asr::Segment> = (0..n)
+            .map(|i| cl_analyze::asr::Segment { start: i as f64 * 0.75, end: i as f64 * 0.75 + 0.75, text: format!("Wort{i}"), words: Vec::new() })
+            .collect();
+        assert_eq!(app.add_caption_segments(&segs, Time::ZERO), n);
+        app
+    }
+
+    /// One headless frame of the captions list in a 400 × 760 px window (list ≈ 600 px high)
+    fn list_frame(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) {
+        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 760.0))), events, ..Default::default() };
+        let _ = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| app.captions_editor(ui));
+        });
+    }
+
+    /// Rows built in one frame
+    fn built(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> Vec<ClipId> {
+        BUILT.with(|b| b.borrow_mut().clear());
+        list_frame(app, ctx, events);
+        BUILT.with(|b| b.take())
+    }
+
+    fn wheel(dy: f32) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos2(200.0, 500.0)),
+            egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: vec2(0.0, dy), modifiers: Default::default() },
+        ]
+    }
+
+    fn key(key: egui::Key) -> egui::Event {
+        egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }
+    }
+
+    /// 1,991 captions made the whole UI sluggish: the list built every row every frame. With 5,000
+    /// captions in a ≈600 px list only the visible rows are built; scrolling, search, editing and
+    /// following the playhead keep working.
+    #[test]
+    fn captions_list_builds_only_visible_rows() {
+        let mut app = app_with_captions(5000);
+        let ctx = egui::Context::default();
+        let ids: Vec<ClipId> = app.caption_clips().iter().map(|c| c.id).collect();
+        for _ in 0..3 {
+            list_frame(&mut app, &ctx, Vec::new());
+        }
+        let rows = built(&mut app, &ctx, Vec::new());
+        assert!(rows.len() >= 5 && rows.len() <= 30, "rows built per frame with 5,000 captions: {}", rows.len());
+        assert_eq!(rows[0], ids[0], "the list starts at the first caption");
+
+        // scroll to the end: the last caption is shown
+        list_frame(&mut app, &ctx, wheel(-1.0e7));
+        let mut rows = Vec::new();
+        for _ in 0..60 {
+            rows = built(&mut app, &ctx, Vec::new());
+        }
+        assert!(rows.len() <= 30 && rows.contains(&ids[4999]), "after scrolling down: {} rows, last caption shown: {}", rows.len(), rows.contains(&ids[4999]));
+
+        // search: only the matches
+        app.asset_cat.insert("cap-q", "Wort123".into());
+        let mut rows = Vec::new();
+        for _ in 0..30 {
+            rows = built(&mut app, &ctx, Vec::new());
+        }
+        let want: Vec<ClipId> = std::iter::once(123).chain(1230..1240).map(|i| ids[i]).collect();
+        assert_eq!(rows, want, "search shows exactly the 11 matches");
+        app.asset_cat.insert("cap-q", String::new());
+
+        // the caption at the playhead comes into view while playing
+        app.playing = true;
+        app.playhead = Time::from_secs_f64(3000.0 * 0.75 + 0.1);
+        let mut rows = Vec::new();
+        for _ in 0..60 {
+            rows = built(&mut app, &ctx, Vec::new());
+        }
+        assert!(rows.contains(&ids[3000]), "caption 3000 under the playhead is shown while playing");
+        app.playing = false;
+
+        // editing a visible row: one undo step, the right clip changes
+        let steps = app.doc.lock().unwrap().undo_entries().len();
+        app.caption_focus = Some(ids[3002]);
+        for _ in 0..30 {
+            list_frame(&mut app, &ctx, Vec::new());
+        }
+        list_frame(&mut app, &ctx, vec![egui::Event::Text("Neu".into())]);
+        list_frame(&mut app, &ctx, vec![key(egui::Key::Enter)]);
+        list_frame(&mut app, &ctx, Vec::new());
+        let texts: Vec<String> = app.caption_clips().iter().map(text_of).collect();
+        assert_eq!(texts[3002], "Neu");
+        assert_eq!((texts[3001].as_str(), texts[3003].as_str()), ("Wort3001", "Wort3003"), "neighbours unchanged");
+        assert_eq!(app.doc.lock().unwrap().undo_entries().len(), steps + 1, "one undo step");
+
+        // typing, then scrolling the row out of view keeps the text (egui drops the focus silently)
+        app.caption_focus = Some(ids[3003]);
+        for _ in 0..30 {
+            list_frame(&mut app, &ctx, Vec::new());
+        }
+        list_frame(&mut app, &ctx, vec![egui::Event::Text("Weg".into())]);
+        list_frame(&mut app, &ctx, wheel(1.0e7));
+        for _ in 0..60 {
+            list_frame(&mut app, &ctx, Vec::new());
+        }
+        assert_eq!(text_of(&app.caption_clips()[3003]), "Weg", "text typed before scrolling away is kept");
+        assert_eq!(app.doc.lock().unwrap().undo_entries().len(), steps + 2);
+        assert!(!app.toasts.iter().any(|t| t.2), "no error");
+    }
+
+    /// Measurement: time per frame of the captions list with 2,000 and 5,000 captions.
+    /// `cargo test --release -p cl-app captions_list_measurement -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn captions_list_measurement() {
+        for n in [2000, 5000] {
+            let mut app = app_with_captions(n);
+            let ctx = egui::Context::default();
+            for _ in 0..3 {
+                list_frame(&mut app, &ctx, Vec::new());
+            }
+            let frames = 30;
+            let t = std::time::Instant::now();
+            for _ in 0..frames {
+                list_frame(&mut app, &ctx, Vec::new());
+            }
+            eprintln!("{n} captions: {:.2} ms per frame", t.elapsed().as_secs_f64() * 1000.0 / frames as f64);
+        }
     }
 
     #[test]
