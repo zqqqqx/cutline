@@ -169,13 +169,25 @@ fn scale_preset(chain: &str, k: f32) -> String {
 /// dense: 4×4×4 echoes). Room size stretches the delays (×0.5…2) and the decay time (RT60 0.4…2.4 s);
 /// the tap gains follow that decay and are scaled by the amount. Each stage lowers its output by
 /// 1/√(1+Σgain²), so the overall loudness stays about the same and sustained sound does not clip.
+const REVERB_TAPS: [[f32; 4]; 3] = [[11.0, 17.0, 29.0, 41.0], [59.0, 89.0, 131.0, 193.0], [263.0, 379.0, 523.0, 701.0]];
+
+/// Seconds the reverb rings after the clip's last sample: each `aecho` stage adds its longest delay
+/// (≤ 1.87 s); 0 without reverb.
+pub fn reverb_tail(a: &AudioFx) -> f64 {
+    if a.reverb <= 0.0 {
+        return 0.0;
+    }
+    let stretch = 0.5 + 1.5 * a.reverb_size.clamp(0.0, 1.0);
+    REVERB_TAPS.iter().map(|t| (t[3] * stretch).round() as f64 / 1000.0).sum()
+}
+
 fn reverb(amount: f32, size: f32) -> Vec<String> {
     if amount <= 0.0 {
         return Vec::new();
     }
     let (a, s) = (amount.clamp(0.0, 1.0), size.clamp(0.0, 1.0));
     let (stretch, rt60) = (0.5 + 1.5 * s, 0.4 + 2.0 * s);
-    [[11.0, 17.0, 29.0, 41.0], [59.0, 89.0, 131.0, 193.0], [263.0, 379.0, 523.0, 701.0]]
+    REVERB_TAPS
         .iter()
         .map(|taps: &[f32; 4]| {
             let ms: Vec<f32> = taps.iter().map(|t| (t * stretch).round()).collect();

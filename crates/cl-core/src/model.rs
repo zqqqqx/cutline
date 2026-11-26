@@ -83,7 +83,7 @@ impl Project {
         self.timeline
             .tracks
             .iter()
-            .find_map(|t| t.clips.iter().find(|c| c.id == id).map(|c| (t, c)))
+            .find_map(|t| t.clips.iter().find(|c| visit() && c.id == id).map(|c| (t, c)))
     }
 
     pub fn duration(&self) -> Time {
@@ -345,6 +345,17 @@ fn is_one(v: &f32) -> bool {
     *v == 1.0
 }
 
+#[cfg(test)]
+thread_local!(pub(crate) static CLIP_VISITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) });
+
+/// Counts one clip visit in tests (work measure for timeline ops); always true.
+#[inline]
+pub(crate) fn visit() -> bool {
+    #[cfg(test)]
+    CLIP_VISITS.with(|v| v.set(v.get() + 1));
+    true
+}
+
 impl Track {
     pub fn new(kind: TrackKind) -> Self {
         Self {
@@ -368,14 +379,17 @@ impl Track {
             .unwrap_or(Time::ZERO)
     }
     pub(crate) fn sort(&mut self) {
-        self.clips.sort_by_key(|c| c.start);
+        self.clips.sort_by_key(|c| {
+            visit();
+            c.start
+        });
     }
     /// Free range without overlap?
     pub fn is_free(&self, start: Time, dur: Time, ignore: Option<ClipId>) -> bool {
         let end = start + dur;
         self.clips
             .iter()
-            .filter(|c| Some(c.id) != ignore)
+            .filter(|c| visit() && Some(c.id) != ignore)
             .all(|c| end <= c.start || start >= c.end())
     }
 }
