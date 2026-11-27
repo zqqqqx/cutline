@@ -30,6 +30,8 @@ struct Shared {
     map: Mutex<HashMap<String, Bars>>,
     queue: Mutex<VecDeque<Job>>,
     wake: Condvar,
+    /// The owner is gone: workers finish their job and end
+    stop: std::sync::atomic::AtomicBool,
     /// Save one after another: several workers share one file (and `write_atomic` one
     /// temp file per process); the state is only taken under the lock, the last one wins
     save: Mutex<()>,
@@ -37,6 +39,7 @@ struct Shared {
 
 pub struct SoundBars {
     shared: Arc<Shared>,
+    workers: Vec<std::thread::JoinHandle<()>>,
     /// already queued (once per session and key)
     asked: HashSet<String>,
 }
@@ -103,6 +106,13 @@ fn work(sh: &Shared, file: &Path) {
         let job = {
             let mut q = sh.queue.lock().unwrap_or_else(|e| e.into_inner());
             loop {
+                if sh.stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    drop(q);
+                    if changed {
+                        save(sh, file);
+                    }
+                    return;
+                }
                 if let Some(j) = q.pop_front() {
                     break j;
                 }
@@ -146,11 +156,13 @@ impl SoundBars {
     pub fn load(file: PathBuf) -> Self {
         let shared = Arc::new(Shared { map: Mutex::new(read(&file)), ..Default::default() });
         let n = std::thread::available_parallelism().map_or(2, |n| n.get() / 2).clamp(1, 4);
-        for _ in 0..n {
-            let (sh, file) = (shared.clone(), file.clone());
-            std::thread::spawn(move || work(&sh, &file));
-        }
-        Self { shared, asked: HashSet::new() }
+        let workers = (0..n)
+            .map(|_| {
+                let (sh, file) = (shared.clone(), file.clone());
+                std::thread::spawn(move || work(&sh, &file))
+            })
+            .collect();
+        Self { shared, workers, asked: HashSet::new() }
     }
 
     pub fn get(&self, key: &str) -> Option<Bars> {
@@ -169,9 +181,38 @@ impl SoundBars {
     }
 }
 
+/// The workers end with their owner. Bug: they went on rendering the built-in sounds into the data
+/// folder after the app was gone; in test runs that folder was a deleted temp folder, which they
+/// created again (thousands of left-over folders, about 100 GB).
+impl Drop for SoundBars {
+    fn drop(&mut self) {
+        self.shared.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.shared.queue.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.shared.wake.notify_all();
+        for w in self.workers.drain(..) {
+            let _ = w.join();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropping_ends_the_workers_and_nothing_is_written_afterwards() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().to_path_buf();
+        let mut sb = SoundBars::load(dir.join("sound-bars.json"));
+        for s in cl_fx::sfx::SFX.iter() {
+            sb.ensure(&format!("builtin:sfx:{}", s.id), &dir.join("Sfx").join(format!("{}.wav", s.id)), Some(s.id));
+        }
+        // the owner goes while most sounds are still waiting
+        drop(sb);
+        drop(d);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        assert!(!dir.exists(), "a worker wrote into the folder after its owner was gone");
+    }
 
     #[test]
     fn stored_bars_are_there_at_once_and_only_changed_files_are_redone() {
@@ -192,7 +233,7 @@ mod tests {
         assert!(!stale(Some(&b), Some(st)));
         assert!(stale(Some(&b), Some(st + 1)) && stale(None, Some(st)) && stale(Some(&b), None));
         // broken file: empty instead of an error
-        std::fs::write(&file, b"{kaputt").unwrap();
+        std::fs::write(&file, b"{broken").unwrap();
         assert!(read(&file).is_empty());
     }
 
