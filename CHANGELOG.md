@@ -21,6 +21,34 @@
 
 **Behoben**
 
+## 0.19.2 – 2026-11-27
+
+### English
+
+**Fixed**
+- **SVG files can be imported.** An SVG added as media or dropped on the timeline stayed black; it now comes in as an image.
+- **A file dropped on the timeline lands there.** After a click in the sound list it ended up in the sound library instead.
+- **Enter in the resolution field keeps the typed value.** The number was thrown away when the field was confirmed with Enter.
+- **Esc in the colour picker only closes the picker.** It also cleared the clip selection.
+- **Cancelling a task no longer shows an error.** A red "Cancelled" message appeared after stopping tracking or another task.
+- **Messages at the bottom are shown in full.** A longer message was cut off although the window had room.
+- **Narrow window: the play button no longer covers its neighbours,** and the inspector no longer cuts off its value fields.
+- **MCP: an invalid request gets an answer.** A list or a number instead of a request left the client waiting forever.
+- **MCP: no changes while no project is open.** On the start screen, edits went into a project nobody could see and were reported as done.
+
+### Deutsch
+
+**Behoben**
+- **SVG-Dateien lassen sich importieren.** Ein SVG als Medium oder auf die Zeitleiste gezogen blieb schwarz; es kommt jetzt als Bild herein.
+- **Eine auf die Zeitleiste gezogene Datei landet dort.** Nach einem Klick in der Sound-Liste kam sie stattdessen in die Sound-Bibliothek.
+- **Enter im Auflösungsfeld behält den getippten Wert.** Die Zahl ging verloren, wenn das Feld mit Enter bestätigt wurde.
+- **Esc im Farbwähler schließt nur den Farbwähler.** Bisher wurde auch die Clip-Auswahl aufgehoben.
+- **Abbrechen einer Aufgabe zeigt keinen Fehler mehr.** Nach dem Stoppen des Verfolgens oder einer anderen Aufgabe erschien eine rote Meldung „Abgebrochen“.
+- **Meldungen unten werden ganz gezeigt.** Eine längere Meldung wurde abgeschnitten, obwohl das Fenster Platz hatte.
+- **Schmales Fenster: Der Abspielknopf liegt nicht mehr über seinen Nachbarn,** und der Inspektor schneidet seine Wertfelder nicht mehr ab.
+- **MCP: Eine ungültige Anfrage bekommt eine Antwort.** Eine Liste oder eine Zahl statt einer Anfrage ließ den Client endlos warten.
+- **MCP: Keine Änderungen, solange kein Projekt geöffnet ist.** Auf dem Startbildschirm gingen Änderungen in ein unsichtbares Projekt und wurden als erledigt gemeldet.
+
 ## 0.19.1 – 2026-11-27
 
 ### English
