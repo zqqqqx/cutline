@@ -315,6 +315,8 @@ pub struct McpRunning {
     pub port: u16,
     pub token: String,
     pub read_only: bool,
+    /// `true` while no project is open: the server refuses write tools then
+    pub closed: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -380,6 +382,8 @@ impl App {
         let token = cl_mcp::new_token();
         let mut srv = cl_mcp::McpServer::new(self.doc.clone(), Some(self.fonts.clone()));
         srv.read_only = self.settings.mcp_read_only;
+        let closed = srv.closed.clone();
+        closed.store(self.screen != crate::app::Screen::Editor, Ordering::Relaxed);
         let stop = Arc::new(AtomicBool::new(false));
         match srv.serve_http_until(self.settings.mcp_port, token.clone(), stop.clone()) {
             Ok((addr, thread)) => {
@@ -393,6 +397,7 @@ impl App {
                     port: addr.port(),
                     token,
                     read_only: self.settings.mcp_read_only,
+                    closed,
                     stop,
                     thread: Some(thread),
                 });
@@ -1186,7 +1191,7 @@ mod tests {
             let doc = Arc::new(std::sync::Mutex::new(cl_core::Document::new(cl_core::Project::new("t"))));
             let stop = Arc::new(AtomicBool::new(false));
             let (addr, t) = cl_mcp::McpServer::new(doc, None).serve_http_until(port, "x".into(), stop.clone())?;
-            Ok::<_, std::io::Error>(McpRunning { port: addr.port(), token: "x".into(), read_only: false, stop, thread: Some(t) })
+            Ok::<_, std::io::Error>(McpRunning { port: addr.port(), token: "x".into(), read_only: false, closed: Default::default(), stop, thread: Some(t) })
         };
         // Restarting on the port just freed must work every time. Seen in CI on Linux: the bind
         // failed five times in a row with AddrInUse while other tests were starting FFmpeg – a

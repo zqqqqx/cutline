@@ -1018,6 +1018,18 @@ impl App {
     }
 }
 
+/// Files to import with every SVG replaced by the PNG rendered from it (FFmpeg cannot decode SVG);
+/// one that cannot be rendered stays and fails at the check with a message.
+pub fn svg_as_png(files: Vec<std::path::PathBuf>) -> Vec<std::path::PathBuf> {
+    files
+        .into_iter()
+        .map(|f| match f.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
+            true => own_sticker_file(&f).unwrap_or(f),
+            false => f,
+        })
+        .collect()
+}
+
 /// File for the image clip of an own sticker: SVG is rendered once as PNG.
 pub fn own_sticker_file(path: &std::path::Path) -> Option<std::path::PathBuf> {
     let file = if path
@@ -1093,6 +1105,22 @@ fn restorable(area: &str, key: &str, packs: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// Bug (window test of 0.19.1): an SVG dropped on the media area became a clip that stayed
+    /// black (FFmpeg has no SVG decoder). It now comes in as the PNG rendered from it.
+    #[test]
+    fn an_imported_svg_becomes_a_png_that_can_be_shown() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let mut app = crate::saving::tests::test_app();
+        let svg = app.dir().join("b.svg");
+        std::fs::write(&svg, r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>"#).unwrap();
+        let ids = app.import_media(vec![svg]);
+        assert_eq!(ids.len(), 1);
+        let m = app.project.media(ids[0]).unwrap();
+        assert!(m.path.extension().is_some_and(|e| e == "png") && m.width == 512, "{:?}", m.path);
+    }
+
     #[test]
     fn esc_ends_the_order_edit_mode_only_while_it_is_on() {
         use super::esc_ends_edit;

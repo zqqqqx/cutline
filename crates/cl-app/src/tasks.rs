@@ -181,6 +181,10 @@ impl Tasks {
         while let Ok((id, done)) = self.rx.try_recv() {
             if let Some(i) = self.list.iter().position(|t| t.id == id) {
                 let t = self.list.remove(i);
+                // stopped on request (the X, a new mark, a deleted clip): that is no error to show
+                if t.cancel.load(Ordering::Relaxed) && matches!(done, TaskDone::Failed(_)) {
+                    continue;
+                }
                 let global = matches!(done, TaskDone::Failed(_) | TaskDone::Model { .. } | TaskDone::Proxy { .. });
                 let done = if t.generation == self.generation || global {
                     done
@@ -228,6 +232,30 @@ mod tests {
         assert!(t.running("roto:1").is_some_and(|n| n.id != old), "the new task runs under the key");
         assert_eq!(kind(&t.list[0].key), "roto", "the old one stays in its group until it ends");
         go.send(()).unwrap();
+    }
+
+    /// Bug (window test of 0.19.1): cancelling the tracking with the X showed a red error
+    /// "Objekt: Abgebrochen". A real failure still reports.
+    #[test]
+    fn a_cancelled_task_reports_no_error() {
+        let ctx = egui::Context::default();
+        let mut t = Tasks::default();
+        t.spawn(&ctx, "roto:1", "x", |_, cancel| {
+            while !cancel.load(Ordering::Relaxed) {
+                std::thread::yield_now();
+            }
+            TaskDone::Failed("Abgebrochen".into())
+        });
+        t.spawn(&ctx, "roto:2", "y", |_, _| TaskDone::Failed("kaputt".into()));
+        t.running("roto:1").unwrap().cancel();
+        let mut got = Vec::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !t.list.is_empty() {
+            assert!(std::time::Instant::now() < deadline, "tasks did not end within 30 s");
+            got.extend(t.poll());
+            std::thread::yield_now();
+        }
+        assert!(matches!(&got[..], [(k, TaskDone::Failed(e))] if k == "roto:2" && e == "kaputt"), "{}", got.len());
     }
 
     #[test]

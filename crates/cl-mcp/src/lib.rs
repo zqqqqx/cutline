@@ -23,6 +23,9 @@ pub struct McpServer {
     pub fonts: Option<Arc<Mutex<cl_fonts::FontLibrary>>>,
     /// Allow read-only tools only (switch in the app).
     pub read_only: bool,
+    /// Set by the app while no project is open (start screen): write tools refuse then, because
+    /// the next project opened replaces what they would change.
+    pub closed: Arc<std::sync::atomic::AtomicBool>,
     client: Arc<Mutex<String>>,
 }
 
@@ -151,6 +154,7 @@ impl McpServer {
             doc,
             fonts,
             read_only: false,
+            closed: Default::default(),
             client: Arc::new(Mutex::new("unbekannt".into())),
         }
     }
@@ -161,9 +165,17 @@ impl McpServer {
 
     /// Processes a JSON-RPC message (or a batch). `None` for pure notifications.
     pub fn handle(&self, msg: Value) -> Option<Value> {
+        // not a request at all (a number, a text, an empty batch): answer, or the client waits forever
+        let invalid = || json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32600, "message": "Ungültige Anfrage" } });
         if let Value::Array(batch) = msg {
+            if batch.is_empty() {
+                return Some(invalid());
+            }
             let out: Vec<Value> = batch.into_iter().filter_map(|m| self.handle(m)).collect();
             return (!out.is_empty()).then_some(Value::Array(out));
+        }
+        if !msg.is_object() {
+            return Some(invalid());
         }
         let id = msg.get("id").cloned();
         let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
@@ -256,6 +268,9 @@ impl McpServer {
             return Err(ToolErr(
                 "Der MCP-Zugang ist auf „nur lesen“ gestellt".into(),
             ));
+        }
+        if tool.write && self.closed.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(ToolErr("Kein Projekt geöffnet".into()));
         }
         match name {
             "project_info" => {
@@ -796,6 +811,19 @@ mod tests {
         );
     }
 
+    /// Bug (window test of 0.19.1): on the start screen write tools answered "ok", but the
+    /// changes went into a project nobody sees and were gone with the next project opened.
+    #[test]
+    fn writes_are_refused_while_no_project_is_open() {
+        let s = server();
+        s.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+        let r = call(&s, "add_text", json!({"text":"x","start":0,"duration":1}));
+        assert!(r["isError"] == true && r["content"][0]["text"] == "Kein Projekt geöffnet", "{r}");
+        assert_eq!(call(&s, "project_info", json!({}))["isError"], false);
+        s.closed.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(call(&s, "add_text", json!({"text":"x","start":0,"duration":1}))["isError"], false);
+    }
+
     #[test]
     fn http_transport_requires_token() {
         let srv = Http::start(server());
@@ -968,6 +996,12 @@ mod tests {
         assert!(s.handle(json!([{"jsonrpc":"2.0","method":"ping"}])).is_none());
         let b = s.handle(json!([{"jsonrpc":"2.0","id":1,"method":"ping"}, {"jsonrpc":"2.0","method":"x"}, {"jsonrpc":"2.0","id":2,"method":"nope"}])).unwrap();
         assert_eq!(b.as_array().unwrap().len(), 2);
+        // bug (window test of 0.19.1): `[1,2,3]`, `5` and `[]` got no answer, the client waited forever
+        let b = s.handle(json!([1, 2, 3])).unwrap();
+        assert!(b.as_array().unwrap().len() == 3 && b[0]["error"]["code"] == -32600 && b[0]["id"].is_null(), "{b}");
+        for m in [json!(5), json!("x"), json!(null), json!([])] {
+            assert_eq!(s.handle(m).unwrap()["error"]["code"], -32600);
+        }
         // wrong types: no panic
         for m in [json!(5), json!("x"), json!(null), json!([]), json!({"id":{"a":1},"method":5}), json!({"id":1,"method":"tools/call","params":5}), json!({"id":1,"method":"tools/call","params":{"name":7,"arguments":"x"}})] {
             let _ = s.handle(m);

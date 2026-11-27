@@ -231,6 +231,10 @@ pub fn probe(path: &Path) -> Result<MediaRef> {
         .as_ref()
         .and_then(|f| f.format_name.clone())
         .unwrap_or_default();
+    if fmt_name == "svg_pipe" || fmt_name == "svg" {
+        // FFprobe names the format, but FFmpeg has no decoder for it: the clip would stay black
+        return Err(MediaError::Unreadable("SVG".into()));
+    }
     let duration = p
         .format
         .as_ref()
@@ -1781,6 +1785,10 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
+        // bug (window test of 0.19.1): an SVG was taken as an image, but nothing can decode it
+        let svg = dir.path().join("b.svg");
+        std::fs::write(&svg, r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>"#).unwrap();
+        assert!(matches!(probe(&svg), Err(MediaError::Unreadable(_))));
         let png = dir.path().join("bild.png");
         let st = command("ffmpeg")
             .unwrap()

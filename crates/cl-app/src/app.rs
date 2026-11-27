@@ -1192,6 +1192,8 @@ impl App {
     // ---------- Media ----------
 
     pub fn import_media(&mut self, files: Vec<PathBuf>) -> Vec<MediaId> {
+        // FFmpeg cannot decode SVG: it comes in as the PNG rendered from it, as own stickers do
+        let files = crate::library_ui::svg_as_png(files);
         // ffprobe for new files in advance in parallel (up to 8 threads), taken over below
         // in order as before
         let mut todo: Vec<&PathBuf> = files
@@ -2883,6 +2885,11 @@ impl App {
         if self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
             return;
         }
+        // an open popup (colour picker, dropdown): Esc closes that and nothing else
+        #[allow(deprecated)]
+        if ctx.memory(|m| m.any_popup_open()) && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            return;
+        }
         let held = std::mem::take(&mut self.held_keys);
         let space = !held.is_empty() || ctx.input(|i| i.key_pressed(Key::Space));
         ctx.input_mut(|i| i.events.extend(held));
@@ -3187,6 +3194,9 @@ impl App {
             .show(ctx, |ui| {
                 // do not wrap messages word by word (the area has no fixed width)
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                // the area starts with the width of the frame before: a longer new message was
+                // cut off ("Rückgängig: Clip hinzufüg…") although the window had room
+                ui.set_max_width(ui.ctx().screen_rect().width() - 48.0);
                 for (i, (msg, at, err)) in self.toasts.iter().enumerate().rev().take(3) {
                     let age = at.elapsed().as_secs_f32();
                     ui.set_opacity(theme::ease(toast_alpha(age, toast_secs(*err), fade_in, fade_out)));
@@ -3247,15 +3257,18 @@ impl App {
             return;
         }
         // dropped over the sticker or sound list: into the own library
+        // where the files were let go (`drops.pos`), not where the pointer was last seen: no mouse
+        // events arrive while dragging from outside, so a video dropped on the timeline right after
+        // a click in the sound list went into the sound library ("Keine passenden Dateien")
         if let (Some((kind, rect)), Some(pos)) =
-            (self.lib_drop, ctx.input(|i| i.pointer.hover_pos()).or(self.drops.pos))
+            (self.lib_drop, self.drops.pos.or(ctx.input(|i| i.pointer.hover_pos())))
         {
             if rect.contains(pos) {
                 self.lib_import(kind, dropped);
                 return;
             }
         }
-        let (projects, rest): (Vec<_>, Vec<_>) = dropped
+        let (projects, rest): (Vec<_>, Vec<_>) = crate::library_ui::svg_as_png(dropped)
             .into_iter()
             .partition(|p| p.extension().is_some_and(|e| e == "cutline"));
         if let Some(p) = projects.first() {
@@ -3583,9 +3596,9 @@ impl eframe::App for App {
             let insp = if lay.assets_right { egui::SidePanel::left(id_i) } else { egui::SidePanel::right(id_i) };
             let r = insp
                 .resizable(!self.settings.layout_locked)
-                .default_width((sr.width() * fi).clamp(200.0, 420.0))
-                .min_width(if small { 180.0 } else { 220.0 })
-                .max_width((sr.width() * 0.32).max(200.0))
+                .default_width((sr.width() * fi).clamp(INSPECTOR_MIN, 420.0))
+                .min_width(INSPECTOR_MIN)
+                .max_width((sr.width() * 0.32).max(INSPECTOR_MIN))
                 .frame(theme::card(theme::PAD_CARD_L))
                 .show(ctx, |ui| fixed_width(ui, |ui| self.inspector_panel(ui)))
                 .response
@@ -4218,6 +4231,10 @@ pub fn fixed_width(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 /// Display time of a toast: errors stay longer (and close on click)
 /// Text of a toast with an icon in front; if the message already brings its own icon,
 /// that one stays (otherwise two check marks would stand before „Gespeichert“).
+/// Narrowest inspector: below this its rows (label, slider, value field) ran out of the panel
+/// and the value fields were cut off (window test of 0.19.1 in a 1080 px wide window)
+const INSPECTOR_MIN: f32 = 300.0;
+
 fn toast_line(msg: &str, err: bool) -> String {
     if msg.starts_with(|c: char| ('\u{E000}'..='\u{F8FF}').contains(&c)) {
         return msg.to_string();
@@ -4587,6 +4604,39 @@ fn font_search_enter_picks_and_esc_keeps_the_selection() {
     assert_eq!(app.selected, Some(clip), "… and leaves the selection alone");
     assert_eq!(font(&app), None);
     assert!(ctx.data(|d| d.get_temp::<(String, usize)>(egui::Id::new("font").with("search"))).is_none(), "query cleared");
+}
+
+/// Bug (window test of 0.19.1): Esc on the open colour picker closed it and also deselected the clip
+#[test]
+fn esc_with_an_open_popup_keeps_the_selection() {
+    let mut app = crate::saving::tests::test_app();
+    let mut p = Project::new("Popup");
+    let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
+    let c = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), Time::ZERO, Time::from_secs_f64(2.0));
+    let clip = c.id;
+    tr.clips.push(c);
+    p.timeline.tracks.push(tr);
+    app.set_doc(p);
+    app.selected = Some(clip);
+    let ctx = egui::Context::default();
+    let esc = egui::Event::Key { key: Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
+    let frame = |app: &mut App, popup: bool| {
+        let mut raw = egui::RawInput { events: vec![esc.clone()], ..Default::default() };
+        eframe::App::raw_input_hook(app, &ctx, &mut raw);
+        let _ = ctx.run(raw, |ctx| {
+            #[allow(deprecated)]
+            if popup {
+                ctx.memory_mut(|m| m.open_popup(egui::Id::new("farbe")));
+            }
+            app.shortcuts(ctx);
+        });
+    };
+    frame(&mut app, true);
+    assert_eq!(app.selected, Some(clip), "Esc belongs to the popup");
+    #[allow(deprecated)]
+    ctx.memory_mut(|m| m.close_popup());
+    frame(&mut app, false);
+    assert_eq!(app.selected, None, "without a popup Esc deselects as before");
 }
 
 /// Esc in the field only discards the input

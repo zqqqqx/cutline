@@ -3458,7 +3458,8 @@ impl App {
             self.toggle_play();
         }
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
-            let compact = ui.available_width() < 200.0;
+            // the labelled chips need about 310 px; below that they ran under the play button
+            let compact = ui.available_width() < 320.0;
             let (g, tip) = if self.player_max { (icon::CORNERS_IN, "Normale Ansicht (F)") } else { (icon::CORNERS_OUT, "Großer Player (F)") };
             if theme::icon_button(ui, g, tip, true, self.player_max).clicked() {
                 self.player_max = !self.player_max;

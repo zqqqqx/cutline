@@ -1789,9 +1789,15 @@ impl App {
             let a = ui.add(egui::DragValue::new(&mut w).range(16..=16384));
             ui.label(RichText::new("×").color(theme::TEXT_DIM()));
             let b = ui.add(egui::DragValue::new(&mut h).range(16..=16384));
-            if (a.drag_stopped() || a.lost_focus() || b.drag_stopped() || b.lost_focus())
-                && (w, h) != (settings.width, settings.height)
-            {
+            // Enter only reports the focus loss, the number came while typing (as in
+            // `widgets::Slider`): keep what was typed, or Enter threw the input away. Esc discards.
+            let typed = a.id.with("typed");
+            if a.changed() || b.changed() {
+                ui.data_mut(|d| d.insert_temp(typed, (w, h)));
+            }
+            let done = a.drag_stopped() || a.lost_focus() || b.drag_stopped() || b.lost_focus();
+            let kept = if done { ui.data_mut(|d| d.remove_temp(typed)) } else { None };
+            if let Some((w, h)) = kept.filter(|v| *v != (settings.width, settings.height) && !crate::widgets::field_esc(ui.ctx())) {
                 settings.width = w & !1;
                 settings.height = h & !1;
                 settings.aspect = AspectPreset::Custom;

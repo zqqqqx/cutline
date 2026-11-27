@@ -543,6 +543,9 @@ pub fn frame(ctx: &egui::Context, app: &mut crate::app::App) {
     let on = app.settings.send_reports;
     ENABLED.store(on, Ordering::Relaxed);
     SCREEN.store(if app.screen == crate::app::Screen::Editor { 2 } else { 1 }, Ordering::Relaxed);
+    if let Some(m) = &app.mcp {
+        m.closed.store(app.screen != crate::app::Screen::Editor, Ordering::Relaxed);
+    }
     let (Some(dsn), true) = (dsn(), on) else { return };
     if lock(&CRASH).auto_tried {
         return;
