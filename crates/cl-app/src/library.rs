@@ -94,7 +94,13 @@ struct Stored {
     areas: std::collections::BTreeMap<String, AreaLayout>,
     /// Linked folders: (kind, path)
     linked: Vec<(String, PathBuf)>,
+    /// 0: written by versions up to 0.19.3 (German keys of folders and categories), see [`STORED_VERSION`]
+    version: u32,
 }
+
+/// `Stored::version` written now: the old keys are converted only in files without it, so a
+/// label or tag of the user that happens to read „Alle“ stays
+const STORED_VERSION: u32 = 1;
 
 /// Arrangement of an asset area (stickers, sound effects, effects, …).
 ///
@@ -240,7 +246,14 @@ fn walk(dir: &Path, exts: &[&str], depth: u8, out: &mut Vec<PathBuf>) {
 
 impl Library {
     pub fn load() -> Self {
-        let s: Stored = paths::read_json_converted(&store(), &crate::legacy::library_key);
+        Self::load_from(&store())
+    }
+
+    fn load_from(p: &Path) -> Self {
+        let mut s: Stored = paths::read_json_converted(p, &|_| None);
+        if s.version < STORED_VERSION {
+            s = paths::read_json_converted(p, &crate::legacy::library_key);
+        }
         Self {
             favorites: s.favorites,
             recent: s.recent,
@@ -262,6 +275,7 @@ impl Library {
             hidden: self.hidden.clone(),
             areas: self.areas.clone(),
             linked: self.linked.clone(),
+            version: STORED_VERSION,
         };
         let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
@@ -670,8 +684,8 @@ impl Library {
             && self.in_cat(area, cat, key, folder)
             && (q.is_empty()
                 || name.to_lowercase().contains(&q)
-                || crate::tr(name).to_lowercase().contains(&q)
-                || crate::tr(folder).to_lowercase().contains(&q)
+                // built-in names in both languages: „würfel“ finds the cube in the English window too
+                || [cl_i18n::Lang::De, cl_i18n::Lang::En].into_iter().any(|l| [name, folder].iter().any(|s| cl_i18n::tr_in(l, s).to_lowercase().contains(&q)))
                 || tags.iter().any(|t| t.to_lowercase().contains(&q)))
     }
 
@@ -928,7 +942,7 @@ pub fn unique(dir: &Path, file: String) -> PathBuf {
 
 /// Move to the Cutline trash (nothing is deleted permanently).
 fn to_trash(p: &Path) -> Result<(), String> {
-    let trash = paths::data_dir().join("Trash").join("Library");
+    let trash = paths::data_dir().join(cl_core::legacy::TRASH_DIR).join("Library");
     std::fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
     let dest = unique(
         &trash,
@@ -965,6 +979,35 @@ mod tests {
         assert!(!v(&lib, "hand"), "hidden stays hidden");
     }
 
+
+    /// Built-in names are found in both languages, whatever the interface language (tests run in English)
+    #[test]
+    fn search_finds_built_in_names_in_both_languages() {
+        let _home = crate::paths::TestHome::new();
+        let lib = Library::default();
+        let v = |q: &str| lib.visible("transition", "All", q, "tr:dissolve", "Dissolve", "Basic");
+        assert!(v("auflös"), "German name in the English window");
+        assert!(v("dissol"));
+        assert!(!v("wackeln"));
+    }
+
+    /// Keys of 0.19.3 are converted once; a current file keeps a user's name „Alle“ or folder „Zuletzt“
+    #[test]
+    fn old_library_keys_are_converted_once() {
+        let home = crate::paths::TestHome::new();
+        let f = home.path().join("library.json");
+        std::fs::write(&f, r#"{"areas":{"effect":{"order":["Favoriten","b:Bewegung"],"names":{"b:Bewegung":"Alle"}}}}"#).unwrap();
+        let lib = Library::load_from(&f);
+        assert_eq!(lib.areas["effect"].order, ["Favorites", "b:Motion"]);
+        std::fs::write(&f, r#"{"version":1,"areas":{"effect":{"order":["Favorites"],"names":{"b:Motion":"Alle"},"virt":{"Zuletzt":["x"]}}}}"#).unwrap();
+        let lib = Library::load_from(&f);
+        assert_eq!(lib.areas["effect"].names["b:Motion"], "Alle");
+        assert!(lib.areas["effect"].virt.contains_key("Zuletzt"));
+        // saving marks the file as current
+        lib.save();
+        let saved = std::fs::read_to_string(store()).unwrap();
+        assert!(saved.contains("\"version\": 1"), "{saved}");
+    }
 
     #[test]
     fn media_saves_as_element_or_sound_into_new_folder() {

@@ -389,7 +389,7 @@ mod tests {
             .spawn()
             .unwrap();
         super::raise_priority(&c);
-        let job = super::win::job().expect("Job-Objekt") as *mut std::ffi::c_void;
+        let job = super::win::job().expect("job object") as *mut std::ffi::c_void;
         let mut inside = 0;
         // SAFETY: valid handles
         let ok = unsafe { super::win::IsProcessInJob(c.as_raw_handle(), job, &mut inside) };

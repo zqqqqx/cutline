@@ -50,14 +50,15 @@ pub fn thumb_path(project: &Path) -> PathBuf {
         .join(format!("{:016x}.rgba", h.finish()))
 }
 
-/// Free file name for a duplicated project: `<name> (Copy).cutline`, then `(Copy 2)` …
+/// Free file name for a duplicated project: `<name> (Copy).cutline`, then `(Copy 2)` …, in the interface language
 /// Special characters in the name (`/`, `:`, `?` …) are replaced.
 fn copy_path(dir: &Path, name: &str) -> PathBuf {
     let base = paths::safe_name(name);
-    let mut out = dir.join(format!("{base} (Copy).cutline"));
+    let copy = crate::tr("Copy~noun");
+    let mut out = dir.join(format!("{base} ({copy}).cutline"));
     let mut n = 2;
     while out.exists() {
-        out = dir.join(format!("{base} (Copy {n}).cutline"));
+        out = dir.join(format!("{base} ({copy} {n}).cutline"));
         n += 1;
     }
     out
@@ -123,9 +124,9 @@ pub fn reveal(p: &Path) {
 pub fn next_project_name() -> String {
     let dir = paths::projects_dir();
     (1..)
-        .map(|n| format!("Project {n}"))
+        .map(|n| crate::tr(format!("Project {n}")))
         .find(|n| !dir.join(format!("{n}.cutline")).exists())
-        .unwrap_or_else(|| "Project".into())
+        .unwrap_or_else(|| crate::tr("Project"))
 }
 
 pub fn ago(t: SystemTime) -> String {
@@ -440,7 +441,7 @@ impl App {
                                 ui.painter().text(
                                     pos2(tr.right() + 12.0, r.center().y - 8.0),
                                     egui::Align2::LEFT_CENTER,
-                                    crate::tr(&name),
+                                    name.clone(),
                                     egui::FontId::proportional(theme::FS_TEXT),
                                     theme::TEXT(),
                                 );
@@ -600,7 +601,7 @@ impl App {
                                     np.text(
                                         pos2(r.left() + 2.0, thumb_r.bottom() + 14.0),
                                         egui::Align2::LEFT_CENTER,
-                                        theme::elide(&crate::tr(&name), r.width() - 30.0, |s| theme::text_width(ui.ctx(), s, font.clone())),
+                                        theme::elide(&name, r.width() - 30.0, |s| theme::text_width(ui.ctx(), s, font.clone())),
                                         font,
                                         theme::TEXT(),
                                     );
@@ -717,7 +718,7 @@ impl App {
             .and_then(|mut proj| {
                 let dir = paths::projects_dir();
                 let out = copy_path(&dir, &proj.name);
-                proj.name = crate::tr(format!("{} (Copy)", proj.name));
+                proj.name = format!("{} ({})", proj.name, crate::tr("Copy~noun"));
                 std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
                 paths::write_atomic(&out, proj.to_json()).map_err(|e| e.to_string())?;
                 Ok(out)
@@ -795,10 +796,10 @@ impl App {
                 close |= crate::dialog::title(ui, "Delete project?");
                 let name = self.home.entries.iter().find(|e| e.path == path).map(|e| e.name.clone()).unwrap_or_default();
                 ui.label(crate::tr(format!("“{name}” will be moved to the Cutline trash. Your media files stay untouched.")));
-                ui.label(RichText::new(paths::shown(&paths::data_dir().join("Trash"))).small().color(theme::TEXT_DIM()));
+                ui.label(RichText::new(paths::shown(&paths::data_dir().join(cl_core::legacy::TRASH_DIR))).small().color(theme::TEXT_DIM()));
                 crate::dialog::footer(ui, |ui| {
                     if ui.add(theme::danger("Delete")).clicked() {
-                        let trash = paths::data_dir().join("Trash");
+                        let trash = paths::data_dir().join(cl_core::legacy::TRASH_DIR);
                         let _ = std::fs::create_dir_all(&trash);
                         let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
                         let fname = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();

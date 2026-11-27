@@ -121,7 +121,7 @@ pub fn tr(s: impl AsRef<str>) -> String {
 /// A text in a given language, whatever the UI language is (search finds commands by both names)
 pub fn tr_in(lang: Lang, s: &str) -> String {
     match lang {
-        Lang::De => lookup(s),
+        Lang::De => translate(s),
         _ => plain(s),
     }
 }
@@ -142,7 +142,8 @@ fn plain(s: &str) -> String {
 }
 
 fn translate(s: &str) -> String {
-    if s.is_empty() || !s.chars().any(|c| c.is_alphabetic()) {
+    // a text without letters stays, unless the dictionary has it (a sample number „1,000,000“)
+    if s.is_empty() || (!s.chars().any(|c| c.is_alphabetic()) && !dict().exact.contains_key(s)) {
         return s.to_string();
     }
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -181,6 +182,11 @@ fn lookup(s: &str) -> String {
     }
     for (parts, to) in &d.templates {
         if let Some(vals) = match_template(core, parts) {
+            let vals: Vec<String> = vals
+                .iter()
+                .enumerate()
+                .map(|(i, v)| if user_data(parts[i], parts[i + 1], v) { v.to_string() } else { translate(v) })
+                .collect();
             return format!("{pre}{}{post}", fill(to, &vals));
         }
     }
@@ -203,14 +209,12 @@ fn lookup(s: &str) -> String {
             return format!("{pre}{}{gap}({}){post}", lookup(head), lookup(inner));
         }
     }
-    // keyboard shortcuts
-    let keys = keys();
-    if keys.iter().take(4).any(|(en, _)| core.contains(en)) || core == "Home" {
-        let mut out = core.to_string();
-        for (en, de) in keys {
-            out = out.replace(en, de);
-        }
-        return format!("{pre}{out}{post}");
+    // keyboard shortcuts: only whole key names, so names like „Delta“ or „Space Ambience.wav“ stay
+    let german_key = |p: &str| keys().iter().find(|(en, _)| *en == p.trim()).map(|(_, de)| *de);
+    let parts: Vec<&str> = core.split('+').collect();
+    if parts.iter().any(|p| german_key(p).is_some()) {
+        let out: Vec<String> = parts.iter().map(|p| german_key(p).map_or_else(|| p.to_string(), |de| p.replace(p.trim(), de))).collect();
+        return format!("{pre}{}{post}", out.join("+"));
     }
     if cfg!(debug_assertions) {
         report_missing(core);
@@ -250,7 +254,14 @@ fn match_template<'a>(s: &'a str, parts: &[&str]) -> Option<Vec<&'a str>> {
     Some(vals)
 }
 
-fn fill(to: &str, vals: &[&str]) -> String {
+/// A value the template quotes, or a path or file name, is the user's own text and is not translated
+fn user_data(before: &str, after: &str, v: &str) -> bool {
+    let quoted = [('“', '”'), ('„', '“'), ('"', '"'), ('\'', '\'')].iter().any(|(o, c)| before.ends_with(*o) && after.starts_with(*c));
+    let file = v.rsplit_once('.').is_some_and(|(_, ext)| (1..=5).contains(&ext.len()) && ext.chars().all(|c| c.is_ascii_alphanumeric()));
+    quoted || file || v.contains('/') || v.contains('\\')
+}
+
+fn fill(to: &str, vals: &[impl AsRef<str>]) -> String {
     let mut out = String::new();
     let mut next = 0;
     let mut rest = to;
@@ -270,7 +281,7 @@ fn fill(to: &str, vals: &[&str]) -> String {
             inner.parse::<usize>().ok().map(|n| n.saturating_sub(1))
         };
         match idx.and_then(|k| vals.get(k)) {
-            Some(v) => out.push_str(&translate(v)),
+            Some(v) => out.push_str(v.as_ref()),
             None => out.push_str(&rest[i..i + j + 2]),
         }
         rest = &after[j + 1..];
@@ -410,6 +421,36 @@ mod tests {
             }
             check(&s);
         }
+    }
+
+    /// Names of the user (projects, files) come back as they are; only real shortcuts get German key names
+    #[test]
+    fn user_data_is_not_translated() {
+        assert_eq!(translate("Opening “Delta”"), "„Delta“ wird geöffnet");
+        assert_eq!(translate("Opening “Export”"), "„Export“ wird geöffnet");
+        assert_eq!(translate("“Space Ambience.wav” moved to trash"), "„Space Ambience.wav“ in den Papierkorb verschoben");
+        assert_eq!(translate("Project saved: C:\\Users\\Delia\\Export.cutline"), "Projekt gespeichert: C:\\Users\\Delia\\Export.cutline");
+        assert_eq!(translate("Delta"), "Delta");
+        assert_eq!(translate("Pitch Shift"), "Pitch Shift");
+        assert_eq!(translate("Space Ambience.wav"), "Space Ambience.wav");
+        for (s, want) in [("Ctrl+Del", "Strg+Entf"), ("Shift+click", "Umschalt+Klick"), ("Space", "Leertaste"), ("Ctrl+Shift+Z", "Strg+Umschalt+Z"), ("Ctrl+wheel", "Strg+Mausrad"), ("Del", "Entf")] {
+            assert_eq!(translate(s), want, "{s}");
+        }
+        // values that are no user data still translate
+        assert_eq!(translate(&format!("Saved {}", "just now")), "Gespeichert gerade eben");
+    }
+
+    /// Texts that land in the user's project or file names stay German in German
+    #[test]
+    fn names_and_samples_stay_german() {
+        assert_eq!(translate("Project 3"), "Projekt 3");
+        assert_eq!(translate("New project"), "Neues Projekt");
+        assert_eq!(translate("Copy~noun"), "Kopie");
+        assert_eq!(translate("First Last\nRole"), "Name Nachname\nFunktion");
+        assert_eq!(translate("T H E  M O V I E"), "D E R  F I L M");
+        assert_eq!(translate("1,000,000"), "1.000.000");
+        assert_eq!(translate("Whisper small installed"), "Whisper small installiert");
+        assert_eq!((translate("1 filter"), translate("1 sticker")), ("1 Filter".to_string(), "1 Sticker".to_string()));
     }
 
     #[test]

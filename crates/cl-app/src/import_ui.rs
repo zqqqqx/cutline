@@ -202,7 +202,7 @@ impl App {
                 let _ = tx.send(run_import(&path, &dir, &fonts, &pr));
                 c.request_repaint();
             })
-            .expect("Import-Thread");
+            .expect("import thread");
         self.import.job = Some(Job { label, progress, rx });
     }
 

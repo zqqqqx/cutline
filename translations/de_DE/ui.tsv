@@ -148,7 +148,7 @@ Transitions sit between two adjacent clips	Übergänge liegen zwischen zwei dire
 No cut between two clips found	Kein Schnitt zwischen zwei Clips gefunden
 This clip has no audio	Dieser Clip hat keinen Ton
 Audio extracted	Ton extrahiert
-{} audio extracted	{} Ton extrahiert
+audio extracted	Ton extrahiert
 Freeze frames only work on video clips	Standbilder gibt es nur von Videoclips
 Couldn't create freeze frame	Standbild konnte nicht erzeugt werden
 preview	vorhören
@@ -1355,7 +1355,7 @@ steps	Schritte
 Redo up to here	Bis hier wiederholen
 Go back to this state	Zu diesem Stand zurück
 Undo all steps	Alle Schritte rückgängig
-{} {} projects moved	{} {} Projekte verschoben
+{} projects moved	{} Projekte verschoben
 The new folder must not be inside the old one (or the other way round)	Der neue Ordner darf nicht im alten liegen (oder umgekehrt)
 Gaming	Gaming
 Comedy	Comedy
@@ -1944,10 +1944,10 @@ ONNX Runtime missing (Settings → Models)	ONNX Runtime fehlt (Einstellungen →
 Cut-out model missing (Settings → Models)	Freistell-Modell fehlt (Einstellungen → Modelle)
 {} – Recap	{} – Rückblick
 {} parts finished	{} Teile fertig
-{}  Mask is missing or not finished yet: {}	{}  Maske fehlt oder ist noch nicht fertig: {}
+Mask is missing or not finished yet: {}	Maske fehlt oder ist noch nicht fertig: {}
 Pack switched off	Paket ausgeschaltet
 Pack missing	Paket fehlt
-{}  {} – rendered as “{}”	{}  {} – wird als „{}“ gerechnet
+{} – rendered as “{}”	{} – wird als „{}“ gerechnet
 {}  Extended: {} of silence at the end	{}  Verlängert: {} Stille am Ende
 Built-in entries cannot be moved	Eingebaute Einträge lassen sich nicht verschieben
 Built-in entries cannot be renamed	Eingebaute Einträge lassen sich nicht umbenennen
@@ -2073,6 +2073,13 @@ What do you think?	Was meint ihr?
 My day	Mein Tag
 ONLY $9.99	NUR 9,99 €
 Everyday	Alltag
-{} (Copy)	{} (Kopie)
 frame pair incomplete	Bildpaar unvollständig
 no frame at {} s in {}	kein Bild bei {} s in {}
+Copy~noun	Kopie
+Project {}	Projekt {}
+{} installed	{} installiert
+First Last	Name Nachname
+Role	Funktion
+T H E  M O V I E	D E R  F I L M
+Alex Sample	Alex Muster
+1,000,000	1.000.000

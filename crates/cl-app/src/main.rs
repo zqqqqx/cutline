@@ -223,8 +223,16 @@ fn mcp_save_skips_unchanged_and_locked_projects() {
 
 fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     use cl_core::{Document, Project};
+    let me = std::process::id();
     let proj = match &project {
-        Some(p) if p.is_file() => Project::from_json(&std::fs::read_to_string(p)?)?,
+        Some(p) if p.is_file() => {
+            let proj = Project::from_json(&std::fs::read_to_string(p)?)?;
+            // an old project is converted once with its copy `.v6`, before the first save rewrites it
+            if !paths::lock_held_by_other(&paths::lock_path(p), me) {
+                let _ = crate::loading::convert_old_file(p, &proj);
+            }
+            proj
+        }
         Some(p) => Project::new(
             p.file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -239,7 +247,6 @@ fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> Result<(), Box<dyn std:
     let server = cl_mcp::McpServer::new(doc.clone(), fonts);
     // save after every change: an abort by the client or a broken line loses nothing
     let mut saved = doc.lock().unwrap().revision();
-    let me = std::process::id();
     let r = server.serve_stdio(|| {
         if let Some(p) = &project {
             mcp_save(p, &doc.lock().unwrap_or_else(|e| e.into_inner()), &mut saved, me);

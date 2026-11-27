@@ -166,7 +166,7 @@ impl Tasks {
                 let _ = tx.send((id, done));
                 ctx.request_repaint();
             })
-            .expect("Task-Thread");
+            .expect("task thread");
     }
 
     /// Another project in the editor: results of older tasks no longer belong to it.

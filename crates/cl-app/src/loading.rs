@@ -147,8 +147,13 @@ pub struct Load {
 /// A project saved by a version with the old ids of bundled content (see `cl_core::legacy`) was
 /// converted while loading: the file is written in the current version at once, so it is converted
 /// only this one time. The file as it was stays beside it (`<name>.cutline.v6`, never overwritten).
-fn convert_old_file(path: &Path, text: &str, project: &Project) {
-    let Some(v) = Project::file_version(text).filter(|v| *v <= cl_core::LAST_GERMAN_ID_VERSION) else { return };
+/// Only for a project this window owns (opened with its lock, moved, served by MCP), never in
+/// `load()`: a restored backup or a cancelled opening leaves the file as it is.
+/// `Ok(true)`: converted; `Ok(false)`: the file is not of an old version.
+pub(crate) fn convert_old_file(path: &Path, project: &Project) -> std::io::Result<bool> {
+    let text = std::fs::read_to_string(path)?;
+    let Some(v) = Project::file_version(&text).filter(|v| *v <= cl_core::LAST_GERMAN_ID_VERSION) else { return Ok(false) };
+    drop(text);
     let mut keep = path.as_os_str().to_owned();
     keep.push(format!(".v{v}"));
     let keep = PathBuf::from(keep);
@@ -156,13 +161,17 @@ fn convert_old_file(path: &Path, text: &str, project: &Project) {
         if let Err(e) = std::fs::copy(path, &keep) {
             // without the copy the file is not touched (it converts again at the next opening)
             log::warn!(target: "project", "old project not converted on disk, copy failed: {e}");
-            return;
+            return Err(e);
         }
     }
     match crate::paths::write_atomic(path, project.to_json()) {
         Ok(()) => log::info!(target: "project", "project of version {v} converted to version {}", cl_core::PROJECT_SCHEMA_VERSION),
-        Err(e) => log::warn!(target: "project", "converted project not written: {e}"),
+        Err(e) => {
+            log::warn!(target: "project", "converted project not written: {e}");
+            return Err(e);
+        }
     }
+    Ok(true)
 }
 
 /// Read and prepare a project (background thread).
@@ -172,7 +181,6 @@ pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {} ({e})", crate::tr("Project could not be opened"), path.display()))?;
     progress.check()?;
     let mut project = Project::from_json(&text).map_err(|e| e.to_string())?;
-    convert_old_file(path, &text, &project);
     drop(text);
     progress.set(Step::Read, 1, 1, "");
     progress.check()?;
@@ -266,7 +274,7 @@ impl Load {
                 let _ = tx.send(r);
                 c.request_repaint();
             })
-            .expect("Lade-Thread");
+            .expect("load thread");
         Self {
             name: path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
             path: path.to_path_buf(),
@@ -408,6 +416,9 @@ impl App {
         drop(s);
         let s = crate::app::section("load: lock and settings");
         self.take_lock(p);
+        if self.locked_out.is_none() {
+            let _ = convert_old_file(p, &self.project);
+        }
         self.settings.add_recent(p);
         self.settings.save();
         self.screen = Screen::Editor;
@@ -632,19 +643,50 @@ mod tests {
             ClipContent::Effect(fx) => fx.id.clone(),
             _ => String::new(),
         };
+        let keep = dir.path().join("Old.cutline.v6");
+        // reading alone (also for „Restore backup“ or a cancelled opening) leaves the file as it is
         let l = load(&f, &Progress::default()).unwrap();
         assert_eq!(id(&l.project), "cutline.effects/hologram");
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), v6);
+        assert!(!keep.exists());
+        // opened in the window: converted on disk once the lock is taken
+        let mut app = crate::saving::tests::test_app();
+        app.apply_loaded(&f, l, None);
         let on_disk = std::fs::read_to_string(&f).unwrap();
         assert_eq!(Project::file_version(&on_disk), Some(cl_core::PROJECT_SCHEMA_VERSION));
         assert!(on_disk.contains("cutline.effects/hologram") && !on_disk.contains("hologramm"));
-        let keep = dir.path().join("Old.cutline.v6");
         assert_eq!(std::fs::read_to_string(&keep).unwrap(), v6, "the file as it was");
         // opened again: a version 7 file, nothing is converted and the copy stays as it is
         std::fs::write(&keep, "untouched").unwrap();
         let again = load(&f, &Progress::default()).unwrap();
-        assert_eq!(again.project, l.project);
+        assert_eq!(id(&again.project), "cutline.effects/hologram");
+        assert!(!convert_old_file(&f, &again.project).unwrap());
         assert_eq!(std::fs::read_to_string(&keep).unwrap(), "untouched");
         assert_eq!(std::fs::read_to_string(&f).unwrap(), on_disk);
+    }
+
+    /// Another window holds the project: this one neither converts nor writes it
+    #[test]
+    fn old_project_open_elsewhere_stays_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("Old.cutline");
+        let v6 = Project::new("Old").to_json().replace(&format!("\"schema_version\": {}", cl_core::PROJECT_SCHEMA_VERSION), "\"schema_version\": 6");
+        std::fs::write(&f, &v6).unwrap();
+        // another running Cutline: a child process that waits on its stdin
+        let mut other = if cfg!(windows) { std::process::Command::new("cmd") } else { std::process::Command::new("cat") };
+        if cfg!(windows) {
+            other.args(["/c", "pause"]);
+        }
+        let mut other = other.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).spawn().unwrap();
+        std::fs::write(crate::paths::lock_path(&f), other.id().to_string()).unwrap();
+        let l = load(&f, &Progress::default()).unwrap();
+        let mut app = crate::saving::tests::test_app();
+        app.apply_loaded(&f, l, None);
+        let _ = other.kill();
+        let _ = other.wait();
+        assert!(app.locked_out.is_some());
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), v6);
+        assert!(!dir.path().join("Old.cutline.v6").exists());
     }
 
     /// An archive made by a version up to 0.19.3 keeps its files in `Medien` and `Schriften`

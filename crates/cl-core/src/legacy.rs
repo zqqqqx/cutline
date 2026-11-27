@@ -34,8 +34,20 @@ fn rows(src: &'static str, key: &str) -> Vec<(&'static str, &'static str)> {
 }
 
 /// (old, new) names under `key` in `translations/legacy/names.tsv`
-pub fn pairs(key: &str) -> Vec<(&'static str, &'static str)> {
-    rows(NAMES_TSV, key)
+pub fn pairs(key: &str) -> &'static [(&'static str, &'static str)] {
+    // parsed once: the log check at startup asks for old markers on every line
+    static M: OnceLock<HashMap<&str, Vec<(&str, &str)>>> = OnceLock::new();
+    let m = M.get_or_init(|| {
+        let mut m: HashMap<&str, Vec<(&str, &str)>> = HashMap::new();
+        for l in NAMES_TSV.lines().filter(|l| !l.starts_with('#')) {
+            let mut p = l.split('\t');
+            if let (Some(k), Some(old), Some(new)) = (p.next(), p.next(), p.next()) {
+                m.entry(k).or_default().push((old, new));
+            }
+        }
+        m
+    });
+    m.get(key).map_or(&[], Vec::as_slice)
 }
 
 /// The name versions up to 0.19.3 used for `key` (empty: no such key)

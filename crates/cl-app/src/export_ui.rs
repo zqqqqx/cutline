@@ -268,7 +268,8 @@ impl Running {
                         *pr.lock().unwrap() = at + x * w;
                         c2.request_repaint();
                     });
-                    if let Err(e) = &r { log::error!(target: "export", "{} · command: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
+                    // a cancel is the user's choice, not a fault (an error line would go out as an error report)
+                    if let Some(e) = r.as_ref().err().filter(|e| !matches!(e, cl_export::ExportError::Cancelled)) { log::error!(target: "export", "{} · command: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
                     r
                 });
                 match r {
@@ -945,8 +946,7 @@ impl ExportDialog {
                             self.exported = Some((src.rev, src.out.clone(), src.settings.clone()));
                         }
                         // the app translates toasts
-                        let what = group.map_or_else(|| "Export finishedv".to_string(), |n| format!("{n} parts finished"));
-                        let mut msg = format!("{} {what} ({})", icon::CHECK_CIRCLE, theme::secs(secs as f64, 1));
+                        let mut msg = done_toast(group, secs as f64);
                         if !failed.is_empty() {
                             let e = format!("{}: {}", crate::tr("Could not save companion file"), failed.join(", "));
                             msg = format!("{} {e}", icon::WARNING_CIRCLE);
@@ -1537,7 +1537,7 @@ fn stale_parts(dir: &Path, ext: &str, keep: &[PathBuf], recorded: &[PathBuf]) ->
         };
         match rest.split_once(' ') {
             // „Part“, or the word exports of versions up to 0.19.3 carry
-            Some((w, t)) if w == "Part" || w == cl_core::legacy::old("export_part") => nr(t),
+            Some((w, t)) if w == "Part" || w == crate::tr("Part") || w == cl_core::legacy::old("export_part") => nr(t),
             Some((h, t)) => nr(h) && !t.trim().is_empty(),
             None => nr(rest),
         }
@@ -1705,7 +1705,7 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
             egui::FontId::proportional(13.0 * pop.max(0.01)),
             theme::SUCCESS_BG,
         );
-        ui.label(RichText::new(crate::tr(format!("Done in {}", theme::secs(secs as f64, 1)))).strong());
+        ui.label(RichText::new(crate::tr(format!("Done in {} s", theme::dec(secs as f64, 1)))).strong());
     });
     if age < dur {
         ui.ctx().request_repaint();
@@ -1923,6 +1923,22 @@ fn estimate_matches_a_real_1080p30_export() {
     assert!(!exact);
     // real file: 117.6 MB
     assert!((80.0..=160.0).contains(&mb), "{mb}");
+}
+
+/// Toast word of a finished export; `ui.tsv` has it as `Export finished ({} s)`
+pub(crate) const EXPORT_DONE: &str = "Export finished";
+
+/// Toast of a finished export (`group`: number of parts), translated by the app
+fn done_toast(group: Option<usize>, secs: f64) -> String {
+    let what = group.map_or_else(|| EXPORT_DONE.to_string(), |n| format!("{n} parts finished"));
+    format!("{} {what} ({})", icon::CHECK_CIRCLE, theme::secs(secs, 1))
+}
+
+#[test]
+fn done_toast_translates() {
+    let de = |s: &str| cl_i18n::tr_in(cl_i18n::Lang::De, s);
+    assert_eq!(de(&done_toast(None, 1.0)), format!("{} Export fertig (1.0 s)", icon::CHECK_CIRCLE));
+    assert_eq!(de(&done_toast(Some(3), 2.5)), format!("{} 3 Teile fertig (2.5 s)", icon::CHECK_CIRCLE));
 }
 
 #[cfg(test)]

@@ -442,7 +442,7 @@ impl App {
         // graphics card runtime for the AI models: used only with files matching the catalog
         std::thread::spawn(|| crate::roto_ui::check_gpu_runtime(&cl_analyze::Models::new(paths::models_dir())));
 
-        let project = Project::new("New project");
+        let project = Project::new(cl_i18n::tr_in(lang, "New project"));
         let screen = if open.is_some() || !settings.start_on_home {
             Screen::Editor
         } else {
@@ -657,12 +657,12 @@ impl App {
 
     pub fn toast(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
-        log::info!(target: "feedback", "{}", crate::applog::anon(&msg));
+        log::info!(target: "message", "{}", crate::applog::anon(&msg));
         self.push_toast(crate::tr(msg), false);
     }
     pub fn toast_err(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
-        log::error!(target: "feedback", "{}", crate::applog::anon(&msg));
+        log::error!(target: "message", "{}", crate::applog::anon(&msg));
         self.push_toast(crate::tr(msg), true);
     }
     fn push_toast(&mut self, msg: String, err: bool) {
@@ -2149,7 +2149,7 @@ impl App {
                 return;
             }
             crate::applog::project("saved", &self.project, Some(t0));
-            self.toast(format!("{} saved", icon::CHECK));
+            self.toast(format!("{} Saved", icon::CHECK));
             self.project_path = Some(p);
             self.settings.save();
         }
@@ -3469,8 +3469,8 @@ impl eframe::App for App {
         // exports keep running on the start page too, the next waiting one starts by itself
         if let Some((msg, done)) = self.export.poll(ctx) {
             // a successful export with Epidemic music is reported (terms of use) – for the
-            // project it comes from
-            if let Some(p) = done.filter(|_| msg.contains("Export finishedv")) {
+            // project it comes from; `poll` gives the project only for a finished export (also in parts)
+            if let Some(p) = done {
                 self.report_epidemic_export(ctx, &p);
                 // only if nothing is being previewed: `preview_sound` toggles and would abort it
                 if self.settings.export_sound
@@ -4312,7 +4312,7 @@ mod toast_tests {
 
     #[test]
     fn toast_shows_one_symbol() {
-        let saved = toast_line(&format!("{} saved", icon::CHECK), false);
+        let saved = toast_line(&format!("{} Saved", icon::CHECK), false);
         assert_eq!(saved.matches(icon::CHECK).count() + saved.matches(icon::CHECK_CIRCLE).count(), 1, "{saved}");
         assert_eq!(toast_line(&format!("{} Export done (1.0 s)", icon::CHECK_CIRCLE), false).matches(icon::CHECK_CIRCLE).count(), 1);
         // without its own icon: check mark or warning in front

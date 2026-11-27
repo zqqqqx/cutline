@@ -442,7 +442,7 @@ pub fn move_projects(old: &Path, new: &Path) -> (Vec<(PathBuf, PathBuf)>, Vec<St
                 continue;
             }
         };
-        let text = match cl_core::Project::from_json(&text) {
+        let proj = match cl_core::Project::from_json(&text) {
             Ok(mut proj) => {
                 // only rewrite paths in media folders that were really moved; other
                 // material in the old folder stays where it is
@@ -453,11 +453,17 @@ pub fn move_projects(old: &Path, new: &Path) -> (Vec<(PathBuf, PathBuf)>, Vec<St
                         }
                     }
                 }
-                proj.to_json()
+                Some(proj)
             }
-            Err(_) => text,
+            Err(_) => None,
         };
-        if let Err(e) = write_atomic(&to, text) {
+        // an old project keeps the file as it was beside the converted one, as when it is opened
+        let r = std::fs::copy(p, &to).and_then(|_| match &proj {
+            Some(proj) => crate::loading::convert_old_file(&to, proj).and_then(|done| if done { Ok(()) } else { write_atomic(&to, proj.to_json()) }),
+            None => Ok(()),
+        });
+        if let Err(e) = r {
+            let _ = std::fs::remove_file(&to);
             errs.push(format!("{}: {e}", to.display()));
             continue;
         }
@@ -521,6 +527,15 @@ fn moves_projects_and_media_folders() {
     assert!(errs.is_empty() && moved.len() == 1, "{errs:?}");
     let back = cl_core::Project::from_json(&std::fs::read_to_string(new.join("Neu.cutline")).unwrap()).unwrap();
     assert_eq!(back.media[0].path, new.join("New-media").join("y.mp3"));
+    // a project of an old version is converted and keeps the file as it was (`.v6`)
+    let v6 = proj.to_json().replace(&format!("\"schema_version\": {}", cl_core::PROJECT_SCHEMA_VERSION), "\"schema_version\": 6");
+    std::fs::write(a.path().join("Old.cutline"), &v6).unwrap();
+    let (moved, errs) = move_projects(a.path(), &new);
+    assert!(errs.is_empty() && moved.len() == 1, "{errs:?}");
+    assert_eq!(std::fs::read_to_string(new.join("Old.cutline.v6")).unwrap(), v6);
+    let text = std::fs::read_to_string(new.join("Old.cutline")).unwrap();
+    assert_eq!(cl_core::Project::file_version(&text), Some(cl_core::PROJECT_SCHEMA_VERSION));
+    assert_eq!(cl_core::Project::from_json(&text).unwrap().media[0].path, new.join("New-media").join("y.mp3"));
 }
 
 /// Bundled fonts (OFL/Apache, see `assets/fonts/FONTS.md`) for the text templates

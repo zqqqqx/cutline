@@ -17,6 +17,11 @@ use std::result::Result;
 
 pub const SUPPORTED_PROTOCOLS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 
+/// An undo label as shown: without its translator context („Relink media~one“ → „Relink media“)
+fn shown(label: &str) -> &str {
+    label.split('~').next().unwrap_or(label)
+}
+
 #[derive(Clone)]
 pub struct McpServer {
     pub doc: Arc<Mutex<Document>>,
@@ -132,7 +137,7 @@ const TOOLS: &[Tool] = &[
             "aspect": { "type": "string" },
             "width": { "type": "integer" },
             "height": { "type": "integer" },
-            "fps": { "type": "string", "description": "z. B. '30', '29.97', '60'" }
+            "fps": { "type": "string", "description": "e.g. '30', '29.97', '60'" }
         }), &[]),
     },
     Tool {
@@ -178,6 +183,12 @@ impl McpServer {
             return Some(invalid());
         }
         let id = msg.get("id").cloned();
+        // without a method it is no notification either (`{}`): answer, or the client waits forever
+        if !msg.get("method").is_some_and(Value::is_string) {
+            let mut e = invalid();
+            e["id"] = id.unwrap_or(Value::Null);
+            return Some(e);
+        }
         let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
         let params = msg.get("params").cloned().unwrap_or(Value::Null);
         let id = id?; // notification (e.g. notifications/initialized): no response
@@ -316,7 +327,7 @@ impl McpServer {
                 let doc = self.doc.lock().unwrap();
                 Ok(json!(doc
                     .history()
-                    .map(|(l, s)| json!({ "label": l, "source": s }))
+                    .map(|(l, s)| json!({ "label": shown(l), "source": s }))
                     .collect::<Vec<_>>()))
             }
             "import_media" => {
@@ -460,8 +471,8 @@ impl McpServer {
                 }
                 Ok(json!({ "results": results }))
             }
-            "undo" => Ok(json!({ "undone": self.doc.lock().unwrap().undo()? })),
-            "redo" => Ok(json!({ "redone": self.doc.lock().unwrap().redo()? })),
+            "undo" => Ok(json!({ "undone": shown(&self.doc.lock().unwrap().undo()?) })),
+            "redo" => Ok(json!({ "redone": shown(&self.doc.lock().unwrap().redo()?) })),
             _ => unreachable!("tool list and match agree"),
         }
     }
@@ -985,6 +996,33 @@ mod tests {
         }
         assert_eq!(s.doc.lock().unwrap().project(), &before);
         assert_eq!(s.doc.lock().unwrap().undo_entries().len(), 0);
+    }
+
+    /// Labels reach the client as shown in the window: without the translator context after `~`
+    #[test]
+    fn history_labels_without_context() {
+        let id = cl_core::MediaId::new();
+        let mut p = Project::new("MCP-Test");
+        p.media.push(serde_json::from_value(json!({
+            "id": id, "path": "a.mp4", "kind": "Video", "duration": 1000000,
+            "width": 2, "height": 2, "fps": null, "has_audio": false, "video_codec": null, "audio_codec": null
+        })).unwrap());
+        let s = McpServer::new(Arc::new(Mutex::new(Document::new(p))), None);
+        s.doc.lock().unwrap().apply(EditOp::RelinkMedia { media: id, path: "b.mp4".into() }, cl_core::OpSource::Ui).unwrap();
+        assert_eq!(call(&s, "history", json!({}))["structuredContent"][0]["label"], "Relink media");
+        assert_eq!(call(&s, "undo", json!({}))["structuredContent"]["undone"], "Relink media");
+        assert_eq!(call(&s, "redo", json!({}))["structuredContent"]["redone"], "Relink media");
+        assert_eq!(shown("Track~verb"), "Track");
+    }
+
+    #[test]
+    fn bare_object_and_fps_text() {
+        let s = server();
+        let r = s.handle(json!({})).unwrap();
+        assert!(r["error"]["code"] == -32600 && r["id"].is_null(), "{r}");
+        let tools = rpc(&s, "tools/list", json!({}));
+        let fmt = tools["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "set_format").unwrap();
+        assert!(fmt["inputSchema"]["properties"]["fps"]["description"].as_str().unwrap().starts_with("e.g."), "{fmt}");
     }
 
     #[test]

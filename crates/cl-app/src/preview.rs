@@ -1349,7 +1349,7 @@ impl Decoder {
             std::thread::Builder::new()
                 .name("cl-decoder".into())
                 .spawn(move || frame_dispatcher(jobs, tx, done_tx, ctx, gen, busy, held, decode, frames_fn, rest))
-                .expect("Decoder-Thread");
+                .expect("decoder thread");
         }
         let strips_wanted: Arc<Mutex<HashSet<String>>> = Default::default();
         let (tx_fx, jobs_fx) = channel::<(u64, Job)>();
@@ -1388,7 +1388,7 @@ impl Decoder {
                         ctx.request_repaint();
                     }
                 })
-                .expect("Decoder-Thread");
+                .expect("decoder thread");
         }
         // background
         let (tx_bg, jobs_bg) = channel::<(u64, Job)>();
@@ -1411,7 +1411,7 @@ impl Decoder {
                     }
                 }
             })
-            .expect("Decoder-Thread");
+            .expect("decoder thread");
         Self {
             tx,
             tx_bg,
@@ -1488,7 +1488,7 @@ impl Starter {
                     }
                 }
             })
-            .expect("Strom-Thread");
+            .expect("stream thread");
         Self { tx, rx }
     }
     pub fn send(&self, j: OpenJob) {

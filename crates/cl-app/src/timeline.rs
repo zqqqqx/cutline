@@ -2943,7 +2943,7 @@ impl App {
             p.text(
                 cr.left_top() + vec2(6.0, 2.0),
                 egui::Align2::LEFT_TOP,
-                crate::tr(format!("{}  Recording {}", icon::RECORD, theme::secs(*elapsed, 1))),
+                crate::tr(format!("{}  Recording {} s", icon::RECORD, theme::dec(*elapsed, 1))),
                 egui::FontId::proportional(theme::FS_HINT),
                 Color32::WHITE,
             );

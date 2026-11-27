@@ -327,7 +327,7 @@ impl App {
                 if self.ripple_ranges(ranges, label) {
 
                     self.toast(if kind == QuickKind::Pauses {
-                        format!("{} ({})", crate::theme::count_text(n, "{} pause removed", "{} pauses removed"), crate::theme::secs(total as f64, 1))
+                        crate::theme::count_text(n, "{} pause removed ({} s)", "{} pauses removed ({} s)").replacen("{}", &crate::theme::dec(total, 1), 1)
                     } else {
                         crate::theme::count_text(n, "{} filler word removed", "{} filler words removed")
                     });

@@ -216,7 +216,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
         id: "cinema-title",
         name: "Movie title",
         category: "Title",
-        text: "D E R  F I L M",
+        text: "T H E  M O V I E",
         intro: Some("fade"),
         style: || TextStyle {
             size: 72.0,
@@ -224,7 +224,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [240, 232, 214, 255],
             shadow: false,
             line_spacing: 1.3,
-            ..base("D E R  F I L M")
+            ..base("T H E  M O V I E")
         },
     },
     TextTemplate {
@@ -630,7 +630,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
         id: "big-number",
         name: "Big number",
         category: "Social",
-        text: "1.000.000",
+        text: "1,000,000",
         intro: Some("elastic"),
         style: || TextStyle {
             size: 120.0,
@@ -638,7 +638,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [255, 255, 255, 255],
             outline: Some((6.0, [0, 0, 0, 255])),
             shadow: true,
-            ..base("1.000.000")
+            ..base("1,000,000")
         },
     },
     TextTemplate {
@@ -660,7 +660,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
         id: "name-tag",
         name: "Name tag",
         category: "Note",
-        text: "Alex Muster\nCreator",
+        text: "Alex Sample\nCreator",
         intro: Some("snap-left"),
         style: || TextStyle {
             size: 46.0,
@@ -670,7 +670,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
             background: Some([255, 255, 255, 240]),
             shadow: false,
             line_spacing: 1.2,
-            ..base("Alex Muster\nCreator")
+            ..base("Alex Sample\nCreator")
         },
     },
     TextTemplate {

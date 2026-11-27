@@ -428,6 +428,12 @@ pub fn auto(dsn: Option<&'static Dsn>, enabled: bool, lim: &Mutex<Limiter>, r: R
     std::thread::Builder::new().name("cl-report".into()).spawn(move || send_report(dsn, &r, &who)).ok()
 }
 
+/// An own error line that goes out as an automatic report. Toasts (`message`) are errors shown to
+/// the user (file unreadable …), not faults of the app
+fn sends_itself(level: Level, area: &str, own: bool) -> bool {
+    level == Level::Error && own && area != "message"
+}
+
 /// Every log record (from `applog::Logger`): keeps the tail, sends own errors when switched on
 pub fn observe(level: Level, area: &str, msg: &str, own: bool) {
     {
@@ -440,8 +446,7 @@ pub fn observe(level: Level, area: &str, msg: &str, own: bool) {
     if area == "system" {
         lock(&SYSTEM).push(msg.to_string());
     }
-    // "feedback" errors are messages to the user (file unreadable …), not faults of the app
-    if level == Level::Error && own && area != "feedback" && ENABLED.load(Ordering::Relaxed) {
+    if sends_itself(level, area, own) && ENABLED.load(Ordering::Relaxed) {
         let _ = auto(dsn(), true, &AUTO, Report::error(area, msg).with_current("auto"), Who::current());
     }
 }
@@ -975,6 +980,14 @@ mod tests {
         let body = &raw[raw.find("\r\n\r\n").unwrap() + 4..];
         assert!(body.contains("index out of bounds") && body.contains("crash-prompt"), "{body}");
         println!("{body}");
+    }
+
+    #[test]
+    fn toasts_are_no_automatic_reports() {
+        assert!(!sends_itself(Level::Error, "message", true));
+        assert!(sends_itself(Level::Error, "export", true));
+        assert!(sends_itself(Level::Error, "feedback", true), "only the toast target is left out");
+        assert!(!sends_itself(Level::Info, "export", true) && !sends_itself(Level::Error, "export", false));
     }
 
     #[test]

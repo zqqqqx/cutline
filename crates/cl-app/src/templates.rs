@@ -208,7 +208,7 @@ impl App {
             self.tpl_dialog = Some(TplDialog::Rename { path, name });
         }
         if let Some(p) = remove {
-            let trash = paths::data_dir().join("Trash");
+            let trash = paths::data_dir().join(cl_core::legacy::TRASH_DIR);
             let _ = std::fs::create_dir_all(&trash);
             // unique name: an earlier removed template of the same name stays kept
             let to = crate::library::unique(&trash, p.file_name().unwrap_or_default().to_string_lossy().into_owned());

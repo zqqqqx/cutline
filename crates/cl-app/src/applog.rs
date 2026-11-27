@@ -31,7 +31,7 @@ use cl_core::legacy::old;
 const LIMIT_NOTE: &str = "File size limit reached – only warnings and errors from here on";
 const DAY_MS: i64 = 86_400_000;
 /// Targets Cutline itself uses with `target:` (everything with `cutline::…` belongs anyway)
-const OWN: &[&str] = &["session", "system", "perf", "project", "export", "proxy", "update", "pack", "import", "feedback", "playback"];
+const OWN: &[&str] = &["session", "system", "perf", "project", "export", "proxy", "update", "pack", "import", "message", "playback"];
 
 pub struct Rec {
     pub ms: i64,
@@ -1135,8 +1135,8 @@ mod tests {
             r"2026-11-16 19:10:31.628 +01:00 INFO  export: Error after 27.3 s: ~/AppData/Local/Temp/qa/K5_proj\K5_abbruch.mp4 · Some((852, 480))",
             r"2026-11-16 19:11:56.839 +01:00 INFO  export: done after 12.0 s: ~/AppData/Local/Temp/qa/K5_proj\entwurf.gif · Some((1920, 1080))",
             "2026-11-16 18:44:12.469 +01:00 INFO  proxy: videoplayback.mp4 done in 129747 ms",
-            "2026-11-16 18:51:54.712 +01:00 ERROR feedback: broken_text.mp4 could not be read: file cannot be read",
-            "2026-11-16 18:52:57.789 +01:00 INFO  feedback: Template “My project” saved",
+            "2026-11-16 18:51:54.712 +01:00 ERROR message: broken_text.mp4 could not be read: file cannot be read",
+            "2026-11-16 18:52:57.789 +01:00 INFO  message: Template “My project” saved",
         ];
         let dir = tempfile::tempdir().unwrap();
         let now = lines.iter().filter_map(|l| parse_stamp(l)).max().unwrap() + 1000;
@@ -1146,7 +1146,7 @@ mod tests {
             assert!(!out.contains(bad), "{bad} in\n{out}");
         }
         assert!(out.contains("done after 245.4 s: <path>.mp4 · Some((852, 480, Rational { num: 60, den: 1 }"), "{out}");
-        assert!(out.contains("<path>.gif · ") && out.contains("proxy: <file>.mp4 done") && out.contains("feedback: <file>.mp4 could not"), "{out}");
+        assert!(out.contains("<path>.gif · ") && out.contains("proxy: <file>.mp4 done") && out.contains("message: <file>.mp4 could not"), "{out}");
         // Versions, times and numbers stay
         for s in ["Cutline 0.11.1 (Release)", "18:44:12.469", "graph.txt", "10.0.26300.9974", "245.4 s"] {
             assert_eq!(anon(s), s);
