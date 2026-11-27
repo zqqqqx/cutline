@@ -116,6 +116,14 @@ impl Tasks {
         self.list.iter().find(|t| t.key == key)
     }
 
+    /// Cancelled tasks under `key` give the key up (they end at their next check), so the same
+    /// work can start again at once instead of being taken for still running.
+    pub fn retire(&mut self, key: &str) {
+        for t in self.list.iter_mut().filter(|t| t.key == key && t.cancel.load(Ordering::Relaxed)) {
+            t.key.push_str(":abgebrochen");
+        }
+    }
+
     /// Start a task; `f` gets a progress function (0…1) and the cancel flag.
     pub fn spawn(
         &mut self,
@@ -196,6 +204,30 @@ mod tests {
         assert_eq!(groups(&keys), vec![vec![0, 2, 4], vec![1], vec![3]]);
         assert!(groups(&[]).is_empty());
         assert_eq!(kind("scenes:abc:def"), "scenes");
+    }
+
+    /// Bug (review of 0.19.0): a new mark cancels the tracking, but the cancelled task kept its key
+    /// until it really ended (loading the model takes seconds). Leaving the tool in that time found
+    /// "already running" and no mask was ever made.
+    #[test]
+    fn a_cancelled_task_does_not_block_a_new_one_with_its_key() {
+        let ctx = egui::Context::default();
+        let mut t = Tasks::default();
+        let (go, wait) = channel::<()>();
+        t.spawn(&ctx, "roto:1", "alt", move |_, _| {
+            let _ = wait.recv();
+            TaskDone::Failed("Abgebrochen".into())
+        });
+        // not cancelled: it keeps the key
+        t.retire("roto:1");
+        let old = t.running("roto:1").expect("still running").id;
+        t.running("roto:1").unwrap().cancel();
+        t.retire("roto:1");
+        assert!(t.running("roto:1").is_none(), "the cancelled task gave the key up");
+        t.spawn(&ctx, "roto:1", "neu", |_, _| TaskDone::Failed("neu".into()));
+        assert!(t.running("roto:1").is_some_and(|n| n.id != old), "the new task runs under the key");
+        assert_eq!(kind(&t.list[0].key), "roto", "the old one stays in its group until it ends");
+        go.send(()).unwrap();
     }
 
     #[test]

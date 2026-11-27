@@ -429,9 +429,13 @@ impl Live {
     pub fn gpu(&self) -> bool {
         self.sam.gpu
     }
+    /// Frame `key` is read in
+    pub fn has(&self, key: u64) -> bool {
+        self.frame.as_ref().is_some_and(|f| f.0 == key)
+    }
     /// Read in the frame `rgb` (`size`² RGB) unless `key` is already in.
     pub fn set_frame(&mut self, key: u64, rgb: &[u8]) -> R<()> {
-        if self.frame.as_ref().is_none_or(|f| f.0 != key) {
+        if !self.has(key) {
             self.frame = None;
             self.frame = Some((key, self.sam.embed(rgb)?));
         }
@@ -649,6 +653,10 @@ pub fn track(
                     Some(rgb) => sam.step(rgb, &mut bank, &prompt)?,
                     None => last.clone().unwrap_or_else(|| vec![0; frame]),
                 };
+                // cancelled during the step: write nothing more (a new run may own the files already)
+                if cancel.load(Ordering::Relaxed) {
+                    return Err("Abgebrochen".into());
+                }
                 file.write_all(&m).map_err(oe)?;
                 last = Some(m);
                 progress(((counted + done + i + 1) as f32 / total as f32 * 0.97).min(0.97));

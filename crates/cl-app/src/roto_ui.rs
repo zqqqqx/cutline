@@ -192,14 +192,19 @@ impl RotoLive {
                     }
                     let s = live.size();
                     let key = fnv(fnv(FNV0, w.src.to_string_lossy().as_bytes()), &[w.grid.start.to_bits(), w.index as u64].map(u64::to_le_bytes).concat());
-                    let mut rgb = None;
-                    let got = cl_analyze::roto::frames(&w.src, &w.grid, w.index, 1, s, |_, f| {
-                        rgb = Some(f.to_vec());
+                    // the frame is read from the file only when it is not in yet (every pointer move asks)
+                    let read = if live.has(key) {
                         Ok(())
-                    })
-                    .and_then(|_| rgb.ok_or_else(|| "Bild nicht lesbar".to_string()))
-                    .and_then(|f| live.set_frame(key, &f))
-                    .and_then(|()| live.mask(&w.prompt));
+                    } else {
+                        let mut rgb = None;
+                        cl_analyze::roto::frames(&w.src, &w.grid, w.index, 1, s, |_, f| {
+                            rgb = Some(f.to_vec());
+                            Ok(())
+                        })
+                        .and_then(|_| rgb.ok_or_else(|| "Bild nicht lesbar".to_string()))
+                        .and_then(|f| live.set_frame(key, &f))
+                    };
+                    let got = read.and_then(|()| live.mask(&w.prompt));
                     let _ = wtx.send(match got {
                         Ok(mask) => Got::Mask { tag: w.tag, size: s, mask },
                         Err(e) => Got::Failed(e),
@@ -301,6 +306,8 @@ impl App {
         let (gen, cache) = (crate::paths::generated_dir(), crate::paths::data_dir().join("cache"));
         // no object point or frame: nothing to track (the inspector shows no mask status then)
         let Some(plan) = roto_plan(&c, &m, &gen, &cache) else { return skip("nichts markiert") };
+        // a run cancelled by a new mark may still be ending: it must not block the new one
+        self.tasks.retire(&format!("roto:{clip}"));
         if self.tasks.running(&format!("roto:{clip}")).is_some() {
             return skip("läuft schon");
         }
@@ -634,6 +641,7 @@ mod tests {
         })
         .unwrap();
         live.set_frame(1, &rgb).unwrap();
+        assert!(live.has(1) && !live.has(2), "the worker skips reading a frame that is in");
         // the overlay right after the click, the pointer still on the clicked spot
         let shown = live.mask(&live_prompt(click.clone(), Some(click.points[0]))).unwrap().expect("a mask");
         let overlay = cl_analyze::roto::upscale(&shown, s, 320, 180);
