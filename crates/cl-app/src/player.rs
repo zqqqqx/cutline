@@ -561,6 +561,15 @@ pub(crate) fn reverse_window(c: &Clip, m: &MediaRef, original: bool, no_graph: b
     (video && hd && c.fx.reverse && original && no_graph && playing_forward).then(|| m.fps.unwrap_or(fps))
 }
 
+/// Does the playhead rest (the exact frame may be decoded)? Only when it stood still since the tick
+/// before and no key is held. The same frame asked again is no sign of it: two steps can land on one
+/// source frame (24 fps clip in a 30 fps project), and a held arrow key repeats slower than the UI ticks.
+/// Bug (0.19.1): an exact decode started in the middle of a held arrow key; its frame came late,
+/// sharp and from an older place, between the frames of the scrub window.
+pub(crate) fn playhead_rests(before: Option<Time>, now: Time, key_held: bool) -> bool {
+    before == Some(now) && !key_held
+}
+
 /// Fingerprint of a clip's effects (part of the frame and stream keys); includes whether the
 /// mask file exists yet (it appears after the edit that names it, see `App::masks_changed`)
 pub(crate) fn fx_hash_of(c: &Clip) -> u64 {
@@ -974,7 +983,7 @@ mod presence_tests {
         let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
         let l = Layer { clip: c.clone(), t_rel: Time::ZERO, alpha: 1.0, from: None };
         let canvas = egui::vec2(64.0, 36.0);
-        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, canvas, None, true);
+        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, canvas, None, true, true);
         // stopped: single frame only if present
         app.presence.set_all([(path.clone(), false)].into(), 1);
         ask(&mut app);
@@ -1030,7 +1039,7 @@ mod presence_tests {
         crate::proxy::set_test_entry(&m.path, out.clone(), want, ready.clone(), false);
         app.playhead = Time::from_secs_f64(12.0);
         app.core.play(Time::from_secs_f64(12.0), 0, 0.0);
-        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None, true);
+        let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None, true, true);
         ask(&mut app);
         let parts = jobs.try_recv().expect("stream from parts requested");
         assert_eq!(parts.path, app.dir().join("q-540.teile").join("0001-0004.ffconcat"));
@@ -1145,6 +1154,17 @@ mod shader_tests {
     /// Which effect graphs the scrub window may run (real graphs from `cl_fx::preview_graph`): spatial
     /// ones yes; time expressions, per-frame noise, frame mixing, stabilise, denoise, deflicker and
     /// censor areas need single frames.
+    #[test]
+    fn a_held_arrow_key_is_no_rest() {
+        let (a, b) = (Time::from_secs_f64(1.0), Time::from_secs_f64(1.0 + 1.0 / 30.0));
+        assert!(playhead_rests(Some(a), a, false), "stood still, no key");
+        // a step to a new place, although it may show the same source frame
+        assert!(!playhead_rests(Some(a), b, false));
+        // between two repeats of a held key the playhead stands, but the next step is coming
+        assert!(!playhead_rests(Some(a), a, true));
+        assert!(!playhead_rests(None, a, false), "first tick");
+    }
+
     #[test]
     fn scrub_window_runs_only_frame_independent_graphs() {
         let base = Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(10.0));
@@ -2546,6 +2566,10 @@ impl App {
         });
         let mut visible = Vec::with_capacity(needs.len());
         let mut overlays = Vec::new();
+        let rest_id = egui::Id::new("playhead-rest");
+        let before = ctx.data(|d| d.get_temp::<Time>(rest_id));
+        ctx.data_mut(|d| d.insert_temp(rest_id, self.playhead));
+        let rests = playhead_rests(before, self.playhead, ctx.input(|i| !i.keys_down.is_empty()));
         // scrub windows for the top media layers (`needs` lists them bottom first)
         let windowed: Vec<ClipId> = needs.iter().rev().filter(|n| n.prefetch.is_none() && n.overlay.is_none()).take(SCRUB_LAYERS).map(|n| n.id).collect();
         for n in &needs {
@@ -2553,7 +2577,7 @@ impl App {
             if let Some((base, mk, k)) = n.overlay {
                 overlays.push((base, n.id, mk, k));
             }
-            self.request_frame(ctx, n.id, &n.clip, &n.media, &n.layer, canvas_px, n.prefetch, windowed.contains(&n.id));
+            self.request_frame(ctx, n.id, &n.clip, &n.media, &n.layer, canvas_px, n.prefetch, windowed.contains(&n.id), rests);
         }
         self.fx_overlays = overlays;
         self.update_preroll(ctx, &needs, canvas_px);
@@ -2649,6 +2673,7 @@ impl App {
         canvas_px: egui::Vec2,
         prefetch_at: Option<Time>,
         scrub: bool,
+        rests: bool,
     ) {
         let (div, half) = self.play_quality();
         let div = div as f32;
@@ -2733,7 +2758,7 @@ impl App {
         if !self.core.still(lid(id), key, now) {
             // same frame on a later tick while it is still open: the playhead rests (scrub window: now
             // the exact frame is decoded)
-            if !self.core.playing() && self.core.still_open(lid(id), key) {
+            if rests && !self.core.playing() && self.core.still_open(lid(id), key) {
                 self.decoder.rest(id, key);
             }
         } else {

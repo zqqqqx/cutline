@@ -1163,6 +1163,7 @@ impl App {
                 if crate::report::available() {
                     widgets::toggle_row(ui, "Fehlerberichte senden", &mut self.settings.send_reports);
                 }
+                crate::report::feedback_ui(ui, self);
             }
         }
     }

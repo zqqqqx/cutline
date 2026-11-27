@@ -1,6 +1,7 @@
 //! Opt-in error reports to the developer: one Sentry envelope per report, posted with the HTTP
 //! client the app already uses (ureq, rustls). Nothing leaves the machine unless the setting
-//! „Fehlerberichte senden“ is on or the user clicks „An Entwickler senden“ on the crash notice.
+//! „Fehlerberichte senden“ is on or the user clicks „An Entwickler senden“ on the crash notice
+//! or „Senden“ under „Fehler melden“ in the settings (own words, optionally log and window image).
 //! Without a DSN (build time `CUTLINE_SENTRY_DSN`, or the same variable at runtime) nothing of
 //! this is visible and no code path sends. Every string is scrubbed before it leaves.
 
@@ -75,8 +76,12 @@ pub fn available() -> bool {
 }
 
 pub fn post(dsn: &Dsn, body: &[u8]) -> Result<(), String> {
+    post_within(dsn, body, TIMEOUT)
+}
+
+fn post_within(dsn: &Dsn, body: &[u8], timeout: Duration) -> Result<(), String> {
     ureq::AgentBuilder::new()
-        .timeout(TIMEOUT)
+        .timeout(timeout)
         .build()
         .post(&dsn.endpoint)
         .set("X-Sentry-Auth", &dsn.auth)
@@ -331,7 +336,7 @@ pub fn event(r: &Report, who: &Who, id: &str, timestamp: f64) -> Value {
         "event_id": id,
         "timestamp": timestamp,
         "platform": "native",
-        "level": if r.panic { "fatal" } else { "error" },
+        "level": if r.panic { "fatal" } else if r.source == FEEDBACK { "info" } else { "error" },
         "logger": r.area,
         "release": format!("cutline@{}", env!("CARGO_PKG_VERSION")),
         "environment": if cfg!(debug_assertions) { "debug" } else { "release" },
@@ -353,8 +358,26 @@ pub fn event(r: &Report, who: &Who, id: &str, timestamp: f64) -> Value {
 }
 
 pub fn envelope(ev: &Value) -> Vec<u8> {
+    envelope_with(ev, &[])
+}
+
+/// A file sent along with an event
+pub struct Attachment {
+    pub name: &'static str,
+    pub mime: &'static str,
+    pub data: Vec<u8>,
+}
+
+pub fn envelope_with(ev: &Value, files: &[Attachment]) -> Vec<u8> {
     let body = ev.to_string();
-    format!("{}\n{}\n{body}\n", json!({ "event_id": ev["event_id"] }), json!({ "type": "event", "length": body.len() })).into_bytes()
+    let mut out = format!("{}\n{}\n{body}\n", json!({ "event_id": ev["event_id"] }), json!({ "type": "event", "length": body.len() })).into_bytes();
+    for f in files {
+        let head = json!({ "type": "attachment", "length": f.data.len(), "filename": f.name, "content_type": f.mime });
+        out.extend(format!("{head}\n").into_bytes());
+        out.extend(&f.data);
+        out.push(b'\n');
+    }
+    out
 }
 
 fn event_id() -> String {
@@ -542,6 +565,7 @@ fn send_crash(app: &mut crate::app::App, ctx: &egui::Context, dsn: &'static Dsn,
 pub fn frame(ctx: &egui::Context, app: &mut crate::app::App) {
     let on = app.settings.send_reports;
     ENABLED.store(on, Ordering::Relaxed);
+    feedback_frame(ctx, app);
     SCREEN.store(if app.screen == crate::app::Screen::Editor { 2 } else { 1 }, Ordering::Relaxed);
     if let Some(m) = &app.mcp {
         m.closed.store(app.screen != crate::app::Screen::Editor, Ordering::Relaxed);
@@ -569,6 +593,131 @@ pub fn crash_button(ui: &mut egui::Ui, app: &mut crate::app::App) {
     if ui.add_enabled(can, theme::secondary("An Entwickler senden")).clicked() {
         if let Some(r) = lock(&PREV).clone() {
             send_crash(app, ui.ctx(), dsn, r, true);
+        }
+    }
+}
+
+// ---------- bug report written by the user ----------
+
+/// `source` of a report the user wrote („Fehler melden“)
+const FEEDBACK: &str = "feedback";
+/// Upper bound for a send with attachments (log, window image)
+const TIMEOUT_FILES: Duration = Duration::from_secs(30);
+/// Attached log: its newest part, at most this many bytes
+const LOG_BYTES: usize = 1 << 20;
+/// Frames to wait for the window image before the report goes without it
+const SHOT_FRAMES: u32 = 120;
+/// Frames between the click and asking for the image (the settings fade out first)
+const SHOT_DELAY: u32 = 15;
+
+/// „Fehler melden“ in the settings
+struct Form {
+    open: bool,
+    text: String,
+    log: bool,
+    shot: bool,
+    /// Sending waits for the window image: frames left
+    wait: Option<u32>,
+}
+
+static FORM: Mutex<Form> = Mutex::new(Form { open: false, text: String::new(), log: true, shot: false, wait: None });
+
+/// The exported log as an attachment: scrubbed like every report text, the newest part
+pub fn log_file(text: &str, who: &Who) -> Attachment {
+    let text = text.lines().map(|l| who.scrub(l)).collect::<Vec<_>>().join("\n");
+    let mut from = text.len().saturating_sub(LOG_BYTES);
+    while !text.is_char_boundary(from) {
+        from += 1;
+    }
+    Attachment { name: "log.txt", mime: "text/plain", data: text.as_bytes()[from..].to_vec() }
+}
+
+fn shot_file(img: &egui::ColorImage) -> Option<Attachment> {
+    let [w, h] = img.size;
+    let im = image::RgbaImage::from_raw(w as u32, h as u32, img.pixels.iter().flat_map(|c| c.to_array()).collect())?;
+    let mut data = std::io::Cursor::new(Vec::new());
+    im.write_to(&mut data, image::ImageFormat::Png).ok()?;
+    Some(Attachment { name: "window.png", mime: "image/png", data: data.into_inner() })
+}
+
+/// The user's own words as an event (level info) with the files they chose to attach
+pub fn feedback(dsn: &Dsn, text: &str, files: &[Attachment], who: &Who) -> bool {
+    let r = Report::error("meldung", text).with_current(FEEDBACK);
+    let ev = event(&r, who, &event_id(), now_secs());
+    post_within(dsn, &envelope_with(&ev, files), TIMEOUT_FILES).map_err(|e| log::warn!(target: "bericht", "nicht gesendet: {e}")).is_ok()
+}
+
+fn send_feedback(app: &mut crate::app::App, ctx: &egui::Context, dsn: &'static Dsn, shot: Option<std::sync::Arc<egui::ColorImage>>) {
+    let (text, with_log) = {
+        let f = lock(&FORM);
+        (f.text.clone(), f.log)
+    };
+    let log = with_log.then(|| app.log_text_job());
+    app.tasks.spawn(ctx, "bug-report", crate::tr("Bericht wird gesendet"), move |_, _| {
+        let who = Who::current();
+        let mut files: Vec<Attachment> = log.map(|job| log_file(&job(), &who)).into_iter().collect();
+        files.extend(shot.and_then(|i| shot_file(&i)));
+        let ok = feedback(dsn, &text, &files, &who);
+        crate::tasks::TaskDone::Run(Box::new(move |app: &mut crate::app::App| {
+            if ok {
+                let mut f = lock(&FORM);
+                f.text.clear();
+                f.open = false;
+                app.toast(format!("{}  Bericht gesendet", icon::CHECK));
+            } else {
+                app.toast_err("Bericht konnte nicht gesendet werden");
+            }
+        }))
+    });
+}
+
+/// With a window image: the settings close, the image of the window behind them is taken, then it sends
+fn feedback_frame(ctx: &egui::Context, app: &mut crate::app::App) {
+    let Some(dsn) = dsn() else { return };
+    let Some(left) = lock(&FORM).wait else { return };
+    if left == SHOT_FRAMES {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
+    }
+    let shot = ctx.input(|i| {
+        i.raw.events.iter().find_map(|e| match e {
+            egui::Event::Screenshot { image, .. } => Some(image.clone()),
+            _ => None,
+        })
+    });
+    if shot.is_none() && left > 0 {
+        lock(&FORM).wait = Some(left - 1);
+        ctx.request_repaint();
+        return;
+    }
+    lock(&FORM).wait = None;
+    send_feedback(app, ctx, dsn, shot);
+}
+
+/// Settings → About Cutline: „Fehler melden“ with a free text; the click on „Senden“ is the
+/// consent for this one report (also with the setting off)
+pub fn feedback_ui(ui: &mut egui::Ui, app: &mut crate::app::App) {
+    if dsn().is_none() {
+        return;
+    }
+    let mut f = lock(&FORM);
+    if ui.add(theme::secondary(format!("{}  Fehler melden", icon::BUG))).clicked() {
+        f.open = !f.open;
+    }
+    if !f.open {
+        return;
+    }
+    let f = &mut *f;
+    ui.add(egui::TextEdit::multiline(&mut f.text).id_salt("bug-report").desired_rows(4).desired_width(f32::INFINITY).char_limit(4000));
+    crate::widgets::toggle_row(ui, "Protokoll anhängen", &mut f.log);
+    crate::widgets::toggle_row(ui, "Bildschirmfoto anhängen", &mut f.shot);
+    let busy = f.wait.is_some() || app.tasks.running("bug-report").is_some();
+    if ui.add_enabled(!busy && !f.text.trim().is_empty(), theme::primary("Senden")).clicked() {
+        if f.shot {
+            f.wait = Some(SHOT_FRAMES + SHOT_DELAY);
+            app.settings_open = false;
+            ui.ctx().request_repaint();
+        } else {
+            f.wait = Some(0);
         }
     }
 }
@@ -739,6 +888,29 @@ mod tests {
         for g in got.iter() {
             assert_clean(g);
         }
+    }
+
+    #[test]
+    fn a_written_report_goes_out_scrubbed_with_its_files() {
+        let f = fake(200);
+        let log = log_file("INFO  import: C:\\Users\\Jörg Müller\\Videos\\Urlaub Mallorca\\clip 1.mp4\nINFO  sitzung: Rechner JOERG-PC", &who());
+        let shot = Attachment { name: "window.png", mime: "image/png", data: vec![0x89, b'P', b'N', b'G', 0, 255, b'\n', 7] };
+        let (log_len, shot_data) = (log.data.len(), shot.data.clone());
+        assert!(feedback(f.dsn, "Abspielen ruckelt bei C:\\Users\\Jörg Müller\\Videos\\Urlaub Mallorca.cutline", &[log, shot], &who()));
+        let got = f.got.lock().unwrap();
+        assert_eq!(got.len(), 1);
+        assert_clean(&got[0]);
+        let raw = String::from_utf8_lossy(&got[0]);
+        assert!(raw.contains(r#""level":"info""#) && raw.contains(r#""source":"feedback""#), "{raw}");
+        assert!(raw.contains("Abspielen ruckelt bei <path>.cutline"), "{raw}");
+        assert!(raw.contains(&format!(r#"{{"content_type":"text/plain","filename":"log.txt","length":{log_len},"type":"attachment"}}"#)), "{raw}");
+        // the image bytes follow their item header unchanged
+        let head = br#"{"content_type":"image/png","filename":"window.png","length":8,"type":"attachment"}"#;
+        let at = got[0].windows(head.len()).position(|w| w == head).expect("image item") + head.len() + 1;
+        assert_eq!(&got[0][at..at + 8], &shot_data[..]);
+        // a long log keeps its newest part
+        let long = log_file(&format!("alt\n{}\nneu", "x".repeat(LOG_BYTES)), &who());
+        assert!(long.data.len() <= LOG_BYTES && long.data.ends_with(b"neu"));
     }
 
     const LOG: &str = "2026-11-25 10:00:00.000 +01:00 INFO  sitzung: beginnt pid=11 · Cutline 0.18.2 (Release)\n\

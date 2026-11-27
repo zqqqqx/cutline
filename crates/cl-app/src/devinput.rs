@@ -138,6 +138,11 @@ fn parse_events(line: &str, ppp: f32) -> Vec<Ev> {
             let ev = |pressed| Event::Key { key: k, physical_key: None, pressed, repeat: false, modifiers: m };
             vec![(vec![ev(true)], m), (vec![ev(false)], m)]
         }),
+        // held key: `keydown` again = one repeat, until `keyup`
+        "keydown" | "keyup" => rest.first().and_then(|n| key(n)).map(|k| {
+            let m = mods(rest.get(1).copied());
+            vec![(vec![Event::Key { key: k, physical_key: None, pressed: cmd == "keydown", repeat: false, modifiers: m }], m)]
+        }),
         _ => None,
     };
     out.unwrap_or_default()

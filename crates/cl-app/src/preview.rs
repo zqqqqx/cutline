@@ -501,7 +501,17 @@ impl InFlight {
         if self.0.get(&clip).is_none_or(|((k, ..), _)| *k != key) {
             return None;
         }
-        self.0.remove(&clip).map(|(_, w)| w.map(|w| w.0))
+        let (_, w) = self.0.remove(&clip)?;
+        match w {
+            // a deferred job the playhead does not rest on keeps waiting, and the finished frame counts
+            // as stale. Bug (0.19.1): it started here, so after one exact decode (first step after a
+            // pause) a held arrow key ran decode after decode; their late frames jumped back.
+            Some((s, due, false)) => {
+                self.0.insert(clip, ((0, s.path.clone(), s.at, Arc::default()), Some((s, due, false))));
+                None
+            }
+            w => Some(w.map(|w| w.0)),
+        }
     }
     /// The UI asked for the same frame again on a later tick: the playhead rests on job `key`
     fn rest(&mut self, clip: ClipId, key: u64) {
@@ -2110,6 +2120,26 @@ mod tests {
         }
         assert_eq!(killed.recv_timeout(s10).expect("stale run killed"), 1);
         assert_eq!(wins.recv_timeout(s10).unwrap().0, 241, "next run starts at the playhead");
+    }
+
+    #[test]
+    fn a_finished_decode_does_not_start_a_job_the_playhead_passes() {
+        let (clip, zero) = (ClipId::new(), std::time::Duration::ZERO);
+        let still = |key: u64| Still { key, path: "a.mp4".into(), at: Time::from_secs_f64(key as f64 / 30.0), w: 64, h: 36, graph: None };
+        let mut f = InFlight::default();
+        // first step after a pause: its exact frame is decoded at once
+        assert!(f.offer(clip, still(1), zero, true, true).is_some());
+        // the key stays held: the next steps wait for a rest
+        assert!(f.offer(clip, still(2), zero, false, true).is_none());
+        assert!(f.offer(clip, still(3), zero, false, true).is_none());
+        assert!(f.finish(clip, 1).is_none(), "frame of step 1 is stale, nothing starts");
+        assert!(f.rested().is_empty());
+        // key released: the playhead rests on step 3
+        f.rest(clip, 3);
+        let r = f.rested();
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].1.key, r[0].3.is_none()), (3, true), "starts, nothing to kill");
+        assert!(matches!(f.finish(clip, 3), Some(None)));
     }
 
     /// Rest means an unchanged playhead on a later tick, not a pause between ticks: slow ticks (100 ms

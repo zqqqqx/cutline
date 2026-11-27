@@ -952,6 +952,23 @@ impl crate::app::App {
             None => crate::dialog().add_filter(crate::tr("Textdatei"), &["txt"]).set_file_name(export_name(now)).save_file(),
         };
         let Some(out) = target else { return };
+        let text = self.log_text_job();
+        self.tasks.spawn(ctx, "log-export", crate::tr("Protokoll wird exportiert"), move |_, _| {
+            match crate::paths::write_atomic(&out, text()) {
+                Ok(()) => crate::tasks::TaskDone::Run(Box::new(move |app: &mut crate::app::App| {
+                    log::info!(target: "sitzung", "Protokoll exportiert: {}", out.display());
+                    app.toast(format!("{}  Protokoll gespeichert", icon::CHECK));
+                    *LAST_EXPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(out);
+                })),
+                Err(e) => crate::tasks::TaskDone::Failed(format!("{}: {e}", out.display())),
+            }
+        });
+        CRASHED.store(false, Ordering::Relaxed);
+    }
+
+    /// The exported log (header and last 24 hours, anonymised) as a job for a background thread
+    pub fn log_text_job(&self) -> impl FnOnce() -> String + Send + 'static {
+        let now = now_ms();
         let packages: Vec<(String, String, bool)> = self
             .plugins
             .plugins
@@ -962,19 +979,10 @@ impl crate::app::App {
         let settings = serde_json::to_value(&self.settings).unwrap_or_default();
         let ui = UI_INFO.get().cloned().unwrap_or_default();
         flush();
-        self.tasks.spawn(ctx, "log-export", crate::tr("Protokoll wird exportiert"), move |_, _| {
+        move || {
             let head = header(system_info(), &ui, settings, &packages, project, now);
-            let text = export_text(&crate::paths::logs_dir(), &head, now, &home());
-            match crate::paths::write_atomic(&out, text) {
-                Ok(()) => crate::tasks::TaskDone::Run(Box::new(move |app: &mut crate::app::App| {
-                    log::info!(target: "sitzung", "Protokoll exportiert: {}", out.display());
-                    app.toast(format!("{}  Protokoll gespeichert", icon::CHECK));
-                    *LAST_EXPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(out);
-                })),
-                Err(e) => crate::tasks::TaskDone::Failed(format!("{}: {e}", out.display())),
-            }
-        });
-        CRASHED.store(false, Ordering::Relaxed);
+            export_text(&crate::paths::logs_dir(), &head, now, &home())
+        }
     }
 }
 
