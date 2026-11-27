@@ -428,7 +428,7 @@ fn version_6_projects_get_the_new_ids_of_bundled_content() {
     let mut p = Project::new("Old");
     let m = MediaRef {
         id: MediaId::new(),
-        path: r"C:\Programs\Cutline\plugins\cutline-sounds\audio\knall.ogg".into(),
+        path: "/opt/cutline/plugins/cutline-sounds/audio/knall.ogg".into(),
         kind: MediaKind::Audio,
         duration: Time::from_secs_f64(1.0),
         width: 0,
@@ -476,7 +476,7 @@ fn version_6_projects_get_the_new_ids_of_bundled_content() {
     let old = Project::from_json(&json.replace(&cur, "\"schema_version\": 6")).unwrap();
     assert_eq!(old.schema_version, PROJECT_SCHEMA_VERSION);
     assert_eq!(ids(&old), ["cutline.effects/crt-tv", "cutline.effects/super8", "blur"]);
-    assert_eq!(old.media[0].path, std::path::PathBuf::from(r"C:\Programs\Cutline\plugins\cutline-sounds\audio\bang.ogg"));
+    assert_eq!(old.media[0].path, std::path::PathBuf::from("/opt/cutline/plugins/cutline-sounds/audio/bang.ogg"));
     // the caption track is found by its name: a text track with the old default name gets the new one
     let names = |p: &Project| p.timeline.tracks.iter().map(|t| t.name.clone().unwrap_or_default()).collect::<Vec<_>>();
     assert_eq!(names(&old), ["", "", "Captions", "Untertitel"]);
