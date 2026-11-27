@@ -21,6 +21,24 @@
 
 **Behoben**
 
+## 0.19.3 – 2026-11-27
+
+### English
+
+**New**
+- **Report a bug from the settings.** "Report a bug" under "About Cutline" sends your own words to the developer, with the log and, if you switch it on, an image of the window. Nothing is sent before you click "Send".
+
+**Fixed**
+- **Holding an arrow key steps smoothly again.** The picture jumped back and forth and flickered between sharp and soft, most of all when clip and project have different frame rates.
+
+### Deutsch
+
+**Neu**
+- **Fehler aus den Einstellungen melden.** „Fehler melden“ unter „Über Cutline“ schickt deine eigenen Worte an den Entwickler, mit dem Protokoll und, wenn du es einschaltest, einem Bild des Fensters. Vor dem Klick auf „Senden“ wird nichts gesendet.
+
+**Behoben**
+- **Pfeiltaste halten läuft wieder flüssig.** Das Bild sprang vor und zurück und wechselte zwischen scharf und weich, vor allem wenn Clip und Projekt verschiedene Bildraten haben.
+
 ## 0.19.2 – 2026-11-27
 
 ### English
