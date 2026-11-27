@@ -593,6 +593,8 @@ impl App {
         }
         let models = self.models();
         let id = c.id;
+        // a run cancelled a moment ago (Person → Off → Person) must not block this one
+        self.tasks.retire(&format!("matte:{id}"));
         self.tasks.spawn(
             ctx,
             format!("matte:{id}"),

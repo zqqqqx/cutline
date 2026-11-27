@@ -14,6 +14,13 @@ use crate::{session, Models};
 /// Processing size (longest edge)
 const WORK: u32 = 640;
 
+/// Work file next to `out`, its own for every run: a cancelled run that is still ending and the
+/// run started after it never write into the same file.
+pub(crate) fn part_path(out: &Path) -> std::path::PathBuf {
+    static RUN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    out.with_extension(format!("{}-{}.part.mkv", std::process::id(), RUN.fetch_add(1, Ordering::Relaxed)))
+}
+
 /// Write the mask video for the whole file `src` to `out`.
 pub fn matte(
     models: &Models,
@@ -66,7 +73,7 @@ pub fn matte(
     if let Some(d) = out.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
-    let tmp = out.with_extension("part.mkv");
+    let tmp = part_path(out);
     let mut enc = cl_media::ffmpeg_command()
         .map_err(|e| e.to_string())?
         .args([
@@ -172,6 +179,16 @@ pub(crate) fn finish(tmp: &Path, out: &Path, result: Result<(), String>, written
 mod tests {
     use super::*;
     use crate::testutil;
+
+    /// Bug (audit of 0.19.0): every run wrote `<name>.part.mkv`; a cancelled run still ending and
+    /// its restart would have written into one file.
+    #[test]
+    fn every_run_has_its_own_work_file() {
+        let out = Path::new("masks").join("m.mkv");
+        let (a, b) = (part_path(&out), part_path(&out));
+        assert_ne!(a, b);
+        assert!(a.to_string_lossy().ends_with(".part.mkv") && a.parent() == out.parent(), "{a:?}");
+    }
 
     /// Cancel and errors leave no `.part.mkv` behind; success renames it.
     #[test]

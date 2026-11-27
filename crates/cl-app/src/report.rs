@@ -135,12 +135,17 @@ fn fold(s: &str) -> String {
         .collect()
 }
 
-/// Replace `pat` ignoring case (`JÖRG` = `jörg`)
+/// Replace the whole word `pat` ignoring case (`JÖRG` = `jörg`); inside a longer word it stays
+/// (the user „max“ must not turn „maximum“ into „<user>imum“)
 fn replace_ci(s: &str, pat: &str, with: &str) -> String {
     let (low, pat) = (fold(s), fold(pat));
     let mut out = String::with_capacity(s.len());
     let mut last = 0;
+    let letter = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
     for (i, _) in low.match_indices(&pat) {
+        if letter(s[..i].chars().next_back()) || letter(s[i + pat.len()..].chars().next()) {
+            continue;
+        }
         out.push_str(&s[last..i]);
         out.push_str(with);
         last = i + pat.len();
@@ -655,6 +660,8 @@ mod tests {
             ("proxy: urlaub.mp4 fertig in 12 ms", "proxy: <file>.mp4 fertig in 12 ms"),
             ("Projekt „Urlaub Mallorca“ gespeichert", "Projekt „***“ gespeichert"),
             ("Rechner joerg-pc, Benutzer JÖRG MÜLLER", "Rechner <user>, Benutzer <user>"),
+            // bug (review of 0.19.0): a name inside a longer word garbled the text
+            ("joerg-pcs und Jörg Müllers Maximum", "joerg-pcs und Jörg Müllers Maximum"),
             ("Authorization: Bearer abcdefghijklmnop", "Authorization: Bearer ***"),
         ];
         for (input, want) in cases {

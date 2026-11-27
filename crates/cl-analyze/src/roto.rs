@@ -457,32 +457,54 @@ impl Live {
 /// Seeks a quarter frame before the frame: the one before is dropped, the wanted one is kept.
 /// shortcut: assumes a constant frame rate (variable-rate sources may shift by a frame)
 pub fn frames(src: &Path, grid: &Grid, from: usize, count: usize, s: usize, mut each: impl FnMut(usize, &[u8]) -> R<()>) -> R<usize> {
-    let ss = (grid.time(from) - 0.25 / grid.fps).max(0.0);
-    let mut child = cl_media::ffmpeg_command()
-        .map_err(oe)?
-        .args(["-v", "error", "-nostdin", "-ss", &format!("{ss:.6}")])
-        .arg("-i")
-        .arg(src)
-        .args(["-an", "-frames:v", &count.to_string(), "-vf", &format!("scale={s}:{s}:flags=bilinear,format=rgb24"), "-f", "rawvideo", "-"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(oe)?;
-    let mut out = child.stdout.take().expect("piped");
-    let mut buf = vec![0u8; s * s * 3];
+    let mut r = Reader::open(src, grid, from, s)?;
     let mut n = 0;
-    let mut r = Ok(());
-    while n < count && out.read_exact(&mut buf).is_ok() {
-        r = each(from + n, &buf);
-        if r.is_err() {
-            break;
-        }
+    while n < count {
+        let Some(f) = r.next() else { break };
+        each(from + n, &f)?;
         n += 1;
     }
-    let _ = child.kill();
-    let _ = child.wait();
-    r.map(|()| n)
+    Ok(n)
+}
+
+/// Decoder that stays open: the source frames from grid frame `from` on, one after another.
+/// Tracking forwards reads its blocks from one of these instead of seeking anew for every block
+/// (a seek decodes from the key frame before, with long frame groups far more than the block).
+struct Reader {
+    child: std::process::Child,
+    out: std::process::ChildStdout,
+    len: usize,
+}
+
+impl Reader {
+    fn open(src: &Path, grid: &Grid, from: usize, s: usize) -> R<Reader> {
+        let ss = (grid.time(from) - 0.25 / grid.fps).max(0.0);
+        let mut child = cl_media::ffmpeg_command()
+            .map_err(oe)?
+            .args(["-v", "error", "-nostdin", "-ss", &format!("{ss:.6}")])
+            .arg("-i")
+            .arg(src)
+            .args(["-an", "-vf", &format!("scale={s}:{s}:flags=bilinear,format=rgb24"), "-f", "rawvideo", "-"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(oe)?;
+        let out = child.stdout.take().expect("piped");
+        Ok(Reader { child, out, len: s * s * 3 })
+    }
+    /// The next frame; `None` at the end of the source
+    fn next(&mut self) -> Option<Vec<u8>> {
+        let mut b = vec![0u8; self.len];
+        self.out.read_exact(&mut b).ok().map(|()| b)
+    }
+}
+
+impl Drop for Reader {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 // ------------------------------------------------------------------ tracking
@@ -629,17 +651,24 @@ pub fn track(
             save_state(&state, done, bank.as_ref().expect("set"))?;
         }
         let mut last: Option<Vec<u8>> = None;
+        let mut stream: Option<Reader> = None;
         while done < sec.len {
             let count = SAVE_EVERY.min(sec.len - done);
             // forwards: the next frames in order; backwards: the block before, read forwards, used reversed
             let from = if sec.back { sec.frame(done + count - 1) } else { sec.frame(done) };
             let mut block: Vec<Vec<u8>> = vec![];
-            frames(&job.src, &job.grid, from, count, s, |_, rgb| {
-                block.push(rgb.to_vec());
-                Ok(())
-            })?;
             if sec.back {
+                frames(&job.src, &job.grid, from, count, s, |_, rgb| {
+                    block.push(rgb.to_vec());
+                    Ok(())
+                })?;
                 block.reverse();
+            } else {
+                let r = match &mut stream {
+                    Some(r) => r,
+                    None => stream.insert(Reader::open(&job.src, &job.grid, from, s)?),
+                };
+                block.extend((0..count).map_while(|_| r.next()));
             }
             for i in 0..count {
                 while pause() && !cancel.load(Ordering::Relaxed) {
@@ -685,7 +714,7 @@ pub fn join(work: &Path, grid: &Grid, key: usize, s: usize, size: (u32, u32), ra
     if let Some(d) = out.parent() {
         std::fs::create_dir_all(d).map_err(oe)?;
     }
-    let tmp = out.with_extension("part.mkv");
+    let tmp = crate::matte::part_path(out);
     let mut enc = cl_media::ffmpeg_command()
         .map_err(oe)?
         .args(["-v", "error", "-nostdin", "-y", "-f", "rawvideo", "-pix_fmt", "gray", "-s", &format!("{w}x{h}"), "-r", rate, "-i", "-", "-c:v", "ffv1", "-g", "1"])
@@ -788,6 +817,36 @@ mod tests {
         d.pop();
         std::fs::write(&state, d).unwrap();
         assert_eq!(load_state(&state), None);
+    }
+
+    /// Tracking forwards reads from one decoder; it must give the frames a seek to each one gives.
+    #[test]
+    fn one_decoder_gives_the_frames_of_single_seeks() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let v = dir.path().join("v.mp4");
+        let st = cl_media::ffmpeg_command()
+            .unwrap()
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=2", "-g", "50", "-pix_fmt", "yuv420p"])
+            .arg(&v)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let grid = Grid::new(0.0, 2.0, 25.0);
+        let mut r = Reader::open(&v, &grid, 7, 32).unwrap();
+        for i in 7..45 {
+            let mut one = vec![];
+            frames(&v, &grid, i, 1, 32, |_, f| {
+                one = f.to_vec();
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(r.next().as_deref(), Some(&one[..]), "frame {i}");
+        }
+        // the end of the source ends the stream
+        assert_eq!((45..60).map_while(|_| r.next()).count(), 5);
     }
 
     /// `join` from made-up sections: backwards file before the marked frame (stored newest first),

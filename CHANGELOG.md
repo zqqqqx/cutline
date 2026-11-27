@@ -10,16 +10,28 @@
 **New**
 
 **Improved**
+- **Marking an object reacts faster.** The preview under the pointer no longer reads the frame from the file on every mouse move.
+- **Tracking an object is faster with long-GOP files.** Tracking forwards reads the video in one go instead of seeking again every 30 frames.
+- **Error reports are easier to read.** User and machine names are only removed as whole words, no longer in the middle of other words.
 
 **Fixed**
+- **Object cut-out: new marks are tracked.** After changing the marks and leaving the tool quickly, tracking sometimes did not start and the cut-out stayed empty.
+- **Person cut-out starts again after switching it off and on quickly.** The mask was not computed when "Person" was chosen again while the cancelled run was still ending.
+- **Updates: the download stops at 1 GB** instead of filling the memory if a server sends more than a package can be.
 
 ### Deutsch
 
 **Neu**
 
 **Verbessert**
+- **Objekt markieren reagiert schneller.** Die Vorschau unter dem Zeiger liest das Bild nicht mehr bei jeder Mausbewegung neu aus der Datei.
+- **Objekt verfolgen ist bei Dateien mit langen Bildgruppen schneller.** Vorwärts wird das Video in einem Zug gelesen statt alle 30 Bilder neu angesprungen.
+- **Fehlerberichte sind besser lesbar.** Benutzer- und Rechnernamen werden nur als ganzes Wort entfernt, nicht mehr mitten in anderen Wörtern.
 
 **Behoben**
+- **Objekt-Freistellen: neue Markierungen werden verfolgt.** Nach dem Ändern der Markierung und schnellem Verlassen des Werkzeugs startete das Verfolgen manchmal nicht, die Freistellung blieb leer.
+- **Personen-Freistellung startet nach schnellem Aus- und Einschalten wieder.** Die Maske wurde nicht berechnet, wenn „Person“ erneut gewählt wurde, während der abgebrochene Lauf noch auslief.
+- **Updates: Der Download bricht bei 1 GB ab,** statt den Arbeitsspeicher zu füllen, wenn ein Server mehr sendet, als ein Paket groß sein kann.
 
 ## 0.19.0 – 2026-11-26
 

@@ -225,12 +225,20 @@ pub fn parse_sha_file(s: &str) -> Option<String> {
     (h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit())).then_some(h)
 }
 
+/// Largest update package accepted (today about 150 MB): it is held in memory until checked
+const MAX_PACKAGE: u64 = 1 << 30;
+
 /// Download and check the package. Returns the path of the checked ZIP file.
-pub fn download(
+pub fn download(rel: &Release, dir: &Path, progress: impl FnMut(u64, u64), cancel: &AtomicBool) -> Result<PathBuf, String> {
+    download_max(rel, dir, progress, cancel, MAX_PACKAGE)
+}
+
+fn download_max(
     rel: &Release,
     dir: &Path,
     mut progress: impl FnMut(u64, u64),
     cancel: &AtomicBool,
+    max: u64,
 ) -> Result<PathBuf, String> {
     let sha_url = rel
         .sha_url
@@ -267,6 +275,9 @@ pub fn download(
             break;
         }
         data.extend_from_slice(&buf[..n]);
+        if data.len() as u64 > max {
+            return Err("Paket ist zu groß".into());
+        }
         progress(data.len() as u64, total);
     }
     let got = sha256_hex(&data);
@@ -845,6 +856,18 @@ mod tests {
         let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
         let p = download(&release(&base), dir.path(), |_, _| {}, &no).unwrap();
         assert_eq!(std::fs::read(p).unwrap(), b"hallo");
+    }
+
+    /// Bug (audit of 0.19.0): the package was read into memory without a limit.
+    #[test]
+    fn download_stops_at_the_size_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let no = AtomicBool::new(false);
+        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
+        assert_eq!(download_max(&release(&base), dir.path(), |_, _| {}, &no, 4).unwrap_err(), "Paket ist zu groß");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
+        assert!(download_max(&release(&base), dir.path(), |_, _| {}, &no, 5).is_ok());
     }
 
     /// Bug: a huge Content-Length reserved that much memory up front (crash).
