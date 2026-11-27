@@ -10,6 +10,22 @@
 **New**
 
 **Improved**
+
+**Fixed**
+
+### Deutsch
+
+**Neu**
+
+**Verbessert**
+
+**Behoben**
+
+## 0.19.1 – 2026-11-27
+
+### English
+
+**Improved**
 - **Marking an object reacts faster.** The preview under the pointer no longer reads the frame from the file on every mouse move.
 - **Tracking an object is faster with long-GOP files.** Tracking forwards reads the video in one go instead of seeking again every 30 frames.
 - **Error reports are easier to read.** User and machine names are only removed as whole words, no longer in the middle of other words.
@@ -20,8 +36,6 @@
 - **Updates: the download stops at 1 GB** instead of filling the memory if a server sends more than a package can be.
 
 ### Deutsch
-
-**Neu**
 
 **Verbessert**
 - **Objekt markieren reagiert schneller.** Die Vorschau unter dem Zeiger liest das Bild nicht mehr bei jeder Mausbewegung neu aus der Datei.
